@@ -1,6 +1,6 @@
 # ADR-0006: CAMetalDisplayLink per display, compositor on the master display
 
-Status: Proposed · 2026-10-22
+Status: Accepted · 2026-10-22
 
 ## Context
 The brief fixes `CAMetalDisplayLink` as the clock. Displays may have

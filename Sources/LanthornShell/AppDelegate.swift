@@ -1,0 +1,99 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 Tim de Bruijn
+// Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
+
+import AppKit
+import LanthornCore
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var window: NSWindow?
+    private let engine = EngineManager()
+    private var browser: BrowserController?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        buildMenu()
+        engine.start()
+        let browser = BrowserController(url: URL(string: "https://127.0.0.1:8443/")!)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.title = Attribution.projectName
+        window.contentView = browser.webView
+        window.setFrameAutosaveName("LanthornMain")
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        self.window = window
+        self.browser = browser
+        browser.load()
+        NSApp.activate()
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    func applicationWillTerminate(_ notification: Notification) { engine.stopIfChild() }
+
+    @objc func showAbout(_ sender: Any?) {
+        let credits = NSAttributedString(
+            string: "\(Attribution.text)\n\n\(Attribution.artNetCredit)\n\nGPL-3.0-only with additional terms.")
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationName: Attribution.projectName,
+            .applicationVersion: LanthornVersion.string,
+            .version: "",
+            .credits: credits,
+        ])
+    }
+
+    @objc func restartEngine(_ sender: Any?) {
+        engine.restart()
+        browser?.load()
+    }
+
+    @objc func openLogs(_ sender: Any?) { NSWorkspace.shared.open(AppPaths.logs) }
+
+    @objc func reloadUI(_ sender: Any?) { browser?.load() }
+
+    private func buildMenu() {
+        let mainMenu = NSMenu()
+
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "About \(Attribution.projectName)", action: #selector(showAbout(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Hide \(Attribution.projectName)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Quit \(Attribution.projectName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        mainMenu.addItem(submenu: appMenu)
+
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        mainMenu.addItem(submenu: editMenu)
+
+        let engineMenu = NSMenu(title: "Engine")
+        engineMenu.addItem(withTitle: "Reload UI", action: #selector(reloadUI(_:)), keyEquivalent: "r")
+        engineMenu.addItem(withTitle: "Restart Engine", action: #selector(restartEngine(_:)), keyEquivalent: "")
+        engineMenu.addItem(withTitle: "Open Logs", action: #selector(openLogs(_:)), keyEquivalent: "")
+        mainMenu.addItem(submenu: engineMenu)
+
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.zoom(_:)), keyEquivalent: "")
+        mainMenu.addItem(submenu: windowMenu)
+        NSApp.windowsMenu = windowMenu
+
+        NSApp.mainMenu = mainMenu
+    }
+}
+
+extension NSMenu {
+    fileprivate func addItem(submenu: NSMenu) {
+        let item = NSMenuItem()
+        item.submenu = submenu
+        addItem(item)
+    }
+}

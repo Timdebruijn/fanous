@@ -1,6 +1,6 @@
 # Lanthorn — Design
 
-Status: **DRAFT for approval** · 2026-10-22 · Owner: Tim de Bruijn
+Status: **Approved 2026-10-22** (defaults of §22 accepted) · Owner: Tim de Bruijn
 
 Lanthorn is an open-source media server for live events, programmed from a
 lighting console as if it were a fixture (Catalyst-style). This document is the
@@ -29,7 +29,7 @@ extension point exists) but not built.
 Linux, Intel, base M1, a timeline editor.
 
 **Platform floor:** Apple Silicon with a hardware ProRes engine. Minimum macOS
-14 per the brief; see `[OPEN-1]` for a recommendation to raise it to 15.
+15 (ADR-0020; the brief said 14, raised with the owner's approval of `[OPEN-1]`).
 
 ---
 
@@ -177,14 +177,14 @@ Lanthorn/
 │   ├── CHap/                vendored Vidvox hap.c/.h (BSD) — C target
 │   ├── CSnappy/             vendored google/snappy (BSD-3) — C++ target
 │   ├── Syphon/              vendored Syphon-Framework sources (BSD) — ObjC target
-│   ├── lanthornd/           executable: wiring, CLI flags, resources (web/dist)
+│   ├── lanthornd/           executable: wiring, CLI flags; serves web/dist (located at runtime, see below)
 │   ├── LanthornShell/       executable: AppKit app, WKWebView, SMAppService, About
 │   └── lanthorn-bench/      executable: benchmark harness
 ├── Tests/
 │   ├── LanthornCoreTests/   protocol fixtures (captures), parameter/channel map, GDTF, cues, mapping math
 │   ├── LanthornEngineTests/ golden images, decode spikes — Apple Silicon only
 │   └── Fixtures/            captures/*.bin + .pcapng, golden/*.png, media/ (generated)
-├── web/                     Svelte 5 + Vite + TypeScript; builds to web/dist (copied as SPM resource)
+├── web/                     Svelte 5 + Vite + TypeScript; builds to web/dist (copied into the .app by bundle.sh)
 ├── scripts/                 bundle.sh (assemble .app), sign.sh, license-headers.sh, fixtures.sh
 └── docs/
 ```
@@ -196,8 +196,12 @@ header; no new package dependencies without an entry in
 
 The `.app` bundle is assembled by `scripts/bundle.sh` from SPM products
 (no Xcode project): Info.plist, LaunchAgent plist, embedded `lanthornd`,
-`web/dist`, entitlements, then `codesign` + `notarytool`. `[OPEN-2]` bundle
-identifier prefix (placeholder `org.lanthorn`).
+`web/dist` as `Contents/Resources/web`, entitlements, then `codesign` +
+`notarytool`. The engine locates its web root at runtime (`--web-root`,
+`$LANTHORN_WEB_ROOT`, `Contents/Resources/web`, or `web/dist` relative to a
+development build) instead of using SPM resources, so one binary serves both
+the bundle and `swift run`. Bundle identifiers: `org.lanthorn.app` (shell),
+`org.lanthorn.engine` (agent) (`[OPEN-2]`, decided: `org.lanthorn`).
 
 ---
 
@@ -1162,7 +1166,7 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
 
 | File | Content |
 |---|---|
-| `LICENSE` | Verbatim GNU GPL v3 text, preceded by a short notice: "Lanthorn is licensed under GPL-3.0-only with additional terms under section 7; see `LICENSE-ADDITIONAL-TERMS.md`." |
+| `LICENSE` | Verbatim GNU GPL v3 text, unmodified so license scanners recognise it; the notice "GPL-3.0-only with additional terms under section 7, see `LICENSE-ADDITIONAL-TERMS.md`" is in `README.md` and in every source header. |
 | `LICENSE-ADDITIONAL-TERMS.md` | The two §7 additions: (b) attribution preservation (text in `docs/licensing/ATTRIBUTION.md`), and the additional *permission* for plugins (`docs/licensing/PLUGIN-EXCEPTION.md`, DRAFT until lawyer-reviewed; shipped only after review). |
 | `docs/licensing/ATTRIBUTION.md` | exact wording of the attribution term and the exact strings the About screen and web footer must show |
 | `docs/licensing/PLUGIN-EXCEPTION.md` | DRAFT additional permission for linking plugins against proprietary SDKs via `LanthornPluginAPI` |
@@ -1189,7 +1193,7 @@ trademark search for "Lanthorn" (`[OPEN-21]`).
 
 | Level | What | Where it runs |
 |---|---|---|
-| **Unit (Core)** | every parser/builder (Art-Net, sACN, OSC, CITP, LTC, MTC, HTTP/WS framing), channel map ↔ units, GDTF XML against the XSD, cue fades, blend/warp math, project migrations, JSON patch/undo | GitHub Actions `macos-latest` (no GPU needed) and locally; Swift Testing |
+| **Unit (Core)** | every parser/builder (Art-Net, sACN, OSC, CITP, LTC, MTC, HTTP/WS framing), channel map ↔ units, GDTF XML against the XSD, cue fades, blend/warp math, project migrations, JSON patch/undo | GitHub Actions `macos-26` (no GPU needed) and locally via `scripts/test.sh`; Swift Testing |
 | **Protocol fixtures** | real packet captures: `Tests/Fixtures/captures/<protocol>/<source>-<desc>.bin` (raw UDP/TCP payloads extracted from `.pcapng` kept next to them with provenance in `README.md`). Sources in v1: grandMA3 onPC, Eos Nomad, MagicQ PC, QLC+, sACNView, plus hand-built edge cases (sequence wrap, priorities, sync packets, malformed lengths). Fuzz-style tests mutate fixtures and assert no crash | same |
 | **Golden images** | deterministic scenes (synthetic textures, fixed parameters) rendered through the real compositor and output pass, read back, compared to PNGs with per-channel tolerance (±2/255) and a diff image on failure: blend modes, effects, transforms, dissolve, blend maps, warp, masks, test patterns, YCbCr/YCoCg conversion | Apple Silicon only: locally and on a self-hosted runner when available; skipped (not failed) on hosted CI |
 | **Decode conformance** | one sample file per codec variant (generated by the ingest encoder from a synthetic source, checked against known pixel values) | Apple Silicon |
@@ -1272,8 +1276,8 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 
 | ID | Question | Proposed default |
 |---|---|---|
-| OPEN-1 | Raise the minimum macOS from 14 to **15**? Gains: stdlib `Synchronization` (`Atomic`, `Mutex`, macOS 15+) instead of swift-atomics (whose own README says it is superseded), one dependency fewer; macOS 14 Sonoma received its last update in Aug 2026 and is absent from the Sep 2026 security batches (verified 2026-10-22), i.e. outside Apple's n-2 window now that macOS 27 is out. CAMetalDisplayLink needs 14+, so 15 keeps everything in the brief. Metal 4 (macOS 26+) is not needed. | raise to 15 |
-| OPEN-2 | Bundle identifier / reverse-DNS prefix | `org.lanthorn` until a domain is chosen |
+| OPEN-1 | Raise the minimum macOS from 14 to **15**? Gains: stdlib `Synchronization` (`Atomic`, `Mutex`, macOS 15+) instead of swift-atomics (whose own README says it is superseded), one dependency fewer; macOS 14 Sonoma received its last update in Aug 2026 and is absent from the Sep 2026 security batches (verified 2026-10-22), i.e. outside Apple's n-2 window now that macOS 27 is out. CAMetalDisplayLink needs 14+, so 15 keeps everything in the brief. Metal 4 (macOS 26+) is not needed. | **Decided 2026-10-22: 15** |
+| OPEN-2 | Bundle identifier / reverse-DNS prefix | **Decided: `org.lanthorn`** (`org.lanthorn.app`, `org.lanthorn.engine`) |
 | OPEN-3 | Native pixel formats of the hardware ProRes decoder (422 bi-planar 10-bit; 4444 with alpha) | decided by the Phase 2 spike |
 | OPEN-4 | Optional frame blending for rate-mismatched content | v1.x |
 | OPEN-5 | 10-bit output drawables (`bgr10a2`/`rgba16Float` with EDR off) | v1.x; blue-noise dither in v1 |

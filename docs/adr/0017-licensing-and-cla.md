@@ -1,6 +1,6 @@
 # ADR-0017: GPL-3.0-only with §7 terms, SPDX headers, CLA via cla-assistant
 
-Status: Proposed · 2026-10-22 · needs lawyer review before public release
+Status: Accepted · 2026-10-22 · needs lawyer review before public release
 
 ## Context
 The owner wants GPL-3.0-only, an attribution term (GPLv3 §7(b)), a plugin

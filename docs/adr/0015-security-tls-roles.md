@@ -1,6 +1,6 @@
 # ADR-0015: TLS everywhere with a self-generated certificate; role passwords, no accounts
 
-Status: Proposed · 2026-10-22
+Status: Accepted · 2026-10-22
 
 ## Context
 The brief requires TLS and roles. WebCodecs needs a secure context, and

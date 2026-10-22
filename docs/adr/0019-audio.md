@@ -1,6 +1,6 @@
 # ADR-0019: Audio: one output device, layer clock is master
 
-Status: Proposed · 2026-10-22
+Status: Accepted · 2026-10-22
 
 ## Context
 Audio playback per layer is in v1 (owner's decision). Multiple output

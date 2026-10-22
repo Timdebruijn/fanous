@@ -1,6 +1,6 @@
 # ADR-0004: Demux with AVSampleCursor, decode with VTDecompressionSession and hap.c
 
-Status: Proposed · 2026-10-22
+Status: Accepted · 2026-10-22
 
 ## Context
 `AVAssetReader` is forward-only and must be re-created to seek: reverse

@@ -12,15 +12,15 @@ checks).
 |---|---|---|---|---|---|
 | apple/swift-log | 1.16.2 (2026-10-22) | Apache-2.0 | yes | logging facade (os_log + file handlers) | exact |
 | apple/swift-collections | 1.7.3 (2026-10-12) | Apache-2.0 | yes | only if a concrete need appears (Deque/Heap); not added by default | exact |
-| apple/swift-atomics | 1.3.1 (2026-06-23) | Apache-2.0 | yes | only if the minimum macOS stays 14 (ADR-0020); README states it is superseded by the stdlib `Synchronization` module on macOS 15+ | exact |
+| apple/swift-atomics | — | Apache-2.0 | yes | **not used**: minimum macOS is 15 (ADR-0020), the stdlib `Synchronization` module replaces it | — |
 
 ## Vendored C / Objective-C (SPM targets)
 
 | Code | Version / commit | License | GPLv3-compatible | Use | Notes |
 |---|---|---|---|---|---|
-| Vidvox/hap (`hap.c`, `hap.h`) | master @ 2024-07-25 (pin SHA at Phase 0) | BSD-2-Clause | yes | HAP encode/decode (chunk callback for parallel decode) | no commits since 2024-07; we own fixes; fuzz-tested inputs |
-| google/snappy | 1.3.1 (2026-09-18) | BSD-3-Clause (text match; COPYING unlabeled) | yes | HAP frame (de)compression | C++ target |
-| Syphon/Syphon-Framework | main @ 2026-09-21 (pin SHA at Phase 0); last tagged release "5" is from 2019 | Syphon Framework License (BSD-3-Clause style) | yes | Syphon Metal server/client | pin to commit, not tag |
+| Vidvox/hap (`hap.c`, `hap.h`) | master @ `d847f6b` (2024-07-25) | BSD-2-Clause | yes | HAP encode/decode (chunk callback for parallel decode) | no commits since 2024-07; we own fixes; fuzz-tested inputs |
+| google/snappy | 1.3.1 = `9c28114` (2026-09-18) | BSD-3-Clause (text match; COPYING unlabeled) | yes | HAP frame (de)compression | C++ target |
+| Syphon/Syphon-Framework | main @ `f476167` (2026-09-21); last tagged release "5" is from 2019 | Syphon Framework License (BSD-3-Clause style) | yes | Syphon Metal server/client | pin to commit, not tag |
 
 Not used: Vidvox/hap-in-avfoundation (multi-license file with YCoCg/EA
 sections; our own sample-cursor + hap.c path makes it unnecessary).

@@ -1,6 +1,6 @@
 # ADR-0014: VideoToolbox H.264 over WebSocket to WebCodecs, JPEG fallback
 
-Status: Proposed · 2026-10-22
+Status: Accepted · 2026-10-22
 
 ## Context
 Clients need a live view without full frames crossing the network. WebCodecs

@@ -1,6 +1,6 @@
 # ADR-0011: Single output pass: displacement-field warp, blend map, slices, masks
 
-Status: Proposed · 2026-10-22
+Status: Accepted · 2026-10-22
 
 ## Context
 The brief requires all output/mapping configuration to be applied on the GPU

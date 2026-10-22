@@ -1,6 +1,6 @@
 # ADR-0010: Numeric-prefix library, number-based references, playable codecs only
 
-Status: Proposed · 2026-10-22
+Status: Accepted · 2026-10-22
 
 ## Context
 Catalyst-style folder/file addressing from DMX; a future backup machine must

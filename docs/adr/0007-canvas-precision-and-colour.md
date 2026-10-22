@@ -1,6 +1,6 @@
 # ADR-0007: rgba16Float canvases, gamma-encoded blending, dithered output
 
-Status: Proposed · 2026-10-22
+Status: Accepted · 2026-10-22
 
 ## Context
 Edge-blend curves and black-lift need more than 8 bits to avoid banding;

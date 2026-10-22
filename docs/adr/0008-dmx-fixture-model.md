@@ -1,6 +1,6 @@
 # ADR-0008: One fixture type, three modes, fixed 64/8/8 footprints
 
-Status: Proposed · 2026-10-22
+Status: Accepted · 2026-10-22
 
 ## Context
 Console programmers patch media servers as fixtures; footprints must never

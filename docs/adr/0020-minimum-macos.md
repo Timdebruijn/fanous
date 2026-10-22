@@ -1,6 +1,6 @@
 # ADR-0020: Minimum macOS version 15
 
-Status: Proposed · 2026-10-22 · **needs owner decision** (`[OPEN-1]`)
+Status: Accepted · 2026-10-22 (owner approved: minimum macOS 15)
 
 ## Context
 The brief fixes macOS 14 as the minimum because of `CAMetalDisplayLink`

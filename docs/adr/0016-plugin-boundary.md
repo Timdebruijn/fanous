@@ -1,6 +1,6 @@
 # ADR-0016: Plugin boundary: C ABI, dynamically loaded (design only in v1)
 
-Status: Proposed · 2026-10-22
+Status: Accepted · 2026-10-22
 
 ## Context
 NDI and DeckLink SDKs are proprietary and must never be vendored or linked

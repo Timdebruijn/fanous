@@ -1,6 +1,6 @@
 # ADR-0001: Engine as a LaunchAgent inside one app bundle
 
-Status: Proposed · 2026-10-22
+Status: Accepted · 2026-10-22
 
 ## Context
 The render engine must be headless, survive UI crashes, restart after its own

@@ -1,6 +1,6 @@
 # ADR-0003: Package layout
 
-Status: Proposed · 2026-10-22
+Status: Accepted · 2026-10-22
 
 ## Context
 Protocol parsing, the parameter model and cue logic must be testable on any
@@ -17,7 +17,10 @@ is Objective-C. The owner wants SwiftPM, not Xcode projects.
 - The `.app` bundle is assembled by `scripts/bundle.sh` from SPM products;
   `web/dist` is an SPM resource of `lanthornd`.
 - `swift-tools-version: 6.2` (buildable with Xcode 26.x and 27.x).
-- Tests use Swift Testing; XCTest only where it is the only option.
+- Tests use Swift Testing; XCTest only where it is the only option. On a
+  machine with Command Line Tools only (no Xcode) the Swift Testing macro
+  plugin is not on the compiler's default search path; `scripts/test.sh`
+  adds it. Xcode toolchains and CI need nothing extra.
 
 ## Consequences
 + Core tests run everywhere; GPU tests are a separate workflow.

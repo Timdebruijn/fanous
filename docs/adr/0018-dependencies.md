@@ -1,6 +1,6 @@
 # ADR-0018: Dependency and vendoring policy
 
-Status: Proposed · 2026-10-22
+Status: Accepted · 2026-10-22
 
 ## Context
 The brief allows only hap + Snappy, Syphon, and Apple's swift-collections,

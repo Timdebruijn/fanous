@@ -1,6 +1,6 @@
 # ADR-0002: Threading model
 
-Status: Proposed · 2026-10-22
+Status: Accepted · 2026-10-22
 
 ## Context
 Frame-exact output and sub-frame DMX latency do not tolerate scheduler

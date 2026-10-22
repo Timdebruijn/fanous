@@ -1,6 +1,6 @@
 # ADR-0013: Snapshot + revisioned JSON patches, commands with acks, global undo
 
-Status: Proposed · 2026-10-22
+Status: Accepted · 2026-10-22
 
 ## Context
 Several clients must always show the same state; the server is the only

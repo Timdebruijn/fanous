@@ -1,6 +1,6 @@
 # ADR-0012: Frontend: Svelte 5 + Vite + TypeScript
 
-Status: Proposed · 2026-10-22
+Status: Accepted · 2026-10-22
 
 ## Context
 The UI shows 1 000+ live values updating at 20 Hz plus a live video preview

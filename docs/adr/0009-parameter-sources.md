@@ -1,6 +1,6 @@
 # ADR-0009: Parameter sources and per-layer merge policy
 
-Status: Proposed · 2026-10-22
+Status: Accepted · 2026-10-22
 
 ## Context
 Values can come from DMX, cues, OSC and the UI. Shows without a console

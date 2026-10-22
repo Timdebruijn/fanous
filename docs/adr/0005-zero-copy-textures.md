@@ -1,6 +1,6 @@
 # ADR-0005: Zero-copy textures and in-shader colour conversion
 
-Status: Proposed · 2026-10-22
+Status: Accepted · 2026-10-22
 
 ## Context
 Every copy of a 4K frame costs bandwidth the compositor needs. Apple Silicon

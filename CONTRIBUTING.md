@@ -43,7 +43,7 @@ accounts are covered. Pull requests from unsigned authors are not merged.
   fixture-based tests (real captures in `Tests/Fixtures/captures/`).
 - **Hot paths** (render, decode, DMX, audio, timecode): no Swift Concurrency,
   no allocations in steady state, no locks. See ADR-0002.
-- **Tests**: unit tests for Core changes; golden images for anything visual;
+- **Tests**: run `scripts/test.sh` (wraps `swift test`); unit tests for Core changes; golden images for anything visual;
   benchmark numbers in the PR description for anything that touches the
   render or decode path (run `lanthorn-bench` before and after).
 - **Commits** in English, imperative mood, one topic per commit. PRs describe
