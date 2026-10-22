@@ -30,6 +30,10 @@ public final class Engine: @unchecked Sendable {
     private let logger: Logger
     private var server: HTTPSServer?
     private let startedAt = Date()
+    private var dmx: DMXStore?
+    private var artnet: ArtNetReceiver?
+    private var sacn: SACNReceiver?
+    private var osc: OSCReceiver?
 
     public init(options: EngineOptions, logger: Logger) {
         self.options = options
@@ -51,14 +55,45 @@ public final class Engine: @unchecked Sendable {
         let identity = try TLSIdentity.loadOrCreate(
             directory: AppPaths.tls, hostnames: hostnames, ipAddresses: ["127.0.0.1", "::1"] + SystemInfo.ipv4Addresses,
             logger: logger)
+        // Phase 1: the standard patch until projects exist (Phase 5).
+        let patch = Patch.standard()
+        let dmx = DMXStore(patch: patch, logger: logger)
+        dmx.start()
+        let artnet = ArtNetReceiver(store: dmx, logger: logger, nodeName: Attribution.projectName)
+        try artnet.start()
+        let sacn = SACNReceiver(store: dmx, logger: logger)
+        try sacn.start(universes: [1, 2, 3])
+        let osc = OSCReceiver(store: dmx, logger: logger)
+        try osc.start()
+        self.dmx = dmx
+        self.artnet = artnet
+        self.sacn = sacn
+        self.osc = osc
+
         let startedAt = self.startedAt
         let webRoot = options.webRoot
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
         let server = try HTTPSServer(port: options.port, identity: identity, webRoot: options.webRoot, logger: logger) { request in
-            guard request.path == "/healthz" else { return nil }
-            let health = HealthStatus(
-                uptimeSeconds: Int(Date().timeIntervalSince(startedAt)), chip: SystemInfo.chipName, webRoot: webRoot.path)
-            let body = (try? JSONEncoder().encode(health)) ?? Data()
-            return .json(200, Array(body))
+            switch request.path {
+            case "/healthz":
+                let health = HealthStatus(
+                    uptimeSeconds: Int(Date().timeIntervalSince(startedAt)), chip: SystemInfo.chipName, webRoot: webRoot.path)
+                return .json(200, Array((try? encoder.encode(health)) ?? Data()))
+            case "/api/live":
+                return .json(200, Array((try? encoder.encode(dmx.snapshot())) ?? Data()))
+            case "/api/patch":
+                return .json(200, Array((try? encoder.encode(patch)) ?? Data()))
+            case "/api/gdtf":
+                return HTTPResponse(
+                    status: 200,
+                    headers: [HTTPHeader("Content-Type", "application/zip"), HTTPHeader("Content-Disposition", "attachment; filename=\"Lanthorn.gdtf\"")],
+                    body: GDTFExporter.gdtf())
+            case "/api/channel-map.md":
+                return .text(200, ChannelMapDocument.markdown())
+            default:
+                return nil
+            }
         }
         server.start()
         self.server = server
@@ -66,6 +101,10 @@ public final class Engine: @unchecked Sendable {
 
     public func stop() {
         server?.stop()
+        artnet?.stop()
+        sacn?.stop()
+        osc?.stop()
+        dmx?.stop()
         logger.info("lanthornd stopped")
     }
 }

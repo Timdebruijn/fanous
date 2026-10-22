@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 Tim de Bruijn
+// Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
+
+/// docs/channel-map.md, generated from `ChannelMap` (`lanthornd channel-map`).
+public enum ChannelMapDocument {
+    public static func markdown() -> String {
+        var md = "# Lanthorn DMX channel map\n\n"
+        md += "Generated from `Sources/LanthornCore/Parameters/ChannelMap.swift` by `lanthornd channel-map`; do not edit by hand. "
+        md += "16-bit parameters use coarse/fine on adjacent channels. OSC: `\(OSCAddressMap.prefix)/layer/{n}/{key}`, `/master/{key}`, `/output/{n}/{key}` (float = normalized 0–1, int = raw).\n\n"
+        for mode in FixtureMode.allCases {
+            md += "## \(mode.displayName) mode (\(mode.footprint) channels)\n\n"
+            md += "| Ch | Parameter | Bits | Default | Mapping | OSC key |\n|---|---|---|---|---|---|\n"
+            for spec in ChannelMap.specs(for: mode) {
+                let channels = spec.bits == 16 ? "\(spec.channel)–\(spec.channel + 1)" : "\(spec.channel)"
+                md += "| \(channels) | \(spec.name) | \(spec.bits) | \(spec.defaultRaw) | \(mapping(spec)) | `\(spec.oscKey)` |\n"
+            }
+            let reserved: ClosedRange<Int> =
+                switch mode {
+                case .layer: ChannelMap.reservedLayerChannels
+                case .master: ChannelMap.reservedMasterChannels
+                case .output: ChannelMap.reservedOutputChannels
+                }
+            md += "| \(reserved.lowerBound)–\(reserved.upperBound) | Reserved | — | 0 | ignored | — |\n\n"
+        }
+        return md
+    }
+
+    static func mapping(_ spec: ParameterSpec) -> String {
+        switch spec.kind {
+        case .curve(let points, let unit):
+            return points.map { "\(Int($0.raw)) → \(number($0.value))\(unit == "°" ? "°" : " " + unit)" }.joined(separator: " · ")
+        case .bands(let bands, let fallback):
+            let fallbackName = bands.first { $0.value == fallback }?.name ?? "?"
+            return bands.map { "\($0.from)–\($0.to) \($0.name)" }.joined(separator: " · ") + " · rest = \(fallbackName)"
+        case .index(let max):
+            return "0 = none · 1–\(max)"
+        }
+    }
+
+    static func number(_ v: Double) -> String { v == v.rounded() ? String(Int(v)) : String(v) }
+}

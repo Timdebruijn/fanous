@@ -18,6 +18,7 @@ jobs:
       - run: swift test
       - run: scripts/license-headers.sh
       - run: scripts/core-purity.sh
+      - run: scripts/check-channel-map.sh
 
   web:
     runs-on: ubuntu-latest

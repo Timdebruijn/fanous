@@ -492,8 +492,12 @@ can never disagree). `[OPEN-9]` exact bands and the speed/scale upper limits.
   **hold last values** (Catalyst behaviour) and the universe turns red in the
   status bar. Hold-vs-release is a project setting.
 - The server answers `ArtPoll` with `ArtPollReply` (name, IP, port
-  addresses) and sACN discovery (E1.31 universe discovery packets are
+  addresses; unicast back to the poller, one reply per Net/Sub-Net group of
+  four ports) and sACN discovery (E1.31 universe discovery packets are
   received; the server advertises nothing in v1 as it only receives).
+- sACN multicast groups are joined on the default-route interface until the
+  per-protocol interface setting exists (Phase 5); unicast sACN on port 5568
+  is accepted on every interface.
 - `ArtSync` and E1.31 synchronization packets: when received, a universe
   update is applied at the sync packet, otherwise immediately.
 

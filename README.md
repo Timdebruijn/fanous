@@ -22,6 +22,12 @@ swift run LanthornShell          # native shell; starts lanthornd as a child in 
 scripts/bundle.sh                # dist/Lanthorn.app (ad-hoc signed; CODESIGN_IDENTITY=… for Developer ID)
 ```
 
+Protocol fixtures: `scripts/capture-dmx.py artnet|sacn|osc <name>` records
+real console packets into `Tests/Fixtures/captures/` (stop `lanthornd` first;
+see the README there). `lanthornd channel-map` prints the DMX channel map,
+`lanthornd gdtf FILE` writes the GDTF fixture file; `scripts/check-channel-map.sh`
+keeps `docs/channel-map.md` in sync.
+
 The first engine start generates an ECDSA key and self-signed certificate in
 the login keychain (`Lanthorn TLS`) and writes the public certificate and its
 fingerprint to `~/Library/Application Support/Lanthorn/tls/`. Logs:

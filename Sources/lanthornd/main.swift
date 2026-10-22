@@ -11,11 +11,33 @@ import Logging
 func usage() -> String {
     """
     usage: lanthornd [--port N] [--web-root PATH] [--foreground]
+           lanthornd channel-map            print docs/channel-map.md to stdout
+           lanthornd gdtf FILE              write the GDTF fixture file
       --port N         HTTPS port (default 8443)
       --web-root PATH  directory with the built web UI (default: auto-detect)
       --foreground     run attached to the terminal (default when started by hand)
       --version        print the version and exit
     """
+}
+
+switch CommandLine.arguments.dropFirst().first {
+case "channel-map":
+    print(ChannelMapDocument.markdown(), terminator: "")
+    exit(0)
+case "gdtf":
+    guard CommandLine.arguments.count == 3 else {
+        FileHandle.standardError.write(Data("usage: lanthornd gdtf FILE\n".utf8))
+        exit(64)
+    }
+    do {
+        try Data(GDTFExporter.gdtf()).write(to: URL(fileURLWithPath: CommandLine.arguments[2]))
+        exit(0)
+    } catch {
+        FileHandle.standardError.write(Data("cannot write GDTF: \(error)\n".utf8))
+        exit(1)
+    }
+default:
+    break
 }
 
 var port: UInt16 = 8443
@@ -55,7 +77,7 @@ do {
     FileHandle.standardError.write(Data("cannot create directories: \(error)\n".utf8))
     exit(1)
 }
-EngineLogging.bootstrap(fileURL: AppPaths.logs.appending(path: "lanthornd.log"))
+EngineLogging.bootstrap(fileURL: AppPaths.logs.appending(path: "lanthornd.log"), level: ProcessInfo.processInfo.environment["LANTHORN_LOG"] == "debug" ? .debug : .info)
 let logger = Logger(label: "lanthornd")
 let engine = Engine(options: EngineOptions(port: port, webRoot: webRootOverride ?? WebRoot.locate()), logger: logger)
 do {
