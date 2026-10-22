@@ -7,9 +7,13 @@ stops parsing is a regression.
 
 | Directory | Source software | Notes |
 |---|---|---|
-| `artnet/` | see per-file `.txt` | ArtDmx, ArtPoll as sent on the wire |
-| `sacn/` | see per-file `.txt` | E1.31 data, sync and discovery packets |
-| `osc/` | see per-file `.txt` | OSC messages/bundles |
+| `artnet/qlcplus-universe1-*` | QLC+ 5.3.0 (macOS), ArtNet output plugin, universe 1 → Art-Net 0.0.0, unicast to 127.0.0.1 | one ArtPoll QLC+ sends on its own, then ArtDmx frames with consecutive sequence numbers; channels 1–5 and 512 set over the QLC+ web API (`CH\|n\|value`) |
+| `artnet/qlcplus-poll-*` | QLC+ 5.3.0 | ArtPoll from QLC+ and ArtDmx frames; QLC+ does not answer ArtPoll (it is a controller, not a node) |
+| `sacn/sacnview-universe1-*` | sACNView 3.1.0 (macOS), Transmit window, universe 1, priority 100, 512 slots | ratified E1.31 data packets, source name "sACNView", consecutive sequence numbers, all slots 0 |
+| `sacn/sacnview-universe1-full-*` | sACNView 3.1.0 | same source with channels 1–512 at 255 |
+| `osc/` | — | no real OSC sender available yet; OSC fixtures are the hand-built packets in `OSCTests` |
+
+Not captured yet (needs software that is not installed or cannot run offline): sACN sync and universe-discovery packets, ArtPollReply from a real node, CITP/MSEX (MagicQ), consoles with hardware keys (Eos Nomad). Phase 7 adds those.
 
 Capturing: stop `lanthornd` (it binds the same ports), run
 `scripts/capture-dmx.py artnet <name> --note "QLC+ 5.3.0, universe 1, …"`,

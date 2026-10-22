@@ -1,0 +1,1 @@
+2026-10-22 21:30 UTC: 6 datagrams captured on udp/6454 as qlcplus-poll-NNN.bin. QLC+ 5.3.0 while an ArtPoll was sent to it from 127.0.0.1: QLC+ sent its own ArtPoll packets and ArtDmx frames but no ArtPollReply (it is a controller, not a node)

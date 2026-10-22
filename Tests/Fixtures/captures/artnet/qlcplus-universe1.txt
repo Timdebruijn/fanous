@@ -1,0 +1,1 @@
+2026-10-22 21:29 UTC: 30 datagrams captured on udp/6454 as qlcplus-universe1-NNN.bin. QLC+ 5.3.0 (macOS 27.0.1), workspace with universe 1 -> ArtNet output plugin, unicast to 127.0.0.1, Art-Net universe 0; channel values set over the QLC+ web API (CH|n|value)

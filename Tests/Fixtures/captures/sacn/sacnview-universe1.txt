@@ -1,0 +1,1 @@
+2026-10-22 21:28 UTC: 30 datagrams captured on udp/5568 as sacnview-universe1-NNN.bin. sACNView 3.1.0 (macOS 27.0.1), Transmit window: universe 1, 512 slots, priority 100, unicast to 127.0.0.1 (sACNView does not loop back its multicast); all 512 slots at 0 (the keypad changes came after this recording; see sacnview-universe1-full)
