@@ -111,6 +111,7 @@ enum Benchmark {
         _ = (dmxStore, artnet)  // kept alive for the run
         useDisplayLinkFlag = useDisplayLink
         variant = (effects.isEmpty ? "" : "-fx-" + effects.map { "\($0)" }.joined(separator: "-")) + (dissolve > 0 ? "-dissolve\(Int(dissolve))s" : "")
+            + (window >= 600 ? "-soak\(Int(window))s" : "")
         logger.info("benchmark", metadata: ["file": "\(file.lastPathComponent)", "display": "\(useDisplay.map(String.init) ?? "headless")", "window": "\(window)s", "maxLayers": "\(maxLayers)"])
 
         Task { @MainActor in

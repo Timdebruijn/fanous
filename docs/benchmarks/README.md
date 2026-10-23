@@ -101,8 +101,12 @@ A dissolve costs exactly one extra layer (its decoder and draw) for its
 duration: the incoming media is staged until its first frame is decoded, so
 switching files never shows a texture miss.
 
-Audio (one HAP Q 1080p60 layer with a 48 kHz LPCM track, 20 s, headless):
-0 underruns, 0 drift corrections, max drift 11.8 ms (the layer clock is
-master; the ring reseeks at the loop point). The one-hour drift soak is
-recorded in `apple-m1-pro-hapq-1920x1080p60-headless-layers1-*drift*` once run
-(`scripts/bench-phase3.sh drift`).
+Audio (one HAP Q 1080p60 layer with a 48 kHz LPCM track, headless, the
+layer clock is master): 20 s run 0 underruns, 0 drift corrections, max drift
+11.8 ms. **One-hour soak** (`scripts/bench-phase3.sh drift`,
+`…-layers1-soak3600s-2026-10-23.md`): max drift 15.3 ms, 0 drift corrections,
+26 underruns over 360 loop wraps of the 10 s file (a loop wrap is a reseek
+with one callback of silence; gapless loop reads are a v1.x item), video
+0 missed / 0 late (the frame metrics ring holds the last 16 384 ticks, so
+those cover the final 4.5 min; the audio counters cover the whole hour).
+Acceptance "drift < 20 ms over 1 h at 1×" met.
