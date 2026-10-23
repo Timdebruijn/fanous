@@ -45,7 +45,11 @@
     <span class="nm">Layer {n}</span>
     <span class="caption">Canvas 1</span>
   </span>
-  <span class="c-media mono tone-{media.tone}" title={media.text}><span class="lbl">Media: </span>{media.text}</span>
+  <span class="c-media tone-{media.tone}" title={media.text}>
+    <span class="lbl">Media: </span>
+    <span class="ellipsis mtitle">{media.title}</span>
+    {#if media.detail}<span class="ellipsis caption mono mdetail">{media.detail}</span>{/if}
+  </span>
   <span class="c-pos">
     <span class="lbl">Position</span>
     <span class="scrubber" aria-hidden="true">
@@ -69,13 +73,10 @@
       <span class="mode">{playMode?.label ?? '—'}</span>
       <span class="caption mono">{speed ? `speed ${speed.label}` : '—'}</span>
     </span>
-    <span class="c-audio" title="Bars follow the audioVolume parameter; there is no real level meter yet">
+    <span class="c-audio" title="Audio volume parameter (a level meter arrives with CITP, backlog B29)">
       <span class="lbl">Audio</span>
-      <span class="meter" role="img" aria-label="Audio volume {formatPercent(volume?.physical ?? 0)} % (no level meter yet)">
-        <span style:height="{level}%"></span>
-        <span style:height="{level}%"></span>
-      </span>
-      <span class="caption">volume</span>
+      <span class="mono">{volume ? `${formatPercent(volume.physical)} %` : '—'}</span>
+      <span class="bar" aria-hidden="true"><span style:width="{level}%"></span></span>
     </span>
     <span class="c-src">
       <span class="lbl">Source</span>
@@ -94,19 +95,18 @@
   .c-thumb { display: block; flex: none; width: 96px; height: 54px; border: 1px solid var(--line); background: var(--ground); }
   .c-name { display: flex; flex-direction: column; min-width: 0; }
   .nm { font-weight: 600; font-size: 14px; }
-  .c-media { font-size: 12px; line-height: 1.35; min-width: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+  .c-media { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 13px; }
+  .mdetail { font-size: 12px; }
   .tone-faint { color: var(--text-3); }
-  .tone-error { color: var(--red); }
+  .tone-error .mdetail { color: var(--red); }
   .c-pos { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .scrubber { width: 200px; max-width: 100%; }
   .c-vals { display: contents; }
   .c-int, .c-mode, .c-audio, .c-src { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .c-int .mono { font-size: 13px; }
   .mode { overflow-wrap: anywhere; line-height: 1.2; }
-  .c-audio { align-items: flex-start; }
-  .c-audio .meter { height: 36px; }
-  /* the shared gradient spans the full meter height, so a low level stays green */
-  .c-audio .meter span { background-size: 8px 36px; background-position: bottom; background-repeat: no-repeat; min-height: 2px; }
+  .c-audio { align-items: stretch; }
+  .c-audio .bar { height: 6px; }
   .c-src { align-items: flex-start; }
   .c-dot { display: flex; justify-content: center; }
   /* column labels: spoken on the desktop row (the heads are visual), drawn on the tile (no heads there) */

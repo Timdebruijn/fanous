@@ -35,6 +35,9 @@
   let uploading = $state(false);
   let picker: HTMLInputElement | undefined;
   let latest = 0;
+  let creating = $state(false);
+  let newNumber = $state(1);
+  let newName = $state('');
 
   const folders = $derived(library?.folders ?? []);
   const current = $derived(folders.find((f) => f.path === selectedFolder) ?? defaultFolder(folders));
@@ -45,6 +48,19 @@
   const inFlight = $derived(activeSources(app.live.ingest));
   const locked = $derived(!can('programmer'));
   const canImport = $derived(current?.number != null);
+  /** "folder/file" → the layers playing it, for the tile badge */
+  const playing = $derived.by(() => {
+    const map = new Map<string, string[]>();
+    for (const layer of app.live.layers) {
+      if (layer.folder > 0 && layer.file > 0) map.set(`${layer.folder}/${layer.file}`, [...(map.get(`${layer.folder}/${layer.file}`) ?? []), `Layer ${layer.index}`]);
+    }
+    return map;
+  });
+  const nextFolderNumber = $derived.by(() => {
+    const used = new Set(folders.map((f) => f.number));
+    for (let n = 1; n <= 255; n++) if (!used.has(n)) return n;
+    return 0;
+  });
 
   async function load() {
     const mine = ++latest;
@@ -73,6 +89,26 @@
     const timer = setTimeout(() => void load(), 2000);
     return () => clearTimeout(timer);
   });
+
+  function startCreate() {
+    newNumber = nextFolderNumber;
+    newName = '';
+    creating = true;
+  }
+
+  async function createFolder(event: SubmitEvent) {
+    event.preventDefault();
+    const error = await send('/api/library/folder', {
+      method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ number: newNumber, name: newName.trim() }),
+    });
+    if (error) {
+      notice = `Cannot create the folder: ${error}`;
+      return;
+    }
+    creating = false;
+    await load();
+    selectedFolder = folders.find((f) => f.number === newNumber)?.path ?? selectedFolder;
+  }
 
   async function rescan() {
     rescanning = true;
@@ -132,8 +168,18 @@
           <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
         </button>
       </header>
+      {#if creating}
+        <form class="create" onsubmit={createFolder}>
+          <label class="field"><span>Number</span><input class="input mono" type="number" min="1" max="255" bind:value={newNumber} required /></label>
+          <label class="field grow"><span>Name</span><input class="input" type="text" bind:value={newName} placeholder="Intro" required /></label>
+          <div class="create-actions">
+            <button type="button" class="btn btn-ghost" onclick={() => (creating = false)}>Cancel</button>
+            <button type="submit" class="btn btn-primary">Create</button>
+          </div>
+        </form>
+      {/if}
       {#if folders.length === 0}
-        <p class="caption pad">{library ? 'No folders in the library.' : 'Loading…'}</p>
+        <p class="caption pad">{library ? 'No folders yet. Create the first one; the console addresses folders by number.' : 'Loading…'}</p>
       {:else}
         <ul>
           {#each folders as folder (folder.path)}
@@ -149,6 +195,9 @@
           {/each}
         </ul>
       {/if}
+      <div class="pad">
+        <button class="btn" disabled={locked || creating || nextFolderNumber === 0} title={locked ? LOCKED_TITLE : undefined} onclick={startCreate}>New folder</button>
+      </div>
       <p class="caption pad">Folders 1–255 are addressable from the console. Names without a number prefix are listed but never resolved.</p>
     </aside>
 
@@ -201,6 +250,7 @@
               {item}
               selected={selectedItem === item.path}
               pending={inFlight.has(item.path)}
+              onLayers={item.file === null ? [] : (playing.get(`${item.folder}/${item.file}`) ?? [])}
               onselect={() => (selectedItem = selectedItem === item.path ? null : item.path)}
               ontranscode={transcode}
             />
@@ -223,6 +273,10 @@
   .lib ul { list-style: none; margin: 0; padding: 0; }
   .lib .pad { margin: 0; padding: 12px; }
   .num { flex: 0 0 3ch; text-align: right; }
+  .create { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding: 12px; border-bottom: 1px solid var(--line); }
+  .create .input { width: 100%; }
+  .create .field:first-child { flex: 0 0 72px; }
+  .create-actions { display: flex; gap: 8px; width: 100%; justify-content: flex-end; }
   .list-row.dim { color: var(--text-3); }
   .search { position: relative; display: flex; align-items: center; gap: 8px; min-height: var(--touch); padding: 0 12px; border-radius: var(--radius-control); border: 1px solid var(--line-strong); background: var(--surface-2); color: var(--text-3); }
   .search:focus-within { border-color: var(--accent); }

@@ -78,8 +78,9 @@ public final class Engine: @unchecked Sendable {
         let identity = try TLSIdentity.loadOrCreate(
             directory: AppPaths.tls, hostnames: hostnames, ipAddresses: ["127.0.0.1", "::1"] + SystemInfo.ipv4Addresses,
             logger: logger)
-        // Phase 1: the standard patch until projects exist (Phase 5).
-        let patch = Patch.standard()
+        // The standard patch sized to the scene until projects exist; the project document can change it (Phase 5).
+        let layerCount = options.scene?.layerCount ?? 8
+        let patch = Patch.standard(layers: layerCount, outputs: 4)
         let dmx = DMXStore(patch: patch, logger: logger)
         if let policy = options.scene?.policy, policy != .dmx {
             for entry in patch.entries { dmx.setPolicy(policy, for: entry.fixture) }
@@ -132,9 +133,8 @@ public final class Engine: @unchecked Sendable {
         let auth = RoleAuth(settingsURL: AppPaths.settingsFile, shellTokenURL: AppPaths.shellTokenFile, logger: logger)
         let project =
             ProjectDocument.load(from: AppPaths.projectFile)
-            ?? ProjectDocument.initial(
-                patch: patch, layerCount: options.scene?.layerCount ?? 8, libraryRoot: libraryRoot.path, policy: options.scene?.policy ?? .dmx)
-        if let loaded = ProjectDocument.patch(from: project), loaded != patch { dmx.setPatch(loaded) }
+            ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: options.scene?.policy ?? .dmx)
+        if let loaded = ProjectDocument.effectivePatch(from: project), loaded != patch { dmx.setPatch(loaded) }
         let store = StateStore(project: project, logger: logger)
         ProjectDocument.registerCommands(on: store, auth: auth)
         store.onProjectChanged = { [weak self] document in self?.projectChanged(document) }
@@ -176,6 +176,19 @@ public final class Engine: @unchecked Sendable {
                 // any role: it only re-reads the disk
                 library.rescan()
                 return .text(200, "rescanned")
+            }
+            if request.path == "/api/library/folder" {
+                // POST {"number": N, "name": "…"} creates NNN_name under the root (and the root itself)
+                guard request.method == "POST" else { return HTTPResponse(status: 405, headers: [HTTPHeader("Allow", "POST")]) }
+                guard programmerAllowed(request) else { return .text(403, "programmer role required") }
+                guard let body = try? JSONDecoder().decode(JSONValue.self, from: Data(request.body)), let number = body["number"]?.int, (1...255).contains(number),
+                    let name = body["name"]?.string, !name.trimmingCharacters(in: .whitespaces).isEmpty
+                else { return .text(400, "expected {\"number\": 1–255, \"name\": …}") }
+                if library.snapshot.folders.contains(where: { $0.number == number }) { return .text(409, "folder \(number) exists") }
+                try? FileManager.default.createDirectory(at: libraryRoot, withIntermediateDirectories: true)
+                guard let url = library.folderURL(number: number, createAs: name) else { return .text(500, "cannot create the folder") }
+                library.rescan()
+                return .text(200, url.lastPathComponent)
             }
             switch request.path {
             case "/healthz":
@@ -248,7 +261,7 @@ public final class Engine: @unchecked Sendable {
 
     /// Control queue: re-applies the patch when it changed and schedules the autosave (2 s after the last change).
     private func projectChanged(_ document: JSONValue) {
-        if let dmx, let patch = ProjectDocument.patch(from: document), patch != dmx.currentPatch { dmx.setPatch(patch) }
+        if let dmx, let patch = ProjectDocument.effectivePatch(from: document), patch != dmx.currentPatch { dmx.setPatch(patch) }
         autosave?.cancel()
         let logger = logger
         let work = DispatchWorkItem {

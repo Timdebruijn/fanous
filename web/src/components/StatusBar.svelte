@@ -2,7 +2,10 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
+  import Login from './Login.svelte';
   import { app, can, cmd } from '../lib/state.svelte';
+
+  let showLogin = $state(false);
 
   const metrics = $derived(app.live.metrics);
   const fps = $derived(metrics.frames > 0 ? Math.min(999, metrics.frames) : 0);
@@ -98,9 +101,10 @@
     <button class="btn btn-icon" aria-label="Redo" title="Redo (⇧⌘Z)" disabled={!can('programmer')} onclick={() => cmd('redo')}>
       <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5" /><path d="M20 9H9a5 5 0 0 0 0 10h6" /></svg>
     </button>
-    <span class="role role-{app.role}">{app.role.toUpperCase()}</span>
+    <button type="button" class="role role-{app.role} role-btn" title="Log in as another role" onclick={() => (showLogin = true)}>{app.role.toUpperCase()}</button>
   </div>
 </header>
+{#if showLogin}<Login onclose={() => (showLogin = false)} />{/if}
 
 <style>
   .status { display: flex; flex-wrap: wrap; align-items: center; min-height: 56px; padding: 4px 8px; background: var(--surface-1); border-bottom: 1px solid var(--line); }
@@ -117,4 +121,5 @@
   .ingest { width: 150px; }
   .ingest .bar { width: 100%; height: 4px; margin-top: 4px; }
   .yellow { color: var(--yellow); }
+  .role-btn { border: 0; cursor: pointer; min-height: var(--touch); }
 </style>

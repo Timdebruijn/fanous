@@ -179,3 +179,27 @@ extension Result where Success == CommandResult, Failure == CommandError {
         return nil
     }
 }
+
+extension StateStoreTests {
+    @Test func layerCountPatchesNewLayersAndDropsRemovedOnes() throws {
+        let (store, _) = Self.makeStore()  // 2 layers patched at 1 and 65 on artnet:0.0.0
+        _ = try store.execute("layers.setCount", args: ["count": 4], role: .programmer).get()
+        var patch = try #require(ProjectDocument.patch(from: store.project))
+        #expect(store.project["layerCount"]?.int == 4)
+        #expect(patch.entry(for: .layer(3))?.address == 129)
+        #expect(patch.entry(for: .layer(4))?.address == 193)
+        // a layer whose standard range is taken stays unpatched
+        _ = try store.execute("patch.set", args: ["fixture": "Layer 4", "universe": "artnet:0.0.0", "address": 300], role: .programmer).get()
+        _ = try store.execute("layers.setCount", args: ["count": 5], role: .programmer).get()
+        patch = try #require(ProjectDocument.patch(from: store.project))
+        #expect(patch.entry(for: .layer(5)) == nil, "257–320 overlaps Layer 4 at 300")
+        _ = try store.execute("layers.setCount", args: ["count": 2], role: .programmer).get()
+        patch = try #require(ProjectDocument.patch(from: store.project))
+        #expect(patch.entry(for: .layer(3)) == nil && patch.entry(for: .layer(4)) == nil)
+        #expect(ProjectDocument.effectivePatch(from: store.project)?.entries.count == patch.entries.count)
+        #expect(store.execute("layers.setCount", args: ["count": 65], role: .programmer).failureCode == "invalidArgs")
+        #expect(store.execute("project.set", args: ["path": "/layerCount", "value": 3], role: .programmer).failureCode == "invalidArgs")
+        _ = try store.execute("undo", role: .programmer).get()
+        #expect(store.project["layerCount"]?.int == 5)
+    }
+}

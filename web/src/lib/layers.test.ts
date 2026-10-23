@@ -57,16 +57,16 @@ describe('position', () => {
 
 describe('mediaLine and layerState', () => {
   it('describes each media kind', () => {
-    expect(mediaLine(layer())).toEqual({ text: '2 / 5 · intro.mov · hevc · 1920×1080p25', tone: 'normal' });
-    expect(mediaLine(layer({ fps: 29.97002997 })).text).toBe('2 / 5 · intro.mov · hevc · 1920×1080p29.97');
-    expect(mediaLine(layer({ kind: 'still', name: 'logo.png', width: 800, height: 600 })).text).toBe('logo.png · Still · 800×600');
+    expect(mediaLine(layer())).toMatchObject({ title: '2 / 5 · intro.mov', detail: 'hevc · 1080p25', text: '2 / 5 · intro.mov · hevc · 1080p25', tone: 'normal' });
+    expect(mediaLine(layer({ fps: 29.97002997, codec: 'HapY' })).detail).toBe('HAP Q · 1080p29.97');
+    expect(mediaLine(layer({ kind: 'still', name: 'logo.png', width: 800, height: 600 })).text).toBe('2 / 5 · logo.png · Still · 800×600');
     expect(mediaLine(layer({ kind: 'live', name: 'Syphon: Resolume' })).text).toBe('Syphon: Resolume · Live · 1920×1080');
-    expect(mediaLine(layer({ kind: 'none' }))).toEqual({ text: 'no media', tone: 'faint' });
+    expect(mediaLine(layer({ kind: 'none' }))).toMatchObject({ text: 'no media', detail: '', tone: 'faint' });
   });
   it('shows the error in red for a missing file or a decoder error, and colours the dot', () => {
     const missing = layer({ kind: 'missing', error: 'file not found: 2/5' });
-    expect(mediaLine(missing)).toEqual({ text: 'file not found: 2/5', tone: 'error' });
-    expect(mediaLine(layer({ kind: 'missing' })).text).toBe('File missing');
+    expect(mediaLine(missing)).toMatchObject({ title: '2 / 5', detail: 'file not found: 2/5', tone: 'error' });
+    expect(mediaLine(layer({ kind: 'missing' })).detail).toBe('File missing');
     expect(mediaLine(layer({ error: 'decoder failed' })).tone).toBe('error');
     expect(layerState(missing).dot).toBe('red');
     expect(layerState(layer({ error: 'decoder failed' })).dot).toBe('red');

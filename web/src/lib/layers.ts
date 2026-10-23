@@ -62,23 +62,35 @@ function fpsText(fps: number): string {
   return String(Number(fps.toFixed(3)));
 }
 
-/** The one-line media description in the layer list. A decoder error or a missing file replaces the description. */
-export function mediaLine(layer: LayerStatus | undefined): { text: string; tone: Tone } {
-  if (!layer) return { text: 'no live data', tone: 'faint' };
-  if (layer.kind === 'missing' || layer.error) return { text: layer.error || 'File missing', tone: 'error' };
+const codecNames = new Map([
+  ['apch', 'ProRes 422 HQ'], ['apcn', 'ProRes 422'], ['apcs', 'ProRes 422 LT'], ['apco', 'ProRes 422 Proxy'], ['ap4h', 'ProRes 4444'], ['ap4x', 'ProRes 4444 XQ'],
+  ['Hap1', 'HAP'], ['Hap5', 'HAP Alpha'], ['HapY', 'HAP Q'], ['HapM', 'HAP Q Alpha'], ['HapA', 'HAP Alpha Only'], ['HapR', 'HAP R'],
+  ['avc1', 'H.264'], ['hvc1', 'HEVC'], ['hev1', 'HEVC'],
+]);
+
+/** "apch" → "ProRes 422 HQ"; unknown codecs are shown as the engine names them. */
+export function codecName(codec: string): string {
+  return codecNames.get(codec) ?? codec;
+}
+
+/**
+ * The media description in the layer list: `title` = "12 / 4 · intro_loop.mov", `detail` = "HAP Q · 1080p60";
+ * `text` joins both. A decoder error or a missing file replaces the description.
+ */
+export function mediaLine(layer: LayerStatus | undefined): { text: string; title: string; detail: string; tone: Tone } {
+  const line = (title: string, detail: string, tone: Tone) => ({ text: detail ? `${title} · ${detail}` : title, title, detail, tone });
+  if (!layer) return line('no live data', '', 'faint');
+  if (layer.kind === 'missing' || layer.error) return line(`${layer.folder} / ${layer.file}`, layer.error || 'File missing', 'error');
   const name = layer.name ?? '—';
   switch (layer.kind) {
     case 'none':
-      return { text: 'no media', tone: 'faint' };
+      return line('no media', '', 'faint');
     case 'live':
-      return { text: `${name} · Live · ${layer.width}×${layer.height}`, tone: 'normal' };
+      return line(name, `Live · ${layer.width}×${layer.height}`, 'normal');
     case 'still':
-      return { text: `${name} · Still · ${layer.width}×${layer.height}`, tone: 'normal' };
+      return line(`${layer.folder} / ${layer.file} · ${name}`, `Still · ${layer.width}×${layer.height}`, 'normal');
     default:
-      return {
-        text: `${layer.folder} / ${layer.file} · ${name} · ${layer.codec} · ${layer.width}×${layer.height}p${fpsText(layer.fps)}`,
-        tone: 'normal',
-      };
+      return line(`${layer.folder} / ${layer.file} · ${name}`, `${codecName(layer.codec)} · ${layer.height}p${fpsText(layer.fps)}`, 'normal');
   }
 }
 

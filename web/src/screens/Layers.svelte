@@ -50,9 +50,6 @@
 <div class="toolbar">
   <h1>Layers</h1>
   <span class="caption">Canvas 1 · {layerCount} layers · tier allows {app.caps.maxLayers ?? '—'} layers</span>
-  <span class="spacer"></span>
-  <button type="button" class="btn" disabled title="Not wired yet (Phase 7)">Retrigger all</button>
-  <button type="button" class="btn btn-danger" disabled title="Not wired yet (Phase 7)">Blackout</button>
 </div>
 
 <LayerStrips />
@@ -111,7 +108,7 @@
   .layout { display: flex; gap: 12px; align-items: flex-start; }
   .table {
     /* LayerRow reads these two; the heads below use the same grid so the columns line up. */
-    --layer-cols: 96px 70px minmax(0, 1fr) 200px 64px 92px 48px 74px 12px;
+    --layer-cols: 96px 70px minmax(0, 1fr) 200px 64px 92px 56px 74px 12px;
     --layer-gap: 8px;
     flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 6px;
   }

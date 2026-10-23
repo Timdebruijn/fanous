@@ -44,12 +44,6 @@
     {/each}
   </ul>
   {#if specs}<p class="caption note">{reservedText(specs, footprint)}</p>{/if}
-
-  <section class="override" aria-labelledby="layer-override-title">
-    <h3 id="layer-override-title" class="label">Override</h3>
-    <button type="button" class="btn" disabled title="Not wired yet (backlog B27)">Override layer</button>
-    <p class="caption">Overrides are not wired yet (backlog B27)</p>
-  </section>
 </section>
 
 <style>
@@ -64,7 +58,4 @@
   .val { color: var(--text-2); font-size: 12px; }
   .val.red { color: var(--red); }
   .note { margin: 0; padding: 0 4px; }
-  .override { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 8px; padding: 12px 4px 0; border-top: 1px solid var(--line); }
-  .override h3 { margin: 0; }
-  .override p { margin: 0; }
 </style>

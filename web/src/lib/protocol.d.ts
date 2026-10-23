@@ -16,6 +16,7 @@ export interface PatchOp {
 }
 
 export type CommandName =
+  | 'layers.setCount'
   | 'patch.set'
   | 'project.set'
   | 'redo'
@@ -25,9 +26,11 @@ export type CommandName =
   | 'undo';
 
 export interface CommandArgs {
+  /** Set the number of layers (1–64): new layers are patched at their standard address when that range is free, dropped layers are unpatched. Role: programmer, refused under show lock, undoable. */
+  'layers.setCount': { count: number };
   /** Patch a fixture (layer, master, output) to a universe and address, or unpatch it with address 0. Role: programmer, refused under show lock, undoable. */
   'patch.set': { fixture: string; universe: string; address: number };
-  /** Set one project value (name, layerCount, policy, library.root, ui.*). Role: programmer, refused under show lock, undoable. */
+  /** Set one project value (name, policy, library.root, ui.*); layers.setCount changes the layer count. Role: programmer, refused under show lock, undoable. */
   'project.set': { path: string; value: JSONValue };
   /** Redo the last undone command. Role: programmer, refused under show lock. */
   'redo': Record<string, never>;

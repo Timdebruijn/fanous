@@ -13,8 +13,8 @@
   const maxLayers = $derived(typeof app.caps.maxLayers === 'number' ? app.caps.maxLayers : undefined);
   const atLimit = $derived(layerCount >= Math.min(64, maxLayers ?? 64));
 
-  function setLayerCount(value: number) {
-    void cmd('project.set', { path: '/layerCount', value });
+  function setLayerCount(count: number) {
+    void cmd('layers.setCount', { count });
   }
 </script>
 

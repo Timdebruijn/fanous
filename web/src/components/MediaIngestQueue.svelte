@@ -23,9 +23,6 @@
       <h2 id="queue-title">Ingest queue</h2>
       <div class="caption">{summary.running} running · {summary.queued} queued · yields when the show needs the CPU</div>
     </div>
-    <span class="spacer"></span>
-    <!-- IngestQueue has `paused`, but IngestAPI has no pause route yet -->
-    <button class="btn" disabled title="Not wired yet">Pause all</button>
   </header>
   {#if jobs.length === 0}
     <p class="caption empty">Nothing queued. Import a file or transcode one from the library.</p>

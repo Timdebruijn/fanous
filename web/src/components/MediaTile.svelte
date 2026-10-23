@@ -19,10 +19,12 @@
     selected: boolean;
     /** a job for this source is still going */
     pending: boolean;
+    /** layers currently playing this file ("Layer 3") */
+    onLayers: string[];
     onselect: () => void;
     ontranscode: (item: LibraryItem, codec: string) => Promise<void>;
   }
-  let { item, selected, pending, onselect, ontranscode }: Props = $props();
+  let { item, selected, pending, onLayers, onselect, ontranscode }: Props = $props();
 
   let codec = $state<string>(transcodeCodecs[0].value);
   let busy = $state(false);
@@ -47,6 +49,7 @@
       {#if item.thumbnail}<img src="/api/thumbnail/{item.thumbnail}" alt="" loading="lazy" />{/if}
       <span class="n" class:invalid={item.file === null}>{item.file ?? '—'}</span>
       {#if duration}<span class="dur mono">{duration}</span>{/if}
+      {#if onLayers.length}<span class="on"><span class="dot dot-green"></span>{onLayers.join(', ')}</span>{/if}
     </span>
     <span class="name ellipsis">{displayName(item.name, item.file !== null)}</span>
     <span class="badges">
@@ -91,6 +94,8 @@
   .thumb { display: block; aspect-ratio: 16 / 9; background: var(--ground); }
   .thumb img { position: absolute; inset: 0; }
   .n.invalid { color: var(--red); background: var(--red-bg); }
+  .on { position: absolute; left: 4px; bottom: 4px; height: 20px; padding: 0 6px; border-radius: 4px; background: var(--accent-dim); font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+  .on .dot { width: 6px; height: 6px; }
   .dur { position: absolute; right: 4px; bottom: 4px; height: 18px; padding: 0 5px; border-radius: 3px; background: rgba(11, 12, 14, 0.8); font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; }
   .name { display: block; font-weight: 500; }
   .badges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 24px; }

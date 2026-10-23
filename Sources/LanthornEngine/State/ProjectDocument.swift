@@ -32,6 +32,17 @@ public enum ProjectDocument {
             })
     }
 
+    /// The patch the DMX store runs: entries of layers beyond `layerCount` are ignored.
+    public static func effectivePatch(from project: JSONValue) -> Patch? {
+        guard var patch = patch(from: project) else { return nil }
+        let count = project["layerCount"]?.int ?? Int.max
+        patch.entries.removeAll {
+            if case .layer(let n) = $0.fixture { return n > count }
+            return false
+        }
+        return patch
+    }
+
     public static func patch(from project: JSONValue) -> Patch? {
         guard let entries = project["patch"]?.array else { return nil }
         var result: [PatchEntry] = []
@@ -59,12 +70,12 @@ public enum ProjectDocument {
     }
 
     /// Paths `project.set` may touch; everything else has a command of its own or is engine-owned.
-    static let settablePrefixes = ["/name", "/layerCount", "/policy", "/library/root", "/ui"]
+    static let settablePrefixes = ["/name", "/policy", "/library/root", "/ui"]
 
     public static func registerCommands(on store: StateStore, auth: RoleAuth) {
         store.register(
             CommandSpec(
-                name: "project.set", role: .programmer, summary: "Set one project value (name, layerCount, policy, library.root, ui.*).",
+                name: "project.set", role: .programmer, summary: "Set one project value (name, policy, library.root, ui.*); layers.setCount changes the layer count.",
                 argsType: "{ path: string; value: JSONValue }"
             ) { project, args in
                 guard let path = args["path"]?.string, let pointer = try? JSONPointer(path), let value = args["value"] else {
@@ -72,9 +83,6 @@ public enum ProjectDocument {
                 }
                 guard settablePrefixes.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) else {
                     throw CommandError.invalidArgs("path \(path) is not settable")
-                }
-                if path == "/layerCount" {
-                    guard let n = value.int, (1...64).contains(n) else { throw CommandError.invalidArgs("layerCount must be 1–64") }
                 }
                 if path == "/policy" {
                     guard let raw = value.string, SourcePolicy(rawValue: raw) != nil else { throw CommandError.invalidArgs("policy must be dmx, internal, ltp or htp") }
@@ -100,6 +108,31 @@ public enum ProjectDocument {
                     guard address + fixture.mode.footprint - 1 <= 512 else { throw CommandError.invalidArgs("\(fixture) does not fit at \(address)") }
                     patch.entries.append(PatchEntry(fixture: fixture, universe: universe, address: address))
                 }
+                try project.set(patchValue(patch), at: "/patch")
+                return nil
+            })
+        store.register(
+            CommandSpec(
+                name: "layers.setCount", role: .programmer,
+                summary: "Set the number of layers (1–64): new layers are patched at their standard address when that range is free, dropped layers are unpatched.",
+                argsType: "{ count: number }"
+            ) { project, args in
+                guard let count = args["count"]?.int, (1...64).contains(count) else { throw CommandError.invalidArgs("count must be 1–64") }
+                guard var patch = ProjectDocument.patch(from: project) else { throw CommandError.invalidArgs("project has no patch") }
+                let previous = project["layerCount"]?.int ?? 0
+                patch.entries.removeAll {
+                    if case .layer(let n) = $0.fixture { return n > count }
+                    return false
+                }
+                if count > previous {
+                    let standard = Patch.standard(layers: count, outputs: 4)
+                    for n in (previous + 1)...count where patch.entry(for: .layer(n)) == nil {
+                        guard let candidate = standard.entry(for: .layer(n)) else { continue }
+                        let free = !patch.entries.contains { $0.universe == candidate.universe && $0.channels.overlaps(candidate.channels) }
+                        if free { patch.entries.append(candidate) }
+                    }
+                }
+                try project.set(.number(Double(count)), at: "/layerCount")
                 try project.set(patchValue(patch), at: "/patch")
                 return nil
             })
