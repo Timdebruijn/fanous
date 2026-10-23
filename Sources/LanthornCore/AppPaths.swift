@@ -16,6 +16,12 @@ public enum AppPaths {
     public static var ingestQueueFile: URL { applicationSupport.appending(path: "ingest-queue.json") }
     /// Default library root (machine setting, OPEN-23).
     public static var defaultLibrary: URL { home.appending(path: "Movies/Lanthorn Library") }
+    /// Machine settings outside the project (DESIGN.md §11.5): role passwords, library root, interfaces.
+    public static var settingsFile: URL { applicationSupport.appending(path: "settings.json") }
+    /// Per-install random token the local shell presents to authenticate as programmer (mode 0600).
+    public static var shellTokenFile: URL { applicationSupport.appending(path: "shell-token") }
+    /// The current project document until project bundles exist (DESIGN.md §11.5).
+    public static var projectFile: URL { applicationSupport.appending(path: "project.json") }
     public static var certificateFile: URL { tls.appending(path: "certificate.der") }
     public static var fingerprintFile: URL { tls.appending(path: "fingerprint.sha256") }
 

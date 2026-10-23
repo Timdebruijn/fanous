@@ -14,7 +14,7 @@ func usage() -> String {
            lanthornd channel-map            print docs/channel-map.md to stdout
            lanthornd gdtf FILE              write the GDTF fixture file
            lanthornd reset-tls              delete the TLS key and certificate (regenerated at next start)
-           lanthornd ingest DIR OUT.mov [--fps N] [--codec prores4444|prores422hq|hapq|hap]
+           lanthornd ingest DIR OUT.mov [--fps N] [--codec prores4444|prores422hq|hapq|hap|hapalpha]
                                             convert an image sequence to a movie (Phase 3 stub)
       --port N         HTTPS port (default 8443)
       --web-root PATH  directory with the built web UI (default: auto-detect)
@@ -28,6 +28,9 @@ switch CommandLine.arguments.dropFirst().first {
 case "channel-map":
     print(ChannelMapDocument.markdown(), terminator: "")
     exit(0)
+case "protocol-dts":
+    print(ProtocolTypes.typescript(commands: Engine.commandSpecs()), terminator: "")
+    exit(0)
 case "reset-tls":
     TLSIdentity.reset(directory: AppPaths.tls)
     print("TLS identity removed; a new one is generated at the next start")
@@ -35,7 +38,7 @@ case "reset-tls":
 case "ingest":
     let args = Array(CommandLine.arguments.dropFirst(2))
     guard args.count >= 2 else {
-        FileHandle.standardError.write(Data("usage: lanthornd ingest DIR OUT.mov [--fps N] [--codec prores4444|prores422hq|hapq|hap]\n".utf8))
+        FileHandle.standardError.write(Data("usage: lanthornd ingest DIR OUT.mov [--fps N] [--codec prores4444|prores422hq|hapq|hap|hapalpha]\n".utf8))
         exit(64)
     }
     func option(_ name: String) -> String? {
@@ -48,6 +51,7 @@ case "ingest":
         case "prores422": .proRes422
         case "hapq": .hap(.hapQ)
         case "hap": .hap(.hap)
+        case "hapalpha": .hap(.hapAlpha)
         default: .proRes4444
         }
     do {

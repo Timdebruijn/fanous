@@ -144,6 +144,22 @@ public final class DMXStore: @unchecked Sendable {
 
     // MARK: Cross-thread
 
+    /// Replaces the patch (Phase 5 `patch.set`, undo, project load); resolvers of fixtures that stay keep their state.
+    public func setPatch(_ patch: Patch) {
+        queue.async { [self] in
+            self.patch = patch
+            var kept: [FixtureRef: FixtureResolver] = [:]
+            for entry in patch.entries { kept[entry.fixture] = resolvers[entry.fixture] ?? FixtureResolver(mode: entry.fixture.mode) }
+            resolvers = kept
+            publish(receivedAt: 0)
+        }
+    }
+
+    public var currentPatch: Patch { queue.sync { patch } }
+
+    /// The merged 512 slots of a universe for the DMX monitor stream; nil until a packet arrived.
+    public func slots(for universe: UniverseID) -> [UInt8]? { queue.sync { table.slots(for: universe) } }
+
     public func setPolicy(_ policy: SourcePolicy, for fixture: FixtureRef) {
         queue.async { [self] in resolvers[fixture]?.policy = policy }
     }

@@ -21,6 +21,8 @@ public struct HTTPRequest: Equatable, Sendable {
     public var headers: [HTTPHeader]
     /// Request body when it was small enough to buffer (see HTTPSServer); large bodies are streamed to a file.
     public var body: [UInt8] = []
+    /// Peer address ("host:port"), filled in by the server for rate limiting and logs.
+    public var remoteAddress: String = ""
 
     public enum ParseError: Error, Equatable {
         case malformedRequestLine
@@ -106,6 +108,7 @@ public struct HTTPResponse: Sendable {
 
     public static func reason(_ status: Int) -> String {
         switch status {
+        case 101: "Switching Protocols"
         case 200: "OK"
         case 204: "No Content"
         case 400: "Bad Request"
@@ -114,17 +117,20 @@ public struct HTTPResponse: Sendable {
         case 404: "Not Found"
         case 405: "Method Not Allowed"
         case 413: "Content Too Large"
+        case 429: "Too Many Requests"
         case 500: "Internal Server Error"
         default: "Status \(status)"
         }
     }
 
     /// Serializes head and (unless `includeBody` is false, for HEAD) body.
-    /// Content-Length always describes the body, as RFC 9110 requires for HEAD.
+    /// Content-Length always describes the body, as RFC 9110 requires for HEAD,
+    /// except for 101, which must not carry it (RFC 9110 §15.2; WebKit rejects the upgrade otherwise).
     public func serialized(includeBody: Bool = true) -> [UInt8] {
         var head = "HTTP/1.1 \(status) \(Self.reason(status))\r\n"
         for header in headers { head += "\(header.name): \(header.value)\r\n" }
-        head += "Content-Length: \(body.count)\r\n\r\n"
+        if status != 101 { head += "Content-Length: \(body.count)\r\n" }
+        head += "\r\n"
         return Array(head.utf8) + (includeBody ? body : [])
     }
 }

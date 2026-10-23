@@ -828,9 +828,9 @@ from the compositor after the canvas pass with the same completed texture
   downloads (thumbnails, GDTF, logs, project export), WebSocket for state,
   commands and binary streams. HTTP/1.1 and RFC 6455 framing are implemented
   in `LanthornCore/Protocol` (small, unit-tested) on top of Network.framework
-  TLS connections; no web framework. `[OPEN-16]` evaluate
-  `NWProtocolWebSocket` in server role in the Phase 5 spike; if it works on
-  the same listener it replaces the hand-written framing.
+  TLS connections; no web framework. `[OPEN-16]` resolved in Phase 5: the
+  framing stays hand-written (`WebSocketFrame`, `WebSocketHandshake`) because
+  `NWProtocolWebSocket` needs its own listener and cannot share the port.
 - **TLS everywhere, including the local shell.** WebCodecs is only exposed
   in secure contexts, and WebKit's treatment of `http://localhost` as secure
   is inconsistent, so even the local preview needs HTTPS. The engine
@@ -853,8 +853,9 @@ from the compositor after the canvas pass with the same completed texture
   indicator until the programmer password is set. The local shell
   authenticates as programmer with a per-install random token from a
   mode-0600 file in Application Support (never typed, never shown).
-  `[OPEN-18]` whether "monitor" should be open by default even when others
-  are protected.
+  `[OPEN-18]` decided in Phase 5: roles are open or protected independently,
+  and a client is granted the highest role up to the one it requested that it
+  is entitled to (cookie, shell token or open role).
 - Rate limiting on login (5/min per IP), CSRF not needed (cookie SameSite
   Strict + same-origin WebSocket check), all REST mutations go through
   WebSocket commands anyway.
@@ -1319,9 +1320,9 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | OPEN-13 | HAP muxing via AVAssetWriter passthrough vs own muxer | **Resolved (Phases 2–4):** `AVAssetWriterInput` with a `sourceFormatHint` format description and passthrough sample buffers writes HAP `.mov` files the engine plays; no own muxer |
 | OPEN-14 | Per-channel (RGB) blend gamma | v1.x, cheap |
 | OPEN-15 | Audio varispeed / pitch at speed ≠ 100 % | v1.x; mute in v1 |
-| OPEN-16 | `NWProtocolWebSocket` in server role vs hand-written framing | spike in Phase 5 |
+| OPEN-16 | `NWProtocolWebSocket` in server role vs hand-written framing | **Resolved in Phase 5**: hand-written RFC 6455 framing in `LanthornCore/Protocol/WebSocket.swift` (SHA-1 for the accept key is in Core too, Foundation-only). `NWProtocolWebSocket` owns a whole listener, so it could not share port 8443 with the HTTP/1.1 routes and static files; the upgrade is handled by the existing HTTPS connection handler. |
 | OPEN-17 | Downloadable CA profile for iPads | v1.x |
-| OPEN-18 | Monitor role open by default when other roles have passwords | yes |
+| OPEN-18 | Monitor role open by default when other roles have passwords | **Decided in Phase 5**: each role is open or protected independently; a client gets the highest role ≤ the one it asked for that its session cookie or shell token entitles it to, or that is open. Monitor stays open unless it has its own password. |
 | OPEN-19 | Prometheus metrics endpoint | v1.x |
 | OPEN-20 | MDM profile for show machines | later (owner's choice) |
 | OPEN-21 | Trademark search for "Lanthorn" before public release | owner |

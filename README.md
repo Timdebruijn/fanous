@@ -63,6 +63,18 @@ priority, yielding when the compositor is busy, and moves originals to
 (streamed to `_incoming/`, then queued). Endpoints: `/api/library`,
 `/api/library/rescan`, `/api/thumbnail/<name>.jpg`, `/api/ingest`.
 
+State and roles (Phase 5, DESIGN.md §11): the UI talks WebSocket on
+`wss://<host>:8443/ws` (hello → welcome with the `project` and `live`
+documents, commands with acks, RFC 6902 patches per revision, `snapshot` for
+a lagging client, `sub` for the DMX monitor stream). Roles are monitor,
+operator and programmer with optional passwords (`roles.setPassword`,
+PBKDF2-HMAC-SHA256 in `~/Library/Application Support/Lanthorn/settings.json`);
+`POST /api/login` returns the session cookie, `GET /api/session` shows the
+current role and which roles are open. The local shell authenticates with the
+token in `shell-token` (mode 0600). The project is autosaved to `project.json`
+and loaded at start; `lanthornd protocol-dts` prints `web/src/lib/protocol.d.ts`
+(checked by `scripts/check-protocol-dts.sh`).
+
 `/api/metrics` reports frame timing, the DMX-to-photon estimate and audio
 drift; `lanthorn-bench run` ramps layers until a frame drops (`--effects
 blur,edge`, `--dissolve 2`, `--ingest FILE` for the Phase 3/4 variants) and

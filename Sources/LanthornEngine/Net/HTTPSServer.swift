@@ -7,19 +7,24 @@ import LanthornCore
 import Logging
 import Network
 
-/// HTTPS/1.1 static-file server on Network.framework. One listener; each
-/// connection parses request heads with LanthornCore's parser. Small bodies are buffered, large ones (uploads) streamed to a file
-/// in Phase 0; WebSocket and uploads arrive in Phase 5.
+/// HTTPS/1.1 server on Network.framework. One listener; each connection parses request heads with
+/// LanthornCore's parser. Small bodies are buffered, large ones (uploads) streamed to a file, and an
+/// upgrade request hands the connection to a `WebSocketSession` (DESIGN.md §11.1: one port for all).
 public final class HTTPSServer: @unchecked Sendable {
     public typealias Route = @Sendable (HTTPRequest) -> HTTPResponse?
     /// Where to stream a large request body (an upload); nil = refuse the body. Called with the request head only.
     public typealias UploadSink = @Sendable (HTTPRequest) -> URL?
     /// Called once a streamed body is complete, with the request head and the file it was written to.
     public typealias UploadRoute = @Sendable (HTTPRequest, URL) -> HTTPResponse
+    /// Decides whether a WebSocket upgrade request gets a session; nil refuses it (404).
+    public typealias UpgradeRoute = @Sendable (HTTPRequest) -> WebSocketHandler?
     /// Bodies up to this size are buffered and handed to the route in `HTTPRequest.body`.
     public static let maxInlineBody = 1 << 20
     nonisolated(unsafe) public var uploadSink: UploadSink?
     nonisolated(unsafe) public var uploadRoute: UploadRoute?
+    nonisolated(unsafe) public var upgradeRoute: UpgradeRoute?
+    /// The port actually bound (differs from `port` when 0 was requested); set once the listener is ready.
+    nonisolated(unsafe) public private(set) var boundPort: UInt16?
 
     private let listener: NWListener
     private let queue = DispatchQueue(label: "org.lanthorn.https", qos: .userInitiated)
@@ -49,9 +54,11 @@ public final class HTTPSServer: @unchecked Sendable {
     }
 
     public func start() {
-        listener.stateUpdateHandler = { [logger, port] state in
+        listener.stateUpdateHandler = { [weak self, logger, port] state in
             switch state {
-            case .ready: logger.info("HTTPS listening", metadata: ["port": "\(port)"])
+            case .ready:
+                self?.boundPort = self?.listener.port?.rawValue ?? port
+                logger.info("HTTPS listening", metadata: ["port": "\(self?.boundPort ?? port)"])
             case .failed(let error): logger.error("HTTPS listener failed", metadata: ["error": "\(error)"])
             case .cancelled: logger.info("HTTPS listener stopped")
             default: break
@@ -108,6 +115,12 @@ private final class ClientConnection: @unchecked Sendable {
     private var buffer: [UInt8] = []
     /// An upload in progress: body bytes go to the file until `remaining` reaches 0.
     private var upload: (request: HTTPRequest, file: URL, handle: FileHandle, remaining: Int)?
+    /// Set after a successful upgrade: every further byte is a WebSocket frame.
+    private var websocket: WebSocketSession?
+    private var remoteAddress: String {
+        if case .hostPort(let host, _) = connection.endpoint { return "\(host)" }
+        return "\(connection.endpoint)"
+    }
 
     init(_ connection: NWConnection, server: HTTPSServer) {
         self.connection = connection
@@ -115,9 +128,13 @@ private final class ClientConnection: @unchecked Sendable {
     }
 
     func start() {
-        connection.stateUpdateHandler = { [connection] state in
+        connection.stateUpdateHandler = { [weak self, connection] state in
             if case .failed = state { connection.cancel() }
-            if case .cancelled = state { connection.stateUpdateHandler = nil }
+            if case .cancelled = state {
+                connection.stateUpdateHandler = nil
+                self?.websocket?.connectionDidEnd()
+                self?.websocket = nil
+            }
         }
         connection.start(queue: queue)
         receive()
@@ -130,6 +147,7 @@ private final class ClientConnection: @unchecked Sendable {
                 guard process() else { return }
             }
             if isComplete || error != nil {
+                websocket?.connectionDidEnd()
                 connection.cancel()
                 return
             }
@@ -140,6 +158,7 @@ private final class ClientConnection: @unchecked Sendable {
     /// Handles every complete request in the buffer. Returns false once the connection is being closed.
     private func process() -> Bool {
         while true {
+            if let websocket { return websocket.feed(&buffer) }
             if upload != nil { return drainUpload() }
             let parsed: (request: HTTPRequest, headLength: Int)?
             do {
@@ -149,6 +168,20 @@ private final class ClientConnection: @unchecked Sendable {
                 return false
             }
             guard var (request, headLength) = parsed else { return true }
+            request.remoteAddress = remoteAddress
+            if WebSocketHandshake.isUpgrade(request) {
+                buffer.removeFirst(headLength)
+                guard let handler = server.upgradeRoute?(request), let response = WebSocketHandshake.response(for: request) else {
+                    send(.text(404, "no such socket"), includeBody: true, close: true)
+                    return false
+                }
+                server.log(request, response)
+                send(response, includeBody: false, close: false)
+                let session = WebSocketSession(connection: connection, remoteAddress: request.remoteAddress, handler: handler)
+                websocket = session
+                session.opened()
+                return session.feed(&buffer)
+            }
             if request.contentLength > HTTPSServer.maxInlineBody {
                 // large body: stream it to the file the upload sink names, or refuse it
                 guard let sink = server.uploadSink, let file = sink(request), server.uploadRoute != nil,

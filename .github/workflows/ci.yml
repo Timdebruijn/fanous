@@ -19,6 +19,7 @@ jobs:
       - run: scripts/license-headers.sh
       - run: scripts/core-purity.sh
       - run: scripts/check-channel-map.sh
+      - run: scripts/check-protocol-dts.sh
 
   web:
     runs-on: ubuntu-latest
