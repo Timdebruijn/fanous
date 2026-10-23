@@ -46,13 +46,27 @@ driven by the standard DMX patch:
            {"folder": 0, "file": 1, "syphon": "Some App/Server name"}]}
 ```
 
-Layers pick media with their Folder/File channels; movies (ProRes, HAP),
-stills and Syphon servers are the v1 sources. The canvas is published as the
-Syphon server "Lanthorn – Canvas". `lanthornd ingest DIR out.mov` turns an
-image sequence into a ProRes 4444 (or HAP) movie. `/api/metrics` reports frame
-timing and the DMX-to-photon estimate; `lanthorn-bench run` ramps layers until
-a frame drops (`--effects blur,edge`, `--dissolve 2` for the Phase 3 variants)
-and `scripts/bench-sweep.sh` runs the matrix.
+Layers pick media with their Folder/File channels. The engine indexes the
+library root (`~/Movies/Lanthorn Library` by default, `"library"` in the
+scene to override): folders `NNN_name/` and files `NNN_name.ext`, numbered
+1–255, ProRes/HAP `.mov` and stills playable, everything else marked "needs
+transcode"; FSEvents keep the index current, metadata and thumbnails are
+cached under `~/Library/Application Support/Lanthorn/cache/`. Explicit scene
+`media` entries (Syphon servers, test files) take precedence over the library.
+The canvas is published as the Syphon server "Lanthorn – Canvas".
+
+Ingest: `lanthornd ingest DIR out.mov` converts an image sequence from the
+command line; the engine's ingest queue (`/api/ingest`) transcodes uploads and
+"needs transcode" items to ProRes or HAP one job at a time at utility
+priority, yielding when the compositor is busy, and moves originals to
+`_originals/`. Remote clients upload with `PUT /api/upload/<folder>/<name>`
+(streamed to `_incoming/`, then queued). Endpoints: `/api/library`,
+`/api/library/rescan`, `/api/thumbnail/<name>.jpg`, `/api/ingest`.
+
+`/api/metrics` reports frame timing, the DMX-to-photon estimate and audio
+drift; `lanthorn-bench run` ramps layers until a frame drops (`--effects
+blur,edge`, `--dissolve 2`, `--ingest FILE` for the Phase 3/4 variants) and
+`scripts/bench-sweep.sh` / `scripts/bench-phase3.sh` run the matrices.
 
 - `docs/DESIGN.md` — the design (architecture, pipeline, channel map, UI, roadmap)
 - `docs/adr/` — architecture decision records

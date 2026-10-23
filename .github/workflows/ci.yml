@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v7
       - run: swift --version
       - run: swift build
-      - run: swift test
+      - run: scripts/test.sh
       - run: scripts/license-headers.sh
       - run: scripts/core-purity.sh
       - run: scripts/check-channel-map.sh

@@ -656,9 +656,17 @@ source file(s) ──▶ _incoming/ (remote upload) or in-place (local path)
   (Proxy/LT/422/HQ), ProRes 4444 (XQ).
 - Audio is transcoded to 48 kHz LPCM so playback never needs a compressed
   audio decoder.
-- HAP muxing through `AVAssetWriter` passthrough is a Phase 4 spike; the
-  fallback is a small all-intra QuickTime muxer in `LanthornEngine/Ingest`
-  (`[OPEN-13]`).
+- HAP muxing through `AVAssetWriter` passthrough works (`MovieWriter`,
+  Phases 2–4); the own-muxer fallback was not needed (`[OPEN-13]` resolved).
+- **Phase 4 as built:** `LibraryIndex` (scan + FSEvents, 500 ms debounce,
+  code-point order decides duplicate numbers), metadata/thumbnail cache in
+  `cache/library-index.json` + `cache/thumbnails/`, `Thumbnailer` renders the
+  mid-file frame through the layer pipeline; `IngestQueue` (one `.utility`
+  thread, JSON-persisted, yields while the last 250 ms of frames exceeded 70 %
+  of the frame budget), `Transcoder` (AVAssetReader → `MovieWriter`, audio to
+  48 kHz LPCM, alpha sources promoted to ProRes 4444 / HAP Alpha),
+  `IngestAPI` (`/api/ingest`, `PUT /api/upload/<folder>/<name>` streamed to
+  `_incoming/`). Role checks come with Phase 5.
 - Transcode never runs on the compositor's P-cores exclusively: ingest threads
   are `.utility` QoS and the job yields when the compositor's measured frame
   time exceeds 70 % of budget (instrumentation feeds back into scheduling).
@@ -1286,6 +1294,7 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | Pixel mapping to DMX fixtures | Art-Net/sACN *builders* already exist in Core (needed for tests); a GPU sampling pass reads canvas regions into a small buffer per universe on the preview thread |
 | Main/backup failover (v2) | projects reference media by number; `live` is a replicable document; a backup engine subscribes to the main's state over WSS and runs the same DMX; outputs are switched by the operator (status bar "backup" slot reserved) |
 | 3D projection mapping | the output pass already renders arbitrary meshes through a displacement field; a projected OBJ with a calibrated camera matrix replaces the slice mesh |
+| 3D-model layers (media as texture on a mesh) | the layer pass is one quad in a perspective camera (§4.3); a mesh from Model I/O (USDZ/OBJ) with its own UVs replaces the quad, the fragment shader is unchanged; needs a depth attachment on the canvas pass and a "Geometry" parameter in the reserved Layer channels 51–64 (0 = flat, 1–255 = model from the library); `docs/BACKLOG.md` B9 |
 | Serial device fixture | fixture type in `ParameterSpec`; POSIX termios on `/dev/cu.*`, no dependency |
 | OSC feedback, MIDI notes/CC, MSC, timeline, varispeed audio, 10-bit output, per-channel blend gamma, frame blending, MDM profile, CA profile for iPads | noted in their sections |
 
@@ -1307,7 +1316,7 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | OPEN-10 | sACN per-address priority (0xDD start code) | not in v1 |
 | OPEN-11 | Per-parameter smoothing vs a global switch | per parameter, default off |
 | OPEN-12 | Folder 0 numbering for inputs/generators | as in §8.2 |
-| OPEN-13 | HAP muxing via AVAssetWriter passthrough vs own muxer | spike in Phase 4 |
+| OPEN-13 | HAP muxing via AVAssetWriter passthrough vs own muxer | **Resolved (Phases 2–4):** `AVAssetWriterInput` with a `sourceFormatHint` format description and passthrough sample buffers writes HAP `.mov` files the engine plays; no own muxer |
 | OPEN-14 | Per-channel (RGB) blend gamma | v1.x, cheap |
 | OPEN-15 | Audio varispeed / pitch at speed ≠ 100 % | v1.x; mute in v1 |
 | OPEN-16 | `NWProtocolWebSocket` in server role vs hand-written framing | spike in Phase 5 |

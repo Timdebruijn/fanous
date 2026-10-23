@@ -19,6 +19,8 @@ public struct HTTPRequest: Equatable, Sendable {
     public var target: String
     public var version: String
     public var headers: [HTTPHeader]
+    /// Request body when it was small enough to buffer (see HTTPSServer); large bodies are streamed to a file.
+    public var body: [UInt8] = []
 
     public enum ParseError: Error, Equatable {
         case malformedRequestLine

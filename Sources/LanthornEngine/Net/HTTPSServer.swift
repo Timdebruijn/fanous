@@ -8,10 +8,18 @@ import Logging
 import Network
 
 /// HTTPS/1.1 static-file server on Network.framework. One listener; each
-/// connection parses request heads with LanthornCore's parser. GET/HEAD only
+/// connection parses request heads with LanthornCore's parser. Small bodies are buffered, large ones (uploads) streamed to a file
 /// in Phase 0; WebSocket and uploads arrive in Phase 5.
 public final class HTTPSServer: @unchecked Sendable {
     public typealias Route = @Sendable (HTTPRequest) -> HTTPResponse?
+    /// Where to stream a large request body (an upload); nil = refuse the body. Called with the request head only.
+    public typealias UploadSink = @Sendable (HTTPRequest) -> URL?
+    /// Called once a streamed body is complete, with the request head and the file it was written to.
+    public typealias UploadRoute = @Sendable (HTTPRequest, URL) -> HTTPResponse
+    /// Bodies up to this size are buffered and handed to the route in `HTTPRequest.body`.
+    public static let maxInlineBody = 1 << 20
+    nonisolated(unsafe) public var uploadSink: UploadSink?
+    nonisolated(unsafe) public var uploadRoute: UploadRoute?
 
     private let listener: NWListener
     private let queue = DispatchQueue(label: "org.lanthorn.https", qos: .userInitiated)
@@ -98,6 +106,8 @@ private final class ClientConnection: @unchecked Sendable {
     private let server: HTTPSServer
     private let queue = DispatchQueue(label: "org.lanthorn.https.client")
     private var buffer: [UInt8] = []
+    /// An upload in progress: body bytes go to the file until `remaining` reaches 0.
+    private var upload: (request: HTTPRequest, file: URL, handle: FileHandle, remaining: Int)?
 
     init(_ connection: NWConnection, server: HTTPSServer) {
         self.connection = connection
@@ -130,6 +140,7 @@ private final class ClientConnection: @unchecked Sendable {
     /// Handles every complete request in the buffer. Returns false once the connection is being closed.
     private func process() -> Bool {
         while true {
+            if upload != nil { return drainUpload() }
             let parsed: (request: HTTPRequest, headLength: Int)?
             do {
                 parsed = try HTTPRequest.parse(buffer)
@@ -137,15 +148,55 @@ private final class ClientConnection: @unchecked Sendable {
                 send(.text(400, "bad request"), includeBody: true, close: true)
                 return false
             }
-            guard let (request, headLength) = parsed else { return true }
+            guard var (request, headLength) = parsed else { return true }
+            if request.contentLength > HTTPSServer.maxInlineBody {
+                // large body: stream it to the file the upload sink names, or refuse it
+                guard let sink = server.uploadSink, let file = sink(request), server.uploadRoute != nil,
+                    FileManager.default.createFile(atPath: file.path, contents: nil), let handle = try? FileHandle(forWritingTo: file)
+                else {
+                    send(.text(413, "body too large"), includeBody: true, close: true)
+                    return false
+                }
+                buffer.removeFirst(headLength)
+                upload = (request, file, handle, request.contentLength)
+                return drainUpload()
+            }
             let total = headLength + request.contentLength
-            guard buffer.count >= total else { return true }  // body still arriving; it is ignored
+            guard buffer.count >= total else { return true }  // body still arriving
+            request.body = Array(buffer[headLength..<total])
             buffer.removeFirst(total)
             let response = server.respond(to: request)
             server.log(request, response)
             send(response, includeBody: request.method != "HEAD", close: request.wantsClose)
             if request.wantsClose { return false }
         }
+    }
+
+    /// Moves buffered bytes into the upload file; finishes the request when the body is complete.
+    private func drainUpload() -> Bool {
+        guard var current = upload else { return true }
+        let take = min(current.remaining, buffer.count)
+        if take > 0 {
+            do {
+                try current.handle.write(contentsOf: Data(buffer[0..<take]))
+            } catch {
+                try? current.handle.close()
+                try? FileManager.default.removeItem(at: current.file)
+                upload = nil
+                send(.text(500, "cannot write upload"), includeBody: true, close: true)
+                return false
+            }
+            buffer.removeFirst(take)
+            current.remaining -= take
+            upload = current
+        }
+        guard current.remaining == 0 else { return true }
+        try? current.handle.close()
+        upload = nil
+        let response = server.uploadRoute?(current.request, current.file) ?? .text(500, "no upload route")
+        server.log(current.request, response)
+        send(response, includeBody: true, close: current.request.wantsClose)
+        return !current.request.wantsClose
     }
 
     private func send(_ response: HTTPResponse, includeBody: Bool, close: Bool) {

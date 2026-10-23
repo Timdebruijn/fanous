@@ -250,6 +250,8 @@ public final class MediaLoader: @unchecked Sendable {
     public var liveFactory: (@Sendable (String) -> (any LiveTextureSource)?)?
     /// Two mixer channels per layer slot (the playing media and the one dissolving out); nil = no audio.
     public var mixer: AudioMixer?
+    /// Library lookup for keys the scene's explicit list does not cover (DESIGN.md §7.4).
+    public var resolver: (@Sendable (MediaKey) -> URL?)?
     private var parity: [Int]
     public let opened = Atomic<Int>(0)
     public let failures = Atomic<Int>(0)
@@ -309,7 +311,7 @@ public final class MediaLoader: @unchecked Sendable {
 
     private func open(_ key: MediaKey, layer: Int) -> LayerPlayback? {
         guard !key.isNone else { return nil }
-        guard let entry = media[key] else {
+        guard let entry = media[key] ?? resolver?(key).map({ MediaEntry(folder: key.folder, file: key.file, path: $0.path) }) else {
             logger.warning("media not found", metadata: ["layer": "\(layer + 1)", "media": "\(key)"])
             failures.wrappingAdd(1, ordering: .relaxed)
             return nil

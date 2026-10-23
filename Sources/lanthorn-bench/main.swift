@@ -18,6 +18,7 @@ func usage() -> Never {
                                   [--layers N (single step)] [--ring N (frames per layer ring)]
                                   [--dmx (parameters from Art-Net on 6454; reports DMX-to-photon)] [--displaylink]
                                   [--effects blur,edge (effect slots 1 and 2 on every layer)] [--dissolve SECONDS (permanent crossfades)]
+                                  [--ingest FILE (transcode FILE to HAP Q in-process during the window)]
                lanthorn-bench syphon [--app NAME] [--server NAME] [--seconds N] [--out FILE.png]   receive a Syphon server from another process
         """)
     exit(64)
@@ -58,7 +59,7 @@ case "run":
         onlyLayers: option("--layers").flatMap(Int.init), ringCapacity: option("--ring").flatMap(Int.init),
         dmx: flag("--dmx"), useDisplayLink: flag("--displaylink"),
         effects: (option("--effects") ?? "").split(separator: ",").compactMap { name in Effect.allCases.first { "\($0)" == name } },
-        dissolve: Double(option("--dissolve") ?? "0") ?? 0, logger: logger)
+        dissolve: Double(option("--dissolve") ?? "0") ?? 0, ingest: option("--ingest").map { URL(fileURLWithPath: $0) }, logger: logger)
 case "syphon":
     try SyphonProbe.run(
         app: option("--app") ?? "lanthornd", server: option("--server") ?? "Lanthorn – Canvas", seconds: Double(option("--seconds") ?? "3") ?? 3,

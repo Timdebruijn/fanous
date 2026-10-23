@@ -27,6 +27,8 @@ public struct SceneConfig: Codable, Sendable {
     public var audio = true
     /// Source policy for every layer and the master until projects carry it (DESIGN.md §7.2): dmx, internal, ltp, htp.
     public var policy: SourcePolicy = .dmx
+    /// Library root (DESIGN.md §8.1); nil = the machine default `~/Movies/Lanthorn Library`. Explicit `media` entries win.
+    public var library: String?
 
     public init() {}
 
@@ -49,6 +51,7 @@ public struct SceneConfig: Codable, Sendable {
         syphonOutput = try c.decodeIfPresent(Bool.self, forKey: .syphonOutput) ?? syphonOutput
         audio = try c.decodeIfPresent(Bool.self, forKey: .audio) ?? audio
         policy = try c.decodeIfPresent(SourcePolicy.self, forKey: .policy) ?? policy
+        library = try c.decodeIfPresent(String.self, forKey: .library)
     }
 }
 

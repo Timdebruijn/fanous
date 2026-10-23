@@ -53,7 +53,7 @@ enum Benchmark {
     static func run(
         mediaDirectory: URL, codec: String, resolution: String, maxLayers: Int, window: Double, soak: Double, display: Int?,
         headless: Bool, outputDirectory: URL, onlyLayers: Int? = nil, ringCapacity: Int? = nil, dmx: Bool = false,
-        useDisplayLink: Bool = false, effects: [Effect] = [], dissolve: Double = 0, logger: Logger
+        useDisplayLink: Bool = false, effects: [Effect] = [], dissolve: Double = 0, ingest: URL? = nil, logger: Logger
     ) throws {
         let parts = resolution.replacingOccurrences(of: "p", with: "x").split(separator: "x").compactMap { Double($0) }
         guard parts.count == 3 else { throw RenderError.pipeline("resolution must look like 1920x1080p60") }
@@ -110,8 +110,9 @@ enum Benchmark {
         }
         _ = (dmxStore, artnet)  // kept alive for the run
         useDisplayLinkFlag = useDisplayLink
+        ingestSource = ingest
         variant = (effects.isEmpty ? "" : "-fx-" + effects.map { "\($0)" }.joined(separator: "-")) + (dissolve > 0 ? "-dissolve\(Int(dissolve))s" : "")
-            + (window >= 600 ? "-soak\(Int(window))s" : "")
+            + (window >= 600 ? "-soak\(Int(window))s" : "") + (ingest != nil ? "-ingest" : "")
         logger.info("benchmark", metadata: ["file": "\(file.lastPathComponent)", "display": "\(useDisplay.map(String.init) ?? "headless")", "window": "\(window)s", "maxLayers": "\(maxLayers)"])
 
         Task { @MainActor in
@@ -147,6 +148,7 @@ enum Benchmark {
 
     nonisolated(unsafe) static var useDisplayLinkFlag = false
     nonisolated(unsafe) static var dissolveTimer: DispatchSourceTimer?
+    nonisolated(unsafe) static var ingestSource: URL?
     nonisolated(unsafe) static var variant = ""
 
     @MainActor
@@ -167,6 +169,21 @@ enum Benchmark {
         try await service.start()
         try await Task.sleep(for: .seconds(2))  // warm-up is not measured
         service.mixer?.resetPeakDrift()
+        // Phase 4: an ingest job (HAP Q transcode) runs in-process during the window, yielding on compositor load (DESIGN.md §8.3)
+        var ingestQueue: IngestQueue?
+        if let source = ingestSource {
+            let directory = FileManager.default.temporaryDirectory.appending(path: "lanthorn-bench-ingest-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"), logger: logger)
+            queue.shouldYield = {
+                let budget = 0.7 / fps * 1e6
+                return metrics.recent(seconds: 0.25, now: CACurrentMediaTime()).contains { Double($0.cpuMicros + $0.gpuMicros) > budget }
+            }
+            queue.start()
+            _ = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "ingested.mov"), kind: .transcode(codec: .hap(.hapQ))))
+            ingestQueue = queue
+            print("  ingest: transcoding \(source.lastPathComponent) to HAP Q during the window")
+        }
         let start = CACurrentMediaTime()
         let mallocBefore = mallocStatistics()
         try await Task.sleep(for: .seconds(seconds))
@@ -177,6 +194,11 @@ enum Benchmark {
         let audio = service.mixer?.statistics ?? AudioStatistics()
         if counters.gpuErrors > 0 || counters.encoderFailures > 0 || counters.outputFailures > 0 || counters.completed < counters.ticks - 2 {
             print("  diagnostics: ticks \(counters.ticks), completed \(counters.completed), gpu errors \(counters.gpuErrors) \(counters.lastError), encoder failures \(counters.encoderFailures)/\(counters.outputFailures)")
+        }
+        if let ingestQueue {
+            let job = ingestQueue.jobs.first
+            print("  ingest: \(job.map { "\($0.state)" } ?? "no job") after \(Int(seconds)) s")
+            ingestQueue.stop()
         }
         service.stop()
         try await Task.sleep(for: .milliseconds(300))

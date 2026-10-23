@@ -39,6 +39,8 @@ public final class Engine: @unchecked Sendable {
     private var sacn: SACNReceiver?
     private var osc: OSCReceiver?
     private var render: RenderService?
+    private var library: LibraryIndex?
+    private var ingest: IngestQueue?
     public let metrics = MetricsRing()
 
     public init(options: EngineOptions, logger: Logger) {
@@ -79,11 +81,31 @@ public final class Engine: @unchecked Sendable {
         self.sacn = sacn
         self.osc = osc
 
+        // The library is always indexed (DESIGN.md §8); scenes may add explicit entries (Syphon inputs, test files).
+        let context = try MetalContext()
+        let libraryRoot = options.scene?.library.map { URL(fileURLWithPath: $0) } ?? AppPaths.defaultLibrary
+        let library = LibraryIndex(root: libraryRoot, cacheDirectory: AppPaths.cache, logger: logger)
+        let thumbnailer = Thumbnailer(context: context, directory: AppPaths.cache.appending(path: "thumbnails"), logger: logger)
+        library.thumbnailer = { url, metadata, kind in thumbnailer.make(for: url, metadata: metadata, kind: kind) }
+        library.start()
+        self.library = library
+
+        // Ingest queue (DESIGN.md §8.3): one job at a time at utility priority; yields while the compositor is busy.
+        let ingest = IngestQueue(persistenceURL: AppPaths.ingestQueueFile, logger: logger)
+        let metrics = self.metrics
+        let fps = options.scene?.fps ?? 60
+        ingest.shouldYield = {
+            let budget = 0.7 / fps * 1e6
+            return metrics.recent(seconds: 0.25, now: CACurrentMediaTime()).contains { Double($0.cpuMicros + $0.gpuMicros) > budget }
+        }
+        ingest.start()
+        self.ingest = ingest
+
         if let scene = options.scene {
-            let context = try MetalContext()
             let service = try MainActor.assumeIsolated {
                 try RenderService(scene: scene, context: context, parameters: dmx.snapshots, metrics: metrics, logger: logger)
             }
+            service.loader.resolver = { key in library.resolve(key) }
             render = service
             let log = logger
             Task { @MainActor in
@@ -93,10 +115,12 @@ public final class Engine: @unchecked Sendable {
 
         let startedAt = self.startedAt
         let webRoot = options.webRoot
-        let metrics = self.metrics
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let ingestAPI = IngestAPI(library: library, queue: ingest, encoder: encoder, logger: logger)
         let server = try HTTPSServer(port: options.port, identity: identity, webRoot: options.webRoot, logger: logger) { request in
+            if request.path.hasPrefix("/api/ingest") || request.path.hasPrefix("/api/upload/") { return ingestAPI.handle(request, uploadedFile: nil) }
             switch request.path {
             case "/healthz":
                 let health = HealthStatus(
@@ -113,6 +137,18 @@ public final class Engine: @unchecked Sendable {
                     body: GDTFExporter.gdtf())
             case "/api/channel-map.md":
                 return .text(200, ChannelMapDocument.markdown())
+            case "/api/library":
+                return .json(200, Array((try? encoder.encode(library.snapshot)) ?? Data()))
+            case "/api/library/rescan":
+                library.rescan()
+                return .text(200, "rescanned")
+            case let path where path.hasPrefix("/api/thumbnail/"):
+                // thumbnail file names are hashes written by the engine itself: no path component may escape the cache
+                let name = String(path.dropFirst("/api/thumbnail/".count))
+                guard !name.contains("/"), !name.contains(".."), name.hasSuffix(".jpg"),
+                    let data = try? Data(contentsOf: thumbnailer.directory.appending(path: name))
+                else { return .text(404, "no thumbnail") }
+                return HTTPResponse(status: 200, headers: [HTTPHeader("Content-Type", "image/jpeg"), HTTPHeader("Cache-Control", "max-age=86400")], body: Array(data))
             case "/api/metrics":
                 var text = metrics.summary(seconds: 10, now: CACurrentMediaTime()).description
                 if let audio = self.render?.mixer?.statistics {
@@ -123,12 +159,17 @@ public final class Engine: @unchecked Sendable {
                 return nil
             }
         }
+        // large uploads stream to _incoming/ before the route runs
+        server.uploadSink = { request in ingestAPI.uploadTarget(for: request) }
+        server.uploadRoute = { request, file in ingestAPI.handle(request, uploadedFile: file) }
         server.start()
         self.server = server
     }
 
     public func stop() {
         server?.stop()
+        ingest?.stop()
+        library?.stop()
         artnet?.stop()
         sacn?.stop()
         osc?.stop()

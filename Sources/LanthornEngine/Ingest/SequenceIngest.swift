@@ -36,7 +36,7 @@ public enum SequenceIngest {
 
     /// Writes `frames` at `fps` to `output`. Returns the number of frames written.
     @discardableResult
-    public static func convert(frames: [URL], to output: URL, fps: Int32, codec: MovieWriter.Codec, progress: ((Int, Int) -> Void)? = nil) throws -> Int {
+    public static func convert(frames: [URL], to output: URL, fps: Int32, codec: MovieWriter.Codec, progress: ((Int, Int) throws -> Void)? = nil) throws -> Int {
         guard let first = frames.first, let probe = image(at: first) else { throw IngestError.noImages(output) }
         let width = probe.width, height = probe.height
         let writer = try MovieWriter(url: output, width: width, height: height, fps: fps, codec: codec)
@@ -63,7 +63,7 @@ public enum SequenceIngest {
                 context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
                 try writer.append(buffer)
             }
-            progress?(index + 1, frames.count)
+            try progress?(index + 1, frames.count)
         }
         try writer.finish()
         return frames.count

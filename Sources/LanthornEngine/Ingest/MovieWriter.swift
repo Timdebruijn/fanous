@@ -8,9 +8,10 @@ import Foundation
 
 /// Writes a QuickTime movie: ProRes through AVFoundation's hardware encoder,
 /// HAP through `HAPEncoder` and AVAssetWriter sample passthrough. Optionally
-/// adds a 48 kHz stereo 16-bit LPCM test track (`TestTone`).
+/// adds a 48 kHz stereo 16-bit LPCM track: either the `TestTone` (`audio`) or
+/// sample buffers the caller supplies through `appendAudio(_:)` (`externalAudio`).
 public final class MovieWriter {
-    public enum Codec: Sendable, Equatable {
+    public enum Codec: Sendable, Equatable, Codable {
         case proRes422HQ
         case proRes422
         case proRes4444
@@ -31,6 +32,8 @@ public final class MovieWriter {
     public let width: Int
     public let height: Int
     public let fps: Int32
+    /// Presentation time step of one video frame: `1/fps` unless the caller needs a rational rate (30000/1001).
+    public let frameDuration: CMTime
     private let writer: AVAssetWriter
     private let input: AVAssetWriterInput
     private let adaptor: AVAssetWriterInputPixelBufferAdaptor?
@@ -38,13 +41,23 @@ public final class MovieWriter {
     private let hapFormat: CMFormatDescription?
     private let audioInput: AVAssetWriterInput?
     private let audioFormat: CMAudioFormatDescription?
+    private let testTone: Bool
     private var frame: Int64 = 0
 
     /// `audio: true` adds an LPCM 48 kHz stereo track (`TestTone`), written per video frame so its length matches the video.
-    public init(url: URL, width: Int, height: Int, fps: Int32, codec: Codec, audio: Bool = false) throws {
+    /// `externalAudio: true` adds the same track but leaves it empty: feed it with `appendAudio(_:)` (16-bit interleaved
+    /// stereo at 48 kHz, in step with the video: the writer interleaves sparsely and stalls if audio runs far behind).
+    /// `frameDuration` overrides `1/fps` for rational rates; `fps` stays the rounded integer rate.
+    public init(
+        url: URL, width: Int, height: Int, fps: Int32, frameDuration: CMTime? = nil, codec: Codec, audio: Bool = false,
+        externalAudio: Bool = false
+    ) throws {
+        precondition(!(audio && externalAudio), "audio is either the test tone or caller-supplied")
         self.width = width
         self.height = height
         self.fps = fps
+        self.frameDuration = frameDuration ?? CMTime(value: 1, timescale: fps)
+        testTone = audio
         try? FileManager.default.removeItem(at: url)
         writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         switch codec {
@@ -79,7 +92,7 @@ public final class MovieWriter {
         input.expectsMediaDataInRealTime = false
         guard writer.canAdd(input) else { throw WriterError.failed("cannot add input") }
         writer.add(input)
-        if audio {
+        if audio || externalAudio {
             var description = AudioStreamBasicDescription(
                 mSampleRate: TestTone.sampleRate, mFormatID: kAudioFormatLinearPCM,
                 mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked, mBytesPerPacket: 4,
@@ -118,10 +131,18 @@ public final class MovieWriter {
     /// A BGRA pixel buffer from `pixelBufferPool` (ProRes) or any BGRA buffer (HAP).
     public var pixelBufferPool: CVPixelBufferPool? { adaptor?.pixelBufferPool }
 
+    deinit {
+        // An early exit (error, cancel) must not leave the writer open: it asserts or leaves a half-written file.
+        if writer.status == .writing { writer.cancelWriting() }
+    }
+
+    /// Abandons the movie: the writer stops and deletes the partial file.
+    public func cancel() { writer.cancelWriting() }
+
     public func append(_ pixelBuffer: CVPixelBuffer) throws {
-        try appendAudio()
-        while !input.isReadyForMoreMediaData { usleep(500) }
-        let time = CMTime(value: frame, timescale: fps)
+        if testTone { try appendTestTone() }
+        try waitUntilReady(input)
+        let time = CMTime(value: frame * frameDuration.value, timescale: frameDuration.timescale)
         if let adaptor {
             guard adaptor.append(pixelBuffer, withPresentationTime: time) else {
                 throw WriterError.failed(writer.error?.localizedDescription ?? "append")
@@ -132,7 +153,7 @@ public final class MovieWriter {
             let base = CVPixelBufferGetBaseAddress(pixelBuffer)!.assumingMemoryBound(to: UInt8.self)
             let bytes = try encoder.encode(bgra: base, bytesPerRow: CVPixelBufferGetBytesPerRow(pixelBuffer))
             hap = encoder
-            let sample = try Self.sampleBuffer(bytes: bytes, format: hapFormat, time: time, duration: CMTime(value: 1, timescale: fps))
+            let sample = try Self.sampleBuffer(bytes: bytes, format: hapFormat, time: time, duration: frameDuration)
             guard input.append(sample) else { throw WriterError.failed(writer.error?.localizedDescription ?? "append (HAP passthrough)") }
         }
         frame += 1
@@ -140,8 +161,8 @@ public final class MovieWriter {
 
     /// The audio samples that belong to video frame `frame`: `[frame * 48000 / fps, (frame + 1) * 48000 / fps)`,
     /// so any integer fps stays sample-exact and the phase of the tones is continuous across frames.
-    private func appendAudio() throws {
-        guard let audioInput, let audioFormat else { return }
+    private func appendTestTone() throws {
+        guard audioInput != nil, let audioFormat else { return }
         let first = frame * Int64(TestTone.sampleRate) / Int64(fps)
         let count = Int((frame + 1) * Int64(TestTone.sampleRate) / Int64(fps) - first)
         let samples = [Int16](unsafeUninitializedCapacity: count * 2) { buffer, initialized in
@@ -155,8 +176,24 @@ public final class MovieWriter {
             presentationTimeStamp: CMTime(value: first, timescale: Int32(TestTone.sampleRate)), packetDescriptions: nil,
             sampleBufferOut: &sample)
         guard status == noErr, let sample else { throw WriterError.failed("audio sample buffer \(status)") }
-        while !audioInput.isReadyForMoreMediaData { usleep(500) }
-        guard audioInput.append(sample) else { throw WriterError.failed(writer.error?.localizedDescription ?? "append (audio)") }
+        try appendAudio(sample)
+    }
+
+    /// Appends caller-supplied audio (`externalAudio`): LPCM, 48 kHz, stereo, 16-bit interleaved; blocks until the writer
+    /// takes it. Timestamps are written as given, on the same timeline as the video (frame `n` is at `n * frameDuration`).
+    public func appendAudio(_ sampleBuffer: CMSampleBuffer) throws {
+        guard let audioInput else { throw WriterError.notReady }
+        try waitUntilReady(audioInput)
+        guard audioInput.append(sampleBuffer) else { throw WriterError.failed(writer.error?.localizedDescription ?? "append (audio)") }
+    }
+
+    /// Polls like the writer's own pull model would, but gives up when the writer has failed or been cancelled
+    /// (`isReadyForMoreMediaData` then stays false forever).
+    private func waitUntilReady(_ input: AVAssetWriterInput) throws {
+        while !input.isReadyForMoreMediaData {
+            guard writer.status == .writing else { throw WriterError.failed(writer.error?.localizedDescription ?? "writer status \(writer.status.rawValue)") }
+            usleep(500)
+        }
     }
 
     public func finish() throws {
@@ -192,6 +229,8 @@ public final class MovieWriter {
         return sample
     }
 }
+
+extension HAPEncoder.Variant: Codable {}
 
 /// Synthetic benchmark content: animated gradient, a moving bar and a 16-bit
 /// binary frame counter (32 px squares, top-left) so decoded frames are identifiable.

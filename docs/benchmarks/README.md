@@ -110,3 +110,23 @@ with one callback of silence; gapless loop reads are a v1.x item), video
 0 missed / 0 late (the frame metrics ring holds the last 16 384 ticks, so
 those cover the final 4.5 min; the audio counters cover the whole hour).
 Acceptance "drift < 20 ms over 1 h at 1×" met.
+
+## Phase 4 (2026-10-23): ingest during a show
+
+`lanthorn-bench run --ingest FILE` runs the real `IngestQueue` in the
+benchmark process: one `.utility` thread transcodes FILE to HAP Q while the
+compositor runs, yielding 20 ms whenever a frame in the last 250 ms exceeded
+70 % of the frame budget (DESIGN.md §8.3). Source: the 3 s 1080p60 ProRes
+4444 benchmark file (180 frames).
+
+| Variant | Codec | Canvas | Output | Result |
+|---|---|---|---|---|
+| 8 layers + ingest ProRes 4444 → HAP Q | HAP Q | 1080p60 | display | **pass**, 2422 frames, 0 missed / late / misses, GPU p99 4.3 ms; the job finished inside the 40 s window |
+| 8 layers + ingest ProRes 4444 → HAP Q | ProRes 422 HQ | 1080p60 | headless | **pass**, 2416 frames, 0 missed / late / misses, GPU p99 4.5 ms; job finished |
+
+Library index: a 10 000-file root (40 folders × 250 files) scans in under the
+test's 5 s bound on the M1 Pro (directory listings only; metadata probes run
+afterwards on the library thread and are cached per path + mtime + size).
+Transcode throughput (release, 320×176 2 s source): ProRes 422 HQ ≈ 350–600
+fps, HAP Q ≈ 210–280 fps, HAP ≈ 350–590 fps; at 1080p HAP Q encodes at
+≈ 11 fps (CPU DXT, `HAPEncoder`).
