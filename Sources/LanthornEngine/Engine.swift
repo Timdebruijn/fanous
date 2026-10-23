@@ -64,6 +64,9 @@ public final class Engine: @unchecked Sendable {
         // Phase 1: the standard patch until projects exist (Phase 5).
         let patch = Patch.standard()
         let dmx = DMXStore(patch: patch, logger: logger)
+        if let policy = options.scene?.policy, policy != .dmx {
+            for entry in patch.entries { dmx.setPolicy(policy, for: entry.fixture) }
+        }
         dmx.start()
         let artnet = ArtNetReceiver(store: dmx, logger: logger, nodeName: Attribution.projectName)
         try artnet.start()
@@ -111,7 +114,11 @@ public final class Engine: @unchecked Sendable {
             case "/api/channel-map.md":
                 return .text(200, ChannelMapDocument.markdown())
             case "/api/metrics":
-                return .text(200, metrics.summary(seconds: 10, now: CACurrentMediaTime()).description)
+                var text = metrics.summary(seconds: 10, now: CACurrentMediaTime()).description
+                if let audio = self.render?.mixer?.statistics {
+                    text += String(format: "\naudio: callbacks %llu  underruns %llu  corrections %llu  max drift %.1f ms", audio.callbacks, audio.underruns, audio.corrections, audio.maxDriftMillis)
+                }
+                return .text(200, text)
             default:
                 return nil
             }

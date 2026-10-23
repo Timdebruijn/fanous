@@ -32,11 +32,19 @@ let package = Package(
             dependencies: ["CSnappy"],
             path: "Sources/CHap",
             exclude: ["LICENSE", "VENDORED.md"]),
+        // Vendored Syphon-Framework, Metal path only (ADR-0003, ADR-0018). Public headers in include/Syphon,
+        // private ones next to the sources, hence the extra header search path for their quoted imports.
+        .target(
+            name: "Syphon",
+            path: "Sources/Syphon",
+            exclude: ["LICENSE", "VENDORED.md"],
+            cSettings: [.headerSearchPath("include/Syphon")]),
         .target(
             name: "LanthornEngine",
             dependencies: [
                 "LanthornCore",
                 "CHap",
+                "Syphon",
                 .product(name: "Logging", package: "swift-log"),
             ]),
         .executableTarget(

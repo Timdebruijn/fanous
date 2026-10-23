@@ -69,8 +69,12 @@ enum DecodeSpike {
         guard let target = device.makeTexture(descriptor: descriptor), let buffer = device.makeBuffer(length: 256, options: .storageModeShared) else { return nil }
         // map the top-left 1024×64 pixels of the frame onto the whole target
         let scaleX = Float(width) / 1024, scaleY = Float(texture0.height) / 64
-        var uniforms = LayerUniforms(transform: simd_float4x4(diagonal: SIMD4(scaleX, scaleY, 1, 1)), intensity: 1, kind: slot.kind.rawValue, textureWidth: Float(width))
+        var uniforms = LayerUniforms()
+        uniforms.transform = simd_float4x4(diagonal: SIMD4(scaleX, scaleY, 1, 1))
         uniforms.transform.columns.3 = SIMD4(scaleX - 1, 1 - scaleY, 0, 1)
+        uniforms.quadRect = SIMD4(-1, -1, 1, 1)
+        uniforms.kind = slot.kind.rawValue
+        uniforms.texel = SIMD4(1 / Float(width), 1 / Float(texture0.height), Float(width) / Float(texture0.height), 0)
         memcpy(buffer.contents(), &uniforms, MemoryLayout<LayerUniforms>.size)
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = target

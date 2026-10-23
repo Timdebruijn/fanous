@@ -27,13 +27,13 @@ enum MediaGenerator {
         Spec(codec: .hap(.hap), width: 1920, height: 1080, fps: 60),
     ]
 
-    static func generate(into directory: URL, seconds: Double, only: String?, logger: Logger) throws {
+    static func generate(into directory: URL, seconds: Double, only: String?, audio: Bool = false, logger: Logger) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         for spec in specs where only == nil || spec.name.contains(only!) {
             let url = directory.appending(path: spec.name)
             let frames = Int(seconds * Double(spec.fps))
             let started = Date()
-            let writer = try MovieWriter(url: url, width: spec.width, height: spec.height, fps: spec.fps, codec: spec.codec)
+            let writer = try MovieWriter(url: url, width: spec.width, height: spec.height, fps: spec.fps, codec: spec.codec, audio: audio)
             var buffer: CVPixelBuffer?
             if let pool = writer.pixelBufferPool {
                 CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
@@ -59,7 +59,7 @@ enum MediaGenerator {
             let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
             logger.info(
                 "wrote \(spec.name)",
-                metadata: ["frames": "\(frames)", "MB": "\(size / 1_000_000)", "seconds": "\(Int(Date().timeIntervalSince(started)))"])
+                metadata: ["frames": "\(frames)", "audio": "\(audio)", "MB": "\(size / 1_000_000)", "seconds": "\(Int(Date().timeIntervalSince(started)))"])
         }
     }
 }

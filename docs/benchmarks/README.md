@@ -51,3 +51,58 @@ two frames; the display's own scan-out latency is not included.
 Decode (one frame, p50, release build): ProRes 422 HQ 1080p 0.8 ms / 4K 1.8 ms;
 ProRes 4444 1080p 1.8 ms (`y416`, alpha kept) vs 0.95 ms native; HAP Q 1080p
 0.8 ms / 4K 1.6 ms (chunked, parallel); HAP 1080p 0.4 ms.
+
+## Phase 3 (2026-10-23): effects, dissolves, audio
+
+Same machine and criterion; release build; `scripts/bench-phase3.sh` runs the
+matrix (`--effects a,b` puts both effect slots on every layer, `--dissolve 2`
+switches every layer between two files every 4 s so there is always a
+crossfade running).
+
+GPU cost per effect, one 1080p HAP Q layer (GPU p99, whole frame incl. clear
+and output pass; the layer without effects is 0.6 ms):
+
+| Effect(s) | GPU p99 | Per layer |
+|---|---|---|
+| none | 0.6 ms | — |
+| invert, tint, luma key, kaleidoscope, pixelate (per-pixel) | 0.7–0.9 ms | ≈ 0.1–0.3 ms |
+| blur (13 taps, radius 2.5 % of height) | 2.5 ms | ≈ 1.9 ms |
+| edge (Sobel, 9 taps) | 2.2 ms | ≈ 1.6 ms |
+| blur + edge | 5.2 ms | ≈ 4.6 ms |
+
+Before the function-constant specialisation of blur/edge the same shader cost
+3.7 / 3.0 / 7.1 ms: inlining the tap loops into the single uber-shader cost
+every draw its occupancy (DESIGN.md §4.3).
+
+| Variant | Codec | Canvas | Output | Result |
+|---|---|---|---|---|
+| invert + tint on all 16 layers | HAP Q | 1080p60 | headless | **pass**, GPU p99 9.3 ms |
+| invert + tint on all 16 layers | ProRes 422 HQ | 1080p60 | headless | **pass**, GPU p99 11.2 ms |
+| pixelate + kaleidoscope on all 16 layers | HAP Q | 1080p60 | headless | **pass**, GPU p99 11.7 ms |
+| invert + tint on all 16 layers | HAP Q | 4K30 | headless | **pass**, GPU p99 13.4 ms |
+| blur + edge on every layer, ramp | HAP Q | 1080p60 | headless | **2 layers** (3 fails late, GPU p99 14.5 ms) |
+| blur + edge on every layer, ramp | ProRes 422 HQ | 1080p60 | headless | **3 layers** (4 fails late, GPU p99 18.2 ms) |
+| blur + edge on every layer, ramp | HAP Q | 4K30 | headless | **≥ 4** (max tested, GPU p99 27.9 ms) |
+| blur + edge on all 16 layers | both | 1080p60 / 4K30 | headless | fail (GPU-bound, ≈ 75–150 ms per frame) |
+| permanent 2 s dissolves, 8 layers (16 decoders) | HAP Q | 1080p60 | headless | **pass**, 0 texture misses, GPU p99 3.8 ms |
+| permanent 2 s dissolves, 8 layers (16 decoders) | ProRes 422 HQ | 1080p60 | headless | **pass**, 0 texture misses, GPU p99 4.1 ms |
+| invert + tint on all 16 layers | HAP Q | 1080p60 | display | **pass**, 1201 frames, GPU p99 9.9 ms |
+| invert + tint on all 16 layers | ProRes 422 HQ | 1080p60 | display | **pass**, 1221 frames, GPU p99 11.4 ms |
+| permanent 2 s dissolves, 8 layers | HAP Q | 1080p60 | display | **pass**, 0 texture misses, GPU p99 4.4 ms |
+| blur + edge on both layers | HAP Q | 1080p60 | display | **pass** at 2 layers, GPU p99 10.3 ms |
+
+So the tier numbers hold with both effect slots in use for the per-pixel
+effects; the two neighbourhood effects (blur, edge) cost about one extra
+1080p layer each per layer they are on, which the Layers screen will show as
+a per-layer cost (Phase 5). A cheaper blur (separable or mip-based) is a
+v1.x option if shows want blur on many layers at once.
+
+A dissolve costs exactly one extra layer (its decoder and draw) for its
+duration: the incoming media is staged until its first frame is decoded, so
+switching files never shows a texture miss.
+
+Audio (one HAP Q 1080p60 layer with a 48 kHz LPCM track, 20 s, headless):
+0 underruns, 0 drift corrections, max drift 11.8 ms (the layer clock is
+master; the ring reseeks at the loop point). The one-hour drift soak is
+recorded in `apple-m1-pro-hapq-1920x1080p60-headless-layers1-*drift*` once run
+(`scripts/bench-phase3.sh drift`).

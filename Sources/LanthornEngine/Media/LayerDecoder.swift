@@ -21,6 +21,10 @@ public final class LayerDecoder: @unchecked Sendable {
     private var lastProduced = -1
     public let errors = Atomic<Int>(0)
     public let decoded = Atomic<Int>(0)
+    /// Audio track of the same movie, filled from this thread between video frames (ADR-0019).
+    public var audio: (reader: AudioTrackReader, channel: LayerAudioChannel)?
+    /// The compositor enables audio for the playback that owns the channel (a dissolve hands it over).
+    public let audioEnabled = Atomic<Bool>(false)
 
     public init(source: MovieSource, ring: FrameRing, logger: Logger) {
         self.source = source
@@ -51,8 +55,9 @@ public final class LayerDecoder: @unchecked Sendable {
     private func loop() {
         let count = source.info.frameCount
         while running.load(ordering: .relaxed) {
+            if let audio, audioEnabled.load(ordering: .relaxed) { audio.channel.fill(from: audio.reader) }
             guard let slot = ring.slotForWriting() else {
-                wake.wait()
+                _ = wake.wait(timeout: .now() + .milliseconds(10))  // keep topping up audio while the video ring is full
                 continue
             }
             let want = ((wanted.load(ordering: .relaxed) % count) + count) % count

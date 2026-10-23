@@ -39,3 +39,23 @@ data-protection keychain (`kSecUseDataProtectionKeychain`, no per-app prompts,
 scoped to the application identifier); unsigned builds fall back to the login
 keychain and use `lanthornd reset-tls` after a rebuild. Weakening the key's
 ACL to "any application" was considered and rejected.
+
+## Amendment 2026-10-23 (Phase 3): no login keychain
+
+The login-keychain fallback is removed. Builds that cannot use the
+data-protection keychain (no team identifier, i.e. ad-hoc development
+builds; `SecKeyCreateRandomKey` fails with `errSecMissingEntitlement`) now
+generate an ephemeral P-256 key, keep its external representation in
+`tls/private-key.der` (directory 0700, file 0600) and build the identity in
+memory with `SecIdentityCreate(cert, key)`, which the macOS 27 SDK declares
+publicly (available since 10.12). Network.framework completes the handshake
+with such an identity (`TLSIdentityTests`), and `lanthornd` served HTTPS from
+both the create and the load path without any SecurityAgent prompt. Signed
+builds are unchanged (data-protection keychain, prompt-free, scoped to the
+application identifier). `lanthornd reset-tls` still clears both and any
+login-keychain leftovers from earlier builds. Trade-off: on a development
+machine the key is a user-readable file, as with every file-based TLS server
+(nginx, Caddy); it only protects the LAN UI connection and is replaced by the
+keychain in signed builds. The `kSecImportToMemoryOnly` PKCS#12 route
+(macOS 15+) would do the same with ~250 more lines (a PKCS#12 writer) and was
+not needed.

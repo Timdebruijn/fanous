@@ -51,3 +51,14 @@ releases; the brief's "no CVDisplayLink" rule is still honoured. The two
 drivers share the compositor, so switching back is a one-line change.
 Follow-up: file Feedback with Apple with the standalone reproduction
 (`scratchpad/linktest5.swift` saved as `docs/benchmarks/cametaldisplaylink-repro.swift`).
+
+Re-test 2026-10-23 (Phase 3): a macOS 27 control app by a third party
+(`rrva/metal-display-link-pacing`, M2 Max, 27 beta) runs the link at full
+rate from a `.regular`, activated app with a key, titled window. The
+reproduction was extended with exactly those variants (`.regular` policy,
+`activate`, `makeKeyAndOrderFront`, titled window, occlusion check): still
+three updates in every combination on 27.0.1 / M1 Pro. Window visibility is
+therefore ruled out; the drawable-loop driver stays. Apple's own guidance
+(WWDC26, game-porting-toolkit skills, 2026-06) still names CAMetalDisplayLink
+the intended render loop, and no replacement API exists in the macOS 26/27
+SDKs, so the switch remains worth re-testing per macOS release.

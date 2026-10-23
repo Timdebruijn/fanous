@@ -1,0 +1,22 @@
+Vendored from https://github.com/Syphon/Syphon-Framework at commit f4761677a45b8034a3c2069ec0f3d2553da81fba (main, 2026-09-21). License: Syphon Framework License (BSD-3-Clause style), see LICENSE (upstream License.txt, unchanged).
+
+Metal path only. Upstream files are unchanged unless listed under "Local changes".
+
+Files (upstream names; public headers live in `include/Syphon/` so that `<Syphon/X.h>` resolves, everything else sits next to the sources):
+- Public headers (`include/Syphon/`): Syphon.h (umbrella, patched), SyphonServerDirectory.h, SyphonMetalServer.h (patched), SyphonMetalClient.h (patched), SyphonServerBase.h, SyphonClientBase.h
+- Server: SyphonServerBase.m, SyphonMetalServer.m, SyphonServerRendererMetal.h/.m (patched), SyphonServerMetalTypes.h, SyphonServerConnectionManager.h/.m
+- Client: SyphonClientBase.m, SyphonMetalClient.m, SyphonClientConnectionManager.h/.m
+- Directory: SyphonServerDirectory.m
+- Messaging: SyphonMessaging.h/.m, SyphonMessageQueue.h/.m, SyphonMessageReceiver.h/.m, SyphonMessageSender.h/.m, SyphonCFMessageReceiver.h/.m, SyphonCFMessageSender.h/.m, SyphonDispatch.h/.c
+- Shared: SyphonPrivate.h (patched) /.m, SyphonSubclassing.h, Syphon_Prefix.h (upstream Syphon_Prefix.pch, renamed)
+
+Left out: everything OpenGL (SyphonOpenGL*, SyphonGL*, SyphonServerGL*, SyphonServerRendererGL/LegacyGL/CoreGL, SyphonCGL, SyphonIOSurfaceImageCore/Legacy, SyphonImageBase, which only the GL images use), the deprecated SyphonServer/SyphonClient/SyphonImage, SyphonMetalShaders.metal (embedded as a string, see below), Syphon.docc, Syphon.xcodeproj, Syphon.modulemap, Info.plist, Exported_Symbols.exp, icons, README and SDK read-me.
+
+Local changes (all marked "Lanthorn" in the source except the header edits):
+1. SyphonServerRendererMetal.m: SwiftPM targets have no default.metallib, so `newDefaultLibraryWithBundle:` cannot work. The shaders are now compiled at runtime with `newLibraryWithSource:options:error:` from the static string `kSyphonMetalShaderSource`, which holds SyphonMetalShaders.metal with SyphonServerMetalTypes.h inlined (a runtime-compiled source cannot `#include` it) and without the license comment. A failed compile now returns nil at once instead of failing later at pipeline creation. When updating upstream, regenerate the string from both files. Also imports SyphonPrivate.h for SYPHONLOG.
+2. SyphonPrivate.h: imports "Syphon_Prefix.h". Upstream gets SYPHONLOG and Cocoa from the Xcode prefix header (Syphon_Prefix.pch), which SwiftPM does not support; Syphon_Prefix.h is that file under another name, content unchanged.
+3. include/Syphon/Syphon.h: umbrella header reduced to the directory, Metal server and Metal client imports (the OpenGL and deprecated imports are gone with their files).
+4. include/Syphon/SyphonMetalServer.h, SyphonMetalClient.h: `- (id)init...` became `- (nullable id)init...` so Swift imports the initializers as failable. Both document returning nil on failure, but unannotated they import as non-failable and a nil result would be undefined behaviour in Swift.
+
+Build notes: SyphonServerBase.m uses the deprecated `kIOSurfaceIsGlobal` (compiler warning, upstream behaviour, global surface IDs are how Syphon shares surfaces between processes). Quoted imports between private and public headers need `headerSearchPath("include/Syphon")` (set in Package.swift)..
+- `Syphon_Prefix.h`: `SYPHONLOG` is enabled by `SYPHON_DEBUG_LOGGING` instead of `DEBUG`, because SwiftPM defines `DEBUG` for every debug build and the engine log should stay quiet.

@@ -65,3 +65,22 @@ Generated from `Sources/LanthornCore/Parameters/ChannelMap.swift` by `lanthornd 
 | 4 | Test pattern | 8 | 0 | 0–15 Off · 16–31 Grid · 32–47 Colour bars · 48–63 Blend zones · 64–79 Output ID · 80–95 Crosshair · 96–111 Grey steps · 112–127 Checkerboard · rest = Off | `testPattern` |
 | 5 | Blend | 8 | 0 | 0–127 On · 128–255 Raw · rest = On | `blend` |
 | 6–8 | Reserved | — | 0 | ignored | — |
+
+## Effect parameters
+
+Effect 1 and Effect 2 (layer channels 38–43) share these meanings; both slots run in series, slot 1 first.
+
+| Effect | Param A | Param B |
+|---|---|---|
+| None | — | — |
+| Blur | radius 0–5 % of frame height | 0 = round · 1–100 % = motion blur at 0–360° |
+| Pixelate | block size 0–10 % of frame height | — |
+| Mirror | 0–24 % left→right · 25–49 % right→left · 50–74 % top→bottom · 75–100 % bottom→top | mirror line: 0 = centre … 100 % = edge |
+| Kaleidoscope | segments 2–16 | rotation 0–360° |
+| Invert | — | — |
+| Strobe | rate 1–30 Hz | on time 10–90 % |
+| Luma key | key level 0–100 % (darker is transparent) | softness 0–100 % |
+| Chroma key | tolerance 0–100 % | key hue 0–360° |
+| Edge | gain 1–8× | mix with original 0–100 % |
+| Threshold | level 0–100 % | softness 0–100 % |
+| Tint | amount 0–100 % | hue 0–360° |

@@ -135,7 +135,7 @@ public final class DMXStore: @unchecked Sendable {
         snapshots.write { slot in
             slot.sequence = sequence
             slot.receivedAt = receivedAt
-            if let master = resolvers[.master] { slot.master = Float(master.physical(.master(.intensity)) / 100) }
+            if let master = resolvers[.master] { ParameterSnapshotSlot.from(master, into: slot) }
             for (fixture, resolver) in resolvers {
                 if case .layer(let n) = fixture, n >= 1, n <= slot.layers.count { slot.layers[n - 1] = LayerParameters.from(resolver) }
             }

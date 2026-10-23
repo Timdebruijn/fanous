@@ -275,14 +275,20 @@ triple-buffered `rgba16Float` canvas texture (ADR-0007):
      programmable blending** (Apple GPUs expose the destination pixel as
      `[[color(0)]]` in the fragment shader, so Add/Screen/Multiply/… need no
      extra passes or copies).
-   - Effects are branches of one uber-shader selected by a function constant
-     per (effect-1, effect-2) combination, compiled lazily and cached on
-     first use (a pipeline-state cache keyed by the combination; the first
-     use of a new combination is compiled on Control, never on the
-     compositor, and the layer uses the "no effect" pipeline until the
-     specialized one is ready). Neighbourhood effects (blur, pixelate,
-     kaleidoscope, edge) sample the *source* texture multiple times; no
-     intermediate textures.
+   - Effects are branches of one uber-shader selected by per-draw uniforms
+     (**Phase 3 decision**: a uniform branch is free on Apple GPUs, one
+     pipeline means nothing is ever compiled during a show, and the
+     benchmark with blur + edge on every layer is the proof; function-constant
+     specialisation stays the fallback if a later effect needs it).
+     Neighbourhood effects (blur, pixelate, kaleidoscope, edge) sample the
+     *source* texture multiple times; no intermediate textures. The meaning of
+     the two parameter channels per effect is the `EffectSpec` table in Core,
+     rendered into `docs/channel-map.md`.
+   - Dissolve: the outgoing media keeps playing and is drawn first; with
+     Normal blending it stays at full intensity under the incoming quad (so
+     a crossfade never dips to the background), with the other modes both
+     quads are weighted (1 − t) and t. A dissolve therefore costs exactly one
+     extra layer (decode and draw) for its duration.
 3. Done. The canvas texture index is marked complete in the command buffer's
    completion handler (CPU side), making it visible to output threads.
 
@@ -365,7 +371,7 @@ labelled "not yet benchmarked".
 | Tier | Chips | Media engines (Apple spec) | Expected max layers, canvas 1080p60 | Expected max layers, canvas 4K60 | Notes |
 |---|---|---|---|---|---|
 | **1 Base** | M2, M3, M4, M5 | 1 | 6 × 1080p60 ProRes 422 HQ · 8 × 1080p60 HAP Q | 2 × 4K60 ProRes HQ · 3 × 4K60 HAP Q | 8 GB/16 GB memory limits ring depth; 2 external displays |
-| **2 Pro** (reference: M1 Pro) | M1 Pro, M2 Pro, M3 Pro, M4 Pro, (M5 Pro) | 1 | **Measured 2026-10-23 (M1 Pro, 32 GB):** 16 × 1080p60 ProRes 422 HQ (cap) · 16 × 1080p60 HAP Q (cap) | **Measured:** 16 × 4K30 ProRes HQ (cap) · 16 × 4K30 HAP Q (cap, ring 8) · 3–7 × 4K60 ProRes HQ (decode jitter, Phase 3) · ≥ 4 × 4K60 HAP Q (ring 8) | all v1 acceptance criteria are defined on this tier first; details in `docs/benchmarks/README.md` |
+| **2 Pro** (reference: M1 Pro) | M1 Pro, M2 Pro, M3 Pro, M4 Pro, (M5 Pro) | 1 | **Measured 2026-10-23 (M1 Pro, 32 GB):** 16 × 1080p60 ProRes 422 HQ (cap) · 16 × 1080p60 HAP Q (cap) | **Measured:** 16 × 4K30 ProRes HQ (cap) · 16 × 4K30 HAP Q (cap, ring 8) · 3–7 × 4K60 ProRes HQ (decode jitter, Phase 3) · ≥ 4 × 4K60 HAP Q (ring 8) | all v1 acceptance criteria are defined on this tier first; details in `docs/benchmarks/README.md`. **Phase 3:** the caps hold with both effect slots on every layer for the per-pixel effects; blur and edge cost ≈ 1.6–1.9 ms per 1080p layer each (2–3 layers with both at 1080p60), a dissolve costs one extra layer |
 | **3 Max** | M1 Max, M2 Max, M3 Max, M4 Max, (M5 Max) | 2 | 16 (cap) | 8 × 4K60 ProRes HQ · 8 × 4K60 HAP Q | 4 external displays |
 | **4 Ultra** | M1 Ultra, M2 Ultra, M3 Ultra | 4 | 16 (cap) | 16 (cap) | 5+ displays |
 
@@ -1255,7 +1261,7 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | R3 | Network.framework's queue-based delivery adds jitter/latency to DMX | DMX→photon latency | measured in Phase 2; fallback: BSD socket + dedicated thread for Art-Net/sACN only (the brief's Network.framework rule would then be relaxed for this path, recorded in an ADR) |
 | R4 | `AVSampleBufferGenerator` behaviour with HAP tracks (custom fourcc) or odd files | playback of some files | Phase 2 spike with files from several encoders (AfterCodecs, ffmpeg-made HAP, Vidvox tools); fallback: own minimal QuickTime demuxer for all-intra `.mov` (bounded scope) |
 | R5 | Multi-display presentation drift with mixed refresh rates | visible judder on secondary outputs | documented behaviour + warning; recommend identical modes; measured in Phase 6 |
-| R6 | TLS identity in the keychain (prompts, ACLs) | first-run friction; **seen in Phase 2**: the login keychain prompts "lanthornd wants to use key" whenever an ad-hoc signed build changes, and the TLS handshake blocks until the dialog is answered | Signed (Developer ID) builds use the data-protection keychain (no prompts, access scoped to the app identifier); development builds fall back to the login keychain and run `lanthornd reset-tls` after a rebuild. A permissive "any application" ACL was rejected as a security weakening. |
+| R6 | TLS identity in the keychain (prompts, ACLs) | first-run friction; **seen in Phase 2**: the login keychain prompts "lanthornd wants to use key" whenever an ad-hoc signed build changes, and the TLS handshake blocks until the dialog is answered | **Resolved in Phase 3** (ADR-0015 amendment): signed builds use the data-protection keychain; builds without a team identifier keep the key in a 0600 file and build the identity in memory with `SecIdentityCreate`. The login keychain is never used. A permissive "any application" ACL was rejected as a security weakening. |
 | R7 | WebCodecs H.264 decode gaps on older iPad Safari | preview quality | real-decode test at connect; JPEG fallback; document "iPadOS 26+ recommended" |
 | R8 | Writing HAP into `.mov` via `AVAssetWriter` passthrough fails for custom fourccs | ingest to HAP | Phase 4 spike; fallback own all-intra muxer |
 | R9 | Audio/video drift and device changes at show time | audible glitches | layer-clock-master design, drift correction, device-change handler that re-creates the graph and logs; measured in Phase 3 |
@@ -1313,5 +1319,5 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | OPEN-22 | Browser smoke tests (Playwright) | Phase 5 if cheap |
 | OPEN-23 | Library default location `~/Movies/Lanthorn Library` | yes |
 | OPEN-24 | Default ports: HTTPS 8443, OSC 8000/8001; configurable | yes |
-| OPEN-26 | Keychain strategy for unsigned development builds (prompt on every rebuild vs. ephemeral per-process identity) | `reset-tls` after rebuild; revisit if it hurts the dev loop |
+| OPEN-26 | Keychain strategy for unsigned development builds (prompt on every rebuild vs. ephemeral per-process identity) | **Decided 2026-10-23:** file-backed in-memory identity (`SecIdentityCreate`), no login keychain; ADR-0015 amendment |
 | OPEN-25 | Register an Art-Net OEM code with Artistic Licence (free, needed for a proper `ArtPollReply`) | owner, before 1.0; 0xFFFF until then |

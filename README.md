@@ -28,18 +28,31 @@ see the README there). `lanthornd channel-map` prints the DMX channel map,
 `lanthornd gdtf FILE` writes the GDTF fixture file; `scripts/check-channel-map.sh`
 keeps `docs/channel-map.md` in sync.
 
-The first engine start generates an ECDSA key and self-signed certificate
-(data-protection keychain for signed builds, login keychain otherwise) and
+The first engine start generates an ECDSA key and self-signed certificate and
 writes the public certificate and its fingerprint to
-`~/Library/Application Support/Lanthorn/tls/`. Unsigned development builds:
-the login keychain prompts when the binary changes, so run
-`lanthornd reset-tls` after a rebuild to regenerate the identity for the
-current build. Logs: `~/Library/Logs/Lanthorn/lanthornd.log`.
+`~/Library/Application Support/Lanthorn/tls/`. Signed builds keep the key in
+the data-protection keychain; builds without a team identifier (ad-hoc
+development builds) keep it in `tls/private-key.der` (mode 0600) and never
+touch the login keychain, so there are no keychain prompts. `lanthornd
+reset-tls` discards the identity. Logs: `~/Library/Logs/Lanthorn/lanthornd.log`.
 
-Phase 2 render spike: `lanthornd --scene scene.json` renders a static scene
-(`{"canvasWidth":1920,"canvasHeight":1080,"fps":60,"display":0,"layers":["a.mov","b.mov"]}`),
-driven by the standard DMX patch; `/api/metrics` reports frame timing and the
-DMX-to-photon estimate. `scripts/bench-sweep.sh` runs the benchmark matrix.
+Until projects exist (Phase 5), `lanthornd --scene scene.json` renders a scene
+driven by the standard DMX patch:
+
+```json
+{"canvasWidth": 1920, "canvasHeight": 1080, "fps": 60, "display": 0, "layerCount": 4,
+ "media": [{"folder": 1, "file": 1, "path": "/path/loop.mov"},
+           {"folder": 1, "file": 2, "path": "/path/still.png"},
+           {"folder": 0, "file": 1, "syphon": "Some App/Server name"}]}
+```
+
+Layers pick media with their Folder/File channels; movies (ProRes, HAP),
+stills and Syphon servers are the v1 sources. The canvas is published as the
+Syphon server "Lanthorn – Canvas". `lanthornd ingest DIR out.mov` turns an
+image sequence into a ProRes 4444 (or HAP) movie. `/api/metrics` reports frame
+timing and the DMX-to-photon estimate; `lanthorn-bench run` ramps layers until
+a frame drops (`--effects blur,edge`, `--dissolve 2` for the Phase 3 variants)
+and `scripts/bench-sweep.sh` runs the matrix.
 
 - `docs/DESIGN.md` — the design (architecture, pipeline, channel map, UI, roadmap)
 - `docs/adr/` — architecture decision records

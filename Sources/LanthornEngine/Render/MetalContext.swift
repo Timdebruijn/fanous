@@ -6,19 +6,30 @@ import Foundation
 import Metal
 import simd
 
+/// Mirrors `LayerUniforms` in Shaders.swift (natural alignment, 192 bytes).
 public struct LayerUniforms {
-    public var transform: simd_float4x4
-    public var intensity: Float
-    public var kind: UInt32
-    public var textureWidth: Float
-    public var padding: Float = 0
+    public var transform: simd_float4x4 = matrix_identity_float4x4
+    public var quadRect: SIMD4<Float> = SIMD4(-1, -1, 1, 1)
+    public var uvRect: SIMD4<Float> = SIMD4(0, 0, 1, 1)
+    public var colour: SIMD4<Float> = SIMD4(1, 1, 1, 1)
+    public var adjust: SIMD4<Float> = SIMD4(0, 1, 1, 0)
+    public var effect1: SIMD4<Float> = .zero
+    public var effect2: SIMD4<Float> = .zero
+    public var texel: SIMD4<Float> = SIMD4(0, 0, 1, 0)
+    public var kind: UInt32 = 0
+    public var blend: UInt32 = 0
+    public var pad0: UInt32 = 0
+    public var pad1: UInt32 = 0
 
-    public init(transform: simd_float4x4, intensity: Float, kind: UInt32, textureWidth: Float) {
-        self.transform = transform
-        self.intensity = intensity
-        self.kind = kind
-        self.textureWidth = textureWidth
-    }
+    public init() {}
+}
+
+/// Mirrors `OutputUniforms` in Shaders.swift.
+public struct OutputUniforms {
+    public var size: SIMD2<Float> = .zero
+    public var pattern: UInt32 = 0
+    public var index: UInt32 = 1
+    public init() {}
 }
 
 public enum RenderError: Error, CustomStringConvertible {
@@ -43,7 +54,9 @@ public final class MetalContext: @unchecked Sendable {
     public let device: MTLDevice
     public let queue: MTLCommandQueue
     let library: MTLLibrary
-    let layerPipeline: MTLRenderPipelineState
+    /// Index = (blur ? 1 : 0) | (edge ? 2 : 0): the neighbourhood effects are function-constant specialisations.
+    let layerPipelines: [MTLRenderPipelineState]
+    var layerPipeline: MTLRenderPipelineState { layerPipelines[0] }
     let outputPipeline: MTLRenderPipelineState
     let linearSampler: MTLSamplerState
     let nearestSampler: MTLSamplerState
@@ -60,25 +73,32 @@ public final class MetalContext: @unchecked Sendable {
         } catch {
             throw RenderError.shader("\(error)")
         }
-        let layer = MTLRenderPipelineDescriptor()
-        layer.label = "layer"
-        layer.vertexFunction = library.makeFunction(name: "layer_vertex")
-        layer.fragmentFunction = library.makeFunction(name: "layer_fragment")
-        layer.colorAttachments[0].pixelFormat = Self.canvasFormat
-        layer.colorAttachments[0].isBlendingEnabled = true
-        layer.colorAttachments[0].rgbBlendOperation = .add
-        layer.colorAttachments[0].alphaBlendOperation = .add
-        layer.colorAttachments[0].sourceRGBBlendFactor = .one
-        layer.colorAttachments[0].sourceAlphaBlendFactor = .one
-        layer.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
-        layer.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        var layers: [MTLRenderPipelineDescriptor] = []
+        for variant in 0..<4 {
+            let layer = MTLRenderPipelineDescriptor()
+            layer.label = "layer\(variant & 1 != 0 ? "+blur" : "")\(variant & 2 != 0 ? "+edge" : "")"
+            let constants = MTLFunctionConstantValues()
+            var hasBlur = variant & 1 != 0, hasEdge = variant & 2 != 0
+            constants.setConstantValue(&hasBlur, type: .bool, index: 0)
+            constants.setConstantValue(&hasEdge, type: .bool, index: 1)
+            layer.vertexFunction = library.makeFunction(name: "layer_vertex")
+            do {
+                layer.fragmentFunction = try library.makeFunction(name: "layer_fragment", constantValues: constants)
+            } catch {
+                throw RenderError.shader("\(error)")
+            }
+            layer.colorAttachments[0].pixelFormat = Self.canvasFormat
+            // blending happens in the fragment shader (framebuffer fetch), see Shaders.swift
+            layer.colorAttachments[0].isBlendingEnabled = false
+            layers.append(layer)
+        }
         let output = MTLRenderPipelineDescriptor()
         output.label = "output"
         output.vertexFunction = library.makeFunction(name: "output_vertex")
         output.fragmentFunction = library.makeFunction(name: "output_fragment")
         output.colorAttachments[0].pixelFormat = Self.outputFormat
         do {
-            layerPipeline = try device.makeRenderPipelineState(descriptor: layer)
+            layerPipelines = try layers.map { try device.makeRenderPipelineState(descriptor: $0) }
             outputPipeline = try device.makeRenderPipelineState(descriptor: output)
         } catch {
             throw RenderError.pipeline("\(error)")

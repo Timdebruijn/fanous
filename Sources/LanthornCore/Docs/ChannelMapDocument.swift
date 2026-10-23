@@ -23,6 +23,13 @@ public enum ChannelMapDocument {
                 }
             md += "| \(reserved.lowerBound)–\(reserved.upperBound) | Reserved | — | 0 | ignored | — |\n\n"
         }
+        md += "## Effect parameters\n\n"
+        md += "Effect 1 and Effect 2 (layer channels 38–43) share these meanings; both slots run in series, slot 1 first.\n\n"
+        md += "| Effect | Param A | Param B |\n|---|---|---|\n"
+        for spec in EffectSpec.all {
+            md += "| \(ChannelMap.spec(.layer(.effect1)).label(forRaw: UInt16(spec.effect.rawValue * 16))) | \(spec.paramA) | \(spec.paramB) |\n"
+        }
+        md += "\n"
         return md
     }
 

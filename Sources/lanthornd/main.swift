@@ -14,10 +14,12 @@ func usage() -> String {
            lanthornd channel-map            print docs/channel-map.md to stdout
            lanthornd gdtf FILE              write the GDTF fixture file
            lanthornd reset-tls              delete the TLS key and certificate (regenerated at next start)
+           lanthornd ingest DIR OUT.mov [--fps N] [--codec prores4444|prores422hq|hapq|hap]
+                                            convert an image sequence to a movie (Phase 3 stub)
       --port N         HTTPS port (default 8443)
       --web-root PATH  directory with the built web UI (default: auto-detect)
       --foreground     run attached to the terminal (default when started by hand)
-      --scene FILE     render a Phase 2 scene (JSON: canvasWidth, canvasHeight, fps, layers[], display)
+      --scene FILE     render a scene (JSON: canvasWidth, canvasHeight, fps, layerCount, media[{folder,file,path|syphon}], display)
       --version        print the version and exit
     """
 }
@@ -30,6 +32,33 @@ case "reset-tls":
     TLSIdentity.reset(directory: AppPaths.tls)
     print("TLS identity removed; a new one is generated at the next start")
     exit(0)
+case "ingest":
+    let args = Array(CommandLine.arguments.dropFirst(2))
+    guard args.count >= 2 else {
+        FileHandle.standardError.write(Data("usage: lanthornd ingest DIR OUT.mov [--fps N] [--codec prores4444|prores422hq|hapq|hap]\n".utf8))
+        exit(64)
+    }
+    func option(_ name: String) -> String? {
+        guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
+        return args[i + 1]
+    }
+    let codec: MovieWriter.Codec =
+        switch option("--codec") ?? "prores4444" {
+        case "prores422hq": .proRes422HQ
+        case "prores422": .proRes422
+        case "hapq": .hap(.hapQ)
+        case "hap": .hap(.hap)
+        default: .proRes4444
+        }
+    do {
+        let frames = try SequenceIngest.frames(in: URL(fileURLWithPath: args[0]))
+        let count = try SequenceIngest.convert(frames: frames, to: URL(fileURLWithPath: args[1]), fps: Int32(option("--fps") ?? "25") ?? 25, codec: codec)
+        print("wrote \(count) frames to \(args[1])")
+        exit(0)
+    } catch {
+        FileHandle.standardError.write(Data("ingest failed: \(error)\n".utf8))
+        exit(1)
+    }
 case "gdtf":
     guard CommandLine.arguments.count == 3 else {
         FileHandle.standardError.write(Data("usage: lanthornd gdtf FILE\n".utf8))
