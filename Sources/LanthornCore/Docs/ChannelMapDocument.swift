@@ -47,3 +47,26 @@ public enum ChannelMapDocument {
 
     static func number(_ v: Double) -> String { v == v.rounded() ? String(Int(v)) : String(v) }
 }
+
+extension ChannelMapDocument {
+    /// The same specs as the markdown, for the UI (DMX monitor labels, Patch screen): per mode a list of
+    /// parameters with their channels and bands. Names are the ones `docs/channel-map.md` prints.
+    public static func json() -> JSONValue {
+        var modes: [String: JSONValue] = [:]
+        for mode in FixtureMode.allCases {
+            modes[mode.rawValue] = .array(
+                ChannelMap.specs(for: mode).map { spec in
+                    var entry: [String: JSONValue] = [
+                        "name": .string(spec.name), "key": .string(spec.id.key), "channel": .number(Double(spec.channel)),
+                        "bits": .number(Double(spec.bits)), "default": .number(Double(spec.defaultRaw)), "group": .string(spec.group),
+                        "unit": .string(spec.unit),
+                    ]
+                    if case .bands(let bands, _) = spec.kind {
+                        entry["bands"] = .array(bands.map { ["from": .number(Double($0.from)), "to": .number(Double($0.to)), "name": .string($0.name)] })
+                    }
+                    return .object(entry)
+                })
+        }
+        return ["footprints": .object(Dictionary(uniqueKeysWithValues: FixtureMode.allCases.map { ($0.rawValue, JSONValue.number(Double($0.footprint))) })), "modes": .object(modes)]
+    }
+}

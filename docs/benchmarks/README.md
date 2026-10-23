@@ -130,3 +130,37 @@ afterwards on the library thread and are cached per path + mtime + size).
 Transcode throughput (release, 320×176 2 s source): ProRes 422 HQ ≈ 350–600
 fps, HAP Q ≈ 210–280 fps, HAP ≈ 350–590 fps; at 1080p HAP Q encodes at
 ≈ 11 fps (CPU DXT, `HAPEncoder`).
+
+## Phase 5 (2026-10-23): service restart, state sync with many clients
+
+Debug build of `lanthornd` running headless with a 4-layer 1080p60 scene,
+driven from a user LaunchAgent with `KeepAlive` (the same plist shape
+`scripts/bundle.sh` writes for `SMAppService`), probed every 50 ms over
+HTTPS (`scripts` in the session scratchpad; numbers from one run):
+
+| Event | Time after `kill -9` |
+|---|---|
+| `/healthz` answers 200 | 0.15 s |
+| `/api/metrics` reports rendered frames again | 0.26 s |
+
+launchd relaunches at once because the engine had run longer than its
+10 s throttle interval; the TLS identity, library index and media open from
+cache. Acceptance "outputs back < 3 s" holds with margin; a display-bound
+start adds the window creation only.
+
+State sync (DESIGN.md §11.2), same scene, 25 s window: four WebSocket
+clients as programmer, each subscribed to the 640×360 H.264 preview, plus one
+client that completes hello and the preview subscription and then stops
+reading its socket.
+
+| Measure | Result |
+|---|---|
+| Revision after a command from client 1, seen by all four | identical (342 at the end of the window) |
+| Preview frames per client | 750 (30 fps × 25 s), 2.1 MB each |
+| Stalled client | reported as `live.clients.lagging = 1` after 12 s; live patches dropped for it, project patches never |
+| Compositor during the window | 600 frames / 10 s, 0 missed, 0 late, GPU p99 2.4 ms with 4 layers playing |
+
+The engine's own cost for five clients is one H.264 encoder (VideoToolbox,
+Baseline, 1.5 Mbit/s) on the preview queue and the 10 Hz live diff; the
+render thread only encodes the extra 640×360 output pass into its command
+buffer every second tick.

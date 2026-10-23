@@ -959,6 +959,36 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   reference, role passwords, last project) live outside the project in
   `~/Library/Application Support/Lanthorn/settings.json`.
 
+### 11.6 Phase 5 as built (2026-10-23)
+
+- Transport: hand-written RFC 6455 framing on the HTTPS listener
+  (`LanthornCore/Protocol/WebSocket.swift`, SHA-1 in Core), `/ws` handled by
+  `StateServer`; binary frames `[u8 kind][u32 stream][payload]` with kind 1 =
+  `[u8 key][u64 µs][AVCC AU]`, 2 = JPEG, 3 = 512 DMX slots. The H.264 decoder
+  configuration travels as a `stream` text message (base64 avcC) whenever the
+  parameter sets change.
+- Documents: `project` (schema, name, showLock, layerCount, patch, policy,
+  library.root, ui) autosaved to `project.json` 2 s after the last command;
+  `live` (engine, metrics, dmx, layers, ingest, library, clients, security)
+  rebuilt at 10 Hz and diffed, so one patch per 100 ms carries only changes.
+  Commands are diffed into forward/inverse patches (`StateStore`), which gives
+  undo/redo for free; show lock refuses `mutatesConfig` commands.
+- Roles: independent per role (OPEN-18); PBKDF2-HMAC-SHA256 600 000 rounds;
+  `/api/login` cookie, shell token as `?token=` on first load and as a bearer
+  for mutating REST calls; `/api/ingest`, `/api/upload` need programmer.
+- Preview: `PreviewStreamer` draws the canvas through the output pass into a
+  pooled BGRA pixel buffer on the compositor's command buffer every N-th tick,
+  VideoToolbox H.264 Baseline (1 s GOP, 1.5 Mbit/s, 640×360@30) on a utility
+  queue, JPEG at 5 fps for clients without WebCodecs; one encoder shared by
+  all subscribers. Per-layer live thumbnails are deferred (B29).
+- UI: Svelte 5 runes, hash router, one deep `$state` tree patched in place,
+  `protocol.d.ts` generated from the command registry; status bar, Layers,
+  Media and Patch/DMX screens follow the approved design canvas; system fonts
+  until Inter/JetBrains Mono are bundled (B26).
+- Measured (docs/benchmarks/README.md): kill -9 → HTTPS 0.15 s, frames
+  0.26 s; four preview clients + one stalled client: identical revisions, the
+  stalled one flagged lagging, 0 missed / late frames.
+
 ---
 
 ## 12. Main screens

@@ -26,6 +26,8 @@ public final class Compositor: @unchecked Sendable {
     nonisolated(unsafe) public var canvasPublished: ((MTLTexture, MTLCommandBuffer) -> Void)?
     /// Without a drawable the output pass renders into this texture instead (tests, headless previews).
     nonisolated(unsafe) public var offscreenOutput: MTLTexture?
+    /// Browser previews (DESIGN.md §11.3): draws the canvas into a small pixel buffer on the same command buffer.
+    nonisolated(unsafe) public var previewTap: ((MTLTexture, MTLCommandBuffer, Double) -> Void)?
 
     private let canvases: [MTLTexture]
     private let canvasPasses: [MTLRenderPassDescriptor]
@@ -162,6 +164,7 @@ public final class Compositor: @unchecked Sendable {
         }
         encoder.endEncoding()
         canvasPublished?(canvases[canvasIndex], commandBuffer)
+        previewTap?(canvases[canvasIndex], commandBuffer, target)
 
         if let target = drawable?.texture ?? offscreenOutput {
             outputPass.colorAttachments[0].texture = target

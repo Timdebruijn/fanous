@@ -3,47 +3,67 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Rail from './components/Rail.svelte';
+  import StatusBar from './components/StatusBar.svelte';
   import { attributionText, repositoryURL } from './lib/attribution';
-  import { formatUptime, parseHealth, type Health } from './lib/health';
-
-  let health = $state<Health | null>(null);
-  let error = $state<string | null>(null);
-
-  async function poll() {
-    try {
-      const response = await fetch('/healthz', { cache: 'no-store' });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      health = parseHealth(await response.json());
-      error = null;
-    } catch (e) {
-      health = null;
-      error = e instanceof Error ? e.message : String(e);
-    }
-  }
+  import { route, startRouter } from './lib/router.svelte';
+  import { app, connect } from './lib/state.svelte';
+  import Layers from './screens/Layers.svelte';
+  import Media from './screens/Media.svelte';
+  import Patch from './screens/Patch.svelte';
+  import Placeholder from './screens/Placeholder.svelte';
 
   onMount(() => {
-    void poll();
-    const timer = setInterval(() => void poll(), 2000);
-    return () => clearInterval(timer);
+    connect();
+    return startRouter();
   });
 </script>
 
-<header class="status" class:red={error !== null}>
-  <span class="dot"></span>
-  {#if health}
-    <span>engine {health.version}</span>
-    <span>{health.chip}</span>
-    <span>up {formatUptime(health.uptimeSeconds)}</span>
-  {:else}
-    <span>engine unreachable{error ? `: ${error}` : ''}</span>
-  {/if}
-</header>
+<StatusBar />
+<div class="body">
+  <Rail />
+  <main>
+    {#if app.connection !== 'open' && app.rev === 0}
+      <div class="banner banner-yellow" role="status">
+        <span class="dot dot-yellow"></span>
+        <span>{app.connection === 'connecting' ? 'Connecting to the engine…' : `Engine unreachable${app.detail ? `: ${app.detail}` : ''}; retrying`}</span>
+      </div>
+    {:else if app.connection === 'closed'}
+      <div class="banner banner-red" role="alert">
+        <span class="dot dot-red"></span>
+        <span><strong>Connection lost</strong> · {app.detail || 'reconnecting'} · values shown are stale</span>
+      </div>
+    {/if}
+    {#if app.lastError}
+      <div class="banner banner-yellow" role="alert">
+        <span class="dot dot-yellow"></span>
+        <span><strong>{app.lastError.code}</strong> · {app.lastError.message}</span>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost" onclick={() => (app.lastError = null)}>Dismiss</button>
+      </div>
+    {/if}
+    {#if route.screen === 'layers'}
+      <Layers />
+    {:else if route.screen === 'media'}
+      <Media />
+    {:else if route.screen === 'patch'}
+      <Patch />
+    {:else if route.screen === 'outputs'}
+      <Placeholder title="Outputs & Mapping" phase="Phase 6" />
+    {:else if route.screen === 'show'}
+      <Placeholder title="Show control" phase="Phase 7" />
+    {:else}
+      <Placeholder title="System / Health" phase="Phase 7" />
+    {/if}
+    <footer>
+      {attributionText.replace(repositoryURL, '')}<a href={repositoryURL}>{repositoryURL}</a>
+    </footer>
+  </main>
+</div>
 
-<main>
-  <h1>Lanthorn</h1>
-  <p>Phase 0 skeleton. The engine is serving this page over HTTPS; the screens arrive in Phase 5.</p>
-</main>
-
-<footer>
-  {attributionText.replace(repositoryURL, '')}<a href={repositoryURL}>{repositoryURL}</a>
-</footer>
+<style>
+  .body { display: flex; flex-wrap: wrap; flex: 1; align-items: stretch; }
+  main { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+  footer { margin-top: auto; padding-top: 16px; color: var(--text-3); font-size: 12px; }
+  footer a { color: inherit; }
+</style>

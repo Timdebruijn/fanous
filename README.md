@@ -75,6 +75,16 @@ token in `shell-token` (mode 0600). The project is autosaved to `project.json`
 and loaded at start; `lanthornd protocol-dts` prints `web/src/lib/protocol.d.ts`
 (checked by `scripts/check-protocol-dts.sh`).
 
+Web UI (`web/`, Svelte 5 + Vite, served by the engine from `web/dist`):
+status bar, Layers / Mixer (rows with the resolved media, position, intensity
+and the DMX inspector of the selected layer), Media (library browser, upload,
+transcode, ingest queue) and Patch / DMX (fixture table with collisions,
+`patch.set`, a 512-cell monitor fed by the `dmx` stream). The canvas preview
+on the Layers screen uses WebCodecs (H.264 from VideoToolbox, `sub` stream
+`preview`) and falls back to JPEG at 5 fps. Keys 1–6 switch screens.
+`cd web && npm run dev` proxies `/api`, `/ws` and `/healthz` to a running
+engine; `npm run build` writes `web/dist`.
+
 `/api/metrics` reports frame timing, the DMX-to-photon estimate and audio
 drift; `lanthorn-bench run` ramps layers until a frame drops (`--effects
 blur,edge`, `--dissolve 2`, `--ingest FILE` for the Phase 3/4 variants) and

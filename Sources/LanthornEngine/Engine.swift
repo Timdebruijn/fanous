@@ -143,6 +143,13 @@ public final class Engine: @unchecked Sendable {
             "maxLayers": 32, "fps": .number(fps),
         ]
         let stateServer = StateServer(store: store, auth: auth, caps: caps, logger: logger)
+        if let render {
+            // 640×360 at 30 fps (DESIGN.md §11.3 default), on the compositor's own command buffer
+            let height = 640 * render.scene.canvasHeight / max(1, render.scene.canvasWidth)
+            let preview = try PreviewStreamer(context: context, width: 640, height: max(2, height), fps: min(30, fps), canvasFPS: fps, logger: logger)
+            render.compositor.previewTap = { canvas, commandBuffer, target in preview.tap(canvas: canvas, commandBuffer: commandBuffer, target: target) }
+            stateServer.preview = preview
+        }
         self.auth = auth
         self.store = store
         self.stateServer = stateServer
@@ -154,8 +161,22 @@ public final class Engine: @unchecked Sendable {
         encoder.outputFormatting = [.sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         let ingestAPI = IngestAPI(library: library, queue: ingest, encoder: encoder, logger: logger)
+        /// REST calls that change state need the programmer role: the session cookie, the shell token as a bearer, or an open role.
+        @Sendable func programmerAllowed(_ request: HTTPRequest) -> Bool {
+            let bearer = request.header("Authorization").flatMap { $0.hasPrefix("Bearer ") ? String($0.dropFirst(7)) : nil }
+            let sessionRole = auth.role(forToken: bearer) ?? auth.role(forCookie: RoleAuth.cookie(in: request))
+            return auth.grant(requested: .programmer, sessionRole: sessionRole) == .programmer
+        }
         let server = try HTTPSServer(port: options.port, identity: identity, webRoot: options.webRoot, logger: logger) { request in
-            if request.path.hasPrefix("/api/ingest") || request.path.hasPrefix("/api/upload/") { return ingestAPI.handle(request, uploadedFile: nil) }
+            if request.path.hasPrefix("/api/ingest") || request.path.hasPrefix("/api/upload/") {
+                if request.method != "GET", !programmerAllowed(request) { return .text(403, "programmer role required") }
+                return ingestAPI.handle(request, uploadedFile: nil)
+            }
+            if request.path == "/api/library/rescan" {
+                // any role: it only re-reads the disk
+                library.rescan()
+                return .text(200, "rescanned")
+            }
             switch request.path {
             case "/healthz":
                 let health = HealthStatus(
@@ -196,11 +217,10 @@ public final class Engine: @unchecked Sendable {
                     body: GDTFExporter.gdtf())
             case "/api/channel-map.md":
                 return .text(200, ChannelMapDocument.markdown())
+            case "/api/channel-map.json":
+                return .json(200, Array(store.encode(ChannelMapDocument.json()).utf8))
             case "/api/library":
                 return .json(200, Array((try? encoder.encode(library.snapshot)) ?? Data()))
-            case "/api/library/rescan":
-                library.rescan()
-                return .text(200, "rescanned")
             case let path where path.hasPrefix("/api/thumbnail/"):
                 // thumbnail file names are hashes written by the engine itself: no path component may escape the cache
                 let name = String(path.dropFirst("/api/thumbnail/".count))
@@ -218,8 +238,8 @@ public final class Engine: @unchecked Sendable {
                 return nil
             }
         }
-        // large uploads stream to _incoming/ before the route runs
-        server.uploadSink = { request in ingestAPI.uploadTarget(for: request) }
+        // large uploads stream to _incoming/ before the route runs (role checked before the body is accepted)
+        server.uploadSink = { request in programmerAllowed(request) ? ingestAPI.uploadTarget(for: request) : nil }
         server.uploadRoute = { request, file in ingestAPI.handle(request, uploadedFile: file) }
         server.upgradeRoute = { request in stateServer.upgrade(request) }
         server.start()
@@ -272,7 +292,18 @@ public final class Engine: @unchecked Sendable {
             "library": [
                 "root": .string(snapshot.root), "rootExists": .bool(snapshot.rootExists), "folders": .number(Double(snapshot.folders.count)),
                 "fileCount": .number(Double(snapshot.fileCount)), "invalidCount": .number(Double(snapshot.invalidCount)),
+                "scannedAt": .number(snapshot.scannedAt),
             ],
+            "layers": .array(
+                (render?.layers ?? []).map { layer in
+                    let s = layer.mediaStatus.withLock { $0 }
+                    return [
+                        "index": .number(Double(layer.index + 1)), "folder": .number(Double(s.folder)), "file": .number(Double(s.file)),
+                        "name": s.name.map { .string($0) } ?? .null, "kind": .string(s.kind), "codec": .string(s.codec),
+                        "width": .number(Double(s.width)), "height": .number(Double(s.height)), "fps": .number(s.fps),
+                        "frames": .number(Double(s.frames)), "frame": .number(Double(layer.currentFrame)), "error": s.error.map { .string($0) } ?? .null,
+                    ]
+                }),
             "clients": ["count": .number(Double(store.clientCount)), "lagging": .number(Double(store.laggingClients))],
             "security": ["webUIOpen": .bool(auth.isOpen(.programmer))],
         ]

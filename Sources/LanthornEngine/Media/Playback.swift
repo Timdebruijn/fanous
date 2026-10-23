@@ -189,8 +189,25 @@ struct PendingPlayback {
 /// One layer slot: the playing media, the outgoing one during a dissolve, and
 /// the lock-free hand-off with the media loader (compositor thread owns the
 /// `var`s).
+/// What the UI shows per layer (`live.layers`): written by the loader when media opens or fails.
+public struct LayerMediaStatus: Sendable, Equatable {
+    public var folder = 0
+    public var file = 0
+    public var name: String? = nil
+    /// movie, still, live, none, missing
+    public var kind = "none"
+    public var codec = ""
+    public var width = 0
+    public var height = 0
+    public var fps = 0.0
+    public var frames = 0
+    public var error: String? = nil
+    public init() {}
+}
+
 public final class RenderLayer: @unchecked Sendable {
     public let index: Int  // 0-based layer slot
+    public let mediaStatus = Mutex<LayerMediaStatus>(LayerMediaStatus())
     var current: LayerPlayback?
     var outgoing: LayerPlayback?
     /// Loaded but not yet shown: becomes `current` once its first frame is decoded (DESIGN.md §4.2).
@@ -212,6 +229,9 @@ public final class RenderLayer: @unchecked Sendable {
     }
 
     public var currentMedia: MediaKey? { current?.key }
+    /// Frame index of the playing media for the UI's position display.
+    /// ponytail: unsynchronised read of a compositor-owned value; a stale frame number for one 100 ms tick is harmless.
+    public var currentFrame: Int { Int(current?.clock.position ?? 0) }
 }
 
 /// Media as a scene addresses it: (folder, file) → a file or a live input.
@@ -310,23 +330,36 @@ public final class MediaLoader: @unchecked Sendable {
     }
 
     private func open(_ key: MediaKey, layer: Int) -> LayerPlayback? {
+        var status = LayerMediaStatus()
+        status.folder = key.folder
+        status.file = key.file
+        defer { layers[layer].mediaStatus.withLock { $0 = status } }
         guard !key.isNone else { return nil }
         guard let entry = media[key] ?? resolver?(key).map({ MediaEntry(folder: key.folder, file: key.file, path: $0.path) }) else {
             logger.warning("media not found", metadata: ["layer": "\(layer + 1)", "media": "\(key)"])
             failures.wrappingAdd(1, ordering: .relaxed)
+            status.kind = "missing"
+            status.error = "no file \(key.file) in folder \(key.folder)"
             return nil
         }
         do {
             if let syphon = entry.syphon {
                 guard let live = liveFactory?(syphon) else { throw RenderError.pipeline("no live input for \(syphon)") }
                 opened.wrappingAdd(1, ordering: .relaxed)
+                status.kind = "live"
+                status.name = "Syphon: \(syphon)"
                 return LayerPlayback(key: key, live: live)
             }
             guard let path = entry.path else { throw RenderError.pipeline("media \(key) has no path") }
             let url = URL(fileURLWithPath: path)
+            status.name = url.lastPathComponent
             if StillSource.extensions.contains(url.pathExtension.lowercased()) {
                 let playback = LayerPlayback(key: key, still: try StillSource.load(url: url, device: device))
                 opened.wrappingAdd(1, ordering: .relaxed)
+                status.kind = "still"
+                status.codec = url.pathExtension.lowercased()
+                status.width = playback.width
+                status.height = playback.height
                 return playback
             }
             let source = try blocking { try await MovieSource.open(url: url, device: self.device, poolSize: self.ringCapacity) }
@@ -343,10 +376,17 @@ public final class MediaLoader: @unchecked Sendable {
             decoder.request(frame: 0, direction: 1)
             opened.wrappingAdd(1, ordering: .relaxed)
             logger.info("layer \(layer + 1) media \(key)", metadata: ["file": "\(url.lastPathComponent)", "codec": "\(source.info.codecName)", "size": "\(source.info.width)x\(source.info.height)@\(source.info.frameRate)"])
+            status.kind = "movie"
+            status.codec = source.info.codecName
+            status.width = source.info.width
+            status.height = source.info.height
+            status.fps = source.info.frameRate
+            status.frames = source.info.frameCount
             return LayerPlayback(key: key, movie: source, decoder: decoder, ring: ring)
         } catch {
             logger.error("media open failed", metadata: ["layer": "\(layer + 1)", "media": "\(key)", "error": "\(error)"])
             failures.wrappingAdd(1, ordering: .relaxed)
+            status.error = "\(error)"
             return nil
         }
     }

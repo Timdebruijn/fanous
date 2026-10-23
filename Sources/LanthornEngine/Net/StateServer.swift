@@ -17,6 +17,8 @@ public final class StateServer: @unchecked Sendable {
 
     public let store: StateStore
     public let auth: RoleAuth
+    /// Installed by the engine when it renders; nil → preview subscriptions are refused.
+    nonisolated(unsafe) public var preview: PreviewStreamer?
     private let caps: JSONValue
     private let logger: Logger
     private let connections = Mutex<[ObjectIdentifier: Connection]>([:])
@@ -56,7 +58,10 @@ public final class StateServer: @unchecked Sendable {
 
     fileprivate func forget(_ connection: Connection) { connections.withLock { _ = $0.removeValue(forKey: ObjectIdentifier(connection)) } }
 
-    public enum Subscription: Equatable, Sendable { case dmx(String) }
+    public enum Subscription: Equatable, Sendable {
+        case dmx(String)
+        case preview
+    }
 
     public final class Connection: WebSocketHandler, StateClient, @unchecked Sendable {
         private let server: StateServer
@@ -100,6 +105,7 @@ public final class StateServer: @unchecked Sendable {
 
         public func sessionDidClose(_ session: WebSocketSession) {
             if isAuthenticated { server.store.detach(self) }
+            server.preview?.remove(connection: self)
             server.forget(self)
             server.logger.debug("client left", metadata: ["client": "\(clientId.withLock { $0 })"])
         }
@@ -134,15 +140,37 @@ public final class StateServer: @unchecked Sendable {
                 server.store.clearLagging(self)
                 session.send(text: server.store.snapshot(), droppable: false)
             case "sub":
-                guard message["stream"]?.string == "dmx", let universe = message["universe"]?.string else {
-                    session.send(text: server.store.encode(["t": "error", "code": "badStream", "message": "only stream \"dmx\" with a universe in v1"]), droppable: false)
-                    return
+                switch message["stream"]?.string {
+                case "dmx":
+                    guard let universe = message["universe"]?.string else {
+                        session.send(text: server.store.encode(["t": "error", "code": "badStream", "message": "stream dmx needs a universe"]), droppable: false)
+                        return
+                    }
+                    let id = server.nextStream.add(1, ordering: .relaxed).oldValue
+                    subscriptions.withLock { $0[id] = .dmx(universe) }
+                    session.send(text: server.store.encode(["t": "sub", "id": .number(Double(id)), "stream": "dmx", "universe": .string(universe)]), droppable: false)
+                case "preview":
+                    guard let preview = server.preview else {
+                        session.send(text: server.store.encode(["t": "error", "code": "noPreview", "message": "the engine is not rendering"]), droppable: false)
+                        return
+                    }
+                    let jpeg = message["codec"]?.string == "jpeg"
+                    let id = server.nextStream.add(1, ordering: .relaxed).oldValue
+                    subscriptions.withLock { $0[id] = .preview }
+                    session.send(
+                        text: server.store.encode([
+                            "t": "sub", "id": .number(Double(id)), "stream": "preview", "codec": jpeg ? "jpeg" : "avc", "w": .number(Double(preview.width)),
+                            "h": .number(Double(preview.height)), "fps": .number(jpeg ? 5 : preview.fps),
+                        ]), droppable: false)
+                    preview.subscribe(PreviewStreamer.Subscriber(connection: self, stream: id, jpeg: jpeg))
+                default:
+                    session.send(text: server.store.encode(["t": "error", "code": "badStream", "message": "streams: dmx, preview"]), droppable: false)
                 }
-                let id = server.nextStream.add(1, ordering: .relaxed).oldValue
-                subscriptions.withLock { $0[id] = .dmx(universe) }
-                session.send(text: server.store.encode(["t": "sub", "id": .number(Double(id)), "stream": "dmx", "universe": .string(universe)]), droppable: false)
             case "unsub":
-                if let id = message["id"]?.int { subscriptions.withLock { _ = $0.removeValue(forKey: UInt32(id)) } }
+                if let id = message["id"]?.int {
+                    let removed = subscriptions.withLock { $0.removeValue(forKey: UInt32(id)) }
+                    if removed == .preview { server.preview?.unsubscribe(connection: self, stream: UInt32(id)) }
+                }
             default:
                 session.send(text: server.store.encode(["t": "error", "code": "badMessage", "message": "unknown t \(type)"]), droppable: false)
             }

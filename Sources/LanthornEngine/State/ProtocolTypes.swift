@@ -39,6 +39,7 @@ public enum ProtocolTypes {
               | { t: 'cmd'; id: string; name: CommandName; args?: JSONValue }
               | { t: 'snapshot' }
               | { t: 'sub'; stream: 'dmx'; universe: string }
+              | { t: 'sub'; stream: 'preview'; codec?: 'avc' | 'jpeg' }
               | { t: 'unsub'; id: number };
 
             export type ServerMessage =
@@ -48,7 +49,11 @@ public enum ProtocolTypes {
               | { t: 'ack'; id: string; ok: true; rev: number; result: JSONValue }
               | { t: 'ack'; id: string; ok: false; error: { code: string; message: string } }
               | { t: 'sub'; id: number; stream: 'dmx'; universe: string }
+              | { t: 'sub'; id: number; stream: 'preview'; codec: 'avc' | 'jpeg'; w: number; h: number; fps: number }
+              | { t: 'stream'; id: number; codec: string; description: string; w: number; h: number; fps: number }
               | { t: 'error'; code: string; message: string };
+
+            /** Binary frame kind 1 (H.264): `[u8 key][u64 be timestamp µs][AVCC access unit]` after the 5-byte stream header; kind 2 (JPEG): the file; kind 3 (DMX): 512 slot bytes. */
 
             """
         out = out.replacingOccurrences(of: "\n            ", with: "\n")

@@ -1,0 +1,47 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!-- Copyright (c) 2026 Tim de Bruijn -->
+<!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
+<script lang="ts">
+  import type { ResolvedParameter } from '../lib/docs';
+  import { findParam, outputFixtures, valueText } from '../lib/layers';
+  import { app } from '../lib/state.svelte';
+
+  const master = $derived(app.live.dmx.fixtures['Master']);
+  const outputs = $derived(outputFixtures(app.live.dmx.fixtures));
+</script>
+
+{#snippet value(params: ResolvedParameter[] | undefined, key: string, caption: string)}
+  {@const param = findParam(params, key)}
+  <span class="val">
+    <span class="mono v">{param ? valueText(param) : '—'}</span>
+    <span class="caption">{caption}</span>
+  </span>
+{/snippet}
+
+<div class="strips" role="group" aria-label="Master and outputs">
+  <section class="panel strip" aria-label="Master">
+    <span class="name">Master</span>
+    {@render value(master, 'intensity', 'Intensity')}
+    {@render value(master, 'speed', 'Speed')}
+    {@render value(master, 'control', 'Control')}
+    {@render value(master, 'testPattern', 'Test pattern')}
+  </section>
+  {#each outputs as name (name)}
+    {@const params = app.live.dmx.fixtures[name]}
+    <section class="panel strip" aria-label={name}>
+      <span class="name"><span class="dot dot-green" aria-hidden="true"></span>{name}</span>
+      {@render value(params, 'intensity', 'Intensity')}
+      {@render value(params, 'control', 'Control')}
+      {@render value(params, 'testPattern', 'Test pattern')}
+      {@render value(params, 'blend', 'Blend')}
+    </section>
+  {/each}
+</div>
+
+<style>
+  .strips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .strip { flex: 1 1 280px; min-width: 0; min-height: 56px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; padding: 8px 16px; }
+  .name { display: inline-flex; align-items: center; gap: 8px; min-width: 64px; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); }
+  .val { display: flex; flex-direction: column; min-width: 0; }
+  .v { font-size: 15px; font-weight: 500; }
+</style>
