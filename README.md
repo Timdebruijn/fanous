@@ -85,6 +85,20 @@ on the Layers screen uses WebCodecs (H.264 from VideoToolbox, `sub` stream
 `cd web && npm run dev` proxies `/api`, `/ws` and `/healthz` to a running
 engine; `npm run build` writes `web/dist`.
 
+Outputs and mapping (Phase 6, DESIGN.md §9): the project holds `outputs[]`
+(display identity, region, mode, intensity, blend edges with power and gamma,
+black lift, corner pin and mesh warp, slices with source rectangle,
+destination quad, mask path and feather, test pattern) and `canvases[]`.
+Commands `output.add`, `output.remove`, `output.set` (a JSON pointer inside the
+output, validated as a whole) and `canvas.set`; `live.displays` lists the
+connected displays by UUID and `live.outputs` whether each output is bound,
+lost or unassigned. The engine opens one window per bound display, drives the
+compositor from the clock-master display and presents the others from the
+latest completed canvas; blend maps, warp fields and masks are compiled on
+Control and swapped into the render thread. The Outputs & Mapping screen edits
+all of it with handles over the output preview (`sub` stream `preview` with
+`target: "output:<id>"`).
+
 `/api/metrics` reports frame timing, the DMX-to-photon estimate and audio
 drift; `lanthorn-bench run` ramps layers until a frame drops (`--effects
 blur,edge`, `--dissolve 2`, `--ingest FILE` for the Phase 3/4 variants) and

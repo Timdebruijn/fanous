@@ -39,7 +39,7 @@ public enum ProtocolTypes {
               | { t: 'cmd'; id: string; name: CommandName; args?: JSONValue }
               | { t: 'snapshot' }
               | { t: 'sub'; stream: 'dmx'; universe: string }
-              | { t: 'sub'; stream: 'preview'; codec?: 'avc' | 'jpeg' }
+              | { t: 'sub'; stream: 'preview'; codec?: 'avc' | 'jpeg'; target?: string }
               | { t: 'unsub'; id: number };
 
             export type ServerMessage =
@@ -49,7 +49,7 @@ public enum ProtocolTypes {
               | { t: 'ack'; id: string; ok: true; rev: number; result: JSONValue }
               | { t: 'ack'; id: string; ok: false; error: { code: string; message: string } }
               | { t: 'sub'; id: number; stream: 'dmx'; universe: string }
-              | { t: 'sub'; id: number; stream: 'preview'; codec: 'avc' | 'jpeg'; w: number; h: number; fps: number }
+              | { t: 'sub'; id: number; stream: 'preview'; codec: 'avc' | 'jpeg'; w: number; h: number; fps: number; target: string }
               | { t: 'stream'; id: number; codec: string; description: string; w: number; h: number; fps: number }
               | { t: 'error'; code: string; message: string };
 

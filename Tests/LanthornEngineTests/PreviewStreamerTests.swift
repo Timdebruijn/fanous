@@ -21,7 +21,7 @@ struct PreviewStreamerTests {
         let compositor = try Compositor(
             context: context, canvasWidth: 320, canvasHeight: 180, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 64), parameters: parameters,
             logger: logger)
-        let streamer = try PreviewStreamer(context: context, width: 320, height: 180, fps: 30, canvasFPS: 60, logger: logger)
+        let streamer = try PreviewStreamer(context: context, width: 320, height: 180, fps: 30, canvasFPS: 60, parameters: parameters, logger: logger)
         let frames = Mutex<[(payload: [UInt8], avcC: [UInt8])]>([])
         streamer.onFrame = { payload, avcC in frames.withLock { $0.append((payload, avcC)) } }
         streamer.alwaysEncode = true  // no WebSocket subscriber in this test

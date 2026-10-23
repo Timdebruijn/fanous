@@ -138,6 +138,7 @@ public final class DMXStore: @unchecked Sendable {
             if let master = resolvers[.master] { ParameterSnapshotSlot.from(master, into: slot) }
             for (fixture, resolver) in resolvers {
                 if case .layer(let n) = fixture, n >= 1, n <= slot.layers.count { slot.layers[n - 1] = LayerParameters.from(resolver) }
+                if case .output(let n) = fixture, n >= 1, n <= slot.outputs.count { slot.outputs[n - 1] = OutputParameters.from(resolver) }
             }
         }
     }

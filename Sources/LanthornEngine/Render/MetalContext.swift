@@ -58,6 +58,8 @@ public final class MetalContext: @unchecked Sendable {
     let layerPipelines: [MTLRenderPipelineState]
     var layerPipeline: MTLRenderPipelineState { layerPipelines[0] }
     let outputPipeline: MTLRenderPipelineState
+    /// Slice mesh with warp, mask and blend map (DESIGN.md §9.5); slices alpha-blend over each other.
+    let mappedPipeline: MTLRenderPipelineState
     let linearSampler: MTLSamplerState
     let nearestSampler: MTLSamplerState
 
@@ -97,9 +99,22 @@ public final class MetalContext: @unchecked Sendable {
         output.vertexFunction = library.makeFunction(name: "output_vertex")
         output.fragmentFunction = library.makeFunction(name: "output_fragment")
         output.colorAttachments[0].pixelFormat = Self.outputFormat
+        let mapped = MTLRenderPipelineDescriptor()
+        mapped.label = "mapped output"
+        mapped.vertexFunction = library.makeFunction(name: "mapped_vertex")
+        mapped.fragmentFunction = library.makeFunction(name: "mapped_fragment")
+        mapped.colorAttachments[0].pixelFormat = Self.outputFormat
+        mapped.colorAttachments[0].isBlendingEnabled = true
+        mapped.colorAttachments[0].rgbBlendOperation = .add
+        mapped.colorAttachments[0].alphaBlendOperation = .add
+        mapped.colorAttachments[0].sourceRGBBlendFactor = .one
+        mapped.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+        mapped.colorAttachments[0].sourceAlphaBlendFactor = .one
+        mapped.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
         do {
             layerPipelines = try layers.map { try device.makeRenderPipelineState(descriptor: $0) }
             outputPipeline = try device.makeRenderPipelineState(descriptor: output)
+            mappedPipeline = try device.makeRenderPipelineState(descriptor: mapped)
         } catch {
             throw RenderError.pipeline("\(error)")
         }

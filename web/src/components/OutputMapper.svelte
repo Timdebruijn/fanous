@@ -1,0 +1,109 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!-- Copyright (c) 2026 Tim de Bruijn -->
+<!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
+<script lang="ts">
+  import { clamp01, handles, nudge, outlines, type MapPoint, type MapperMode, type OutputConfig } from '../lib/outputs';
+
+  // Handles over the output preview (DESIGN.md §12.3): corner pin, mesh points, slice quads or a mask path.
+  // Pointer Events everywhere, 44 px hit targets, arrow keys nudge the selected point by one output pixel
+  // (Shift: ten). Changes go out as (JSON pointer, point) at most every 120 ms while dragging and on release.
+  let {
+    output,
+    mode,
+    sliceIndex,
+    size,
+    selected = $bindable(null),
+    onchange,
+  }: {
+    output: OutputConfig;
+    mode: MapperMode;
+    sliceIndex: number;
+    /** output size in pixels: nudge steps and the aspect ratio of the overlay */
+    size: { w: number; h: number };
+    selected: string | null;
+    onchange: (path: string, point: MapPoint) => void;
+  } = $props();
+
+  const W = 1000;
+  const H = $derived(Math.round((W * size.h) / size.w));
+  const points = $derived(handles(output, mode, sliceIndex));
+  const lines = $derived(outlines(output, mode, sliceIndex));
+  /** while dragging, the handle follows the pointer before the engine echoes the patch */
+  let dragging = $state<{ path: string; point: MapPoint } | null>(null);
+  let svg: SVGSVGElement | undefined = $state();
+  let lastSent = 0;
+
+  function shown(h: { path: string; point: MapPoint }): MapPoint {
+    return dragging?.path === h.path ? dragging.point : h.point;
+  }
+
+  function toPoint(event: PointerEvent): MapPoint {
+    const rect = svg!.getBoundingClientRect();
+    return { x: clamp01((event.clientX - rect.left) / rect.width), y: clamp01((event.clientY - rect.top) / rect.height) };
+  }
+
+  function down(event: PointerEvent, path: string) {
+    (event.currentTarget as Element).setPointerCapture(event.pointerId);
+    selected = path;
+    dragging = { path, point: toPoint(event) };
+  }
+
+  function move(event: PointerEvent) {
+    if (!dragging) return;
+    dragging = { path: dragging.path, point: toPoint(event) };
+    const now = performance.now();
+    if (now - lastSent > 120) {
+      lastSent = now;
+      onchange(dragging.path, dragging.point);
+    }
+  }
+
+  function up(event: PointerEvent) {
+    if (!dragging) return;
+    const final = { path: dragging.path, point: toPoint(event) };
+    dragging = null;
+    onchange(final.path, final.point);
+  }
+
+  function key(event: KeyboardEvent) {
+    if (!selected) return;
+    const handle = points.find((h) => h.path === selected);
+    if (!handle) return;
+    const step = event.shiftKey ? 10 : 1;
+    const delta: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+    const d = delta[event.key];
+    if (!d) return;
+    event.preventDefault();
+    onchange(handle.path, nudge(handle.point, d[0], d[1], size));
+  }
+
+  const colours = ['#4C9EFF', '#35D07F', '#FFC532', '#FF5A5F', '#A3AAB4'];
+</script>
+
+<svg bind:this={svg} class="mapper" viewBox="0 0 {W} {H}" role="application" aria-label="Mapping editor: drag the handles, arrow keys nudge the selected point" tabindex="0" onkeydown={key} onpointermove={move} onpointerup={up} onpointercancel={up}>
+  {#each lines as line, i (i)}
+    <polyline
+      points={line.points.map((p) => `${p.x * W},${p.y * H}`).join(' ') + (mode === 'mesh' ? '' : ` ${line.points[0]!.x * W},${line.points[0]!.y * H}`)}
+      fill={mode === 'mask' ? 'rgba(76,158,255,0.12)' : 'none'}
+      stroke={colours[line.group % colours.length]}
+      stroke-width="2"
+      vector-effect="non-scaling-stroke"
+      opacity={mode === 'mesh' ? 0.5 : 0.9}
+    />
+  {/each}
+  {#each points as h (h.path)}
+    {@const p = shown(h)}
+    <g class="handle" class:sel={selected === h.path} onpointerdown={(e) => down(e, h.path)} role="button" aria-label={h.path} tabindex="-1">
+      <circle cx={p.x * W} cy={p.y * H} r="28" fill="transparent" />
+      <circle cx={p.x * W} cy={p.y * H} r={mode === 'mesh' ? 9 : 12} fill={selected === h.path ? '#ECEEF1' : colours[h.group % colours.length]} stroke="#0B0C0E" stroke-width="3" vector-effect="non-scaling-stroke" />
+    </g>
+  {/each}
+</svg>
+
+<style>
+  .mapper { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; outline: none; cursor: default; }
+  .mapper:focus-visible { outline: 2px solid var(--accent); }
+  .handle { cursor: grab; }
+  .handle:active { cursor: grabbing; }
+  .handle.sel circle:last-child { stroke: var(--accent); }
+</style>

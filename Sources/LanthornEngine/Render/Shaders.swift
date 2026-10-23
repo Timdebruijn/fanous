@@ -368,5 +368,69 @@ public enum ShaderSource {
         if (o.pattern != 0u) return float4(test_pattern(o.pattern, o.index, in.uv, o.size), 1.0);
         return float4(canvas.sample(linearSampler, in.uv).rgb, 1.0);
     }
+
+    // Mapped output pass (DESIGN.md §9.5): slice mesh → warp → clip; canvas × mask × opacity → blend map →
+    // intensity → dither. Slices alpha-blend over each other in order (pipeline: one, one-minus-source-alpha).
+    struct MappedUniforms {
+        float2 size;      // region size in pixels (dither, patterns)
+        float intensity;  // output intensity × master intensity × output fixture
+        float opacity;    // slice opacity
+        uint flags;       // 1 = warp field present, 2 = mask present, 4 = raw (no blend/warp/mask), 8 = no blend map
+        uint pad0, pad1, pad2;
+    };
+
+    struct MappedVertex {
+        float2 pos;  // normalized output coordinates, pre-warp
+        float2 uv;   // canvas
+    };
+
+    struct MappedOut {
+        float4 position [[position]];
+        float2 uv;
+        float2 pre;   // pre-warp output coordinates (mask, slice space)
+        float2 post;  // post-warp output coordinates (blend map, projector space)
+    };
+
+    vertex MappedOut mapped_vertex(uint vid [[vertex_id]],
+                                   const device MappedVertex* vertices [[buffer(0)]],
+                                   constant MappedUniforms& u [[buffer(1)]],
+                                   texture2d<float> warp [[texture(0)]],
+                                   sampler linearSampler [[sampler(0)]]) {
+        MappedVertex v = vertices[vid];
+        float2 p = v.pos;
+        if ((u.flags & 1u) != 0u && (u.flags & 4u) == 0u) p = warp.sample(linearSampler, v.pos).xy;
+        MappedOut out;
+        out.position = float4(p.x * 2.0 - 1.0, 1.0 - p.y * 2.0, 0.0, 1.0);
+        out.uv = v.uv;
+        out.pre = v.pos;
+        out.post = p;
+        return out;
+    }
+
+    // interleaved gradient noise: ±0.5 LSB of ordered dither without a texture
+    // ponytail: blue-noise texture (DESIGN §4.4) when banding shows on a real projector
+    static float ign(float2 px) {
+        return fract(52.9829189 * fract(0.06711056 * px.x + 0.00583715 * px.y));
+    }
+
+    fragment float4 mapped_fragment(MappedOut in [[stage_in]],
+                                    constant MappedUniforms& u [[buffer(1)]],
+                                    texture2d<float> canvas [[texture(0)]],
+                                    texture2d<float> mask [[texture(1)]],
+                                    texture2d<float> blend [[texture(2)]],
+                                    sampler linearSampler [[sampler(0)]]) {
+        float3 c = canvas.sample(linearSampler, in.uv).rgb;
+        float a = u.opacity;
+        bool raw = (u.flags & 4u) != 0u;
+        if (!raw && (u.flags & 2u) != 0u) a *= mask.sample(linearSampler, in.pre).r;
+        c *= a;
+        if (!raw && (u.flags & 8u) == 0u) {
+            float2 b = blend.sample(linearSampler, in.post).rg;
+            c = c * b.x + b.y * a;
+        }
+        c *= u.intensity;
+        c += (ign(in.position.xy) - 0.5) / 255.0;
+        return float4(c, a);
+    }
     """
 }

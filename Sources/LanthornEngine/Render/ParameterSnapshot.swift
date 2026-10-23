@@ -99,6 +99,25 @@ public struct LayerParameters: Sendable, Equatable {
     }
 }
 
+/// Output fixture parameters (DESIGN.md §6.4) in render units.
+public struct OutputParameters: Sendable, Equatable {
+    public var intensity: Float = 1
+    public var control: OutputControl = .normal
+    public var testPattern: TestPattern = .off
+    /// Blend switch "raw": bypass blend, warp and mask for alignment.
+    public var raw = false
+    public init() {}
+
+    public static func from(_ resolver: FixtureResolver) -> OutputParameters {
+        var p = OutputParameters()
+        p.intensity = Float(resolver.physical(.output(.intensity)) / 100)
+        p.control = OutputControl(rawValue: Int(resolver.physical(.output(.control)))) ?? .normal
+        p.testPattern = TestPattern(rawValue: Int(resolver.physical(.output(.testPattern)))) ?? .off
+        p.raw = BlendSwitch(rawValue: Int(resolver.physical(.output(.blend)))) == .raw
+        return p
+    }
+}
+
 /// Folder/file pair as addressed from DMX (DESIGN.md §7.4).
 public struct MediaKey: Hashable, Sendable, Codable, CustomStringConvertible {
     public var folder: Int
@@ -125,6 +144,8 @@ public final class ParameterSnapshotSlot: @unchecked Sendable {
     public var masterSpeed: Float = 1
     public var testPattern: TestPattern = .off
     public var layers: [LayerParameters]
+    public static let maxOutputs = 8
+    public var outputs: [OutputParameters] = Array(repeating: OutputParameters(), count: ParameterSnapshotSlot.maxOutputs)
 
     public init(maxLayers: Int) { layers = Array(repeating: LayerParameters(), count: maxLayers) }
 
@@ -143,6 +164,7 @@ public final class ParameterSnapshotSlot: @unchecked Sendable {
         masterSpeed = other.masterSpeed
         testPattern = other.testPattern
         for i in layers.indices { layers[i] = other.layers[i] }
+        for i in outputs.indices { outputs[i] = other.outputs[i] }
     }
 }
 

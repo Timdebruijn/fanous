@@ -10,6 +10,7 @@
   import { app, connect } from './lib/state.svelte';
   import Layers from './screens/Layers.svelte';
   import Media from './screens/Media.svelte';
+  import Outputs from './screens/Outputs.svelte';
   import Patch from './screens/Patch.svelte';
   import Placeholder from './screens/Placeholder.svelte';
 
@@ -49,7 +50,7 @@
     {:else if route.screen === 'patch'}
       <Patch />
     {:else if route.screen === 'outputs'}
-      <Placeholder title="Outputs & Mapping" phase="Phase 6" />
+      <Outputs />
     {:else if route.screen === 'show'}
       <Placeholder title="Show control" phase="Phase 7" />
     {:else}

@@ -29,6 +29,8 @@ public struct SceneConfig: Codable, Sendable {
     public var policy: SourcePolicy = .dmx
     /// Library root (DESIGN.md §8.1); nil = the machine default `~/Movies/Lanthorn Library`. Explicit `media` entries win.
     public var library: String?
+    /// True when an `OutputCoordinator` owns displays and drivers (projects with outputs); the service then starts none.
+    public var managedOutputs = false
 
     public init() {}
 
@@ -116,7 +118,9 @@ public final class RenderService {
             }
         }
         loader.start()
-        if let display = scene.display {
+        if scene.managedOutputs {
+            logger.info("outputs managed by the coordinator", metadata: ["layers": "\(layers.count)"])
+        } else if let display = scene.display {
             let screens = NSScreen.screens
             guard display < screens.count else { throw RenderError.pipeline("display \(display) not found (\(screens.count) screens)") }
             let window = OutputWindow(screen: screens[display], device: context.device)

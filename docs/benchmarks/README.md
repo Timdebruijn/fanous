@@ -164,3 +164,25 @@ The engine's own cost for five clients is one H.264 encoder (VideoToolbox,
 Baseline, 1.5 Mbit/s) on the preview queue and the 10 Hz live diff; the
 render thread only encodes the extra 640×360 output pass into its command
 buffer every second tick.
+
+## Phase 6 (2026-10-23): blend, warp, output binding
+
+Readback tests (`OutputPassTests`, 320×180 canvas, flat grey still):
+
+| Arrangement | Gamma | Max light error across the overlaps |
+|---|---|---|
+| 2×1, 80 px overlap | 1.0 | < 0.02 (8-bit quantization + dither) |
+| 2×1, 80 px overlap | 2.2 | < 0.03 |
+| 2×2, 80 × 20 px overlaps | 2.2 | < 0.035 |
+
+Light = Σ (value/255)^γ over the outputs covering a canvas pixel, compared
+with the input's (value/255)^γ.
+
+Warp edit → apply: `OutputCompiler.compile` of an output with a 33×33 mesh
+and a feathered mask at 1920×1080 (field 480×270, mask grid 480×270, 64×64
+slice mesh, texture uploads): **3.7 ms** release, 145 ms debug (M1 Pro). The
+swap into the render thread is one reference store.
+
+Binding/unbinding the built-in display at runtime (`output.add` / `remove`
+over the protocol, debug build, 4-layer 1080p60 scene): one missed frame at
+the headless → display driver switch, 0 late frames, GPU p99 0.8 ms.

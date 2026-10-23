@@ -2,10 +2,12 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
+import AppKit
 import Foundation
 import LanthornCore
 import Logging
 import QuartzCore
+import Synchronization
 
 public struct EngineOptions: Sendable {
     public var port: UInt16
@@ -43,6 +45,12 @@ public final class Engine: @unchecked Sendable {
     private var ingest: IngestQueue?
     private var auth: RoleAuth?
     private var store: StateStore?
+    private var coordinator: OutputCoordinator?
+    private var displayManager: DisplayManager?
+    private let displays = Mutex<[DisplayInfo]>([])
+    private let outputStatus = Mutex<[OutputStatus]>([])
+    private var lastOutputs: [OutputConfig] = []
+    private var lastClockMaster: Int?
     private var stateServer: StateServer?
     private var liveTimer: DispatchSourceTimer?
     private var dmxTimer: DispatchSourceTimer?
@@ -117,23 +125,23 @@ public final class Engine: @unchecked Sendable {
         ingest.start()
         self.ingest = ingest
 
-        if let scene = options.scene {
+        var sceneWithOutputs = options.scene
+        sceneWithOutputs?.managedOutputs = true  // the coordinator below owns displays and drivers (DESIGN.md §9.6)
+        if let scene = sceneWithOutputs {
             let service = try MainActor.assumeIsolated {
                 try RenderService(scene: scene, context: context, parameters: dmx.snapshots, metrics: metrics, logger: logger)
             }
             service.loader.resolver = { key in library.resolve(key) }
             render = service
-            let log = logger
-            Task { @MainActor in
-                do { try await service.start() } catch { log.error("render start failed", metadata: ["error": "\(error)"]) }
-            }
         }
 
         // Phase 5: roles, the project and live documents and the WebSocket state server (DESIGN.md §11).
         let auth = RoleAuth(settingsURL: AppPaths.settingsFile, shellTokenURL: AppPaths.shellTokenFile, logger: logger)
         let project =
-            ProjectDocument.load(from: AppPaths.projectFile)
-            ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: options.scene?.policy ?? .dmx)
+            ProjectDocument.load(from: AppPaths.projectFile, canvas: (options.scene?.canvasWidth ?? 1920, options.scene?.canvasHeight ?? 1080))
+            ?? ProjectDocument.initial(
+                patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: options.scene?.policy ?? .dmx,
+                canvas: (options.scene?.canvasWidth ?? 1920, options.scene?.canvasHeight ?? 1080))
         if let loaded = ProjectDocument.effectivePatch(from: project), loaded != patch { dmx.setPatch(loaded) }
         let store = StateStore(project: project, logger: logger)
         ProjectDocument.registerCommands(on: store, auth: auth)
@@ -146,9 +154,54 @@ public final class Engine: @unchecked Sendable {
         if let render {
             // 640×360 at 30 fps (DESIGN.md §11.3 default), on the compositor's own command buffer
             let height = 640 * render.scene.canvasHeight / max(1, render.scene.canvasWidth)
-            let preview = try PreviewStreamer(context: context, width: 640, height: max(2, height), fps: min(30, fps), canvasFPS: fps, logger: logger)
+            let preview = try PreviewStreamer(context: context, width: 640, height: max(2, height), fps: min(30, fps), canvasFPS: fps, parameters: dmx.snapshots, logger: logger)
             render.compositor.previewTap = { canvas, commandBuffer, target in preview.tap(canvas: canvas, commandBuffer: commandBuffer, target: target) }
             stateServer.preview = preview
+            let compiler = try OutputCompiler(device: context.device)
+            stateServer.previewTarget = { [weak self] target in
+                guard let self else { return false }
+                if target == "canvas" {
+                    preview.outputSet = nil
+                    return true
+                }
+                let outputs = self.store?.project.outputsConfig ?? []
+                guard target.hasPrefix("output:"), let id = Int(target.dropFirst(7)), let output = outputs.first(where: { $0.id == id }) else { return false }
+                return self.previewOutput(output, in: outputs, compiler: compiler, preview: preview)
+            }
+
+            // Displays and output windows (DESIGN.md §9.6); the render service starts after the coordinator exists.
+            let coordinator = try MainActor.assumeIsolated { () throws -> OutputCoordinator in
+                let coordinator = try OutputCoordinator(compositor: render.compositor, context: context, fps: fps, displays: DisplayManager.current(), logger: logger)
+                displays.withLock { $0 = coordinator.connectedDisplays }
+                coordinator.onStatus = { [weak self] statuses in self?.outputStatus.withLock { $0 = statuses } }
+                let manager = DisplayManager(logger: logger)
+                manager.onChange = { [weak self] list in
+                    self?.displays.withLock { $0 = list }
+                    coordinator.displaysChanged(list)
+                }
+                manager.start()
+                self.displayManager = manager
+                // a scene "display" index on first start becomes a bound output in the project
+                if ProjectDocument.outputs(from: project).isEmpty, let index = options.scene?.display {
+                    let screens = NSScreen.screens
+                    if index < screens.count, let number = (screens[index].deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value,
+                        let display = coordinator.connectedDisplays.first(where: { $0.id == number })
+                    {
+                        _ = store.execute("output.add", args: ["display": ["uuid": .string(display.uuid), "name": .string(display.name)]], role: .programmer)
+                    }
+                }
+                return coordinator
+            }
+            self.coordinator = coordinator
+            let outputs = ProjectDocument.outputs(from: store.project)
+            let clockMaster = ProjectDocument.canvases(from: store.project).first?.clockMaster
+            lastOutputs = outputs
+            lastClockMaster = clockMaster
+            let log = logger
+            Task { @MainActor in
+                do { try await render.start() } catch { log.error("render start failed", metadata: ["error": "\(error)"]) }
+                coordinator.apply(outputs: outputs, clockMaster: clockMaster)
+            }
         }
         self.auth = auth
         self.store = store
@@ -259,9 +312,44 @@ public final class Engine: @unchecked Sendable {
         self.server = server
     }
 
+    /// Compiles one output for the preview size; overlaps and feathers scale with the preview.
+    /// `outputs` is passed in: this runs on the control queue from `projectChanged`, where `store.project` would deadlock.
+    private func previewOutput(_ output: OutputConfig, in outputs: [OutputConfig], compiler: OutputCompiler, preview: PreviewStreamer) -> Bool {
+        var scaled = output
+        let region = output.region ?? displays.withLock { list in
+            list.first { $0.uuid == output.display?.uuid }.map { PixelRect(x: 0, y: 0, w: $0.pixelWidth, h: $0.pixelHeight) }
+        } ?? PixelRect(x: 0, y: 0, w: 1920, h: 1080)
+        let factor = Double(preview.width) / Double(max(1, region.w))
+        scaled.region = nil
+        for edge in [\OutputConfig.blend.left, \.blend.right, \.blend.top, \.blend.bottom] { scaled[keyPath: edge].overlap *= factor }
+        scaled.blend.liftFeather *= factor
+        for i in scaled.slices.indices { scaled.slices[i].mask?.feather *= factor }
+        let index = (outputs.firstIndex { $0.id == output.id } ?? 0) + 1
+        do {
+            preview.outputSet = OutputSet(plans: [try compiler.compile(scaled, index: index, drawable: (preview.width, preview.height))])
+            return true
+        } catch {
+            logger.error("preview output compile failed", metadata: ["output": "\(output.id)", "error": "\(error)"])
+            return false
+        }
+    }
+
     /// Control queue: re-applies the patch when it changed and schedules the autosave (2 s after the last change).
     private func projectChanged(_ document: JSONValue) {
         if let dmx, let patch = ProjectDocument.effectivePatch(from: document), patch != dmx.currentPatch { dmx.setPatch(patch) }
+        let outputs = ProjectDocument.outputs(from: document)
+        let clockMaster = ProjectDocument.canvases(from: document).first?.clockMaster
+        if outputs != lastOutputs || clockMaster != lastClockMaster, let coordinator {
+            lastOutputs = outputs
+            lastClockMaster = clockMaster
+            Task { @MainActor in coordinator.apply(outputs: outputs, clockMaster: clockMaster) }
+            // the preview follows its output when that one changed
+            if let preview = stateServer?.preview, preview.outputSet != nil, let id = preview.outputSet?.plans.first?.id, let output = outputs.first(where: { $0.id == id }),
+                let compiler = try? OutputCompiler(device: render?.context.device ?? MTLCreateSystemDefaultDevice()!)
+            {
+                _ = previewOutput(output, in: outputs, compiler: compiler, preview: preview)
+            }
+        }
         autosave?.cancel()
         let logger = logger
         let work = DispatchWorkItem {
@@ -318,6 +406,21 @@ public final class Engine: @unchecked Sendable {
                     ]
                 }),
             "clients": ["count": .number(Double(store.clientCount)), "lagging": .number(Double(store.laggingClients))],
+            "displays": .array(
+                displays.withLock { $0 }.map { d in
+                    [
+                        "uuid": .string(d.uuid), "name": .string(d.name), "width": .number(Double(d.pixelWidth)), "height": .number(Double(d.pixelHeight)),
+                        "hz": .number(d.hz), "main": .bool(d.isMain), "builtin": .bool(d.isBuiltin),
+                        "modes": .array(d.modes.prefix(24).map { ["width": .number(Double($0.width)), "height": .number(Double($0.height)), "hz": .number($0.hz)] }),
+                    ]
+                }),
+            "outputs": .array(
+                outputStatus.withLock { $0 }.map { s in
+                    [
+                        "id": .number(Double(s.id)), "state": .string(s.state.rawValue), "display": s.display.map { .string($0) } ?? .null,
+                        "width": .number(Double(s.width)), "height": .number(Double(s.height)), "hz": .number(s.hz), "master": .bool(s.isMaster),
+                    ]
+                }),
             "security": ["webUIOpen": .bool(auth.isOpen(.programmer))],
         ]
         store.updateLive(live)
@@ -338,6 +441,12 @@ public final class Engine: @unchecked Sendable {
     public func stop() {
         liveTimer?.cancel()
         dmxTimer?.cancel()
+        if let coordinator, let displayManager {
+            MainActor.assumeIsolated {
+                displayManager.stop()
+                coordinator.stop()
+            }
+        }
         if let autosave, !autosave.isCancelled {
             autosave.cancel()
             autosave.perform()

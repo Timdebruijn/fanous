@@ -10,6 +10,8 @@ export interface PatchEntry {
   address: number; // 1-based
 }
 
+import type { CanvasConfig, DisplayDoc, OutputConfig, OutputStatusDoc } from './outputs';
+
 export interface ProjectDoc {
   schema: number;
   name: string;
@@ -18,6 +20,8 @@ export interface ProjectDoc {
   patch: PatchEntry[];
   policy: 'dmx' | 'internal' | 'ltp' | 'htp';
   library: { root: string };
+  canvases: CanvasConfig[];
+  outputs: OutputConfig[];
   ui: Record<string, unknown>;
 }
 
@@ -87,6 +91,8 @@ export interface LiveDoc {
   library: { root: string; rootExists: boolean; folders: number; fileCount: number; invalidCount: number; scannedAt: number };
   clients: { count: number; lagging: number };
   security: { webUIOpen: boolean };
+  displays: DisplayDoc[];
+  outputs: OutputStatusDoc[];
 }
 
 export const emptyProject: ProjectDoc = {
@@ -97,6 +103,8 @@ export const emptyProject: ProjectDoc = {
   patch: [],
   policy: 'dmx',
   library: { root: '' },
+  canvases: [],
+  outputs: [],
   ui: {},
 };
 
@@ -109,4 +117,6 @@ export const emptyLive: LiveDoc = {
   library: { root: '', rootExists: false, folders: 0, fileCount: 0, invalidCount: 0, scannedAt: 0 },
   clients: { count: 0, lagging: 0 },
   security: { webUIOpen: false },
+  displays: [],
+  outputs: [],
 };

@@ -122,9 +122,9 @@ export class LanthornClient {
   }
 
   /** Subscribes to the canvas preview; resolves with the stream id and the codec the engine chose. */
-  subscribePreview(codec: 'avc' | 'jpeg'): Promise<PreviewInfo> {
+  subscribePreview(codec: 'avc' | 'jpeg', target = 'canvas'): Promise<PreviewInfo> {
     return new Promise((resolve, reject) => {
-      if (!this.send({ t: 'sub', stream: 'preview', codec })) {
+      if (!this.send({ t: 'sub', stream: 'preview', codec, target })) {
         reject({ code: 'offline', message: 'not connected' });
         return;
       }

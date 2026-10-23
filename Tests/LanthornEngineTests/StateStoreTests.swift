@@ -203,3 +203,53 @@ extension StateStoreTests {
         #expect(store.project["layerCount"]?.int == 5)
     }
 }
+
+extension StateStoreTests {
+    @Test func outputCommandsAddSetValidateAndRemove() throws {
+        let (store, _) = Self.makeStore()
+        let id = try store.execute("output.add", args: ["display": ["uuid": "U1", "name": "Epson"]], role: .programmer).get().value?.int
+        #expect(id == 1)
+        var outputs = ProjectDocument.outputs(from: store.project)
+        #expect(outputs.count == 1 && outputs[0].display?.uuid == "U1" && outputs[0].slices.count == 1)
+        _ = try store.execute("output.set", args: ["id": 1, "path": "/blend/right/overlap", "value": 240], role: .programmer).get()
+        _ = try store.execute("output.set", args: ["id": 1, "path": "/warp/mesh", "value": ["cols": 3, "rows": 3, "points": .array((0..<9).map { ["x": .number(Double($0 % 3) / 2), "y": .number(Double($0 / 3) / 2)] })]], role: .programmer).get()
+        _ = try store.execute("output.set", args: ["id": 1, "path": "/intensity", "value": 7], role: .programmer).get()
+        outputs = ProjectDocument.outputs(from: store.project)
+        #expect(outputs[0].blend.right.overlap == 240)
+        #expect(outputs[0].warp.mesh?.cols == 3)
+        #expect(outputs[0].intensity == 1, "clamped")
+        #expect(store.execute("output.set", args: ["id": 1, "path": "/warp/mesh/cols", "value": 40], role: .programmer).failureCode == "invalidArgs")
+        #expect(store.execute("output.set", args: ["id": 1, "path": "/slices", "value": []], role: .programmer).failureCode == "invalidArgs")
+        #expect(store.execute("output.set", args: ["id": 1, "path": "/id", "value": 9], role: .programmer).failureCode == "invalidArgs")
+        #expect(store.execute("output.set", args: ["id": 2, "path": "/name", "value": "x"], role: .programmer).failureCode == "invalidArgs")
+        _ = try store.execute("output.add", role: .programmer).get()
+        #expect(ProjectDocument.outputs(from: store.project).map(\.id) == [1, 2])
+        _ = try store.execute("output.remove", args: ["id": 1], role: .programmer).get()
+        #expect(ProjectDocument.outputs(from: store.project).map(\.id) == [2])
+        _ = try store.execute("undo", role: .programmer).get()
+        #expect(ProjectDocument.outputs(from: store.project).map(\.id) == [1, 2])
+        _ = try store.execute("canvas.set", args: ["id": 1, "path": "/clockMaster", "value": 2], role: .programmer).get()
+        #expect(ProjectDocument.canvases(from: store.project).first?.clockMaster == 2)
+        #expect(store.execute("canvas.set", args: ["id": 1, "path": "/width", "value": 10], role: .programmer).failureCode == "invalidArgs")
+    }
+
+    @Test func outputBindingResolvesByIdentityAndElectsTheMaster() {
+        let displays = [
+            DisplayInfo(id: 7, uuid: "A", name: "LG", pixelWidth: 3840, pixelHeight: 2160, scale: 2, hz: 60, isMain: true, isBuiltin: false, modes: []),
+            DisplayInfo(id: 9, uuid: "B", name: "Epson", pixelWidth: 1920, pixelHeight: 1200, scale: 1, hz: 60, isMain: false, isBuiltin: false, modes: []),
+        ]
+        var left = OutputConfig(id: 1), right = OutputConfig(id: 2), gone = OutputConfig(id: 3), free = OutputConfig(id: 4)
+        left.display = DisplayIdentity(uuid: "B", name: "Epson")
+        right.display = DisplayIdentity(uuid: "B", name: "Epson")
+        gone.display = DisplayIdentity(uuid: "Z", name: "Unplugged")
+        let binding = OutputBinding.resolve(outputs: [left, right, gone, free], displays: displays)
+        #expect(binding.byDisplay == [9: [1, 2]])
+        #expect(binding.lost == [3] && binding.unassigned == [4])
+        #expect(OutputBinding.master(outputs: [left, right, gone, free], binding: binding, clockMaster: nil) == 9)
+        #expect(OutputBinding.master(outputs: [left, right, gone, free], binding: binding, clockMaster: 3) == 9, "a lost clock master falls back to the first bound output")
+        // unplug B: everything on it is lost, the master is gone
+        let after = OutputBinding.resolve(outputs: [left, right, gone, free], displays: [displays[0]])
+        #expect(after.byDisplay.isEmpty && after.lost == [1, 2, 3])
+        #expect(OutputBinding.master(outputs: [left, right, gone, free], binding: after, clockMaster: nil) == nil)
+    }
+}

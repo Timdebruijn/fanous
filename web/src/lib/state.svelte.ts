@@ -118,8 +118,9 @@ export async function subscribePreview(
   codec: 'avc' | 'jpeg',
   onFrame: (kind: number, payload: Uint8Array) => void,
   onDescription: (description: StreamDescription) => void,
+  target = 'canvas',
 ): Promise<PreviewInfo & { stop: () => void }> {
-  const info = await client.subscribePreview(codec);
+  const info = await client.subscribePreview(codec, target);
   binaryListeners.set(info.id, onFrame);
   streamListeners.set(info.id, onDescription);
   const existing = client.descriptions.get(info.id);

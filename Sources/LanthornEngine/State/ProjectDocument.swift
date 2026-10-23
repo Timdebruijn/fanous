@@ -11,7 +11,7 @@ import Logging
 public enum ProjectDocument {
     public static let schema = 1
 
-    public static func initial(patch: Patch, layerCount: Int, libraryRoot: String, policy: SourcePolicy) -> JSONValue {
+    public static func initial(patch: Patch, layerCount: Int, libraryRoot: String, policy: SourcePolicy, canvas: (width: Int, height: Int) = (1920, 1080)) -> JSONValue {
         [
             "schema": .number(Double(schema)),
             "name": "Untitled",
@@ -20,8 +20,51 @@ public enum ProjectDocument {
             "patch": patchValue(patch),
             "policy": .string(policy.rawValue),
             "library": ["root": .string(libraryRoot)],
+            "canvases": (try? JSONValue(encoding: [CanvasConfig(id: 1, name: "Canvas 1", width: canvas.width, height: canvas.height)])) ?? [],
+            "outputs": [],
             "ui": [:],
         ]
+    }
+
+    // MARK: Outputs (DESIGN.md §9)
+
+    public static func outputs(from project: JSONValue) -> [OutputConfig] {
+        guard let value = project["outputs"], let data = try? JSONEncoder().encode(value) else { return [] }
+        return (try? JSONDecoder().decode([OutputConfig].self, from: data)) ?? []
+    }
+
+    public static func canvases(from project: JSONValue) -> [CanvasConfig] {
+        guard let value = project["canvases"], let data = try? JSONEncoder().encode(value) else { return [] }
+        return (try? JSONDecoder().decode([CanvasConfig].self, from: data)) ?? []
+    }
+
+    static func validate(_ output: inout OutputConfig) throws {
+        output.intensity = min(1, max(0, output.intensity))
+        output.testPattern = min(7, max(0, output.testPattern))
+        for edge in [\OutputConfig.blend.left, \.blend.right, \.blend.top, \.blend.bottom] {
+            output[keyPath: edge].overlap = max(0, output[keyPath: edge].overlap)
+            output[keyPath: edge].power = min(10, max(0.1, output[keyPath: edge].power))
+            output[keyPath: edge].gamma = min(5, max(0.5, output[keyPath: edge].gamma))
+        }
+        output.blend.lift = min(0.5, max(0, output.blend.lift))
+        output.blend.liftFeather = max(0, output.blend.liftFeather)
+        guard output.warp.cornerPin.count == 4 else { throw CommandError.invalidArgs("cornerPin needs 4 points") }
+        if let mesh = output.warp.mesh {
+            guard (2...33).contains(mesh.cols), (2...33).contains(mesh.rows), mesh.points.count == mesh.cols * mesh.rows else {
+                throw CommandError.invalidArgs("mesh must be 2–33 columns and rows with cols×rows points")
+            }
+        }
+        guard !output.slices.isEmpty else { throw CommandError.invalidArgs("an output needs at least one slice") }
+        for i in output.slices.indices {
+            guard output.slices[i].dest.count == 4 else { throw CommandError.invalidArgs("slice dest needs 4 points") }
+            output.slices[i].opacity = min(1, max(0, output.slices[i].opacity))
+            if let mask = output.slices[i].mask, mask.path.count < 3 { output.slices[i].mask = nil }
+        }
+        if let region = output.region, region.w <= 0 || region.h <= 0 { throw CommandError.invalidArgs("region needs a positive size") }
+    }
+
+    static func setOutputs(_ outputs: [OutputConfig], in project: inout JSONValue) throws {
+        try project.set(try JSONValue(encoding: outputs), at: "/outputs")
     }
 
     /// `[{"fixture":"Layer 3","universe":"artnet:0.0.1","address":17}, …]`, sorted by universe then address.
@@ -56,10 +99,16 @@ public enum ProjectDocument {
         return Patch(entries: result)
     }
 
-    public static func load(from url: URL) -> JSONValue? {
-        guard let data = try? Data(contentsOf: url), let document = try? JSONDecoder().decode(JSONValue.self, from: data),
+    public static func load(from url: URL, canvas: (width: Int, height: Int) = (1920, 1080)) -> JSONValue? {
+        guard let data = try? Data(contentsOf: url), var document = try? JSONDecoder().decode(JSONValue.self, from: data),
             document["schema"]?.int == schema, document["patch"]?.array != nil
         else { return nil }
+        // keys added within schema 1 (Phase 6): give older files their defaults
+        if document["outputs"] == nil { try? document.set([], at: "/outputs") }
+        if document["canvases"] == nil {
+            try? document.set((try? JSONValue(encoding: [CanvasConfig(id: 1, name: "Canvas 1", width: canvas.width, height: canvas.height)])) ?? [], at: "/canvases")
+        }
+        if document["ui"] == nil { try? document.set([:], at: "/ui") }
         return document
     }
 
@@ -138,6 +187,70 @@ public enum ProjectDocument {
             })
         store.register(
             CommandSpec(
+                name: "output.add", role: .programmer, summary: "Add an output (one full-canvas slice, no blend, identity warp), optionally bound to a display.",
+                argsType: "{ display?: { uuid: string; name: string } }"
+            ) { project, args in
+                var outputs = ProjectDocument.outputs(from: project)
+                let id = (outputs.map(\.id).max() ?? 0) + 1
+                var output = OutputConfig(id: id)
+                if let uuid = args["display"]?["uuid"]?.string { output.display = DisplayIdentity(uuid: uuid, name: args["display"]?["name"]?.string ?? uuid) }
+                outputs.append(output)
+                try setOutputs(outputs, in: &project)
+                return .number(Double(id))
+            })
+        store.register(
+            CommandSpec(name: "output.remove", role: .programmer, summary: "Remove an output.", argsType: "{ id: number }") { project, args in
+                guard let id = args["id"]?.int else { throw CommandError.invalidArgs("args: { id }") }
+                var outputs = ProjectDocument.outputs(from: project)
+                guard outputs.contains(where: { $0.id == id }) else { throw CommandError.invalidArgs("no output \(id)") }
+                outputs.removeAll { $0.id == id }
+                try setOutputs(outputs, in: &project)
+                return nil
+            })
+        store.register(
+            CommandSpec(
+                name: "output.set", role: .programmer,
+                summary: "Set one value inside an output by JSON pointer (name, display, region, mode, intensity, blend/*, warp/*, slices/*, testPattern); the result is validated as a whole.",
+                argsType: "{ id: number; path: string; value: JSONValue }"
+            ) { project, args in
+                guard let id = args["id"]?.int, let path = args["path"]?.string, let pointer = try? JSONPointer(path), let value = args["value"] else {
+                    throw CommandError.invalidArgs("args: { id, path, value }")
+                }
+                guard !pointer.tokens.isEmpty, pointer.tokens.first != "id" else { throw CommandError.invalidArgs("path must name a field of the output") }
+                var outputs = ProjectDocument.outputs(from: project)
+                guard let index = outputs.firstIndex(where: { $0.id == id }) else { throw CommandError.invalidArgs("no output \(id)") }
+                var document = try JSONValue(encoding: outputs[index])
+                try document.set(value, at: pointer)
+                guard let data = try? JSONEncoder().encode(document), var updated = try? JSONDecoder().decode(OutputConfig.self, from: data) else {
+                    throw CommandError.invalidArgs("\(path) does not fit the output model")
+                }
+                updated.id = id
+                try validate(&updated)
+                outputs[index] = updated
+                try setOutputs(outputs, in: &project)
+                return nil
+            })
+        store.register(
+            CommandSpec(
+                name: "canvas.set", role: .programmer, summary: "Set the canvas name or clock-master output (size changes need a restart, B31).",
+                argsType: "{ id: number; path: '/name' | '/clockMaster'; value: JSONValue }"
+            ) { project, args in
+                guard let id = args["id"]?.int, let path = args["path"]?.string, ["/name", "/clockMaster"].contains(path), let value = args["value"] else {
+                    throw CommandError.invalidArgs("args: { id, path: /name | /clockMaster, value }")
+                }
+                var canvases = ProjectDocument.canvases(from: project)
+                guard let index = canvases.firstIndex(where: { $0.id == id }) else { throw CommandError.invalidArgs("no canvas \(id)") }
+                if path == "/name" {
+                    guard let name = value.string, !name.isEmpty else { throw CommandError.invalidArgs("name must be a string") }
+                    canvases[index].name = name
+                } else {
+                    canvases[index].clockMaster = value.int
+                }
+                try project.set(try JSONValue(encoding: canvases), at: "/canvases")
+                return nil
+            })
+        store.register(
+            CommandSpec(
                 name: "roles.setPassword", role: .programmer, undoable: false, summary: "Set or clear (null) the password of a role; machine setting, not part of the project.",
                 argsType: "{ role: Role; password: string | null }"
             ) { _, args in
@@ -152,6 +265,11 @@ public enum ProjectDocument {
                 return nil
             })
     }
+}
+
+extension JSONValue {
+    /// The project's outputs (empty when the document has none).
+    var outputsConfig: [OutputConfig] { ProjectDocument.outputs(from: self) }
 }
 
 extension FixtureRef {

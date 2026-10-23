@@ -83,7 +83,11 @@ public final class HeadlessDriver: @unchecked Sendable {
         self.thread = thread
     }
 
-    public func stop() { running.store(false, ordering: .relaxed) }
+    /// Stops and waits (≤ 1 s) for the last tick, so another driver can take the compositor.
+    public func stop() {
+        running.store(false, ordering: .relaxed)
+        thread.map { SecondaryDriver.join($0) }
+    }
 }
 
 /// Output driver paced by the engine's own clock with `nextDrawable()` for
@@ -124,5 +128,9 @@ public final class DrawableLoopDriver: @unchecked Sendable {
         self.thread = thread
     }
 
-    public func stop() { running.store(false, ordering: .relaxed) }
+    /// Stops and waits (≤ 1 s) for the last tick, so another driver can take the compositor.
+    public func stop() {
+        running.store(false, ordering: .relaxed)
+        thread.map { SecondaryDriver.join($0) }
+    }
 }

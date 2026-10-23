@@ -16,7 +16,11 @@ export interface PatchOp {
 }
 
 export type CommandName =
+  | 'canvas.set'
   | 'layers.setCount'
+  | 'output.add'
+  | 'output.remove'
+  | 'output.set'
   | 'patch.set'
   | 'project.set'
   | 'redo'
@@ -26,8 +30,16 @@ export type CommandName =
   | 'undo';
 
 export interface CommandArgs {
+  /** Set the canvas name or clock-master output (size changes need a restart, B31). Role: programmer, refused under show lock, undoable. */
+  'canvas.set': { id: number; path: '/name' | '/clockMaster'; value: JSONValue };
   /** Set the number of layers (1–64): new layers are patched at their standard address when that range is free, dropped layers are unpatched. Role: programmer, refused under show lock, undoable. */
   'layers.setCount': { count: number };
+  /** Add an output (one full-canvas slice, no blend, identity warp), optionally bound to a display. Role: programmer, refused under show lock, undoable. */
+  'output.add': { display?: { uuid: string; name: string } };
+  /** Remove an output. Role: programmer, refused under show lock, undoable. */
+  'output.remove': { id: number };
+  /** Set one value inside an output by JSON pointer (name, display, region, mode, intensity, blend/*, warp/*, slices/*, testPattern); the result is validated as a whole. Role: programmer, refused under show lock, undoable. */
+  'output.set': { id: number; path: string; value: JSONValue };
   /** Patch a fixture (layer, master, output) to a universe and address, or unpatch it with address 0. Role: programmer, refused under show lock, undoable. */
   'patch.set': { fixture: string; universe: string; address: number };
   /** Set one project value (name, policy, library.root, ui.*); layers.setCount changes the layer count. Role: programmer, refused under show lock, undoable. */
@@ -49,7 +61,7 @@ export type ClientMessage =
   | { t: 'cmd'; id: string; name: CommandName; args?: JSONValue }
   | { t: 'snapshot' }
   | { t: 'sub'; stream: 'dmx'; universe: string }
-  | { t: 'sub'; stream: 'preview'; codec?: 'avc' | 'jpeg' }
+  | { t: 'sub'; stream: 'preview'; codec?: 'avc' | 'jpeg'; target?: string }
   | { t: 'unsub'; id: number };
 
 export type ServerMessage =
@@ -59,7 +71,7 @@ export type ServerMessage =
   | { t: 'ack'; id: string; ok: true; rev: number; result: JSONValue }
   | { t: 'ack'; id: string; ok: false; error: { code: string; message: string } }
   | { t: 'sub'; id: number; stream: 'dmx'; universe: string }
-  | { t: 'sub'; id: number; stream: 'preview'; codec: 'avc' | 'jpeg'; w: number; h: number; fps: number }
+  | { t: 'sub'; id: number; stream: 'preview'; codec: 'avc' | 'jpeg'; w: number; h: number; fps: number; target: string }
   | { t: 'stream'; id: number; codec: string; description: string; w: number; h: number; fps: number }
   | { t: 'error'; code: string; message: string };
 

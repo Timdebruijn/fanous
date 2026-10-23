@@ -763,6 +763,37 @@ for each slice (ordered):
 One pass, no intermediate textures; "all output/mapping configuration is
 applied entirely on the GPU in the final output pass" is satisfied.
 
+### 9.5a Phase 6 as built (2026-10-23)
+
+- Model (`LanthornCore/Mapping/OutputModel.swift`) and edit-time math
+  (`MappingMath.swift`, Foundation only, tested): blend map (two floats per
+  pixel: factor and lift term), warp displacement field (homography for the
+  corner pin, Catmull-Rom surface through the mesh points, evaluated
+  separably), mask raster (signed distance with the feather, on a 4× coarser
+  grid for feathers ≥ 2 px; CoreGraphics fill for hard edges), 64×64 slice
+  meshes.
+- Output pass (`OutputRenderer.swift`, `mapped_vertex/fragment`): per output
+  region a viewport/scissor, per slice one indexed draw; slices alpha-blend
+  over each other in order; the Output fixture's intensity, blackout, test
+  pattern and raw switch and the Master's intensity/pattern are applied from
+  the parameter snapshot. Dither is an interleaved-gradient-noise function
+  (B34).
+- `OutputCoordinator` binds project outputs to displays by UUID, owns one
+  window per display, drives the compositor from the clock-master display and
+  presents the other displays from the latest completed canvas on their own
+  threads; drivers join on stop so the compositor never ticks twice. Without
+  a bound output the compositor runs headless. `DisplayManager` enumerates
+  displays with `CGDisplayCreateUUIDFromDisplayID` and debounces
+  reconfiguration callbacks (300 ms).
+- Commands `output.add/remove/set` (JSON-pointer edits validated as a whole),
+  `canvas.set`; `live.displays` and `live.outputs` (bound / lost /
+  unassigned, master). A scene `display` index becomes a bound output on first
+  start. The preview stream takes `target: output:<id>`.
+- Measured: 2×1 and 2×2 blends of a flat field are flat in linear light
+  within 2 % (readback test, γ 1 and 2.2); a 33×33 mesh with a feathered mask
+  compiles at 1080p in 3.7 ms (release) / 145 ms (debug); binding an output
+  to the built-in display costs one missed frame at the driver switch.
+
 ### 9.6 Display identity, modes, hot-plug
 
 - Outputs bind to a display by `CGDisplayCreateUUIDFromDisplayID` + EDID

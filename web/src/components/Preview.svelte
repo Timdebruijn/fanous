@@ -5,7 +5,8 @@
   import { onMount } from 'svelte';
   import { app, subscribePreview } from '../lib/state.svelte';
 
-  // Canvas preview (DESIGN.md §11.3): WebCodecs H.264 when the browser decodes it, JPEG at 5 fps otherwise.
+  // Canvas (or output) preview (DESIGN.md §11.3): WebCodecs H.264 when the browser decodes it, JPEG at 5 fps otherwise.
+  let { target = 'canvas' }: { target?: string } = $props();
   let canvas: HTMLCanvasElement | undefined = $state();
   let mode = $state<'connecting' | 'avc' | 'jpeg' | 'off'>('connecting');
   let detail = $state('');
@@ -40,6 +41,7 @@
       const sub = await subscribePreview(
         'jpeg',
         async (_kind, payload) => {
+          if (!canvas) return;
           const bitmap = await createImageBitmap(new Blob([payload as BlobPart], { type: 'image/jpeg' }));
           if (canvas && (canvas.width !== bitmap.width || canvas.height !== bitmap.height)) {
             canvas.width = bitmap.width;
@@ -48,6 +50,7 @@
           drawBitmap(bitmap);
         },
         () => {},
+        target,
       );
       stop = sub.stop;
       mode = 'jpeg';
@@ -92,6 +95,7 @@
             void fallbackToJPEG(String(error));
           }
         },
+        target,
       );
       stop = sub.stop;
       detail = `${sub.w}×${sub.h} · ${sub.fps} fps`;
@@ -109,9 +113,18 @@
     };
   });
 
-  // reconnects re-subscribe
+  // reconnects re-subscribe; a new target restarts the stream
   $effect(() => {
     if (app.connection === 'open' && stop === null && mode !== 'connecting') void start();
+  });
+  let shownTarget = target;
+  $effect(() => {
+    if (target === shownTarget) return;
+    shownTarget = target;
+    stop?.();
+    stop = null;
+    frames = 0;
+    void start();
   });
 </script>
 

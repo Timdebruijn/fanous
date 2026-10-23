@@ -27,6 +27,10 @@ public final class PreviewStreamer: @unchecked Sendable {
     public let width: Int
     public let height: Int
     public let fps: Double
+    /// When set, the preview shows this output (post-warp/blend) instead of the canvas; compiled for the preview size.
+    nonisolated(unsafe) public var outputSet: OutputSet?
+    private let parameters: TripleBuffer<ParameterSnapshotSlot>
+    private let mappedUniforms: MTLBuffer
     private let context: MetalContext
     private let logger: Logger
     private let queue = DispatchQueue(label: "org.lanthorn.preview", qos: .utility)
@@ -49,8 +53,11 @@ public final class PreviewStreamer: @unchecked Sendable {
     /// Tests: encode even without subscribers.
     nonisolated(unsafe) var alwaysEncode = false
 
-    public init(context: MetalContext, width: Int, height: Int, fps: Double, canvasFPS: Double, logger: Logger) throws {
+    public init(context: MetalContext, width: Int, height: Int, fps: Double, canvasFPS: Double, parameters: TripleBuffer<ParameterSnapshotSlot>, logger: Logger) throws {
         self.context = context
+        self.parameters = parameters
+        guard let mapped = context.device.makeBuffer(length: Compositor.mappedUniformsLength, options: .storageModeShared) else { throw RenderError.pipeline("preview mapped uniforms") }
+        mappedUniforms = mapped
         self.width = width & ~1
         self.height = height & ~1
         self.fps = fps
@@ -63,7 +70,7 @@ public final class PreviewStreamer: @unchecked Sendable {
             o.size = SIMD2(Float(self.width), Float(self.height))
             return o
         }()
-        pass.colorAttachments[0].loadAction = .dontCare
+        pass.colorAttachments[0].loadAction = .clear
         pass.colorAttachments[0].storeAction = .store
         let attributes: [CFString: Any] = [
             kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey: self.width, kCVPixelBufferHeightKey: self.height,
@@ -127,11 +134,19 @@ public final class PreviewStreamer: @unchecked Sendable {
             return
         }
         encoder.label = "preview"
-        encoder.setRenderPipelineState(context.outputPipeline)
-        encoder.setFragmentBuffer(uniforms, offset: 0, index: 0)
-        encoder.setFragmentTexture(canvas, index: 0)
-        encoder.setFragmentSamplerState(context.linearSampler, index: 0)
-        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        if let set = outputSet {
+            // same thread as the compositor tick, so reading the parameter slot here is the reader's own slot
+            let snapshot = parameters.read()
+            OutputPass.draw(
+                set, canvas: canvas, encoder: encoder, context: context, uniforms: mappedUniforms,
+                master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs)
+        } else {
+            encoder.setRenderPipelineState(context.outputPipeline)
+            encoder.setFragmentBuffer(uniforms, offset: 0, index: 0)
+            encoder.setFragmentTexture(canvas, index: 0)
+            encoder.setFragmentSamplerState(context.linearSampler, index: 0)
+            encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        }
         encoder.endEncoding()
         framesIn.wrappingAdd(1, ordering: .relaxed)
         let keep = cvTexture  // the CVMetalTexture must outlive the GPU work

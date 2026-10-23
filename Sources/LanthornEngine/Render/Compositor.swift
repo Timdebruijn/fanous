@@ -28,6 +28,12 @@ public final class Compositor: @unchecked Sendable {
     nonisolated(unsafe) public var offscreenOutput: MTLTexture?
     /// Browser previews (DESIGN.md §11.3): draws the canvas into a small pixel buffer on the same command buffer.
     nonisolated(unsafe) public var previewTap: ((MTLTexture, MTLCommandBuffer, Double) -> Void)?
+    /// Output regions of the master display (DESIGN.md §9): nil = the whole drawable shows the canvas.
+    /// Replaced as one reference by Control; the tick reads it once.
+    nonisolated(unsafe) public var outputSet: OutputSet?
+    private let mappedUniformBuffers: [MTLBuffer]
+    /// 256 bytes per slice draw: enough for 64 slices across the outputs of one display.
+    static let mappedUniformsLength = 256 * 64
 
     private let canvases: [MTLTexture]
     private let canvasPasses: [MTLRenderPassDescriptor]
@@ -86,6 +92,12 @@ public final class Compositor: @unchecked Sendable {
             guard let buffer = context.device.makeBuffer(length: 256, options: .storageModeShared) else { throw RenderError.pipeline("output uniforms") }
             return buffer
         }
+        mappedUniformBuffers = try (0..<3).map { _ in
+            guard let buffer = context.device.makeBuffer(length: Self.mappedUniformsLength, options: .storageModeShared) else { throw RenderError.pipeline("mapped uniforms") }
+            return buffer
+        }
+        outputPass.colorAttachments[0].loadAction = .clear
+        outputPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
     }
 
     public func setLayers(_ layers: [RenderLayer]) { self.layers = Array(layers.prefix(maxLayers)) }
@@ -168,7 +180,13 @@ public final class Compositor: @unchecked Sendable {
 
         if let target = drawable?.texture ?? offscreenOutput {
             outputPass.colorAttachments[0].texture = target
-            if let output = commandBuffer.makeRenderCommandEncoder(descriptor: outputPass) {
+            if let set = outputSet, let output = commandBuffer.makeRenderCommandEncoder(descriptor: outputPass) {
+                output.label = "mapped output"
+                OutputPass.draw(
+                    set, canvas: canvases[canvasIndex], encoder: output, context: context, uniforms: mappedUniformBuffers[canvasIndex],
+                    master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs)
+                output.endEncoding()
+            } else if let output = commandBuffer.makeRenderCommandEncoder(descriptor: outputPass) {
                 output.label = "output"
                 let buffer = outputUniformBuffers[canvasIndex]
                 buffer.contents().assumingMemoryBound(to: OutputUniforms.self).pointee = {
@@ -358,6 +376,47 @@ public final class Compositor: @unchecked Sendable {
         let distance: Float = 2, near: Float = 0.1
         let projection = simd_float4x4(SIMD4(1 / aspect, 0, 0, 0), SIMD4(0, 1, 0, 0), SIMD4(0, 0, -1 / distance, -1 / distance), SIMD4(0, 0, 1 - near, 1))
         return (projection * translate * rz * ry * rx * scale, quad)
+    }
+
+    // MARK: Secondary displays
+
+    /// Draws the latest completed canvas through `set` into a drawable of another display (DESIGN.md §4.5):
+    /// its own command buffer on the caller's thread; `uniforms` belongs to that caller.
+    public func present(_ set: OutputSet, to drawable: CAMetalDrawable, uniforms: MTLBuffer) {
+        let snapshot = parameters.read()
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = drawable.texture
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].storeAction = .store
+        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        guard let commandBuffer = context.queue.makeCommandBuffer(), let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else {
+            outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
+            return
+        }
+        encoder.label = "secondary output"
+        OutputPass.draw(
+            set, canvas: latestCanvas, encoder: encoder, context: context, uniforms: uniforms,
+            master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs)
+        encoder.endEncoding()
+        commandBuffer.present(drawable)
+        commandBuffer.commit()
+    }
+
+    /// Reads the offscreen output (BGRA 8-bit) back; tests only.
+    public func readbackOutput() -> (width: Int, height: Int, bgra: [UInt8]) {
+        guard let texture = offscreenOutput else { return (0, 0, []) }
+        let bytesPerRow = texture.width * 4
+        guard let buffer = context.device.makeBuffer(length: bytesPerRow * texture.height, options: .storageModeShared),
+            let commandBuffer = context.queue.makeCommandBuffer(), let blit = commandBuffer.makeBlitCommandEncoder()
+        else { return (0, 0, []) }
+        blit.copy(
+            from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+            sourceSize: MTLSize(width: texture.width, height: texture.height, depth: 1), to: buffer, destinationOffset: 0,
+            destinationBytesPerRow: bytesPerRow, destinationBytesPerImage: bytesPerRow * texture.height)
+        blit.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        return (texture.width, texture.height, Array(UnsafeBufferPointer(start: buffer.contents().assumingMemoryBound(to: UInt8.self), count: bytesPerRow * texture.height)))
     }
 
     // MARK: Diagnostics
