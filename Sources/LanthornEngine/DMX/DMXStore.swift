@@ -5,6 +5,7 @@
 import Foundation
 import LanthornCore
 import Logging
+import QuartzCore
 
 public struct ResolvedParameterInfo: Encodable, Sendable {
     public var key: String
@@ -51,6 +52,9 @@ public final class DMXStore: @unchecked Sendable {
     private var resolvers: [FixtureRef: FixtureResolver] = [:]
     private var announced: Set<String> = []
     private var timer: DispatchSourceTimer?
+    /// Render-side parameters, one write per resolved DMX packet (ADR-0002 hand-off).
+    public let snapshots = TripleBuffer { ParameterSnapshotSlot(maxLayers: 32) }
+    private var sequence: UInt64 = 0
 
     public init(patch: Patch, logger: Logger) {
         self.logger = logger
@@ -76,7 +80,7 @@ public final class DMXStore: @unchecked Sendable {
 
     public func stop() { timer?.cancel() }
 
-    static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
+    static var now: TimeInterval { CACurrentMediaTime() }
 
     // MARK: Called on `queue`
 
@@ -99,9 +103,11 @@ public final class DMXStore: @unchecked Sendable {
         switch command {
         case .setParameter(let fixture, let parameter, let raw):
             resolvers[fixture]?.setInternal(parameter, raw: raw, source: .osc, at: now)
+            publish(receivedAt: 0)
         case .setMedia(let layer, let folder, let file):
             resolvers[.layer(layer)]?.setInternal(.layer(.folder), raw: UInt16(clamping: folder), source: .osc, at: now)
             resolvers[.layer(layer)]?.setInternal(.layer(.file), raw: UInt16(clamping: file), source: .osc, at: now)
+            publish(receivedAt: 0)
         default:
             logger.info("OSC command not wired yet", metadata: ["command": "\(command)"])
         }
@@ -118,6 +124,21 @@ public final class DMXStore: @unchecked Sendable {
         for entry in patch.entries where entry.universe == universe {
             guard let raw = ChannelMap.rawValues(mode: entry.fixture.mode, slots: slots, address: entry.address) else { continue }
             resolvers[entry.fixture]?.updateDMX(raw, at: time)
+        }
+        publish(receivedAt: time)
+    }
+
+    /// ponytail: iterates the resolver dictionary per packet; a fixed layer array comes with projects (Phase 5).
+    private func publish(receivedAt: TimeInterval) {
+        sequence += 1
+        let sequence = self.sequence
+        snapshots.write { slot in
+            slot.sequence = sequence
+            slot.receivedAt = receivedAt
+            if let master = resolvers[.master] { slot.master = Float(master.physical(.master(.intensity)) / 100) }
+            for (fixture, resolver) in resolvers {
+                if case .layer(let n) = fixture, n >= 1, n <= slot.layers.count { slot.layers[n - 1] = LayerParameters.from(resolver) }
+            }
         }
     }
 

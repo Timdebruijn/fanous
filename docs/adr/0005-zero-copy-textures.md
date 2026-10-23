@@ -27,3 +27,15 @@ packed 16-bit YCbCr; HAP frames are GPU block-compressed formats.
   for one or two frames).
 − If a future decoder emits an unexpected format, the fallback is a transfer
   session on the decode thread, logged and visible in metrics.
+
+## Amendment 2026-10-23 (Phase 2 spike)
+
+On macOS 27 the hardware ProRes decoder's native output is Apple's
+lossless-compressed bi-planar 16-bit YCbCr (`&sv2` for 4:2:2, `&sv4` for
+4:4:4), not `v216`/`y416`. `CVMetalTextureCache` wraps those planes as
+`r16Unorm` + `rg16Unorm` textures without a copy, so the zero-copy claim holds
+and bandwidth is lower than with packed formats. `&sv4` carries no alpha, so
+ProRes 4444 sessions request `y416` (≈0.8 ms extra per 1080p frame on the
+decode thread). HAP frames reach the GPU through `MTLTexture.replace` into
+pooled textures (0.4–0.8 ms per 1080p frame including Snappy); a blit from a
+shared buffer remains the alternative if that copy ever shows up in profiles.

@@ -1,0 +1,55 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 Tim de Bruijn
+// Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
+
+import AVFoundation
+import Foundation
+import LanthornCore
+import LanthornEngine
+import Logging
+
+func usage() -> Never {
+    print(
+        """
+        usage: lanthorn-bench media --dir DIR [--seconds N] [--only NAME]   generate benchmark media
+               lanthorn-bench spike FILE [--frames N]                       decode a file, report formats and timing
+               lanthorn-bench run --media DIR [--codec prores422hq|hapq] [--res 1920x1080p60] [--max-layers N]
+                                  [--window SECONDS] [--soak SECONDS] [--display N | --headless] [--out DIR]
+        """)
+    exit(64)
+}
+
+var arguments = Array(CommandLine.arguments.dropFirst())
+guard let command = arguments.first else { usage() }
+arguments.removeFirst()
+
+@MainActor func option(_ name: String) -> String? {
+    guard let index = arguments.firstIndex(of: name), index + 1 < arguments.count else { return nil }
+    return arguments[index + 1]
+}
+@MainActor func flag(_ name: String) -> Bool { arguments.contains(name) }
+
+EngineLogging.bootstrap(fileURL: AppPaths.logs.appending(path: "lanthorn-bench.log"))
+let logger = Logger(label: "bench")
+
+switch command {
+case "media":
+    guard let dir = option("--dir") else { usage() }
+    let seconds = Double(option("--seconds") ?? "3") ?? 3
+    let only = option("--only")
+    try MediaGenerator.generate(into: URL(fileURLWithPath: dir), seconds: seconds, only: only, logger: logger)
+case "spike":
+    guard let file = arguments.first else { usage() }
+    let frames = Int(option("--frames") ?? "120") ?? 120
+    try DecodeSpike.run(file: URL(fileURLWithPath: file), frames: frames, logger: logger)
+case "run":
+    guard let media = option("--media") else { usage() }
+    try Benchmark.run(
+        mediaDirectory: URL(fileURLWithPath: media), codec: option("--codec") ?? "prores422hq",
+        resolution: option("--res") ?? "1920x1080p60", maxLayers: Int(option("--max-layers") ?? "16") ?? 16,
+        window: Double(option("--window") ?? "60") ?? 60, soak: Double(option("--soak") ?? "0") ?? 0,
+        display: option("--display").flatMap(Int.init), headless: flag("--headless"),
+        outputDirectory: URL(fileURLWithPath: option("--out") ?? "docs/benchmarks"), logger: logger)
+default:
+    usage()
+}

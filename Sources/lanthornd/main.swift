@@ -16,6 +16,7 @@ func usage() -> String {
       --port N         HTTPS port (default 8443)
       --web-root PATH  directory with the built web UI (default: auto-detect)
       --foreground     run attached to the terminal (default when started by hand)
+      --scene FILE     render a Phase 2 scene (JSON: canvasWidth, canvasHeight, fps, layers[], display)
       --version        print the version and exit
     """
 }
@@ -42,6 +43,7 @@ default:
 
 var port: UInt16 = 8443
 var webRootOverride: URL?
+var sceneFile: URL?
 var arguments = CommandLine.arguments.dropFirst().makeIterator()
 while let argument = arguments.next() {
     switch argument {
@@ -59,6 +61,12 @@ while let argument = arguments.next() {
         webRootOverride = URL(fileURLWithPath: value)
     case "--foreground":
         break
+    case "--scene":
+        guard let value = arguments.next() else {
+            FileHandle.standardError.write(Data("missing --scene value\n".utf8))
+            exit(64)
+        }
+        sceneFile = URL(fileURLWithPath: value)
     case "--version":
         print("lanthornd \(LanthornVersion.string)")
         exit(0)
@@ -79,7 +87,14 @@ do {
 }
 EngineLogging.bootstrap(fileURL: AppPaths.logs.appending(path: "lanthornd.log"), level: ProcessInfo.processInfo.environment["LANTHORN_LOG"] == "debug" ? .debug : .info)
 let logger = Logger(label: "lanthornd")
-let engine = Engine(options: EngineOptions(port: port, webRoot: webRootOverride ?? WebRoot.locate()), logger: logger)
+var scene: SceneConfig?
+if let sceneFile {
+    do { scene = try SceneConfig.load(sceneFile) } catch {
+        FileHandle.standardError.write(Data("cannot load scene: \(error)\n".utf8))
+        exit(1)
+    }
+}
+let engine = Engine(options: EngineOptions(port: port, webRoot: webRootOverride ?? WebRoot.locate(), scene: scene), logger: logger)
 do {
     try engine.start()
 } catch {

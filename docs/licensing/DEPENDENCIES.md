@@ -18,8 +18,8 @@ checks).
 
 | Code | Version / commit | License | GPLv3-compatible | Use | Notes |
 |---|---|---|---|---|---|
-| Vidvox/hap (`hap.c`, `hap.h`) | master @ `d847f6b` (2024-07-25) | BSD-2-Clause | yes | HAP encode/decode (chunk callback for parallel decode) | no commits since 2024-07; we own fixes; fuzz-tested inputs |
-| google/snappy | 1.3.1 = `9c28114` (2026-09-18) | BSD-3-Clause (text match; COPYING unlabeled) | yes | HAP frame (de)compression | C++ target |
+| Vidvox/hap (`hap.c`, `hap.h`) | master @ `d847f6b` (2024-07-25), vendored in `Sources/CHap` | BSD-2-Clause | yes | HAP encode/decode (chunk callback for parallel decode) | no commits since 2024-07; we own fixes; fuzz-tested inputs (Phase 3) |
+| google/snappy | 1.3.1 = `9c28114` (2026-09-18), vendored in `Sources/CSnappy` | BSD-3-Clause (text match; COPYING unlabeled) | yes | HAP frame (de)compression | C++17 target; `snappy-stubs-public.h` generated for macOS |
 | Syphon/Syphon-Framework | main @ `f476167` (2026-09-21); last tagged release "5" is from 2019 | Syphon Framework License (BSD-3-Clause style) | yes | Syphon Metal server/client | pin to commit, not tag |
 
 Not used: Vidvox/hap-in-avfoundation (multi-license file with YCoCg/EA

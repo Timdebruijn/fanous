@@ -5,14 +5,18 @@
 import Foundation
 import LanthornCore
 import Logging
+import QuartzCore
 
 public struct EngineOptions: Sendable {
     public var port: UInt16
     public var webRoot: URL
+    /// Phase 2: a static scene to render (until projects exist in Phase 5).
+    public var scene: SceneConfig?
 
-    public init(port: UInt16 = 8443, webRoot: URL) {
+    public init(port: UInt16 = 8443, webRoot: URL, scene: SceneConfig? = nil) {
         self.port = port
         self.webRoot = webRoot
+        self.scene = scene
     }
 }
 
@@ -34,6 +38,8 @@ public final class Engine: @unchecked Sendable {
     private var artnet: ArtNetReceiver?
     private var sacn: SACNReceiver?
     private var osc: OSCReceiver?
+    private var render: RenderService?
+    public let metrics = MetricsRing()
 
     public init(options: EngineOptions, logger: Logger) {
         self.options = options
@@ -70,8 +76,21 @@ public final class Engine: @unchecked Sendable {
         self.sacn = sacn
         self.osc = osc
 
+        if let scene = options.scene {
+            let context = try MetalContext()
+            let service = try MainActor.assumeIsolated {
+                try RenderService(scene: scene, context: context, parameters: dmx.snapshots, metrics: metrics, logger: logger)
+            }
+            render = service
+            let log = logger
+            Task { @MainActor in
+                do { try await service.start() } catch { log.error("render start failed", metadata: ["error": "\(error)"]) }
+            }
+        }
+
         let startedAt = self.startedAt
         let webRoot = options.webRoot
+        let metrics = self.metrics
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let server = try HTTPSServer(port: options.port, identity: identity, webRoot: options.webRoot, logger: logger) { request in
@@ -91,6 +110,8 @@ public final class Engine: @unchecked Sendable {
                     body: GDTFExporter.gdtf())
             case "/api/channel-map.md":
                 return .text(200, ChannelMapDocument.markdown())
+            case "/api/metrics":
+                return .text(200, metrics.summary(seconds: 10, now: CACurrentMediaTime()).description)
             default:
                 return nil
             }

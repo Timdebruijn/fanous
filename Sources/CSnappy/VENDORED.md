@@ -1,0 +1,1 @@
+Vendored from https://github.com/google/snappy at commit 9c28114a38866f6deeaa826db918293bc28ae410 (release 1.3.1, 2026-09-18). snappy-stubs-public.h was generated from the .in template for macOS (HAVE_SYS_UIO_H=1). License: BSD-3-Clause, see LICENSE.

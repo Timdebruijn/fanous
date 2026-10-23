@@ -30,6 +30,8 @@ Linux, Intel, base M1, a timeline editor.
 
 **Platform floor:** Apple Silicon with a hardware ProRes engine. Minimum macOS
 15 (ADR-0020; the brief said 14, raised with the owner's approval of `[OPEN-1]`).
+Shaders are compiled at engine start from source (`MTLDevice.makeLibrary(source:)`),
+so no offline Metal toolchain is needed to build or run.
 
 ---
 
@@ -214,9 +216,9 @@ contract; the compositor does not care where a texture came from.
 
 | Source | Demux | Decode | Texture path | Notes |
 |---|---|---|---|---|
-| ProRes 422 (Proxy/LT/422/HQ) | `AVSampleCursor` + `AVSampleBufferGenerator` (random access, all-intra) | `VTDecompressionSession`, hardware required (`kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder`) | IOSurface-backed `CVPixelBuffer` in the decoder's native packed 16-bit 4:2:2 format `v216` (`kCVPixelFormatType_422YpCbCr16`) → `MTLTexture` made directly from the IOSurface as `rgba16Unorm` at **half width** (one texel = Cb, Y0, Cr, Y1) | Apple names `v216` as the most native output of the hardware decoder (WWDC20 10090); the layer shader unpacks the pair and converts YCbCr→RGB (Rec.709/2020 per track). Zero copy. |
-| ProRes 4444 / 4444 XQ (with alpha) | same | same | native `y416` (`kCVPixelFormatType_4444AYpCbCr16`, packed A Y Cb Cr 16-bit) → `rgba16Unorm` texture from the IOSurface, swizzled in-shader | the delivered format is asserted at runtime; if a decoder ever delivers something else the layer logs it and falls back to a `VTPixelTransferSession` on its decode thread (`[OPEN-3]`) |
-| HAP / HAP Alpha / HAP Q / HAP Q Alpha / HAP Alpha-only | same (compressed samples only) | `hap.c` `HapDecode` with chunk callback → Snappy on the HAP chunk pool; DXT bytes written straight into a pooled shared-storage `MTLBuffer` | blit `MTLBuffer` → `MTLTexture` (`bc1_rgba`, `bc3_rgba`, `bc4_rUnorm`; HAP Q = `bc3` interpreted as scaled YCoCg in shader; HAP Q Alpha = two textures) | CPU-bound (Snappy); unified memory means the "upload" is a GPU-side copy, no PCIe. HAP R (`bc7`) is the same path later. |
+| ProRes 422 (Proxy/LT/422/HQ) | `AVSampleCursor` + `AVSampleBufferGenerator` (random access, all-intra) | `VTDecompressionSession`, hardware required (`kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder`) | **Measured on macOS 27 / M1 Pro (Phase 2 spike):** the decoder's native output is Apple's lossless-compressed bi-planar 16-bit 4:2:2 (`&sv2`), IOSurface-backed; `CVMetalTextureCache` wraps the planes as `r16Unorm` + `rg16Unorm` without a copy | 0.8 ms per 1080p frame (p50). YCbCr→RGB (Rec.709 video range) in the layer shader. The `v216`/`y416` paths from WWDC20 are kept as fallbacks. |
+| ProRes 4444 / 4444 XQ (with alpha) | same | same | native `&sv4` (bi-planar 4:4:4) **drops alpha**, so the session requests `y416` (packed A Y Cb Cr 16-bit); IOSurface → `rgba16Unorm` texture, swizzled in-shader | 1.8 ms per 1080p frame vs 0.95 ms native: the conversion costs ≈0.8 ms on the decode thread. Alpha-less 4444 files could use the native path later (`[OPEN-3]` resolved for v1: alpha wins). |
+| HAP / HAP Alpha / HAP Q / HAP Q Alpha / HAP Alpha-only | same (compressed samples only) | `hap.c` `HapDecode` with a chunk callback (`DispatchQueue.concurrentPerform` over the frame's chunks) → Snappy; DXT bytes land in a per-layer staging buffer | `MTLTexture.replace(region:)` into a per-ring-slot pooled texture (`bc1_rgba`, `bc3_rgba`, `bc4_rUnorm`; HAP Q = `bc3` read as scaled YCoCg in the shader; HAP Q Alpha = two textures) | **Measured:** HAP Q 0.8 ms, HAP 0.4 ms per 1080p frame (p50) incl. the copy. CPU-bound (Snappy). HAP R (`bc7`) is the same path later. |
 | Still (PNG/JPEG/TIFF/HEIF) | ImageIO | ImageIO → `MTLTexture` once (`rgba8`/`rgba16`) | resident | premultiplied alpha normalized on load |
 | Image sequence | not played directly: ingest converts to ProRes 4444 / HAP (§8) | — | — | keeps the engine to two movie codecs |
 | Syphon input | `SyphonMetalClient` | — | the server's `MTLTexture` is sampled directly | library folder 0 (§8.2) |
@@ -1282,7 +1284,7 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 |---|---|---|
 | OPEN-1 | Raise the minimum macOS from 14 to **15**? Gains: stdlib `Synchronization` (`Atomic`, `Mutex`, macOS 15+) instead of swift-atomics (whose own README says it is superseded), one dependency fewer; macOS 14 Sonoma received its last update in Aug 2026 and is absent from the Sep 2026 security batches (verified 2026-10-22), i.e. outside Apple's n-2 window now that macOS 27 is out. CAMetalDisplayLink needs 14+, so 15 keeps everything in the brief. Metal 4 (macOS 26+) is not needed. | **Decided 2026-10-22: 15** |
 | OPEN-2 | Bundle identifier / reverse-DNS prefix | **Decided: `org.lanthorn`** (`org.lanthorn.app`, `org.lanthorn.engine`) |
-| OPEN-3 | Native pixel formats of the hardware ProRes decoder (422 bi-planar 10-bit; 4444 with alpha) | decided by the Phase 2 spike |
+| OPEN-3 | Native pixel formats of the hardware ProRes decoder | **Measured (Phase 2):** 422 → `&sv2` lossless-compressed bi-planar 16-bit (zero copy); 4444 → `y416` requested to keep alpha (≈0.8 ms/1080p frame conversion) |
 | OPEN-4 | Optional frame blending for rate-mismatched content | v1.x |
 | OPEN-5 | 10-bit output drawables (`bgr10a2`/`rgba16Float` with EDR off) | v1.x; blue-noise dither in v1 |
 | OPEN-6 | Keep the chip capability table in `docs/hardware.md` and in Core; who verifies new chips | owner verifies per generation |
