@@ -28,10 +28,18 @@ see the README there). `lanthornd channel-map` prints the DMX channel map,
 `lanthornd gdtf FILE` writes the GDTF fixture file; `scripts/check-channel-map.sh`
 keeps `docs/channel-map.md` in sync.
 
-The first engine start generates an ECDSA key and self-signed certificate in
-the login keychain (`Lanthorn TLS`) and writes the public certificate and its
-fingerprint to `~/Library/Application Support/Lanthorn/tls/`. Logs:
-`~/Library/Logs/Lanthorn/lanthornd.log`.
+The first engine start generates an ECDSA key and self-signed certificate
+(data-protection keychain for signed builds, login keychain otherwise) and
+writes the public certificate and its fingerprint to
+`~/Library/Application Support/Lanthorn/tls/`. Unsigned development builds:
+the login keychain prompts when the binary changes, so run
+`lanthornd reset-tls` after a rebuild to regenerate the identity for the
+current build. Logs: `~/Library/Logs/Lanthorn/lanthornd.log`.
+
+Phase 2 render spike: `lanthornd --scene scene.json` renders a static scene
+(`{"canvasWidth":1920,"canvasHeight":1080,"fps":60,"display":0,"layers":["a.mov","b.mov"]}`),
+driven by the standard DMX patch; `/api/metrics` reports frame timing and the
+DMX-to-photon estimate. `scripts/bench-sweep.sh` runs the benchmark matrix.
 
 - `docs/DESIGN.md` — the design (architecture, pipeline, channel map, UI, roadmap)
 - `docs/adr/` — architecture decision records

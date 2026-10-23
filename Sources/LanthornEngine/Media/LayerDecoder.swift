@@ -63,7 +63,7 @@ public final class LayerDecoder: @unchecked Sendable {
                 next = ahead <= ring.capacity ? (lastProduced + dir + count) % count : want
             }
             do {
-                try source.decode(frame: next, into: slot)
+                try autoreleasepool { try source.decode(frame: next, into: slot) }
                 ring.commit()
                 lastProduced = next
                 decoded.wrappingAdd(1, ordering: .relaxed)

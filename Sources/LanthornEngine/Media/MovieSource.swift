@@ -92,6 +92,8 @@ public final class MovieSource: @unchecked Sendable {
 
     /// Spike switch: when false, 4444 decodes to the decoder's native alpha-less format (&sv4).
     nonisolated(unsafe) public static var requestAlphaFor4444 = true
+    /// Spike switch: decode HAP chunks one after another instead of in parallel.
+    nonisolated(unsafe) public static var serialHAPDecode = false
 
     public let url: URL
     public let info: MovieInfo
@@ -280,8 +282,8 @@ public final class MovieSource: @unchecked Sendable {
 
     private static let decodeCallback: HapDecodeCallback = { function, context, count, _ in
         guard let function else { return }
-        if count <= 1 {
-            function(context, 0)
+        if count <= 1 || MovieSource.serialHAPDecode {
+            for i in 0..<count { function(context, i) }
         } else {
             DispatchQueue.concurrentPerform(iterations: Int(count)) { function(context, UInt32($0)) }
         }

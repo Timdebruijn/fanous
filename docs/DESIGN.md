@@ -310,6 +310,11 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
   repeat or skip canvas frames; that is the documented behaviour.
 - `preferredFrameLatency = 1` on every link (lowest DMX→photon latency; the
   benchmark checks that this does not cost frames at the tier's layer count).
+- **Phase 2 finding:** on macOS 27.0.1 `CAMetalDisplayLink` stops after three
+  presented frames in every configuration tried (ADR-0006 amendment). The
+  shipping driver is therefore a mach-clock-paced thread using
+  `nextDrawable()` on a `displaySyncEnabled` layer with two drawables; the
+  display-link driver is kept behind a switch for re-testing.
 - No output displays (preview-only / headless bench): the compositor runs on a
   `mach_wait_until` loop at the project's canvas rate.
 - Display sleep, mode change or hot-unplug: the output thread stops its link;
@@ -360,12 +365,13 @@ labelled "not yet benchmarked".
 | Tier | Chips | Media engines (Apple spec) | Expected max layers, canvas 1080p60 | Expected max layers, canvas 4K60 | Notes |
 |---|---|---|---|---|---|
 | **1 Base** | M2, M3, M4, M5 | 1 | 6 × 1080p60 ProRes 422 HQ · 8 × 1080p60 HAP Q | 2 × 4K60 ProRes HQ · 3 × 4K60 HAP Q | 8 GB/16 GB memory limits ring depth; 2 external displays |
-| **2 Pro** (reference: M1 Pro) | M1 Pro, M2 Pro, M3 Pro, M4 Pro, (M5 Pro) | 1 | 8 × 1080p60 ProRes 422 HQ · 12 × 1080p60 HAP Q | 4 × 4K30 / 2–3 × 4K60 ProRes HQ · 4 × 4K60 HAP Q | all v1 acceptance criteria are defined on this tier first |
+| **2 Pro** (reference: M1 Pro) | M1 Pro, M2 Pro, M3 Pro, M4 Pro, (M5 Pro) | 1 | **Measured 2026-10-23 (M1 Pro, 32 GB):** 16 × 1080p60 ProRes 422 HQ (cap) · 16 × 1080p60 HAP Q (cap) | **Measured:** 16 × 4K30 ProRes HQ (cap) · 16 × 4K30 HAP Q (cap, ring 8) · 3–7 × 4K60 ProRes HQ (decode jitter, Phase 3) · ≥ 4 × 4K60 HAP Q (ring 8) | all v1 acceptance criteria are defined on this tier first; details in `docs/benchmarks/README.md` |
 | **3 Max** | M1 Max, M2 Max, M3 Max, M4 Max, (M5 Max) | 2 | 16 (cap) | 8 × 4K60 ProRes HQ · 8 × 4K60 HAP Q | 4 external displays |
 | **4 Ultra** | M1 Ultra, M2 Ultra, M3 Ultra | 4 | 16 (cap) | 16 (cap) | 5+ displays |
 
 Tier knobs the engine sets automatically (overridable in System settings):
-frame-ring depth, HAP chunk-pool size, canvas precision (`rgba16Float`
+frame-ring depth (8 frames per layer at 4K, 6 at 1080p: measured to be the
+decisive knob at 4K), HAP chunk-pool size, canvas precision (`rgba16Float`
 default, `rgba8Unorm` as "performance" mode), preview resolution/fps, number
 of simultaneous dissolves allowed (a dissolve costs a second decoder), ingest
 concurrency.
@@ -1249,7 +1255,7 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | R3 | Network.framework's queue-based delivery adds jitter/latency to DMX | DMX→photon latency | measured in Phase 2; fallback: BSD socket + dedicated thread for Art-Net/sACN only (the brief's Network.framework rule would then be relaxed for this path, recorded in an ADR) |
 | R4 | `AVSampleBufferGenerator` behaviour with HAP tracks (custom fourcc) or odd files | playback of some files | Phase 2 spike with files from several encoders (AfterCodecs, ffmpeg-made HAP, Vidvox tools); fallback: own minimal QuickTime demuxer for all-intra `.mov` (bounded scope) |
 | R5 | Multi-display presentation drift with mixed refresh rates | visible judder on secondary outputs | documented behaviour + warning; recommend identical modes; measured in Phase 6 |
-| R6 | TLS identity in the keychain from a LaunchAgent (prompts, ACLs) | first-run friction | Phase 0 spike; fallback: identity stored as PKCS#12 in Application Support (0600) and imported into an in-memory keychain at start |
+| R6 | TLS identity in the keychain (prompts, ACLs) | first-run friction; **seen in Phase 2**: the login keychain prompts "lanthornd wants to use key" whenever an ad-hoc signed build changes, and the TLS handshake blocks until the dialog is answered | Signed (Developer ID) builds use the data-protection keychain (no prompts, access scoped to the app identifier); development builds fall back to the login keychain and run `lanthornd reset-tls` after a rebuild. A permissive "any application" ACL was rejected as a security weakening. |
 | R7 | WebCodecs H.264 decode gaps on older iPad Safari | preview quality | real-decode test at connect; JPEG fallback; document "iPadOS 26+ recommended" |
 | R8 | Writing HAP into `.mov` via `AVAssetWriter` passthrough fails for custom fourccs | ingest to HAP | Phase 4 spike; fallback own all-intra muxer |
 | R9 | Audio/video drift and device changes at show time | audible glitches | layer-clock-master design, drift correction, device-change handler that re-creates the graph and logs; measured in Phase 3 |
@@ -1260,6 +1266,7 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | R14 | Single maintainer | bus factor, schedule | design and ADRs are the knowledge base; phases are independently shippable; CLA in place for future contributors |
 | R15 | Memory pressure on 16 GB machines with 4K layers | stalls | budget rules (§4.6), tier knobs, red warning before activation |
 | R16 | Thermal throttling on MacBook Pro during long shows | dropped frames late in a show | thermal state in status bar and readiness; benchmark includes a 10-min soak; recommend AC + stand/airflow in docs |
+| R17 | `CAMetalDisplayLink` stalls after three presented frames on macOS 27.0.1 (measured, ADR-0006 amendment) | the brief's render clock cannot be used as-is | drawable-loop driver with the same compositor and metrics; display-link driver kept behind a switch; re-test on each macOS release; Apple Feedback with the standalone reproduction |
 
 ---
 
@@ -1306,4 +1313,5 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | OPEN-22 | Browser smoke tests (Playwright) | Phase 5 if cheap |
 | OPEN-23 | Library default location `~/Movies/Lanthorn Library` | yes |
 | OPEN-24 | Default ports: HTTPS 8443, OSC 8000/8001; configurable | yes |
+| OPEN-26 | Keychain strategy for unsigned development builds (prompt on every rebuild vs. ephemeral per-process identity) | `reset-tls` after rebuild; revisit if it hurts the dev loop |
 | OPEN-25 | Register an Art-Net OEM code with Artistic Licence (free, needed for a proper `ArtPollReply`) | owner, before 1.0; 0xFFFF until then |

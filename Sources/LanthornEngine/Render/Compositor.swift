@@ -8,6 +8,7 @@ import Logging
 import Metal
 import QuartzCore
 import simd
+import Synchronization
 
 /// Render-side state of one layer; touched only by the compositor thread.
 public final class RenderLayer {
@@ -77,6 +78,12 @@ public final class Compositor: @unchecked Sendable {
     private var lastTarget = 0.0
     private var lastSequence: UInt64 = 0
     private let logger: Logger
+    public let ticks = Atomic<Int>(0)
+    public let encoderFailures = Atomic<Int>(0)
+    public let completed = Atomic<Int>(0)
+    public let gpuErrors = Atomic<Int>(0)
+    public let outputEncoderFailures = Atomic<Int>(0)
+    nonisolated(unsafe) public var lastGPUError: String = ""
 
     public init(
         context: MetalContext, canvasWidth: Int, canvasHeight: Int, fps: Double, maxLayers: Int, metrics: MetricsRing,
@@ -121,6 +128,7 @@ public final class Compositor: @unchecked Sendable {
 
     /// One compositor tick. `target` is the target presentation time (host seconds).
     public func tick(target: Double, drawable: CAMetalDrawable?) {
+        ticks.wrappingAdd(1, ordering: .relaxed)
         let cpuStart = CACurrentMediaTime()
         var record = FrameRecord()
         record.target = target
@@ -143,7 +151,10 @@ public final class Compositor: @unchecked Sendable {
 
         guard let commandBuffer = context.queue.makeCommandBuffer(),
             let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: canvasPasses[canvasIndex])
-        else { return }
+        else {
+            encoderFailures.wrappingAdd(1, ordering: .relaxed)
+            return
+        }
         encoder.label = "canvas"
         encoder.setRenderPipelineState(context.layerPipeline)
         encoder.setFragmentSamplerState(context.linearSampler, index: 0)
@@ -196,6 +207,8 @@ public final class Compositor: @unchecked Sendable {
                 output.setFragmentSamplerState(context.linearSampler, index: 0)
                 output.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                 output.endEncoding()
+            } else {
+                outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
             }
             commandBuffer.present(drawable)
         }
@@ -205,7 +218,12 @@ public final class Compositor: @unchecked Sendable {
         record.cpuMicros = UInt32((CACurrentMediaTime() - cpuStart) * 1e6)
         let slot = metrics.write(record)
         let metrics = self.metrics
-        commandBuffer.addCompletedHandler { buffer in
+        commandBuffer.addCompletedHandler { [self] buffer in
+            completed.wrappingAdd(1, ordering: .relaxed)
+            if buffer.status == .error {
+                gpuErrors.wrappingAdd(1, ordering: .relaxed)
+                lastGPUError = "\(buffer.error.map { "\($0)" } ?? "unknown")"
+            }
             metrics.complete(slot: slot, gpuMicros: UInt32(max(0, (buffer.gpuEndTime - buffer.gpuStartTime) * 1e6)), late: buffer.gpuEndTime > target)
         }
         commandBuffer.commit()

@@ -14,8 +14,11 @@ public struct SceneConfig: Codable, Sendable {
     public var fps = 60.0
     public var layers: [String] = []  // movie paths, layer 1 first
     public var display: Int?  // NSScreen index; nil = headless
-    public var ringCapacity = 4
+    /// Frames decoded ahead per layer; 8 is needed for 4K (benchmarks 2026-10-23), 6 suffices for 1080p.
+    public var ringCapacity = 8
     public var frameLatency = 1
+    /// CAMetalDisplayLink instead of the drawable loop (stalls on macOS 27.0.1, see ADR-0006 amendment).
+    public var useDisplayLink = false
 
     public init() {}
 
@@ -36,6 +39,7 @@ public final class RenderService {
     private var layers: [RenderLayer] = []
     private var window: OutputWindow?
     private var displayDriver: DisplayLinkDriver?
+    private var loopDriver: DrawableLoopDriver?
     private var headlessDriver: HeadlessDriver?
 
     public init(scene: SceneConfig, context: MetalContext, parameters: TripleBuffer<ParameterSnapshotSlot>, metrics: MetricsRing, logger: Logger) throws {
@@ -78,19 +82,33 @@ public final class RenderService {
             let screens = NSScreen.screens
             guard display < screens.count else { throw RenderError.pipeline("display \(display) not found (\(screens.count) screens)") }
             let window = OutputWindow(screen: screens[display], device: device)
-            displayDriver = DisplayLinkDriver(layer: window.metalLayer, fps: scene.fps, compositor: compositor, frameLatency: scene.frameLatency)
+            // Let the window server attach the layer to its display before the display link binds to it.
+            try await Task.sleep(for: .milliseconds(250))
+            if scene.useDisplayLink {
+                displayDriver = DisplayLinkDriver(layer: window.metalLayer, fps: scene.fps, compositor: compositor, frameLatency: scene.frameLatency)
+            } else {
+                loopDriver = DrawableLoopDriver(layer: window.metalLayer, fps: scene.fps, compositor: compositor)
+            }
             self.window = window
-            logger.info("output on display \(display)", metadata: ["size": "\(window.metalLayer.drawableSize)", "frameLatency": "\(scene.frameLatency)"])
+            logger.info("output on display \(display)", metadata: ["size": "\(window.metalLayer.drawableSize)", "driver": "\(scene.useDisplayLink ? "CAMetalDisplayLink" : "drawable loop")", "frameLatency": "\(scene.frameLatency)"])
         } else {
             headlessDriver = HeadlessDriver(fps: scene.fps, compositor: compositor)
             logger.info("headless compositor", metadata: ["fps": "\(scene.fps)"])
         }
     }
 
+    /// Diagnostics: display-link updates seen, compositor ticks, encoder failures.
+    public var counters: (updates: Int, ticks: Int, encoderFailures: Int, completed: Int, gpuErrors: Int, outputFailures: Int, lastError: String) {
+        (displayDriver?.updates.load(ordering: .relaxed) ?? -1, compositor.ticks.load(ordering: .relaxed), compositor.encoderFailures.load(ordering: .relaxed),
+         compositor.completed.load(ordering: .relaxed), compositor.gpuErrors.load(ordering: .relaxed), compositor.outputEncoderFailures.load(ordering: .relaxed), compositor.lastGPUError)
+    }
+
     public func stop() {
         displayDriver?.stop()
+        loopDriver?.stop()
         headlessDriver?.stop()
         displayDriver = nil
+        loopDriver = nil
         headlessDriver = nil
         usleep(50_000)
         for layer in layers { layer.decoder.stop() }

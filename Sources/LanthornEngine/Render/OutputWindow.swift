@@ -24,7 +24,6 @@ public final class OutputWindow {
         window.ignoresMouseEvents = true
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         let view = NSView(frame: NSRect(origin: .zero, size: frame.size))
-        view.wantsLayer = true
         metalLayer = CAMetalLayer()
         metalLayer.device = device
         metalLayer.pixelFormat = MetalContext.outputFormat
@@ -32,7 +31,9 @@ public final class OutputWindow {
         metalLayer.displaySyncEnabled = true
         metalLayer.contentsScale = screen.backingScaleFactor
         metalLayer.drawableSize = CGSize(width: frame.width * screen.backingScaleFactor, height: frame.height * screen.backingScaleFactor)
-        view.layer = metalLayer
+        metalLayer.frame = view.bounds
+        view.layer = metalLayer  // layer-hosting view: set the layer before wantsLayer
+        view.wantsLayer = true
         window.contentView = view
         window.setFrame(frame, display: true)
         window.orderFrontRegardless()

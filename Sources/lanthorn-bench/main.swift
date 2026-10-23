@@ -15,6 +15,8 @@ func usage() -> Never {
                lanthorn-bench spike FILE [--frames N]                       decode a file, report formats and timing
                lanthorn-bench run --media DIR [--codec prores422hq|hapq] [--res 1920x1080p60] [--max-layers N]
                                   [--window SECONDS] [--soak SECONDS] [--display N | --headless] [--out DIR]
+                                  [--layers N (single step)] [--ring N (frames per layer ring)]
+                                  [--dmx (parameters from Art-Net on 6454; reports DMX-to-photon)] [--displaylink]
         """)
     exit(64)
 }
@@ -41,6 +43,7 @@ case "media":
 case "spike":
     guard let file = arguments.first else { usage() }
     let frames = Int(option("--frames") ?? "120") ?? 120
+    MovieSource.serialHAPDecode = flag("--serial-hap")
     try DecodeSpike.run(file: URL(fileURLWithPath: file), frames: frames, logger: logger)
 case "run":
     guard let media = option("--media") else { usage() }
@@ -49,7 +52,9 @@ case "run":
         resolution: option("--res") ?? "1920x1080p60", maxLayers: Int(option("--max-layers") ?? "16") ?? 16,
         window: Double(option("--window") ?? "60") ?? 60, soak: Double(option("--soak") ?? "0") ?? 0,
         display: option("--display").flatMap(Int.init), headless: flag("--headless"),
-        outputDirectory: URL(fileURLWithPath: option("--out") ?? "docs/benchmarks"), logger: logger)
+        outputDirectory: URL(fileURLWithPath: option("--out") ?? "docs/benchmarks"),
+        onlyLayers: option("--layers").flatMap(Int.init), ringCapacity: option("--ring").flatMap(Int.init),
+        dmx: flag("--dmx"), useDisplayLink: flag("--displaylink"), logger: logger)
 default:
     usage()
 }

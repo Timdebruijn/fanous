@@ -13,6 +13,7 @@ func usage() -> String {
     usage: lanthornd [--port N] [--web-root PATH] [--foreground]
            lanthornd channel-map            print docs/channel-map.md to stdout
            lanthornd gdtf FILE              write the GDTF fixture file
+           lanthornd reset-tls              delete the TLS key and certificate (regenerated at next start)
       --port N         HTTPS port (default 8443)
       --web-root PATH  directory with the built web UI (default: auto-detect)
       --foreground     run attached to the terminal (default when started by hand)
@@ -24,6 +25,10 @@ func usage() -> String {
 switch CommandLine.arguments.dropFirst().first {
 case "channel-map":
     print(ChannelMapDocument.markdown(), terminator: "")
+    exit(0)
+case "reset-tls":
+    TLSIdentity.reset(directory: AppPaths.tls)
+    print("TLS identity removed; a new one is generated at the next start")
     exit(0)
 case "gdtf":
     guard CommandLine.arguments.count == 3 else {

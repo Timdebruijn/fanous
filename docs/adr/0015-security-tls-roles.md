@@ -29,3 +29,13 @@ the server runs on trusted networks; a password on the web UI is welcome.
 − First-run keychain interaction from a LaunchAgent is a Phase 0 spike (R6);
   fallback is a PKCS#12 file in Application Support loaded into an in-memory
   keychain.
+
+## Amendment 2026-10-23 (Phase 2)
+
+Risk R6 materialised: an ad-hoc signed `lanthornd` that differs from the build
+that created the key makes the login keychain prompt, and the TLS handshake
+blocks on the dialog. Decision: signed builds store the identity in the
+data-protection keychain (`kSecUseDataProtectionKeychain`, no per-app prompts,
+scoped to the application identifier); unsigned builds fall back to the login
+keychain and use `lanthornd reset-tls` after a rebuild. Weakening the key's
+ACL to "any application" was considered and rejected.

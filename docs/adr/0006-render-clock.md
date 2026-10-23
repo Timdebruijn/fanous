@@ -25,3 +25,29 @@ slowest display.
   content cadence, which is what projection blends need.
 − Secondary displays at a different rate show cadence artifacts; documented,
   warned, and measured.
+
+## Amendment 2026-10-23 (Phase 2): CAMetalDisplayLink stalls on macOS 27.0.1
+
+Measured on the M1 Pro reference machine (macOS 27.0.1, build 26A434):
+`CAMetalDisplayLink` delivers exactly three updates and then none, as soon as
+the delegate presents the update's drawable (`commandBuffer.present(drawable)`).
+This happened in every variant tried: delegate on a background run loop or on
+main, `preferredFrameLatency` 1 or 2, fixed or default frame-rate range,
+`maximumDrawableCount` 2 or 3, layer-hosting or layer-backed view, borderless
+or titled window, shielding or normal level, accessory or regular app, bare
+executable, embedded Info.plist, and a real `.app` launched by LaunchServices.
+A delegate that does not present keeps receiving ~60 updates/s, and the classic
+`CAMetalLayer.nextDrawable()` path presents 156 frames in 2.5 s in the same
+window, so the window, the layer and presentation itself are fine. GPU
+completion handlers and `addPresentedHandler` fire for the three frames.
+
+Decision: the output driver is a dedicated thread paced by the engine's mach
+clock at the canvas rate that takes `nextDrawable()` from a `displaySyncEnabled`
+layer with `maximumDrawableCount = 2` (one frame of latency), and presents
+through the command buffer. Missed frames show up as target-time gaps, exactly
+as with the display link. `DisplayLinkDriver` stays in the tree behind
+`SceneConfig.useDisplayLink` so the behaviour can be re-tested on later macOS
+releases; the brief's "no CVDisplayLink" rule is still honoured. The two
+drivers share the compositor, so switching back is a one-line change.
+Follow-up: file Feedback with Apple with the standalone reproduction
+(`scratchpad/linktest5.swift` saved as `docs/benchmarks/cametaldisplaylink-repro.swift`).
