@@ -22,7 +22,36 @@ export interface ProjectDoc {
   library: { root: string };
   canvases: CanvasConfig[];
   outputs: OutputConfig[];
+  /** cue list (DESIGN §15.2): fixture and parameter by name, raw DMX values */
+  cues: CueDoc[];
+  timecode: TimecodeSettingsDoc;
   ui: Record<string, unknown>;
+}
+
+export interface CueValueDoc {
+  fixture: string; // "Layer 3" | "Master" | "Output 1"
+  parameter: string; // parameter key, e.g. "intensity", "playMode"
+  raw: number;
+  fade?: number; // seconds, overrides the cue's fade
+}
+
+export interface CueDoc {
+  id: string;
+  number: number;
+  name: string;
+  fade: number; // seconds
+  values: CueValueDoc[];
+  trigger?: string | null; // "hh:mm:ss:ff@25" (rates: 24, 25, 29.97df, 30)
+  follow?: number | null; // seconds after which the next cue fires
+}
+
+export interface TimecodeSettingsDoc {
+  source: 'off' | 'ltc' | 'mtc';
+  device: string | null;
+  channel: number;
+  offset: number; // frames
+  freewheel: number; // seconds
+  layerOffsets: Record<string, number>; // layer number → frames
 }
 
 export interface ResolvedParameter {
@@ -93,6 +122,34 @@ export interface LiveDoc {
   security: { webUIOpen: boolean };
   displays: DisplayDoc[];
   outputs: OutputStatusDoc[];
+  timecode: { state: 'off' | 'locked' | 'freewheel' | 'lost'; source: string; value: string; rate: string; frames: number; seen: number; error: string | null; device: string };
+  cue: { current: number | null; currentName: string | null; next: number | null; nextName: string | null; fading: boolean; count: number };
+  show: { mode: boolean; checkedAt: number; ready: boolean; readiness: ReadinessItemDoc[] };
+  system: {
+    thermal: 'nominal' | 'fair' | 'serious' | 'critical';
+    onAC: boolean;
+    power: string;
+    memoryFreeFraction: number;
+    memoryGB: number;
+    os: string;
+    host: string;
+    addresses: string[];
+    port: number;
+    tlsFingerprint: string;
+    bonjour: string;
+  };
+  osc: { port: number; recent: { at: number; command: string }[]; midiSources: string[]; audioInputs: string[] };
+  /** CITP/MSEX media-server side: TCP port advertised by PLoc, connected consoles, open streams. */
+  citp: { port: number; clients: string[]; streams: number; multicast: string[] };
+}
+
+export interface ReadinessItemDoc {
+  id: string;
+  title: string;
+  state: 'ok' | 'fail' | 'manual' | 'hard';
+  detail: string;
+  fix: string;
+  acknowledged: boolean;
 }
 
 export const emptyProject: ProjectDoc = {
@@ -105,6 +162,8 @@ export const emptyProject: ProjectDoc = {
   library: { root: '' },
   canvases: [],
   outputs: [],
+  cues: [],
+  timecode: { source: 'off', device: null, channel: 0, offset: 0, freewheel: 2, layerOffsets: {} },
   ui: {},
 };
 
@@ -119,4 +178,10 @@ export const emptyLive: LiveDoc = {
   security: { webUIOpen: false },
   displays: [],
   outputs: [],
+  timecode: { state: 'off', source: '', value: '--:--:--:--', rate: '25', frames: 0, seen: 0, error: null, device: '' },
+  cue: { current: null, currentName: null, next: null, nextName: null, fading: false, count: 0 },
+  show: { mode: false, checkedAt: 0, ready: false, readiness: [] },
+  system: { thermal: 'nominal', onAC: true, power: '', memoryFreeFraction: 1, memoryGB: 0, os: '', host: '', addresses: [], port: 8443, tlsFingerprint: '', bonjour: '' },
+  osc: { port: 8000, recent: [], midiSources: [], audioInputs: [] },
+  citp: { port: 0, clients: [], streams: 0, multicast: [] },
 };

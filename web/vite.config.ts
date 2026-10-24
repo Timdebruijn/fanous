@@ -11,6 +11,7 @@ export default defineConfig({
     // `vite dev` against a running engine; the built UI is served by lanthornd itself.
     proxy: {
       '/healthz': { target: 'https://127.0.0.1:8443', secure: false },
+      '/metrics': { target: 'https://127.0.0.1:8443', secure: false },
       '/api': { target: 'https://127.0.0.1:8443', secure: false },
       '/ws': { target: 'wss://127.0.0.1:8443', ws: true, secure: false },
     },

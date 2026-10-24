@@ -48,6 +48,10 @@ public final class PreviewStreamer: @unchecked Sendable {
     public let framesIn = Atomic<Int>(0)
     public let framesOut = Atomic<Int>(0)
     public let skipped = Atomic<Int>(0)
+    /// The latest JPEG (bytes, width, height) for CITP streaming frames; produced at 5 fps while anyone wants it.
+    public let latestJPEG = Mutex<([UInt8], Int, Int)?>(nil)
+    /// Set by the CITP server while a console streams; nil = only WebSocket JPEG subscribers count.
+    nonisolated(unsafe) public var externalJPEGWanted: (@Sendable () -> Bool)?
     /// Tests: every delivered H.264 access unit with the current avcC.
     nonisolated(unsafe) var onFrame: (([UInt8], [UInt8]) -> Void)?
     /// Tests: encode even without subscribers.
@@ -115,7 +119,7 @@ public final class PreviewStreamer: @unchecked Sendable {
     /// `Compositor.previewTap`: encodes the downscale into the tick's command buffer when a frame is due.
     public func tap(canvas: MTLTexture, commandBuffer: MTLCommandBuffer, target: Double) {
         tickCounter &+= 1
-        guard tickCounter % everyNth == 0, hasSubscribers || alwaysEncode, let pool, let textureCache else { return }
+        guard tickCounter % everyNth == 0, hasSubscribers || alwaysEncode || externalJPEGWanted?() == true, let pool, let textureCache else { return }
         var pixelBuffer: CVPixelBuffer?
         guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer) == kCVReturnSuccess, let pixelBuffer else {
             skipped.wrappingAdd(1, ordering: .relaxed)
@@ -178,10 +182,12 @@ public final class PreviewStreamer: @unchecked Sendable {
 
     private func encode(_ pixelBuffer: CVPixelBuffer, target: Double) {
         let (h264, jpeg) = subscribers.withLock { subs in (subs.filter { !$0.jpeg }, subs.filter { $0.jpeg }) }
-        if !jpeg.isEmpty, target - lastJPEG >= 0.2 {
+        if !jpeg.isEmpty || externalJPEGWanted?() == true, target - lastJPEG >= 0.2 {
             lastJPEG = target
             if let data = ciContext.jpegRepresentation(of: CIImage(cvPixelBuffer: pixelBuffer), colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.7]) {
-                for s in jpeg { _ = s.connection.send(stream: s.stream, kind: .jpeg, payload: Array(data)) }
+                let bytes = Array(data)
+                latestJPEG.withLock { $0 = (bytes, width, height) }
+                for s in jpeg { _ = s.connection.send(stream: s.stream, kind: .jpeg, payload: bytes) }
             }
         }
         guard !h264.isEmpty || alwaysEncode, let session else { return }

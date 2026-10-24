@@ -1224,7 +1224,7 @@ MSC and MIDI-triggered cues are additions, not rewrites.
   (ephemeral, advertised).
 - MSEX over TCP, negotiating the highest version both sides support
   (1.0/1.1/1.2): `CInf`/`SInf` (server info, layer count), `LSta` (layer
-  status: media, position, playing state at 4 Hz), `ELIn`/`EInf` (element
+  status: media, position, playing state at 4 Hz), `ELIn`/`MEIn` (element
   libraries = folders, elements = files with names/dimensions/fps/length),
   `EThn` (JPEG/RGB8 thumbnails from the library cache), `StFr` (streaming
   frames of a layer or canvas, JPEG, ≤ 320 px, rate as requested up to
@@ -1249,6 +1249,62 @@ against a schema derived from the spec text, and the file is imported into
 grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
 
 ---
+
+### 16.3 Phase 7 as built (2026-10-24)
+
+- **Timecode** (`ShowControl/TimecodeInput.swift`): `TimecodeClock` keeps one
+  (timecode, host time) sample under a mutex with locked / freewheel / lost
+  states; `frames(at:)` extrapolates for the chase and returns nil once lost.
+  `LTCInput` runs an `AVAudioEngine` input graph with an `AVAudioSinkNode`
+  (device picked by name through CoreAudio, microphone permission requested
+  once) and feeds the Core `LTCDecoder`; `MTCInput` opens a CoreMIDI UMP
+  (MIDI 1.0 protocol) input port, assembles quarter frames (+2 frames) and
+  reads full-frame SysEx. The compositor chases in the `timecode` play mode:
+  `(tc − projectOffset − layerOffset) / rate × fileFps`, looped inside
+  in/out (`Render/TimecodeOffsets.swift`). Settings live in `project.timecode`
+  (`timecode.set`); `live.timecode` carries state, value, rate, device, error.
+- **Cues** (`ShowControl/CueRunner.swift`, `ShowCommands.swift`): `project.cues[]`
+  stores cues UI-friendly (`{number, name, fade, values:[{fixture:"Layer 3",
+  parameter:"intensity", raw, fade?}], trigger:"hh:mm:ss:ff@25", follow}`),
+  validated against the channel map by `cue.add/set/remove`; `cue.go/back/goto`
+  drive the Core `CueEngine` through `CueRunner` (fades ticked at 50 Hz while
+  anything fades or a follow is pending, timecode triggers from the clock).
+  Cue values enter `DMXStore.setCue` as the internal `.cue` source, so the
+  source policy decides per layer. `live.cue`: current, next, fading, count.
+- **OSC**: the full §15.3 address map is routed through `DMXStore.onCommand`
+  into the state store (cue, show lock/mode, timecode enable); bundles with
+  timetags are scheduled on Control; `live.osc.recent` is the log the Show
+  screen shows. `/lanthorn/project/load` waits for project bundles (B35).
+- **Show mode and readiness** (`ShowControl/ShowMode.swift`): IOPM assertions
+  (`PreventUserIdleDisplaySleep`, `PreventUserIdleSystemSleep`),
+  `beginActivity` (latency critical, no App Nap), ingest paused. Readiness
+  runs the 14 §14 items on entering and every 30 s while on
+  (`readiness.run`, `readiness.acknowledge`); `show.mode` is refused with the
+  blocking ids (`notReady`). The remaining §14 side effects (display modes,
+  shielding level and cursor, log level, thumbnail/preview throttling) are
+  B33/B42.
+- **System**: `/metrics` (JSON: frames, GPU/CPU timing, DMX age, audio,
+  preview, clients), `/api/logs` (ring tail), Bonjour `_lanthorn._tcp`,
+  `live.system` (thermal, power, memory, OS, host, addresses, TLS fingerprint).
+- **CITP/MSEX**: codec in Core (`CITP/CITP.swift`, `CITP/CITPMSEX.swift`:
+  PINF `PLoc`/`PNam`, MSEX 1.0–1.2 `CInf`/`SInf`/`Nack`/`LSta`/`GELI`/`ELIn`/
+  `GEIn`/`MEIn`/`GETh`/`EThn`/`RqSt`/`StFr`, little-endian, byte-exact tests);
+  transport in Engine (`Net/CITPServer.swift`): one `NWListener` on an
+  ephemeral TCP port, `PLoc` every 5 s to `224.0.0.180` and `239.224.0.180`
+  (both groups, port 4809, a BSD socket: `NWConnection` does not deliver to
+  multicast groups), per session the highest common version ≤ 1.2,
+  `SInf` with one DMX source string per layer, `LSta` at 4 Hz from the layer
+  status, libraries = numbered folders, elements = numbered files with their
+  probed metadata, thumbnails from the library cache, streaming frames = the
+  canvas JPEG from the preview path (≤ 10 fps, only encoded while a console
+  streams), `Nack` for MSEX types we do not model. The server UUID is a
+  per-install file in Application Support. `live.citp` lists port, consoles
+  and open streams. Verified in loopback only (B40).
+- **UI**: Show screen (Go / Back / Go to, Space = go, timecode panel with
+  source and offsets, cue list and editor, OSC log, MIDI sources) and
+  System / Health screen (show-mode switch with the readiness panel, machine
+  and network facts, metric tiles and a sparkline polled from `/metrics`
+  every 2 s, roles and passwords, log tail with filter and download).
 
 ## 17. Licensing setup (ADR-0015)
 

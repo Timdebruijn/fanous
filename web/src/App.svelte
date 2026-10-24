@@ -12,7 +12,8 @@
   import Media from './screens/Media.svelte';
   import Outputs from './screens/Outputs.svelte';
   import Patch from './screens/Patch.svelte';
-  import Placeholder from './screens/Placeholder.svelte';
+  import Show from './screens/Show.svelte';
+  import System from './screens/System.svelte';
 
   onMount(() => {
     connect();
@@ -52,9 +53,9 @@
     {:else if route.screen === 'outputs'}
       <Outputs />
     {:else if route.screen === 'show'}
-      <Placeholder title="Show control" phase="Phase 7" />
+      <Show />
     {:else}
-      <Placeholder title="System / Health" phase="Phase 7" />
+      <System />
     {/if}
     <footer>
       {attributionText.replace(repositoryURL, '')}<a href={repositoryURL}>{repositoryURL}</a>

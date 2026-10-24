@@ -17,21 +17,43 @@ export interface PatchOp {
 
 export type CommandName =
   | 'canvas.set'
+  | 'cue.add'
+  | 'cue.back'
+  | 'cue.go'
+  | 'cue.goto'
+  | 'cue.remove'
+  | 'cue.set'
   | 'layers.setCount'
   | 'output.add'
   | 'output.remove'
   | 'output.set'
   | 'patch.set'
   | 'project.set'
+  | 'readiness.acknowledge'
+  | 'readiness.run'
   | 'redo'
   | 'roles.setPassword'
   | 'show.lock'
+  | 'show.mode'
   | 'show.unlock'
+  | 'timecode.set'
   | 'undo';
 
 export interface CommandArgs {
   /** Set the canvas name or clock-master output (size changes need a restart, B31). Role: programmer, refused under show lock, undoable. */
   'canvas.set': { id: number; path: '/name' | '/clockMaster'; value: JSONValue };
+  /** Add a cue: { number, name, fade?, values?: [{fixture, parameter, raw, fade?}], trigger?: "hh:mm:ss:ff@rate", follow? }. Role: programmer, refused under show lock, undoable. */
+  'cue.add': { number: number; name: string; fade?: number; values?: { fixture: string; parameter: string; raw: number; fade?: number }[]; trigger?: string | null; follow?: number | null };
+  /** Fire the previous cue. Role: operator. */
+  'cue.back': Record<string, never>;
+  /** Fire the next cue. Role: operator. */
+  'cue.go': Record<string, never>;
+  /** Fire the cue with this number. Role: operator. */
+  'cue.goto': { number: number };
+  /** Remove a cue by id. Role: programmer, refused under show lock, undoable. */
+  'cue.remove': { id: string };
+  /** Replace one cue by id (whole object, validated). Role: programmer, refused under show lock, undoable. */
+  'cue.set': { id: string; cue: JSONValue };
   /** Set the number of layers (1–64): new layers are patched at their standard address when that range is free, dropped layers are unpatched. Role: programmer, refused under show lock, undoable. */
   'layers.setCount': { count: number };
   /** Add an output (one full-canvas slice, no blend, identity warp), optionally bound to a display. Role: programmer, refused under show lock, undoable. */
@@ -44,14 +66,22 @@ export interface CommandArgs {
   'patch.set': { fixture: string; universe: string; address: number };
   /** Set one project value (name, policy, library.root, ui.*); layers.setCount changes the layer count. Role: programmer, refused under show lock, undoable. */
   'project.set': { path: string; value: JSONValue };
+  /** Acknowledge a failed readiness item so show mode can be entered. Role: programmer. */
+  'readiness.acknowledge': { id: string };
+  /** Run the readiness checks now. Role: operator. */
+  'readiness.run': Record<string, never>;
   /** Redo the last undone command. Role: programmer, refused under show lock. */
   'redo': Record<string, never>;
   /** Set or clear (null) the password of a role; machine setting, not part of the project. Role: programmer, refused under show lock. */
   'roles.setPassword': { role: Role; password: string | null };
   /** Lock the show: configuration commands are refused. Role: programmer. */
   'show.lock': Record<string, never>;
+  /** Enter (true) or leave show mode; refused with the blocking readiness items. Role: operator. */
+  'show.mode': { on: boolean };
   /** Unlock the show. Role: programmer. */
   'show.unlock': Record<string, never>;
+  /** Timecode settings: source (off|ltc|mtc), device, channel, offset (frames), freewheel (s), layerOffsets. Role: programmer, refused under show lock, undoable. */
+  'timecode.set': { path: string; value: JSONValue };
   /** Undo the last undoable command (global history). Role: programmer, refused under show lock. */
   'undo': Record<string, never>;
 }

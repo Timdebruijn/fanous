@@ -98,6 +98,9 @@ public final class DMXStore: @unchecked Sendable {
         resolve(universe: universe, at: now)
     }
 
+    /// Cue, show and timecode commands from OSC go to the engine (Phase 7); set on the DMX queue's behalf by the engine.
+    nonisolated(unsafe) public var onCommand: (@Sendable (OSCCommand) -> Void)?
+
     func apply(_ command: OSCCommand) {
         let now = Self.now
         switch command {
@@ -108,8 +111,16 @@ public final class DMXStore: @unchecked Sendable {
             resolvers[.layer(layer)]?.setInternal(.layer(.folder), raw: UInt16(clamping: folder), source: .osc, at: now)
             resolvers[.layer(layer)]?.setInternal(.layer(.file), raw: UInt16(clamping: file), source: .osc, at: now)
             publish(receivedAt: 0)
+        case .retrigger(let layer):
+            // Control 8–15 = Retrigger; the compositor latches the edge, so the value returns to idle right after
+            resolvers[.layer(layer)]?.setInternal(.layer(.control), raw: 8, source: .osc, at: now)
+            publish(receivedAt: 0)
+            queue.asyncAfter(deadline: .now() + 0.1) { [self] in
+                resolvers[.layer(layer)]?.setInternal(.layer(.control), raw: 0, source: .osc, at: Self.now)
+                publish(receivedAt: 0)
+            }
         default:
-            logger.info("OSC command not wired yet", metadata: ["command": "\(command)"])
+            if let onCommand { onCommand(command) } else { logger.info("OSC command not wired", metadata: ["command": "\(command)"]) }
         }
     }
 
@@ -144,6 +155,15 @@ public final class DMXStore: @unchecked Sendable {
     }
 
     // MARK: Cross-thread
+
+    /// Cue list output (DESIGN.md §15.2): every value the cue engine asserts, as the cue source.
+    public func setCue(_ outputs: [CueOutput]) {
+        queue.async { [self] in
+            let now = Self.now
+            for output in outputs { resolvers[output.fixture]?.setInternal(output.parameter, raw: output.raw, source: .cue, at: now) }
+            publish(receivedAt: 0)
+        }
+    }
 
     /// Replaces the patch (Phase 5 `patch.set`, undo, project load); resolvers of fixtures that stay keep their state.
     public func setPatch(_ patch: Patch) {

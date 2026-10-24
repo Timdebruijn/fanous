@@ -51,6 +51,18 @@ public final class Engine: @unchecked Sendable {
     private let outputStatus = Mutex<[OutputStatus]>([])
     private var lastOutputs: [OutputConfig] = []
     private var lastClockMaster: Int?
+    // Phase 7: show control
+    private let timecodeClock = TimecodeClock()
+    private var ltc: LTCInput?
+    private var mtc: MTCInput?
+    private var lastTimecodeSettings = ShowCommands.TimecodeSettings()
+    private var cues: CueRunner?
+    private var lastCues = CueList()
+    private let showMode: ShowModeController
+    private let readiness = Mutex<(items: [ReadinessItem], acknowledged: Set<String>, checkedAt: Double)>(([], [], 0))
+    private var readinessTimer: DispatchSourceTimer?
+    private let oscLog = Mutex<[JSONValue]>([])
+    private var citp: CITPServer?
     private var stateServer: StateServer?
     private var liveTimer: DispatchSourceTimer?
     private var dmxTimer: DispatchSourceTimer?
@@ -63,12 +75,14 @@ public final class Engine: @unchecked Sendable {
         let logger = Logger(label: "protocol")
         let store = StateStore(project: [:], logger: logger)
         ProjectDocument.registerCommands(on: store, auth: RoleAuth(settingsURL: nil, shellTokenURL: nil, logger: logger))
+        ShowCommands.register(on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in nil }, acknowledge: { _ in }, runReadiness: {}))
         return store.commandSpecs
     }
 
     public init(options: EngineOptions, logger: Logger) {
         self.options = options
         self.logger = logger
+        showMode = ShowModeController(logger: logger)
     }
 
     public func start() throws {
@@ -86,6 +100,7 @@ public final class Engine: @unchecked Sendable {
         let identity = try TLSIdentity.loadOrCreate(
             directory: AppPaths.tls, hostnames: hostnames, ipAddresses: ["127.0.0.1", "::1"] + SystemInfo.ipv4Addresses,
             logger: logger)
+        tlsFingerprint = identity.fingerprintSHA256
         // The standard patch sized to the scene until projects exist; the project document can change it (Phase 5).
         let layerCount = options.scene?.layerCount ?? 8
         let patch = Patch.standard(layers: layerCount, outputs: 4)
@@ -145,12 +160,60 @@ public final class Engine: @unchecked Sendable {
         if let loaded = ProjectDocument.effectivePatch(from: project), loaded != patch { dmx.setPatch(loaded) }
         let store = StateStore(project: project, logger: logger)
         ProjectDocument.registerCommands(on: store, auth: auth)
+        // Phase 7: cues, timecode, show mode (DESIGN.md §14–15)
+        let cues = CueRunner(dmx: dmx, logger: logger)
+        cues.replace(list: ShowCommands.cueList(from: project))
+        lastCues = ShowCommands.cueList(from: project)
+        self.cues = cues
+        timecodeClock.onFrame = { [weak self] timecode, _ in self?.cues?.timecode(timecode) }
+        ShowCommands.register(
+            on: store,
+            hooks: ShowCommands.Hooks(
+                go: { cues.go() }, back: { cues.back() }, goto: { cues.goto($0) },
+                showMode: { [weak self] on in self?.setShowMode(on) ?? nil },
+                acknowledge: { [weak self] id in
+                    // flag the stored items too, so the UI sees it now and not at the next 30 s run
+                    self?.readiness.withLock { r in
+                        r.acknowledged.insert(id)
+                        for i in r.items.indices where r.items[i].id == id { r.items[i].acknowledged = true }
+                    }
+                    self?.publishReadiness()
+                },
+                runReadiness: { [weak self] in self?.runReadiness() }))
+        // OSC: cue, show and timecode commands (DESIGN.md §15.3); the parameter ones stay on the DMX queue
+        dmx.onCommand = { [weak self] command in
+            guard let self, let store = self.store else { return }
+            self.oscLog.withLock { log in
+                log.append(["at": .number(Date().timeIntervalSince1970), "command": .string("\(command)")])
+                if log.count > 50 { log.removeFirst(log.count - 50) }
+            }
+            switch command {
+            case .cueGo: _ = store.execute("cue.go", role: .operator)
+            case .cueBack: _ = store.execute("cue.back", role: .operator)
+            case .cueGoto(let number): _ = store.execute("cue.goto", args: ["number": .number(number)], role: .operator)
+            case .showLock(let on): _ = store.execute(on ? "show.lock" : "show.unlock", role: .programmer)
+            case .showMode(let on): _ = store.execute("show.mode", args: ["on": .bool(on)], role: .operator)
+            case .timecodeEnable(let on):
+                let settings = ShowCommands.timecodeSettings(from: store.project)
+                let source: ShowCommands.TimecodeSettings.Source = on ? (settings.source == .off ? .ltc : settings.source) : .off
+                _ = store.execute("timecode.set", args: ["path": "/source", "value": .string(source.rawValue)], role: .programmer)
+            case .projectLoad: self.logger.warning("OSC project load is not available until project bundles exist (B23)")
+            default: break
+            }
+        }
+        showMode.onChange = { [weak self] on in
+            guard let self else { return }
+            self.ingest?.paused = on  // DESIGN.md §14: ingest paused in show mode
+            if on { self.startReadinessTimer() } else { self.stopReadinessTimer() }
+        }
+        applyTimecodeSettings(ShowCommands.timecodeSettings(from: project))
         store.onProjectChanged = { [weak self] document in self?.projectChanged(document) }
         let caps: JSONValue = [
             "schema": .number(Double(StateServer.schema)), "version": .string(LanthornVersion.string), "chip": .string(SystemInfo.chipName),
             "maxLayers": 32, "fps": .number(fps),
         ]
         let stateServer = StateServer(store: store, auth: auth, caps: caps, logger: logger)
+        render?.compositor.timecode = timecodeClock
         if let render {
             // 640×360 at 30 fps (DESIGN.md §11.3 default), on the compositor's own command buffer
             let height = 640 * render.scene.canvasHeight / max(1, render.scene.canvasWidth)
@@ -169,7 +232,23 @@ public final class Engine: @unchecked Sendable {
                 return self.previewOutput(output, in: outputs, compiler: compiler, preview: preview)
             }
 
-            // Displays and output windows (DESIGN.md §9.6); the render service starts after the coordinator exists.
+            // CITP/MSEX (DESIGN.md §16.1): peer location, layer status, library, thumbnails, streaming frames
+        let citp = CITPServer(
+            name: SystemInfo.hostName, uuid: Self.installUUID(),
+            providers: CITPServer.Providers(
+                layers: { [weak self] in self?.citpLayers() ?? [] },
+                library: { library.snapshot },
+                thumbnail: { name in (try? Data(contentsOf: thumbnailer.directory.appending(path: name))).map(Array.init) },
+                frame: { [weak self] in self?.stateServer?.preview?.latestJPEG.withLock { $0 } ?? nil }), logger: logger)
+        do {
+            try citp.start()
+            preview.externalJPEGWanted = { citp.wantsFrames.load(ordering: .relaxed) }
+            self.citp = citp
+        } catch {
+            logger.error("CITP start failed", metadata: ["error": "\(error)"])
+        }
+
+        // Displays and output windows (DESIGN.md §9.6); the render service starts after the coordinator exists.
             let coordinator = try MainActor.assumeIsolated { () throws -> OutputCoordinator in
                 let coordinator = try OutputCoordinator(compositor: render.compositor, context: context, fps: fps, displays: DisplayManager.current(), logger: logger)
                 displays.withLock { $0 = coordinator.connectedDisplays }
@@ -267,6 +346,37 @@ public final class Engine: @unchecked Sendable {
                 guard request.method == "POST" else { return HTTPResponse(status: 405, headers: [HTTPHeader("Allow", "POST")]) }
                 if let cookie = RoleAuth.cookie(in: request) { auth.logout(cookie: cookie) }
                 return HTTPResponse(status: 204, headers: [HTTPHeader("Set-Cookie", "\(RoleAuth.cookieName)=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0")])
+            case "/metrics":
+                // DESIGN.md §13: the current 1-second summary as JSON for external monitoring
+                let s = metrics.summary(seconds: 1, now: CACurrentMediaTime())
+                var m: [String: JSONValue] = [
+                    "frames": .number(Double(s.frames)), "missed": .number(Double(s.missed)), "late": .number(Double(s.late)), "textureMisses": .number(Double(s.textureMisses)),
+                    "cpuMsP50": .number(s.cpuP50), "cpuMsP99": .number(s.cpuP99), "cpuMsMax": .number(s.cpuMax), "gpuMsP50": .number(s.gpuP50), "gpuMsP99": .number(s.gpuP99),
+                    "gpuMsMax": .number(s.gpuMax), "dmxToPhotonMsP50": .number(s.dmxP50), "dmxToPhotonMsP99": .number(s.dmxP99), "dmxSamples": .number(Double(s.dmxSamples)),
+                    "windowSeconds": .number(s.seconds), "clients": .number(Double(store.clientCount)), "lagging": .number(Double(store.laggingClients)),
+                    "showMode": .bool(self.showMode.isOn), "uptimeSeconds": .number(Date().timeIntervalSince(startedAt).rounded()),
+                ]
+                if let audio = self.render?.mixer?.statistics {
+                    m["audio"] = ["callbacks": .number(Double(audio.callbacks)), "underruns": .number(Double(audio.underruns)), "corrections": .number(Double(audio.corrections)), "maxDriftMs": .number(audio.maxDriftMillis)]
+                }
+                if let preview = stateServer.preview {
+                    m["preview"] = ["framesIn": .number(Double(preview.framesIn.load(ordering: .relaxed))), "framesOut": .number(Double(preview.framesOut.load(ordering: .relaxed))), "skipped": .number(Double(preview.skipped.load(ordering: .relaxed)))]
+                }
+                return .json(200, Array(store.encode(.object(m)).utf8))
+            case "/api/logs":
+                // the last 64 KB of the engine log (System › Logs); `?download=1` sends the whole file
+                let file = AppPaths.logs.appending(path: "lanthornd.log")
+                guard let handle = try? FileHandle(forReadingFrom: file) else { return .text(404, "no log file") }
+                defer { try? handle.close() }
+                let size = (try? handle.seekToEnd()) ?? 0
+                let download = request.target.contains("download=1")
+                let from = download ? 0 : max(0, Int(size) - 65_536)
+                try? handle.seek(toOffset: UInt64(from))
+                let data = (try? handle.readToEnd()) ?? Data()
+                return HTTPResponse(
+                    status: 200,
+                    headers: [HTTPHeader("Content-Type", "text/plain; charset=utf-8")] + (download ? [HTTPHeader("Content-Disposition", "attachment; filename=\"lanthornd.log\"")] : []),
+                    body: Array(data))
             case "/api/session":
                 let role = auth.role(forCookie: RoleAuth.cookie(in: request))
                 let session: JSONValue = [
@@ -308,6 +418,7 @@ public final class Engine: @unchecked Sendable {
         server.uploadSink = { request in programmerAllowed(request) ? ingestAPI.uploadTarget(for: request) : nil }
         server.uploadRoute = { request, file in ingestAPI.handle(request, uploadedFile: file) }
         server.upgradeRoute = { request in stateServer.upgrade(request) }
+        server.bonjour(name: SystemInfo.hostName)
         server.start()
         self.server = server
     }
@@ -334,9 +445,177 @@ public final class Engine: @unchecked Sendable {
         }
     }
 
+    // MARK: Show control
+
+    /// A stable per-install UUID for CITP (MSEX 1.2 server UUID), kept next to the shell token.
+    static func installUUID() -> String {
+        let file = AppPaths.applicationSupport.appending(path: "install-uuid")
+        if let existing = try? String(contentsOf: file, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), existing.count == 36 { return existing }
+        let uuid = UUID().uuidString
+        try? Data(uuid.utf8).write(to: file, options: .atomic)
+        return uuid
+    }
+
+    private func citpLayers() -> [CITPServer.LayerInfo] {
+        guard let render, let dmx else { return [] }
+        let snapshot = dmx.snapshots.read()
+        return render.layers.map { layer in
+            let s = layer.mediaStatus.withLock { $0 }
+            let p = layer.index < snapshot.layers.count ? snapshot.layers[layer.index] : LayerParameters()
+            let fps = max(1.0, s.fps)
+            var flags: UInt32 = 0
+            if s.kind == "movie" && p.intensity > 0 && p.playMode != .freeze { flags |= LayerStatus.playing }
+            if p.playMode.isReverse { flags |= LayerStatus.playbackReverse }
+            if p.playMode == .loopForward || p.playMode == .loopReverse { flags |= LayerStatus.playbackLooping }
+            if p.playMode == .bounce { flags |= LayerStatus.playbackBouncing }
+            if p.playMode == .freeze { flags |= LayerStatus.paused }
+            return CITPServer.LayerInfo(
+                index: layer.index + 1, folder: s.folder, file: s.file, name: s.name ?? "", positionMs: UInt32(clamping: Int(Double(layer.currentFrame) * 1000 / fps)),
+                lengthMs: UInt32(clamping: Int(Double(s.frames) * 1000 / fps)), fps: UInt8(clamping: Int(s.fps.rounded())), flags: flags)
+        }
+    }
+
+    private func citpLive() -> JSONValue {
+        guard let s = citp?.status.withLock({ $0 }) else { return [:] }
+        return ["port": .number(Double(s.port)), "clients": .array(s.clients.map { .string($0) }), "streams": .number(Double(s.streams)), "multicast": .array([.string(CITPMulticast.address), .string(CITPMulticast.addressSince2014)])]
+    }
+
+    private func timecodeLive() -> JSONValue {
+        let s = timecodeClock.current()
+        return [
+            "state": .string(s.state.rawValue), "source": .string(s.source), "value": .string(s.state == .off ? "--:--:--:--" : s.timecode.description),
+            "rate": .string(s.rate.label), "frames": .number(Double(s.frameCount)), "seen": .number(Double(timecodeClock.framesSeen.load(ordering: .relaxed))),
+            "error": ltc?.lastError.map { .string($0) } ?? .null, "device": .string(ltc?.deviceName ?? mtc?.connected.joined(separator: ", ") ?? ""),
+        ]
+    }
+
+    private func cueLive() -> JSONValue {
+        guard let s = cues?.status.withLock({ $0 }) else { return [:] }
+        return [
+            "current": s.current.map { .number($0) } ?? .null, "currentName": s.currentName.map { .string($0) } ?? .null,
+            "next": s.next.map { .number($0) } ?? .null, "nextName": s.nextName.map { .string($0) } ?? .null, "fading": .bool(s.fading), "count": .number(Double(s.count)),
+        ]
+    }
+
+    private func showLive() -> JSONValue {
+        let r = readiness.withLock { $0 }
+        return [
+            "mode": .bool(showMode.isOn),
+            "checkedAt": .number(r.checkedAt),
+            "ready": .bool(!r.items.contains { $0.blocks }),
+            "readiness": .array(
+                r.items.map {
+                    ["id": .string($0.id), "title": .string($0.title), "state": .string($0.state.rawValue), "detail": .string($0.detail), "fix": .string($0.fix), "acknowledged": .bool($0.acknowledged)]
+                }),
+        ]
+    }
+
+    private func systemLive() -> JSONValue {
+        let power = Readiness.powerState()
+        let memory = Readiness.memoryHeadroom()
+        let thermal = ProcessInfo.processInfo.thermalState
+        return [
+            "thermal": .string(thermal == .nominal ? "nominal" : thermal == .fair ? "fair" : thermal == .serious ? "serious" : "critical"),
+            "onAC": .bool(power.onAC), "power": .string(power.detail), "memoryFreeFraction": .number((memory.fraction * 1000).rounded() / 1000),
+            "memoryGB": .number(Double(SystemInfo.physicalMemoryBytes / 1_073_741_824)), "os": .string(SystemInfo.osVersion), "host": .string(SystemInfo.hostName),
+            "addresses": .array(SystemInfo.ipv4Addresses.map { .string($0) }), "port": .number(Double(options.port)),
+            "tlsFingerprint": .string(tlsFingerprint), "bonjour": .string("\(SystemInfo.hostName)._lanthorn._tcp"),
+        ]
+    }
+    private var tlsFingerprint = ""
+
+    private func applyTimecodeSettings(_ settings: ShowCommands.TimecodeSettings) {
+        lastTimecodeSettings = settings
+        ltc?.stop()
+        mtc?.stop()
+        ltc = nil
+        mtc = nil
+        timecodeClock.stop()
+        timecodeClock.freewheelSeconds = max(0.1, settings.freewheel)
+        render?.compositor.timecodeOffsets = TimecodeOffsets(project: settings.offset, layers: Dictionary(uniqueKeysWithValues: settings.layerOffsets.compactMap { k, v in Int(k).map { ($0, v) } }))
+        switch settings.source {
+        case .off: break
+        case .ltc:
+            let input = LTCInput(clock: timecodeClock, channel: settings.channel, logger: logger)
+            ltc = input
+            Task { _ = await input.start(device: settings.device) }
+        case .mtc:
+            let input = MTCInput(clock: timecodeClock, logger: logger)
+            mtc = input
+            _ = input.start(source: settings.device)
+        }
+    }
+
+    private func readinessContext() -> ReadinessContext {
+        var context = ReadinessContext()
+        if let dmx {
+            let snapshot = dmx.snapshot()
+            let patched = Set(dmx.currentPatch.universes.map(\.description))
+            context.universesSilent = snapshot.universes.filter { patched.contains($0.id) && !$0.active }.map(\.id)
+        }
+        let statuses = outputStatus.withLock { $0 }
+        context.outputsLost = statuses.filter { $0.state == .lost }.map(\.id)
+        context.outputsUnassigned = statuses.filter { $0.state == .unassigned }.map(\.id)
+        context.outputsBound = statuses.filter { $0.state == .bound }.count
+        context.layerErrors = (render?.layers ?? []).compactMap { layer in layer.mediaStatus.withLock { $0.error.map { "Layer \(layer.index + 1): \($0)" } } }
+        context.libraryRoot = library?.snapshot.root ?? ""
+        return context
+    }
+
+    /// Off the control queue: the probes shell out (mdutil, tmutil, pmset, defaults).
+    private func runReadiness() {
+        let context = readinessContext()
+        feedQueue.async { [self] in
+            let acknowledged = readiness.withLock { $0.acknowledged }
+            let items = Readiness.check(context, acknowledged: acknowledged)
+            readiness.withLock { $0.items = items; $0.checkedAt = Date().timeIntervalSince1970 }
+            publishReadiness()
+        }
+    }
+
+    private func publishReadiness() {
+        store?.setLive(showLive(), at: JSONPointer(tokens: ["show"]))
+    }
+
+    /// `show.mode`: entering runs the checks synchronously and refuses with the blocking item ids.
+    private func setShowMode(_ on: Bool) -> [String]? {
+        if !on {
+            showMode.leave()
+            return nil
+        }
+        let acknowledged = readiness.withLock { $0.acknowledged }
+        let items = Readiness.check(readinessContext(), acknowledged: acknowledged)
+        readiness.withLock { $0.items = items; $0.checkedAt = Date().timeIntervalSince1970 }
+        let blocking = items.filter(\.blocks).map(\.id)
+        if !blocking.isEmpty { return blocking }
+        showMode.enter()
+        return nil
+    }
+
+    private func startReadinessTimer() {
+        stopReadinessTimer()
+        let timer = DispatchSource.makeTimerSource(queue: feedQueue)
+        timer.schedule(deadline: .now() + 30, repeating: 30)
+        timer.setEventHandler { [weak self] in self?.runReadiness() }
+        timer.resume()
+        readinessTimer = timer
+    }
+
+    private func stopReadinessTimer() {
+        readinessTimer?.cancel()
+        readinessTimer = nil
+    }
+
     /// Control queue: re-applies the patch when it changed and schedules the autosave (2 s after the last change).
     private func projectChanged(_ document: JSONValue) {
         if let dmx, let patch = ProjectDocument.effectivePatch(from: document), patch != dmx.currentPatch { dmx.setPatch(patch) }
+        let cueList = ShowCommands.cueList(from: document)
+        if cueList != lastCues {
+            lastCues = cueList
+            cues?.replace(list: cueList)
+        }
+        let timecodeSettings = ShowCommands.timecodeSettings(from: document)
+        if timecodeSettings != lastTimecodeSettings { applyTimecodeSettings(timecodeSettings) }
         let outputs = ProjectDocument.outputs(from: document)
         let clockMaster = ProjectDocument.canvases(from: document).first?.clockMaster
         if outputs != lastOutputs || clockMaster != lastClockMaster, let coordinator {
@@ -422,6 +701,12 @@ public final class Engine: @unchecked Sendable {
                     ]
                 }),
             "security": ["webUIOpen": .bool(auth.isOpen(.programmer))],
+            "timecode": timecodeLive(),
+            "cue": cueLive(),
+            "show": showLive(),
+            "system": systemLive(),
+            "osc": ["port": 8000, "recent": .array(oscLog.withLock { $0 }), "midiSources": .array(MTCInput.sources().map { .string($0) }), "audioInputs": .array(LTCInput.inputDevices().map { .string($0) })],
+            "citp": citpLive(),
         ]
         store.updateLive(live)
     }
@@ -441,6 +726,12 @@ public final class Engine: @unchecked Sendable {
     public func stop() {
         liveTimer?.cancel()
         dmxTimer?.cancel()
+        stopReadinessTimer()
+        citp?.stop()
+        if showMode.isOn { showMode.leave() }
+        ltc?.stop()
+        mtc?.stop()
+        cues?.stop()
         if let coordinator, let displayManager {
             MainActor.assumeIsolated {
                 displayManager.stop()

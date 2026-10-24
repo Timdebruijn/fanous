@@ -190,7 +190,13 @@ public final class OSCReceiver: @unchecked Sendable {
             guard let command = OSCAddressMap.command(for: message) else { return }
             store.apply(command)
         case .bundle(let bundle):
-            for element in bundle.elements { dispatch(element) }  // timetags scheduled in Phase 7
+            // NTP timetag: seconds since 1900 in the high word, fraction in the low word; 1 = immediately
+            let delay = bundle.timetag <= 1 ? 0 : (Double(bundle.timetag >> 32) - 2_208_988_800 + Double(bundle.timetag & 0xFFFF_FFFF) / 4_294_967_296) - Date().timeIntervalSince1970
+            if delay > 0.001, delay < 3600 {
+                store.queue.asyncAfter(deadline: .now() + delay) { [self] in for element in bundle.elements { dispatch(element) } }
+            } else {
+                for element in bundle.elements { dispatch(element) }
+            }
         }
     }
 }

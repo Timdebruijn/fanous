@@ -69,9 +69,9 @@
       <span class="caption">no universes</span>
     {/each}
   </div>
-  <div class="item col">
-    <span class="mono value faint">--:--:--:--</span>
-    <span class="caption">timecode · Phase 7</span>
+  <div class="item col" class:red={app.live.timecode.state === 'lost' && app.project.showLock}>
+    <span class="mono value" class:faint={app.live.timecode.state === 'off'}>{app.live.timecode.value}</span>
+    <span class="caption">timecode{app.live.timecode.state === 'off' ? '' : ` · ${app.live.timecode.state}`}</span>
   </div>
   <div class="item col" class:red={!outputsOk && app.project.showLock}>
     <span class="mono value"><span class="dot {outputsOk ? 'dot-green' : 'dot-off'}"></span> {outputsOk ? 'on' : 'off'}</span>

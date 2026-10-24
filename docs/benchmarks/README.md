@@ -186,3 +186,21 @@ swap into the render thread is one reference store.
 Binding/unbinding the built-in display at runtime (`output.add` / `remove`
 over the protocol, debug build, 4-layer 1080p60 scene): one missed frame at
 the headless → display driver switch, 0 late frames, GPU p99 0.8 ms.
+
+## Phase 7 (2026-10-24): timecode chase, CITP loopback
+
+LTC chase (`ShowControlTests.ltcFileChasesWithinOneFrame`): 3 s of generated
+25 fps LTC at 48 kHz, fed to the decoder in 512-sample buffers as the audio
+thread would, host time from the sample index. 70+ of 75 frames decoded
+(the first frames are sync), chase error at frame 61 and half a frame later
+**≤ 1 frame** (acceptance). MTC: eight quarter frames lock the clock two
+frames behind the quarter-frame time, a full-frame SysEx sets it directly.
+
+CITP/MSEX loopback (`CITPServerTests`, debug build): `CInf` → `SInf`,
+`GELI`, `GEIn`, `GETh`, first `LSta`, `RqSt` → first `StFr`, `Nack`, stream
+stop — the whole session in 0.34 s including the listener start. `LSta` is
+sent at 4 Hz, frames at the requested rate up to 10 fps, and the preview
+encoder only produces JPEGs while a stream is open.
+
+Not measured: cue fade end-to-end (B43), readiness probe cost (shell-outs,
+B38), real LTC/MTC hardware (B44).

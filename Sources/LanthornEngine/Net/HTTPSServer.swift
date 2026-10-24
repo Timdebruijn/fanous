@@ -53,6 +53,11 @@ public final class HTTPSServer: @unchecked Sendable {
         listener = try NWListener(using: parameters, on: nwPort)
     }
 
+    /// Advertises `_lanthorn._tcp` so browsers on the network find `https://<host>.local:<port>` (DESIGN.md §11.1).
+    public func bonjour(name: String) {
+        listener.service = NWListener.Service(name: name, type: "_lanthorn._tcp", domain: nil, txtRecord: NWTXTRecord(["port": "\(port)", "v": LanthornVersion.string]))
+    }
+
     public func start() {
         listener.stateUpdateHandler = { [weak self, logger, port] state in
             switch state {

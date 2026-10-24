@@ -99,6 +99,19 @@ Control and swapped into the render thread. The Outputs & Mapping screen edits
 all of it with handles over the output preview (`sub` stream `preview` with
 `target: "output:<id>"`).
 
+Show control (Phase 7, DESIGN.md §14–16): `project.timecode` selects LTC (any
+CoreAudio input) or MTC (any CoreMIDI source) with project and per-layer
+offsets; layers in the `timecode` play mode chase it. `project.cues[]` holds
+cues with fades, timecode triggers and follows (`cue.add/set/remove`,
+`cue.go/back/goto`, Space on the Show screen); cue values enter the resolver
+as the internal source. The complete OSC address map is live (UDP 8000,
+bundles with timetags). Show mode (`show.mode`) takes power assertions and
+pauses ingest after the readiness check (`readiness.run/acknowledge`,
+`live.show`). CITP/MSEX advertises the engine (`PLoc` on both multicast
+groups) and serves consoles layer status, libraries, elements, thumbnails and
+streaming frames over TCP (`live.citp`). `/metrics` and `/api/logs` feed the
+System / Health screen.
+
 `/api/metrics` reports frame timing, the DMX-to-photon estimate and audio
 drift; `lanthorn-bench run` ramps layers until a frame drops (`--effects
 blur,edge`, `--dissolve 2`, `--ingest FILE` for the Phase 3/4 variants) and

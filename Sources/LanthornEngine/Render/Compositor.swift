@@ -28,6 +28,9 @@ public final class Compositor: @unchecked Sendable {
     nonisolated(unsafe) public var offscreenOutput: MTLTexture?
     /// Browser previews (DESIGN.md §11.3): draws the canvas into a small pixel buffer on the same command buffer.
     nonisolated(unsafe) public var previewTap: ((MTLTexture, MTLCommandBuffer, Double) -> Void)?
+    /// Timecode for layers in the Timecode play mode (DESIGN.md §15.1); offsets in frames of the timecode rate.
+    nonisolated(unsafe) public var timecode: TimecodeClock?
+    nonisolated(unsafe) public var timecodeOffsets = TimecodeOffsets(project: 0, layers: [:])
     /// Output regions of the master display (DESIGN.md §9): nil = the whole drawable shows the canvas.
     /// Replaced as one reference by Control; the tick reads it once.
     nonisolated(unsafe) public var outputSet: OutputSet?
@@ -298,6 +301,16 @@ public final class Compositor: @unchecked Sendable {
         let inFrame = Int((p.inPoint * Float(last)).rounded())
         let outFrame = Int((p.outPoint * Float(last)).rounded())
         if retrigger { playback.clock.retrigger(mode: p.playMode, inFrame: inFrame, outFrame: outFrame, frameCount: playback.frameCount) }
+        if p.playMode == .timecode, playback.frameCount > 1, let timecode, let frames = timecode.frames(at: ctx.target) {
+            // chase: (tc − project offset − layer offset) at the file's rate, looped within in/out
+            let offsets = timecodeOffsets
+            let seconds = (frames - offsets.project - (offsets.layers[slot / 2 + 1] ?? 0)) / timecode.read(at: ctx.target).rate.exactFrameRate
+            let lo = Double(min(inFrame, outFrame)), hi = Double(max(inFrame, outFrame))
+            var frame = seconds * playback.frameRate
+            let span = hi - lo + 1
+            if span > 0 { frame = lo + (frame - lo).truncatingRemainder(dividingBy: span) + (frame < lo ? span : 0) }
+            playback.clock.position = min(hi, max(lo, frame))
+        }
         let speed = Double(p.speed * ctx.masterSpeed) * 100
         let frameIndex = playback.clock.advance(
             dt: ctx.dt, fps: playback.frameRate, speed: speed, mode: p.playMode, inFrame: inFrame, outFrame: outFrame, frameCount: playback.frameCount)
