@@ -227,4 +227,11 @@ library from `project.json`, 8 layers, `soak-2026-10-24-0849.md`): **0 missed,
 0 late, 2 × kill → healthz 0.18 s, RSS 223 → 203 MB after warm-up, average
 60.6 fps over 837 samples, GPU p99 ≤ 6.9 ms, DMX→photon p99 30 ms — PASS.**
 
-The 8 h run of DESIGN §18 is an owner step (`docs/RELEASE.md` §3, B49).
+8-hour run (DESIGN §18 acceptance, production path, 8 layers, kill -9 every
+2 h, system kept awake with `caffeinate`, `soak-2026-10-24-0928.md`): **PASS
+with warnings: 0 missed frames in 26 797 one-second samples (≈ 1.7 million
+frames over four engine instances), 3 × kill → healthz 0.26 s, RSS 218 → 230 MB
+after warm-up (max 278 MB), average 60.7 fps, GPU p99 ≤ 8.0 ms, DMX→photon p99
+30 ms, thermal state nominal throughout; 5 late presents (one vsync late) in
+8 h (B52).** The 8 h criterion of §19 is met on the reference machine; other
+machines remain owner runs (`docs/RELEASE.md` §3, B49).

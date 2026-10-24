@@ -19,6 +19,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Shell: Engine menu with a live status line, Start / Restart / Stop Engine
   (stop removes the LaunchAgent registration).
 - User documentation in `docs/user/`.
+- 8 h soak on the M1 Pro passed (0 dropped frames, kill -9 → healthz 0.26 s,
+  memory flat; `docs/benchmarks/soak-2026-10-24-0928.md`).
 - Fixed: the engine renders without a scene file (the bundled agent did not);
   the project's source policy is applied (cues and OSC had no effect with the
   default `dmx`); sACN joins the patched universes, not 1–3; operators can

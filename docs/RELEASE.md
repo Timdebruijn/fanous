@@ -34,10 +34,12 @@ Phase 8 deliverable of `DESIGN.md` §19; v1.0 ships when every box is ticked.
       available machine → `docs/benchmarks/<chip>-…-<date>.md/.json` and the
       tier table in `docs/benchmarks/README.md`; `docs/hardware.md` lists the
       chips verified (OPEN-6: owner verifies per generation)
-- [ ] `scripts/soak.sh 8` on the reference machine with the installed agent
-      (`LABEL=org.lanthorn.engine`) → `docs/benchmarks/soak-<date>.md` says
-      PASS: no missed or late frames outside the restart windows, memory flat,
-      every `kill -9` → `/healthz` under 3 s (DESIGN §2.3)
+- [x] `scripts/soak.sh 8` on the reference machine → `docs/benchmarks/soak-<date>.md`
+      says PASS: no missed frames outside the restart windows, memory flat,
+      every `kill -9` → `/healthz` under 3 s (DESIGN §2.3); late presents are
+      warnings. Done for 1.0.0-rc.1 with the test agent
+      (`soak-2026-10-24-0928.md`); repeat with the installed notarized agent
+      (`LABEL=org.lanthorn.engine`) before the final release
 - [ ] a second display plugged and unplugged during the soak once a Mac with
       one is available (B34)
 
@@ -86,7 +88,18 @@ On a fresh macOS user account (or a fresh Mac) with the notarized dmg:
 - [ ] remove `docs/BRIEF.md` (DESIGN §17) and this line from the design
 - [ ] lawyer review of `docs/licensing/PLUGIN-EXCEPTION.md`, `CLA.md`,
       `ATTRIBUTION.md` (all marked DRAFT until then)
-- [ ] trademark search for "Lanthorn" (OPEN-21); `TRADEMARKS.md` final
+- [ ] trademark search for "Lanthorn" (OPEN-21); `TRADEMARKS.md` final.
+      Web survey 2026-10-24 (not a legal search): no media server or lighting
+      software of that name; collisions to weigh: `hrmasss/lanthorn` (GPL
+      Android video player, v1.0.0 2026-10-22), Lanthorn.ai (video analytics,
+      claims the mark in its terms), USPTO serial 99907978 "LANTHORN" (class 42
+      SaaS, filed 2026-06-26 by another company, seen on an aggregator only),
+      LanthornLED (luminaires, Namibia); EUIPO not checked
+- [ ] positioning: the survey found no open-source media server with DMX
+      fixtures + GDTF + CITP + timecode chase together; closest are
+      OpenVideoServer (Apache-2.0, Debian/Windows, 2026) and ossia score; the
+      free Katrin Media Server (Logvinov, Mac, last release 2013, closed
+      source) is the historical precedent to name in the README
 - [ ] `docs/licensing/DEPENDENCIES.md` and `THIRD-PARTY-NOTICES.md` match
       `Package.resolved` and `web/package-lock.json`
 - [ ] cla-assistant enabled on the public repository

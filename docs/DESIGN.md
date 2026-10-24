@@ -188,9 +188,10 @@ on every display link. Budgets are measured, not assumed (§13).
   measurements per machine, console interop, build/notarize, clean-account
   install, legal, docs, publish); `CHANGELOG.md` started; user documentation
   in `docs/user/`.
-- Not done here (owner steps in the checklist): the 8 h soak on the reference
-  machine (a 30-minute run with two kill/restart cycles is in
-  `docs/benchmarks/`), benchmarks on other machines, the notarized build and
+- Measured: the 8 h soak on the reference machine passed (0 dropped frames,
+  restarts 0.26 s, memory flat, 5 late presents as warnings;
+  `docs/benchmarks/soak-2026-10-24-0928.md`). Not done here (owner steps in the
+  checklist): benchmarks and soaks on other machines, the notarized build and
   the clean-account install, the legal and trademark items.
 
 ---
