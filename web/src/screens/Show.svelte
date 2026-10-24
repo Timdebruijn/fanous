@@ -71,6 +71,13 @@
   </form>
 </div>
 
+{#if app.project.policy === 'dmx'}
+  <div class="banner banner-yellow" role="status">
+    <span class="dot dot-yellow"></span>
+    <span><strong>Source policy is DMX only:</strong> cues and OSC are recorded but do not control the layers. Change it under Patch › Source policy.</span>
+  </div>
+{/if}
+
 <div class="screen">
   <div class="main">
     <ShowTimecode />

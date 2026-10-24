@@ -41,6 +41,11 @@ public final class MetricsRing: @unchecked Sendable {
     private var records: [FrameRecord]
     private let writeIndex = Atomic<Int>(0)
 
+    /// Since start, for soak tests (`/metrics`): frames presented, display-link ticks missed, late presents.
+    public let totalFrames = Atomic<Int>(0)
+    public let totalMissed = Atomic<Int>(0)
+    public let totalLate = Atomic<Int>(0)
+
     public init(capacity: Int = 16_384) {
         self.capacity = capacity
         records = Array(repeating: FrameRecord(), count: capacity)
@@ -50,6 +55,8 @@ public final class MetricsRing: @unchecked Sendable {
     public func write(_ record: FrameRecord) -> Int {
         let index = writeIndex.wrappingAdd(1, ordering: .relaxed).oldValue
         records[index % capacity] = record
+        totalFrames.wrappingAdd(1, ordering: .relaxed)
+        if record.missed > 0 { totalMissed.wrappingAdd(Int(record.missed), ordering: .relaxed) }
         return index % capacity
     }
 
@@ -58,6 +65,7 @@ public final class MetricsRing: @unchecked Sendable {
         records[slot].gpuMicros = gpuMicros
         records[slot].late = late
         records[slot].complete = true
+        if late { totalLate.wrappingAdd(1, ordering: .relaxed) }
     }
 
     public var count: Int { min(capacity, writeIndex.load(ordering: .relaxed)) }

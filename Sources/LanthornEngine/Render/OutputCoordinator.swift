@@ -123,6 +123,7 @@ public final class OutputCoordinator {
     private var clockMaster: Int?
     private var displays: [DisplayInfo]
     private var bound: [CGDirectDisplayID: Bound] = [:]
+    private var cursorHidden = false
     private var masterDriver: DrawableLoopDriver?
     private var headless: HeadlessDriver?
     private var masterDisplay: CGDirectDisplayID?
@@ -149,6 +150,14 @@ public final class OutputCoordinator {
     }
 
     /// Hot-plug or mode change.
+    /// Show mode (DESIGN.md §14): no cursor over any bound output; shown again on leaving.
+    public func setCursorHidden(_ hidden: Bool) {
+        cursorHidden = hidden
+        for displayID in bound.keys {
+            if hidden { CGDisplayHideCursor(displayID) } else { CGDisplayShowCursor(displayID) }
+        }
+    }
+
     public func displaysChanged(_ displays: [DisplayInfo]) {
         self.displays = displays
         rebind()
@@ -197,6 +206,7 @@ public final class OutputCoordinator {
                     continue
                 }
                 window = OutputWindow(screen: screen, device: context.device)
+                if cursorHidden { CGDisplayHideCursor(displayID) }
                 logger.info("output window", metadata: ["display": "\(display.name)", "size": "\(window.metalLayer.drawableSize)"])
             }
             let size = window.metalLayer.drawableSize

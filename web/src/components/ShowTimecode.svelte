@@ -1,11 +1,6 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
-<script module lang="ts">
-  // Module scope: the switch turns the clock back on with the source it had, also after a visit to another screen.
-  const last = $state({ source: 'ltc' as 'ltc' | 'mtc' });
-</script>
-
 <script lang="ts">
   import type { JSONValue } from '../lib/protocol';
   import { lockTitle, timecodeBadge, timecodeSource } from '../lib/show';
@@ -14,12 +9,13 @@
   const tc = $derived(app.project.timecode);
   const live = $derived(app.live.timecode);
   const badge = $derived(timecodeBadge(live.state));
-  const on = $derived(tc.source !== 'off');
+  // The switch is the operator's `timecode.enable` (also under show lock); the source and the rest are configuration.
+  const on = $derived(tc.source !== 'off' && tc.enabled !== false);
 
   // Settings are configuration (programmer, refused under show lock); the switch is the operator's.
   const editTitle = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
   const editable = $derived(editTitle === undefined);
-  const switchTitle = $derived(lockTitle('operator', can('operator'), app.project.showLock));
+  const switchTitle = $derived(tc.source === 'off' ? 'Choose a source first' : lockTitle('operator', can('operator'), false));
   const switchable = $derived(switchTitle === undefined);
 
   const devices = $derived(tc.source === 'ltc' ? app.live.osc.audioInputs : tc.source === 'mtc' ? app.live.osc.midiSources : []);
@@ -28,10 +24,6 @@
 
   // Draft that follows the project until edited, so quick repeated taps on the stepper add up before the engine answers.
   let offset = $derived(tc.offset);
-
-  $effect(() => {
-    if (tc.source !== 'off') last.source = tc.source;
-  });
 
   /** Sends one setting; `revert` puts the control back when the engine refuses (the banner says why). */
   async function set(path: string, value: JSONValue, revert: () => void) {
@@ -63,9 +55,9 @@
         role="switch"
         checked={on}
         disabled={!switchable}
-        onchange={(e) => {
+        onchange={async (e) => {
           const el = e.currentTarget;
-          void set('/source', on ? 'off' : last.source, () => (el.checked = on));
+          if ((await cmd('timecode.enable', { on: !on })) === undefined) el.checked = on;
         }}
       />
       <span class="track"></span>

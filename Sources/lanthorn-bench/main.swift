@@ -20,6 +20,7 @@ func usage() -> Never {
                                   [--effects blur,edge (effect slots 1 and 2 on every layer)] [--dissolve SECONDS (permanent crossfades)]
                                   [--ingest FILE (transcode FILE to HAP Q in-process during the window)]
                lanthorn-bench syphon [--app NAME] [--server NAME] [--seconds N] [--out FILE.png]   receive a Syphon server from another process
+               lanthorn-bench dmx [--layers N] [--files N] [--hz 40] [--seconds N] [--host 127.0.0.1] [--seed N]   soak traffic: Art-Net at the standard patch
         """)
     exit(64)
 }
@@ -60,6 +61,10 @@ case "run":
         dmx: flag("--dmx"), useDisplayLink: flag("--displaylink"),
         effects: (option("--effects") ?? "").split(separator: ",").compactMap { name in Effect.allCases.first { "\($0)" == name } },
         dissolve: Double(option("--dissolve") ?? "0") ?? 0, ingest: option("--ingest").map { URL(fileURLWithPath: $0) }, logger: logger)
+case "dmx":
+    DMXGenerator.run(
+        layers: Int(option("--layers") ?? "4") ?? 4, files: Int(option("--files") ?? "4") ?? 4, hz: Double(option("--hz") ?? "40") ?? 40,
+        seconds: Double(option("--seconds") ?? "3600") ?? 3600, host: option("--host") ?? "127.0.0.1", seed: UInt64(option("--seed") ?? "1") ?? 1)
 case "syphon":
     try SyphonProbe.run(
         app: option("--app") ?? "lanthornd", server: option("--server") ?? "Lanthorn – Canvas", seconds: Double(option("--seconds") ?? "3") ?? 3,

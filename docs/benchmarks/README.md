@@ -204,3 +204,27 @@ encoder only produces JPEGs while a stream is open.
 
 Not measured: cue fade end-to-end (B43), readiness probe cost (shell-outs,
 B38), real LTC/MTC hardware (B44).
+
+## Phase 8 (2026-10-24): soak and restart
+
+`scripts/soak.sh HOURS LAYERS` drives the running engine with `lanthorn-bench
+dmx` (Art-Net at the standard patch, 40 Hz, random file / play mode / dissolve /
+intensity per layer every 3–8 s, slow position and scale drift), samples
+`/metrics` and the engine's RSS every second, `kill -9`s the engine at the
+kill interval and times `/healthz` coming back. Pass = no missed (dropped)
+frames outside the first 5 s after a (re)start, RSS growth under 100 MB after
+a 5-minute warm-up, every restart under 3 s; late presents are warnings.
+
+30-minute run on the M1 Pro (debug build, 4 layers 1080p60 HAP Q / ProRes from
+the demo library, scene file, `soak-2026-10-24-0814.md`): **35 828 frames per
+engine instance, 0 missed, 2 × kill → healthz 0.19 s, RSS 138 → 143 MB after
+warm-up, GPU p99 2.1 ms, DMX→photon p99 30 ms**; 3 late presents (one vsync
+late) in the whole run (B52). The sampler spawned ten processes per second
+during this run; it now spawns one.
+
+15-minute run on the production path (no scene file: canvas, patch and
+library from `project.json`, 8 layers, `soak-2026-10-24-0849.md`): **0 missed,
+0 late, 2 × kill → healthz 0.18 s, RSS 223 → 203 MB after warm-up, average
+60.6 fps over 837 samples, GPU p99 ≤ 6.9 ms, DMX→photon p99 30 ms — PASS.**
+
+The 8 h run of DESIGN §18 is an owner step (`docs/RELEASE.md` §3, B49).

@@ -89,8 +89,19 @@ public final class SACNReceiver: @unchecked Sendable {
         self.logger = logger
     }
 
+    private var universes: [Int] = []
+
+    /// Patch changes: join the new set of universes (the group is recreated; unicast keeps working throughout).
+    public func update(universes: [Int]) {
+        let numbers = universes.isEmpty ? [1] : universes
+        guard numbers != self.universes else { return }
+        group?.cancel()
+        do { try start(universes: numbers) } catch { logger.error("sACN rejoin failed", metadata: ["error": "\(error)"]) }
+    }
+
     public func start(universes: [Int]) throws {
         let numbers = universes.isEmpty ? [1] : universes
+        self.universes = numbers
         let endpoints = numbers.map { NWEndpoint.hostPort(host: NWEndpoint.Host(SACN.multicastAddress(universe: $0)), port: NWEndpoint.Port(rawValue: SACN.port)!) }
         let multicast = try NWMulticastGroup(for: endpoints, disableUnicast: false)
         let group = NWConnectionGroup(with: multicast, using: .udp)

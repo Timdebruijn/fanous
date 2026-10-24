@@ -6,10 +6,11 @@ import AppKit
 import LanthornCore
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var window: NSWindow?
     private let engine = EngineManager()
     private var browser: BrowserController?
+    private var statusItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
@@ -49,6 +50,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         browser?.load()
     }
 
+    @objc func startEngine(_ sender: Any?) {
+        engine.startEngine()
+        browser?.load()
+    }
+
+    @objc func stopEngine(_ sender: Any?) {
+        let alert = NSAlert()
+        alert.messageText = "Stop the engine?"
+        alert.informativeText = "Outputs go black and the background service is removed until the next start. The project is kept."
+        alert.addButton(withTitle: "Stop Engine")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        engine.stopEngine()
+    }
+
+    /// Engine menu: refresh the status line each time it opens.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard let statusItem else { return }
+        statusItem.title = "Checking the engine…"
+        engine.statusLine { [weak statusItem] line in statusItem?.title = line }
+    }
+
     @objc func openLogs(_ sender: Any?) { NSWorkspace.shared.open(AppPaths.logs) }
 
     @objc func reloadUI(_ sender: Any?) { browser?.load() }
@@ -75,8 +98,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(submenu: editMenu)
 
         let engineMenu = NSMenu(title: "Engine")
+        engineMenu.delegate = self
+        let status = NSMenuItem(title: "Engine status unknown", action: nil, keyEquivalent: "")
+        status.isEnabled = false
+        engineMenu.addItem(status)
+        statusItem = status
+        engineMenu.addItem(.separator())
         engineMenu.addItem(withTitle: "Reload UI", action: #selector(reloadUI(_:)), keyEquivalent: "r")
+        engineMenu.addItem(withTitle: "Start Engine", action: #selector(startEngine(_:)), keyEquivalent: "")
         engineMenu.addItem(withTitle: "Restart Engine", action: #selector(restartEngine(_:)), keyEquivalent: "")
+        engineMenu.addItem(withTitle: "Stop Engine…", action: #selector(stopEngine(_:)), keyEquivalent: "")
+        engineMenu.addItem(.separator())
         engineMenu.addItem(withTitle: "Open Logs", action: #selector(openLogs(_:)), keyEquivalent: "")
         mainMenu.addItem(submenu: engineMenu)
 

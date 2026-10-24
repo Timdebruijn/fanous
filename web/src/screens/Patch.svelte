@@ -6,7 +6,7 @@
   import DMXMonitor from '../components/DMXMonitor.svelte';
   import PatchInspector from '../components/PatchInspector.svelte';
   import PatchTable from '../components/PatchTable.svelte';
-  import { app } from '../lib/state.svelte';
+  import { app, can, cmd } from '../lib/state.svelte';
   import { buildFixtures, knownUniverses, loadChannelMap, summarize, universeOptions, type ChannelMap } from '../lib/patch-screen';
 
   // Footprints come from the engine's channel map; until it arrives (or if it cannot be fetched) 64/8/8 apply.
@@ -30,6 +30,8 @@
     return known[0] ?? null;
   });
 
+  const policyTitle = $derived(!can('programmer') ? 'Locked: programmer only' : app.project.showLock ? 'Locked: show lock is on' : 'Which sources control the fixtures: DMX only, internal only (cues, OSC), or merged');
+
   function select(name: string) {
     selectedName = name;
     const row = rows.find((r) => r.name === name);
@@ -43,6 +45,15 @@
     {summary.fixtures} fixtures · {summary.universes} universes{#if summary.collisions > 0}{' · '}<span class="alert">{summary.collisions} collisions</span>{/if}
   </span>
   <span class="spacer"></span>
+  <label class="caption policy" title={policyTitle}>
+    Source policy
+    <select class="input" value={app.project.policy} disabled={policyTitle.startsWith('Locked')} onchange={(e) => void cmd('project.set', { path: '/policy', value: e.currentTarget.value })}>
+      <option value="dmx">DMX only</option>
+      <option value="internal">Internal only (cues, OSC)</option>
+      <option value="ltp">LTP · merge, latest wins</option>
+      <option value="htp">HTP · merge, highest wins</option>
+    </select>
+  </label>
   <a class="link" href="/api/channel-map.md" target="_blank" rel="noopener">Channel map</a>
   <a class="btn" href="/api/gdtf" download>Export GDTF</a>
 </div>
@@ -58,6 +69,8 @@
 </div>
 
 <style>
+  .policy { display: flex; align-items: center; gap: 8px; }
+  .policy select { min-height: var(--touch); }
   .screen { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; }
   .left { flex: 1 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
   .right { flex: 1 1 560px; min-width: 0; }

@@ -112,6 +112,14 @@ groups) and serves consoles layer status, libraries, elements, thumbnails and
 streaming frames over TCP (`live.citp`). `/metrics` and `/api/logs` feed the
 System / Health screen.
 
+Install and release (Phase 8, `docs/RELEASE.md`): `scripts/bundle.sh` assembles
+`dist/Lanthorn.app` (shell + `lanthornd` LaunchAgent + web UI) with the
+hardened runtime; `CODESIGN_IDENTITY` selects a Developer ID and
+`scripts/notarize.sh` notarizes and staples a dmg. First launch asks once to
+allow the engine under Login Items. `scripts/soak.sh HOURS` runs the soak test
+(scripted Art-Net, 1 s metrics samples, `kill -9` restarts) and writes a
+PASS/FAIL report to `docs/benchmarks/`. User documentation: `docs/user/`.
+
 `/api/metrics` reports frame timing, the DMX-to-photon estimate and audio
 drift; `lanthorn-bench run` ramps layers until a frame drops (`--effects
 blur,edge`, `--dissolve 2`, `--ingest FILE` for the Phase 3/4 variants) and

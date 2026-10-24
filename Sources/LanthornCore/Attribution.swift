@@ -15,5 +15,5 @@ public enum Attribution {
 }
 
 public enum LanthornVersion {
-    public static let string = "0.0.1"
+    public static let string = "1.0.0-rc.1"
 }

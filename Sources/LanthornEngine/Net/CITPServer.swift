@@ -59,6 +59,11 @@ public final class CITPServer: @unchecked Sendable {
     }
 
     public static let productName = "Lanthorn"
+    /// "1.0.0-rc.1" → (1, 0, 0); MSEX has no room for a pre-release tag.
+    static let productVersion: (UInt8, UInt8, UInt8) = {
+        let parts = LanthornVersion.string.split(separator: "-").first?.split(separator: ".").compactMap { UInt8($0) } ?? []
+        return (parts.count > 0 ? parts[0] : 0, parts.count > 1 ? parts[1] : 0, parts.count > 2 ? parts[2] : 0)
+    }()
     private let name: String
     private let uuid: String
     private let providers: Providers
@@ -233,7 +238,8 @@ public final class CITPServer: @unchecked Sendable {
             session.send(
                 .serverInformation(
                     ServerInformation(
-                        version: version, uuid: uuid, productName: Self.productName, productVersionMajor: 0, productVersionMinor: 0, productVersionBugfix: 1,
+                        version: version, uuid: uuid, productName: Self.productName, productVersionMajor: Self.productVersion.0, productVersionMinor: Self.productVersion.1,
+                        productVersionBugfix: Self.productVersion.2,
                         supportedVersions: [.v1_0, .v1_1, .v1_2], supportedLibraryTypes: 1 << 0, thumbnailFormats: ["JPEG", "RGB8"], streamFormats: ["JPEG"],
                         layerDMXSources: providers.layers().map { "Layer \($0.index)" })), requestIndex: requestIndex)
             logger.info("CITP client", metadata: ["peer": "\(session.connection.endpoint)", "msex": "\(version.major).\(version.minor)", "folders": "\(library.folders.count)"])

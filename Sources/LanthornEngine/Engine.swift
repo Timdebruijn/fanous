@@ -62,6 +62,8 @@ public final class Engine: @unchecked Sendable {
     private let readiness = Mutex<(items: [ReadinessItem], acknowledged: Set<String>, checkedAt: Double)>(([], [], 0))
     private var readinessTimer: DispatchSourceTimer?
     private let oscLog = Mutex<[JSONValue]>([])
+    private var lastPolicy: SourcePolicy?
+    private var lastLibraryRootWarning: String?
     private var citp: CITPServer?
     private var stateServer: StateServer?
     private var liveTimer: DispatchSourceTimer?
@@ -101,18 +103,22 @@ public final class Engine: @unchecked Sendable {
             directory: AppPaths.tls, hostnames: hostnames, ipAddresses: ["127.0.0.1", "::1"] + SystemInfo.ipv4Addresses,
             logger: logger)
         tlsFingerprint = identity.fingerprintSHA256
-        // The standard patch sized to the scene until projects exist; the project document can change it (Phase 5).
-        let layerCount = options.scene?.layerCount ?? 8
-        let patch = Patch.standard(layers: layerCount, outputs: 4)
+        // The project document comes first: without a scene file (the bundled agent) it is the source of the layer
+        // count, canvas, source policy and library root (DESIGN.md §2.4); a scene file (development, bench) wins.
+        let defaultCanvas = (width: options.scene?.canvasWidth ?? 1920, height: options.scene?.canvasHeight ?? 1080)
+        let loadedProject = ProjectDocument.load(from: AppPaths.projectFile, canvas: defaultCanvas)
+        let layerCount = options.scene?.layerCount ?? loadedProject?["layerCount"]?.int ?? 8
+        let patch = ProjectDocument.effectivePatch(from: loadedProject ?? .null) ?? Patch.standard(layers: layerCount, outputs: 4)
+        let policy = options.scene?.policy ?? loadedProject?["policy"]?.string.flatMap(SourcePolicy.init(rawValue:)) ?? .dmx
         let dmx = DMXStore(patch: patch, logger: logger)
-        if let policy = options.scene?.policy, policy != .dmx {
+        if policy != .dmx {
             for entry in patch.entries { dmx.setPolicy(policy, for: entry.fixture) }
         }
         dmx.start()
         let artnet = ArtNetReceiver(store: dmx, logger: logger, nodeName: Attribution.projectName)
         try artnet.start()
         let sacn = SACNReceiver(store: dmx, logger: logger)
-        try sacn.start(universes: [1, 2, 3])
+        try sacn.start(universes: Self.sacnUniverses(patch))
         let osc = OSCReceiver(store: dmx, logger: logger)
         try osc.start()
         self.dmx = dmx
@@ -122,7 +128,7 @@ public final class Engine: @unchecked Sendable {
 
         // The library is always indexed (DESIGN.md §8); scenes may add explicit entries (Syphon inputs, test files).
         let context = try MetalContext()
-        let libraryRoot = options.scene?.library.map { URL(fileURLWithPath: $0) } ?? AppPaths.defaultLibrary
+        let libraryRoot = (options.scene?.library ?? loadedProject?["library"]?["root"]?.string).map { URL(fileURLWithPath: $0) } ?? AppPaths.defaultLibrary
         let library = LibraryIndex(root: libraryRoot, cacheDirectory: AppPaths.cache, logger: logger)
         let thumbnailer = Thumbnailer(context: context, directory: AppPaths.cache.appending(path: "thumbnails"), logger: logger)
         library.thumbnailer = { url, metadata, kind in thumbnailer.make(for: url, metadata: metadata, kind: kind) }
@@ -140,9 +146,10 @@ public final class Engine: @unchecked Sendable {
         ingest.start()
         self.ingest = ingest
 
-        var sceneWithOutputs = options.scene
-        sceneWithOutputs?.managedOutputs = true  // the coordinator below owns displays and drivers (DESIGN.md §9.6)
-        if let scene = sceneWithOutputs {
+        var sceneWithOutputs = options.scene ?? Self.defaultScene(project: loadedProject, layerCount: layerCount, policy: policy, library: libraryRoot)
+        sceneWithOutputs.managedOutputs = true  // the coordinator below owns displays and drivers (DESIGN.md §9.6)
+        do {
+            let scene = sceneWithOutputs
             let service = try MainActor.assumeIsolated {
                 try RenderService(scene: scene, context: context, parameters: dmx.snapshots, metrics: metrics, logger: logger)
             }
@@ -152,12 +159,7 @@ public final class Engine: @unchecked Sendable {
 
         // Phase 5: roles, the project and live documents and the WebSocket state server (DESIGN.md §11).
         let auth = RoleAuth(settingsURL: AppPaths.settingsFile, shellTokenURL: AppPaths.shellTokenFile, logger: logger)
-        let project =
-            ProjectDocument.load(from: AppPaths.projectFile, canvas: (options.scene?.canvasWidth ?? 1920, options.scene?.canvasHeight ?? 1080))
-            ?? ProjectDocument.initial(
-                patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: options.scene?.policy ?? .dmx,
-                canvas: (options.scene?.canvasWidth ?? 1920, options.scene?.canvasHeight ?? 1080))
-        if let loaded = ProjectDocument.effectivePatch(from: project), loaded != patch { dmx.setPatch(loaded) }
+        let project = loadedProject ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: policy, canvas: defaultCanvas)
         let store = StateStore(project: project, logger: logger)
         ProjectDocument.registerCommands(on: store, auth: auth)
         // Phase 7: cues, timecode, show mode (DESIGN.md §14–15)
@@ -193,10 +195,7 @@ public final class Engine: @unchecked Sendable {
             case .cueGoto(let number): _ = store.execute("cue.goto", args: ["number": .number(number)], role: .operator)
             case .showLock(let on): _ = store.execute(on ? "show.lock" : "show.unlock", role: .programmer)
             case .showMode(let on): _ = store.execute("show.mode", args: ["on": .bool(on)], role: .operator)
-            case .timecodeEnable(let on):
-                let settings = ShowCommands.timecodeSettings(from: store.project)
-                let source: ShowCommands.TimecodeSettings.Source = on ? (settings.source == .off ? .ltc : settings.source) : .off
-                _ = store.execute("timecode.set", args: ["path": "/source", "value": .string(source.rawValue)], role: .programmer)
+            case .timecodeEnable(let on): _ = store.execute("timecode.enable", args: ["on": .bool(on)], role: .operator)
             case .projectLoad: self.logger.warning("OSC project load is not available until project bundles exist (B23)")
             default: break
             }
@@ -205,6 +204,7 @@ public final class Engine: @unchecked Sendable {
             guard let self else { return }
             self.ingest?.paused = on  // DESIGN.md §14: ingest paused in show mode
             if on { self.startReadinessTimer() } else { self.stopReadinessTimer() }
+            DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.coordinator?.setCursorHidden(on) } }
         }
         applyTimecodeSettings(ShowCommands.timecodeSettings(from: project))
         store.onProjectChanged = { [weak self] document in self?.projectChanged(document) }
@@ -355,6 +355,8 @@ public final class Engine: @unchecked Sendable {
                     "gpuMsMax": .number(s.gpuMax), "dmxToPhotonMsP50": .number(s.dmxP50), "dmxToPhotonMsP99": .number(s.dmxP99), "dmxSamples": .number(Double(s.dmxSamples)),
                     "windowSeconds": .number(s.seconds), "clients": .number(Double(store.clientCount)), "lagging": .number(Double(store.laggingClients)),
                     "showMode": .bool(self.showMode.isOn), "uptimeSeconds": .number(Date().timeIntervalSince(startedAt).rounded()),
+                    "totalFrames": .number(Double(metrics.totalFrames.load(ordering: .relaxed))), "totalMissed": .number(Double(metrics.totalMissed.load(ordering: .relaxed))),
+                    "totalLate": .number(Double(metrics.totalLate.load(ordering: .relaxed))), "pid": .number(Double(getpid())),
                 ]
                 if let audio = self.render?.mixer?.statistics {
                     m["audio"] = ["callbacks": .number(Double(audio.callbacks)), "underruns": .number(Double(audio.underruns)), "corrections": .number(Double(audio.corrections)), "maxDriftMs": .number(audio.maxDriftMillis)]
@@ -533,7 +535,7 @@ public final class Engine: @unchecked Sendable {
         timecodeClock.stop()
         timecodeClock.freewheelSeconds = max(0.1, settings.freewheel)
         render?.compositor.timecodeOffsets = TimecodeOffsets(project: settings.offset, layers: Dictionary(uniqueKeysWithValues: settings.layerOffsets.compactMap { k, v in Int(k).map { ($0, v) } }))
-        switch settings.source {
+        switch settings.enabled == false ? .off : settings.source {
         case .off: break
         case .ltc:
             let input = LTCInput(clock: timecodeClock, channel: settings.channel, logger: logger)
@@ -607,8 +609,35 @@ public final class Engine: @unchecked Sendable {
     }
 
     /// Control queue: re-applies the patch when it changed and schedules the autosave (2 s after the last change).
+    /// The bundled agent runs without a scene file: canvas from the project's first canvas, media from the library.
+    static func defaultScene(project: JSONValue?, layerCount: Int, policy: SourcePolicy, library: URL) -> SceneConfig {
+        var scene = SceneConfig()
+        if let canvas = project.map(ProjectDocument.canvases(from:))?.first {
+            scene.canvasWidth = canvas.width
+            scene.canvasHeight = canvas.height
+        }
+        scene.layerCount = layerCount
+        scene.policy = policy
+        scene.library = library.path
+        return scene
+    }
+
+    static func sacnUniverses(_ patch: Patch) -> [Int] { patch.universes.filter { $0.transport == .sacn }.map(\.number) }
+
     private func projectChanged(_ document: JSONValue) {
-        if let dmx, let patch = ProjectDocument.effectivePatch(from: document), patch != dmx.currentPatch { dmx.setPatch(patch) }
+        if let dmx, let patch = ProjectDocument.effectivePatch(from: document), patch != dmx.currentPatch {
+            dmx.setPatch(patch)
+            sacn?.update(universes: Self.sacnUniverses(patch))
+        }
+        // the source policy applies to every patched fixture, also to the resolvers a new patch created
+        if let dmx, let raw = document["policy"]?.string, let policy = SourcePolicy(rawValue: raw), policy != lastPolicy {
+            lastPolicy = policy
+            for entry in dmx.currentPatch.entries { dmx.setPolicy(policy, for: entry.fixture) }
+        }
+        if let root = document["library"]?["root"]?.string, root != library?.root.path, root != lastLibraryRootWarning {
+            lastLibraryRootWarning = root
+            logger.warning("library root changed in the project; it applies after an engine restart", metadata: ["root": "\(root)"])
+        }
         let cueList = ShowCommands.cueList(from: document)
         if cueList != lastCues {
             lastCues = cueList

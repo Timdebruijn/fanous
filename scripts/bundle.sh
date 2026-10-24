@@ -34,6 +34,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Tim de Bruijn. GPL-3.0-only with additional terms.</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.video</string>
+  <key>NSMicrophoneUsageDescription</key><string>Lanthorn reads LTC timecode from an audio input when you select one under Show › Timecode.</string>
+  <key>NSLocalNetworkUsageDescription</key><string>Lanthorn receives Art-Net, sACN and OSC from your lighting console and announces itself to consoles over CITP and Bonjour.</string>
+  <key>NSBonjourServices</key><array><string>_lanthorn._tcp</string></array>
 </dict></plist>
 PLIST
 
@@ -50,8 +54,12 @@ cat > "$APP/Contents/Library/LaunchAgents/org.lanthorn.engine.plist" <<PLIST
 </dict></plist>
 PLIST
 
+# The agent shares the app's Info.plist keys (usage strings) through the bundle; it gets the same entitlements.
+cp scripts/entitlements.plist "$APP/Contents/Resources/entitlements.plist"
 IDENTITY=${CODESIGN_IDENTITY:--}
-codesign --force --sign "$IDENTITY" "$APP/Contents/MacOS/lanthornd"
-codesign --force --sign "$IDENTITY" "$APP"
-codesign --verify --verbose=2 "$APP"
-echo "built $APP ($VERSION, signed with: $IDENTITY)"
+SIGN=(codesign --force --sign "$IDENTITY" --options runtime --entitlements scripts/entitlements.plist)
+[[ "$IDENTITY" != "-" ]] && SIGN+=(--timestamp)
+"${SIGN[@]}" "$APP/Contents/MacOS/lanthornd"
+"${SIGN[@]}" "$APP"
+codesign --verify --deep --strict --verbose=2 "$APP"
+echo "built $APP ($VERSION, signed with: $IDENTITY, hardened runtime)"

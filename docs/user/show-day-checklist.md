@@ -1,0 +1,110 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!-- Copyright (c) 2026 Tim de Bruijn -->
+<!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
+
+# Show-day checklist
+
+Print this page. Date: ______________ Venue: ______________________
+Mac: ______________ Lanthorn version: ______________
+
+## The day before
+
+- [ ] Every file the show uses is in the library on the Mac's **internal disk**,
+      with more than 10 % of the disk free.
+- [ ] Layers screen: every layer you use shows its file and a green dot, no red
+      message.
+- [ ] Patch screen: no red "collisions" in the toolbar; every universe you use
+      shows a green pill when the console runs.
+- [ ] Outputs screen: every output is bound to its display; blend, warp and masks
+      checked with the test patterns.
+- [ ] Timecode source tested if you chase it; cues stepped through with Go.
+- [ ] Copy `~/Library/Application Support/Lanthorn/project.json` somewhere safe.
+- [ ] No macOS update planned between now and the show.
+
+## Mac settings (once per show machine)
+
+- [ ] **AC power** connected. Check cooling and airflow.
+- [ ] **Display sleep off**: System Settings › Lock Screen › Turn display off:
+      Never.
+- [ ] **Spotlight off for the library volume**: `sudo mdutil -i off <volume>`, or
+      add the library folder to Spotlight Privacy.
+- [ ] **Automatic updates off**: System Settings › General › Software Update ›
+      Automatic updates.
+- [ ] **Time Machine paused**: stop a running backup, or switch Time Machine off
+      for the show.
+- [ ] **Focus on** (Do Not Disturb) from the menu bar, so no notification lands
+      on an output. Lanthorn cannot read this; it stays a manual item.
+- [ ] **One network interface** for the console network. Turn Wi-Fi off if the
+      console is on Ethernet. sACN multicast is joined on the default-route
+      interface only, so a second active interface can put it on the wrong network.
+- [ ] Displays are **not mirrored**, and each has the resolution and refresh rate
+      you want (System Settings › Displays). Lanthorn does not apply display
+      modes (B33) and does not check for mirroring (B42).
+- [ ] Firewall allows `lanthornd` (see getting-started.md).
+
+## In Lanthorn
+
+- [ ] Console is sending: every patched universe pill in the status bar is green.
+- [ ] **Programmer password set** (System › Roles and passwords) and the yellow
+      "web UI open" notice is gone. Operator password set if an iPad or a
+      second computer is in the room.
+- [ ] System screen: press **Run checks**. Work through the Readiness list (below).
+- [ ] Switch **Show mode** on (System screen, top right). It refuses while an item
+      blocks.
+- [ ] Timecode on, state **Locked**, if you chase timecode.
+- [ ] Press **L** (programmer, confirm) to **lock the show**. The status bar says
+      SHOW LOCK.
+- [ ] Look at "dropped" in the status bar: it should read 0 and stay there.
+
+## The Readiness list
+
+Show mode runs these checks when you switch it on and every 30 seconds while it
+is on. Each item shows a fix hint.
+
+| Item | Needs |
+|---|---|
+| On AC power | power adapter connected |
+| Thermal state nominal | cool machine (nominal or fair) |
+| Free disk > 10 % | space on the library volume |
+| Memory headroom | quit other applications |
+| All patched universes receiving | console output and network |
+| All outputs bound to their displays | displays connected, outputs assigned |
+| No decoder errors | no layer showing a media error |
+| Library on a local volume | library on the internal disk |
+| Spotlight indexing off for the library volume | see above |
+| Automatic macOS updates off | see above |
+| Time Machine not backing up | see above |
+| Focus / Do Not Disturb on | manual, check the menu bar |
+| Display sleep disabled | see above |
+| Supported hardware | Apple Silicon with a ProRes engine |
+
+**Failed** items (red) block show mode. A programmer can press **Acknowledge**
+next to an item to accept the risk: the badge changes to "acknowledged" and it
+no longer blocks. Do this only for things you decided on purpose, for example a
+spare display that is not connected. A setting Lanthorn cannot read is shown as
+"unknown"; check those yourself (B38).
+
+**Manual** items (Focus) have no button; the check is yours.
+
+**Blocking** items (shown with a "blocking" badge) cannot be acknowledged. Today
+that is Supported hardware: the Mac has no ProRes engine and cannot run a show.
+Use a Mac with an M1 Pro or newer.
+
+While show mode is on, the Mac does not sleep (display and system), the engine is
+exempt from App Nap, the ingest queue is paused and the cursor is hidden over
+the outputs. Leave show mode to resume ingest.
+
+## During the show
+
+- [ ] Check the status bar now and then: red means look now (dropped frames, a
+      universe that went silent, lost timecode, a lost output).
+- [ ] Cue Go, Back and Go to keep working while the show is locked. Everything
+      else needs the programmer to unlock first (**L**).
+- [ ] Do not import or transcode media during the show; ingest is paused in show
+      mode anyway.
+
+## After the show
+
+- [ ] Leave show mode; unlock the show (**L**) if you need to edit.
+- [ ] System › Logs › **Download** the log if anything odd happened.
+- [ ] Switch automatic updates and Time Machine back on if you want them.

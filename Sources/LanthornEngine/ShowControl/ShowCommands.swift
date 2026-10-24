@@ -21,6 +21,8 @@ public enum ShowCommands {
         public var freewheel: Double = 2
         /// Per-layer chase offsets in frames, keyed by the layer number as a string.
         public var layerOffsets: [String: Double] = [:]
+        /// The operator's switch (`timecode.enable`, allowed under show lock); nil = on. The source stays configured.
+        public var enabled: Bool? = nil
         public init() {}
     }
 
@@ -163,6 +165,14 @@ public enum ShowCommands {
                     throw CommandError.invalidArgs("\(path) does not fit the timecode settings")
                 }
                 try project.set(try JSONValue(encoding: decoded), at: "/timecode")
+                return nil
+            })
+        store.register(
+            CommandSpec(name: "timecode.enable", role: .operator, mutatesConfig: false, undoable: false, summary: "Operator switch: chase the configured timecode source (true) or ignore it (false).", argsType: "{ on: boolean }") { project, args in
+                guard let on = args["on"]?.bool else { throw CommandError.invalidArgs("args: { on }") }
+                var settings = try project["timecode"] ?? JSONValue(encoding: TimecodeSettings())
+                try settings.set(.bool(on), at: "/enabled")
+                try project.set(settings, at: "/timecode")
                 return nil
             })
         store.register(

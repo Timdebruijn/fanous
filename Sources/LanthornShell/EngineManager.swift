@@ -31,6 +31,49 @@ final class EngineManager {
         if usesAgent { startAgent() } else { startChild() }
     }
 
+    /// One line for the Engine menu: service state plus whether the engine answers on 8443.
+    func statusLine(completion: @escaping @MainActor (String) -> Void) {
+        let service: String
+        if usesAgent {
+            switch SMAppService.agent(plistName: Self.agentPlist).status {
+            case .enabled: service = "service installed"
+            case .requiresApproval: service = "service needs approval in Login Items"
+            case .notRegistered: service = "service not installed"
+            case .notFound: service = "service plist missing"
+            @unknown default: service = "service state unknown"
+            }
+        } else {
+            service = child?.isRunning == true ? "child process" : "no child process"
+        }
+        var request = URLRequest(url: URL(string: "https://127.0.0.1:8443/healthz")!)
+        request.timeoutInterval = 1
+        let task = URLSession(configuration: .ephemeral, delegate: TrustAnyLocalhost.shared, delegateQueue: nil).dataTask(with: request) { data, _, _ in
+            let version = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["version"] as? String
+            let engine = version.map { "Engine \($0) running" } ?? "Engine not running"
+            DispatchQueue.main.async { MainActor.assumeIsolated { completion("\(engine) · \(service)") } }
+        }
+        task.resume()
+    }
+
+    /// Start: register the service when needed and kick it; in development start the child.
+    func startEngine() {
+        if usesAgent {
+            startAgent()
+            run("/bin/launchctl", ["kickstart", "gui/\(getuid())/org.lanthorn.engine"])
+        } else if child?.isRunning != true {
+            startChild()
+        }
+    }
+
+    /// Stop: a KeepAlive agent only stays down when its registration goes; the next start registers it again.
+    func stopEngine() {
+        if usesAgent {
+            do { try SMAppService.agent(plistName: Self.agentPlist).unregister() } catch { alert("The engine service could not be removed.", "\(error)") }
+        } else {
+            stopIfChild()
+        }
+    }
+
     func restart() {
         if usesAgent {
             run("/bin/launchctl", ["kickstart", "-k", "gui/\(getuid())/org.lanthorn.engine"])
@@ -90,6 +133,15 @@ final class EngineManager {
         process.executableURL = URL(fileURLWithPath: tool)
         process.arguments = arguments
         try? process.run()
+    }
+
+    /// The engine's certificate is self-signed; the shell pins its fingerprint in the web view, this status probe only reads the version.
+    final class TrustAnyLocalhost: NSObject, URLSessionDelegate {
+        static let shared = TrustAnyLocalhost()
+        func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+            guard challenge.protectionSpace.host == "127.0.0.1", let trust = challenge.protectionSpace.serverTrust else { return completionHandler(.performDefaultHandling, nil) }
+            completionHandler(.useCredential, URLCredential(trust: trust))
+        }
     }
 
     private func alert(_ message: String, _ detail: String) {

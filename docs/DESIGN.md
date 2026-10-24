@@ -142,6 +142,57 @@ on every display link. Budgets are measured, not assumed (§13).
   (target < 3 s on the reference machine; measured in Phase 8 soak tests).
   Playback positions are not restored; DMX re-establishes state immediately.
 
+### 2.4 Phase 8 as built (2026-10-24)
+
+- One engine per user: `lanthornd` holds an `flock` on
+  `~/Library/Application Support/Lanthorn/engine.lock` (pid inside) for its
+  whole run; a second start prints "already running (pid n)" and exits 75.
+  Under launchd that means the KeepAlive retry every 10 s is refused as long
+  as a foreground engine owns the ports, which is the intended outcome.
+- Soak test (`scripts/soak.sh HOURS LAYERS`): `lanthorn-bench dmx` sends
+  Art-Net at the standard patch at 40 Hz with a random file, play mode,
+  dissolve and intensity per layer every 3–8 s and slow position/scale drift;
+  the script samples `/metrics` (now with `totalFrames`, `totalMissed`,
+  `totalLate` and `pid`) and the engine's RSS every second, `kill -9`s the
+  engine at the kill interval and times `/healthz` coming back, and writes
+  `docs/benchmarks/soak-<date>.{csv,md}` with PASS/FAIL: no missed (dropped)
+  frames outside the first 5 s after a (re)start, RSS growth under 100 MB
+  after a 5-minute warm-up, every restart under 3 s (§2.3); late presents
+  (one vsync late, §18 counts dropped frames) are listed as warnings.
+- Found by the user-docs pass and fixed: the engine now renders without a
+  scene file (the bundled agent): canvas, layer count, patch, source policy
+  and library root come from the project document, media from the library
+  (`Engine.defaultScene`). The project's `policy` is applied to every patched
+  fixture at start and on change (it was only read from scene files). sACN
+  joins the multicast groups of the universes in the patch and re-joins on
+  patch changes (it was universes 1–3). `timecode.enable {on}` is the
+  operator's switch (also under show lock; OSC `/lanthorn/timecode/enable`
+  uses it) and `TimecodeSettings.enabled` the stored flag; the source stays a
+  programmer setting. The Patch toolbar has the source-policy selector and the
+  Show screen warns while the policy is DMX only. A changed library root
+  applies after an engine restart (B51).
+- Show mode hides the cursor on every bound output display
+  (`CGDisplayHideCursor`) and shows it again on leaving; output windows were
+  already at `CGShieldingWindowLevel`. The other §14 side effects stay B42.
+- Shell: the Engine menu shows "Engine <version> running · service installed"
+  (or the approval/not-installed state) when opened, and offers Start,
+  Restart and Stop Engine (stop = `SMAppService.unregister`, since a KeepAlive
+  agent only stays down when its registration goes).
+- Bundle: `scripts/bundle.sh` signs with the hardened runtime and
+  `scripts/entitlements.plist` (microphone for LTC), writes the microphone and
+  local-network usage strings and `NSBonjourServices`, timestamps when a
+  Developer ID is given; `scripts/notarize.sh` submits with `notarytool`,
+  staples the app and a UDZO dmg. Version `1.0.0-rc.1` from
+  `LanthornVersion.string`, also in CITP `SInf`.
+- `docs/RELEASE.md` is the release checklist (code green, version,
+  measurements per machine, console interop, build/notarize, clean-account
+  install, legal, docs, publish); `CHANGELOG.md` started; user documentation
+  in `docs/user/`.
+- Not done here (owner steps in the checklist): the 8 h soak on the reference
+  machine (a 30-minute run with two kill/restart cycles is in
+  `docs/benchmarks/`), benchmarks on other machines, the notarized build and
+  the clean-account install, the legal and trademark items.
+
 ---
 
 ## 3. Module / package layout (ADR-0003)
@@ -1374,7 +1425,8 @@ biggest risks early.
 
 Scope guard: a feature not in the table is not in v1. Serial fixture, OSC
 feedback, per-output Syphon, 10-bit output, per-channel blend gamma, frame
-blending, varispeed audio and the MDM profile are the v1.x candidates.
+blending, varispeed audio, browser end-to-end tests (OPEN-22) and the MDM
+profile are the v1.x candidates.
 
 ---
 
@@ -1430,7 +1482,7 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | OPEN-6 | Keep the chip capability table in `docs/hardware.md` and in Core; who verifies new chips | owner verifies per generation |
 | OPEN-7 | Serial fixture in v1 or v1.x | v1.x |
 | OPEN-8 | Engine hard cap on layer count | 32 |
-| OPEN-9 | Exact DMX bands (play modes, effects), speed max 400 %, scale max 800 % | as in §6.2; review before Phase 1 locks the GDTF |
+| OPEN-9 | Exact DMX bands (play modes, effects), speed max 400 %, scale max 800 % | **Resolved (Phase 1):** as in §6.2, locked in `docs/channel-map.md` and the GDTF |
 | OPEN-10 | sACN per-address priority (0xDD start code) | not in v1 |
 | OPEN-11 | Per-parameter smoothing vs a global switch | per parameter, default off |
 | OPEN-12 | Folder 0 numbering for inputs/generators | as in §8.2 |
@@ -1442,9 +1494,9 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | OPEN-18 | Monitor role open by default when other roles have passwords | **Decided in Phase 5**: each role is open or protected independently; a client gets the highest role ≤ the one it asked for that its session cookie or shell token entitles it to, or that is open. Monitor stays open unless it has its own password. |
 | OPEN-19 | Prometheus metrics endpoint | v1.x |
 | OPEN-20 | MDM profile for show machines | later (owner's choice) |
-| OPEN-21 | Trademark search for "Lanthorn" before public release | owner |
-| OPEN-22 | Browser smoke tests (Playwright) | Phase 5 if cheap |
+| OPEN-21 | Trademark search for "Lanthorn" before public release | owner; `docs/RELEASE.md` §7 |
+| OPEN-22 | Browser smoke tests (Playwright) | **v1.x** (B47): Vitest covers the client, store and screen helpers; the screens were checked by hand in Phases 5–7 |
 | OPEN-23 | Library default location `~/Movies/Lanthorn Library` | yes |
 | OPEN-24 | Default ports: HTTPS 8443, OSC 8000/8001; configurable | yes |
 | OPEN-26 | Keychain strategy for unsigned development builds (prompt on every rebuild vs. ephemeral per-process identity) | **Decided 2026-10-23:** file-backed in-memory identity (`SecIdentityCreate`), no login keychain; ADR-0015 amendment |
-| OPEN-25 | Register an Art-Net OEM code with Artistic Licence (free, needed for a proper `ArtPollReply`) | owner, before 1.0; 0xFFFF until then |
+| OPEN-25 | Register an Art-Net OEM code with Artistic Licence (free, needed for a proper `ArtPollReply`) | owner, `docs/RELEASE.md` §4; 0xFFFF until then |

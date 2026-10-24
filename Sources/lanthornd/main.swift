@@ -123,6 +123,17 @@ do {
     FileHandle.standardError.write(Data("cannot create directories: \(error)\n".utf8))
     exit(1)
 }
+// One engine per user (DESIGN.md §2.1): an flock on engine.lock held for the whole run; a second start exits with
+// the owner's pid. launchd (KeepAlive) retries a refused start every 10 s, which is the intended outcome.
+let lockFile = AppPaths.applicationSupport.appending(path: "engine.lock")
+let lockDescriptor = open(lockFile.path, O_RDWR | O_CREAT, 0o600)
+if lockDescriptor < 0 || flock(lockDescriptor, LOCK_EX | LOCK_NB) != 0 {
+    let owner = (try? String(contentsOf: lockFile, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "?"
+    FileHandle.standardError.write(Data("lanthornd is already running (pid \(owner.isEmpty ? "?" : owner)): one engine per user\n".utf8))
+    exit(75)
+}
+_ = ftruncate(lockDescriptor, 0)
+_ = "\(getpid())\n".withCString { pwrite(lockDescriptor, $0, strlen($0), 0) }
 EngineLogging.bootstrap(fileURL: AppPaths.logs.appending(path: "lanthornd.log"), level: ProcessInfo.processInfo.environment["LANTHORN_LOG"] == "debug" ? .debug : .info)
 let logger = Logger(label: "lanthornd")
 var scene: SceneConfig?

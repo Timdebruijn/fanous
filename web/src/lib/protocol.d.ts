@@ -36,6 +36,7 @@ export type CommandName =
   | 'show.lock'
   | 'show.mode'
   | 'show.unlock'
+  | 'timecode.enable'
   | 'timecode.set'
   | 'undo';
 
@@ -80,6 +81,8 @@ export interface CommandArgs {
   'show.mode': { on: boolean };
   /** Unlock the show. Role: programmer. */
   'show.unlock': Record<string, never>;
+  /** Operator switch: chase the configured timecode source (true) or ignore it (false). Role: operator. */
+  'timecode.enable': { on: boolean };
   /** Timecode settings: source (off|ltc|mtc), device, channel, offset (frames), freewheel (s), layerOffsets. Role: programmer, refused under show lock, undoable. */
   'timecode.set': { path: string; value: JSONValue };
   /** Undo the last undoable command (global history). Role: programmer, refused under show lock. */

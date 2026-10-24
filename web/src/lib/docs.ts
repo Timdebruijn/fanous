@@ -52,6 +52,7 @@ export interface TimecodeSettingsDoc {
   offset: number; // frames
   freewheel: number; // seconds
   layerOffsets: Record<string, number>; // layer number → frames
+  enabled?: boolean | null; // the operator's switch; missing or null = on
 }
 
 export interface ResolvedParameter {
