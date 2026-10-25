@@ -12,7 +12,7 @@ Phase 8 deliverable of `DESIGN.md` §19; v1.0 ships when every box is ticked.
 
 - [ ] `scripts/test.sh` (engine tests bind the DMX/OSC/HTTPS ports: stop any
       running `lanthornd` first)
-- [ ] `LANTHORN_NET_TESTS=1 scripts/test.sh --filter CITPServerTests` on a Mac
+- [x] `LANTHORN_NET_TESTS=1 scripts/test.sh --filter CITPServerTests` on a Mac
       whose firewall allows the test runner's outgoing UDP (the CITP beacon)
 - [ ] `scripts/check-protocol-dts.sh`, `scripts/check-channel-map.sh`,
       `scripts/core-purity.sh`, `scripts/license-headers.sh`
