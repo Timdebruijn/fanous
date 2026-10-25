@@ -1,6 +1,6 @@
-# Contributing to Lanthorn
+# Contributing to Fanous
 
-Thank you for considering a contribution. Lanthorn is a media server for live
+Thank you for considering a contribution. Fanous is a media server for live
 events; stability and performance come before features, and the project is
 dual-licensed (GPL-3.0-only with additional terms, and a commercial license).
 That second point shapes the rules below.
@@ -33,19 +33,19 @@ accounts are covered. Pull requests from unsigned authors are not merged.
   CSS, shell):
   ```
   // SPDX-License-Identifier: GPL-3.0-only
-  // Copyright (c) 2026 Tim de Bruijn and Lanthorn contributors
+  // Copyright (c) 2026 Tim de Bruijn and Fanous contributors
   // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
   ```
   `scripts/license-headers.sh` checks this in CI.
 - **No new dependencies** without an ADR and a row in
   `docs/licensing/DEPENDENCIES.md`. Vendored C code is pinned to a commit.
-- **`LanthornCore` imports only Foundation.** Protocol parsers come with
+- **`FanousCore` imports only Foundation.** Protocol parsers come with
   fixture-based tests (real captures in `Tests/Fixtures/captures/`).
 - **Hot paths** (render, decode, DMX, audio, timecode): no Swift Concurrency,
   no allocations in steady state, no locks. See ADR-0002.
 - **Tests**: run `scripts/test.sh` (wraps `swift test`); unit tests for Core changes; golden images for anything visual;
   benchmark numbers in the PR description for anything that touches the
-  render or decode path (run `lanthorn-bench` before and after).
+  render or decode path (run `fanous-bench` before and after).
 - **Commits** in English, imperative mood, one topic per commit. PRs describe
   what was measured, not only what was changed.
 - Code style: `swift-format` configuration in the repo; `eslint`/`prettier`

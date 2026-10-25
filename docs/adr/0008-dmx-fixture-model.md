@@ -9,7 +9,7 @@ Catalyst's), layers, outputs and the server itself as fixtures, 16-bit
 precision, and one mode in v1.
 
 ## Decision
-- GDTF fixture type "Lanthorn" with DMX modes **Layer (64 ch)**, **Master
+- GDTF fixture type "Fanous" with DMX modes **Layer (64 ch)**, **Master
   (8 ch)**, **Output (8 ch)**; a Serial mode is reserved for later.
 - 16-bit parameters as coarse/fine pairs on adjacent channels. Layer
   channels 51–64 are reserved and ignored so additions never change the

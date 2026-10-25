@@ -1,11 +1,27 @@
-# Lanthorn
+# Fanous
 
 Open-source media server for live events, programmed from a lighting console
 as a fixture (Catalyst-style): video layers driven by Art-Net/sACN on Apple
 Silicon Macs, with edge blending, warping and video mapping on the GPU.
 
-Status: **Phase 0 (skeleton)** — engine serves the UI over HTTPS; no media
-features yet. Roadmap: `docs/DESIGN.md` §19.
+Status: **1.0.0 release candidate** — all phases of `docs/DESIGN.md` §19 are
+built; the release steps that need the owner are in `docs/RELEASE.md`. Until
+2026-10-25 the project was called Lanthorn. The name is the Egyptian lantern
+(fanous): coloured light for a show.
+
+## Getting Fanous, support and paid editions
+
+- **Free:** the source on GitHub under GPL-3.0-only with additional terms, and
+  a notarized `Fanous-<version>.dmg` with every GitHub release.
+- **Fanous Pro (paid binary):** the same engine plus the plugins that need
+  closed vendor SDKs (NDI, DeckLink, AJA; `FanousPluginAPI` boundary,
+  `docs/licensing/PLUGIN-EXCEPTION.md`), signed and auto-updating.
+- **Support and training:** support contracts with response times, show
+  commissioning (patch, mapping, timecode) and operator training.
+- **Sponsored features:** companies may propose a feature and pay for its
+  development; it lands in the open core unless it needs a closed SDK.
+- **Commercial license:** for products that cannot ship GPL code (dual
+  licensing through the CLA).
 
 ## Development
 
@@ -17,26 +33,26 @@ web UI.
 swift build                      # engine, shell, core
 scripts/test.sh                  # Core unit tests (Swift Testing)
 (cd web && npm install && npm run build)   # web UI → web/dist
-.build/debug/lanthornd --foreground        # https://127.0.0.1:8443 (self-signed; fingerprint in the log)
-swift run LanthornShell          # native shell; starts lanthornd as a child in development
-scripts/bundle.sh                # dist/Lanthorn.app (ad-hoc signed; CODESIGN_IDENTITY=… for Developer ID)
+.build/debug/fanousd --foreground        # https://127.0.0.1:8443 (self-signed; fingerprint in the log)
+swift run FanousShell          # native shell; starts fanousd as a child in development
+scripts/bundle.sh                # dist/Fanous.app (ad-hoc signed; CODESIGN_IDENTITY=… for Developer ID)
 ```
 
 Protocol fixtures: `scripts/capture-dmx.py artnet|sacn|osc <name>` records
-real console packets into `Tests/Fixtures/captures/` (stop `lanthornd` first;
-see the README there). `lanthornd channel-map` prints the DMX channel map,
-`lanthornd gdtf FILE` writes the GDTF fixture file; `scripts/check-channel-map.sh`
+real console packets into `Tests/Fixtures/captures/` (stop `fanousd` first;
+see the README there). `fanousd channel-map` prints the DMX channel map,
+`fanousd gdtf FILE` writes the GDTF fixture file; `scripts/check-channel-map.sh`
 keeps `docs/channel-map.md` in sync.
 
 The first engine start generates an ECDSA key and self-signed certificate and
 writes the public certificate and its fingerprint to
-`~/Library/Application Support/Lanthorn/tls/`. Signed builds keep the key in
+`~/Library/Application Support/Fanous/tls/`. Signed builds keep the key in
 the data-protection keychain; builds without a team identifier (ad-hoc
 development builds) keep it in `tls/private-key.der` (mode 0600) and never
-touch the login keychain, so there are no keychain prompts. `lanthornd
-reset-tls` discards the identity. Logs: `~/Library/Logs/Lanthorn/lanthornd.log`.
+touch the login keychain, so there are no keychain prompts. `fanousd
+reset-tls` discards the identity. Logs: `~/Library/Logs/Fanous/fanousd.log`.
 
-Until projects exist (Phase 5), `lanthornd --scene scene.json` renders a scene
+Until projects exist (Phase 5), `fanousd --scene scene.json` renders a scene
 driven by the standard DMX patch:
 
 ```json
@@ -47,15 +63,15 @@ driven by the standard DMX patch:
 ```
 
 Layers pick media with their Folder/File channels. The engine indexes the
-library root (`~/Movies/Lanthorn Library` by default, `"library"` in the
+library root (`~/Movies/Fanous Library` by default, `"library"` in the
 scene to override): folders `NNN_name/` and files `NNN_name.ext`, numbered
 1–255, ProRes/HAP `.mov` and stills playable, everything else marked "needs
 transcode"; FSEvents keep the index current, metadata and thumbnails are
-cached under `~/Library/Application Support/Lanthorn/cache/`. Explicit scene
+cached under `~/Library/Application Support/Fanous/cache/`. Explicit scene
 `media` entries (Syphon servers, test files) take precedence over the library.
-The canvas is published as the Syphon server "Lanthorn – Canvas".
+The canvas is published as the Syphon server "Fanous – Canvas".
 
-Ingest: `lanthornd ingest DIR out.mov` converts an image sequence from the
+Ingest: `fanousd ingest DIR out.mov` converts an image sequence from the
 command line; the engine's ingest queue (`/api/ingest`) transcodes uploads and
 "needs transcode" items to ProRes or HAP one job at a time at utility
 priority, yielding when the compositor is busy, and moves originals to
@@ -68,11 +84,11 @@ State and roles (Phase 5, DESIGN.md §11): the UI talks WebSocket on
 documents, commands with acks, RFC 6902 patches per revision, `snapshot` for
 a lagging client, `sub` for the DMX monitor stream). Roles are monitor,
 operator and programmer with optional passwords (`roles.setPassword`,
-PBKDF2-HMAC-SHA256 in `~/Library/Application Support/Lanthorn/settings.json`);
+PBKDF2-HMAC-SHA256 in `~/Library/Application Support/Fanous/settings.json`);
 `POST /api/login` returns the session cookie, `GET /api/session` shows the
 current role and which roles are open. The local shell authenticates with the
 token in `shell-token` (mode 0600). The project is autosaved to `project.json`
-and loaded at start; `lanthornd protocol-dts` prints `web/src/lib/protocol.d.ts`
+and loaded at start; `fanousd protocol-dts` prints `web/src/lib/protocol.d.ts`
 (checked by `scripts/check-protocol-dts.sh`).
 
 Web UI (`web/`, Svelte 5 + Vite, served by the engine from `web/dist`):
@@ -113,7 +129,7 @@ streaming frames over TCP (`live.citp`). `/metrics` and `/api/logs` feed the
 System / Health screen.
 
 Install and release (Phase 8, `docs/RELEASE.md`): `scripts/bundle.sh` assembles
-`dist/Lanthorn.app` (shell + `lanthornd` LaunchAgent + web UI) with the
+`dist/Fanous.app` (shell + `fanousd` LaunchAgent + web UI) with the
 hardened runtime; `CODESIGN_IDENTITY` selects a Developer ID and
 `scripts/notarize.sh` notarizes and staples a dmg. First launch asks once to
 allow the engine under Login Items. `scripts/soak.sh HOURS` runs the soak test
@@ -121,7 +137,7 @@ allow the engine under Login Items. `scripts/soak.sh HOURS` runs the soak test
 PASS/FAIL report to `docs/benchmarks/`. User documentation: `docs/user/`.
 
 `/api/metrics` reports frame timing, the DMX-to-photon estimate and audio
-drift; `lanthorn-bench run` ramps layers until a frame drops (`--effects
+drift; `fanous-bench run` ramps layers until a frame drops (`--effects
 blur,edge`, `--dissolve 2`, `--ingest FILE` for the Phase 3/4 variants) and
 `scripts/bench-sweep.sh` / `scripts/bench-phase3.sh` run the matrices.
 

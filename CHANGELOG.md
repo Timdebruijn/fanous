@@ -9,9 +9,15 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## 1.0.0-rc.1 — unreleased (Phase 8, 2026-10-24)
 
+- Renamed Lanthorn → **Fanous** (2026-10-25; name collisions, `docs/RELEASE.md` §7). Existing machine
+  state moves once from `~/Library/Application Support/Lanthorn` and `~/Library/Logs/Lanthorn`.
+- App icon and mark (a fanous lantern, `assets/`); UI fonts Atkinson Hyperlegible Next and Mono
+  (Braille Institute, OFL), bundled with the UI, chosen for unambiguous glyphs when reading fast in the dark.
+- Layer cap stays 32 for v1 (OPEN-8).
+
 - Hardening: one engine per user (`engine.lock`), cumulative frame counters in
   `/metrics`, show mode hides the cursor over the outputs.
-- `scripts/soak.sh` (scripted Art-Net via `lanthorn-bench dmx`, 1 s samples,
+- `scripts/soak.sh` (scripted Art-Net via `fanous-bench dmx`, 1 s samples,
   `kill -9` restarts, pass/fail report) and `docs/RELEASE.md`.
 - Bundle: hardened runtime with `scripts/entitlements.plist`, microphone and
   local-network usage strings, `NSBonjourServices`; `scripts/notarize.sh`
@@ -49,7 +55,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Phase 3: the full layer feature set (transform, fit, crop, colour, blend
   modes, effects, dissolve, play modes), stills, Syphon, audio, Master fixture.
 - Phase 2: ProRes and HAP decode, zero-copy textures, compositor, display
-  output, `lanthorn-bench`.
+  output, `fanous-bench`.
 - Phase 1: Art-Net/sACN, channel map, resolver with source policies, OSC
   server, LTC/MTC decoders, GDTF export, cue fade engine.
 - Phase 0: package layout, licenses, CI checks, HTTPS with a generated

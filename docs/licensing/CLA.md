@@ -1,10 +1,10 @@
-# Lanthorn Contributor License Agreement
+# Fanous Contributor License Agreement
 
 **STATUS: DRAFT for lawyer review. Based on the structure of the Apache
 Software Foundation Individual/Corporate CLAs, with an explicit sublicensing
 and relicensing grant so the project can be dual-licensed.**
 
-Thank you for your interest in Lanthorn (the "Project"), whose copyright is
+Thank you for your interest in Fanous (the "Project"), whose copyright is
 held by Tim de Bruijn (the "Project Owner"). This Contributor License
 Agreement ("Agreement") documents the rights granted by contributors to the
 Project Owner. It does not change your rights to use your own Contributions

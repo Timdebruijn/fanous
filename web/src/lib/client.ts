@@ -63,7 +63,7 @@ export interface ClientOptions {
  * The engine's state-sync client (DESIGN.md §11.2): hello → welcome, commands with acks, patches on a
  * revision chain (a gap triggers a snapshot), reconnect with backoff, binary stream dispatch.
  */
-export class LanthornClient {
+export class FanousClient {
   private socket: WebSocket | null = null;
   private rev = -1;
   private resync = false;

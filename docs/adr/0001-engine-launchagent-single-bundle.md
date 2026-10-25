@@ -10,7 +10,7 @@ to start the application like any app, without mandatory auto-login, and
 wants one bundle, not an installer package.
 
 ## Decision
-- `lanthornd` ships inside `Lanthorn.app` and is registered as a
+- `fanousd` ships inside `Fanous.app` and is registered as a
   **LaunchAgent** with `SMAppService.agent(plistName:)` (macOS 13+). The plist
   lives in `Contents/Library/LaunchAgents/` and uses `BundleProgram`;
   `KeepAlive` and `RunAtLoad` are set.

@@ -32,7 +32,7 @@
 #ifdef __OBJC__
 
 #import <stdatomic.h> // For SyphonSafeBool
-#import "Syphon_Prefix.h" // Lanthorn: replaces the Xcode prefix header (SYPHONLOG, Cocoa)
+#import "Syphon_Prefix.h" // Fanous: replaces the Xcode prefix header (SYPHONLOG, Cocoa)
 
 #define kSyphonIdentifier @"info.v002.Syphon"
 

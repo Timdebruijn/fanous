@@ -12,7 +12,7 @@ Files (upstream names; public headers live in `include/Syphon/` so that `<Syphon
 
 Left out: everything OpenGL (SyphonOpenGL*, SyphonGL*, SyphonServerGL*, SyphonServerRendererGL/LegacyGL/CoreGL, SyphonCGL, SyphonIOSurfaceImageCore/Legacy, SyphonImageBase, which only the GL images use), the deprecated SyphonServer/SyphonClient/SyphonImage, SyphonMetalShaders.metal (embedded as a string, see below), Syphon.docc, Syphon.xcodeproj, Syphon.modulemap, Info.plist, Exported_Symbols.exp, icons, README and SDK read-me.
 
-Local changes (all marked "Lanthorn" in the source except the header edits):
+Local changes (all marked "Fanous" in the source except the header edits):
 1. SyphonServerRendererMetal.m: SwiftPM targets have no default.metallib, so `newDefaultLibraryWithBundle:` cannot work. The shaders are now compiled at runtime with `newLibraryWithSource:options:error:` from the static string `kSyphonMetalShaderSource`, which holds SyphonMetalShaders.metal with SyphonServerMetalTypes.h inlined (a runtime-compiled source cannot `#include` it) and without the license comment. A failed compile now returns nil at once instead of failing later at pipeline creation. When updating upstream, regenerate the string from both files. Also imports SyphonPrivate.h for SYPHONLOG.
 2. SyphonPrivate.h: imports "Syphon_Prefix.h". Upstream gets SYPHONLOG and Cocoa from the Xcode prefix header (Syphon_Prefix.pch), which SwiftPM does not support; Syphon_Prefix.h is that file under another name, content unchanged.
 3. include/Syphon/Syphon.h: umbrella header reduced to the directory, Metal server and Metal client imports (the OpenGL and deprecated imports are gone with their files).

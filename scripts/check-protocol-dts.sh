@@ -5,8 +5,8 @@
 # web/src/lib/protocol.d.ts must equal what the engine's command registry generates (DESIGN.md §11.4). `--write` regenerates it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-swift build --product lanthornd >/dev/null
-generated=$("$(swift build --show-bin-path)/lanthornd" protocol-dts)
+swift build --product fanousd >/dev/null
+generated=$("$(swift build --show-bin-path)/fanousd" protocol-dts)
 if [[ "${1:-}" == "--write" ]]; then
   printf '%s\n' "$generated" > web/src/lib/protocol.d.ts
   echo "web/src/lib/protocol.d.ts written"

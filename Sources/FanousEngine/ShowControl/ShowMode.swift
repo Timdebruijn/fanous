@@ -1,0 +1,210 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 Tim de Bruijn
+// Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
+
+import Foundation
+import IOKit.ps
+import IOKit.pwr_mgt
+import FanousCore
+import Logging
+import Synchronization
+
+/// Show mode (DESIGN.md §14): sleep assertions, a latency-critical activity, ingest paused, warning-level logs.
+/// Entered and left on the control side; the assertions are plain IOKit handles.
+public final class ShowModeController: @unchecked Sendable {
+    private let logger: Logger
+    private let state = Mutex<(on: Bool, display: IOPMAssertionID, system: IOPMAssertionID, activity: NSObjectProtocol?)>((false, 0, 0, nil))
+    /// Side effects owned by the engine (ingest pause, display modes, log level), run on enter/leave.
+    nonisolated(unsafe) public var onChange: (@Sendable (Bool) -> Void)?
+
+    public init(logger: Logger) { self.logger = logger }
+
+    public var isOn: Bool { state.withLock { $0.on } }
+
+    public func enter() {
+        let changed = state.withLock { s -> Bool in
+            guard !s.on else { return false }
+            var display = IOPMAssertionID(0), system = IOPMAssertionID(0)
+            IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleDisplaySleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), "Fanous show mode" as CFString, &display)
+            IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleSystemSleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), "Fanous show mode" as CFString, &system)
+            let activity = ProcessInfo.processInfo.beginActivity(options: [.latencyCritical, .userInitiated, .idleDisplaySleepDisabled], reason: "Fanous show mode")
+            s = (true, display, system, activity)
+            return true
+        }
+        guard changed else { return }
+        logger.warning("show mode entered")
+        onChange?(true)
+    }
+
+    public func leave() {
+        let changed = state.withLock { s -> Bool in
+            guard s.on else { return false }
+            if s.display != 0 { IOPMAssertionRelease(s.display) }
+            if s.system != 0 { IOPMAssertionRelease(s.system) }
+            if let activity = s.activity { ProcessInfo.processInfo.endActivity(activity) }
+            s = (false, 0, 0, nil)
+            return true
+        }
+        guard changed else { return }
+        logger.warning("show mode left")
+        onChange?(false)
+    }
+}
+
+/// One readiness item (DESIGN.md §14).
+public struct ReadinessItem: Sendable, Equatable, Identifiable {
+    public enum State: String, Sendable { case ok, fail, manual, hard }
+    public var id: String
+    public var title: String
+    public var state: State
+    public var detail: String
+    public var fix: String
+    public var acknowledged = false
+
+    public var blocks: Bool { (state == .fail && !acknowledged) || state == .hard }
+}
+
+/// What the checks look at; filled by the engine so the checks stay testable.
+public struct ReadinessContext: Sendable {
+    public var universesSilent: [String] = []
+    public var outputsLost: [Int] = []
+    public var outputsUnassigned: [Int] = []
+    public var outputsBound = 0
+    public var layerErrors: [String] = []
+    public var libraryRoot: String = ""
+    public var hardwareSupported = true
+    public init() {}
+}
+
+public enum Readiness {
+    /// All items; the slow probes (power, disk, volume, Spotlight, Time Machine, updates, display sleep) run here too,
+    /// so call it off the control queue.
+    public static func check(_ context: ReadinessContext, acknowledged: Set<String>) -> [ReadinessItem] {
+        var items: [ReadinessItem] = []
+        func add(_ id: String, _ title: String, _ ok: Bool?, _ detail: String, _ fix: String, hard: Bool = false) {
+            let state: ReadinessItem.State = ok == nil ? .manual : (ok! ? .ok : (hard ? .hard : .fail))
+            items.append(ReadinessItem(id: id, title: title, state: state, detail: detail, fix: fix, acknowledged: acknowledged.contains(id)))
+        }
+        let power = powerState()
+        add("power", "On AC power", power.onAC, power.detail, "Connect the power adapter")
+        let thermal = ProcessInfo.processInfo.thermalState
+        add("thermal", "Thermal state nominal", thermal == .nominal || thermal == .fair, thermal == .nominal ? "nominal" : "\(thermal)", "Let the machine cool down, improve airflow")
+        let disk = freeDisk(at: context.libraryRoot)
+        add("disk", "Free disk > 10 %", disk.fraction > 0.10, String(format: "%.0f %% free (%.1f GB)", disk.fraction * 100, disk.freeGB), "Free space on the library volume")
+        let memory = memoryHeadroom()
+        add("memory", "Memory headroom", memory.fraction > 0.15, String(format: "%.0f %% free", memory.fraction * 100), "Quit other applications")
+        add("dmx", "All patched universes receiving", context.universesSilent.isEmpty, context.universesSilent.isEmpty ? "all receiving" : "silent: \(context.universesSilent.joined(separator: ", "))", "Check the console's output and the network")
+        let outputsOK = context.outputsLost.isEmpty && context.outputsUnassigned.isEmpty && context.outputsBound > 0
+        add(
+            "outputs", "All outputs bound to their displays", outputsOK,
+            context.outputsBound == 0 ? "no output bound" : (context.outputsLost.isEmpty && context.outputsUnassigned.isEmpty ? "\(context.outputsBound) bound" : "lost: \(context.outputsLost), unassigned: \(context.outputsUnassigned)"),
+            "Connect the displays, assign every output")
+        add("decoders", "No decoder errors", context.layerErrors.isEmpty, context.layerErrors.isEmpty ? "none" : context.layerErrors.joined(separator: "; "), "Fix or replace the failing media")
+        let local = volumeIsLocal(context.libraryRoot)
+        add("library", "Library on a local volume", local, local ? "local" : "network or removable volume", "Copy the library to the internal disk")
+        let spotlight = spotlightIndexing(context.libraryRoot)
+        add("spotlight", "Spotlight indexing off for the library volume", spotlight.map { !$0 }, spotlight == nil ? "unknown" : (spotlight! ? "indexing enabled" : "off"), "sudo mdutil -i off <volume>, or add the library to Spotlight Privacy")
+        let updates = automaticUpdatesEnabled()
+        add("updates", "Automatic macOS updates off", updates.map { !$0 }, updates == nil ? "unknown" : (updates! ? "automatic install enabled" : "off"), "System Settings › General › Software Update › Automatic updates")
+        let backup = timeMachineRunning()
+        add("timemachine", "Time Machine not backing up", backup.map { !$0 }, backup == nil ? "unknown" : (backup! ? "backup running" : "idle"), "Stop the backup or disable Time Machine for the show")
+        add("focus", "Focus / Do Not Disturb on", nil, "cannot be read; check the menu bar", "Turn on a Focus so notifications stay off the outputs")
+        let sleep = displaySleepMinutes()
+        add("displaysleep", "Display sleep disabled", sleep.map { $0 == 0 } ?? true, sleep.map { $0 == 0 ? "never" : "\($0) min (held off by the show-mode assertion)" } ?? "unknown", "System Settings › Lock Screen › Turn display off: never")
+        add("hardware", "Supported hardware", context.hardwareSupported, context.hardwareSupported ? "Apple Silicon with ProRes engine" : "unsupported machine", "Use an Apple Silicon Mac with a ProRes engine (M1 Pro or newer)", hard: true)
+        return items
+    }
+
+    // MARK: probes
+
+    static func powerState() -> (onAC: Bool, detail: String) {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(), let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else {
+            return (true, "no battery")  // desktops report no sources
+        }
+        for source in sources {
+            guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any] else { continue }
+            let state = description[kIOPSPowerSourceStateKey] as? String ?? ""
+            let percent = description[kIOPSCurrentCapacityKey] as? Int ?? 0
+            let onAC = state == kIOPSACPowerValue
+            return (onAC, onAC ? "AC power (battery \(percent) %)" : "on battery, \(percent) %")
+        }
+        return (true, "no battery")
+    }
+
+    static func freeDisk(at path: String) -> (fraction: Double, freeGB: Double) {
+        let url = URL(fileURLWithPath: path.isEmpty ? NSHomeDirectory() : path)
+        let target = FileManager.default.fileExists(atPath: url.path) ? url : URL(fileURLWithPath: NSHomeDirectory())
+        guard let values = try? target.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]),
+            let free = values.volumeAvailableCapacityForImportantUsage, let total = values.volumeTotalCapacity, total > 0
+        else { return (1, 0) }
+        return (Double(free) / Double(total), Double(free) / 1e9)
+    }
+
+    static func memoryHeadroom() -> (fraction: Double, freeGB: Double) {
+        var stats = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &stats) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count) }
+        }
+        guard result == KERN_SUCCESS else { return (1, 0) }
+        let pageSize = Double(sysconf(_SC_PAGESIZE))
+        let free = (Double(stats.free_count) + Double(stats.inactive_count) + Double(stats.purgeable_count)) * pageSize
+        let total = Double(ProcessInfo.processInfo.physicalMemory)
+        return (free / total, free / 1e9)
+    }
+
+    static func volumeIsLocal(_ path: String) -> Bool {
+        let url = URL(fileURLWithPath: path.isEmpty ? NSHomeDirectory() : path)
+        let target = FileManager.default.fileExists(atPath: url.path) ? url : URL(fileURLWithPath: NSHomeDirectory())
+        guard let values = try? target.resourceValues(forKeys: [.volumeIsLocalKey, .volumeIsRemovableKey]) else { return true }
+        return (values.volumeIsLocal ?? true) && !(values.volumeIsRemovable ?? false)
+    }
+
+    static func run(_ tool: String, _ arguments: [String]) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: tool)
+        process.arguments = arguments
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        do { try process.run() } catch { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// `mdutil -s` for the library's volume; nil when it cannot be read.
+    static func spotlightIndexing(_ path: String) -> Bool? {
+        let url = URL(fileURLWithPath: path.isEmpty ? NSHomeDirectory() : path)
+        let volume = (try? url.resourceValues(forKeys: [.volumeURLKey]))?.volume ?? URL(fileURLWithPath: "/")
+        guard let output = run("/usr/bin/mdutil", ["-s", volume.path]) else { return nil }
+        if output.contains("Indexing enabled") { return true }
+        if output.contains("Indexing disabled") || output.contains("No index") { return false }
+        return nil
+    }
+
+    static func automaticUpdatesEnabled() -> Bool? {
+        guard let output = run("/usr/bin/defaults", ["read", "/Library/Preferences/com.apple.SoftwareUpdate", "AutomaticallyInstallMacOSUpdates"]) else { return nil }
+        let value = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value == "1" { return true }
+        if value == "0" { return false }
+        return nil
+    }
+
+    static func timeMachineRunning() -> Bool? {
+        guard let output = run("/usr/bin/tmutil", ["status"]) else { return nil }
+        if output.contains("Running = 1") { return true }
+        if output.contains("Running = 0") { return false }
+        return nil
+    }
+
+    /// `pmset -g` → "displaysleep N" (minutes, 0 = never) for the current power source.
+    static func displaySleepMinutes() -> Int? {
+        guard let output = run("/usr/bin/pmset", ["-g"]) else { return nil }
+        for line in output.split(separator: "\n") {
+            let parts = line.split(separator: " ", omittingEmptySubsequences: true)
+            if parts.count >= 2, parts[0] == "displaysleep", let minutes = Int(parts[1]) { return minutes }
+        }
+        return nil
+    }
+}

@@ -8,7 +8,7 @@ Usage: capture-dmx.py <artnet|sacn|osc> <name> [--seconds N] [--max N] [--multic
 Writes Tests/Fixtures/captures/<protocol>/<name>-NNN.bin (one datagram each)
 and appends provenance to Tests/Fixtures/captures/<protocol>/<name>.txt.
 No root needed: it binds the protocol's port like the engine does, so stop
-lanthornd first. Art-Net broadcast and sACN multicast are received when the
+fanousd first. Art-Net broadcast and sACN multicast are received when the
 sender is on the same network as this machine.
 """
 import argparse, datetime, pathlib, socket, struct, sys, time

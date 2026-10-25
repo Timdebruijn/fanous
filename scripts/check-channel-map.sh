@@ -5,8 +5,8 @@
 # docs/channel-map.md must equal what the engine generates. `--write` regenerates it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-swift build --product lanthornd >/dev/null
-generated=$("$(swift build --show-bin-path)/lanthornd" channel-map)
+swift build --product fanousd >/dev/null
+generated=$("$(swift build --show-bin-path)/fanousd" channel-map)
 if [[ "${1:-}" == "--write" ]]; then
   printf '%s\n' "$generated" > docs/channel-map.md
   echo "docs/channel-map.md written"

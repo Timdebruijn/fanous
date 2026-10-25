@@ -35,7 +35,7 @@
     #import <Cocoa/Cocoa.h>
 
 	// logging only enabled if debug is on. 
-	#ifdef SYPHON_DEBUG_LOGGING  // Lanthorn: SwiftPM defines DEBUG for every debug build; opt in explicitly
+	#ifdef SYPHON_DEBUG_LOGGING  // Fanous: SwiftPM defines DEBUG for every debug build; opt in explicitly
 		#define SYPHONLOG(format, ...)  NSLog(@"SYPHON DEBUG: %@: %@", NSStringFromClass([self class]), [NSString stringWithFormat:format, ##__VA_ARGS__]);
 	#else
 		#define SYPHONLOG(format, ...) 

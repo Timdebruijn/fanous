@@ -2,6 +2,10 @@
 /* Copyright (c) 2026 Tim de Bruijn */
 /* Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md */
 /* Tokens from the approved design canvas "Lanthorn UI" (2026-10-23): stage-safe dark, red = look now. */
+/* Bundled with the UI (no network at show time); licenses in /fonts/OFL-*.txt */
+@font-face { font-family: 'Atkinson Hyperlegible Next'; src: url('/fonts/AtkinsonHyperlegibleNext-Variable.woff2') format('woff2'); font-weight: 200 800; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Atkinson Hyperlegible Mono'; src: url('/fonts/AtkinsonHyperlegibleMono-Variable.woff2') format('woff2'); font-weight: 200 800; font-style: normal; font-display: swap; }
+
 :root {
   color-scheme: dark;
   --ground: #0b0c0e;
@@ -22,8 +26,9 @@
   --green: #35d07f;
   --green-bg: #10311f;
   /* system fonts: no runtime CDN loads (DESIGN §11.4); Inter/JetBrains Mono can be bundled later (B26) */
-  --font-ui: -apple-system, 'SF Pro Text', Inter, system-ui, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+  /* Atkinson Hyperlegible (Braille Institute, OFL): unambiguous glyphs (Il1, 0O) for fast reading in the dark */
+  --font-ui: 'Atkinson Hyperlegible Next', -apple-system, system-ui, sans-serif;
+  --font-mono: 'Atkinson Hyperlegible Mono', ui-monospace, Menlo, monospace;
   --radius-control: 6px;
   --radius-panel: 10px;
   --touch: 44px;

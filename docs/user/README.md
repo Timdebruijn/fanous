@@ -2,10 +2,10 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 
-# Lanthorn user guide
+# Fanous user guide
 
-Lanthorn is a media server for live events. Your lighting console patches it
-as a fixture and drives video layers over Art-Net or sACN; Lanthorn plays the
+Fanous is a media server for live events. Your lighting console patches it
+as a fixture and drives video layers over Art-Net or sACN; Fanous plays the
 media, blends, warps and maps it onto projectors and displays, and reports back
 what it is doing. This guide describes version 1.0.0-rc.1.
 
@@ -71,13 +71,13 @@ The pages that follow repeat the ones that matter for their topic.
   built-in display (B34).
 - Project versions do not exist yet: there is one `project.json`, autosaved,
   with no named versions and no "revert to" (B23). The OSC message
-  `/lanthorn/project/load` is refused (B35).
+  `/fanous/project/load` is refused (B35).
 - Layers show the library thumbnail of the playing file, not a live picture of
   the layer (B29). You can see values but not hold an override from the UI
   (B27). Per-universe settings are read-only (B28).
 - Consoles over CITP/MSEX get the canvas only, as a 640x360 JPEG stream; there
   are no per-layer streams and thumbnails ignore the requested size (B41). No
-  real console has talked to Lanthorn over CITP yet (B40).
+  real console has talked to Fanous over CITP yet (B40).
 - OSC has no feedback (no query, no notify); MIDI notes, MIDI Show Control and
   MIDI-triggered cues do not exist (B36).
 - Several OSC messages sent back to back from one socket may be partly lost;

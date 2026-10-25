@@ -7,18 +7,18 @@
 
   // DESIGN §15.3. Layer and output parameters take a float (0–1 of the raw range) or an int (raw value).
   const addresses = [
-    { address: '/lanthorn/layer/{n}/{param}', args: 'f', note: 'Layer parameter; param is a key of the channel map' },
-    { address: '/lanthorn/layer/{n}/media', args: 'ii', note: 'Folder, file' },
-    { address: '/lanthorn/layer/{n}/retrigger', args: '', note: 'Restart the media' },
-    { address: '/lanthorn/master/{param}', args: 'f', note: 'Master parameter' },
-    { address: '/lanthorn/output/{n}/{param}', args: 'f', note: 'Output parameter' },
-    { address: '/lanthorn/cue/go', args: '', note: 'Fire the next cue' },
-    { address: '/lanthorn/cue/back', args: '', note: 'Fire the previous cue' },
-    { address: '/lanthorn/cue/goto', args: 'i', note: 'Fire the cue with this number' },
-    { address: '/lanthorn/cue/{number}/go', args: '', note: 'Fire that cue' },
-    { address: '/lanthorn/show/lock', args: 'i', note: '1 locks the show, 0 unlocks' },
-    { address: '/lanthorn/show/mode', args: 'i', note: '1 enters show mode, 0 leaves' },
-    { address: '/lanthorn/timecode/enable', args: 'i', note: '1 switches timecode on, 0 off' },
+    { address: '/fanous/layer/{n}/{param}', args: 'f', note: 'Layer parameter; param is a key of the channel map' },
+    { address: '/fanous/layer/{n}/media', args: 'ii', note: 'Folder, file' },
+    { address: '/fanous/layer/{n}/retrigger', args: '', note: 'Restart the media' },
+    { address: '/fanous/master/{param}', args: 'f', note: 'Master parameter' },
+    { address: '/fanous/output/{n}/{param}', args: 'f', note: 'Output parameter' },
+    { address: '/fanous/cue/go', args: '', note: 'Fire the next cue' },
+    { address: '/fanous/cue/back', args: '', note: 'Fire the previous cue' },
+    { address: '/fanous/cue/goto', args: 'i', note: 'Fire the cue with this number' },
+    { address: '/fanous/cue/{number}/go', args: '', note: 'Fire that cue' },
+    { address: '/fanous/show/lock', args: 'i', note: '1 locks the show, 0 unlocks' },
+    { address: '/fanous/show/mode', args: 'i', note: '1 enters show mode, 0 leaves' },
+    { address: '/fanous/timecode/enable', args: 'i', note: '1 switches timecode on, 0 off' },
   ];
 
   const osc = $derived(app.live.osc);
@@ -34,7 +34,7 @@
 
   <h3 id="osc-recent">Last received</h3>
   {#if recent.length === 0}
-    <p class="caption">Nothing received yet. Send <span class="mono">/lanthorn/cue/go</span> to port {osc.port} to try it.</p>
+    <p class="caption">Nothing received yet. Send <span class="mono">/fanous/cue/go</span> to port {osc.port} to try it.</p>
   {:else}
     <ol class="recent" aria-labelledby="osc-recent">
       {#each recent as r, i (i)}

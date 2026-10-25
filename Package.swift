@@ -6,21 +6,21 @@
 import PackageDescription
 
 let package = Package(
-    name: "Lanthorn",
+    name: "Fanous",
     platforms: [.macOS(.v15)],
     products: [
-        .library(name: "LanthornCore", targets: ["LanthornCore"]),
-        .library(name: "LanthornEngine", targets: ["LanthornEngine"]),
-        .executable(name: "lanthornd", targets: ["lanthornd"]),
-        .executable(name: "LanthornShell", targets: ["LanthornShell"]),
-        .executable(name: "lanthorn-bench", targets: ["lanthorn-bench"]),
+        .library(name: "FanousCore", targets: ["FanousCore"]),
+        .library(name: "FanousEngine", targets: ["FanousEngine"]),
+        .executable(name: "fanousd", targets: ["fanousd"]),
+        .executable(name: "FanousShell", targets: ["FanousShell"]),
+        .executable(name: "fanous-bench", targets: ["fanous-bench"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-log.git", exact: "1.16.2"),
     ],
     targets: [
         // Pure Swift, Foundation only. Enforced by scripts/core-purity.sh.
-        .target(name: "LanthornCore"),
+        .target(name: "FanousCore"),
         // Vendored C/C++ (ADR-0018): google/snappy 1.3.1 and the Vidvox HAP reference implementation.
         .target(
             name: "CSnappy",
@@ -40,31 +40,31 @@ let package = Package(
             exclude: ["LICENSE", "VENDORED.md"],
             cSettings: [.headerSearchPath("include/Syphon")]),
         .target(
-            name: "LanthornEngine",
+            name: "FanousEngine",
             dependencies: [
-                "LanthornCore",
+                "FanousCore",
                 "CHap",
                 "Syphon",
                 .product(name: "Logging", package: "swift-log"),
             ]),
         .executableTarget(
-            name: "lanthornd",
+            name: "fanousd",
             dependencies: [
-                "LanthornEngine",
-                "LanthornCore",
+                "FanousEngine",
+                "FanousCore",
                 .product(name: "Logging", package: "swift-log"),
             ]),
-        .executableTarget(name: "LanthornShell", dependencies: ["LanthornCore"]),
+        .executableTarget(name: "FanousShell", dependencies: ["FanousCore"]),
         .executableTarget(
-            name: "lanthorn-bench",
+            name: "fanous-bench",
             dependencies: [
-                "LanthornEngine",
-                "LanthornCore",
+                "FanousEngine",
+                "FanousCore",
                 .product(name: "Logging", package: "swift-log"),
             ]),
-        .testTarget(name: "LanthornCoreTests", dependencies: ["LanthornCore"]),
+        .testTarget(name: "FanousCoreTests", dependencies: ["FanousCore"]),
         // Engine tests that need no display: lock-free hand-off, encoders. Golden images come in Phase 3.
-        .testTarget(name: "LanthornEngineTests", dependencies: ["LanthornEngine", "LanthornCore"]),
+        .testTarget(name: "FanousEngineTests", dependencies: ["FanousEngine", "FanousCore"]),
     ],
     swiftLanguageModes: [.v6],
     cxxLanguageStandard: .cxx17

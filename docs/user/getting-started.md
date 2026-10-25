@@ -6,38 +6,38 @@
 
 ## Install
 
-1. Copy `Lanthorn.app` to the Applications folder (drag it from the disk image
-   `Lanthorn-<version>.dmg`).
+1. Copy `Fanous.app` to the Applications folder (drag it from the disk image
+   `Fanous-<version>.dmg`).
 2. Open it. Until a notarized build exists (backlog B50), macOS may refuse the
    first open; allow it in System Settings › Privacy & Security.
 
-`Lanthorn.app` holds two programs: the window you see (the shell) and
-`lanthornd`, the engine. The engine does all the work: DMX, decoding, outputs,
+`Fanous.app` holds two programs: the window you see (the shell) and
+`fanousd`, the engine. The engine does all the work: DMX, decoding, outputs,
 the web UI server. The shell only shows the web UI in a window.
 
 ## First launch
 
 The app registers the engine as a background service (a LaunchAgent named
-`org.lanthorn.engine`). macOS wants your approval **once**:
+`org.fanous.engine`). macOS wants your approval **once**:
 
-1. A dialog says "Allow Lanthorn to run its engine in the background". Click
+1. A dialog says "Allow Fanous to run its engine in the background". Click
    **Open System Settings** (or choose Later and do it by hand).
 2. Open System Settings › General › Login Items & Extensions.
-3. Under "Allow in the Background", switch Lanthorn on.
+3. Under "Allow in the Background", switch Fanous on.
 
 After that the engine starts at login and macOS restarts it within about a
 second if it ever crashes. **Quitting the app does not stop the engine**; the
 outputs keep running. Auto-login is your choice for an unattended machine; it
 is not required.
 
-macOS may also ask for Local Network access (Lanthorn receives Art-Net, sACN
+macOS may also ask for Local Network access (Fanous receives Art-Net, sACN
 and OSC and announces itself over CITP) and, when you first pick an LTC input,
 for the Microphone. Allow both. Neither prompt has been tested on a clean
 install yet (B50, B37).
 
 ## Firewall
 
-If the Mac runs Little Snitch or another firewall, allow `lanthornd`:
+If the Mac runs Little Snitch or another firewall, allow `fanousd`:
 
 | Direction | Protocol, port | For |
 |---|---|---|
@@ -48,7 +48,7 @@ If the Mac runs Little Snitch or another firewall, allow `lanthornd`:
 | out | UDP to 224.0.0.180 and 239.224.0.180, port 4809 | CITP announcements |
 
 The CITP server also listens on a TCP port the system picks; System › Network
-shows it on the CITP line. Bonjour (`_lanthorn._tcp`) is advertised as well.
+shows it on the CITP line. Bonjour (`_fanous._tcp`) is advertised as well.
 
 ## The main window
 
@@ -59,7 +59,7 @@ The window is a normal browser view of the web UI. Menus:
   **Reload UI** (Cmd-R) reloads the page. **Start Engine**, **Restart Engine**
   and **Stop Engine…** control the service. Stop removes the service
   registration, so outputs go black until the next start. **Open Logs** opens
-  `~/Library/Logs/Lanthorn` in Finder.
+  `~/Library/Logs/Fanous` in Finder.
 - **Edit**: Undo and Redo, Cut, Copy, Paste.
 
 Closing the window quits the app, not the engine.
@@ -77,7 +77,7 @@ silent.
 
 Browse to `https://<mac-name>.local:8443`. The exact host name, the IP
 addresses and the port are under System › Network (Host, Addresses, Port,
-Bonjour). Lanthorn only advertises `_lanthorn._tcp`, so it will not show up in a
+Bonjour). Fanous only advertises `_fanous._tcp`, so it will not show up in a
 browser's Bonjour list (B39); type the address.
 
 The engine makes its own certificate the first time it runs, so the browser
@@ -92,7 +92,7 @@ The preview on the Layers screen uses H.264 through WebCodecs. If the browser
 cannot decode it, the preview falls back to JPEG at 5 frames per second. iPad
 Safari has not been tested yet (B46).
 
-If you ever reset the certificate (`lanthornd reset-tls`), the fingerprint
+If you ever reset the certificate (`fanousd reset-tls`), the fingerprint
 changes and every browser warns again.
 
 ## Roles and passwords
@@ -123,13 +123,13 @@ The app window on the Mac itself is always programmer; it needs no password.
 
 | What | Where |
 |---|---|
-| Media library | `~/Movies/Lanthorn Library` |
-| Project (patch, outputs, cues, timecode settings) | `~/Library/Application Support/Lanthorn/project.json` |
-| Machine settings, role passwords (hashed) | `~/Library/Application Support/Lanthorn/settings.json` |
-| Certificate and fingerprint | `~/Library/Application Support/Lanthorn/tls/` |
-| Thumbnail and metadata cache | `~/Library/Application Support/Lanthorn/cache/` |
-| Ingest queue | `~/Library/Application Support/Lanthorn/ingest-queue.json` |
-| Logs | `~/Library/Logs/Lanthorn/lanthornd.log` |
+| Media library | `~/Movies/Fanous Library` |
+| Project (patch, outputs, cues, timecode settings) | `~/Library/Application Support/Fanous/project.json` |
+| Machine settings, role passwords (hashed) | `~/Library/Application Support/Fanous/settings.json` |
+| Certificate and fingerprint | `~/Library/Application Support/Fanous/tls/` |
+| Thumbnail and metadata cache | `~/Library/Application Support/Fanous/cache/` |
+| Ingest queue | `~/Library/Application Support/Fanous/ingest-queue.json` |
+| Logs | `~/Library/Logs/Fanous/fanousd.log` |
 
 The project is saved automatically two seconds after your last change. Back it
 up by copying `project.json`.

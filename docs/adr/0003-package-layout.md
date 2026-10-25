@@ -8,14 +8,14 @@ Mac and in hosted CI, which has no GPU guarantees. HAP needs C code, Syphon
 is Objective-C. The owner wants SwiftPM, not Xcode projects.
 
 ## Decision
-- One package at the repo root. `LanthornCore` imports only Foundation (CI
-  greps for other imports). `LanthornEngine` holds every Apple media/GPU
-  framework. Executables: `lanthornd`, `LanthornShell`, `lanthorn-bench`.
+- One package at the repo root. `FanousCore` imports only Foundation (CI
+  greps for other imports). `FanousEngine` holds every Apple media/GPU
+  framework. Executables: `fanousd`, `FanousShell`, `fanous-bench`.
 - Vendored C/ObjC as SPM targets: `CHap` (Vidvox hap.c), `CSnappy`
   (google/snappy, C++), `Syphon` (Syphon-Framework sources), each pinned to
   a commit in `docs/licensing/DEPENDENCIES.md` and carrying its license.
 - The `.app` bundle is assembled by `scripts/bundle.sh` from SPM products;
-  `web/dist` is an SPM resource of `lanthornd`.
+  `web/dist` is an SPM resource of `fanousd`.
 - `swift-tools-version: 6.2` (buildable with Xcode 26.x and 27.x).
 - Tests use Swift Testing; XCTest only where it is the only option. On a
   machine with Command Line Tools only (no Xcode) the Swift Testing macro

@@ -5,7 +5,7 @@
 # Show-day checklist
 
 Print this page. Date: ______________ Venue: ______________________
-Mac: ______________ Lanthorn version: ______________
+Mac: ______________ Fanous version: ______________
 
 ## The day before
 
@@ -18,7 +18,7 @@ Mac: ______________ Lanthorn version: ______________
 - [ ] Outputs screen: every output is bound to its display; blend, warp and masks
       checked with the test patterns.
 - [ ] Timecode source tested if you chase it; cues stepped through with Go.
-- [ ] Copy `~/Library/Application Support/Lanthorn/project.json` somewhere safe.
+- [ ] Copy `~/Library/Application Support/Fanous/project.json` somewhere safe.
 - [ ] No macOS update planned between now and the show.
 
 ## Mac settings (once per show machine)
@@ -33,16 +33,16 @@ Mac: ______________ Lanthorn version: ______________
 - [ ] **Time Machine paused**: stop a running backup, or switch Time Machine off
       for the show.
 - [ ] **Focus on** (Do Not Disturb) from the menu bar, so no notification lands
-      on an output. Lanthorn cannot read this; it stays a manual item.
+      on an output. Fanous cannot read this; it stays a manual item.
 - [ ] **One network interface** for the console network. Turn Wi-Fi off if the
       console is on Ethernet. sACN multicast is joined on the default-route
       interface only, so a second active interface can put it on the wrong network.
 - [ ] Displays are **not mirrored**, and each has the resolution and refresh rate
-      you want (System Settings › Displays). Lanthorn does not apply display
+      you want (System Settings › Displays). Fanous does not apply display
       modes (B33) and does not check for mirroring (B42).
-- [ ] Firewall allows `lanthornd` (see getting-started.md).
+- [ ] Firewall allows `fanousd` (see getting-started.md).
 
-## In Lanthorn
+## In Fanous
 
 - [ ] Console is sending: every patched universe pill in the status bar is green.
 - [ ] **Programmer password set** (System › Roles and passwords) and the yellow
@@ -81,7 +81,7 @@ is on. Each item shows a fix hint.
 **Failed** items (red) block show mode. A programmer can press **Acknowledge**
 next to an item to accept the risk: the badge changes to "acknowledged" and it
 no longer blocks. Do this only for things you decided on purpose, for example a
-spare display that is not connected. A setting Lanthorn cannot read is shown as
+spare display that is not connected. A setting Fanous cannot read is shown as
 "unknown"; check those yourself (B38).
 
 **Manual** items (Focus) have no button; the check is yours.

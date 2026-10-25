@@ -4,7 +4,7 @@
 
 # Console setup
 
-Lanthorn is one fixture type, "Lanthorn", with three DMX modes. You patch each
+Fanous is one fixture type, "Fanous", with three DMX modes. You patch each
 mode as its own fixture on the console.
 
 | Mode | Channels | Patch one per | Does |
@@ -41,7 +41,7 @@ With 8 layers:
 
 With 16 layers, layers 9 to 16 use A 0.0.1 and Master and Outputs move to A 0.0.2.
 
-Lanthorn writes Art-Net universes as `net.subnet.universe`, shortened to
+Fanous writes Art-Net universes as `net.subnet.universe`, shortened to
 `A 0.0.1`, and sACN universes as `S 1`. `A 0.0.0` is Art-Net port-address 0.
 Some consoles count Art-Net universes from 0, others from 1: check which one
 yours does.
@@ -73,12 +73,12 @@ patched universe has been silent longer than 2.5 s. In that case the fixtures
 
 ## GDTF
 
-**Patch › Export GDTF** writes `Lanthorn.gdtf` (GDTF 1.2). It contains the
-fixture type "Lanthorn" with the Layer, Master and Output modes, channel
+**Patch › Export GDTF** writes `Fanous.gdtf` (GDTF 1.2). It contains the
+fixture type "Fanous" with the Layer, Master and Output modes, channel
 functions with their physical ranges, a channel set for every band (play modes,
 blend modes, effects, test patterns), the 16-bit links and the default values.
 The file is generated from the same table as the channel map, so they cannot
-disagree. On the command line: `lanthornd gdtf FILE`.
+disagree. On the command line: `fanousd gdtf FILE`.
 
 Import it with your console's GDTF import, then patch the modes as above.
 grandMA3, Eos and MagicQ are the intended targets, but the import has not
@@ -112,10 +112,10 @@ is DMX only. Pick LTP for a show that mixes console control with cues.
 1. **Media.** On the Media screen press **New folder**, enter number 1 and a
    name, **Create**. Press **Import…** and pick a clip; wait until the ingest
    queue says done. Or put a ProRes or HAP `.mov` in
-   `~/Movies/Lanthorn Library/001_Test/001_clip.mov` with Finder.
+   `~/Movies/Fanous Library/001_Test/001_clip.mov` with Finder.
 2. **Output.** On the Outputs screen choose a display under **Add output on**.
    A new output shows the whole canvas.
-3. **Console.** Patch fixture "Lanthorn", mode Layer, on A 0.0.0 at address 1.
+3. **Console.** Patch fixture "Fanous", mode Layer, on A 0.0.0 at address 1.
    The universe pill in the status bar turns green when packets arrive.
 4. **Values.** Set Folder to 1, File to 1 and Intensity to full (100 %; 65535
    on the 16-bit pair). The other channels can stay at their defaults, which the

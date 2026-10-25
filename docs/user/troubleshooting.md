@@ -21,17 +21,17 @@ red "Connection lost … values shown are stale".
 3. Open `https://127.0.0.1:8443/healthz` in a browser on the Mac. A short JSON
    with `"status":"ok"` means the engine answers.
 4. On another device: same network, `https`, port 8443, and the firewall allows
-   TCP 8443 into `lanthornd`.
+   TCP 8443 into `fanousd`.
 5. Read the log (see below).
 
-A second engine refuses to start with "lanthornd is already running (pid n)":
-there is one engine per user. If you started `lanthornd` by hand in Terminal,
+A second engine refuses to start with "fanousd is already running (pid n)":
+there is one engine per user. If you started `fanousd` by hand in Terminal,
 stop it first.
 
 ## "service needs approval in Login Items", or no engine at all
 
 The first launch needs your approval once. Open System Settings › General ›
-Login Items & Extensions and switch Lanthorn on under "Allow in the Background".
+Login Items & Extensions and switch Fanous on under "Allow in the Background".
 Then choose **Start Engine** in the Engine menu. Other first lines of the menu:
 "service not installed" (choose Start Engine; it registers the service) and
 "service plist missing" (the app is damaged; reinstall it).
@@ -83,7 +83,7 @@ The Layers screen (key 1) shows the problem in the Media column of the row.
   191 is Blackout); if you patched the Output fixture, its Intensity and Control
   (channel 3, 64 to 127 is Blackout); the output is bound (Outputs screen);
   the Layer's Scale and Crop channels. The Layer detail panel on the Layers
-  screen shows the value of every channel as Lanthorn reads it.
+  screen shows the value of every channel as Fanous reads it.
 - Video plays but is frozen: Master Control 64 to 127 is Freeze all; Output
   Control 128 to 191 is Freeze; Play mode 112 to 127 is Freeze.
 
@@ -108,7 +108,7 @@ frames, GPU and CPU time, texture misses. In show mode any dropped frame is red.
   volume, turn show mode on (it pauses ingest). Many open browser previews also
   cost time: see the clients tile.
 - **Display mode**: the display must run at the canvas frame rate and not be
-  mirrored. Lanthorn does not apply display modes (B33): set them in System
+  mirrored. Fanous does not apply display modes (B33): set them in System
   Settings › Displays and compare with the Outputs status line ("@ 60").
 - **Too much media**: 4K60 ProRes, many effects (Blur, Edge) and dissolves cost
   more than they look. See the performance advice in media-library.md.
@@ -124,21 +124,21 @@ Show › Timecode: the pill should say Locked and "frames seen" should count up.
 - **Level**: LTC that is too quiet or clipped does not decode; check the input
   level of the audio interface.
 - **Permission**: System Settings › Privacy & Security › Microphone must allow
-  Lanthorn. An error text in red under the readout names the problem.
+  Fanous. An error text in red under the readout names the problem.
 - Freewheel (yellow) means the signal dropped; Lost (red) means it stayed away
   longer than the Freewheel time.
 
 For **MTC** the MIDI panel must list the source; connect the interface or enable
 a network MIDI session, then choose it under Device (or "All sources").
 
-## A CITP console does not see Lanthorn
+## A CITP console does not see Fanous
 
 - System › Network, CITP line: "not running" means the CITP server did not
   start (look for "CITP start failed" in the log); otherwise it shows the TCP
   port, the consoles and the open streams.
 - Same subnet as the console, and multicast must pass the network (managed
   switches: check multicast settings).
-- Firewall: `lanthornd` needs outgoing UDP to 224.0.0.180 and 239.224.0.180 on
+- Firewall: `fanousd` needs outgoing UDP to 224.0.0.180 and 239.224.0.180 on
   port 4809. Little Snitch holds the first outgoing UDP packets until you allow
   them (B40).
 - CITP has not been tried with a real console yet (B40).
@@ -147,7 +147,7 @@ a network MIDI session, then choose it under Device (or "All sources").
 
 - **System › Logs**: the last 64 KB of the engine log, with a filter field,
   **Refresh** and **Download**.
-- `~/Library/Logs/Lanthorn/lanthornd.log` (Engine › **Open Logs** opens the
+- `~/Library/Logs/Fanous/fanousd.log` (Engine › **Open Logs** opens the
   folder).
 
 ## Restart the engine
@@ -164,11 +164,11 @@ This deletes your patch changes, outputs, cues and timecode settings. Copy
 
 1. Engine › **Stop Engine…** (quitting the app alone leaves the engine running
    with the old project in memory).
-2. In Finder move `~/Library/Application Support/Lanthorn/project.json` away,
+2. In Finder move `~/Library/Application Support/Fanous/project.json` away,
    for example to the Desktop.
 3. Engine › **Start Engine**. The engine starts with the standard patch (8 layers).
 
 Role passwords and the certificate are not in `project.json`. To clear all role
 passwords move `settings.json` in the same folder away the same way (this also
 resets the other machine settings). The certificate is reset with
-`lanthornd reset-tls`; browsers then warn again.
+`fanousd reset-tls`; browsers then warn again.

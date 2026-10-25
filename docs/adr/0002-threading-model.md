@@ -23,7 +23,7 @@ and actors/async hops allocate and can be delayed by unrelated work.
   only `@unchecked Sendable` and carry a comment naming the invariant.
 - Swift Concurrency is allowed on the Control/network side where it does not
   touch render data directly (e.g. ingest job orchestration), but not in
-  `LanthornCore` protocol parsers (they are called from the DMX queue).
+  `FanousCore` protocol parsers (they are called from the DMX queue).
 
 ## Consequences
 + Deterministic latency; instrumentation can attribute every microsecond.

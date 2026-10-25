@@ -96,7 +96,7 @@ pixels. Changes go to the engine while you drag.
   **Add point** inserts a point after the selected one, **Remove point** deletes
   the selected one (a mask keeps at least three), **Remove mask** deletes it.
 
-The canvas is also published as the Syphon server "Lanthorn – Canvas", so
+The canvas is also published as the Syphon server "Fanous – Canvas", so
 another app on the same Mac can receive it. This was checked between processes
 by the bench tool, not yet with a third-party app (B6).
 

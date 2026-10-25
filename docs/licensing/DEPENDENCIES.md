@@ -45,6 +45,13 @@ platform; the GPL's system-library exception covers linking against them.
 Rejected alternative: preact 11.0.1 + @preact/signals 2.11.3 (MIT) — see
 ADR-0012.
 
+## Fonts (shipped with the web UI)
+
+| Font | Version / source | License | GPLv3-compatible | Use |
+|---|---|---|---|---|
+| Atkinson Hyperlegible Next | 2.66, variable woff2 from `googlefonts/atkinson-hyperlegible-next` (fetched 2026-10-25) | SIL OFL 1.1 (`web/public/fonts/OFL-Next.txt`; "Atkinson" and "Hyperlegible" are reserved names) | yes (font files ship unmodified next to the code) | UI text |
+| Atkinson Hyperlegible Mono | 2.66, variable woff2 from `googlefonts/atkinson-hyperlegible-next-mono` (fetched 2026-10-25) | SIL OFL 1.1 (`web/public/fonts/OFL-Mono.txt`) | yes | values, addresses, timecode |
+
 ## Protocols and specifications with conditions
 
 | Protocol | Spec | Conditions |

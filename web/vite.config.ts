@@ -8,7 +8,7 @@ export default defineConfig({
   plugins: [svelte()],
   build: { target: 'es2022', sourcemap: true },
   server: {
-    // `vite dev` against a running engine; the built UI is served by lanthornd itself.
+    // `vite dev` against a running engine; the built UI is served by fanousd itself.
     proxy: {
       '/healthz': { target: 'https://127.0.0.1:8443', secure: false },
       '/metrics': { target: 'https://127.0.0.1:8443', secure: false },

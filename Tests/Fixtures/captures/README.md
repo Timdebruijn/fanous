@@ -15,6 +15,6 @@ stops parsing is a regression.
 
 Not captured yet (needs software that is not installed or cannot run offline): sACN sync and universe-discovery packets, ArtPollReply from a real node, CITP/MSEX (MagicQ), consoles with hardware keys (Eos Nomad). Phase 7 adds those.
 
-Capturing: stop `lanthornd` (it binds the same ports), run
+Capturing: stop `fanousd` (it binds the same ports), run
 `scripts/capture-dmx.py artnet <name> --note "QLC+ 5.3.0, universe 1, …"`,
 then make the console send. Hand-built packets live in the unit tests, not here.

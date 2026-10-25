@@ -1,14 +1,14 @@
-# Lanthorn — Design
+# Fanous — Design
 
 Status: **Approved 2026-10-22** (defaults of §22 accepted) · Owner: Tim de Bruijn
 
-Lanthorn is an open-source media server for live events, programmed from a
+Fanous is an open-source media server for live events, programmed from a
 lighting console as if it were a fixture (Catalyst-style). This document is the
 single design reference for v1. Key decisions are recorded as ADRs in
 `docs/adr/`; where this document and an ADR disagree, the ADR wins. Open
 questions are tagged `[OPEN-n]` inline and collected in §22.
 
-Conventions: "engine" = the headless render process `lanthornd`; "shell" = the
+Conventions: "engine" = the headless render process `fanousd`; "shell" = the
 native WKWebView host app; "client" = any UI (shell or browser); "console" =
 the lighting desk sending DMX.
 
@@ -38,27 +38,27 @@ so no offline Metal toolchain is needed to build or run.
 ## 2. Process architecture
 
 ```
-┌──────────────────────────── Lanthorn.app ─────────────────────────────┐
-│  Contents/MacOS/Lanthorn          shell: AppKit + WKWebView, no logic  │
-│  Contents/MacOS/lanthornd         engine: headless, owns everything   │
-│  Contents/Library/LaunchAgents/org.lanthorn.engine.plist              │
+┌──────────────────────────── Fanous.app ─────────────────────────────┐
+│  Contents/MacOS/Fanous          shell: AppKit + WKWebView, no logic  │
+│  Contents/MacOS/fanousd         engine: headless, owns everything   │
+│  Contents/Library/LaunchAgents/org.fanous.engine.plist              │
 │  Contents/Resources/web/          built UI (static files)             │
 └───────────────────────────────────────────────────────────────────────┘
 
    console ──Art-Net/sACN──▶ ┌──────────┐ ──Metal──▶ displays (outputs)
-   OSC / MTC / LTC ────────▶ │ lanthornd│ ──Syphon─▶ other apps
+   OSC / MTC / LTC ────────▶ │ fanousd│ ──Syphon─▶ other apps
    shell / browsers ◀─HTTPS─▶│          │ ──CoreAudio▶ audio device
    console ◀───CITP/MSEX───▶ └──────────┘ ──logs/metrics
 ```
 
 ### 2.1 Engine as a LaunchAgent in one bundle (ADR-0001)
 
-- `lanthornd` is registered as a **LaunchAgent** via `SMAppService.agent(plistName:)`
+- `fanousd` is registered as a **LaunchAgent** via `SMAppService.agent(plistName:)`
   from the shell's first launch. It runs in the logged-in user's session (a
   LaunchDaemon cannot reach the WindowServer, so it cannot drive displays).
   `KeepAlive` restarts it within ~1 s after a crash; `RunAtLoad` starts it at
   login. Auto-login is a deployment choice for unattended machines, not a
-  requirement: the user starts `Lanthorn.app` like any app, the app starts the
+  requirement: the user starts `Fanous.app` like any app, the app starts the
   agent if it is not running. macOS asks once to allow the agent under
   System Settings › Login Items; the shell detects "not approved" and shows a
   banner with the exact step.
@@ -66,12 +66,12 @@ so no offline Metal toolchain is needed to build or run.
   engine. It also offers Start/Stop/Restart engine, "Open logs", "Install /
   remove service" and the About screen (attribution, see §17).
 - The engine can also run in the foreground for development
-  (`swift run lanthornd --foreground --project X`). Same binary, no agent.
+  (`swift run fanousd --foreground --project X`). Same binary, no agent.
 - The engine creates its output windows itself. It runs an `NSApplication`
   with activation policy `.accessory` (no Dock icon, no menu bar), so it can
   create borderless fullscreen windows at shielding window level on any
   display without ever becoming the frontmost app.
-- One instance per user: a lock file in `~/Library/Application Support/Lanthorn/`.
+- One instance per user: a lock file in `~/Library/Application Support/Fanous/`.
   A second start exits with a clear message.
 
 ### 2.2 Threading model (ADR-0002)
@@ -144,12 +144,12 @@ on every display link. Budgets are measured, not assumed (§13).
 
 ### 2.4 Phase 8 as built (2026-10-24)
 
-- One engine per user: `lanthornd` holds an `flock` on
-  `~/Library/Application Support/Lanthorn/engine.lock` (pid inside) for its
+- One engine per user: `fanousd` holds an `flock` on
+  `~/Library/Application Support/Fanous/engine.lock` (pid inside) for its
   whole run; a second start prints "already running (pid n)" and exits 75.
   Under launchd that means the KeepAlive retry every 10 s is refused as long
   as a foreground engine owns the ports, which is the intended outcome.
-- Soak test (`scripts/soak.sh HOURS LAYERS`): `lanthorn-bench dmx` sends
+- Soak test (`scripts/soak.sh HOURS LAYERS`): `fanous-bench dmx` sends
   Art-Net at the standard patch at 40 Hz with a random file, play mode,
   dissolve and intensity per layer every 3–8 s and slow position/scale drift;
   the script samples `/metrics` (now with `totalFrames`, `totalMissed`,
@@ -166,7 +166,7 @@ on every display link. Budgets are measured, not assumed (§13).
   fixture at start and on change (it was only read from scene files). sACN
   joins the multicast groups of the universes in the patch and re-joins on
   patch changes (it was universes 1–3). `timecode.enable {on}` is the
-  operator's switch (also under show lock; OSC `/lanthorn/timecode/enable`
+  operator's switch (also under show lock; OSC `/fanous/timecode/enable`
   uses it) and `TimecodeSettings.enabled` the stored flag; the source stays a
   programmer setting. The Patch toolbar has the source-policy selector and the
   Show screen warns while the policy is DMX only. A changed library root
@@ -183,7 +183,7 @@ on every display link. Budgets are measured, not assumed (§13).
   local-network usage strings and `NSBonjourServices`, timestamps when a
   Developer ID is given; `scripts/notarize.sh` submits with `notarytool`,
   staples the app and a UDZO dmg. Version `1.0.0-rc.1` from
-  `LanthornVersion.string`, also in CITP `SInf`.
+  `FanousVersion.string`, also in CITP `SInf`.
 - `docs/RELEASE.md` is the release checklist (code green, version,
   measurements per machine, console interop, build/notarize, clean-account
   install, legal, docs, publish); `CHANGELOG.md` started; user documentation
@@ -201,10 +201,10 @@ on every display link. Budgets are measured, not assumed (§13).
 One SwiftPM package, `Package.swift` at repo root, plus the `web/` frontend.
 
 ```
-Lanthorn/
+Fanous/
 ├── Package.swift
 ├── Sources/
-│   ├── LanthornCore/        pure Swift, Foundation only. Unit-testable on any Mac.
+│   ├── FanousCore/        pure Swift, Foundation only. Unit-testable on any Mac.
 │   │   ├── Parameters/      ParameterSpec, fixture types, channel map, units
 │   │   ├── DMX/             Art-Net + sACN parsers/builders, universe model, merge
 │   │   ├── OSC/             OSC 1.0 parser/builder, address map from ParameterSpec
@@ -216,7 +216,7 @@ Lanthorn/
 │   │   ├── Project/         project document (Codable), commands, undo, versioning, JSON patch
 │   │   ├── Protocol/        WebSocket message types, HTTP/1.1 + RFC 6455 framing (pure)
 │   │   └── Capabilities/    chip table, tier model, readiness rules
-│   ├── LanthornEngine/      Metal, AVFoundation, VideoToolbox, CoreAudio, CoreMIDI, Network.framework
+│   ├── FanousEngine/      Metal, AVFoundation, VideoToolbox, CoreAudio, CoreMIDI, Network.framework
 │   │   ├── Render/          compositor, output pass, shaders (.metal), texture pools, display links
 │   │   ├── Media/           sources: ProRes, HAP, still, Syphon-in; frame rings; layer clocks
 │   │   ├── Audio/           per-layer PCM rings, mixer source node, device selection
@@ -227,35 +227,35 @@ Lanthorn/
 │   │   ├── Ingest/          transcode jobs (ProRes via AVAssetWriter, HAP via hap.c)
 │   │   ├── ShowMode/        assertions, readiness checks
 │   │   └── Instrumentation/ metrics ring, exporters
-│   ├── LanthornPluginAPI/   C header + Swift shim: the plugin ABI (design only in v1)
+│   ├── FanousPluginAPI/   C header + Swift shim: the plugin ABI (design only in v1)
 │   ├── CHap/                vendored Vidvox hap.c/.h (BSD) — C target
 │   ├── CSnappy/             vendored google/snappy (BSD-3) — C++ target
 │   ├── Syphon/              vendored Syphon-Framework sources (BSD) — ObjC target
-│   ├── lanthornd/           executable: wiring, CLI flags; serves web/dist (located at runtime, see below)
-│   ├── LanthornShell/       executable: AppKit app, WKWebView, SMAppService, About
-│   └── lanthorn-bench/      executable: benchmark harness
+│   ├── fanousd/           executable: wiring, CLI flags; serves web/dist (located at runtime, see below)
+│   ├── FanousShell/       executable: AppKit app, WKWebView, SMAppService, About
+│   └── fanous-bench/      executable: benchmark harness
 ├── Tests/
-│   ├── LanthornCoreTests/   protocol fixtures (captures), parameter/channel map, GDTF, cues, mapping math
-│   ├── LanthornEngineTests/ golden images, decode spikes — Apple Silicon only
+│   ├── FanousCoreTests/   protocol fixtures (captures), parameter/channel map, GDTF, cues, mapping math
+│   ├── FanousEngineTests/ golden images, decode spikes — Apple Silicon only
 │   └── Fixtures/            captures/*.bin + .pcapng, golden/*.png, media/ (generated)
 ├── web/                     Svelte 5 + Vite + TypeScript; builds to web/dist (copied into the .app by bundle.sh)
 ├── scripts/                 bundle.sh (assemble .app), sign.sh, license-headers.sh, fixtures.sh
 └── docs/
 ```
 
-Rules enforced by CI (Phase 0): `LanthornCore` imports only `Foundation`
+Rules enforced by CI (Phase 0): `FanousCore` imports only `Foundation`
 (a test greps for other imports); every source file starts with the SPDX
 header; no new package dependencies without an entry in
 `docs/licensing/DEPENDENCIES.md`.
 
 The `.app` bundle is assembled by `scripts/bundle.sh` from SPM products
-(no Xcode project): Info.plist, LaunchAgent plist, embedded `lanthornd`,
+(no Xcode project): Info.plist, LaunchAgent plist, embedded `fanousd`,
 `web/dist` as `Contents/Resources/web`, entitlements, then `codesign` +
 `notarytool`. The engine locates its web root at runtime (`--web-root`,
-`$LANTHORN_WEB_ROOT`, `Contents/Resources/web`, or `web/dist` relative to a
+`$FANOUS_WEB_ROOT`, `Contents/Resources/web`, or `web/dist` relative to a
 development build) instead of using SPM resources, so one binary serves both
-the bundle and `swift run`. Bundle identifiers: `org.lanthorn.app` (shell),
-`org.lanthorn.engine` (agent) (`[OPEN-2]`, decided: `org.lanthorn`).
+the bundle and `swift run`. Bundle identifiers: `org.fanous.app` (shell),
+`org.fanous.engine` (agent) (`[OPEN-2]`, decided: `org.fanous`).
 
 ---
 
@@ -404,7 +404,7 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
 | Hardware ProRes decode / encode | `VTIsHardwareDecodeSupported(kCMVideoCodecType_AppleProRes422)`; encoder list (`VTCopyVideoEncoderList`) filtered on `kVTVideoEncoderList_IsHardwareAccelerated` |
 | H.264 hardware encode (preview) | encoder list, same |
 | Displays, modes, identity | `CGGetOnlineDisplayList`, `CGDisplayCopyAllDisplayModes`, `CGDisplayCreateUUIDFromDisplayID`, EDID name via IOKit |
-| Media-engine count, max external displays | **static table** keyed by chip name (`LanthornCore/Capabilities`), marked "Apple spec" in the UI, with `unknown` fallback → conservative tier and a yellow "unknown chip, benchmark recommended" status |
+| Media-engine count, max external displays | **static table** keyed by chip name (`FanousCore/Capabilities`), marked "Apple spec" in the UI, with `unknown` fallback → conservative tier and a yellow "unknown chip, benchmark recommended" status |
 | Thermal / power | `ProcessInfo.thermalState`, `IOPSCopyPowerSourcesInfo` (on battery = yellow) |
 
 Unsupported machine (no hardware ProRes, i.e. base M1 / Intel): the engine
@@ -416,7 +416,7 @@ mode. Development on such a machine still works for the UI.
 Tiers group chips by media-engine count and GPU/bandwidth class. Layer counts
 below are **initial expectations** derived from Apple's published ProRes stream
 counts and bandwidth; they are replaced by measured numbers from
-`lanthorn-bench` (Phase 2) and stored per machine. The UI shows the measured
+`fanous-bench` (Phase 2) and stored per machine. The UI shows the measured
 numbers for *this* machine when available, otherwise the tier expectation
 labelled "not yet benchmarked".
 
@@ -445,7 +445,7 @@ still unverified as of 2026-10-22) and is re-checked per chip generation
 
 ### 6.1 Fixture types
 
-The server exposes **one GDTF fixture type, "Lanthorn", with three DMX modes**
+The server exposes **one GDTF fixture type, "Fanous", with three DMX modes**
 in v1; every mode is patched independently as its own fixture on the console:
 
 | Mode | Footprint | Patched per | Purpose |
@@ -573,7 +573,7 @@ can never disagree). `[OPEN-9]` exact bands and the speed/scale upper limits.
 
 ### 7.1 One spec, many views
 
-`LanthornCore/Parameters/ParameterSpec.swift` is the single source of truth:
+`FanousCore/Parameters/ParameterSpec.swift` is the single source of truth:
 
 ```swift
 struct ParameterSpec {
@@ -582,7 +582,7 @@ struct ParameterSpec {
   let kind: Kind                 // .continuous(range, unit) | .enumerated([Band]) | .discrete(0...255)
   let dmx: DMXEncoding           // .u8(channel) | .u16(coarse, fine)
   let defaultRaw: UInt16
-  let osc: String                // "intensity" → /lanthorn/layer/{n}/intensity
+  let osc: String                // "intensity" → /fanous/layer/{n}/intensity
   let smoothing: Smoothing       // .none | .optional(defaultOff)
   let group: Group               // for UI layout and GDTF channel groups
 }
@@ -644,11 +644,11 @@ nothing.
 ### 8.1 Library layout
 
 One **library root** per machine (machine setting, not project; default
-`~/Movies/Lanthorn Library`), local volumes only (network volumes are rejected
+`~/Movies/Fanous Library`), local volumes only (network volumes are rejected
 with an explanation). Catalyst-style numeric prefixes:
 
 ```
-Lanthorn Library/
+Fanous Library/
 ├── 001_Opening/
 │   ├── 001_intro_loop.mov          HAP Q
 │   ├── 002_title.png               still
@@ -666,7 +666,7 @@ Lanthorn Library/
 - The index is built at start and kept current with FSEvents (debounced
   500 ms). Metadata (codec, size, fps, duration, alpha, audio channels,
   colour primaries, file hash) and thumbnails are cached in
-  `~/Library/Application Support/Lanthorn/cache/` keyed by path + mtime + size.
+  `~/Library/Application Support/Fanous/cache/` keyed by path + mtime + size.
 - **Playable** = ProRes/HAP in `.mov`, stills. Anything else (H.264/HEVC,
   `.mp4`, `.avi`, image sequences) is indexed as "needs transcode" with a
   one-click ingest action. Long-GOP codecs are deliberately not playable:
@@ -817,7 +817,7 @@ applied entirely on the GPU in the final output pass" is satisfied.
 
 ### 9.5a Phase 6 as built (2026-10-23)
 
-- Model (`LanthornCore/Mapping/OutputModel.swift`) and edit-time math
+- Model (`FanousCore/Mapping/OutputModel.swift`) and edit-time math
   (`MappingMath.swift`, Foundation only, tested): blend map (two floats per
   pixel: factor and lift term), warp displacement field (homography for the
   corner pin, Catmull-Rom surface through the mesh points, evaluated
@@ -872,7 +872,7 @@ matching), checkerboard (pixel-exact). Selectable per output and globally
 
 ### 9.8 Syphon
 
-`SyphonMetalServer` per canvas, named `Lanthorn – <canvas name>`, published
+`SyphonMetalServer` per canvas, named `Fanous – <canvas name>`, published
 from the compositor after the canvas pass with the same completed texture
 (no copy; Syphon shares the IOSurface). Per-output Syphon (post-warp) later.
 
@@ -910,7 +910,7 @@ from the compositor after the canvas pass with the same completed texture
   by default, per-interface selectable. Static UI files, REST for uploads /
   downloads (thumbnails, GDTF, logs, project export), WebSocket for state,
   commands and binary streams. HTTP/1.1 and RFC 6455 framing are implemented
-  in `LanthornCore/Protocol` (small, unit-tested) on top of Network.framework
+  in `FanousCore/Protocol` (small, unit-tested) on top of Network.framework
   TLS connections; no web framework. `[OPEN-16]` resolved in Phase 5: the
   framing stays hand-written (`WebSocketFrame`, `WebSocketHandshake`) because
   `NWProtocolWebSocket` needs its own listener and cannot share the port.
@@ -925,7 +925,7 @@ from the compositor after the canvas pass with the same completed texture
   `webView(_:didReceive:)`. Browsers show a warning once; users can replace
   the identity with their own PEM/PKCS#12 (System › Network). A downloadable
   CA profile for iPads is `[OPEN-17]` (later).
-- Bonjour: `_lanthorn._tcp` and `_https._tcp` advertised so a browser on the
+- Bonjour: `_fanous._tcp` and `_https._tcp` advertised so a browser on the
   iPad finds `https://<host>.local:8443`.
 - **Auth = roles with optional passwords**, no user accounts. Three roles
   (monitor, operator, programmer), each with an optional password stored as
@@ -1019,7 +1019,7 @@ stay smooth on an iPad while the mapping editor renders an SVG overlay over a
 live preview.
 
 Structure: `web/src/{lib/protocol,lib/state,screens/*,components/*}`; the
-protocol types are generated from `LanthornCore/Protocol` (a small Swift
+protocol types are generated from `FanousCore/Protocol` (a small Swift
 script emits `protocol.d.ts` in Phase 5) so client and server cannot drift.
 
 Touch: Pointer Events everywhere; the mapping editor's handles are ≥ 44 px
@@ -1031,7 +1031,7 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
 - One **global** undo history on the server (commands with inverses),
   shared by all programmer clients, 500 entries, cleared on project load.
   Show-lock/unlock and cue *go* are not undoable (they are not config).
-- Project format: a directory bundle `Name.lanthorn/` with `project.json`
+- Project format: a directory bundle `Name.fanous/` with `project.json`
   (schema-versioned, migrated on load), `versions/` (one JSON snapshot per
   change burst, debounced 2 s; keep last 200 + one per day for 90 days +
   all named versions), `thumbs/` (cache). Snapshots are full documents
@@ -1040,12 +1040,12 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   commands themselves (and therefore undoable).
 - Machine settings (library root, interfaces, audio devices, TLS identity
   reference, role passwords, last project) live outside the project in
-  `~/Library/Application Support/Lanthorn/settings.json`.
+  `~/Library/Application Support/Fanous/settings.json`.
 
 ### 11.6 Phase 5 as built (2026-10-23)
 
 - Transport: hand-written RFC 6455 framing on the HTTPS listener
-  (`LanthornCore/Protocol/WebSocket.swift`, SHA-1 in Core), `/ws` handled by
+  (`FanousCore/Protocol/WebSocket.swift`, SHA-1 in Core), `/ws` handled by
   `StateServer`; binary frames `[u8 kind][u32 stream][payload]` with kind 1 =
   `[u8 key][u64 µs][AVCC AU]`, 2 = JPEG, 3 = 512 DMX slots. The H.264 decoder
   configuration travels as a `stream` text message (base64 avcC) whenever the
@@ -1164,7 +1164,7 @@ the benchmark.
 | System | thermal state, memory footprint, on battery, CPU per thread (from `thread_info`) | System + status bar |
 
 Logging: `swift-log` with two handlers: `os_log` (Console.app) and a rotating
-file in `~/Library/Logs/Lanthorn/` (10 × 10 MB). Log lines in hot paths are
+file in `~/Library/Logs/Fanous/` (10 × 10 MB). Log lines in hot paths are
 pre-formatted off-thread from ring events; the compositor itself never calls
 the logger. Anomalies (first dropped frame in show mode, DMX loss, display
 loss, decoder error) are logged at `warning` with the metric context, and a
@@ -1213,7 +1213,7 @@ later deliverable (`[OPEN-20]`).
 
 - **LTC**: any CoreAudio input device/channel (machine setting). An
   `AVAudioSinkNode` on an `AVAudioEngine` input graph delivers buffers on the
-  real-time thread; the biphase-mark decoder in `LanthornCore/Timecode` is
+  real-time thread; the biphase-mark decoder in `FanousCore/Timecode` is
   fed samples and emits frames (24/25/29.97 DF/NDF/30 auto-detected), with
   sub-frame phase for jitter-free chasing. Lock / freewheel (configurable,
   default 2 s) / lost states. Requires the microphone permission (TCC); the
@@ -1245,13 +1245,13 @@ UDP and TCP (SLIP, RFC 1055) servers on configurable ports (default 8000),
 interface selectable. Address space generated from `ParameterSpec`:
 
 ```
-/lanthorn/layer/{1..n}/{param}  f (normalized 0–1 or unit value; both accepted via type tag)   e.g. /lanthorn/layer/3/intensity 0.75
-/lanthorn/layer/{n}/media       ii (folder, file)
-/lanthorn/layer/{n}/retrigger
-/lanthorn/master/{param}        /lanthorn/output/{n}/{param}
-/lanthorn/cue/go  /cue/back  /cue/goto i  /cue/{number}/go
-/lanthorn/show/lock i  /lanthorn/show/mode i  /lanthorn/timecode/enable i
-/lanthorn/project/load s (programmer; refused while show-locked)
+/fanous/layer/{1..n}/{param}  f (normalized 0–1 or unit value; both accepted via type tag)   e.g. /fanous/layer/3/intensity 0.75
+/fanous/layer/{n}/media       ii (folder, file)
+/fanous/layer/{n}/retrigger
+/fanous/master/{param}        /fanous/output/{n}/{param}
+/fanous/cue/go  /cue/back  /cue/goto i  /cue/{number}/go
+/fanous/show/lock i  /fanous/show/mode i  /fanous/timecode/enable i
+/fanous/project/load s (programmer; refused while show-locked)
 ```
 
 Bundles with timetags are honoured (scheduled on Control). OSC feedback
@@ -1288,8 +1288,8 @@ MSC and MIDI-triggered cues are additions, not rewrites.
 
 ### 16.2 GDTF export
 
-`Patch › Export GDTF` writes `Lanthorn.gdtf` (zip: `description.xml` +
-thumbnail PNG) describing fixture type "Lanthorn" with the three DMX modes,
+`Patch › Export GDTF` writes `Fanous.gdtf` (zip: `description.xml` +
+thumbnail PNG) describing fixture type "Fanous" with the three DMX modes,
 channel functions with physical ranges, channel sets for every band (play
 modes, blend modes, effects, test patterns), 16-bit coarse/fine links and
 defaults — all generated from `ParameterSpec`. Fixture type GUID is stable
@@ -1326,7 +1326,7 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
 - **OSC**: the full §15.3 address map is routed through `DMXStore.onCommand`
   into the state store (cue, show lock/mode, timecode enable); bundles with
   timetags are scheduled on Control; `live.osc.recent` is the log the Show
-  screen shows. `/lanthorn/project/load` waits for project bundles (B35).
+  screen shows. `/fanous/project/load` waits for project bundles (B35).
 - **Show mode and readiness** (`ShowControl/ShowMode.swift`): IOPM assertions
   (`PreventUserIdleDisplaySleep`, `PreventUserIdleSystemSleep`),
   `beginActivity` (latency critical, no App Nap), ingest paused. Readiness
@@ -1336,7 +1336,7 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   shielding level and cursor, log level, thumbnail/preview throttling) are
   B33/B42.
 - **System**: `/metrics` (JSON: frames, GPU/CPU timing, DMX age, audio,
-  preview, clients), `/api/logs` (ring tail), Bonjour `_lanthorn._tcp`,
+  preview, clients), `/api/logs` (ring tail), Bonjour `_fanous._tcp`,
   `live.system` (thermal, power, memory, OS, host, addresses, TLS fingerprint).
 - **CITP/MSEX**: codec in Core (`CITP/CITP.swift`, `CITP/CITPMSEX.swift`:
   PINF `PLoc`/`PNam`, MSEX 1.0–1.2 `CInf`/`SInf`/`Nack`/`LSta`/`GELI`/`ELIn`/
@@ -1365,14 +1365,14 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
 | `LICENSE` | Verbatim GNU GPL v3 text, unmodified so license scanners recognise it; the notice "GPL-3.0-only with additional terms under section 7, see `LICENSE-ADDITIONAL-TERMS.md`" is in `README.md` and in every source header. |
 | `LICENSE-ADDITIONAL-TERMS.md` | The two §7 additions: (b) attribution preservation (text in `docs/licensing/ATTRIBUTION.md`), and the additional *permission* for plugins (`docs/licensing/PLUGIN-EXCEPTION.md`, DRAFT until lawyer-reviewed; shipped only after review). |
 | `docs/licensing/ATTRIBUTION.md` | exact wording of the attribution term and the exact strings the About screen and web footer must show |
-| `docs/licensing/PLUGIN-EXCEPTION.md` | DRAFT additional permission for linking plugins against proprietary SDKs via `LanthornPluginAPI` |
+| `docs/licensing/PLUGIN-EXCEPTION.md` | DRAFT additional permission for linking plugins against proprietary SDKs via `FanousPluginAPI` |
 | `docs/licensing/CLA.md` | Individual + Entity CLA text granting copyright and patent licenses with the right to sublicense and relicense (enables the commercial license) — DRAFT for lawyer review |
 | `docs/licensing/DEPENDENCIES.md` | every dependency (server, vendored C/ObjC, web build-time and runtime), version, license, GPLv3 compatibility, how it is pinned |
 | `CONTRIBUTING.md` | CLA requirement (DCO is not enough), how signing works, coding rules (SPDX header, Core purity, no new dependencies, tests), review process |
 | `TRADEMARKS.md` | name and logo policy: code under GPL, name/logo not |
 | Source headers | `// SPDX-License-Identifier: GPL-3.0-only` + `// Copyright (c) 2026 Tim de Bruijn` + `// Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md` — the pointer line is what GPLv3 §7 requires when additional terms exist. A LicenseRef expression would be more SPDX-pure but makes license scanners stop recognising GPL; the ADR records the trade-off. `scripts/license-headers.sh` checks every `.swift`, `.metal`, `.c/.h`, `.ts`, `.svelte`, `.css`, `.sh` file in CI. |
 | CLA tool | **cla-assistant (SAP)**, hosted at cla-assistant.io (or self-hosted) as a GitHub App: blocks merge until the PR author has signed the CLA stored in the repo; `contributor-assistant/github-action` is archived and EasyCLA is LF-only. Enabled when the repository goes public; until then the CLA text already lives in the repo. |
-| About / footer | shell About window and web footer render the attribution string from one constant in `LanthornCore` (`Attribution.text`), with the repository link; a UI test asserts both render it. The About screen also carries the third-party notices, including the Art-Net credit Artistic Licence requires. |
+| About / footer | shell About window and web footer render the attribution string from one constant in `FanousCore` (`Attribution.text`), with the repository link; a UI test asserts both render it. The About screen also carries the third-party notices, including the Art-Net credit Artistic Licence requires. |
 
 Dual licensing: the author is the sole copyright holder; every external
 contribution is covered by the CLA, so the whole can also be offered under a
@@ -1381,7 +1381,7 @@ notices in `THIRD-PARTY-NOTICES.md` and is compatible with both licenses.
 
 Release checklist items that come from this section: remove `docs/BRIEF.md`;
 lawyer review of `PLUGIN-EXCEPTION.md`, `CLA.md` and `ATTRIBUTION.md`;
-trademark search for "Lanthorn" (`[OPEN-21]`).
+trademark search for "Fanous" (`[OPEN-21]`).
 
 ---
 
@@ -1394,7 +1394,7 @@ trademark search for "Lanthorn" (`[OPEN-21]`).
 | **Golden images** | deterministic scenes (synthetic textures, fixed parameters) rendered through the real compositor and output pass, read back, compared to PNGs with per-channel tolerance (±2/255) and a diff image on failure: blend modes, effects, transforms, dissolve, blend maps, warp, masks, test patterns, YCbCr/YCoCg conversion | Apple Silicon only: locally and on a self-hosted runner when available; skipped (not failed) on hosted CI |
 | **Decode conformance** | one sample file per codec variant (generated by the ingest encoder from a synthetic source, checked against known pixel values) | Apple Silicon |
 | **Allocation / latency** | 0 mallocs on the compositor thread over 1 000 frames; DMX→photon p99 under the tier's limit | Apple Silicon |
-| **Benchmark** | `lanthorn-bench`: generates media (codec × resolution × fps), ramps layer count until any frame drops within 60 s, confirms with a 10-minute soak at the found count, with 0 and 4 preview clients; writes `docs/benchmarks/<chip>-<date>.json/.md` and the tier record the UI shows | Apple Silicon; first on the M1 Pro reference machine |
+| **Benchmark** | `fanous-bench`: generates media (codec × resolution × fps), ramps layer count until any frame drops within 60 s, confirms with a 10-minute soak at the found count, with 0 and 4 preview clients; writes `docs/benchmarks/<chip>-<date>.json/.md` and the tier record the UI shows | Apple Silicon; first on the M1 Pro reference machine |
 | **Soak** | 8 h run with a scripted DMX generator (random play modes, file changes, dissolves), hot-plug of one display, engine kill/restart; pass = 0 dropped frames outside the restart window, memory flat | before each release |
 | **Protocol interop** | manual checklist with free console software (CITP thumbnails visible, GDTF imports, DMX control end-to-end) | Phase 7 |
 | **UI** | Vitest unit tests for the protocol client, state store and mapping-editor geometry; a Playwright smoke test against a mock server is `[OPEN-22]` | GitHub Actions |
@@ -1414,9 +1414,9 @@ biggest risks early.
 
 | Phase | Deliverable | Acceptance criteria |
 |---|---|---|
-| **0 — Skeleton** | Package layout, CI, license files, SPDX headers, `web` scaffold, `scripts/bundle.sh`, empty `lanthornd` that starts, serves the UI shell page over HTTPS with the generated certificate, and logs | `swift build` + `swift test` green on hosted CI; `.app` assembles, signs ad-hoc and launches; TLS identity generated and pinned by the shell; license-header and Core-purity checks pass; `DEPENDENCIES.md` complete |
+| **0 — Skeleton** | Package layout, CI, license files, SPDX headers, `web` scaffold, `scripts/bundle.sh`, empty `fanousd` that starts, serves the UI shell page over HTTPS with the generated certificate, and logs | `swift build` + `swift test` green on hosted CI; `.app` assembles, signs ad-hoc and launches; TLS identity generated and pinned by the shell; license-header and Core-purity checks pass; `DEPENDENCIES.md` complete |
 | **1 — Core protocols & parameter model** | Art-Net/sACN receive + merge, universe model, `ParameterSpec`, channel map, resolver with source policies, OSC server, LTC/MTC decoders, GDTF export, cue fade engine, `docs/channel-map.md` generated | all fixture captures pass; footprint test locks 64/8/8; GDTF validates against the XSD and imports into grandMA3 onPC and Eos Nomad; OSC and DMX drive the same resolver in tests; LTC decoder locks on a generated 25/29.97DF file within 2 frames |
-| **2 — Render spike & benchmark** | ProRes and HAP decode via sample cursor + VT / hap.c, zero-copy textures, compositor with intensity/position/scale, one canvas, one output, display link, instrumentation, `lanthorn-bench` v1, DMX→photon estimate | **spike results written down**: native ProRes pixel formats confirmed IOSurface-backed and used without conversion; HAP chunk decode parallelism measured; benchmark on the M1 Pro: tier-2 numbers recorded for 1080p60/4K30/4K60 × ProRes HQ/HAP Q; 0 mallocs per frame; `preferredFrameLatency 1` holds at the measured layer count; DMX→photon p99 ≤ 2 frames + display |
+| **2 — Render spike & benchmark** | ProRes and HAP decode via sample cursor + VT / hap.c, zero-copy textures, compositor with intensity/position/scale, one canvas, one output, display link, instrumentation, `fanous-bench` v1, DMX→photon estimate | **spike results written down**: native ProRes pixel formats confirmed IOSurface-backed and used without conversion; HAP chunk decode parallelism measured; benchmark on the M1 Pro: tier-2 numbers recorded for 1080p60/4K30/4K60 × ProRes HQ/HAP Q; 0 mallocs per frame; `preferredFrameLatency 1` holds at the measured layer count; DMX→photon p99 ≤ 2 frames + display |
 | **3 — Full layer feature set** | all Layer-mode parameters (3D transform, fit, crop, colour, 8 blend modes, 11 effects, dissolve, all play modes, retrigger), stills, image sequences via ingest stub, Syphon in/out, audio playback, Master fixture | golden images for every blend mode/effect/transform; dissolve measured cost documented; audio drift < 20 ms over 1 h at 1×; Syphon output visible in another app; benchmark re-run shows the tier numbers still hold with effects on 2 slots |
 | **4 — Media library & ingest** | library index + FSEvents, thumbnails, ingest queue (ProRes via AVAssetWriter, HAP via hap.c + muxing spike), image sequences, originals handling, remote upload | HAP files written by ingest play back in the engine and in VLC/QuickTime with the HAP plugin; ingest does not drop a frame of a running 8-layer show (measured); index survives 10 000 files; invalid names reported |
 | **5 — Service, UI foundation** | LaunchAgent via SMAppService, crash restart, role auth, state sync protocol, undo/versioning, show lock, preview streaming (H.264 + JPEG fallback), status bar, Layers, Media, Patch/DMX screens, DMX monitor, generated `protocol.d.ts` | kill -9 of the engine → outputs back < 3 s; 4 browser clients + shell show identical state, lagging-client test passes without affecting frame time (measured); WebCodecs preview works on iPad Safari over HTTPS; show lock refuses config commands; undo across clients; channel-map labels in the UI match `docs/channel-map.md` byte-for-byte |
@@ -1440,7 +1440,7 @@ profile are the v1.x candidates.
 | R3 | Network.framework's queue-based delivery adds jitter/latency to DMX | DMX→photon latency | measured in Phase 2; fallback: BSD socket + dedicated thread for Art-Net/sACN only (the brief's Network.framework rule would then be relaxed for this path, recorded in an ADR) |
 | R4 | `AVSampleBufferGenerator` behaviour with HAP tracks (custom fourcc) or odd files | playback of some files | Phase 2 spike with files from several encoders (AfterCodecs, ffmpeg-made HAP, Vidvox tools); fallback: own minimal QuickTime demuxer for all-intra `.mov` (bounded scope) |
 | R5 | Multi-display presentation drift with mixed refresh rates | visible judder on secondary outputs | documented behaviour + warning; recommend identical modes; measured in Phase 6 |
-| R6 | TLS identity in the keychain (prompts, ACLs) | first-run friction; **seen in Phase 2**: the login keychain prompts "lanthornd wants to use key" whenever an ad-hoc signed build changes, and the TLS handshake blocks until the dialog is answered | **Resolved in Phase 3** (ADR-0015 amendment): signed builds use the data-protection keychain; builds without a team identifier keep the key in a 0600 file and build the identity in memory with `SecIdentityCreate`. The login keychain is never used. A permissive "any application" ACL was rejected as a security weakening. |
+| R6 | TLS identity in the keychain (prompts, ACLs) | first-run friction; **seen in Phase 2**: the login keychain prompts "fanousd wants to use key" whenever an ad-hoc signed build changes, and the TLS handshake blocks until the dialog is answered | **Resolved in Phase 3** (ADR-0015 amendment): signed builds use the data-protection keychain; builds without a team identifier keep the key in a 0600 file and build the identity in memory with `SecIdentityCreate`. The login keychain is never used. A permissive "any application" ACL was rejected as a security weakening. |
 | R7 | WebCodecs H.264 decode gaps on older iPad Safari | preview quality | real-decode test at connect; JPEG fallback; document "iPadOS 26+ recommended" |
 | R8 | Writing HAP into `.mov` via `AVAssetWriter` passthrough fails for custom fourccs | ingest to HAP | Phase 4 spike; fallback own all-intra muxer |
 | R9 | Audio/video drift and device changes at show time | audible glitches | layer-clock-master design, drift correction, device-change handler that re-creates the graph and logs; measured in Phase 3 |
@@ -1461,12 +1461,12 @@ profile are the v1.x candidates.
 |---|---|
 | NotchLC decode in Metal | `Source` protocol + compute-shader decode stage before the ring; **blocked on licence** (R11) |
 | HAP R | `bc7_rgbaUnorm` in the HAP texture path; ingest encoder flag |
-| NDI in/out, DeckLink in/out | `LanthornPluginAPI` (ADR-0016): C ABI, `dlopen`ed from `~/Library/Application Support/Lanthorn/Plugins/`, sources hand over IOSurfaces into the same frame rings; sinks subscribe to completed canvas textures like Syphon |
+| NDI in/out, DeckLink in/out | `FanousPluginAPI` (ADR-0016): C ABI, `dlopen`ed from `~/Library/Application Support/Fanous/Plugins/`, sources hand over IOSurfaces into the same frame rings; sinks subscribe to completed canvas textures like Syphon |
 | Pixel mapping to DMX fixtures | Art-Net/sACN *builders* already exist in Core (needed for tests); a GPU sampling pass reads canvas regions into a small buffer per universe on the preview thread |
 | Main/backup failover (v2) | projects reference media by number; `live` is a replicable document; a backup engine subscribes to the main's state over WSS and runs the same DMX; outputs are switched by the operator (status bar "backup" slot reserved) |
 | 3D projection mapping | the output pass already renders arbitrary meshes through a displacement field; a projected OBJ with a calibrated camera matrix replaces the slice mesh |
 | 3D-model layers (media as texture on a mesh) | the layer pass is one quad in a perspective camera (§4.3); a mesh from Model I/O (USDZ/OBJ) with its own UVs replaces the quad, the fragment shader is unchanged; needs a depth attachment on the canvas pass and a "Geometry" parameter in the reserved Layer channels 51–64 (0 = flat, 1–255 = model from the library); `docs/BACKLOG.md` B9 |
-| Motion: tracking in, movement out (B53) | **Tracking as a source:** a PosiStageNet receiver in Core (UDP multicast, position/speed/orientation per tracker) and OSC trackers become an extra *internal source* in the resolver (§7.2), mapped per project ("tracker 3 → Layer 2 position X/Y, scale") through a stage-to-canvas calibration (metres → canvas) set on the Outputs screen; on-device person tracking through the Vision framework on a capture input (folder 0); depth/lidar SDKs only through the plugin boundary (ADR-0016). **Movement out:** DMX-controlled motion (mirror heads, pan/tilt yokes, winches, rotators) via the Art-Net/sACN builders of the pixel-mapping pass; small motors (ESP32 steppers/servos) via OSC output (B36) or an MQTT bridge. **Moving screens:** encoder positions in over PSN/OSC update an output's corner-pin homography per frame. **Hard rule:** Lanthorn sends cues and target positions only; it is never the safety layer of stage automation (e-stops, SIL-rated controllers stay in charge). Camera tracking of people is processed on the device and never stored (GDPR). Expected tracker → photon ≈ 35–40 ms, enough to follow a performer, not for locked-on AR. |
+| Motion: tracking in, movement out (B53) | **Tracking as a source:** a PosiStageNet receiver in Core (UDP multicast, position/speed/orientation per tracker) and OSC trackers become an extra *internal source* in the resolver (§7.2), mapped per project ("tracker 3 → Layer 2 position X/Y, scale") through a stage-to-canvas calibration (metres → canvas) set on the Outputs screen; on-device person tracking through the Vision framework on a capture input (folder 0); depth/lidar SDKs only through the plugin boundary (ADR-0016). **Movement out:** DMX-controlled motion (mirror heads, pan/tilt yokes, winches, rotators) via the Art-Net/sACN builders of the pixel-mapping pass; small motors (ESP32 steppers/servos) via OSC output (B36) or an MQTT bridge. **Moving screens:** encoder positions in over PSN/OSC update an output's corner-pin homography per frame. **Hard rule:** Fanous sends cues and target positions only; it is never the safety layer of stage automation (e-stops, SIL-rated controllers stay in charge). Camera tracking of people is processed on the device and never stored (GDPR). Expected tracker → photon ≈ 35–40 ms, enough to follow a performer, not for locked-on AR. |
 | Serial device fixture | fixture type in `ParameterSpec`; POSIX termios on `/dev/cu.*`, no dependency |
 | OSC feedback, MIDI notes/CC, MSC, timeline, varispeed audio, 10-bit output, per-channel blend gamma, frame blending, MDM profile, CA profile for iPads | noted in their sections |
 
@@ -1477,13 +1477,13 @@ profile are the v1.x candidates.
 | ID | Question | Proposed default |
 |---|---|---|
 | OPEN-1 | Raise the minimum macOS from 14 to **15**? Gains: stdlib `Synchronization` (`Atomic`, `Mutex`, macOS 15+) instead of swift-atomics (whose own README says it is superseded), one dependency fewer; macOS 14 Sonoma received its last update in Aug 2026 and is absent from the Sep 2026 security batches (verified 2026-10-22), i.e. outside Apple's n-2 window now that macOS 27 is out. CAMetalDisplayLink needs 14+, so 15 keeps everything in the brief. Metal 4 (macOS 26+) is not needed. | **Decided 2026-10-22: 15** |
-| OPEN-2 | Bundle identifier / reverse-DNS prefix | **Decided: `org.lanthorn`** (`org.lanthorn.app`, `org.lanthorn.engine`) |
+| OPEN-2 | Bundle identifier / reverse-DNS prefix | **Decided: `org.fanous`** (`org.fanous.app`, `org.fanous.engine`) |
 | OPEN-3 | Native pixel formats of the hardware ProRes decoder | **Measured (Phase 2):** 422 → `&sv2` lossless-compressed bi-planar 16-bit (zero copy); 4444 → `y416` requested to keep alpha (≈0.8 ms/1080p frame conversion) |
 | OPEN-4 | Optional frame blending for rate-mismatched content | v1.x |
 | OPEN-5 | 10-bit output drawables (`bgr10a2`/`rgba16Float` with EDR off) | v1.x; blue-noise dither in v1 |
 | OPEN-6 | Keep the chip capability table in `docs/hardware.md` and in Core; who verifies new chips | owner verifies per generation |
 | OPEN-7 | Serial fixture in v1 or v1.x | v1.x |
-| OPEN-8 | Engine hard cap on layer count | 32 |
+| OPEN-8 | Engine hard cap on layer count | **Decided 2026-10-25: 32** for v1; raise later per measured tier |
 | OPEN-9 | Exact DMX bands (play modes, effects), speed max 400 %, scale max 800 % | **Resolved (Phase 1):** as in §6.2, locked in `docs/channel-map.md` and the GDTF |
 | OPEN-10 | sACN per-address priority (0xDD start code) | not in v1 |
 | OPEN-11 | Per-parameter smoothing vs a global switch | per parameter, default off |
@@ -1491,14 +1491,14 @@ profile are the v1.x candidates.
 | OPEN-13 | HAP muxing via AVAssetWriter passthrough vs own muxer | **Resolved (Phases 2–4):** `AVAssetWriterInput` with a `sourceFormatHint` format description and passthrough sample buffers writes HAP `.mov` files the engine plays; no own muxer |
 | OPEN-14 | Per-channel (RGB) blend gamma | v1.x, cheap |
 | OPEN-15 | Audio varispeed / pitch at speed ≠ 100 % | v1.x; mute in v1 |
-| OPEN-16 | `NWProtocolWebSocket` in server role vs hand-written framing | **Resolved in Phase 5**: hand-written RFC 6455 framing in `LanthornCore/Protocol/WebSocket.swift` (SHA-1 for the accept key is in Core too, Foundation-only). `NWProtocolWebSocket` owns a whole listener, so it could not share port 8443 with the HTTP/1.1 routes and static files; the upgrade is handled by the existing HTTPS connection handler. |
+| OPEN-16 | `NWProtocolWebSocket` in server role vs hand-written framing | **Resolved in Phase 5**: hand-written RFC 6455 framing in `FanousCore/Protocol/WebSocket.swift` (SHA-1 for the accept key is in Core too, Foundation-only). `NWProtocolWebSocket` owns a whole listener, so it could not share port 8443 with the HTTP/1.1 routes and static files; the upgrade is handled by the existing HTTPS connection handler. |
 | OPEN-17 | Downloadable CA profile for iPads | v1.x |
 | OPEN-18 | Monitor role open by default when other roles have passwords | **Decided in Phase 5**: each role is open or protected independently; a client gets the highest role ≤ the one it asked for that its session cookie or shell token entitles it to, or that is open. Monitor stays open unless it has its own password. |
 | OPEN-19 | Prometheus metrics endpoint | v1.x |
 | OPEN-20 | MDM profile for show machines | later (owner's choice) |
-| OPEN-21 | Trademark search for "Lanthorn" before public release | owner; `docs/RELEASE.md` §7 |
+| OPEN-21 | Trademark search for "Fanous" before public release | owner; `docs/RELEASE.md` §7 |
 | OPEN-22 | Browser smoke tests (Playwright) | **v1.x** (B47): Vitest covers the client, store and screen helpers; the screens were checked by hand in Phases 5–7 |
-| OPEN-23 | Library default location `~/Movies/Lanthorn Library` | yes |
+| OPEN-23 | Library default location `~/Movies/Fanous Library` | yes |
 | OPEN-24 | Default ports: HTTPS 8443, OSC 8000/8001; configurable | yes |
 | OPEN-26 | Keychain strategy for unsigned development builds (prompt on every rebuild vs. ephemeral per-process identity) | **Decided 2026-10-23:** file-backed in-memory identity (`SecIdentityCreate`), no login keychain; ADR-0015 amendment |
 | OPEN-25 | Register an Art-Net OEM code with Artistic Licence (free, needed for a proper `ArtPollReply`) | owner, `docs/RELEASE.md` §4; 0xFFFF until then |

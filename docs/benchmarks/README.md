@@ -1,16 +1,16 @@
 # Benchmarks
 
-Results of `lanthorn-bench run` per machine, codec and resolution. One
+Results of `fanous-bench run` per machine, codec and resolution. One
 `.md` + `.json` pair per run; the engine will read the JSON for its tier
 display (Phase 5).
 
 ```bash
-swift build -c release --product lanthorn-bench
+swift build -c release --product fanous-bench
 BIN=$(swift build -c release --show-bin-path)
-"$BIN/lanthorn-bench" media --dir ~/Movies/Lanthorn\ Bench --seconds 3      # once: synthetic test movies
-"$BIN/lanthorn-bench" spike ~/Movies/Lanthorn\ Bench/prores422hq_1920x1080p60.mov   # decode formats and timing
-"$BIN/lanthorn-bench" run --media ~/Movies/Lanthorn\ Bench --codec prores422hq --res 1920x1080p60 --display 0 --window 60
-"$BIN/lanthorn-bench" run --media ~/Movies/Lanthorn\ Bench --codec hapq --res 3840x2160p60 --headless --window 60 --soak 600
+"$BIN/fanous-bench" media --dir ~/Movies/Fanous\ Bench --seconds 3      # once: synthetic test movies
+"$BIN/fanous-bench" spike ~/Movies/Fanous\ Bench/prores422hq_1920x1080p60.mov   # decode formats and timing
+"$BIN/fanous-bench" run --media ~/Movies/Fanous\ Bench --codec prores422hq --res 1920x1080p60 --display 0 --window 60
+"$BIN/fanous-bench" run --media ~/Movies/Fanous\ Bench --codec hapq --res 3840x2160p60 --headless --window 60 --soak 600
 ```
 
 Pass criterion per step: 0 missed display-link ticks, 0 late GPU completions,
@@ -113,7 +113,7 @@ Acceptance "drift < 20 ms over 1 h at 1×" met.
 
 ## Phase 4 (2026-10-23): ingest during a show
 
-`lanthorn-bench run --ingest FILE` runs the real `IngestQueue` in the
+`fanous-bench run --ingest FILE` runs the real `IngestQueue` in the
 benchmark process: one `.utility` thread transcodes FILE to HAP Q while the
 compositor runs, yielding 20 ms whenever a frame in the last 250 ms exceeded
 70 % of the frame budget (DESIGN.md §8.3). Source: the 3 s 1080p60 ProRes
@@ -133,7 +133,7 @@ fps, HAP Q ≈ 210–280 fps, HAP ≈ 350–590 fps; at 1080p HAP Q encodes at
 
 ## Phase 5 (2026-10-23): service restart, state sync with many clients
 
-Debug build of `lanthornd` running headless with a 4-layer 1080p60 scene,
+Debug build of `fanousd` running headless with a 4-layer 1080p60 scene,
 driven from a user LaunchAgent with `KeepAlive` (the same plist shape
 `scripts/bundle.sh` writes for `SMAppService`), probed every 50 ms over
 HTTPS (`scripts` in the session scratchpad; numbers from one run):
@@ -207,7 +207,7 @@ B38), real LTC/MTC hardware (B44).
 
 ## Phase 8 (2026-10-24): soak and restart
 
-`scripts/soak.sh HOURS LAYERS` drives the running engine with `lanthorn-bench
+`scripts/soak.sh HOURS LAYERS` drives the running engine with `fanous-bench
 dmx` (Art-Net at the standard patch, 40 Hz, random file / play mode / dissolve /
 intensity per layer every 3–8 s, slow position and scale drift), samples
 `/metrics` and the engine's RSS every second, `kill -9`s the engine at the

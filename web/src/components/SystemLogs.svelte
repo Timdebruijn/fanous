@@ -46,7 +46,7 @@
     <span class="spacer"></span>
     <input class="input" type="search" aria-label="Filter log lines" placeholder="Filter lines" autocomplete="off" spellcheck="false" bind:value={query} />
     <button type="button" class="btn" disabled={loading} onclick={load}>Refresh</button>
-    <a class="btn" href="/api/logs?download=1" download="lanthornd.log">Download</a>
+    <a class="btn" href="/api/logs?download=1" download="fanousd.log">Download</a>
   </header>
   {#if error}<p class="caption err" role="alert">Could not load the log: {error}</p>{/if}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->

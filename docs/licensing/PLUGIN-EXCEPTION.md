@@ -1,4 +1,4 @@
-# Lanthorn Plugin Exception (additional permission under GPLv3 section 7)
+# Fanous Plugin Exception (additional permission under GPLv3 section 7)
 
 **STATUS: DRAFT. NOT IN EFFECT. This text must be reviewed by a lawyer before
 it is added to `LICENSE-ADDITIONAL-TERMS.md` and before any plugin that links
@@ -6,13 +6,13 @@ a proprietary SDK is distributed.**
 
 Modelled on the structure of existing GPL additional permissions (GCC Runtime
 Library Exception, Classpath Exception). Definitions refer to the interface in
-`Sources/LanthornPluginAPI/`.
+`Sources/FanousPluginAPI/`.
 
 ## Definitions
 
-- "Program" means Lanthorn as licensed under GPL-3.0-only with additional terms.
-- "Plugin Interface" means the C header `lanthorn_plugin.h` and the Swift
-  declarations in `Sources/LanthornPluginAPI/`, as published in the Program's
+- "Program" means Fanous as licensed under GPL-3.0-only with additional terms.
+- "Plugin Interface" means the C header `fanous_plugin.h` and the Swift
+  declarations in `Sources/FanousPluginAPI/`, as published in the Program's
   source repository, including their documentation comments.
 - "Plugin" means a work that (a) is loaded by the Program at run time through
   the Plugin Interface, (b) interacts with the Program solely through the
@@ -49,7 +49,7 @@ provided that:
 This exception is an additional permission under section 7 of the GPL. You
 may remove it from your copies of the Program, as section 7 allows, but it
 then no longer applies to works you convey. It does not grant any right to
-use the Lanthorn name or logo (see `TRADEMARKS.md`).
+use the Fanous name or logo (see `TRADEMARKS.md`).
 
 ## Notes for legal review
 

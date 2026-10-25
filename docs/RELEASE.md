@@ -4,15 +4,15 @@
 
 # Release checklist
 
-Everything a Lanthorn release needs, in order. "Owner" steps need Tim's
+Everything a Fanous release needs, in order. "Owner" steps need Tim's
 accounts, hardware or signature; the rest is scripted. The checklist is the
 Phase 8 deliverable of `DESIGN.md` §19; v1.0 ships when every box is ticked.
 
 ## 1. Code is green
 
 - [ ] `scripts/test.sh` (engine tests bind the DMX/OSC/HTTPS ports: stop any
-      running `lanthornd` first)
-- [x] `LANTHORN_NET_TESTS=1 scripts/test.sh --filter CITPServerTests` on a Mac
+      running `fanousd` first)
+- [x] `FANOUS_NET_TESTS=1 scripts/test.sh --filter CITPServerTests` on a Mac
       whose firewall allows the test runner's outgoing UDP (the CITP beacon)
 - [ ] `scripts/check-protocol-dts.sh`, `scripts/check-channel-map.sh`,
       `scripts/core-purity.sh`, `scripts/license-headers.sh`
@@ -22,7 +22,7 @@ Phase 8 deliverable of `DESIGN.md` §19; v1.0 ships when every box is ticked.
 
 ## 2. Version
 
-- [ ] `LanthornVersion.string` in `Sources/LanthornCore/Attribution.swift`
+- [ ] `FanousVersion.string` in `Sources/FanousCore/Attribution.swift`
       (semver; `-rc.N` for candidates). The bundle, About window, `/healthz`,
       `caps.version` and CITP `SInf` read it.
 - [ ] `CHANGELOG.md` entry with the date
@@ -39,19 +39,19 @@ Phase 8 deliverable of `DESIGN.md` §19; v1.0 ships when every box is ticked.
       every `kill -9` → `/healthz` under 3 s (DESIGN §2.3); late presents are
       warnings. Done for 1.0.0-rc.1 with the test agent
       (`soak-2026-10-24-0928.md`); repeat with the installed notarized agent
-      (`LABEL=org.lanthorn.engine`) before the final release
+      (`LABEL=org.fanous.engine`) before the final release
 - [ ] a second display plugged and unplugged during the soak once a Mac with
       one is available (B34)
 
 ## 4. Console interop (owner, B40)
 
-With Lanthorn and the console software on one subnet (Little Snitch: allow
-`lanthornd` incoming UDP 6454/5568/8000 and outgoing UDP to
+With Fanous and the console software on one subnet (Little Snitch: allow
+`fanousd` incoming UDP 6454/5568/8000 and outgoing UDP to
 224.0.0.180/239.224.0.180:4809):
 
 - [ ] grandMA3 onPC, ChamSys MagicQ PC, ETC Eos Nomad: GDTF import
       (`Patch › Export GDTF`), DMX end to end (intensity, folder/file, play
-      mode), CITP: Lanthorn appears as a media server, thumbnails show, the
+      mode), CITP: Fanous appears as a media server, thumbnails show, the
       canvas stream plays
 - [ ] packet captures of what the consoles send go to
       `Tests/Fixtures/captures/` with provenance in its `README.md`
@@ -63,19 +63,19 @@ With Lanthorn and the console software on one subnet (Little Snitch: allow
 - [ ] `CODESIGN_IDENTITY="Developer ID Application: <name> (<team>)" scripts/bundle.sh`
       — hardened runtime, `scripts/entitlements.plist` (microphone for LTC),
       usage strings and `NSBonjourServices` in `Info.plist`, timestamped
-- [ ] `xcrun notarytool store-credentials lanthorn --apple-id … --team-id … --password <app-specific>` once, then
-      `NOTARY_PROFILE=lanthorn scripts/notarize.sh` → `dist/Lanthorn-<version>.dmg`, stapled, `spctl --assess` passes
-- [ ] `shasum -a 256 dist/Lanthorn-<version>.dmg` goes into the release notes
+- [ ] `xcrun notarytool store-credentials fanous --apple-id … --team-id … --password <app-specific>` once, then
+      `NOTARY_PROFILE=fanous scripts/notarize.sh` → `dist/Fanous-<version>.dmg`, stapled, `spctl --assess` passes
+- [ ] `shasum -a 256 dist/Fanous-<version>.dmg` goes into the release notes
 
 ## 6. Clean-account install test (owner)
 
 On a fresh macOS user account (or a fresh Mac) with the notarized dmg:
 
 - [ ] drag to Applications, first launch opens without a Gatekeeper warning
-- [ ] "Allow in the Background" appears once; after approval `lanthornd` runs
-      (`launchctl print gui/$(id -u)/org.lanthorn.engine`) and the UI loads
+- [ ] "Allow in the Background" appears once; after approval `fanousd` runs
+      (`launchctl print gui/$(id -u)/org.fanous.engine`) and the UI loads
 - [ ] the Local Network prompt appears on first Art-Net/sACN receive and the
-      microphone prompt when an LTC input is chosen; both attributed to Lanthorn
+      microphone prompt when an LTC input is chosen; both attributed to Fanous
 - [ ] `kill -9` of the engine: outputs back within 3 s (`scripts/soak.sh 0.1`)
 - [ ] an iPad on the same network reaches `https://<mac>.local:8443`, accepts
       the certificate once (fingerprint under System › Network), WebCodecs
@@ -88,13 +88,15 @@ On a fresh macOS user account (or a fresh Mac) with the notarized dmg:
 - [ ] remove `docs/BRIEF.md` (DESIGN §17) and this line from the design
 - [ ] lawyer review of `docs/licensing/PLUGIN-EXCEPTION.md`, `CLA.md`,
       `ATTRIBUTION.md` (all marked DRAFT until then)
-- [ ] trademark search for "Lanthorn" (OPEN-21); `TRADEMARKS.md` final.
-      Web survey 2026-10-24 (not a legal search): no media server or lighting
-      software of that name; collisions to weigh: `hrmasss/lanthorn` (GPL
-      Android video player, v1.0.0 2026-10-22), Lanthorn.ai (video analytics,
-      claims the mark in its terms), USPTO serial 99907978 "LANTHORN" (class 42
-      SaaS, filed 2026-06-26 by another company, seen on an aggregator only),
-      LanthornLED (luminaires, Namibia); EUIPO not checked
+- [ ] trademark search for "Fanous" (OPEN-21); `TRADEMARKS.md` final.
+      The project was called Lanthorn until 2026-10-25 and was renamed
+      because of collisions found in a web survey (Lanthorn.ai claims the mark,
+      USPTO serial 99907978 "LANTHORN", the GPL Android player
+      `hrmasss/lanthorn`). Web check of "Fanous" on 2026-10-25 (not a legal
+      search): no software, media server or live mark; one cancelled US mark
+      for jewelry (FANOUS JEWELERS, filed 2002, cancelled). The word is the
+      Egyptian decorative lantern (fanous), also used for Ramadan. EUIPO and
+      the Benelux register still to check
 - [ ] positioning: the survey found no open-source media server with DMX
       fixtures + GDTF + CITP + timecode chase together; closest are
       OpenVideoServer (Apache-2.0, Debian/Windows, 2026) and ossia score; the

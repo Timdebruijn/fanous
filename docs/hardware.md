@@ -1,6 +1,6 @@
 # Hardware capability table
 
-Source for `LanthornCore/Capabilities`. Runtime detection (chip name, cores,
+Source for `FanousCore/Capabilities`. Runtime detection (chip name, cores,
 memory, GPU, displays, hardware ProRes) is authoritative; this table only adds
 what macOS does not expose: media-engine count and Apple's external-display
 limit. Cells marked *unverified* were not confirmed from an Apple page on

@@ -20,5 +20,5 @@ APIs only. Supported matrix: macOS 15, 26, 27 (and later).
 + One dependency fewer in the hottest code; a test matrix of three
   supported, security-patched releases.
 − A show machine still on Sonoma would need an update before running
-  Lanthorn. If the owner prefers to keep 14, `swift-atomics` 1.3.1 is used
+  Fanous. If the owner prefers to keep 14, `swift-atomics` 1.3.1 is used
   and the matrix includes an unpatched OS.

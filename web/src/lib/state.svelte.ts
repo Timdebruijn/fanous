@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
-import { LanthornClient, patchDoc, type ConnectionState, type Doc, type PreviewInfo, type StreamDescription } from './client';
+import { FanousClient, patchDoc, type ConnectionState, type Doc, type PreviewInfo, type StreamDescription } from './client';
 import { emptyLive, emptyProject, type LiveDoc, type ProjectDoc } from './docs';
 import type { CommandArgs, CommandName, JSONValue, Role } from './protocol';
 
@@ -25,10 +25,10 @@ export function can(role: Role): boolean {
 
 function clientId(): string {
   try {
-    const existing = localStorage.getItem('lanthorn.clientId');
+    const existing = localStorage.getItem('fanous.clientId');
     if (existing) return existing;
     const id = crypto.randomUUID();
-    localStorage.setItem('lanthorn.clientId', id);
+    localStorage.setItem('fanous.clientId', id);
     return id;
   } catch {
     return crypto.randomUUID();
@@ -56,7 +56,7 @@ export function authHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-export const client = new LanthornClient(
+export const client = new FanousClient(
   {
     url: `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`,
     clientId: clientId(),

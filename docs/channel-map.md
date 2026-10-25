@@ -1,6 +1,6 @@
-# Lanthorn DMX channel map
+# Fanous DMX channel map
 
-Generated from `Sources/LanthornCore/Parameters/ChannelMap.swift` by `lanthornd channel-map`; do not edit by hand. 16-bit parameters use coarse/fine on adjacent channels. OSC: `/lanthorn/layer/{n}/{key}`, `/master/{key}`, `/output/{n}/{key}` (float = normalized 0–1, int = raw).
+Generated from `Sources/FanousCore/Parameters/ChannelMap.swift` by `fanousd channel-map`; do not edit by hand. 16-bit parameters use coarse/fine on adjacent channels. OSC: `/fanous/layer/{n}/{key}`, `/master/{key}`, `/output/{n}/{key}` (float = normalized 0–1, int = raw).
 
 ## Layer mode (64 channels)
 

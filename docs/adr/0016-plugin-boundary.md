@@ -8,9 +8,9 @@ into the GPL server. The plugin exception (`docs/licensing/PLUGIN-EXCEPTION.md`)
 needs a precisely defined interface to refer to.
 
 ## Decision
-- `LanthornPluginAPI` is a C header (`lanthorn_plugin.h`) plus a Swift shim.
-  A plugin is a `.dylib` in `~/Library/Application Support/Lanthorn/Plugins/`
-  exporting `lanthorn_plugin_entry(const LanthornHostAPI*) -> const LanthornPluginAPI*`.
+- `FanousPluginAPI` is a C header (`fanous_plugin.h`) plus a Swift shim.
+  A plugin is a `.dylib` in `~/Library/Application Support/Fanous/Plugins/`
+  exporting `fanous_plugin_entry(const FanousHostAPI*) -> const FanousPluginAPI*`.
 - Capabilities: **source** (delivers IOSurface-backed frames with pts into a
   ring the host owns), **sink** (receives completed canvas IOSurfaces),
   **control** (later: serial/other protocols). Versioned structs with size

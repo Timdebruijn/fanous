@@ -28,11 +28,11 @@
  */
 
 #import "SyphonServerRendererMetal.h"
-#import "SyphonPrivate.h" // Lanthorn: SYPHONLOG (was in the Xcode prefix header)
+#import "SyphonPrivate.h" // Fanous: SYPHONLOG (was in the Xcode prefix header)
 #include <simd/simd.h>
 #include "SyphonServerMetalTypes.h"
 
-// Lanthorn: the contents of SyphonMetalShaders.metal (without its license comment, see the header of this
+// Fanous: the contents of SyphonMetalShaders.metal (without its license comment, see the header of this
 // file), with SyphonServerMetalTypes.h inlined. SwiftPM targets have no default.metallib, so the shaders are
 // compiled at runtime in -initWithDevice:colorPixelFormat:.
 static NSString * const kSyphonMetalShaderSource =
@@ -103,7 +103,7 @@ static NSString * const kSyphonMetalShaderSource =
     if( self )
     {
         NSError *error = NULL;
-        // Lanthorn: compile the shaders at runtime (was newDefaultLibraryWithBundle:)
+        // Fanous: compile the shaders at runtime (was newDefaultLibraryWithBundle:)
         id<MTLLibrary> defaultLibrary = [device newLibraryWithSource:kSyphonMetalShaderSource options:nil error:&error];
         if(!defaultLibrary)
         {

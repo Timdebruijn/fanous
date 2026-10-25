@@ -7,18 +7,18 @@
 # docs/benchmarks/soak-<date>.{csv,md} with a pass/fail verdict: no missed (dropped) frames outside the restart
 # windows, memory growth under MEM_GROWTH_MB after a 5-minute warm-up, every restart under RESTART_S. Late presents
 # (a frame shown one vsync late) are listed as warnings: DESIGN.md §18 counts dropped frames.
-#   scripts/soak.sh [HOURS=8] [LAYERS=4]   env: LABEL=org.lanthorn.engine (launchd label), PORT=8443,
+#   scripts/soak.sh [HOURS=8] [LAYERS=4]   env: LABEL=org.fanous.engine (launchd label), PORT=8443,
 #   KILL_EVERY_S=7200 (0 = never), MEM_GROWTH_MB=100, RESTART_S=3, FILES=4, OUT=docs/benchmarks
 set -euo pipefail
 cd "$(dirname "$0")/.."
 HOURS=${1:-8}; LAYERS=${2:-4}
-LABEL=${LABEL:-org.lanthorn.engine}; PORT=${PORT:-8443}; KILL_EVERY_S=${KILL_EVERY_S:-7200}
+LABEL=${LABEL:-org.fanous.engine}; PORT=${PORT:-8443}; KILL_EVERY_S=${KILL_EVERY_S:-7200}
 MEM_GROWTH_MB=${MEM_GROWTH_MB:-100}; RESTART_S=${RESTART_S:-3}; FILES=${FILES:-4}; OUT=${OUT:-docs/benchmarks}
 SECONDS_TOTAL=$(printf '%.0f' "$(echo "$HOURS * 3600" | bc)")
 STAMP=$(date +%Y-%m-%d-%H%M)
 CSV="$OUT/soak-$STAMP.csv"; MD="$OUT/soak-$STAMP.md"
 BIN=$(swift build -c release --show-bin-path)
-[[ -x "$BIN/lanthorn-bench" ]] || swift build -c release --product lanthorn-bench >/dev/null
+[[ -x "$BIN/fanous-bench" ]] || swift build -c release --product fanous-bench >/dev/null
 
 metrics() { curl -sk --max-time 2 "https://127.0.0.1:$PORT/metrics" || true; }
 # one python per sample: "pid totalFrames totalMissed totalLate frames gpuMsP99 cpuMsP99 dmxToPhotonMsP99 textureMisses clients uptimeSeconds"
@@ -29,7 +29,7 @@ engine_pid() { lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | head -1; }
 m=$(metrics); read -r pid _ <<< "$(echo "$m" | fields)"
 [[ -n "$pid" ]] || { echo "no engine answers on https://127.0.0.1:$PORT (start the agent first)"; exit 1; }
 echo "soak: ${HOURS} h, $LAYERS layers, engine pid $pid ($LABEL), kill every ${KILL_EVERY_S}s → $CSV"
-"$BIN/lanthorn-bench" dmx --layers "$LAYERS" --files "$FILES" --seconds "$SECONDS_TOTAL" >/dev/null 2>&1 &
+"$BIN/fanous-bench" dmx --layers "$LAYERS" --files "$FILES" --seconds "$SECONDS_TOTAL" >/dev/null 2>&1 &
 DMX_PID=$!
 trap 'kill $DMX_PID 2>/dev/null || true' EXIT
 

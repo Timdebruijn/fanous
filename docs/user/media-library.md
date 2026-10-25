@@ -4,7 +4,7 @@
 
 # Media library
 
-The library is a folder on the Mac, `~/Movies/Lanthorn Library`. The console
+The library is a folder on the Mac, `~/Movies/Fanous Library`. The console
 picks media by number: channel 3 (Folder) and channel 4 (File) of a Layer. Show
 files store those numbers, never paths, so a library on another Mac works as
 long as the numbers match.
@@ -14,7 +14,7 @@ Use a folder on a local disk. Network volumes are not supported.
 ## Folder and file names
 
 ```
-Lanthorn Library/
+Fanous Library/
 ├── 001_Opening/
 │   ├── 001_intro_loop.mov
 │   ├── 002_title.png
@@ -51,7 +51,7 @@ filled in; 1 to 255) and a name, then **Create**. The engine makes
 `NNN_name` under the library root (and the root itself if it is missing). You can
 also make folders in Finder. Creating folders is for the programmer role. If the
 screen says "The library root does not exist", create a folder this way or make
-`~/Movies/Lanthorn Library` yourself.
+`~/Movies/Fanous Library` yourself.
 
 ## Formats
 
@@ -119,7 +119,7 @@ mode) and survive an engine restart. The status bar shows the progress too.
 
 The engine renders one frame from the middle of each file, 320 pixels wide, and
 caches it with the file's metadata (codec, size, frame rate, duration, alpha,
-audio) in `~/Library/Application Support/Lanthorn/cache/`. Tiles say "probing…"
+audio) in `~/Library/Application Support/Fanous/cache/`. Tiles say "probing…"
 until it is done. The same thumbnails appear on the Layers screen and go to
 consoles over CITP. A file that changes is probed again.
 

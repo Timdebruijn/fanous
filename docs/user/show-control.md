@@ -5,7 +5,7 @@
 # Show control
 
 The Show screen (key 5, "Show control") holds timecode, the cue list, OSC and
-the MIDI source list. Lanthorn can also be seen and browsed from a console
+the MIDI source list. Fanous can also be seen and browsed from a console
 over CITP/MSEX.
 
 Before you build a show on cues or OSC parameter values, set the project's
@@ -87,34 +87,34 @@ locked); Go, Back and Go to are not.
 
 ## OSC
 
-Lanthorn listens for OSC on port 8000, UDP, and on TCP 8000 with SLIP framing.
+Fanous listens for OSC on port 8000, UDP, and on TCP 8000 with SLIP framing.
 The OSC panel shows the port, the last received messages (time and command) and
-the address list. Try `/lanthorn/cue/go` first. Parameter keys are the "OSC key"
+the address list. Try `/fanous/cue/go` first. Parameter keys are the "OSC key"
 column of [channel-map.md](../channel-map.md); a float is a value from 0 to 1 of
 the parameter's range, an int is the raw value.
 
 | Address | Args | Effect |
 |---|---|---|
-| `/lanthorn/layer/{n}/{param}` | f | Layer parameter; param is a key of the channel map |
-| `/lanthorn/layer/{n}/media` | ii | Folder, file |
-| `/lanthorn/layer/{n}/retrigger` | | Restart the media |
-| `/lanthorn/master/{param}` | f | Master parameter |
-| `/lanthorn/output/{n}/{param}` | f | Output parameter |
-| `/lanthorn/cue/go` | | Fire the next cue |
-| `/lanthorn/cue/back` | | Fire the previous cue |
-| `/lanthorn/cue/goto` | i | Fire the cue with this number |
-| `/lanthorn/cue/{number}/go` | | Fire that cue |
-| `/lanthorn/show/lock` | i | 1 locks the show, 0 unlocks |
-| `/lanthorn/show/mode` | i | 1 enters show mode, 0 leaves |
-| `/lanthorn/timecode/enable` | i | 1 switches timecode on, 0 off |
+| `/fanous/layer/{n}/{param}` | f | Layer parameter; param is a key of the channel map |
+| `/fanous/layer/{n}/media` | ii | Folder, file |
+| `/fanous/layer/{n}/retrigger` | | Restart the media |
+| `/fanous/master/{param}` | f | Master parameter |
+| `/fanous/output/{n}/{param}` | f | Output parameter |
+| `/fanous/cue/go` | | Fire the next cue |
+| `/fanous/cue/back` | | Fire the previous cue |
+| `/fanous/cue/goto` | i | Fire the cue with this number |
+| `/fanous/cue/{number}/go` | | Fire that cue |
+| `/fanous/show/lock` | i | 1 locks the show, 0 unlocks |
+| `/fanous/show/mode` | i | 1 enters show mode, 0 leaves |
+| `/fanous/timecode/enable` | i | 1 switches timecode on, 0 off |
 
 OSC bundles with timetags are honoured: the contents run at the given time.
 Send a burst slowly: messages sent back to back from one socket can be partly
-lost, so leave about 50 ms between them (B30). Lanthorn does not send OSC back.
+lost, so leave about 50 ms between them (B30). Fanous does not send OSC back.
 
 ## CITP/MSEX
 
-Lanthorn announces itself to consoles every 5 seconds on the CITP multicast
+Fanous announces itself to consoles every 5 seconds on the CITP multicast
 groups 224.0.0.180 and 239.224.0.180 (port 4809), under the Mac's host name, and
 serves MSEX over TCP on a port the system picks (shown in System › Network, CITP
 line, together with the connected consoles and open streams). The console must
@@ -137,7 +137,7 @@ MSEX versions 1.0 to 1.2 are negotiated; the highest common one is used.
   on the Patch screen for every fixture.
 - No OSC feedback (query or notify). MIDI notes and CC as parameters, MIDI Show
   Control and MIDI-triggered cue recording do not exist (B36).
-- `/lanthorn/project/load` is refused; projects have no versions yet (B23, B35).
+- `/fanous/project/load` is refused; projects have no versions yet (B23, B35).
 - CITP: only the canvas can be streamed, not single layers; thumbnails are sent
   at their stored size whatever the console asks for (B41). No real console has
   been tried (B40).

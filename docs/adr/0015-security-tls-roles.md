@@ -32,12 +32,12 @@ the server runs on trusted networks; a password on the web UI is welcome.
 
 ## Amendment 2026-10-23 (Phase 2)
 
-Risk R6 materialised: an ad-hoc signed `lanthornd` that differs from the build
+Risk R6 materialised: an ad-hoc signed `fanousd` that differs from the build
 that created the key makes the login keychain prompt, and the TLS handshake
 blocks on the dialog. Decision: signed builds store the identity in the
 data-protection keychain (`kSecUseDataProtectionKeychain`, no per-app prompts,
 scoped to the application identifier); unsigned builds fall back to the login
-keychain and use `lanthornd reset-tls` after a rebuild. Weakening the key's
+keychain and use `fanousd reset-tls` after a rebuild. Weakening the key's
 ACL to "any application" was considered and rejected.
 
 ## Amendment 2026-10-23 (Phase 3): no login keychain
@@ -49,10 +49,10 @@ generate an ephemeral P-256 key, keep its external representation in
 `tls/private-key.der` (directory 0700, file 0600) and build the identity in
 memory with `SecIdentityCreate(cert, key)`, which the macOS 27 SDK declares
 publicly (available since 10.12). Network.framework completes the handshake
-with such an identity (`TLSIdentityTests`), and `lanthornd` served HTTPS from
+with such an identity (`TLSIdentityTests`), and `fanousd` served HTTPS from
 both the create and the load path without any SecurityAgent prompt. Signed
 builds are unchanged (data-protection keychain, prompt-free, scoped to the
-application identifier). `lanthornd reset-tls` still clears both and any
+application identifier). `fanousd reset-tls` still clears both and any
 login-keychain leftovers from earlier builds. Trade-off: on a development
 machine the key is a user-readable file, as with every file-based TLS server
 (nginx, Caddy); it only protects the LAN UI connection and is replaced by the

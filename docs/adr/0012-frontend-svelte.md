@@ -12,8 +12,8 @@ TypeScript 7.0 (Apache-2.0); see `docs/licensing/DEPENDENCIES.md`.
 ## Decision
 - Svelte 5 (runes) with Vite and TypeScript strict; Vitest for unit tests.
   No SvelteKit, no router library, no UI component library, no runtime CDN
-  loads. The built `web/dist` is embedded in `lanthornd`.
-- Protocol types are generated from `LanthornCore` into `protocol.d.ts`.
+  loads. The built `web/dist` is embedded in `fanousd`.
+- Protocol types are generated from `FanousCore` into `protocol.d.ts`.
 
 ## Rationale
 Svelte compiles components to direct DOM updates with fine-grained
