@@ -1,0 +1,102 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 Tim de Bruijn
+// Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
+
+import FanousCore
+import Foundation
+import Metal
+
+/// Built-in content in folder 0 (DESIGN.md §8.2): drawn on the GPU every frame, no files. Selected like media,
+/// so a console (or the UI) can put a test card on any layer and transform, tint and dissolve it like a clip.
+public enum Generators {
+    /// file number → name; 100 is white (the layer's Red/Green/Blue channels give it a colour)
+    public static let names: [Int: String] = [
+        100: "Solid colour", 101: "Grid", 102: "Colour bars", 103: "Blend check", 104: "Output ID", 105: "Crosshair", 106: "Grey steps",
+        107: "Checkerboard", 110: "Test card", 111: "Colour sweep", 112: "Clock",
+    ]
+
+    public static func isGenerator(_ key: MediaKey) -> Bool { key.folder == 0 && names[key.file] != nil }
+}
+
+/// Layout matches `GeneratorUniforms` in Shaders.swift. Characters: 0–9 digits, 10 colon, 11 blank.
+struct GeneratorUniforms {
+    var size: SIMD2<Float> = .zero
+    var kind: UInt32 = 0
+    var frame: UInt32 = 0
+    var time: Float = 0
+    var pad0: UInt32 = 0
+    var pad1: UInt32 = 0
+    var pad2: UInt32 = 0
+    var d0 = SIMD4<UInt32>(repeating: 11), d1 = SIMD4<UInt32>(repeating: 11), d2 = SIMD4<UInt32>(repeating: 11)
+    var d3 = SIMD4<UInt32>(repeating: 11), d4 = SIMD4<UInt32>(repeating: 11)
+
+    mutating func put(_ c: Int, at i: Int) {
+        let v = UInt32(c)
+        switch i / 4 {
+        case 0: d0[i % 4] = v
+        case 1: d1[i % 4] = v
+        case 2: d2[i % 4] = v
+        case 3: d3[i % 4] = v
+        default: d4[i % 4] = v
+        }
+    }
+
+    /// "hh:mm:ss:ff" at 0…10 (ff = -1 leaves the last pair blank → "hh:mm:ss" at 0…7)
+    mutating func putTime(h: Int, m: Int, s: Int, f: Int, at start: Int) {
+        let parts = f >= 0 ? [h, m, s, f] : [h, m, s]
+        var i = start
+        for (n, value) in parts.enumerated() {
+            if n > 0 {
+                put(10, at: i)
+                i += 1
+            }
+            put(value / 10 % 10, at: i)
+            put(value % 10, at: i + 1)
+            i += 2
+        }
+    }
+}
+
+/// One generator instance on a layer: a canvas-sized texture the compositor redraws each tick.
+public final class GeneratorSource: LiveTextureSource, @unchecked Sendable {
+    let kind: UInt32
+    let texture: MTLTexture
+    private let context: MetalContext
+    public var latestTexture: MTLTexture? { texture }
+
+    init?(context: MetalContext, file: Int, width: Int, height: Int) {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
+        descriptor.usage = [.renderTarget, .shaderRead]
+        descriptor.storageMode = .private
+        guard Generators.names[file] != nil, let texture = context.device.makeTexture(descriptor: descriptor) else { return nil }
+        texture.label = "generator \(file)"
+        self.kind = UInt32(file)
+        self.texture = texture
+        self.context = context
+        // first frame now, so the layer never shows an empty texture before the compositor's next tick
+        var u = GeneratorUniforms()
+        u.kind = kind
+        if let commandBuffer = context.queue.makeCommandBuffer() {
+            encode(into: commandBuffer, uniforms: u)
+            commandBuffer.commit()
+        }
+    }
+
+    func encode(into commandBuffer: MTLCommandBuffer, uniforms: GeneratorUniforms) {
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = texture
+        pass.colorAttachments[0].loadAction = .dontCare
+        pass.colorAttachments[0].storeAction = .store
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { return }
+        var u = uniforms
+        u.kind = kind
+        u.size = SIMD2(Float(texture.width), Float(texture.height))
+        encoder.label = "generator \(kind)"
+        encoder.setRenderPipelineState(context.generatorPipeline)
+        encoder.setFragmentBytes(&u, length: MemoryLayout<GeneratorUniforms>.stride, index: 0)
+        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        encoder.endEncoding()
+    }
+
+    public func stop() {}
+}

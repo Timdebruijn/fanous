@@ -25,7 +25,7 @@ public enum MasterControl: Int, CaseIterable, Codable, Sendable { case normal, f
 public enum OutputControl: Int, CaseIterable, Codable, Sendable { case normal, blackout, freeze }
 
 public enum TestPattern: Int, CaseIterable, Codable, Sendable {
-    case off, grid, colourBars, blendZones, outputID, crosshair, greySteps, checkerboard
+    case off, grid, colourBars, blendCheck, outputID, crosshair, greySteps, checkerboard
 }
 
 public enum BlendSwitch: Int, CaseIterable, Codable, Sendable { case on, raw }

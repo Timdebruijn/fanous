@@ -684,7 +684,13 @@ Fanous Library/
 | 100 | solid colour (RGB channels define the colour) |
 | 101–120 | test patterns (same set as the Output test patterns), usable as layer content |
 
-`[OPEN-12]` final numbering of folder 0.
+`[OPEN-12]` final numbering of folder 0. **As built (2026-10-25):** 100 solid
+colour, 101–107 the test patterns, 110 test card (running time or incoming
+timecode, frame number, a sweep bar per second, two squares that swap every
+frame), 111 colour sweep, 112 clock. A generator is a `LiveTextureSource`
+(`Render/Generators.swift`) redrawn by the compositor on its own command buffer
+before the canvas pass, so it costs one small full-screen pass per layer and no
+file I/O; it then goes through the layer pipeline like media.
 
 ### 8.3 Ingest flow
 
@@ -1487,7 +1493,7 @@ profile are the v1.x candidates.
 | OPEN-9 | Exact DMX bands (play modes, effects), speed max 400 %, scale max 800 % | **Resolved (Phase 1):** as in §6.2, locked in `docs/channel-map.md` and the GDTF |
 | OPEN-10 | sACN per-address priority (0xDD start code) | not in v1 |
 | OPEN-11 | Per-parameter smoothing vs a global switch | per parameter, default off |
-| OPEN-12 | Folder 0 numbering for inputs/generators | as in §8.2 |
+| OPEN-12 | Folder 0 numbering for inputs/generators | **Decided 2026-10-25:** as in §8.2, plus 110 test card, 111 colour sweep, 112 clock (`Generators.names`) |
 | OPEN-13 | HAP muxing via AVAssetWriter passthrough vs own muxer | **Resolved (Phases 2–4):** `AVAssetWriterInput` with a `sourceFormatHint` format description and passthrough sample buffers writes HAP `.mov` files the engine plays; no own muxer |
 | OPEN-14 | Per-channel (RGB) blend gamma | v1.x, cheap |
 | OPEN-15 | Audio varispeed / pitch at speed ≠ 100 % | v1.x; mute in v1 |

@@ -121,7 +121,7 @@ public enum ChannelMap {
     ]
 
     static let testPatternBands = bands(width: 16, [
-        "Off", "Grid", "Colour bars", "Blend zones", "Output ID", "Crosshair", "Grey steps", "Checkerboard",
+        "Off", "Grid", "Colour bars", "Blend check", "Output ID", "Crosshair", "Grey steps", "Checkerboard",
     ])
 
     // MARK: - Output (8 channels)

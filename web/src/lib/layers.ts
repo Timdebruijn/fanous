@@ -16,6 +16,21 @@ export interface ChannelSpec {
   bands?: { from: number; to: number; name: string }[];
 }
 
+/** Folder 0 generators (engine `Generators.names`, DESIGN §8.2): drawn on the GPU, no files. */
+export const GENERATORS: { file: number; name: string }[] = [
+  { file: 110, name: 'Test card (timecode, frame flags)' },
+  { file: 100, name: 'Solid colour (Red/Green/Blue channels)' },
+  { file: 101, name: 'Grid' },
+  { file: 102, name: 'Colour bars' },
+  { file: 103, name: 'Blend check' },
+  { file: 104, name: 'Output ID' },
+  { file: 105, name: 'Crosshair' },
+  { file: 106, name: 'Grey steps' },
+  { file: 107, name: 'Checkerboard' },
+  { file: 111, name: 'Colour sweep' },
+  { file: 112, name: 'Clock' },
+];
+
 export interface ChannelMap {
   footprints: { layer: number; master: number; output: number };
   modes: { layer: ChannelSpec[]; master: ChannelSpec[]; output: ChannelSpec[] };

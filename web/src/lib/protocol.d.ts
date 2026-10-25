@@ -23,6 +23,8 @@ export type CommandName =
   | 'cue.goto'
   | 'cue.remove'
   | 'cue.set'
+  | 'fixture.release'
+  | 'fixture.set'
   | 'layers.setCount'
   | 'output.add'
   | 'output.remove'
@@ -55,6 +57,10 @@ export interface CommandArgs {
   'cue.remove': { id: string };
   /** Replace one cue by id (whole object, validated). Role: programmer, refused under show lock, undoable. */
   'cue.set': { id: string; cue: JSONValue };
+  /** Drop the UI values of one fixture, or of all fixtures without a fixture argument. Role: programmer. */
+  'fixture.release': { fixture?: string };
+  /** Set one fixture parameter from the UI (source ui; shown when the source policy is internal, ltp or htp). Role: programmer, refused under show lock. */
+  'fixture.set': { fixture: string; parameter: string; raw: number };
   /** Set the number of layers (1–64): new layers are patched at their standard address when that range is free, dropped layers are unpatched. Role: programmer, refused under show lock, undoable. */
   'layers.setCount': { count: number };
   /** Add an output (one full-canvas slice, no blend, identity warp), optionally bound to a display. Role: programmer, refused under show lock, undoable. */

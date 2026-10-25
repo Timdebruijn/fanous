@@ -145,3 +145,29 @@ MSEX versions 1.0 to 1.2 are negotiated; the highest common one is used.
   hardware, and not at 29.97 drop frame or over long runs (B44). The
   microphone prompt has not been tested on a clean install (B37). Cue fades
   have not been measured from cue to picture (B43).
+
+## Built-in content (folder 0)
+
+Folder 0 holds content the engine draws itself: no files, any layer, selected
+like a clip (Folder 0, File n) from the console or from the layer panel
+(**Control** › **Built-in content**). It goes through the layer like media:
+position, scale, colour, effects and dissolves apply.
+
+| File | Content |
+|---|---|
+| 100 | Solid colour: white times the layer's Red/Green/Blue channels |
+| 101–107 | The seven output test patterns as layer content |
+| 110 | Test card: grid, aspect circle, border, colour bars, running time (or the incoming timecode when it runs) with a frame number, a bar that sweeps once a second, and two squares that swap every frame (a dropped or doubled frame shows as both lit or both dark) |
+| 111 | Colour sweep: a slow moving hue gradient |
+| 112 | Clock: time of day, hh:mm:ss |
+
+## Controlling layers from the UI
+
+Without a console on site, open the Layers screen, select a layer and turn on
+**Control** in its panel. Every channel gets a control: a slider for continuous
+values (double-click: default), a list for modes, a number for folder and file.
+Values enter as the UI source, so the project's source policy must be LTP, HTP
+or Internal only; the panel offers **Use LTP** when it is DMX only. With LTP the
+latest change wins between console and UI. **Release** hands the layer back to
+the console. UI control is refused while the show is locked.
+

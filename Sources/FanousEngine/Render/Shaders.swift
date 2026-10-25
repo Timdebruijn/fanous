@@ -311,54 +311,158 @@ public enum ShaderSource {
         return out;
     }
 
+    constant uint segMasks[10] = { 0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F };  // gfedcba
+
+    // one seven-segment character in its cell (q in [0,1]², y down)
+    static float seven_seg(float2 q, uint c) {
+        if (c == 10u) {  // colon
+            float2 a = q - float2(0.5, 0.33), b = q - float2(0.5, 0.67);
+            return (dot(a, a) < 0.006 || dot(b, b) < 0.006) ? 1.0 : 0.0;
+        }
+        if (c > 9u) return 0.0;
+        float2 p = (q - float2(0.18, 0.1)) / float2(0.64, 0.8);
+        if (p.x < 0.0 || p.y < 0.0 || p.x > 1.0 || p.y > 1.0) return 0.0;
+        float t = 0.14;
+        if (c == 1u) return abs(p.x - 0.5) < t * 0.5 ? 1.0 : 0.0;  // centred, like a typeset 1
+        uint m = segMasks[c];
+        bool inX = p.x > t * 0.6 && p.x < 1.0 - t * 0.6;
+        bool top = p.y < 0.5;
+        if ((m & 1u) && inX && p.y < t) return 1.0;
+        if ((m & 64u) && inX && abs(p.y - 0.5) < t * 0.5) return 1.0;
+        if ((m & 8u) && inX && p.y > 1.0 - t) return 1.0;
+        if ((m & 32u) && p.x < t && top) return 1.0;
+        if ((m & 2u) && p.x > 1.0 - t && top) return 1.0;
+        if ((m & 16u) && p.x < t && !top) return 1.0;
+        if ((m & 4u) && p.x > 1.0 - t && !top) return 1.0;
+        return 0.0;
+    }
+
+    // Test patterns (Master/Output fixtures, folder 0 files 101–107). Sizes follow the region's height, so a pattern
+    // reads the same on a 720p monitor and a 4K projector; line width is ≥ 1 px per 540 px of height.
     static float3 test_pattern(uint pattern, uint index, float2 uv, float2 size) {
         float2 px = uv * size;
+        float h = size.y;
+        float lw = max(1.0, h / 540.0);
+        float2 c = px - size * 0.5;
+        float cell = h / 12.0;
+        bool border = px.x < lw * 3.0 || px.y < lw * 3.0 || size.x - px.x < lw * 3.0 || size.y - px.y < lw * 3.0;
         switch (pattern) {
-        case 1: {  // grid: 100 px lines, 10 px hairlines, centre cross
-            float2 m100 = fmod(px, 100.0), m10 = fmod(px, 10.0);
-            float g = (m100.x < 1.0 || m100.y < 1.0) ? 1.0 : ((m10.x < 1.0 || m10.y < 1.0) ? 0.25 : 0.05);
-            float2 centre = abs(px - size * 0.5);
-            if (centre.x < 1.5 || centre.y < 1.5) return float3(1.0, 0.3, 0.3);
-            return float3(g);
+        case 1: {  // alignment grid: centred square cells, half-cell dim lines, border, centre cross, aspect circle, diagonals
+            float2 m = abs(fmod(abs(c) + cell * 0.5, cell) - cell * 0.5);
+            float2 half_ = abs(fmod(abs(c), cell) - cell * 0.5);
+            if (border) return float3(1.0);
+            if (abs(c.x) < lw * 1.5 || abs(c.y) < lw * 1.5) return float3(1.0, 0.3, 0.3);
+            if (abs(length(c) - h * 0.45) < lw * 1.5) return float3(1.0);
+            float2 n = normalize(size);
+            if (abs(c.x * n.y - c.y * n.x) < lw || abs(c.x * n.y + c.y * n.x) < lw) return float3(0.5);
+            if (m.x < lw || m.y < lw) return float3(0.85);
+            if (half_.x < lw * 0.5 || half_.y < lw * 0.5) return float3(0.22);
+            return float3(0.04);
         }
-        case 2: {  // colour bars (75 %), SMPTE order
-            uint bar = min(7u, uint(uv.x * 8.0));
-            const float3 bars[8] = { float3(0.75), float3(0.75, 0.75, 0), float3(0, 0.75, 0.75), float3(0, 0.75, 0),
-                                     float3(0.75, 0, 0.75), float3(0.75, 0, 0), float3(0, 0, 0.75), float3(0) };
-            return bars[bar];
+        case 2: {  // colour bars: 75 % SMPTE order above, 100 % white/red/green/blue/black references below
+            if (uv.y < 0.67) {
+                uint bar = min(7u, uint(uv.x * 8.0));
+                const float3 bars[8] = { float3(0.75), float3(0.75, 0.75, 0), float3(0, 0.75, 0.75), float3(0, 0.75, 0),
+                                         float3(0.75, 0, 0.75), float3(0.75, 0, 0), float3(0, 0, 0.75), float3(0) };
+                return bars[bar];
+            }
+            uint ref = min(4u, uint(uv.x * 5.0));
+            const float3 refs[5] = { float3(1.0), float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1), float3(0) };
+            return refs[ref];
         }
-        case 3: {  // blend zones: linear ramps over the outer 10 % of each edge
-            float2 e = min(uv, 1.0 - uv) / 0.1;
-            float r = saturate(min(e.x, e.y));
-            return float3(r, r * 0.5 + 0.25, 1.0 - r);
+        case 3: {  // blend check: flat 50 % grey (the blend map shows a seam as a bright or dark band) with grid lines
+                   // in this output's own colour, so two overlapping projectors' lines can be laid on top of each other
+            float2 m = abs(fmod(abs(c) + cell * 0.5, cell) - cell * 0.5);
+            float3 own = hsv2rgb(float3(fract(float(index) * 0.618034), 0.85, 1.0));
+            if (m.x < lw * 1.5 || m.y < lw * 1.5) return own;
+            return float3(0.5);
         }
-        case 4: {  // output ID: solid hue per output with a 1-bit binary strip of the number
-            float3 base = hsv2rgb(float3(fract(float(index) * 0.618034), 0.6, 0.6));
-            if (uv.y > 0.45 && uv.y < 0.55) {
-                uint bit = uint(uv.x * 8.0);
-                bool on = ((index >> (7u - bit)) & 1u) == 1u;
-                return on ? float3(1.0) : float3(0.0);
+        case 4: {  // output ID: the number, large, on this output's colour, with a white border
+            float3 base = hsv2rgb(float3(fract(float(index) * 0.618034), 0.6, 0.5));
+            if (border) return float3(1.0);
+            uint tens = index / 10u, ones = index % 10u;
+            uint count = tens > 0u ? 2u : 1u;
+            float th = h * 0.6, cw = th * 0.62;
+            float2 p = (px - (size * 0.5 - float2(cw * float(count), th) * 0.5)) / float2(cw, th);
+            if (p.x >= 0.0 && p.y >= 0.0 && p.y < 1.0 && p.x < float(count)) {
+                uint digit = count == 2u && p.x < 1.0 ? tens : ones;
+                if (seven_seg(float2(fract(p.x), p.y), digit) > 0.5) return float3(1.0);
             }
             return base;
         }
-        case 5: {  // crosshair with circles
-            float2 c = px - size * 0.5;
+        case 5: {  // crosshair with circles every 1/8 of the height
             float r = length(c);
-            float ring = fmod(r, 100.0);
-            bool line = abs(c.x) < 1.0 || abs(c.y) < 1.0;
-            bool circle = ring < 1.5;
-            return line ? float3(1.0, 0.3, 0.3) : (circle ? float3(1.0) : float3(0.05));
+            float ring = abs(fmod(r + h / 16.0, h / 8.0) - h / 16.0);
+            if (abs(c.x) < lw * 1.5 || abs(c.y) < lw * 1.5) return float3(1.0, 0.3, 0.3);
+            if (border) return float3(1.0);
+            return ring < lw * 1.5 ? float3(1.0) : float3(0.04);
         }
-        case 6: {  // 11 grey steps
-            return float3(floor(uv.x * 11.0) / 10.0);
+        case 6: {  // grey steps: 0–100 % in 10 % steps above, 0–10 % in 1 % steps below (black level, black lift)
+            float step_ = floor(uv.x * 11.0) / 10.0;
+            return float3(uv.y < 0.5 ? step_ : step_ * 0.1);
         }
-        case 7: {  // 64 px checkerboard
-            float2 cell = floor(px / 64.0);
-            return float3(fmod(cell.x + cell.y, 2.0) < 1.0 ? 1.0 : 0.0);
+        case 7: {  // checkerboard, square cells of 1/16 of the height, centred (focus, pixel geometry)
+            float2 k = floor(c / (h / 16.0));
+            return float3(fmod(abs(k.x + k.y), 2.0) < 1.0 ? 1.0 : 0.0);
         }
         default:
             return float3(0.0);
         }
+    }
+
+    // Generators (folder 0, DESIGN.md §8.2): drawn into a layer texture every frame.
+    struct GeneratorUniforms {
+        float2 size;
+        uint kind;     // file number in folder 0
+        uint frame;    // compositor tick count
+        float time;    // seconds (for motion)
+        uint pad0, pad1, pad2;
+        uint4 d[5];    // characters: 0–9, 10 = colon, 11 = blank
+    };
+
+    static float gen_text(constant GeneratorUniforms& g, uint first, uint count, float2 px, float2 centre, float h) {
+        float cw = h * 0.62;
+        float2 p = (px - (centre - float2(cw * float(count), h) * 0.5)) / float2(cw, h);
+        if (p.x < 0.0 || p.y < 0.0 || p.y >= 1.0 || p.x >= float(count)) return 0.0;
+        uint i = first + uint(p.x);
+        return seven_seg(float2(fract(p.x), p.y), g.d[i / 4u][i % 4u]);
+    }
+
+    fragment float4 generator_fragment(VertexOut in [[stage_in]], constant GeneratorUniforms& g [[buffer(0)]]) {
+        float2 uv = in.uv;
+        float2 px = uv * g.size;
+        float h = g.size.y;
+        float lw = max(1.0, h / 540.0);  // line width follows the resolution
+        if (g.kind == 100u) return float4(1.0);
+        if (g.kind >= 101u && g.kind <= 107u) return float4(test_pattern(g.kind - 100u, 1u, uv, g.size), 1.0);
+        if (g.kind == 111u) {  // slow diagonal hue sweep
+            float hue = fract(uv.x * 0.5 + uv.y * 0.25 + g.time * 0.05);
+            return float4(hsv2rgb(float3(hue, 0.75, 0.9)), 1.0);
+        }
+        if (g.kind == 112u) {  // time of day, hh:mm:ss
+            float t = gen_text(g, 0u, 8u, px, g.size * 0.5, h * 0.22);
+            return float4(mix(float3(0.02), float3(1.0), t), 1.0);
+        }
+        // 110 test card: grid, aspect circle, border, colour bars, running time and frame number, motion bar, frame flags
+        float3 c = test_pattern(1u, 1u, uv, g.size) * 0.45;
+        float r = length(px - g.size * 0.5);
+        if (abs(r - h * 0.45) < lw * 1.5) c = float3(1.0);
+        if (px.x < lw * 3.0 || px.y < lw * 3.0 || g.size.x - px.x < lw * 3.0 || g.size.y - px.y < lw * 3.0) c = float3(1.0);
+        if (uv.y > 0.08 && uv.y < 0.2 && uv.x > 0.1 && uv.x < 0.9) c = test_pattern(2u, 1u, float2((uv.x - 0.1) / 0.8, 0.5), g.size);
+        float boxW = h * 0.16 * 0.62 * 11.0 * 0.5 + h * 0.04;
+        if (abs(uv.y - 0.5) < 0.12 && abs(px.x - g.size.x * 0.5) < boxW) c = float3(0.03);
+        c = mix(c, float3(1.0), gen_text(g, 0u, 11u, px, float2(g.size.x * 0.5, h * 0.5), h * 0.16));
+        c = mix(c, float3(1.0, 0.77, 0.2), gen_text(g, 11u, 6u, px, float2(g.size.x * 0.5, h * 0.7), h * 0.07));
+        if (uv.y > 0.82 && uv.y < 0.9 && uv.x > 0.1 && uv.x < 0.9) {
+            float x = 0.1 + 0.8 * fract(g.time);
+            c = abs(uv.x - x) < 0.006 ? float3(1.0) : float3(0.08);
+        }
+        // alternate every frame: a dropped or doubled frame shows as both squares lit or both dark in a photo
+        float sq = h * 0.06;
+        bool odd = (g.frame & 1u) == 1u;
+        if (px.y > sq && px.y < sq * 2.0 && px.x > sq && px.x < sq * 2.0) c = odd ? float3(0.18) : float3(1.0);
+        if (px.y > sq && px.y < sq * 2.0 && px.x > g.size.x - sq * 2.0 && px.x < g.size.x - sq) c = odd ? float3(1.0) : float3(0.18);
+        return float4(c, 1.0);
     }
 
     fragment float4 output_fragment(VertexOut in [[stage_in]],

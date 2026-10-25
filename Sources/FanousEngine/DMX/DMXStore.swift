@@ -165,6 +165,22 @@ public final class DMXStore: @unchecked Sendable {
         }
     }
 
+    /// A value from the UI (`fixture.set`): the `ui` internal source.
+    public func setUI(_ fixture: FixtureRef, _ parameter: ParameterID, raw: UInt16) {
+        queue.async { [self] in
+            resolvers[fixture]?.setInternal(parameter, raw: raw, source: .ui, at: Self.now)
+            publish(receivedAt: 0)
+        }
+    }
+
+    /// `fixture.release`: drop UI values of one fixture (nil = all).
+    public func releaseUI(_ fixture: FixtureRef?) {
+        queue.async { [self] in
+            for key in resolvers.keys where fixture == nil || key == fixture { resolvers[key]?.clearInternal(source: .ui) }
+            publish(receivedAt: 0)
+        }
+    }
+
     /// Replaces the patch (Phase 5 `patch.set`, undo, project load); resolvers of fixtures that stay keep their state.
     public func setPatch(_ patch: Patch) {
         queue.async { [self] in

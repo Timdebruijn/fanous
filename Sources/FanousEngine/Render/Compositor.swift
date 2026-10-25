@@ -105,6 +105,53 @@ public final class Compositor: @unchecked Sendable {
 
     public func setLayers(_ layers: [RenderLayer]) { self.layers = Array(layers.prefix(maxLayers)) }
 
+    private var firstTarget = 0.0
+
+    /// Folder 0 generators on any layer: redrawn on this tick's command buffer before the canvas pass samples them.
+    private func encodeGenerators(_ commandBuffer: MTLCommandBuffer, target: Double) {
+        var u = GeneratorUniforms()
+        var prepared = false
+        func encode(_ playback: LayerPlayback?) {
+            guard let generator = playback?.live as? GeneratorSource else { return }
+            if !prepared {
+                prepared = true
+                if firstTarget == 0 { firstTarget = target }
+                let frame = ticks.load(ordering: .relaxed)
+                u.frame = UInt32(truncatingIfNeeded: frame)
+                u.time = Float((target - firstTarget).truncatingRemainder(dividingBy: 86_400))
+                // test card: incoming timecode when it runs, otherwise the running time at the canvas rate
+                if let timecode, let frames = timecode.frames(at: target) {
+                    let tc = Timecode(frameCount: Int(frames), rate: timecode.read(at: target).rate)
+                    u.putTime(h: tc.hours, m: tc.minutes, s: tc.seconds, f: tc.frames, at: 0)
+                } else {
+                    let elapsed = max(0, target - firstTarget)
+                    let whole = Int(elapsed)
+                    u.putTime(h: whole / 3600 % 24, m: whole / 60 % 60, s: whole % 60, f: Int((elapsed - Double(whole)) * fps), at: 0)
+                }
+                var n = frame % 1_000_000
+                for i in (11..<17).reversed() {
+                    u.put(n % 10, at: i)
+                    n /= 10
+                }
+            }
+            if generator.kind == 112 {
+                var now = time(nil)
+                var local = tm()
+                localtime_r(&now, &local)
+                var clock = u
+                clock.putTime(h: Int(local.tm_hour), m: Int(local.tm_min), s: Int(local.tm_sec), f: -1, at: 0)
+                generator.encode(into: commandBuffer, uniforms: clock)
+            } else {
+                generator.encode(into: commandBuffer, uniforms: u)
+            }
+        }
+        for layer in layers {
+            encode(layer.current)
+            encode(layer.outgoing)
+            encode(layer.staged)
+        }
+    }
+
     /// The canvas completed by the previous tick (for previews and other outputs).
     public var latestCanvas: MTLTexture { canvases[(canvasIndex + 2) % 3] }
 
@@ -131,9 +178,12 @@ public final class Compositor: @unchecked Sendable {
             if snapshot.receivedAt > 0 { record.dmxToPhotonMicros = UInt32(max(0, min(4e9, (target - snapshot.receivedAt) * 1e6))) }
         }
 
-        guard let commandBuffer = context.queue.makeCommandBuffer(),
-            let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: canvasPasses[canvasIndex])
-        else {
+        guard let commandBuffer = context.queue.makeCommandBuffer() else {
+            encoderFailures.wrappingAdd(1, ordering: .relaxed)
+            return
+        }
+        encodeGenerators(commandBuffer, target: target)
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: canvasPasses[canvasIndex]) else {
             encoderFailures.wrappingAdd(1, ordering: .relaxed)
             return
         }

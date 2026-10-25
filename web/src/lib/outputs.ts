@@ -91,7 +91,7 @@ export interface OutputStatusDoc {
   master: boolean;
 }
 
-export const TEST_PATTERNS = ['Off', 'Grid', 'Colour bars', 'Blend zones', 'Output ID', 'Crosshair', 'Grey steps', 'Checkerboard'] as const;
+export const TEST_PATTERNS = ['Off', 'Grid', 'Colour bars', 'Blend check', 'Output ID', 'Crosshair', 'Grey steps', 'Checkerboard'] as const;
 export const EDGES = ['left', 'right', 'top', 'bottom'] as const;
 export type Edge = (typeof EDGES)[number];
 export type MapperMode = 'cornerPin' | 'mesh' | 'slices' | 'mask';

@@ -60,6 +60,7 @@ public final class MetalContext: @unchecked Sendable {
     let outputPipeline: MTLRenderPipelineState
     /// Slice mesh with warp, mask and blend map (DESIGN.md §9.5); slices alpha-blend over each other.
     let mappedPipeline: MTLRenderPipelineState
+    let generatorPipeline: MTLRenderPipelineState
     let linearSampler: MTLSamplerState
     let nearestSampler: MTLSamplerState
 
@@ -99,6 +100,11 @@ public final class MetalContext: @unchecked Sendable {
         output.vertexFunction = library.makeFunction(name: "output_vertex")
         output.fragmentFunction = library.makeFunction(name: "output_fragment")
         output.colorAttachments[0].pixelFormat = Self.outputFormat
+        let generator = MTLRenderPipelineDescriptor()
+        generator.label = "generator"
+        generator.vertexFunction = library.makeFunction(name: "output_vertex")
+        generator.fragmentFunction = library.makeFunction(name: "generator_fragment")
+        generator.colorAttachments[0].pixelFormat = .bgra8Unorm
         let mapped = MTLRenderPipelineDescriptor()
         mapped.label = "mapped output"
         mapped.vertexFunction = library.makeFunction(name: "mapped_vertex")
@@ -115,6 +121,7 @@ public final class MetalContext: @unchecked Sendable {
             layerPipelines = try layers.map { try device.makeRenderPipelineState(descriptor: $0) }
             outputPipeline = try device.makeRenderPipelineState(descriptor: output)
             mappedPipeline = try device.makeRenderPipelineState(descriptor: mapped)
+            generatorPipeline = try device.makeRenderPipelineState(descriptor: generator)
         } catch {
             throw RenderError.pipeline("\(error)")
         }

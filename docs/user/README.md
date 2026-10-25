@@ -73,8 +73,8 @@ The pages that follow repeat the ones that matter for their topic.
   with no named versions and no "revert to" (B23). The OSC message
   `/fanous/project/load` is refused (B35).
 - Layers show the library thumbnail of the playing file, not a live picture of
-  the layer (B29). You can see values but not hold an override from the UI
-  (B27). Per-universe settings are read-only (B28).
+  the layer (B29). UI values do not expire on their own (B27). Per-universe
+  settings are read-only (B28).
 - Consoles over CITP/MSEX get the canvas only, as a 640x360 JPEG stream; there
   are no per-layer streams and thumbnails ignore the requested size (B41). No
   real console has talked to Fanous over CITP yet (B40).

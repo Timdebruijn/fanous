@@ -78,6 +78,7 @@ public final class Engine: @unchecked Sendable {
         let store = StateStore(project: [:], logger: logger)
         ProjectDocument.registerCommands(on: store, auth: RoleAuth(settingsURL: nil, shellTokenURL: nil, logger: logger))
         ShowCommands.register(on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in nil }, acknowledge: { _ in }, runReadiness: {}))
+        ControlCommands.register(on: store, hooks: ControlCommands.Hooks(set: { _, _, _ in }, release: { _ in }))
         return store.commandSpecs
     }
 
@@ -168,6 +169,7 @@ public final class Engine: @unchecked Sendable {
         lastCues = ShowCommands.cueList(from: project)
         self.cues = cues
         timecodeClock.onFrame = { [weak self] timecode, _ in self?.cues?.timecode(timecode) }
+        ControlCommands.register(on: store, hooks: ControlCommands.Hooks(set: { dmx.setUI($0, $1, raw: $2) }, release: { dmx.releaseUI($0) }))
         ShowCommands.register(
             on: store,
             hooks: ShowCommands.Hooks(

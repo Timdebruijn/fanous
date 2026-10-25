@@ -69,10 +69,26 @@ ramps.
 
 ### Test patterns
 
-Buttons: Off, Grid, Colour bars, Blend zones, Output ID, Crosshair, Grey steps,
-Checkerboard. The Test pattern channel of the Output fixture and of the Master
-overrides the button. Set the Output fixture's **Blend** channel to 128 or more
-(Raw) to see the canvas without blend, warp and mask while aligning.
+Buttons: Off, Grid, Colour bars, Blend check, Output ID, Crosshair, Grey steps,
+Checkerboard. The Test pattern channel of the Output fixture (per projector) and
+of the Master (all outputs) overrides the button, so a console can call them up.
+Patterns follow the corner pin and mesh and show the blend map; set the Output
+fixture's **Blend** channel to 128 or more (Raw) to see them without blend, warp
+and mask. Line widths and cells follow the output's height, so a pattern reads
+the same on a monitor and on a 4K projector.
+
+| Pattern | Use it for |
+|---|---|
+| Grid | alignment: centred square cells, border (overscan), centre cross, a circle for aspect ratio, diagonals |
+| Colour bars | 75 % SMPTE bars and 100 % white/red/green/blue/black: colour and level match between projectors |
+| Blend check | flat 50 % grey shows a blend seam as a bright or dark band; grid lines in this output's own colour let two overlapping projectors be laid on top of each other |
+| Output ID | the output number, large, on the output's colour: which projector is which |
+| Crosshair | centre and focus, circles every 1/8 of the height |
+| Grey steps | 0–100 % in 10 % steps (top) and 0–10 % in 1 % steps (bottom): gamma and black level, black lift |
+| Checkerboard | focus and pixel geometry |
+
+The same patterns, a moving test card and a few more are also available as layer
+content in folder 0 (see [show-control.md](show-control.md#built-in-content-folder-0)).
 
 ## Warp & Slices tab
 

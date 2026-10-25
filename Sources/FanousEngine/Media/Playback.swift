@@ -268,6 +268,8 @@ public final class MediaLoader: @unchecked Sendable {
     private var thread: Thread?
     /// Creates live inputs ("App/Server" for Syphon); nil until the Syphon wiring is installed.
     public var liveFactory: (@Sendable (String) -> (any LiveTextureSource)?)?
+    /// Folder 0 generators (file 100+); nil in tests without a Metal context.
+    public var generatorFactory: (@Sendable (Int) -> (any LiveTextureSource)?)?
     /// Two mixer channels per layer slot (the playing media and the one dissolving out); nil = no audio.
     public var mixer: AudioMixer?
     /// Library lookup for keys the scene's explicit list does not cover (DESIGN.md §7.4).
@@ -335,6 +337,12 @@ public final class MediaLoader: @unchecked Sendable {
         status.file = key.file
         defer { layers[layer].mediaStatus.withLock { $0 = status } }
         guard !key.isNone else { return nil }
+        if Generators.isGenerator(key), let generator = generatorFactory?(key.file) {
+            opened.wrappingAdd(1, ordering: .relaxed)
+            status.kind = "live"
+            status.name = "Generator: \(Generators.names[key.file] ?? "\(key.file)")"
+            return LayerPlayback(key: key, live: generator)
+        }
         guard let entry = media[key] ?? resolver?(key).map({ MediaEntry(folder: key.folder, file: key.file, path: $0.path) }) else {
             logger.warning("media not found", metadata: ["layer": "\(layer + 1)", "media": "\(key)"])
             failures.wrappingAdd(1, ordering: .relaxed)

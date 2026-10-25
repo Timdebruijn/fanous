@@ -104,10 +104,17 @@ final class EngineManager {
 
     private func startAgent() {
         let service = SMAppService.agent(plistName: Self.agentPlist)
-        // an ad-hoc rebuild leaves the agent pinned to the old binary (launchd: EX_CONFIG); register it afresh
+        // an ad-hoc rebuild leaves the agent pinned to the old binary (launchd: EX_CONFIG); register it afresh once the
+        // unregistration has finished (it completes asynchronously, a register right after it is a no-op)
         if Self.isAdHocSigned, service.status == .enabled {
-            try? service.unregister()
+            service.unregister { _ in DispatchQueue.main.async { MainActor.assumeIsolated { self.registerAgent() } } }
+            return
         }
+        registerAgent()
+    }
+
+    private func registerAgent() {
+        let service = SMAppService.agent(plistName: Self.agentPlist)
         if service.status == .notRegistered || service.status == .notFound {
             do {
                 try service.register()
