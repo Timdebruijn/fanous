@@ -376,7 +376,9 @@ public enum ShaderSource {
         float intensity;  // output intensity × master intensity × output fixture
         float opacity;    // slice opacity
         uint flags;       // 1 = warp field present, 2 = mask present, 4 = raw (no blend/warp/mask), 8 = no blend map
-        uint pad0, pad1, pad2;
+        uint pattern;     // TestPattern drawn instead of the canvas (through warp and blend, no mask), 0 = canvas
+        uint index;       // output number for the "output ID" pattern
+        uint pad0;
     };
 
     struct MappedVertex {
@@ -419,9 +421,18 @@ public enum ShaderSource {
                                     texture2d<float> mask [[texture(1)]],
                                     texture2d<float> blend [[texture(2)]],
                                     sampler linearSampler [[sampler(0)]]) {
+        bool raw = (u.flags & 4u) != 0u;
+        if (u.pattern != 0u) {
+            // alignment: the pattern follows the warp, the blend map shows the overlaps; full level, no dither
+            float3 p = test_pattern(u.pattern, u.index, in.pre, u.size);
+            if (!raw && (u.flags & 8u) == 0u) {
+                float2 b = blend.sample(linearSampler, in.post).rg;
+                p = p * b.x + b.y;
+            }
+            return float4(p, 1.0);
+        }
         float3 c = canvas.sample(linearSampler, in.uv).rgb;
         float a = u.opacity;
-        bool raw = (u.flags & 4u) != 0u;
         if (!raw && (u.flags & 2u) != 0u) a *= mask.sample(linearSampler, in.pre).r;
         c *= a;
         if (!raw && (u.flags & 8u) == 0u) {

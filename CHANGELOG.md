@@ -19,6 +19,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Shell: Engine menu with a live status line, Start / Restart / Stop Engine
   (stop removes the LaunchAgent registration).
 - User documentation in `docs/user/`.
+- Fixed after Tim's first hands-on test: the app window answered every
+  confirmation with "no" (removing an output did nothing) and ignored file
+  pickers and downloads, because the web view had no UI delegate; test
+  patterns were drawn flat over the output and ignored the warp, so aligning
+  on a grid was impossible; the warp modes now say "Corner pin · 4 points" and
+  "Mesh · up to 33 × 33"; ad-hoc rebuilds re-register the engine service (B54).
 - 8 h soak on the M1 Pro passed (0 dropped frames, kill -9 → healthz 0.26 s,
   memory flat; `docs/benchmarks/soak-2026-10-24-0928.md`).
 - Fixed: the engine renders without a scene file (the bundled agent did not);

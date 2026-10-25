@@ -218,8 +218,8 @@
         <div class="head2">
           <h2>{output.name}</h2>
           <div class="segmented" role="group" aria-label="Edit">
-            <button type="button" class="btn" aria-pressed={ui.mapper === 'cornerPin'} onclick={() => (ui.mapper = 'cornerPin')}>Corner pin</button>
-            <button type="button" class="btn" aria-pressed={ui.mapper === 'mesh'} onclick={() => (ui.mapper = 'mesh')}>Mesh</button>
+            <button type="button" class="btn" aria-pressed={ui.mapper === 'cornerPin'} onclick={() => (ui.mapper = 'cornerPin')}>Corner pin · 4 points</button>
+            <button type="button" class="btn" aria-pressed={ui.mapper === 'mesh'} onclick={() => (ui.mapper = 'mesh')}>Mesh · up to 33 × 33</button>
             <button type="button" class="btn" aria-pressed={ui.mapper === 'slices'} onclick={() => (ui.mapper = 'slices')}>Slices</button>
             <button type="button" class="btn" aria-pressed={ui.mapper === 'mask'} onclick={() => (ui.mapper = 'mask')}>Mask</button>
           </div>
@@ -232,7 +232,7 @@
         </div>
         {#if ui.mapper === 'cornerPin'}
           <div class="fields">
-            <p class="caption grow">Drag the four corners on the preview; arrow keys nudge the selected corner by one pixel (Shift: ten).</p>
+            <p class="caption grow">Drag the four corners on the preview; arrow keys nudge the selected corner by one pixel (Shift: ten). For a curved or uneven surface, switch to Mesh and pick a density; the mesh works on top of the corner pin.</p>
             <button type="button" class="btn" disabled={locked} onclick={() => set('/warp/cornerPin', UNIT_QUAD as unknown as JSONValue)}>Reset corners</button>
           </div>
         {:else if ui.mapper === 'mesh'}

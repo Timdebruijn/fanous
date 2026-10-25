@@ -4,6 +4,7 @@
 
 import AppKit
 import LanthornCore
+import Security
 import ServiceManagement
 
 /// Bundled: the engine is a LaunchAgent registered through SMAppService.
@@ -88,8 +89,25 @@ final class EngineManager {
         child = nil
     }
 
+    /// No team identifier = ad-hoc signed (local builds). launchd pins a registered agent to its cdhash, which every
+    /// rebuild changes; a Developer ID build is pinned to the team instead.
+    static var isAdHocSigned: Bool {
+        var code: SecCode?
+        var staticCode: SecStaticCode?
+        var info: CFDictionary?
+        guard SecCodeCopySelf([], &code) == errSecSuccess, let code, SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
+            SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
+            let dict = info as? [String: Any]
+        else { return true }
+        return dict[kSecCodeInfoTeamIdentifier as String] == nil
+    }
+
     private func startAgent() {
         let service = SMAppService.agent(plistName: Self.agentPlist)
+        // an ad-hoc rebuild leaves the agent pinned to the old binary (launchd: EX_CONFIG); register it afresh
+        if Self.isAdHocSigned, service.status == .enabled {
+            try? service.unregister()
+        }
         if service.status == .notRegistered || service.status == .notFound {
             do {
                 try service.register()

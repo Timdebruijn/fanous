@@ -14,7 +14,9 @@ struct MappedUniforms {
     var intensity: Float = 1
     var opacity: Float = 1
     var flags: UInt32 = 0
-    var pad = SIMD3<UInt32>(repeating: 0)
+    var pattern: UInt32 = 0
+    var index: UInt32 = 0
+    var pad: UInt32 = 0
 }
 
 /// One slice ready to draw: tessellated mesh and an optional mask texture.
@@ -46,8 +48,11 @@ public final class OutputPlan: @unchecked Sendable {
     let blendMap: MTLTexture?
     let warpField: MTLTexture?
     let slices: [SlicePlan]
+    /// The whole output (unit quad) tessellated like a slice: test patterns are drawn through it, so they follow the warp.
+    let patternMesh: SlicePlan?
 
-    init(id: Int, index: Int, region: MTLRegion, intensity: Float, testPattern: TestPattern, blendMap: MTLTexture?, warpField: MTLTexture?, slices: [SlicePlan]) {
+    init(id: Int, index: Int, region: MTLRegion, intensity: Float, testPattern: TestPattern, blendMap: MTLTexture?, warpField: MTLTexture?, slices: [SlicePlan], patternMesh: SlicePlan? = nil) {
+        self.patternMesh = patternMesh
         self.id = id
         self.index = index
         self.region = region
@@ -97,6 +102,11 @@ public struct OutputCompiler: @unchecked Sendable {
             warpField = try texture(.rg32Float, width: cols, height: rows, bytesPerPixel: 8, label: "warp \(config.id)") { field.withUnsafeBytes { $0.baseAddress! } }
         }
         var slices: [SlicePlan] = []
+        let full = SliceMesh.build(SliceConfig(id: 0), subdivisions: Self.sliceSubdivisions)
+        guard let fullVertices = device.makeBuffer(bytes: full.vertices, length: full.vertices.count * MemoryLayout<SliceMesh.Vertex>.stride, options: .storageModeShared),
+            let fullIndices = device.makeBuffer(bytes: full.indices, length: full.indices.count * 4, options: .storageModeShared)
+        else { throw RenderError.pipeline("pattern mesh \(config.id)") }
+        let patternMesh = SlicePlan(vertices: fullVertices, indices: fullIndices, indexCount: full.indices.count, mask: nil, opacity: 1)
         for slice in config.slices {
             let (vertices, indices) = SliceMesh.build(slice, subdivisions: Self.sliceSubdivisions)
             guard !vertices.isEmpty,
@@ -120,7 +130,7 @@ public struct OutputCompiler: @unchecked Sendable {
         }
         return OutputPlan(
             id: config.id, index: index, region: region, intensity: Float(config.intensity), testPattern: TestPattern(rawValue: config.testPattern) ?? .off,
-            blendMap: blendMap, warpField: warpField, slices: slices)
+            blendMap: blendMap, warpField: warpField, slices: slices, patternMesh: patternMesh)
     }
 
     /// Anti-aliased polygon fill, 8-bit coverage, row-major from the top-left.
@@ -173,8 +183,31 @@ enum OutputPass {
             encoder.setScissorRect(MTLScissorRect(x: region.origin.x, y: region.origin.y, width: region.size.width, height: region.size.height))
             let pattern = masterPattern != .off ? masterPattern : (fixture.testPattern != .off ? fixture.testPattern : plan.testPattern)
             let intensity = fixture.control == .blackout ? 0 : plan.intensity * fixture.intensity * master
+            if pattern != .off, let mesh = plan.patternMesh {
+                // through the warp (and blend map) like the content, so a grid can be aligned on the surface
+                guard offset + 256 <= uniforms.length else { return }
+                var u = MappedUniforms()
+                u.size = SIMD2(Float(region.size.width), Float(region.size.height))
+                u.flags = (plan.warpField != nil ? 1 : 0) | (fixture.raw ? 4 : 0) | (plan.blendMap == nil ? 8 : 0)
+                u.pattern = UInt32(pattern.rawValue)
+                u.index = UInt32(plan.index)
+                (uniforms.contents() + offset).assumingMemoryBound(to: MappedUniforms.self).pointee = u
+                encoder.setRenderPipelineState(context.mappedPipeline)
+                encoder.setVertexSamplerState(context.linearSampler, index: 0)
+                encoder.setFragmentSamplerState(context.linearSampler, index: 0)
+                encoder.setFragmentTexture(canvas, index: 0)
+                encoder.setFragmentTexture(canvas, index: 1)
+                encoder.setFragmentTexture(plan.blendMap ?? canvas, index: 2)
+                encoder.setVertexTexture(plan.warpField ?? canvas, index: 0)
+                encoder.setVertexBuffer(mesh.vertices, offset: 0, index: 0)
+                encoder.setVertexBuffer(uniforms, offset: offset, index: 1)
+                encoder.setFragmentBuffer(uniforms, offset: offset, index: 1)
+                encoder.drawIndexedPrimitives(type: .triangle, indexCount: mesh.indexCount, indexType: .uint32, indexBuffer: mesh.indices, indexBufferOffset: 0)
+                offset += 256
+                continue
+            }
             if pattern != .off {
-                // whole region: the plain output pass draws the pattern
+                // no compiled plan mesh (should not happen): the plain output pass draws the pattern unwarped
                 guard offset + 256 <= uniforms.length else { return }
                 (uniforms.contents() + offset).assumingMemoryBound(to: OutputUniforms.self).pointee = {
                     var o = OutputUniforms()

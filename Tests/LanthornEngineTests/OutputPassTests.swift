@@ -147,6 +147,24 @@ struct OutputPassTests {
         #expect(dark[(90 * Self.width + 300) * 4 + 1] <= 1)
     }
 
+    /// A test pattern follows the corner pin (it used to be drawn flat over the region, so warping showed nothing).
+    @Test func testPatternFollowsTheWarp() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 200)
+        let compiler = try OutputCompiler(device: context.device)
+        var o = OutputConfig(id: 1)
+        o.testPattern = TestPattern.colourBars.rawValue
+        let flat = try Self.render(compiler.compile(o, index: 1, drawable: (Self.width, Self.height)), still: still, drawable: (Self.width, Self.height), context: context)
+        func px(_ image: [UInt8], _ x: Int, _ y: Int) -> (r: Int, g: Int) { (Int(image[(y * Self.width + x) * 4 + 2]), Int(image[(y * Self.width + x) * 4 + 1])) }
+        // unwarped: x = 100 of 320 is bar 2 (cyan: no red, 75 % green)
+        #expect(px(flat, 100, 90).r < 10 && abs(px(flat, 100, 90).g - 191) <= 2, "\(px(flat, 100, 90))")
+        // corner pin onto the left half: x = 100 now shows pre-warp x = 0.625, bar 5 (red); the right half is empty
+        o.warp.cornerPin = [MapPoint(0, 0), MapPoint(0.5, 0), MapPoint(0.5, 1), MapPoint(0, 1)]
+        let warped = try Self.render(compiler.compile(o, index: 1, drawable: (Self.width, Self.height)), still: still, drawable: (Self.width, Self.height), context: context)
+        #expect(abs(px(warped, 100, 90).r - 191) <= 2 && px(warped, 100, 90).g < 10, "\(px(warped, 100, 90))")
+        #expect(px(warped, 250, 90).r < 3 && px(warped, 250, 90).g < 3, "outside the pinned quad: \(px(warped, 250, 90))")
+    }
+
     @Test func warpMaskAndSliceGoldens() throws {
         let context = try MetalContext()
         let still = try GoldenTests.pattern(device: context.device, variant: 0)
