@@ -10,7 +10,9 @@
   let canvas: HTMLCanvasElement | undefined = $state();
   let mode = $state<'connecting' | 'avc' | 'jpeg' | 'off'>('connecting');
   let detail = $state('');
-  let frames = $state(0);
+  // the time of the last drawn frame is a plain variable: per-frame $state would re-render the caption 30× a second
+  let lastFrame = 0;
+  let stalled = $state(false);
   let stop: (() => void) | null = null;
 
   async function start() {
@@ -29,7 +31,7 @@
         canvas.height = bitmap.displayHeight;
       }
       ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      frames++;
+      lastFrame = performance.now();
       bitmap.close();
     };
 
@@ -107,7 +109,13 @@
 
   onMount(() => {
     void start();
+    // once a second: flag a preview that stopped arriving (2 s without a frame); only a change touches the DOM
+    const watch = setInterval(() => {
+      const now = lastFrame > 0 && performance.now() - lastFrame > 2000;
+      if (now !== stalled) stalled = now;
+    }, 1000);
     return () => {
+      clearInterval(watch);
       stop?.();
       stop = null;
     };
@@ -123,7 +131,8 @@
     shownTarget = target;
     stop?.();
     stop = null;
-    frames = 0;
+    lastFrame = 0;
+    stalled = false;
     void start();
   });
 </script>
@@ -132,11 +141,12 @@
   <canvas bind:this={canvas} width="640" height="360" aria-label="Canvas preview"></canvas>
   <figcaption class="caption">
     {#if mode === 'avc'}H.264 · {detail}{:else if mode === 'jpeg'}JPEG 5 fps · {detail}{:else if mode === 'off'}no preview · {detail}{:else}connecting…{/if}
-    {#if frames > 0}<span class="mono"> · {frames} frames</span>{/if}
+    {#if stalled}<span class="stalled"> · no new frames</span>{/if}
   </figcaption>
 </figure>
 
 <style>
+  .stalled { color: var(--yellow); }
   .preview { margin: 0; display: flex; flex-direction: column; gap: 6px; }
   canvas { width: 100%; height: auto; aspect-ratio: 16 / 9; border-radius: 8px; background: #000; border: 1px solid var(--line); display: block; }
 </style>
