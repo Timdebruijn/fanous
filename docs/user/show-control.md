@@ -5,10 +5,10 @@
 # Show control
 
 The Show screen (key 5, "Show control") holds timecode, the cue list, OSC and
-the MIDI source list. Fanous can also be seen and browsed from a console
+MIDI. Fanous can also be seen and browsed from a console
 over CITP/MSEX.
 
-Before you build a show on cues or OSC parameter values, set the project's
+Before you build a show on cues or OSC or MIDI parameter values, set the project's
 source policy (Patch screen toolbar) to **Console + UI (latest wins)**,
 **Console + UI (highest wins)** or **UI and cues only**: with the default
 **Console only** those values are recorded but do not move a layer, and the
@@ -45,7 +45,8 @@ non-drop) and 30 are detected by themselves. LTC needs the Microphone
 permission: macOS asks once when you pick an input. If you said no, turn it on
 in System Settings › Privacy & Security › Microphone. **MTC** reads quarter-frame and full-frame messages from any
 MIDI source; connected sources are listed in the MIDI panel on the right, with a
-"timecode" badge on the chosen one. MIDI is MTC only in this version.
+"timecode" badge on the chosen one. MIDI controllers and MIDI Show Control are
+described under [MIDI](#midi).
 
 Offsets: besides the project offset the engine supports one offset per layer
 (also frames); the Show screen only has the project offset field.
@@ -115,6 +116,66 @@ OSC bundles with timetags are honoured: the contents run at the given time.
 Send a burst slowly: messages sent back to back from one socket can be partly
 lost, so leave about 50 ms between them (B30). Fanous does not send OSC back.
 
+## MIDI
+
+A MIDI controller (an APC, Launchpad, nanoKONTROL, a keyboard) can fire cues
+and move parameters without a lighting desk, and a show controller can fire
+cues with MIDI Show Control. The MIDI panel on the Show screen has:
+
+- **Source**: **All sources** (default) or one MIDI source. Devices plugged in
+  later are picked up by themselves. The list below shows every source; a green
+  dot means Fanous listens to it, the "timecode" badge marks the MTC source.
+- **MSC device id** (0–111, default 0): MIDI Show Control messages to this id or
+  to all (127) are answered. **GO** fires the next cue, **GO** with a cue number
+  fires that cue. STOP, RESUME and the other MSC commands are shown but do
+  nothing yet. Group ids (112–126) are not answered.
+- The **last message** received, for example `APC mini · ch 1 · CC 48 = 127`, so
+  you can see a controller is talking before you map it.
+- The **map**: one row per control with Control (channel and note, CC or
+  program, and the source it came from), Target, Mode and **Remove**.
+
+**Learn.** Choose a target: **GO**, **Back**, **Go to cue** (pick the cue) or
+**Parameter** (pick fixture and parameter). Press **Learn**, then press the key
+or move the control. The first note, controller or program change that arrives
+becomes a map row; "Learned: ch 1 · note 0 → …" confirms it. **Cancel** stops
+waiting. Learning the same control for the same target again replaces the row.
+A controller 0–31 followed by its partner 32–63 is learned as one 14-bit
+control (fine faders).
+
+What a control does:
+
+| Control | Cue target | Parameter target |
+|---|---|---|
+| Note | fires on key down | **Linear**: the velocity while held, back to 0 on release. **Toggle** (the default when learned): every press switches between 0 and full |
+| CC | fires when it rises past half way (a button sending 127/0 fires once per press) | **Linear**: 0–127 across the parameter's range. **Toggle**: every rise past half way switches |
+| CC 14-bit | as CC | as CC, with 16 384 steps |
+| Program change | fires; **Go to cue** without a number fires cue *program + 1* (program 1 on the device = cue 1) | the program number across the range |
+
+**Pickup** (Linear only): the control is ignored until it reaches the value the
+parameter shows now, then takes over. When something else changes the value
+(the console, a cue, the UI), it lets go again until it is reached once more.
+Use it for faders so a layer does not jump when you touch one.
+
+MIDI parameter values enter like OSC values, as their own source "MIDI", so the
+project's source policy decides whether they move a layer (not with **Console
+only**). Mapping changes and Learn are programmer settings and are refused while
+the show is locked; a locked show still follows its MIDI controllers.
+
+**Example: APC mini.** Set the source policy to **Console + UI (latest wins)**.
+In the MIDI panel:
+
+1. Target **GO**, **Learn**, press the bottom-right pad. That pad is now GO.
+2. Target **Back**, **Learn**, press the pad left of it.
+3. Target **Go to cue**, cue 1, **Learn**, press the top-left pad; repeat for
+   cues 2, 3… along the top row.
+4. Target **Parameter**, Layer 1 · Intensity, **Learn**, move fader 1; set Mode
+   to Linear and tick **Pickup**. Repeat for Layer 2 to 8 with faders 2 to 8.
+5. Target **Parameter**, Master · Intensity, **Learn**, move the ninth fader.
+
+On an APC mini the pads are notes 0–63 and the faders CC 48–56 on channel 1, but
+Learn finds the numbers for you. The pad lights are not driven: Fanous does not
+send MIDI back.
+
 ## CITP/MSEX
 
 Fanous announces itself to consoles every 5 seconds on the CITP multicast
@@ -138,8 +199,10 @@ MSEX versions 1.0 to 1.2 are negotiated; the highest common one is used.
 
 - **Source policy applies to the whole project**, not per layer: one setting
   on the Patch screen for every fixture.
-- No OSC feedback (query or notify). MIDI notes and CC as parameters, MIDI Show
-  Control and MIDI-triggered cue recording do not exist (B36).
+- No OSC feedback (query or notify). No MIDI output (controller lights, MSC
+  replies) and no MIDI-triggered cue recording. MIDI ranges (low/high of a
+  mapping) can only be set with the `midi.map.set` command, not in the panel.
+  MIDI has been tested with injected messages, not with a real controller (B36).
 - `/fanous/project/load` is refused; projects have no versions yet (B23, B35).
 - CITP: only the canvas can be streamed, not single layers; thumbnails are sent
   at their stored size whatever the console asks for (B41). No real console has

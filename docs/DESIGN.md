@@ -1340,6 +1340,47 @@ MTC only in v1 (§15.1). The CoreMIDI client, port enumeration and the
 Show-control screen's MIDI section are built so that notes/CC → parameters,
 MSC and MIDI-triggered cues are additions, not rewrites.
 
+**As built (B36, 2026-10-26):** MIDI input for control, next to MTC.
+
+- Core (`MIDI/MIDI.swift`): `MIDIParser` turns a MIDI 1.0 byte stream into
+  note on/off (velocity 0 = off), CC, program change and MSC messages, with
+  running status, real-time bytes anywhere, system common cancelling running
+  status and SysEx up to 256 bytes; `MIDIParser.bytes(ump:)` turns the Universal
+  MIDI Packets CoreMIDI delivers with the 1.0 protocol (types 1, 2, 3; others
+  skipped by size) back into bytes. `MSCMessage` parses `F0 7F dev 02 fmt cmd
+  Q_number 00 Q_list 00 Q_path F7` (ASCII cue numbers, any command format).
+- Engine (`ShowControl/MIDIControl.swift`): `project.midi = {source?,
+  mscDevice, map[]}`; a map entry is `{id, source?, channel (0 = any), kind:
+  note|cc|cc14|pc, number?, target, cue?, curve: linear|toggle, pickup, low,
+  high}` with targets `cue.go`, `cue.back`, `cue.goto` (+ `cue`; a program
+  change without one goes to cue program + 1), `fixture:<Layer n|Master|Output
+  n>/<key>` and `master/<key>`. `MIDIMapper` (pure): cue targets fire on a press
+  (note on, a CC rising past 64, a program change); 14-bit pairs (CC n / n+32,
+  n < 32) follow the MSB until an LSB has been seen and then the LSB only, so
+  there is no coarse step; pickup holds a control until it is within one 7-bit
+  step of, or moves across, the resolved value, and releases it when another
+  source changes that value. MSC GO (with or without a cue) to our device id or
+  the all-call → `cue.go`/`cue.goto`; STOP/RESUME are parsed, not acted on (the
+  cue engine has no pause). `MIDILearner` takes the next note on, CC or program
+  change; CC 0–31 waits one message for its LSB to tell a 14-bit pair.
+- `MIDIInput` opens its own CoreMIDI client and a UMP 1.0 input port on every
+  source or the named one, reconnects on `msgSetupChanged`, and handles
+  everything on one serial queue (one parser per source). Parameter values go to
+  `DMXStore.setMIDI` as the internal `midi` source (`ValueSource.midi`), so the
+  source policy decides, exactly as for OSC; cue actions run `cue.go/back/goto`
+  through the state store as the operator. Commands `midi.set`,
+  `midi.map.set` (upsert by id, or by same control and target), `midi.map.remove`
+  and `midi.learn {target?, cue?}` (arms; the learned entry is stored with
+  `midi.map.set` when the message arrives, so learn answers through
+  `live.midi.learning/learned`) are programmer commands refused under show lock;
+  MIDI values keep flowing while locked. `live.midi`: connected sources, last
+  message, learn state, error.
+- UI: the Show screen's MIDI panel (`ShowMIDI.svelte`): source picker, MSC
+  device id, last message, Learn with target choice, map table with mode and
+  pickup, Remove.
+- Not built: MIDI output (feedback LEDs, MSC replies), MSC group ids, a
+  CoreMIDI virtual-source test (kept out of CI; tests inject bytes).
+
 ---
 
 ## 16. CITP/MSEX and GDTF
