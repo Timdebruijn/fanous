@@ -23,11 +23,23 @@ export interface ProjectDoc {
   canvases: CanvasConfig[];
   /** layer number → canvas id; a layer not listed is on canvas 1 (`layer.set`) */
   layerCanvas?: Record<string, number>;
+  /** per-universe receive settings (`universe.set`, B28); a universe without an entry runs the defaults */
+  universes?: UniverseSettingsDoc[];
   outputs: OutputConfig[];
   /** cue list (DESIGN §15.2): fixture and parameter by name, raw DMX values */
   cues: CueDoc[];
   timecode: TimecodeSettingsDoc;
   ui: Record<string, unknown>;
+}
+
+export interface UniverseSettingsDoc {
+  id: string; // "artnet:0.0.1", "sacn:3"
+  protocol: 'artnet' | 'sacn' | 'both';
+  interface: string; // "any", "en0" or an IPv4 address
+  holdOnLoss: 'hold' | 'zero' | 'internal';
+  lossTimeout: number; // seconds
+  sacnPriorityMode: 'highest' | 'htp';
+  pair: string; // the other protocol's universe
 }
 
 export interface CueValueDoc {
@@ -142,6 +154,8 @@ export interface LiveDoc {
     os: string;
     host: string;
     addresses: string[];
+    /** every IPv4 interface address, loopback included (universe Interface choices) */
+    interfaces?: { name: string; address: string }[];
     port: number;
     tlsFingerprint: string;
     bonjour: string;

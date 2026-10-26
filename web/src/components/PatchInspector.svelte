@@ -3,7 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { app, can, cmd } from '../lib/state.svelte';
-  import { LOCKED_TITLE, UNIVERSE_SIZE, universeHealth, universeName, universeSettings, type FixtureRow } from '../lib/patch-screen';
+  import { LOCKED_TITLE, UNIVERSE_SIZE, interfaceOptions, parseUniverseName, universeHealth, universeName, universeSettings, type FixtureRow } from '../lib/patch-screen';
 
   let { row, options, defaultUniverse, onpatched }: {
     row: FixtureRow;
@@ -21,8 +21,18 @@
   let address = $derived(row.address);
 
   const info = $derived(row.universe ? app.live.dmx.universes.find((u) => u.id === row.universe) : undefined);
-  const health = $derived(universeHealth(info));
-  const settings = $derived(universeSettings(row.universe ?? ''));
+  const settings = $derived(universeSettings(app.project.universes, row.universe ?? ''));
+  const health = $derived(universeHealth(info, settings.lossTimeout));
+  const own = $derived(settings.id.startsWith('sacn:') ? 'sacn' : 'artnet');
+  const interfaces = $derived(interfaceOptions(app.live.system.interfaces, settings.interface));
+  const absent = $derived(interfaces.find((o) => o.value === settings.interface)?.label.endsWith('(not present)') ?? false);
+  const uLockTitle = $derived(locked ? LOCKED_TITLE : app.project.showLock ? 'Locked: show lock is on' : undefined);
+
+  /** One universe setting; a refused change (show lock, invalid value) puts the control back. */
+  async function setUniverse(path: string, value: string | number | null, el: HTMLInputElement | HTMLSelectElement, previous: string) {
+    await cmd('universe.set', { id: settings.id, path: path as '/protocol', value });
+    if (app.lastError) el.value = previous;
+  }
 
   function clamp(n: number): number {
     return Math.min(maxAddress, Math.max(0, Math.round(n)));
@@ -88,13 +98,56 @@
       <h3>Universe {universeName(row.universe)}</h3>
       <span class="pill pill-{health.tone}"><span class="dot"></span>{health.text}</span>
     </div>
-    <dl>
-      <div><dt>Protocol</dt><dd class="mono">{settings.protocol}</dd></div>
-      <div><dt>Interface</dt><dd class="mono">{settings.iface}</dd></div>
-      <div><dt>Hold on loss</dt><dd class="mono">{settings.holdOnLoss}</dd></div>
-      <div><dt>sACN priority</dt><dd class="mono">{settings.priority}</dd></div>
-    </dl>
-    <p class="caption">Per-universe settings arrive with projects (B28)</p>
+    <div class="fields">
+      <label class="field">
+        <span class="label">Protocol</span>
+        <select class="select" value={settings.protocol} disabled={!!uLockTitle} title={uLockTitle} onchange={(e) => setUniverse('/protocol', e.currentTarget.value, e.currentTarget, settings.protocol)}>
+          <option value="artnet">Art-Net</option>
+          <option value="sacn">sACN</option>
+          <option value="both">Art-Net + sACN</option>
+        </select>
+      </label>
+      {#if settings.protocol !== own}
+        <label class="field" title={uLockTitle ?? 'The other protocol\'s universe that feeds this one, e.g. S 1 or A 0.0.0'}>
+          <span class="label">{own === 'artnet' ? 'sACN universe' : 'Art-Net universe'}</span>
+          <input class="input mono pair" value={universeName(settings.pair)} disabled={!!uLockTitle}
+            onchange={(e) => setUniverse('/pair', parseUniverseName(e.currentTarget.value), e.currentTarget, universeName(settings.pair))} />
+        </label>
+      {/if}
+      <label class="field">
+        <span class="label">Interface</span>
+        <select class="select" value={settings.interface} disabled={!!uLockTitle} title={uLockTitle} onchange={(e) => setUniverse('/interface', e.currentTarget.value, e.currentTarget, settings.interface)}>
+          {#each interfaces as option (option.value)}
+            <option value={option.value}>{option.label}</option>
+          {/each}
+        </select>
+      </label>
+      <label class="field">
+        <span class="label">Hold on loss</span>
+        <select class="select" value={settings.holdOnLoss} disabled={!!uLockTitle} title={uLockTitle} onchange={(e) => setUniverse('/holdOnLoss', e.currentTarget.value, e.currentTarget, settings.holdOnLoss)}>
+          <option value="hold">Hold last values</option>
+          <option value="zero">Go to zero</option>
+          <option value="internal">UI and cues take over</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="label">Loss after (s)</span>
+        <input class="input mono timeout" type="number" min="0.5" max="60" step="0.5" value={settings.lossTimeout} disabled={!!uLockTitle} title={uLockTitle}
+          onchange={(e) => setUniverse('/lossTimeout', Number(e.currentTarget.value), e.currentTarget, String(settings.lossTimeout))} />
+      </label>
+      {#if settings.protocol !== 'artnet'}
+        <label class="field">
+          <span class="label">sACN priority</span>
+          <select class="select" value={settings.sacnPriorityMode} disabled={!!uLockTitle} title={uLockTitle} onchange={(e) => setUniverse('/sacnPriorityMode', e.currentTarget.value, e.currentTarget, settings.sacnPriorityMode)}>
+            <option value="highest">Highest wins</option>
+            <option value="htp">Merge equal (HTP)</option>
+          </select>
+        </label>
+      {/if}
+    </div>
+    {#if absent}
+      <p class="caption alert">Interface {settings.interface} is not on this Mac: the universe receives nothing until it is connected.</p>
+    {/if}
   {:else}
     <p class="caption">Not patched: set an address to start listening on a universe.</p>
   {/if}
@@ -109,9 +162,8 @@
   hr { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--line); }
   .uhead { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
   h3 { margin: 0; font-size: 15px; font-weight: 600; }
-  dl { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; }
-  dl > div { display: flex; flex-direction: column; gap: 2px; }
-  dt { font-size: 12px; color: var(--text-3); }
-  dd { margin: 0; color: var(--text-2); }
+  .pair { width: 110px; }
+  .timeout { width: 80px; }
+  .alert { color: var(--yellow); }
   p { margin: 0; }
 </style>
