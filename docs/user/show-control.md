@@ -129,8 +129,8 @@ sees:
 - the **libraries and elements**: numbered folders and numbered files with name,
   size, frame rate and length;
 - **thumbnails** of the files (the library thumbnails);
-- a **canvas preview stream**: JPEG at 640x360, up to 10 frames per second, only
-  produced while a console asks for it.
+- a **canvas preview stream** of Canvas 1: JPEG at 640x360, up to 10 frames per
+  second, only produced while a console asks for it.
 
 MSEX versions 1.0 to 1.2 are negotiated; the highest common one is used.
 
@@ -182,7 +182,9 @@ only. With latest wins, whoever moved last wins between console and UI.
 show is locked.
 
 **Preview of one layer.** Above the preview on the Layers screen, **Canvas**
-shows the whole canvas and **This layer** shows only the selected layer: its
+shows the whole canvas (with several canvases there is a button per canvas
+instead) and **This layer** shows only the selected layer, in the shape of its
+own canvas: its
 media with its own position, scale, rotation, fit, crop, colour, effects and
 intensity, in the canvas frame, over black. Layers above and below it are left
 out, and its blend mode is shown as Normal (Multiply or Darken over black would
