@@ -14,6 +14,20 @@ import Testing
 struct ShowControlTests {
     static let logger = Logger(label: "test")
 
+    @Test func cueFollowFiresWithoutAFade() async throws {
+        let runner = CueRunner(dmx: DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger), logger: Self.logger)
+        defer { runner.stop() }
+        runner.replace(list: CueList(cues: [
+            Cue(number: 1, fadeTime: 0, followTime: 0.6),
+            Cue(number: 2, fadeTime: 0),
+        ]))
+        runner.go()
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(runner.status.withLock { $0.current } == 1)
+        try await Task.sleep(for: .milliseconds(900))
+        #expect(runner.status.withLock { $0.current } == 2, "the follow fired although nothing was fading")
+    }
+
     @Test func timecodeClockExtrapolatesFreewheelsAndLoses() {
         let clock = TimecodeClock()
         clock.freewheelSeconds = 2

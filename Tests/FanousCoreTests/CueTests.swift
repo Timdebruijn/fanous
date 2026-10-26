@@ -82,4 +82,33 @@ import Testing
         list.remove(id: list.cues[0].id)
         #expect(list.cues.count == 2)
     }
+
+    @Test func timecodeTriggerComparesInSecondsAcrossRates() {
+        let cue = Cue(number: 1, timecodeTrigger: Timecode(hours: 0, minutes: 0, seconds: 10, frames: 0, rate: .fps25))
+        func tc30(_ s: Int, _ f: Int) -> Timecode { Timecode(hours: 0, minutes: 0, seconds: s, frames: f, rate: .fps30) }
+        var engine = CueEngine(list: CueList(cues: [cue]))
+        engine.timecode(tc30(9, 0), at: 0)
+        engine.timecode(tc30(9, 29), at: 0.1)  // 9.97 s: a frame-count compare (250 vs 299) would fire here
+        #expect(engine.current == nil)
+        engine.timecode(tc30(10, 0), at: 0.2)
+        #expect(engine.current?.number == 1)
+    }
+
+    @Test func listEditsKeepCurrentCueAndReleaseRemovedValues() {
+        func cue(_ n: Double, _ raw: UInt16) -> Cue { Cue(number: n, values: [CueValue(fixture: .layer(1), parameter: .layer(.intensity), raw: raw)]) }
+        var engine = CueEngine(list: CueList(cues: [cue(2, 100), cue(3, 200)]))
+        engine.go(at: 0)
+        #expect(engine.current?.number == 2)
+        var edited = engine.list
+        edited.insert(cue(1, 50))  // before the current cue
+        engine.replace(list: edited)
+        #expect(engine.current?.number == 2)
+        engine.go(at: 1)
+        #expect(engine.current?.number == 3, "GO fires the cue after the current one, not the one now at the old index")
+        var removed = engine.list
+        removed.remove(id: engine.current!.id)
+        engine.replace(list: removed)
+        #expect(engine.tick(at: 2).isEmpty, "values of the removed cue are released")
+        #expect(engine.current?.number == 2)
+    }
 }

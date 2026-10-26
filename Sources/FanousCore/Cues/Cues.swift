@@ -79,17 +79,33 @@ public struct CueEngine: Sendable {
     }
 
     public private(set) var list: CueList
-    public private(set) var currentIndex: Int?
+    /// The current cue is tracked by id so list edits (insert/remove before it) keep it correct.
+    private var currentID: UUID?
     private var held: [Key: UInt16] = [:]
     private var fades: [Key: Fade] = [:]
-    private var follow: (index: Int, fireAt: TimeInterval)?
-    private var lastTimecodeFrame: Int?
+    private var owner: [Key: UUID] = [:]  // the cue that last set each key
+    private var follow: (from: UUID, fireAt: TimeInterval)?  // fires the cue after `from`
+    private var lastTimecodeSeconds: Double?
+
+    public var currentIndex: Int? { currentID.flatMap { id in list.cues.firstIndex { $0.id == id } } }
 
     public init(list: CueList) { self.list = list }
 
     public mutating func replace(list: CueList) {
+        let old = self.list.cues
         self.list = list
-        if let index = currentIndex, index >= list.cues.count { currentIndex = nil }
+        let alive = Set(list.cues.map(\.id))
+        // a removed current cue falls back to the nearest earlier surviving one
+        if let id = currentID, !alive.contains(id), let at = old.firstIndex(where: { $0.id == id }) {
+            currentID = old[..<at].last { alive.contains($0.id) }?.id
+        }
+        if let f = follow, !alive.contains(f.from) { follow = nil }
+        // release what removed cues were asserting
+        for (key, id) in owner where !alive.contains(id) {
+            held[key] = nil
+            fades[key] = nil
+            owner[key] = nil
+        }
     }
 
     public var current: Cue? { currentIndex.map { list.cues[$0] } }
@@ -116,23 +132,26 @@ public struct CueEngine: Sendable {
 
     /// Fires every cue whose trigger lies in (previous, current]. A jump backwards re-arms.
     public mutating func timecode(_ timecode: Timecode, at time: TimeInterval) {
-        let frame = timecode.frameCount
-        defer { lastTimecodeFrame = frame }
-        guard let last = lastTimecodeFrame, frame > last, frame - last < timecode.rate.nominalFrames * 5 else { return }
+        let seconds = timecode.secondsValue
+        defer { lastTimecodeSeconds = seconds }
+        // compare in seconds: the trigger may be written at another rate than the incoming clock
+        guard let last = lastTimecodeSeconds, seconds > last, seconds - last < 5 else { return }
+        let eps = 1e-6
         for (index, cue) in list.cues.enumerated() {
             guard let trigger = cue.timecodeTrigger else { continue }
-            let triggerFrame = trigger.frameCount
-            if triggerFrame > last && triggerFrame <= frame { fire(index: index, at: time) }
+            let at = trigger.secondsValue
+            if at > last + eps && at <= seconds + eps { fire(index: index, at: time) }
         }
     }
 
     private mutating func fire(index: Int, at time: TimeInterval) {
         let cue = list.cues[index]
-        currentIndex = index
+        currentID = cue.id
         for value in cue.values {
             let key = Key(fixture: value.fixture, parameter: value.parameter)
             let spec = ChannelMap.spec(value.parameter)
             let duration = value.fadeTime ?? cue.fadeTime
+            owner[key] = cue.id
             let from = Double(currentRaw(key, at: time) ?? spec.defaultRaw)
             if spec.isContinuous && duration > 0 {
                 fades[key] = Fade(from: from, to: Double(spec.clamped(value.raw)), start: time, duration: duration)
@@ -141,7 +160,7 @@ public struct CueEngine: Sendable {
                 held[key] = spec.clamped(value.raw)
             }
         }
-        follow = cue.followTime.map { (index + 1, time + $0) }
+        follow = cue.followTime.map { (cue.id, time + $0) }
     }
 
     private func currentRaw(_ key: Key, at time: TimeInterval) -> UInt16? {
@@ -153,7 +172,7 @@ public struct CueEngine: Sendable {
     public mutating func tick(at time: TimeInterval) -> [CueOutput] {
         if let follow, time >= follow.fireAt {
             self.follow = nil
-            if follow.index < list.cues.count { fire(index: follow.index, at: time) }
+            if let at = list.cues.firstIndex(where: { $0.id == follow.from }), at + 1 < list.cues.count { fire(index: at + 1, at: time) }
         }
         for (key, fade) in fades where time >= fade.start + fade.duration {
             held[key] = UInt16(fade.to.rounded())
@@ -167,6 +186,7 @@ public struct CueEngine: Sendable {
     }
 
     public var isFading: Bool { !fades.isEmpty }
+    public var hasPendingFollow: Bool { follow != nil }
 }
 
 extension CueEngine.Fade {

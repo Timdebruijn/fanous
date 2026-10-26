@@ -36,7 +36,7 @@ public final class CueRunner: @unchecked Sendable {
     public func replace(list: CueList) {
         queue.async { [self] in
             engine.withLock { $0.replace(list: list) }
-            publish()
+            tick()  // pushes the released values to the resolvers
         }
     }
 
@@ -61,7 +61,7 @@ public final class CueRunner: @unchecked Sendable {
         timer.schedule(deadline: .now() + 0.02, repeating: 0.02)
         timer.setEventHandler { [self] in
             tick()
-            if !engine.withLock({ $0.isFading }) {
+            if !engine.withLock({ $0.isFading || $0.hasPendingFollow }) {
                 self.timer?.cancel()
                 self.timer = nil
             }

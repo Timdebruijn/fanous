@@ -160,6 +160,8 @@ public final class DMXStore: @unchecked Sendable {
     public func setCue(_ outputs: [CueOutput]) {
         queue.async { [self] in
             let now = Self.now
+            // values the list no longer asserts (removed cue) are released
+            for key in resolvers.keys { resolvers[key]?.clearInternal(source: .cue) }
             for output in outputs { resolvers[output.fixture]?.setInternal(output.parameter, raw: output.raw, source: .cue, at: now) }
             publish(receivedAt: 0)
         }
