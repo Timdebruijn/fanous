@@ -43,12 +43,14 @@ public final class SyphonOutput: @unchecked Sendable {
     public func stop() { server.stop() }
 
     /// Encodes a copy of the whole texture into the server's IOSurface on `commandBuffer`; Syphon tells the
-    /// clients when that buffer completes. The caller commits the buffer. Metal textures have their origin top
-    /// left, which is what Syphon's Metal path expects, so `flipped` is false and clients see the image upright.
-    /// The texture needs `.shaderRead` usage and must not be `framebufferOnly` (same format = blit, else a draw).
+    /// clients when that buffer completes. The caller commits the buffer. Syphon surfaces are in OpenGL order
+    /// (row 0 at the bottom); a Metal texture has row 0 at the top, so it is published `flipped` and Syphon
+    /// draws it upside down into the surface. Checked 2026-10-26 with the Syphon Simple Client (OpenGL): with
+    /// `flipped: false` it showed the canvas upside down. The texture needs `.shaderRead` usage and must not be
+    /// `framebufferOnly`; the flip always takes Syphon's draw path (one quad), never the blit.
     public func publish(texture: MTLTexture, commandBuffer: MTLCommandBuffer) {
         server.publishFrameTexture(
             texture, on: commandBuffer,
-            imageRegion: NSRect(x: 0, y: 0, width: texture.width, height: texture.height), flipped: false)
+            imageRegion: NSRect(x: 0, y: 0, width: texture.width, height: texture.height), flipped: true)
     }
 }

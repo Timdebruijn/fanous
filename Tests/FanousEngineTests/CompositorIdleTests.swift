@@ -80,6 +80,15 @@ struct CompositorIdleTests {
         }
     }
 
+    /// A bottom-up frame (Syphon) is sampled with v0 and v1 swapped, and the crop sides swap with them.
+    @Test func bottomUpFramesSampleFlipped() {
+        #expect(Compositor.uvRect(cropLeft: 0, cropTop: 0, cropRight: 0, cropBottom: 0, bottomUp: false) == SIMD4(0, 0, 1, 1))
+        #expect(Compositor.uvRect(cropLeft: 0, cropTop: 0, cropRight: 0, cropBottom: 0, bottomUp: true) == SIMD4(0, 1, 1, 0))
+        // 10 % off the top of the picture: v0 moves down from the top in Metal order, up from v = 1 in GL order
+        #expect(Compositor.uvRect(cropLeft: 0.2, cropTop: 0.1, cropRight: 0.3, cropBottom: 0.4, bottomUp: false) == SIMD4(0.2, 0.1, 0.7, 0.6))
+        #expect(Compositor.uvRect(cropLeft: 0.2, cropTop: 0.1, cropRight: 0.3, cropBottom: 0.4, bottomUp: true) == SIMD4(0.2, 0.9, 0.7, 0.4))
+    }
+
     @Test func unwatchedTicksEncodeNothingAndTheFirstWatchedFrameIsComplete() throws {
         let rig = try Rig(idleWork: true, offscreen: false)
         rig.tick(30)
