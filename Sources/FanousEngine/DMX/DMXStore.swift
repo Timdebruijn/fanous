@@ -58,9 +58,9 @@ public final class DMXStore: @unchecked Sendable {
     /// Render-side parameters, one write per resolved DMX packet (ADR-0002 hand-off).
     public let snapshots = TripleBuffer { ParameterSnapshotSlot(maxLayers: 32) }
     private var sequence: UInt64 = 0
-    /// When the UI expiry clock of a fixture with UI values started: its last UI change, or later while no console was received.
-    private var uiSince: [FixtureRef: TimeInterval] = [:]
-    /// DESIGN.md §7.2: UI values that mask a live console are released this long after the last UI change.
+    /// Per fixture with UI values: seconds they have masked the console since the last UI change, and the tick that was counted to.
+    private(set) var uiClock: [FixtureRef: (masked: TimeInterval, tick: TimeInterval)] = [:]
+    /// DESIGN.md §7.2: UI values that mask a live console are released after masking it this long since the last UI change.
     static let uiExpiry: TimeInterval = 600
 
     public init(patch: Patch, logger: Logger) {
@@ -74,14 +74,7 @@ public final class DMXStore: @unchecked Sendable {
     public func start() {
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + 0.5, repeating: 0.5)
-        timer.setEventHandler { [self] in
-            let now = Self.now
-            table.expire(at: now)
-            for entry in patch.entries where !table.status(for: entry.universe, at: now).active {
-                resolvers[entry.fixture]?.markDMXLost()
-            }
-            expireUI(at: now)
-        }
+        timer.setEventHandler { [self] in tick(at: Self.now) }
         timer.resume()
         self.timer = timer
     }
@@ -92,8 +85,16 @@ public final class DMXStore: @unchecked Sendable {
 
     // MARK: Called on `queue`
 
-    func receive(artnet packet: ArtDmx, from source: String) {
-        let now = Self.now
+    /// The 0.5 s housekeeping tick: signal loss, then the UI expiry clock.
+    func tick(at now: TimeInterval) {
+        table.expire(at: now)
+        for entry in patch.entries where !table.status(for: entry.universe, at: now).active {
+            resolvers[entry.fixture]?.markDMXLost()
+        }
+        expireUI(at: now)
+    }
+
+    func receive(artnet packet: ArtDmx, from source: String, at now: TimeInterval = DMXStore.now) {
         guard let universe = table.apply(artnet: packet, from: source, at: now) else { return }
         announce(universe, source: source)
         resolve(universe: universe, at: now)
@@ -132,19 +133,39 @@ public final class DMXStore: @unchecked Sendable {
         }
     }
 
-    /// UI values expire only while they mask a console: without console traffic for the fixture the clock is held at
-    /// `now`, so a UI used to test before the desk is on site keeps its values until Release.
+    /// UI values mask the console when the fixture's universe has traffic and at least one parameter resolves to the UI:
+    /// never under policy `dmx` (UI not shown), under `htp` only where the UI value is the higher one, under `ltp` until
+    /// the desk moves that parameter again.
+    private static func masksConsole(_ resolver: FixtureResolver) -> Bool {
+        resolver.hasDMX && resolver.resolvedAll().contains { $0.source == .ui }
+    }
+
+    /// Seconds left for a fixture whose UI values mask the console right now; nil otherwise (no countdown shown).
+    private func uiExpiresIn(_ fixture: FixtureRef, at now: TimeInterval) -> TimeInterval? {
+        guard let clock = uiClock[fixture], let resolver = resolvers[fixture], Self.masksConsole(resolver) else { return nil }
+        return max(0, Self.uiExpiry - clock.masked - (now - clock.tick))
+    }
+
+    /// UI values expire only after masking a live console for 10 minutes since the last UI change. Time without console
+    /// traffic (or with the console winning) pauses the clock, so testing before the desk is on site keeps the values
+    /// until Release. ponytail: a tick interval counts whole when the fixture masks at its end (≤ 0.5 s error, and up
+    /// to the 2.5 s loss timeout after a dropout).
     func expireUI(at now: TimeInterval) {
         var changed = false
-        for (fixture, since) in uiSince {
-            guard let resolver = resolvers[fixture] else { uiSince[fixture] = nil; continue }
-            if !resolver.hasDMX {
-                uiSince[fixture] = now
-            } else if now - since >= Self.uiExpiry {
+        for (fixture, clock) in uiClock {
+            // released, or every UI value overwritten (OSC, cue): nothing left to expire
+            guard let resolver = resolvers[fixture], resolver.internalValues().contains(where: { $0.source == .ui }) else {
+                uiClock[fixture] = nil
+                continue
+            }
+            let masked = clock.masked + (Self.masksConsole(resolver) ? now - clock.tick : 0)
+            if masked >= Self.uiExpiry {
                 resolvers[fixture]?.clearInternal(source: .ui)
-                uiSince[fixture] = nil
+                uiClock[fixture] = nil
                 changed = true
-                logger.info("UI values released after 10 minutes with the console active", metadata: ["fixture": "\(fixture)"])
+                logger.warning("UI values released: they masked the console for 10 minutes", metadata: ["fixture": "\(fixture)"])
+            } else {
+                uiClock[fixture] = (masked, now)
             }
         }
         if changed { publish(receivedAt: 0) }
@@ -153,12 +174,12 @@ public final class DMXStore: @unchecked Sendable {
     func applyUI(_ fixture: FixtureRef, _ parameter: ParameterID, raw: UInt16, at now: TimeInterval) {
         guard resolvers[fixture] != nil else { return }
         resolvers[fixture]?.setInternal(parameter, raw: raw, source: .ui, at: now)
-        uiSince[fixture] = now
+        uiClock[fixture] = (0, now)
         publish(receivedAt: 0)
     }
 
     func keepUI(_ fixture: FixtureRef, at now: TimeInterval) {
-        if uiSince[fixture] != nil { uiSince[fixture] = now }
+        if uiClock[fixture] != nil { uiClock[fixture] = (0, now) }
     }
 
     /// Logs a universe/source pair once; the string is only built when the pair differs from the previous packet's.
@@ -224,7 +245,7 @@ public final class DMXStore: @unchecked Sendable {
         queue.async { [self] in
             for key in resolvers.keys where fixture == nil || key == fixture {
                 resolvers[key]?.clearInternal(source: .ui)
-                uiSince[key] = nil
+                uiClock[key] = nil
             }
             publish(receivedAt: 0)
         }
@@ -250,9 +271,10 @@ public final class DMXStore: @unchecked Sendable {
         queue.async { [self] in resolvers[fixture]?.policy = policy }
     }
 
-    public func snapshot() -> LiveSnapshot {
+    public func snapshot() -> LiveSnapshot { snapshot(at: Self.now) }
+
+    func snapshot(at now: TimeInterval) -> LiveSnapshot {
         queue.sync {
-            let now = Self.now
             let ids = Set(table.knownUniverses + patch.universes).sorted()
             let universes = ids.map { id -> UniverseInfo in
                 let status = table.status(for: id, at: now)
@@ -277,8 +299,8 @@ public final class DMXStore: @unchecked Sendable {
                 policies[fixture.description] = resolver.policy.rawValue
             }
             var uiExpiresIn: [String: Double] = [:]
-            for (fixture, since) in uiSince where resolvers[fixture]?.hasDMX == true {
-                uiExpiresIn[fixture.description] = max(0, (since + Self.uiExpiry - now).rounded(.up))
+            for fixture in uiClock.keys {
+                if let left = self.uiExpiresIn(fixture, at: now) { uiExpiresIn[fixture.description] = left.rounded(.up) }
             }
             return LiveSnapshot(universes: universes, fixtures: fixtures, policies: policies, internalValues: internalValues, uiExpiresIn: uiExpiresIn)
         }

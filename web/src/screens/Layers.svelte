@@ -58,11 +58,28 @@
 
 <LayerStrips selected={fixture} onselect={(f) => (ui.fixture = f)} />
 
+<!-- keyed: the Control switch starts off for every fixture picked -->
+{#snippet fixturePanel(name: string)}
+  {#key name}
+    <LayerDetail
+      n={0}
+      {name}
+      layer={undefined}
+      params={app.live.dmx.fixtures[name]}
+      entry={patchByFixture.get(name)}
+      specs={channelMap?.modes[fixtureMode]}
+      footprint={channelMap?.footprints[fixtureMode] ?? 8}
+    />
+  {/key}
+{/snippet}
+
 {#if layerCount === 0}
   <div class="panel empty">
     <p class="muted">The project has no layers, so there is nothing to play on. Add layers on the Patch screen (this Mac's tier allows {app.caps.maxLayers ?? '—'}).</p>
     <button type="button" class="btn btn-primary" onclick={() => go('patch')}>Go to Patch</button>
   </div>
+  <!-- Master and outputs stay controllable without layers -->
+  {#if fixture !== null}<div class="alone">{@render fixturePanel(fixture)}</div>{/if}
 {:else}
   <div class="layout">
     <div class="table">
@@ -102,15 +119,7 @@
         <Preview />
       {/if}
       {#if fixture !== null}
-        <LayerDetail
-          n={0}
-          name={fixture}
-          layer={undefined}
-          params={app.live.dmx.fixtures[fixture]}
-          entry={patchByFixture.get(fixture)}
-          specs={channelMap?.modes[fixtureMode]}
-          footprint={channelMap?.footprints[fixtureMode] ?? 8}
-        />
+        {@render fixturePanel(fixture)}
       {:else}
       <LayerDetail
         n={selected}
@@ -129,6 +138,7 @@
 <style>
   .empty { padding: 32px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
   .empty p { margin: 0; }
+  .alone { max-width: 360px; margin-top: 12px; }
   .layout { display: flex; gap: 12px; align-items: flex-start; }
   .table {
     /* LayerRow reads these two; the heads below use the same grid so the columns line up. */
