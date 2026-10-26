@@ -371,6 +371,11 @@ public final class MediaLoader: @unchecked Sendable {
             opened.wrappingAdd(1, ordering: .relaxed)
             status.kind = "live"
             status.name = "Generator: \(Generators.names[key.file] ?? "\(key.file)")"
+            if let texture = generator.latestTexture {
+                status.width = texture.width
+                status.height = texture.height
+            }
+            status.codec = "generator"
             return LayerPlayback(key: key, live: generator)
         }
         guard let entry = media[key] ?? resolver?(key).map({ MediaEntry(folder: key.folder, file: key.file, path: $0.path) }) else {

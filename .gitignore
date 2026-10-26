@@ -11,3 +11,6 @@ docs/BRIEF.md
 
 # local editor and assistant settings
 .claude/
+
+# Internal market notes with competitor prices (kept local)
+docs/marketing/*-internal.md

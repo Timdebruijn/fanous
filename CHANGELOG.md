@@ -16,6 +16,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Layer cap stays 32 for v1 (OPEN-8).
 - Built-in content in folder 0: solid colour, the test patterns, a moving test card, colour sweep,
   clock and a frame-locked motion test (113), drawn on the GPU and selectable from the console or the UI.
+  Layer status shows their size and "Built-in" instead of 0 × 0.
+- README rewritten around the console-as-controller story with screenshots and a tour GIF
+  (`docs/images/`); the developer reference moved to `docs/DEVELOPMENT.md`; market research and
+  positioning in `docs/marketing/positioning.md`.
 - Test patterns reworked after a review: resolution-scaled lines, centred grid with border, aspect
   circle and diagonals, 100 % colour references, "Blend check" (was Blend zones), a readable output
   number, a 1 % black-level ramp.

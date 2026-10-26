@@ -129,7 +129,7 @@ function fpsText(fps: number): string {
 const codecNames = new Map([
   ['apch', 'ProRes 422 HQ'], ['apcn', 'ProRes 422'], ['apcs', 'ProRes 422 LT'], ['apco', 'ProRes 422 Proxy'], ['ap4h', 'ProRes 4444'], ['ap4x', 'ProRes 4444 XQ'],
   ['Hap1', 'HAP'], ['Hap5', 'HAP Alpha'], ['HapY', 'HAP Q'], ['HapM', 'HAP Q Alpha'], ['HapA', 'HAP Alpha Only'], ['HapR', 'HAP R'],
-  ['avc1', 'H.264'], ['hvc1', 'HEVC'], ['hev1', 'HEVC'],
+  ['avc1', 'H.264'], ['hvc1', 'HEVC'], ['hev1', 'HEVC'], ['generator', 'Built-in'],
 ]);
 
 /** "apch" → "ProRes 422 HQ"; unknown codecs are shown as the engine names them. */
