@@ -17,6 +17,10 @@
     size,
     selected = $bindable(null),
     onchange,
+    addMode = false,
+    draft = null,
+    onadd,
+    onremove,
   }: {
     output: OutputConfig;
     mode: MapperMode;
@@ -25,6 +29,12 @@
     size: { w: number; h: number };
     selected: string | null;
     onchange: (path: string, point: MapPoint) => void;
+    /** mask mode: taps on the picture add points (stored, pre-warp coordinates); double-click always does */
+    addMode?: boolean;
+    /** a mask being drawn corner by corner, before it has three points */
+    draft?: MapPoint[] | null;
+    onadd?: (point: MapPoint) => void;
+    onremove?: (path: string) => void;
   } = $props();
 
   const W = 1000;
@@ -76,7 +86,27 @@
     onchange(final.path, final.point);
   }
 
+  /** a tap on the picture itself (not on a handle) */
+  function background(event: PointerEvent) {
+    if ((event.target as Element).closest('.handle') || mode !== 'mask' || !onadd) return;
+    if (!(addMode || draft)) return;
+    event.preventDefault();
+    onadd(fromScreen(output, mode, toPoint(event)));
+  }
+
+  function doubleClick(event: MouseEvent) {
+    if ((event.target as Element).closest('.handle') || mode !== 'mask' || !onadd || draft) return;
+    const rect = svg!.getBoundingClientRect();
+    const p = { x: clamp01((event.clientX - rect.left) / rect.width), y: clamp01((event.clientY - rect.top) / rect.height) };
+    onadd(fromScreen(output, mode, p));
+  }
+
   function key(event: KeyboardEvent) {
+    if ((event.key === 'Backspace' || event.key === 'Delete') && selected && mode === 'mask' && onremove) {
+      event.preventDefault();
+      onremove(selected);
+      return;
+    }
     if (!selected) return;
     const handle = points.find((h) => h.path === selected);
     if (!handle) return;
@@ -91,7 +121,12 @@
   const colours = ['#4C9EFF', '#35D07F', '#FFC532', '#FF5A5F', '#A3AAB4'];
 </script>
 
-<svg bind:this={svg} class="mapper" viewBox="0 0 {W} {H}" role="application" aria-label="Mapping editor: drag the handles, arrow keys nudge the selected point" tabindex="0" onkeydown={key} onpointermove={move} onpointerup={up} onpointercancel={up}>
+<svg bind:this={svg} class="mapper" viewBox="0 0 {W} {H}" role="application" aria-label="Mapping editor: drag the handles, arrow keys nudge the selected point" tabindex="0" class:adding={mode === 'mask' && (addMode || draft)} onkeydown={key} onpointerdown={background} ondblclick={doubleClick} onpointermove={move} onpointerup={up} onpointercancel={up}>
+  {#if draft && draft.length > 0}
+    {@const pts = draft.map((p) => toScreen(output, mode, p))}
+    <polyline points={pts.map((p) => `${p.x * W},${p.y * H}`).join(' ')} fill="none" stroke="#FFC532" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" />
+    {#each pts as p, i (i)}<circle cx={p.x * W} cy={p.y * H} r="10" fill="#FFC532" stroke="#0B0C0E" stroke-width="3" vector-effect="non-scaling-stroke" />{/each}
+  {/if}
   {#each lines as line, i (i)}
     <polyline
       points={line.points.map((p) => `${p.x * W},${p.y * H}`).join(' ') + (line.closed ? ` ${line.points[0]!.x * W},${line.points[0]!.y * H}` : '')}
@@ -114,6 +149,7 @@
 <style>
   .mapper { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; outline: none; cursor: default; }
   .mapper:focus-visible { outline: 2px solid var(--accent); }
+  .mapper.adding { cursor: crosshair; }
   .handle { cursor: grab; }
   .handle:active { cursor: grabbing; }
   .handle.sel circle:last-child { stroke: var(--accent); }

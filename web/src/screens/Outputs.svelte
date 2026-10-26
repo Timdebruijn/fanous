@@ -2,7 +2,7 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script module lang="ts">
-  const ui = $state({ selected: 0, tab: 'outputs' as 'canvases' | 'outputs' | 'warp', mapper: 'cornerPin' as MapperMode, slice: 0, handle: null as string | null });
+  const ui = $state({ selected: 0, tab: 'outputs' as 'canvases' | 'outputs' | 'warp', mapper: 'cornerPin' as MapperMode, slice: 0, handle: null as string | null, maskAdd: false, draft: null as MapPoint[] | null });
 </script>
 
 <script lang="ts">
@@ -10,12 +10,13 @@
   import OutputMapper from '../components/OutputMapper.svelte';
   import Preview from '../components/Preview.svelte';
   import {
-    EDGES, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, insertPoint, meshIdentity, modeText, nextSliceId, outputSize, statusText,
+    EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, meshIdentity, modeText, nextSliceId, outputSize, statusText,
     type MapPoint, type MapperMode, type OutputConfig,
   } from '../lib/outputs';
   import { app, can, cmd, toastUndo } from '../lib/state.svelte';
   import { go } from '../lib/router.svelte';
   import { sourcePixels, sourceFromPixels } from '../lib/outputs';
+  import { downloadTemplatePNG, templateSVG } from '../lib/template';
   import { fromScreen, nudgeStored, toScreen } from '../lib/warp';
   import type { JSONValue } from '../lib/protocol';
 
@@ -99,11 +100,40 @@
     if (!output || !ui.handle || !selectedHandle) return;
     point(ui.handle, nudgeStored(output, ui.mapper, selectedHandle, dx, dy, size));
   }
-  function addMaskPoint() {
+  async function exportTemplate() {
+    if (!output || !canvas) return;
+    const size = { width: canvas.width, height: canvas.height };
+    const name = output.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    await downloadTemplatePNG(templateSVG(output, size), size.width, size.height, `fanous-template-${name}-${size.width}x${size.height}.png`);
+  }
+  /** a tap or double-click on the picture in Mask mode: a corner of a mask being drawn, or a new point on the nearest edge */
+  function addMaskAt(p: MapPoint) {
     const slice = output?.slices[sliceIndex];
-    if (!slice?.mask) return;
-    const index = ui.handle?.startsWith(`/slices/${sliceIndex}/mask/path/`) ? Number(ui.handle.split('/').pop()) : slice.mask.path.length - 1;
-    set(`/slices/${sliceIndex}/mask/path`, insertPoint(slice.mask.path, index) as unknown as JSONValue);
+    if (!output || !slice || locked) return;
+    const q = { x: clamp01(p.x), y: clamp01(p.y) };
+    if (ui.draft) {
+      ui.draft = [...ui.draft, q];
+      return;
+    }
+    if (!slice.mask) return;
+    const { path, index } = insertNearest(slice.mask.path, q);
+    set(`/slices/${sliceIndex}/mask/path`, path as unknown as JSONValue);
+    ui.handle = `/slices/${sliceIndex}/mask/path/${index}`;
+  }
+  function startDrawing() {
+    ui.draft = [];
+    ui.handle = null;
+  }
+  function finishDrawing() {
+    if (!ui.draft || ui.draft.length < 3) return;
+    set(`/slices/${sliceIndex}/mask`, { path: ui.draft, feather: 0 } as unknown as JSONValue);
+    ui.draft = null;
+    ui.maskAdd = false;
+  }
+  function removeMaskPointAt(path: string) {
+    if (!path.startsWith(`/slices/${sliceIndex}/mask/path/`)) return;
+    ui.handle = path;
+    removeMaskPoint();
   }
   function removeMaskPoint() {
     const slice = output?.slices[sliceIndex];
@@ -173,7 +203,7 @@
         <Preview target={previewTarget} aspect={previewAspect} />
         {#if output && ui.tab === 'warp'}
           <div class="overlay" style:aspect-ratio={previewAspect}>
-            <OutputMapper {output} mode={ui.mapper} {sliceIndex} {size} bind:selected={ui.handle} onchange={point} />
+            <OutputMapper {output} mode={ui.mapper} {sliceIndex} {size} bind:selected={ui.handle} onchange={point} addMode={ui.maskAdd} draft={ui.mapper === 'mask' ? ui.draft : null} onadd={addMaskAt} onremove={removeMaskPointAt} />
           </div>
         {/if}
       {:else}
@@ -272,6 +302,7 @@
             <button type="button" class="btn" aria-pressed={ui.mapper === 'slices'} onclick={() => (ui.mapper = 'slices')}>Slices</button>
             <button type="button" class="btn" aria-pressed={ui.mapper === 'mask'} onclick={() => (ui.mapper = 'mask')}>Mask</button>
           </div>
+          <button type="button" class="btn" disabled={!canvas} title="A PNG at canvas size showing which part of the canvas each slice uses and what its mask leaves visible: a guide for making content" onclick={exportTemplate}>Content template (PNG)</button>
           <span class="spacer"></span>
           {#if selectedHandle && selectedScreen}
             <span class="caption">Selected point (px)</span>
@@ -330,14 +361,22 @@
                 {#each output.slices as sl, i (sl.id)}<option value={i}>Slice {sl.id}</option>{/each}
               </select>
             </label>
-            {#if s?.mask}
+            {#if ui.draft}
+              <p class="caption grow"><strong>Drawing a mask:</strong> tap the corners of the area that stays visible, in order around it ({ui.draft.length} so far, at least 3).</p>
+              <button type="button" class="btn btn-primary" disabled={ui.draft.length < 3} onclick={finishDrawing}>Done</button>
+              <button type="button" class="btn" disabled={ui.draft.length === 0} onclick={() => (ui.draft = ui.draft!.slice(0, -1))}>Undo last corner</button>
+              <button type="button" class="btn" onclick={() => (ui.draft = null)}>Cancel</button>
+            {:else if s?.mask}
               <label class="field"><span>Feather px</span><input class="input mono" type="number" min="0" value={s.mask.feather} disabled={locked} onchange={(e) => set(`/slices/${sliceIndex}/mask/feather`, Number(e.currentTarget.value))} /></label>
-              <button type="button" class="btn" disabled={locked} onclick={addMaskPoint}>Add point</button>
+              <button type="button" class="btn" aria-pressed={ui.maskAdd} disabled={locked} onclick={() => (ui.maskAdd = !ui.maskAdd)}>{ui.maskAdd ? 'Adding points: tap the picture' : 'Add points'}</button>
               <button type="button" class="btn" disabled={locked || s.mask.path.length <= 3 || !ui.handle?.includes('/mask/')} onclick={removeMaskPoint}>Remove point</button>
+              <button type="button" class="btn" disabled={locked} onclick={startDrawing}>Redraw</button>
               <button type="button" class="btn btn-danger" disabled={locked} onclick={removeMask}>Remove mask</button>
+              <p class="caption grow">Tap the picture to add a point where you tap (with Add points on), or double-click anywhere; it joins the nearest edge. Drag points to move them; Backspace removes the selected one.</p>
             {:else}
-              <button type="button" class="btn" disabled={locked || !s} onclick={() => set(`/slices/${sliceIndex}/mask`, defaultMask() as unknown as JSONValue)}>Add mask</button>
-              <p class="caption grow">A mask hides everything outside its path; feather softens the edge in output pixels.</p>
+              <button type="button" class="btn btn-primary" disabled={locked || !s} onclick={startDrawing}>Draw mask</button>
+              <button type="button" class="btn" disabled={locked || !s} onclick={() => set(`/slices/${sliceIndex}/mask`, defaultMask() as unknown as JSONValue)}>Rectangle</button>
+              <p class="caption grow">A mask hides everything outside its shape. Draw mask: tap the corners of the visible area on the picture. Feather softens the edge.</p>
             {/if}
           </div>
         {/if}

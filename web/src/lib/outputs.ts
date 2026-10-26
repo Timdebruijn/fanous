@@ -181,6 +181,28 @@ export function defaultMask(): MaskSettings {
   return { path: [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 }, { x: 0.9, y: 0.9 }, { x: 0.1, y: 0.9 }], feather: 0 };
 }
 
+/** Inserts `p` into the closed path on the edge nearest to it, so a tapped point never tangles the shape. */
+export function insertNearest(path: MapPoint[], p: MapPoint): { path: MapPoint[]; index: number } {
+  if (path.length < 2) return { path: [...path, p], index: path.length };
+  let best = 0;
+  let bestDistance = Infinity;
+  for (let i = 0; i < path.length; i++) {
+    const a = path[i]!, b = path[(i + 1) % path.length]!;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const length2 = dx * dx + dy * dy;
+    const t = length2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length2)) : 0;
+    const qx = a.x + t * dx - p.x, qy = a.y + t * dy - p.y;
+    const distance = qx * qx + qy * qy;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = i;
+    }
+  }
+  const next = [...path];
+  next.splice(best + 1, 0, p);
+  return { path: next, index: best + 1 };
+}
+
 /** Inserts a point halfway between `index` and the next one (wrapping). */
 export function insertPoint(path: MapPoint[], index: number): MapPoint[] {
   const a = path[index] ?? path[0]!;

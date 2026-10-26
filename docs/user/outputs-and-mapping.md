@@ -118,15 +118,30 @@ a handle stays on the spot you touch while a warp is active.
 - **Mesh**: **Density** is Off (corner pin only) or 2x2, 3x3, 5x5, 9x9, 17x17
   or 33x33 points. Changing the density starts from a flat grid. The picture
   follows a smooth surface through the points. **Reset mesh** flattens it.
-- **Slices**: a slice takes a rectangle of the canvas (**Source x · y · w · h**,
-  in pixels of the canvas; the tooltip shows the stored 0 to 1 value) and puts it on a four-corner destination on the output (the
-  handles). **Opacity %** per slice. **Add slice** and **Remove slice**; slices
-  draw in order, later over earlier. Use slices to feed different parts of the
-  canvas to different regions.
-- **Mask**: **Add mask** starts with a rectangle 10 % inside the slice. Everything
-  outside the path is hidden. **Feather (px)** softens the edge in output pixels.
-  **Add point** inserts a point after the selected one, **Remove point** deletes
-  the selected one (a mask keeps at least three), **Remove mask** deletes it.
+- **Slices**: a slice is a piece of the canvas placed somewhere on the output.
+  It takes a rectangle of the canvas (**Source x · y · w · h**, in canvas
+  pixels; the tooltip shows the stored 0 to 1 value) and stretches it into a
+  four-corner area on the output (the handles). An output starts with one slice
+  that shows the whole canvas, so you only need more when one projector covers
+  several surfaces that each need their own part of the picture: three screens
+  on a stage, the pillars of a facade, a strip next to a screen. **Opacity %**
+  per slice; **Add slice** and **Remove slice**; later slices draw over earlier
+  ones. The warp (corner pin, mesh) applies to the whole output on top.
+- **Mask**: a mask hides everything of a slice outside its shape (windows,
+  doors, the sky above a building). **Draw mask** and then tap the corners of
+  the area that stays visible on the picture, in order around it; **Done**
+  when you have at least three, **Undo last corner** and **Cancel** while
+  drawing. **Rectangle** starts with a rectangle 10 % inside instead. To add
+  points to an existing mask, turn on **Add points** and tap where the point
+  goes, or double-click anywhere: the point joins the nearest edge. Drag points
+  to move them, nudge with the arrow keys or the pad, **Backspace** (or
+  **Remove point**) deletes the selected one; a mask keeps at least three.
+  **Feather (px)** softens the edge, **Redraw** starts the shape again,
+  **Remove mask** deletes it.
+- **Content template (PNG)**: downloads a picture at canvas size that shows,
+  per slice, which rectangle of the canvas it uses and (filled) what its mask
+  leaves visible. Give it to whoever makes the content, as a layer under their
+  design, so windows and edges land where the mapping expects them.
 
 The canvas is also published as the Syphon server "Fanous – Canvas", so
 another app on the same Mac can receive it. This was checked between processes
