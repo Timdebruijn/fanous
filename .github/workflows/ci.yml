@@ -57,12 +57,12 @@ jobs:
           echo "swift=$(swift --version 2>&1 | shasum | cut -c1-12)" >> "$GITHUB_OUTPUT"
           echo "playwright=$(node -p "require('./web/package-lock.json').packages['node_modules/playwright-core'].version")" >> "$GITHUB_OUTPUT"
       # the debug build: dependencies and unchanged modules come from the last run on this toolchain
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: .build
           key: e2e-build-${{ runner.os }}-${{ steps.versions.outputs.swift }}-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Sources/**') }}
           restore-keys: e2e-build-${{ runner.os }}-${{ steps.versions.outputs.swift }}-${{ hashFiles('Package.resolved') }}-
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: ~/Library/Caches/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.versions.outputs.playwright }}
