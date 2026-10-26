@@ -309,3 +309,26 @@ struct StateStoreRedactionTests {
         #expect(store.snapshot(role: .monitor).contains("/elsewhere") == false)
     }
 }
+
+struct LibraryRedactionTests {
+    @Test func monitorSnapshotHasNoAbsolutePaths() {
+        let item = LibraryItem(folder: 1, file: 1, name: "a.mov", path: "/Users/x/lib/001_a/001_a.mov", kind: .movie, status: .playable, reason: nil, metadata: nil, thumbnail: nil, modified: 0, size: 1)
+        let snapshot = LibrarySnapshot(root: "/Users/x/lib", rootExists: true, folders: [LibraryFolder(number: 1, name: "a", path: "/Users/x/lib/001_a", items: [item])], scannedAt: 0, fileCount: 1, invalidCount: 0)
+        let redacted = snapshot.redacted()
+        #expect(redacted.root == "")
+        #expect(redacted.folders[0].path == "001_a")
+        #expect(redacted.folders[0].items[0].path == "001_a/001_a.mov")
+        #expect(redacted.fileCount == 1)
+    }
+
+    @Test func admitSendsRedactedWelcomeAndSetsRoleAtomically() throws {
+        let (store, _) = StateStoreTests.makeStore()
+        let client = RecordingClient(role: .monitor)
+        var set = false
+        store.admit(client, role: .monitor, caps: [:]) { set = true }
+        #expect(set)
+        #expect(client.messages.withLock { $0.first?["t"]?.string } == "welcome")
+        #expect(client.messages.withLock { $0.first?["project"]?["library"]?["root"]?.string } == "")
+        #expect(store.clientCount == 1)
+    }
+}

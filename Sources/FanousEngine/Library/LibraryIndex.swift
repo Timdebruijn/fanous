@@ -55,6 +55,18 @@ public struct LibrarySnapshot: Codable, Sendable, Equatable {
     public var scannedAt: Double
     public var fileCount: Int
     public var invalidCount: Int
+
+    /// For clients below operator (B25): no root, and paths relative to it (still unique, so UI keys keep working).
+    public func redacted() -> LibrarySnapshot {
+        func relative(_ path: String) -> String { path.hasPrefix(root + "/") ? String(path.dropFirst(root.count + 1)) : URL(fileURLWithPath: path).lastPathComponent }
+        var copy = self
+        copy.root = ""
+        for f in copy.folders.indices {
+            copy.folders[f].path = relative(copy.folders[f].path)
+            for i in copy.folders[f].items.indices { copy.folders[f].items[i].path = relative(copy.folders[f].items[i].path) }
+        }
+        return copy
+    }
 }
 
 /// Library index: numbered folders and files under one root, kept current

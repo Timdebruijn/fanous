@@ -283,6 +283,20 @@ public final class StateStore: @unchecked Sendable {
         }
     }
 
+    /// Makes `client` a member at `role` and sends its welcome in one turn on the queue, so no broadcast (built for
+    /// the new role) can reach it before the redacted document it patches.
+    public func admit(_ client: StateClient, role: Role, caps: JSONValue, setRole: () -> Void) {
+        queue.sync {
+            setRole()
+            clients[ObjectIdentifier(client)] = clients[ObjectIdentifier(client)] ?? Client(client: client)
+            var message = snapshotObject(role: role)
+            message["t"] = "welcome"
+            message["role"] = .string(role.rawValue)
+            message["caps"] = caps
+            _ = client.send(text: encode(.object(message)), droppable: false)
+        }
+    }
+
     public func snapshot(role: Role) -> String { queue.sync { snapshotMessage(type: "snapshot", role: role) } }
 
     /// Clears the lagging flag once a client re-snapshotted.
