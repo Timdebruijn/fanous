@@ -80,6 +80,36 @@ export const CANVAS_PRESETS = [
 ] as const;
 export const CANVAS_RATES = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60] as const;
 
+/** Canvases a project may have (engine: ProjectDocument.maxCanvases); they all run at canvas 1's rate. */
+export const MAX_CANVASES = 4;
+
+/** Preview target of a canvas: "canvas" for canvas 1 (also what CITP streams), "canvas:<id>" for the others. */
+export function canvasTarget(id: number): string {
+  return id === 1 ? 'canvas' : `canvas:${id}`;
+}
+
+/** The canvas a layer renders into (`project.layerCanvas`, canvas 1 when unset). */
+export function layerCanvas(assigned: Record<string, number> | undefined, layer: number): number {
+  return assigned?.[String(layer)] ?? 1;
+}
+
+/** Layer numbers (1…layerCount) that render into a canvas. */
+export function layersOn(assigned: Record<string, number> | undefined, layerCount: number, canvas: number): number[] {
+  return Array.from({ length: Math.max(0, layerCount) }, (_, i) => i + 1).filter((n) => layerCanvas(assigned, n) === canvas);
+}
+
+/** "1–4, 7": layer numbers as runs. */
+export function layerRuns(numbers: number[]): string {
+  const runs: string[] = [];
+  for (let i = 0; i < numbers.length; i++) {
+    let j = i;
+    while (j + 1 < numbers.length && numbers[j + 1] === numbers[j]! + 1) j++;
+    runs.push(j > i ? `${numbers[i]}–${numbers[j]}` : String(numbers[i]));
+    i = j;
+  }
+  return runs.join(', ');
+}
+
 /** Why the engine would refuse this canvas size, or null when it is fine. */
 export function canvasSizeError(width: number, height: number): string | null {
   for (const [name, v] of [['Width', width], ['Height', height]] as const) {

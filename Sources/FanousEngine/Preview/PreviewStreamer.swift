@@ -27,6 +27,9 @@ public final class PreviewStreamer: @unchecked Sendable {
     public let width: Int
     public let height: Int
     public let fps: Double
+    /// The canvas this streamer shows ("canvas:<id>" targets); output streamers sample canvas 1 here and the others
+    /// through `tap`'s lookup.
+    public var canvasID = 1
     /// When set, the preview shows this output (post-warp/blend) instead of the canvas; compiled for the preview size.
     nonisolated(unsafe) public var outputSet: OutputSet?
     /// Target "layer:<n>": the 0-based layer this preview shows alone (`showLayer`); nil = canvas or output.
@@ -153,7 +156,8 @@ public final class PreviewStreamer: @unchecked Sendable {
     // MARK: Compositor thread
 
     /// `Compositor.previewTap`: encodes the downscale into the tick's command buffer when a frame is due.
-    public func tap(canvas: MTLTexture, commandBuffer: MTLCommandBuffer, target: Double) {
+    /// `canvases` looks up the other canvases of this tick (outputs whose slices use them).
+    public func tap(canvas: MTLTexture, commandBuffer: MTLCommandBuffer, target: Double, canvases: ((Int) -> MTLTexture?)? = nil) {
         tickCounter &+= 1
         guard wantsFrames, tickCounter % (wantsH264 ? everyNth : jpegEveryNth) == 0, let pool, let textureCache else { return }
         var pixelBuffer: CVPixelBuffer?
@@ -189,7 +193,7 @@ public final class PreviewStreamer: @unchecked Sendable {
             // same thread as the compositor tick, so reading the parameter slot here is the reader's own slot
             let snapshot = parameters.read()
             OutputPass.draw(
-                set, canvas: canvas, encoder: encoder, context: context, uniforms: mappedUniforms,
+                set, canvas: { $0 == canvasID ? canvas : canvases?($0) }, encoder: encoder, context: context, uniforms: mappedUniforms,
                 master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs)
         } else {
             encoder.setRenderPipelineState(context.outputPipeline)

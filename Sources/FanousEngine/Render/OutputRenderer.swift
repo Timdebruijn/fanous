@@ -26,7 +26,10 @@ public final class SlicePlan: @unchecked Sendable {
     let indexCount: Int
     let mask: MTLTexture?
     let opacity: Float
-    init(vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int, mask: MTLTexture?, opacity: Float) {
+    /// Canvas id the slice samples (DESIGN.md §9.1).
+    let canvas: Int
+    init(vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int, mask: MTLTexture?, opacity: Float, canvas: Int = 1) {
+        self.canvas = canvas
         self.vertices = vertices
         self.indices = indices
         self.indexCount = indexCount
@@ -50,9 +53,9 @@ public final class OutputPlan: @unchecked Sendable {
     let slices: [SlicePlan]
     /// The whole output (unit quad) tessellated like a slice: test patterns are drawn through it, so they follow the warp.
     let patternMesh: SlicePlan?
-    /// Canvas copy taken when the Output fixture's Control engaged Freeze; the content pass samples it instead of the live canvas.
-    /// Only touched by the one thread that renders this plan's set.
-    nonisolated(unsafe) var held: MTLTexture?
+    /// Canvas copies (by canvas id) taken when the Output fixture's Control engaged Freeze; the content pass samples them
+    /// instead of the live canvases. Only touched by the one thread that renders this plan's set.
+    nonisolated(unsafe) var held: [Int: MTLTexture] = [:]
 
     init(id: Int, index: Int, region: MTLRegion, intensity: Float, testPattern: TestPattern, blendMap: MTLTexture?, warpField: MTLTexture?, slices: [SlicePlan], patternMesh: SlicePlan? = nil) {
         self.patternMesh = patternMesh
@@ -129,7 +132,7 @@ public struct OutputCompiler: @unchecked Sendable {
                     mask = try texture(.r8Unorm, width: w, height: h, bytesPerPixel: 1, label: "mask \(config.id).\(slice.id)") { raster.withUnsafeBytes { $0.baseAddress! } }
                 }
             }
-            slices.append(SlicePlan(vertices: vertexBuffer, indices: indexBuffer, indexCount: indices.count, mask: mask, opacity: Float(slice.opacity)))
+            slices.append(SlicePlan(vertices: vertexBuffer, indices: indexBuffer, indexCount: indices.count, mask: mask, opacity: Float(slice.opacity), canvas: slice.canvas))
         }
         return OutputPlan(
             id: config.id, index: index, region: region, intensity: Float(config.intensity), testPattern: TestPattern(rawValue: config.testPattern) ?? .off,
@@ -178,30 +181,38 @@ enum OutputPass {
         plan.index - 1 < outputs.count && plan.index >= 1 ? outputs[plan.index - 1] : OutputParameters()
     }
 
-    /// Output Control = Freeze: keeps a copy of the canvas from the moment Freeze engaged, released when it ends.
-    /// Call before the output render encoder is created.
-    static func holdFrozen(_ set: OutputSet, canvas: MTLTexture, outputs: [OutputParameters], buffer: MTLCommandBuffer) {
+    /// Output Control = Freeze: keeps a copy of the canvases its slices use from the moment Freeze engaged, released
+    /// when it ends. `canvas` looks a canvas up by id (nil: it does not render). Call before the output render encoder is created.
+    static func holdFrozen(_ set: OutputSet, canvas: (Int) -> MTLTexture?, outputs: [OutputParameters], buffer: MTLCommandBuffer) {
         for plan in set.plans {
             guard fixture(for: plan, in: outputs).control == .freeze else {
-                plan.held = nil
+                if !plan.held.isEmpty { plan.held = [:] }
                 continue
             }
-            guard plan.held == nil else { continue }
-            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: canvas.pixelFormat, width: canvas.width, height: canvas.height, mipmapped: false)
-            descriptor.usage = .shaderRead
-            descriptor.storageMode = .private
-            guard let copy = buffer.device.makeTexture(descriptor: descriptor), let blit = buffer.makeBlitCommandEncoder() else { continue }
-            copy.label = "frozen output \(plan.id)"
-            blit.copy(from: canvas, to: copy)
-            blit.endEncoding()
-            plan.held = copy
+            guard plan.held.isEmpty else { continue }
+            var held: [Int: MTLTexture] = [:]
+            for slice in plan.slices where held[slice.canvas] == nil {
+                guard let source = canvas(slice.canvas) else { continue }
+                let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: source.pixelFormat, width: source.width, height: source.height, mipmapped: false)
+                descriptor.usage = .shaderRead
+                descriptor.storageMode = .private
+                guard let copy = buffer.device.makeTexture(descriptor: descriptor), let blit = buffer.makeBlitCommandEncoder() else { continue }
+                copy.label = "frozen output \(plan.id) canvas \(slice.canvas)"
+                blit.copy(from: source, to: copy)
+                blit.endEncoding()
+                held[slice.canvas] = copy
+            }
+            plan.held = held
         }
     }
 
+    /// `canvas` looks a canvas up by id; canvas 1 always renders. A slice whose canvas does not render stays black.
     static func draw(
-        _ set: OutputSet, canvas: MTLTexture, encoder: MTLRenderCommandEncoder, context: MetalContext, uniforms: MTLBuffer,
+        _ set: OutputSet, canvas lookup: (Int) -> MTLTexture?, encoder: MTLRenderCommandEncoder, context: MetalContext, uniforms: MTLBuffer,
         master: Float, masterPattern: TestPattern, outputs: [OutputParameters]
     ) {
+        // bound to texture slots the shader does not sample in this draw (patterns, no blend map, no warp, no mask)
+        guard let canvas = lookup(1) else { return }
         var offset = 0
         for plan in set.plans {
             let fixture = fixture(for: plan, in: outputs)
@@ -254,11 +265,13 @@ enum OutputPass {
             encoder.setRenderPipelineState(context.mappedPipeline)
             encoder.setVertexSamplerState(context.linearSampler, index: 0)
             encoder.setFragmentSamplerState(context.linearSampler, index: 0)
-            encoder.setFragmentTexture(fixture.control == .freeze ? (plan.held ?? canvas) : canvas, index: 0)
             encoder.setFragmentTexture(plan.blendMap ?? canvas, index: 2)
             encoder.setVertexTexture(plan.warpField ?? canvas, index: 0)
             for slice in plan.slices {
                 guard offset + 256 <= uniforms.length else { return }
+                let frozen = fixture.control == .freeze ? plan.held[slice.canvas] : nil
+                guard let source = frozen ?? lookup(slice.canvas) else { continue }  // removed canvas: black (the coordinator logs it)
+                encoder.setFragmentTexture(source, index: 0)
                 var u = MappedUniforms()
                 u.size = SIMD2(Float(region.size.width), Float(region.size.height))
                 u.intensity = intensity

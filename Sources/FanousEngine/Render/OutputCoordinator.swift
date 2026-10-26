@@ -129,6 +129,7 @@ public final class OutputCoordinator {
     private var masterDriver: DrawableLoopDriver?
     private var headless: HeadlessDriver?
     private var masterDisplay: CGDirectDisplayID?
+    private var lastOrphans: [String] = []
     public private(set) var status: [OutputStatus] = []
     /// Called after every rebind with the new statuses (feeds `live.outputs`).
     public var onStatus: (@MainActor ([OutputStatus]) -> Void)?
@@ -165,6 +166,17 @@ public final class OutputCoordinator {
     /// as fractions of the canvas, so mappings stay valid. On failure the old canvas runs on and the error is thrown.
     /// A driver that does not stop within its join timeout aborts the change: the textures are not swapped under a tick.
     public func setCanvas(width: Int, height: Int, fps: Double) throws {
+        try reconfigure { try compositor.reconfigure(width: width, height: height, fps: fps) }
+        self.fps = fps
+    }
+
+    /// Canvases added, removed or resized (multiple canvases): the same stop–reconfigure–restart as `setCanvas`.
+    public func setCanvases(_ layout: ProjectDocument.CanvasLayout) throws {
+        try reconfigure { try compositor.reconfigure(layout) }
+        self.fps = layout.fps
+    }
+
+    private func reconfigure(_ change: () throws -> Void) throws {
         var stopped = masterDriver?.stop() ?? true
         stopMaster()
         stopped = (headless?.stop() ?? true) && stopped
@@ -175,8 +187,7 @@ public final class OutputCoordinator {
         }
         defer { rebind() }
         guard stopped else { throw RenderError.pipeline("a render thread did not stop within 1 s; canvas unchanged") }
-        try compositor.reconfigure(width: width, height: height, fps: fps)
-        self.fps = fps
+        try change()
     }
 
     public func displaysChanged(_ displays: [DisplayInfo]) {
@@ -198,6 +209,13 @@ public final class OutputCoordinator {
     }
 
     private func rebind() {
+        // a slice on a canvas that does not render draws black (OutputPass); said once per change
+        let canvasIDs = Set(compositor.canvasIDs)
+        let orphans = outputs.flatMap { o in o.slices.filter { !canvasIDs.contains($0.canvas) }.map { "output \(o.id) slice \($0.id) → canvas \($0.canvas)" } }
+        if orphans != lastOrphans {
+            lastOrphans = orphans
+            if !orphans.isEmpty { logger.warning("slices on a canvas that does not render stay black", metadata: ["slices": "\(orphans.joined(separator: ", "))"]) }
+        }
         let binding = OutputBinding.resolve(outputs: outputs, displays: displays)
         let newMaster = OutputBinding.master(outputs: outputs, binding: binding, clockMaster: clockMaster)
 

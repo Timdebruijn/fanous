@@ -6,9 +6,9 @@ import Foundation
 import Metal
 import Synchronization
 
-/// One preview streamer per target ("canvas", "output:<id>", "layer:<n>") that has subscribers, created on demand and released with
-/// its last subscriber, so one client's target never changes what another sees. The canvas streamer always exists:
-/// CITP consoles stream the canvas.
+/// One preview streamer per target ("canvas" = "canvas:1", "canvas:<id>", "output:<id>", "layer:<n>") that has subscribers,
+/// created on demand and released with its last subscriber, so one client's target never changes what another sees. The
+/// canvas 1 streamer always exists: CITP consoles stream it.
 public final class PreviewHub: @unchecked Sendable {
     /// Replaced by `rebuild` (canvas size or rate changed); taken under `streamers` when both are needed.
     private let canvasBox: Mutex<PreviewStreamer>
@@ -19,6 +19,12 @@ public final class PreviewHub: @unchecked Sendable {
     private let active: Mutex<[PreviewStreamer]>
     /// Points a new streamer at its target; false for an unknown target. Set by the engine (output compile needs its project).
     nonisolated(unsafe) public var configure: (@Sendable (String, PreviewStreamer) -> Bool)?
+    /// Makes the streamer of another canvas (its size and aspect); nil when that canvas does not render. Set by the engine.
+    nonisolated(unsafe) public var makeCanvas: (@Sendable (Int) throws -> PreviewStreamer?)?
+    /// Compositor thread: a canvas of the running tick by id (`Compositor.tickCanvas`).
+    nonisolated(unsafe) public var canvasTexture: ((Int) -> MTLTexture?)?
+    /// The canvas id of a "layer:<n>" target's layer (its preview takes that canvas's aspect). Set by the engine.
+    nonisolated(unsafe) public var canvasOfLayer: (@Sendable (String) -> Int?)?
 
     public init(canvas: PreviewStreamer, make: @escaping @Sendable () throws -> PreviewStreamer) {
         canvasBox = Mutex(canvas)
@@ -28,11 +34,12 @@ public final class PreviewHub: @unchecked Sendable {
 
     /// Subscribes `connection`'s stream to `target`, creating that target's streamer when this is its first subscriber.
     /// `announce` runs before the first frame can be sent (the `sub` reply carries the stream's size). False: bad target.
-    public func attach(target: String, connection: StateServer.Connection, stream: UInt32, jpeg: Bool, announce: (PreviewStreamer) -> Void) -> Bool {
+    public func attach(target requested: String, connection: StateServer.Connection, stream: UInt32, jpeg: Bool, announce: (PreviewStreamer) -> Void) -> Bool {
+        let target = requested == "canvas:1" ? "canvas" : requested
         // compiling an output reads the project (the store's queue): never under our lock, the store calls `refreshOutputs` from there
         var fresh: PreviewStreamer?
         if target != "canvas", !streamers.withLock({ $0[target] != nil }) {
-            guard let created = try? make(), configure?(target, created) == true else { return false }
+            guard let created = try? create(target) else { return false }
             fresh = created
         }
         return streamers.withLock { all in
@@ -77,8 +84,7 @@ public final class PreviewHub: @unchecked Sendable {
         let fresh = try make()
         var outputs: [String: PreviewStreamer] = [:]
         for target in streamers.withLock({ Array($0.keys) }) {
-            let streamer = try make()
-            if configure?(target, streamer) == true { outputs[target] = streamer }
+            if let streamer = try create(target) { outputs[target] = streamer }
         }
         streamers.withLock { all in
             let old = canvas
@@ -86,12 +92,34 @@ public final class PreviewHub: @unchecked Sendable {
             for subscriber in old.subscriberList { fresh.subscribe(subscriber) }
             canvasBox.withLock { $0 = fresh }
             for (target, previous) in all {
-                guard let replacement = outputs[target] else { continue }
+                guard let replacement = outputs[target] else {
+                    // a removed canvas: its viewers are told instead of left on a frozen picture
+                    if target.hasPrefix("canvas:") {
+                        all.removeValue(forKey: target)
+                        for s in previous.subscriberList {
+                            _ = s.connection.send(text: #"{"t":"error","code":"badTarget","message":"preview target \#(target) no longer exists","id":\#(s.stream)}"#, droppable: false)
+                        }
+                    }
+                    continue
+                }
                 for subscriber in previous.subscriberList { replacement.subscribe(subscriber) }
                 all[target] = replacement
             }
             publishActive(all)
         }
+    }
+
+    /// A streamer for a target other than canvas 1: "canvas:<id>" through `makeCanvas`, anything else through `make` and `configure`.
+    private func create(_ target: String) throws -> PreviewStreamer? {
+        if target.hasPrefix("canvas:") {
+            guard let id = Int(target.dropFirst(7)), let streamer = try makeCanvas?(id) else { return nil }
+            streamer.canvasID = id
+            return streamer
+        }
+        // a layer preview is made at its canvas's aspect (`drawLayer` draws it there)
+        let canvas = target.hasPrefix("layer:") ? canvasOfLayer?(target) ?? 1 : 1
+        let streamer = try (canvas == 1 ? make() : makeCanvas?(canvas)) ?? make()
+        return configure?(target, streamer) == true ? streamer : nil
     }
 
     /// Output streamers without subscribers go; the canvas one stays.
@@ -128,7 +156,10 @@ public final class PreviewHub: @unchecked Sendable {
 
     /// `Compositor.previewTap`.
     public func tap(canvas texture: MTLTexture, commandBuffer: MTLCommandBuffer, target: Double) {
-        for streamer in active.withLock({ $0 }) { streamer.tap(canvas: texture, commandBuffer: commandBuffer, target: target) }
+        for streamer in active.withLock({ $0 }) {
+            guard let canvas = streamer.canvasID == 1 ? texture : canvasTexture?(streamer.canvasID) else { continue }
+            streamer.tap(canvas: canvas, commandBuffer: commandBuffer, target: target, canvases: canvasTexture)
+        }
     }
 
     // MARK: Counters

@@ -190,7 +190,7 @@ public final class StateServer: @unchecked Sendable {
                     }
                     if !attached {
                         subscriptions.withLock { _ = $0.removeValue(forKey: id) }
-                        session.send(text: server.store.encode(["t": "error", "code": "badTarget", "message": "preview target \(target) is not canvas, an existing output:<id> or layer:<n>"]), droppable: false)
+                        session.send(text: server.store.encode(["t": "error", "code": "badTarget", "message": "preview target \(target) is not canvas, an existing canvas:<id>, an existing output:<id> or layer:<n>"]), droppable: false)
                     }
                 default:
                     session.send(text: server.store.encode(["t": "error", "code": "badStream", "message": "streams: dmx, preview"]), droppable: false)

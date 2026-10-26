@@ -8,7 +8,8 @@
   const PREVIEW_KEY = 'fanous.layersPreview';
 
   // Module scope: the router unmounts this screen on navigation, the selected layer should survive that.
-  const ui = $state({ selected: 1, fixture: null as string | null, preview: storedPreview() });
+  // previewCanvas: the canvas shown while the preview shows a canvas (multiple canvases)
+  const ui = $state({ selected: 1, fixture: null as string | null, preview: storedPreview(), previewCanvas: 1 });
 
   function storedPreview(): PreviewSource {
     try {
@@ -34,6 +35,7 @@
   import LayerStrips from '../components/LayerStrips.svelte';
   import Preview from '../components/Preview.svelte';
   import { layerPreview, thumbnailFor, thumbnailIndex, type ChannelMap, type LibrarySnapshot } from '../lib/layers';
+  import { canvasTarget, layerCanvas } from '../lib/outputs';
   import { go } from '../lib/router.svelte';
   import { app } from '../lib/state.svelte';
 
@@ -72,11 +74,21 @@
   const fixtureMode = $derived(fixture === 'Master' ? 'master' : 'output');
   // "This layer" follows the selection; Master or an output picked in the strips means no layer is selected
   const preview = $derived(layerPreview(ui.preview, fixture === null ? selected : null));
+  const canvases = $derived(app.project.canvases);
+  // the canvas a canvas preview shows (canvas 1 when the chosen one is gone); a layer preview has its layer's canvas aspect
+  const previewCanvas = $derived(canvases.find((c) => c.id === ui.previewCanvas) ?? canvases[0]);
+  const shownCanvas = $derived(preview.shows === 'layer' ? (canvases.find((c) => c.id === layerCanvas(app.project.layerCanvas, selected)) ?? canvases[0]) : previewCanvas);
+  const canvasName = $derived(canvases.length > 1 ? (previewCanvas?.name ?? 'Canvas') : 'Canvas');
+  const previewLabel = $derived(preview.shows === 'layer' ? preview.label : ui.preview === 'layer' ? `${canvasName} (no layer selected)` : canvasName);
+  function showCanvas(id: number) {
+    ui.previewCanvas = id;
+    setPreview('canvas');
+  }
 </script>
 
 <div class="toolbar">
   <h1>Layers</h1>
-  <span class="caption">Canvas 1 · {layerCount} layers · <span title="Layer limit of this Mac's performance tier (chip class, see System). Add layer on Patch stops at this number so the show does not drop frames.">tier allows {app.caps.maxLayers ?? '—'} layers</span></span>
+  <span class="caption">{canvases.length > 1 ? `${canvases.length} canvases` : (canvases[0]?.name ?? 'Canvas 1')} · {layerCount} layers · <span title="Layer limit of this Mac's performance tier (chip class, see System). Add layer on Patch stops at this number so the show does not drop frames.">tier allows {app.caps.maxLayers ?? '—'} layers</span></span>
 </div>
 
 <LayerStrips selected={fixture} onselect={(f) => (ui.fixture = f)} />
@@ -141,11 +153,19 @@
       {#if app.live.engine.rendering}
         <div class="preview">
           <div class="segmented" role="group" aria-label="Preview shows">
-            <!-- pressed = what is shown: with Master or an output picked, Canvas even when This layer was chosen -->
-            <button type="button" class="btn" aria-pressed={preview.shows === 'canvas'} onclick={() => setPreview('canvas')}>Canvas</button>
+            <!-- pressed = what is shown: with Master or an output picked, a canvas even when This layer was chosen -->
+            {#if canvases.length > 1}
+              {#each canvases as c (c.id)}<button type="button" class="btn" aria-pressed={preview.shows === 'canvas' && previewCanvas?.id === c.id} onclick={() => showCanvas(c.id)}>{c.name}</button>{/each}
+            {:else}
+              <button type="button" class="btn" aria-pressed={preview.shows === 'canvas'} onclick={() => setPreview('canvas')}>Canvas</button>
+            {/if}
             <button type="button" class="btn" aria-pressed={preview.shows === 'layer'} onclick={() => setPreview('layer')}>This layer</button>
           </div>
-          <Preview target={preview.target} label={preview.label} />
+          <Preview
+            target={preview.shows === 'layer' ? preview.target : canvasTarget(previewCanvas?.id ?? 1)}
+            aspect={shownCanvas ? `${shownCanvas.width} / ${shownCanvas.height}` : '16 / 9'}
+            label={previewLabel}
+          />
         </div>
       {/if}
       {#if fixture !== null}

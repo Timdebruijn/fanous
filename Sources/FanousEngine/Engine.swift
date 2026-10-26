@@ -56,6 +56,16 @@ public final class Engine: @unchecked Sendable {
     private let modeChecks = Mutex<[Int: DisplayModeMatching.Check]>([:])
     private var lastOutputs: [OutputConfig] = []
     private var lastClockMaster: Int?
+    private var lastLayerCanvas: [Int] = []
+    /// What the project assigns to canvases, as last seen by Control; applied (main actor) against the canvases that
+    /// actually render, so a switch deferred in show mode or a failed one never leaves layers or slices on nothing.
+    private struct CanvasUse: Sendable {
+        var outputs: [OutputConfig] = []
+        var clockMaster: Int?
+        var layers: [Int] = []
+        var canvases: Set<Int> = [1]
+    }
+    private let canvasUse = Mutex(CanvasUse())
     /// B31: keeps the rendered canvas in step with the project's.
     private var canvasSwitch: CanvasSwitch?
     // Phase 7: show control
@@ -136,11 +146,13 @@ public final class Engine: @unchecked Sendable {
             try? ProjectDocument.setCanvasFormat(startCanvas, in: &project)
             loadedProject = project
         }
+        // every canvas of the project from the first tick (also after a restart in show mode, which defers switches)
+        let startLayout = ProjectDocument.layout(from: loadedProject ?? .null, start: startCanvas)
         let canvasSwitch = CanvasSwitch(
-            rendered: startCanvas, isDeferred: { [weak self] in self?.showMode.isOn ?? false },
-            apply: { [weak self] format in
+            rendered: startLayout, isDeferred: { [weak self] in self?.showMode.isOn ?? false },
+            apply: { [weak self] layout in
                 guard let coordinator = self?.coordinator else { throw RenderError.pipeline("no compositor") }
-                try coordinator.setCanvas(width: format.width, height: format.height, fps: format.fps)
+                try coordinator.setCanvases(layout)
             },
             revert: { [weak self] rendered, error in self?.canvasSwitchFailed(keeping: rendered, error: error) })
         canvasSwitch.applied = { [weak self] format in self?.canvasSwitched(to: format) }
@@ -194,6 +206,15 @@ public final class Engine: @unchecked Sendable {
             }
             service.loader.resolver = { key in library.resolve(key) }
             service.audioKeepRunning = { [weak self] in self?.showMode.isOn ?? false }
+            if startLayout.canvases.count > 1 {
+                // nothing ticks yet; on failure canvas 1 runs alone and takes the others' layers and slices meanwhile
+                do {
+                    try service.compositor.reconfigure(startLayout)
+                } catch {
+                    logger.error("canvases could not be made at start; canvas 1 runs alone", metadata: ["error": "\(error)"])
+                    canvasSwitch.startFailed(rendering: .init(fps: startLayout.fps, canvases: [startLayout.canvases[0]]), error: "at start: \(error)")
+                }
+            }
             render = service
         }
 
@@ -278,12 +299,23 @@ public final class Engine: @unchecked Sendable {
             // 640 wide in the canvas aspect at 30 fps (DESIGN.md §11.3 default), on the compositor's own command buffer;
             // made again from the rendered canvas when it changes (B31)
             let makePreview: @Sendable () throws -> PreviewStreamer = { [weak self, parameters = dmx.snapshots, logger] in
-                let canvas = self?.canvasSwitch?.rendered ?? startCanvas
+                let canvas = self?.canvasSwitch?.rendered.first ?? startCanvas
                 let height = max(2, 640 * canvas.height / max(1, canvas.width))
                 return try PreviewStreamer(context: context, width: 640, height: height, fps: min(30, canvas.fps), canvasFPS: canvas.fps, parameters: parameters, logger: logger)
             }
-            // one streamer per target that has subscribers (canvas, output:<id>, layer:<n>); the canvas one also serves CITP
+            // one streamer per target that has subscribers (canvas, canvas:<id>, output:<id>, layer:<n>); the canvas one also serves CITP
             let preview = PreviewHub(canvas: try makePreview(), make: makePreview)
+            preview.makeCanvas = { [weak self, parameters = dmx.snapshots, logger] id in
+                guard let layout = self?.canvasSwitch?.rendered, let canvas = layout.canvases.first(where: { $0.id == id }) else { return nil }
+                let height = max(2, 640 * canvas.height / max(1, canvas.width))
+                return try PreviewStreamer(context: context, width: 640, height: height, fps: min(30, layout.fps), canvasFPS: layout.fps, parameters: parameters, logger: logger)
+            }
+            preview.canvasTexture = { [unowned compositor = render.compositor] id in compositor.tickCanvas(id) }
+            preview.canvasOfLayer = { [weak self] target in
+                guard let self, let n = Int(target.dropFirst(6)), n >= 1 else { return nil }
+                let layers = self.effectiveCanvasUse().layers
+                return n <= layers.count ? layers[n - 1] : 1
+            }
             render.compositor.previewTap = { canvas, commandBuffer, target in preview.tap(canvas: canvas, commandBuffer: commandBuffer, target: target) }
             // no GPU work for a canvas nobody sees: no output window, preview, Syphon client or CITP stream
             render.compositor.skipsIdleWork = true
@@ -297,7 +329,7 @@ public final class Engine: @unchecked Sendable {
                     guard let index = PreviewHub.layerIndex(of: target, layerCount: self.store?.project["layerCount"]?.int ?? 0) else { return false }
                     return (try? streamer.showLayer(index, of: compositor)) != nil
                 }
-                let outputs = self.store?.project.outputsConfig ?? []
+                let outputs = self.effectiveCanvasUse().outputs  // as rendered (slices waiting for a canvas show canvas 1)
                 guard target.hasPrefix("output:"), let id = Int(target.dropFirst(7)), let output = outputs.first(where: { $0.id == id }) else { return false }
                 return self.previewOutput(output, in: outputs, compiler: compiler, preview: streamer)
             }
@@ -354,10 +386,14 @@ public final class Engine: @unchecked Sendable {
             let clockMaster = ProjectDocument.canvases(from: store.project).first?.clockMaster
             lastOutputs = outputs
             lastClockMaster = clockMaster
+            lastLayerCanvas = Self.layerCanvas(project: store.project, layers: render.layers.count)
+            let projectCanvases = Set(ProjectDocument.canvases(from: store.project).map(\.id))
+            canvasUse.withLock { $0 = CanvasUse(outputs: outputs, clockMaster: clockMaster, layers: lastLayerCanvas, canvases: projectCanvases) }
             let log = logger
+            render.compositor.layerCanvas = effectiveCanvasUse().layers
             Task { @MainActor in
                 do { try await render.start() } catch { log.error("render start failed", metadata: ["error": "\(error)"]) }
-                coordinator.apply(outputs: outputs, clockMaster: clockMaster)
+                self.applyCanvasUse()
             }
         }
         self.auth = auth
@@ -768,19 +804,73 @@ public final class Engine: @unchecked Sendable {
     }
 
     /// After a canvas switch (B31): previews at the new aspect and rate, caps for new clients, display-mode checks.
-    @MainActor private func canvasSwitched(to format: ProjectDocument.CanvasFormat) {
-        logger.info("canvas changed", metadata: ["size": "\(format.width)×\(format.height)", "fps": "\(format.fps)"])
+    /// Layers and slices on a canvas that does not render: a switch deferred in show mode (undo, redo, load) or one that
+    /// failed. Layers draw into canvas 1 meanwhile; a slice on a canvas the project has shows canvas 1, a slice on a
+    /// canvas the project does not have stays black (the coordinator logs it).
+    static func effectiveCanvasUse(layers: [Int], outputs: [OutputConfig], rendering: Set<Int>, project: Set<Int>) -> (layers: [Int], outputs: [OutputConfig]) {
+        let mappedLayers = layers.map { rendering.contains($0) ? $0 : 1 }
+        var mappedOutputs = outputs
+        for o in mappedOutputs.indices {
+            for s in mappedOutputs[o].slices.indices {
+                let canvas = mappedOutputs[o].slices[s].canvas
+                if !rendering.contains(canvas), project.contains(canvas) { mappedOutputs[o].slices[s].canvas = 1 }
+            }
+        }
+        return (mappedLayers, mappedOutputs)
+    }
+
+    private func effectiveCanvasUse() -> (layers: [Int], outputs: [OutputConfig], clockMaster: Int?) {
+        let use = canvasUse.withLock { $0 }
+        let rendering = Set(canvasSwitch?.rendered.canvases.map(\.id) ?? [1])
+        let mapped = Self.effectiveCanvasUse(layers: use.layers, outputs: use.outputs, rendering: rendering, project: use.canvases)
+        return (mapped.layers, mapped.outputs, use.clockMaster)
+    }
+
+    /// The project's layer and slice assignment against the canvases that render now: after a project change and
+    /// after every canvas switch. Output and layer previews follow.
+    @MainActor private func applyCanvasUse(rebuildLayerPreviews: Bool = false) {
+        let use = effectiveCanvasUse()
+        if let render, use.layers != render.compositor.layerCanvas { render.compositor.layerCanvas = use.layers }
+        coordinator?.apply(outputs: use.outputs, clockMaster: use.clockMaster)
+        guard let preview = stateServer?.preview else { return }
+        if rebuildLayerPreviews, preview.targets.contains(where: { $0.hasPrefix("layer:") }) {
+            // layer:<n> previews take the aspect of their layer's canvas
+            do { try preview.rebuild() } catch { logger.error("preview rebuild failed", metadata: ["error": "\(error)"]) }
+        } else if preview.targets.contains(where: { $0.hasPrefix("output:") }), let device = render?.context.device, let compiler = try? OutputCompiler(device: device) {
+            // output previews follow their output
+            preview.refreshOutputs { target, streamer in
+                guard target.hasPrefix("output:"), let id = Int(target.dropFirst(7)), let output = use.outputs.first(where: { $0.id == id }) else { return false }
+                return previewOutput(output, in: use.outputs, compiler: compiler, preview: streamer)
+            }
+        }
+    }
+
+    @MainActor private func canvasSwitched(to layout: ProjectDocument.CanvasLayout) {
+        let sizes = layout.canvases.map { "\($0.id): \($0.width)×\($0.height)" }.joined(separator: ", ")
+        logger.info("canvases changed", metadata: ["canvases": "\(sizes)", "fps": "\(layout.fps)"])
+        applyCanvasUse()  // layers and slices waiting for a canvas that now renders
         do { try stateServer?.preview?.rebuild() } catch { logger.error("preview rebuild failed", metadata: ["error": "\(error)"]) }
-        stateServer?.setCaps(fps: format.fps)
+        stateServer?.setCaps(fps: layout.fps)
         syncDisplayModes()
     }
 
-    /// A canvas switch failed: the old canvas still renders, so it goes back into the project (no history entry).
-    @MainActor private func canvasSwitchFailed(keeping rendered: ProjectDocument.CanvasFormat, error: any Error) {
-        logger.error("canvas change failed; the previous canvas keeps running", metadata: ["error": "\(error)"])
+    /// A canvas switch failed: the old canvases still render, so they go back into the project (no history entry).
+    @MainActor private func canvasSwitchFailed(keeping rendered: ProjectDocument.CanvasLayout, error: any Error) {
+        logger.error("canvas change failed; the previous canvases keep running", metadata: ["error": "\(error)"])
         guard let store else { return }
         var project = store.project
-        if (try? ProjectDocument.setCanvasFormat(rendered, in: &project)) != nil, let canvases = project["canvases"] { store.correct(canvases, at: "/canvases") }
+        guard (try? ProjectDocument.setCanvasLayout(rendered, in: &project)) != nil else { return }
+        // what was put on a canvas that could not be made goes back to canvas 1, as canvas.remove does
+        try? ProjectDocument.moveToCanvas1(keeping: Set(rendered.canvases.map(\.id)), in: &project)
+        for key in ["canvases", "layerCanvas", "outputs"] {
+            if let value = project[key], value != store.project[key], let pointer = try? JSONPointer("/" + key) { store.correct(value, at: pointer) }
+        }
+    }
+
+    /// Canvas id per layer index for the compositor (`/layerCanvas`, canvas 1 when unset).
+    static func layerCanvas(project: JSONValue, layers: Int) -> [Int] {
+        let assigned = ProjectDocument.layerCanvases(from: project)
+        return (0..<layers).map { assigned[$0 + 1] ?? 1 }
     }
 
     /// Canvas at start (B31): a `--scene` file wins (development, bench), then the project's first canvas, then
@@ -827,23 +917,27 @@ public final class Engine: @unchecked Sendable {
         }
         let timecodeSettings = ShowCommands.timecodeSettings(from: document)
         if timecodeSettings != lastTimecodeSettings { applyTimecodeSettings(timecodeSettings) }
-        // canvas size or rate (canvas.set, undo/redo, project load): applied unless show mode is on
-        if let canvas = ProjectDocument.canvases(from: document).first, let format = try? ProjectDocument.validated((canvas.width, canvas.height, canvas.fps)) {
-            canvasSwitch?.request(format)
+        // canvases, sizes or rate (canvas.add/remove/set, undo/redo, project load): applied unless show mode is on
+        if let c = ProjectDocument.canvases(from: document).first, (try? ProjectDocument.validated((c.width, c.height, c.fps))) != nil {
+            canvasSwitch?.request(ProjectDocument.layout(from: document))
         }
+        // layer → canvas (layer.set) and slices: applied against the canvases that render (main actor)
+        let layers = Self.layerCanvas(project: document, layers: render?.layers.count ?? 0)
         let outputs = ProjectDocument.outputs(from: document)
         let clockMaster = ProjectDocument.canvases(from: document).first?.clockMaster
-        if outputs != lastOutputs || clockMaster != lastClockMaster, let coordinator {
+        let projectCanvases = Set(ProjectDocument.canvases(from: document).map(\.id))
+        let use = CanvasUse(outputs: outputs, clockMaster: clockMaster, layers: layers, canvases: projectCanvases)
+        let previous = canvasUse.withLock { old in
+            defer { old = use }
+            return old
+        }
+        if layers != lastLayerCanvas || outputs != lastOutputs || clockMaster != lastClockMaster || projectCanvases != previous.canvases {
+            let layersChanged = layers != lastLayerCanvas
+            lastLayerCanvas = layers
             lastOutputs = outputs
             lastClockMaster = clockMaster
-            Task { @MainActor in coordinator.apply(outputs: outputs, clockMaster: clockMaster) }
-            // output previews follow their output when that one changed
-            if let preview = stateServer?.preview, preview.targets.count > 1, let compiler = try? OutputCompiler(device: render?.context.device ?? MTLCreateSystemDefaultDevice()!) {
-                preview.refreshOutputs { target, streamer in
-                    guard target.hasPrefix("output:"), let id = Int(target.dropFirst(7)), let output = outputs.first(where: { $0.id == id }) else { return false }
-                    return previewOutput(output, in: outputs, compiler: compiler, preview: streamer)
-                }
-            }
+            // never from here: rebuilding previews reads the project (this queue); the main actor may
+            Task { @MainActor in self.applyCanvasUse(rebuildLayerPreviews: layersChanged) }
         }
         autosave?.cancel()
         let logger = logger

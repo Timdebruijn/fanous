@@ -4,6 +4,9 @@
 <script lang="ts">
   import type { LayerStatus, ResolvedParameter } from '../lib/docs';
   import { clampPercent, findParam, formatPercent, layerState, mediaLine, playedPercent, policyName, positionCaption } from '../lib/layers';
+  import { layerCanvas } from '../lib/outputs';
+  import { lockTitle } from '../lib/show';
+  import { app, can, cmd } from '../lib/state.svelte';
 
   let {
     n,
@@ -33,17 +36,35 @@
   const outPoint = $derived(findParam(params, 'outPoint'));
   const volume = $derived(findParam(params, 'audioVolume'));
   const level = $derived(clampPercent(volume?.physical ?? 0));
+  // the canvas this layer renders into: a project setting (layer.set), shown as a select once there is a choice
+  const canvases = $derived(app.project.canvases);
+  const canvas = $derived(layerCanvas(app.project.layerCanvas, n));
+  const canvasName = $derived(canvases.find((c) => c.id === canvas)?.name ?? `Canvas ${canvas}`);
+  const canvasLock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
+  function keydown(event: KeyboardEvent) {
+    if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+    event.preventDefault();
+    onselect();
+  }
 </script>
 
 <!-- Column widths come from --layer-cols / --layer-gap, set by the Layers screen so its column heads line up. -->
-<button type="button" class="row layer" aria-pressed={selected} onclick={onselect}>
+<!-- a div, not a button: the canvas select sits inside the row -->
+<div class="row layer" role="button" tabindex="0" aria-pressed={selected} onclick={onselect} onkeydown={keydown}>
   <span class="thumb c-thumb">
     {#if thumb}<img src={thumb} alt="" loading="lazy" />{/if}
     <span class="n">{n}</span>
   </span>
   <span class="c-name">
     <span class="nm">Layer {n}</span>
-    <span class="caption">Canvas 1</span>
+    {#if canvases.length > 1}
+      <select class="select canvas" aria-label="Canvas of layer {n}" title={canvasLock ?? 'The canvas this layer renders into'} disabled={canvasLock !== undefined} value={canvas} onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} onchange={(e) => void cmd('layer.set', { layer: n, canvas: Number(e.currentTarget.value) })}>
+        {#if !canvases.some((c) => c.id === canvas)}<option value={canvas}>Canvas {canvas} · missing</option>{/if}
+        {#each canvases as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
+      </select>
+    {:else}
+      <span class="caption">{canvasName}</span>
+    {/if}
   </span>
   <span class="c-media tone-{media.tone}" title={media.text}>
     <span class="lbl">Media: </span>
@@ -87,7 +108,7 @@
     <span class="dot dot-{status.dot}" role="img" aria-label={status.label} title={status.label}></span>
     <span class="chip chip-{status.dot}">{status.chip}</span>
   </span>
-</button>
+</div>
 
 <style>
   /* Desktop row: one grid line per layer. Narrower than 1320 px the row becomes a tile (the list is a tile grid there). */
@@ -96,7 +117,9 @@
     min-height: var(--row); font-size: 13px;
   }
   .c-thumb { display: block; flex: none; width: 96px; height: 54px; border: 1px solid var(--line); background: var(--ground); }
-  .c-name { display: flex; flex-direction: column; min-width: 0; }
+  .layer { cursor: pointer; }
+  .c-name { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+  .canvas { min-height: 28px; height: 28px; padding: 0 6px; font-size: 12px; max-width: 100%; }
   .nm { font-weight: 600; font-size: 14px; }
   .c-media { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 13px; }
   .mdetail { font-size: 12px; }

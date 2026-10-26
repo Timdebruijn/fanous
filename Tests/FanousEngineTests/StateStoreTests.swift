@@ -273,19 +273,17 @@ extension StateStoreTests {
         let showMode = Mutex(false), fail = Mutex(false), applied = Mutex<[Int]>([])
         ProjectDocument.registerCommands(on: store, auth: auth, showModeOn: { showMode.withLock { $0 } })
         let switcher = CanvasSwitch(
-            rendered: ProjectDocument.defaultCanvas, isDeferred: { showMode.withLock { $0 } },
-            apply: { format in
+            rendered: ProjectDocument.CanvasLayout(ProjectDocument.defaultCanvas), isDeferred: { showMode.withLock { $0 } },
+            apply: { layout in
                 if fail.withLock({ $0 }) { throw RenderError.pipeline("no memory") }
-                applied.withLock { $0.append(format.width) }
+                applied.withLock { $0.append(layout.first.width) }
             },
             revert: { rendered, _ in
                 var project = store.project
-                try? ProjectDocument.setCanvasFormat(rendered, in: &project)
+                try? ProjectDocument.setCanvasLayout(rendered, in: &project)
                 store.correct(project["canvases"]!, at: "/canvases")
             })
-        store.onProjectChanged = { document in
-            if let c = ProjectDocument.canvases(from: document).first { switcher.request((c.width, c.height, c.fps)) }
-        }
+        store.onProjectChanged = { document in switcher.request(ProjectDocument.layout(from: document)) }
         func settle() async throws { for _ in 0..<50 { try await Task.sleep(for: .milliseconds(5)) } }
 
         _ = try store.execute("canvas.set", args: ["id": 1, "width": 3840, "height": 2160, "fps": 50], role: .programmer).get()
@@ -309,6 +307,104 @@ extension StateStoreTests {
         let canvas = try #require(ProjectDocument.canvases(from: store.project).first)
         #expect((canvas.width, canvas.fps) == (1920, 60), "the rendered canvas is back in the project")
         #expect(switcher.live["error"]?.string?.contains("no memory") == true && switcher.live["pending"]?.bool == false)
+    }
+
+    /// Multiple canvases: add (shared rate, cap), per-layer assignment, slices on a canvas, remove moves both to canvas 1.
+    @Test func canvasAddRemoveAndLayerAssignment() throws {
+        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
+        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 8, outputs: 1), layerCount: 8, libraryRoot: "/x", policy: .dmx), logger: Self.logger)
+        let showMode = Mutex(false)
+        ProjectDocument.registerCommands(on: store, auth: auth, showModeOn: { showMode.withLock { $0 } })
+        func ids() -> [Int] { ProjectDocument.canvases(from: store.project).map(\.id) }
+
+        #expect(try store.execute("canvas.add", args: ["width": 1280, "height": 720], role: .programmer).get().value == 2)
+        let wall = try #require(ProjectDocument.canvases(from: store.project).last)
+        #expect((wall.name, wall.width, wall.height, wall.fps) == ("Canvas 2", 1280, 720, 60))
+        #expect(store.execute("canvas.add", args: ["width": 1280, "height": 720, "fps": 50], role: .programmer).failureCode == "invalidArgs", "one shared rate")
+        #expect(store.execute("canvas.add", args: ["width": 1281, "height": 720], role: .programmer).failureCode == "invalidArgs")
+        #expect(store.execute("canvas.add", args: ["width": 1280, "height": 720], role: .operator).failureCode == "forbidden")
+        showMode.withLock { $0 = true }
+        #expect(store.execute("canvas.add", args: ["width": 1280, "height": 720], role: .programmer).failureCode == "showMode")
+        #expect(store.execute("canvas.remove", args: ["id": 2], role: .programmer).failureCode == "showMode")
+        showMode.withLock { $0 = false }
+        _ = try store.execute("canvas.add", args: ["width": 640, "height": 480, "fps": 60, "name": "Side"], role: .programmer).get()
+        _ = try store.execute("canvas.add", args: ["width": 640, "height": 480], role: .programmer).get()
+        #expect(ids() == [1, 2, 3, 4])
+        #expect(store.execute("canvas.add", args: ["width": 640, "height": 480], role: .programmer).failureCode == "invalidArgs", "at most 4")
+        _ = try store.execute("canvas.remove", args: ["id": 4], role: .programmer).get()
+
+        // the rate: canvas 1 changes it for all, another canvas may not differ
+        _ = try store.execute("canvas.set", args: ["id": 1, "width": 1920, "height": 1080, "fps": 50], role: .programmer).get()
+        #expect(ProjectDocument.canvases(from: store.project).allSatisfy { $0.fps == 50 })
+        #expect(store.execute("canvas.set", args: ["id": 2, "width": 1280, "height": 720, "fps": 60], role: .programmer).failureCode == "invalidArgs")
+        _ = try store.execute("canvas.set", args: ["id": 2, "width": 1920, "height": 1080, "fps": 50], role: .programmer).get()
+        #expect(ProjectDocument.layout(from: store.project).canvases.map(\.width) == [1920, 1920, 640])
+
+        // layers 5–8 on canvas 2
+        for layer in 5...8 { _ = try store.execute("layer.set", args: ["layer": .number(Double(layer)), "canvas": 2], role: .programmer).get() }
+        #expect(ProjectDocument.layerCanvases(from: store.project) == [5: 2, 6: 2, 7: 2, 8: 2])
+        #expect(Engine.layerCanvas(project: store.project, layers: 8) == [1, 1, 1, 1, 2, 2, 2, 2])
+        #expect(store.execute("layer.set", args: ["layer": 9, "canvas": 2], role: .programmer).failureCode == "invalidArgs")
+        #expect(store.execute("layer.set", args: ["layer": 1, "canvas": 7], role: .programmer).failureCode == "invalidArgs")
+        #expect(store.execute("layer.set", args: ["layer": 1, "canvas": 2], role: .operator).failureCode == "forbidden")
+        _ = try store.execute("layer.set", args: ["layer": 8, "canvas": 1], role: .programmer).get()
+        #expect(ProjectDocument.layerCanvases(from: store.project)[8] == nil, "canvas 1 is stored as the default")
+
+        // a slice on canvas 2; a canvas that does not exist is refused
+        _ = try store.execute("output.add", role: .programmer).get()
+        _ = try store.execute("output.set", args: ["id": 1, "path": "/slices/0/canvas", "value": 2], role: .programmer).get()
+        #expect(ProjectDocument.outputs(from: store.project)[0].slices[0].canvas == 2)
+        #expect(store.execute("output.set", args: ["id": 1, "path": "/slices/0/canvas", "value": 9], role: .programmer).failureCode == "invalidArgs")
+
+        // remove: canvas 1 never, the others move their layers and slices to canvas 1 in one undo step
+        #expect(store.execute("canvas.remove", args: ["id": 1], role: .programmer).failureCode == "invalidArgs")
+        #expect(store.execute("canvas.remove", args: ["id": 9], role: .programmer).failureCode == "invalidArgs")
+        _ = try store.execute("canvas.remove", args: ["id": 2], role: .programmer).get()
+        #expect(ids() == [1, 3])
+        #expect(ProjectDocument.layerCanvases(from: store.project).isEmpty)
+        #expect(ProjectDocument.outputs(from: store.project)[0].slices[0].canvas == 1)
+        _ = try store.execute("show.lock", role: .programmer).get()
+        #expect(store.execute("layer.set", args: ["layer": 1, "canvas": 3], role: .programmer) == .failure(.showLocked))
+        #expect(store.execute("canvas.add", args: ["width": 640, "height": 480], role: .programmer) == .failure(.showLocked))
+        _ = try store.execute("show.unlock", role: .programmer).get()
+        _ = try store.execute("undo", role: .programmer).get()
+        #expect(ids() == [1, 2, 3])
+        #expect(ProjectDocument.layerCanvases(from: store.project) == [5: 2, 6: 2, 7: 2])
+        #expect(ProjectDocument.outputs(from: store.project)[0].slices[0].canvas == 2)
+
+        // fewer layers drop their assignment
+        _ = try store.execute("layers.setCount", args: ["count": 6], role: .programmer).get()
+        #expect(ProjectDocument.layerCanvases(from: store.project) == [5: 2, 6: 2])
+
+        // a failed switch writes the rendered layout back: canvas 3 goes, canvas 2 keeps its name
+        var project = store.project
+        try ProjectDocument.setCanvasLayout(.init(fps: 50, canvases: [.init(id: 1, width: 1920, height: 1080), .init(id: 2, width: 1280, height: 720)]), in: &project)
+        #expect(ProjectDocument.canvases(from: project).map(\.id) == [1, 2] && ProjectDocument.canvases(from: project)[1].width == 1280)
+        // …and what was put on canvas 3 meanwhile goes back to canvas 1
+        _ = try store.execute("layer.set", args: ["layer": 6, "canvas": 3], role: .programmer).get()
+        project = store.project
+        try ProjectDocument.moveToCanvas1(keeping: [1, 2], in: &project)
+        #expect(ProjectDocument.layerCanvases(from: project) == [5: 2])
+
+        // GPU memory: all canvases together at most 4 × UHD
+        _ = try store.execute("canvas.set", args: ["id": 2, "width": 7680, "height": 3840, "fps": 50], role: .programmer).get()
+        let tooMuch = store.execute("canvas.set", args: ["id": 3, "width": 3840, "height": 2160, "fps": 50], role: .programmer)
+        #expect(tooMuch.failureCode == "invalidArgs")
+        #expect(store.execute("canvas.add", args: ["width": 3840, "height": 2160], role: .programmer).failureCode == "invalidArgs")
+    }
+
+    /// While a canvas does not render (switch deferred in show mode, or failed), its layers draw into canvas 1 and the
+    /// slices that show it show canvas 1; a slice on a canvas the project does not have stays black.
+    @Test func layersAndSlicesWaitingForACanvasUseCanvas1() {
+        var output = OutputConfig(id: 1)
+        output.slices = [SliceConfig(id: 1), SliceConfig(id: 2), SliceConfig(id: 3)]
+        output.slices[1].canvas = 2
+        output.slices[2].canvas = 9
+        let use = Engine.effectiveCanvasUse(layers: [1, 2, 3], outputs: [output], rendering: [1, 3], project: [1, 2, 3])
+        #expect(use.layers == [1, 1, 3])
+        #expect(use.outputs[0].slices.map(\.canvas) == [1, 1, 9])
+        let rendering = Engine.effectiveCanvasUse(layers: [1, 2, 3], outputs: [output], rendering: [1, 2, 3], project: [1, 2, 3])
+        #expect(rendering.layers == [1, 2, 3] && rendering.outputs == [output])
     }
 
     @Test func projectCanvasWinsOverSceneDefaultsAndASceneFileWinsOverTheProject() throws {

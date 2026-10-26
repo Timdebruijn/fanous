@@ -4,8 +4,11 @@
 
 # Outputs and mapping
 
-All layers are composited into one **canvas** (1920x1080 at 60 fps in a new
-project; change it on the Canvases tab, see below). **Outputs** take parts of the canvas to displays
+Layers are composited into a **canvas** (1920x1080 at 60 fps in a new
+project; change it on the Canvases tab, see below). A project can have up to
+four canvases, for example layers 1 to 4 on Canvas 1 for the projectors and
+layers 5 to 8 on Canvas 2 for an LED wall (see "Several canvases" below).
+**Outputs** take parts of the canvases to displays
 and projectors. An output is a display, a region of it, an intensity, blend
 edges, a warp and one or more slices. A new output shows the whole canvas with
 no blend and no warp. Everything is applied on the GPU in the last step, so it
@@ -41,6 +44,42 @@ showed the left half still shows the left half (in pixels, the numbers double
 when you go from 1920 × 1080 to 3840 × 2160). Content that was made for the
 old size is scaled to the new canvas by each layer's fit mode. Undo (Cmd-Z)
 goes back to the previous size.
+
+## Several canvases
+
+Not every layer has to be on every output. **Add canvas** on the Canvases tab
+adds a canvas (at most four, and all canvases together at most four times
+3840 × 2160 pixels, for GPU memory; it starts at the size of Canvas 1); the buttons
+above the editor pick which canvas the editor and the preview show. Each canvas
+has its own name and size. All canvases run at the frame rate of Canvas 1: the
+**Frame rate** list is only enabled on Canvas 1, and changing it there changes
+every canvas. The clock master is set on Canvas 1 too.
+
+- **Which layers:** every layer is on Canvas 1 until you pick another canvas in
+  the small list under the layer's name on the Layers screen (the list appears
+  once there are two canvases). A layer is drawn only into its own canvas. The
+  Canvases tab lists the layers of the selected canvas. This is a project
+  setting, not a DMX channel; it needs the programmer role and is refused while
+  the show is locked.
+- **Which outputs:** on Warp & Slices, every slice has a **Canvas** list: the
+  slice takes its picture from that canvas. One output can mix slices from
+  different canvases.
+- **Remove canvas** (not Canvas 1): its layers and the slices that showed it
+  move to Canvas 1, in one step that Undo reverses.
+- Adding, removing or resizing a canvas re-creates the canvases: outputs blank
+  briefly, so do it before the show. It is refused in show mode and under show
+  lock. An undo, redo or project load in show mode that brings back a canvas
+  waits for the end of show mode like a size change; until then its layers
+  are drawn on Canvas 1 and the slices that show it show Canvas 1, so nothing
+  goes dark. If a canvas cannot be made (not enough memory), the canvases go
+  back to what renders, the tab shows the error and what was on the missing
+  canvas moves to Canvas 1. A layer costs the same layer capacity on any
+  canvas; each extra canvas costs one more render pass while it has layers, and
+  three textures of its size in GPU memory.
+- A slice whose canvas no longer exists (a hand-edited project) stays black and
+  the engine log says which slice; pick another canvas for it. A browser
+  previewing a canvas that was removed gets an error instead of a frozen
+  picture.
 
 The size and rate are saved in the project and used at every start. Developers
 who start the engine with `--scene FILE` override them: the scene file's canvas
@@ -210,13 +249,14 @@ a handle stays on the spot you touch while a warp is active.
   **Remove point**) deletes the selected one; a mask keeps at least three.
   **Feather (px)** softens the edge, **Redraw** starts the shape again,
   **Remove mask** deletes it.
-- **Content template (PNG)**: downloads a picture at canvas size that shows,
-  per slice, which rectangle of the canvas it uses and (filled) what its mask
+- **Content template (PNG)**: downloads a picture at the size of the selected
+  slice's canvas that shows, per slice on that canvas, which rectangle it uses and (filled) what its mask
   leaves visible. Give it to whoever makes the content, as a layer under their
   design, so windows and edges land where the mapping expects them.
 
-The canvas is also published as the Syphon server "Fanous – Canvas", so
-another app on the same Mac can receive it. This was checked between processes
+Canvas 1 is also published as the Syphon server "Fanous – Canvas", so
+another app on the same Mac can receive it (the other canvases are not
+published). This was checked between processes
 by the bench tool, not yet with a third-party app (B6).
 
 Editing on this screen needs the programmer role and is refused while the show
@@ -229,5 +269,6 @@ is locked.
   the show (B34).
 - Dithering is a simple noise function; if you see banding on a projector, tell
   the developers (B34).
-- Not available: per-output Syphon, 10-bit output, separate blend gamma for red,
-  green and blue.
+- Not available: per-output Syphon, Syphon for canvases other than Canvas 1,
+  a frame rate per canvas, 10-bit output, separate blend gamma for red, green
+  and blue.

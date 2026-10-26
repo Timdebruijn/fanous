@@ -114,6 +114,66 @@ import Testing
         #expect(rig.hub.framesIn - beforeH264 == 30)
     }
 
+    /// Multiple canvases: "canvas:1" is the canvas streamer, "canvas:<id>" gets its own streamer at that canvas's size
+    /// and taps that canvas; an unknown canvas is refused; a rebuild remakes it too.
+    @Test func canvasTargetsPreviewTheirCanvas() throws {
+        let rig = try Rig()
+        try rig.compositor.reconfigure(.init(fps: 60, canvases: [.init(id: 1, width: 160, height: 90), .init(id: 2, width: 320, height: 320)]))
+        let context = rig.context, parameters = rig.parameters
+        let made = Mutex(0)
+        rig.hub.makeCanvas = { id in
+            guard id == 2 else { return nil }
+            made.withLock { $0 += 1 }
+            return try PreviewStreamer(context: context, width: 160, height: 160, fps: 30, canvasFPS: 60, parameters: parameters, logger: Self.logger)
+        }
+        rig.hub.canvasTexture = { [compositor = rig.compositor] id in compositor.tickCanvas(id) }
+        let (a, b) = (rig.connection(), rig.connection())
+        #expect(rig.attach("canvas:1", a))
+        #expect(rig.hub.targets == ["canvas"], "canvas:1 is the canvas streamer")
+        #expect(rig.attach("canvas:2", b, stream: 2))
+        #expect(!rig.attach("canvas:3", rig.connection()))
+        #expect(!rig.attach("canvas:x", rig.connection()))
+        rig.tick(30)
+        let second = rig.hub.framesIn - rig.hub.canvas.framesIn.load(ordering: .relaxed)
+        #expect(second == 15, "the canvas 2 streamer taps its canvas (got \(second))")
+        try rig.hub.rebuild()
+        #expect(made.withLock { $0 } == 2 && Set(rig.hub.targets) == ["canvas", "canvas:2"])
+
+        // canvas 2 removed: its streamer goes (its viewer gets badTarget) instead of showing a frozen picture
+        rig.hub.makeCanvas = { _ in nil }
+        try rig.hub.rebuild()
+        #expect(rig.hub.targets == ["canvas"])
+    }
+
+    /// A layer.set with a layer:<n> subscriber: the preview rebuild reads the project, so it must not run on the
+    /// store's queue (it did, and deadlocked). Wired like the engine: Control hops to the main actor.
+    @Test(.timeLimit(.minutes(1))) func layerSetWithALayerSubscriberDoesNotHang() async throws {
+        let rig = try LayerRig()
+        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
+        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/x", policy: .dmx), logger: Self.logger)
+        ProjectDocument.registerCommands(on: store, auth: auth)
+        let compositor = rig.compositor, made = rig.made
+        rig.hub.canvasOfLayer = { target in ProjectDocument.layerCanvases(from: store.project)[Int(target.dropFirst(6)) ?? 0] ?? 1 }
+        rig.hub.configure = { target, streamer in
+            guard let index = PreviewHub.layerIndex(of: target, layerCount: store.project["layerCount"]?.int ?? 0), (try? streamer.showLayer(index, of: compositor)) != nil else { return false }
+            made.withLock { $0[target] = streamer }
+            return true
+        }
+        let rebuilt = Mutex(0)
+        store.onProjectChanged = { [hub = rig.hub] _ in
+            Task { @MainActor in
+                try? hub.rebuild()
+                rebuilt.withLock { $0 += 1 }
+            }
+        }
+        #expect(rig.attach("layer:2"))
+        _ = try store.execute("canvas.add", args: ["width": 640, "height": 640], role: .programmer).get()
+        _ = try store.execute("layer.set", args: ["layer": 2, "canvas": 2], role: .programmer).get()
+        for _ in 0..<200 where rebuilt.withLock({ $0 }) < 2 { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(rebuilt.withLock { $0 } == 2)
+        #expect(rig.hub.targets.contains("layer:2"))
+    }
+
     /// A solid-colour still for a layer (RGBA 8-bit).
     static func solid(_ context: MetalContext, _ rgba: [UInt8], file: Int) throws -> LayerPlayback {
         let texture = try #require(context.device.makeTexture(descriptor: .texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 16, height: 9, mipmapped: false)))
@@ -258,6 +318,28 @@ import Testing
         rig.tick(4)
         #expect(try rig.pixel("layer:1", 0.05, 0.05) == Self.black, "intensity 0: black")
         #expect(try rig.pixel("layer:2", 0.5, 0.5) == Self.green)
+    }
+
+    /// Multiple canvases: a layer on canvas 2 is previewed at canvas 2's aspect (the hub makes it with `makeCanvas`),
+    /// drawn as on that canvas; layer 1 stays on canvas 1.
+    @Test func aLayerPreviewTakesItsCanvasAspect() throws {
+        let rig = try LayerRig()
+        try rig.compositor.reconfigure(.init(fps: 60, canvases: [.init(id: 1, width: 320, height: 180), .init(id: 2, width: 240, height: 240)]))
+        rig.compositor.layerCanvas = [1, 2]
+        let context = rig.context, parameters = rig.parameters
+        rig.hub.canvasOfLayer = { target in target == "layer:2" ? 2 : 1 }
+        rig.hub.makeCanvas = { id in
+            id == 2 ? try PreviewStreamer(context: context, width: 120, height: 120, fps: 30, canvasFPS: 60, parameters: parameters, logger: Self.logger) : nil
+        }
+        #expect(rig.attach("layer:1"))
+        #expect(rig.attach("layer:2", stream: 2))
+        rig.tick(4)
+        let square = try #require(rig.made.withLock { $0["layer:2"] })
+        #expect((square.width, square.height) == (120, 120) && square.framesIn.load(ordering: .relaxed) == 2)
+        #expect(try rig.pixel("layer:2", 0.5, 0.5) == Self.green)
+        #expect(try rig.pixel("layer:2", 0.1, 0.1) == Self.black, "half size on its square canvas")
+        #expect(try rig.pixel("layer:1", 0.5, 0.5) == Self.red)
+        #expect(rig.made.withLock { $0["layer:1"] }?.height == 90, "layer 1 at canvas 1's aspect")
     }
 
     /// B31 with a layer target: after a canvas change of aspect the old streamer draws nothing (not stretched), and
