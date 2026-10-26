@@ -436,10 +436,12 @@ public final class Engine: @unchecked Sendable {
         } ?? PixelRect(x: 0, y: 0, w: 1920, h: 1080)
         let factor = Double(preview.width) / Double(max(1, region.w))
         scaled.region = nil
-        for edge in [\OutputConfig.blend.left, \.blend.right, \.blend.top, \.blend.bottom] { scaled[keyPath: edge].overlap *= factor }
+        let factorY = Double(preview.height) / Double(max(1, region.h))
+        for edge in [\OutputConfig.blend.left, \.blend.right] { scaled[keyPath: edge].overlap *= factor }
+        for edge in [\OutputConfig.blend.top, \.blend.bottom] { scaled[keyPath: edge].overlap *= factorY }
         scaled.blend.liftFeather *= factor
         for i in scaled.slices.indices { scaled.slices[i].mask?.feather *= factor }
-        let index = (outputs.firstIndex { $0.id == output.id } ?? 0) + 1
+        let index = output.id  // fixture number and ID pattern follow the output's id
         do {
             preview.outputSet = OutputSet(plans: [try compiler.compile(scaled, index: index, drawable: (preview.width, preview.height))])
             return true

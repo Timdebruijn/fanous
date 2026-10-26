@@ -50,6 +50,9 @@ public final class OutputPlan: @unchecked Sendable {
     let slices: [SlicePlan]
     /// The whole output (unit quad) tessellated like a slice: test patterns are drawn through it, so they follow the warp.
     let patternMesh: SlicePlan?
+    /// Canvas copy taken when the Output fixture's Control engaged Freeze; the content pass samples it instead of the live canvas.
+    /// Only touched by the one thread that renders this plan's set.
+    nonisolated(unsafe) var held: MTLTexture?
 
     init(id: Int, index: Int, region: MTLRegion, intensity: Float, testPattern: TestPattern, blendMap: MTLTexture?, warpField: MTLTexture?, slices: [SlicePlan], patternMesh: SlicePlan? = nil) {
         self.patternMesh = patternMesh
@@ -171,13 +174,37 @@ public struct OutputCompiler: @unchecked Sendable {
 /// Draws output plans into a drawable-sized target (the output pass of DESIGN.md §9.5).
 enum OutputPass {
     /// `outputs` are the Output fixture values by index (1-based → index − 1); `master` the Master intensity.
+    static func fixture(for plan: OutputPlan, in outputs: [OutputParameters]) -> OutputParameters {
+        plan.index - 1 < outputs.count && plan.index >= 1 ? outputs[plan.index - 1] : OutputParameters()
+    }
+
+    /// Output Control = Freeze: keeps a copy of the canvas from the moment Freeze engaged, released when it ends.
+    /// Call before the output render encoder is created.
+    static func holdFrozen(_ set: OutputSet, canvas: MTLTexture, outputs: [OutputParameters], buffer: MTLCommandBuffer) {
+        for plan in set.plans {
+            guard fixture(for: plan, in: outputs).control == .freeze else {
+                plan.held = nil
+                continue
+            }
+            guard plan.held == nil else { continue }
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: canvas.pixelFormat, width: canvas.width, height: canvas.height, mipmapped: false)
+            descriptor.usage = .shaderRead
+            descriptor.storageMode = .private
+            guard let copy = buffer.device.makeTexture(descriptor: descriptor), let blit = buffer.makeBlitCommandEncoder() else { continue }
+            copy.label = "frozen output \(plan.id)"
+            blit.copy(from: canvas, to: copy)
+            blit.endEncoding()
+            plan.held = copy
+        }
+    }
+
     static func draw(
         _ set: OutputSet, canvas: MTLTexture, encoder: MTLRenderCommandEncoder, context: MetalContext, uniforms: MTLBuffer,
         master: Float, masterPattern: TestPattern, outputs: [OutputParameters]
     ) {
         var offset = 0
         for plan in set.plans {
-            let fixture = plan.index - 1 < outputs.count && plan.index >= 1 ? outputs[plan.index - 1] : OutputParameters()
+            let fixture = fixture(for: plan, in: outputs)
             let region = plan.region
             encoder.setViewport(MTLViewport(originX: Double(region.origin.x), originY: Double(region.origin.y), width: Double(region.size.width), height: Double(region.size.height), znear: 0, zfar: 1))
             encoder.setScissorRect(MTLScissorRect(x: region.origin.x, y: region.origin.y, width: region.size.width, height: region.size.height))
@@ -227,7 +254,7 @@ enum OutputPass {
             encoder.setRenderPipelineState(context.mappedPipeline)
             encoder.setVertexSamplerState(context.linearSampler, index: 0)
             encoder.setFragmentSamplerState(context.linearSampler, index: 0)
-            encoder.setFragmentTexture(canvas, index: 0)
+            encoder.setFragmentTexture(fixture.control == .freeze ? (plan.held ?? canvas) : canvas, index: 0)
             encoder.setFragmentTexture(plan.blendMap ?? canvas, index: 2)
             encoder.setVertexTexture(plan.warpField ?? canvas, index: 0)
             for slice in plan.slices {

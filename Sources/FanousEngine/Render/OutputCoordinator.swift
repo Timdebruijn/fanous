@@ -198,8 +198,12 @@ public final class OutputCoordinator {
             if let existing = bound[displayID], existing.display == display {
                 window = existing.window
             } else {
+                // The window is replaced: drop everything tied to the old one (secondary driver, and the
+                // master driver, which renders to the old window's layer) so new ones are created below.
+                if displayID == masterDisplay { stopMaster() }
                 bound[displayID]?.secondary?.stop()
                 bound[displayID]?.window.close()
+                bound.removeValue(forKey: displayID)
                 guard let screen = NSScreen.screens.first(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == displayID })
                 else {
                     logger.warning("display has no screen", metadata: ["display": "\(display.name)"])
@@ -214,7 +218,7 @@ public final class OutputCoordinator {
             for id in ids {
                 guard let config = outputs.first(where: { $0.id == id }), let index = outputs.firstIndex(where: { $0.id == id }) else { continue }
                 do {
-                    plans.append(try compiler.compile(config, index: index + 1, drawable: (Int(size.width), Int(size.height))))
+                    plans.append(try compiler.compile(config, index: id, drawable: (Int(size.width), Int(size.height))))
                     statuses.append(OutputStatus(id: id, state: .bound, display: display.name, width: Int(size.width), height: Int(size.height), hz: display.hz, isMaster: displayID == newMaster))
                 } catch {
                     logger.error("output compile failed", metadata: ["output": "\(id)", "error": "\(error)"])

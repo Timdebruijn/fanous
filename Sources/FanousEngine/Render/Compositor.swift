@@ -233,6 +233,7 @@ public final class Compositor: @unchecked Sendable {
 
         if let target = drawable?.texture ?? offscreenOutput {
             outputPass.colorAttachments[0].texture = target
+            if let set = outputSet { OutputPass.holdFrozen(set, canvas: canvases[canvasIndex], outputs: snapshot.outputs, buffer: commandBuffer) }
             if let set = outputSet, let output = commandBuffer.makeRenderCommandEncoder(descriptor: outputPass) {
                 output.label = "mapped output"
                 OutputPass.draw(
@@ -452,7 +453,12 @@ public final class Compositor: @unchecked Sendable {
         pass.colorAttachments[0].loadAction = .clear
         pass.colorAttachments[0].storeAction = .store
         pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-        guard let commandBuffer = context.queue.makeCommandBuffer(), let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else {
+        guard let commandBuffer = context.queue.makeCommandBuffer() else {
+            outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
+            return
+        }
+        OutputPass.holdFrozen(set, canvas: latestCanvas, outputs: snapshot.outputs, buffer: commandBuffer)
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else {
             outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
             return
         }

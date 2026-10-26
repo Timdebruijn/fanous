@@ -529,7 +529,11 @@ public enum ShaderSource {
                                    sampler linearSampler [[sampler(0)]]) {
         MappedVertex v = vertices[vid];
         float2 p = v.pos;
-        if ((u.flags & 1u) != 0u && (u.flags & 4u) == 0u) p = warp.sample(linearSampler, v.pos).xy;
+        if ((u.flags & 1u) != 0u && (u.flags & 4u) == 0u) {
+            // texel k holds f(k/(size-1)): sample at texel centres, not at pos*size
+            float2 size = float2(warp.get_width(), warp.get_height());
+            p = warp.sample(linearSampler, (v.pos * (size - 1.0) + 0.5) / size).xy;
+        }
         MappedOut out;
         out.position = float4(p.x * 2.0 - 1.0, 1.0 - p.y * 2.0, 0.0, 1.0);
         out.uv = v.uv;

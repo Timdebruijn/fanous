@@ -147,6 +147,47 @@ struct OutputPassTests {
         #expect(dark[(90 * Self.width + 300) * 4 + 1] <= 1)
     }
 
+    /// Output Control = Freeze keeps the frame from the moment it engaged while the canvas goes dark; without it the output follows.
+    @Test func freezeHoldsTheOutputWhileTheCanvasMovesOn() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 200)
+        let plan = try OutputCompiler(device: context.device).compile(OutputConfig(id: 1), index: 1, drawable: (Self.width, Self.height))
+        for control in [OutputControl.freeze, .normal] {
+            let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
+            let compositor = try Compositor(
+                context: context, canvasWidth: Self.width, canvasHeight: Self.height, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 16),
+                parameters: parameters, logger: Logger(label: "output-test"))
+            let layer = RenderLayer(index: 0)
+            layer.current = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: still)
+            layer.wanted.store(MediaKey(folder: 1, file: 1).packed, ordering: .relaxed)
+            compositor.setLayers([layer])
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.outputFormat, width: Self.width, height: Self.height, mipmapped: false)
+            descriptor.usage = [.renderTarget, .shaderRead]
+            descriptor.storageMode = .shared
+            compositor.offscreenOutput = context.device.makeTexture(descriptor: descriptor)
+            compositor.outputSet = OutputSet(plans: [plan])
+            var fixture = OutputParameters()
+            fixture.control = control
+            func write(sequence: UInt64, layerIntensity: Float) {
+                parameters.write { slot in
+                    slot.sequence = sequence
+                    slot.layers[0].intensity = layerIntensity
+                    slot.layers[0].folder = 1
+                    slot.layers[0].file = 1
+                    slot.layers[0].fitMode = .stretch
+                    slot.outputs[0] = fixture
+                }
+            }
+            write(sequence: 1, layerIntensity: 1)
+            compositor.tick(target: 3600, drawable: nil)
+            #expect(compositor.readbackOutput().bgra[(90 * Self.width + 160) * 4 + 1] == 200)
+            write(sequence: 2, layerIntensity: 0)
+            compositor.tick(target: 3601, drawable: nil)
+            let after = compositor.readbackOutput().bgra[(90 * Self.width + 160) * 4 + 1]
+            if control == .freeze { #expect(after == 200, "frozen output keeps the last frame") } else { #expect(after <= 1, "unfrozen output follows the canvas") }
+        }
+    }
+
     /// A test pattern follows the corner pin (it used to be drawn flat over the region, so warping showed nothing).
     @Test func testPatternFollowsTheWarp() throws {
         let context = try MetalContext()
