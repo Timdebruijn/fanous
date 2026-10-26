@@ -57,6 +57,10 @@ Mac: ______________ Fanous version: ______________
 - [ ] Press **L** (programmer) to **lock the show**. The status bar says
       LOCKED. Unlocking while show mode is on asks for confirmation.
 - [ ] Look at "dropped" in the status bar: it should read 0 and stay there.
+- [ ] **Save a named version before doors**: System › Project versions ›
+      **Save version…**, a name such as "Doors 19:30". It never expires, works
+      while the show is locked, and is what you go back to if a late change goes
+      wrong (troubleshooting.md, "Go back to an earlier version").
 
 ## The Readiness list
 

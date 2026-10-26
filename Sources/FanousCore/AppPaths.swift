@@ -22,6 +22,8 @@ public enum AppPaths {
     public static var shellTokenFile: URL { applicationSupport.appending(path: "shell-token") }
     /// The current project document until project bundles exist (DESIGN.md §11.5).
     public static var projectFile: URL { applicationSupport.appending(path: "project.json") }
+    /// Project versions next to the project (DESIGN.md §11.5, B23): `<timestamp>-<name>.json`.
+    public static var versionsDirectory: URL { applicationSupport.appending(path: "versions") }
     /// Display modes to put back after show mode (DESIGN.md §9.6); present only while a display is switched.
     public static var displayModesFile: URL { applicationSupport.appending(path: "display-modes.json") }
     /// Show mode on (DESIGN.md §14); present only while show mode is on, so a crash brings the engine back in it.

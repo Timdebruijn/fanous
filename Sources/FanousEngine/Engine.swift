@@ -92,6 +92,13 @@ public final class Engine: @unchecked Sendable {
     private var liveTimer: DispatchSourceTimer?
     private var dmxTimer: DispatchSourceTimer?
     private var autosave: DispatchWorkItem?
+    /// B23: project versions; their file work (start, show mode, 10-minute timer, OSC load) runs on `versionsQueue`.
+    private var versions: ProjectVersions?
+    private var versionTimer: DispatchSourceTimer?
+    private let versionsQueue = DispatchQueue(label: "org.fanous.versions", qos: .utility)
+    /// Versions queue only: the last OSC project load, so a repeat of the same version within the window is ignored.
+    private var lastOSCLoad: (id: String, at: TimeInterval)?
+    static let oscLoadRepeatWindow: TimeInterval = 2
     private let feedQueue = DispatchQueue(label: "org.fanous.feed", qos: .utility)
     public let metrics = MetricsRing()
 
@@ -102,6 +109,7 @@ public final class Engine: @unchecked Sendable {
         ProjectDocument.registerCommands(on: store, auth: RoleAuth(settingsURL: nil, shellTokenURL: nil, logger: logger))
         ShowCommands.register(on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in nil }, acknowledge: { _ in }, runReadiness: {}))
         ControlCommands.register(on: store, hooks: ControlCommands.Hooks(set: { _, _, _ in }, release: { _ in }, keep: { _ in }))
+        ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger).registerCommands(on: store)
         return store.commandSpecs
     }
 
@@ -223,6 +231,19 @@ public final class Engine: @unchecked Sendable {
         let project = loadedProject ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: policy, canvas: startCanvas)
         let store = StateStore(project: project, logger: logger)
         ProjectDocument.registerCommands(on: store, auth: auth, showModeOn: { [weak self] in self?.showMode.isOn ?? false })
+        // B23: a version of the project as loaded, then one every 10 minutes when it changed, and one per show-mode enter
+        let versions = ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger)
+        versions.registerCommands(on: store, showModeOn: { [weak self] in self?.showMode.isOn ?? false })
+        self.versions = versions
+        let startProject = loadedProject
+        versionsQueue.async {
+            if let startProject { versions.saveAutomatic(startProject, reason: .start) } else { _ = versions.list() }
+        }
+        let versionTimer = DispatchSource.makeTimerSource(queue: versionsQueue)
+        versionTimer.schedule(deadline: .now() + ProjectVersions.periodicInterval, repeating: ProjectVersions.periodicInterval)
+        versionTimer.setEventHandler { versions.saveAutomatic(store.project, reason: .periodic) }
+        versionTimer.resume()
+        self.versionTimer = versionTimer
         // Phase 7: cues, timecode, show mode (DESIGN.md §14–15)
         let cues = CueRunner(dmx: dmx, logger: logger)
         cues.replace(list: ShowCommands.cueList(from: project))
@@ -258,13 +279,30 @@ public final class Engine: @unchecked Sendable {
             case .showLock(let on): _ = store.execute(on ? "show.lock" : "show.unlock", role: .programmer)
             case .showMode(let on): _ = store.execute("show.mode", args: ["on": .bool(on)], role: .operator)
             case .timecodeEnable(let on): _ = store.execute("timecode.enable", args: ["on": .bool(on)], role: .operator)
-            case .projectLoad: self.logger.warning("OSC project load is not available until project bundles exist (B23)")
+            case .projectLoad(let key):
+                // B35: a named version (or a version id); off the DMX and feed queues, the lookup reads the versions directory
+                let logger = self.logger
+                self.versionsQueue.async { [weak self] in
+                    guard let self else { return }
+                    guard let id = self.versions?.resolve(key) else {
+                        logger.warning("OSC project load: no such version", metadata: ["version": "\(key)"])
+                        return
+                    }
+                    // a console repeating the message (or a bundle sent twice) loads once
+                    let now = ProcessInfo.processInfo.systemUptime
+                    if let last = self.lastOSCLoad, last.id == id, now - last.at < Self.oscLoadRepeatWindow { return }
+                    self.lastOSCLoad = (id, now)
+                    if case .failure(let error) = store.execute("project.revert", args: ["id": .string(id)], role: .programmer) {
+                        logger.warning("OSC project load refused", metadata: ["version": "\(key)", "code": "\(error.code)", "reason": "\(error.message)"])
+                    }
+                }
             default: break
             }
         }
         showMode.onChange = { [weak self] on in
             guard let self else { return }
             self.ingest?.paused = on  // DESIGN.md §14: ingest paused in show mode
+            if on { self.versionsQueue.async { versions.saveAutomatic(store.project, reason: .showMode) } }  // B23
             if on { self.startReadinessTimer() } else { self.stopReadinessTimer() }
             if !on {
                 self.showResumedAt.withLock { $0 = nil }
@@ -1060,6 +1098,7 @@ public final class Engine: @unchecked Sendable {
             "system": systemLive(addresses: facts.addresses),
             "osc": ["port": 8000, "recent": .array(oscLog.withLock { $0 }), "midiSources": .array(facts.midiSources.map { .string($0) }), "audioInputs": .array(facts.audioInputs.map { .string($0) })],
             "citp": citpLive(),
+            "versions": versions?.live ?? .null,
         ]
         store.updateLive(live)
     }
@@ -1083,6 +1122,7 @@ public final class Engine: @unchecked Sendable {
             dmxTimer = nil
         }
         stopReadinessTimer()
+        versionTimer?.cancel()
         citp?.stop()
         // Engine › Restart Engine keeps show mode (and the switched display modes) for the next start; every other
         // stop leaves it. Either way no enter after this point.
