@@ -89,6 +89,8 @@ export interface OutputStatusDoc {
   height: number;
   hz: number;
   master: boolean;
+  /** yellow display-mode warning (desired mode differs, unavailable, or not a multiple of the canvas rate) */
+  modeNote?: string | null;
 }
 
 export const TEST_PATTERNS = ['Off', 'Grid', 'Colour bars', 'Blend check', 'Output ID', 'Crosshair', 'Grey steps', 'Checkerboard'] as const;

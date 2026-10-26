@@ -149,7 +149,7 @@ export interface LiveDoc {
 export interface ReadinessItemDoc {
   id: string;
   title: string;
-  state: 'ok' | 'fail' | 'manual' | 'hard';
+  state: 'ok' | 'warn' | 'fail' | 'manual' | 'hard';
   detail: string;
   fix: string;
   acknowledged: boolean;

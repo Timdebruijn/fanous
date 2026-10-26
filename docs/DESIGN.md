@@ -1337,11 +1337,15 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
 - **Show mode and readiness** (`ShowControl/ShowMode.swift`): IOPM assertions
   (`PreventUserIdleDisplaySleep`, `PreventUserIdleSystemSleep`),
   `beginActivity` (latency critical, no App Nap), ingest paused. Readiness
-  runs the 14 §14 items on entering and every 30 s while on
+  runs the §14 items (15 with display modes) on entering and every 30 s while on
   (`readiness.run`, `readiness.acknowledge`); `show.mode` is refused with the
-  blocking ids (`notReady`). The remaining §14 side effects (display modes,
-  shielding level and cursor, log level, thumbnail/preview throttling) are
-  B33/B42.
+  blocking ids (`notReady`). Desired display modes are applied on entering
+  and restored on leaving (B33, `DisplayModeSwitcher`, matching in
+  `DisplayModeMatching`; one `.forSession` transaction, re-applied on
+  re-plug; previous modes persisted in `display-modes.json` and restored on
+  the next start after a crash; unavailable modes are a non-blocking `warn` readiness item). The
+  remaining §14 side effects (shielding level, log level, thumbnail/preview
+  throttling) are B42.
 - **System**: `/metrics` (JSON: frames, GPU/CPU timing, DMX age, audio,
   preview, clients), `/api/logs` (ring tail), Bonjour `_fanous._tcp`,
   `live.system` (thermal, power, memory, OS, host, addresses, TLS fingerprint).
