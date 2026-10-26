@@ -89,10 +89,13 @@ public struct NetworkInterface: Equatable, Sendable {
     public var name: String
     public var address: String
     public var netmask: String
-    public init(name: String, address: String, netmask: String) {
+    /// IFF_MULTICAST and not loopback: where "any" joins sACN multicast.
+    public var multicast: Bool
+    public init(name: String, address: String, netmask: String, multicast: Bool = false) {
         self.name = name
         self.address = address
         self.netmask = netmask
+        self.multicast = multicast
     }
 }
 

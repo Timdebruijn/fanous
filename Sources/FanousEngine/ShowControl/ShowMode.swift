@@ -202,6 +202,8 @@ public struct ReadinessContext: Sendable {
     public var universesSilent: [String] = []
     /// "artnet:0.0.1: en5" per patched universe whose interface this Mac does not have or offers no sACN multicast on (B28).
     public var interfacesMissing: [String] = []
+    /// Why the sACN port could not be bound at start; nil when sACN runs.
+    public var sacnError: String?
     public var outputsLost: [Int] = []
     public var outputsUnassigned: [Int] = []
     public var outputsBound = 0
@@ -236,6 +238,11 @@ public enum Readiness {
                 id: "interfaces", title: "Universe interfaces usable", state: context.interfacesMissing.isEmpty ? .ok : .warn,
                 detail: context.interfacesMissing.isEmpty ? "present, or any interface" : "not usable: \(context.interfacesMissing.joined(separator: "; "))",
                 fix: "Connect the network adapter, or pick another interface for the universe (Patch › Interface)"))
+        items.append(
+            ReadinessItem(
+                id: "sacnport", title: "sACN port 5568 available", state: context.sacnError == nil ? .ok : .warn,
+                detail: context.sacnError.map { "in use, running without sACN: \($0)" } ?? "listening",
+                fix: "Quit the program that holds UDP 5568 (sudo lsof -nP -iUDP:5568), then Engine › Restart Engine"))
         let outputsOK = context.outputsLost.isEmpty && context.outputsUnassigned.isEmpty && context.outputsBound > 0
         add(
             "outputs", "All outputs bound to their displays", outputsOK,

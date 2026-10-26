@@ -61,7 +61,9 @@ public enum SystemInfo {
             guard entry.pointee.ifa_addr?.pointee.sa_family == UInt8(AF_INET), let address = numeric(entry.pointee.ifa_addr),
                 let netmask = numeric(entry.pointee.ifa_netmask)
             else { continue }
-            result.append(NetworkInterface(name: String(cString: entry.pointee.ifa_name), address: address, netmask: netmask))
+            let flags = entry.pointee.ifa_flags
+            let multicast = flags & UInt32(IFF_MULTICAST) != 0 && flags & UInt32(IFF_LOOPBACK) == 0 && flags & UInt32(IFF_UP) != 0
+            result.append(NetworkInterface(name: String(cString: entry.pointee.ifa_name), address: address, netmask: netmask, multicast: multicast))
         }
         return result
     }

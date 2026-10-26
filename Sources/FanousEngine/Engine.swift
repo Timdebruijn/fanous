@@ -90,6 +90,8 @@ public final class Engine: @unchecked Sendable {
     private var lastPolicy: SourcePolicy?
     private var lastUniverseSettings: [UniverseID: UniverseSettings] = [:]
     private var lastUniverseIssues: [String] = []
+    /// Why the sACN port could not be bound at start (readiness); nil while sACN runs.
+    private let sacnError = Mutex<String?>(nil)
     /// The project's library root as last seen by `projectChanged` (B51).
     private let libraryRootInProject = Mutex<String?>(nil)
     /// Root switches run here one at a time (scan, probe-thread join): never on the feed or control queue.
@@ -190,8 +192,15 @@ public final class Engine: @unchecked Sendable {
         dmx.start()
         let artnet = ArtNetReceiver(store: dmx, logger: logger, nodeName: Attribution.projectName)
         try artnet.start()
-        let sacn = SACNReceiver(store: dmx, logger: logger)
-        try sacn.start(groups: UniverseSettings.wire(patch.universes, over: .sacn, settings: universeSettings))
+        // a held sACN port never stops the engine: it runs without sACN and readiness says so
+        var sacn: SACNReceiver? = SACNReceiver(store: dmx, logger: logger)
+        do {
+            try sacn?.start(groups: UniverseSettings.wire(patch.universes, over: .sacn, settings: universeSettings))
+        } catch {
+            logger.error("sACN port in use; running without sACN", metadata: ["port": "\(SACN.port)", "error": "\(error)"])
+            sacnError.withLock { $0 = "\(error)" }
+            sacn = nil
+        }
         let osc = OSCReceiver(store: dmx, logger: logger)
         try osc.start()
         self.dmx = dmx
@@ -742,13 +751,15 @@ public final class Engine: @unchecked Sendable {
             let patched = Set(dmx.currentPatch.universes.map(\.description))
             context.universesSilent = snapshot.universes.filter { patched.contains($0.id) && !$0.active }.map(\.id)
             context.interfacesMissing = dmx.missingInterfaces()
-            // present, but Network.framework offers no multicast on it (lo0, or the join keeps failing)
+            // present, but the sACN multicast join fails on it
             let present = dmx.interfaceList()
+            // "any …" is always reported: no multicast interface at all, or a join that failed on one of them
             for (interface, numbers) in (sacn?.unjoined() ?? [:]).sorted(by: { $0.key < $1.key })
-            where present.contains(where: { $0.name == interface || $0.address == interface }) {
+            where interface.hasPrefix(UniverseSettings.anyInterface) || present.contains(where: { $0.name == interface || $0.address == interface }) {
                 context.interfacesMissing.append("\(numbers.map { "sacn:\($0)" }.joined(separator: ", ")): \(interface) (no sACN multicast)")
             }
         }
+        context.sacnError = sacnError.withLock { $0 }
         let statuses = outputStatus.withLock { $0 }
         context.outputsLost = statuses.filter { $0.state == .lost }.map(\.id)
         context.outputsUnassigned = statuses.filter { $0.state == .unassigned }.map(\.id)

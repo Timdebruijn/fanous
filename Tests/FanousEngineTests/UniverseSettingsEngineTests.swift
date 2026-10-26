@@ -251,6 +251,50 @@ struct UniverseSettingsEngineTests {
         #expect(!sacn.isMember(7, on: "127.0.0.1") && !sacn.isMember(9, on: "127.0.0.1"))
     }
 
+    /// "any" joins on every up, multicast, non-loopback interface, reports a failed join per interface, and is not
+    /// a warning for the universe-1 placeholder joined when no universe asks for sACN.
+    @Test func sacnAnyJoinsEveryMulticastInterface() throws {
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
+        let real = SystemInfo.ipv4Interfaces.filter(\.multicast)
+        store.interfaceList = { real + [NetworkInterface(name: "en99", address: "10.99.0.1", netmask: "255.255.0.0", multicast: true)] }
+        let sacn = SACNReceiver(store: store, logger: Self.logger, port: try Self.freePort())
+        try sacn.start(groups: ["any": [3]])
+        defer { sacn.stop() }
+        sacn.pathUpdated()
+        for interface in real { #expect(sacn.isMember(3, on: interface.address), "\(interface.name)") }
+        #expect(sacn.unjoined() == ["any via en99": [3]])  // EADDRNOTAVAIL: not an address of this Mac
+        sacn.update(groups: [:])
+        sacn.pathUpdated()
+        #expect(sacn.unjoined().isEmpty)
+        for interface in real { #expect(sacn.isMember(1, on: interface.address) && !sacn.isMember(3, on: interface.address)) }
+        store.interfaceList = { [] }  // offline
+        sacn.update(groups: ["any": [3]])
+        sacn.pathUpdated()
+        #expect(sacn.unjoined() == ["any": [3]])
+    }
+
+    /// A port someone holds without SO_REUSEPORT (nc -u -l 5568) fails the bind: the engine catches it and runs on.
+    @Test func sacnBindFailureThrowsAndReadinessWarns() throws {
+        let port = try Self.freePort()
+        let holder = socket(AF_INET, SOCK_DGRAM, 0)
+        defer { close(holder) }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr.s_addr = INADDR_ANY
+        let held = withUnsafePointer(to: &address) { p in
+            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(holder, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        try #require(held == 0)
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
+        #expect(throws: POSIXError.self) { try SACNReceiver(store: store, logger: Self.logger, port: port).start(groups: [:]) }
+
+        var context = ReadinessContext()
+        context.sacnError = "Address already in use"
+        let item = try #require(Readiness.check(context, acknowledged: []).first { $0.id == "sacnport" })
+        #expect(item.state == .warn && !item.blocks && item.detail == "in use, running without sACN: Address already in use")
+    }
+
     @Test func protocolSwitchesLiveToSACNOnThePair() async throws {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
         let artPort = try Self.freePort(), sacnPort = try Self.freePort()

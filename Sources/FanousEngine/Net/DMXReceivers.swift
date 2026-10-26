@@ -78,18 +78,20 @@ public final class ArtNetReceiver: @unchecked Sendable {
     }
 }
 
-/// sACN on UDP 5568: one socket on every interface (unicast always works) that joins each universe's multicast group
-/// on the interface the universe asks for ("any": the default-route interface). Network.framework cannot do this: a
-/// second `NWConnectionGroup` on the port fails with EADDRINUSE. Changing a universe adds or drops only its own
-/// memberships; the socket is never rebound. Memberships are re-asserted on every path change and every 5 s, so an
-/// adapter that is replugged (the kernel drops its memberships) or comes up later is joined again (B28).
+/// sACN on UDP 5568: one BSD socket bound on every interface (unicast always works) that joins each universe's
+/// multicast group on the interface the universe asks for ("any": every up, multicast, non-loopback interface). It
+/// replaces `NWConnectionGroup`s, which cannot share the port per interface (the second fails with EADDRINUSE).
+/// Changing a universe adds or drops only its own memberships; the socket is never rebound. Memberships are re-asserted
+/// on every path change and every 5 s, so an adapter that is replugged (the kernel drops its memberships) or comes up
+/// later is joined again (B28). SO_REUSEPORT lets another receiver (sACNView, a second Fanous) bind the port too: both
+/// get multicast, but unicast goes to only one of them, the later one.
 public final class SACNReceiver: @unchecked Sendable {
     private let store: DMXStore
     private let logger: Logger
     private let port: UInt16
     private struct Membership: Hashable {
         var universe: Int
-        /// in_addr of the interface, network order; 0 = the default-route interface.
+        /// in_addr of the interface, network order.
         var interface: UInt32
     }
     /// Touched on the DMX queue.
@@ -100,6 +102,8 @@ public final class SACNReceiver: @unchecked Sendable {
     private var joined: Set<Membership> = []
     /// Interfaces with universes but without their memberships (not present, or the join failed).
     private var failed: [String: [Int]] = [:]
+    /// Universe 1 joined only because no universe asks for sACN: not worth a readiness warning.
+    private var placeholder = false
     private let monitor = NWPathMonitor()
     static let reassertInterval: TimeInterval = 5
 
@@ -116,6 +120,9 @@ public final class SACNReceiver: @unchecked Sendable {
         var on: Int32 = 1
         setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, socklen_t(MemoryLayout<Int32>.size))
         setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &on, socklen_t(MemoryLayout<Int32>.size))
+        // 32 universes at 44 Hz while the DMX queue is busy for a moment: 4 MB holds several seconds of packets
+        var buffer: Int32 = 4 << 20
+        setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &buffer, socklen_t(MemoryLayout<Int32>.size))
         var address = sockaddr_in()
         address.sin_family = sa_family_t(AF_INET)
         address.sin_port = port.bigEndian
@@ -147,16 +154,18 @@ public final class SACNReceiver: @unchecked Sendable {
         update(groups: groups)
     }
 
-    /// Patch or universe settings changed.
+    /// Patch or universe settings changed. Without sACN universes, universe 1 is joined on any interface (as before B28).
     public func update(groups: [String: [Int]]) {
         store.queue.async { [self] in
-            wanted = groups
+            placeholder = groups.isEmpty
+            wanted = placeholder ? [UniverseSettings.anyInterface: [1]] : groups
             apply()
         }
     }
 
-    /// Named interfaces whose universes are not joined (readiness).
-    public func unjoined() -> [String: [Int]] { store.queue.sync { failed } }
+    /// Interfaces whose universes are not joined, for readiness: a named interface, "any" (no multicast interface at
+    /// all), or "any via en5" (the join failed on that interface, e.g. EADDRNOTAVAIL on an isolated LAN).
+    public func unjoined() -> [String: [Int]] { store.queue.sync { placeholder ? [:] : failed } }
 
     /// A path update or the periodic re-assert (tests).
     func pathUpdated() { store.queue.sync { apply() } }
@@ -184,31 +193,32 @@ public final class SACNReceiver: @unchecked Sendable {
 
     /// On the DMX queue: drop memberships nobody wants, then (re)add every wanted one. Adding is idempotent
     /// (EADDRINUSE = already a member), so re-asserting also restores memberships the kernel dropped, and one a drop
-    /// removed while another interface spec ("any" and the default interface's name) still needs it.
+    /// removed while another interface spec ("any" and an interface name) still needs it.
     private func apply() {
         guard fd >= 0 else { return }
         let interfaces = store.interfaceList()
         var desired: Set<Membership> = []
         var failed: [String: [Int]] = [:]
         for (interface, universes) in wanted {
-            let address: UInt32?
+            // "any": every up, multicast, non-loopback interface (a console on a NIC without a gateway must work)
+            let targets: [(label: String, address: String)]
             if interface == UniverseSettings.anyInterface {
-                address = INADDR_ANY
+                targets = interfaces.filter(\.multicast).map { ("\(interface) via \($0.name)", $0.address) }
             } else {
                 let match = interfaces.first { $0.address == interface } ?? interfaces.first { $0.name == interface }
-                address = match.map { inet_addr($0.address) }
+                targets = match.map { [(interface, $0.address)] } ?? []
             }
-            guard let address else {
-                failed[interface] = universes
-                continue
-            }
-            for universe in universes {
-                let m = Membership(universe: universe, interface: address)
-                desired.insert(m)
-                let error = setMembership(m, IP_ADD_MEMBERSHIP)
-                if error != 0 && error != EADDRINUSE {
-                    failed[interface, default: []].append(universe)
-                    desired.remove(m)
+            if targets.isEmpty { failed[interface] = universes }
+            for target in targets {
+                for universe in universes {
+                    let m = Membership(universe: universe, interface: inet_addr(target.address))
+                    let error = setMembership(m, IP_ADD_MEMBERSHIP)
+                    // EADDRINUSE: already a member (a second address of the interface, or another spec wants it too)
+                    if error == 0 || error == EADDRINUSE {
+                        desired.insert(m)
+                    } else {
+                        failed[target.label, default: []].append(universe)
+                    }
                 }
             }
         }
@@ -224,17 +234,22 @@ public final class SACNReceiver: @unchecked Sendable {
         joined = desired
     }
 
+    /// At most `drainLimit` packets per read event, so a flood cannot hold the DMX queue (the source fires again).
+    static let drainLimit = 256
+
     private func read() {
         var buffer = [UInt8](repeating: 0, count: 1500)
+        var host = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
         var sender = sockaddr_in()
-        while true {
+        for _ in 0..<Self.drainLimit {
             var length = socklen_t(MemoryLayout<sockaddr_in>.size)
             let count = withUnsafeMutablePointer(to: &sender) { p in
                 p.withMemoryRebound(to: sockaddr.self, capacity: 1) { recvfrom(fd, &buffer, buffer.count, 0, $0, &length) }
             }
             guard count > 0 else { return }  // EAGAIN: drained
             guard case .data(let packet)? = try? SACN.parse(Array(buffer[0..<count])) else { continue }
-            store.receive(sacn: packet, from: String(cString: inet_ntoa(sender.sin_addr)))
+            let from = inet_ntop(AF_INET, &sender.sin_addr, &host, socklen_t(host.count)) != nil ? String(decoding: host.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self) : ""
+            store.receive(sacn: packet, from: from)
         }
     }
 
