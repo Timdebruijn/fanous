@@ -285,3 +285,27 @@ extension StateStoreTests {
         #expect(OutputBinding.master(outputs: [left, right, gone, free], binding: after, clockMaster: nil) == nil)
     }
 }
+
+struct StateStoreRedactionTests {
+    @Test func rolesGetRedactedDocumentsAndPatches() throws {
+        let (store, _) = StateStoreTests.makeStore()
+        store.setLive("/Users/x/lib", at: JSONPointer(tokens: ["library", "root"]))
+        store.queue.sync {}
+        let monitor = RecordingClient(role: .monitor)
+        let programmer = RecordingClient(role: .programmer)
+        store.attach(monitor)
+        store.attach(programmer)
+
+        let welcome = try JSONDecoder().decode(JSONValue.self, from: Data(store.welcome(role: .monitor, caps: [:]).utf8))
+        #expect(welcome["project"]?["library"]?["root"]?.string == "")
+        #expect(welcome["live"]?["library"]?["root"]?.string == "")
+        let full = try JSONDecoder().decode(JSONValue.self, from: Data(store.welcome(role: .programmer, caps: [:]).utf8))
+        #expect(full["project"]?["library"]?["root"]?.string == "/tmp/lib")
+
+        _ = try store.execute("project.set", args: ["path": "/library/root", "value": "/elsewhere"], role: .programmer).get()
+        #expect(monitor.patches.last?["ops"]?.array?.first?["value"]?.string == "")
+        #expect(monitor.patches.last?["rev"] == programmer.patches.last?["rev"])
+        #expect(programmer.patches.last?["ops"]?.array?.first?["value"]?.string == "/elsewhere")
+        #expect(store.snapshot(role: .monitor).contains("/elsewhere") == false)
+    }
+}
