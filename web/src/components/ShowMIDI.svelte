@@ -11,7 +11,15 @@
   let { map }: { map: ChannelMap | null } = $props();
 
   // DESIGN §15.4 (B36): source, MSC device id and the map are configuration (programmer, refused under show lock).
-  const midi = $derived(app.project.midi ?? { source: null, mscDevice: 0, map: [] });
+  const midi = $derived(app.project.midi ?? { source: null, mscDevice: 0, mscFormat: null, map: [] });
+  /** MSC command formats offered; '' = the default (video 0x30–0x3F). All-types (0x7F) is always answered. */
+  const formats: { value: number; label: string }[] = [
+    { value: 0x01, label: 'Lighting (01)' },
+    { value: 0x10, label: 'Sound (10)' },
+    { value: 0x30, label: 'Video general (30) only' },
+    { value: 0x7f, label: 'All types (7F) only' },
+  ];
+  const formatMissing = $derived(midi.mscFormat != null && !formats.some((f) => f.value === midi.mscFormat));
   const live = $derived(app.live.midi);
   const sources = $derived(app.live.osc.midiSources);
   const sourceMissing = $derived(!!midi.source && !sources.includes(midi.source));
@@ -78,6 +86,23 @@
           else void cmd('midi.set', { mscDevice: n }).then((r) => { if (r === undefined) el.value = String(midi.mscDevice); });
         }}
       />
+    </label>
+    <label class="field">
+      <span>MSC format</span>
+      <select
+        class="select"
+        value={midi.mscFormat == null ? '' : String(midi.mscFormat)}
+        disabled={!editable}
+        title={editTitle ?? 'MSC messages in other command formats are ignored; all types (7F) is always answered'}
+        onchange={(e) => {
+          const el = e.currentTarget;
+          void cmd('midi.set', { mscFormat: el.value === '' ? null : Number(el.value) }).then((r) => { if (r === undefined) el.value = midi.mscFormat == null ? '' : String(midi.mscFormat); });
+        }}
+      >
+        <option value="">Video (30–3F)</option>
+        {#if formatMissing}<option value={String(midi.mscFormat)}>Format {midi.mscFormat?.toString(16).toUpperCase().padStart(2, '0')}</option>{/if}
+        {#each formats as f (f.value)}<option value={String(f.value)}>{f.label}</option>{/each}
+      </select>
     </label>
   </div>
 

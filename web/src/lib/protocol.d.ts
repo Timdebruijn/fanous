@@ -71,7 +71,7 @@ export interface CommandArgs {
   'cue.set': { id: string; cue: JSONValue };
   /** Restart the 10-minute expiry of a fixture's UI values (it runs only while a console is received for the fixture). Role: programmer, refused under show lock. */
   'fixture.keep': { fixture: string };
-  /** Drop the UI values of one fixture, or of all fixtures without a fixture argument. Role: programmer. */
+  /** Drop the UI and MIDI values of one fixture, or of all fixtures without a fixture argument. Role: programmer. */
   'fixture.release': { fixture?: string };
   /** Set one fixture parameter from the UI (source ui; shown when the source policy is internal, ltp or htp). Role: programmer, refused under show lock. */
   'fixture.set': { fixture: string; parameter: string; raw: number };
@@ -85,8 +85,8 @@ export interface CommandArgs {
   'midi.map.remove': { id: string };
   /** Add or replace (by id, or same control and target) a MIDI map entry; returns its id. Role: programmer, refused under show lock, undoable. */
   'midi.map.set': { id?: string; source?: string | null; channel: number; kind: 'note' | 'cc' | 'cc14' | 'pc'; number?: number | null; target: string; cue?: number | null; curve?: 'linear' | 'toggle'; pickup?: boolean; low?: number; high?: number };
-  /** MIDI input: source (a MIDI source name, null = all) and mscDevice (0–111; 127 all-call is always answered). Role: programmer, refused under show lock, undoable. */
-  'midi.set': { source?: string | null; mscDevice?: number };
+  /** MIDI input: source (a MIDI source name, null = all), mscDevice (0–111; 127 all-call is always answered), mscFormat (0–127, null = video 0x30–0x3F; 0x7F all-types is always answered). Role: programmer, refused under show lock, undoable. */
+  'midi.set': { source?: string | null; mscDevice?: number; mscFormat?: number | null };
   /** Add an output (one full-canvas slice, no blend, identity warp), optionally bound to a display. Role: programmer, refused under show lock, undoable. */
   'output.add': { display?: { uuid: string; name: string } };
   /** Remove an output. Role: programmer, refused under show lock, undoable. */

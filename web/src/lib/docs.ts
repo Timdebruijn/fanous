@@ -28,7 +28,7 @@ export interface ProjectDoc {
   cues: CueDoc[];
   timecode: TimecodeSettingsDoc;
   /** MIDI control (DESIGN §15.4, B36); absent until first set */
-  midi: MIDISettingsDoc;
+  midi?: MIDISettingsDoc;
   ui: Record<string, unknown>;
 }
 
@@ -76,6 +76,7 @@ export interface MIDIMappingDoc {
 export interface MIDISettingsDoc {
   source?: string | null; // missing or null = every source
   mscDevice: number; // 0–111; the all-call 127 is always answered
+  mscFormat?: number | null; // MSC command format answered; missing/null = video 0x30–0x3F; all-types 0x7F always
   map: MIDIMappingDoc[];
 }
 
@@ -169,7 +170,8 @@ export interface LiveDoc {
     bonjour: string;
   };
   osc: { port: number; recent: { at: number; command: string }[]; midiSources: string[]; audioInputs: string[] };
-  /** MIDI control input: sources listened to, the last message ("source · ch 1 · note 36 on · 127"), learn state. */
+  /** MIDI control input: sources listened to, the last message ("source · ch 1 · note 36 on · 127"), learn state;
+   * error also lists map entries that cannot be read or cannot work. */
   midi: {
     connected: string[];
     last: string | null;
@@ -204,7 +206,6 @@ export const emptyProject: ProjectDoc = {
   outputs: [],
   cues: [],
   timecode: { source: 'off', device: null, channel: 0, offset: 0, freewheel: 2, layerOffsets: {} },
-  midi: { source: null, mscDevice: 0, map: [] },
   ui: {},
 };
 

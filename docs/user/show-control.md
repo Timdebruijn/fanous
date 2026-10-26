@@ -127,10 +127,17 @@ cues with MIDI Show Control. The MIDI panel on the Show screen has:
   dot means Fanous listens to it, the "timecode" badge marks the MTC source.
 - **MSC device id** (0–111, default 0): MIDI Show Control messages to this id or
   to all (127) are answered. **GO** fires the next cue, **GO** with a cue number
-  fires that cue. STOP, RESUME and the other MSC commands are shown but do
-  nothing yet. Group ids (112–126) are not answered.
+  fires that cue. A GO whose cue is not a number (`1.2.3`, a stray byte) does
+  nothing: it never becomes a plain GO. STOP, RESUME and the other MSC commands
+  are shown but do nothing yet. Group ids (112–126) are not answered.
+- **MSC format**: the command format answered, default **Video (30–3F)**; pick
+  **Lighting (01)** or another to follow that one instead. MSC in other formats
+  is ignored (a lighting GO meant for the desk does not fire Fanous cues); "all
+  types" (7F) is always answered.
 - The **last message** received, for example `APC mini · ch 1 · CC 48 = 127`, so
-  you can see a controller is talking before you map it.
+  you can see a controller is talking before you map it. Map entries that
+  cannot be read or cannot work (hand-written into a project) are listed in red
+  under it; the other entries keep working.
 - The **map**: one row per control with Control (channel and note, CC or
   program, and the source it came from), Target, Mode and **Remove**.
 
@@ -146,9 +153,9 @@ What a control does:
 
 | Control | Cue target | Parameter target |
 |---|---|---|
-| Note | fires on key down | **Linear**: the velocity while held, back to 0 on release. **Toggle** (the default when learned): every press switches between 0 and full |
+| Note | fires on key down | **Linear**: the velocity while held, back to 0 on release. **Toggle** (the default when learned): every press switches between 0 and full, starting from what the layer shows |
 | CC | fires when it rises past half way (a button sending 127/0 fires once per press) | **Linear**: 0–127 across the parameter's range. **Toggle**: every rise past half way switches |
-| CC 14-bit | as CC | as CC, with 16 384 steps |
+| CC 14-bit | as CC | as CC, with 16 384 steps: the coarse controller sets the value, its fine partner refines it |
 | Program change | fires; **Go to cue** without a number fires cue *program + 1* (program 1 on the device = cue 1) | the program number across the range |
 
 **Pickup** (Linear only): the control is ignored until it reaches the value the
@@ -156,10 +163,15 @@ parameter shows now, then takes over. When something else changes the value
 (the console, a cue, the UI), it lets go again until it is reached once more.
 Use it for faders so a layer does not jump when you touch one.
 
-MIDI parameter values enter like OSC values, as their own source "MIDI", so the
-project's source policy decides whether they move a layer (not with **Console
-only**). Mapping changes and Learn are programmer settings and are refused while
-the show is locked; a locked show still follows its MIDI controllers.
+MIDI parameter values enter as their own source "MIDI", so the project's source
+policy decides whether they move a layer (not with **Console only**). A
+controller can be left holding a value, so MIDI values are treated like UI
+values: the layer panel says "MIDI control", they are released after masking a
+received console for 10 minutes (**Keep** restarts the count) and **Release**
+clears them. They are also dropped when their map row is removed or the
+controller is unplugged. Mapping changes and Learn are programmer settings and
+are refused while the show is locked; a locked show still follows its MIDI
+controllers.
 
 **Example: APC mini.** Set the source policy to **Console + UI (latest wins)**.
 In the MIDI panel:
