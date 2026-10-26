@@ -18,9 +18,7 @@ public final class StateServer: @unchecked Sendable {
     public let store: StateStore
     public let auth: RoleAuth
     /// Installed by the engine when it renders; nil → preview subscriptions are refused.
-    nonisolated(unsafe) public var preview: PreviewStreamer?
-    /// Switches what the preview shows: "canvas" or "output:<id>"; returns false for an unknown target.
-    nonisolated(unsafe) public var previewTarget: (@Sendable (String) -> Bool)?
+    nonisolated(unsafe) public var preview: PreviewHub?
     private let caps: JSONValue
     private let logger: Logger
     private let connections = Mutex<[ObjectIdentifier: Connection]>([:])
@@ -158,18 +156,20 @@ public final class StateServer: @unchecked Sendable {
                     }
                     let jpeg = message["codec"]?.string == "jpeg"
                     let target = message["target"]?.string ?? "canvas"
-                    if let switchTarget = server.previewTarget, !switchTarget(target) {
-                        session.send(text: server.store.encode(["t": "error", "code": "badTarget", "message": "preview target \(target) is not canvas or an existing output:<id>"]), droppable: false)
-                        return
-                    }
                     let id = server.nextStream.add(1, ordering: .relaxed).oldValue
                     subscriptions.withLock { $0[id] = .preview }
-                    session.send(
-                        text: server.store.encode([
-                            "t": "sub", "id": .number(Double(id)), "stream": "preview", "codec": jpeg ? "jpeg" : "avc", "w": .number(Double(preview.width)),
-                            "h": .number(Double(preview.height)), "fps": .number(jpeg ? 5 : preview.fps), "target": .string(target),
-                        ]), droppable: false)
-                    preview.subscribe(PreviewStreamer.Subscriber(connection: self, stream: id, jpeg: jpeg))
+                    // each target has its own streamer: this client's choice does not change what others see
+                    let attached = preview.attach(target: target, connection: self, stream: id, jpeg: jpeg) { streamer in
+                        session.send(
+                            text: server.store.encode([
+                                "t": "sub", "id": .number(Double(id)), "stream": "preview", "codec": jpeg ? "jpeg" : "avc", "w": .number(Double(streamer.width)),
+                                "h": .number(Double(streamer.height)), "fps": .number(jpeg ? 5 : streamer.fps), "target": .string(target),
+                            ]), droppable: false)
+                    }
+                    if !attached {
+                        subscriptions.withLock { _ = $0.removeValue(forKey: id) }
+                        session.send(text: server.store.encode(["t": "error", "code": "badTarget", "message": "preview target \(target) is not canvas or an existing output:<id>"]), droppable: false)
+                    }
                 default:
                     session.send(text: server.store.encode(["t": "error", "code": "badStream", "message": "streams: dmx, preview"]), droppable: false)
                 }

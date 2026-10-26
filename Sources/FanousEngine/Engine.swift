@@ -220,22 +220,23 @@ public final class Engine: @unchecked Sendable {
         if let render {
             // 640×360 at 30 fps (DESIGN.md §11.3 default), on the compositor's own command buffer
             let height = 640 * render.scene.canvasHeight / max(1, render.scene.canvasWidth)
-            let preview = try PreviewStreamer(context: context, width: 640, height: max(2, height), fps: min(30, fps), canvasFPS: fps, parameters: dmx.snapshots, logger: logger)
+            let previewWidth = 640, previewHeight = max(2, height)
+            let makePreview: @Sendable () throws -> PreviewStreamer = { [parameters = dmx.snapshots, logger] in
+                try PreviewStreamer(context: context, width: previewWidth, height: previewHeight, fps: min(30, fps), canvasFPS: fps, parameters: parameters, logger: logger)
+            }
+            // one streamer per target that has subscribers (canvas, output:<id>); the canvas one also serves CITP
+            let preview = PreviewHub(canvas: try makePreview(), make: makePreview)
             render.compositor.previewTap = { canvas, commandBuffer, target in preview.tap(canvas: canvas, commandBuffer: commandBuffer, target: target) }
             // no GPU work for a canvas nobody sees: no output window, preview, Syphon client or CITP stream
             render.compositor.skipsIdleWork = true
             render.compositor.previewWanted = { preview.wantsFrames }
             stateServer.preview = preview
             let compiler = try OutputCompiler(device: context.device)
-            stateServer.previewTarget = { [weak self] target in
+            preview.configure = { [weak self] target, streamer in
                 guard let self else { return false }
-                if target == "canvas" {
-                    preview.outputSet = nil
-                    return true
-                }
                 let outputs = self.store?.project.outputsConfig ?? []
                 guard target.hasPrefix("output:"), let id = Int(target.dropFirst(7)), let output = outputs.first(where: { $0.id == id }) else { return false }
-                return self.previewOutput(output, in: outputs, compiler: compiler, preview: preview)
+                return self.previewOutput(output, in: outputs, compiler: compiler, preview: streamer)
             }
 
             // CITP/MSEX (DESIGN.md §16.1): peer location, layer status, library, thumbnails, streaming frames
@@ -245,10 +246,10 @@ public final class Engine: @unchecked Sendable {
                 layers: { [weak self] in self?.citpLayers() ?? [] },
                 library: { library.snapshot },
                 thumbnail: { name in (try? Data(contentsOf: thumbnailer.directory.appending(path: name))).map(Array.init) },
-                frame: { [weak self] in self?.stateServer?.preview?.latestJPEG.withLock { $0 } ?? nil }), logger: logger)
+                frame: { [weak self] in self?.stateServer?.preview?.canvas.latestJPEG.withLock { $0 } ?? nil }), logger: logger)
         do {
             try citp.start()
-            preview.externalJPEGWanted = { citp.wantsFrames.load(ordering: .relaxed) }
+            preview.canvas.externalJPEGWanted = { citp.wantsFrames.load(ordering: .relaxed) }  // CITP always streams the canvas
             self.citp = citp
         } catch {
             logger.error("CITP start failed", metadata: ["error": "\(error)"])
@@ -368,7 +369,7 @@ public final class Engine: @unchecked Sendable {
                     m["audio"] = ["callbacks": .number(Double(audio.callbacks)), "underruns": .number(Double(audio.underruns)), "corrections": .number(Double(audio.corrections)), "maxDriftMs": .number(audio.maxDriftMillis)]
                 }
                 if let preview = stateServer.preview {
-                    m["preview"] = ["framesIn": .number(Double(preview.framesIn.load(ordering: .relaxed))), "framesOut": .number(Double(preview.framesOut.load(ordering: .relaxed))), "skipped": .number(Double(preview.skipped.load(ordering: .relaxed)))]
+                    m["preview"] = ["framesIn": .number(Double(preview.framesIn)), "framesOut": .number(Double(preview.framesOut)), "skipped": .number(Double(preview.skipped))]
                 }
                 return .json(200, Array(store.encode(.object(m)).utf8))
             case "/api/logs":
@@ -657,11 +658,12 @@ public final class Engine: @unchecked Sendable {
             lastOutputs = outputs
             lastClockMaster = clockMaster
             Task { @MainActor in coordinator.apply(outputs: outputs, clockMaster: clockMaster) }
-            // the preview follows its output when that one changed
-            if let preview = stateServer?.preview, preview.outputSet != nil, let id = preview.outputSet?.plans.first?.id, let output = outputs.first(where: { $0.id == id }),
-                let compiler = try? OutputCompiler(device: render?.context.device ?? MTLCreateSystemDefaultDevice()!)
-            {
-                _ = previewOutput(output, in: outputs, compiler: compiler, preview: preview)
+            // output previews follow their output when that one changed
+            if let preview = stateServer?.preview, preview.targets.count > 1, let compiler = try? OutputCompiler(device: render?.context.device ?? MTLCreateSystemDefaultDevice()!) {
+                preview.refreshOutputs { target, streamer in
+                    guard target.hasPrefix("output:"), let id = Int(target.dropFirst(7)), let output = outputs.first(where: { $0.id == id }) else { return false }
+                    return previewOutput(output, in: outputs, compiler: compiler, preview: streamer)
+                }
             }
         }
         autosave?.cancel()
@@ -718,7 +720,7 @@ public final class Engine: @unchecked Sendable {
             ],
             "metrics": [
                 "frames": .number(Double(summary.frames)), "missed": .number(Double(summary.missed)), "late": .number(Double(summary.late)),
-                "textureMisses": .number(Double(summary.textureMisses)), "cpuP50": ms(summary.cpuP50), "cpuP99": ms(summary.cpuP99),
+                "textureMisses": .number(Double(summary.textureMisses)), "idle": .number(Double(summary.idle)), "cpuP50": ms(summary.cpuP50), "cpuP99": ms(summary.cpuP99),
                 "gpuP50": ms(summary.gpuP50), "gpuP99": ms(summary.gpuP99), "dmxP99": ms(summary.dmxP99),
             ],
             "dmx": (try? JSONValue(encoding: dmx.snapshot())) ?? [:],
