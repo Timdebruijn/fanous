@@ -7,12 +7,13 @@
   import SystemRoles from '../components/SystemRoles.svelte';
   import { modeText } from '../lib/outputs';
   import { app, can, cmd } from '../lib/state.svelte';
-  import { LOCKED_TITLE, OPERATOR_TITLE, ageText, headerCaption, memoryText, outputTone, readinessBadge, readinessSummary, stampText, thermalTone } from '../lib/system';
+  import { LOCKED_TITLE, OPERATOR_TITLE, ageText, headerCaption, memoryText, outputTone, readinessBadge, readinessSummary, resumedText, stampText, thermalTone } from '../lib/system';
 
   const show = $derived(app.live.show);
   const sys = $derived(app.live.system);
   const library = $derived(app.live.library);
   const summary = $derived(readinessSummary(show.readiness, show.checkedAt));
+  const resumed = $derived(resumedText(show.resumedAt));
   const lockedOperator = $derived(!can('operator'));
   const lockedProgrammer = $derived(!can('programmer'));
   const caption = $derived(
@@ -82,6 +83,12 @@
     <span class="spacer"></span>
     <button type="button" class="btn" disabled={lockedOperator} title={lockedOperator ? OPERATOR_TITLE : undefined} onclick={() => void cmd('readiness.run')}>Run checks</button>
   </header>
+  {#if show.mode && resumed}
+    <div class="banner banner-yellow inset" role="status">
+      <span class="dot dot-yellow"></span>
+      <span><strong>{resumed}.</strong> The engine stopped uncleanly during the show; check the outputs and the log.</span>
+    </div>
+  {/if}
   {#if show.mode && summary.status === 'notReady'}
     <div class="banner banner-red inset" role="alert">
       <span class="dot dot-red"></span>

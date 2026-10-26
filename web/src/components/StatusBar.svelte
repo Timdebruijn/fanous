@@ -3,7 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import Login from './Login.svelte';
-  import { readinessSummary } from '../lib/system';
+  import { readinessSummary, resumedText } from '../lib/system';
   import { app, can, cmd, shell, toggleLock } from '../lib/state.svelte';
 
   let showLogin = $state(false);
@@ -35,6 +35,7 @@
     return `${name} · ${u.ageSeconds.toFixed(1)} s`;
   }
   const showMode = $derived(app.live.show.mode);
+  const resumed = $derived(resumedText(app.live.show.resumedAt));
   const blocking = $derived(readinessSummary(app.live.show.readiness, app.live.show.checkedAt).blocking);
   /** set when entering show mode was refused: the popover under the button says why */
   let refused = $state<string | null>(null);
@@ -59,6 +60,7 @@
       <button type="button" class="tag {showMode ? 'tag-mode' : 'tag-open'}" aria-pressed={showMode} aria-expanded={refused !== null} onclick={toggleShowMode} disabled={!can('operator')} title={can('operator') ? (showMode ? 'Leave show mode' : 'Enter show mode: runs the readiness checks first') : 'Operator or programmer only'}>
         SHOW MODE: {showMode ? 'ON' : 'OFF'}
       </button>
+      {#if showMode && resumed}<a class="caption resumed" href="#/system" role="status">{resumed}</a>{/if}
       {#if refused !== null}
         <div class="pop panel" role="alert">
           <strong>Cannot enter show mode</strong>
@@ -145,6 +147,7 @@
   .popactions { display: flex; gap: 8px; }
   .popactions a { text-decoration: none; }
   .tag:disabled { opacity: 0.8; }
+  .resumed { margin-left: 8px; color: var(--yellow); text-decoration: none; }
   .value { font-size: 15px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
   .dmx { gap: 6px; }
   .ingest { width: 150px; }

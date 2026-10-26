@@ -102,6 +102,16 @@ exempt from App Nap, the ingest queue is paused, the cursor is hidden over
 the outputs and every output's display runs the output's Mode. Leave show mode
 to resume ingest and put the previous display modes back.
 
+If the engine crashes or is killed while show mode is on, it restarts within
+about a second **still in show mode**: the displays keep their show modes (no
+flip back and forth), the Mac stays awake, ingest stays paused and the cursor
+stays hidden. The status bar and System say "Show mode resumed after the engine
+restarted at HH:MM" until you leave show mode; download the log after the show.
+The readiness checks run again but cannot refuse a resumed show mode. A locked
+show stays locked. A deliberate stop (Engine › Stop Engine, Restart Engine,
+Stop Engine and Quit, logging out) leaves show mode, so the next start is
+normal.
+
 ## During the show
 
 - [ ] Check the status bar now and then: red means look now (dropped frames, a

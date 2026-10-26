@@ -1196,6 +1196,9 @@ with public APIs:
 - Ingest paused (default), library rescans reduced to manual, log level
   `warning`, thumbnails at 1 fps, preview encoders capped.
 - Dropped-frame and DMX-loss events become red.
+- Survives an engine crash: the state is persisted (`show-state.json`), a clean
+  stop clears it, and a start after an unclean end resumes show mode without
+  the readiness refusal and without restoring the display modes (§16.3 as built).
 
 **Readiness check** (runs on entering show mode, re-checked every 30 s, each
 item with a one-line fix): on AC power; thermal state nominal; free disk >
@@ -1343,7 +1346,21 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   and restored on leaving (B33, `DisplayModeSwitcher`, matching in
   `DisplayModeMatching`; one `.forSession` transaction, re-applied on
   re-plug; previous modes persisted in `display-modes.json` and restored on
-  the next start after a crash; unavailable modes are a non-blocking `warn` readiness item). The
+  the next start after a crash outside show mode; unavailable modes are a non-blocking `warn` readiness item).
+  **Show mode survives a crash (as built 2026-10-26):** `show-state.json`
+  (`{on, since}`) is written on entering and removed on leaving; `Engine.stop`
+  leaves show mode, so SIGTERM (launchd stop, Stop Engine, Stop Engine and
+  Quit, Restart Engine, logout) clears it and only an unclean end (crash,
+  kill -9, power loss, launchd's SIGKILL after a hung stop) leaves it. At start a
+  present file re-enters show mode before the outputs and display modes come up,
+  with every normal side effect and without the readiness refusal (readiness
+  still runs after the first display sync); the log says "show mode resumed
+  after an unclean stop" and live `show.resumedAt` drives the status-bar and
+  System notice until show mode is left. The first display sync is then an apply,
+  not a restore: displays already in their show mode are not switched and the
+  ledger is kept for the restore on leaving (no flip-flop). The show lock lives in
+  the project document; a lock change is saved at once instead of with the 2 s
+  autosave, so a crash cannot unlock a locked show. The
   remaining §14 side effects (shielding level, log level, thumbnail/preview
   throttling) are B42.
 - **System**: `/metrics` (JSON: frames, GPU/CPU timing, DMX age, audio,

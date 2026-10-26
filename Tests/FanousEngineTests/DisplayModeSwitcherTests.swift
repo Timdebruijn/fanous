@@ -134,4 +134,28 @@ struct DisplayModeSwitcherTests {
         #expect(backend.state.withLock { $0.current } == Self.m120)
         #expect(!FileManager.default.fileExists(atPath: url.path))
     }
+
+    /// Show mode resumed after a crash: the engine applies (not restores), the display is already in its show mode,
+    /// so nothing is switched and the ledger stays for the restore when show mode is left.
+    @Test func resumedShowModeKeepsTheLedgerAndSwitchesNothing() throws {
+        let url = FileManager.default.temporaryDirectory.appending(
+            path: "fanous-switcher-\(UUID().uuidString)/display-modes.json")
+        var ledger = DisplayModeLedger()
+        ledger.record("A", Self.m120)
+        try ledger.save(to: url)
+        let backend = FakeBackend()
+        backend.state.withLock { $0.current = Self.m60 }
+        let switcher = DisplayModeSwitcher(logger: Logger(label: "test"), backend: backend, ledgerURL: url)
+        for _ in 0..<2 {  // first sync, then a rebind's sync
+            switcher.apply([(Self.display, Self.m60.descriptor.config)], connected: [Self.display])
+        }
+        switcher.flush()
+        #expect(backend.state.withLock { $0.calls }.isEmpty)  // no restore-then-reapply flip-flop
+        #expect(switcher.ledgerSnapshot.previous == ["A": Self.m120])
+        #expect(FileManager.default.fileExists(atPath: url.path))
+        switcher.restore(connected: [Self.display])  // show mode left later
+        switcher.flush()
+        #expect(backend.state.withLock { $0.calls } == [[54]])
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
 }

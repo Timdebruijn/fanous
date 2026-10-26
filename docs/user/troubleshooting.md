@@ -17,7 +17,8 @@ red "Connection lost … values shown are stale".
    connection (network, firewall, wrong address). "Engine not running" means it
    is down.
 2. Choose **Start Engine**, or **Restart Engine** if it hangs. The engine also
-   restarts itself within about a second after a crash.
+   restarts itself within about a second after a crash, still in show mode if
+   show mode was on (see the show-day checklist).
 3. Open `https://127.0.0.1:8443/healthz` in a browser on the Mac. A short JSON
    with `"status":"ok"` means the engine answers.
 4. On another device: same network, `https`, port 8443, and the firewall allows
@@ -155,7 +156,8 @@ a network MIDI session, then choose it under Device (or "All sources").
 
 Engine › **Restart Engine**. Outputs go black for a moment and the UI reloads.
 DMX restores the state at once; playback positions are not restored. Do not do
-this during a show. Quitting the app does not stop the engine unless you choose
+this during a show: a restart is a clean stop, so it leaves show mode and puts
+the previous display modes back. Quitting the app does not stop the engine unless you choose
 **Stop Engine and Quit** in the quit question; **Stop Engine…** does, and
 **Start Engine** starts it again.
 

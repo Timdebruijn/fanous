@@ -184,6 +184,34 @@ struct ShowControlTests {
         #expect(changes.withLock { $0 } == [true, false])
     }
 
+    /// Enter writes the state, leave (also the clean-stop path) removes it; a run that ends without leaving keeps it,
+    /// and the next start resumes from it.
+    @Test func showModeStateSurvivesOnlyAnUncleanEnd() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "fanous-show-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appending(path: "show-state.json")
+        #expect(ShowModeState.load(from: url) == nil)  // normal start
+
+        let since = Date(timeIntervalSince1970: 1_800_000_000)
+        let crashed = ShowModeController(logger: Self.logger, stateURL: url)
+        crashed.enter(since: since)
+        // a kill -9 here: nothing more runs, so the next start sees show mode on
+        #expect(ShowModeState.load(from: url) == ShowModeState(on: true, since: since.timeIntervalSince1970))
+
+        let restarted = ShowModeController(logger: Self.logger, stateURL: url)
+        restarted.enter(since: since)  // the resume keeps the original entry time
+        #expect(ShowModeState.load(from: url)?.since == since.timeIntervalSince1970)
+        restarted.leave()  // leaving, or Engine.stop on SIGTERM
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        #expect(ShowModeState.load(from: url) == nil)
+        crashed.leave()  // releases this test's assertions
+
+        try Data(#"{"on":false,"since":0}"#.utf8).write(to: url)
+        #expect(ShowModeState.load(from: url) == nil)
+        try Data("garbage".utf8).write(to: url)
+        #expect(ShowModeState.load(from: url) == nil)  // unreadable: start normally
+    }
+
     @Test func compositorChasesTimecode() throws {
         let context = try MetalContext()
         let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }

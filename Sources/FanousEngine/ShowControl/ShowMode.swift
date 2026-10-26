@@ -9,19 +9,39 @@ import FanousCore
 import Logging
 import Synchronization
 
+/// Show mode on disk (`show-state.json`): written on enter, removed on leave — and every clean stop leaves show mode.
+/// A file still there at start means the last run ended uncleanly (crash, kill -9, power loss): show mode resumes.
+public struct ShowModeState: Codable, Equatable, Sendable {
+    public var on: Bool
+    /// When show mode was entered (seconds since 1970); kept across a resume.
+    public var since: Double
+
+    /// The state an unclean end left behind, or nil (no file, unreadable, or off): the start decision.
+    public static func load(from url: URL) -> ShowModeState? {
+        guard let data = try? Data(contentsOf: url), let state = try? JSONDecoder().decode(Self.self, from: data), state.on else { return nil }
+        return state
+    }
+}
+
 /// Show mode (DESIGN.md §14): sleep assertions, a latency-critical activity, ingest paused, warning-level logs.
 /// Entered and left on the control side; the assertions are plain IOKit handles.
 public final class ShowModeController: @unchecked Sendable {
     private let logger: Logger
+    private let stateURL: URL?
     private let state = Mutex<(on: Bool, display: IOPMAssertionID, system: IOPMAssertionID, activity: NSObjectProtocol?)>((false, 0, 0, nil))
     /// Side effects owned by the engine (ingest pause, display modes, log level), run on enter/leave.
     nonisolated(unsafe) public var onChange: (@Sendable (Bool) -> Void)?
 
-    public init(logger: Logger) { self.logger = logger }
+    /// `stateURL`: where the on/off state survives an unclean end (nil: not persisted).
+    public init(logger: Logger, stateURL: URL? = nil) {
+        self.logger = logger
+        self.stateURL = stateURL
+    }
 
     public var isOn: Bool { state.withLock { $0.on } }
 
-    public func enter() {
+    /// `since`: the original entry time when show mode resumes after an unclean stop.
+    public func enter(since: Date = Date()) {
         let changed = state.withLock { s -> Bool in
             guard !s.on else { return false }
             var display = IOPMAssertionID(0), system = IOPMAssertionID(0)
@@ -32,10 +52,12 @@ public final class ShowModeController: @unchecked Sendable {
             return true
         }
         guard changed else { return }
+        persist(ShowModeState(on: true, since: since.timeIntervalSince1970))
         logger.warning("show mode entered")
         onChange?(true)
     }
 
+    /// Also the clean-stop path (`Engine.stop`): the state file goes, so the next start is not in show mode.
     public func leave() {
         let changed = state.withLock { s -> Bool in
             guard s.on else { return false }
@@ -46,8 +68,22 @@ public final class ShowModeController: @unchecked Sendable {
             return true
         }
         guard changed else { return }
+        persist(nil)
         logger.warning("show mode left")
         onChange?(false)
+    }
+
+    private func persist(_ value: ShowModeState?) {
+        guard let stateURL else { return }
+        do {
+            if let value {
+                try JSONEncoder().encode(value).write(to: stateURL, options: .atomic)
+            } else if FileManager.default.fileExists(atPath: stateURL.path) {
+                try FileManager.default.removeItem(at: stateURL)
+            }
+        } catch {
+            logger.error("show mode state not saved", metadata: ["error": "\(error)"])
+        }
     }
 }
 

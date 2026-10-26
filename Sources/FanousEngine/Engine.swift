@@ -68,6 +68,10 @@ public final class Engine: @unchecked Sendable {
     private let showMode: ShowModeController
     private let readiness = Mutex<(items: [ReadinessItem], acknowledged: Set<String>, checkedAt: Double)>(([], [], 0))
     private var readinessTimer: DispatchSourceTimer?
+    /// When show mode came back by itself after an unclean stop (live `show.resumedAt`); cleared when show mode is left.
+    private let showResumedAt = Mutex<Double?>(nil)
+    /// The show lock as last written to disk: a change is saved at once, not with the 2 s autosave.
+    private var savedShowLock: Bool?
     private let oscLog = Mutex<[JSONValue]>([])
     private var lastPolicy: SourcePolicy?
     private var lastLibraryRootWarning: String?
@@ -92,7 +96,7 @@ public final class Engine: @unchecked Sendable {
     public init(options: EngineOptions, logger: Logger) {
         self.options = options
         self.logger = logger
-        showMode = ShowModeController(logger: logger)
+        showMode = ShowModeController(logger: logger, stateURL: AppPaths.showStateFile)
     }
 
     public func start() throws {
@@ -228,7 +232,10 @@ public final class Engine: @unchecked Sendable {
             guard let self else { return }
             self.ingest?.paused = on  // DESIGN.md §14: ingest paused in show mode
             if on { self.startReadinessTimer() } else { self.stopReadinessTimer() }
-            if !on { self.canvasSwitch?.run() }  // a canvas change deferred during show mode (B31)
+            if !on {
+                self.showResumedAt.withLock { $0 = nil }
+                self.canvasSwitch?.run()  // a canvas change deferred during show mode (B31)
+            }
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated {
                     self?.coordinator?.setCursorHidden(on)
@@ -236,6 +243,15 @@ public final class Engine: @unchecked Sendable {
                 }
             }
         }
+        // An unclean end (crash, kill -9, power loss) left show mode on: back in it before the outputs and the display
+        // modes come up, so the first sync applies (keeps) the show modes instead of restoring the ledger. Readiness
+        // runs and is published, but never refuses.
+        if let resumed = ShowModeState.load(from: AppPaths.showStateFile) {
+            logger.warning("show mode resumed after an unclean stop", metadata: ["since": "\(Date(timeIntervalSince1970: resumed.since))"])
+            showResumedAt.withLock { $0 = Date().timeIntervalSince1970 }
+            showMode.enter(since: Date(timeIntervalSince1970: resumed.since))
+        }
+        savedShowLock = project["showLock"]?.bool ?? false
         applyTimecodeSettings(ShowCommands.timecodeSettings(from: project))
         store.onProjectChanged = { [weak self] document in self?.projectChanged(document) }
         let caps: JSONValue = [
@@ -554,6 +570,7 @@ public final class Engine: @unchecked Sendable {
         let r = readiness.withLock { $0 }
         return [
             "mode": .bool(showMode.isOn),
+            "resumedAt": showResumedAt.withLock { $0 }.map { .number($0) } ?? .null,
             "checkedAt": .number(r.checkedAt),
             "ready": .bool(!r.items.contains { $0.blocks }),
             "readiness": .array(
@@ -808,7 +825,14 @@ public final class Engine: @unchecked Sendable {
             do { try ProjectDocument.save(document, to: AppPaths.projectFile) } catch { logger.error("autosave failed", metadata: ["error": "\(error)"]) }
         }
         autosave = work
-        feedQueue.asyncAfter(deadline: .now() + 2, execute: work)
+        // a crash must not unlock a locked show: the lock is on disk before the command returns
+        let showLock = document["showLock"]?.bool ?? false
+        if showLock != savedShowLock {
+            savedShowLock = showLock
+            work.perform()
+        } else {
+            feedQueue.asyncAfter(deadline: .now() + 2, execute: work)
+        }
     }
 
     /// Live document at 10 Hz and the DMX monitor stream at 20 Hz, both off the render and DMX threads.
