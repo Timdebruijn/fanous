@@ -285,3 +285,50 @@ extension StateStoreTests {
         #expect(OutputBinding.master(outputs: [left, right, gone, free], binding: after, clockMaster: nil) == nil)
     }
 }
+
+struct StateStoreRedactionTests {
+    @Test func rolesGetRedactedDocumentsAndPatches() throws {
+        let (store, _) = StateStoreTests.makeStore()
+        store.setLive("/Users/x/lib", at: JSONPointer(tokens: ["library", "root"]))
+        store.queue.sync {}
+        let monitor = RecordingClient(role: .monitor)
+        let programmer = RecordingClient(role: .programmer)
+        store.attach(monitor)
+        store.attach(programmer)
+
+        let welcome = try JSONDecoder().decode(JSONValue.self, from: Data(store.welcome(role: .monitor, caps: [:]).utf8))
+        #expect(welcome["project"]?["library"]?["root"]?.string == "")
+        #expect(welcome["live"]?["library"]?["root"]?.string == "")
+        let full = try JSONDecoder().decode(JSONValue.self, from: Data(store.welcome(role: .programmer, caps: [:]).utf8))
+        #expect(full["project"]?["library"]?["root"]?.string == "/tmp/lib")
+
+        _ = try store.execute("project.set", args: ["path": "/library/root", "value": "/elsewhere"], role: .programmer).get()
+        #expect(monitor.patches.last?["ops"]?.array?.first?["value"]?.string == "")
+        #expect(monitor.patches.last?["rev"] == programmer.patches.last?["rev"])
+        #expect(programmer.patches.last?["ops"]?.array?.first?["value"]?.string == "/elsewhere")
+        #expect(store.snapshot(role: .monitor).contains("/elsewhere") == false)
+    }
+}
+
+struct LibraryRedactionTests {
+    @Test func monitorSnapshotHasNoAbsolutePaths() {
+        let item = LibraryItem(folder: 1, file: 1, name: "a.mov", path: "/Users/x/lib/001_a/001_a.mov", kind: .movie, status: .playable, reason: nil, metadata: nil, thumbnail: nil, modified: 0, size: 1)
+        let snapshot = LibrarySnapshot(root: "/Users/x/lib", rootExists: true, folders: [LibraryFolder(number: 1, name: "a", path: "/Users/x/lib/001_a", items: [item])], scannedAt: 0, fileCount: 1, invalidCount: 0)
+        let redacted = snapshot.redacted()
+        #expect(redacted.root == "")
+        #expect(redacted.folders[0].path == "001_a")
+        #expect(redacted.folders[0].items[0].path == "001_a/001_a.mov")
+        #expect(redacted.fileCount == 1)
+    }
+
+    @Test func admitSendsRedactedWelcomeAndSetsRoleAtomically() throws {
+        let (store, _) = StateStoreTests.makeStore()
+        let client = RecordingClient(role: .monitor)
+        var set = false
+        store.admit(client, role: .monitor, caps: [:]) { set = true }
+        #expect(set)
+        #expect(client.messages.withLock { $0.first?["t"]?.string } == "welcome")
+        #expect(client.messages.withLock { $0.first?["project"]?["library"]?["root"]?.string } == "")
+        #expect(store.clientCount == 1)
+    }
+}

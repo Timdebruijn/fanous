@@ -27,7 +27,6 @@ struct HealthStatus: Encodable {
     var version = FanousVersion.string
     var uptimeSeconds: Int
     var chip: String
-    var webRoot: String
 }
 
 /// Phase 0 engine: logs the machine, owns the TLS identity and serves the UI.
@@ -302,14 +301,16 @@ public final class Engine: @unchecked Sendable {
         encoder.dateEncodingStrategy = .iso8601
         let ingestAPI = IngestAPI(library: library, queue: ingest, encoder: encoder, logger: logger)
         /// REST calls that change state need the programmer role: the session cookie, the shell token as a bearer, or an open role.
-        @Sendable func programmerAllowed(_ request: HTTPRequest) -> Bool {
+        @Sendable func allowed(_ role: Role, _ request: HTTPRequest) -> Bool {
             let bearer = request.header("Authorization").flatMap { $0.hasPrefix("Bearer ") ? String($0.dropFirst(7)) : nil }
             let sessionRole = auth.role(forToken: bearer) ?? auth.role(forCookie: RoleAuth.cookie(in: request))
-            return auth.grant(requested: .programmer, sessionRole: sessionRole) == .programmer
+            return auth.grant(requested: role, sessionRole: sessionRole) == role
         }
+        @Sendable func programmerAllowed(_ request: HTTPRequest) -> Bool { allowed(.programmer, request) }
         let server = try HTTPSServer(port: options.port, identity: identity, webRoot: options.webRoot, logger: logger) { request in
             if request.path.hasPrefix("/api/ingest") || request.path.hasPrefix("/api/upload/") {
                 if request.method != "GET", !programmerAllowed(request) { return .text(403, "programmer role required") }
+                if request.method == "GET", !allowed(.operator, request) { return .text(403, "operator role required") }  // job lists carry file paths
                 return ingestAPI.handle(request, uploadedFile: nil)
             }
             if request.path == "/api/library/rescan" {
@@ -333,7 +334,7 @@ public final class Engine: @unchecked Sendable {
             switch request.path {
             case "/healthz":
                 let health = HealthStatus(
-                    uptimeSeconds: Int(Date().timeIntervalSince(startedAt)), chip: SystemInfo.chipName, webRoot: webRoot.path)
+                    uptimeSeconds: Int(Date().timeIntervalSince(startedAt)), chip: SystemInfo.chipName)
                 return .json(200, Array((try? encoder.encode(health)) ?? Data()))
             case "/api/live":
                 return .json(200, Array((try? encoder.encode(dmx.snapshot())) ?? Data()))
@@ -374,6 +375,7 @@ public final class Engine: @unchecked Sendable {
                 }
                 return .json(200, Array(store.encode(.object(m)).utf8))
             case "/api/logs":
+                guard programmerAllowed(request) else { return .text(403, "programmer role required") }
                 // the last 64 KB of the engine log (System › Logs); `?download=1` sends the whole file
                 let file = AppPaths.logs.appending(path: "fanousd.log")
                 guard let handle = try? FileHandle(forReadingFrom: file) else { return .text(404, "no log file") }
@@ -406,7 +408,9 @@ public final class Engine: @unchecked Sendable {
             case "/api/channel-map.json":
                 return .json(200, Array(store.encode(ChannelMapDocument.json()).utf8))
             case "/api/library":
-                return .json(200, Array((try? encoder.encode(library.snapshot)) ?? Data()))
+                // below operator: no absolute paths (B25); the UI keys files by `path`, which stays unique relative to the root
+                let snapshot = allowed(.operator, request) ? library.snapshot : library.snapshot.redacted()
+                return .json(200, Array((try? encoder.encode(snapshot)) ?? Data()))
             case let path where path.hasPrefix("/api/thumbnail/"):
                 // thumbnail file names are hashes written by the engine itself: no path component may escape the cache
                 let name = String(path.dropFirst("/api/thumbnail/".count))

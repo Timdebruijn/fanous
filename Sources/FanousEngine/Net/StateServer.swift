@@ -153,7 +153,7 @@ public final class StateServer: @unchecked Sendable {
                 session.send(text: server.store.encode(ack), droppable: false)
             case "snapshot":
                 server.store.clearLagging(self)
-                session.send(text: server.store.snapshot(), droppable: false)
+                session.send(text: server.store.snapshot(role: role), droppable: false)
             case "sub":
                 switch message["stream"]?.string {
                 case "dmx":
@@ -214,13 +214,7 @@ public final class StateServer: @unchecked Sendable {
                 return
             }
             clientId.withLock { $0 = message["clientId"]?.string ?? "" }
-            let first = grantedRole.withLock { current -> Bool in
-                let wasNil = current == nil
-                current = granted
-                return wasNil
-            }
-            if first { server.store.attach(self) }
-            session.send(text: server.store.welcome(role: granted, caps: server.caps), droppable: false)
+            server.store.admit(self, role: granted, caps: server.caps) { grantedRole.withLock { $0 = granted } }
             server.logger.info("client joined", metadata: ["client": "\(clientId.withLock { $0 })", "role": "\(granted)", "from": "\(session.remoteAddress)"])
         }
     }
