@@ -42,7 +42,9 @@ jobs:
   e2e:
     # Browser end-to-end tests (web/e2e) against the real engine: each test starts `fanousd --no-network` on a free
     # port with FANOUS_HOME in a temporary directory; headless, no display bound.
+    # independent of the swift job; the run itself stops after 10 min (globalTimeout in web/playwright.config.ts)
     runs-on: macos-26
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -50,6 +52,20 @@ jobs:
           node-version: 26
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - id: versions
+        run: |
+          echo "swift=$(swift --version 2>&1 | shasum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+          echo "playwright=$(node -p "require('./web/package-lock.json').packages['node_modules/playwright-core'].version")" >> "$GITHUB_OUTPUT"
+      # the debug build: dependencies and unchanged modules come from the last run on this toolchain
+      - uses: actions/cache@v5
+        with:
+          path: .build
+          key: e2e-build-${{ runner.os }}-${{ steps.versions.outputs.swift }}-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Sources/**') }}
+          restore-keys: e2e-build-${{ runner.os }}-${{ steps.versions.outputs.swift }}-${{ hashFiles('Package.resolved') }}-
+      - uses: actions/cache@v5
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.versions.outputs.playwright }}
       - run: swift build --product fanousd
       - run: npm ci && npm run build && npx playwright install chromium
         working-directory: web
