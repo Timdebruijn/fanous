@@ -81,7 +81,9 @@
   }
   function addSlice() {
     if (!output) return;
-    set(`/slices/${output.slices.length}`, { id: nextSliceId(output), canvas: 1, source: { x: 0, y: 0, w: 1, h: 1 }, dest: UNIT_QUAD as unknown as JSONValue, mask: null, opacity: 1 });
+    // output.set only replaces existing pointers, so append by setting the whole list
+    const slice = { id: nextSliceId(output), canvas: 1, source: { x: 0, y: 0, w: 1, h: 1 }, dest: UNIT_QUAD, mask: null, opacity: 1 };
+    set('/slices', [...output.slices, slice] as unknown as JSONValue);
     ui.slice = output.slices.length;
   }
   function removeSlice() {
