@@ -22,6 +22,21 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: opening the app showed no window when the engine was running (the engine registered as the app;
   it is now a helper app, `Contents/Helpers/FanousEngine.app`); service dialogs are sheets on the window;
   opening the app no longer restarts the engine in local builds.
+- Review round (three review agents, then three fix branches):
+  - Bugs: a projector could stay black after a display mode change; cue follow without a fade never fired;
+    timecode triggers fired early across frame rates; malformed OSC numbers could crash the engine; output
+    fixture numbers follow the output id; editing the cue list no longer shifts the current cue and removed
+    cues release their values; dragging in the mapper is one undo step; warp sampled half a texel off;
+    Output Freeze works; preview blend scaling.
+  - Performance: no live updates without clients, DMX publishes only on change with O(1) lookups, no GPU
+    work when nobody watches, static pictures and generators are not redrawn, decoders sleep on a full ring
+    and pause after 2 s invisible, audio starts and stops with audio content, one preview stream per target
+    (CITP always the canvas), timers only while used, HAP decodes in place, the UI pauses when hidden.
+  - Usability: status chips next to the layer dots, Play on layer from the Media screen and a media picker
+    in the layer panel, plain policy names, Show mode and lock in the status bar, a large GO with the next
+    cue, bigger mapper handles with a nudge pad, handles that follow the warp, Undo toasts instead of
+    confirmations, error messages with a next step, better contrast and 44 px targets, guidance after adding
+    an output, physical values, empty states with an action, a shortcuts overlay.
 - Fixed: mask and warp handles did not line up with the picture on outputs that are not 16:9 (the
   preview filled 16:9, the handles used the output's shape); the output preview now has the output's shape.
 - Layers can be controlled from the UI (layer panel Control switch, `fixture.set`/`fixture.release`).
