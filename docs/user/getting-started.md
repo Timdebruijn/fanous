@@ -27,8 +27,8 @@ The app registers the engine as a background service (a LaunchAgent named
 
 After that the engine starts at login and macOS restarts it within about a
 second if it ever crashes. **Quitting the app does not stop the engine** unless
-you choose so; the outputs keep running. Auto-login is your choice for an unattended machine; it
-is not required.
+you choose so; the outputs keep running. Auto-login is your choice for an
+unattended machine; it is not required.
 
 macOS may also ask for Local Network access (Fanous receives Art-Net, sACN
 and OSC and announces itself over CITP) and, when you first pick an LTC input,
