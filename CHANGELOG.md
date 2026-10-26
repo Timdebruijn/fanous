@@ -17,6 +17,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Built-in content in folder 0: solid colour, the test patterns, a moving test card, colour sweep,
   clock and a frame-locked motion test (113), drawn on the GPU and selectable from the console or the UI.
   Layer status shows their size and "Built-in" instead of 0 × 0.
+- Quitting the app asks whether to keep the engine running (default) or stop it too; logout and
+  restart skip the question. Canvas size and frame rate are set on the Outputs screen and applied
+  live (B31). Show mode applies each output's display mode and restores it afterwards (B33). UI
+  values release only after masking a console for 10 minutes; Master and Output fixtures can be
+  set from the Layers screen (B27).
 - Audio: forward loops are gapless (B3). Ingest makes rotated and flipped phone footage upright (B18).
   State sync and HTTP endpoints hide paths, host and TLS details from lower roles (B25). OSC burst
   regression tests; the reported loss is not reproducible (B30).
