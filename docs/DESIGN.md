@@ -1336,28 +1336,43 @@ so a feedback sender is a subscriber like any client.
 
 **OSC feedback as built (B36, 2026-10-26).** Not through the `live` document
 after all: `OSCFeedbackServer` (Engine/Net) builds a flat map address →
-arguments on its own queue — resolved fixture values from
-`DMXStore.oscFeedbackValues()` (float 0–1 of the raw range, `media ii`, so a
-reply sent back sets the same raw value) plus cue, show, readiness, timecode,
-output and engine values from `Engine.oscFeedbackState()`; no paths. Requests
-(`OSCFeedback.request`, Core) are handled before the command map:
+arguments on its own queue, at most once per half tick (25 ms); notifications
+and every `get` in between share it. Under the DMX lock only the resolved raw
+values are copied (`DMXStore.resolvedRaw()`); addresses are built once per
+fixture and cached, values are float 0–1 of the raw range plus `media ii` (a
+reply sent back sets the same raw value). Cue, show, readiness, timecode,
+output and engine values come from `Engine.oscFeedbackState()`, which reads
+only cached copies: show lock and timecode enable from `oscProjectFacts`
+(updated on project changes, not the project document on Control), fps and
+missed frames from the metric totals sampled once a second (no percentiles).
+No paths. Requests (`OSCFeedback.request`, Core) are handled before the
+command map, after a token bucket per source host (10/s, burst 20) and one over
+all hosts (200/s, burst 400) (`OSCRateLimiter`):
 `/fanous/<path>/get [port]` answers every address at or below the path (sorted,
-at most 256), `/fanous/get` the summary; `/fanous/subscribe host port [prefix]`,
-`/fanous/unsubscribe`, `/fanous/ping` (→ `/fanous/pong`). `OSCSubscriptions`
-(Core, pure) keys subscribers by host:port with up to 8 prefixes, 16
-subscribers (the fixed target not counted), 60 s lifetime renewed by subscribe or
-ping, and diffs the map against what each subscriber was last sent on a 50 ms
-tick: per address at most 20 messages/s, latest wins, at most 200 messages per
-subscriber per tick (rotating, the rest next tick). Every cue go invalidates
-`/fanous/cue` so it is re-sent unchanged. Output is OSC bundles with timetag 1
-(a real timestamp would be delayed by a receiver whose clock runs behind) packed
-under 1 200 bytes. Feedback only goes to the requesting host; a subscriber
-whose port is its source port, and the fixed target once it sends from that
-port, are answered on their inbound flow (from port 8000) — an outbound
-`NWConnection` to a host:port that has a flow into the listener fails with
-EADDRINUSE. Others get one outbound UDP `NWConnection` each. The fixed target
-is `oscFeedback {host, port, prefix?}` in `settings.json` (`MachineSettings`),
-read at start; there is no UI for it.
+at most 256) to the sender, or to `port` on its host only if that host:port is
+a confirmed subscriber; `/fanous/get` the summary. Subscribing is a cookie
+handshake: `/fanous/subscribe host port [prefix]` (host must be the sender) is
+answered with `/fanous/subscribe/confirm <cookie>` to host:port and streams only
+after `/fanous/subscribe/ack <cookie>` from that host; pending entries take no
+slot, expire after 5 s and are capped at 64. `OSCSubscriptions` (Core, pure)
+keys confirmed subscribers by host:port with up to 8 prefixes, 16 subscribers
+(the fixed target not counted), 60 s lifetime renewed by subscribe or ping, and
+diffs the map against what each was last sent on a 50 ms tick: per address at
+most 20 messages/s, latest wins, at most 200 messages per subscriber per tick
+(rotating). The tick runs only while a confirmed subscriber or a fixed target
+with a prefix under `/fanous` exists, and only after `Engine.start` finished.
+Every cue go invalidates `/fanous/cue` so it is re-sent unchanged. Output is OSC
+bundles with timetag 1 (a real timestamp would be delayed by a receiver whose
+clock runs behind) packed under 1 200 bytes. A subscriber whose port is its
+source port, and the fixed target once it sends from that port, are answered on
+their inbound flow (from port 8000): an outbound `NWConnection` to a host:port
+that has a flow into the listener fails with EADDRINUSE. Others get one
+outbound UDP `NWConnection` each (a confirm to another port: one connection,
+cancelled after the send). Source hosts keep their IPv6 scope for these
+connections; named hosts are compared without it. The fixed target is
+`oscFeedback {host, port, prefix?}` in `settings.json` (`MachineSettings`, decoded
+field by field so a bad value never drops the role passwords; problems are
+logged), read at start; there is no UI for it.
 
 ### 15.4 MIDI
 

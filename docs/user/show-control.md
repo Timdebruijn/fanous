@@ -126,17 +126,25 @@ value of layer 3, `/fanous/cue/get` with the cue state. `/fanous/get` on its own
 answers with a summary: version, show mode, show lock, ready, current cue,
 frames per second and missed frames. The answer goes back to the address and
 port the question came from. A controller that listens on another port than it
-sends from adds that port as an int: `/fanous/get 9000`. One question answers
-at most 256 addresses; ask per layer rather than for all layers at once.
+sends from adds that port as an int (`/fanous/get 9000`); that only works once
+that port has a confirmed subscription (below), otherwise the answer still goes
+to the port the question came from. One question answers at most 256 addresses;
+ask per layer rather than for all layers at once. Answers come from a snapshot
+that is at most 25 ms old.
 
-**Subscribe.** `/fanous/subscribe <host> <port> [prefix]` (s, i, s) sends every
-change under the prefix (default `/fanous`, everything) to that port. Right
-after subscribing you get all current values once, then only changes. Changes
+**Subscribe** takes two steps. `/fanous/subscribe <host> <port> [prefix]`
+(s, i, s) is answered with `/fanous/subscribe/confirm <cookie>` (s) on that
+port; the controller sends `/fanous/subscribe/ack <cookie>` back within 5
+seconds, from the same computer. From then on every change under the prefix
+(default `/fanous`, everything) goes to that port. This way nobody can make
+Fanous send a stream to a computer that did not ask for it. Right after the ack
+you get all current values once, then only changes. Changes
 are collected for 50 ms and sent together, so a value goes out at most 20 times
 a second and always as its latest value; a console fading a layer does not
 flood the controller. A subscription ends after 60 seconds unless it is renewed
-with another `/fanous/subscribe` or a `/fanous/ping` (answered with
-`/fanous/pong`): let the controller send one every 30 seconds.
+with another `/fanous/subscribe` (no new cookie needed once confirmed) or a
+`/fanous/ping` (answered with `/fanous/pong`): let the controller send one every
+30 seconds.
 `/fanous/unsubscribe` ends every subscription of the sending computer;
 `/fanous/unsubscribe <host> <port> [prefix]` ends one. Every cue go (Go, Back,
 Go to, from the UI, the Space key or OSC) sends the cue addresses again, also
@@ -175,8 +183,11 @@ Nothing that names a file or folder on the Mac (library root, project file) can
 be read over OSC.
 
 **Who gets feedback.** Fanous only sends to the computer that asked: a subscribe
-naming another host is refused with `/fanous/error`. At most 16 subscriptions
-exist at once. OSC has no passwords, so keep it on the show network. For a
+naming another host is refused with `/fanous/error`, and a stream starts only
+after the cookie came back. At most 16 confirmed subscriptions exist at once.
+Each computer can send 10 feedback requests (get, subscribe, ack, ping) a second,
+20 in a burst; more are ignored. OSC has no passwords, so keep it on the show
+network. For a
 controller that cannot subscribe, set a **fixed feedback target** in
 `~/Library/Application Support/Fanous/settings.json` (next to `passwords`, keep
 those), then restart the engine:
@@ -196,18 +207,24 @@ no field for it on the System screen yet.
 Mac's address as target and port 8000, and let it listen for OSC on a port of
 its own, say 9000 (the field names differ between Companion versions). Then:
 
-- either put the Companion computer in `settings.json` as fixed target
-  (`"host": "<Companion's address>", "port": 9000`), or give a trigger that runs
-  every 30 seconds the action *Send message* `/fanous/subscribe` with the
-  arguments `<Companion's address>` (string), `9000` (integer) and
-  `/fanous/cue` (string);
+- the simplest: put the Companion computer in `settings.json` as fixed target
+  (`"host": "<Companion's address>", "port": 9000`); no subscribe needed;
+- or subscribe in two steps. A trigger that runs every 30 seconds sends
+  *Send message* `/fanous/subscribe` with the arguments `<Companion's address>`
+  (string), `9000` (integer) and `/fanous/cue` (string). Store the received
+  `/fanous/subscribe/confirm` argument in a variable, and let a second trigger
+  on that variable changing send `/fanous/subscribe/ack` with the variable as
+  string argument. Once confirmed, the 30-second subscribe only renews (no new
+  cookie);
 - a button with the action *Send message* `/fanous/cue/go` fires the next cue;
 - received `/fanous/cue/current/name` and `/fanous/cue/next/name` fill
   variables to show on that button ("Next: Chorus"), and a feedback on
   `/fanous/show/ready` = 0 can turn a button red before show mode.
 
-TouchOSC sends from and listens on the same port: there `/fanous/subscribe
-<its address> <its port>` is enough, and the answers come from port 8000.
+TouchOSC sends from and listens on the same port: it gets the cookie on that
+port, from port 8000, and answers with the ack (a small script on a control:
+on `/fanous/subscribe/confirm`, send `/fanous/subscribe/ack` with the same
+argument); changes then come from port 8000 too.
 
 ## CITP/MSEX
 
