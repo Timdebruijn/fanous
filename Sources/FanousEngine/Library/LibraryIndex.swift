@@ -39,6 +39,13 @@ public struct MediaMetadata: Codable, Sendable, Equatable {
     public var audioChannels = 0
     public var audioSampleRate = 0.0
     public var frameCount = 0
+    /// The track carries a rotation/flip (`preferredTransform`); the decoder ignores it, so ingest must bake it in.
+    public var rotated: Bool?
+}
+
+extension CGAffineTransform {
+    /// Anything but identity and pure translation.
+    var rotatesOrFlips: Bool { !(a == 1 && b == 0 && c == 0 && d == 1) }
 }
 
 public struct LibraryFolder: Codable, Sendable, Equatable {
@@ -243,8 +250,10 @@ public final class LibraryIndex: @unchecked Sendable {
             do {
                 let metadata = try Self.probeMovie(url)
                 entry.metadata = metadata
-                entry.status = url.pathExtension.lowercased() == "mov" && Self.playableCodecs.contains(metadata.codec) ? .playable : .needsTranscode
-                if entry.status == .needsTranscode { entry.reason = "\(metadata.codec) is not ProRes/HAP in .mov" }
+                entry.status = url.pathExtension.lowercased() == "mov" && Self.playableCodecs.contains(metadata.codec) && metadata.rotated != true ? .playable : .needsTranscode
+                if entry.status == .needsTranscode {
+                    entry.reason = metadata.rotated == true ? "rotated or flipped (phone footage): transcode to make it upright" : "\(metadata.codec) is not ProRes/HAP in .mov"
+                }
             } catch {
                 entry.reason = "\(error)"
             }
@@ -314,9 +323,11 @@ public final class LibraryIndex: @unchecked Sendable {
                 var metadata = MediaMetadata()
                 metadata.duration = duration
                 if let video = try await asset.loadTracks(withMediaType: .video).first {
-                    let (descriptions, frameRate, size) = try await video.load(.formatDescriptions, .nominalFrameRate, .naturalSize)
-                    metadata.width = Int(size.width)
-                    metadata.height = Int(size.height)
+                    let (descriptions, frameRate, size, transform) = try await video.load(.formatDescriptions, .nominalFrameRate, .naturalSize, .preferredTransform)
+                    let upright = CGRect(origin: .zero, size: size).applying(transform).size  // rotated phone footage: report the displayed size
+                    metadata.rotated = transform.rotatesOrFlips
+                    metadata.width = Int(upright.width.rounded())
+                    metadata.height = Int(upright.height.rounded())
                     metadata.frameRate = Double(frameRate)
                     metadata.frameCount = Int((duration * Double(frameRate)).rounded())
                     if let description = descriptions.first {
