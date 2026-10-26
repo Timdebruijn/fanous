@@ -609,18 +609,28 @@ can never disagree). `[OPEN-9]` exact bands and the speed/scale upper limits.
 - `interface` filters by sender: a packet is accepted when its source address
   is in a subnet of that interface (getifaddrs, re-read on the 0.5 s tick
   while a universe names one, so adapters may come and go). sACN is one BSD
-  UDP socket bound to the port on every interface (SO_REUSEPORT; unicast
-  always works) that joins each universe's group with `IP_ADD_MEMBERSHIP` on
-  the interface's address (`any`: the default-route interface). A second
-  `NWConnectionGroup` on the same port fails with EADDRINUSE, so
-  Network.framework cannot join per interface. Settings changes add or drop
-  only the affected memberships; the socket and the Art-Net listener never
-  rebind. Memberships are re-asserted (idempotent) on every `NWPathMonitor`
-  update and every 5 s, which re-joins an adapter the kernel dropped them
-  for (replug) and restores one shared between `any` and the default
-  interface's name after a drop. Everything runs on the DMX queue.
-  Readiness warns (`interfaces`) for a patched universe whose interface is
-  missing or whose sACN membership could not be joined.
+  UDP socket bound to INADDR_ANY:5568 (SO_RCVBUF 4 MB; unicast always works)
+  that joins each universe's group with `IP_ADD_MEMBERSHIP` on the interface's
+  address; `any` joins on every up, IFF_MULTICAST, non-loopback IPv4
+  interface, so a console on a NIC without a gateway works with the default.
+  EADDRINUSE on a join means "already a member" (a second address of the
+  interface, or two specs wanting it). Without any sACN universe, universe 1
+  is joined on `any` (as before B28). This replaces the `NWConnectionGroup`s:
+  a second group on the same port fails with EADDRINUSE, so Network.framework
+  cannot join per interface. Settings changes add or drop only the affected
+  memberships; the socket and the Art-Net listener never rebind. Memberships
+  are re-asserted (idempotent) on every `NWPathMonitor` update and every
+  5 s, which re-joins an adapter the kernel dropped them for (replug). A
+  read event drains at most 256 packets. Everything runs on the DMX queue.
+- The socket sets SO_REUSEPORT: a later process on the port (sACNView
+  receiving, a second Fanous) also gets multicast, but unicast is delivered
+  to one socket only, the one bound last. A port held exclusively
+  (`nc -u -l 5568`) fails the bind: the engine logs it, runs without sACN,
+  and readiness warns (`sacnport`).
+- Readiness warns (`interfaces`) for a patched universe whose interface is
+  missing or whose sACN membership could not be joined, including `any`
+  (no multicast interface at all, or a failed join on one of them, e.g.
+  EADDRNOTAVAIL on an isolated LAN).
 - Hold on loss applies on the transition to lost, and at once when the
   setting changes while a universe that was received is lost: `hold` keeps
   the values (as before); `zero` feeds a frame of zeros stamped now, so under
@@ -632,7 +642,8 @@ can never disagree). `[OPEN-9]` exact bands and the speed/scale upper limits.
   is rejected by the subnet filter), Art-Net output/ArtAddress, per-address
   sACN priority (`[OPEN-10]`). Multicast delivery is not covered by the
   tests (it needs the Local Network permission); memberships are checked
-  against the kernel.
+  against the kernel, and the manual sACNView checklist in
+  `docs/user/console-setup.md` covers delivery.
 
 ---
 
