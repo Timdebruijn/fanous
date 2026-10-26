@@ -14,13 +14,15 @@ import Logging
 /// ponytail: no role check yet (Phase 5 brings roles); the engine listens on the LAN like every other endpoint.
 public final class IngestAPI: @unchecked Sendable {
     public static let defaultCodec: MovieWriter.Codec = .proRes422HQ
-    private let library: LibraryIndex
+    /// The current index: the library root can change while the engine runs (B51).
+    private let currentLibrary: @Sendable () -> LibraryIndex
+    private var library: LibraryIndex { currentLibrary() }
     private let queue: IngestQueue
     private let encoder: JSONEncoder
     private let logger: Logger
 
-    public init(library: LibraryIndex, queue: IngestQueue, encoder: JSONEncoder, logger: Logger) {
-        self.library = library
+    public init(library: @escaping @Sendable () -> LibraryIndex, queue: IngestQueue, encoder: JSONEncoder, logger: Logger) {
+        currentLibrary = library
         self.queue = queue
         self.encoder = encoder
         self.logger = logger
