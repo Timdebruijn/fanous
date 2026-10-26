@@ -198,8 +198,25 @@ struct CompositorIdleTests {
         let canvas = compositor.readback()
         #expect((canvas.width, canvas.height, compositor.fps) == (320, 180, 50))
         #expect(canvas.rgba[(canvas.height / 2 * canvas.width + canvas.width / 2) * 4] > 150, "the layer is drawn on the new canvas")
-        // ponytail: the failure path (makeTexture returns nil, old canvas kept) is not forced here: Metal asserts on
-        // oversized descriptors instead of returning nil, and running out of memory is not reproducible in a test
+
+        // a canvas that cannot be made: refused before anything changes, the loop runs on at the old size and rate
+        #expect(throws: RenderError.self) { try coordinator.setCanvas(width: 20_000, height: 180, fps: 60) }
+        try await ticksAdvance()
+        #expect((compositor.latestCanvas.width, compositor.canvasSizeSnapshot.width, compositor.fps) == (320, 320, 50))
+    }
+
+    /// B31: a generator on a layer follows the canvas size; new ones are made at the snapshot size.
+    @Test func generatorsFollowTheCanvasSize() throws {
+        let context = try MetalContext()
+        let generator = try #require(GeneratorSource(context: context, file: 110, width: Self.width, height: Self.height))
+        let rig = try Rig(playback: LayerPlayback(key: MediaKey(folder: 0, file: 110), live: generator), idleWork: false, offscreen: false)
+        rig.tick(2)
+        try rig.compositor.reconfigure(width: 320, height: 240, fps: 25)
+        #expect(rig.compositor.canvasSizeSnapshot == (320, 240))
+        let canvas = rig.compositor.readback()
+        #expect(canvas.width == 320 && canvas.rgba.allSatisfy { $0 == 0 || $0 == 255 }, "new canvases are cleared before the first tick")
+        rig.tick(1, from: 2)
+        #expect((generator.texture.width, generator.texture.height) == (320, 240))
     }
 
     @Test func invisibleLayersStopAskingForFramesAfterTwoSecondsAndResumeWhenVisible() {

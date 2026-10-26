@@ -10,7 +10,9 @@ import Synchronization
 /// its last subscriber, so one client's target never changes what another sees. The canvas streamer always exists:
 /// CITP consoles stream the canvas.
 public final class PreviewHub: @unchecked Sendable {
-    public let canvas: PreviewStreamer
+    /// Replaced by `rebuild` (canvas size or rate changed); taken under `streamers` when both are needed.
+    private let canvasBox: Mutex<PreviewStreamer>
+    public var canvas: PreviewStreamer { canvasBox.withLock { $0 } }
     private let make: @Sendable () throws -> PreviewStreamer
     private let streamers = Mutex<[String: PreviewStreamer]>([:])
     /// The streamers `tap` walks; replaced (never mutated) when the set changes, so a tick takes one lock and a retain.
@@ -19,7 +21,7 @@ public final class PreviewHub: @unchecked Sendable {
     nonisolated(unsafe) public var configure: (@Sendable (String, PreviewStreamer) -> Bool)?
 
     public init(canvas: PreviewStreamer, make: @escaping @Sendable () throws -> PreviewStreamer) {
-        self.canvas = canvas
+        canvasBox = Mutex(canvas)
         self.make = make
         active = Mutex([canvas])
     }
@@ -53,18 +55,42 @@ public final class PreviewHub: @unchecked Sendable {
     }
 
     public func unsubscribe(connection: StateServer.Connection, stream: UInt32) {
-        canvas.unsubscribe(connection: connection, stream: stream)
         streamers.withLock { all in
+            canvas.unsubscribe(connection: connection, stream: stream)
             for streamer in all.values { streamer.unsubscribe(connection: connection, stream: stream) }
             release(&all)
         }
     }
 
     public func remove(connection: StateServer.Connection) {
-        canvas.remove(connection: connection)
         streamers.withLock { all in
+            canvas.remove(connection: connection)
             for streamer in all.values { streamer.remove(connection: connection) }
             release(&all)
+        }
+    }
+
+    /// The canvas changed size or rate (B31): every streamer is made again by `make` (new size, new frame interval)
+    /// and its subscribers move over; they get a new `stream` description with the first frame. Output streamers are
+    /// configured outside the lock (that reads the project); one that no longer configures keeps its old streamer.
+    public func rebuild() throws {
+        let fresh = try make()
+        var outputs: [String: PreviewStreamer] = [:]
+        for target in streamers.withLock({ Array($0.keys) }) {
+            let streamer = try make()
+            if configure?(target, streamer) == true { outputs[target] = streamer }
+        }
+        streamers.withLock { all in
+            let old = canvas
+            fresh.externalJPEGWanted = old.externalJPEGWanted
+            for subscriber in old.subscriberList { fresh.subscribe(subscriber) }
+            canvasBox.withLock { $0 = fresh }
+            for (target, previous) in all {
+                guard let replacement = outputs[target] else { continue }
+                for subscriber in previous.subscriberList { replacement.subscribe(subscriber) }
+                all[target] = replacement
+            }
+            publishActive(all)
         }
     }
 

@@ -265,6 +265,52 @@ extension StateStoreTests {
         #expect((canvas.width, canvas.height, canvas.fps, canvas.name) == (3840, 2160, 50, "Canvas 1"))
     }
 
+    /// B31: undo in show mode changes the project but not the render until show mode ends; a failed switch puts the
+    /// rendered canvas back into the project and reports the error.
+    @MainActor @Test func canvasSwitchDefersInShowModeAndRevertsOnFailure() async throws {
+        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
+        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/x", policy: .dmx), logger: Self.logger)
+        let showMode = Mutex(false), fail = Mutex(false), applied = Mutex<[Int]>([])
+        ProjectDocument.registerCommands(on: store, auth: auth, showModeOn: { showMode.withLock { $0 } })
+        let switcher = CanvasSwitch(
+            rendered: ProjectDocument.defaultCanvas, isDeferred: { showMode.withLock { $0 } },
+            apply: { format in
+                if fail.withLock({ $0 }) { throw RenderError.pipeline("no memory") }
+                applied.withLock { $0.append(format.width) }
+            },
+            revert: { rendered, _ in
+                var project = store.project
+                try? ProjectDocument.setCanvasFormat(rendered, in: &project)
+                store.correct(project["canvases"]!, at: "/canvases")
+            })
+        store.onProjectChanged = { document in
+            if let c = ProjectDocument.canvases(from: document).first { switcher.request((c.width, c.height, c.fps)) }
+        }
+        func settle() async throws { for _ in 0..<50 { try await Task.sleep(for: .milliseconds(5)) } }
+
+        _ = try store.execute("canvas.set", args: ["id": 1, "width": 3840, "height": 2160, "fps": 50], role: .programmer).get()
+        try await settle()
+        #expect(applied.withLock { $0 } == [3840])
+        showMode.withLock { $0 = true }
+        _ = try store.execute("undo", role: .programmer).get()
+        try await settle()
+        #expect(ProjectDocument.canvases(from: store.project).first?.width == 1920)
+        #expect(applied.withLock { $0 } == [3840], "not applied in show mode")
+        #expect(switcher.live["pending"]?.bool == true && switcher.live["width"]?.int == 3840)
+        showMode.withLock { $0 = false }
+        switcher.run()  // the engine calls this when show mode ends
+        try await settle()
+        #expect(applied.withLock { $0 } == [3840, 1920])
+        #expect(switcher.live["pending"]?.bool == false)
+
+        fail.withLock { $0 = true }
+        _ = try store.execute("canvas.set", args: ["id": 1, "width": 1280, "height": 720, "fps": 25], role: .programmer).get()
+        try await settle()
+        let canvas = try #require(ProjectDocument.canvases(from: store.project).first)
+        #expect((canvas.width, canvas.fps) == (1920, 60), "the rendered canvas is back in the project")
+        #expect(switcher.live["error"]?.string?.contains("no memory") == true && switcher.live["pending"]?.bool == false)
+    }
+
     @Test func projectCanvasWinsOverSceneDefaultsAndASceneFileWinsOverTheProject() throws {
         var project = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/x", policy: .dmx)
         #expect(Engine.startCanvas(project: nil, scene: nil) == (1920, 1080, 60))

@@ -55,7 +55,8 @@ public final class Engine: @unchecked Sendable {
     private let modeChecks = Mutex<[Int: DisplayModeMatching.Check]>([:])
     private var lastOutputs: [OutputConfig] = []
     private var lastClockMaster: Int?
-    private var lastCanvas = ProjectDocument.defaultCanvas
+    /// B31: keeps the rendered canvas in step with the project's.
+    private var canvasSwitch: CanvasSwitch?
     // Phase 7: show control
     private let timecodeClock = TimecodeClock()
     private var ltc: LTCInput?
@@ -118,7 +119,15 @@ public final class Engine: @unchecked Sendable {
             try? ProjectDocument.setCanvasFormat(startCanvas, in: &project)
             loadedProject = project
         }
-        lastCanvas = startCanvas
+        let canvasSwitch = CanvasSwitch(
+            rendered: startCanvas, isDeferred: { [weak self] in self?.showMode.isOn ?? false },
+            apply: { [weak self] format in
+                guard let coordinator = self?.coordinator else { throw RenderError.pipeline("no compositor") }
+                try coordinator.setCanvas(width: format.width, height: format.height, fps: format.fps)
+            },
+            revert: { [weak self] rendered, error in self?.canvasSwitchFailed(keeping: rendered, error: error) })
+        canvasSwitch.applied = { [weak self] format in self?.canvasSwitched(to: format) }
+        self.canvasSwitch = canvasSwitch
         let layerCount = options.scene?.layerCount ?? loadedProject?["layerCount"]?.int ?? 8
         let patch = ProjectDocument.effectivePatch(from: loadedProject ?? .null) ?? Patch.standard(layers: layerCount, outputs: 4)
         let policy = options.scene?.policy ?? loadedProject?["policy"]?.string.flatMap(SourcePolicy.init(rawValue:)) ?? .dmx
@@ -151,8 +160,8 @@ public final class Engine: @unchecked Sendable {
         let ingest = IngestQueue(persistenceURL: AppPaths.ingestQueueFile, logger: logger)
         let metrics = self.metrics
         let fps = startCanvas.fps
-        ingest.shouldYield = {
-            let budget = 0.7 / fps * 1e6
+        ingest.shouldYield = { [weak self] in
+            let budget = 0.7 / (self?.canvasSwitch?.rendered.fps ?? fps) * 1e6
             return metrics.recent(seconds: 0.25, now: CACurrentMediaTime()).contains { Double($0.cpuMicros + $0.gpuMicros) > budget }
         }
         ingest.start()
@@ -218,6 +227,7 @@ public final class Engine: @unchecked Sendable {
             guard let self else { return }
             self.ingest?.paused = on  // DESIGN.md §14: ingest paused in show mode
             if on { self.startReadinessTimer() } else { self.stopReadinessTimer() }
+            if !on { self.canvasSwitch?.run() }  // a canvas change deferred during show mode (B31)
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated {
                     self?.coordinator?.setCursorHidden(on)
@@ -234,11 +244,12 @@ public final class Engine: @unchecked Sendable {
         let stateServer = StateServer(store: store, auth: auth, caps: caps, logger: logger)
         render?.compositor.timecode = timecodeClock
         if let render {
-            // 640×360 at 30 fps (DESIGN.md §11.3 default), on the compositor's own command buffer
-            let height = 640 * render.scene.canvasHeight / max(1, render.scene.canvasWidth)
-            let previewWidth = 640, previewHeight = max(2, height)
-            let makePreview: @Sendable () throws -> PreviewStreamer = { [parameters = dmx.snapshots, logger] in
-                try PreviewStreamer(context: context, width: previewWidth, height: previewHeight, fps: min(30, fps), canvasFPS: fps, parameters: parameters, logger: logger)
+            // 640 wide in the canvas aspect at 30 fps (DESIGN.md §11.3 default), on the compositor's own command buffer;
+            // made again from the rendered canvas when it changes (B31)
+            let makePreview: @Sendable () throws -> PreviewStreamer = { [weak self, parameters = dmx.snapshots, logger] in
+                let canvas = self?.canvasSwitch?.rendered ?? startCanvas
+                let height = max(2, 640 * canvas.height / max(1, canvas.width))
+                return try PreviewStreamer(context: context, width: 640, height: height, fps: min(30, canvas.fps), canvasFPS: canvas.fps, parameters: parameters, logger: logger)
             }
             // one streamer per target that has subscribers (canvas, output:<id>); the canvas one also serves CITP
             let preview = PreviewHub(canvas: try makePreview(), make: makePreview)
@@ -679,6 +690,22 @@ public final class Engine: @unchecked Sendable {
         readinessTimer = nil
     }
 
+    /// After a canvas switch (B31): previews at the new aspect and rate, caps for new clients, display-mode checks.
+    @MainActor private func canvasSwitched(to format: ProjectDocument.CanvasFormat) {
+        logger.info("canvas changed", metadata: ["size": "\(format.width)×\(format.height)", "fps": "\(format.fps)"])
+        do { try stateServer?.preview?.rebuild() } catch { logger.error("preview rebuild failed", metadata: ["error": "\(error)"]) }
+        stateServer?.setCaps(fps: format.fps)
+        syncDisplayModes()
+    }
+
+    /// A canvas switch failed: the old canvas still renders, so it goes back into the project (no history entry).
+    @MainActor private func canvasSwitchFailed(keeping rendered: ProjectDocument.CanvasFormat, error: any Error) {
+        logger.error("canvas change failed; the previous canvas keeps running", metadata: ["error": "\(error)"])
+        guard let store else { return }
+        var project = store.project
+        if (try? ProjectDocument.setCanvasFormat(rendered, in: &project)) != nil, let canvases = project["canvases"] { store.correct(canvases, at: "/canvases") }
+    }
+
     /// Canvas at start (B31): a `--scene` file wins (development, bench), then the project's first canvas, then
     /// 1920×1080 at 60. A hand-edited project canvas that `canvas.set` would refuse falls back to the default.
     static func startCanvas(project: JSONValue?, scene: SceneConfig?) -> ProjectDocument.CanvasFormat {
@@ -723,20 +750,9 @@ public final class Engine: @unchecked Sendable {
         }
         let timecodeSettings = ShowCommands.timecodeSettings(from: document)
         if timecodeSettings != lastTimecodeSettings { applyTimecodeSettings(timecodeSettings) }
-        // canvas size or rate (canvas.set, undo/redo): new canvas textures and driver rates, windows and bindings stay
-        if let coordinator, let canvas = ProjectDocument.canvases(from: document).first,
-            let format = try? ProjectDocument.validated((canvas.width, canvas.height, canvas.fps)), format != lastCanvas
-        {
-            lastCanvas = format
-            let log = logger
-            Task { @MainActor in
-                do {
-                    try coordinator.setCanvas(width: format.width, height: format.height, fps: format.fps)
-                    log.info("canvas changed", metadata: ["size": "\(format.width)×\(format.height)", "fps": "\(format.fps)"])
-                } catch {
-                    log.error("canvas change failed; the previous canvas keeps running", metadata: ["error": "\(error)"])
-                }
-            }
+        // canvas size or rate (canvas.set, undo/redo, project load): applied unless show mode is on
+        if let canvas = ProjectDocument.canvases(from: document).first, let format = try? ProjectDocument.validated((canvas.width, canvas.height, canvas.fps)) {
+            canvasSwitch?.request(format)
         }
         let outputs = ProjectDocument.outputs(from: document)
         let clockMaster = ProjectDocument.canvases(from: document).first?.clockMaster
@@ -812,6 +828,7 @@ public final class Engine: @unchecked Sendable {
         let snapshot = library.snapshot
         let modeNotes = modeChecks.withLock { $0 }.compactMapValues(\.note)
         let live: JSONValue = [
+            "canvas": canvasSwitch?.live ?? .null,
             "engine": [
                 "version": .string(FanousVersion.string), "chip": .string(SystemInfo.chipName),
                 "uptimeSeconds": .number(Date().timeIntervalSince(startedAt).rounded()), "rendering": .bool(render != nil),

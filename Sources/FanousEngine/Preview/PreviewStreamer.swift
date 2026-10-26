@@ -100,6 +100,7 @@ public final class PreviewStreamer: @unchecked Sendable {
     // MARK: Subscribers
 
     public var hasSubscribers: Bool { subscribers.withLock { !$0.isEmpty } }
+    var subscriberList: [Subscriber] { subscribers.withLock { $0 } }
     private var wantsH264: Bool { alwaysEncode || subscribers.withLock { $0.contains { !$0.jpeg } } }
     /// Anyone who needs canvas frames: a WebSocket subscriber or a CITP console that streams.
     public var wantsFrames: Bool { alwaysEncode || hasSubscribers || externalJPEGWanted?() == true }

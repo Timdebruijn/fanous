@@ -264,6 +264,8 @@
             </label>
           </div>
           {#if formatError}<p class="caption tone-red">{formatError}</p>{/if}
+          {#if app.live.canvas?.error}<p class="caption tone-red">Canvas change failed, the previous canvas is still running: {app.live.canvas.error}</p>{/if}
+          {#if app.live.canvas?.pending}<p class="caption">Rendering {app.live.canvas.width} × {app.live.canvas.height} at {app.live.canvas.fps} fps. {app.live.show.mode ? 'The project canvas applies when show mode ends.' : 'Applying the project canvas…'}</p>{/if}
           <p class="caption">Layers are assigned to this canvas by the patch. Applying a new size or frame rate re-creates the canvas: outputs blank briefly. Slices keep their place (they are stored as fractions of the canvas).</p>
         {/if}
       </section>

@@ -30,7 +30,12 @@ must be even and between 320 and 8192. Nothing changes until you press
 
 Applying re-creates the canvas: every output blanks (or holds its last picture)
 for a moment, so do it before the show, not during it. It is refused while the
-show is locked or show mode is on. Outputs keep their display, blend, warp and
+show is locked or show mode is on. An undo, redo or project load that changes the
+canvas during show mode waits: the tab says which canvas is rendering, and the
+change applies when show mode ends. If the engine cannot make the new canvas
+(not enough memory), the old one keeps running, the project goes back to it and
+the tab shows the error. Previews and generator layers (test card, grid) follow
+the new size. Outputs keep their display, blend, warp and
 slices: slice sources are stored as fractions of the canvas, so a slice that
 showed the left half still shows the left half (in pixels, the numbers double
 when you go from 1920 × 1080 to 3840 × 2160). Content that was made for the

@@ -203,6 +203,17 @@ public final class StateStore: @unchecked Sendable {
         return .success(CommandResult(rev: revision, value: nil))
     }
 
+    /// Engine-owned correction of a project value (a change the engine could not apply is put back): no command,
+    /// no history entry, every client gets the patch. Not to be called from the store's own queue.
+    public func correct(_ value: JSONValue, at pointer: JSONPointer) {
+        queue.sync {
+            var next = projectDocument
+            guard (try? next.set(value, at: pointer)) != nil else { return }
+            let patch = JSONPatch.diff(from: projectDocument, to: next)
+            if !patch.isEmpty { commit(next, patch: patch) }
+        }
+    }
+
     private func commit(_ next: JSONValue, patch: JSONPatch) {
         projectDocument = next
         revision += 1
