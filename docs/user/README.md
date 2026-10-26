@@ -49,7 +49,7 @@ Switch screens with the left rail or the keys 1 to 6.
 
 | Key | Screen | Purpose |
 |---|---|---|
-| 1 | Layers | One row per layer: media, position, intensity, play mode, source; canvas preview |
+| 1 | Layers | One row per layer: media, position, intensity, play mode, source; preview of the canvas or the selected layer |
 | 2 | Media | The library: folders, files, import, transcode, ingest queue |
 | 3 | Outputs (Outputs & Mapping) | Canvases, outputs, blend, warp, slices, masks |
 | 4 | Patch (Patch / DMX) | Fixture table, DMX monitor, GDTF export |
