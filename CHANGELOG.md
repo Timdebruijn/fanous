@@ -17,6 +17,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Built-in content in folder 0: solid colour, the test patterns, a moving test card, colour sweep,
   clock and a frame-locked motion test (113), drawn on the GPU and selectable from the console or the UI.
   Layer status shows their size and "Built-in" instead of 0 × 0.
+- Audio: forward loops are gapless (B3). Ingest makes rotated and flipped phone footage upright (B18).
+  State sync and HTTP endpoints hide paths, host and TLS details from lower roles (B25). OSC burst
+  regression tests; the reported loss is not reproducible (B30).
 - README rewritten around the console-as-controller story with screenshots and a tour GIF
   (`docs/images/`); the developer reference moved to `docs/DEVELOPMENT.md`; market research and
   positioning in `docs/marketing/positioning.md`.
