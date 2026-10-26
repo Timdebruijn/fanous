@@ -94,8 +94,9 @@ The engine renders the project's canvas (System › Machine shows the library an
 displays it found) and every output you assign on the Outputs & Mapping screen.
 Check that the output is bound to a connected display (its badge says "bound",
 not "lost" or "unassigned"), that its intensity is up and that the layer's
-intensity and media are set. Changing the library root on the System screen
-takes effect after Engine › Restart Engine.
+intensity and media are set. After a change of the library root on the System
+screen the layers look their media up in the new library at once: a number that
+does not exist there shows "no file N in folder M" on the Layers screen.
 
 ## Dropped frames
 

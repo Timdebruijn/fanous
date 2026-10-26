@@ -171,7 +171,12 @@ on every display link. Budgets are measured, not assumed (§13).
   uses it) and `TimecodeSettings.enabled` the stored flag; the source stays a
   programmer setting. The Patch toolbar has the source-policy selector and the
   Show screen warns while the policy is DMX only. A changed library root
-  applies after an engine restart (B51).
+  applies at once (B51): `project.set /library/root` checks the folder and
+  refuses in show mode or while ingest jobs are unfinished; the engine stops
+  the old `LibraryIndex` (FSEvents released), starts one on the new root (the
+  probe cache is keyed by path, so a known root needs no probes) and the
+  media loader re-resolves every library layer. An undo or redo that cannot
+  apply is put back in the project.
 - Show mode hides the cursor on every bound output display
   (`CGDisplayHideCursor`) and shows it again on leaving; output windows were
   already at `CGShieldingWindowLevel`. The other §14 side effects stay B42.
