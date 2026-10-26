@@ -2,8 +2,30 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script module lang="ts">
+  import type { PreviewSource } from '../lib/layers';
+
+  // Canvas or This layer, remembered per browser (default Canvas)
+  const PREVIEW_KEY = 'fanous.layersPreview';
+
   // Module scope: the router unmounts this screen on navigation, the selected layer should survive that.
-  const ui = $state({ selected: 1, fixture: null as string | null, preview: 1 });
+  // previewCanvas: the canvas shown while the preview shows a canvas (multiple canvases)
+  const ui = $state({ selected: 1, fixture: null as string | null, preview: storedPreview(), previewCanvas: 1 });
+
+  function storedPreview(): PreviewSource {
+    try {
+      return localStorage.getItem(PREVIEW_KEY) === 'layer' ? 'layer' : 'canvas';
+    } catch {
+      return 'canvas';
+    }
+  }
+  function setPreview(source: PreviewSource) {
+    ui.preview = source;
+    try {
+      localStorage.setItem(PREVIEW_KEY, source);
+    } catch {
+      // private mode or blocked storage: the choice lasts for this page only
+    }
+  }
 </script>
 
 <script lang="ts">
@@ -12,8 +34,8 @@
   import LayerRow from '../components/LayerRow.svelte';
   import LayerStrips from '../components/LayerStrips.svelte';
   import Preview from '../components/Preview.svelte';
-  import { thumbnailFor, thumbnailIndex, type ChannelMap, type LibrarySnapshot } from '../lib/layers';
-  import { canvasTarget } from '../lib/outputs';
+  import { layerPreview, thumbnailFor, thumbnailIndex, type ChannelMap, type LibrarySnapshot } from '../lib/layers';
+  import { canvasTarget, layerCanvas } from '../lib/outputs';
   import { go } from '../lib/router.svelte';
   import { app } from '../lib/state.svelte';
 
@@ -50,9 +72,18 @@
   // Master or an output picked in the strips; null = the selected layer
   const fixture = $derived(ui.fixture !== null && app.live.dmx.fixtures[ui.fixture] ? ui.fixture : null);
   const fixtureMode = $derived(fixture === 'Master' ? 'master' : 'output');
+  // "This layer" follows the selection; Master or an output picked in the strips means no layer is selected
+  const preview = $derived(layerPreview(ui.preview, fixture === null ? selected : null));
   const canvases = $derived(app.project.canvases);
-  // the canvas the preview shows (canvas 1 when the chosen one is gone)
-  const previewCanvas = $derived(canvases.find((c) => c.id === ui.preview) ?? canvases[0]);
+  // the canvas a canvas preview shows (canvas 1 when the chosen one is gone); a layer preview has its layer's canvas aspect
+  const previewCanvas = $derived(canvases.find((c) => c.id === ui.previewCanvas) ?? canvases[0]);
+  const shownCanvas = $derived(preview.shows === 'layer' ? (canvases.find((c) => c.id === layerCanvas(app.project.layerCanvas, selected)) ?? canvases[0]) : previewCanvas);
+  const canvasName = $derived(canvases.length > 1 ? (previewCanvas?.name ?? 'Canvas') : 'Canvas');
+  const previewLabel = $derived(preview.shows === 'layer' ? preview.label : ui.preview === 'layer' ? `${canvasName} (no layer selected)` : canvasName);
+  function showCanvas(id: number) {
+    ui.previewCanvas = id;
+    setPreview('canvas');
+  }
 </script>
 
 <div class="toolbar">
@@ -120,12 +151,22 @@
     </div>
     <div class="side">
       {#if app.live.engine.rendering}
-        {#if canvases.length > 1}
-          <div class="segmented" role="group" aria-label="Canvas in the preview">
-            {#each canvases as c (c.id)}<button type="button" class="btn" aria-pressed={previewCanvas?.id === c.id} onclick={() => (ui.preview = c.id)}>{c.name}</button>{/each}
+        <div class="preview">
+          <div class="segmented" role="group" aria-label="Preview shows">
+            <!-- pressed = what is shown: with Master or an output picked, a canvas even when This layer was chosen -->
+            {#if canvases.length > 1}
+              {#each canvases as c (c.id)}<button type="button" class="btn" aria-pressed={preview.shows === 'canvas' && previewCanvas?.id === c.id} onclick={() => showCanvas(c.id)}>{c.name}</button>{/each}
+            {:else}
+              <button type="button" class="btn" aria-pressed={preview.shows === 'canvas'} onclick={() => setPreview('canvas')}>Canvas</button>
+            {/if}
+            <button type="button" class="btn" aria-pressed={preview.shows === 'layer'} onclick={() => setPreview('layer')}>This layer</button>
           </div>
-        {/if}
-        <Preview target={canvasTarget(previewCanvas?.id ?? 1)} aspect={previewCanvas ? `${previewCanvas.width} / ${previewCanvas.height}` : '16 / 9'} />
+          <Preview
+            target={preview.shows === 'layer' ? preview.target : canvasTarget(previewCanvas?.id ?? 1)}
+            aspect={shownCanvas ? `${shownCanvas.width} / ${shownCanvas.height}` : '16 / 9'}
+            label={previewLabel}
+          />
+        </div>
       {/if}
       {#if fixture !== null}
         {@render fixturePanel(fixture)}
@@ -148,6 +189,8 @@
   .empty { padding: 32px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
   .empty p { margin: 0; }
   .alone { max-width: 360px; margin-top: 12px; }
+  .preview { display: flex; flex-direction: column; gap: 6px; }
+  .preview .segmented { align-self: flex-start; }
   .layout { display: flex; gap: 12px; align-items: flex-start; }
   .table {
     /* LayerRow reads these two; the heads below use the same grid so the columns line up. */

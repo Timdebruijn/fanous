@@ -3,11 +3,13 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { latestOnly } from '../lib/preview';
   import { app, subscribePreview } from '../lib/state.svelte';
 
   // Canvas (or output) preview (DESIGN.md §11.3): WebCodecs H.264 when the browser decodes it, JPEG at 5 fps otherwise.
   // aspect: CSS aspect-ratio of the picture; an output preview uses the output's own shape (the stream itself is 16:9)
-  let { target = 'canvas', aspect = '16 / 9' }: { target?: string; aspect?: string } = $props();
+  // label: what is shown, appended to the caption ("Layer 3"); none = the caption names no source
+  let { target = 'canvas', aspect = '16 / 9', label = '' }: { target?: string; aspect?: string; label?: string } = $props();
   let canvas: HTMLCanvasElement | undefined = $state();
   let mode = $state<'connecting' | 'avc' | 'jpeg' | 'off'>('connecting');
   let detail = $state('');
@@ -18,10 +20,14 @@
   // a hidden tab (another tab in front, minimised window) takes no preview stream; it resumes when the tab shows again
   let hidden = typeof document !== 'undefined' && document.hidden;
 
+  // a target change while a subscription is still pending: the older one is stopped when it resolves
+  const latest = latestOnly();
+
   async function start() {
     if (!canvas || hidden) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    const run = latest.begin();
     const supportsWebCodecs = 'VideoDecoder' in window && 'EncodedVideoChunk' in window;
     let decoder: VideoDecoder | null = null;
     let configured = false;
@@ -39,6 +45,8 @@
     };
 
     const fallbackToJPEG = async (why: string) => {
+      if (!run.current()) return;  // a late error of a stream that was already replaced
+      const jpegRun = latest.begin();
       detail = why;
       decoder?.close();
       decoder = null;
@@ -57,6 +65,7 @@
         () => {},
         target,
       );
+      if (!jpegRun.keep(sub.stop)) return;
       stop = sub.stop;
       mode = 'jpeg';
       if (hidden) pause();  // hidden while the subscription was being set up
@@ -103,16 +112,19 @@
         },
         target,
       );
+      if (!run.keep(sub.stop)) return;
       stop = sub.stop;
       detail = `${sub.w}×${sub.h} · ${sub.fps} fps`;
       if (hidden) pause();
     } catch (error) {
+      if (!run.current()) return;
       mode = 'off';
       detail = (error as { message?: string }).message ?? String(error);
     }
   }
 
   function pause() {
+    latest.cancel();  // a subscription still on its way is stopped when it arrives
     stop?.();
     stop = null;
     lastFrame = 0;
@@ -136,6 +148,7 @@
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       clearInterval(watch);
+      latest.cancel();  // unmounted while subscribing: that stream stops when it arrives
       stop?.();
       stop = null;
     };
@@ -155,9 +168,9 @@
 </script>
 
 <figure class="preview">
-  <canvas bind:this={canvas} width="640" height="360" aria-label="Canvas preview" style:aspect-ratio={aspect}></canvas>
+  <canvas bind:this={canvas} width="640" height="360" aria-label={`${label || 'Canvas'} preview`} style:aspect-ratio={aspect}></canvas>
   <figcaption class="caption">
-    {#if mode === 'avc'}H.264 · {detail}{:else if mode === 'jpeg'}JPEG 5 fps · {detail}{:else if mode === 'off'}no preview · {detail}{:else}connecting…{/if}
+    {#if mode === 'avc'}H.264 · {detail}{:else if mode === 'jpeg'}JPEG 5 fps · {detail}{:else if mode === 'off'}no preview · {detail}{:else}connecting…{/if}{#if label} · {label}{/if}
     {#if stalled}<span class="stalled"> · no new frames</span>{/if}
   </figcaption>
 </figure>

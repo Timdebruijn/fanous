@@ -6,9 +6,9 @@ import Foundation
 import Metal
 import Synchronization
 
-/// One preview streamer per target ("canvas" = "canvas:1", "canvas:<id>", "output:<id>") that has subscribers, created on
-/// demand and released with its last subscriber, so one client's target never changes what another sees. The canvas 1
-/// streamer always exists: CITP consoles stream it.
+/// One preview streamer per target ("canvas" = "canvas:1", "canvas:<id>", "output:<id>", "layer:<n>") that has subscribers,
+/// created on demand and released with its last subscriber, so one client's target never changes what another sees. The
+/// canvas 1 streamer always exists: CITP consoles stream it.
 public final class PreviewHub: @unchecked Sendable {
     /// Replaced by `rebuild` (canvas size or rate changed); taken under `streamers` when both are needed.
     private let canvasBox: Mutex<PreviewStreamer>
@@ -23,6 +23,8 @@ public final class PreviewHub: @unchecked Sendable {
     nonisolated(unsafe) public var makeCanvas: (@Sendable (Int) throws -> PreviewStreamer?)?
     /// Compositor thread: a canvas of the running tick by id (`Compositor.tickCanvas`).
     nonisolated(unsafe) public var canvasTexture: ((Int) -> MTLTexture?)?
+    /// The canvas id of a "layer:<n>" target's layer (its preview takes that canvas's aspect). Set by the engine.
+    nonisolated(unsafe) public var canvasOfLayer: (@Sendable (String) -> Int?)?
 
     public init(canvas: PreviewStreamer, make: @escaping @Sendable () throws -> PreviewStreamer) {
         canvasBox = Mutex(canvas)
@@ -105,7 +107,9 @@ public final class PreviewHub: @unchecked Sendable {
             streamer.canvasID = id
             return streamer
         }
-        let streamer = try make()
+        // a layer preview is made at its canvas's aspect (`drawLayer` draws it there)
+        let canvas = target.hasPrefix("layer:") ? canvasOfLayer?(target) ?? 1 : 1
+        let streamer = try (canvas == 1 ? make() : makeCanvas?(canvas)) ?? make()
         return configure?(target, streamer) == true ? streamer : nil
     }
 
@@ -119,6 +123,12 @@ public final class PreviewHub: @unchecked Sendable {
     private func publishActive(_ all: [String: PreviewStreamer]) {
         let list = [canvas] + all.values
         active.withLock { $0 = list }
+    }
+
+    /// "layer:<n>" with 1 ≤ n ≤ `layerCount` → the 0-based layer index; anything else nil.
+    public static func layerIndex(of target: String, layerCount: Int) -> Int? {
+        guard target.hasPrefix("layer:"), let n = Int(target.dropFirst(6)), n >= 1, n <= layerCount else { return nil }
+        return n - 1
     }
 
     /// Targets with a streamer right now (tests, diagnostics).
