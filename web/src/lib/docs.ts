@@ -27,6 +27,8 @@ export interface ProjectDoc {
   /** cue list (DESIGN §15.2): fixture and parameter by name, raw DMX values */
   cues: CueDoc[];
   timecode: TimecodeSettingsDoc;
+  /** MIDI control (DESIGN §15.4, B36); absent until first set */
+  midi: MIDISettingsDoc;
   ui: Record<string, unknown>;
 }
 
@@ -57,6 +59,26 @@ export interface TimecodeSettingsDoc {
   enabled?: boolean | null; // the operator's switch; missing or null = on
 }
 
+export interface MIDIMappingDoc {
+  id: string;
+  source?: string | null; // MIDI source name; missing = any source
+  channel: number; // 1–16, 0 = any
+  kind: 'note' | 'cc' | 'cc14' | 'pc';
+  number?: number | null; // note / controller (cc14: MSB 0–31) / program; missing on pc = any program
+  target: string; // "cue.go" | "cue.back" | "cue.goto" | "fixture:Layer 3/intensity" | "master/intensity"
+  cue?: number | null; // cue.goto
+  curve: 'linear' | 'toggle';
+  pickup: boolean;
+  low: number; // 0–1 of the parameter's range
+  high: number;
+}
+
+export interface MIDISettingsDoc {
+  source?: string | null; // missing or null = every source
+  mscDevice: number; // 0–111; the all-call 127 is always answered
+  map: MIDIMappingDoc[];
+}
+
 export interface ResolvedParameter {
   key: string;
   name: string;
@@ -64,7 +86,7 @@ export interface ResolvedParameter {
   physical: number;
   label: string;
   unit: string;
-  source: 'none' | 'dmx' | 'cue' | 'osc' | 'ui';
+  source: 'none' | 'dmx' | 'cue' | 'osc' | 'ui' | 'midi';
 }
 
 export interface UniverseInfo {
@@ -147,6 +169,15 @@ export interface LiveDoc {
     bonjour: string;
   };
   osc: { port: number; recent: { at: number; command: string }[]; midiSources: string[]; audioInputs: string[] };
+  /** MIDI control input: sources listened to, the last message ("source · ch 1 · note 36 on · 127"), learn state. */
+  midi: {
+    connected: string[];
+    last: string | null;
+    lastAt: number | null;
+    learning: { target: string; cue: number | null } | null;
+    learned: string | null;
+    error: string | null;
+  };
   /** CITP/MSEX media-server side: TCP port advertised by PLoc, connected consoles, open streams. */
   citp: { port: number; clients: string[]; streams: number; multicast: string[] };
 }
@@ -173,6 +204,7 @@ export const emptyProject: ProjectDoc = {
   outputs: [],
   cues: [],
   timecode: { source: 'off', device: null, channel: 0, offset: 0, freewheel: 2, layerOffsets: {} },
+  midi: { source: null, mscDevice: 0, map: [] },
   ui: {},
 };
 
@@ -192,5 +224,6 @@ export const emptyLive: LiveDoc = {
   show: { mode: false, checkedAt: 0, ready: false, readiness: [], resumedAt: null },
   system: { thermal: 'nominal', onAC: true, power: '', memoryFreeFraction: 1, memoryGB: 0, os: '', host: '', addresses: [], port: 8443, tlsFingerprint: '', bonjour: '' },
   osc: { port: 8000, recent: [], midiSources: [], audioInputs: [] },
+  midi: { connected: [], last: null, lastAt: null, learning: null, learned: null, error: null },
   citp: { port: 0, clients: [], streams: 0, multicast: [] },
 };

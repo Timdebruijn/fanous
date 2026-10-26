@@ -9,6 +9,9 @@ import {
   numberAfter, parseTrigger, retargetValue, sortedCues, specsFor, swapSteps, timecodeBadge, timecodeSource, valueControl, withFade,
   offsetText,
   rateFps,
+  midiControlText,
+  midiParameterTarget,
+  midiTargetText,
 } from './show';
 
 const cue = (id: string, number: number, extra: Partial<CueDoc> = {}): CueDoc => ({ id, number, name: `Cue ${number}`, fade: 0, values: [], ...extra });
@@ -241,5 +244,22 @@ describe('timecode offset text', () => {
     expect(offsetText(30, '29.97 DF')).toBe('+30 frames = +1.00 s at 29.97 fps');
     expect(offsetText(0, '')).toBe('0 frames = 0.00 s assuming 25 fps until a source locks');
     expect(rateFps('30')).toBe(30);
+  });
+});
+
+describe('MIDI map wording', () => {
+  const map: ChannelMap = { footprints: { layer: 64, master: 8, output: 8 }, modes: { layer: [intensity], master: [intensity], output: [] } };
+  it('names the control', () => {
+    expect(midiControlText({ channel: 1, kind: 'note', number: 36 })).toBe('ch 1 · note 36');
+    expect(midiControlText({ channel: 0, kind: 'cc14', number: 1 })).toBe('any ch · CC 1/33 (14-bit)');
+    expect(midiControlText({ channel: 10, kind: 'pc', number: null })).toBe('ch 10 · any program');
+  });
+  it('names the target', () => {
+    expect(midiTargetText({ target: 'cue.go' }, map)).toBe('GO');
+    expect(midiTargetText({ target: 'cue.goto', cue: 2.5 }, map)).toBe('Go to cue 2.5');
+    expect(midiTargetText({ target: 'cue.goto', cue: null }, map)).toBe('Go to cue (program + 1)');
+    expect(midiTargetText({ target: 'fixture:Layer 2/intensity' }, map)).toBe('Layer 2 · Intensity');
+    expect(midiTargetText({ target: 'master/intensity' }, null)).toBe('Master · intensity');
+    expect(midiParameterTarget('cue.back')).toBeNull();
   });
 });

@@ -30,6 +30,10 @@ export type CommandName =
   | 'fixture.set'
   | 'layer.set'
   | 'layers.setCount'
+  | 'midi.learn'
+  | 'midi.map.remove'
+  | 'midi.map.set'
+  | 'midi.set'
   | 'output.add'
   | 'output.remove'
   | 'output.set'
@@ -75,6 +79,14 @@ export interface CommandArgs {
   'layer.set': { layer: number; canvas: number };
   /** Set the number of layers (1–64): new layers are patched at their standard address when that range is free, dropped layers are unpatched. Role: programmer, refused under show lock, undoable. */
   'layers.setCount': { count: number };
+  /** Learn: the next note, controller or program change received is mapped to target (live.midi.learning until then); no target cancels. Role: programmer, refused under show lock. */
+  'midi.learn': { target?: string; cue?: number };
+  /** Remove a MIDI map entry by id. Role: programmer, refused under show lock, undoable. */
+  'midi.map.remove': { id: string };
+  /** Add or replace (by id, or same control and target) a MIDI map entry; returns its id. Role: programmer, refused under show lock, undoable. */
+  'midi.map.set': { id?: string; source?: string | null; channel: number; kind: 'note' | 'cc' | 'cc14' | 'pc'; number?: number | null; target: string; cue?: number | null; curve?: 'linear' | 'toggle'; pickup?: boolean; low?: number; high?: number };
+  /** MIDI input: source (a MIDI source name, null = all) and mscDevice (0–111; 127 all-call is always answered). Role: programmer, refused under show lock, undoable. */
+  'midi.set': { source?: string | null; mscDevice?: number };
   /** Add an output (one full-canvas slice, no blend, identity warp), optionally bound to a display. Role: programmer, refused under show lock, undoable. */
   'output.add': { display?: { uuid: string; name: string } };
   /** Remove an output. Role: programmer, refused under show lock, undoable. */
