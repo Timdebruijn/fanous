@@ -27,6 +27,7 @@
   const lost = $derived(app.live.outputs.filter((s) => s.state === 'lost'));
   const display = $derived(displays.find((d) => d.uuid === output?.display?.uuid));
   const previewTarget = $derived(output && ui.tab !== 'canvases' ? `output:${output.id}` : 'canvas');
+  const previewAspect = $derived(output && ui.tab !== 'canvases' ? `${size.w} / ${size.h}` : '16 / 9');
   const sliceIndex = $derived(Math.min(ui.slice, Math.max(0, (output?.slices.length ?? 1) - 1)));
 
   function set(path: string, value: JSONValue) {
@@ -126,10 +127,11 @@
   <section class="main">
     <div class="preview">
       {#if app.live.engine.rendering}
-        <Preview target={previewTarget} />
+        <!-- an output preview takes the output's shape (the 16:9 stream is stretched back into it), and the overlay
+             uses exactly the same box, so handles sit on the picture whatever the display's aspect ratio -->
+        <Preview target={previewTarget} aspect={previewAspect} />
         {#if output && ui.tab === 'warp'}
-          <!-- the preview stream is 16:9 whatever the output's shape (B32), so the overlay follows the preview box -->
-          <div class="overlay" style:aspect-ratio="16 / 9">
+          <div class="overlay" style:aspect-ratio={previewAspect}>
             <OutputMapper {output} mode={ui.mapper} {sliceIndex} {size} bind:selected={ui.handle} onchange={point} />
           </div>
         {/if}

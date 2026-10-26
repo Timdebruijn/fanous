@@ -6,7 +6,8 @@
   import { app, subscribePreview } from '../lib/state.svelte';
 
   // Canvas (or output) preview (DESIGN.md §11.3): WebCodecs H.264 when the browser decodes it, JPEG at 5 fps otherwise.
-  let { target = 'canvas' }: { target?: string } = $props();
+  // aspect: CSS aspect-ratio of the picture; an output preview uses the output's own shape (the stream itself is 16:9)
+  let { target = 'canvas', aspect = '16 / 9' }: { target?: string; aspect?: string } = $props();
   let canvas: HTMLCanvasElement | undefined = $state();
   let mode = $state<'connecting' | 'avc' | 'jpeg' | 'off'>('connecting');
   let detail = $state('');
@@ -138,7 +139,7 @@
 </script>
 
 <figure class="preview">
-  <canvas bind:this={canvas} width="640" height="360" aria-label="Canvas preview"></canvas>
+  <canvas bind:this={canvas} width="640" height="360" aria-label="Canvas preview" style:aspect-ratio={aspect}></canvas>
   <figcaption class="caption">
     {#if mode === 'avc'}H.264 · {detail}{:else if mode === 'jpeg'}JPEG 5 fps · {detail}{:else if mode === 'off'}no preview · {detail}{:else}connecting…{/if}
     {#if stalled}<span class="stalled"> · no new frames</span>{/if}

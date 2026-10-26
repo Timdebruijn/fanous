@@ -22,6 +22,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: opening the app showed no window when the engine was running (the engine registered as the app;
   it is now a helper app, `Contents/Helpers/FanousEngine.app`); service dialogs are sheets on the window;
   opening the app no longer restarts the engine in local builds.
+- Fixed: mask and warp handles did not line up with the picture on outputs that are not 16:9 (the
+  preview filled 16:9, the handles used the output's shape); the output preview now has the output's shape.
 - Layers can be controlled from the UI (layer panel Control switch, `fixture.set`/`fixture.release`).
 
 - Hardening: one engine per user (`engine.lock`), cumulative frame counters in
