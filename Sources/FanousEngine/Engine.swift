@@ -14,11 +14,14 @@ public struct EngineOptions: Sendable {
     public var webRoot: URL
     /// Phase 2: a static scene to render (until projects exist in Phase 5).
     public var scene: SceneConfig?
+    /// false (`--no-network`): no Art-Net, sACN, OSC, CITP or Bonjour, so a test engine runs next to a real one (B47).
+    public var network: Bool
 
-    public init(port: UInt16 = 8443, webRoot: URL, scene: SceneConfig? = nil) {
+    public init(port: UInt16 = 8443, webRoot: URL, scene: SceneConfig? = nil, network: Bool = true) {
         self.port = port
         self.webRoot = webRoot
         self.scene = scene
+        self.network = network
     }
 }
 
@@ -165,16 +168,20 @@ public final class Engine: @unchecked Sendable {
             for entry in patch.entries { dmx.setPolicy(policy, for: entry.fixture) }
         }
         dmx.start()
-        let artnet = ArtNetReceiver(store: dmx, logger: logger, nodeName: Attribution.projectName)
-        try artnet.start()
-        let sacn = SACNReceiver(store: dmx, logger: logger)
-        try sacn.start(universes: Self.sacnUniverses(patch))
-        let osc = OSCReceiver(store: dmx, logger: logger)
-        try osc.start()
         self.dmx = dmx
-        self.artnet = artnet
-        self.sacn = sacn
-        self.osc = osc
+        if options.network {
+            let artnet = ArtNetReceiver(store: dmx, logger: logger, nodeName: Attribution.projectName)
+            try artnet.start()
+            let sacn = SACNReceiver(store: dmx, logger: logger)
+            try sacn.start(universes: Self.sacnUniverses(patch))
+            let osc = OSCReceiver(store: dmx, logger: logger)
+            try osc.start()
+            self.artnet = artnet
+            self.sacn = sacn
+            self.osc = osc
+        } else {
+            logger.warning("network receivers off (--no-network): no Art-Net, sACN, OSC, CITP or Bonjour")
+        }
 
         // The library is always indexed (DESIGN.md §8); scenes may add explicit entries (Syphon inputs, test files).
         let context = try MetalContext()
@@ -335,20 +342,22 @@ public final class Engine: @unchecked Sendable {
             }
 
             // CITP/MSEX (DESIGN.md §16.1): peer location, layer status, library, thumbnails, streaming frames
-        let citp = CITPServer(
-            name: SystemInfo.hostName, uuid: Self.installUUID(),
-            providers: CITPServer.Providers(
-                layers: { [weak self] in self?.citpLayers() ?? [] },
-                library: { library.snapshot },
-                thumbnail: { name in (try? Data(contentsOf: thumbnailer.directory.appending(path: name))).map(Array.init) },
-                frame: { [weak self] in self?.stateServer?.preview?.canvas.latestJPEG.withLock { $0 } ?? nil }), logger: logger)
-        do {
-            try citp.start()
-            preview.canvas.externalJPEGWanted = { citp.wantsFrames.load(ordering: .relaxed) }  // CITP always streams the canvas
-            self.citp = citp
-        } catch {
-            logger.error("CITP start failed", metadata: ["error": "\(error)"])
-        }
+            if options.network {
+                let citp = CITPServer(
+                    name: SystemInfo.hostName, uuid: Self.installUUID(),
+                    providers: CITPServer.Providers(
+                        layers: { [weak self] in self?.citpLayers() ?? [] },
+                        library: { library.snapshot },
+                        thumbnail: { name in (try? Data(contentsOf: thumbnailer.directory.appending(path: name))).map(Array.init) },
+                        frame: { [weak self] in self?.stateServer?.preview?.canvas.latestJPEG.withLock { $0 } ?? nil }), logger: logger)
+                do {
+                    try citp.start()
+                    preview.canvas.externalJPEGWanted = { citp.wantsFrames.load(ordering: .relaxed) }  // CITP always streams the canvas
+                    self.citp = citp
+                } catch {
+                    logger.error("CITP start failed", metadata: ["error": "\(error)"])
+                }
+            }
 
         // Displays and output windows (DESIGN.md §9.6); the render service starts after the coordinator exists.
             let coordinator = try MainActor.assumeIsolated { () throws -> OutputCoordinator in
@@ -540,7 +549,7 @@ public final class Engine: @unchecked Sendable {
         server.uploadSink = { request in programmerAllowed(request) ? ingestAPI.uploadTarget(for: request) : nil }
         server.uploadRoute = { request, file in ingestAPI.handle(request, uploadedFile: file) }
         server.upgradeRoute = { request in stateServer.upgrade(request) }
-        server.bonjour(name: SystemInfo.hostName)
+        if options.network { server.bonjour(name: SystemInfo.hostName) }
         server.start()
         self.server = server
     }

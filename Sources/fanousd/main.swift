@@ -10,7 +10,7 @@ import Logging
 
 func usage() -> String {
     """
-    usage: fanousd [--port N] [--web-root PATH] [--foreground]
+    usage: fanousd [--port N] [--web-root PATH] [--foreground] [--no-network]
            fanousd channel-map            print docs/channel-map.md to stdout
            fanousd gdtf FILE              write the GDTF fixture file
            fanousd reset-tls              delete the TLS key and certificate (regenerated at next start)
@@ -21,7 +21,12 @@ func usage() -> String {
       --foreground     run attached to the terminal (default when started by hand)
       --scene FILE     render a scene (JSON: canvasWidth, canvasHeight, fps, layerCount, media[{folder,file,path|syphon}], display);
                        its canvas size and fps override the project's for this run
+      --no-network     no Art-Net, sACN, OSC, CITP or Bonjour (tests; runs next to another engine)
       --version        print the version and exit
+    environment:
+      FANOUS_HOME=DIR  use DIR instead of the home directory for Application Support, logs, cache, TLS and the
+                       default library (DIR/Library/..., DIR/Movies/Fanous Library): an isolated engine
+      FANOUS_LOG=debug debug logging
     """
 }
 
@@ -83,6 +88,7 @@ default:
 var port: UInt16 = 8443
 var webRootOverride: URL?
 var sceneFile: URL?
+var network = true
 var arguments = CommandLine.arguments.dropFirst().makeIterator()
 while let argument = arguments.next() {
     switch argument {
@@ -100,6 +106,8 @@ while let argument = arguments.next() {
         webRootOverride = URL(fileURLWithPath: value)
     case "--foreground":
         break
+    case "--no-network":
+        network = false
     case "--scene":
         guard let value = arguments.next() else {
             FileHandle.standardError.write(Data("missing --scene value\n".utf8))
@@ -144,7 +152,7 @@ if let sceneFile {
         exit(1)
     }
 }
-let engine = Engine(options: EngineOptions(port: port, webRoot: webRootOverride ?? WebRoot.locate(), scene: scene), logger: logger)
+let engine = Engine(options: EngineOptions(port: port, webRoot: webRootOverride ?? WebRoot.locate(), scene: scene, network: network), logger: logger)
 do {
     try engine.start()
 } catch {

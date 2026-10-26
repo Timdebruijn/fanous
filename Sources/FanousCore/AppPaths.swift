@@ -6,7 +6,11 @@ import Foundation
 
 /// Machine-local directories shared by the engine and the shell.
 public enum AppPaths {
-    public static var home: URL { FileManager.default.homeDirectoryForCurrentUser }
+    /// The user's home, or `FANOUS_HOME` when set: every path below (Application Support, logs, cache, TLS, the default
+    /// library) then lives under that directory, so a test engine never touches the user's data (B47).
+    public static var home: URL {
+        ProcessInfo.processInfo.environment["FANOUS_HOME"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.homeDirectoryForCurrentUser
+    }
     public static var applicationSupport: URL { home.appending(path: "Library/Application Support/Fanous") }
     public static var logs: URL { home.appending(path: "Library/Logs/Fanous") }
     public static var tls: URL { applicationSupport.appending(path: "tls") }
