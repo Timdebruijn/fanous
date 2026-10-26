@@ -73,12 +73,10 @@ public final class AudioMixer: @unchecked Sendable {
             }
             let engine = AVAudioEngine()
             engine.attach(node)
-            // The main mixer feeds the default output device. `connect(_:to:format:)` is deprecated since macOS 27 but the floor is 15.
-            if #available(macOS 27.0, *) {
-                try engine.connectNode(node, to: engine.mainMixerNode, format: format)
-            } else {
-                engine.connect(node, to: engine.mainMixerNode, format: format)
-            }
+            // The main mixer feeds the default output device. `connect(_:to:format:)` is deprecated since macOS 27, but its
+            // successor `connectNode` exists only in the macOS 27 SDK and CI builds with an older one; the floor is 15.
+            // ponytail: switch to connectNode when the minimum SDK for building is 27
+            engine.connect(node, to: engine.mainMixerNode, format: format)
             self.engine = engine
             sourceNode = node
         }
