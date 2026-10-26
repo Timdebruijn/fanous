@@ -115,6 +115,8 @@ export interface LiveDoc {
     fixtures: Record<string, ResolvedParameter[]>;
     policies: Record<string, string>;
     internalValues: Record<string, { key: string; raw: number; source: string }[]>;
+    /** Seconds until a fixture's UI values are released; only fixtures whose console is being received (B27). */
+    uiExpiresIn: Record<string, number>;
   };
   layers: LayerStatus[];
   ingest: IngestJobDoc[];
@@ -171,7 +173,7 @@ export const emptyProject: ProjectDoc = {
 export const emptyLive: LiveDoc = {
   engine: { version: '', chip: '', uptimeSeconds: 0, rendering: false },
   metrics: { frames: 0, missed: 0, late: 0, textureMisses: 0, cpuP50: 0, cpuP99: 0, gpuP50: 0, gpuP99: 0, dmxP99: 0 },
-  dmx: { universes: [], fixtures: {}, policies: {}, internalValues: {} },
+  dmx: { universes: [], fixtures: {}, policies: {}, internalValues: {}, uiExpiresIn: {} },
   layers: [],
   ingest: [],
   library: { root: '', rootExists: false, folders: 0, fileCount: 0, invalidCount: 0, scannedAt: 0 },

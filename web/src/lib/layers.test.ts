@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import type { LayerStatus, ResolvedParameter } from './docs';
 import {
   channelRange,
+  clockText,
+  controlKeys,
   findParam,
   formatTime,
   layerState,
@@ -122,5 +124,18 @@ describe('thumbnails', () => {
     expect(thumbnailFor(index, layer({ file: 6 }))).toBeNull();
     expect(thumbnailFor(index, undefined)).toBeNull();
     expect(thumbnailIndex(null).size).toBe(0);
+  });
+});
+
+describe('UI control (B27)', () => {
+  it('counts down as m:ss', () => {
+    expect(clockText(462)).toBe('7:42');
+    expect(clockText(600)).toBe('10:00');
+    expect(clockText(-3)).toBe('0:00');
+  });
+  it('offers intensity/speed for Master, intensity/test pattern for outputs, everything for layers', () => {
+    expect(controlKeys('Master')).toEqual(['intensity', 'speed']);
+    expect(controlKeys('Output 2')).toEqual(['intensity', 'testPattern']);
+    expect(controlKeys('Layer 1')).toBeUndefined();
   });
 });

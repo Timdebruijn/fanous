@@ -604,7 +604,7 @@ into the `ParameterSnapshot` the compositor reads:
 | DMX | raw channel values for the patched fixture | per universe packet (≈ 44 Hz) |
 | Internal: cue engine | target values + fade progress for parameters the cue touches | per Control tick (100 Hz) |
 | Internal: OSC | last received value per address | on receipt |
-| Internal: UI override | programmer-set values (only while "override" is on in the UI; auto-expires after 10 min to avoid show-time surprises) | on command |
+| Internal: UI override | programmer-set values (only while "override" is on in the UI; auto-expires after masking a received console for 10 min since the last UI change, to avoid show-time surprises; the count pauses while there is no console traffic or the console wins, so without a console they stay until released) | on command |
 
 Per-layer **source policy** (project setting, default `dmx`):
 
