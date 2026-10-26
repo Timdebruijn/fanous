@@ -6,7 +6,7 @@ import Foundation
 
 public enum SourcePolicy: String, Codable, Sendable, CaseIterable { case dmx, `internal`, ltp, htp }
 
-public enum ValueSource: String, Codable, Sendable, Equatable { case none, dmx, cue, osc, ui }
+public enum ValueSource: String, Codable, Sendable, Equatable { case none, dmx, cue, osc, ui, midi }
 
 public struct ResolvedValue: Equatable, Sendable {
     public var raw: UInt16
