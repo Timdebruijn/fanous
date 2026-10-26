@@ -15,9 +15,11 @@
   let lastFrame = 0;
   let stalled = $state(false);
   let stop: (() => void) | null = null;
+  // a hidden tab (another tab in front, minimised window) takes no preview stream; it resumes when the tab shows again
+  let hidden = typeof document !== 'undefined' && document.hidden;
 
   async function start() {
-    if (!canvas) return;
+    if (!canvas || hidden) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const supportsWebCodecs = 'VideoDecoder' in window && 'EncodedVideoChunk' in window;
@@ -57,6 +59,7 @@
       );
       stop = sub.stop;
       mode = 'jpeg';
+      if (hidden) pause();  // hidden while the subscription was being set up
     };
 
     if (!supportsWebCodecs) {
@@ -102,20 +105,36 @@
       );
       stop = sub.stop;
       detail = `${sub.w}×${sub.h} · ${sub.fps} fps`;
+      if (hidden) pause();
     } catch (error) {
       mode = 'off';
       detail = (error as { message?: string }).message ?? String(error);
     }
   }
 
+  function pause() {
+    stop?.();
+    stop = null;
+    lastFrame = 0;
+    stalled = false;
+  }
+
+  function onVisibility() {
+    hidden = document.hidden;
+    if (hidden) pause();
+    else if (stop === null) void start();
+  }
+
   onMount(() => {
     void start();
+    document.addEventListener('visibilitychange', onVisibility);
     // once a second: flag a preview that stopped arriving (2 s without a frame); only a change touches the DOM
     const watch = setInterval(() => {
-      const now = lastFrame > 0 && performance.now() - lastFrame > 2000;
+      const now = !hidden && lastFrame > 0 && performance.now() - lastFrame > 2000;
       if (now !== stalled) stalled = now;
     }, 1000);
     return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
       clearInterval(watch);
       stop?.();
       stop = null;
@@ -124,17 +143,14 @@
 
   // reconnects re-subscribe; a new target restarts the stream
   $effect(() => {
-    if (app.connection === 'open' && stop === null && mode !== 'connecting') void start();
+    if (app.connection === 'open' && !hidden && stop === null && mode !== 'connecting') void start();
   });
   let shownTarget = target;
   $effect(() => {
     if (target === shownTarget) return;
     shownTarget = target;
-    stop?.();
-    stop = null;
-    lastFrame = 0;
-    stalled = false;
-    void start();
+    pause();
+    void start();  // does nothing while hidden; the next show starts the new target
   });
 </script>
 

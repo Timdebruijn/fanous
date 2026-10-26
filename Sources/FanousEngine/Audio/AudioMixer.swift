@@ -26,9 +26,65 @@ public final class AudioMixer: @unchecked Sendable {
     /// system default output is used.
     public init(channels: Int, deviceUID: String? = nil) {
         self.channels = (0..<max(0, channels)).map { _ in LayerAudioChannel() }
+        for channel in self.channels { channel.onActivate = { [weak self] in self?.ensureRunning() } }
     }
 
     deinit { engine?.stop() }
+
+    // MARK: Lifecycle
+
+    /// The engine stops this long after the last channel went inactive (unless `keepRunning` says otherwise).
+    nonisolated(unsafe) public var idleStopSeconds = 10.0
+    /// Tests: stand-ins for opening and closing the output device.
+    nonisolated(unsafe) var startHook: (() throws -> Void)?
+    nonisolated(unsafe) var stopHook: (() -> Void)?
+    /// True while the output device is held open. Atomic so the compositor-side callback can look without a lock.
+    private let runningFlag = Atomic<Bool>(false)
+    private let control = DispatchQueue(label: "org.fanous.audio.control", qos: .utility)
+    private var watchdog: DispatchSourceTimer?  // control queue only
+    private var lastBusy = 0.0  // control queue only (host seconds)
+    /// Show mode keeps the device open: no first-sound latency during a show.
+    nonisolated(unsafe) public var keepRunning: (@Sendable () -> Bool)?
+    /// A failed start (no device, wrong configuration): the layers play silent until the next attempt.
+    nonisolated(unsafe) public var onError: (@Sendable (Error) -> Void)?
+    public var isRunning: Bool { runningFlag.load(ordering: .relaxed) }
+
+    /// Starts the engine in the background if it is not running (first media with audio opened, a channel turned active).
+    /// Never blocks the caller; a running engine makes this one atomic load.
+    public func ensureRunning() {
+        guard !runningFlag.load(ordering: .relaxed) else { return }
+        control.async { [self] in
+            do { try startLocked() } catch { onError?(error) }
+        }
+    }
+
+    private func startLocked() throws {
+        guard !runningFlag.load(ordering: .relaxed) else { return }
+        if let startHook { try startHook() } else { try start() }
+        runningFlag.store(true, ordering: .relaxed)
+        lastBusy = ProcessInfo.processInfo.systemUptime
+        let timer = DispatchSource.makeTimerSource(queue: control)
+        timer.schedule(deadline: .now() + 1, repeating: 1)
+        timer.setEventHandler { [weak self] in self?.checkIdle() }
+        timer.resume()
+        watchdog = timer
+    }
+
+    private func checkIdle() {
+        let now = ProcessInfo.processInfo.systemUptime
+        if channels.contains(where: \.isActive) || keepRunning?() == true {
+            lastBusy = now
+        } else if now - lastBusy >= idleStopSeconds {
+            stopLocked()
+        }
+    }
+
+    private func stopLocked() {
+        watchdog?.cancel()
+        watchdog = nil
+        if let stopHook { stopHook() } else { engine?.stop() }
+        runningFlag.store(false, ordering: .relaxed)
+    }
 
     /// Master gain, 0 ... 1 (not clamped above). Ramped across each callback.
     public var masterVolume: Float {
@@ -83,7 +139,10 @@ public final class AudioMixer: @unchecked Sendable {
         try engine?.start()
     }
 
-    public func stop() { engine?.stop() }
+    /// Starts now and blocks until the device is open (tests, tools); the engine paths use `ensureRunning`.
+    public func startNow() throws { try control.sync { try startLocked() } }
+
+    public func stop() { control.sync { stopLocked() } }
 
     // MARK: Render
 

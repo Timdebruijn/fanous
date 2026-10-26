@@ -40,13 +40,18 @@ public struct FixtureResolver: Sendable {
     }
 
     /// New DMX frame (raw values in spec order, from `ChannelMap.rawValues`).
-    public mutating func updateDMX(_ raw: [UInt16], at time: TimeInterval) {
+    /// Returns whether anything a reader can see changed: a value, or signal coming back after a loss.
+    @discardableResult
+    public mutating func updateDMX(_ raw: [UInt16], at time: TimeInterval) -> Bool {
         precondition(raw.count == specs.count)
+        var changed = !hasDMX
         hasDMX = true
         for i in raw.indices where raw[i] != dmxRaw[i] {
             dmxRaw[i] = raw[i]
             dmxChangedAt[i] = time
+            changed = true
         }
+        return changed
     }
 
     /// Signal loss: values are held (Catalyst behaviour); only the flag changes.

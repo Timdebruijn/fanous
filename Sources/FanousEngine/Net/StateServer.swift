@@ -18,9 +18,7 @@ public final class StateServer: @unchecked Sendable {
     public let store: StateStore
     public let auth: RoleAuth
     /// Installed by the engine when it renders; nil → preview subscriptions are refused.
-    nonisolated(unsafe) public var preview: PreviewStreamer?
-    /// Switches what the preview shows: "canvas" or "output:<id>"; returns false for an unknown target.
-    nonisolated(unsafe) public var previewTarget: (@Sendable (String) -> Bool)?
+    nonisolated(unsafe) public var preview: PreviewHub?
     private let caps: JSONValue
     private let logger: Logger
     private let connections = Mutex<[ObjectIdentifier: Connection]>([:])
@@ -59,6 +57,20 @@ public final class StateServer: @unchecked Sendable {
     }
 
     fileprivate func forget(_ connection: Connection) { connections.withLock { _ = $0.removeValue(forKey: ObjectIdentifier(connection)) } }
+
+    /// Called with true when the first DMX monitor subscription appears and false when the last one is gone,
+    /// so the engine only runs its 20 Hz monitor timer while somebody watches.
+    nonisolated(unsafe) public var onDMXActive: (@Sendable (Bool) -> Void)?
+    private let dmxActive = Mutex(false)
+
+    fileprivate func dmxSubscriptionsChanged() {
+        let now = !dmxSubscriptions().isEmpty
+        let changed = dmxActive.withLock { was -> Bool in
+            defer { was = now }
+            return was != now
+        }
+        if changed { onDMXActive?(now) }
+    }
 
     public enum Subscription: Equatable, Sendable {
         case dmx(String)
@@ -109,6 +121,7 @@ public final class StateServer: @unchecked Sendable {
             if isAuthenticated { server.store.detach(self) }
             server.preview?.remove(connection: self)
             server.forget(self)
+            server.dmxSubscriptionsChanged()
             server.logger.debug("client left", metadata: ["client": "\(clientId.withLock { $0 })"])
         }
 
@@ -151,6 +164,7 @@ public final class StateServer: @unchecked Sendable {
                     let id = server.nextStream.add(1, ordering: .relaxed).oldValue
                     subscriptions.withLock { $0[id] = .dmx(universe) }
                     session.send(text: server.store.encode(["t": "sub", "id": .number(Double(id)), "stream": "dmx", "universe": .string(universe)]), droppable: false)
+                    server.dmxSubscriptionsChanged()
                 case "preview":
                     guard let preview = server.preview else {
                         session.send(text: server.store.encode(["t": "error", "code": "noPreview", "message": "the engine is not rendering"]), droppable: false)
@@ -158,18 +172,20 @@ public final class StateServer: @unchecked Sendable {
                     }
                     let jpeg = message["codec"]?.string == "jpeg"
                     let target = message["target"]?.string ?? "canvas"
-                    if let switchTarget = server.previewTarget, !switchTarget(target) {
-                        session.send(text: server.store.encode(["t": "error", "code": "badTarget", "message": "preview target \(target) is not canvas or an existing output:<id>"]), droppable: false)
-                        return
-                    }
                     let id = server.nextStream.add(1, ordering: .relaxed).oldValue
                     subscriptions.withLock { $0[id] = .preview }
-                    session.send(
-                        text: server.store.encode([
-                            "t": "sub", "id": .number(Double(id)), "stream": "preview", "codec": jpeg ? "jpeg" : "avc", "w": .number(Double(preview.width)),
-                            "h": .number(Double(preview.height)), "fps": .number(jpeg ? 5 : preview.fps), "target": .string(target),
-                        ]), droppable: false)
-                    preview.subscribe(PreviewStreamer.Subscriber(connection: self, stream: id, jpeg: jpeg))
+                    // each target has its own streamer: this client's choice does not change what others see
+                    let attached = preview.attach(target: target, connection: self, stream: id, jpeg: jpeg) { streamer in
+                        session.send(
+                            text: server.store.encode([
+                                "t": "sub", "id": .number(Double(id)), "stream": "preview", "codec": jpeg ? "jpeg" : "avc", "w": .number(Double(streamer.width)),
+                                "h": .number(Double(streamer.height)), "fps": .number(jpeg ? 5 : streamer.fps), "target": .string(target),
+                            ]), droppable: false)
+                    }
+                    if !attached {
+                        subscriptions.withLock { _ = $0.removeValue(forKey: id) }
+                        session.send(text: server.store.encode(["t": "error", "code": "badTarget", "message": "preview target \(target) is not canvas or an existing output:<id>"]), droppable: false)
+                    }
                 default:
                     session.send(text: server.store.encode(["t": "error", "code": "badStream", "message": "streams: dmx, preview"]), droppable: false)
                 }
@@ -177,6 +193,7 @@ public final class StateServer: @unchecked Sendable {
                 if let id = message["id"]?.int {
                     let removed = subscriptions.withLock { $0.removeValue(forKey: UInt32(id)) }
                     if removed == .preview { server.preview?.unsubscribe(connection: self, stream: UInt32(id)) }
+                    if case .dmx? = removed { server.dmxSubscriptionsChanged() }
                 }
             default:
                 session.send(text: server.store.encode(["t": "error", "code": "badMessage", "message": "unknown t \(type)"]), droppable: false)

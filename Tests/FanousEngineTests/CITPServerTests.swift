@@ -133,6 +133,7 @@ struct CITPServerTests {
             if port == 0 { usleep(20_000) }
         }
         #expect(port > 0)
+        #expect(server.activeTimers == (false, false), "nobody connected: no periodic timers")
         let client = Client(port: port)
 
         client.send(.clientInformation(ClientInformation(supportedVersions: [.v1_0, .v1_1, .v1_2, MSEXVersion(major: 2, minor: 0)])))
@@ -140,6 +141,7 @@ struct CITPServerTests {
         #expect(info.version == .v1_2, "highest common version, never above 1.2")
         #expect(info.productName == "Fanous" && info.layerDMXSources == ["Layer 1"] && info.streamFormats == ["JPEG"])
         #expect(server.wantsFrames.load(ordering: .relaxed) == false)
+        #expect(server.activeTimers == (true, false), "negotiated: layer status runs, no frames yet")
 
         client.send(.getElementLibraryInformation(GetElementLibraryInformation()))
         let libraries = try #require(client.wait { if case .elementLibraryInformation(let l) = $0 { return l } else { return nil } })
@@ -163,6 +165,7 @@ struct CITPServerTests {
         #expect(frame.buffer == Self.jpeg && frame.frameWidth == 640 && frame.frameFormat == "JPEG")
         #expect(server.wantsFrames.load(ordering: .relaxed) == true)
         #expect(server.status.withLock { $0.streams } == 1)
+        #expect(server.activeTimers == (true, true), "streaming: frame timer runs")
 
         client.send(.unknown(contentType: "MSEX", body: [1, 2] + Array("XXXX".utf8)))
         let nack = try #require(client.wait(1) { if case .nack(let n) = $0 { return n } else { return nil } })
@@ -171,6 +174,9 @@ struct CITPServerTests {
         client.send(.requestStream(RequestStream(sourceIdentifier: 0, frameFormat: "JPEG", frameWidth: 640, frameHeight: 360, fps: 0, timeout: 5)))
         for _ in 0..<50 where server.status.withLock({ $0.streams }) > 0 { usleep(20_000) }
         #expect(server.status.withLock { $0.streams } == 0 && server.wantsFrames.load(ordering: .relaxed) == false, "fps 0 stops the stream")
+        #expect(server.activeTimers == (true, false), "stream over: frame timer stopped")
         client.connection.cancel()
+        for _ in 0..<100 where server.activeTimers.status { usleep(20_000) }
+        #expect(server.activeTimers == (false, false), "console gone: no periodic timers")
     }
 }

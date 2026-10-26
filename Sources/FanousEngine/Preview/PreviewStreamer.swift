@@ -42,6 +42,8 @@ public final class PreviewStreamer: @unchecked Sendable {
     private let pass = MTLRenderPassDescriptor()
     private var tickCounter = 0
     private let everyNth: Int
+    /// Tap interval while only JPEG consumers (5 fps) are listening: the GPU copy is throttled too, not just the encode.
+    private let jpegEveryNth: Int
     private var avcC: [UInt8] = []
     private var lastJPEG = 0.0
     private let ciContext = CIContext(options: [.cacheIntermediates: false])
@@ -67,6 +69,7 @@ public final class PreviewStreamer: @unchecked Sendable {
         self.fps = fps
         self.logger = logger
         everyNth = max(1, Int((canvasFPS / fps).rounded()))
+        jpegEveryNth = max(1, Int((canvasFPS / 5).rounded()))
         guard let uniforms = context.device.makeBuffer(length: 256, options: .storageModeShared) else { throw RenderError.pipeline("preview uniforms") }
         self.uniforms = uniforms
         uniforms.contents().assumingMemoryBound(to: OutputUniforms.self).pointee = {
@@ -97,6 +100,9 @@ public final class PreviewStreamer: @unchecked Sendable {
     // MARK: Subscribers
 
     public var hasSubscribers: Bool { subscribers.withLock { !$0.isEmpty } }
+    private var wantsH264: Bool { alwaysEncode || subscribers.withLock { $0.contains { !$0.jpeg } } }
+    /// Anyone who needs canvas frames: a WebSocket subscriber or a CITP console that streams.
+    public var wantsFrames: Bool { alwaysEncode || hasSubscribers || externalJPEGWanted?() == true }
 
     /// Adds a subscriber; H.264 clients get the `stream` description (avcC) right away when one exists.
     public func subscribe(_ subscriber: Subscriber) {
@@ -119,7 +125,7 @@ public final class PreviewStreamer: @unchecked Sendable {
     /// `Compositor.previewTap`: encodes the downscale into the tick's command buffer when a frame is due.
     public func tap(canvas: MTLTexture, commandBuffer: MTLCommandBuffer, target: Double) {
         tickCounter &+= 1
-        guard tickCounter % everyNth == 0, hasSubscribers || alwaysEncode || externalJPEGWanted?() == true, let pool, let textureCache else { return }
+        guard wantsFrames, tickCounter % (wantsH264 ? everyNth : jpegEveryNth) == 0, let pool, let textureCache else { return }
         var pixelBuffer: CVPixelBuffer?
         guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer) == kCVReturnSuccess, let pixelBuffer else {
             skipped.wrappingAdd(1, ordering: .relaxed)
@@ -182,7 +188,7 @@ public final class PreviewStreamer: @unchecked Sendable {
 
     private func encode(_ pixelBuffer: CVPixelBuffer, target: Double) {
         let (h264, jpeg) = subscribers.withLock { subs in (subs.filter { !$0.jpeg }, subs.filter { $0.jpeg }) }
-        if !jpeg.isEmpty || externalJPEGWanted?() == true, target - lastJPEG >= 0.2 {
+        if !jpeg.isEmpty || externalJPEGWanted?() == true, target - lastJPEG >= 0.18 {  // taps come every 0.2 s when only JPEG listens
             lastJPEG = target
             if let data = ciContext.jpegRepresentation(of: CIImage(cvPixelBuffer: pixelBuffer), colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.7]) {
                 let bytes = Array(data)

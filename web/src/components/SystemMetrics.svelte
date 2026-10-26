@@ -13,7 +13,8 @@
   let history = $state.raw<number[]>([]);
   let error = $state('');
 
-  // GET /metrics every 2 s while this component is mounted; a poll that is still running is not stacked.
+  // GET /metrics every 2 s while this component is mounted and the tab is visible (a hidden tab stops polling and polls
+  // once when it shows again); a poll that is still running is not stacked.
   $effect(() => {
     let alive = true;
     let busy = false;
@@ -34,11 +35,23 @@
         busy = false;
       }
     }
-    void poll();
-    const timer = setInterval(poll, POLL_MS);
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const run = () => {
+      if (timer !== undefined) return;
+      void poll();
+      timer = setInterval(poll, POLL_MS);
+    };
+    const pause = () => {
+      clearInterval(timer);
+      timer = undefined;
+    };
+    const onVisibility = () => (document.hidden ? pause() : run());
+    document.addEventListener('visibilitychange', onVisibility);
+    if (!document.hidden) run();
     return () => {
       alive = false;
-      clearInterval(timer);
+      pause();
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   });
 

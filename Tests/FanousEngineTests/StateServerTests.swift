@@ -6,6 +6,7 @@ import Foundation
 import FanousCore
 import Logging
 import Security
+import Synchronization
 import Testing
 
 @testable import FanousEngine
@@ -25,6 +26,7 @@ struct StateServerTests {
 
     struct Fixture {
         let server: HTTPSServer
+        let stateServer: StateServer
         let store: StateStore
         let auth: RoleAuth
         let port: UInt16
@@ -82,7 +84,7 @@ struct StateServerTests {
         for _ in 0..<100 where server.boundPort == nil { try await Task.sleep(for: .milliseconds(20)) }
         let port = try #require(server.boundPort)
         let session = URLSession(configuration: .ephemeral, delegate: TrustAll(), delegateQueue: nil)
-        return Fixture(server: server, store: store, auth: auth, port: port, session: session)
+        return Fixture(server: server, stateServer: stateServer, store: store, auth: auth, port: port, session: session)
     }
 
     static func receive(_ task: URLSessionWebSocketTask) async throws -> JSONValue {
@@ -151,6 +153,31 @@ struct StateServerTests {
         b.cancel(with: .normalClosure, reason: nil)
         for _ in 0..<50 where f.store.clientCount > 0 { try await Task.sleep(for: .milliseconds(20)) }
         #expect(f.store.clientCount == 0)
+    }
+
+    @Test func dmxMonitorTimerFollowsTheSubscriptions() async throws {
+        let f = try await Self.start()
+        defer { f.server.stop() }
+        let changes = Mutex<[Bool]>([])
+        f.stateServer.onDMXActive = { on in changes.withLock { $0.append(on) } }
+        let a = f.socket(), b = f.socket()
+        for (task, name) in [(a, "a"), (b, "b")] {
+            try await task.send(.string(#"{"t":"hello","clientId":"\#(name)","schema":1}"#))
+            _ = try await Self.receive(task, until: "welcome")
+        }
+        #expect(changes.withLock { $0 }.isEmpty, "no subscription, no timer")
+        try await a.send(.string(#"{"t":"sub","stream":"dmx","universe":"artnet:0.0.0"}"#))
+        let id = try #require(try await Self.receive(a, until: "sub")["id"]?.int)
+        try await b.send(.string(#"{"t":"sub","stream":"dmx","universe":"artnet:0.0.0"}"#))
+        _ = try await Self.receive(b, until: "sub")
+        #expect(changes.withLock { $0 } == [true], "started once, with the first subscription")
+        try await a.send(.string(#"{"t":"unsub","id":\#(id)}"#))
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(changes.withLock { $0 } == [true], "b still watches")
+        b.cancel(with: .normalClosure, reason: nil)
+        for _ in 0..<100 where changes.withLock({ $0.count }) < 2 { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(changes.withLock { $0 } == [true, false], "stopped with the last one (closing the socket counts)")
+        a.cancel(with: .normalClosure, reason: nil)
     }
 
     @Test func loginCookieUnlocksProtectedRole() async throws {

@@ -60,6 +60,12 @@ struct GeneratorUniforms {
 /// One generator instance on a layer: a canvas-sized texture the compositor redraws each tick.
 public final class GeneratorSource: LiveTextureSource, @unchecked Sendable {
     let kind: UInt32
+    /// Kinds 100–107 look the same every frame: drawn once at creation.
+    var isStatic: Bool { (100...107).contains(kind) }
+    /// Wall-clock second the clock (112) was last drawn for.
+    var drawnSecond = -1
+    /// Draws encoded so far (the first one is the creation draw); diagnostics and tests.
+    private(set) var encodeCount = 0
     let texture: MTLTexture
     private let context: MetalContext
     public var latestTexture: MTLTexture? { texture }
@@ -83,6 +89,7 @@ public final class GeneratorSource: LiveTextureSource, @unchecked Sendable {
     }
 
     func encode(into commandBuffer: MTLCommandBuffer, uniforms: GeneratorUniforms) {
+        encodeCount += 1
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = texture
         pass.colorAttachments[0].loadAction = .dontCare

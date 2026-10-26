@@ -51,6 +51,7 @@ public final class DMXStore: @unchecked Sendable {
     private var patch: Patch
     private var resolvers: [FixtureRef: FixtureResolver] = [:]
     private var announced: Set<String> = []
+    private var lastAnnounced: (universe: UniverseID, source: String, priority: UInt8?)?
     private var timer: DispatchSourceTimer?
     /// Render-side parameters, one write per resolved DMX packet (ADR-0002 hand-off).
     public let snapshots = TripleBuffer { ParameterSnapshotSlot(maxLayers: 32) }
@@ -87,14 +88,14 @@ public final class DMXStore: @unchecked Sendable {
     func receive(artnet packet: ArtDmx, from source: String) {
         let now = Self.now
         guard let universe = table.apply(artnet: packet, from: source, at: now) else { return }
-        announce("\(universe) from \(source)")
+        announce(universe, source: source)
         resolve(universe: universe, at: now)
     }
 
     func receive(sacn packet: SACNData) {
         let now = Self.now
         guard let universe = table.apply(sacn: packet, at: now) else { return }
-        announce("\(universe) from \(packet.sourceName) (priority \(packet.priority))")
+        announce(universe, source: packet.sourceName, priority: packet.priority)
         resolve(universe: universe, at: now)
     }
 
@@ -124,19 +125,24 @@ public final class DMXStore: @unchecked Sendable {
         }
     }
 
-    private func announce(_ what: String) {
-        guard !announced.contains(what) else { return }
-        announced.insert(what)
+    /// Logs a universe/source pair once; the string is only built when the pair differs from the previous packet's.
+    private func announce(_ universe: UniverseID, source: String, priority: UInt8? = nil) {
+        if let last = lastAnnounced, last.universe == universe, last.source == source, last.priority == priority { return }
+        lastAnnounced = (universe, source, priority)
+        let what = priority.map { "\(universe) from \(source) (priority \($0))" } ?? "\(universe) from \(source)"
+        guard announced.insert(what).inserted else { return }
         logger.info("DMX receiving", metadata: ["universe": "\(what)"])
     }
 
     private func resolve(universe: UniverseID, at time: TimeInterval) {
         guard let slots = table.slots(for: universe) else { return }
+        var changed = false
         for entry in patch.entries where entry.universe == universe {
             guard let raw = ChannelMap.rawValues(mode: entry.fixture.mode, slots: slots, address: entry.address) else { continue }
-            resolvers[entry.fixture]?.updateDMX(raw, at: time)
+            if resolvers[entry.fixture]?.updateDMX(raw, at: time) == true { changed = true }
         }
-        publish(receivedAt: time)
+        // an identical refresh (most packets in a steady show) rebuilds nothing; the render side keeps the last snapshot
+        if changed { publish(receivedAt: time) }
     }
 
     /// ponytail: iterates the resolver dictionary per packet; a fixed layer array comes with projects (Phase 5).

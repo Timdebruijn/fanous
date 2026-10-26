@@ -16,6 +16,11 @@ public final class LayerDecoder: @unchecked Sendable {
     private let direction = Atomic<Int>(1)
     private let running = Atomic<Bool>(true)
     private let wake = DispatchSemaphore(value: 0)
+    /// What the decode thread was last woken for; a repeated request (paused clip) wakes nobody.
+    private let signalledFrame = Atomic<Int>(-1)
+    private let signalledDirection = Atomic<Int>(0)
+    /// Wake-ups sent to the decode thread; diagnostics and tests.
+    public let wakeups = Atomic<Int>(0)
     private let logger: Logger
     private var thread: Thread?
     private var lastProduced = -1
@@ -45,10 +50,20 @@ public final class LayerDecoder: @unchecked Sendable {
         wake.signal()
     }
 
-    /// Called by the compositor every tick (never blocks).
+    /// Called by the compositor every tick (never blocks). The thread is only woken when the frame or the direction
+    /// differs from the last wake-up: while it has a full ring and nothing changes it sleeps.
     public func request(frame: Int, direction: Int) {
+        let dir = direction >= 0 ? 1 : -1
         wanted.store(frame, ordering: .relaxed)
-        self.direction.store(direction >= 0 ? 1 : -1, ordering: .relaxed)
+        self.direction.store(dir, ordering: .relaxed)
+        let frameChanged = signalledFrame.exchange(frame, ordering: .relaxed) != frame
+        let directionChanged = signalledDirection.exchange(dir, ordering: .relaxed) != dir
+        if frameChanged || directionChanged { nudge() }
+    }
+
+    /// Wakes the decode thread (audio just got enabled, a request changed).
+    public func nudge() {
+        wakeups.wrappingAdd(1, ordering: .relaxed)
         wake.signal()
     }
 
@@ -57,7 +72,8 @@ public final class LayerDecoder: @unchecked Sendable {
         while running.load(ordering: .relaxed) {
             if let audio, audioEnabled.load(ordering: .relaxed) { audio.channel.fill(from: audio.reader) }
             guard let slot = ring.slotForWriting() else {
-                _ = wake.wait(timeout: .now() + .milliseconds(10))  // keep topping up audio while the video ring is full
+                // with audio to feed, keep topping it up while the video ring is full; otherwise sleep until a request changes
+                _ = wake.wait(timeout: audio != nil && audioEnabled.load(ordering: .relaxed) ? .now() + .milliseconds(10) : .distantFuture)
                 continue
             }
             let want = ((wanted.load(ordering: .relaxed) % count) + count) % count

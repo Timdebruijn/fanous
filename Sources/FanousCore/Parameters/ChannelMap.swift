@@ -18,13 +18,18 @@ public enum ChannelMap {
         }
     }
 
-    public static func spec(_ id: ParameterID) -> ParameterSpec {
-        specs(for: id.mode).first { $0.id == id }!
-    }
+    /// Spec order position per parameter, built once (these lookups sit on the per-packet DMX path).
+    private static let indexTable: [ParameterID: Int] = {
+        var table: [ParameterID: Int] = [:]
+        for mode in [FixtureMode.layer, .master, .output] {
+            for (i, spec) in specs(for: mode).enumerated() { table[spec.id] = i }
+        }
+        return table
+    }()
 
-    public static func index(of id: ParameterID) -> Int {
-        specs(for: id.mode).firstIndex { $0.id == id }!
-    }
+    public static func spec(_ id: ParameterID) -> ParameterSpec { specs(for: id.mode)[index(of: id)] }
+
+    public static func index(of id: ParameterID) -> Int { indexTable[id]! }
 
     /// Raw values of a fixture at `address` (1-based) in a universe of 512 slots, in spec order.
     public static func rawValues(mode: FixtureMode, slots: [UInt8], address: Int) -> [UInt16]? {

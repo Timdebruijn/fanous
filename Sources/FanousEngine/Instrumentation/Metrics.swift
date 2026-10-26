@@ -17,6 +17,8 @@ public struct FrameRecord: Sendable {
     public var textureMisses: UInt16 = 0  // layers that had no decoded frame ready
     public var dmxToPhotonMicros: UInt32 = 0  // 0 = no new DMX this tick
     public var complete = false
+    /// No GPU work was encoded because nothing consumed the canvas; not a drop.
+    public var idle = false
 }
 
 public struct MetricsSummary: Sendable, CustomStringConvertible {
@@ -24,6 +26,7 @@ public struct MetricsSummary: Sendable, CustomStringConvertible {
     public var missed = 0
     public var late = 0
     public var textureMisses = 0
+    public var idle = 0
     public var cpuP50 = 0.0, cpuP99 = 0.0, cpuMax = 0.0
     public var gpuP50 = 0.0, gpuP99 = 0.0, gpuMax = 0.0
     public var dmxP50 = 0.0, dmxP99 = 0.0, dmxSamples = 0
@@ -89,6 +92,7 @@ public final class MetricsRing: @unchecked Sendable {
         s.frames = frames.count
         s.missed = frames.reduce(0) { $0 + Int($1.missed) }
         s.late = frames.filter(\.late).count
+        s.idle = frames.filter(\.idle).count
         s.textureMisses = frames.reduce(0) { $0 + Int($1.textureMisses) }
         func percentiles(_ values: [Double]) -> (Double, Double, Double) {
             guard !values.isEmpty else { return (0, 0, 0) }
