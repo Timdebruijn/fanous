@@ -65,13 +65,27 @@ The window is a normal browser view of the web UI. Menus:
 Closing the window quits the app, not the engine.
 
 The **status bar** is on every screen. From the left: the lock tag (UNLOCKED or
-SHOW LOCK), frames per second with GPU and CPU timing, dropped frames over the
+LOCKED; press it or L), the **SHOW MODE: ON/OFF** button (operator; when the
+readiness checks refuse, a small popover under it lists what blocks, with a
+link to System), frames per second with GPU and CPU timing, dropped frames over the
 last second, one pill per DMX universe (green = receiving), the timecode
 readout and state, outputs on or off, ingest progress, connected clients, a
 yellow "web UI open" notice while the programmer role has no password, and on
-the right Undo, Redo and your role. Red means look now: dropped frames or a
+the right Undo, Redo, **?** (keyboard shortcuts) and your role. Red means look now: dropped frames or a
 lost timecode or output while the show is locked, a patched universe that went
 silent.
+
+Refused commands show a yellow banner with the next step ("Show lock is on:
+press L or the LOCKED tag to unlock", "Not allowed for this role: log in as
+programmer"). It disappears after 10 seconds; **Recent messages** on the banner
+lists the last 20.
+
+The Layers screen header says "tier allows N layers". The tier is the
+performance class of this Mac's chip (System shows the chip); N is the number of
+layers it plays without dropping frames, measured with the benchmark. **Add
+layer** on the Patch screen stops at N so a show cannot be built that the
+machine cannot play. Each layer row shows its state as a word next to the
+dot (OK, LIVE, NO MEDIA, MISSING FILE, DECODER ERROR).
 
 ## Open the UI from an iPad or another computer
 

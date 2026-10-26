@@ -49,11 +49,12 @@ Mac: ______________ Fanous version: ______________
       "web UI open" notice is gone. Operator password set if an iPad or a
       second computer is in the room.
 - [ ] System screen: press **Run checks**. Work through the Readiness list (below).
-- [ ] Switch **Show mode** on (System screen, top right). It refuses while an item
-      blocks.
+- [ ] Switch **Show mode** on (the SHOW MODE button in the status bar, or the
+      switch on the System screen). It refuses while an item blocks and says
+      which.
 - [ ] Timecode on, state **Locked**, if you chase timecode.
-- [ ] Press **L** (programmer, confirm) to **lock the show**. The status bar says
-      SHOW LOCK.
+- [ ] Press **L** (programmer) to **lock the show**. The status bar says
+      LOCKED. Unlocking while show mode is on asks for confirmation.
 - [ ] Look at "dropped" in the status bar: it should read 0 and stay there.
 
 ## The Readiness list

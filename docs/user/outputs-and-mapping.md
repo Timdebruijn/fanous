@@ -14,8 +14,14 @@ costs no layer capacity.
 The Outputs screen (key 3, "Outputs & Mapping") has three tabs: **Canvases**,
 **Outputs** and **Warp & Slices**. The output list is on the left. The preview
 on top shows the canvas on the Canvases tab and the selected output on the other
-two. The preview is always 640x360 and 16:9 (B32): an output with another
-aspect ratio looks stretched there, and the handles follow the preview box.
+two. The output preview has the output's own aspect ratio (4:3, 16:10, an
+ultra-wide LED wall), and the handles are drawn over exactly the same box, so
+they sit on the picture whatever the display. The Canvases tab shows the canvas
+at 16:9. The preview image itself is a 640 x 360 stream stretched back into the
+output's shape.
+
+After you add an output, a yellow bar says **Next: align this output**; its
+button opens the Warp & Slices tab for that output.
 
 ## Displays and binding
 
@@ -50,18 +56,21 @@ window is hidden behind it. Use the web UI from another device then.
 | Region x · y · w · h (px) | the part of the display this output draws on; **Full display** resets it |
 | Intensity % | multiplied with the Output fixture's intensity and the Master intensity |
 
-**Remove output** asks for confirmation.
+**Remove output** takes effect at once and shows "Undone? Undo" for 8 seconds
+(Undo also works with Cmd-Z). Slices, masks, cues and the last layer work the
+same way.
 
 ### Blend edges
 
-For each edge (left, right, top, bottom) set **Overlap px**, the width of the
-zone that overlaps the neighbour, plus **Power** and **Gamma**. The curve next
+For each edge (left, right, top, bottom) set **Overlap**: the width of the strip
+shared with the neighbouring projector, in pixels of this output. Then **Power**
+and **Gamma**; each has a one-line explanation under it on the screen. The curve next
 to the fields shows the ramp. Power (0.1 to 10, default 2) is how steep the
 S-curve is; set **Gamma** (0.5 to 5, default 2.2) to the projector's gamma so
 the sum of both projectors stays flat in the overlap. In tests a flat field
 over two or four projectors stayed within 2 % across the overlap.
 
-**Black lift %** (0 to 50) raises the black level outside the overlaps so the
+**Black lift (%)** (0 to 50) raises the black level outside the overlaps so the
 single-projector area matches the doubled black of the overlap; **Lift feather
 px** softens where the lift ends. Use the Grey steps pattern to match it by eye.
 Grids work: a corner pixel gets the product of the horizontal and vertical
@@ -95,20 +104,27 @@ content in folder 0 (see [show-control.md](show-control.md#built-in-content-fold
 Choose what to edit with **Corner pin**, **Mesh**, **Slices** or **Mask**.
 Handles sit over the output preview. Drag them with mouse or finger (the hit
 target is large for touch); with a handle selected the arrow keys move it by one
-output pixel, Shift by ten. A selected point also shows numeric x and y fields in
-pixels. Changes go to the engine while you drag.
+output pixel, Shift by ten. On an iPad use the **nudge pad** that appears under
+the mode buttons once a point is selected: arrows move by 1 px, the **10 px**
+key in the middle makes every press move ten. A selected point also shows
+numeric x and y fields in pixels. Changes go to the engine while you drag.
+
+Slice, mask and mesh points are stored before the warp, but the preview shows
+the warped picture. The editor therefore draws these handles where the picture
+really is (through the corner pin and mesh) and moves them in that picture, so
+a handle stays on the spot you touch while a warp is active.
 
 - **Corner pin**: four corners. **Reset corners** puts them back.
 - **Mesh**: **Density** is Off (corner pin only) or 2x2, 3x3, 5x5, 9x9, 17x17
   or 33x33 points. Changing the density starts from a flat grid. The picture
   follows a smooth surface through the points. **Reset mesh** flattens it.
 - **Slices**: a slice takes a rectangle of the canvas (**Source x · y · w · h**,
-  values 0 to 1) and puts it on a four-corner destination on the output (the
+  in pixels of the canvas; the tooltip shows the stored 0 to 1 value) and puts it on a four-corner destination on the output (the
   handles). **Opacity %** per slice. **Add slice** and **Remove slice**; slices
   draw in order, later over earlier. Use slices to feed different parts of the
   canvas to different regions.
 - **Mask**: **Add mask** starts with a rectangle 10 % inside the slice. Everything
-  outside the path is hidden. **Feather px** softens the edge in output pixels.
+  outside the path is hidden. **Feather (px)** softens the edge in output pixels.
   **Add point** inserts a point after the selected one, **Remove point** deletes
   the selected one (a mask keeps at least three), **Remove mask** deletes it.
 

@@ -9,17 +9,20 @@ the MIDI source list. Fanous can also be seen and browsed from a console
 over CITP/MSEX.
 
 Before you build a show on cues or OSC parameter values, set the project's
-source policy (Patch screen toolbar) to LTP, HTP or Internal only: with the
-default **DMX only** those values are recorded but do not move a layer, and the
+source policy (Patch screen toolbar) to **Console + UI (latest wins)**,
+**Console + UI (highest wins)** or **UI and cues only**: with the default
+**Console only** those values are recorded but do not move a layer, and the
 Show control screen shows a yellow warning. See
 [console-setup.md](console-setup.md#sources-and-merging).
 
 The **Timecode on/off** switch belongs to the operator and also works under
 show lock; the source, device, channel and offsets are programmer settings.
 
-The toolbar has **Go** (also the Space key), **Back**, and a **Cue no.** field
-with **Go to**. Operators and programmers can use them, also while the show is
-locked. Space only works when no field or button has the focus.
+The big **GO · Space** button (72 px high) fires the next cue and says which
+one: "Next: 3 Chorus". **Back** sits at the far right, apart from Go, so it is
+not pressed by mistake. The toolbar has a **Cue no.** field with **Go to**.
+Operators and programmers can use them, also while the show is locked. The Space
+key does the same as GO, but only when no field or button has the focus.
 
 ## Timecode
 
@@ -33,7 +36,7 @@ signal dropped and the clock keeps running for the Freewheel time), **Lost**
 | Source | Off, LTC (audio input) or MTC (MIDI) |
 | Device | an audio input for LTC ("Default input" or a named device), a MIDI source for MTC ("All sources" or one) |
 | Channel | LTC only: input channel of the device, 1 is the first |
-| Offset (frames) | subtracted from the incoming time, project wide |
+| Offset (frames) | subtracted from the incoming time, project wide. The line under it shows the same offset in seconds at the current rate, for example "+25 frames = +1.00 s at 25 fps" |
 | Freewheel (s) | how long a dropped signal is bridged; default 2 |
 | Timecode on/off | the switch in the panel header |
 
@@ -64,7 +67,7 @@ Follow and Values; the header says "Now 2 Name · next 3 Name", and the rows are
 marked current (or fading) and next.
 
 - **Add cue** takes the next free number and the name "Cue N". **Duplicate**
-  copies fade and values, not trigger and follow. **Remove** asks first. **Move
+  copies fade and values, not trigger and follow. **Remove** shows "Undone? Undo" for 8 seconds. **Move
   up** and **Move down** swap numbers with the neighbour. Numbers may have
   decimals (2.5) and must be unique.
 - In the editor: **Number**, **Name**, **Fade (s)**, **Trigger**, **Follow (s)**,
@@ -160,7 +163,7 @@ position, scale, colour, effects and dissolves apply.
 | 110 | Test card: grid, aspect circle, border, colour bars, running time (or the incoming timecode when it runs) with a frame number, a bar that sweeps once a second, and two squares that swap every frame (a dropped or doubled frame shows as both lit or both dark) |
 | 111 | Colour sweep: a slow moving hue gradient |
 | 112 | Clock: time of day, hh:mm:ss |
-| 113 | Motion test, locked to the frame counter: a bar moving 16 px per frame (at 1080p), stripes scrolling 8 px per frame and a strip of 60 cells with one lit per frame. At a steady rate every step is equal; a dropped or doubled frame shows as a jump or a stop |
+| 113 | Motion test: a bar moving 16 px per frame (at 1080p), stripes scrolling 8 px per frame and a strip of 60 cells with one lit per frame. At a steady rate every step is equal; a dropped or doubled frame shows as a jump or a stop |
 
 Judge motion on an output (a display or projector), not in the preview: the
 preview is 640 × 360 at 30 fps and shows only every second frame of a 60 fps
@@ -171,8 +174,16 @@ canvas, so moving content always looks jerky there.
 Without a console on site, open the Layers screen, select a layer and turn on
 **Control** in its panel. Every channel gets a control: a slider for continuous
 values (double-click: default), a list for modes, a number for folder and file.
-Values enter as the UI source, so the project's source policy must be LTP, HTP
-or Internal only; the panel offers **Use LTP** when it is DMX only. With LTP the
-latest change wins between console and UI. **Release** hands the layer back to
-the console. UI control is refused while the show is locked.
+Values enter as the UI source, so the project's source policy must be
+**Console + UI (latest wins)**, **Console + UI (highest wins)** or **UI and cues
+only**; the panel offers **Use Console + UI (latest wins)** when it is Console
+only. With latest wins, whoever moved last wins between console and UI.
+**Release** hands the layer back to the console. UI control is refused while the
+show is locked.
+
+**Media from the library** lists every playable file as "Folder 3 · Intro / 12 ·
+loop.mov" and puts the choice on the layer (folder and file, and intensity to
+full if it was 0). The same works from the Media screen: select a file and pick
+**Play on layer** (Layer 1 to n). The panel shows the library names of what the
+layer plays, not only the numbers.
 
