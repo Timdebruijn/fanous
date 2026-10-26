@@ -19,6 +19,7 @@ export interface ChannelSpec {
 /** Folder 0 generators (engine `Generators.names`, DESIGN §8.2): drawn on the GPU, no files. */
 export const GENERATORS: { file: number; name: string }[] = [
   { file: 110, name: 'Test card (timecode, frame flags)' },
+  { file: 113, name: 'Motion test (smoothness, frame-locked)' },
   { file: 100, name: 'Solid colour (Red/Green/Blue channels)' },
   { file: 101, name: 'Grid' },
   { file: 102, name: 'Colour bars' },

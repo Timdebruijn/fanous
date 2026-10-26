@@ -160,6 +160,11 @@ position, scale, colour, effects and dissolves apply.
 | 110 | Test card: grid, aspect circle, border, colour bars, running time (or the incoming timecode when it runs) with a frame number, a bar that sweeps once a second, and two squares that swap every frame (a dropped or doubled frame shows as both lit or both dark) |
 | 111 | Colour sweep: a slow moving hue gradient |
 | 112 | Clock: time of day, hh:mm:ss |
+| 113 | Motion test, locked to the frame counter: a bar moving 16 px per frame (at 1080p), stripes scrolling 8 px per frame and a strip of 60 cells with one lit per frame. At a steady rate every step is equal; a dropped or doubled frame shows as a jump or a stop |
+
+Judge motion on an output (a display or projector), not in the preview: the
+preview is 640 × 360 at 30 fps and shows only every second frame of a 60 fps
+canvas, so moving content always looks jerky there.
 
 ## Controlling layers from the UI
 

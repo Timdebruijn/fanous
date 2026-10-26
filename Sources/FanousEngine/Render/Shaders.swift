@@ -439,6 +439,31 @@ public enum ShaderSource {
             float hue = fract(uv.x * 0.5 + uv.y * 0.25 + g.time * 0.05);
             return float4(hsv2rgb(float3(hue, 0.75, 0.9)), 1.0);
         }
+        if (g.kind == 113u) {
+            // motion test, locked to the frame counter (not to time): at a steady rate every step is equal, a dropped or
+            // doubled frame shows as a jump or a stop. Top: a bar moving 16 px per frame at 1080p. Middle: stripes
+            // scrolling 8 px per frame (follow them with the eyes: judder shows as stutter). Bottom: 60 cells, one lit
+            // per frame; in a photo with a long exposure every cell of a run must be lit once.
+            float3 c = float3(0.06);
+            float step_ = lw * 16.0;
+            if (uv.y > 0.08 && uv.y < 0.3) {
+                float x = fmod(float(g.frame % 100000u) * step_, g.size.x + h * 0.08) - h * 0.08;
+                if (px.x >= x && px.x < x + h * 0.08) c = float3(1.0);
+            }
+            if (uv.y > 0.38 && uv.y < 0.62) {
+                float period = h / 8.0;
+                float x = fmod(px.x + float(g.frame % 100000u) * lw * 8.0, period);
+                c = x < period * 0.5 ? float3(0.85) : float3(0.15);
+            }
+            if (uv.y > 0.72 && uv.y < 0.88 && uv.x > 0.04 && uv.x < 0.96) {
+                float cellW = 0.92 / 60.0;
+                uint cell = uint((uv.x - 0.04) / cellW);
+                float inCell = fract((uv.x - 0.04) / cellW);
+                bool lit = cell == g.frame % 60u;
+                c = inCell < 0.12 ? float3(0.06) : (lit ? float3(0.2, 1.0, 0.5) : float3(0.18));
+            }
+            return float4(c, 1.0);
+        }
         if (g.kind == 112u) {  // time of day, hh:mm:ss
             float t = gen_text(g, 0u, 8u, px, g.size * 0.5, h * 0.22);
             return float4(mix(float3(0.02), float3(1.0), t), 1.0);

@@ -12,7 +12,7 @@ public enum Generators {
     /// file number → name; 100 is white (the layer's Red/Green/Blue channels give it a colour)
     public static let names: [Int: String] = [
         100: "Solid colour", 101: "Grid", 102: "Colour bars", 103: "Blend check", 104: "Output ID", 105: "Crosshair", 106: "Grey steps",
-        107: "Checkerboard", 110: "Test card", 111: "Colour sweep", 112: "Clock",
+        107: "Checkerboard", 110: "Test card", 111: "Colour sweep", 112: "Clock", 113: "Motion test",
     ]
 
     public static func isGenerator(_ key: MediaKey) -> Bool { key.folder == 0 && names[key.file] != nil }

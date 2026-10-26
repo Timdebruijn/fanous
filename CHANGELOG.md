@@ -14,8 +14,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - App icon and mark (a fanous lantern, `assets/`); UI fonts Atkinson Hyperlegible Next and Mono
   (Braille Institute, OFL), bundled with the UI, chosen for unambiguous glyphs when reading fast in the dark.
 - Layer cap stays 32 for v1 (OPEN-8).
-- Built-in content in folder 0: solid colour, the test patterns, a moving test card, colour sweep and
-  clock, drawn on the GPU and selectable from the console or the UI.
+- Built-in content in folder 0: solid colour, the test patterns, a moving test card, colour sweep,
+  clock and a frame-locked motion test (113), drawn on the GPU and selectable from the console or the UI.
 - Test patterns reworked after a review: resolution-scaled lines, centred grid with border, aspect
   circle and diagonals, 100 % colour references, "Blend check" (was Blend zones), a readable output
   number, a 1 % black-level ramp.
