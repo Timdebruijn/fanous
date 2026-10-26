@@ -26,9 +26,9 @@ The app registers the engine as a background service (a LaunchAgent named
 3. Under "Allow in the Background", switch Fanous on.
 
 After that the engine starts at login and macOS restarts it within about a
-second if it ever crashes. **Quitting the app does not stop the engine**; the
-outputs keep running. Auto-login is your choice for an unattended machine; it
-is not required.
+second if it ever crashes. **Quitting the app does not stop the engine** unless
+you choose so; the outputs keep running. Auto-login is your choice for an
+unattended machine; it is not required.
 
 macOS may also ask for Local Network access (Fanous receives Art-Net, sACN
 and OSC and announces itself over CITP) and, when you first pick an LTC input,
@@ -62,7 +62,18 @@ The window is a normal browser view of the web UI. Menus:
   `~/Library/Logs/Fanous` in Finder.
 - **Edit**: Undo and Redo, Cut, Copy, Paste.
 
-Closing the window quits the app, not the engine.
+Closing the window quits the app. When the engine is running, the app asks
+"Quit Fanous?" first:
+
+- **Keep Engine Running** (the default, Return): the app quits, the outputs
+  keep running.
+- **Stop Engine and Quit**: the same as Engine › **Stop Engine…**, then quit.
+- **Cancel**: nothing happens.
+
+Tick **Don't ask again** with Keep Engine Running to quit without the question
+from then on (`defaults delete org.fanous.app KeepEngineOnQuit` brings it
+back). Stopping is never remembered. When the engine is not running, the app
+quits without asking.
 
 The **status bar** is on every screen. From the left: the lock tag (UNLOCKED or
 LOCKED; press it or L), the **SHOW MODE: ON/OFF** button (operator; when the
