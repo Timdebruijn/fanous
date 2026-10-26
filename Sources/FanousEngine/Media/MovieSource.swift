@@ -289,22 +289,38 @@ public final class MovieSource: @unchecked Sendable {
         }
     }
 
+    /// Tests: always go through the staging copy (the contiguous block buffer path must give the same texture).
+    var forceHAPStaging = false
+    /// Frames decoded straight from the block buffer, without the staging copy (tests).
+    private(set) var hapInPlaceFrames = 0
+
     private func decodeHAP(_ sample: CMSampleBuffer, into slot: DecodedFrame) throws {
         guard let block = CMSampleBufferGetDataBuffer(sample) else { throw MovieError.noSample }
         let length = CMBlockBufferGetDataLength(block)
+        // a contiguous block buffer (the normal case for a .mov sample) is decoded in place; otherwise copy it out
+        var contiguousLength = 0
+        var pointer: UnsafeMutablePointer<CChar>?
+        let direct = CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: &contiguousLength, totalLengthOut: nil, dataPointerOut: &pointer)
+        if !forceHAPStaging, direct == noErr, contiguousLength == length, let pointer {
+            try decodeHAP(UnsafeRawPointer(pointer), length: length, into: slot)
+            hapInPlaceFrames += 1
+            return
+        }
         if hapStaging.count < length { hapStaging = [UInt8](repeating: 0, count: length) }
         let copyStatus = hapStaging.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: length, destination: $0.baseAddress!) }
         guard copyStatus == noErr else { throw MovieError.decoder(copyStatus) }
+        try hapStaging.withUnsafeBytes { try decodeHAP($0.baseAddress!, length: length, into: slot) }
+    }
+
+    private func decodeHAP(_ input: UnsafeRawPointer, length: Int, into slot: DecodedFrame) throws {
         var textureCount: UInt32 = 0
-        let countResult = hapStaging.withUnsafeBytes { HapGetFrameTextureCount($0.baseAddress!, UInt(length), &textureCount) }
+        let countResult = HapGetFrameTextureCount(input, UInt(length), &textureCount)
         guard countResult == HapResult_No_Error.rawValue else { throw HAPError.decode(countResult) }
         for index in 0..<Int(textureCount) {
             var used: UInt = 0
             var format: UInt32 = 0
-            let result: UInt32 = hapStaging.withUnsafeBytes { input in
-                hapOutput.withUnsafeMutableBytes { output in
-                    HapDecode(input.baseAddress!, UInt(length), UInt32(index), Self.decodeCallback, nil, output.baseAddress!, UInt(output.count), &used, &format)
-                }
+            let result: UInt32 = hapOutput.withUnsafeMutableBytes { output in
+                HapDecode(input, UInt(length), UInt32(index), Self.decodeCallback, nil, output.baseAddress!, UInt(output.count), &used, &format)
             }
             guard result == HapResult_No_Error.rawValue else { throw HAPError.decode(result) }
             let blockBytes: Int
