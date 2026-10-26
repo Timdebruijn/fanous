@@ -872,7 +872,8 @@ applied entirely on the GPU in the final output pass" is satisfied.
   canvas). `reconfigure(CanvasLayout)` keeps the textures of canvases whose
   size did not change; `OutputCoordinator.setCanvases` stops and restarts the
   drivers around it like B31. `CanvasSwitch` tracks the whole layout; the
-  engine requests the project's extra canvases once the coordinator exists.
+  compositor gets every project canvas before its first tick (so a restart in
+  show mode, which defers switches, still renders them all).
   Generators take the size of their layer's canvas (made at canvas 1's size,
   resized on the first tick). Layer capacity is unchanged: a layer costs the
   same on any canvas.

@@ -136,9 +136,10 @@ public final class Engine: @unchecked Sendable {
             try? ProjectDocument.setCanvasFormat(startCanvas, in: &project)
             loadedProject = project
         }
-        // the compositor starts with canvas 1; the project's other canvases are requested once the coordinator exists
+        // every canvas of the project from the first tick (also after a restart in show mode, which defers switches)
+        let startLayout = ProjectDocument.layout(from: loadedProject ?? .null, start: startCanvas)
         let canvasSwitch = CanvasSwitch(
-            rendered: ProjectDocument.CanvasLayout(startCanvas), isDeferred: { [weak self] in self?.showMode.isOn ?? false },
+            rendered: startLayout, isDeferred: { [weak self] in self?.showMode.isOn ?? false },
             apply: { [weak self] layout in
                 guard let coordinator = self?.coordinator else { throw RenderError.pipeline("no compositor") }
                 try coordinator.setCanvases(layout)
@@ -195,6 +196,10 @@ public final class Engine: @unchecked Sendable {
             }
             service.loader.resolver = { key in library.resolve(key) }
             service.audioKeepRunning = { [weak self] in self?.showMode.isOn ?? false }
+            if startLayout.canvases.count > 1 {
+                // nothing ticks yet; on failure canvas 1 runs alone and slices on the others stay black (logged)
+                do { try service.compositor.reconfigure(startLayout) } catch { logger.error("canvases could not be made at start", metadata: ["error": "\(error)"]) }
+            }
             render = service
         }
 
@@ -367,11 +372,9 @@ public final class Engine: @unchecked Sendable {
             lastClockMaster = clockMaster
             let log = logger
             render.compositor.layerCanvas = Self.layerCanvas(project: store.project, layers: render.layers.count)
-            let layout = ProjectDocument.layout(from: store.project, start: startCanvas)
             Task { @MainActor in
                 do { try await render.start() } catch { log.error("render start failed", metadata: ["error": "\(error)"]) }
                 coordinator.apply(outputs: outputs, clockMaster: clockMaster)
-                self.canvasSwitch?.request(layout)  // canvases beyond the first (the compositor started with canvas 1 only)
             }
         }
         self.auth = auth
