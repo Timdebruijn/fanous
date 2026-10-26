@@ -254,3 +254,17 @@ with two drawables both were periodically still in flight when the phases met
 badly, so `nextDrawable()` blocked. Not a regression of the review round (the
 older build shows it too). The 8 h soak ran headless and did not see it.
 
+16 layers on the 120 Hz built-in panel with three drawables (release, 2 min
+each, `fanous-bench run --layers 16 --window 120 --display 1`):
+
+| Codec | Frames | Missed | Late | Texture misses | GPU p99 |
+|---|---|---|---|---|---|
+| ProRes 422 HQ 1080p60 | 7203 | 0 | 0 | 0 | 10.0 ms |
+| HAP Q 1080p60 | 7267 | 0 | 0 | 0 | 9.6 ms |
+
+The drawable count does not scale with layers or outputs: layers are
+composited into the canvas first (their own frame rings sit at the decoders),
+and every output window has its own three drawables. More layers raise the
+GPU time per frame; while that stays under the frame period three drawables
+suffice, and when it does not, more drawables would only add latency.
+
