@@ -21,11 +21,11 @@ func usage() -> String {
       --foreground     run attached to the terminal (default when started by hand)
       --scene FILE     render a scene (JSON: canvasWidth, canvasHeight, fps, layerCount, media[{folder,file,path|syphon}], display);
                        its canvas size and fps override the project's for this run
-      --no-network     no Art-Net, sACN, OSC, CITP or Bonjour (tests; runs next to another engine)
+      --no-network     no Art-Net, sACN, OSC, CITP or Bonjour, HTTPS on 127.0.0.1 only (tests; next to another engine)
       --version        print the version and exit
     environment:
-      FANOUS_HOME=DIR  use DIR instead of the home directory for Application Support, logs, cache, TLS and the
-                       default library (DIR/Library/..., DIR/Movies/Fanous Library): an isolated engine
+      FANOUS_HOME=DIR  use DIR (absolute) instead of the home directory for Application Support, logs, cache, TLS
+                       (keychain tag included) and the default library (DIR/Library/..., DIR/Movies/Fanous Library)
       FANOUS_LOG=debug debug logging
     """
 }
@@ -38,6 +38,11 @@ case "protocol-dts":
     print(ProtocolTypes.typescript(commands: Engine.commandSpecs()), terminator: "")
     exit(0)
 case "reset-tls":
+    // an ignored FANOUS_HOME would make this reset the real install's identity
+    if let problem = AppPaths.homeOverrideProblem {
+        FileHandle.standardError.write(Data("\(problem); nothing reset\n".utf8))
+        exit(64)
+    }
     TLSIdentity.reset(directory: AppPaths.tls)
     print("TLS identity removed; a new one is generated at the next start")
     exit(0)
@@ -145,6 +150,8 @@ _ = ftruncate(lockDescriptor, 0)
 _ = "\(getpid())\n".withCString { pwrite(lockDescriptor, $0, strlen($0), 0) }
 EngineLogging.bootstrap(fileURL: AppPaths.logs.appending(path: "fanousd.log"), level: ProcessInfo.processInfo.environment["FANOUS_LOG"] == "debug" ? .debug : .info)
 let logger = Logger(label: "fanousd")
+if let problem = AppPaths.homeOverrideProblem { logger.warning("\(problem)") }
+if let home = AppPaths.homeOverride { logger.notice("FANOUS_HOME: data, logs, TLS and the default library under \(home.path)") }
 var scene: SceneConfig?
 if let sceneFile {
     do { scene = try SceneConfig.load(sceneFile) } catch {

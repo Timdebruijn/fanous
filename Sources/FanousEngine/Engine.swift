@@ -14,7 +14,8 @@ public struct EngineOptions: Sendable {
     public var webRoot: URL
     /// Phase 2: a static scene to render (until projects exist in Phase 5).
     public var scene: SceneConfig?
-    /// false (`--no-network`): no Art-Net, sACN, OSC, CITP or Bonjour, so a test engine runs next to a real one (B47).
+    /// false (`--no-network`): no Art-Net, sACN, OSC, CITP or Bonjour, and HTTPS on 127.0.0.1 only, so a test engine
+    /// runs next to a real one and the network cannot reach it (B47).
     public var network: Bool
 
     public init(port: UInt16 = 8443, webRoot: URL, scene: SceneConfig? = nil, network: Bool = true) {
@@ -180,7 +181,7 @@ public final class Engine: @unchecked Sendable {
             self.sacn = sacn
             self.osc = osc
         } else {
-            logger.warning("network receivers off (--no-network): no Art-Net, sACN, OSC, CITP or Bonjour")
+            logger.warning("network off (--no-network): no Art-Net, sACN, OSC, CITP or Bonjour; HTTPS on 127.0.0.1 only")
         }
 
         // The library is always indexed (DESIGN.md §8); scenes may add explicit entries (Syphon inputs, test files).
@@ -424,7 +425,7 @@ public final class Engine: @unchecked Sendable {
             return auth.grant(requested: role, sessionRole: sessionRole) == role
         }
         @Sendable func programmerAllowed(_ request: HTTPRequest) -> Bool { allowed(.programmer, request) }
-        let server = try HTTPSServer(port: options.port, identity: identity, webRoot: options.webRoot, logger: logger) { request in
+        let server = try HTTPSServer(port: options.port, identity: identity, webRoot: options.webRoot, loopbackOnly: !options.network, logger: logger) { request in
             if request.path.hasPrefix("/api/ingest") || request.path.hasPrefix("/api/upload/") {
                 if request.method != "GET", !programmerAllowed(request) { return .text(403, "programmer role required") }
                 if request.method == "GET", !allowed(.operator, request) { return .text(403, "operator role required") }  // job lists carry file paths
