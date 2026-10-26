@@ -14,7 +14,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
-        engine.start()
         let browser = BrowserController(url: URL(string: "https://127.0.0.1:8443/")!)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800),
@@ -26,8 +25,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         window.makeKeyAndOrderFront(nil)
         self.window = window
         self.browser = browser
-        browser.load()
         NSApp.activate()
+        // window first: any question about the background service appears as a sheet on it (the page retries until the engine answers)
+        engine.start()
+        browser.load()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

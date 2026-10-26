@@ -793,9 +793,12 @@ public enum WebRoot {
             return resources
         }
         var directory = Bundle.main.executableURL?.deletingLastPathComponent() ?? URL(fileURLWithPath: fm.currentDirectoryPath)
+        // walking up also finds the main app's Contents/Resources/web from the engine helper (Contents/Helpers/…)
         for _ in 0..<6 {
-            let candidate = directory.appending(path: "web/dist")
-            if fm.fileExists(atPath: candidate.appending(path: "index.html").path) { return candidate }
+            for candidate in [directory.appending(path: "web/dist"), directory.appending(path: "Resources/web")]
+            where fm.fileExists(atPath: candidate.appending(path: "index.html").path) {
+                return candidate
+            }
             directory = directory.deletingLastPathComponent()
         }
         return URL(fileURLWithPath: "web/dist")

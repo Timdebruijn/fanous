@@ -106,11 +106,31 @@ final class EngineManager {
         let service = SMAppService.agent(plistName: Self.agentPlist)
         // an ad-hoc rebuild leaves the agent pinned to the old binary (launchd: EX_CONFIG); register it afresh once the
         // unregistration has finished (it completes asynchronously, a register right after it is a no-op)
+        // only when the engine does not answer: re-registering restarts it, which must never happen just because
+        // the UI was opened during a show
         if Self.isAdHocSigned, service.status == .enabled {
-            service.unregister { _ in DispatchQueue.main.async { MainActor.assumeIsolated { self.registerAgent() } } }
+            Self.engineAnswers(within: 3) { answers in
+                guard !answers else { return }
+                service.unregister { _ in DispatchQueue.main.async { MainActor.assumeIsolated { self.registerAgent() } } }
+            }
             return
         }
         registerAgent()
+    }
+
+    /// Polls /healthz once a second for up to `seconds` (a freshly started agent needs a moment).
+    static func engineAnswers(within seconds: Int, then: @escaping @MainActor (Bool) -> Void) {
+        var request = URLRequest(url: URL(string: "https://127.0.0.1:8443/healthz")!)
+        request.timeoutInterval = 1
+        let session = URLSession(configuration: .ephemeral, delegate: TrustAnyLocalhost.shared, delegateQueue: nil)
+        session.dataTask(with: request) { data, response, _ in
+            let ok = (response as? HTTPURLResponse)?.statusCode == 200 && data != nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + (ok ? 0 : 1)) {
+                MainActor.assumeIsolated {
+                    if ok || seconds <= 1 { then(ok) } else { engineAnswers(within: seconds - 1, then: then) }
+                }
+            }
+        }.resume()
     }
 
     private func registerAgent() {
@@ -130,12 +150,14 @@ final class EngineManager {
                 "macOS needs your approval once. Open System Settings › General › Login Items & Extensions and allow Fanous."
             alert.addButton(withTitle: "Open System Settings")
             alert.addButton(withTitle: "Later")
-            if alert.runModal() == .alertFirstButtonReturn { SMAppService.openSystemSettingsLoginItems() }
+            present(alert) { if $0 == .alertFirstButtonReturn { SMAppService.openSystemSettingsLoginItems() } }
         }
     }
 
     private func startChild() {
-        let executable = Bundle.main.executableURL!.deletingLastPathComponent().appending(path: "fanousd")
+        // bundled: the engine helper app; `swift run`: next to the shell
+        let helper = Bundle.main.bundleURL.appending(path: "Contents/Helpers/FanousEngine.app/Contents/MacOS/fanousd")
+        let executable = FileManager.default.isExecutableFile(atPath: helper.path) ? helper : Bundle.main.executableURL!.deletingLastPathComponent().appending(path: "fanousd")
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
             NSLog("fanousd not found next to the shell (%@); start it by hand", executable.path)
             return
@@ -173,6 +195,18 @@ final class EngineManager {
         let alert = NSAlert()
         alert.messageText = message
         alert.informativeText = detail
-        alert.runModal()
+        present(alert) { _ in }
+    }
+
+    /// A sheet on the main window, never an app-modal dialog: a dialog that ends up behind another window or on another
+    /// display blocks the app while the user sees nothing (seen 2026-10-26).
+    private func present(_ alert: NSAlert, then: @escaping @MainActor (NSApplication.ModalResponse) -> Void) {
+        if let window = NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }) {
+            NSApp.activate()
+            alert.beginSheetModal(for: window) { response in MainActor.assumeIsolated { then(response) } }
+        } else {
+            NSApp.activate()
+            then(alert.runModal())
+        }
     }
 }

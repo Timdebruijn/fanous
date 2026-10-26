@@ -19,6 +19,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Test patterns reworked after a review: resolution-scaled lines, centred grid with border, aspect
   circle and diagonals, 100 % colour references, "Blend check" (was Blend zones), a readable output
   number, a 1 % black-level ramp.
+- Fixed: opening the app showed no window when the engine was running (the engine registered as the app;
+  it is now a helper app, `Contents/Helpers/FanousEngine.app`); service dialogs are sheets on the window;
+  opening the app no longer restarts the engine in local builds.
 - Layers can be controlled from the UI (layer panel Control switch, `fixture.set`/`fixture.release`).
 
 - Hardening: one engine per user (`engine.lock`), cumulative frame counters in
