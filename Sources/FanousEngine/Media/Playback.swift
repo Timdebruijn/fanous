@@ -163,11 +163,18 @@ public final class LayerPlayback: @unchecked Sendable {
     /// needed. The previously shown frame is kept one tick for the GPU.
     private func select(index: Int, direction: Int) -> DecodedFrame? {
         guard let ring else { return nil }
+        var freed = false
+        defer { if freed { decoder?.nudge() } }  // a slot is free again: the decode thread may be asleep on a full ring
         let n = frameCount
         func behind(_ f: Int) -> Int { direction > 0 ? (index - f + n) % n : (f - index + n) % n }
         while ring.count > 1, let head = ring.peek(0), let next = ring.peek(1) {
             if head.frameIndex == previousShown || head.frameIndex == currentShown { break }
-            if behind(next.frameIndex) <= behind(head.frameIndex) { ring.pop() } else { break }
+            if behind(next.frameIndex) <= behind(head.frameIndex) {
+                ring.pop()
+                freed = true
+            } else {
+                break
+            }
         }
         guard ring.count > 0 else { return holdFrame }
         var best: DecodedFrame?
@@ -177,6 +184,7 @@ public final class LayerPlayback: @unchecked Sendable {
         }
         guard let best, behind(best.frameIndex) < ring.capacity + 2 else {
             if holdFrame == nil { holdFrame = best }  // never shown (held invisible): better a stale picture than none until the seek lands
+            freed = true
             ring.drain()  // everything buffered is on the wrong side of a seek
             return holdFrame
         }

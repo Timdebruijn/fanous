@@ -413,6 +413,7 @@ public final class Compositor: @unchecked Sendable {
         }
         layer.current = incoming
         incoming?.decoder?.audioEnabled.store(true, ordering: .relaxed)
+        if incoming?.decoder?.audio != nil { incoming?.decoder?.nudge() }  // the decode thread sleeps without audio to feed
     }
 
     private func retire(_ playback: LayerPlayback, from layer: RenderLayer) {
