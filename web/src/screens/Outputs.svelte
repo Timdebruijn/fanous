@@ -92,6 +92,12 @@
     ui.slice = 0;
     toastUndo(`Slice ${id} removed.`);
   }
+  function resetSlice() {
+    const s = output?.slices[sliceIndex];
+    if (!s) return;
+    set(`/slices/${sliceIndex}`, { ...s, source: { x: 0, y: 0, w: 1, h: 1 }, dest: UNIT_QUAD, opacity: 1 } as unknown as JSONValue);
+    toastUndo(`Slice ${s.id} reset to the whole canvas.`);
+  }
   function removeMask() {
     set(`/slices/${sliceIndex}/mask`, null);
     toastUndo(`Mask of slice ${output?.slices[sliceIndex]?.id} removed.`);
@@ -390,7 +396,8 @@
               <label class="field"><span>Opacity %</span><input class="input mono" type="number" min="0" max="100" value={Math.round(s.opacity * 100)} disabled={locked} onchange={(e) => set(`/slices/${sliceIndex}/opacity`, Number(e.currentTarget.value) / 100)} /></label>
             {/if}
             <button type="button" class="btn" disabled={locked} onclick={addSlice}>Add slice</button>
-            <button type="button" class="btn btn-danger" disabled={locked || output.slices.length <= 1} onclick={removeSlice}>Remove slice</button>
+            <button type="button" class="btn" disabled={locked} title="Whole canvas on the whole output; the mask stays" onclick={resetSlice}>Reset slice</button>
+            <button type="button" class="btn btn-danger" disabled={locked || output.slices.length <= 1} title={output.slices.length <= 1 ? 'An output needs at least one slice: use Reset slice instead' : undefined} onclick={removeSlice}>Remove slice</button>
           </div>
         {:else}
           {@const s = output.slices[sliceIndex]}

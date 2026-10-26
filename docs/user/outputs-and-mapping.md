@@ -188,8 +188,9 @@ a handle stays on the spot you touch while a warp is active.
   that shows the whole canvas, so you only need more when one projector covers
   several surfaces that each need their own part of the picture: three screens
   on a stage, the pillars of a facade, a strip next to a screen. **Opacity %**
-  per slice; **Add slice** and **Remove slice**; later slices draw over earlier
-  ones. The warp (corner pin, mesh) applies to the whole output on top.
+  per slice; **Add slice**, **Reset slice** (whole canvas on the whole output,
+  the mask stays) and **Remove slice** (an output keeps at least one); later
+  slices draw over earlier ones. The warp (corner pin, mesh) applies to the whole output on top.
 - **Mask**: a mask hides everything of a slice outside its shape (windows,
   doors, the sky above a building). **Draw mask** and then tap the corners of
   the area that stays visible on the picture, in order around it; **Done**
