@@ -254,13 +254,17 @@ public enum ProjectDocument {
     static let settablePrefixes = ["/name", "/policy", "/library/root", "/ui"]
 
     /// `showModeOn`: canvas format changes are refused while show mode is on (they re-initialise the canvas).
-    public static func registerCommands(on store: StateStore, auth: RoleAuth, showModeOn: @escaping @Sendable () -> Bool = { false }) {
+    /// `checkLibraryRoot`: throws when the engine cannot switch to that root now (B51); gets the expanded absolute path.
+    public static func registerCommands(
+        on store: StateStore, auth: RoleAuth, showModeOn: @escaping @Sendable () -> Bool = { false },
+        checkLibraryRoot: @escaping @Sendable (String) throws -> Void = { _ in }
+    ) {
         store.register(
             CommandSpec(
                 name: "project.set", role: .programmer, summary: "Set one project value (name, policy, library.root, ui.*); layers.setCount changes the layer count.",
                 argsType: "{ path: string; value: JSONValue }"
             ) { project, args in
-                guard let path = args["path"]?.string, let pointer = try? JSONPointer(path), let value = args["value"] else {
+                guard let path = args["path"]?.string, let pointer = try? JSONPointer(path), var value = args["value"] else {
                     throw CommandError.invalidArgs("args: { path, value }")
                 }
                 guard settablePrefixes.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) else {
@@ -268,6 +272,14 @@ public enum ProjectDocument {
                 }
                 if path == "/policy" {
                     guard let raw = value.string, SourcePolicy(rawValue: raw) != nil else { throw CommandError.invalidArgs("policy must be dmx, internal, ltp or htp") }
+                }
+                if path == "/library/root" {
+                    guard let raw = value.string else { throw CommandError.invalidArgs("the library root must be a path") }
+                    let expanded = (raw.trimmingCharacters(in: .whitespaces) as NSString).expandingTildeInPath
+                    guard expanded.hasPrefix("/") else { throw CommandError.invalidArgs("the library root must be an absolute path") }
+                    let root = URL(fileURLWithPath: expanded).standardizedFileURL.path
+                    try checkLibraryRoot(root)
+                    value = .string(root)
                 }
                 try project.set(value, at: pointer)
                 return nil

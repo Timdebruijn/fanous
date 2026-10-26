@@ -36,10 +36,12 @@ import Testing
         return true
     }
 
-    /// bgra8Unorm takes Syphon's blit path; rgba8Unorm differs from the surface format and takes the draw path,
-    /// which runs the runtime-compiled shaders.
+    /// Syphon surfaces are in OpenGL order (row 0 at the bottom), so a published Metal texture arrives with its
+    /// rows reversed and the compositor samples a Syphon input bottom-up; an OpenGL client such as the Syphon
+    /// Simple Client then shows the canvas upright (checked by eye 2026-10-26). bgra8Unorm matches the surface
+    /// format, rgba8Unorm takes the conversion path; both go through Syphon's flip draw.
     @Test(arguments: [MTLPixelFormat.bgra8Unorm, .rgba8Unorm])
-    func publishedTextureArrivesUprightInAClient(format: MTLPixelFormat) throws {
+    func publishedTextureArrivesBottomUpInASurfaceAndTheInputSaysSo(format: MTLPixelFormat) throws {
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else { return }  // no GPU: skip
         let name = "FanousTest-\(UUID().uuidString)"
         let output = try SyphonOutput(name: name, device: device)
@@ -77,7 +79,11 @@ import Testing
 
         var bytes = [UInt8](repeating: 0, count: pattern.count)
         received.getBytes(&bytes, bytesPerRow: Self.size * 4, from: MTLRegionMake2D(0, 0, Self.size, Self.size), mipmapLevel: 0)
-        #expect(bytes == pattern)
+        let row = Self.size * 4
+        let reversed = (0..<Self.size).reversed().flatMap { y in pattern[(y * row)..<((y + 1) * row)] }
+        #expect(bytes == reversed)
+        #expect(bytes != pattern)
+        #expect(input.bottomUp)
 
         // The directory learns about servers through distributed notifications, which need the main run loop.
         #expect(Self.wait(seconds: 2) { input.servers.contains { $0.serverName == name } })

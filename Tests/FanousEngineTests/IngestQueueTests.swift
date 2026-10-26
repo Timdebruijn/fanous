@@ -6,6 +6,7 @@ import AVFoundation
 import CoreGraphics
 import Foundation
 import ImageIO
+import Logging
 import Metal
 import Testing
 import UniformTypeIdentifiers
@@ -503,6 +504,26 @@ import UniformTypeIdentifiers
         #expect(!message.isEmpty)
         #expect((try? FileManager.default.contentsOfDirectory(atPath: directory.appending(path: "library").path)) ?? [] == [])
         #expect(FileManager.default.fileExists(atPath: notAMovie.path))
+    }
+
+    /// B51: while a library root change holds enqueues, a new job is refused with 409 and nothing is queued.
+    @Test func heldEnqueueIsRefused() throws {
+        let directory = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: Logger(label: "test"))
+        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: Logger(label: "test"))
+        let still = directory.appending(path: "still.png")
+        try Self.writePNG(to: still, index: 0)
+        api.holdEnqueue("the library root is changing")
+        api.holdEnqueue("the library root is changing")
+        #expect(api.enqueue(source: still, folder: 1, file: nil, name: nil, codec: nil, fps: nil, keepOriginal: true).status == 409)
+        api.releaseEnqueue()
+        #expect(api.enqueue(source: still, folder: 1, file: nil, name: nil, codec: nil, fps: nil, keepOriginal: true).status == 409, "holds nest")
+        #expect(queue.jobs.isEmpty)
+        api.releaseEnqueue()
+        #expect(api.enqueue(source: still, folder: 1, file: nil, name: nil, codec: nil, fps: nil, keepOriginal: true).status == 202)
+        #expect(queue.jobs.count == 1)
     }
 }
 

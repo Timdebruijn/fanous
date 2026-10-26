@@ -5,6 +5,7 @@
   import SystemLogs from '../components/SystemLogs.svelte';
   import SystemMetrics from '../components/SystemMetrics.svelte';
   import SystemRoles from '../components/SystemRoles.svelte';
+  import SystemVersions from '../components/SystemVersions.svelte';
   import { modeText } from '../lib/outputs';
   import { app, can, cmd } from '../lib/state.svelte';
   import { LOCKED_TITLE, OPERATOR_TITLE, ageText, headerCaption, memoryText, outputTone, readinessBadge, readinessSummary, resumedText, stampText, thermalTone } from '../lib/system';
@@ -148,7 +149,7 @@
           <input class="input mono" type="text" aria-label="Library root path" autocomplete="off" spellcheck="false" value={rootValue} disabled={lockedProgrammer} title={lockedProgrammer ? LOCKED_TITLE : undefined} oninput={(event) => (rootDraft = event.currentTarget.value)} />
           <button type="submit" class="btn" disabled={lockedProgrammer || !rootDirty} title={lockedProgrammer ? LOCKED_TITLE : undefined}>Apply</button>
         </form>
-        <div class="caption">A new root is indexed after the engine restarts (Engine › Restart Engine in the app).</div>
+        <div class="caption">Apply switches at once to an existing folder; refused in show mode and while ingest jobs are queued or running.</div>
       </dd>
     </dl>
 
@@ -238,6 +239,7 @@
   </section>
 </div>
 
+<SystemVersions />
 <SystemRoles />
 <SystemLogs />
 
