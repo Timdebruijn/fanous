@@ -86,8 +86,13 @@ On a fresh macOS user account (or a fresh Mac) with the notarized dmg:
 ## 7. Legal and naming (owner)
 
 - [x] remove `docs/BRIEF.md` (DESIGN §17): removed from the repository and its whole history on 2026-10-26, before the first push; kept outside the repo by the owner
+- [x] employment contract checked by the owner: Fanous is his own project
+      (2026-10-26)
+- [x] owner checked the name "Fanous" in TMview/BOIP (2026-10-26)
 - [ ] lawyer review of `docs/licensing/PLUGIN-EXCEPTION.md`, `CLA.md`,
-      `ATTRIBUTION.md` (all marked DRAFT until then)
+      `ATTRIBUTION.md` (all marked DRAFT until then); not needed to make the
+      repository public, needed before the first external pull request is
+      merged (README and CONTRIBUTING say pull requests are not accepted yet)
 - [ ] trademark search for "Fanous" (OPEN-21); `TRADEMARKS.md` final.
       The project was called Lanthorn until 2026-10-25 and was renamed
       because of collisions found in a web survey (Lanthorn.ai claims the mark,

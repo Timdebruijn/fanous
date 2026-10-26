@@ -23,6 +23,14 @@ built; the release steps that need the owner are in `docs/RELEASE.md`. Until
 - **Commercial license:** for products that cannot ship GPL code (dual
   licensing through the CLA).
 
+## Contributing
+
+Issues, bug reports and feature proposals are welcome now. **Pull requests are
+not accepted yet:** the Contributor License Agreement (`docs/licensing/CLA.md`)
+is a draft under legal review, and every contribution needs a signed CLA so the
+project can stay dual-licensed. This section changes when the CLA is final. See
+`CONTRIBUTING.md`.
+
 ## Development
 
 Requirements: Apple Silicon Mac with a ProRes engine, macOS 15+, Swift 6.2+

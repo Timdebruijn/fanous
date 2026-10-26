@@ -5,6 +5,10 @@ events; stability and performance come before features, and the project is
 dual-licensed (GPL-3.0-only with additional terms, and a commercial license).
 That second point shapes the rules below.
 
+> **Not accepting pull requests yet.** The CLA below is a draft under legal
+> review and the CLA bot is not active. Until both are in place, please open
+> an issue instead of a pull request; pull requests are closed unmerged.
+
 ## 1. Contributor License Agreement (required)
 
 Every contribution — code, shaders, documentation, test fixtures, media —
