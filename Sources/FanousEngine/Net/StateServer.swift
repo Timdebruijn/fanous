@@ -129,7 +129,7 @@ public final class StateServer: @unchecked Sendable {
                     session.send(text: server.store.encode(["t": "ack", "id": id, "ok": false, "error": ["code": "badMessage", "message": "cmd needs a name"]]), droppable: false)
                     return
                 }
-                let result = server.store.execute(name, args: message["args"] ?? [:], role: role)
+                let result = server.store.execute(name, args: message["args"] ?? [:], role: role, from: self)
                 let ack: JSONValue =
                     switch result {
                     case .success(let r):

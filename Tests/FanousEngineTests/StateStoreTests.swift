@@ -233,6 +233,38 @@ extension StateStoreTests {
         #expect(store.execute("canvas.set", args: ["id": 1, "path": "/width", "value": 10], role: .programmer).failureCode == "invalidArgs")
     }
 
+    @Test func removingTheClockMasterOutputClearsIt() throws {
+        let (store, _) = Self.makeStore()
+        _ = try store.execute("output.add", role: .programmer).get()
+        _ = try store.execute("output.add", role: .programmer).get()
+        _ = try store.execute("canvas.set", args: ["id": 1, "path": "/clockMaster", "value": 2], role: .programmer).get()
+        _ = try store.execute("output.remove", args: ["id": 1], role: .programmer).get()
+        #expect(ProjectDocument.canvases(from: store.project).first?.clockMaster == 2)
+        _ = try store.execute("output.remove", args: ["id": 2], role: .programmer).get()
+        #expect(ProjectDocument.canvases(from: store.project).first?.clockMaster == nil)
+        _ = try store.execute("undo", role: .programmer).get()
+        #expect(ProjectDocument.canvases(from: store.project).first?.clockMaster == 2, "one undo restores both")
+    }
+
+    @Test func dragEditsFromOneClientCoalesceIntoOneUndoStep() throws {
+        let (store, _) = Self.makeStore()
+        _ = try store.execute("output.add", role: .programmer).get()
+        let a = RecordingClient(role: .programmer), b = RecordingClient(role: .programmer)
+        let before = store.historyDepth.undo
+        for v in [10, 20, 30] { _ = try store.execute("output.set", args: ["id": 1, "path": "/blend/right/overlap", "value": .number(Double(v))], role: .programmer, from: a).get() }
+        #expect(store.historyDepth.undo == before + 1)
+        _ = try store.execute("output.set", args: ["id": 1, "path": "/blend/right/overlap", "value": 40], role: .programmer, from: b).get()
+        _ = try store.execute("output.set", args: ["id": 1, "path": "/blend/left/overlap", "value": 5], role: .programmer, from: b).get()
+        #expect(store.historyDepth.undo == before + 3, "another client or another path starts a new entry")
+        _ = try store.execute("undo", role: .programmer).get()
+        _ = try store.execute("undo", role: .programmer).get()
+        #expect(ProjectDocument.outputs(from: store.project)[0].blend.right.overlap == 30)
+        _ = try store.execute("undo", role: .programmer).get()
+        #expect(ProjectDocument.outputs(from: store.project)[0].blend.right.overlap == 0, "the whole drag undoes at once")
+        _ = try store.execute("redo", role: .programmer).get()
+        #expect(ProjectDocument.outputs(from: store.project)[0].blend.right.overlap == 30)
+    }
+
     @Test func outputBindingResolvesByIdentityAndElectsTheMaster() {
         let displays = [
             DisplayInfo(id: 7, uuid: "A", name: "LG", pixelWidth: 3840, pixelHeight: 2160, scale: 2, hz: 60, isMain: true, isBuiltin: false, modes: []),

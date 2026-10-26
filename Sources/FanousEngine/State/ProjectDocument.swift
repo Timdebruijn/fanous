@@ -205,6 +205,11 @@ public enum ProjectDocument {
                 guard outputs.contains(where: { $0.id == id }) else { throw CommandError.invalidArgs("no output \(id)") }
                 outputs.removeAll { $0.id == id }
                 try setOutputs(outputs, in: &project)
+                var canvases = ProjectDocument.canvases(from: project)
+                if canvases.contains(where: { $0.clockMaster == id }) {
+                    for i in canvases.indices where canvases[i].clockMaster == id { canvases[i].clockMaster = nil }
+                    try project.set(try JSONValue(encoding: canvases), at: "/canvases")
+                }
                 return nil
             })
         store.register(

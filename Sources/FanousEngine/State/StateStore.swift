@@ -69,7 +69,17 @@ public final class StateStore: @unchecked Sendable {
     public static let maxHistory = 500
     public static let liveInterval: TimeInterval = 0.05
 
-    private struct HistoryEntry { var name: String; var forward: JSONPatch; var inverse: JSONPatch }
+    private struct HistoryEntry {
+        var name: String
+        var forward: JSONPatch
+        var inverse: JSONPatch
+        /// Coalescing key: same command, args id/path and client within `coalesceWindow` merge into one entry.
+        var key: String? = nil
+        var client: ObjectIdentifier? = nil
+        var at: TimeInterval = 0
+    }
+    /// Consecutive same-path edits from one client closer together than this (a drag) become one undo step.
+    public static let coalesceWindow: TimeInterval = 1
     private struct Client { var client: StateClient; var lagging = false }
 
     private var projectDocument: JSONValue
@@ -133,11 +143,11 @@ public final class StateStore: @unchecked Sendable {
     // MARK: Commands
 
     /// Runs a command synchronously on the control queue.
-    public func execute(_ name: String, args: JSONValue = [:], role: Role) -> Result<CommandResult, CommandError> {
-        queue.sync { executeLocked(name, args: args, role: role) }
+    public func execute(_ name: String, args: JSONValue = [:], role: Role, from client: AnyObject? = nil) -> Result<CommandResult, CommandError> {
+        queue.sync { executeLocked(name, args: args, role: role, client: client.map(ObjectIdentifier.init)) }
     }
 
-    private func executeLocked(_ name: String, args: JSONValue, role: Role) -> Result<CommandResult, CommandError> {
+    private func executeLocked(_ name: String, args: JSONValue, role: Role, client: ObjectIdentifier? = nil) -> Result<CommandResult, CommandError> {
         guard let spec = commands[name] else { return .failure(.unknownCommand) }
         guard role >= spec.role else { return .failure(.forbidden) }
         let locked = projectDocument["showLock"]?.bool ?? false
@@ -163,7 +173,15 @@ public final class StateStore: @unchecked Sendable {
             let inverse = JSONPatch.diff(from: next, to: projectDocument)
             commit(next, patch: forward)
             if spec.undoable {
-                undoStack.append(HistoryEntry(name: name, forward: forward, inverse: inverse))
+                let key = args["path"]?.string.map { "\(name)|\(args["id"]?.int ?? -1)|\($0)" }
+                let now = ProcessInfo.processInfo.systemUptime
+                if let key, let client, let last = undoStack.last, last.key == key, last.client == client, now - last.at < Self.coalesceWindow {
+                    undoStack[undoStack.count - 1] = HistoryEntry(
+                        name: name, forward: JSONPatch(operations: last.forward.operations + forward.operations),
+                        inverse: JSONPatch(operations: inverse.operations + last.inverse.operations), key: key, client: client, at: now)
+                } else {
+                    undoStack.append(HistoryEntry(name: name, forward: forward, inverse: inverse, key: key, client: client, at: now))
+                }
                 if undoStack.count > Self.maxHistory { undoStack.removeFirst() }
                 redoStack.removeAll()
             }
