@@ -38,3 +38,27 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
+
+  e2e:
+    # Browser end-to-end tests (web/e2e) against the real engine: each test starts `fanousd --no-network` on a free
+    # port with FANOUS_HOME in a temporary directory; headless, no display bound.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: swift build --product fanousd
+      - run: npm ci && npm run build && npx playwright install chromium
+        working-directory: web
+      - run: npm run e2e
+        working-directory: web
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: e2e-results
+          path: |
+            web/test-results/
+            web/playwright-report/
