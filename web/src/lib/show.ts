@@ -247,3 +247,20 @@ export function formatClock(at: number): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
+
+/** Frames per second of a timecode rate as the engine spells it ("25", "29.97 DF"); null when it names none. */
+export function rateFps(rate: string): number | null {
+  const n = Number.parseFloat(rate);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.abs(n - 29.97) < 0.005 ? 30000 / 1001 : n;
+}
+
+/** "+25 frames = +1.00 s at 25 fps": the offset in both units, the sign kept. Unknown rate: assumes 25 and says so. */
+export function offsetText(frames: number, rate: string): string {
+  const fps = rateFps(rate);
+  const seconds = frames / (fps ?? 25);
+  const sign = frames > 0 ? '+' : '';
+  const unit = Math.abs(frames) === 1 ? 'frame' : 'frames';
+  const at = fps === null ? 'assuming 25 fps until a source locks' : `at ${rate.replace(/ (DF|NDF)$/, '')} fps`;
+  return `${sign}${frames} ${unit} = ${sign}${seconds.toFixed(2)} s ${at}`;
+}

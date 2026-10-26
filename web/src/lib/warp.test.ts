@@ -2,8 +2,8 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
-import type { WarpSettings } from './outputs';
-import { applyHomography, homography, invert, meshPoint, unwarp, warped } from './warp';
+import type { OutputConfig, WarpSettings } from './outputs';
+import { nudgeStored, toScreen, applyHomography, homography, invert, meshPoint, unwarp, warped } from './warp';
 
 // Reference values printed by WarpMath (MappingMath.swift) for exactly these inputs.
 const quad = [{ x: 0.05, y: 0.1 }, { x: 0.95, y: 0 }, { x: 1, y: 0.9 }, { x: 0, y: 1 }];
@@ -46,5 +46,17 @@ describe('warp port', () => {
   it('invert and degenerate quads', () => {
     expect(invert([1, 2, 3, 2, 4, 6, 0, 0, 1])).toBeNull();
     expect(homography([])).toEqual([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+  });
+});
+
+describe('nudge through the warp', () => {
+  const output = { warp } as unknown as OutputConfig;
+  it('moves a slice point by whole screen pixels even under a warp', () => {
+    const stored = { x: 0.5, y: 0.5 };
+    const next = nudgeStored(output, 'slices', stored, 10, 0, { w: 1000, h: 1000 });
+    const before = toScreen(output, 'slices', stored);
+    const after = toScreen(output, 'slices', next);
+    expect((after.x - before.x) * 1000).toBeCloseTo(10, 3);
+    expect(after.y - before.y).toBeCloseTo(0, 6);
   });
 });

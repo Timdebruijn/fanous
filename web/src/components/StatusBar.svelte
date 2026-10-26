@@ -77,7 +77,7 @@
   </div>
   <div class="item col">
     <span class="mono value">{fps}<span class="faint"> fps </span>{metrics.gpuP99.toFixed(1)}<span class="faint"> ms</span></span>
-    <span class="caption">{app.live.engine.rendering ? `gpu p99 · cpu ${metrics.cpuP99.toFixed(1)} ms` : 'no outputs rendering'}</span>
+    <span class="caption">{app.live.engine.rendering ? `gpu p99 · cpu ${metrics.cpuP99.toFixed(1)} ms` : 'no outputs rendering: add or assign one (Outputs)'}</span>
   </div>
   <div class="item col" class:red={dropped > 0 && app.project.showLock}>
     <span class="mono value">{dropped}</span>
@@ -87,7 +87,7 @@
     {#each universes as u (u.id)}
       <span class="pill {universeClass(u)}"><span class="dot"></span>{universeLabel(u)}</span>
     {:else}
-      <span class="caption">no universes</span>
+      <span class="caption" title="Nothing has arrived on Art-Net or sACN yet: check the console's output address, the network cable and the universe numbers (System shows details).">no DMX received</span>
     {/each}
   </div>
   <div class="item col" class:red={app.live.timecode.state === 'lost' && app.project.showLock}>

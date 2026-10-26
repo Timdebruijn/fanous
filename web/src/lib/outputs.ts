@@ -194,6 +194,22 @@ export function nextSliceId(output: OutputConfig): number {
   return Math.max(0, ...output.slices.map((s) => s.id)) + 1;
 }
 
+type SourceRect = { x: number; y: number; w: number; h: number };
+
+/** Slice source (stored 0–1 of the canvas) in canvas pixels, rounded; the canvas defaults to 1920×1080 until known. */
+export function sourcePixels(source: SourceRect, canvas: { width: number; height: number } | undefined): SourceRect {
+  const w = canvas?.width ?? 1920;
+  const h = canvas?.height ?? 1080;
+  return { x: Math.round(source.x * w), y: Math.round(source.y * h), w: Math.round(source.w * w), h: Math.round(source.h * h) };
+}
+
+/** One typed pixel value back to the stored 0–1 fraction (clamped); null for a non-number. */
+export function sourceFromPixels(key: keyof SourceRect, pixels: number, canvas: { width: number; height: number } | undefined): number | null {
+  if (!Number.isFinite(pixels)) return null;
+  const total = key === 'x' || key === 'w' ? (canvas?.width ?? 1920) : (canvas?.height ?? 1080);
+  return clamp01(pixels / total);
+}
+
 /** Nudge in pixels of the output, as a normalized delta. */
 export function nudge(point: MapPoint, dx: number, dy: number, size: { w: number; h: number }): MapPoint {
   return { x: clamp01(point.x + dx / size.w), y: clamp01(point.y + dy / size.h) };
