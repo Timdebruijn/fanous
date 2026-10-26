@@ -10,7 +10,7 @@
   import OutputMapper from '../components/OutputMapper.svelte';
   import Preview from '../components/Preview.svelte';
   import {
-    CANVAS_PRESETS, CANVAS_RATES, canvasSizeError, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, meshIdentity, modeText, nextSliceId, outputSize, statusText,
+    CANVAS_PRESETS, CANVAS_RATES, canvasSizeError, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, meshIdentity, modeText, nextSliceId, outputSize, spreadSources, statusText,
     type MapPoint, type MapperMode, type OutputConfig,
   } from '../lib/outputs';
   import { app, can, cmd, toastUndo } from '../lib/state.svelte';
@@ -99,6 +99,11 @@
     if (!s) return;
     set(`/slices/${sliceIndex}`, { ...s, source: { x: 0, y: 0, w: 1, h: 1 }, dest: UNIT_QUAD, opacity: 1 } as unknown as JSONValue);
     toastUndo(`Slice ${s.id} reset to the whole canvas.`);
+  }
+  function spreadCanvas() {
+    if (!output) return;
+    set('/slices', spreadSources(output.slices, size) as unknown as JSONValue);
+    toastUndo('Canvas spread over the slices, left to right.');
   }
   function removeMask() {
     set(`/slices/${sliceIndex}/mask`, null);
@@ -399,6 +404,7 @@
             {/if}
             <button type="button" class="btn" disabled={locked} onclick={addSlice}>Add slice</button>
             <button type="button" class="btn" disabled={locked} title="Whole canvas on the whole output; the mask stays" onclick={resetSlice}>Reset slice</button>
+            <button type="button" class="btn" disabled={locked || output.slices.length < 2} title="One picture across all slices: each slice gets the next strip of the canvas, left to right, as wide as the slice is on the output" onclick={spreadCanvas}>Spread canvas</button>
             <button type="button" class="btn btn-danger" disabled={locked || output.slices.length <= 1} title={output.slices.length <= 1 ? 'An output needs at least one slice: use Reset slice instead' : undefined} onclick={removeSlice}>Remove slice</button>
           </div>
         {:else}

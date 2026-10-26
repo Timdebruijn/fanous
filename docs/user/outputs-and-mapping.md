@@ -191,7 +191,11 @@ a handle stays on the spot you touch while a warp is active.
   on a stage, the pillars of a facade, a strip next to a screen. **Opacity %**
   per slice; **Add slice**, **Reset slice** (whole canvas on the whole output,
   the mask stays) and **Remove slice** (an output keeps at least one); later
-  slices draw over earlier ones. The warp (corner pin, mesh) applies to the whole output on top.
+  slices draw over earlier ones. **Spread canvas** makes one picture across all
+  slices, for the faces of an object: from left to right on the output, each
+  slice gets the next strip of the canvas, as wide as the slice is on the
+  output (full canvas height). Fine-tune a seam by changing the w of one slice
+  and the x of the next by the same amount. The warp (corner pin, mesh) applies to the whole output on top.
 - **Mask**: a mask hides everything of a slice outside its shape (windows,
   doors, the sky above a building). **Draw mask** and then tap the corners of
   the area that stays visible on the picture, in order around it; **Done**

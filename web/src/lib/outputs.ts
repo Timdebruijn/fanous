@@ -256,6 +256,26 @@ export function sourceFromPixels(key: keyof SourceRect, pixels: number, canvas: 
   return clamp01(pixels / total);
 }
 
+/** One picture across all slices (faces of an object): slices ordered left to right by their centre on the output,
+ *  each gets the next strip of the canvas in proportion to its width on the output (mean of top and bottom edge, in
+ *  output pixels); full canvas height. Returns the slices with new sources, in their original order. */
+export function spreadSources(slices: SliceConfig[], size: { w: number; h: number }): SliceConfig[] {
+  const edge = (a: MapPoint, b: MapPoint) => Math.hypot((b.x - a.x) * size.w, (b.y - a.y) * size.h);
+  const width = (d: MapPoint[]) => (d.length === 4 ? (edge(d[0]!, d[1]!) + edge(d[3]!, d[2]!)) / 2 : 0);
+  const centre = (d: MapPoint[]) => d.reduce((sum, p) => sum + p.x, 0) / Math.max(1, d.length);
+  const order = slices.map((s, i) => ({ i, w: width(s.dest), c: centre(s.dest) })).sort((a, b) => a.c - b.c);
+  const total = order.reduce((sum, o) => sum + o.w, 0);
+  if (total <= 0) return slices;
+  const out = slices.slice();
+  let x = 0;
+  for (const o of order) {
+    const w = o.w / total;
+    out[o.i] = { ...slices[o.i]!, source: { x, y: 0, w, h: 1 } };
+    x += w;
+  }
+  return out;
+}
+
 /** Nudge in pixels of the output, as a normalized delta. */
 export function nudge(point: MapPoint, dx: number, dy: number, size: { w: number; h: number }): MapPoint {
   return { x: clamp01(point.x + dx / size.w), y: clamp01(point.y + dy / size.h) };

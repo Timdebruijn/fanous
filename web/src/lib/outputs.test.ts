@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
-import { canvasSizeError, sourceFromPixels, sourcePixels, blendCurvePath, handles, insertPoint, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
+import { canvasSizeError, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, handles, insertPoint, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
 
 const output: OutputConfig = {
   id: 1,
@@ -30,6 +30,20 @@ describe('outputs helpers', () => {
     expect(outlines(two, 'slices', 0)).toHaveLength(2);
     expect(handles(output, 'mask', 0)).toHaveLength(3);
     expect(handles({ ...output, warp: { ...output.warp, mesh: null } }, 'mesh', 0)).toEqual([]);
+  });
+
+  it('spreads the canvas over the slices left to right, by their width on the output', () => {
+    const quad = (x0: number, x1: number) => [{ x: x0, y: 0 }, { x: x1, y: 0 }, { x: x1, y: 1 }, { x: x0, y: 1 }];
+    const base = output.slices[0]!;
+    // stored right face first: the result follows the position on the output, not the list order
+    const slices = [{ ...base, id: 2, dest: quad(0.6, 1) }, { ...base, id: 1, dest: quad(0, 0.6) }];
+    const spread = spreadSources(slices, { w: 1920, h: 1080 });
+    expect(spread.map((s) => s.id)).toEqual([2, 1]);
+    expect(spread[1]!.source).toEqual({ x: 0, y: 0, w: 0.6, h: 1 });
+    expect(spread[0]!.source.x).toBeCloseTo(0.6);
+    expect(spread[0]!.source.w).toBeCloseTo(0.4);
+    // degenerate slices are left alone
+    expect(spreadSources([{ ...base, dest: [] }], { w: 1920, h: 1080 })[0]!.source).toEqual(base.source);
   });
 
   it('draws mesh rows and columns as outlines', () => {
