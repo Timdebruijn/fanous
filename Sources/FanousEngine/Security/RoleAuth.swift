@@ -20,13 +20,37 @@ public struct MachineSettings: Codable, Sendable, Equatable {
     /// OSC feedback to a fixed host:port for controllers that cannot subscribe (B36); edited in the file, read at start.
     public var oscFeedback: OSCFeedbackTarget?
 
+    /// Fields that could not be read, with the reason; never written back.
+    public private(set) var problems: [String] = []
+
+    enum CodingKeys: String, CodingKey { case passwords, oscFeedback }
+
     public init() {}
 
-    public static func load(from url: URL) -> MachineSettings {
-        guard let data = try? Data(contentsOf: url), let settings = try? JSONDecoder().decode(MachineSettings.self, from: data) else {
+    /// Field by field: a missing or broken field never takes the others with it (a typo in `oscFeedback` must not
+    /// drop the role passwords and open every role).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        do { passwords = try c.decodeIfPresent([String: PasswordRecord].self, forKey: .passwords) ?? [:] } catch { problems.append("passwords: \(error)") }
+        do { oscFeedback = try c.decodeIfPresent(OSCFeedbackTarget.self, forKey: .oscFeedback) } catch { problems.append("oscFeedback: \(error)") }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(passwords, forKey: .passwords)
+        try c.encodeIfPresent(oscFeedback, forKey: .oscFeedback)
+    }
+
+    public static func load(from url: URL, logger: Logger? = nil) -> MachineSettings {
+        guard let data = try? Data(contentsOf: url) else { return MachineSettings() }
+        do {
+            let settings = try JSONDecoder().decode(MachineSettings.self, from: data)
+            for problem in settings.problems { logger?.error("settings.json: field ignored", metadata: ["problem": "\(problem)"]) }
+            return settings
+        } catch {
+            logger?.error("settings.json could not be read; machine settings start empty", metadata: ["error": "\(error)"])
             return MachineSettings()
         }
-        return settings
     }
 
     public func save(to url: URL) throws {
@@ -66,7 +90,7 @@ public final class RoleAuth: @unchecked Sendable {
         self.settingsURL = settingsURL
         self.iterations = iterations
         self.logger = logger
-        state = Mutex(State(settings: settingsURL.map(MachineSettings.load) ?? MachineSettings()))
+        state = Mutex(State(settings: settingsURL.map { MachineSettings.load(from: $0, logger: logger) } ?? MachineSettings()))
         shellToken = shellTokenURL.map { Self.loadOrCreateToken(at: $0, logger: logger) }
     }
 
