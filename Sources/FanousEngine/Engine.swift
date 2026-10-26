@@ -252,7 +252,7 @@ public final class Engine: @unchecked Sendable {
                 let height = max(2, 640 * canvas.height / max(1, canvas.width))
                 return try PreviewStreamer(context: context, width: 640, height: height, fps: min(30, canvas.fps), canvasFPS: canvas.fps, parameters: parameters, logger: logger)
             }
-            // one streamer per target that has subscribers (canvas, output:<id>); the canvas one also serves CITP
+            // one streamer per target that has subscribers (canvas, output:<id>, layer:<n>); the canvas one also serves CITP
             let preview = PreviewHub(canvas: try makePreview(), make: makePreview)
             render.compositor.previewTap = { canvas, commandBuffer, target in preview.tap(canvas: canvas, commandBuffer: commandBuffer, target: target) }
             // no GPU work for a canvas nobody sees: no output window, preview, Syphon client or CITP stream
@@ -260,8 +260,13 @@ public final class Engine: @unchecked Sendable {
             render.compositor.previewWanted = { preview.wantsFrames }
             stateServer.preview = preview
             let compiler = try OutputCompiler(device: context.device)
-            preview.configure = { [weak self] target, streamer in
+            preview.configure = { [weak self, compositor = render.compositor] target, streamer in
                 guard let self else { return false }
+                // layer:<n> (1-based, within the project's layers): that layer alone, drawn after the canvas pass
+                if target.hasPrefix("layer:") {
+                    guard let index = PreviewHub.layerIndex(of: target, layerCount: self.store?.project["layerCount"]?.int ?? 0) else { return false }
+                    return (try? streamer.showLayer(index, of: compositor)) != nil
+                }
                 let outputs = self.store?.project.outputsConfig ?? []
                 guard target.hasPrefix("output:"), let id = Int(target.dropFirst(7)), let output = outputs.first(where: { $0.id == id }) else { return false }
                 return self.previewOutput(output, in: outputs, compiler: compiler, preview: streamer)

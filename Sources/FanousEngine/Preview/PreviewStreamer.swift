@@ -12,8 +12,8 @@ import Metal
 import Synchronization
 import VideoToolbox
 
-/// Canvas preview for browsers (DESIGN.md §11.3, ADR-0014): every N-th compositor tick the canvas is
-/// drawn through the output pass into a small BGRA `CVPixelBuffer` from a Metal-compatible pool (no
+/// Canvas preview for browsers (DESIGN.md §11.3, ADR-0014): every N-th compositor tick the canvas (or one output,
+/// or one layer alone) is drawn through the output pass into a small BGRA `CVPixelBuffer` from a Metal-compatible pool (no
 /// readback), encoded on the preview queue as H.264 (Baseline, no B-frames, 1 s GOP) for WebCodecs, or as
 /// JPEG at 5 fps for clients without WebCodecs. One encoder, shared by every subscriber.
 /// ponytail: one size for all subscribers (the first one's); per-(target,size) encoders when a show needs them.
@@ -29,6 +29,12 @@ public final class PreviewStreamer: @unchecked Sendable {
     public let fps: Double
     /// When set, the preview shows this output (post-warp/blend) instead of the canvas; compiled for the preview size.
     nonisolated(unsafe) public var outputSet: OutputSet?
+    /// Target "layer:<n>": the 0-based layer this preview shows alone (`showLayer`); nil = canvas or output.
+    public private(set) var layer: Int?
+    private weak var layerCompositor: Compositor?
+    private let layerPass = MTLRenderPassDescriptor()
+    private var layerUniforms: MTLBuffer?
+    private var layerRing = 0
     private let parameters: TripleBuffer<ParameterSnapshotSlot>
     private let mappedUniforms: MTLBuffer
     private let context: MetalContext
@@ -97,6 +103,29 @@ public final class PreviewStreamer: @unchecked Sendable {
         if let session { VTCompressionSessionInvalidate(session) }
     }
 
+    /// Shows layer `index` (0-based) alone instead of the canvas: each preview frame `Compositor.drawLayer` renders it
+    /// into a canvas-format texture at the preview size, which then goes through the same downscale and encode as the
+    /// canvas. Called before the streamer is published (the hub's `configure`).
+    public func showLayer(_ index: Int, of compositor: Compositor) throws {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.canvasFormat, width: width, height: height, mipmapped: false)
+        descriptor.usage = [.renderTarget, .shaderRead]
+        descriptor.storageMode = .private
+        guard let texture = context.device.makeTexture(descriptor: descriptor),
+            let uniforms = context.device.makeBuffer(length: Compositor.uniformStride * 6, options: .storageModeShared)
+        else { throw RenderError.pipeline("layer preview texture") }
+        texture.label = "layer preview"
+        layerPass.colorAttachments[0].texture = texture
+        layerPass.colorAttachments[0].loadAction = .clear
+        layerPass.colorAttachments[0].storeAction = .store
+        layerPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        layerUniforms = uniforms
+        layerCompositor = compositor
+        layer = index
+    }
+
+    /// The layer picture of the last preview frame (tests).
+    var layerTexture: MTLTexture? { layerPass.colorAttachments[0].texture }
+
     // MARK: Subscribers
 
     public var hasSubscribers: Bool { subscribers.withLock { !$0.isEmpty } }
@@ -138,6 +167,17 @@ public final class PreviewStreamer: @unchecked Sendable {
         else {
             skipped.wrappingAdd(1, ordering: .relaxed)
             return
+        }
+        var canvas = canvas
+        if let layer {
+            guard let compositor = layerCompositor, let layerUniforms, let layerTexture,
+                compositor.drawLayer(layer, into: layerPass, uniforms: layerUniforms, ring: layerRing, commandBuffer: commandBuffer)
+            else {
+                skipped.wrappingAdd(1, ordering: .relaxed)
+                return
+            }
+            layerRing = (layerRing + 1) % 3
+            canvas = layerTexture
         }
         pass.colorAttachments[0].texture = texture
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else {

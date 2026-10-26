@@ -50,7 +50,7 @@ public final class Compositor: @unchecked Sendable {
     private let outputPass = MTLRenderPassDescriptor()
     private let uniformBuffers: [MTLBuffer]
     private let outputUniformBuffers: [MTLBuffer]
-    private static let uniformStride = 256
+    static let uniformStride = 256
     private let maxLayers: Int
     private var canvasIndex = 0
     private var lastTarget = 0.0
@@ -59,6 +59,7 @@ public final class Compositor: @unchecked Sendable {
     private var drawItems: [DrawItem] = []
     private var drawnItems: [DrawItem] = []
     private var drawnSequence: UInt64 = 0
+    private var drawnTime: Float = 0
     private var canvasValid = false
     private var reuseStreak = 0
     private var drawnGPUErrors = 0
@@ -335,6 +336,7 @@ public final class Compositor: @unchecked Sendable {
             encoder.endEncoding()
             Swift.swap(&drawnItems, &drawItems)
             drawnSequence = snapshot.sequence
+            drawnTime = frame.time
             drawnGPUErrors = gpuErrors.load(ordering: .relaxed)
             canvasValid = true
         }
@@ -583,6 +585,26 @@ public final class Compositor: @unchecked Sendable {
         let distance: Float = 2, near: Float = 0.1
         let projection = simd_float4x4(SIMD4(1 / aspect, 0, 0, 0), SIMD4(0, 1, 0, 0), SIMD4(0, 0, -1 / distance, -1 / distance), SIMD4(0, 0, 1 - near, 1))
         return (projection * translate * rz * ry * rx * scale, quad)
+    }
+
+    // MARK: Layer preview
+
+    /// Draws layer `index` (0-based) alone as the last canvas pass drew it (transform, crop, colour, effects, intensity,
+    /// both quads of a dissolve), with normal blending over black, into `pass` (canvas format, canvas aspect, any size).
+    /// Render thread, after the canvas pass of the tick (`previewTap`); a layer with nothing on the canvas stays black.
+    /// `uniforms` (the caller's) holds 3 × 2 slots of `uniformStride`; `ring` (0…2) picks the pair this call writes.
+    func drawLayer(_ index: Int, into pass: MTLRenderPassDescriptor, uniforms: MTLBuffer, ring: Int, commandBuffer: MTLCommandBuffer) -> Bool {
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { return false }
+        encoder.label = "layer preview"
+        encoder.setFragmentSamplerState(context.linearSampler, index: 0)
+        encoder.setFragmentSamplerState(context.nearestSampler, index: 1)
+        for var item in drawnItems where item.slot / 2 == index {
+            item.p.blendMode = .normal  // multiply or darken over black would show nothing
+            item.slot = ring * 2 + item.slot % 2
+            encode(item, uniforms: uniforms, time: drawnTime, with: encoder)
+        }
+        encoder.endEncoding()
+        return true
     }
 
     // MARK: Secondary displays
