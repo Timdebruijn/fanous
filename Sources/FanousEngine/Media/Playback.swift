@@ -331,9 +331,24 @@ public final class MediaLoader: @unchecked Sendable {
         wake.signal()
     }
 
+    private let reresolve = Atomic<Bool>(false)
+
+    /// B51: the library root changed; every layer on library media opens its folder/file again through `resolver`
+    /// (a file the new root lacks shows "missing"). Generators, scene entries and "none" are left alone.
+    public func reresolveLibrary() {
+        reresolve.store(true, ordering: .relaxed)
+        wake.signal()
+    }
+
     private func loop() {
         while running.load(ordering: .relaxed) {
             _ = wake.wait(timeout: .now() + .milliseconds(100))
+            if reresolve.exchange(false, ordering: .relaxed) {
+                for i in loaded.indices {
+                    let key = MediaKey(packed: loaded[i])
+                    if !key.isNone, key.folder != 0, media[key] == nil { loaded[i] = .max }  // never a packed key: opened again below
+                }
+            }
             for (i, layer) in layers.enumerated() {
                 let retired = layer.retired.withLock { list -> [LayerPlayback] in
                     let copy = list

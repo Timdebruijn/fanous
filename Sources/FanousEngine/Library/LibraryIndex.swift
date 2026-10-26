@@ -63,6 +63,8 @@ public struct LibrarySnapshot: Codable, Sendable, Equatable {
     public var fileCount: Int
     public var invalidCount: Int
 
+    public static let empty = LibrarySnapshot(root: "", rootExists: false, folders: [], scannedAt: 0, fileCount: 0, invalidCount: 0)
+
     /// For clients below operator (B25): no root, and paths relative to it (still unique, so UI keys keep working).
     public func redacted() -> LibrarySnapshot {
         func relative(_ path: String) -> String { path.hasPrefix(root + "/") ? String(path.dropFirst(root.count + 1)) : URL(fileURLWithPath: path).lastPathComponent }
@@ -99,7 +101,7 @@ public final class LibraryIndex: @unchecked Sendable {
     public var thumbnailer: (@Sendable (URL, MediaMetadata, LibraryItem.Kind) -> String?)?
 
     struct State {
-        var snapshot = LibrarySnapshot(root: "", rootExists: false, folders: [], scannedAt: 0, fileCount: 0, invalidCount: 0)
+        var snapshot = LibrarySnapshot.empty
         var byKey: [MediaKey: String] = [:]
         var cache: [String: CacheEntry] = [:]  // key = path|mtime|size
         var pendingProbes: [String] = []
@@ -138,12 +140,35 @@ public final class LibraryIndex: @unchecked Sendable {
         guard running.exchange(false, ordering: .relaxed) else { return }
         probeWake.signal()
         _ = probeExited.wait(timeout: .now() + .seconds(10))
+        probeThread = nil  // its block holds the index: a replaced index (B51) must be freed
         if let stream {
             FSEventStreamStop(stream)
             FSEventStreamInvalidate(stream)
             FSEventStreamRelease(stream)
             self.stream = nil
         }
+    }
+
+    /// B51: an index on another root with this one's cache, thumbnailer and change hook, started. This one stops
+    /// first (FSEvents stream released, probe thread joined), so nothing of the old root fires afterwards. The cache
+    /// is keyed by absolute path and shared, so switching back to a root probed before needs no new probes.
+    public func replaced(root: URL) -> LibraryIndex {
+        stop()
+        let next = LibraryIndex(root: root, cacheDirectory: cacheDirectory, logger: logger)
+        next.thumbnailer = thumbnailer
+        next.onChange = onChange
+        next.start()
+        return next
+    }
+
+    /// Why `path` cannot be the library root (B51); nil when it is an existing, readable folder.
+    public static func rootProblem(_ path: String) -> String? {
+        var isDirectory: ObjCBool = false
+        guard path.hasPrefix("/") else { return "the library root must be an absolute path" }
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else { return "\(path) does not exist" }
+        guard isDirectory.boolValue else { return "\(path) is not a folder" }
+        guard (try? FileManager.default.contentsOfDirectory(atPath: path)) != nil else { return "\(path) cannot be read" }
+        return nil
     }
 
     /// Full rescan of the root (fast: directory listings only; probes run on the library thread afterwards).
@@ -420,7 +445,7 @@ public final class LibraryIndex: @unchecked Sendable {
             rescanPending = true
             eventQueue.asyncAfter(deadline: .now() + 0.5) { [self] in
                 rescanPending = false
-                rescan()
+                if running.load(ordering: .relaxed) { rescan() }  // never after stop(): the root may have been replaced
             }
         }
     }
