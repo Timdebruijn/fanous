@@ -56,9 +56,9 @@ public struct SACNUniverseMerger: Sendable {
     }
 
     @discardableResult
-    public mutating func expire(at time: TimeInterval, timeout: TimeInterval = Self.timeout) -> Bool {
+    public mutating func expire(at time: TimeInterval) -> Bool {
         let before = sources.count
-        sources = sources.filter { time - $0.value.lastSeen <= timeout }
+        sources = sources.filter { time - $0.value.lastSeen <= Self.timeout }
         return sources.count != before
     }
 
@@ -215,7 +215,7 @@ public struct UniverseTable: Sendable {
         let winner = s.listens(to: .sacn) ? entry.sacn.winner : nil
         var useSACN = winner != nil
         var merge = false
-        if artnet, let winner, time - entry.artnet.lastSeen <= s.lossTimeout {
+        if artnet, let winner, time - entry.artnet.lastSeen <= SACNUniverseMerger.timeout {
             if winner.priority == UniverseSettings.artnetPriority {
                 merge = s.priorityMode == .htp
                 useSACN = winner.lastSeen >= entry.artnet.lastSeen
@@ -239,11 +239,11 @@ public struct UniverseTable: Sendable {
         entries[id] = entry
     }
 
-    /// sACN sources silent for longer than their universe's loss timeout are dropped.
+    /// sACN sources silent for 2.5 s are dropped (the E1.31 source timeout, so a backup console takes over on time);
+    /// a universe's `lossTimeout` decides only when the universe counts as lost.
     public mutating func expire(at time: TimeInterval) {
         for id in entries.keys {
-            let timeout = settings(for: id).lossTimeout
-            entries[id]?.sacn.expire(at: time, timeout: timeout)
+            entries[id]?.sacn.expire(at: time)
             refresh(id, at: time)
         }
     }

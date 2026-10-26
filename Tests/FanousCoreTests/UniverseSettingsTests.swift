@@ -123,18 +123,25 @@ import Testing
         #expect(merger.slots(.htp)?.prefix(3) == [1, 1, 1])  // only the highest priority merges
     }
 
-    @Test func lossTimeoutPerUniverse() {
+    /// The loss timeout decides when a universe counts as lost; the sACN source timeout stays 2.5 s (E1.31), so a
+    /// backup console at a lower priority takes over on time whatever the loss timeout.
+    @Test func lossTimeoutPerUniverseSourceTimeoutFixed() {
         var table = UniverseTable()
         var s = UniverseSettings(for: Self.s1)
         s.lossTimeout = 10
         table.configure([Self.s1: s], at: 0)
-        _ = table.apply(sacn: Self.sacn([1]), at: 0.5)
+        _ = table.apply(sacn: Self.sacn([1], priority: 150), at: 0.5)
+        _ = table.apply(sacn: Self.sacn([2], priority: 100, cid: Self.cidB), at: 0.5)
         _ = table.apply(sacn: Self.sacn([1], universe: 2), at: 0.5)
-        table.expire(at: 5)
-        #expect(table.status(for: Self.s1, at: 5).active && table.slots(for: Self.s1) != nil)
-        #expect(!table.status(for: UniverseID(.sacn, 2), at: 5).active && table.slots(for: UniverseID(.sacn, 2)) == nil)
-        table.expire(at: 11)
-        #expect(!table.status(for: Self.s1, at: 11).active && table.slots(for: Self.s1) == nil)
+        _ = table.apply(sacn: Self.sacn([2], priority: 100, cid: Self.cidB, sequence: 2), at: 4)  // the backup keeps sending
+        table.expire(at: 4)
+        #expect(table.slots(for: Self.s1)?.first == 2)  // primary dropped after 2.5 s
+        #expect(table.status(for: Self.s1, at: 4).active)
+        table.expire(at: 8)
+        #expect(table.status(for: Self.s1, at: 8).active && table.slots(for: Self.s1) == nil)  // no source, not lost yet
+        #expect(!table.status(for: UniverseID(.sacn, 2), at: 5).active)
+        #expect(!table.status(for: Self.s1, at: 14.5).active)
+        #expect(UniverseSettings.lossTimeoutRange == 1...60)
     }
 
     @Test func resolverFallsBackToInternalWithoutDMX() {

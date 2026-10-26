@@ -18,7 +18,8 @@ public struct UniverseSettings: Equatable, Sendable {
 
     public static let anyInterface = "any"
     public static let defaultLossTimeout: TimeInterval = 2.5
-    public static let lossTimeoutRange: ClosedRange<TimeInterval> = 0.5...60
+    /// Above the 0.8–1 s DMX keep-alive interval of consoles that send only on change.
+    public static let lossTimeoutRange: ClosedRange<TimeInterval> = 1...60
     /// Art-Net has no priority: where both transports feed a universe it competes as an sACN source at the default priority.
     public static let artnetPriority: UInt8 = 100
 
