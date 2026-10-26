@@ -9,7 +9,6 @@ import Synchronization
 
 public enum TranscodeError: Error, CustomStringConvertible {
     case noVideoTrack(URL)
-    case rotatedSource
     case hapDimensions(Int, Int)
     case reader(String)
     case noFrames
@@ -18,7 +17,6 @@ public enum TranscodeError: Error, CustomStringConvertible {
     public var description: String {
         switch self {
         case .noVideoTrack(let url): "\(url.lastPathComponent) has no video track"
-        case .rotatedSource: "the source is rotated or flipped (preferredTransform); export it upright first"
         case .hapDimensions(let w, let h): "HAP needs a width and height that are multiples of 4, the source is \(w)×\(h)"
         case .reader(let message): "cannot read the source: \(message)"
         case .noFrames: "the source has no decodable video frames"
@@ -129,12 +127,18 @@ public final class Transcoder: @unchecked Sendable {
     public func run(progress: ((_ framesDone: Int, _ framesTotal: Int) -> Void)? = nil) throws -> Summary {
         try gate.throwIfCancelled()
         let probe = try Self.blocking { [source] in try await Probe.load(source) }
-        guard probe.upright else { throw TranscodeError.rotatedSource }
         let requested = Self.effectiveCodec(codec, sourceHasAlpha: probe.hasAlpha)
 
         let reader = try AVAssetReader(asset: probe.asset)
-        let videoOutput = AVAssetReaderTrackOutput(
-            track: probe.video, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        let bgra = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+        let videoOutput: AVAssetReaderOutput
+        if let composition = probe.upright {  // phone footage: the reader bakes the rotation/flip in, the output has the upright (swapped) size
+            let output = AVAssetReaderVideoCompositionOutput(videoTracks: [probe.video], videoSettings: bgra)
+            output.videoComposition = composition
+            videoOutput = output
+        } else {
+            videoOutput = AVAssetReaderTrackOutput(track: probe.video, outputSettings: bgra)
+        }
         videoOutput.alwaysCopiesSampleData = false
         guard reader.canAdd(videoOutput) else { throw TranscodeError.reader("cannot read the video track") }
         reader.add(videoOutput)
@@ -233,7 +237,8 @@ public final class Transcoder: @unchecked Sendable {
         let frameDuration: CMTime
         let duration: CMTime
         let hasAlpha: Bool
-        let upright: Bool
+        /// Non-nil when the track carries a rotation/flip (`preferredTransform`): applies it and sizes the render to match.
+        let upright: AVVideoComposition?
         let codec: FourCharCode
 
         static func load(_ url: URL) async throws -> Probe {
@@ -253,9 +258,10 @@ public final class Transcoder: @unchecked Sendable {
                 let subtype = CMFormatDescriptionGetMediaSubType(description)
                 return (flag as? Bool) == true || [makeFourCC("Hap5"), makeFourCC("HapM"), makeFourCC("HapA")].contains(subtype)
             }
+            let composition = transform.isIdentity ? nil : try await AVMutableVideoComposition.videoComposition(withPropertiesOf: asset)
             return Probe(
                 asset: asset, video: video, audio: audio, frameDuration: frameDuration, duration: range.duration, hasAlpha: alpha,
-                upright: transform.a == 1 && transform.b == 0 && transform.c == 0 && transform.d == 1,
+                upright: composition,
                 codec: formats.first.map(CMFormatDescriptionGetMediaSubType) ?? 0)
         }
     }

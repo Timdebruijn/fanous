@@ -424,7 +424,7 @@ import UniformTypeIdentifiers
         }
     }
 
-    @Test func rotatedSourceIsRejectedNotWrittenSideways() async throws {
+    @Test func rotatedSourceIsBakedUpright() async throws {
         let directory = try Self.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "rotated.mp4")
@@ -433,12 +433,27 @@ import UniformTypeIdentifiers
         queue.start()
         defer { queue.stop() }
         let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_rotated.mov"), kind: .transcode(codec: .proRes422HQ)))
-        guard case .failed(let message) = await Self.wait(for: job.id, in: queue) else {
-            Issue.record("expected a failure")
-            return
-        }
-        #expect(message.contains("rotated"))
-        #expect(!FileManager.default.fileExists(atPath: job.destination.path))
+        #expect(await Self.wait(for: job.id, in: queue) == .done)
+
+        // 320×176 landscape pixels + 90° clockwise tag -> 176×320 upright, no transform left on the output.
+        let asset = AVURLAsset(url: job.destination)
+        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
+        let size = try await track.load(.naturalSize)
+        #expect(size.width == 176 && size.height == 320)
+        #expect(try await track.load(.preferredTransform).isIdentity)
+        // Frame 0: the source's top rows are the black counter, its left edge the white bar. Rotated clockwise, the black lands on the right edge and the bar on the left.
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        reader.add(output)
+        reader.startReading()
+        let buffer = try #require(output.copyNextSampleBuffer().flatMap(CMSampleBufferGetImageBuffer))
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
+        let stride = CVPixelBufferGetBytesPerRow(buffer)
+        func pixel(_ x: Int, _ y: Int) -> (r: UInt8, g: UInt8) { (base[y * stride + x * 4 + 2], base[y * stride + x * 4 + 1]) }
+        #expect(pixel(4, 4).r > 200 && pixel(4, 315).r > 200)
+        #expect(pixel(171, 4).r < 40 && pixel(171, 315).r < 40)
     }
 
     @Test func cancelledSequenceLeavesNothing() async throws {

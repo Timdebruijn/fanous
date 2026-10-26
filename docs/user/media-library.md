@@ -94,8 +94,9 @@ import.
   `_incoming/` is deleted afterwards.
 - **HAP files cannot be imported or transcoded** (the macOS decoder cannot read
   them; B20). Copy HAP files into the folder with Finder under the right name.
-- Phone footage with a rotation flag is refused (B18). Variable-frame-rate
-  sources can drift against their audio (B19).
+- Phone footage with a rotation flag (portrait video) is imported upright: the
+  rotation is baked in and the file gets the swapped width and height.
+  Variable-frame-rate sources can drift against their audio (B19).
 
 ## Transcode a file that is already in the library
 

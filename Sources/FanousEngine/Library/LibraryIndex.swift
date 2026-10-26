@@ -314,9 +314,10 @@ public final class LibraryIndex: @unchecked Sendable {
                 var metadata = MediaMetadata()
                 metadata.duration = duration
                 if let video = try await asset.loadTracks(withMediaType: .video).first {
-                    let (descriptions, frameRate, size) = try await video.load(.formatDescriptions, .nominalFrameRate, .naturalSize)
-                    metadata.width = Int(size.width)
-                    metadata.height = Int(size.height)
+                    let (descriptions, frameRate, size, transform) = try await video.load(.formatDescriptions, .nominalFrameRate, .naturalSize, .preferredTransform)
+                    let upright = CGRect(origin: .zero, size: size).applying(transform).size  // rotated phone footage: report the displayed size
+                    metadata.width = Int(upright.width.rounded())
+                    metadata.height = Int(upright.height.rounded())
                     metadata.frameRate = Double(frameRate)
                     metadata.frameCount = Int((duration * Double(frameRate)).rounded())
                     if let description = descriptions.first {
