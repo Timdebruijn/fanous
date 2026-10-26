@@ -123,8 +123,7 @@ Building for development, protocols and endpoints: [`docs/DEVELOPMENT.md`](docs/
 ## What it does not do yet
 
 - **No download.** Source only; a signed, notarized app comes later.
-- **Not tested with real consoles, LTC/MTC hardware, iPad Safari or display
-  hot-plug.** Built and tested against loopback, generated signals and captured packets.
+- **Not tested with real consoles, LTC/MTC hardware or display hot-plug.** Built and tested against loopback, generated signals and captured packets.
 - **One machine measured** (M1 Pro). Other Apple Silicon chips are expectations.
 - **Apple Silicon only:** no Intel, Windows or Linux.
 - **4K60 is about 6 ProRes layers;** heavy blur and edge effects fit on 2–3 layers.

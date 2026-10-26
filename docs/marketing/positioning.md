@@ -62,7 +62,7 @@ not yet verified with real consoles or hardware.
 | Test patterns that follow the warp, built-in generators (test card, motion test, clock) selectable from the console | V | CHANGELOG |
 | LTC/MTC timecode chase per layer (±1 frame on generated LTC), cue list with fades, triggers and follows | M / V, D (real hardware) | ShowControlTests, B44 |
 | Show mode + readiness check (power, thermal, disk, universes, outputs, Spotlight, updates, Time Machine), show lock | V | DESIGN §14, show-day checklist |
-| Engine runs as a background service that survives the app quitting and restarts after a crash; web UI for any number of browsers and iPads with roles and passwords | M / V, D (iPad Safari, clean install) | benchmarks Phase 5, B46, B50 |
+| Engine runs as a background service that survives the app quitting and restarts after a crash; web UI for any number of browsers and iPads with roles and passwords | M / V, D (clean install); iPad Safari used by the owner 2026-10-26 | benchmarks Phase 5, B46, B50 |
 | UI made for the dark and for haste: legible type, 44 px targets, undo toasts, plain wording | V | CHANGELOG |
 | No dongle, no licence server, no account; GPL-3.0 source; offline by design | V | LICENSE, DESIGN |
 | Published benchmarks with a zero-dropped-frame pass criterion | M | docs/benchmarks |
@@ -87,7 +87,7 @@ not yet verified with real consoles or hardware.
 
 - Release candidate, **source only**: no notarized download yet (B50).
 - Not yet tested with real consoles (GDTF import, CITP thumbnails) (B7, B40),
-  real LTC/MTC hardware (B44), iPad Safari (B46), second-display hot-plug (B34).
+  real LTC/MTC hardware (B44), second-display hot-plug (B34).
 - Measured on one machine (MacBook Pro M1 Pro); other chips are expectations (B49).
 - Apple Silicon with a ProRes engine only; no Windows, Linux, Intel or base M1.
 - 4K60: about 6 ProRes layers; heavy blur/edge effects on 2–3 layers only.

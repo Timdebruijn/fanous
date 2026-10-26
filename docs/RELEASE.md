@@ -79,7 +79,7 @@ On a fresh macOS user account (or a fresh Mac) with the notarized dmg:
 - [ ] `kill -9` of the engine: outputs back within 3 s (`scripts/soak.sh 0.1`)
 - [ ] an iPad on the same network reaches `https://<mac>.local:8443`, accepts
       the certificate once (fingerprint under System › Network), WebCodecs
-      preview plays (B46)
+      preview plays (B46: done once on 2026-10-26, repeat per release)
 - [ ] Quit the app: the engine keeps running; `Engine › Stop Engine…` removes
       the service; the next launch installs it again
 

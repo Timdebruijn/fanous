@@ -44,7 +44,7 @@ It warns again if the certificate was reset or you use a different device or
 browser. If the page does not load at all, check the address (see
 getting-started.md) and the firewall. If the preview is a still image that
 updates five times a second, the browser used the JPEG fallback instead of
-H.264. iPad Safari has not been tested yet (B46).
+H.264.
 
 ## A DMX universe is silent
 

@@ -103,8 +103,8 @@ shows a certificate warning once:
    can select the text.)
 
 The preview on the Layers screen uses H.264 through WebCodecs. If the browser
-cannot decode it, the preview falls back to JPEG at 5 frames per second. iPad
-Safari has not been tested yet (B46).
+cannot decode it, the preview falls back to JPEG at 5 frames per second. This
+works on an iPad in Safari.
 
 If you ever reset the certificate (`fanousd reset-tls`), the fingerprint
 changes and every browser warns again.
