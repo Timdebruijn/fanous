@@ -258,7 +258,12 @@ public final class Transcoder: @unchecked Sendable {
                 let subtype = CMFormatDescriptionGetMediaSubType(description)
                 return (flag as? Bool) == true || [makeFourCC("Hap5"), makeFourCC("HapM"), makeFourCC("HapA")].contains(subtype)
             }
-            let composition = transform.isIdentity ? nil : try await AVMutableVideoComposition.videoComposition(withPropertiesOf: asset)
+            // ponytail: the composition renders over opaque black, so a rotated source with alpha keeps the alpha codec but loses the alpha channel.
+            var composition: AVMutableVideoComposition?
+            if transform.rotatesOrFlips {
+                composition = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: asset)
+                composition?.frameDuration = frameDuration  // match the identity path: same frame count and pacing
+            }
             return Probe(
                 asset: asset, video: video, audio: audio, frameDuration: frameDuration, duration: range.duration, hasAlpha: alpha,
                 upright: composition,

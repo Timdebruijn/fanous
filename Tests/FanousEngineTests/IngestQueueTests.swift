@@ -435,6 +435,11 @@ import UniformTypeIdentifiers
         let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_rotated.mov"), kind: .transcode(codec: .proRes422HQ)))
         #expect(await Self.wait(for: job.id, in: queue) == .done)
 
+        // The library flags the source (upright size, needs ingest) and the output is plain.
+        let before = try LibraryIndex.probeMovie(source), after = try LibraryIndex.probeMovie(job.destination)
+        #expect(before.rotated == true && before.width == 176 && before.height == 320)
+        #expect(after.rotated == false && after.width == 176 && after.height == 320 && after.frameCount == 25)
+
         // 320×176 landscape pixels + 90° clockwise tag -> 176×320 upright, no transform left on the output.
         let asset = AVURLAsset(url: job.destination)
         let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
@@ -446,7 +451,11 @@ import UniformTypeIdentifiers
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
         reader.add(output)
         reader.startReading()
-        let buffer = try #require(output.copyNextSampleBuffer().flatMap(CMSampleBufferGetImageBuffer))
+        let first = try #require(output.copyNextSampleBuffer())
+        var count = 1
+        while output.copyNextSampleBuffer() != nil { count += 1 }
+        #expect(count == 25)
+        let buffer = try #require(CMSampleBufferGetImageBuffer(first))
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
         let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
