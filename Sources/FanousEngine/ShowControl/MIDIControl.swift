@@ -402,7 +402,10 @@ public final class MIDIInput: @unchecked Sendable {
         }
     }
 
-    public func start() {
+    public func start() { queue.async { [self] in open() } }
+
+    /// On `queue`, like everything that touches the client, the port and the source names.
+    private func open() {
         let created = MIDIClientCreateWithBlock("Fanous MIDI" as CFString, &client) { [weak self] notification in
             guard notification.pointee.messageID == .msgSetupChanged, let self else { return }
             self.queue.async { self.connect() }
@@ -428,7 +431,7 @@ public final class MIDIInput: @unchecked Sendable {
             logger.error("MIDI input: cannot create the input port", metadata: ["status": "\(made)"])
             return
         }
-        queue.async { [self] in connect() }
+        connect()
     }
 
     /// On `queue`: every source matching the setting; the source's unique id rides along as the connection refCon.
