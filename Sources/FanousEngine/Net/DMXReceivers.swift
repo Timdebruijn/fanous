@@ -197,9 +197,11 @@ public final class OSCReceiver: @unchecked Sendable {
     }
 
     private static func source(_ connection: NWConnection, reply: @escaping @Sendable ([UInt8]) -> Void) -> OSCSource {
-        var port: UInt16 = 0
-        if case .hostPort(_, let p) = connection.endpoint { port = p.rawValue }
-        return OSCSource(host: ArtNetReceiver.host(of: connection.endpoint), port: port, reply: reply)
+        // the IPv6 scope stays (fe80::…%en0): feedback connections to a link-local host need it
+        guard case .hostPort(let host, let port) = connection.endpoint else {
+            return OSCSource(host: "\(connection.endpoint)", port: 0, reply: reply)
+        }
+        return OSCSource(host: "\(host)", port: port.rawValue, reply: reply)
     }
 
     private func handle(_ bytes: [UInt8], from source: OSCSource) {

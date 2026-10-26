@@ -40,6 +40,10 @@ public final class Engine: @unchecked Sendable {
     private var sacn: SACNReceiver?
     private var osc: OSCReceiver?
     private var oscFeedback: OSCFeedbackServer?
+    /// OSC feedback reads these instead of the project document (control queue) every 50 ms; set on project changes.
+    private let oscProjectFacts = Mutex((showLock: false, timecodeEnabled: false))
+    /// Frames and missed frames per second from the metric totals, sampled once a second (no percentile sort).
+    private let oscFrameRate = Mutex((at: 0.0, frames: 0, missed: 0, fps: Float(0), missedLast: Int32(0)))
     private var render: RenderService?
     private var library: LibraryIndex?
     private var ingest: IngestQueue?
@@ -170,9 +174,9 @@ public final class Engine: @unchecked Sendable {
         try artnet.start()
         let sacn = SACNReceiver(store: dmx, logger: logger)
         try sacn.start(universes: Self.sacnUniverses(patch))
-        let oscFeedback = OSCFeedbackServer(fixed: MachineSettings.load(from: AppPaths.settingsFile).oscFeedback, logger: logger) { [weak self] in
-            self?.oscFeedbackState() ?? [:]
-        }
+        let oscFeedback = OSCFeedbackServer(
+            fixed: MachineSettings.load(from: AppPaths.settingsFile, logger: logger).oscFeedback, logger: logger,
+            fixtures: { dmx.resolvedRaw() }, engine: { [weak self] in self?.oscFeedbackState() ?? [:] })
         self.oscFeedback = oscFeedback
         let osc = OSCReceiver(store: dmx, logger: logger, feedback: oscFeedback)
         try osc.start()
@@ -408,6 +412,8 @@ public final class Engine: @unchecked Sendable {
         stateServer.onDMXActive = { [weak self] active in self?.setDMXStream(active: active) }
         self.stateServer = stateServer
         startFeeds()
+        oscFacts(from: store.project)
+        oscFeedback.start()  // the fixed target is notified once everything it reads exists
 
         let startedAt = self.startedAt
         let webRoot = options.webRoot
@@ -606,11 +612,17 @@ public final class Engine: @unchecked Sendable {
         }
     }
 
-    /// Every readable OSC address (B36, docs/user/show-control.md). Nothing that names a path (library root, files).
+    private func oscFacts(from project: JSONValue) {
+        let facts = (showLock: project["showLock"]?.bool ?? false, timecodeEnabled: ShowCommands.timecodeSettings(from: project).enabled != false)
+        oscProjectFacts.withLock { $0 = facts }
+    }
+
+    /// The readable OSC addresses besides fixture parameters (B36, docs/user/show-control.md), from cached copies
+    /// only: no project document, no metric percentiles. Nothing that names a path (library root, files).
     private func oscFeedbackState() -> OSCFeedback.State {
-        var state = dmx?.oscFeedbackValues() ?? [:]
+        var state: OSCFeedback.State = [:]
         let p = OSCAddressMap.prefix
-        let project = store?.project ?? .null
+        let facts = oscProjectFacts.withLock { $0 }
         let flag = { (on: Bool) in [OSCArgument.int32(on ? 1 : 0)] }
         let cue = cues?.status.withLock { $0 }
         state[p + "/cue/current"] = [.float32(cue?.current.map { Float($0) } ?? -1)]
@@ -620,20 +632,31 @@ public final class Engine: @unchecked Sendable {
         state[p + "/cue/fading"] = flag(cue?.fading ?? false)
         state[p + "/cue/count"] = [.int32(Int32(cue?.count ?? 0))]
         state[p + "/show/mode"] = flag(showMode.isOn)
-        state[p + "/show/lock"] = flag(project["showLock"]?.bool ?? false)
+        state[p + "/show/lock"] = flag(facts.showLock)
         state[p + "/show/ready"] = flag(!readiness.withLock { $0.items.contains { $0.blocks } })
         let tc = timecodeClock.current()
-        state[p + "/timecode/enable"] = flag(ShowCommands.timecodeSettings(from: project).enabled != false)
+        state[p + "/timecode/enable"] = flag(facts.timecodeEnabled)
         state[p + "/timecode/state"] = [.string(tc.state.rawValue)]
         state[p + "/timecode/value"] = [.string(tc.state == .off ? "--:--:--:--" : tc.timecode.description)]
         for output in outputStatus.withLock({ $0 }) {
             state[p + "/output/\(output.id)/state"] = [.string(output.state.rawValue)]
             state[p + "/output/\(output.id)/bound"] = flag(output.state == .bound)
         }
-        let summary = metrics.summary(seconds: 1, now: CACurrentMediaTime())
+        let now = CACurrentMediaTime()
+        let frames = metrics.totalFrames.load(ordering: .relaxed), missed = metrics.totalMissed.load(ordering: .relaxed)
+        let rate = oscFrameRate.withLock { r in
+            if now - r.at >= 1 {
+                if r.at > 0 {
+                    r.fps = Float(Double(frames - r.frames) / (now - r.at))
+                    r.missedLast = Int32(clamping: missed - r.missed)
+                }
+                r = (now, frames, missed, r.fps, r.missedLast)
+            }
+            return r
+        }
         state[p + "/engine/version"] = [.string(FanousVersion.string)]
-        state[p + "/engine/fps"] = [.float32(Float(Double(summary.frames) / max(summary.seconds, 0.001)))]
-        state[p + "/engine/missed"] = [.int32(Int32(clamping: summary.missed))]
+        state[p + "/engine/fps"] = [.float32(rate.fps)]
+        state[p + "/engine/missed"] = [.int32(rate.missedLast)]
         return state
     }
 
@@ -935,6 +958,7 @@ public final class Engine: @unchecked Sendable {
     static func sacnUniverses(_ patch: Patch) -> [Int] { patch.universes.filter { $0.transport == .sacn }.map(\.number) }
 
     private func projectChanged(_ document: JSONValue) {
+        oscFacts(from: document)
         if let dmx, let patch = ProjectDocument.effectivePatch(from: document), patch != dmx.currentPatch {
             dmx.setPatch(patch)
             sacn?.update(universes: Self.sacnUniverses(patch))
