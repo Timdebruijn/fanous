@@ -236,3 +236,15 @@ export function thumbnailIndex(library: LibrarySnapshot | null): Map<string, str
 export function thumbnailFor(index: Map<string, string>, layer: LayerStatus | undefined): string | null {
   return layer ? (index.get(`${layer.folder}/${layer.file}`) ?? null) : null;
 }
+
+/** What the Layers screen preview shows: the whole canvas or the selected layer alone. */
+export type PreviewSource = 'canvas' | 'layer';
+
+/**
+ * Preview target and caption label for the Layers screen. "This layer" follows the selected layer (null = Master or an
+ * output picked in the strips); without one it falls back to the canvas and says so.
+ */
+export function layerPreview(source: PreviewSource, selected: number | null): { target: string; label: string } {
+  if (source === 'layer' && selected !== null) return { target: `layer:${selected}`, label: `Layer ${selected}` };
+  return { target: 'canvas', label: source === 'layer' ? 'Canvas (no layer selected)' : 'Canvas' };
+}

@@ -7,7 +7,8 @@
 
   // Canvas (or output) preview (DESIGN.md §11.3): WebCodecs H.264 when the browser decodes it, JPEG at 5 fps otherwise.
   // aspect: CSS aspect-ratio of the picture; an output preview uses the output's own shape (the stream itself is 16:9)
-  let { target = 'canvas', aspect = '16 / 9' }: { target?: string; aspect?: string } = $props();
+  // label: what is shown, appended to the caption ("Layer 3"); none = the caption names no source
+  let { target = 'canvas', aspect = '16 / 9', label = '' }: { target?: string; aspect?: string; label?: string } = $props();
   let canvas: HTMLCanvasElement | undefined = $state();
   let mode = $state<'connecting' | 'avc' | 'jpeg' | 'off'>('connecting');
   let detail = $state('');
@@ -155,9 +156,9 @@
 </script>
 
 <figure class="preview">
-  <canvas bind:this={canvas} width="640" height="360" aria-label="Canvas preview" style:aspect-ratio={aspect}></canvas>
+  <canvas bind:this={canvas} width="640" height="360" aria-label={`${label || 'Canvas'} preview`} style:aspect-ratio={aspect}></canvas>
   <figcaption class="caption">
-    {#if mode === 'avc'}H.264 · {detail}{:else if mode === 'jpeg'}JPEG 5 fps · {detail}{:else if mode === 'off'}no preview · {detail}{:else}connecting…{/if}
+    {#if mode === 'avc'}H.264 · {detail}{:else if mode === 'jpeg'}JPEG 5 fps · {detail}{:else if mode === 'off'}no preview · {detail}{:else}connecting…{/if}{#if label} · {label}{/if}
     {#if stalled}<span class="stalled"> · no new frames</span>{/if}
   </figcaption>
 </figure>
