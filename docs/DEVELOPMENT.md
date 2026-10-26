@@ -20,6 +20,34 @@ swift run FanousShell          # native shell; starts fanousd as a child in deve
 scripts/bundle.sh                # dist/Fanous.app (ad-hoc signed; CODESIGN_IDENTITY=… for Developer ID)
 ```
 
+An isolated engine (tests, a second engine next to a running one):
+`FANOUS_HOME=DIR` puts everything the engine keeps under `DIR` instead of the
+home directory (`DIR/Library/Application Support/Fanous`, `DIR/Library/Logs/Fanous`,
+the TLS identity, the cache and the default library `DIR/Movies/Fanous Library`),
+and `--no-network` leaves out Art-Net (6454), sACN (5568), OSC (8000), CITP and
+Bonjour, so only the HTTPS port is bound:
+
+```bash
+FANOUS_HOME=$(mktemp -d) .build/debug/fanousd --foreground --no-network --port 18443
+```
+
+Browser end-to-end tests (`web/e2e/`, Playwright with Chromium) run the built
+UI against such an engine, one engine per test on a free port with a fresh
+temporary `FANOUS_HOME`, opened as the shell does (`?token=` from that home, so
+programmer). A page error, console error, refused command or refused stream
+fails the test. They need `.build/debug/fanousd` and `web/dist` (or
+`FANOUSD=/path/to/fanousd`):
+
+```bash
+swift build
+cd web && npm run build
+npx playwright install chromium   # once
+npm run e2e                       # npx playwright test --headed / --ui to watch
+```
+
+CI runs them in the `e2e` job on macOS; on a failure the traces and engine
+logs are uploaded as the `e2e-results` artifact.
+
 Protocol fixtures: `scripts/capture-dmx.py artnet|sacn|osc <name>` records
 real console packets into `Tests/Fixtures/captures/` (stop `fanousd` first;
 see the README there). `fanousd channel-map` prints the DMX channel map,
