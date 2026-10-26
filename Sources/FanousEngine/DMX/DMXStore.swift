@@ -35,7 +35,7 @@ public struct LiveSnapshot: Encodable, Sendable {
     public var universes: [UniverseInfo]
     public var fixtures: [String: [ResolvedParameterInfo]]
     public var policies: [String: String]
-    /// Internal (cue/OSC/UI) values per fixture, including those the policy currently ignores.
+    /// Internal (cue/OSC/UI/MIDI) values per fixture, including those the policy currently ignores.
     public var internalValues: [String: [InternalValueInfo]]
     /// Seconds until the UI values of a fixture are released, for fixtures whose console is being received (B27).
     public var uiExpiresIn: [String: Double]
@@ -233,6 +233,20 @@ public final class DMXStore: @unchecked Sendable {
     /// A value from the UI (`fixture.set`): the `ui` internal source.
     public func setUI(_ fixture: FixtureRef, _ parameter: ParameterID, raw: UInt16) {
         queue.async { [self] in applyUI(fixture, parameter, raw: raw, at: Self.now) }
+    }
+
+    /// A value from the MIDI map (B36): the `midi` internal source.
+    public func setMIDI(_ fixture: FixtureRef, _ parameter: ParameterID, raw: UInt16) {
+        queue.async { [self] in
+            guard resolvers[fixture] != nil else { return }
+            resolvers[fixture]?.setInternal(parameter, raw: raw, source: .midi, at: Self.now)
+            publish(receivedAt: 0)
+        }
+    }
+
+    /// The value a parameter shows now (MIDI pickup); nil when the fixture is not patched.
+    public func resolvedRaw(_ fixture: FixtureRef, _ parameter: ParameterID) -> UInt16? {
+        queue.sync { resolvers[fixture]?.resolved(parameter).raw }
     }
 
     /// `fixture.keep`: restart the expiry clock of a fixture's UI values.
