@@ -1014,6 +1014,27 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   current frame to 160 px wide every 250 ms; JPEG on the preview queue;
   broadcast on stream kind 2 to subscribed clients. The same frames feed
   CITP/MSEX streaming (§16.1).
+- **As built (layer target, 2026-10-26):** `sub` with `target: "layer:<n>"`
+  (1-based, 1…project `layerCount`, otherwise `badTarget`) gets its own
+  streamer from `PreviewHub` like `output:<id>`. Each preview frame (the
+  streamer's N-th tick, only while it has subscribers) `Compositor.drawLayer`
+  re-draws that layer's draw items of the canvas pass just completed (same
+  layer shader and uniforms, one quad, two during a dissolve, blend forced to
+  Normal) over black into a preview-sized `rgba16Float` texture owned by the
+  streamer, on the tick's command buffer; that texture then takes the canvas
+  path (downscale into the pooled pixel buffer, H.264/JPEG). Extra cost per
+  subscribed layer target: one 640×360 render pass with one or two quads
+  every second tick at 60 fps, plus its own encoder. A layer with nothing on
+  the canvas (no media, intensity 0, index beyond the render layers after the
+  layer count shrank) is black; a canvas change (B31) rebuilds the streamer
+  at the new size through `configure`, and until then a streamer whose
+  aspect no longer matches the canvas sends no frames (the last one stays).
+  The draw items are always this tick's selection (`drawItems` on a
+  canvas-reuse tick), so their ring frames are protected exactly as for the
+  canvas pass. The browser stops a subscription that resolves after the
+  target changed again (`latestOnly`). The Layers screen toggles Canvas /
+  This layer (per browser, `localStorage`). B29 thumbnails can reuse
+  `drawLayer` into an atlas; not built.
 
 ### 11.4 Frontend (ADR-0012)
 

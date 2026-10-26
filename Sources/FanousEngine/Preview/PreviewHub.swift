@@ -6,7 +6,7 @@ import Foundation
 import Metal
 import Synchronization
 
-/// One preview streamer per target ("canvas", "output:<id>") that has subscribers, created on demand and released with
+/// One preview streamer per target ("canvas", "output:<id>", "layer:<n>") that has subscribers, created on demand and released with
 /// its last subscriber, so one client's target never changes what another sees. The canvas streamer always exists:
 /// CITP consoles stream the canvas.
 public final class PreviewHub: @unchecked Sendable {
@@ -104,6 +104,12 @@ public final class PreviewHub: @unchecked Sendable {
     private func publishActive(_ all: [String: PreviewStreamer]) {
         let list = [canvas] + all.values
         active.withLock { $0 = list }
+    }
+
+    /// "layer:<n>" with 1 ≤ n ≤ `layerCount` → the 0-based layer index; anything else nil.
+    public static func layerIndex(of target: String, layerCount: Int) -> Int? {
+        guard target.hasPrefix("layer:"), let n = Int(target.dropFirst(6)), n >= 1, n <= layerCount else { return nil }
+        return n - 1
     }
 
     /// Targets with a streamer right now (tests, diagnostics).
