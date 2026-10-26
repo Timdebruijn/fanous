@@ -33,7 +33,8 @@ public final class HTTPSServer: @unchecked Sendable {
     private let route: Route
     public let port: UInt16
 
-    public init(port: UInt16, identity: TLSIdentity, webRoot: URL, logger: Logger, route: @escaping Route) throws {
+    /// `loopbackOnly`: bound to 127.0.0.1, unreachable from the network (`--no-network`).
+    public init(port: UInt16, identity: TLSIdentity, webRoot: URL, loopbackOnly: Bool = false, logger: Logger, route: @escaping Route) throws {
         self.port = port
         self.logger = logger
         self.webRoot = webRoot.standardizedFileURL
@@ -50,7 +51,12 @@ public final class HTTPSServer: @unchecked Sendable {
         let parameters = NWParameters(tls: tls, tcp: tcp)
         parameters.allowLocalEndpointReuse = true
         guard let nwPort = NWEndpoint.Port(rawValue: port) else { throw TLSIdentityError.security(errSecParam, "port") }
-        listener = try NWListener(using: parameters, on: nwPort)
+        if loopbackOnly {
+            parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: nwPort)
+            listener = try NWListener(using: parameters)
+        } else {
+            listener = try NWListener(using: parameters, on: nwPort)
+        }
     }
 
     /// Advertises `_fanous._tcp` so browsers on the network find `https://<host>.local:<port>` (DESIGN.md §11.1).
