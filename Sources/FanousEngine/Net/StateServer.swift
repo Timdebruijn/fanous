@@ -58,6 +58,20 @@ public final class StateServer: @unchecked Sendable {
 
     fileprivate func forget(_ connection: Connection) { connections.withLock { _ = $0.removeValue(forKey: ObjectIdentifier(connection)) } }
 
+    /// Called with true when the first DMX monitor subscription appears and false when the last one is gone,
+    /// so the engine only runs its 20 Hz monitor timer while somebody watches.
+    nonisolated(unsafe) public var onDMXActive: (@Sendable (Bool) -> Void)?
+    private let dmxActive = Mutex(false)
+
+    fileprivate func dmxSubscriptionsChanged() {
+        let now = !dmxSubscriptions().isEmpty
+        let changed = dmxActive.withLock { was -> Bool in
+            defer { was = now }
+            return was != now
+        }
+        if changed { onDMXActive?(now) }
+    }
+
     public enum Subscription: Equatable, Sendable {
         case dmx(String)
         case preview
@@ -107,6 +121,7 @@ public final class StateServer: @unchecked Sendable {
             if isAuthenticated { server.store.detach(self) }
             server.preview?.remove(connection: self)
             server.forget(self)
+            server.dmxSubscriptionsChanged()
             server.logger.debug("client left", metadata: ["client": "\(clientId.withLock { $0 })"])
         }
 
@@ -149,6 +164,7 @@ public final class StateServer: @unchecked Sendable {
                     let id = server.nextStream.add(1, ordering: .relaxed).oldValue
                     subscriptions.withLock { $0[id] = .dmx(universe) }
                     session.send(text: server.store.encode(["t": "sub", "id": .number(Double(id)), "stream": "dmx", "universe": .string(universe)]), droppable: false)
+                    server.dmxSubscriptionsChanged()
                 case "preview":
                     guard let preview = server.preview else {
                         session.send(text: server.store.encode(["t": "error", "code": "noPreview", "message": "the engine is not rendering"]), droppable: false)
@@ -177,6 +193,7 @@ public final class StateServer: @unchecked Sendable {
                 if let id = message["id"]?.int {
                     let removed = subscriptions.withLock { $0.removeValue(forKey: UInt32(id)) }
                     if removed == .preview { server.preview?.unsubscribe(connection: self, stream: UInt32(id)) }
+                    if case .dmx? = removed { server.dmxSubscriptionsChanged() }
                 }
             default:
                 session.send(text: server.store.encode(["t": "error", "code": "badMessage", "message": "unknown t \(type)"]), droppable: false)

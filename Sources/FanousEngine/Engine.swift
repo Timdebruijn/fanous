@@ -291,6 +291,7 @@ public final class Engine: @unchecked Sendable {
         }
         self.auth = auth
         self.store = store
+        stateServer.onDMXActive = { [weak self] active in self?.setDMXStream(active: active) }
         self.stateServer = stateServer
         startFeeds()
 
@@ -682,11 +683,22 @@ public final class Engine: @unchecked Sendable {
         live.setEventHandler { [weak self] in self?.publishLive() }
         live.resume()
         liveTimer = live
-        let dmxStream = DispatchSource.makeTimerSource(queue: feedQueue)
-        dmxStream.schedule(deadline: .now() + 0.05, repeating: 0.05)
-        dmxStream.setEventHandler { [weak self] in self?.streamDMX() }
-        dmxStream.resume()
-        dmxTimer = dmxStream
+    }
+
+    /// The DMX monitor stream (20 Hz) only runs while a client has a DMX subscription.
+    private func setDMXStream(active: Bool) {
+        feedQueue.async { [self] in
+            if active, dmxTimer == nil {
+                let timer = DispatchSource.makeTimerSource(queue: feedQueue)
+                timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
+                timer.setEventHandler { [weak self] in self?.streamDMX() }
+                timer.resume()
+                dmxTimer = timer
+            } else if !active, let timer = dmxTimer {
+                timer.cancel()
+                dmxTimer = nil
+            }
+        }
     }
 
     /// CoreAudio/CoreMIDI/getifaddrs lookups are slow and rarely change: refreshed every 5 s on the feed queue.
@@ -781,7 +793,10 @@ public final class Engine: @unchecked Sendable {
 
     public func stop() {
         liveTimer?.cancel()
-        dmxTimer?.cancel()
+        feedQueue.sync {
+            dmxTimer?.cancel()
+            dmxTimer = nil
+        }
         stopReadinessTimer()
         citp?.stop()
         if showMode.isOn { showMode.leave() }

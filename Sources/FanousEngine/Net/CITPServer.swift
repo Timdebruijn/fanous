@@ -114,23 +114,39 @@ public final class CITPServer: @unchecked Sendable {
         }
         listener.start(queue: queue)
         self.listener = listener
-        let statusTimer = DispatchSource.makeTimerSource(queue: queue)
-        statusTimer.schedule(deadline: .now() + 0.25, repeating: 0.25)
-        statusTimer.setEventHandler { [weak self] in self?.sendLayerStatus() }
-        statusTimer.resume()
-        self.statusTimer = statusTimer
-        let frameTimer = DispatchSource.makeTimerSource(queue: queue)
-        frameTimer.schedule(deadline: .now() + 0.1, repeating: 0.1)
-        frameTimer.setEventHandler { [weak self] in self?.sendFrames() }
-        frameTimer.resume()
-        self.frameTimer = frameTimer
     }
+
+    /// Layer status (4 Hz) runs while a console has negotiated a version, stream frames (10 Hz) while one streams;
+    /// a server nobody talks to has only the 5 s beacon. Server queue only.
+    private func updateTimers() {
+        let negotiated = connections.values.contains { $0.version != nil }
+        let streaming = connections.values.contains { !$0.streams.isEmpty }
+        func sync(_ timer: inout DispatchSourceTimer?, wanted: Bool, interval: Double, _ tick: @escaping @Sendable (CITPServer) -> Void) {
+            if wanted, timer == nil {
+                let new = DispatchSource.makeTimerSource(queue: queue)
+                new.schedule(deadline: .now() + interval, repeating: interval)
+                new.setEventHandler { [weak self] in if let self { tick(self) } }
+                new.resume()
+                timer = new
+            } else if !wanted, let running = timer {
+                running.cancel()
+                timer = nil
+            }
+        }
+        sync(&statusTimer, wanted: negotiated, interval: 0.25) { $0.sendLayerStatus() }
+        sync(&frameTimer, wanted: streaming, interval: 0.1) { $0.sendFrames() }
+    }
+
+    /// Which periodic timers run (tests).
+    var activeTimers: (status: Bool, frames: Bool) { queue.sync { (statusTimer != nil, frameTimer != nil) } }
 
     public func stop() {
         queue.sync {
             locationTimer?.cancel()
             statusTimer?.cancel()
             frameTimer?.cancel()
+            statusTimer = nil
+            frameTimer = nil
             listener?.cancel()
             if multicastSocket >= 0 { close(multicastSocket) }
             multicastSocket = -1
@@ -185,7 +201,8 @@ public final class CITPServer: @unchecked Sendable {
     }
 
     private func publishStatus() {
-        let clients = connections.values.map { "\($0.connection.endpoint)" }
+        updateTimers()
+        let clients = connections.values.map(\.label)
         let streams = connections.values.reduce(0) { $0 + $1.streams.count }
         status.withLock {
             $0.clients = clients
@@ -210,13 +227,14 @@ public final class CITPServer: @unchecked Sendable {
 
     private func sendFrames() {
         let now = Date().timeIntervalSince1970
-        var any = false
+        var expired = false
         for session in connections.values where !session.streams.isEmpty {
+            let before = session.streams.count
             session.streams.removeAll { $0.expires < now }
+            if session.streams.count != before { expired = true }
             guard let (jpeg, width, height) = providers.frame() else { continue }
             for i in session.streams.indices where now - session.streams[i].lastSent >= 1 / Double(max(1, session.streams[i].fps)) {
                 session.streams[i].lastSent = now
-                any = true
                 session.send(
                     .streamFrame(
                         StreamFrame(
@@ -224,7 +242,7 @@ public final class CITPServer: @unchecked Sendable {
                             frameWidth: UInt16(clamping: width), frameHeight: UInt16(clamping: height), buffer: jpeg)))
             }
         }
-        if any || connections.values.contains(where: { !$0.streams.isEmpty }) { publishStatus() }
+        if expired { publishStatus() }  // the status strings are only rebuilt when the set of streams changed
     }
 
     // MARK: Requests
@@ -234,6 +252,7 @@ public final class CITPServer: @unchecked Sendable {
         case .clientInformation(let info):
             let version = info.supportedVersions.filter { $0 <= .v1_2 }.max() ?? .v1_0
             session.version = version
+            updateTimers()
             let library = providers.library()
             session.send(
                 .serverInformation(
@@ -300,6 +319,8 @@ public final class CITPServer: @unchecked Sendable {
             var lastSent: TimeInterval
         }
         let connection: NWConnection
+        /// The peer as shown in the status, built once.
+        let label: String
         private unowned let server: CITPServer
         var version: MSEXVersion?
         var streams: [Stream] = []
@@ -307,6 +328,7 @@ public final class CITPServer: @unchecked Sendable {
 
         init(connection: NWConnection, server: CITPServer) {
             self.connection = connection
+            label = "\(connection.endpoint)"
             self.server = server
         }
 
