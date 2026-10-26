@@ -275,7 +275,18 @@ public final class Engine: @unchecked Sendable {
             case .showLock(let on): _ = store.execute(on ? "show.lock" : "show.unlock", role: .programmer)
             case .showMode(let on): _ = store.execute("show.mode", args: ["on": .bool(on)], role: .operator)
             case .timecodeEnable(let on): _ = store.execute("timecode.enable", args: ["on": .bool(on)], role: .operator)
-            case .projectLoad: self.logger.warning("OSC project load is not available until project bundles exist (B23)")
+            case .projectLoad(let key):
+                // B35: a named version (or a version id); off the DMX queue, the lookup reads the versions directory
+                let logger = self.logger
+                self.feedQueue.async { [weak self] in
+                    guard let id = self?.versions?.resolve(key) else {
+                        logger.warning("OSC project load: no such version", metadata: ["version": "\(key)"])
+                        return
+                    }
+                    if case .failure(let error) = store.execute("project.revert", args: ["id": .string(id)], role: .programmer) {
+                        logger.warning("OSC project load refused", metadata: ["version": "\(key)", "code": "\(error.code)", "reason": "\(error.message)"])
+                    }
+                }
             default: break
             }
         }
