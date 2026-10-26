@@ -184,6 +184,96 @@ struct ShowControlTests {
         #expect(changes.withLock { $0 } == [true, false])
     }
 
+    /// Enter writes the state (with the boot and write time), leave removes it; a run that ends without leaving keeps
+    /// it for the next start.
+    @Test func showModeStateSurvivesOnlyAnUncleanEnd() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "fanous-show-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appending(path: "show-state.json")
+        #expect(ShowModeState.load(from: url) == nil)  // normal start
+
+        let since = Date(timeIntervalSince1970: 1_800_000_000)
+        let crashed = ShowModeController(logger: Self.logger, stateURL: url)
+        crashed.enter(since: since)
+        // a kill -9 here: nothing more runs, so the next start sees show mode on, written in this boot
+        let saved = try #require(ShowModeState.load(from: url))
+        #expect(saved.since == since.timeIntervalSince1970 && saved.restart == nil)
+        #expect(saved.boot == ShowModeState.bootTime && saved.boot > 0)
+        #expect(abs(saved.written - Date().timeIntervalSince1970) < 5)
+
+        let restarted = ShowModeController(logger: Self.logger, stateURL: url)
+        restarted.enter(since: since)  // the resume keeps the original entry time
+        #expect(ShowModeState.load(from: url)?.since == since.timeIntervalSince1970)
+        restarted.leave()  // leaving
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        #expect(ShowModeState.load(from: url) == nil)
+        crashed.leave()  // releases this test's assertions
+
+        try Data(#"{"on":false,"since":0,"boot":0,"written":0}"#.utf8).write(to: url)
+        #expect(ShowModeState.load(from: url) == nil)
+        try Data(#"{"on":true,"since":0}"#.utf8).write(to: url)  // the first format: no boot time, start normally
+        #expect(ShowModeState.load(from: url) == nil)
+        try Data("garbage".utf8).write(to: url)
+        #expect(ShowModeState.load(from: url) == nil)  // unreadable: start normally
+    }
+
+    /// Same boot (engine crash or kill): resume however old. Other boot: resume only within 2 h (power loss, panic).
+    @Test func showModeStartDecision() {
+        let boot = 1_800_000_000.0, now = boot + 10 * 3600
+        let state = ShowModeState(since: boot + 60, boot: boot, written: boot + 120)
+        #expect(ShowModeState.decide(nil, boot: boot, now: now) == .none)
+        #expect(ShowModeState.decide(state, boot: boot, now: now) == .resume(state))  // 10 h old, same boot
+        #expect(ShowModeState.decide(state, boot: boot + 2, now: now) == .resume(state))  // clock stepped a little
+        var young = state
+        young.written = now - 3600
+        #expect(ShowModeState.decide(young, boot: now - 60, now: now) == .resume(young))  // rebooted mid-show
+        #expect(ShowModeState.decide(state, boot: now - 60, now: now) == .stale)  // rebooted, file from a show long ago
+        var off = state
+        off.on = false
+        #expect(ShowModeState.decide(off, boot: boot, now: now) == .none)
+    }
+
+    /// Engine.stop: a fresh restart marker keeps show mode on disk (marked as a restart); no marker, an old one, or
+    /// show mode off is a clean stop. Nothing enters after the stop began.
+    @Test func showModeStopDecision() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "fanous-show-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appending(path: "show-state.json"), marker = directory.appending(path: "restart-pending")
+
+        #expect(!ShowModeState.takeRestartMarker(at: marker))  // no marker: Stop Engine, logout, bootout
+        try Data().write(to: marker)
+        #expect(ShowModeState.takeRestartMarker(at: marker))
+        #expect(!FileManager.default.fileExists(atPath: marker.path))  // consumed
+        try Data().write(to: marker)
+        #expect(!ShowModeState.takeRestartMarker(at: marker, now: Date().addingTimeInterval(120)))  // a failed restart's
+        #expect(!FileManager.default.fileExists(atPath: marker.path))
+
+        let since = Date(timeIntervalSince1970: 1_800_000_000)
+        let restarting = ShowModeController(logger: Self.logger, stateURL: url)
+        let changes = Mutex<[Bool]>([])
+        restarting.onChange = { on in changes.withLock { $0.append(on) } }
+        restarting.enter(since: since)
+        #expect(restarting.stop(keepingState: true))
+        #expect(!restarting.isOn)
+        #expect(changes.withLock { $0 } == [true])  // no leave side effects: ingest, display restore, canvas
+        let kept = try #require(ShowModeState.load(from: url))
+        #expect(kept.restart == true && kept.since == since.timeIntervalSince1970)
+        #expect(ShowModeState.decide(kept, boot: ShowModeState.bootTime, now: Date().timeIntervalSince1970) == .resume(kept))
+        restarting.enter()  // refused while stopping
+        #expect(!restarting.isOn)
+
+        let stopping = ShowModeController(logger: Self.logger, stateURL: url)
+        stopping.enter()
+        #expect(!stopping.stop(keepingState: false))
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        stopping.enter()
+        #expect(!stopping.isOn && !FileManager.default.fileExists(atPath: url.path))
+
+        let idle = ShowModeController(logger: Self.logger, stateURL: url)
+        #expect(!idle.stop(keepingState: true))  // restart outside show mode: nothing kept
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
     @Test func compositorChasesTimecode() throws {
         let context = try MetalContext()
         let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }

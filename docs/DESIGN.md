@@ -1196,6 +1196,10 @@ with public APIs:
 - Ingest paused (default), library rescans reduced to manual, log level
   `warning`, thumbnails at 1 fps, preview encoders capped.
 - Dropped-frame and DMX-loss events become red.
+- Survives an engine crash and Engine › Restart Engine: the state is persisted
+  (`show-state.json`), a clean stop clears it, and the next start resumes show
+  mode without the readiness refusal and without restoring the display modes
+  (§16.3 as built).
 
 **Readiness check** (runs on entering show mode, re-checked every 30 s, each
 item with a one-line fix): on AC power; thermal state nominal; free disk >
@@ -1343,7 +1347,30 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   and restored on leaving (B33, `DisplayModeSwitcher`, matching in
   `DisplayModeMatching`; one `.forSession` transaction, re-applied on
   re-plug; previous modes persisted in `display-modes.json` and restored on
-  the next start after a crash; unavailable modes are a non-blocking `warn` readiness item). The
+  the next start after a crash outside show mode; unavailable modes are a non-blocking `warn` readiness item).
+  **Show mode survives a crash (as built 2026-10-26):** `show-state.json`
+  (`{on, since, boot, written, restart?}`, `boot` = `kern.boottime`) is written
+  on entering (inside the controller's state lock, refreshed every 30 s) and
+  removed on leaving. `Engine.stop` leaves show mode, so SIGTERM (launchd stop,
+  Stop Engine, Stop Engine and Quit, logout, bootout) clears it; once the stop
+  has begun, entering is refused. Engine › Restart Engine (and the shell's
+  re-register of a hung ad-hoc agent) first writes `restart-pending`; a stop
+  that finds it fresh (< 60 s, always removed) keeps the file marked `restart`
+  and skips the display-mode restore, leaving the ledger. An unclean end (crash,
+  kill -9, power loss, launchd's SIGKILL after a hung stop) leaves the file too.
+  At start the file resumes show mode when its boot time matches (engine died,
+  not the Mac) or it is younger than 2 h (Mac went down mid-show); otherwise
+  "stale show state ignored" and it is removed. Resuming pauses ingest before
+  it starts and re-enters show mode before the outputs and display modes come
+  up, with every normal side effect and without the readiness refusal; readiness
+  runs at the first display sync. The log says "show mode resumed after an
+  unclean stop" or "show mode kept across a restart", and live `show.resumedAt`
+  drives the status-bar and System notice until show mode is left. The first
+  display sync is then an apply, not a restore: displays already in their show
+  mode are not switched and the ledger is kept for the restore on leaving (no
+  flip-flop). The show lock lives in the project document; a lock change is
+  saved at once on the autosave's serial queue (no older write can land after
+  it), so a crash cannot unlock a locked show. The
   remaining §14 side effects (shielding level, log level, thumbnail/preview
   throttling) are B42.
 - **System**: `/metrics` (JSON: frames, GPU/CPU timing, DMX age, audio,

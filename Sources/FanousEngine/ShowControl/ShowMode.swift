@@ -9,26 +9,106 @@ import FanousCore
 import Logging
 import Synchronization
 
+/// Show mode on disk (`show-state.json`): written on enter (and refreshed every 30 s), removed on leave — and every
+/// clean stop leaves show mode. A file still there at start means the last run ended uncleanly (crash, kill -9, power
+/// loss) or was an Engine › Restart Engine: show mode resumes.
+public struct ShowModeState: Codable, Equatable, Sendable {
+    public var on: Bool
+    /// When show mode was entered (seconds since 1970); kept across a resume.
+    public var since: Double
+    /// `kern.boottime` when written: the same boot means the engine died, not the Mac.
+    public var boot: Double
+    /// When written (seconds since 1970).
+    public var written: Double
+    /// Written by the stop for Engine › Restart Engine: show mode kept on purpose.
+    public var restart: Bool?
+
+    public init(on: Bool = true, since: Double, boot: Double, written: Double, restart: Bool? = nil) {
+        self.on = on
+        self.since = since
+        self.boot = boot
+        self.written = written
+        self.restart = restart
+    }
+
+    /// After a reboot (power loss, panic) a file this young still resumes the show; an older one is stale.
+    public static let maxAgeAfterReboot: Double = 2 * 3600
+
+    public enum Decision: Equatable, Sendable { case none, resume(ShowModeState), stale }
+
+    /// The start decision: resume when the Mac has not rebooted since the write (engine crash, kill, restart), or when
+    /// the file is younger than `maxAgeAfterReboot` (the Mac went down mid-show); anything else is stale.
+    public static func decide(_ state: ShowModeState?, boot: Double, now: Double) -> Decision {
+        guard let state, state.on else { return .none }
+        // kern.boottime moves a little when the wall clock is stepped
+        let age = now - state.written
+        if abs(state.boot - boot) < 5 || (age >= 0 && age < maxAgeAfterReboot) { return .resume(state) }
+        return .stale
+    }
+
+    /// nil: no file, unreadable (an older format too), or off.
+    public static func load(from url: URL) -> ShowModeState? {
+        guard let data = try? Data(contentsOf: url), let state = try? JSONDecoder().decode(Self.self, from: data), state.on else { return nil }
+        return state
+    }
+
+    /// `sysctl kern.boottime` in seconds since 1970; 0 when it cannot be read.
+    public static var bootTime: Double {
+        var mib: [Int32] = [CTL_KERN, KERN_BOOTTIME]
+        var value = timeval()
+        var size = MemoryLayout<timeval>.size
+        guard sysctl(&mib, 2, &value, &size, nil, 0) == 0 else { return 0 }
+        return Double(value.tv_sec) + Double(value.tv_usec) / 1e6
+    }
+
+    /// The shell writes `restart-pending` right before Engine › Restart Engine; a stop that finds a fresh one keeps
+    /// show mode. Always removed, so a marker from a failed restart cannot turn a later Stop Engine into a restart.
+    public static func takeRestartMarker(at url: URL, now: Date = Date(), maxAge: TimeInterval = 60) -> Bool {
+        let fm = FileManager.default
+        guard let modified = (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date else { return false }
+        try? fm.removeItem(at: url)
+        return now.timeIntervalSince(modified) < maxAge
+    }
+}
+
 /// Show mode (DESIGN.md §14): sleep assertions, a latency-critical activity, ingest paused, warning-level logs.
 /// Entered and left on the control side; the assertions are plain IOKit handles.
 public final class ShowModeController: @unchecked Sendable {
+    private struct State {
+        var on = false
+        var since: Double = 0
+        var display = IOPMAssertionID(0)
+        var system = IOPMAssertionID(0)
+        var activity: NSObjectProtocol?
+        /// Set by `stop`: no enter after the engine began stopping.
+        var stopping = false
+    }
+
     private let logger: Logger
-    private let state = Mutex<(on: Bool, display: IOPMAssertionID, system: IOPMAssertionID, activity: NSObjectProtocol?)>((false, 0, 0, nil))
+    private let stateURL: URL?
+    /// The file is written inside this lock, so it never lags `isOn` out of order.
+    private let state = Mutex(State())
     /// Side effects owned by the engine (ingest pause, display modes, log level), run on enter/leave.
     nonisolated(unsafe) public var onChange: (@Sendable (Bool) -> Void)?
 
-    public init(logger: Logger) { self.logger = logger }
+    /// `stateURL`: where the on/off state survives an unclean end (nil: not persisted).
+    public init(logger: Logger, stateURL: URL? = nil) {
+        self.logger = logger
+        self.stateURL = stateURL
+    }
 
     public var isOn: Bool { state.withLock { $0.on } }
 
-    public func enter() {
+    /// `since`: the original entry time when show mode resumes after an unclean stop or a restart.
+    public func enter(since: Date = Date()) {
         let changed = state.withLock { s -> Bool in
-            guard !s.on else { return false }
-            var display = IOPMAssertionID(0), system = IOPMAssertionID(0)
-            IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleDisplaySleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), "Fanous show mode" as CFString, &display)
-            IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleSystemSleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), "Fanous show mode" as CFString, &system)
-            let activity = ProcessInfo.processInfo.beginActivity(options: [.latencyCritical, .userInitiated, .idleDisplaySleepDisabled], reason: "Fanous show mode")
-            s = (true, display, system, activity)
+            guard !s.on, !s.stopping else { return false }
+            IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleDisplaySleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), "Fanous show mode" as CFString, &s.display)
+            IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleSystemSleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), "Fanous show mode" as CFString, &s.system)
+            s.activity = ProcessInfo.processInfo.beginActivity(options: [.latencyCritical, .userInitiated, .idleDisplaySleepDisabled], reason: "Fanous show mode")
+            s.on = true
+            s.since = since.timeIntervalSince1970
+            persist(s)
             return true
         }
         guard changed else { return }
@@ -39,15 +119,67 @@ public final class ShowModeController: @unchecked Sendable {
     public func leave() {
         let changed = state.withLock { s -> Bool in
             guard s.on else { return false }
-            if s.display != 0 { IOPMAssertionRelease(s.display) }
-            if s.system != 0 { IOPMAssertionRelease(s.system) }
-            if let activity = s.activity { ProcessInfo.processInfo.endActivity(activity) }
-            s = (false, 0, 0, nil)
+            release(&s)
+            persist(s)
             return true
         }
         guard changed else { return }
         logger.warning("show mode left")
         onChange?(false)
+    }
+
+    /// Refreshes the write time while on (readiness timer), so a show longer than `maxAgeAfterReboot` still resumes
+    /// after a power loss.
+    public func touch() {
+        state.withLock { s in if s.on { persist(s) } }
+    }
+
+    /// `Engine.stop`: no enter after this. A clean stop leaves show mode (file removed, `onChange`); a restart
+    /// (`keepingState`) only releases the assertions and keeps the file, marked as a restart, for the next start.
+    /// True when show mode was kept.
+    @discardableResult
+    public func stop(keepingState keep: Bool) -> Bool {
+        let wasOn = state.withLock { s -> Bool in
+            s.stopping = true
+            guard s.on else { return false }
+            release(&s)
+            persist(s, restart: keep)
+            return true
+        }
+        guard wasOn else { return false }
+        if keep {
+            logger.warning("show mode kept for the restart")
+            return true
+        }
+        logger.warning("show mode left")
+        onChange?(false)
+        return false
+    }
+
+    /// `since` stays: a restart writes it into the kept file.
+    private func release(_ s: inout State) {
+        if s.display != 0 { IOPMAssertionRelease(s.display) }
+        if s.system != 0 { IOPMAssertionRelease(s.system) }
+        if let activity = s.activity { ProcessInfo.processInfo.endActivity(activity) }
+        s.on = false
+        s.display = 0
+        s.system = 0
+        s.activity = nil
+    }
+
+    /// Under the state lock: on → the file, off → no file (unless kept for a restart).
+    private func persist(_ s: State, restart: Bool = false) {
+        guard let stateURL else { return }
+        do {
+            if s.on || restart {
+                let value = ShowModeState(since: s.since, boot: ShowModeState.bootTime, written: Date().timeIntervalSince1970, restart: restart ? true : nil)
+                try JSONEncoder().encode(value).write(to: stateURL, options: .atomic)
+            } else if FileManager.default.fileExists(atPath: stateURL.path) {
+                try FileManager.default.removeItem(at: stateURL)
+            }
+        } catch {
+            logger.error("show mode state not saved", metadata: ["error": "\(error)"])
+        }
     }
 }
 
