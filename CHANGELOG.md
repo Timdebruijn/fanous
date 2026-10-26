@@ -17,6 +17,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Built-in content in folder 0: solid colour, the test patterns, a moving test card, colour sweep,
   clock and a frame-locked motion test (113), drawn on the GPU and selectable from the console or the UI.
   Layer status shows their size and "Built-in" instead of 0 × 0.
+- Several canvases (up to 4): `canvas.add/remove`, a canvas per layer (`layer.set`) and per slice, one
+  render pass per canvas, `canvas:<id>` previews; removing a canvas moves its layers and slices to
+  canvas 1. Layers screen: a Canvas / This layer preview toggle (`layer:<n>` preview target). Show mode
+  survives an engine crash, `kill -9` or Engine › Restart Engine: the engine resumes in show mode, keeps
+  the display modes and shows a notice; a clean stop still leaves it. Outputs: Reset slice, Spread canvas
+  (one picture across the slices of an object), Add slice fixed, only the selected slice has handles.
 - Quitting the app asks whether to keep the engine running (default) or stop it too; logout and
   restart skip the question. Canvas size and frame rate are set on the Outputs screen and applied
   live (B31). Show mode applies each output's display mode and restores it afterwards (B33). UI
