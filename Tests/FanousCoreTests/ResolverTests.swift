@@ -14,6 +14,25 @@ import Testing
         return raw
     }
 
+    @Test func updateDMXReportsOnlyRealChanges() {
+        var resolver = FixtureResolver(mode: .layer)
+        let first = resolver.updateDMX(dmxFrame(intensity: 1000), at: 1)
+        let same = resolver.updateDMX(dmxFrame(intensity: 1000), at: 2)
+        let moved = resolver.updateDMX(dmxFrame(intensity: 1001), at: 3)
+        resolver.markDMXLost()
+        let back = resolver.updateDMX(dmxFrame(intensity: 1001), at: 4)
+        #expect(first && !same && moved && back)  // first frame, identical refresh, new value, signal back
+    }
+
+    @Test func lookupTablesAgreeWithTheSpecOrder() {
+        for mode in [FixtureMode.layer, .master, .output] {
+            for (i, spec) in ChannelMap.specs(for: mode).enumerated() {
+                #expect(ChannelMap.index(of: spec.id) == i)
+                #expect(ChannelMap.spec(spec.id).id == spec.id)
+            }
+        }
+    }
+
     @Test func dmxPolicyIgnoresInternalSources() {
         var resolver = FixtureResolver(mode: .layer, policy: .dmx)
         resolver.updateDMX(dmxFrame(intensity: 1000), at: 1)
