@@ -223,7 +223,9 @@ public final class Engine: @unchecked Sendable {
 
         // Phase 5: roles, the project and live documents and the WebSocket state server (DESIGN.md §11).
         let auth = RoleAuth(settingsURL: AppPaths.settingsFile, shellTokenURL: AppPaths.shellTokenFile, logger: logger)
-        let project = loadedProject ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: policy, canvas: startCanvas)
+        var project = loadedProject ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: policy, canvas: startCanvas)
+        // hand-written MIDI map entries get an id on load, so per-entry state and midi.map.remove can address them
+        if let fixed = MIDISettings.assigningIDs(project) { project = fixed }
         let store = StateStore(project: project, logger: logger)
         ProjectDocument.registerCommands(on: store, auth: auth, showModeOn: { [weak self] in self?.showMode.isOn ?? false })
         // Phase 7: cues, timecode, show mode (DESIGN.md §14–15)
@@ -649,7 +651,8 @@ public final class Engine: @unchecked Sendable {
         return [
             "connected": .array(s.connected.map { .string($0) }), "last": s.last.map { .string($0) } ?? .null, "lastAt": s.lastAt.map { .number($0) } ?? .null,
             "learning": s.learning.map { ["target": .string($0.target), "cue": $0.cue.map { .number($0) } ?? .null] } ?? .null,
-            "learned": s.learned.map { .string($0) } ?? .null, "error": s.error.map { .string($0) } ?? .null,
+            "learned": s.learned.map { .string($0) } ?? .null,
+            "error": s.error == nil && s.problems.isEmpty ? .null : .string(([s.error].compactMap { $0 } + s.problems).joined(separator: "; ")),
         ]
     }
 
@@ -949,6 +952,11 @@ public final class Engine: @unchecked Sendable {
         }
         let timecodeSettings = ShowCommands.timecodeSettings(from: document)
         if timecodeSettings != lastTimecodeSettings { applyTimecodeSettings(timecodeSettings) }
+        if let fixed = MIDISettings.assigningIDs(document), let map = fixed["midi"]?["map"], let store {
+            // a loaded or replaced project with hand-written entries; not from this queue (correct syncs on it).
+            // ponytail: replaces the whole map, so a map edit landing in between is lost; ids then come on the next change
+            DispatchQueue.global(qos: .utility).async { store.correct(map, at: "/midi/map") }
+        }
         let midiSettings = MIDISettings.from(project: document)
         if midiSettings != lastMIDISettings {
             lastMIDISettings = midiSettings

@@ -11,25 +11,57 @@ import Synchronization
 /// MIDI control (DESIGN.md §15.4, B36): notes, CC (7- and 14-bit), program change and MIDI Show Control from a
 /// controller fire cues and drive parameters. The map lives in the project (`project.midi`); parameter values enter
 /// the resolver as the internal `midi` source, so the source policy decides per layer, as for OSC and cues.
-public struct MIDISettings: Codable, Equatable, Sendable {
+public struct MIDISettings: Equatable, Sendable {
     /// MIDI source name to listen to; nil = every connected source.
     public var source: String? = nil
     /// MSC device id we answer (0–111); the all-call (127) is always answered.
     public var mscDevice: Int = 0
+    /// MSC command format answered; nil = video (0x30–0x3F). The all-types format (0x7F) is always answered.
+    public var mscFormat: Int? = nil
+    /// Every entry that could be read, also those that cannot work (`problem`); the mapper skips those.
     public var map: [MIDIMapping] = []
+    /// Entries that cannot be read or cannot work, as "entry 3: reason" (live.midi.error).
+    public var problems: [String] = []
 
     public init() {}
 
-    public init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        source = try c.decodeIfPresent(String.self, forKey: .source)
-        mscDevice = try c.decodeIfPresent(Int.self, forKey: .mscDevice) ?? 0
-        map = try c.decodeIfPresent([MIDIMapping].self, forKey: .map) ?? []
+    /// Entry by entry, so one broken hand-written entry does not take the rest of the map with it.
+    public static func from(project: JSONValue) -> MIDISettings {
+        var s = MIDISettings()
+        guard let midi = project["midi"] else { return s }
+        s.source = midi["source"]?.string
+        s.mscDevice = midi["mscDevice"]?.int ?? 0
+        s.mscFormat = midi["mscFormat"]?.int
+        for (i, raw) in (midi["map"]?.array ?? []).enumerated() {
+            guard let m = MIDIMapping.decode(raw) else {
+                s.problems.append("map entry \(i + 1): not readable (needs kind and target)")
+                continue
+            }
+            if let problem = m.problem { s.problems.append("map entry \(i + 1): \(problem)") }
+            s.map.append(m)
+        }
+        return s
     }
 
-    public static func from(project: JSONValue) -> MIDISettings {
-        guard let value = project["midi"], let data = try? JSONEncoder().encode(value) else { return MIDISettings() }
-        return (try? JSONDecoder().decode(MIDISettings.self, from: data)) ?? MIDISettings()
+    /// The project with an id on every map entry that has none (hand-written); nil when nothing is missing.
+    public static func assigningIDs(_ project: JSONValue) -> JSONValue? {
+        guard var map = project["midi"]?["map"]?.array else { return nil }
+        var changed = false
+        for i in map.indices where map[i]["kind"] != nil && (map[i]["id"]?.string ?? "").isEmpty {
+            guard (try? map[i].set(.string(UUID().uuidString), at: "/id")) != nil else { continue }
+            changed = true
+        }
+        guard changed else { return nil }
+        var fixed = project
+        return (try? fixed.set(.array(map), at: "/midi/map")) != nil ? fixed : nil
+    }
+
+    /// The parameters the map drives (to release MIDI values when an entry goes).
+    var parameterTargets: Set<MIDIInput.Target> {
+        Set(map.compactMap { m in
+            guard m.problem == nil, case .parameter(let f, let p) = MIDITarget(m.target, cue: m.cue) else { return nil }
+            return MIDIInput.Target(fixture: f, parameter: p)
+        })
     }
 }
 
@@ -37,7 +69,7 @@ public struct MIDISettings: Codable, Equatable, Sendable {
 public struct MIDIMapping: Codable, Equatable, Sendable {
     public enum Kind: String, Codable, Sendable { case note, cc, cc14, pc }
     /// linear: the control's value across low…high (a note: velocity while held, low on release);
-    /// toggle: every press flips between low and high.
+    /// toggle: every press flips between low and high, starting from the value shown.
     public enum Curve: String, Codable, Sendable { case linear, toggle }
 
     public var id = ""
@@ -85,6 +117,11 @@ public struct MIDIMapping: Codable, Equatable, Sendable {
         high = try c.decodeIfPresent(Double.self, forKey: .high) ?? 1
     }
 
+    static func decode(_ value: JSONValue) -> MIDIMapping? {
+        guard let data = try? JSONEncoder().encode(value) else { return nil }
+        return try? JSONDecoder().decode(MIDIMapping.self, from: data)
+    }
+
     /// Same control and same target: learning it again replaces the entry instead of adding a second one.
     func sameBinding(as other: MIDIMapping) -> Bool {
         source == other.source && channel == other.channel && kind == other.kind && number == other.number && target == other.target && cue == other.cue
@@ -128,7 +165,7 @@ public enum MIDITarget: Equatable, Sendable {
 }
 
 /// The map applied to incoming messages: pure, owned by one queue. `current` reads the value the resolver shows
-/// (for pickup); nil when the fixture is not patched.
+/// (pickup, toggle); nil when the fixture is not patched. `uid` is the source's CoreMIDI unique id.
 public struct MIDIMapper: Sendable {
     public enum Action: Equatable, Sendable {
         case set(FixtureRef, ParameterID, UInt16)
@@ -137,48 +174,59 @@ public struct MIDIMapper: Sendable {
     }
 
     private struct Pickup { var caught = false, lastIn: Int?, lastSent: Int? }
+    private struct Controller: Hashable { var uid: Int32, channel: UInt8, number: UInt8 }
 
     public private(set) var settings = MIDISettings()
     private var targets: [MIDITarget?] = []
-    /// Last MSB per channel × controller 0–31, and the pairs whose LSB has been seen (then the LSB carries the value).
-    private var msb: [Int: UInt8] = [:]
-    private var paired: Set<Int> = []
+    /// Last MSB per source, channel and controller 0–31 (an LSB completes it).
+    private var msb: [Controller: UInt8] = [:]
+    /// Per entry (by id): a controller held past half way, the toggle position without a shown value, pickup.
     private var held: [String: Bool] = [:]
     private var toggled: [String: Bool] = [:]
     private var pickups: [String: Pickup] = [:]
 
     public init(settings: MIDISettings = MIDISettings()) { update(settings) }
 
-    /// New map; the per-control state (toggles, pickup, 14-bit pairs) is kept for entries that stay.
+    /// New map; the per-entry state is kept for entries that stay.
     public mutating func update(_ settings: MIDISettings) {
         self.settings = settings
         targets = settings.map.map { $0.problem == nil ? MIDITarget($0.target, cue: $0.cue) : nil }
     }
 
-    public mutating func handle(_ message: MIDIMessage, from source: String, current: (FixtureRef, ParameterID) -> UInt16?) -> [Action] {
+    /// A source went away: its half-received 14-bit values go with it.
+    public mutating func forget(uid: Int32) { msb = msb.filter { $0.key.uid != uid } }
+
+    /// MSC formats answered: the setting, or video (0x30–0x3F) by default; all-types (0x7F) always.
+    func answers(format: UInt8) -> Bool {
+        format == 0x7F || settings.mscFormat.map { Int(format) == $0 } ?? (0x30...0x3F).contains(format)
+    }
+
+    public mutating func handle(_ message: MIDIMessage, from source: String, uid: Int32 = 0, current: (FixtureRef, ParameterID) -> UInt16?) -> [Action] {
         let channel: UInt8
         switch message {
         case .showControl(let msc):
-            guard msc.isAddressed(to: UInt8(clamping: settings.mscDevice)), msc.knownCommand == .go else { return [] }
-            return [msc.cueNumber.map { .cueGoto($0) } ?? .cueGo]
+            guard msc.isAddressed(to: UInt8(clamping: settings.mscDevice)), answers(format: msc.format), msc.knownCommand == .go else { return [] }
+            guard msc.cue != nil else { return [.cueGo] }
+            // a cue that is there but is no number does nothing: never fire the next cue instead
+            return msc.cueNumber.map { [.cueGoto($0)] } ?? []
         case .noteOn(let c, _, _), .noteOff(let c, _, _), .controlChange(let c, _, _), .programChange(let c, _):
             channel = c
         }
-        // a 14-bit value this message completes: on the LSB once the pair is known, on the MSB before that
+        // MIDI 1.0: an MSB resets the LSB, so the MSB alone is a value; the LSB then refines it
         var fourteen: (controller: Int, value: Int)?
         if case .controlChange(_, let cc, let v) = message, cc < 64 {
-            let key = Int(channel) * 32 + Int(cc % 32)
+            let key = Controller(uid: uid, channel: channel, number: cc % 32)
             if cc < 32 {
                 msb[key] = v
-                if !paired.contains(key) { fourteen = (Int(cc), Int(v) << 7) }
+                fourteen = (Int(cc), Int(v) << 7)
             } else {
-                paired.insert(key)
                 fourteen = (Int(cc) - 32, Int(msb[key] ?? 0) << 7 | Int(v))
             }
         }
         var actions: [Action] = []
-        for (m, target) in zip(settings.map, targets) {
+        for (i, (m, target)) in zip(settings.map, targets).enumerated() {
             guard let target, m.source == nil || m.source == source, m.channel == 0 || m.channel == Int(channel) + 1 else { continue }
+            let id = m.id.isEmpty ? "#\(i)" : m.id
             // the control's position 0…1, and whether this message is a press (note on, a controller crossing half way up, a program change)
             var fraction = 0.0
             var press = false
@@ -191,10 +239,10 @@ public struct MIDIMapper: Sendable {
                 fraction = 0
             case (.cc, .controlChange(_, let n, let v)) where Int(n) == m.number:
                 fraction = Double(v) / 127
-                press = edge(m.id, up: v >= 64)
+                press = edge(id, up: v >= 64)
             case (.cc14, .controlChange) where fourteen != nil && fourteen?.controller == m.number:
                 fraction = Double(fourteen!.value) / 16383
-                press = edge(m.id, up: fraction >= 0.5)
+                press = edge(id, up: fraction >= 0.5)
             case (.pc, .programChange(_, let p)) where m.number == nil || Int(p) == m.number:
                 fraction = Double(p) / 127
                 press = true
@@ -208,18 +256,20 @@ public struct MIDIMapper: Sendable {
             case .cueGoto(let cue):
                 if press, let number = cue ?? program.map({ Double($0) + 1 }) { actions.append(.cueGoto(number)) }
             case .parameter(let fixture, let parameter):
+                let max = Int(ChannelMap.spec(parameter).rawMax)
+                func raw(_ f: Double) -> Int { Swift.min(max, Swift.max(0, Int(((m.low + f * (m.high - m.low)) * Double(max)).rounded()))) }
                 if m.curve == .toggle {
                     guard press else { continue }
-                    let on = !(toggled[m.id] ?? false)
-                    toggled[m.id] = on
+                    // from the value shown: nearer to low turns it on, so a press never just repeats what is there
+                    let on = current(fixture, parameter).map { abs(Int($0) - raw(1)) > abs(Int($0) - raw(0)) } ?? !(toggled[id] ?? false)
+                    toggled[id] = on
                     fraction = on ? 1 : 0
                 }
-                let max = Int(ChannelMap.spec(parameter).rawMax)
-                let raw = Swift.min(max, Swift.max(0, Int(((m.low + fraction * (m.high - m.low)) * Double(max)).rounded())))
-                if m.pickup, m.curve == .linear, let now = current(fixture, parameter), !caught(m.id, raw: raw, current: Int(now), step: Swift.max(1, max / 127)) {
+                let value = raw(fraction)
+                if m.pickup, m.curve == .linear, let now = current(fixture, parameter), !caught(id, raw: value, current: Int(now), step: Swift.max(1, max / 127)) {
                     continue
                 }
-                actions.append(.set(fixture, parameter, UInt16(raw)))
+                actions.append(.set(fixture, parameter, UInt16(value)))
             }
         }
         return actions
@@ -280,19 +330,35 @@ public enum MIDICommands {
         public init(learn: @escaping @Sendable (String?, Double?) -> Void) { self.learn = learn }
     }
 
-    static func settings(_ project: JSONValue) throws -> JSONValue { try project["midi"] ?? JSONValue(encoding: MIDISettings()) }
+    static func stored(_ project: JSONValue) -> JSONValue { project["midi"] ?? ["mscDevice": 0, "map": []] }
+
+    /// Writes the raw map back: entries this command did not read are kept exactly as they were.
+    static func store(map: [JSONValue], in project: inout JSONValue) throws {
+        var midi = stored(project)
+        try midi.set(.array(map), at: "/map")
+        try project.set(midi, at: "/midi")
+    }
 
     public static func register(on store: StateStore, hooks: Hooks) {
         store.register(
             CommandSpec(
-                name: "midi.set", role: .programmer, summary: "MIDI input: source (a MIDI source name, null = all) and mscDevice (0–111; 127 all-call is always answered).",
-                argsType: "{ source?: string | null; mscDevice?: number }"
+                name: "midi.set", role: .programmer,
+                summary: "MIDI input: source (a MIDI source name, null = all), mscDevice (0–111; 127 all-call is always answered), mscFormat (0–127, null = video 0x30–0x3F; 0x7F all-types is always answered).",
+                argsType: "{ source?: string | null; mscDevice?: number; mscFormat?: number | null }"
             ) { project, args in
-                var midi = try settings(project)
+                var midi = stored(project)
                 if let source = args["source"] { try midi.set(source.string.map { .string($0) } ?? .null, at: "/source") }
                 if let device = args["mscDevice"] {
                     guard let n = device.int, (0...111).contains(n) else { throw CommandError.invalidArgs("mscDevice is 0–111") }
                     try midi.set(.number(Double(n)), at: "/mscDevice")
+                }
+                if let format = args["mscFormat"] {
+                    if format == .null {
+                        try midi.set(.null, at: "/mscFormat")
+                    } else {
+                        guard let n = format.int, (0...127).contains(n) else { throw CommandError.invalidArgs("mscFormat is 0–127, or null for video") }
+                        try midi.set(.number(Double(n)), at: "/mscFormat")
+                    }
                 }
                 try project.set(midi, at: "/midi")
                 return nil
@@ -304,32 +370,28 @@ public enum MIDICommands {
                 argsType:
                     "{ id?: string; source?: string | null; channel: number; kind: 'note' | 'cc' | 'cc14' | 'pc'; number?: number | null; target: string; cue?: number | null; curve?: 'linear' | 'toggle'; pickup?: boolean; low?: number; high?: number }"
             ) { project, args in
-                guard let data = try? JSONEncoder().encode(args), var mapping = try? JSONDecoder().decode(MIDIMapping.self, from: data) else {
-                    throw CommandError.invalidArgs("a map entry needs kind and target")
-                }
+                guard var mapping = MIDIMapping.decode(args) else { throw CommandError.invalidArgs("a map entry needs kind and target") }
                 if let problem = mapping.problem { throw CommandError.invalidArgs(problem) }
-                var midi = MIDISettings.from(project: project)
-                if let i = midi.map.firstIndex(where: { (!mapping.id.isEmpty && $0.id == mapping.id) || (mapping.id.isEmpty && $0.sameBinding(as: mapping)) }) {
-                    mapping.id = midi.map[i].id
-                    midi.map[i] = mapping
+                var map = stored(project)["map"]?.array ?? []
+                let index: Int?
+                if mapping.id.isEmpty {
+                    index = map.firstIndex { MIDIMapping.decode($0)?.sameBinding(as: mapping) == true }
+                    mapping.id = index.flatMap { map[$0]["id"]?.string }.flatMap { $0.isEmpty ? nil : $0 } ?? UUID().uuidString
                 } else {
-                    guard mapping.id.isEmpty else { throw CommandError.invalidArgs("no map entry \(mapping.id)") }
-                    mapping.id = UUID().uuidString
-                    midi.map.append(mapping)
+                    index = map.firstIndex { $0["id"]?.string == mapping.id }
+                    guard index != nil else { throw CommandError.invalidArgs("no map entry \(mapping.id)") }
                 }
-                var stored = try settings(project)
-                try stored.set(try JSONValue(encoding: midi.map), at: "/map")
-                try project.set(stored, at: "/midi")
+                let value = try JSONValue(encoding: mapping)
+                if let index { map[index] = value } else { map.append(value) }
+                try MIDICommands.store(map: map, in: &project)
                 return .string(mapping.id)
             })
         store.register(CommandSpec(name: "midi.map.remove", role: .programmer, summary: "Remove a MIDI map entry by id.", argsType: "{ id: string }") { project, args in
             guard let id = args["id"]?.string else { throw CommandError.invalidArgs("args: { id }") }
-            var midi = MIDISettings.from(project: project)
-            guard midi.map.contains(where: { $0.id == id }) else { throw CommandError.invalidArgs("no map entry \(id)") }
-            midi.map.removeAll { $0.id == id }
-            var stored = try settings(project)
-            try stored.set(try JSONValue(encoding: midi.map), at: "/map")
-            try project.set(stored, at: "/midi")
+            var map = stored(project)["map"]?.array ?? []
+            guard map.contains(where: { $0["id"]?.string == id }) else { throw CommandError.invalidArgs("no map entry \(id)") }
+            map.removeAll { $0["id"]?.string == id }
+            try MIDICommands.store(map: map, in: &project)
             return nil
         })
         store.register(
@@ -362,6 +424,13 @@ public final class MIDIInput: @unchecked Sendable {
         public var learning: (target: String, cue: Double?)?
         public var learned: String?
         public var error: String?
+        /// Map entries that cannot be read or cannot work.
+        public var problems: [String] = []
+    }
+
+    struct Target: Hashable, Sendable {
+        var fixture: FixtureRef
+        var parameter: ParameterID
     }
 
     let queue = DispatchQueue(label: "org.fanous.midi", qos: .userInteractive)
@@ -369,8 +438,11 @@ public final class MIDIInput: @unchecked Sendable {
     private let logger: Logger
     private var client = MIDIClientRef()
     private var port = MIDIPortRef()
+    /// Connected sources by CoreMIDI unique id: two identical controllers share a name, not an id.
     private var names: [MIDIUniqueID: String] = [:]
-    private var parsers: [String: MIDIParser] = [:]
+    private var parsers: [MIDIUniqueID: MIDIParser] = [:]
+    /// Parameters each source has set, released when it disconnects.
+    private var setBy: [MIDIUniqueID: Set<Target>] = [:]
     private var mapper = MIDIMapper()
     private var learner = MIDILearner()
     public let status = Mutex(Status())
@@ -387,7 +459,12 @@ public final class MIDIInput: @unchecked Sendable {
     public func apply(_ settings: MIDISettings) {
         queue.async { [self] in
             let reconnect = settings.source != mapper.settings.source
+            // values of entries that went (or changed target) would otherwise stay up for good
+            let gone = mapper.settings.parameterTargets.subtracting(settings.parameterTargets)
+            dmx.releaseMIDI(gone.map { ($0.fixture, $0.parameter) })
             mapper.update(settings)
+            status.withLock { $0.problems = settings.problems }
+            if !settings.problems.isEmpty { logger.warning("MIDI map entries ignored", metadata: ["problems": "\(settings.problems)"]) }
             if reconnect, client != 0 { connect() }
         }
     }
@@ -424,7 +501,7 @@ public final class MIDIInput: @unchecked Sendable {
                 withUnsafeBytes(of: packet.pointee.words) { raw in words += raw.bindMemory(to: UInt32.self).prefix(count) }
             }
             let bytes = MIDIParser.bytes(ump: words)
-            self.queue.async { self.receive(bytes, from: self.names[uid] ?? "MIDI") }
+            self.queue.async { self.receive(bytes, uid: uid) }
         }
         guard made == noErr else {
             status.withLock { $0.error = "cannot create the MIDI input port (\(made))" }
@@ -436,8 +513,7 @@ public final class MIDIInput: @unchecked Sendable {
 
     /// On `queue`: every source matching the setting; the source's unique id rides along as the connection refCon.
     private func connect() {
-        var connected: [String] = []
-        names = [:]
+        var connected: [MIDIUniqueID: String] = [:]
         for i in 0..<MIDIGetNumberOfSources() {
             let ref = MIDIGetSource(i)
             MIDIPortDisconnectSource(port, ref)
@@ -445,30 +521,46 @@ public final class MIDIInput: @unchecked Sendable {
             if let wanted = mapper.settings.source, wanted != name { continue }
             var uid: MIDIUniqueID = 0
             MIDIObjectGetIntegerProperty(ref, kMIDIPropertyUniqueID, &uid)
-            names[uid] = name
             // bit 32 keeps the refCon non-null for a unique id of 0
             let refCon = UnsafeMutableRawPointer(bitPattern: Int(UInt32(bitPattern: uid)) | 1 << 32)
-            if MIDIPortConnectSource(port, ref, refCon) == noErr { connected.append(name) }
+            if MIDIPortConnectSource(port, ref, refCon) == noErr { connected[uid] = name }
         }
-        status.withLock {
-            $0.connected = connected
-            $0.error = nil
-        }
-        logger.info("MIDI input listening", metadata: ["sources": "\(connected)"])
+        setSources(connected)
+        status.withLock { $0.error = nil }
+        logger.info("MIDI input listening", metadata: ["sources": "\(connected.values.sorted())"])
     }
 
-    /// Tests: bytes as if a source sent them, handled before this returns.
-    func inject(_ bytes: [UInt8], from source: String) { queue.sync { receive(bytes, from: source) } }
+    /// On `queue`: the sources now connected. One that went away (unplugged, or no longer the chosen source) takes its
+    /// running status, its half-received 14-bit values and the values it set with it.
+    func setSources(_ connected: [MIDIUniqueID: String]) {
+        for uid in Set(names.keys).subtracting(connected.keys) {
+            dmx.releaseMIDI((setBy[uid] ?? []).map { ($0.fixture, $0.parameter) })
+            setBy[uid] = nil
+            parsers[uid] = nil
+            mapper.forget(uid: uid)
+        }
+        names = connected
+        status.withLock { $0.connected = connected.values.sorted() }
+    }
+
+    /// Tests: bytes as if a connected source sent them, handled before this returns.
+    func inject(_ bytes: [UInt8], from source: String, uid: MIDIUniqueID = 1) {
+        queue.sync {
+            if names[uid] == nil { setSources(names.merging([uid: source]) { a, _ in a }) }
+            receive(bytes, uid: uid)
+        }
+    }
 
     /// On `queue`.
-    private func receive(_ bytes: [UInt8], from source: String) {
-        var parser = parsers[source] ?? MIDIParser()
+    private func receive(_ bytes: [UInt8], uid: MIDIUniqueID) {
+        let source = names[uid] ?? "MIDI"
+        var parser = parsers[uid] ?? MIDIParser()
         let messages = parser.feed(bytes)
-        parsers[source] = parser
-        for message in messages { handle(message, from: source) }
+        parsers[uid] = parser
+        for message in messages { handle(message, from: source, uid: uid) }
     }
 
-    private func handle(_ message: MIDIMessage, from source: String) {
+    private func handle(_ message: MIDIMessage, from source: String, uid: MIDIUniqueID) {
         status.withLock {
             $0.last = "\(source) · \(message)"
             $0.lastAt = Date().timeIntervalSince1970
@@ -484,10 +576,11 @@ public final class MIDIInput: @unchecked Sendable {
             }
         }
         let dmx = dmx
-        let actions = mapper.handle(message, from: source) { dmx.resolvedRaw($0, $1) }
+        let actions = mapper.handle(message, from: source, uid: uid) { dmx.resolvedRaw($0, $1) }
         for action in actions {
             if case .set(let fixture, let parameter, let raw) = action {
                 dmx.setMIDI(fixture, parameter, raw: raw)
+                setBy[uid, default: []].insert(Target(fixture: fixture, parameter: parameter))
             } else {
                 onCue?(action)
             }

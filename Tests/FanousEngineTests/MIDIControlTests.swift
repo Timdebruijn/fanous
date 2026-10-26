@@ -14,9 +14,10 @@ import Testing
 struct MIDIControlTests {
     static let logger = Logger(label: "test")
 
-    static func settings(_ map: [MIDIMapping], mscDevice: Int = 0) -> MIDISettings {
+    static func settings(_ map: [MIDIMapping], mscDevice: Int = 0, mscFormat: Int? = nil) -> MIDISettings {
         var s = MIDISettings()
         s.mscDevice = mscDevice
+        s.mscFormat = mscFormat
         s.map = map.enumerated().map { i, m in
             var m = m
             m.id = "m\(i)"
@@ -36,11 +37,15 @@ struct MIDIControlTests {
         #expect(run(.controlChange(channel: 0, controller: 7, value: 127)) == [.set(.layer(2), .layer(.intensity), 65535)])
         #expect(run(.controlChange(channel: 0, controller: 7, value: 0)) == [.set(.layer(2), .layer(.intensity), 32768)])
         #expect(run(.controlChange(channel: 1, controller: 7, value: 0)) == [])
-        // 14-bit: the MSB alone counts until an LSB has been seen, then the LSB carries the value (no coarse step)
+        // 14-bit per MIDI 1.0: an MSB resets the LSB (msb << 7), also once the pair is known; the LSB refines it
         #expect(run(.controlChange(channel: 3, controller: 1, value: 64)) == [.set(.master, .master(.intensity), 32770)])
         #expect(run(.controlChange(channel: 3, controller: 33, value: 127)) == [.set(.master, .master(.intensity), 33278)])
-        #expect(run(.controlChange(channel: 3, controller: 1, value: 127)) == [], "waits for the LSB")
+        #expect(run(.controlChange(channel: 3, controller: 1, value: 127)) == [.set(.master, .master(.intensity), 65027)])
         #expect(run(.controlChange(channel: 3, controller: 33, value: 127)) == [.set(.master, .master(.intensity), 65535)])
+        // the MSB is kept per source: another source's LSB does not complete this one's
+        #expect(mapper.handle(.controlChange(channel: 3, controller: 33, value: 127), from: "APC", uid: 2) { _, _ in nil } == [.set(.master, .master(.intensity), 508)])
+        mapper.forget(uid: 0)
+        #expect(run(.controlChange(channel: 3, controller: 33, value: 0)) == [.set(.master, .master(.intensity), 0)], "forgotten with its source")
         // program change: only from the named source; 8-bit file parameter
         #expect(run(.programChange(channel: 0, program: 127)) == [.set(.layer(1), .layer(.file), 255)])
         #expect(run(.programChange(channel: 0, program: 127), from: "Keyboard") == [])
@@ -64,10 +69,19 @@ struct MIDIControlTests {
         // any program change: program n (0-based) fires cue n + 1
         #expect(run(.programChange(channel: 0, program: 4)) == [.cueGoto(5)])
         // MSC: our device id or the all-call; GO with a cue is a go to; STOP and RESUME do nothing
-        #expect(run(.showControl(MSCMessage(deviceID: 5, command: 1))) == [.cueGo])
-        #expect(run(.showControl(MSCMessage(deviceID: 0x7F, command: 1, cue: "12.5"))) == [.cueGoto(12.5)])
-        #expect(run(.showControl(MSCMessage(deviceID: 6, command: 1))) == [])
-        #expect(run(.showControl(MSCMessage(deviceID: 5, command: 2))) == [])
+        // MSC (video format by default): our device id or the all-call; GO with a cue is a go to; STOP and RESUME do nothing
+        #expect(run(.showControl(MSCMessage(deviceID: 5, format: 0x30, command: 1))) == [.cueGo])
+        #expect(run(.showControl(MSCMessage(deviceID: 0x7F, format: 0x3F, command: 1, cue: "12.5"))) == [.cueGoto(12.5)])
+        #expect(run(.showControl(MSCMessage(deviceID: 5, format: 0x7F, command: 1))) == [.cueGo], "all-types")
+        #expect(run(.showControl(MSCMessage(deviceID: 6, format: 0x30, command: 1))) == [])
+        #expect(run(.showControl(MSCMessage(deviceID: 5, format: 0x30, command: 2))) == [])
+        #expect(run(.showControl(MSCMessage(deviceID: 5, format: 0x01, command: 1))) == [], "a lighting GO is for the desk")
+        // a cue that is there but no number never becomes a plain GO
+        #expect(run(.showControl(MSCMessage(deviceID: 5, format: 0x30, command: 1, cue: "1.2.3"))) == [])
+        #expect(run(.showControl(MSCMessage(deviceID: 5, format: 0x30, command: 1, cue: "1\u{7}"))) == [])
+        var lighting = MIDIMapper(settings: Self.settings([], mscDevice: 5, mscFormat: 0x01))
+        #expect(lighting.handle(.showControl(MSCMessage(deviceID: 5, format: 0x01, command: 1)), from: "x") { _, _ in nil } == [.cueGo])
+        #expect(lighting.handle(.showControl(MSCMessage(deviceID: 5, format: 0x30, command: 1)), from: "x") { _, _ in nil } == [])
     }
 
     @Test func toggleAndPickup() {
@@ -170,13 +184,93 @@ struct MIDIControlTests {
         #expect(input.status.withLock { $0.last } == "nanoKONTROL2 · ch 1 · note 36 on · 100")
         // learn: a note on a parameter becomes a toggle
         input.learn(target: "fixture:Layer 2/intensity", cue: nil)
-        input.inject([0x91, 60, 127], from: "APC40")
+        input.inject([0x91, 60, 127], from: "APC40", uid: 2)
         let mapping = try #require(stored.withLock { $0.first })
         #expect(mapping.source == "APC40" && mapping.channel == 2 && mapping.kind == .note && mapping.number == 60 && mapping.target == "fixture:Layer 2/intensity" && mapping.curve == .toggle)
         #expect(input.status.withLock { $0.learning == nil && $0.learned == "ch 2 · note 60 → fixture:Layer 2/intensity" })
-        // MSC GO 4 to the all-call, split over two packets
-        input.inject([0xF0, 0x7F, 0x7F, 0x02, 0x01], from: "Desk")
-        input.inject([0x01, 0x34, 0xF7], from: "Desk")
+        // MSC GO 4 (video format) to the all-call, split over two packets
+        input.inject([0xF0, 0x7F, 0x7F, 0x02, 0x30], from: "Desk", uid: 3)
+        input.inject([0x01, 0x34, 0xF7], from: "Desk", uid: 3)
         #expect(cues.withLock { $0 } == [.cueGo, .cueGoto(4)])
+    }
+
+    /// Two identical controllers share a name: running status is kept per source id, not per name.
+    @Test func parsersArePerSourceID() {
+        let dmx = DMXStore(patch: .standard(layers: 2, outputs: 1), logger: Self.logger)
+        let input = MIDIInput(dmx: dmx, logger: Self.logger)
+        let cues = Mutex<Int>(0)
+        input.onCue = { _ in cues.withLock { $0 += 1 } }
+        input.apply(Self.settings([MIDIMapping(kind: .note, number: 36, target: "cue.go")]))
+        input.inject([0x90], from: "APC mini", uid: 10)  // a status byte, its data still to come
+        input.inject([0xB0, 1, 0], from: "APC mini", uid: 11)  // the twin sends a CC meanwhile
+        input.inject([36, 127], from: "APC mini", uid: 10)
+        #expect(cues.withLock { $0 } == 1)
+    }
+
+    /// MIDI values are a controller like the UI: they expire after masking a console, Release clears them, and they go
+    /// when their entry is removed or their source disconnects.
+    @Test func midiValuesNeverStayStuck() {
+        let dmx = DMXStore(patch: .standard(layers: 2, outputs: 1), logger: Self.logger)
+        dmx.setPolicy(.internal, for: .layer(1))
+        let input = MIDIInput(dmx: dmx, logger: Self.logger)
+        let fader = MIDIMapping(kind: .cc, number: 7, target: "fixture:Layer 1/intensity")
+        let knob = MIDIMapping(kind: .cc, number: 8, target: "fixture:Layer 1/speed")
+        func midi() -> [String] { (dmx.snapshot().internalValues["Layer 1"] ?? []).filter { $0.source == "midi" }.map(\.key).sorted() }
+        input.apply(Self.settings([fader, knob]))
+        input.inject([0xB0, 7, 100, 8, 100], from: "nanoKONTROL2", uid: 5)
+        #expect(midi().count == 2)
+        // the knob's entry removed: its value goes, the fader's stays
+        input.apply(Self.settings([fader]))
+        input.inject([], from: "nanoKONTROL2", uid: 5)
+        #expect(midi() == ["intensity"])
+        // the source disconnects: everything it set goes
+        input.queue.sync { input.setSources([:]) }
+        #expect(midi() == [])
+        // fixture.release clears MIDI values too
+        input.inject([0xB0, 7, 100], from: "nanoKONTROL2", uid: 5)
+        #expect(midi() == ["intensity"])
+        dmx.releaseUI(.layer(1))
+        #expect(midi() == [])
+        // B27 expiry: masking a received console for 10 minutes releases them
+        dmx.queue.sync {
+            dmx.receive(artnet: ArtDmx(portAddress: 0, data: [UInt8](repeating: 0, count: 512)), from: "desk", at: 1000)
+            dmx.applyUI(.layer(1), .layer(.intensity), raw: 100, at: 1000, source: .midi)
+            dmx.tick(at: 1000)
+        }
+        #expect(dmx.snapshot(at: 1000).uiExpiresIn["Layer 1"] == 600)
+        dmx.queue.sync {
+            dmx.receive(artnet: ArtDmx(portAddress: 0, data: [UInt8](repeating: 0, count: 512)), from: "desk", at: 1601)
+            dmx.tick(at: 1601)
+        }
+        #expect(midi() == [])
+    }
+
+    @Test func toggleStartsFromTheShownValue() {
+        var mapper = MIDIMapper(settings: Self.settings([MIDIMapping(kind: .note, number: 1, target: "fixture:Output 1/intensity", curve: .toggle)]))
+        // the output shows full (its default): the first press turns it off, not "on" again
+        #expect(mapper.handle(.noteOn(channel: 0, note: 1, velocity: 127), from: "x") { _, _ in 65535 } == [.set(.output(1), .output(.intensity), 0)])
+        #expect(mapper.handle(.noteOn(channel: 0, note: 1, velocity: 127), from: "x") { _, _ in 0 } == [.set(.output(1), .output(.intensity), 65535)])
+    }
+
+    /// Hand-written entries: one that cannot be read is reported and kept in the document; the rest work and get ids.
+    @Test func mapEntriesAreReadOneByOne() throws {
+        let broken: JSONValue = ["kind": "knob", "number": 3, "target": "cue.go"]
+        let project: JSONValue = ["midi": ["mscDevice": 0, "map": [broken, ["kind": "note", "number": 36, "target": "cue.go"], ["kind": "note", "number": 37, "target": "cue.goto"]]]]
+        let settings = MIDISettings.from(project: project)
+        #expect(settings.map.count == 2 && settings.problems.count == 2, "\(settings.problems)")
+        #expect(settings.problems.first?.hasPrefix("map entry 1:") == true && settings.problems.last?.contains("cue number") == true)
+        #expect(MIDIMapper(settings: settings).settings.map.count == 2)
+        var mapper = MIDIMapper(settings: settings)
+        #expect(mapper.handle(.noteOn(channel: 0, note: 36, velocity: 1), from: "x") { _, _ in nil } == [.cueGo])
+        let fixed = try #require(MIDISettings.assigningIDs(project))
+        #expect(MIDISettings.from(project: fixed).map.allSatisfy { !$0.id.isEmpty })
+        #expect(MIDISettings.assigningIDs(fixed) == nil)
+        // midi.map.set and remove leave the unreadable entry exactly as it was
+        let store = StateStore(project: fixed, logger: Self.logger)
+        MIDICommands.register(on: store, hooks: MIDICommands.Hooks(learn: { _, _ in }))
+        let id = try store.execute("midi.map.set", args: ["kind": "cc", "number": 1, "target": "cue.back"], role: .programmer).get().value?.string
+        _ = try store.execute("midi.map.remove", args: ["id": .string(id!)], role: .programmer).get()
+        #expect(store.project["midi"]?["map"]?.array?.first?["kind"] == "knob")
+        #expect(store.project["midi"]?["map"]?.array?.count == 3)
     }
 }

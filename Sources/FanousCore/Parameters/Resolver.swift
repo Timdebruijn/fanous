@@ -64,6 +64,14 @@ public struct FixtureResolver: Sendable {
         internalChangedAt[i] = time
     }
 
+    /// One parameter, only when `source` set it.
+    public mutating func clearInternal(_ id: ParameterID, source: ValueSource) {
+        let i = ChannelMap.index(of: id)
+        guard internalSource[i] == source else { return }
+        internalRaw[i] = nil
+        internalSource[i] = .none
+    }
+
     public mutating func clearInternal(source: ValueSource) {
         for i in internalRaw.indices where internalSource[i] == source {
             internalRaw[i] = nil
