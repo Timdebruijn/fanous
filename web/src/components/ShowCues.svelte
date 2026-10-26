@@ -5,7 +5,7 @@
   import type { CueDoc } from '../lib/docs';
   import type { JSONValue } from '../lib/protocol';
   import { cueRowLabel, cueRowText, cueStatus, formatNumber, lockTitle, nextCueNumber, numberAfter, sortedCues, swapSteps } from '../lib/show';
-  import { app, can, cmd } from '../lib/state.svelte';
+  import { app, can, cmd, toastUndo } from '../lib/state.svelte';
 
   let { selected = $bindable('') }: { selected: string } = $props();
 
@@ -33,9 +33,13 @@
   }
 
   async function remove() {
-    if (!picked || !confirm(`Remove cue ${formatNumber(picked.number)} "${picked.name}"?`)) return;
+    if (!picked) return;
+    const label = `Cue ${formatNumber(picked.number)} "${picked.name}" removed.`;
     const neighbour = cues[index + 1] ?? cues[index - 1];
-    if ((await cmd('cue.remove', { id: picked.id })) !== undefined) selected = neighbour?.id ?? '';
+    if ((await cmd('cue.remove', { id: picked.id })) !== undefined) {
+      selected = neighbour?.id ?? '';
+      toastUndo(label);
+    }
   }
 
   /** Swaps numbers with the neighbour; the engine refuses duplicate numbers, so it takes three cue.set calls (three undo steps). */

@@ -2,8 +2,8 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Hash routing for six screens (DESIGN.md §11.4): no router library. Also the global keys of §12:
-// 1–6 screens, Cmd/Ctrl+Z undo, Shift+Cmd/Ctrl+Z redo, L show lock (programmer, confirmed).
-import { app, can, cmd } from './state.svelte';
+// 1–6 screens, Cmd/Ctrl+Z undo, Shift+Cmd/Ctrl+Z redo, L show lock (programmer; asks only when unlocking during show mode), ? shortcut list.
+import { can, cmd, shell, toggleLock } from './state.svelte';
 
 export const screens = [
   { id: 'layers', label: 'Layers', key: '1' },
@@ -40,11 +40,12 @@ export function startRouter(): () => void {
       return;
     }
     if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.key === '?') {
+      shell.help = !shell.help;
+      return;
+    }
     if (event.key.toLowerCase() === 'l' && can('programmer')) {
-      const locked = app.project.showLock;
-      if (confirm(locked ? 'Unlock the show? Configuration commands are accepted again.' : 'Lock the show? Configuration commands are refused until it is unlocked.')) {
-        void cmd(locked ? 'show.unlock' : 'show.lock');
-      }
+      void toggleLock();
       return;
     }
     const screen = screens.find((s) => s.key === event.key);

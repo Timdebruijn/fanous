@@ -3,7 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import type { JSONValue } from '../lib/protocol';
-  import { lockTitle, timecodeBadge, timecodeSource } from '../lib/show';
+  import { lockTitle, offsetText, timecodeBadge, timecodeSource } from '../lib/show';
   import { app, can, cmd } from '../lib/state.svelte';
 
   const tc = $derived(app.project.timecode);
@@ -117,6 +117,7 @@
         <input type="number" step="1" aria-labelledby="tc-offset" value={offset} disabled={!editable} onchange={(e) => setOffset(typed(e.currentTarget), e.currentTarget)} />
         <button type="button" aria-label="Offset one frame later" disabled={!editable} onclick={() => setOffset(offset + 1)}>+</button>
       </div>
+      <span class="caption" aria-live="polite">{offsetText(offset, app.live.timecode.rate)}</span>
     </div>
     <label class="field">
       <span>Freewheel (s)</span>

@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
-import { blendCurvePath, handles, insertPoint, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
+import { sourceFromPixels, sourcePixels, blendCurvePath, handles, insertPoint, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
 
 const output: OutputConfig = {
   id: 1,
@@ -48,5 +48,17 @@ describe('outputs helpers', () => {
     expect(insertPoint([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }], 2)).toEqual([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0.5, y: 0.5 }]);
     expect(nudge({ x: 0.5, y: 0.5 }, 10, -10, { w: 1000, h: 500 })).toEqual({ x: 0.51, y: 0.48 });
     expect(nudge({ x: 0.999, y: 0 }, 10, -10, { w: 1000, h: 500 })).toEqual({ x: 1, y: 0 });
+  });
+});
+
+describe('slice source in pixels', () => {
+  const canvas = { width: 3840, height: 1080 };
+  it('converts between the stored fraction and canvas pixels', () => {
+    expect(sourcePixels({ x: 0.5, y: 0, w: 0.5, h: 1 }, canvas)).toEqual({ x: 1920, y: 0, w: 1920, h: 1080 });
+    expect(sourcePixels({ x: 0.25, y: 0.5, w: 1, h: 1 }, undefined)).toEqual({ x: 480, y: 540, w: 1920, h: 1080 });
+    expect(sourceFromPixels('x', 1920, canvas)).toBe(0.5);
+    expect(sourceFromPixels('h', 540, canvas)).toBe(0.5);
+    expect(sourceFromPixels('w', 99999, canvas)).toBe(1);
+    expect(sourceFromPixels('w', Number.NaN, canvas)).toBeNull();
   });
 });

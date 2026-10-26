@@ -3,8 +3,9 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import type { LayerStatus, PatchEntry, ResolvedParameter } from '../lib/docs';
-  import { GENERATORS, channelRange, patchText, reservedText, valueText, type ChannelSpec } from '../lib/layers';
-  import { app, can, cmd } from '../lib/state.svelte';
+  import { GENERATORS, RELEASE_TEXT, channelRange, mediaOptions, mediaPath, patchText, reservedText, valueText, type ChannelSpec, type LibrarySnapshot } from '../lib/layers';
+  import { app, can, cmd, playOnLayer } from '../lib/state.svelte';
+  import PolicyHint from './PolicyHint.svelte';
 
   let {
     n,
@@ -13,6 +14,7 @@
     entry,
     specs,
     footprint,
+    library = null,
   }: {
     n: number;
     layer: LayerStatus | undefined;
@@ -20,6 +22,7 @@
     entry: PatchEntry | undefined;
     specs: ChannelSpec[] | undefined;
     footprint: number;
+    library?: LibrarySnapshot | null;
   } = $props();
 
   const specByKey = $derived(new Map((specs ?? []).map((spec) => [spec.key, spec])));
@@ -29,7 +32,9 @@
   let control = $state(false);
   const fixture = $derived(`Layer ${n}`);
   const lockTitle = $derived(!can('programmer') ? 'Locked: programmer only' : app.project.showLock ? 'Locked: show lock is on' : undefined);
-  const ignored = $derived(app.project.policy === 'dmx');
+  const options = $derived(mediaOptions(library));
+  const current = $derived(layer && layer.folder > 0 && layer.file > 0 ? `${layer.folder}/${layer.file}` : '');
+  const currentName = $derived(layer && layer.folder > 0 ? mediaPath(library, layer.folder, layer.file) : null);
   const hasUI = $derived((params ?? []).some((p) => p.source === 'ui') || (app.live.dmx.internalValues[fixture] ?? []).some((v) => v.source === 'ui'));
 
   // at most ~20 commands a second per parameter while a slider moves; the last value always goes out
@@ -60,19 +65,24 @@
       </label>
     </div>
     <p class="caption mono">{patchText(entry, footprint)}</p>
+    {#if currentName}<p class="caption">{currentName}</p>{/if}
   </header>
   {#if control}
-    {#if ignored}
-      <div class="banner banner-yellow" role="status">
-        <span class="dot dot-yellow"></span>
-        <span>Source policy is <strong>DMX only</strong>: values set here are kept but not shown.</span>
-        <button type="button" class="btn" disabled={lockTitle !== undefined} onclick={() => void cmd('project.set', { path: '/policy', value: 'ltp' })}>Use LTP</button>
-      </div>
-    {/if}
+    <PolicyHint />
     <div class="releasebar">
-      <span class="caption">Latest change wins between console and UI (LTP). Release hands the layer back to the console.</span>
+      <span class="caption">{RELEASE_TEXT}</span>
       <button type="button" class="btn" disabled={!hasUI || lockTitle !== undefined} onclick={() => void cmd('fixture.release', { fixture })}>Release</button>
     </div>
+    <label class="field builtin">
+      <span>Media from the library</span>
+      <select class="select" aria-label="Media from the library" disabled={lockTitle !== undefined || options.length === 0} value={current} onchange={(e) => {
+        const [folder, file] = e.currentTarget.value.split('/').map(Number);
+        if (folder && file) void playOnLayer(n, folder, file);
+      }}>
+        <option value="" disabled>{options.length === 0 ? 'No media in the library yet (Media screen)' : 'Choose media…'}</option>
+        {#each options as o (`${o.folder}/${o.file}`)}<option value={`${o.folder}/${o.file}`}>{o.label}</option>{/each}
+      </select>
+    </label>
     <label class="field builtin">
       <span>Built-in content (folder 0)</span>
       <select class="select" disabled={lockTitle !== undefined} value="" onchange={(e) => {

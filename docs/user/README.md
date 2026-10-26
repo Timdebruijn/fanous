@@ -57,8 +57,10 @@ Switch screens with the left rail or the keys 1 to 6.
 | 6 | System (System / Health) | Show mode and readiness, metrics, network, roles, logs |
 
 Other keys: Cmd-Z undo and Shift-Cmd-Z redo (programmer), L lock or unlock the
-show (programmer, with a confirmation), Space fires the next cue on the Show
-screen (operator and programmer). Keys do nothing while you type in a field.
+show (programmer; it only asks first when you unlock while show mode is on),
+Space fires the next cue on the Show screen (operator and programmer), ? opens
+the list of shortcuts (also the **?** button in the status bar). The rail shows
+the number key next to each screen. Keys do nothing while you type in a field.
 
 ## Known limitations
 

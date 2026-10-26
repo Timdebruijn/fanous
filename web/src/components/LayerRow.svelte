@@ -3,7 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import type { LayerStatus, ResolvedParameter } from '../lib/docs';
-  import { clampPercent, findParam, formatPercent, layerState, mediaLine, playedPercent, positionCaption } from '../lib/layers';
+  import { clampPercent, findParam, formatPercent, layerState, mediaLine, playedPercent, policyName, positionCaption } from '../lib/layers';
 
   let {
     n,
@@ -80,10 +80,13 @@
     </span>
     <span class="c-src">
       <span class="lbl">Source</span>
-      <span class="badge badge-outline">{policy.toUpperCase()}</span>
+      <span class="badge badge-outline pol">{policyName(policy)}</span>
     </span>
   </span>
-  <span class="c-dot"><span class="dot dot-{status.dot}" role="img" aria-label={status.label} title={status.label}></span></span>
+  <span class="c-dot">
+    <span class="dot dot-{status.dot}" role="img" aria-label={status.label} title={status.label}></span>
+    <span class="chip chip-{status.dot}">{status.chip}</span>
+  </span>
 </button>
 
 <style>
@@ -108,7 +111,11 @@
   .c-audio { align-items: stretch; }
   .c-audio .bar { height: 6px; }
   .c-src { align-items: flex-start; }
-  .c-dot { display: flex; justify-content: center; }
+  .pol { height: auto; min-height: 24px; padding: 2px 6px; white-space: normal; line-height: 1.2; font-size: 11px; }
+  .c-dot { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .chip { font: 700 10px var(--font-ui); letter-spacing: 0.04em; text-align: center; line-height: 1.1; color: var(--text-2); }
+  .chip-red { color: var(--red); }
+  .chip-green { color: var(--green); }
   /* column labels: spoken on the desktop row (the heads are visual), drawn on the tile (no heads there) */
   .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
@@ -116,7 +123,7 @@
     .layer { grid-template-columns: 96px minmax(0, 1fr) auto; row-gap: 10px; align-items: start; align-content: start; height: 100%; padding: 12px; }
     .c-thumb { grid-row: 1 / span 2; }
     .c-name { grid-column: 2; grid-row: 1; }
-    .c-dot { grid-column: 3; grid-row: 1; padding-top: 6px; }
+    .c-dot { grid-column: 3; grid-row: 1; padding-top: 6px; flex-direction: row; }
     .c-media { grid-column: 2 / 4; grid-row: 2; }
     .c-pos { grid-column: 1 / -1; }
     .scrubber { width: 100%; }

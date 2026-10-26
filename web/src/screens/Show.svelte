@@ -23,6 +23,9 @@
   const cues = $derived(app.project.cues);
   const selectedCue = $derived(cues.find((c) => c.id === ui.selected));
   const gotoTarget = $derived(typeof gotoNumber === 'number' ? cues.find((c) => c.number === gotoNumber) : undefined);
+  const nextText = $derived(
+    app.live.cue.next === null ? 'Next: no further cue' : `Next: ${formatNumber(app.live.cue.next)}${app.live.cue.nextName ? ` ${app.live.cue.nextName}` : ''}`,
+  );
   const transportLock = $derived(lockTitle('operator', can('operator'), false));
   const mtcSources = $derived(app.live.osc.midiSources);
   const mtcDevice = $derived(app.project.timecode.source === 'mtc' ? (app.project.timecode.device ?? '') : null);
@@ -54,10 +57,6 @@
   <h1>Show control</h1>
   <span class="caption">{cues.length} {cues.length === 1 ? 'cue' : 'cues'} · timecode {app.live.timecode.state}</span>
   <span class="spacer"></span>
-  <div class="segmented" role="group" aria-label="Cue transport">
-    <button type="button" class="btn btn-primary" aria-keyshortcuts="Space" disabled={transportLock !== undefined} title={transportLock ?? 'Go (Space)'} onclick={() => void cmd('cue.go')}>Go</button>
-    <button type="button" class="btn" disabled={transportLock !== undefined} title={transportLock} onclick={() => void cmd('cue.back')}>Back</button>
-  </div>
   <form
     class="goto"
     onsubmit={(event) => {
@@ -71,10 +70,19 @@
   </form>
 </div>
 
+<div class="transport" role="group" aria-label="Cue transport">
+  <button type="button" class="btn btn-primary go" aria-keyshortcuts="Space" disabled={transportLock !== undefined} title={transportLock ?? 'Fire the next cue (Space)'} onclick={() => void cmd('cue.go')}>
+    <span class="go-title">GO · Space</span>
+    <span class="go-next ellipsis">{nextText}</span>
+  </button>
+  <span class="spacer"></span>
+  <button type="button" class="btn back" disabled={transportLock !== undefined} title={transportLock ?? 'Fire the previous cue'} onclick={() => void cmd('cue.back')}>Back</button>
+</div>
+
 {#if app.project.policy === 'dmx'}
   <div class="banner banner-yellow" role="status">
     <span class="dot dot-yellow"></span>
-    <span><strong>Source policy is DMX only:</strong> cues and OSC are recorded but do not control the layers. Change it under Patch › Source policy.</span>
+    <span><strong>Source policy is Console only:</strong> cues and OSC are recorded but do not control the layers. Change it under Patch › Source policy.</span>
   </div>
 {/if}
 
@@ -111,6 +119,11 @@
 </div>
 
 <style>
+  .transport { display: flex; align-items: center; gap: 48px; }
+  .go { flex: 1 1 320px; max-width: 520px; height: 72px; flex-direction: column; gap: 2px; font-size: 22px; letter-spacing: 0.02em; }
+  .go-title { font-weight: 700; }
+  .go-next { max-width: 100%; font-size: 14px; font-weight: 500; }
+  .back { min-width: 96px; }
   .goto { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .goto .input { width: 120px; }
   .target { max-width: 160px; }

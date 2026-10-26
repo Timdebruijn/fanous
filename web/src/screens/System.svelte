@@ -167,7 +167,7 @@
           {#if s.state === 'bound'}<span class="mono muted">{modeText(s)}</span>{/if}
         </li>
       {:else}
-        <li class="caption empty">No outputs configured.</li>
+        <li class="caption empty">No outputs configured. Add one on the Outputs screen for each projector or display.</li>
       {/each}
     </ul>
 
@@ -182,7 +182,7 @@
           <span class="mono muted">{ageText(u.ageSeconds)}</span>
         </li>
       {:else}
-        <li class="caption empty">No universes seen.</li>
+        <li class="caption empty">No DMX universes seen. Nothing has arrived on Art-Net or sACN: check that the console sends to this Mac's address, the cable or Wi-Fi, and the universe numbers on the Patch screen.</li>
       {/each}
     </ul>
   </section>

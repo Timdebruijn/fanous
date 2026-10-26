@@ -99,13 +99,15 @@ port-address wins. Within sACN the highest priority wins, equal priorities go to
 the most recent packet, and per-address priority is not supported.
 
 The project's **Source policy** (Patch screen toolbar, programmer) decides how
-DMX combines with values from cues and OSC: **DMX only** (the default: cues and
-OSC parameter values are recorded but do not move a layer), **Internal only**
-(cues and OSC only, DMX is shown but ignored), **LTP** (latest change per
-parameter wins) or **HTP** (highest value wins for numbers such as intensity;
-folder, file and mode channels fall back to LTP). The Layers screen shows the
+DMX combines with values from cues and OSC: **Console only** (stored as DMX only; the
+default: cues and OSC parameter values are recorded but do not move a layer),
+**UI and cues only** (cues, OSC and the UI; DMX is shown but ignored),
+**Console + UI (latest wins)** (latest change per parameter wins; LTP in console
+terms) or **Console + UI (highest wins)** (highest value wins for numbers such as
+intensity; folder, file and mode channels fall back to latest wins; HTP in
+console terms). The Layers screen shows the
 policy in the Source column, and the Show control screen warns while the policy
-is DMX only. Pick LTP for a show that mixes console control with cues.
+is Console only. Pick Console + UI (latest wins) for a show that mixes console control with cues.
 
 ## First light
 

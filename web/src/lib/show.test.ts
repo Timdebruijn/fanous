@@ -7,6 +7,8 @@ import type { ChannelMap, ParamSpec } from './patch-screen';
 import {
   cueRowLabel, cueRowText, cueStatus, fixtureNames, fixtureType, formatClock, formatNumber, groupSpecs, isNumberTaken, lockTitle, newValue, nextCueNumber,
   numberAfter, parseTrigger, retargetValue, sortedCues, specsFor, swapSteps, timecodeBadge, timecodeSource, valueControl, withFade,
+  offsetText,
+  rateFps,
 } from './show';
 
 const cue = (id: string, number: number, extra: Partial<CueDoc> = {}): CueDoc => ({ id, number, name: `Cue ${number}`, fade: 0, values: [], ...extra });
@@ -229,5 +231,15 @@ describe('timecode and OSC wording', () => {
     expect(formatClock(new Date(2026, 9, 23, 14, 5, 9).getTime() / 1000)).toBe('14:05:09');
     expect(formatClock(new Date(2026, 0, 1, 0, 0, 0, 900).getTime() / 1000)).toBe('00:00:00');
     expect(formatClock(NaN)).toBe('--:--:--');
+  });
+});
+
+describe('timecode offset text', () => {
+  it('shows frames and the equivalent seconds', () => {
+    expect(offsetText(25, '25')).toBe('+25 frames = +1.00 s at 25 fps');
+    expect(offsetText(-1, '24')).toBe('-1 frame = -0.04 s at 24 fps');
+    expect(offsetText(30, '29.97 DF')).toBe('+30 frames = +1.00 s at 29.97 fps');
+    expect(offsetText(0, '')).toBe('0 frames = 0.00 s assuming 25 fps until a source locks');
+    expect(rateFps('30')).toBe(30);
   });
 });

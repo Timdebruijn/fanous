@@ -3,7 +3,8 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import Login from './Login.svelte';
-  import { app, can, cmd } from '../lib/state.svelte';
+  import { readinessSummary } from '../lib/system';
+  import { app, can, cmd, shell, toggleLock } from '../lib/state.svelte';
 
   let showLogin = $state(false);
 
@@ -33,30 +34,50 @@
     if (u.ageSeconds < 0) return `${name} · silent`;
     return `${name} · ${u.ageSeconds.toFixed(1)} s`;
   }
-  async function toggleLock() {
-    if (app.project.showLock) {
-      if (confirm('Unlock the show? Configuration commands are accepted again.')) await cmd('show.unlock');
-    } else {
-      await cmd('show.lock');
-    }
+  const showMode = $derived(app.live.show.mode);
+  const blocking = $derived(readinessSummary(app.live.show.readiness, app.live.show.checkedAt).blocking);
+  /** set when entering show mode was refused: the popover under the button says why */
+  let refused = $state<string | null>(null);
+  async function toggleShowMode() {
+    const on = !showMode;
+    refused = null;
+    if ((await cmd('show.mode', { on })) === undefined && on) refused = app.lastError?.message ?? 'Show mode could not be entered.';
   }
+  $effect(() => {
+    if (showMode) refused = null;
+  });
 </script>
 
 <header class="status">
   <div class="item brand">
     <span class="name">Fanous</span>
-    {#if app.project.showLock}
-      <button class="tag tag-lock" onclick={toggleLock} disabled={!can('programmer')} title={can('programmer') ? 'Unlock the show' : 'Locked: programmer only'}>
-        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
-        SHOW LOCK
+    <button type="button" class="tag {app.project.showLock ? 'tag-lock' : 'tag-open'}" aria-pressed={app.project.showLock} onclick={toggleLock} disabled={!can('programmer')} title={can('programmer') ? (app.project.showLock ? 'Unlock the show (L)' : 'Lock the show: configuration is refused (L)') : 'Programmer only'}>
+      {#if app.project.showLock}<svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>{/if}
+      {app.project.showLock ? 'LOCKED' : 'UNLOCKED'}
+    </button>
+    <span class="modewrap">
+      <button type="button" class="tag {showMode ? 'tag-mode' : 'tag-open'}" aria-pressed={showMode} aria-expanded={refused !== null} onclick={toggleShowMode} disabled={!can('operator')} title={can('operator') ? (showMode ? 'Leave show mode' : 'Enter show mode: runs the readiness checks first') : 'Operator or programmer only'}>
+        SHOW MODE: {showMode ? 'ON' : 'OFF'}
       </button>
-    {:else}
-      <button class="tag tag-open" onclick={toggleLock} disabled={!can('programmer')} title={can('programmer') ? 'Lock the show' : 'Locked: programmer only'}>UNLOCKED</button>
-    {/if}
+      {#if refused !== null}
+        <div class="pop panel" role="alert">
+          <strong>Cannot enter show mode</strong>
+          {#if blocking.length > 0}
+            <ul>{#each blocking as item (item.id)}<li>{item.title}{#if item.fix}<span class="caption"> — {item.fix}</span>{/if}</li>{/each}</ul>
+          {:else}
+            <p class="caption">{refused}</p>
+          {/if}
+          <div class="popactions">
+            <a class="btn btn-primary" href="#/system" onclick={() => (refused = null)}>Open System</a>
+            <button type="button" class="btn" onclick={() => (refused = null)}>Close</button>
+          </div>
+        </div>
+      {/if}
+    </span>
   </div>
   <div class="item col">
     <span class="mono value">{fps}<span class="faint"> fps </span>{metrics.gpuP99.toFixed(1)}<span class="faint"> ms</span></span>
-    <span class="caption">{app.live.engine.rendering ? `gpu p99 · cpu ${metrics.cpuP99.toFixed(1)} ms` : 'no outputs rendering'}</span>
+    <span class="caption">{app.live.engine.rendering ? `gpu p99 · cpu ${metrics.cpuP99.toFixed(1)} ms` : 'no outputs rendering: add or assign one (Outputs)'}</span>
   </div>
   <div class="item col" class:red={dropped > 0 && app.project.showLock}>
     <span class="mono value">{dropped}</span>
@@ -66,7 +87,7 @@
     {#each universes as u (u.id)}
       <span class="pill {universeClass(u)}"><span class="dot"></span>{universeLabel(u)}</span>
     {:else}
-      <span class="caption">no universes</span>
+      <span class="caption" title="Nothing has arrived on Art-Net or sACN yet: check the console's output address, the network cable and the universe numbers (System shows details).">no DMX received</span>
     {/each}
   </div>
   <div class="item col" class:red={app.live.timecode.state === 'lost' && app.project.showLock}>
@@ -101,6 +122,7 @@
     <button class="btn btn-icon" aria-label="Redo" title="Redo (⇧⌘Z)" disabled={!can('programmer')} onclick={() => cmd('redo')}>
       <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5" /><path d="M20 9H9a5 5 0 0 0 0 10h6" /></svg>
     </button>
+    <button type="button" class="btn btn-icon" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" onclick={() => (shell.help = true)}>?</button>
     <button type="button" class="role role-{app.role} role-btn" title="Log in as another role" onclick={() => (showLogin = true)}>{app.role.toUpperCase()}</button>
   </div>
 </header>
@@ -114,7 +136,14 @@
   .item.red { background: var(--red-bg); border-radius: 6px; }
   .item.red .value, .item.red .caption { color: var(--red); }
   .brand .name { font-weight: 700; letter-spacing: -0.01em; }
-  .tag { border: 0; }
+  .tag { border: 0; cursor: pointer; }
+  .tag.tag-open { border: 1px solid var(--line-strong); background: transparent; }
+  .modewrap { position: relative; }
+  .pop { position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; width: 320px; max-width: calc(100vw - 24px); padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--surface-2); border-color: var(--red); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
+  .pop ul { margin: 0; padding-left: 18px; font-size: 13px; }
+  .pop p { margin: 0; }
+  .popactions { display: flex; gap: 8px; }
+  .popactions a { text-decoration: none; }
   .tag:disabled { opacity: 0.8; }
   .value { font-size: 15px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
   .dmx { gap: 6px; }

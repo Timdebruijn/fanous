@@ -13,6 +13,7 @@
   import LayerStrips from '../components/LayerStrips.svelte';
   import Preview from '../components/Preview.svelte';
   import { thumbnailFor, thumbnailIndex, type ChannelMap, type LibrarySnapshot } from '../lib/layers';
+  import { go } from '../lib/router.svelte';
   import { app } from '../lib/state.svelte';
 
   let channelMap = $state.raw<ChannelMap | null>(null);
@@ -49,13 +50,16 @@
 
 <div class="toolbar">
   <h1>Layers</h1>
-  <span class="caption">Canvas 1 · {layerCount} layers · tier allows {app.caps.maxLayers ?? '—'} layers</span>
+  <span class="caption">Canvas 1 · {layerCount} layers · <span title="Layer limit of this Mac's performance tier (chip class, see System). Add layer on Patch stops at this number so the show does not drop frames.">tier allows {app.caps.maxLayers ?? '—'} layers</span></span>
 </div>
 
 <LayerStrips />
 
 {#if layerCount === 0}
-  <div class="panel empty"><p class="muted">The project has no layers.</p></div>
+  <div class="panel empty">
+    <p class="muted">The project has no layers, so there is nothing to play on. Add layers on the Patch screen (this Mac's tier allows {app.caps.maxLayers ?? '—'}).</p>
+    <button type="button" class="btn btn-primary" onclick={() => go('patch')}>Go to Patch</button>
+  </div>
 {:else}
   <div class="layout">
     <div class="table">
@@ -97,6 +101,7 @@
         params={app.live.dmx.fixtures[`Layer ${selected}`]}
         entry={patchByFixture.get(`Layer ${selected}`)}
         specs={channelMap?.modes.layer}
+        {library}
         footprint={channelMap?.footprints.layer ?? 64}
       />
     </div>
@@ -104,11 +109,12 @@
 {/if}
 
 <style>
-  .empty { padding: 32px; }
+  .empty { padding: 32px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+  .empty p { margin: 0; }
   .layout { display: flex; gap: 12px; align-items: flex-start; }
   .table {
     /* LayerRow reads these two; the heads below use the same grid so the columns line up. */
-    --layer-cols: 96px 70px minmax(0, 1fr) 200px 64px 92px 56px 74px 12px;
+    --layer-cols: 96px 70px minmax(0, 1fr) 200px 64px 92px 56px 120px 84px;
     --layer-gap: 8px;
     flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 6px;
   }

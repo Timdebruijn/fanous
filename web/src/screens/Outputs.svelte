@@ -6,13 +6,17 @@
 </script>
 
 <script lang="ts">
+  import NudgePad from '../components/NudgePad.svelte';
   import OutputMapper from '../components/OutputMapper.svelte';
   import Preview from '../components/Preview.svelte';
   import {
     EDGES, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, insertPoint, meshIdentity, modeText, nextSliceId, outputSize, statusText,
     type MapPoint, type MapperMode, type OutputConfig,
   } from '../lib/outputs';
-  import { app, can, cmd } from '../lib/state.svelte';
+  import { app, can, cmd, toastUndo } from '../lib/state.svelte';
+  import { go } from '../lib/router.svelte';
+  import { sourcePixels, sourceFromPixels } from '../lib/outputs';
+  import { fromScreen, nudgeStored, toScreen } from '../lib/warp';
   import type { JSONValue } from '../lib/protocol';
 
   const LOCKED = 'Locked: programmer only';
@@ -41,8 +45,18 @@
   function addOutput(uuid: string | null) {
     const d = displays.find((x) => x.uuid === uuid);
     void cmd('output.add', d ? { display: { uuid: d.uuid, name: d.name } } : {}).then((id) => {
-      if (typeof id === 'number') ui.selected = id;
+      if (typeof id === 'number') {
+        ui.selected = id;
+        justAdded = id;
+      }
     });
+  }
+  /** the output that was just added: the screen offers the next step for it */
+  let justAdded = $state<number | null>(null);
+  async function removeOutput() {
+    if (!output) return;
+    const name = output.name;
+    if ((await cmd('output.remove', { id: output.id })) !== undefined) toastUndo(`${name} removed.`);
   }
   function point(path: string, p: MapPoint) {
     set(path, { x: p.x, y: p.y });
@@ -57,9 +71,15 @@
   }
   function removeSlice() {
     if (!output || output.slices.length <= 1) return;
+    const id = output.slices[sliceIndex]?.id;
     const next = output.slices.filter((_, i) => i !== sliceIndex);
     set('/slices', next as unknown as JSONValue);
     ui.slice = 0;
+    toastUndo(`Slice ${id} removed.`);
+  }
+  function removeMask() {
+    set(`/slices/${sliceIndex}/mask`, null);
+    toastUndo(`Mask of slice ${output?.slices[sliceIndex]?.id} removed.`);
   }
   const selectedHandle = $derived.by(() => {
     if (!ui.handle || !output) return null;
@@ -68,6 +88,17 @@
     for (const part of parts) node = (node as Record<string, unknown> | undefined)?.[part];
     return node && typeof node === 'object' ? (node as MapPoint) : null;
   });
+  /** the selected point as it appears on screen (through the warp), in output pixels */
+  const selectedScreen = $derived(selectedHandle && output ? toScreen(output, ui.mapper, selectedHandle) : null);
+  function moveSelected(on: { x?: number; y?: number }) {
+    if (!output || !ui.handle || !selectedScreen) return;
+    const p = fromScreen(output, ui.mapper, { x: on.x ?? selectedScreen.x, y: on.y ?? selectedScreen.y });
+    point(ui.handle, { x: Math.min(1, Math.max(0, p.x)), y: Math.min(1, Math.max(0, p.y)) });
+  }
+  function nudgeSelected(dx: number, dy: number) {
+    if (!output || !ui.handle || !selectedHandle) return;
+    point(ui.handle, nudgeStored(output, ui.mapper, selectedHandle, dx, dy, size));
+  }
   function addMaskPoint() {
     const slice = output?.slices[sliceIndex];
     if (!slice?.mask) return;
@@ -101,6 +132,16 @@
   </div>
 {/each}
 
+{#if justAdded !== null && outputs.some((o) => o.id === justAdded)}
+  <div class="banner banner-yellow" role="status">
+    <span class="dot dot-green"></span>
+    <span><strong>Next: align this output.</strong> Open Warp &amp; Slices to place the picture on the projector.</span>
+    <span class="spacer"></span>
+    <button type="button" class="btn btn-primary" onclick={() => { ui.selected = justAdded!; ui.tab = 'warp'; justAdded = null; }}>Align this output</button>
+    <button type="button" class="btn btn-ghost" onclick={() => (justAdded = null)}>Later</button>
+  </div>
+{/if}
+
 <div class="screen">
   <aside class="list">
     {#each outputs as o (o.id)}
@@ -110,7 +151,7 @@
         <span class="caption ellipsis tone-{st.tone}">{st.text}</span>
       </button>
     {:else}
-      <p class="caption pad">No outputs yet. Add one for each projector or display; a new output shows the whole canvas.</p>
+      <p class="caption pad">No outputs yet. Add one for each projector or display with "Add output on" below; a new output shows the whole canvas.</p>
     {/each}
     <div class="add">
       <label class="field"><span>Add output on</span>
@@ -136,7 +177,10 @@
           </div>
         {/if}
       {:else}
-        <div class="panel nopreview"><p class="muted">The engine is not rendering a scene; previews appear when it does.</p></div>
+        <div class="panel nopreview">
+          <p class="muted">No preview: the engine is not rendering outputs. Assign this output to a connected display (Outputs tab), or check System › Readiness. Settings can still be edited; the preview appears when an output renders.</p>
+          <button type="button" class="btn" onclick={() => go('system')}>Open System</button>
+        </div>
       {/if}
     </div>
 
@@ -162,7 +206,7 @@
     {:else if ui.tab === 'outputs'}
       <section class="panel form" aria-label="Output settings">
         <div class="head2"><h2>{output.name}</h2><span class="caption tone-{statusText(status, output).tone}">{statusText(status, output).text}</span><span class="spacer"></span>
-          <button type="button" class="btn btn-danger" disabled={locked} title={locked ? LOCKED : undefined} onclick={() => { if (confirm(`Remove ${output.name}?`)) void cmd('output.remove', { id: output.id }); }}>Remove output</button></div>
+          <button type="button" class="btn btn-danger" disabled={locked} title={locked ? LOCKED : undefined} onclick={removeOutput}>Remove output</button></div>
         <div class="fields">
           <label class="field"><span>Name</span><input class="input" type="text" value={output.name} disabled={locked} onchange={(e) => set('/name', e.currentTarget.value)} /></label>
           <label class="field"><span>Display</span>
@@ -196,14 +240,17 @@
             {@const e = output.blend[edge]}
             <div class="edge panel">
               <div class="ehead"><span class="label">{edge}</span><svg class="curve" viewBox="0 0 100 40" aria-hidden="true"><path d={blendCurvePath(e, 100, 40)} fill="none" stroke="#4C9EFF" stroke-width="2" /></svg></div>
-              <label class="field"><span>Overlap px</span><input class="input mono" type="number" min="0" value={e.overlap} disabled={locked} onchange={(ev) => number(ev, `/blend/${edge}/overlap`)} /></label>
+              <label class="field"><span>Overlap (px)</span><input class="input mono" type="number" min="0" value={e.overlap} disabled={locked} onchange={(ev) => number(ev, `/blend/${edge}/overlap`)} /></label>
+              <p class="caption">Overlap: width of the strip shared with the neighbouring projector, in pixels of this output.</p>
               <label class="field"><span>Power</span><input class="input mono" type="number" min="0.1" max="10" step="0.1" value={e.power} disabled={locked} onchange={(ev) => number(ev, `/blend/${edge}/power`)} /></label>
+              <p class="caption">Power: steepness of the fade. 2 is a smooth S-curve; higher is sharper in the middle.</p>
               <label class="field"><span>Gamma</span><input class="input mono" type="number" min="0.5" max="5" step="0.1" value={e.gamma} disabled={locked} onchange={(ev) => number(ev, `/blend/${edge}/gamma`)} /></label>
+              <p class="caption">Gamma: set it to the projector's gamma (usually 2.2) so the two lights add up evenly.</p>
             </div>
           {/each}
         </div>
         <div class="fields">
-          <label class="field"><span>Black lift %</span><input class="input mono" type="number" min="0" max="50" step="0.5" value={Math.round(output.blend.lift * 1000) / 10} disabled={locked} onchange={(e) => number(e, '/blend/lift', 0.01)} /></label>
+          <label class="field"><span>Black lift (%)</span><input class="input mono" type="number" min="0" max="50" step="0.5" value={Math.round(output.blend.lift * 1000) / 10} disabled={locked} onchange={(e) => number(e, '/blend/lift', 0.01)} /></label>
           <label class="field"><span>Lift feather px</span><input class="input mono" type="number" min="0" value={output.blend.liftFeather} disabled={locked} onchange={(e) => number(e, '/blend/liftFeather')} /></label>
         </div>
 
@@ -226,12 +273,18 @@
             <button type="button" class="btn" aria-pressed={ui.mapper === 'mask'} onclick={() => (ui.mapper = 'mask')}>Mask</button>
           </div>
           <span class="spacer"></span>
-          {#if selectedHandle}
-            <span class="caption">Selected point</span>
-            <input class="input mono narrow" type="number" aria-label="Point x in pixels" value={Math.round(selectedHandle.x * size.w)} disabled={locked} onchange={(e) => ui.handle && point(ui.handle, { x: Number(e.currentTarget.value) / size.w, y: selectedHandle!.y })} />
-            <input class="input mono narrow" type="number" aria-label="Point y in pixels" value={Math.round(selectedHandle.y * size.h)} disabled={locked} onchange={(e) => ui.handle && point(ui.handle, { x: selectedHandle!.x, y: Number(e.currentTarget.value) / size.h })} />
+          {#if selectedHandle && selectedScreen}
+            <span class="caption">Selected point (px)</span>
+            <input class="input mono narrow" type="number" aria-label="Point x in pixels" value={Math.round(selectedScreen.x * size.w)} disabled={locked} onchange={(e) => moveSelected({ x: Number(e.currentTarget.value) / size.w })} />
+            <input class="input mono narrow" type="number" aria-label="Point y in pixels" value={Math.round(selectedScreen.y * size.h)} disabled={locked} onchange={(e) => moveSelected({ y: Number(e.currentTarget.value) / size.h })} />
           {/if}
         </div>
+        {#if selectedHandle}
+          <div class="nudge">
+            <NudgePad disabled={locked} onnudge={nudgeSelected} />
+            <p class="caption">Tap a handle on the picture, then nudge it here. 10 px moves ten pixels per press. Keyboard: arrow keys, Shift for ten.</p>
+          </div>
+        {/if}
         {#if ui.mapper === 'cornerPin'}
           <div class="fields">
             <p class="caption grow">Drag the four corners on the preview; arrow keys nudge the selected corner by one pixel (Shift: ten). For a curved or uneven surface, switch to Mesh and pick a density; the mesh works on top of the corner pin.</p>
@@ -257,10 +310,10 @@
             </label>
             {#if output.slices[sliceIndex]}
               {@const s = output.slices[sliceIndex]!}
-              <div class="field" role="group" aria-label="Source rectangle on the canvas (0–1)"><span>Source x · y · w · h (0–1)</span>
+              <div class="field" role="group" aria-label="Source rectangle on the canvas, in pixels"><span>Source x · y · w · h (canvas px)</span>
                 <span class="row4">
                   {#each ['x', 'y', 'w', 'h'] as k (k)}
-                    <input class="input mono" type="number" step="0.01" min="0" max="1" aria-label="Source {k}" value={s.source[k as 'x']} disabled={locked} onchange={(e) => set(`/slices/${sliceIndex}/source/${k}`, Number(e.currentTarget.value))} />
+                    <input class="input mono" type="number" step="1" min="0" aria-label="Source {k} in pixels" title="Stored as {Math.round(s.source[k as 'x'] * 10000) / 10000} (0–1 of the canvas)" value={sourcePixels(s.source, canvas)[k as 'x']} disabled={locked} onchange={(e) => { const v = sourceFromPixels(k as 'x', Number(e.currentTarget.value), canvas); if (v !== null) set(`/slices/${sliceIndex}/source/${k}`, v); }} />
                   {/each}
                 </span>
               </div>
@@ -281,7 +334,7 @@
               <label class="field"><span>Feather px</span><input class="input mono" type="number" min="0" value={s.mask.feather} disabled={locked} onchange={(e) => set(`/slices/${sliceIndex}/mask/feather`, Number(e.currentTarget.value))} /></label>
               <button type="button" class="btn" disabled={locked} onclick={addMaskPoint}>Add point</button>
               <button type="button" class="btn" disabled={locked || s.mask.path.length <= 3 || !ui.handle?.includes('/mask/')} onclick={removeMaskPoint}>Remove point</button>
-              <button type="button" class="btn btn-danger" disabled={locked} onclick={() => set(`/slices/${sliceIndex}/mask`, null)}>Remove mask</button>
+              <button type="button" class="btn btn-danger" disabled={locked} onclick={removeMask}>Remove mask</button>
             {:else}
               <button type="button" class="btn" disabled={locked || !s} onclick={() => set(`/slices/${sliceIndex}/mask`, defaultMask() as unknown as JSONValue)}>Add mask</button>
               <p class="caption grow">A mask hides everything outside its path; feather softens the edge in output pixels.</p>
@@ -319,6 +372,8 @@
   .row4 .input { width: 90px; }
   .ro { display: inline-flex; align-items: center; min-height: var(--touch); color: var(--text-2); }
   .narrow { width: 90px; }
+  .nudge { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+  .nudge .caption { flex: 1 1 200px; margin: 0; }
   .yellow { color: var(--yellow); }
   .edges { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
   .edge { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
