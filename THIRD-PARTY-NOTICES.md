@@ -14,6 +14,8 @@ specifications. Full license texts are in the linked files or packages.
 
 See `docs/licensing/DEPENDENCIES.md` for versions, pins and GPL compatibility.
 
+The app bundle carries these texts in `Fanous.app/Contents/Resources/licenses/` (GPL, the additional terms, this file and the hap, snappy, Syphon, swift-log and Svelte licenses); the web UI ships the font licenses in `fonts/`.
+
 ## Atkinson Hyperlegible Next and Mono
 
 Copyright 2020-2024 The Atkinson Hyperlegible Next Project Authors and The

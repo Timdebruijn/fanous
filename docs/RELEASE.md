@@ -102,13 +102,14 @@ On a fresh macOS user account (or a fresh Mac) with the notarized dmg:
       for jewelry (FANOUS JEWELERS, filed 2002, cancelled). The word is the
       Egyptian decorative lantern (fanous), also used for Ramadan. EUIPO and
       the Benelux register still to check
-- [ ] positioning: the survey found no open-source media server with DMX
+- [x] positioning (README "Why another media server", 2026-10-26): the survey found no open-source media server with DMX
       fixtures + GDTF + CITP + timecode chase together; closest are
       OpenVideoServer (Apache-2.0, Debian/Windows, 2026) and ossia score; the
       free Katrin Media Server (Logvinov, Mac, last release 2013, closed
       source) is the historical precedent to name in the README
-- [ ] `docs/licensing/DEPENDENCIES.md` and `THIRD-PARTY-NOTICES.md` match
-      `Package.resolved` and `web/package-lock.json`
+- [x] `docs/licensing/DEPENDENCIES.md` and `THIRD-PARTY-NOTICES.md` match
+      `Package.resolved` and `web/package-lock.json` (checked 2026-10-26; the app
+      bundle now carries the license texts in `Resources/licenses/`)
 - [ ] cla-assistant enabled on the public repository
 
 ## 8. Docs

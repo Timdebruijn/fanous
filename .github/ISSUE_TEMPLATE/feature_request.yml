@@ -1,0 +1,32 @@
+name: Feature request
+description: Propose a feature or an integration
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Features outside the v1 roadmap (docs/DESIGN.md §19) land in later versions. Companies can sponsor a feature: say so below and we will get in touch.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do at a show, and what stops you today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How you would like it to work (console channels, OSC, UI).
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware, consoles or protocols involved
+  - type: dropdown
+    id: sponsor
+    attributes:
+      label: Sponsoring
+      options:
+        - "No"
+        - "Maybe, I would like a quote"
+        - "Yes, on behalf of a company"

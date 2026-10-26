@@ -20,6 +20,16 @@ cp "$BIN/FanousShell" "$APP/Contents/MacOS/Fanous"
 cp "$BIN/fanousd" "$APP/Contents/MacOS/fanousd"
 cp -R web/dist "$APP/Contents/Resources/web"
 cp assets/Fanous.icns "$APP/Contents/Resources/Fanous.icns"
+# license texts travel with the binary (GPL, our §7 terms, BSD/Apache notices of what is compiled in)
+L="$APP/Contents/Resources/licenses"
+mkdir -p "$L"
+cp LICENSE LICENSE-ADDITIONAL-TERMS.md THIRD-PARTY-NOTICES.md "$L/"
+cp Sources/CHap/LICENSE "$L/hap-LICENSE.txt"
+cp Sources/CSnappy/LICENSE "$L/snappy-LICENSE.txt"
+cp Sources/Syphon/LICENSE "$L/Syphon-LICENSE.txt"
+SWIFT_LOG_LICENSE=$(find .build/checkouts/swift-log -maxdepth 1 -name "LICENSE*" | head -1)
+[[ -n "$SWIFT_LOG_LICENSE" ]] && cp "$SWIFT_LOG_LICENSE" "$L/swift-log-LICENSE.txt"
+cp web/node_modules/svelte/LICENSE.md "$L/svelte-LICENSE.md"  # the Svelte runtime is compiled into the web UI
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

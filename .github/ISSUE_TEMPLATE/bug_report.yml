@@ -1,0 +1,52 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. For a security problem use Security › Report a vulnerability instead (see SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Patch Layer 1 on A 0.0.0 …\n2. …"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Fanous version
+      description: About window or `fanousd --version`
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac and macOS
+      placeholder: MacBook Pro M1 Pro 32 GB, macOS 27.0.1
+    validations:
+      required: true
+  - type: input
+    id: console
+    attributes:
+      label: Console or control source
+      placeholder: grandMA3 onPC 2.3 over Art-Net / OSC from TouchOSC / none
+  - type: textarea
+    id: media
+    attributes:
+      label: Media and outputs
+      description: Codec, resolution and frame rate of the clips; number of outputs and displays.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: System › Logs (download) or ~/Library/Logs/Fanous/fanousd.log, the part around the problem.
+      render: text

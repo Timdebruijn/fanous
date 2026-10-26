@@ -15,7 +15,8 @@ jobs:
       - uses: actions/checkout@v7
       - run: swift --version
       - run: swift build
-      - run: scripts/test.sh
+      # engine tests need the GPU, the hardware ProRes decoder and free DMX ports: local or self-hosted only (DESIGN.md §18)
+      - run: scripts/test.sh --filter FanousCoreTests
       - run: scripts/license-headers.sh
       - run: scripts/core-purity.sh
       - run: scripts/check-channel-map.sh

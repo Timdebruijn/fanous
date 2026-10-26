@@ -1,13 +1,46 @@
+<p align="center"><img src="assets/fanous-mark.svg" width="128" alt="Fanous"></p>
+
 # Fanous
 
 Open-source media server for live events, programmed from a lighting console
 as a fixture (Catalyst-style): video layers driven by Art-Net/sACN on Apple
 Silicon Macs, with edge blending, warping and video mapping on the GPU.
 
-Status: **1.0.0 release candidate** — all phases of `docs/DESIGN.md` §19 are
-built; the release steps that need the owner are in `docs/RELEASE.md`. Until
-2026-10-25 the project was called Lanthorn. The name is the Egyptian lantern
-(fanous): coloured light for a show.
+**Status: 1.0.0 release candidate, source only.** Everything in the v1
+roadmap (`docs/DESIGN.md` §19) is built and measured: an 8-hour soak on the
+reference Mac (M1 Pro) passed with no dropped frames. Not yet: a notarized
+download (build it yourself, see Development), tests with real consoles over
+CITP and GDTF, and pull requests (see Contributing). Until 2026-10-25 the
+project was called Lanthorn. The name is the Egyptian lantern (fanous):
+coloured light for a show.
+
+## What it does
+
+- **Layers as fixtures.** Each video layer is a 64-channel DMX fixture
+  (folder, file, play mode, speed, position, scale, rotation, colour, blend
+  mode, effects, dissolve); Master and Output fixtures besides. A GDTF file
+  for the console comes out of the Patch screen (`docs/channel-map.md`).
+- **Playback.** ProRes and HAP from the hardware decoder straight into Metal,
+  stills, image sequences, audio, Syphon in and out, built-in test content.
+- **Outputs.** Several displays and projectors, soft-edge blending, corner pin
+  and mesh warp, slices and masks, test patterns that follow the warp.
+- **Show control.** LTC and MTC timecode with layer chase, a cue list,
+  the complete OSC address map, CITP/MSEX for consoles, show mode with a
+  readiness check.
+- **Web UI.** Every screen in a browser or on an iPad, with roles and
+  passwords; the Mac app hosts the same UI and runs the engine as a
+  background service that restarts within a second after a crash.
+
+## Why another media server
+
+Media servers that a lighting console drives as a fixture have been
+commercial products for twenty years, usually sold as a computer in a box.
+The free option most people remember, Katrin Media Server (Mac, closed
+source, last release 2013), is long gone. Open-source projects exist for
+projection mapping (Splash, MapMap), video mixing (vimix) and show control
+(ossia score, Chataigne), but none combines console-driven layers, GDTF,
+CITP and timecode chase. Fanous does, on a Mac that already has a hardware
+ProRes decoder.
 
 ## Getting Fanous, support and paid editions
 
