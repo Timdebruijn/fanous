@@ -13,7 +13,7 @@
   --surface-2: #1c1f24;
   --surface-3: #262a31;
   --line: #2e333b;
-  --line-strong: #3c424c;
+  --line-strong: #5a626e;
   --text-1: #eceef1;
   --text-2: #a3aab4;
   --text-3: #7b8491;
@@ -50,7 +50,7 @@ h2 { margin: 0; font-size: 17px; font-weight: 600; }
 .mono { font-family: var(--font-mono); }
 .muted { color: var(--text-2); }
 .faint { color: var(--text-3); }
-.caption { font-size: 12px; color: var(--text-3); }
+.caption { font-size: 12px; color: var(--text-2); }
 .label { font-size: 13px; font-weight: 500; color: var(--text-2); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -107,12 +107,12 @@ h2 { margin: 0; font-size: 17px; font-weight: 600; }
 .dot-green { background: var(--green); }
 .dot-yellow { background: var(--yellow); }
 .dot-red { background: var(--red); }
-.dot-off { background: var(--line); }
-.role { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 14px; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
+.dot-off { background: transparent; border: 1.5px solid #4a515c; }
+.role { display: inline-flex; align-items: center; min-height: var(--touch); padding: 0 10px; border-radius: 14px; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
 .role-monitor { background: var(--surface-3); color: var(--text-2); }
 .role-operator { background: var(--accent-dim); color: var(--text-1); }
 .role-programmer { background: var(--accent); color: var(--ground); }
-.tag { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: var(--radius-control); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; }
+.tag { display: inline-flex; align-items: center; gap: 6px; min-height: var(--touch); padding: 0 10px; border-radius: var(--radius-control); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; }
 .tag-lock { background: var(--surface-3); color: var(--text-1); }
 .tag-mode { background: var(--accent-dim); color: var(--text-1); }
 .tag-open { border: 1px solid var(--line-strong); color: var(--text-2); }

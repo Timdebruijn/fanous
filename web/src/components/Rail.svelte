@@ -18,7 +18,7 @@
   {#each screens as screen (screen.id)}
     <a href="#/{screen.id}" aria-current={route.screen === screen.id ? 'page' : undefined} title="{screen.label} ({screen.key})">
       <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d={icons[screen.id]} /></svg>
-      <span>{screen.label}</span>
+      <span class="lab"><span class="k">{screen.key}</span> <span class="t">{screen.label}</span></span>
     </a>
   {/each}
 </nav>
@@ -26,12 +26,13 @@
 <style>
   nav { flex: 1 0 84px; display: flex; flex-wrap: wrap; align-content: flex-start; background: var(--surface-1); border-right: 1px solid var(--line); padding: 8px 0; }
   a { flex: 0 0 84px; height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--text-2); text-decoration: none; font-size: 11px; font-weight: 500; }
+  .k { font: 600 10px var(--font-mono); color: var(--text-2); border: 1px solid var(--line-strong); border-radius: 3px; padding: 0 4px; }
   a:hover { color: var(--text-1); }
   a[aria-current='page'] { color: var(--text-1); background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
   /* iPad portrait and narrower: icons only, 56 px */
   @media (max-width: 1100px) {
     nav { flex-basis: 56px; }
     a { flex-basis: 56px; height: 56px; }
-    a span { display: none; }
+    a .t { display: none; }
   }
 </style>

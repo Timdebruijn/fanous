@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { FanousClient, patchDoc, type ConnectionState, type Doc, type PreviewInfo, type StreamDescription } from './client';
+import { makeMessage, pushMessage, TOAST_MS, type UIMessage } from './errors';
 import { emptyLive, emptyProject, type LiveDoc, type ProjectDoc } from './docs';
 import type { CommandArgs, CommandName, JSONValue, Role } from './protocol';
 
@@ -16,7 +17,33 @@ export const app = $state({
   caps: {} as Doc,
   /** last refused command, for a toast */
   lastError: null as { code: string; message: string } | null,
+  /** the last 20 refusals, newest first */
+  messages: [] as UIMessage[],
 });
+
+/** Transient UI state shared by the shell: the "Undo" toast and the shortcut overlay. */
+export const shell = $state({
+  toast: null as { id: number; text: string } | null,
+  help: false,
+});
+
+let messageId = 0;
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** "Removed X. Undo" for 8 s; Undo runs the engine's `undo`. Replaces a toast that is still showing. */
+export function toastUndo(text: string): void {
+  if (toastTimer) clearTimeout(toastTimer);
+  const id = ++messageId;
+  shell.toast = { id, text };
+  toastTimer = setTimeout(() => {
+    if (shell.toast?.id === id) shell.toast = null;
+  }, TOAST_MS);
+}
+
+export function dismissToast(): void {
+  if (toastTimer) clearTimeout(toastTimer);
+  shell.toast = null;
+}
 
 export const roleRank: Record<Role, number> = { monitor: 0, operator: 1, programmer: 2 };
 export function can(role: Role): boolean {
@@ -99,9 +126,22 @@ export async function cmd<N extends CommandName>(name: N, args?: CommandArgs[N])
     app.lastError = null;
     return result;
   } catch (error) {
-    app.lastError = error as { code: string; message: string };
+    const refusal = error as { code: string; message: string };
+    app.lastError = refusal;
+    app.messages = pushMessage(app.messages, makeMessage(++messageId, Date.now(), refusal));
     return undefined;
   }
+}
+
+/** Lock or unlock the show. Locking is harmless; unlocking while show mode is on asks first (the one routine confirm left). */
+export async function toggleLock(): Promise<void> {
+  if (!can('programmer')) return;
+  if (!app.project.showLock) {
+    await cmd('show.lock');
+    return;
+  }
+  if (app.live.show.mode && !confirm('Show mode is on. Unlock the show? Configuration commands are accepted again.')) return;
+  await cmd('show.unlock');
 }
 
 export async function subscribeDMX(universe: string, listener: (payload: Uint8Array) => void): Promise<() => void> {
