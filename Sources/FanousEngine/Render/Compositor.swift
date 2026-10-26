@@ -447,10 +447,12 @@ public final class Compositor: @unchecked Sendable {
             let playing = frameIndex != nil && !playback.clock.finished && ctx.dt > 0
                 && !(p.playMode == .freeze || p.playMode == .scrub || p.playMode == .timecode)
             let active = playing && direction > 0 && abs(speed - 100) < 0.5
-            // a forward loop plays [in, out + 1) frames; the audio reads across its wrap (clamped to the audio length)
+            // a forward loop plays [in, out + 1) frames; the audio reads across its wrap (not when the audio is shorter than that)
             var loop: (start: Double, end: Double)?
-            if p.playMode == .loopForward, outFrame > inFrame, let reader = playback.decoder?.audio?.reader {
-                loop = (Double(inFrame) / playback.frameRate, min(Double(outFrame + 1) / playback.frameRate, reader.duration))
+            if p.playMode == .loopForward, outFrame > inFrame, let reader = playback.decoder?.audio?.reader,
+                Double(outFrame + 1) / playback.frameRate <= reader.duration + 1 / playback.frameRate
+            {
+                loop = (Double(inFrame) / playback.frameRate, Double(outFrame + 1) / playback.frameRate)
             }
             channel.setState(wantedPTS: playback.clock.position / max(1, playback.frameRate), active: active, volume: p.audioVolume * weight, pan: p.audioPan, loop: loop)
         }

@@ -459,6 +459,43 @@ extension LayerAudioChannel {
         }
     }
 
+    /// Loop-end edge cases of the gapless wrap: a 44.1 kHz source looped over its whole (converted) length, a loop
+    /// a little longer than the audio (padded), and a restart whose clock is already past the loop end.
+    @Test func loopEdgeCases() async throws {
+        let directory = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appending(path: "edge.mov")
+        try Self.writeConstantAudio(to: url, rate: 44_100, channels: 2)
+        let reader = try await AudioTrackReader.open(url: url)
+
+        func run(loopEnd: Double, startWanted: Double = 0, laps: Int = 30) -> (underruns: UInt64, silent: Int, channel: LayerAudioChannel) {
+            let channel = LayerAudioChannel()
+            let frames = 480
+            let period = Int((loopEnd * 48_000).rounded())
+            var silent = 0
+            var step = Int((startWanted * 48_000).rounded()) / frames
+            channel.setState(wantedPTS: startWanted, active: true, volume: 1, pan: -1, loop: (0, loopEnd))
+            channel.fill(from: reader, wanted: startWanted)
+            for _ in 0..<(laps * period / frames) {
+                let wanted = Double(step * frames % period) / 48_000
+                channel.setState(wantedPTS: wanted, active: true, volume: 1, pan: -1, loop: (0, loopEnd))
+                let out = Self.pull(channel, frames: frames, wanted: wanted)
+                if step > 1 && out.left.allSatisfy({ $0 == 0 }) { silent += 1 }
+                channel.fill(from: reader, wanted: wanted)
+                step += 1
+            }
+            return (channel.statistics.underruns, silent, channel)
+        }
+
+        let whole = run(loopEnd: reader.duration)  // end = the clamped duration, the converter may return a few frames short
+        #expect(whole.underruns == 0 && whole.silent == 0, "whole: \(whole.underruns) underruns, \(whole.silent) silent")
+        let longer = run(loopEnd: reader.duration + 0.03)  // audio shorter than the loop: padded, never stuck at the end
+        #expect(longer.underruns == 0, "longer: \(longer.underruns) underruns")
+        #expect(longer.silent <= 30 * 4, "longer: \(longer.silent) silent")  // only the 30 ms of padding per lap is silent
+        let past = run(loopEnd: reader.duration, startWanted: reader.duration + 0.016, laps: 3)  // restart just past the end
+        #expect(past.underruns == 0 && past.silent == 0, "past: \(past.underruns) underruns, \(past.silent) silent")
+    }
+
     // MARK: AudioMixer
 
     @Test func mixerSumsChannelsAndAppliesMasterVolume() {

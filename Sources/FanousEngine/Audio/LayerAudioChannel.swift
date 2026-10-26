@@ -67,8 +67,8 @@ public final class LayerAudioChannel: @unchecked Sendable {
     private let volumeBits = Atomic<UInt32>(Float(1).bitPattern)
     private let panBits = Atomic<UInt32>(Float(0).bitPattern)
     // Loop range of a forward loop (`setState(loop:)`): start (seconds) and length in frames; 0 frames = no loop.
-    private let loopStartBits = Atomic<UInt64>(0)
-    private let loopFrames = Atomic<Int>(0)
+    // One atomic so a reader never pairs a new start with an old length: start frame << 32 | length in frames.
+    private let loopBits = Atomic<UInt64>(0)
 
     // Statistics.
     private let pullCount = Atomic<Int>(0)
@@ -110,8 +110,8 @@ public final class LayerAudioChannel: @unchecked Sendable {
 
     func setState(wantedPTS: Double, active: Bool, volume: Float, pan: Float, loop: (start: Double, end: Double)? = nil, atHostNanos nanos: UInt64) {
         let frames = loop.map { Int((($0.end - $0.start) * Self.rate).rounded()) } ?? 0
-        loopFrames.store(frames >= Self.sampleRate / 2 ? frames : 0, ordering: .relaxed)
-        loopStartBits.store((loop?.start ?? 0).bitPattern, ordering: .relaxed)
+        let start = loop.map { Int(($0.start * Self.rate).rounded()) } ?? 0
+        loopBits.store(frames >= Self.sampleRate / 2 && start >= 0 ? UInt64(start) << 32 | UInt64(frames) : 0, ordering: .relaxed)
         clockOffsetBits.store((wantedPTS - Double(nanos) / 1e9).bitPattern, ordering: .relaxed)
         volumeBits.store(volume.bitPattern, ordering: .relaxed)
         panBits.store(pan.bitPattern, ordering: .relaxed)
@@ -201,6 +201,12 @@ public final class LayerAudioChannel: @unchecked Sendable {
     }
 
     private func restart(at wanted: Double, _ seek: (Double) -> Void) {
+        var wanted = wanted
+        let (loopStart, loopLength) = loopRange
+        if loopLength > 0 {  // the extrapolated clock can be a tick past the loop end: fold it back in
+            let span = Double(loopLength) / Self.rate
+            if wanted >= loopStart + span { wanted = loopStart + (wanted - loopStart).truncatingRemainder(dividingBy: span) }
+        }
         seek(wanted)
         producerPTS = wanted
         startNewSegment = true
@@ -224,13 +230,17 @@ public final class LayerAudioChannel: @unchecked Sendable {
 
     /// `d` seconds folded into ±half a loop length when a loop is set (the ring's PTS line is unwrapped, the clock wraps).
     private func wrapped(_ d: Double) -> Double {
-        let span = Double(loopFrames.load(ordering: .relaxed)) / Self.rate
+        let span = Double(loopRange.length) / Self.rate
         return span > 0 ? d - span * (d / span).rounded() : d
     }
 
+    private var loopRange: (start: Double, length: Int) {
+        let bits = loopBits.load(ordering: .relaxed)
+        return (Double(bits >> 32) / Self.rate, Int(bits & 0xFFFF_FFFF))
+    }
+
     private func topUp(_ read: (UnsafeMutablePointer<Float>, Int) -> (framesRead: Int, firstFramePTS: Double), _ seek: (Double) -> Void) {
-        let loopLength = loopFrames.load(ordering: .relaxed)
-        let loopStart = Double(bitPattern: loopStartBits.load(ordering: .relaxed))
+        let (loopStart, loopLength) = loopRange
         let loopEnd = loopStart + Double(loopLength) / Self.rate
         while true {
             let t = tail.load(ordering: .relaxed)
@@ -240,7 +250,15 @@ public final class LayerAudioChannel: @unchecked Sendable {
             var n = min(space, Self.capacity - position)  // contiguous run; the next loop pass handles the wrap
             let looping = loopLength > 0 && producerPTS >= loopStart - 0.001 && producerPTS < loopEnd
             if looping { n = min(n, max(1, Int(((loopEnd - producerPTS) * Self.rate).rounded()))) }  // stop at the loop end
-            let (got, firstPTS) = read(storage + 2 * position, n)
+            var (got, firstPTS) = read(storage + 2 * position, n)
+            var padded = false
+            if looping && got < n && firstPTS + Double(got) / Self.rate >= loopEnd - 0.1 {
+                // The source ends a little before the loop end (rounding, or an audio track a bit shorter than the
+                // video): pad with silence so every lap is exactly the loop length, and wrap instead of ending.
+                (storage + 2 * (position + got)).update(repeating: 0, count: 2 * (n - got))
+                got = n
+                padded = true
+            }
             if startNewSegment {  // ring is empty here, so the consumer is not using the pair
                 baseIndex.store(t, ordering: .relaxed)
                 basePTSBits.store(firstPTS.bitPattern, ordering: .relaxed)
@@ -248,7 +266,7 @@ public final class LayerAudioChannel: @unchecked Sendable {
                 segmentValid = true
             }
             if got > 0 { tail.store(t + got, ordering: .releasing) }
-            producerPTS = firstPTS + Double(got) / Self.rate
+            producerPTS = padded ? producerPTS + Double(n) / Self.rate : firstPTS + Double(got) / Self.rate  // a padded read leaves the reader's PTS at the end
             if looping && got == n && producerPTS >= loopEnd - 0.5 / Self.rate {
                 seek(loopStart)  // wrap: continue in the same segment, the ring timeline is unwrapped
                 producerPTS = loopStart
