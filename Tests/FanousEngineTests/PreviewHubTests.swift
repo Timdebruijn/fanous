@@ -159,18 +159,19 @@ import Testing
             made.withLock { $0[target] = streamer }
             return true
         }
-        let rebuilt = Mutex(0)
+        final class Rebuilt: Sendable { let count = Atomic<Int>(0) }  // Swift 6.3 (CI) refuses a local Mutex sent into a Task
+        let rebuilt = Rebuilt()
         store.onProjectChanged = { [hub = rig.hub] _ in
             Task { @MainActor in
                 try? hub.rebuild()
-                rebuilt.withLock { $0 += 1 }
+                rebuilt.count.add(1, ordering: .relaxed)
             }
         }
         #expect(rig.attach("layer:2"))
         _ = try store.execute("canvas.add", args: ["width": 640, "height": 640], role: .programmer).get()
         _ = try store.execute("layer.set", args: ["layer": 2, "canvas": 2], role: .programmer).get()
-        for _ in 0..<200 where rebuilt.withLock({ $0 }) < 2 { try await Task.sleep(for: .milliseconds(10)) }
-        #expect(rebuilt.withLock { $0 } == 2)
+        for _ in 0..<200 where rebuilt.count.load(ordering: .relaxed) < 2 { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(rebuilt.count.load(ordering: .relaxed) == 2)
         #expect(rig.hub.targets.contains("layer:2"))
     }
 
