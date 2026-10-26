@@ -105,8 +105,13 @@ public final class LayerAudioChannel: @unchecked Sendable {
         clockOffsetBits.store((wantedPTS - Double(nanos) / 1e9).bitPattern, ordering: .relaxed)
         volumeBits.store(volume.bitPattern, ordering: .relaxed)
         panBits.store(pan.bitPattern, ordering: .relaxed)
-        activeFlag.store(active, ordering: .releasing)
+        let wasActive = activeFlag.exchange(active, ordering: .acquiringAndReleasing)
+        if active && !wasActive { onActivate?() }
     }
+
+    /// Called on the compositor thread when the channel turns active (the mixer starts its engine if it had stopped).
+    /// Set once before the channel is used.
+    nonisolated(unsafe) var onActivate: (@Sendable () -> Void)?
 
     /// Host time in nanoseconds (monotonic, does not tick during sleep); real-time safe.
     public static func hostNanos() -> UInt64 { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) }

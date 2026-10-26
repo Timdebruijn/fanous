@@ -155,6 +155,7 @@ public final class Engine: @unchecked Sendable {
                 try RenderService(scene: scene, context: context, parameters: dmx.snapshots, metrics: metrics, logger: logger)
             }
             service.loader.resolver = { key in library.resolve(key) }
+            service.audioKeepRunning = { [weak self] in self?.showMode.isOn ?? false }
             render = service
         }
 

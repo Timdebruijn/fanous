@@ -70,6 +70,8 @@ public final class RenderService {
     public private(set) var syphon: SyphonOutput?
     nonisolated(unsafe) public private(set) var mixer: AudioMixer?  // assigned once at start, read by the metrics endpoint
     private let logger: Logger
+    /// Keeps the audio device open while true (the engine passes show mode); read once by `start()`.
+    nonisolated(unsafe) public var audioKeepRunning: (@Sendable () -> Bool)?
     private var window: OutputWindow?
     private var displayDriver: DisplayLinkDriver?
     private var loopDriver: DrawableLoopDriver?
@@ -111,14 +113,13 @@ public final class RenderService {
 
     public func start() async throws {
         if scene.audio {
+            // the mixer only builds its channels here; the output device opens when the first movie with sound does
             let mixer = AudioMixer(channels: layers.count * 2)
-            do {
-                try mixer.start()
-                self.mixer = mixer
-                loader.mixer = mixer
-            } catch {
-                logger.warning("audio output unavailable; playing silent", metadata: ["error": "\(error)"])
-            }
+            mixer.keepRunning = audioKeepRunning
+            let logger = logger
+            mixer.onError = { logger.warning("audio output unavailable; playing silent", metadata: ["error": "\($0)"]) }
+            self.mixer = mixer
+            loader.mixer = mixer
         }
         loader.start()
         if scene.managedOutputs {

@@ -410,6 +410,7 @@ public final class MediaLoader: @unchecked Sendable {
                 if reader.hasAudio {
                     parity[layer] ^= 1
                     decoder.audio = (reader, mixer.channels[layer * 2 + parity[layer]])
+                    mixer.ensureRunning()
                 }
             }
             decoder.start(name: "org.fanous.decode.\(layer + 1)")
