@@ -76,9 +76,15 @@ mode gets its mode again.
 - A refresh rate that is not a whole multiple of the canvas frame rate (50 Hz
   for a 60 fps canvas) is warned about the same way: motion judders.
 - If several outputs share a display, the first output with a Mode decides.
-- The switch is made for the login session: if Fanous crashes in show mode the
-  display keeps the show mode until you change it back in System Settings ›
-  Displays or log out.
+  An output on the same display that wants another mode says "Conflicts with
+  Output N on the same display" in yellow and in the readiness check.
+- The Mode list only offers modes macOS marks as usable for the desktop
+  (all modes when a display marks none).
+- The previous modes are also written to
+  `~/Library/Application Support/Fanous/display-modes.json`. If Fanous crashes
+  or is killed in show mode, the next start puts them back and removes the
+  file. A display that is unplugged at that moment gets its mode back when it
+  is plugged in again while Fanous runs (outside show mode).
 
 **Remove output** takes effect at once and shows "Undone? Undo" for 8 seconds
 (Undo also works with Cmd-Z). Slices, masks, cues and the last layer work the

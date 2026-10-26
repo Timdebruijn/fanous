@@ -22,6 +22,8 @@ public enum AppPaths {
     public static var shellTokenFile: URL { applicationSupport.appending(path: "shell-token") }
     /// The current project document until project bundles exist (DESIGN.md §11.5).
     public static var projectFile: URL { applicationSupport.appending(path: "project.json") }
+    /// Display modes to put back after show mode (DESIGN.md §9.6); present only while a display is switched.
+    public static var displayModesFile: URL { applicationSupport.appending(path: "display-modes.json") }
     public static var certificateFile: URL { tls.appending(path: "certificate.der") }
     public static var fingerprintFile: URL { tls.appending(path: "fingerprint.sha256") }
 

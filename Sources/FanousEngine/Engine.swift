@@ -50,6 +50,7 @@ public final class Engine: @unchecked Sendable {
     private let outputStatus = Mutex<[OutputStatus]>([])
     /// Main actor only: desired display modes in show mode (DESIGN.md §9.6).
     private var modeSwitcher: DisplayModeSwitcher?
+    private var lastModeConflicts: [Int: Int] = [:]
     /// Output id → what the status line and readiness say about its display mode; written on the main actor.
     private let modeChecks = Mutex<[Int: DisplayModeMatching.Check]>([:])
     private var lastOutputs: [OutputConfig] = []
@@ -272,7 +273,7 @@ public final class Engine: @unchecked Sendable {
                     // after the rebind returned: a mode switch reconfigures the displays and rebinds again
                     DispatchQueue.main.async { MainActor.assumeIsolated { self?.syncDisplayModes() } }
                 }
-                modeSwitcher = DisplayModeSwitcher(logger: logger)
+                modeSwitcher = DisplayModeSwitcher(logger: logger, ledgerURL: AppPaths.displayModesFile)
                 let manager = DisplayManager(logger: logger)
                 manager.onChange = { [weak self] list in
                     self?.displays.withLock { $0 = list }
@@ -627,17 +628,20 @@ public final class Engine: @unchecked Sendable {
     /// Runs after every rebind too, so a replugged display gets its mode again. Then refreshes the mode notes.
     @MainActor private func syncDisplayModes() {
         guard let coordinator, let modeSwitcher else { return }
-        let displays = coordinator.connectedDisplays, outputs = coordinator.outputs, show = showMode.isOn
-        if show {
-            var wanted: [(display: DisplayInfo, mode: DisplayModeConfig)] = []
-            for output in outputs {
-                guard let mode = output.mode, let display = displays.first(where: { $0.uuid == output.display?.uuid }),
-                    !wanted.contains(where: { $0.display.uuid == display.uuid })
-                else { continue }
-                wanted.append((display, mode))
+        var displays = coordinator.connectedDisplays
+        let outputs = coordinator.outputs, show = showMode.isOn
+        let resolved = DisplayModeMatching.resolve(outputs)
+        let conflicts = resolved.conflicts.mapValues(\.id)
+        if conflicts != lastModeConflicts {
+            lastModeConflicts = conflicts
+            for (loser, winner) in resolved.conflicts.sorted(by: { $0.key < $1.key }) {
+                logger.warning("display mode conflict: the first output with a mode wins", metadata: ["output": "\(loser)", "winner": "\(winner.name)"])
             }
-            // switched: the reconfiguration rebinds and lands here again with the new modes to check
-            if modeSwitcher.apply(wanted, connected: displays) { return }
+        }
+        if show {
+            let wanted = displays.compactMap { d in resolved.wanted[d.uuid].map { (display: d, mode: $0) } }
+            // CG reports the new modes at once; the rebind that follows the reconfiguration refreshes them again
+            if modeSwitcher.apply(wanted, connected: displays) { displays = DisplayManager.current() }
         } else {
             modeSwitcher.restore(connected: displays)
         }
@@ -645,6 +649,10 @@ public final class Engine: @unchecked Sendable {
         var checks: [Int: DisplayModeMatching.Check] = [:]
         for output in outputs {
             guard let display = displays.first(where: { $0.uuid == output.display?.uuid }) else { continue }
+            if let winner = resolved.conflicts[output.id] {
+                checks[output.id] = DisplayModeMatching.conflict(with: winner)
+                continue
+            }
             checks[output.id] = DisplayModeMatching.check(desired: output.mode, current: display.mode, available: display.modes, showMode: show, fps: fps)
         }
         modeChecks.withLock { $0 = checks }

@@ -4,25 +4,31 @@
 
 import CoreGraphics
 import FanousCore
+import Foundation
 import Logging
 
 /// Applies the outputs' desired display modes in show mode and restores the previous ones (DESIGN.md §9.6).
 /// Choosing the mode is `DisplayModeMatching.best`; this type only talks to CoreGraphics.
 @MainActor
 final class DisplayModeSwitcher {
-    private struct Saved {
-        var modeID: Int32
-        var descriptor: DisplayModeDescriptor
-    }
-
     private let logger: Logger
-    /// Display UUID → its mode before the first switch.
-    private var previous: [String: Saved] = [:]
+    /// Display UUID → its mode before the first switch, mirrored to `ledgerURL` (survives a crash or kill).
+    private var ledger: DisplayModeLedger
+    private let ledgerURL: URL?
     /// Display UUID → the mode last asked for: a display is switched again only when that changes or it was replugged,
     /// so a display that refuses a mode does not loop through reconfigurations.
     private var requested: [String: DisplayModeConfig] = [:]
 
-    init(logger: Logger) { self.logger = logger }
+    /// A ledger left by a crashed run is restored by the first `restore` (show mode is off at start).
+    init(logger: Logger, ledgerURL: URL?) {
+        self.logger = logger
+        self.ledgerURL = ledgerURL
+        ledger = ledgerURL.map(DisplayModeLedger.load(from:)) ?? DisplayModeLedger()
+        if !ledger.previous.isEmpty {
+            logger.warning(
+                "display modes left switched by a previous run", metadata: ["displays": "\(ledger.previous.count)"])
+        }
+    }
 
     /// Every mode of a display, the HiDPI ones and their 1× duplicates included.
     static func modes(_ display: CGDirectDisplayID) -> [CGDisplayMode] {
@@ -61,15 +67,18 @@ final class DisplayModeSwitcher {
             changes.append((display, list[index], current))
         }
         guard !changes.isEmpty else { return false }
+        // on disk before the switch: a crash right after it still finds the mode to put back
+        for change in changes {
+            ledger.record(
+                change.display.uuid,
+                .init(modeID: change.from.ioDisplayModeID, descriptor: Self.descriptor(change.from)))
+        }
+        saveLedger()
         guard configure(changes.map { ($0.display.id, $0.to) }) else {
             logger.error("display modes not applied", metadata: ["displays": "\(changes.map(\.display.name))"])
             return false
         }
         for change in changes {
-            if previous[change.display.uuid] == nil {
-                previous[change.display.uuid] = Saved(
-                    modeID: change.from.ioDisplayModeID, descriptor: Self.descriptor(change.from))
-            }
             logger.warning(
                 "display mode applied",
                 metadata: [
@@ -81,14 +90,13 @@ final class DisplayModeSwitcher {
         return true
     }
 
-    /// Show mode off or engine stop: back to the modes the displays had. A display that is gone is skipped.
+    /// Show mode off, engine stop or start after a crash: back to the modes the displays had. An entry stays in the
+    /// ledger until its restore succeeded (display unplugged, no matching mode, failed transaction): the next call,
+    /// after every rebind and so on re-plug, tries again.
     func restore(connected: [DisplayInfo]) {
-        defer {
-            previous.removeAll()
-            requested.removeAll()
-        }
-        var changes: [(CGDirectDisplayID, CGDisplayMode)] = []
-        for (uuid, saved) in previous {
+        requested.removeAll()
+        var changes: [(uuid: String, display: DisplayInfo, mode: CGDisplayMode)] = []
+        for (uuid, saved) in ledger.previous {
             guard let display = connected.first(where: { $0.uuid == uuid }) else { continue }
             let list = Self.modes(display.id)
             let index =
@@ -96,17 +104,33 @@ final class DisplayModeSwitcher {
                 ?? DisplayModeMatching.best(
                     for: saved.descriptor.config, in: list.map(Self.descriptor), preferHiDPI: saved.descriptor.isHiDPI)
             guard let index else { continue }
-            changes.append((display.id, list[index]))
+            changes.append((uuid, display, list[index]))
+        }
+        guard !changes.isEmpty else { return }
+        guard configure(changes.map { ($0.display.id, $0.mode) }) else {
+            logger.error("display modes not restored", metadata: ["displays": "\(changes.map(\.display.name))"])
+            return
+        }
+        for change in changes {
             logger.warning(
                 "display mode restored",
                 metadata: [
-                    "display": "\(display.name)", "mode": "\(DisplayModeMatching.text(saved.descriptor.config))",
+                    "display": "\(change.display.name)",
+                    "mode": "\(DisplayModeMatching.text(Self.descriptor(change.mode).config))",
                 ])
+            ledger.previous[change.uuid] = nil
         }
-        if !changes.isEmpty, !configure(changes) { logger.error("display modes not restored") }
+        saveLedger()
     }
 
-    /// One `CGBeginDisplayConfiguration` transaction, for the login session: a crash leaves the mode until logout.
+    private func saveLedger() {
+        guard let ledgerURL else { return }
+        do { try ledger.save(to: ledgerURL) } catch {
+            logger.error("display mode ledger not saved", metadata: ["error": "\(error)"])
+        }
+    }
+
+    /// One `CGBeginDisplayConfiguration` transaction for the login session; the ledger covers a crash in between.
     private func configure(_ changes: [(CGDirectDisplayID, CGDisplayMode)]) -> Bool {
         var config: CGDisplayConfigRef?
         guard CGBeginDisplayConfiguration(&config) == .success, let config else { return false }

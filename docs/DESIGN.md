@@ -1342,7 +1342,8 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   blocking ids (`notReady`). Desired display modes are applied on entering
   and restored on leaving (B33, `DisplayModeSwitcher`, matching in
   `DisplayModeMatching`; one `.forSession` transaction, re-applied on
-  re-plug; unavailable modes are a non-blocking `warn` readiness item). The
+  re-plug; previous modes persisted in `display-modes.json` and restored on
+  the next start after a crash; unavailable modes are a non-blocking `warn` readiness item). The
   remaining §14 side effects (shielding level, log level, thumbnail/preview
   throttling) are B42.
 - **System**: `/metrics` (JSON: frames, GPU/CPU timing, DMX age, audio,

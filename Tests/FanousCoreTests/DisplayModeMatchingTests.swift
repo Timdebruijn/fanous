@@ -88,4 +88,64 @@ struct DisplayModeMatchingTests {
         #expect(judder.note == "50 Hz is not a multiple of the canvas 60 fps: motion judders.")
         #expect(judder.issue == judder.note)
     }
+
+    @Test func unusableModesOnlyWhenNothingElseMatches() {
+        let unusable = Self.mode(1920, 1080, 60, usable: false)
+        let usable = Self.mode(1920, 1080, 59.94)
+        let want = DisplayModeConfig(width: 1920, height: 1080, hz: 60)
+        // a usable 59.94 beats an unusable exact 60
+        #expect(DisplayModeMatching.best(for: want, in: [unusable, usable]) == 1)
+        #expect(DisplayModeMatching.best(for: want, in: [unusable]) == 0)
+        #expect(DisplayModeMatching.offered([unusable, usable]) == [usable])
+        #expect(DisplayModeMatching.offered([unusable]) == [unusable])
+    }
+
+    @Test func firstOutputWithAModeWinsItsDisplay() {
+        func output(_ id: Int, _ uuid: String?, _ mode: DisplayModeConfig?) -> OutputConfig {
+            var o = OutputConfig(id: id)
+            o.display = uuid.map { DisplayIdentity(uuid: $0, name: "D") }
+            o.mode = mode
+            return o
+        }
+        let hd60 = DisplayModeConfig(width: 1920, height: 1080, hz: 60)
+        let outputs = [
+            output(1, "A", nil), output(2, "A", hd60),
+            output(3, "A", DisplayModeConfig(width: 1920, height: 1080, hz: 59.94)),
+            output(4, "A", DisplayModeConfig(width: 1280, height: 720, hz: 60)), output(5, "B", hd60),
+            output(6, nil, hd60),
+        ]
+        let resolved = DisplayModeMatching.resolve(outputs)
+        #expect(resolved.wanted == ["A": hd60, "B": hd60])
+        #expect(resolved.conflicts.mapValues(\.id) == [4: 2])  // 59.94 is the same rate, no conflict
+        #expect(
+            DisplayModeMatching.conflict(with: outputs[1]).issue
+                == "Conflicts with Output 2 on the same display: its mode 1920 × 1080 @ 60 is used.")
+    }
+
+    @Test func ledgerKeepsThePreShowModeAndRoundTrips() throws {
+        let url = FileManager.default.temporaryDirectory.appending(
+            path: "fanous-ledger-\(UUID().uuidString)/display-modes.json")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        #expect(DisplayModeLedger.load(from: url) == DisplayModeLedger())  // no file: nothing to restore
+
+        let original = DisplayModeLedger.Saved(modeID: 73, descriptor: Self.mode(3840, 2160, 60, points: 1920))
+        let show = DisplayModeLedger.Saved(modeID: 12, descriptor: Self.mode(1920, 1080, 50))
+        var ledger = DisplayModeLedger()
+        ledger.record("A", original)
+        try ledger.save(to: url)
+        // after a crash the next run loads the file; re-applying must not overwrite the pre-show mode
+        var reloaded = DisplayModeLedger.load(from: url)
+        #expect(reloaded == ledger)
+        reloaded.record("A", show)
+        reloaded.record("B", show)
+        #expect(reloaded.previous["A"] == original && reloaded.previous["B"] == show)
+
+        // restored entries go; the file goes with the last one
+        reloaded.previous["A"] = nil
+        try reloaded.save(to: url)
+        #expect(DisplayModeLedger.load(from: url).previous.keys.sorted() == ["B"])
+        reloaded.previous["B"] = nil
+        try reloaded.save(to: url)
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
 }
