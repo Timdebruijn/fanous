@@ -24,6 +24,10 @@ public enum AppPaths {
     public static var projectFile: URL { applicationSupport.appending(path: "project.json") }
     /// Display modes to put back after show mode (DESIGN.md §9.6); present only while a display is switched.
     public static var displayModesFile: URL { applicationSupport.appending(path: "display-modes.json") }
+    /// Show mode on (DESIGN.md §14); present only while show mode is on, so a crash brings the engine back in it.
+    public static var showStateFile: URL { applicationSupport.appending(path: "show-state.json") }
+    /// Written by the shell right before Engine › Restart Engine: the stop keeps show mode for the next start.
+    public static var restartPendingFile: URL { applicationSupport.appending(path: "restart-pending") }
     public static var certificateFile: URL { tls.appending(path: "certificate.der") }
     public static var fingerprintFile: URL { tls.appending(path: "fingerprint.sha256") }
 

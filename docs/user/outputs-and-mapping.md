@@ -115,9 +115,12 @@ mode gets its mode again.
   (all modes when a display marks none).
 - The previous modes are also written to
   `~/Library/Application Support/Fanous/display-modes.json`. If Fanous crashes
-  or is killed in show mode, the next start puts them back and removes the
-  file. A display that is unplugged at that moment gets its mode back when it
-  is plugged in again while Fanous runs (outside show mode).
+  or is killed in show mode, it comes back in show mode and the displays keep
+  their show modes; the file stays until you leave show mode, which puts the
+  previous modes back. When it starts outside show mode with the file present
+  (an older crash), it puts them back and removes the file. A display that is
+  unplugged at that moment gets its mode back when it is plugged in again while
+  Fanous runs (outside show mode).
 
 **Remove output** takes effect at once and shows "Undone? Undo" for 8 seconds
 (Undo also works with Cmd-Z). Slices, masks, cues and the last layer work the

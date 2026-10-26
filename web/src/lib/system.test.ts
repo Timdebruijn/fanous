@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { ReadinessItemDoc } from './docs';
 import {
   ageText, droppedTone, filterLines, formatClock, headerCaption, memoryText, metricTiles, outputTone, parseMetrics, parseOpenRoles,
-  pushHistory, readinessBadge, readinessSummary, sparkline, stampText, thermalTone,
+  pushHistory, readinessBadge, readinessSummary, resumedText, sparkline, stampText, thermalTone,
 } from './system';
 
 const item = (state: ReadinessItemDoc['state'], acknowledged = false): ReadinessItemDoc => ({ id: state, title: state, state, detail: '', fix: '', acknowledged });
@@ -23,6 +23,13 @@ describe('clocks and captions', () => {
   it('shows a check stamp in local hh:mm:ss, and never for 0', () => {
     expect(stampText(0)).toBe('never');
     expect(stampText(new Date(2026, 9, 23, 13, 5, 9).getTime() / 1000)).toBe('13:05:09');
+  });
+
+  it('names the restart time when show mode resumed by itself', () => {
+    expect(resumedText(null)).toBeNull();
+    expect(resumedText(undefined)).toBeNull();
+    expect(resumedText(0)).toBeNull();
+    expect(resumedText(new Date(2026, 9, 26, 20, 7, 41).getTime() / 1000)).toBe('Show mode resumed after the engine restarted at 20:07');
   });
 
   it('leaves out header parts the engine has not published', () => {

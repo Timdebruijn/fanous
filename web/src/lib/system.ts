@@ -17,6 +17,13 @@ export type DotTone = 'green' | 'yellow' | 'red' | 'off';
 const pad = (n: number) => n.toString().padStart(2, '0');
 const finite = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
+/** The notice after show mode came back by itself (engine crash or kill); null when it was entered by hand. */
+export function resumedText(resumedAt: number | null | undefined): string | null {
+  if (!resumedAt || !(resumedAt > 0)) return null;
+  const d = new Date(resumedAt * 1000);
+  return `Show mode resumed after the engine restarted at ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /** "h:mm:ss" */
 export function formatClock(seconds: number): string {
   const s = Math.max(0, Math.floor(finite(seconds)));

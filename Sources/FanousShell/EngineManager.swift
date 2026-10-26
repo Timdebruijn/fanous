@@ -81,7 +81,14 @@ final class EngineManager {
         return true
     }
 
+    /// Tells the engine's stop that it is a restart: show mode and the switched display modes stay for the next start.
+    /// The engine ignores a marker older than a minute.
+    static func markRestartPending() {
+        try? Data().write(to: AppPaths.restartPendingFile, options: .atomic)
+    }
+
     func restart() {
+        Self.markRestartPending()
         if usesAgent {
             run("/bin/launchctl", ["kickstart", "-k", "gui/\(getuid())/org.fanous.engine"])
         } else {
@@ -117,6 +124,7 @@ final class EngineManager {
         if Self.isAdHocSigned, service.status == .enabled {
             Self.engineAnswers(within: 3) { answers in
                 guard !answers else { return }
+                Self.markRestartPending()  // a hung engine stopped here comes back in show mode if it was in it
                 service.unregister { _ in DispatchQueue.main.async { MainActor.assumeIsolated { self.registerAgent() } } }
             }
             return
