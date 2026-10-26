@@ -85,18 +85,32 @@ received before these settings existed.
 | Protocol | Art-Net, sACN, Art-Net + sACN | the universe's own (A = Art-Net, S = sACN) | Which protocol feeds the universe. The other protocol arrives on the paired universe. |
 | sACN universe / Art-Net universe | a universe of the other protocol, e.g. `S 1` or `A 0.0.0` | S n+1 for A port-address n (A 0.0.0 ↔ S 1) | Shown when the protocol is not the universe's own. Set it when your console numbers the other way. |
 | Interface | All interfaces, an interface (`en0`) or one of its addresses | All interfaces | Only senders in that interface's network are accepted; sACN multicast is joined on that interface. |
-| Hold on loss | Hold last values, Go to zero, UI and cues take over | Hold last values | What the fixtures do when the universe goes silent. "UI and cues take over" resolves them as source policy *UI and cues only* until packets return. |
-| Loss after (s) | 0.5 to 60 | 2.5 | Silence after which the universe counts as lost (red pill, Hold on loss applies). |
+| Hold on loss | Hold last values, Go to zero, UI and cues take over | Hold last values | What the fixtures do when the universe goes silent. "UI and cues take over" resolves them as source policy *UI and cues only* until packets return. Changing it while the universe is already lost applies at once. |
+| Loss after (s) | 1 to 60 | 2.5 | Silence after which the universe counts as lost (red pill, Hold on loss applies). At least 1 s: consoles that send only on change repeat every 0.8 to 1 s. |
 | sACN priority | Highest wins, Merge equal (HTP) | Highest wins | Sources at the same, highest priority: the latest packet wins, or they merge with the highest value per channel. |
+
+There are two timeouts. **Loss after** is this universe's: when it counts as
+lost and Hold on loss applies. The **sACN source timeout** is fixed at 2.5 s
+(E1.31): a console silent that long drops out of the priority merge, so a
+backup console at a lower priority takes over after 2.5 s whatever Loss after
+says. With a Loss after above 2.5 s and no backup, the universe has no source
+between 2.5 s and Loss after; the fixtures keep their values until it is lost.
+
+**Go to zero** sets every channel of the universe's fixtures to 0 as a new DMX
+change. Under the source policies *Console + UI* (latest or highest wins) that
+change is the latest, so the zeros also win over UI and cue values set before
+the loss; the UI or a cue has to set a value again after it.
 
 With Art-Net + sACN, Art-Net competes as an sACN source at priority 100: a
 higher sACN priority wins, a lower one loses, equal priorities follow the sACN
-priority setting. A silent protocol drops out after the loss timeout.
+priority setting. Either protocol drops out after the 2.5 s source timeout.
 
 An interface that is not on this Mac (an adapter that is unplugged, or a
 project from another machine) is accepted, but the universe receives nothing
 until it is there: the Patch screen says so under the settings and the show
-readiness check warns ("Universe interfaces present").
+readiness check warns ("Universe interfaces usable"). The check also warns when
+the interface is there but its sACN multicast could not be joined. A replugged
+adapter is joined again within 5 s.
 
 ## GDTF
 
