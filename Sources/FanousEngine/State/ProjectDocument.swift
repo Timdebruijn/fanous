@@ -30,17 +30,91 @@ public enum ProjectDocument {
         return (format.width, format.height, fps)
     }
 
+    /// Canvases a project may have: each is a render pass per tick and three canvas-sized textures.
+    public static let maxCanvases = 4
+
+    /// What the compositor renders: every canvas's size, one shared rate (the compositor has one clock).
+    /// Canvas 1 comes first; it cannot be removed (the clock, Syphon and CITP follow it).
+    public struct CanvasLayout: Equatable, Sendable {
+        public struct Size: Equatable, Sendable {
+            public var id: Int
+            public var width: Int
+            public var height: Int
+            public init(id: Int, width: Int, height: Int) {
+                self.id = id
+                self.width = width
+                self.height = height
+            }
+        }
+        public var fps: Double
+        public var canvases: [Size]
+        public init(fps: Double, canvases: [Size]) {
+            self.fps = fps
+            self.canvases = canvases
+        }
+        public init(_ format: CanvasFormat) { self.init(fps: format.fps, canvases: [Size(id: 1, width: format.width, height: format.height)]) }
+        /// Canvas 1 (the first) as a format.
+        public var first: CanvasFormat { (canvases.first?.width ?? defaultCanvas.width, canvases.first?.height ?? defaultCanvas.height, fps) }
+    }
+
+    /// The layout a project asks for: the first canvas as `start` says (else validated, else the default), the others
+    /// validated at its rate; invalid or surplus ones are skipped (hand-edited files).
+    public static func layout(from project: JSONValue, start: CanvasFormat? = nil) -> CanvasLayout {
+        let list = canvases(from: project)
+        let first = start ?? list.first.flatMap { try? validated(($0.width, $0.height, $0.fps)) } ?? defaultCanvas
+        var sizes = [CanvasLayout.Size(id: list.first?.id ?? 1, width: first.width, height: first.height)]
+        for c in list.dropFirst() where sizes.count < maxCanvases && !sizes.contains(where: { $0.id == c.id }) {
+            guard let f = try? validated((c.width, c.height, first.fps)) else { continue }
+            sizes.append(CanvasLayout.Size(id: c.id, width: f.width, height: f.height))
+        }
+        return CanvasLayout(fps: first.fps, canvases: sizes)
+    }
+
+    /// Writes a rendered layout back (a failed switch): sizes and rate of the canvases it has; canvases it lacks go,
+    /// ones the project lacks come back as "Canvas n".
+    public static func setCanvasLayout(_ layout: CanvasLayout, in project: inout JSONValue) throws {
+        let current = canvases(from: project)
+        let list = layout.canvases.map { size -> CanvasConfig in
+            var c = current.first { $0.id == size.id } ?? CanvasConfig(id: size.id, name: "Canvas \(size.id)", width: size.width, height: size.height)
+            c.width = size.width
+            c.height = size.height
+            c.fps = layout.fps
+            return c
+        }
+        try project.set(try JSONValue(encoding: list), at: "/canvases")
+    }
+
+    /// Layer → canvas (layer numbers from 1); a layer not listed is on canvas 1. Stored sparse in `/layerCanvas`.
+    public static func layerCanvases(from project: JSONValue) -> [Int: Int] {
+        guard case .object(let map)? = project["layerCanvas"] else { return [:] }
+        var result: [Int: Int] = [:]
+        for (key, value) in map {
+            if let layer = Int(key), let canvas = value.int { result[layer] = canvas }
+        }
+        return result
+    }
+
+    static func setLayerCanvases(_ map: [Int: Int], in project: inout JSONValue) throws {
+        var object: [String: JSONValue] = [:]
+        for (layer, canvas) in map where canvas != 1 { object[String(layer)] = .number(Double(canvas)) }
+        try project.set(.object(object), at: "/layerCanvas")
+    }
+
+    static func sharedRate(_ fps: Double) -> String {
+        "all canvases share one frame rate (\(String(format: "%g", fps)) fps); change it on canvas 1"
+    }
+
     static func canvasValue(_ format: CanvasFormat) -> JSONValue {
         (try? JSONValue(encoding: [CanvasConfig(id: 1, name: "Canvas 1", width: format.width, height: format.height, fps: format.fps)])) ?? []
     }
 
-    /// Writes a format into the first canvas (name and clock master stay).
+    /// Writes a format into the first canvas (name and clock master stay); the rate goes to every canvas (one clock).
     public static func setCanvasFormat(_ format: CanvasFormat, in project: inout JSONValue) throws {
         var list = canvases(from: project)
         guard !list.isEmpty else { return try project.set(canvasValue(format), at: "/canvases") }
         list[0].width = format.width
         list[0].height = format.height
-        list[0].fps = format.fps
+        for i in list.indices { list[i].fps = format.fps }
         try project.set(try JSONValue(encoding: list), at: "/canvases")
     }
 
@@ -54,6 +128,7 @@ public enum ProjectDocument {
             "policy": .string(policy.rawValue),
             "library": ["root": .string(libraryRoot)],
             "canvases": canvasValue(canvas),
+            "layerCanvas": [:],
             "outputs": [],
             "ui": [:],
         ]
@@ -142,6 +217,7 @@ public enum ProjectDocument {
             try? document.set(canvasValue(canvas), at: "/canvases")
         }
         if document["ui"] == nil { try? document.set([:], at: "/ui") }
+        if document["layerCanvas"] == nil { try? document.set([:], at: "/layerCanvas") }
         return document
     }
 
@@ -217,6 +293,22 @@ public enum ProjectDocument {
                 }
                 try project.set(.number(Double(count)), at: "/layerCount")
                 try project.set(patchValue(patch), at: "/patch")
+                let assigned = layerCanvases(from: project)
+                if assigned.keys.contains(where: { $0 > count }) { try setLayerCanvases(assigned.filter { $0.key <= count }, in: &project) }
+                return nil
+            })
+        store.register(
+            CommandSpec(
+                name: "layer.set", role: .programmer,
+                summary: "Set a layer's project setting: the canvas it renders into (a project setting, not a DMX channel).",
+                argsType: "{ layer: number; canvas: number }"
+            ) { project, args in
+                guard let layer = args["layer"]?.int, let canvas = args["canvas"]?.int else { throw CommandError.invalidArgs("args: { layer, canvas }") }
+                guard (1...(project["layerCount"]?.int ?? 0)).contains(layer) else { throw CommandError.invalidArgs("no layer \(layer)") }
+                guard ProjectDocument.canvases(from: project).contains(where: { $0.id == canvas }) else { throw CommandError.invalidArgs("no canvas \(canvas)") }
+                var assigned = layerCanvases(from: project)
+                assigned[layer] = canvas
+                try setLayerCanvases(assigned, in: &project)
                 return nil
             })
         store.register(
@@ -265,6 +357,13 @@ public enum ProjectDocument {
                 }
                 updated.id = id
                 try validate(&updated)
+                // a slice takes its picture from an existing canvas (one it already used is left alone: hand-edited files)
+                let canvasIDs = Set(ProjectDocument.canvases(from: project).map(\.id))
+                for slice in updated.slices where !canvasIDs.contains(slice.canvas) {
+                    guard outputs[index].slices.first(where: { $0.id == slice.id })?.canvas == slice.canvas else {
+                        throw CommandError.invalidArgs("no canvas \(slice.canvas)")
+                    }
+                }
                 outputs[index] = updated
                 try setOutputs(outputs, in: &project)
                 return nil
@@ -283,7 +382,12 @@ public enum ProjectDocument {
                     let format = try validated((width, height, fps))
                     canvases[index].width = format.width
                     canvases[index].height = format.height
-                    canvases[index].fps = format.fps
+                    // one compositor clock: canvas 1's rate is every canvas's rate
+                    if index == 0 {
+                        for i in canvases.indices { canvases[i].fps = format.fps }
+                    } else if format.fps != canvases[0].fps {
+                        throw CommandError.invalidArgs(sharedRate(canvases[0].fps))
+                    }
                 } else {
                     guard let path = args["path"]?.string, ["/name", "/clockMaster"].contains(path), let value = args["value"] else {
                         throw CommandError.invalidArgs("args: { id, path: /name | /clockMaster, value } or { id, width, height, fps }")
@@ -296,6 +400,55 @@ public enum ProjectDocument {
                     }
                 }
                 try project.set(try JSONValue(encoding: canvases), at: "/canvases")
+                return nil
+            })
+        store.register(
+            CommandSpec(
+                name: "canvas.add", role: .programmer,
+                summary: "Add a canvas (up to 4; even 320–8192 px) at the shared frame rate of canvas 1; outputs blank briefly; refused in show mode. Returns the new id.",
+                argsType: "{ width: number; height: number; fps?: number; name?: string }"
+            ) { project, args in
+                guard let width = args["width"]?.int, let height = args["height"]?.int else { throw CommandError.invalidArgs("args: { width, height, fps?, name? }") }
+                guard !showModeOn() else { throw CommandError("showMode", "canvases cannot be added in show mode; leave show mode first") }
+                var canvases = ProjectDocument.canvases(from: project)
+                guard canvases.count < maxCanvases else { throw CommandError.invalidArgs("at most \(maxCanvases) canvases") }
+                let rate = canvases.first?.fps ?? defaultCanvas.fps
+                let format = try validated((width, height, args["fps"]?.double ?? rate))
+                guard format.fps == rate else { throw CommandError.invalidArgs(sharedRate(rate)) }
+                let id = (canvases.map(\.id).max() ?? 0) + 1
+                var name = "Canvas \(id)"
+                if let given = args["name"] {
+                    guard let text = given.string, !text.isEmpty else { throw CommandError.invalidArgs("name must be a string") }
+                    name = text
+                }
+                canvases.append(CanvasConfig(id: id, name: name, width: format.width, height: format.height, fps: rate))
+                try project.set(try JSONValue(encoding: canvases), at: "/canvases")
+                return .number(Double(id))
+            })
+        store.register(
+            CommandSpec(
+                name: "canvas.remove", role: .programmer,
+                summary: "Remove a canvas (not canvas 1): its layers and slices move to canvas 1; outputs blank briefly; refused in show mode.",
+                argsType: "{ id: number }"
+            ) { project, args in
+                guard let id = args["id"]?.int else { throw CommandError.invalidArgs("args: { id }") }
+                var canvases = ProjectDocument.canvases(from: project)
+                guard canvases.contains(where: { $0.id == id }) else { throw CommandError.invalidArgs("no canvas \(id)") }
+                guard id != 1 else { throw CommandError.invalidArgs("canvas 1 cannot be removed") }
+                guard canvases.count > 1 else { throw CommandError.invalidArgs("the last canvas cannot be removed") }
+                guard !showModeOn() else { throw CommandError("showMode", "canvases cannot be removed in show mode; leave show mode first") }
+                canvases.removeAll { $0.id == id }
+                try project.set(try JSONValue(encoding: canvases), at: "/canvases")
+                // what used it moves to canvas 1, in the same undo step
+                let assigned = layerCanvases(from: project)
+                if assigned.values.contains(id) { try setLayerCanvases(assigned.mapValues { $0 == id ? 1 : $0 }, in: &project) }
+                var outputs = ProjectDocument.outputs(from: project)
+                if outputs.contains(where: { $0.slices.contains { $0.canvas == id } }) {
+                    for o in outputs.indices {
+                        for s in outputs[o].slices.indices where outputs[o].slices[s].canvas == id { outputs[o].slices[s].canvas = 1 }
+                    }
+                    try setOutputs(outputs, in: &project)
+                }
                 return nil
             })
         store.register(
