@@ -80,4 +80,19 @@ import Testing
         #expect(OSCAddressMap.address(.layer(3), .layer(.intensity)) == "/fanous/layer/3/intensity")
         #expect(OSCAddressMap.address(.master, .master(.speed)) == "/fanous/master/speed")
     }
+
+    @Test func hostileNumbersDoNotTrap() {
+        for value in [Double.nan, .infinity, -.infinity, 1e30, -1e30, -5] {
+            let media = OSCMessage("/fanous/layer/1/media", [.double(value), .double(value)])
+            guard case .setMedia(_, let folder, let file)? = OSCAddressMap.command(for: media) else {
+                Issue.record("media command expected for \(value)")
+                continue
+            }
+            #expect(abs(folder) <= 1_000_000_000 && abs(file) <= 1_000_000_000)
+            _ = OSCAddressMap.command(for: OSCMessage("/fanous/layer/1/intensity", [.double(value)]))
+            _ = OSCAddressMap.command(for: OSCMessage("/fanous/layer/1/intensity", [.float32(Float(value))]))
+            if !value.isFinite { #expect(OSCAddressMap.command(for: OSCMessage("/fanous/cue/goto", [.double(value)])) == nil) }
+        }
+        #expect(OSCAddressMap.command(for: OSCMessage("/fanous/cue/nan/go")) == nil)
+    }
 }

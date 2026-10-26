@@ -39,7 +39,7 @@ public enum OSCAddressMap {
             switch parts[2] {
             case "media":
                 guard args.count >= 2, let folder = args[0].asDouble, let file = args[1].asDouble else { return nil }
-                return .setMedia(layer: n, folder: Int(folder), file: Int(file))
+                return .setMedia(layer: n, folder: safeInt(folder), file: safeInt(file))
             case "retrigger":
                 return .retrigger(layer: n)
             default:
@@ -56,8 +56,8 @@ public enum OSCAddressMap {
             switch (parts.count, parts[1]) {
             case (2, "go"): return .cueGo
             case (2, "back"): return .cueBack
-            case (2, "goto"): return args.first?.asDouble.map { .cueGoto($0) }
-            case (3, _): return parts[2] == "go" ? Double(parts[1]).map { .cueGoto($0) } : nil
+            case (2, "goto"): return args.first?.asDouble.flatMap { $0.isFinite ? .cueGoto($0) : nil }
+            case (3, _): return parts[2] == "go" ? Double(parts[1]).flatMap { $0.isFinite ? .cueGoto($0) : nil } : nil
             default: return nil
             }
         case "show":
@@ -73,6 +73,9 @@ public enum OSCAddressMap {
             return nil
         }
     }
+
+    /// `Int(Double)` traps on NaN/inf/huge values, and OSC arrives unauthenticated: non-finite becomes 0, the rest is clamped.
+    static func safeInt(_ d: Double) -> Int { d.isFinite ? Int(d.clamped(-1e9, 1e9)) : 0 }
 
     static func parameterCommand(_ fixture: FixtureRef, _ key: String, _ args: [OSCArgument]) -> OSCCommand? {
         guard let spec = ChannelMap.specs(for: fixture.mode).first(where: { $0.id.key == key }),
