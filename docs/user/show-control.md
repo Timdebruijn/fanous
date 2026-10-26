@@ -187,8 +187,9 @@ media with its own position, scale, rotation, fit, crop, colour, effects and
 intensity, in the canvas frame, over black. Layers above and below it are left
 out, and its blend mode is shown as Normal (Multiply or Darken over black would
 show nothing). The preview follows the selection; with Master or an output
-selected in the strips it shows the canvas and the caption says "Canvas (no
-layer selected)". The caption ends with what is shown, for example
+selected in the strips it shows the canvas, **Canvas** is lit and the caption
+says "Canvas (no layer selected)"; select a layer again and it returns to that
+layer. The caption ends with what is shown, for example
 `H.264 · 640×360 · 30 fps · Layer 3`. The browser remembers the choice; other
 browsers keep their own. A layer at intensity 0 or without media is black.
 

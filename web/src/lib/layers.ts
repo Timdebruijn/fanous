@@ -244,7 +244,7 @@ export type PreviewSource = 'canvas' | 'layer';
  * Preview target and caption label for the Layers screen. "This layer" follows the selected layer (null = Master or an
  * output picked in the strips); without one it falls back to the canvas and says so.
  */
-export function layerPreview(source: PreviewSource, selected: number | null): { target: string; label: string } {
-  if (source === 'layer' && selected !== null) return { target: `layer:${selected}`, label: `Layer ${selected}` };
-  return { target: 'canvas', label: source === 'layer' ? 'Canvas (no layer selected)' : 'Canvas' };
+export function layerPreview(source: PreviewSource, selected: number | null): { target: string; label: string; shows: PreviewSource } {
+  if (source === 'layer' && selected !== null) return { target: `layer:${selected}`, label: `Layer ${selected}`, shows: 'layer' };
+  return { target: 'canvas', label: source === 'layer' ? 'Canvas (no layer selected)' : 'Canvas', shows: 'canvas' };
 }

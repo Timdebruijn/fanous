@@ -1027,7 +1027,12 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   every second tick at 60 fps, plus its own encoder. A layer with nothing on
   the canvas (no media, intensity 0, index beyond the render layers after the
   layer count shrank) is black; a canvas change (B31) rebuilds the streamer
-  at the new size through `configure`. The Layers screen toggles Canvas /
+  at the new size through `configure`, and until then a streamer whose
+  aspect no longer matches the canvas sends no frames (the last one stays).
+  The draw items are always this tick's selection (`drawItems` on a
+  canvas-reuse tick), so their ring frames are protected exactly as for the
+  canvas pass. The browser stops a subscription that resolves after the
+  target changed again (`latestOnly`). The Layers screen toggles Canvas /
   This layer (per browser, `localStorage`). B29 thumbnails can reuse
   `drawLayer` into an atlas; not built.
 

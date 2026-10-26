@@ -6,6 +6,7 @@ import FanousCore
 import Foundation
 import Logging
 import Metal
+import os
 import Synchronization
 import Testing
 
@@ -139,57 +140,148 @@ import Testing
         return (0..<4).map { Int((Float(halves[$0]) * 255).rounded()) }
     }
 
-    /// layer:<n> shows that layer alone: layer 1 (red, full canvas) under layer 2 (green, half size in the middle).
-    @Test func layerTargetShowsOnlyThatLayerAndBadTargetsAreRefused() throws {
-        let context = try MetalContext()
+    /// Layer 1 red over the whole canvas, layer 2 green at half size in the middle; a hub whose `configure` takes
+    /// layer:<n> like the engine's. Idle work is skipped as in the engine, so unchanged ticks reuse the canvas.
+    final class LayerRig {
+        let context: MetalContext
         let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 2) }
-        let compositor = try Compositor(
-            context: context, canvasWidth: 320, canvasHeight: 180, fps: 60, maxLayers: 2, metrics: MetricsRing(capacity: 64), parameters: parameters, logger: Self.logger)
-        let layers = [RenderLayer(index: 0), RenderLayer(index: 1)]
-        layers[0].current = try Self.solid(context, [255, 0, 0, 255], file: 1)
-        layers[1].current = try Self.solid(context, [0, 255, 0, 255], file: 2)
-        for (i, layer) in layers.enumerated() { layer.wanted.store(MediaKey(folder: 1, file: i + 1).packed, ordering: .relaxed) }
-        compositor.setLayers(layers)
-        parameters.write { slot in
-            slot.sequence = 1
-            for i in 0..<2 {
-                slot.layers[i].intensity = 1
-                slot.layers[i].folder = 1
-                slot.layers[i].file = UInt8(i + 1)
-                slot.layers[i].fitMode = .stretch
+        let compositor: Compositor
+        let hub: PreviewHub
+        // copyable locks: the hub's closures share them
+        let made = OSAllocatedUnfairLock<[String: PreviewStreamer]>(initialState: [:])
+        let previewSize = OSAllocatedUnfairLock(initialState: (160, 90))
+        let connections: Rig
+        private var sequence: UInt64 = 0
+        private var ticks = 0
+
+        init() throws {
+            let context = try MetalContext()
+            self.context = context
+            let compositor = try Compositor(
+                context: context, canvasWidth: 320, canvasHeight: 180, fps: 60, maxLayers: 2, metrics: MetricsRing(capacity: 64), parameters: parameters,
+                logger: PreviewHubTests.logger)
+            self.compositor = compositor
+            let layers = [RenderLayer(index: 0), RenderLayer(index: 1)]
+            layers[0].current = try PreviewHubTests.solid(context, [255, 0, 0, 255], file: 1)
+            layers[1].current = try PreviewHubTests.solid(context, [0, 255, 0, 255], file: 2)
+            for (i, layer) in layers.enumerated() { layer.wanted.store(MediaKey(folder: 1, file: i + 1).packed, ordering: .relaxed) }
+            compositor.setLayers(layers)
+            let parameters = parameters, previewSize = previewSize, made = made
+            let make: @Sendable () throws -> PreviewStreamer = {
+                let (w, h) = previewSize.withLock { $0 }
+                return try PreviewStreamer(context: context, width: w, height: h, fps: 30, canvasFPS: 60, parameters: parameters, logger: PreviewHubTests.logger)
             }
-            slot.layers[1].scaleX = 0.5
-            slot.layers[1].scaleY = 0.5
+            hub = PreviewHub(canvas: try make(), make: make)
+            hub.configure = { target, streamer in
+                guard let index = PreviewHub.layerIndex(of: target, layerCount: 2), (try? streamer.showLayer(index, of: compositor)) != nil else { return false }
+                made.withLock { $0[target] = streamer }
+                return true
+            }
+            compositor.previewTap = { [hub] canvas, buffer, target in hub.tap(canvas: canvas, commandBuffer: buffer, target: target) }
+            compositor.skipsIdleWork = true
+            compositor.previewWanted = { [hub] in hub.wantsFrames }
+            connections = try Rig()
+            set()
         }
 
-        let make: @Sendable () throws -> PreviewStreamer = {
-            try PreviewStreamer(context: context, width: 160, height: 90, fps: 30, canvasFPS: 60, parameters: parameters, logger: Self.logger)
+        /// Writes the whole picture again (a triple-buffer slot holds an older state), then `change`.
+        func set(_ change: (ParameterSnapshotSlot) -> Void = { _ in }) {
+            sequence += 1
+            let sequence = sequence
+            parameters.write { slot in
+                slot.sequence = sequence
+                for i in 0..<2 {
+                    slot.layers[i] = LayerParameters()
+                    slot.layers[i].intensity = 1
+                    slot.layers[i].folder = 1
+                    slot.layers[i].file = UInt8(i + 1)
+                    slot.layers[i].fitMode = .stretch
+                }
+                slot.layers[1].scaleX = 0.5
+                slot.layers[1].scaleY = 0.5
+                change(slot)
+            }
         }
-        let hub = PreviewHub(canvas: try make(), make: make)
-        let made = Mutex<[String: PreviewStreamer]>([:])
-        hub.configure = { target, streamer in
-            guard let index = PreviewHub.layerIndex(of: target, layerCount: 2), (try? streamer.showLayer(index, of: compositor)) != nil else { return false }
-            made.withLock { $0[target] = streamer }
-            return true
+
+        func attach(_ target: String, stream: UInt32 = 1) -> Bool {
+            hub.attach(target: target, connection: connections.connection(), stream: stream, jpeg: false) { _ in }
         }
-        compositor.previewTap = { [hub] canvas, buffer, target in hub.tap(canvas: canvas, commandBuffer: buffer, target: target) }
-        let rig = try Rig()
+
+        func tick(_ n: Int) {
+            for _ in 0..<n {
+                compositor.tick(target: 100 + Double(ticks) / 60, drawable: nil)
+                ticks += 1
+            }
+        }
+
+        /// RGBA of `target`'s layer picture at a fraction of its size.
+        func pixel(_ target: String, _ fx: Double, _ fy: Double) throws -> [Int] {
+            let texture = try #require(made.withLock { $0[target] }?.layerTexture)
+            return try PreviewHubTests.pixel(texture, x: Int(Double(texture.width) * fx), y: Int(Double(texture.height) * fy), context: context)
+        }
+    }
+
+    static let red = [255, 0, 0, 255], green = [0, 255, 0, 255], black = [0, 0, 0, 255]
+
+    /// layer:<n> shows that layer alone, also on ticks that reuse the canvas; bad targets are refused.
+    @Test func layerTargetShowsOnlyThatLayerAndBadTargetsAreRefused() throws {
+        let rig = try LayerRig()
         for bad in ["layer:0", "layer:3", "layer:x", "layer:", "layer:-1"] {
-            #expect(!hub.attach(target: bad, connection: rig.connection(), stream: 1, jpeg: true) { _ in }, "\(bad) is refused")
+            #expect(!rig.attach(bad), "\(bad) is refused")
         }
-        #expect(hub.attach(target: "layer:1", connection: rig.connection(), stream: 1, jpeg: false) { _ in })
-        #expect(hub.attach(target: "layer:2", connection: rig.connection(), stream: 2, jpeg: false) { _ in })
-        for i in 0..<4 { compositor.tick(target: 100 + Double(i) / 60, drawable: nil) }
-        #expect(hub.framesIn == 2 * 2, "canvas streamer has no subscriber; both layer streamers tap every second tick")
+        #expect(rig.attach("layer:1"))
+        #expect(rig.attach("layer:2", stream: 2))
+        rig.tick(8)
+        #expect(rig.hub.framesIn == 2 * 4, "canvas streamer has no subscriber; both layer streamers tap every second tick")
+        #expect(rig.compositor.reusedCanvases.load(ordering: .relaxed) > 0, "the layer draws ran on reuse ticks too")
+        #expect(try rig.pixel("layer:1", 0.05, 0.05) == Self.red, "layer 1: red everywhere")
+        #expect(try rig.pixel("layer:1", 0.5, 0.5) == Self.red, "layer 2 is absent from layer 1's preview")
+        #expect(try rig.pixel("layer:2", 0.5, 0.5) == Self.green, "layer 2 in the middle")
+        #expect(try rig.pixel("layer:2", 0.05, 0.05) == Self.black, "layer 1 is absent: black around layer 2")
+    }
 
-        let streamers = try ["layer:1", "layer:2"].map { target in
-            try #require(made.withLock { $0[target] }?.layerTexture)
-        }
-        let (corner, centre) = ((10, 10), (80, 45))
-        #expect(try Self.pixel(streamers[0], x: corner.0, y: corner.1, context: context) == [255, 0, 0, 255], "layer 1: red everywhere")
-        #expect(try Self.pixel(streamers[0], x: centre.0, y: centre.1, context: context) == [255, 0, 0, 255], "layer 2 is absent from layer 1's preview")
-        #expect(try Self.pixel(streamers[1], x: centre.0, y: centre.1, context: context) == [0, 255, 0, 255], "layer 2 in the middle")
-        #expect(try Self.pixel(streamers[1], x: corner.0, y: corner.1, context: context) == [0, 0, 0, 255], "layer 1 is absent: black around layer 2")
+    /// The preview draws Normal: a Multiply layer is black on the canvas over red × green, but shows its own picture.
+    /// Intensity 0 is black, as on the canvas.
+    @Test func layerPreviewForcesNormalBlendAndIntensityZeroIsBlack() throws {
+        let rig = try LayerRig()
+        rig.set { slot in slot.layers[1].blendMode = .multiply }
+        #expect(rig.attach("layer:1"))
+        #expect(rig.attach("layer:2", stream: 2))
+        rig.tick(4)
+        let canvas = rig.compositor.readback()
+        let centre = (canvas.height / 2 * canvas.width + canvas.width / 2) * 4
+        #expect(Array(canvas.rgba[centre..<centre + 3]) == [0, 0, 0], "on the canvas green multiplied over red is black")
+        #expect(try rig.pixel("layer:2", 0.5, 0.5) == Self.green, "the layer preview shows the multiply layer as Normal")
+        #expect(try rig.pixel("layer:1", 0.05, 0.05) == Self.red)
+
+        rig.set { slot in slot.layers[0].intensity = 0 }
+        rig.tick(4)
+        #expect(try rig.pixel("layer:1", 0.05, 0.05) == Self.black, "intensity 0: black")
+        #expect(try rig.pixel("layer:2", 0.5, 0.5) == Self.green)
+    }
+
+    /// B31 with a layer target: after a canvas change of aspect the old streamer draws nothing (not stretched), and
+    /// `rebuild` makes it again at the new size with its subscriber.
+    @Test func rebuildRemakesALayerStreamerAtTheNewSize() throws {
+        let rig = try LayerRig()
+        #expect(rig.attach("layer:2"))
+        rig.tick(4)
+        let old = try #require(rig.made.withLock { $0["layer:2"] })
+        try rig.compositor.reconfigure(width: 320, height: 240, fps: 60)
+        let framesBefore = rig.hub.framesIn
+        rig.tick(4)
+        #expect(rig.hub.framesIn == framesBefore, "4:3 canvas, 16:9 layer streamer: no frames until the rebuild")
+        #expect(old.skipped.load(ordering: .relaxed) == 2)
+
+        rig.previewSize.withLock { $0 = (160, 120) }
+        try rig.hub.rebuild()
+        let fresh = try #require(rig.made.withLock { $0["layer:2"] })
+        #expect(fresh !== old && fresh.layer == 1 && fresh.height == 120)
+        #expect(fresh.subscriberList.map(\.stream) == [1], "the subscriber moved over")
+        rig.tick(4)
+        #expect(fresh.framesIn.load(ordering: .relaxed) == 2)
+        #expect(try rig.pixel("layer:2", 0.5, 0.5) == Self.green)
+        #expect(try rig.pixel("layer:2", 0.05, 0.05) == Self.black)
     }
 
     /// B31: after a canvas change every streamer is made again (new size) and keeps its subscribers.

@@ -60,6 +60,8 @@ public final class Compositor: @unchecked Sendable {
     private var drawnItems: [DrawItem] = []
     private var drawnSequence: UInt64 = 0
     private var drawnTime: Float = 0
+    /// This tick reused the last canvas: its own selection is still in `drawItems` (`drawLayer`).
+    private var reusedThisTick = false
     private var canvasValid = false
     private var reuseStreak = 0
     private var drawnGPUErrors = 0
@@ -316,6 +318,7 @@ public final class Compositor: @unchecked Sendable {
         // a picture that did not change since the canvas was drawn is not drawn again (but at least once a second)
         let reuse = skipsIdleWork && canvasValid && !frame.dynamic && snapshot.sequence == drawnSequence && reuseStreak < Int(fps) && drawItems == drawnItems
             && gpuErrors.load(ordering: .relaxed) == drawnGPUErrors
+        reusedThisTick = reuse
         if reuse {
             reuseStreak += 1
             reusedCanvases.wrappingAdd(1, ordering: .relaxed)
@@ -593,12 +596,23 @@ public final class Compositor: @unchecked Sendable {
     /// both quads of a dissolve), with normal blending over black, into `pass` (canvas format, canvas aspect, any size).
     /// Render thread, after the canvas pass of the tick (`previewTap`); a layer with nothing on the canvas stays black.
     /// `uniforms` (the caller's) holds 3 × 2 slots of `uniformStride`; `ring` (0…2) picks the pair this call writes.
+    /// False (nothing encoded, the caller keeps its last frame) while the target's aspect is not the canvas aspect: after
+    /// `reconfigure` and before `PreviewHub.rebuild` makes the streamer again at the new size.
+    ///
+    /// Frame lifetime: the items are this tick's `prepare` selection (`drawItems` on a reuse tick, which equals the
+    /// drawn list; `drawnItems` right after a canvas pass, swapped in from `drawItems`), never an older list. A ring
+    /// frame selected this tick is `currentShown`, which the ring does not pop while shown nor for one change after
+    /// (`previousShown`, `LayerPlayback.select`), and stills and live textures are held by their playback, so they outlive this command buffer exactly as they do for
+    /// the canvas pass encoded on it.
     func drawLayer(_ index: Int, into pass: MTLRenderPassDescriptor, uniforms: MTLBuffer, ring: Int, commandBuffer: MTLCommandBuffer) -> Bool {
-        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { return false }
+        guard let target = pass.colorAttachments[0].texture,
+            abs(Double(target.width * canvasHeight) / Double(max(1, target.height * canvasWidth)) - 1) < 0.02,
+            let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass)
+        else { return false }
         encoder.label = "layer preview"
         encoder.setFragmentSamplerState(context.linearSampler, index: 0)
         encoder.setFragmentSamplerState(context.nearestSampler, index: 1)
-        for var item in drawnItems where item.slot / 2 == index {
+        for var item in reusedThisTick ? drawItems : drawnItems where item.slot / 2 == index {
             item.p.blendMode = .normal  // multiply or darken over black would show nothing
             item.slot = ring * 2 + item.slot % 2
             encode(item, uniforms: uniforms, time: drawnTime, with: encoder)

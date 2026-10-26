@@ -143,10 +143,10 @@ describe('UI control (B27)', () => {
 
 describe('layerPreview', () => {
   it('shows the canvas by default and the selected layer on request', () => {
-    expect(layerPreview('canvas', 3)).toEqual({ target: 'canvas', label: 'Canvas' });
-    expect(layerPreview('layer', 3)).toEqual({ target: 'layer:3', label: 'Layer 3' });
+    expect(layerPreview('canvas', 3)).toEqual({ target: 'canvas', label: 'Canvas', shows: 'canvas' });
+    expect(layerPreview('layer', 3)).toEqual({ target: 'layer:3', label: 'Layer 3', shows: 'layer' });
   });
   it('falls back to the canvas without a selected layer and says so', () => {
-    expect(layerPreview('layer', null)).toEqual({ target: 'canvas', label: 'Canvas (no layer selected)' });
+    expect(layerPreview('layer', null)).toEqual({ target: 'canvas', label: 'Canvas (no layer selected)', shows: 'canvas' });
   });
 });

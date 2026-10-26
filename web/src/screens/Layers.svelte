@@ -141,8 +141,9 @@
       {#if app.live.engine.rendering}
         <div class="preview">
           <div class="segmented" role="group" aria-label="Preview shows">
-            <button type="button" class="btn" aria-pressed={ui.preview === 'canvas'} onclick={() => setPreview('canvas')}>Canvas</button>
-            <button type="button" class="btn" aria-pressed={ui.preview === 'layer'} onclick={() => setPreview('layer')}>This layer</button>
+            <!-- pressed = what is shown: with Master or an output picked, Canvas even when This layer was chosen -->
+            <button type="button" class="btn" aria-pressed={preview.shows === 'canvas'} onclick={() => setPreview('canvas')}>Canvas</button>
+            <button type="button" class="btn" aria-pressed={preview.shows === 'layer'} onclick={() => setPreview('layer')}>This layer</button>
           </div>
           <Preview target={preview.target} label={preview.label} />
         </div>
