@@ -34,6 +34,13 @@ public final class Compositor: @unchecked Sendable {
     /// Output regions of the master display (DESIGN.md §9): nil = the whole drawable shows the canvas.
     /// Replaced as one reference by Control; the tick reads it once.
     nonisolated(unsafe) public var outputSet: OutputSet?
+    /// Engine only: with nothing consuming the canvas (no drawable, preview, Syphon client or CITP stream) a tick
+    /// still runs hand-off, clocks, audio and decoder requests, but encodes no GPU work. Off by default (tests read back).
+    nonisolated(unsafe) public var skipsIdleWork = false
+    /// True while a browser preview or CITP console wants canvas frames.
+    nonisolated(unsafe) public var previewWanted: (() -> Bool)?
+    /// True while a Syphon client is attached.
+    nonisolated(unsafe) public var canvasPublishedWanted: (() -> Bool)?
     private let mappedUniformBuffers: [MTLBuffer]
     /// 256 bytes per slice draw: enough for 64 slices across the outputs of one display.
     static let mappedUniformsLength = 256 * 64
@@ -48,12 +55,22 @@ public final class Compositor: @unchecked Sendable {
     private var canvasIndex = 0
     private var lastTarget = 0.0
     private var lastSequence: UInt64 = 0
+    /// Static-picture reuse (nothing visible changed since the canvas was last drawn): what the last drawn canvas showed.
+    private var drawItems: [DrawItem] = []
+    private var drawnItems: [DrawItem] = []
+    private var drawnSequence: UInt64 = 0
+    private var canvasValid = false
+    private var reuseStreak = 0
+    private var drawnGPUErrors = 0
     private let logger: Logger
     public let ticks = Atomic<Int>(0)
     public let encoderFailures = Atomic<Int>(0)
     public let completed = Atomic<Int>(0)
     public let gpuErrors = Atomic<Int>(0)
     public let outputEncoderFailures = Atomic<Int>(0)
+    /// Ticks that encoded no GPU work because nobody watched, and ticks that reused the last canvas (nothing changed).
+    public let idleTicks = Atomic<Int>(0)
+    public let reusedCanvases = Atomic<Int>(0)
     nonisolated(unsafe) public var lastGPUError: String = ""
 
     public init(
@@ -68,6 +85,8 @@ public final class Compositor: @unchecked Sendable {
         self.metrics = metrics
         self.parameters = parameters
         self.logger = logger
+        drawItems.reserveCapacity(maxLayers * 2)
+        drawnItems.reserveCapacity(maxLayers * 2)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.canvasFormat, width: canvasWidth, height: canvasHeight, mipmapped: false)
         descriptor.usage = [.renderTarget, .shaderRead]
         descriptor.storageMode = .private
@@ -107,12 +126,25 @@ public final class Compositor: @unchecked Sendable {
 
     private var firstTarget = 0.0
 
-    /// Folder 0 generators on any layer: redrawn on this tick's command buffer before the canvas pass samples them.
+    /// Folder 0 generators that are visible this tick, redrawn on its command buffer before the canvas pass samples them.
+    /// Kinds 100–107 never change (drawn once when created), the clock (112) only when the second changes; a generator
+    /// on a layer at intensity 0 is not in `drawItems`, and is drawn on the first tick it becomes visible.
     private func encodeGenerators(_ commandBuffer: MTLCommandBuffer, target: Double) {
         var u = GeneratorUniforms()
         var prepared = false
-        func encode(_ playback: LayerPlayback?) {
-            guard let generator = playback?.live as? GeneratorSource else { return }
+        var local = tm()
+        var localSecond = -1
+        for item in drawItems {
+            guard let generator = item.playback.live as? GeneratorSource, !generator.isStatic else { continue }
+            if generator.kind == 112 {
+                if localSecond < 0 {
+                    var now = time(nil)
+                    localtime_r(&now, &local)
+                    localSecond = Int(now)
+                }
+                if generator.drawnSecond == localSecond { continue }
+                generator.drawnSecond = localSecond
+            }
             if !prepared {
                 prepared = true
                 if firstTarget == 0 { firstTarget = target }
@@ -135,9 +167,6 @@ public final class Compositor: @unchecked Sendable {
                 }
             }
             if generator.kind == 112 {
-                var now = time(nil)
-                var local = tm()
-                localtime_r(&now, &local)
                 var clock = u
                 clock.putTime(h: Int(local.tm_hour), m: Int(local.tm_min), s: Int(local.tm_sec), f: -1, at: 0)
                 generator.encode(into: commandBuffer, uniforms: clock)
@@ -145,11 +174,10 @@ public final class Compositor: @unchecked Sendable {
                 generator.encode(into: commandBuffer, uniforms: u)
             }
         }
-        for layer in layers {
-            encode(layer.current)
-            encode(layer.outgoing)
-            encode(layer.staged)
-        }
+    }
+
+    private func needsPixels(drawable: CAMetalDrawable?) -> Bool {
+        !skipsIdleWork || drawable != nil || offscreenOutput != nil || previewWanted?() == true || canvasPublishedWanted?() == true
     }
 
     /// The canvas completed by the previous tick (for previews and other outputs).
@@ -178,24 +206,13 @@ public final class Compositor: @unchecked Sendable {
             if snapshot.receivedAt > 0 { record.dmxToPhotonMicros = UInt32(max(0, min(4e9, (target - snapshot.receivedAt) * 1e6))) }
         }
 
-        guard let commandBuffer = context.queue.makeCommandBuffer() else {
-            encoderFailures.wrappingAdd(1, ordering: .relaxed)
-            return
-        }
-        encodeGenerators(commandBuffer, target: target)
-        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: canvasPasses[canvasIndex]) else {
-            encoderFailures.wrappingAdd(1, ordering: .relaxed)
-            return
-        }
-        encoder.label = "canvas"
-        encoder.setRenderPipelineState(context.layerPipeline)
-        encoder.setFragmentSamplerState(context.linearSampler, index: 0)
-        encoder.setFragmentSamplerState(context.nearestSampler, index: 1)
+        let wantsPixels = needsPixels(drawable: drawable)
         var frame = TickContext(
-            encoder: encoder, uniforms: uniformBuffers[canvasIndex], dt: snapshot.masterControl == .freezeAll ? 0 : dt, target: target,
-            masterIntensity: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterSpeed: snapshot.masterSpeed,
-            time: Float(target.truncatingRemainder(dividingBy: 3600)))  // ponytail: one strobe phase jump per hour; per-layer Double phase if it shows
+            dt: snapshot.masterControl == .freezeAll ? 0 : dt, target: target, masterIntensity: snapshot.masterControl == .blackout ? 0 : snapshot.master,
+            masterSpeed: snapshot.masterSpeed, time: Float(target.truncatingRemainder(dividingBy: 3600)))  // ponytail: one strobe phase jump per hour; per-layer Double phase if it shows
+        drawItems.removeAll(keepingCapacity: true)
 
+        // Everything that is not GPU work: hand-off, clocks, audio, decoder requests, frame selection.
         for layer in layers {
             let p = layer.index < snapshot.layers.count ? snapshot.layers[layer.index] : LayerParameters()
             handOff(layer: layer, p: p, target: target)
@@ -215,10 +232,10 @@ public final class Compositor: @unchecked Sendable {
                 // normal: the old picture stays underneath while the new fades in; other modes (and a fade to
                 // no media at all) crossfade the weights
                 let underneath = p.blendMode == .normal && layer.current != nil
-                draw(outgoing, p, weight: underneath ? 1 : 1 - progress, retrigger: false, audio: true, slot: layer.index * 2 + 1, in: &frame)
+                prepare(outgoing, p, weight: underneath ? 1 : 1 - progress, retrigger: false, slot: layer.index * 2 + 1, in: &frame)
             }
             if let current = layer.current {
-                draw(current, p, weight: progress, retrigger: retrigger, audio: true, slot: layer.index * 2, in: &frame)
+                prepare(current, p, weight: progress, retrigger: retrigger, slot: layer.index * 2, in: &frame)
             }
             if !layer.retireLater.isEmpty {
                 layer.retired.withLockIfAvailable { list in
@@ -227,16 +244,59 @@ public final class Compositor: @unchecked Sendable {
                 }
             }
         }
-        encoder.endEncoding()
-        canvasPublished?(canvases[canvasIndex], commandBuffer)
-        previewTap?(canvases[canvasIndex], commandBuffer, target)
+
+        guard wantsPixels else {
+            // nobody watches: no command buffer; the metrics still count the frame, marked idle
+            canvasValid = false
+            idleTicks.wrappingAdd(1, ordering: .relaxed)
+            record.idle = true
+            record.layersDrawn = 0
+            record.textureMisses = frame.misses
+            record.cpuMicros = UInt32((CACurrentMediaTime() - cpuStart) * 1e6)
+            _ = metrics.write(record)
+            return
+        }
+
+        guard let commandBuffer = context.queue.makeCommandBuffer() else {
+            encoderFailures.wrappingAdd(1, ordering: .relaxed)
+            return
+        }
+        // a picture that did not change since the canvas was drawn is not drawn again (but at least once a second)
+        let reuse = skipsIdleWork && canvasValid && !frame.dynamic && snapshot.sequence == drawnSequence && reuseStreak < Int(fps) && drawItems == drawnItems
+            && gpuErrors.load(ordering: .relaxed) == drawnGPUErrors
+        if reuse {
+            reuseStreak += 1
+            reusedCanvases.wrappingAdd(1, ordering: .relaxed)
+        } else {
+            reuseStreak = 0
+            encodeGenerators(commandBuffer, target: target)
+            guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: canvasPasses[canvasIndex]) else {
+                encoderFailures.wrappingAdd(1, ordering: .relaxed)
+                canvasValid = false
+                return
+            }
+            encoder.label = "canvas"
+            encoder.setRenderPipelineState(context.layerPipeline)
+            encoder.setFragmentSamplerState(context.linearSampler, index: 0)
+            encoder.setFragmentSamplerState(context.nearestSampler, index: 1)
+            let uniforms = uniformBuffers[canvasIndex]
+            for item in drawItems { encode(item, uniforms: uniforms, time: frame.time, with: encoder) }
+            encoder.endEncoding()
+            Swift.swap(&drawnItems, &drawItems)
+            drawnSequence = snapshot.sequence
+            drawnGPUErrors = gpuErrors.load(ordering: .relaxed)
+            canvasValid = true
+        }
+        let canvas = reuse ? latestCanvas : canvases[canvasIndex]
+        canvasPublished?(canvas, commandBuffer)
+        previewTap?(canvas, commandBuffer, target)
 
         if let target = drawable?.texture ?? offscreenOutput {
             outputPass.colorAttachments[0].texture = target
             if let set = outputSet, let output = commandBuffer.makeRenderCommandEncoder(descriptor: outputPass) {
                 output.label = "mapped output"
                 OutputPass.draw(
-                    set, canvas: canvases[canvasIndex], encoder: output, context: context, uniforms: mappedUniformBuffers[canvasIndex],
+                    set, canvas: canvas, encoder: output, context: context, uniforms: mappedUniformBuffers[canvasIndex],
                     master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs)
                 output.endEncoding()
             } else if let output = commandBuffer.makeRenderCommandEncoder(descriptor: outputPass) {
@@ -251,7 +311,7 @@ public final class Compositor: @unchecked Sendable {
                 }()
                 output.setRenderPipelineState(context.outputPipeline)
                 output.setFragmentBuffer(buffer, offset: 0, index: 0)
-                output.setFragmentTexture(canvases[canvasIndex], index: 0)
+                output.setFragmentTexture(canvas, index: 0)
                 output.setFragmentSamplerState(context.linearSampler, index: 0)
                 output.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                 output.endEncoding()
@@ -275,12 +335,10 @@ public final class Compositor: @unchecked Sendable {
             metrics.complete(slot: slot, gpuMicros: UInt32(max(0, (buffer.gpuEndTime - buffer.gpuStartTime) * 1e6)), late: buffer.gpuEndTime > target)
         }
         commandBuffer.commit()
-        canvasIndex = (canvasIndex + 1) % 3
+        if !reuse { canvasIndex = (canvasIndex + 1) % 3 }
     }
 
     struct TickContext {
-        let encoder: MTLRenderCommandEncoder
-        let uniforms: MTLBuffer
         let dt: Double
         let target: Double
         let masterIntensity: Float
@@ -288,6 +346,22 @@ public final class Compositor: @unchecked Sendable {
         let time: Float
         var drawn: UInt16 = 0
         var misses: UInt16 = 0
+        /// Something on the canvas changes without its frame or the parameters changing (live texture, strobe).
+        var dynamic = false
+    }
+
+    /// One layer picture to composite this tick; two equal lists mean the same canvas.
+    struct DrawItem: Equatable {
+        var playback: LayerPlayback
+        var frame: DecodedFrame
+        var frameIndex: Int
+        var p: LayerParameters
+        var intensity: Float
+        var slot: Int
+
+        static func == (l: DrawItem, r: DrawItem) -> Bool {
+            l.playback === r.playback && l.frame === r.frame && l.frameIndex == r.frameIndex && l.intensity == r.intensity && l.slot == r.slot
+        }
     }
 
     /// Media hand-off with the loader: ask for what the parameters want, take what has been loaded.
@@ -346,7 +420,8 @@ public final class Compositor: @unchecked Sendable {
         layer.retireLater.append(playback)  // flushed to the loader at the end of the tick
     }
 
-    private func draw(_ playback: LayerPlayback, _ p: LayerParameters, weight: Float, retrigger: Bool, audio: Bool, slot: Int, in ctx: inout TickContext) {
+    /// Advances the clock, drives audio and the decoder, picks the frame; queues the picture when it is visible.
+    private func prepare(_ playback: LayerPlayback, _ p: LayerParameters, weight: Float, retrigger: Bool, slot: Int, in ctx: inout TickContext) {
         let last = playback.frameCount - 1
         let inFrame = Int((p.inPoint * Float(last)).rounded())
         let outFrame = Int((p.outPoint * Float(last)).rounded())
@@ -365,7 +440,7 @@ public final class Compositor: @unchecked Sendable {
         let frameIndex = playback.clock.advance(
             dt: ctx.dt, fps: playback.frameRate, speed: speed, mode: p.playMode, inFrame: inFrame, outFrame: outFrame, frameCount: playback.frameCount)
         let direction = (p.playMode.isReverse ? -1 : 1) * (playback.clock.direction < 0 ? -1 : 1)
-        if audio, let channel = playback.audioChannel {
+        if let channel = playback.audioChannel {
             // audio only at 100 % forward (ADR-0019); freeze/scrub/timecode and once-finished are silent
             let playing = frameIndex != nil && !playback.clock.finished && ctx.dt > 0
                 && !(p.playMode == .freeze || p.playMode == .scrub || p.playMode == .timecode)
@@ -373,13 +448,23 @@ public final class Compositor: @unchecked Sendable {
             channel.setState(wantedPTS: playback.clock.position / max(1, playback.frameRate), active: active, volume: p.audioVolume * weight, pan: p.audioPan)
         }
         guard let frameIndex else { return }  // once-then-black has finished
-        playback.decoder?.request(frame: frameIndex, direction: direction)
         let intensity = p.intensity * ctx.masterIntensity * weight
+        // invisible for a while: the ring and the last frame stay, the clock keeps running, decoding resumes when visible
+        guard playback.hold.allowsRequests(visible: intensity > 0, at: ctx.target) else { return }
+        playback.decoder?.request(frame: frameIndex, direction: direction)
         guard intensity > 0 else { return }
-        guard let frame = playback.frame(at: frameIndex, direction: direction), let texture0 = frame.texture0 else {
+        guard let frame = playback.frame(at: frameIndex, direction: direction), frame.texture0 != nil else {
             ctx.misses += 1
             return
         }
+        if playback.live != nil || p.effect1 == .strobe || p.effect2 == .strobe { ctx.dynamic = true }
+        ctx.drawn += 1
+        drawItems.append(DrawItem(playback: playback, frame: frame, frameIndex: frameIndex, p: p, intensity: intensity, slot: slot))
+    }
+
+    private func encode(_ item: DrawItem, uniforms: MTLBuffer, time: Float, with encoder: MTLRenderCommandEncoder) {
+        let p = item.p, playback = item.playback, frame = item.frame
+        guard let texture0 = frame.texture0 else { return }
         let mediaWidth = playback.live != nil ? texture0.width : playback.width
         let mediaHeight = playback.live != nil ? texture0.height : playback.height
         let (transform, quad) = Self.geometry(for: p, mediaWidth: mediaWidth, mediaHeight: mediaHeight, canvasWidth: canvasWidth, canvasHeight: canvasHeight)
@@ -387,25 +472,24 @@ public final class Compositor: @unchecked Sendable {
         u.transform = transform
         u.quadRect = quad
         u.uvRect = SIMD4(p.cropLeft, p.cropTop, 1 - p.cropRight, 1 - p.cropBottom)
-        u.colour = SIMD4(p.red, p.green, p.blue, intensity)
+        u.colour = SIMD4(p.red, p.green, p.blue, item.intensity)
         u.adjust = SIMD4(p.brightness, p.contrast, p.saturation, p.hue)
         u.effect1 = SIMD4(Float(p.effect1.rawValue), p.effect1A, p.effect1B, 0)
         u.effect2 = SIMD4(Float(p.effect2.rawValue), p.effect2A, p.effect2B, 0)
-        u.texel = SIMD4(1 / Float(max(1, mediaWidth)), 1 / Float(max(1, mediaHeight)), Float(mediaWidth) / Float(max(1, mediaHeight)), ctx.time)
+        u.texel = SIMD4(1 / Float(max(1, mediaWidth)), 1 / Float(max(1, mediaHeight)), Float(mediaWidth) / Float(max(1, mediaHeight)), time)
         u.kind = frame.kind.rawValue
         u.blend = UInt32(p.blendMode.rawValue)
-        let offset = slot * Self.uniformStride
-        (ctx.uniforms.contents() + offset).assumingMemoryBound(to: LayerUniforms.self).pointee = u
+        let offset = item.slot * Self.uniformStride
+        (uniforms.contents() + offset).assumingMemoryBound(to: LayerUniforms.self).pointee = u
         let blur = (p.effect1 == .blur && p.effect1A > 0) || (p.effect2 == .blur && p.effect2A > 0)
         let edge = p.effect1 == .edge || p.effect2 == .edge
-        ctx.encoder.setRenderPipelineState(context.layerPipelines[(blur ? 1 : 0) | (edge ? 2 : 0)])
-        ctx.encoder.setVertexBuffer(ctx.uniforms, offset: offset, index: 0)
-        ctx.encoder.setFragmentBuffer(ctx.uniforms, offset: offset, index: 0)
-        ctx.encoder.setFragmentTexture(texture0, index: 0)
-        ctx.encoder.setFragmentTexture(frame.texture1 ?? texture0, index: 1)
-        ctx.encoder.setFragmentTexture(frame.texture2 ?? texture0, index: 2)
-        ctx.encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
-        ctx.drawn += 1
+        encoder.setRenderPipelineState(context.layerPipelines[(blur ? 1 : 0) | (edge ? 2 : 0)])
+        encoder.setVertexBuffer(uniforms, offset: offset, index: 0)
+        encoder.setFragmentBuffer(uniforms, offset: offset, index: 0)
+        encoder.setFragmentTexture(texture0, index: 0)
+        encoder.setFragmentTexture(frame.texture1 ?? texture0, index: 1)
+        encoder.setFragmentTexture(frame.texture2 ?? texture0, index: 2)
+        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
     }
 
     /// Layer quad in canvas units (half-height = 1, x spans ±aspect) and the

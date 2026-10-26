@@ -97,6 +97,8 @@ public final class PreviewStreamer: @unchecked Sendable {
     // MARK: Subscribers
 
     public var hasSubscribers: Bool { subscribers.withLock { !$0.isEmpty } }
+    /// Anyone who needs canvas frames: a WebSocket subscriber or a CITP console that streams.
+    public var wantsFrames: Bool { alwaysEncode || hasSubscribers || externalJPEGWanted?() == true }
 
     /// Adds a subscriber; H.264 clients get the `stream` description (avcC) right away when one exists.
     public func subscribe(_ subscriber: Subscriber) {
@@ -119,7 +121,7 @@ public final class PreviewStreamer: @unchecked Sendable {
     /// `Compositor.previewTap`: encodes the downscale into the tick's command buffer when a frame is due.
     public func tap(canvas: MTLTexture, commandBuffer: MTLCommandBuffer, target: Double) {
         tickCounter &+= 1
-        guard tickCounter % everyNth == 0, hasSubscribers || alwaysEncode || externalJPEGWanted?() == true, let pool, let textureCache else { return }
+        guard tickCounter % everyNth == 0, wantsFrames, let pool, let textureCache else { return }
         var pixelBuffer: CVPixelBuffer?
         guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer) == kCVReturnSuccess, let pixelBuffer else {
             skipped.wrappingAdd(1, ordering: .relaxed)

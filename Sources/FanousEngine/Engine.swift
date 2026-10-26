@@ -221,6 +221,9 @@ public final class Engine: @unchecked Sendable {
             let height = 640 * render.scene.canvasHeight / max(1, render.scene.canvasWidth)
             let preview = try PreviewStreamer(context: context, width: 640, height: max(2, height), fps: min(30, fps), canvasFPS: fps, parameters: dmx.snapshots, logger: logger)
             render.compositor.previewTap = { canvas, commandBuffer, target in preview.tap(canvas: canvas, commandBuffer: commandBuffer, target: target) }
+            // no GPU work for a canvas nobody sees: no output window, preview, Syphon client or CITP stream
+            render.compositor.skipsIdleWork = true
+            render.compositor.previewWanted = { preview.wantsFrames }
             stateServer.preview = preview
             let compiler = try OutputCompiler(device: context.device)
             stateServer.previewTarget = { [weak self] target in

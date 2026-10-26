@@ -102,6 +102,7 @@ public final class RenderService {
         if scene.syphonOutput {
             let output = try SyphonOutput(name: "Fanous – Canvas", device: device)
             syphon = output
+            compositor.canvasPublishedWanted = { output.hasClients }
             compositor.canvasPublished = { texture, commandBuffer in
                 if output.hasClients { output.publish(texture: texture, commandBuffer: commandBuffer) }
             }
@@ -168,6 +169,7 @@ public final class RenderService {
         window = nil
         compositor.setLayers([])
         compositor.canvasPublished = nil
+        compositor.canvasPublishedWanted = nil
         syphon?.stop()
         syphon = nil
         mixer?.stop()

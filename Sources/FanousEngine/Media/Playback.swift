@@ -59,6 +59,26 @@ public enum StillSource {
     }
 }
 
+/// An invisible layer (intensity × master × weight = 0) keeps its ring and last frame but stops asking the decoder
+/// for more after `holdAfter` seconds; the first visible tick resumes the requests. The play clock is not involved.
+struct InvisibilityHold {
+    static let holdAfter = 2.0
+    private var since: Double?
+
+    /// False while the layer has been invisible for `holdAfter` seconds or more.
+    mutating func allowsRequests(visible: Bool, at time: Double) -> Bool {
+        if visible {
+            since = nil
+            return true
+        }
+        guard let since else {
+            since = time
+            return true
+        }
+        return time - since < Self.holdAfter
+    }
+}
+
 /// One piece of media playing on a layer slot: a movie (decoder + ring), a
 /// still, or a live input. Touched by the compositor thread only, except
 /// `stop()` (media loader, after the compositor has let go of it).
@@ -75,6 +95,7 @@ public final class LayerPlayback: @unchecked Sendable {
     public let live: (any LiveTextureSource)?
     private let liveFrame = DecodedFrame(poolIndex: 0)
     var clock = LayerClock()
+    var hold = InvisibilityHold()
     var currentShown = -1
     var previousShown = -1
     var holdFrame: DecodedFrame?
@@ -155,6 +176,7 @@ public final class LayerPlayback: @unchecked Sendable {
             if best == nil || behind(f.frameIndex) < behind(best!.frameIndex) { best = f }
         }
         guard let best, behind(best.frameIndex) < ring.capacity + 2 else {
+            if holdFrame == nil { holdFrame = best }  // never shown (held invisible): better a stale picture than none until the seek lands
             ring.drain()  // everything buffered is on the wrong side of a seek
             return holdFrame
         }
