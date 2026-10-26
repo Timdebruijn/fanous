@@ -33,6 +33,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
+    static let keepEngineOnQuitKey = "KeepEngineOnQuit"
+
+    /// Quitting leaves a service engine running; ask once per quit unless "keep running" was remembered.
+    /// A child engine stops with the app (applicationWillTerminate), so there is nothing to ask.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard engine.usesAgent, !UserDefaults.standard.bool(forKey: Self.keepEngineOnQuitKey) else { return .terminateNow }
+        // one 1 s probe (plus at most 1 s before the answer): a slow or dead engine never holds the quit for long
+        EngineManager.engineAnswers(within: 1) { [weak self] running in
+            guard let self, running else { return sender.reply(toApplicationShouldTerminate: true) }
+            self.askAboutEngine(sender)
+        }
+        return .terminateLater
+    }
+
+    private func askAboutEngine(_ sender: NSApplication) {
+        let alert = NSAlert()
+        alert.messageText = "Quit \(Attribution.projectName)?"
+        alert.informativeText = "The engine keeps the outputs running after the app quits. Stop it too?"
+        alert.addButton(withTitle: "Keep Engine Running")  // first button: default, Return
+        alert.addButton(withTitle: "Stop Engine and Quit")
+        alert.addButton(withTitle: "Cancel")  // Escape
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = "Don't ask again"
+        engine.present(alert) { [engine] response in
+            switch response {
+            case .alertFirstButtonReturn:
+                // only "keep running" is remembered; stopping is always asked for
+                if alert.suppressionButton?.state == .on { UserDefaults.standard.set(true, forKey: Self.keepEngineOnQuitKey) }
+                sender.reply(toApplicationShouldTerminate: true)
+            case .alertSecondButtonReturn:
+                // a failed stop shows its own alert and keeps the app open
+                sender.reply(toApplicationShouldTerminate: engine.stopEngine())
+            default:
+                sender.reply(toApplicationShouldTerminate: false)
+            }
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) { engine.stopIfChild() }
 
     @objc func showAbout(_ sender: Any?) {

@@ -67,12 +67,18 @@ final class EngineManager {
     }
 
     /// Stop: a KeepAlive agent only stays down when its registration goes; the next start registers it again.
-    func stopEngine() {
+    /// False (after an alert) when the service could not be removed.
+    @discardableResult
+    func stopEngine() -> Bool {
         if usesAgent {
-            do { try SMAppService.agent(plistName: Self.agentPlist).unregister() } catch { alert("The engine service could not be removed.", "\(error)") }
+            do { try SMAppService.agent(plistName: Self.agentPlist).unregister() } catch {
+                alert("The engine service could not be removed.", "\(error)")
+                return false
+            }
         } else {
             stopIfChild()
         }
+        return true
     }
 
     func restart() {
@@ -200,7 +206,7 @@ final class EngineManager {
 
     /// A sheet on the main window, never an app-modal dialog: a dialog that ends up behind another window or on another
     /// display blocks the app while the user sees nothing (seen 2026-10-26).
-    private func present(_ alert: NSAlert, then: @escaping @MainActor (NSApplication.ModalResponse) -> Void) {
+    func present(_ alert: NSAlert, then: @escaping @MainActor (NSApplication.ModalResponse) -> Void) {
         if let window = NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }) {
             NSApp.activate()
             alert.beginSheetModal(for: window) { response in MainActor.assumeIsolated { then(response) } }

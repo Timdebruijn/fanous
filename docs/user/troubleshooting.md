@@ -154,16 +154,17 @@ a network MIDI session, then choose it under Device (or "All sources").
 
 Engine › **Restart Engine**. Outputs go black for a moment and the UI reloads.
 DMX restores the state at once; playback positions are not restored. Do not do
-this during a show. Quitting the app does not stop the engine; **Stop Engine…**
-does, and **Start Engine** starts it again.
+this during a show. Quitting the app does not stop the engine unless you choose
+**Stop Engine and Quit** in the quit question; **Stop Engine…** does, and **Start Engine** starts it again.
 
 ## Reset the project
 
 This deletes your patch changes, outputs, cues and timecode settings. Copy
 `project.json` first if you might want it back.
 
-1. Engine › **Stop Engine…** (quitting the app alone leaves the engine running
-   with the old project in memory).
+1. Engine › **Stop Engine…**, or quit and choose **Stop Engine and Quit**
+   (Keep Engine Running leaves the engine running with the old project in
+   memory).
 2. In Finder move `~/Library/Application Support/Fanous/project.json` away,
    for example to the Desktop.
 3. Engine › **Start Engine**. The engine starts with the standard patch (8 layers).
