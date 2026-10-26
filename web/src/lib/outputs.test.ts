@@ -23,6 +23,11 @@ describe('outputs helpers', () => {
     expect(handles(output, 'mesh', 0)).toHaveLength(9);
     expect(handles(output, 'mesh', 0)[4]!.point).toEqual({ x: 0.5, y: 0.5 });
     expect(handles(output, 'slices', 0)[2]!.path).toBe('/slices/0/dest/2');
+    // two slices on the same corners: only the selected one gets handles, both keep an outline
+    const two = { ...output, slices: [output.slices[0]!, { ...output.slices[0]!, id: 2 }] };
+    expect(handles(two, 'slices', 1).map((h) => h.path)).toEqual(['/slices/1/dest/0', '/slices/1/dest/1', '/slices/1/dest/2', '/slices/1/dest/3']);
+    expect(handles(two, 'slices', 0).every((h) => h.path.startsWith('/slices/0/'))).toBe(true);
+    expect(outlines(two, 'slices', 0)).toHaveLength(2);
     expect(handles(output, 'mask', 0)).toHaveLength(3);
     expect(handles({ ...output, warp: { ...output.warp, mesh: null } }, 'mesh', 0)).toEqual([]);
   });

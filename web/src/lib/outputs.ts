@@ -166,8 +166,11 @@ export function handles(output: OutputConfig, mode: MapperMode, sliceIndex: numb
       return output.warp.cornerPin.map((point, i) => ({ path: `/warp/cornerPin/${i}`, point, group: 0 }));
     case 'mesh':
       return (output.warp.mesh?.points ?? []).map((point, i) => ({ path: `/warp/mesh/points/${i}`, point, group: 0 }));
-    case 'slices':
-      return output.slices.flatMap((slice, s) => slice.dest.map((point, i) => ({ path: `/slices/${s}/dest/${i}`, point, group: s })));
+    case 'slices': {
+      // only the selected slice is draggable: a new slice starts on the same corners as the others
+      const slice = output.slices[sliceIndex];
+      return (slice?.dest ?? []).map((point, i) => ({ path: `/slices/${sliceIndex}/dest/${i}`, point, group: sliceIndex }));
+    }
     case 'mask': {
       const slice = output.slices[sliceIndex];
       return (slice?.mask?.path ?? []).map((point, i) => ({ path: `/slices/${sliceIndex}/mask/path/${i}`, point, group: sliceIndex }));

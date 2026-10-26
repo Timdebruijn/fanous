@@ -184,7 +184,8 @@ a handle stays on the spot you touch while a warp is active.
 - **Slices**: a slice is a piece of the canvas placed somewhere on the output.
   It takes a rectangle of the canvas (**Source x · y · w · h**, in canvas
   pixels; the tooltip shows the stored 0 to 1 value) and stretches it into a
-  four-corner area on the output (the handles). An output starts with one slice
+  four-corner area on the output (the handles). Only the slice chosen in the
+  **Slice** list has handles; the others are drawn as outlines. An output starts with one slice
   that shows the whole canvas, so you only need more when one projector covers
   several surfaces that each need their own part of the picture: three screens
   on a stage, the pillars of a facade, a strip next to a screen. **Opacity %**
