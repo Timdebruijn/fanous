@@ -154,16 +154,19 @@ struct ShowControlTests {
         context.universesSilent = ["artnet:0.0.1"]
         context.outputsLost = [2]
         context.outputsBound = 1
+        context.modeIssues = ["Output 1: unavailable"]
         context.layerErrors = []
         context.libraryRoot = NSHomeDirectory()
         let items = Readiness.check(context, acknowledged: ["dmx"])
         let ids = items.map(\.id)
-        #expect(ids == ["power", "thermal", "disk", "memory", "dmx", "outputs", "decoders", "library", "spotlight", "updates", "timemachine", "focus", "displaysleep", "hardware"])
+        #expect(ids == ["power", "thermal", "disk", "memory", "dmx", "outputs", "modes", "decoders", "library", "spotlight", "updates", "timemachine", "focus", "displaysleep", "hardware"])
         let dmx = items.first { $0.id == "dmx" }!
         #expect(dmx.state == .fail && dmx.acknowledged && !dmx.blocks)
         let outputs = items.first { $0.id == "outputs" }!
         #expect(outputs.state == .fail && outputs.blocks && outputs.detail.contains("lost: [2]"))
         #expect(items.first { $0.id == "focus" }!.state == .manual)
+        let modes = items.first { $0.id == "modes" }!
+        #expect(modes.state == .warn && !modes.blocks && modes.detail == "Output 1: unavailable")
         #expect(items.first { $0.id == "hardware" }!.state == .ok)
         #expect(items.first { $0.id == "library" }!.state == .ok)
         #expect(items.allSatisfy { !$0.fix.isEmpty && !$0.detail.isEmpty })

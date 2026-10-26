@@ -48,6 +48,10 @@ public final class Engine: @unchecked Sendable {
     private var displayManager: DisplayManager?
     private let displays = Mutex<[DisplayInfo]>([])
     private let outputStatus = Mutex<[OutputStatus]>([])
+    /// Main actor only: desired display modes in show mode (DESIGN.md §9.6).
+    private var modeSwitcher: DisplayModeSwitcher?
+    /// Output id → what the status line and readiness say about its display mode; written on the main actor.
+    private let modeChecks = Mutex<[Int: DisplayModeMatching.Check]>([:])
     private var lastOutputs: [OutputConfig] = []
     private var lastClockMaster: Int?
     // Phase 7: show control
@@ -206,7 +210,12 @@ public final class Engine: @unchecked Sendable {
             guard let self else { return }
             self.ingest?.paused = on  // DESIGN.md §14: ingest paused in show mode
             if on { self.startReadinessTimer() } else { self.stopReadinessTimer() }
-            DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.coordinator?.setCursorHidden(on) } }
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.coordinator?.setCursorHidden(on)
+                    self?.syncDisplayModes()
+                }
+            }
         }
         applyTimecodeSettings(ShowCommands.timecodeSettings(from: project))
         store.onProjectChanged = { [weak self] document in self?.projectChanged(document) }
@@ -258,7 +267,12 @@ public final class Engine: @unchecked Sendable {
             let coordinator = try MainActor.assumeIsolated { () throws -> OutputCoordinator in
                 let coordinator = try OutputCoordinator(compositor: render.compositor, context: context, fps: fps, displays: DisplayManager.current(), logger: logger)
                 displays.withLock { $0 = coordinator.connectedDisplays }
-                coordinator.onStatus = { [weak self] statuses in self?.outputStatus.withLock { $0 = statuses } }
+                coordinator.onStatus = { [weak self] statuses in
+                    self?.outputStatus.withLock { $0 = statuses }
+                    // after the rebind returned: a mode switch reconfigures the displays and rebinds again
+                    DispatchQueue.main.async { MainActor.assumeIsolated { self?.syncDisplayModes() } }
+                }
+                modeSwitcher = DisplayModeSwitcher(logger: logger)
                 let manager = DisplayManager(logger: logger)
                 manager.onChange = { [weak self] list in
                     self?.displays.withLock { $0 = list }
@@ -573,6 +587,7 @@ public final class Engine: @unchecked Sendable {
         context.outputsLost = statuses.filter { $0.state == .lost }.map(\.id)
         context.outputsUnassigned = statuses.filter { $0.state == .unassigned }.map(\.id)
         context.outputsBound = statuses.filter { $0.state == .bound }.count
+        context.modeIssues = modeChecks.withLock { $0 }.sorted { $0.key < $1.key }.compactMap { id, check in check.issue.map { "Output \(id): \($0)" } }
         context.layerErrors = (render?.layers ?? []).compactMap { layer in layer.mediaStatus.withLock { $0.error.map { "Layer \(layer.index + 1): \($0)" } } }
         context.libraryRoot = library?.snapshot.root ?? ""
         return context
@@ -606,6 +621,33 @@ public final class Engine: @unchecked Sendable {
         if !blocking.isEmpty { return blocking }
         showMode.enter()
         return nil
+    }
+
+    /// Show mode on: the bound outputs' desired modes (first output per display wins); off: the previous modes back.
+    /// Runs after every rebind too, so a replugged display gets its mode again. Then refreshes the mode notes.
+    @MainActor private func syncDisplayModes() {
+        guard let coordinator, let modeSwitcher else { return }
+        let displays = coordinator.connectedDisplays, outputs = coordinator.outputs, show = showMode.isOn
+        if show {
+            var wanted: [(display: DisplayInfo, mode: DisplayModeConfig)] = []
+            for output in outputs {
+                guard let mode = output.mode, let display = displays.first(where: { $0.uuid == output.display?.uuid }),
+                    !wanted.contains(where: { $0.display.uuid == display.uuid })
+                else { continue }
+                wanted.append((display, mode))
+            }
+            // switched: the reconfiguration rebinds and lands here again with the new modes to check
+            if modeSwitcher.apply(wanted, connected: displays) { return }
+        } else {
+            modeSwitcher.restore(connected: displays)
+        }
+        let fps = render?.compositor.fps ?? 60
+        var checks: [Int: DisplayModeMatching.Check] = [:]
+        for output in outputs {
+            guard let display = displays.first(where: { $0.uuid == output.display?.uuid }) else { continue }
+            checks[output.id] = DisplayModeMatching.check(desired: output.mode, current: display.mode, available: display.modes, showMode: show, fps: fps)
+        }
+        modeChecks.withLock { $0 = checks }
     }
 
     private func startReadinessTimer() {
@@ -731,6 +773,7 @@ public final class Engine: @unchecked Sendable {
         let summary = metrics.summary(seconds: 1, now: CACurrentMediaTime())
         func ms(_ v: Double) -> JSONValue { .number((v * 100).rounded() / 100) }
         let snapshot = library.snapshot
+        let modeNotes = modeChecks.withLock { $0 }.compactMapValues(\.note)
         let live: JSONValue = [
             "engine": [
                 "version": .string(FanousVersion.string), "chip": .string(SystemInfo.chipName),
@@ -764,7 +807,7 @@ public final class Engine: @unchecked Sendable {
                     [
                         "uuid": .string(d.uuid), "name": .string(d.name), "width": .number(Double(d.pixelWidth)), "height": .number(Double(d.pixelHeight)),
                         "hz": .number(d.hz), "main": .bool(d.isMain), "builtin": .bool(d.isBuiltin),
-                        "modes": .array(d.modes.prefix(24).map { ["width": .number(Double($0.width)), "height": .number(Double($0.height)), "hz": .number($0.hz)] }),
+                        "modes": .array(d.modes.prefix(64).map { ["width": .number(Double($0.width)), "height": .number(Double($0.height)), "hz": .number($0.hz)] }),
                     ]
                 }),
             "outputs": .array(
@@ -772,6 +815,7 @@ public final class Engine: @unchecked Sendable {
                     [
                         "id": .number(Double(s.id)), "state": .string(s.state.rawValue), "display": s.display.map { .string($0) } ?? .null,
                         "width": .number(Double(s.width)), "height": .number(Double(s.height)), "hz": .number(s.hz), "master": .bool(s.isMaster),
+                        "modeNote": modeNotes[s.id].map { .string($0) } ?? .null,
                     ]
                 }),
             "security": ["webUIOpen": .bool(auth.isOpen(.programmer))],
@@ -812,6 +856,7 @@ public final class Engine: @unchecked Sendable {
         if let coordinator, let displayManager {
             MainActor.assumeIsolated {
                 displayManager.stop()
+                modeSwitcher?.restore(connected: coordinator.connectedDisplays)  // leave() above only queued it
                 coordinator.stop()
             }
         }

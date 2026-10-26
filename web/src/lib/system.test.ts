@@ -52,6 +52,7 @@ describe('machine tones', () => {
 describe('readiness', () => {
   it('maps every item state to a dot and a word', () => {
     expect(readinessBadge(item('ok'))).toEqual({ tone: 'green', label: 'ok' });
+    expect(readinessBadge(item('warn'))).toEqual({ tone: 'yellow', label: 'warning' });
     expect(readinessBadge(item('fail'))).toEqual({ tone: 'red', label: 'failed' });
     expect(readinessBadge(item('fail', true))).toEqual({ tone: 'yellow', label: 'acknowledged' });
     expect(readinessBadge(item('manual'))).toEqual({ tone: 'off', label: 'manual' });

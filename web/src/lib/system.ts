@@ -58,6 +58,7 @@ export function outputTone(state: string): DotTone {
 /** Dot colour and word of one readiness row (the word is the accessible name of the dot). */
 export function readinessBadge(item: Pick<ReadinessItemDoc, 'state' | 'acknowledged'>): { tone: DotTone; label: string } {
   if (item.state === 'ok') return { tone: 'green', label: 'ok' };
+  if (item.state === 'warn') return { tone: 'yellow', label: 'warning' };
   if (item.state === 'hard') return { tone: 'red', label: 'blocking' };
   if (item.state === 'fail') return item.acknowledged ? { tone: 'yellow', label: 'acknowledged' } : { tone: 'red', label: 'failed' };
   return { tone: 'off', label: 'manual' };

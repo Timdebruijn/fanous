@@ -52,9 +52,33 @@ window is hidden behind it. Use the web UI from another device then.
 |---|---|
 | Name | free text |
 | Display | the bound display, or Unassigned |
-| Mode | the wanted resolution and refresh rate. **Stored but not applied** (B33): set the display mode in System Settings › Displays |
+| Mode | the wanted resolution and refresh rate, chosen from the modes the display offers. Applied when show mode turns on (see below); **Current** leaves the display as it is |
 | Region x · y · w · h (px) | the part of the display this output draws on; **Full display** resets it |
 | Intensity % | multiplied with the Output fixture's intensity and the Master intensity |
+
+### Display modes
+
+Outside show mode Fanous uses whatever mode the display runs and only warns:
+the output list shows a yellow line such as "Mode differs: 1920 × 1080 @ 59.94,
+wanted @ 60. Applied in show mode." When **show mode** turns on, Fanous
+switches every display whose output has a Mode to that mode, all at once, and
+logs the old and new mode. Turning show mode off or stopping Fanous puts the
+previous modes back. A display that is unplugged and replugged during show
+mode gets its mode again.
+
+- 59.94 and 60 Hz (and 29.97/30, 23.976/24) count as the same rate. The exact
+  rate is used when the display offers it.
+- Resolution means pixels. On a HiDPI display Fanous keeps the current scaling
+  when both a scaled and a 1:1 mode have the asked pixel size.
+- When the display does not offer the mode, nothing is switched: the output
+  list and the readiness check (**Outputs in their desired display mode**,
+  a yellow warning) name the closest mode that is available.
+- A refresh rate that is not a whole multiple of the canvas frame rate (50 Hz
+  for a 60 fps canvas) is warned about the same way: motion judders.
+- If several outputs share a display, the first output with a Mode decides.
+- The switch is made for the login session: if Fanous crashes in show mode the
+  display keeps the show mode until you change it back in System Settings ›
+  Displays or log out.
 
 **Remove output** takes effect at once and shows "Undone? Undo" for 8 seconds
 (Undo also works with Cmd-Z). Slices, masks, cues and the last layer work the
@@ -152,8 +176,6 @@ is locked.
 
 ## Not done yet
 
-- **Display modes** are not applied. Set resolution and refresh rate yourself in
-  System Settings › Displays and keep them at the canvas rate (B33).
 - **Hot-plug** (unplug and replug) is only partly tested: through unit tests and
   by binding and releasing the built-in display. Test it on your machine before
   the show (B34).

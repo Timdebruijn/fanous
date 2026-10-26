@@ -67,8 +67,6 @@ the number key next to each screen. Keys do nothing while you type in a field.
 Everything below is also in [BACKLOG.md](../BACKLOG.md) under the given number.
 The pages that follow repeat the ones that matter for their topic.
 
-- Display modes (resolution, refresh rate) stored on an output are not applied;
-  set them in System Settings › Displays (B33).
 - Hot-plugging a display has only been tested through unit tests and the
   built-in display (B34).
 - Project versions do not exist yet: there is one `project.json`, autosaved,

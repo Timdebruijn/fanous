@@ -53,7 +53,8 @@ public final class ShowModeController: @unchecked Sendable {
 
 /// One readiness item (DESIGN.md §14).
 public struct ReadinessItem: Sendable, Equatable, Identifiable {
-    public enum State: String, Sendable { case ok, fail, manual, hard }
+    /// `warn` never blocks: something to look at, not to acknowledge.
+    public enum State: String, Sendable { case ok, warn, fail, manual, hard }
     public var id: String
     public var title: String
     public var state: State
@@ -70,6 +71,8 @@ public struct ReadinessContext: Sendable {
     public var outputsLost: [Int] = []
     public var outputsUnassigned: [Int] = []
     public var outputsBound = 0
+    /// "Output 2: …" for every bound output whose desired display mode cannot be or was not applied.
+    public var modeIssues: [String] = []
     public var layerErrors: [String] = []
     public var libraryRoot: String = ""
     public var hardwareSupported = true
@@ -99,6 +102,11 @@ public enum Readiness {
             "outputs", "All outputs bound to their displays", outputsOK,
             context.outputsBound == 0 ? "no output bound" : (context.outputsLost.isEmpty && context.outputsUnassigned.isEmpty ? "\(context.outputsBound) bound" : "lost: \(context.outputsLost), unassigned: \(context.outputsUnassigned)"),
             "Connect the displays, assign every output")
+        items.append(
+            ReadinessItem(
+                id: "modes", title: "Outputs in their desired display mode", state: context.modeIssues.isEmpty ? .ok : .warn,
+                detail: context.modeIssues.isEmpty ? "applied in show mode, or none set" : context.modeIssues.joined(separator: "; "),
+                fix: "Pick an available mode for the output (Outputs › Mode), or set it in System Settings › Displays"))
         add("decoders", "No decoder errors", context.layerErrors.isEmpty, context.layerErrors.isEmpty ? "none" : context.layerErrors.joined(separator: "; "), "Fix or replace the failing media")
         let local = volumeIsLocal(context.libraryRoot)
         add("library", "Library on a local volume", local, local ? "local" : "network or removable volume", "Copy the library to the internal disk")
