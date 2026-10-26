@@ -86,6 +86,7 @@ public final class Engine: @unchecked Sendable {
     private var readinessOnNextSync = false
     private let oscLog = Mutex<[JSONValue]>([])
     private var lastPolicy: SourcePolicy?
+    private var lastUniverseSettings: [UniverseID: UniverseSettings] = [:]
     private var lastLibraryRootWarning: String?
     private var citp: CITPServer?
     private var stateServer: StateServer?
@@ -164,11 +165,14 @@ public final class Engine: @unchecked Sendable {
         if policy != .dmx {
             for entry in patch.entries { dmx.setPolicy(policy, for: entry.fixture) }
         }
+        let universeSettings = ProjectDocument.universeSettings(from: loadedProject ?? .null)
+        lastUniverseSettings = universeSettings
+        dmx.setUniverseSettings(universeSettings)
         dmx.start()
         let artnet = ArtNetReceiver(store: dmx, logger: logger, nodeName: Attribution.projectName)
         try artnet.start()
         let sacn = SACNReceiver(store: dmx, logger: logger)
-        try sacn.start(universes: Self.sacnUniverses(patch))
+        sacn.start(groups: UniverseSettings.wire(patch.universes, over: .sacn, settings: universeSettings))
         let osc = OSCReceiver(store: dmx, logger: logger)
         try osc.start()
         self.dmx = dmx
@@ -635,7 +639,7 @@ public final class Engine: @unchecked Sendable {
         ]
     }
 
-    private func systemLive(addresses: [String]) -> JSONValue {
+    private func systemLive(addresses: [String], interfaces: [NetworkInterface]) -> JSONValue {
         let power = Readiness.powerState()
         let memory = Readiness.memoryHeadroom()
         let thermal = ProcessInfo.processInfo.thermalState
@@ -643,7 +647,8 @@ public final class Engine: @unchecked Sendable {
             "thermal": .string(thermal == .nominal ? "nominal" : thermal == .fair ? "fair" : thermal == .serious ? "serious" : "critical"),
             "onAC": .bool(power.onAC), "power": .string(power.detail), "memoryFreeFraction": .number((memory.fraction * 1000).rounded() / 1000),
             "memoryGB": .number(Double(SystemInfo.physicalMemoryBytes / 1_073_741_824)), "os": .string(SystemInfo.osVersion), "host": .string(SystemInfo.hostName),
-            "addresses": .array(addresses.map { .string($0) }), "port": .number(Double(options.port)),
+            "addresses": .array(addresses.map { .string($0) }),
+            "interfaces": .array(interfaces.map { ["name": .string($0.name), "address": .string($0.address)] }), "port": .number(Double(options.port)),
             "tlsFingerprint": .string(tlsFingerprint), "bonjour": .string("\(SystemInfo.hostName)._fanous._tcp"),
         ]
     }
@@ -677,6 +682,7 @@ public final class Engine: @unchecked Sendable {
             let snapshot = dmx.snapshot()
             let patched = Set(dmx.currentPatch.universes.map(\.description))
             context.universesSilent = snapshot.universes.filter { patched.contains($0.id) && !$0.active }.map(\.id)
+            context.interfacesMissing = dmx.missingInterfaces()
         }
         let statuses = outputStatus.withLock { $0 }
         context.outputsLost = statuses.filter { $0.state == .lost }.map(\.id)
@@ -894,12 +900,21 @@ public final class Engine: @unchecked Sendable {
         return scene
     }
 
-    static func sacnUniverses(_ patch: Patch) -> [Int] { patch.universes.filter { $0.transport == .sacn }.map(\.number) }
-
     private func projectChanged(_ document: JSONValue) {
-        if let dmx, let patch = ProjectDocument.effectivePatch(from: document), patch != dmx.currentPatch {
-            dmx.setPatch(patch)
-            sacn?.update(universes: Self.sacnUniverses(patch))
+        // patch and per-universe settings (B28): applied on the DMX queue; sACN groups follow both
+        let universeSettings = ProjectDocument.universeSettings(from: document)
+        if let dmx {
+            var changed = false
+            if let patch = ProjectDocument.effectivePatch(from: document), patch != dmx.currentPatch {
+                dmx.setPatch(patch)
+                changed = true
+            }
+            if universeSettings != lastUniverseSettings {
+                lastUniverseSettings = universeSettings
+                dmx.setUniverseSettings(universeSettings)
+                changed = true
+            }
+            if changed { sacn?.update(groups: UniverseSettings.wire(dmx.currentPatch.universes, over: .sacn, settings: universeSettings)) }
         }
         // the source policy applies to every patched fixture, also to the resolvers a new patch created
         if let dmx, let raw = document["policy"]?.string, let policy = SourcePolicy(rawValue: raw), policy != lastPolicy {
@@ -989,12 +1004,13 @@ public final class Engine: @unchecked Sendable {
         var midiSources: [String] = []
         var audioInputs: [String] = []
         var addresses: [String] = []
+        var interfaces: [NetworkInterface] = []
     }
     private var hostFacts = HostFacts()
     private func currentHostFacts() -> HostFacts {
         let now = CACurrentMediaTime()
         if now - hostFacts.at >= 5 {
-            hostFacts = HostFacts(at: now, midiSources: MTCInput.sources(), audioInputs: LTCInput.inputDevices(), addresses: SystemInfo.ipv4Addresses)
+            hostFacts = HostFacts(at: now, midiSources: MTCInput.sources(), audioInputs: LTCInput.inputDevices(), addresses: SystemInfo.ipv4Addresses, interfaces: SystemInfo.ipv4Interfaces)
         }
         return hostFacts
     }
@@ -1057,7 +1073,7 @@ public final class Engine: @unchecked Sendable {
             "timecode": timecodeLive(),
             "cue": cueLive(),
             "show": showLive(),
-            "system": systemLive(addresses: facts.addresses),
+            "system": systemLive(addresses: facts.addresses, interfaces: facts.interfaces),
             "osc": ["port": 8000, "recent": .array(oscLog.withLock { $0 }), "midiSources": .array(facts.midiSources.map { .string($0) }), "audioInputs": .array(facts.audioInputs.map { .string($0) })],
             "citp": citpLive(),
         ]

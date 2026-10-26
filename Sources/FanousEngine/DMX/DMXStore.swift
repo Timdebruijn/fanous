@@ -69,7 +69,13 @@ public final class DMXStore: @unchecked Sendable {
         for entry in patch.entries { resolvers[entry.fixture] = FixtureResolver(mode: entry.fixture.mode) }
     }
 
-    public var universes: [UniverseID] { patch.universes }
+    /// The IPv4 interfaces a universe's `interface` setting is matched against; injectable for tests.
+    nonisolated(unsafe) var interfaceList: @Sendable () -> [NetworkInterface] = { SystemInfo.ipv4Interfaces }
+
+    /// Art-Net port-addresses the patch listens on (ArtPollReply): own universes and the pairs of sACN ones (B28).
+    public var universes: [UniverseID] {
+        Set(UniverseSettings.wire(patch.universes, over: .artnet, settings: table.settings).values.joined()).sorted().map { UniverseID(.artnet, $0) }
+    }
 
     public func start() {
         let timer = DispatchSource.makeTimerSource(queue: queue)
@@ -85,26 +91,59 @@ public final class DMXStore: @unchecked Sendable {
 
     // MARK: Called on `queue`
 
-    /// The 0.5 s housekeeping tick: signal loss, then the UI expiry clock.
+    /// The 0.5 s housekeeping tick: signal loss (by each universe's hold-on-loss setting), interfaces, then the UI
+    /// expiry clock.
     func tick(at now: TimeInterval) {
         table.expire(at: now)
-        for entry in patch.entries where !table.status(for: entry.universe, at: now).active {
+        var changed = false
+        for entry in patch.entries where resolvers[entry.fixture]?.hasDMX == true && !table.status(for: entry.universe, at: now).active {
+            switch table.settings(for: entry.universe).holdOnLoss {
+            case .hold: break
+            case .zero:
+                let zeros = ChannelMap.rawValues(mode: entry.fixture.mode, slots: [UInt8](repeating: 0, count: 512), address: entry.address)
+                if let zeros { resolvers[entry.fixture]?.updateDMX(zeros, at: now) }
+                changed = true
+            case .internal: changed = true
+            }
             resolvers[entry.fixture]?.markDMXLost()
         }
+        if changed { publish(receivedAt: 0) }
+        if table.settings.values.contains(where: { $0.interface != UniverseSettings.anyInterface }) { refreshInterfaces() }
         expireUI(at: now)
     }
 
     func receive(artnet packet: ArtDmx, from source: String, at now: TimeInterval = DMXStore.now) {
-        guard let universe = table.apply(artnet: packet, from: source, at: now) else { return }
-        announce(universe, source: source)
-        resolve(universe: universe, at: now)
+        for universe in table.apply(artnet: packet, from: source, at: now) {
+            announce(universe, source: source)
+            resolve(universe: universe, at: now)
+        }
     }
 
-    func receive(sacn packet: SACNData) {
-        let now = Self.now
-        guard let universe = table.apply(sacn: packet, at: now) else { return }
-        announce(universe, source: packet.sourceName, priority: packet.priority)
-        resolve(universe: universe, at: now)
+    func receive(sacn packet: SACNData, from sender: String = "", at now: TimeInterval = DMXStore.now) {
+        for universe in table.apply(sacn: packet, from: sender, at: now) {
+            announce(universe, source: packet.sourceName, priority: packet.priority)
+            resolve(universe: universe, at: now)
+        }
+    }
+
+    /// Per-universe settings (B28): routing, loss timeout and priority mode in the table, interface filters, and the
+    /// internal fallback of the fixtures on universes that use it.
+    func configure(_ settings: [UniverseID: UniverseSettings], at now: TimeInterval) {
+        table.configure(settings, at: now)
+        refreshInterfaces()
+        applyLossModes()
+        publish(receivedAt: 0)
+    }
+
+    private func applyLossModes() {
+        for entry in patch.entries { resolvers[entry.fixture]?.internalWithoutDMX = table.settings(for: entry.universe).holdOnLoss == .internal }
+    }
+
+    /// Interfaces come and go (USB adapters): re-matched on every tick while a universe names one.
+    private func refreshInterfaces() {
+        let named = table.settings.filter { $0.value.interface != UniverseSettings.anyInterface }
+        let list = named.isEmpty ? [] : interfaceList()
+        table.setFilters(named.compactMapValues { $0.subnets(in: list) })
     }
 
     /// Cue, show and timecode commands from OSC go to the engine (Phase 7); set on the DMX queue's behalf by the engine.
@@ -258,11 +297,28 @@ public final class DMXStore: @unchecked Sendable {
             var kept: [FixtureRef: FixtureResolver] = [:]
             for entry in patch.entries { kept[entry.fixture] = resolvers[entry.fixture] ?? FixtureResolver(mode: entry.fixture.mode) }
             resolvers = kept
+            applyLossModes()
             publish(receivedAt: 0)
         }
     }
 
     public var currentPatch: Patch { queue.sync { patch } }
+
+    /// `universe.set`, undo, project load (B28).
+    public func setUniverseSettings(_ settings: [UniverseID: UniverseSettings]) {
+        queue.async { [self] in configure(settings, at: Self.now) }
+    }
+
+    /// Patched universes set to an interface this Mac does not have, as "A 0.0.1: en5" (readiness).
+    public func missingInterfaces() -> [String] {
+        queue.sync {
+            let list = interfaceList()
+            return patch.universes.compactMap { id in
+                let s = table.settings(for: id)
+                return s.subnets(in: list)?.isEmpty == true ? "\(id): \(s.interface)" : nil
+            }
+        }
+    }
 
     /// The merged 512 slots of a universe for the DMX monitor stream; nil until a packet arrived.
     public func slots(for universe: UniverseID) -> [UInt8]? { queue.sync { table.slots(for: universe) } }

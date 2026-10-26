@@ -78,49 +78,93 @@ public final class ArtNetReceiver: @unchecked Sendable {
     }
 }
 
-/// sACN on UDP 5568: multicast groups for the given universes plus unicast on the same port.
+/// sACN on UDP 5568: one multicast group per interface the universes ask for ("any": the default-route interface),
+/// plus unicast on the same port. Changing one interface's universes recreates only that group (B28).
 public final class SACNReceiver: @unchecked Sendable {
     private let store: DMXStore
     private let logger: Logger
-    private var group: NWConnectionGroup?
+    private let port: UInt16
+    /// Interface ("any" or a BSD name / address) → joined universes and the group; touched on the DMX queue.
+    private var groups: [String: (universes: [Int], group: NWConnectionGroup?)] = [:]
+    private var wanted: [String: [Int]] = [:]
+    private let monitor = NWPathMonitor()
 
-    public init(store: DMXStore, logger: Logger) {
+    public init(store: DMXStore, logger: Logger, port: UInt16 = SACN.port) {
         self.store = store
         self.logger = logger
+        self.port = port
     }
 
-    private var universes: [Int] = []
-
-    /// Patch changes: join the new set of universes (the group is recreated; unicast keeps working throughout).
-    public func update(universes: [Int]) {
-        let numbers = universes.isEmpty ? [1] : universes
-        guard numbers != self.universes else { return }
-        group?.cancel()
-        do { try start(universes: numbers) } catch { logger.error("sACN rejoin failed", metadata: ["error": "\(error)"]) }
+    /// Joins `groups` (interface → universes). There is always a group on any interface (universe 1 when nothing asks
+    /// for one), so unicast keeps working. Interfaces not present yet are joined when they appear.
+    public func start(groups: [String: [Int]]) {
+        monitor.pathUpdateHandler = { [weak self] _ in self?.apply() }
+        monitor.start(queue: store.queue)
+        update(groups: groups)
     }
 
-    public func start(universes: [Int]) throws {
-        let numbers = universes.isEmpty ? [1] : universes
-        self.universes = numbers
-        let endpoints = numbers.map { NWEndpoint.hostPort(host: NWEndpoint.Host(SACN.multicastAddress(universe: $0)), port: NWEndpoint.Port(rawValue: SACN.port)!) }
-        let multicast = try NWMulticastGroup(for: endpoints, disableUnicast: false)
-        let group = NWConnectionGroup(with: multicast, using: .udp)
-        group.stateUpdateHandler = { [logger] state in
-            switch state {
-            case .ready: logger.info("sACN listening", metadata: ["universes": "\(numbers)"])
-            case .failed(let error): logger.error("sACN group failed", metadata: ["error": "\(error)"])
-            default: break
+    /// Patch or universe settings changed; groups whose universes stay the same keep running.
+    public func update(groups: [String: [Int]]) {
+        store.queue.async { [self] in
+            wanted = groups
+            if wanted[UniverseSettings.anyInterface] == nil { wanted[UniverseSettings.anyInterface] = [1] }
+            apply()
+        }
+    }
+
+    /// On the DMX queue.
+    private func apply() {
+        for (interface, entry) in groups where wanted[interface] == nil {
+            entry.group?.cancel()
+            groups[interface] = nil
+        }
+        for (interface, universes) in wanted where groups[interface]?.universes != universes || groups[interface]?.group == nil {
+            groups[interface]?.group?.cancel()
+            groups[interface] = (universes, makeGroup(universes: universes, interface: interface))
+        }
+    }
+
+    private func makeGroup(universes: [Int], interface: String) -> NWConnectionGroup? {
+        let parameters = NWParameters.udp
+        parameters.allowLocalEndpointReuse = true
+        if interface != UniverseSettings.anyInterface {
+            // a name, or an address: the interface that carries it
+            let name = store.interfaceList().first { $0.name == interface || $0.address == interface }?.name ?? interface
+            guard let nw = monitor.currentPath.availableInterfaces.first(where: { $0.name == name }) else {
+                logger.warning("sACN interface not present; joining when it appears", metadata: ["interface": "\(interface)"])
+                return nil
             }
+            parameters.requiredInterface = nw
         }
-        group.setReceiveHandler(maximumMessageSize: 1500, rejectOversizedMessages: true) { [store] _, content, _ in
-            guard let content, case .data(let packet)? = try? SACN.parse(Array(content)) else { return }
-            store.receive(sacn: packet)
+        do {
+            let endpoints = universes.map { NWEndpoint.hostPort(host: NWEndpoint.Host(SACN.multicastAddress(universe: $0)), port: NWEndpoint.Port(rawValue: port)!) }
+            let group = NWConnectionGroup(with: try NWMulticastGroup(for: endpoints, disableUnicast: false), using: parameters)
+            group.stateUpdateHandler = { [logger] state in
+                switch state {
+                case .ready: logger.info("sACN listening", metadata: ["universes": "\(universes)", "interface": "\(interface)"])
+                case .failed(let error): logger.error("sACN group failed", metadata: ["error": "\(error)", "interface": "\(interface)"])
+                default: break
+                }
+            }
+            group.setReceiveHandler(maximumMessageSize: 1500, rejectOversizedMessages: true) { [store] message, content, _ in
+                guard let content, case .data(let packet)? = try? SACN.parse(Array(content)) else { return }
+                store.receive(sacn: packet, from: message.remoteEndpoint.map(ArtNetReceiver.host(of:)) ?? "")
+            }
+            group.start(queue: store.queue)
+            return group
+        } catch {
+            logger.error("sACN join failed", metadata: ["error": "\(error)", "interface": "\(interface)"])
+            return nil
         }
-        group.start(queue: store.queue)
-        self.group = group
     }
 
-    public func stop() { group?.cancel() }
+    public func stop() {
+        monitor.cancel()
+        store.queue.async { [self] in
+            wanted = [:]
+            apply()
+        }
+    }
 }
 
 /// OSC on UDP and TCP (SLIP). Commands go to the store; cue/show commands are logged until Phase 5/7 wire them.

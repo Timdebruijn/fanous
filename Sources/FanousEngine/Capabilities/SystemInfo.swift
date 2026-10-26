@@ -3,6 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
 import Darwin
+import FanousCore
 import Foundation
 
 /// Runtime facts about this machine. Phase 0 only logs them; tiers come in Phase 2.
@@ -36,6 +37,31 @@ public enum SystemInfo {
             if getnameinfo(address, socklen_t(address.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
                 result.append(String(cString: host))
             }
+        }
+        return result
+    }
+
+    /// Every IPv4 address with its interface and netmask, loopback included (universe interfaces, B28).
+    public static var ipv4Interfaces: [NetworkInterface] {
+        var list: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&list) == 0 else { return [] }
+        defer { freeifaddrs(list) }
+        // a netmask's sa_len may be cut after its last non-zero byte: bytes past it are zero
+        func numeric(_ address: UnsafeMutablePointer<sockaddr>?) -> String? {
+            guard let address else { return nil }
+            let length = Int(address.pointee.sa_len)
+            return UnsafeRawPointer(address).withMemoryRebound(to: UInt8.self, capacity: max(length, 8)) { bytes in
+                (4..<8).map { $0 < length ? String(bytes[$0]) : "0" }.joined(separator: ".")
+            }
+        }
+        var result: [NetworkInterface] = []
+        var cursor = list
+        while let entry = cursor {
+            defer { cursor = entry.pointee.ifa_next }
+            guard entry.pointee.ifa_addr?.pointee.sa_family == UInt8(AF_INET), let address = numeric(entry.pointee.ifa_addr),
+                let netmask = numeric(entry.pointee.ifa_netmask)
+            else { continue }
+            result.append(NetworkInterface(name: String(cString: entry.pointee.ifa_name), address: address, netmask: netmask))
         }
         return result
     }
