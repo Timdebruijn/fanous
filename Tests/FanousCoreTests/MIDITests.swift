@@ -34,7 +34,7 @@ import Testing
         guard case .showControl(let msc) = messages[1] else { Issue.record("no MSC"); return }
         #expect(msc.knownCommand == .go && msc.cue == "12.5" && msc.cueNumber == 12.5 && msc.list == "3" && msc.path == nil)
         #expect(msc.isAddressed(to: 1) && !msc.isAddressed(to: 2))
-        #expect(msc.description == "MSC GO 12.5 · device 1")
+        #expect(msc.description == "MSC GO 12.5 · device 1 · format 01")
         // all-call STOP without a cue, RESUME, and a frame split over two feeds
         #expect(parser.feed(MSCMessage(deviceID: 0x7F, format: 0x7F, command: 0x02).sysex) == [.showControl(MSCMessage(deviceID: 0x7F, format: 0x7F, command: 0x02))])
         let resume = MSCMessage(deviceID: 0, command: 0x03, cue: "107")
@@ -43,7 +43,14 @@ import Testing
         #expect(MSCMessage(deviceID: 0x7F, command: 1).isAddressed(to: 42))
         // not MSC (universal non-real-time), garbage in a cue field, and a SysEx cut by a status byte
         #expect(parser.feed([0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7]) == [])
-        #expect(parser.feed([0xF0, 0x7F, 0x00, 0x02, 0x01, 0x01, 0x41, 0xF7]) == [.showControl(MSCMessage(deviceID: 0, command: 1))])
+        // a cue that is present but no number stays apart from no cue: "1.2.3", a stray byte, an exponent
+        #expect(parser.feed([0xF0, 0x7F, 0x00, 0x02, 0x01, 0x01, 0x41, 0xF7]) == [.showControl(MSCMessage(deviceID: 0, command: 1, cue: "A"))])
+        for cue in ["1.2.3", "1\u{7}", "1e3", "."] {
+            let msc = MSCMessage(deviceID: 0, command: 1, cue: cue)
+            #expect(parser.feed(msc.sysex) == [.showControl(msc)])
+            #expect(msc.cue != nil && msc.cueNumber == nil, "\(cue)")
+        }
+        #expect(MSCMessage(deviceID: 0, command: 1).cueNumber == nil && MSCMessage(deviceID: 0, command: 1, cue: "007.50").cueNumber == 7.5)
         #expect(parser.feed([0xF0, 0x7F, 0x00, 0x02, 0x90, 60, 1]) == [.noteOn(channel: 0, note: 60, velocity: 1)])
     }
 

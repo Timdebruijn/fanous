@@ -23,7 +23,8 @@ public enum MIDIMessage: Equatable, Sendable, CustomStringConvertible {
 }
 
 /// MIDI Show Control: `F0 7F <device> 02 <format> <command> <data> F7`. Data of GO/STOP/RESUME/… is
-/// `Q_number 00 Q_list 00 Q_path`, each ASCII digits and ".", all optional.
+/// `Q_number 00 Q_list 00 Q_path`, each ASCII digits and ".", all optional. Fields keep what was sent, so a cue that
+/// is present but not a number ("1.2.3", a stray byte) stays apart from no cue at all.
 public struct MSCMessage: Equatable, Sendable, CustomStringConvertible {
     public static let allCall: UInt8 = 0x7F
     public enum Command: UInt8, Sendable {
@@ -48,14 +49,19 @@ public struct MSCMessage: Equatable, Sendable, CustomStringConvertible {
     }
 
     public var knownCommand: Command? { Command(rawValue: command) }
-    public var cueNumber: Double? { cue.flatMap(Double.init).flatMap { $0.isFinite ? $0 : nil } }
+    /// The cue as a number; nil when there is none or it is not digits with at most one ".".
+    public var cueNumber: Double? {
+        guard let cue, !cue.isEmpty, cue.allSatisfy({ $0 == "." || ("0"..."9").contains($0) }), cue.filter({ $0 == "." }).count <= 1 else { return nil }
+        return Double(cue).flatMap { $0.isFinite ? $0 : nil }
+    }
 
     /// Our own device id or the all-call. ponytail: group ids (0x70–0x7E) are not answered; add a group setting when a desk needs it.
     public func isAddressed(to device: UInt8) -> Bool { deviceID == Self.allCall || deviceID == device }
 
     public var description: String {
         let name = knownCommand.map { "\($0)".uppercased() } ?? "command 0x" + String(command, radix: 16, uppercase: true)
-        return "MSC \(name)\(cue.map { " \($0)" } ?? "") · device \(deviceID == Self.allCall ? "all" : "\(deviceID)")"
+        let format = format < 0x10 ? "0\(String(format, radix: 16, uppercase: true))" : String(format, radix: 16, uppercase: true)
+        return "MSC \(name)\(cue.map { " \($0)" } ?? "") · device \(deviceID == Self.allCall ? "all" : "\(deviceID)") · format \(format)"
     }
 
     /// The SysEx bytes between F0 and F7; nil for anything that is not an MSC message.
@@ -63,7 +69,7 @@ public struct MSCMessage: Equatable, Sendable, CustomStringConvertible {
         let b = Array(body)
         guard b.count >= 5, b[0] == 0x7F, b[2] == 0x02 else { return nil }
         let fields = b.dropFirst(5).split(separator: 0, omittingEmptySubsequences: false).map { field -> String? in
-            field.isEmpty || !field.allSatisfy({ $0 == 0x2E || (0x30...0x39).contains($0) }) ? nil : String(decoding: field, as: UTF8.self)
+            field.isEmpty ? nil : String(decoding: field, as: UTF8.self)
         }
         self.init(deviceID: b[1], format: b[3], command: b[4], cue: fields.first ?? nil, list: fields.count > 1 ? fields[1] : nil, path: fields.count > 2 ? fields[2] : nil)
     }
