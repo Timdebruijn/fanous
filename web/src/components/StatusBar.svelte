@@ -4,6 +4,7 @@
 <script lang="ts">
   import Login from './Login.svelte';
   import { readinessSummary, resumedText } from '../lib/system';
+  import { lastVersionText } from '../lib/versions';
   import { app, can, cmd, shell, toggleLock } from '../lib/state.svelte';
 
   let showLogin = $state(false);
@@ -109,6 +110,10 @@
       <span class="caption">ingest</span>
     {/if}
   </div>
+  <a class="item col plain" href="#/system" title="Project versions (System): the engine saves one at start, on show mode and every 10 minutes after a change">
+    <span class="mono value">{lastVersionText(app.live.versions?.lastAutomatic)}</span>
+    <span class="caption">auto version</span>
+  </a>
   <div class="item col">
     <span class="mono value">{app.live.clients.count}</span>
     <span class="caption" class:yellow={app.live.clients.lagging > 0}>clients{app.live.clients.lagging > 0 ? ` · ${app.live.clients.lagging} lagging` : ''}</span>
@@ -154,4 +159,5 @@
   .ingest .bar { width: 100%; height: 4px; margin-top: 4px; }
   .yellow { color: var(--yellow); }
   .role-btn { border: 0; cursor: pointer; min-height: var(--touch); }
+  .plain { color: inherit; text-decoration: none; }
 </style>
