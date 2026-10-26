@@ -5,6 +5,7 @@
 import Foundation
 import FanousCore
 import Logging
+import Synchronization
 
 /// HTTP surface of the ingest queue and remote upload (DESIGN.md §8.3).
 ///   GET  /api/ingest                 queue as JSON
@@ -81,7 +82,24 @@ public final class IngestAPI: @unchecked Sendable {
     }
 
     /// Builds the destination (`NNN_name.ext` in the numbered folder) and queues the job.
+    /// Why new jobs are refused (a library root change in progress, B51), with how many holds are active.
+    private let hold = Mutex<(count: Int, reason: String)>((0, ""))
+
+    /// Refuses new jobs until `releaseEnqueue()`; returns once no enqueue is in progress, so the queue's job list is
+    /// final apart from jobs finishing. Holds nest.
+    public func holdEnqueue(_ reason: String) { hold.withLock { $0 = ($0.count + 1, reason) } }
+    public func releaseEnqueue() { hold.withLock { $0.count = max(0, $0.count - 1) } }
+
     func enqueue(source: URL, folder: Int, file: Int?, name: String?, codec: String?, fps: Int32?, keepOriginal: Bool) -> HTTPResponse {
+        // under the hold lock: a root change that takes the hold never sees a job appear after its check
+        hold.withLock { hold in
+            if hold.count > 0 { return .text(409, hold.reason) }
+            return enqueueNow(source: source, folder: folder, file: file, name: name, codec: codec, fps: fps, keepOriginal: keepOriginal)
+        }
+    }
+
+    private func enqueueNow(source: URL, folder: Int, file: Int?, name: String?, codec: String?, fps: Int32?, keepOriginal: Bool) -> HTTPResponse {
+        let library = self.library  // one index for the whole job, also if the root changes meanwhile
         guard (1...255).contains(folder) else { return .text(400, "folder must be 1–255") }
         guard FileManager.default.fileExists(atPath: source.path) else { return .text(404, "source not found") }
         guard let folderURL = library.folderURL(number: folder, createAs: name.map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent } ?? "Folder")

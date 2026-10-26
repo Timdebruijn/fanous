@@ -149,11 +149,10 @@ public final class LibraryIndex: @unchecked Sendable {
         }
     }
 
-    /// B51: an index on another root with this one's cache, thumbnailer and change hook, started. This one stops
-    /// first (FSEvents stream released, probe thread joined), so nothing of the old root fires afterwards. The cache
-    /// is keyed by absolute path and shared, so switching back to a root probed before needs no new probes.
-    public func replaced(root: URL) -> LibraryIndex {
-        stop()
+    /// B51: an index on another root with this one's cache, thumbnailer and change hook, started (scanned). This one
+    /// keeps running until the caller has swapped them and calls `stop()` (FSEvents released, probe thread joined).
+    /// The cache is keyed by absolute path and shared, so switching back to a root probed before needs no new probes.
+    public func replacement(root: URL) -> LibraryIndex {
         let next = LibraryIndex(root: root, cacheDirectory: cacheDirectory, logger: logger)
         next.thumbnailer = thumbnailer
         next.onChange = onChange
@@ -331,6 +330,8 @@ public final class LibraryIndex: @unchecked Sendable {
                 }
             }
         }
+        // a probe that outlived stop() (the join timed out): the cache file and the hook belong to the next index (B51)
+        guard running.load(ordering: .relaxed) else { return }
         saveCache()
         onChange?()
     }

@@ -90,6 +90,13 @@ public final class Engine: @unchecked Sendable {
     private var lastPolicy: SourcePolicy?
     /// The project's library root as last seen by `projectChanged` (B51).
     private let libraryRootInProject = Mutex<String?>(nil)
+    /// Root switches run here one at a time (scan, probe-thread join): never on the feed or control queue.
+    private let libraryQueue = DispatchQueue(label: "org.fanous.library.switch", qos: .utility)
+    /// Root switches queued or running; show mode is refused meanwhile.
+    private let librarySwitches = Atomic<Int>(0)
+    /// Set by `stop()`: a queued switch does nothing.
+    private let stopping = Atomic<Bool>(false)
+    private var ingestAPI: IngestAPI?
     private var citp: CITPServer?
     private var stateServer: StateServer?
     private var liveTimer: DispatchSourceTimer?
@@ -185,6 +192,8 @@ public final class Engine: @unchecked Sendable {
         let library = LibraryIndex(root: libraryRoot, cacheDirectory: AppPaths.cache, logger: logger)
         let thumbnailer = Thumbnailer(context: context, directory: AppPaths.cache.appending(path: "thumbnails"), logger: logger)
         library.thumbnailer = { url, metadata, kind in thumbnailer.make(for: url, metadata: metadata, kind: kind) }
+        // a file that becomes playable (a probe after a scan or a root change) reaches layers still showing "missing"
+        library.onChange = { [weak self] in self?.render?.loader.reresolveMissingLibrary() }
         library.start()
         libraryBox.withLock { $0 = library }
 
@@ -199,6 +208,14 @@ public final class Engine: @unchecked Sendable {
         if resumeShow != nil { ingest.paused = true }  // DESIGN.md §14: before the first job can start
         ingest.start()
         self.ingest = ingest
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        // the index of the moment (B51); set above and only ever replaced, never cleared. Never the local `library`:
+        // a closure holding it would keep the first index alive after a root change. Made before the project store
+        // exists: a root change holds its enqueues.
+        let ingestAPI = IngestAPI(library: { self.library! }, queue: ingest, encoder: encoder, logger: logger)
+        self.ingestAPI = ingestAPI
 
         var sceneWithOutputs = options.scene ?? Self.defaultScene(canvas: startCanvas, layerCount: layerCount, policy: policy, library: libraryRoot)
         sceneWithOutputs.managedOutputs = true  // the coordinator below owns displays and drivers (DESIGN.md §9.6)
@@ -410,12 +427,6 @@ public final class Engine: @unchecked Sendable {
 
         let startedAt = self.startedAt
         let webRoot = options.webRoot
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        // the index of the moment (B51); set above and only ever replaced, never cleared. Never the local `library`:
-        // a closure holding it would keep the first index alive after a root change.
-        let ingestAPI = IngestAPI(library: { self.library! }, queue: ingest, encoder: encoder, logger: logger)
         /// REST calls that change state need the programmer role: the session cookie, the shell token as a bearer, or an open role.
         @Sendable func allowed(_ role: Role, _ request: HTTPRequest) -> Bool {
             let bearer = request.header("Authorization").flatMap { $0.hasPrefix("Bearer ") ? String($0.dropFirst(7)) : nil }
@@ -718,6 +729,7 @@ public final class Engine: @unchecked Sendable {
             showMode.leave()
             return nil
         }
+        if librarySwitches.load(ordering: .relaxed) > 0 { return ["libraryRootChanging"] }  // B51: a moment, not a readiness item
         let acknowledged = readiness.withLock { $0.acknowledged }
         let items = Readiness.check(readinessContext(), acknowledged: acknowledged)
         readiness.withLock { $0.items = items; $0.checkedAt = Date().timeIntervalSince1970 }
@@ -915,14 +927,23 @@ public final class Engine: @unchecked Sendable {
             lastPolicy = policy
             for entry in dmx.currentPatch.entries { dmx.setPolicy(policy, for: entry.fixture) }
         }
-        // library root (project.set, undo, redo): switched at once on the feed queue, off the control queue (B51)
+        // library root (project.set, undo, redo): switched at once on the library queue (B51)
         if let raw = document["library"]?["root"]?.string {
             let root = URL(fileURLWithPath: raw).path
             let previous = libraryRootInProject.withLock { old in
                 defer { old = root }
                 return old
             }
-            if root != previous { feedQueue.async { [weak self] in self?.switchLibrary(to: root, previous: previous) } }
+            if root != previous, !stopping.load(ordering: .relaxed) {
+                // here on the control queue, like show.mode: from now on show mode and new ingest jobs are refused
+                librarySwitches.wrappingAdd(1, ordering: .relaxed)
+                ingestAPI?.holdEnqueue("the library root is changing; try again in a moment")
+                libraryQueue.async { [self] in
+                    switchLibrary(to: root)
+                    ingestAPI?.releaseEnqueue()
+                    librarySwitches.wrappingSubtract(1, ordering: .relaxed)
+                }
+            }
         }
         let cueList = ShowCommands.cueList(from: document)
         if cueList != lastCues {
@@ -986,22 +1007,32 @@ public final class Engine: @unchecked Sendable {
         return LibraryIndex.rootProblem(root).map { CommandError.invalidArgs($0) }
     }
 
-    /// Feed queue: a new index on `root` (B51). The old one stops (FSEvents off), the new one scans, and every layer
-    /// opens its folder/file again from it; a file the new root lacks shows "missing", outputs keep running. A change
-    /// that cannot apply now (undo or redo in show mode or during ingest, a folder that went away) is put back.
-    private func switchLibrary(to root: String, previous: String?) {
-        guard let old = library, old.root.path != root else { return }
-        if let refusal = libraryRootRefusal(root) {
-            logger.warning("library root not changed", metadata: ["root": "\(root)", "reason": "\(refusal.message)"])
-            guard let previous, let pointer = try? JSONPointer("/library/root") else { return }
-            libraryRootInProject.withLock { $0 = previous }  // the correction below is not a change to apply
-            store?.correct(.string(previous), at: pointer)
+    /// Library queue, with show mode and ingest enqueues held: a new index on `root` (B51). It is built and scanned
+    /// first, the conditions are checked again, then it replaces the old one and every layer opens its folder/file
+    /// again from it (a file the new root lacks shows "missing" until a probe makes it playable; outputs keep
+    /// running). The old index stops last (FSEvents released, probe thread joined). A change that cannot apply (undo
+    /// or redo in show mode or during ingest, a folder that went away) is put back to the root that runs.
+    private func switchLibrary(to root: String) {
+        guard !stopping.load(ordering: .relaxed), let old = library, old.root.path != root else { return }
+        if let refusal = libraryRootRefusal(root) { return libraryRootPutBack(old.root.path, refused: root, refusal) }
+        let next = old.replacement(root: URL(fileURLWithPath: root))
+        // a job queued just before the hold, a folder gone during the scan, or the engine stopping
+        if stopping.load(ordering: .relaxed) || libraryRootRefusal(root) != nil {
+            next.stop()
+            if let refusal = libraryRootRefusal(root) { libraryRootPutBack(old.root.path, refused: root, refusal) }
             return
         }
-        let next = old.replaced(root: URL(fileURLWithPath: root))
         libraryBox.withLock { $0 = next }
         render?.loader.reresolveLibrary()
+        old.stop()
         logger.info("library root changed", metadata: ["from": "\(old.root.path)", "to": "\(root)"])
+    }
+
+    private func libraryRootPutBack(_ running: String, refused root: String, _ refusal: CommandError) {
+        logger.warning("library root not changed", metadata: ["root": "\(root)", "reason": "\(refusal.message)"])
+        guard let pointer = try? JSONPointer("/library/root") else { return }
+        libraryRootInProject.withLock { $0 = running }  // the correction below is not a change to apply
+        store?.correct(.string(running), at: pointer)
     }
 
     /// Live document at 10 Hz and the DMX monitor stream at 20 Hz, both off the render and DMX threads.
@@ -1155,6 +1186,9 @@ public final class Engine: @unchecked Sendable {
             feedQueue.sync { autosave.perform() }  // after any save in flight
         }
         server?.stop()
+        // a queued root switch does nothing from here; one in progress finishes (or drops its new index) first
+        stopping.store(true, ordering: .relaxed)
+        libraryQueue.sync {}
         ingest?.stop()
         library?.stop()
         artnet?.stop()

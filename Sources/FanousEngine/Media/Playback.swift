@@ -331,22 +331,34 @@ public final class MediaLoader: @unchecked Sendable {
         wake.signal()
     }
 
-    private let reresolve = Atomic<Bool>(false)
+    private let reresolveAll = Atomic<Bool>(false)
+    private let reresolveMissing = Atomic<Bool>(false)
 
     /// B51: the library root changed; every layer on library media opens its folder/file again through `resolver`
     /// (a file the new root lacks shows "missing"). Generators, scene entries and "none" are left alone.
     public func reresolveLibrary() {
-        reresolve.store(true, ordering: .relaxed)
+        reresolveAll.store(true, ordering: .relaxed)
+        wake.signal()
+    }
+
+    /// The library changed (a scan, a probe that made a file playable): layers showing "missing" whose folder/file
+    /// now resolves open it. Cheap when nothing is missing; called on every library change.
+    public func reresolveMissingLibrary() {
+        reresolveMissing.store(true, ordering: .relaxed)
         wake.signal()
     }
 
     private func loop() {
         while running.load(ordering: .relaxed) {
             _ = wake.wait(timeout: .now() + .milliseconds(100))
-            if reresolve.exchange(false, ordering: .relaxed) {
+            let all = reresolveAll.exchange(false, ordering: .relaxed)
+            if reresolveMissing.exchange(false, ordering: .relaxed) || all {
                 for i in loaded.indices {
                     let key = MediaKey(packed: loaded[i])
-                    if !key.isNone, key.folder != 0, media[key] == nil { loaded[i] = .max }  // never a packed key: opened again below
+                    guard !key.isNone, key.folder != 0, media[key] == nil else { continue }
+                    if all || (layers[i].mediaStatus.withLock { $0.kind == "missing" } && resolver?(key) != nil) {
+                        loaded[i] = .max  // never a packed key: opened again below
+                    }
                 }
             }
             for (i, layer) in layers.enumerated() {
