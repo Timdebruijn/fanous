@@ -169,7 +169,7 @@ struct ShowControlTests {
         let modes = items.first { $0.id == "modes" }!
         #expect(modes.state == .warn && !modes.blocks && modes.detail == "Output 1: unavailable")
         let interfaces = items.first { $0.id == "interfaces" }!
-        #expect(interfaces.state == .warn && !interfaces.blocks && interfaces.detail == "not present: sacn:2: en5")
+        #expect(interfaces.state == .warn && !interfaces.blocks && interfaces.detail == "not usable: sacn:2: en5")
         #expect(items.first { $0.id == "hardware" }!.state == .ok)
         #expect(items.first { $0.id == "library" }!.state == .ok)
         #expect(items.allSatisfy { !$0.fix.isEmpty && !$0.detail.isEmpty })

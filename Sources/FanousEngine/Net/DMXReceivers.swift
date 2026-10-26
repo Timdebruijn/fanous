@@ -78,16 +78,30 @@ public final class ArtNetReceiver: @unchecked Sendable {
     }
 }
 
-/// sACN on UDP 5568: one multicast group per interface the universes ask for ("any": the default-route interface),
-/// plus unicast on the same port. Changing one interface's universes recreates only that group (B28).
+/// sACN on UDP 5568: one socket on every interface (unicast always works) that joins each universe's multicast group
+/// on the interface the universe asks for ("any": the default-route interface). Network.framework cannot do this: a
+/// second `NWConnectionGroup` on the port fails with EADDRINUSE. Changing a universe adds or drops only its own
+/// memberships; the socket is never rebound. Memberships are re-asserted on every path change and every 5 s, so an
+/// adapter that is replugged (the kernel drops its memberships) or comes up later is joined again (B28).
 public final class SACNReceiver: @unchecked Sendable {
     private let store: DMXStore
     private let logger: Logger
     private let port: UInt16
-    /// Interface ("any" or a BSD name / address) → joined universes and the group; touched on the DMX queue.
-    private var groups: [String: (universes: [Int], group: NWConnectionGroup?)] = [:]
+    private struct Membership: Hashable {
+        var universe: Int
+        /// in_addr of the interface, network order; 0 = the default-route interface.
+        var interface: UInt32
+    }
+    /// Touched on the DMX queue.
+    private var fd: Int32 = -1
+    private var reader: DispatchSourceRead?
+    private var timer: DispatchSourceTimer?
     private var wanted: [String: [Int]] = [:]
+    private var joined: Set<Membership> = []
+    /// Interfaces with universes but without their memberships (not present, or the join failed).
+    private var failed: [String: [Int]] = [:]
     private let monitor = NWPathMonitor()
+    static let reassertInterval: TimeInterval = 5
 
     public init(store: DMXStore, logger: Logger, port: UInt16 = SACN.port) {
         self.store = store
@@ -95,74 +109,141 @@ public final class SACNReceiver: @unchecked Sendable {
         self.port = port
     }
 
-    /// Joins `groups` (interface → universes). There is always a group on any interface (universe 1 when nothing asks
-    /// for one), so unicast keeps working. Interfaces not present yet are joined when they appear.
-    public func start(groups: [String: [Int]]) {
+    /// Binds the port (shared with other receivers, SO_REUSEPORT) and joins `groups` (interface → universes).
+    public func start(groups: [String: [Int]]) throws {
+        let fd = socket(AF_INET, SOCK_DGRAM, 0)
+        guard fd >= 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
+        var on: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, socklen_t(MemoryLayout<Int32>.size))
+        setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &on, socklen_t(MemoryLayout<Int32>.size))
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr.s_addr = INADDR_ANY
+        let bound = withUnsafePointer(to: &address) { p in
+            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        guard bound == 0, fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) == 0 else {
+            let error = POSIXError(.init(rawValue: errno) ?? .EIO)
+            close(fd)
+            throw error
+        }
+        let reader = DispatchSource.makeReadSource(fileDescriptor: fd, queue: store.queue)
+        reader.setEventHandler { [weak self] in self?.read() }
+        reader.setCancelHandler { close(fd) }
+        let timer = DispatchSource.makeTimerSource(queue: store.queue)
+        timer.schedule(deadline: .now() + Self.reassertInterval, repeating: Self.reassertInterval)
+        timer.setEventHandler { [weak self] in self?.apply() }
+        store.queue.sync {
+            self.fd = fd
+            self.reader = reader
+            self.timer = timer
+        }
+        reader.resume()
+        timer.resume()
         monitor.pathUpdateHandler = { [weak self] _ in self?.apply() }
         monitor.start(queue: store.queue)
+        logger.info("sACN listening", metadata: ["port": "\(port)"])
         update(groups: groups)
     }
 
-    /// Patch or universe settings changed; groups whose universes stay the same keep running.
+    /// Patch or universe settings changed.
     public func update(groups: [String: [Int]]) {
         store.queue.async { [self] in
             wanted = groups
-            if wanted[UniverseSettings.anyInterface] == nil { wanted[UniverseSettings.anyInterface] = [1] }
             apply()
         }
     }
 
-    /// On the DMX queue.
-    private func apply() {
-        for (interface, entry) in groups where wanted[interface] == nil {
-            entry.group?.cancel()
-            groups[interface] = nil
-        }
-        for (interface, universes) in wanted where groups[interface]?.universes != universes || groups[interface]?.group == nil {
-            groups[interface]?.group?.cancel()
-            groups[interface] = (universes, makeGroup(universes: universes, interface: interface))
+    /// Named interfaces whose universes are not joined (readiness).
+    public func unjoined() -> [String: [Int]] { store.queue.sync { failed } }
+
+    /// A path update or the periodic re-assert (tests).
+    func pathUpdated() { store.queue.sync { apply() } }
+
+    /// Drops every membership behind the receiver's back, as the kernel does when an adapter goes away (tests).
+    func dropMembershipsBehindItsBack() { store.queue.sync { for m in joined { _ = setMembership(m, IP_DROP_MEMBERSHIP) } } }
+
+    /// Whether the socket is a member of `universe`'s group on `interface` (an IPv4 address, "0.0.0.0" = default), asked
+    /// of the kernel: adding a membership it already has fails with EADDRINUSE (tests).
+    func isMember(_ universe: Int, on interface: String) -> Bool {
+        store.queue.sync {
+            let m = Membership(universe: universe, interface: inet_addr(interface))
+            let error = setMembership(m, IP_ADD_MEMBERSHIP)
+            if error == 0 { _ = setMembership(m, IP_DROP_MEMBERSHIP) }
+            return error == EADDRINUSE
         }
     }
 
-    private func makeGroup(universes: [Int], interface: String) -> NWConnectionGroup? {
-        let parameters = NWParameters.udp
-        parameters.allowLocalEndpointReuse = true
-        if interface != UniverseSettings.anyInterface {
-            // a name, or an address: the interface that carries it
-            let name = store.interfaceList().first { $0.name == interface || $0.address == interface }?.name ?? interface
-            guard let nw = monitor.currentPath.availableInterfaces.first(where: { $0.name == name }) else {
-                logger.warning("sACN interface not present; joining when it appears", metadata: ["interface": "\(interface)"])
-                return nil
+    private func setMembership(_ m: Membership, _ option: Int32) -> Int32 {
+        var request = ip_mreq()
+        request.imr_multiaddr.s_addr = inet_addr(SACN.multicastAddress(universe: m.universe))
+        request.imr_interface.s_addr = m.interface
+        return setsockopt(fd, IPPROTO_IP, option, &request, socklen_t(MemoryLayout<ip_mreq>.size)) == 0 ? 0 : errno
+    }
+
+    /// On the DMX queue: drop memberships nobody wants, then (re)add every wanted one. Adding is idempotent
+    /// (EADDRINUSE = already a member), so re-asserting also restores memberships the kernel dropped, and one a drop
+    /// removed while another interface spec ("any" and the default interface's name) still needs it.
+    private func apply() {
+        guard fd >= 0 else { return }
+        let interfaces = store.interfaceList()
+        var desired: Set<Membership> = []
+        var failed: [String: [Int]] = [:]
+        for (interface, universes) in wanted {
+            let address: UInt32?
+            if interface == UniverseSettings.anyInterface {
+                address = INADDR_ANY
+            } else {
+                let match = interfaces.first { $0.address == interface } ?? interfaces.first { $0.name == interface }
+                address = match.map { inet_addr($0.address) }
             }
-            parameters.requiredInterface = nw
-        }
-        do {
-            let endpoints = universes.map { NWEndpoint.hostPort(host: NWEndpoint.Host(SACN.multicastAddress(universe: $0)), port: NWEndpoint.Port(rawValue: port)!) }
-            let group = NWConnectionGroup(with: try NWMulticastGroup(for: endpoints, disableUnicast: false), using: parameters)
-            group.stateUpdateHandler = { [logger] state in
-                switch state {
-                case .ready: logger.info("sACN listening", metadata: ["universes": "\(universes)", "interface": "\(interface)"])
-                case .failed(let error): logger.error("sACN group failed", metadata: ["error": "\(error)", "interface": "\(interface)"])
-                default: break
+            guard let address else {
+                failed[interface] = universes
+                continue
+            }
+            for universe in universes {
+                let m = Membership(universe: universe, interface: address)
+                desired.insert(m)
+                let error = setMembership(m, IP_ADD_MEMBERSHIP)
+                if error != 0 && error != EADDRINUSE {
+                    failed[interface, default: []].append(universe)
+                    desired.remove(m)
                 }
             }
-            group.setReceiveHandler(maximumMessageSize: 1500, rejectOversizedMessages: true) { [store] message, content, _ in
-                guard let content, case .data(let packet)? = try? SACN.parse(Array(content)) else { return }
-                store.receive(sacn: packet, from: message.remoteEndpoint.map(ArtNetReceiver.host(of:)) ?? "")
+        }
+        for m in joined.subtracting(desired) { _ = setMembership(m, IP_DROP_MEMBERSHIP) }
+        if !joined.subtracting(desired).isEmpty {
+            for m in desired { _ = setMembership(m, IP_ADD_MEMBERSHIP) }
+        }
+        if failed != self.failed || desired != joined {
+            if !failed.isEmpty { logger.warning("sACN multicast not joined; retrying", metadata: ["interfaces": "\(failed)"]) }
+            if desired != joined { logger.info("sACN multicast joined", metadata: ["groups": "\(wanted)"]) }
+        }
+        self.failed = failed
+        joined = desired
+    }
+
+    private func read() {
+        var buffer = [UInt8](repeating: 0, count: 1500)
+        var sender = sockaddr_in()
+        while true {
+            var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let count = withUnsafeMutablePointer(to: &sender) { p in
+                p.withMemoryRebound(to: sockaddr.self, capacity: 1) { recvfrom(fd, &buffer, buffer.count, 0, $0, &length) }
             }
-            group.start(queue: store.queue)
-            return group
-        } catch {
-            logger.error("sACN join failed", metadata: ["error": "\(error)", "interface": "\(interface)"])
-            return nil
+            guard count > 0 else { return }  // EAGAIN: drained
+            guard case .data(let packet)? = try? SACN.parse(Array(buffer[0..<count])) else { continue }
+            store.receive(sacn: packet, from: String(cString: inet_ntoa(sender.sin_addr)))
         }
     }
 
     public func stop() {
         monitor.cancel()
         store.queue.async { [self] in
-            wanted = [:]
-            apply()
+            timer?.cancel()
+            reader?.cancel()  // closes the socket, which drops its memberships
+            fd = -1
         }
     }
 }

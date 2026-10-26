@@ -87,6 +87,7 @@ public final class Engine: @unchecked Sendable {
     private let oscLog = Mutex<[JSONValue]>([])
     private var lastPolicy: SourcePolicy?
     private var lastUniverseSettings: [UniverseID: UniverseSettings] = [:]
+    private var lastUniverseIssues: [String] = []
     private var lastLibraryRootWarning: String?
     private var citp: CITPServer?
     private var stateServer: StateServer?
@@ -165,14 +166,14 @@ public final class Engine: @unchecked Sendable {
         if policy != .dmx {
             for entry in patch.entries { dmx.setPolicy(policy, for: entry.fixture) }
         }
-        let universeSettings = ProjectDocument.universeSettings(from: loadedProject ?? .null)
+        let universeSettings = checkedUniverseSettings(from: loadedProject ?? .null)
         lastUniverseSettings = universeSettings
         dmx.setUniverseSettings(universeSettings)
         dmx.start()
         let artnet = ArtNetReceiver(store: dmx, logger: logger, nodeName: Attribution.projectName)
         try artnet.start()
         let sacn = SACNReceiver(store: dmx, logger: logger)
-        sacn.start(groups: UniverseSettings.wire(patch.universes, over: .sacn, settings: universeSettings))
+        try sacn.start(groups: UniverseSettings.wire(patch.universes, over: .sacn, settings: universeSettings))
         let osc = OSCReceiver(store: dmx, logger: logger)
         try osc.start()
         self.dmx = dmx
@@ -683,6 +684,12 @@ public final class Engine: @unchecked Sendable {
             let patched = Set(dmx.currentPatch.universes.map(\.description))
             context.universesSilent = snapshot.universes.filter { patched.contains($0.id) && !$0.active }.map(\.id)
             context.interfacesMissing = dmx.missingInterfaces()
+            // present, but Network.framework offers no multicast on it (lo0, or the join keeps failing)
+            let present = dmx.interfaceList()
+            for (interface, numbers) in (sacn?.unjoined() ?? [:]).sorted(by: { $0.key < $1.key })
+            where present.contains(where: { $0.name == interface || $0.address == interface }) {
+                context.interfacesMissing.append("\(numbers.map { "sacn:\($0)" }.joined(separator: ", ")): \(interface) (no sACN multicast)")
+            }
         }
         let statuses = outputStatus.withLock { $0 }
         context.outputsLost = statuses.filter { $0.state == .lost }.map(\.id)
@@ -900,9 +907,20 @@ public final class Engine: @unchecked Sendable {
         return scene
     }
 
+    /// The universe settings the engine runs; entries it skips are logged once, when the set of skipped entries changes
+    /// (load, a hand edit), not on every project change.
+    private func checkedUniverseSettings(from document: JSONValue) -> [UniverseID: UniverseSettings] {
+        let (settings, issues) = ProjectDocument.universeEntries(from: document)
+        if issues != lastUniverseIssues {
+            lastUniverseIssues = issues
+            for issue in issues { logger.warning("universe setting ignored", metadata: ["entry": "\(issue)"]) }
+        }
+        return settings
+    }
+
     private func projectChanged(_ document: JSONValue) {
         // patch and per-universe settings (B28): applied on the DMX queue; sACN groups follow both
-        let universeSettings = ProjectDocument.universeSettings(from: document)
+        let universeSettings = checkedUniverseSettings(from: document)
         if let dmx {
             var changed = false
             if let patch = ProjectDocument.effectivePatch(from: document), patch != dmx.currentPatch {

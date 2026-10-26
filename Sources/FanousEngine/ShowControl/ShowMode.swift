@@ -200,7 +200,7 @@ public struct ReadinessItem: Sendable, Equatable, Identifiable {
 /// What the checks look at; filled by the engine so the checks stay testable.
 public struct ReadinessContext: Sendable {
     public var universesSilent: [String] = []
-    /// "artnet:0.0.1: en5" for every patched universe set to an interface this Mac does not have (B28).
+    /// "artnet:0.0.1: en5" per patched universe whose interface this Mac does not have or offers no sACN multicast on (B28).
     public var interfacesMissing: [String] = []
     public var outputsLost: [Int] = []
     public var outputsUnassigned: [Int] = []
@@ -233,8 +233,8 @@ public enum Readiness {
         add("dmx", "All patched universes receiving", context.universesSilent.isEmpty, context.universesSilent.isEmpty ? "all receiving" : "silent: \(context.universesSilent.joined(separator: ", "))", "Check the console's output and the network")
         items.append(
             ReadinessItem(
-                id: "interfaces", title: "Universe interfaces present", state: context.interfacesMissing.isEmpty ? .ok : .warn,
-                detail: context.interfacesMissing.isEmpty ? "present, or any interface" : "not present: \(context.interfacesMissing.joined(separator: ", "))",
+                id: "interfaces", title: "Universe interfaces usable", state: context.interfacesMissing.isEmpty ? .ok : .warn,
+                detail: context.interfacesMissing.isEmpty ? "present, or any interface" : "not usable: \(context.interfacesMissing.joined(separator: "; "))",
                 fix: "Connect the network adapter, or pick another interface for the universe (Patch › Interface)"))
         let outputsOK = context.outputsLost.isEmpty && context.outputsUnassigned.isEmpty && context.outputsBound > 0
         add(

@@ -132,7 +132,7 @@
       </label>
       <label class="field">
         <span class="label">Loss after (s)</span>
-        <input class="input mono timeout" type="number" min="0.5" max="60" step="0.5" value={settings.lossTimeout} disabled={!!uLockTitle} title={uLockTitle}
+        <input class="input mono timeout" type="number" min="1" max="60" step="0.5" value={settings.lossTimeout} disabled={!!uLockTitle} title={uLockTitle}
           onchange={(e) => setUniverse('/lossTimeout', Number(e.currentTarget.value), e.currentTarget, String(settings.lossTimeout))} />
       </label>
       {#if settings.protocol !== 'artnet'}

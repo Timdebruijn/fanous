@@ -106,7 +106,7 @@ export interface CommandArgs {
   'timecode.set': { path: string; value: JSONValue };
   /** Undo the last undoable command (global history). Role: programmer, refused under show lock. */
   'undo': Record<string, never>;
-  /** Set one receive setting of a universe: protocol (artnet, sacn, both), interface (any, en0, an IPv4 address), holdOnLoss (hold, zero, internal), lossTimeout (0.5–60 s), sacnPriorityMode (highest, htp), pair (the other protocol's universe; null = default); applies live. Role: programmer, refused under show lock, undoable. */
+  /** Set one receive setting of a universe: protocol (artnet, sacn, both), interface (any, en0, an IPv4 address), holdOnLoss (hold, zero, internal), lossTimeout (1–60 s; the sACN source timeout stays 2.5 s), sacnPriorityMode (highest, htp), pair (the other protocol's universe; null = default); applies live. Role: programmer, refused under show lock, undoable. */
   'universe.set': { id: string; path: '/protocol' | '/interface' | '/holdOnLoss' | '/lossTimeout' | '/sacnPriorityMode' | '/pair'; value: JSONValue };
 }
 

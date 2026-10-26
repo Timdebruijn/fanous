@@ -54,7 +54,7 @@ struct UniverseSettingsEngineTests {
         let store = Self.makeStore()
         let bad: [(String, String, JSONValue)] = [
             ("artnet:0.0.0", "/protocol", "dmx"), ("artnet:0.0.0", "/holdOnLoss", "release"), ("artnet:0.0.0", "/sacnPriorityMode", "lowest"),
-            ("artnet:0.0.0", "/interface", "eth 0"), ("artnet:0.0.0", "/interface", 3), ("artnet:0.0.0", "/lossTimeout", 0.1),
+            ("artnet:0.0.0", "/interface", "eth 0"), ("artnet:0.0.0", "/interface", 3), ("artnet:0.0.0", "/lossTimeout", 0.1), ("artnet:0.0.0", "/lossTimeout", 0.5),
             ("artnet:0.0.0", "/lossTimeout", 61), ("artnet:0.0.0", "/lossTimeout", "2"), ("artnet:0.0.0", "/pair", "artnet:0.0.1"),
             ("artnet:0.0.0", "/pair", "sacn:0"), ("sacn:1", "/pair", "sacn:2"), ("artnet:0.0.0", "/name", "x"), ("artnet:0.0.0", "/id", "sacn:1"),
             ("artnet:0.0.0", "", "x"), ("sacn:64000", "/protocol", "sacn"), ("dmx:1", "/protocol", "sacn"),
@@ -74,14 +74,65 @@ struct UniverseSettingsEngineTests {
         #expect(Self.set(store, "/holdOnLoss", "zero") == .failure(.showLocked))
     }
 
-    @Test func invalidHandEditedEntriesRunTheDefaults() {
-        let project: JSONValue = ["universes": [["id": "artnet:0.0.0", "holdOnLoss": "nope"], ["id": "sacn:2", "lossTimeout": 10], ["holdOnLoss": "zero"]]]
-        let settings = ProjectDocument.universeSettings(from: project)
+    @Test func invalidAndDuplicateEntriesAreReportedAndEditedAsTheEngineRunsThem() throws {
+        let entries: JSONValue = [
+            ["id": "artnet:0.0.0", "holdOnLoss": "nope"], ["id": "sacn:2", "lossTimeout": 10], ["holdOnLoss": "zero"],
+            ["id": "sacn:2", "lossTimeout": 20], ["id": "SACN:2", "holdOnLoss": "zero"],
+        ]
+        let project: JSONValue = ["universes": entries]
+        let (settings, issues) = ProjectDocument.universeEntries(from: project)
         #expect(settings.keys.sorted() == [UniverseID(.sacn, 2)])
-        #expect(settings[UniverseID(.sacn, 2)]?.lossTimeout == 10 && settings[UniverseID(.sacn, 2)]?.protocols == .sacn)
+        #expect(settings[UniverseID(.sacn, 2)]?.lossTimeout == 10 && settings[UniverseID(.sacn, 2)]?.holdOnLoss == .hold)  // the first entry
+        #expect(issues == [
+            "artnet:0.0.0: holdOnLoss must be hold, zero or internal; runs the defaults",
+            "universes[2]: id must be artnet:net.subnet.universe or sacn:n; entry ignored",
+            "sacn:2: duplicate entry ignored; the first one applies", "sacn:2: duplicate entry ignored; the first one applies",
+        ])
+
+        // universe.set starts from what the engine runs and leaves one entry per universe
+        let store = Self.makeStore()
+        var document = store.project
+        try document.set(entries, at: "/universes")
+        store.replaceProject(document)
+        _ = try Self.set(store, "/protocol", "both", id: "sacn:2").get()
+        _ = try Self.set(store, "/sacnPriorityMode", "htp").get()
+        let list = try #require(store.project["universes"]?.array)
+        #expect(list.filter { $0["id"]?.string?.lowercased() == "sacn:2" }.count == 1)
+        #expect(ProjectDocument.universeSettings(from: store.project)[UniverseID(.sacn, 2)] == {
+            var s = UniverseSettings(for: UniverseID(.sacn, 2))
+            s.lossTimeout = 10
+            s.protocols = .both
+            return s
+        }())
+        let a0 = try #require(list.first { $0["id"]?.string == "artnet:0.0.0" })
+        #expect(a0["holdOnLoss"]?.string == "hold" && a0["sacnPriorityMode"]?.string == "htp")  // the invalid field is gone
+        let left = ProjectDocument.universeEntries(from: store.project).issues
+        #expect(left.count == 1 && left.first?.hasSuffix("id must be artnet:net.subnet.universe or sacn:n; entry ignored") == true)  // not ours to delete
     }
 
     // MARK: receivers
+
+    struct PortInUse: Error, CustomStringConvertible {
+        var port: UInt16
+        var description: String { "UDP port \(port) is in use (another engine or test?); refusing to share it" }
+    }
+
+    /// A random high UDP port, checked by binding it exclusively (no SO_REUSEADDR/SO_REUSEPORT) and releasing it.
+    /// Network.framework listeners share ports, so a port another process holds would cross-talk silently: fail instead.
+    static func freePort() throws -> UInt16 {
+        let port = UInt16.random(in: 40_000..<60_000)
+        let fd = socket(AF_INET, SOCK_DGRAM, 0)
+        defer { close(fd) }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr.s_addr = INADDR_ANY
+        let bound = withUnsafePointer(to: &address) { p in
+            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        guard bound == 0 else { throw PortInUse(port: port) }
+        return port
+    }
 
     static func send(_ bytes: [UInt8], to port: UInt16) {
         let fd = socket(AF_INET, SOCK_DGRAM, 0)
@@ -115,7 +166,7 @@ struct UniverseSettingsEngineTests {
         var settings = UniverseSettings(for: Self.a0)
         settings.holdOnLoss = loss
         store.setUniverseSettings([Self.a0: settings])
-        let port = UInt16.random(in: 40_000..<60_000)
+        let port = try Self.freePort()
         let receiver = ArtNetReceiver(store: store, logger: Self.logger, nodeName: "test", port: port)
         try receiver.start()
         try await Task.sleep(for: .milliseconds(300))
@@ -159,13 +210,54 @@ struct UniverseSettingsEngineTests {
         #expect(try await Self.wait(store, for: 65535))
     }
 
+    /// Switching to `zero` (or `internal`) while the universe is already lost applies at once, not at the next loss.
+    @Test func switchingWhileLostAppliesAtOnce() async throws {
+        let (store, receiver, _) = try await receiving(.hold)
+        defer { receiver.stop() }
+        store.setUI(.layer(1), .layer(.intensity), raw: 1000)
+        let later = lose(store)
+        #expect(Self.intensity(store, at: later)?.raw == 65535)
+        var settings = UniverseSettings(for: Self.a0)
+        settings.holdOnLoss = .internal
+        store.queue.sync { store.configure([Self.a0: settings], at: later + 1) }
+        #expect(Self.intensity(store, at: later + 1)?.source == "ui")
+        settings.holdOnLoss = .zero
+        store.queue.sync { store.configure([Self.a0: settings], at: later + 2) }
+        #expect(Self.intensity(store, at: later + 2)?.raw == 0)
+        store.setPolicy(.ltp, for: .layer(1))  // the zeros are stamped now: they win over the older UI value
+        #expect(Self.intensity(store, at: later + 2)?.raw == 0 && Self.intensity(store, at: later + 2)?.source == "dmx")
+    }
+
+    /// Memberships on a named interface (lo0) are joined, re-joined after the kernel drops them (adapter replugged) at
+    /// the next path update or re-assert, and dropped when no universe wants them; an absent interface is reported.
+    /// Asked of the kernel (multicast delivery itself needs the Local Network permission, which a test run lacks).
+    @Test func sacnMembershipsFollowSettingsAndSurviveReplug() async throws {
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
+        let sacn = SACNReceiver(store: store, logger: Self.logger, port: try Self.freePort())
+        try sacn.start(groups: ["lo0": [7], "en42": [8]])
+        defer { sacn.stop() }
+        sacn.pathUpdated()
+        #expect(sacn.unjoined() == ["en42": [8]])
+        #expect(sacn.isMember(7, on: "127.0.0.1"))
+        sacn.dropMembershipsBehindItsBack()
+        #expect(!sacn.isMember(7, on: "127.0.0.1"))
+        sacn.pathUpdated()
+        #expect(sacn.isMember(7, on: "127.0.0.1"))
+        sacn.update(groups: ["127.0.0.1": [7, 9]])  // by address; universe 7 stays joined throughout
+        sacn.pathUpdated()
+        #expect(sacn.isMember(7, on: "127.0.0.1") && sacn.isMember(9, on: "127.0.0.1") && sacn.unjoined().isEmpty)
+        sacn.update(groups: [:])
+        sacn.pathUpdated()
+        #expect(!sacn.isMember(7, on: "127.0.0.1") && !sacn.isMember(9, on: "127.0.0.1"))
+    }
+
     @Test func protocolSwitchesLiveToSACNOnThePair() async throws {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
-        let artPort = UInt16.random(in: 40_000..<50_000), sacnPort = UInt16.random(in: 50_000..<60_000)
+        let artPort = try Self.freePort(), sacnPort = try Self.freePort()
         let artnet = ArtNetReceiver(store: store, logger: Self.logger, nodeName: "test", port: artPort)
         try artnet.start()
         let sacn = SACNReceiver(store: store, logger: Self.logger, port: sacnPort)
-        sacn.start(groups: ["any": [1]])
+        try sacn.start(groups: ["any": [1]])
         defer {
             artnet.stop()
             sacn.stop()
@@ -193,7 +285,7 @@ struct UniverseSettingsEngineTests {
         store.interfaceList = {
             [NetworkInterface(name: "lo0", address: "127.0.0.1", netmask: "255.0.0.0"), NetworkInterface(name: "en9", address: "10.9.0.1", netmask: "255.255.0.0")]
         }
-        let port = UInt16.random(in: 40_000..<60_000)
+        let port = try Self.freePort()
         let receiver = ArtNetReceiver(store: store, logger: Self.logger, nodeName: "test", port: port)
         try receiver.start()
         defer { receiver.stop() }

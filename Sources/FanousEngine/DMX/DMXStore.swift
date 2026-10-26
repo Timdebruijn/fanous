@@ -95,19 +95,7 @@ public final class DMXStore: @unchecked Sendable {
     /// expiry clock.
     func tick(at now: TimeInterval) {
         table.expire(at: now)
-        var changed = false
-        for entry in patch.entries where resolvers[entry.fixture]?.hasDMX == true && !table.status(for: entry.universe, at: now).active {
-            switch table.settings(for: entry.universe).holdOnLoss {
-            case .hold: break
-            case .zero:
-                let zeros = ChannelMap.rawValues(mode: entry.fixture.mode, slots: [UInt8](repeating: 0, count: 512), address: entry.address)
-                if let zeros { resolvers[entry.fixture]?.updateDMX(zeros, at: now) }
-                changed = true
-            case .internal: changed = true
-            }
-            resolvers[entry.fixture]?.markDMXLost()
-        }
-        if changed { publish(receivedAt: 0) }
+        if applyLoss(at: now, settingsChanged: false) { publish(receivedAt: 0) }
         if table.settings.values.contains(where: { $0.interface != UniverseSettings.anyInterface }) { refreshInterfaces() }
         expireUI(at: now)
     }
@@ -132,7 +120,29 @@ public final class DMXStore: @unchecked Sendable {
         table.configure(settings, at: now)
         refreshInterfaces()
         applyLossModes()
+        _ = applyLoss(at: now, settingsChanged: true)
         publish(receivedAt: 0)
+    }
+
+    /// Hold on loss for the fixtures of silent universes: on the transition (tick), and at once when the settings
+    /// change while a universe that has been received is silent (switching to `zero` while lost). `zero` feeds a frame
+    /// of zeros stamped now, so under LTP/HTP it wins over older UI or cue values. Returns whether anything changed.
+    private func applyLoss(at now: TimeInterval, settingsChanged: Bool) -> Bool {
+        var changed = false
+        for entry in patch.entries {
+            guard let resolver = resolvers[entry.fixture] else { continue }
+            let status = table.status(for: entry.universe, at: now)
+            guard !status.active, resolver.hasDMX || (settingsChanged && status.lastSeen > 0) else { continue }
+            switch table.settings(for: entry.universe).holdOnLoss {
+            case .hold: break
+            case .zero:
+                let zeros = ChannelMap.rawValues(mode: entry.fixture.mode, slots: [UInt8](repeating: 0, count: 512), address: entry.address)
+                if let zeros, resolvers[entry.fixture]?.updateDMX(zeros, at: now) == true { changed = true }
+            case .internal: changed = true
+            }
+            resolvers[entry.fixture]?.markDMXLost()
+        }
+        return changed
     }
 
     private func applyLossModes() {

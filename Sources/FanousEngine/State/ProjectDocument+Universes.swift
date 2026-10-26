@@ -12,14 +12,31 @@ import Foundation
 extension ProjectDocument {
     static let universeFields = ["protocol", "interface", "holdOnLoss", "lossTimeout", "sacnPriorityMode", "pair"]
 
-    /// Every valid entry; an invalid one (hand-edited file) runs the defaults.
-    public static func universeSettings(from project: JSONValue) -> [UniverseID: UniverseSettings] {
-        var result: [UniverseID: UniverseSettings] = [:]
-        for entry in project["universes"]?.array ?? [] {
-            guard let id = entry["id"]?.string.flatMap(UniverseID.init(parsing:)), let settings = try? universeSettings(entry, for: id) else { continue }
-            result[id] = settings
+    /// The settings the engine runs (`universeEntries`).
+    public static func universeSettings(from project: JSONValue) -> [UniverseID: UniverseSettings] { universeEntries(from: project).settings }
+
+    /// The first entry per universe, when valid. An invalid entry (hand-edited file) runs the defaults and a later entry
+    /// for the same universe is ignored; `issues` has one line per such entry, naming the universe and the field.
+    public static func universeEntries(from project: JSONValue) -> (settings: [UniverseID: UniverseSettings], issues: [String]) {
+        var settings: [UniverseID: UniverseSettings] = [:]
+        var seen: Set<UniverseID> = []
+        var issues: [String] = []
+        for (i, entry) in (project["universes"]?.array ?? []).enumerated() {
+            guard let id = entry["id"]?.string.flatMap(UniverseID.init(parsing:)) else {
+                issues.append("universes[\(i)]: id must be artnet:net.subnet.universe or sacn:n; entry ignored")
+                continue
+            }
+            guard seen.insert(id).inserted else {
+                issues.append("\(id): duplicate entry ignored; the first one applies")
+                continue
+            }
+            do {
+                settings[id] = try universeSettings(entry, for: id)
+            } catch {
+                issues.append("\(id): \((error as? CommandError)?.message ?? "\(error)"); runs the defaults")
+            }
         }
-        return result
+        return (settings, issues)
     }
 
     /// One entry, validated; missing fields take their defaults.
@@ -67,7 +84,7 @@ extension ProjectDocument {
         store.register(
             CommandSpec(
                 name: "universe.set", role: .programmer,
-                summary: "Set one receive setting of a universe: protocol (artnet, sacn, both), interface (any, en0, an IPv4 address), holdOnLoss (hold, zero, internal), lossTimeout (0.5–60 s), sacnPriorityMode (highest, htp), pair (the other protocol's universe; null = default); applies live.",
+                summary: "Set one receive setting of a universe: protocol (artnet, sacn, both), interface (any, en0, an IPv4 address), holdOnLoss (hold, zero, internal), lossTimeout (1–60 s; the sACN source timeout stays 2.5 s), sacnPriorityMode (highest, htp), pair (the other protocol's universe; null = default); applies live.",
                 argsType: "{ id: string; path: '/protocol' | '/interface' | '/holdOnLoss' | '/lossTimeout' | '/sacnPriorityMode' | '/pair'; value: JSONValue }"
             ) { project, args in
                 guard let id = args["id"]?.string.flatMap(UniverseID.init(parsing:)) else {
@@ -76,21 +93,16 @@ extension ProjectDocument {
                 guard let path = args["path"]?.string, universeFields.contains(String(path.dropFirst())), path.hasPrefix("/"), let value = args["value"] else {
                     throw CommandError.invalidArgs("args: { id, path: /\(universeFields.joined(separator: " | /")), value }")
                 }
+                // start from what the engine runs (the first valid entry, else the defaults), so the edit never revives
+                // an ignored duplicate or keeps an invalid field; the result is one entry for the universe, or none
                 let current = project["universes"]?.array ?? []
-                var list = current
-                let index = list.firstIndex { $0["id"]?.string.flatMap(UniverseID.init(parsing:)) == id }
-                var entry = index.map { list[$0] } ?? universeValue(id, UniverseSettings(for: id))
+                var entry = universeValue(id, universeSettings(from: project)[id] ?? UniverseSettings(for: id))
                 try entry.set(value, at: JSONPointer(path))
                 let settings = try universeSettings(entry, for: id)
-                let stored: JSONValue? = settings == UniverseSettings(for: id) ? .none : universeValue(id, settings)
-                switch (index, stored) {
-                case (let i?, let v?): list[i] = v
-                case (let i?, nil): list.remove(at: i)
-                case (nil, let v?): list.append(v)
-                case (nil, nil): break
-                }
-                guard list != current else { return nil }
+                var list = current.filter { $0["id"]?.string.flatMap(UniverseID.init(parsing:)) != id }
+                if settings != UniverseSettings(for: id) { list.append(universeValue(id, settings)) }
                 list.sort { ($0["id"]?.string.flatMap(UniverseID.init(parsing:)) ?? id) < ($1["id"]?.string.flatMap(UniverseID.init(parsing:)) ?? id) }
+                guard list != current else { return nil }
                 try project.set(.array(list), at: "/universes")
                 return nil
             })
