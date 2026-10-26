@@ -71,7 +71,9 @@ public final class Engine: @unchecked Sendable {
     /// When show mode came back by itself after an unclean stop (live `show.resumedAt`); cleared when show mode is left.
     private let showResumedAt = Mutex<Double?>(nil)
     /// The show lock as last written to disk: a change is saved at once, not with the 2 s autosave.
-    private var savedShowLock: Bool?
+    private let savedShowLock = Mutex<Bool?>(nil)
+    /// Main actor: after a resume the first display sync runs readiness at once instead of after 30 s.
+    private var readinessOnNextSync = false
     private let oscLog = Mutex<[JSONValue]>([])
     private var lastPolicy: SourcePolicy?
     private var lastLibraryRootWarning: String?
@@ -108,6 +110,16 @@ public final class Engine: @unchecked Sendable {
                 "memoryGB": "\(SystemInfo.physicalMemoryBytes / 1_073_741_824)", "os": "\(SystemInfo.osVersion)",
                 "webRoot": "\(options.webRoot.path)",
             ])
+        // DESIGN.md §14: show mode left on by an unclean end or kept for Engine › Restart Engine resumes; decided
+        // first so ingest never starts in a show.
+        var resumeShow: ShowModeState?
+        switch ShowModeState.decide(ShowModeState.load(from: AppPaths.showStateFile), boot: ShowModeState.bootTime, now: Date().timeIntervalSince1970) {
+        case .resume(let state): resumeShow = state
+        case .stale:
+            logger.warning("stale show state ignored")
+            try? FileManager.default.removeItem(at: AppPaths.showStateFile)
+        case .none: break
+        }
         let host = SystemInfo.hostName
         var hostnames = ["localhost", host]
         if !host.hasSuffix(".local") { hostnames.append(host + ".local") }
@@ -169,6 +181,7 @@ public final class Engine: @unchecked Sendable {
             let budget = 0.7 / (self?.canvasSwitch?.rendered.fps ?? fps) * 1e6
             return metrics.recent(seconds: 0.25, now: CACurrentMediaTime()).contains { Double($0.cpuMicros + $0.gpuMicros) > budget }
         }
+        if resumeShow != nil { ingest.paused = true }  // DESIGN.md §14: before the first job can start
         ingest.start()
         self.ingest = ingest
 
@@ -243,15 +256,16 @@ public final class Engine: @unchecked Sendable {
                 }
             }
         }
-        // An unclean end (crash, kill -9, power loss) left show mode on: back in it before the outputs and the display
-        // modes come up, so the first sync applies (keeps) the show modes instead of restoring the ledger. Readiness
-        // runs and is published, but never refuses.
-        if let resumed = ShowModeState.load(from: AppPaths.showStateFile) {
-            logger.warning("show mode resumed after an unclean stop", metadata: ["since": "\(Date(timeIntervalSince1970: resumed.since))"])
+        // Back in show mode before the outputs and the display modes come up, so the first sync applies (keeps) the
+        // show modes instead of restoring the ledger. Readiness runs at that sync and is published, but never refuses.
+        if let resumeShow {
+            let since = Date(timeIntervalSince1970: resumeShow.since)
+            logger.warning(resumeShow.restart == true ? "show mode kept across a restart" : "show mode resumed after an unclean stop", metadata: ["since": "\(since)"])
             showResumedAt.withLock { $0 = Date().timeIntervalSince1970 }
-            showMode.enter(since: Date(timeIntervalSince1970: resumed.since))
+            readinessOnNextSync = true
+            showMode.enter(since: since)
         }
-        savedShowLock = project["showLock"]?.bool ?? false
+        savedShowLock.withLock { $0 = project["showLock"]?.bool ?? false }
         applyTimecodeSettings(ShowCommands.timecodeSettings(from: project))
         store.onProjectChanged = { [weak self] document in self?.projectChanged(document) }
         let caps: JSONValue = [
@@ -683,6 +697,10 @@ public final class Engine: @unchecked Sendable {
             modeSwitcher.restore(connected: displays)
         }
         refreshModeChecks(displays: displays)
+        if readinessOnNextSync, showMode.isOn {
+            readinessOnNextSync = false
+            runReadiness()
+        }
     }
 
     /// The status-line notes and readiness issues of every bound output's display mode.
@@ -731,7 +749,10 @@ public final class Engine: @unchecked Sendable {
         stopReadinessTimer()
         let timer = DispatchSource.makeTimerSource(queue: feedQueue)
         timer.schedule(deadline: .now() + 30, repeating: 30)
-        timer.setEventHandler { [weak self] in self?.runReadiness() }
+        timer.setEventHandler { [weak self] in
+            self?.runReadiness()
+            self?.showMode.touch()  // a long show still resumes after a power loss (ShowModeState.maxAgeAfterReboot)
+        }
         timer.resume()
         readinessTimer = timer
     }
@@ -821,15 +842,18 @@ public final class Engine: @unchecked Sendable {
         }
         autosave?.cancel()
         let logger = logger
-        let work = DispatchWorkItem {
-            do { try ProjectDocument.save(document, to: AppPaths.projectFile) } catch { logger.error("autosave failed", metadata: ["error": "\(error)"]) }
+        let showLock = document["showLock"]?.bool ?? false
+        let work = DispatchWorkItem { [weak self] in
+            do {
+                try ProjectDocument.save(document, to: AppPaths.projectFile)
+                self?.savedShowLock.withLock { $0 = showLock }
+            } catch { logger.error("autosave failed", metadata: ["error": "\(error)"]) }
         }
         autosave = work
-        // a crash must not unlock a locked show: the lock is on disk before the command returns
-        let showLock = document["showLock"]?.bool ?? false
-        if showLock != savedShowLock {
-            savedShowLock = showLock
-            work.perform()
+        // a crash must not unlock a locked show: a lock change is written now, on the same serial queue as the
+        // debounced saves, so an older document cannot land after it
+        if showLock != savedShowLock.withLock({ $0 }) {
+            feedQueue.async(execute: work)
         } else {
             feedQueue.asyncAfter(deadline: .now() + 2, execute: work)
         }
@@ -961,15 +985,18 @@ public final class Engine: @unchecked Sendable {
         }
         stopReadinessTimer()
         citp?.stop()
-        if showMode.isOn { showMode.leave() }
+        // Engine › Restart Engine keeps show mode (and the switched display modes) for the next start; every other
+        // stop leaves it. Either way no enter after this point.
+        let keepShow = showMode.stop(keepingState: ShowModeState.takeRestartMarker(at: AppPaths.restartPendingFile))
         ltc?.stop()
         mtc?.stop()
         cues?.stop()
         if let coordinator, let displayManager {
             MainActor.assumeIsolated {
                 displayManager.stop()
-                // leave() above only queued it; supersedes a pending apply and waits for the one in flight
-                modeSwitcher?.restore(connected: coordinator.connectedDisplays)
+                // leaving above only queued it; supersedes a pending apply and waits for the one in flight. A restart
+                // in show mode keeps the modes and the ledger: the next start resumes and finds them switched.
+                if !keepShow { modeSwitcher?.restore(connected: coordinator.connectedDisplays) }
                 modeSwitcher?.flush()
                 for observer in unlockObservers {
                     DistributedNotificationCenter.default().removeObserver(observer)
@@ -980,7 +1007,7 @@ public final class Engine: @unchecked Sendable {
         }
         if let autosave, !autosave.isCancelled {
             autosave.cancel()
-            autosave.perform()
+            feedQueue.sync { autosave.perform() }  // after any save in flight
         }
         server?.stop()
         ingest?.stop()

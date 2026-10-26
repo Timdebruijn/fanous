@@ -155,9 +155,9 @@ a network MIDI session, then choose it under Device (or "All sources").
 ## Restart the engine
 
 Engine › **Restart Engine**. Outputs go black for a moment and the UI reloads.
-DMX restores the state at once; playback positions are not restored. Do not do
-this during a show: a restart is a clean stop, so it leaves show mode and puts
-the previous display modes back. Quitting the app does not stop the engine unless you choose
+DMX restores the state at once; playback positions are not restored. Avoid it
+during a show; if show mode is on, the engine comes back in show mode and the
+displays keep their show modes. Quitting the app does not stop the engine unless you choose
 **Stop Engine and Quit** in the quit question; **Stop Engine…** does, and
 **Start Engine** starts it again.
 

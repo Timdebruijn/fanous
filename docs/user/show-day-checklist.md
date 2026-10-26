@@ -108,9 +108,10 @@ flip back and forth), the Mac stays awake, ingest stays paused and the cursor
 stays hidden. The status bar and System say "Show mode resumed after the engine
 restarted at HH:MM" until you leave show mode; download the log after the show.
 The readiness checks run again but cannot refuse a resumed show mode. A locked
-show stays locked. A deliberate stop (Engine › Stop Engine, Restart Engine,
-Stop Engine and Quit, logging out) leaves show mode, so the next start is
-normal.
+show stays locked. **Engine › Restart Engine** keeps show mode the same way.
+Stopping on purpose (Engine › Stop Engine, Stop Engine and Quit, logging out)
+leaves show mode, so the next start is normal. After a power cut or a crash of
+the whole Mac, show mode comes back if the Mac restarts within two hours.
 
 ## During the show
 
