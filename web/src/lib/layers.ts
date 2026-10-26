@@ -55,7 +55,20 @@ export function policyName(policy: string): string {
   return POLICY_NAMES[policy] ?? policy;
 }
 
-export const RELEASE_TEXT = 'Console and this screen both control the layer; whoever moved last wins. Release hands it back to the console.';
+export const RELEASE_TEXT = 'Console and this screen both control these values; whoever moved last wins. Release hands them back to the console.';
+
+/** 462 → "7:42" for the UI-control expiry countdown. */
+export function clockText(seconds: number): string {
+  const s = Math.max(0, Math.ceil(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/** Which parameters the Layers screen offers for Master and Output fixtures (B27); layers show every channel. */
+export function controlKeys(fixture: string): string[] | undefined {
+  if (fixture === 'Master') return ['intensity', 'speed'];
+  if (fixture.startsWith('Output ')) return ['intensity', 'testPattern'];
+  return undefined;
+}
 
 /** "012_Intro" → "Intro" (the number has its own place in the label). */
 function plainName(name: string): string {

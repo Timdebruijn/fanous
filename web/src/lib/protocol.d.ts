@@ -23,6 +23,7 @@ export type CommandName =
   | 'cue.goto'
   | 'cue.remove'
   | 'cue.set'
+  | 'fixture.keep'
   | 'fixture.release'
   | 'fixture.set'
   | 'layers.setCount'
@@ -57,6 +58,8 @@ export interface CommandArgs {
   'cue.remove': { id: string };
   /** Replace one cue by id (whole object, validated). Role: programmer, refused under show lock, undoable. */
   'cue.set': { id: string; cue: JSONValue };
+  /** Restart the 10-minute expiry of a fixture's UI values (it runs only while a console is received for the fixture). Role: programmer, refused under show lock. */
+  'fixture.keep': { fixture: string };
   /** Drop the UI values of one fixture, or of all fixtures without a fixture argument. Role: programmer. */
   'fixture.release': { fixture?: string };
   /** Set one fixture parameter from the UI (source ui; shown when the source policy is internal, ltp or htp). Role: programmer, refused under show lock. */

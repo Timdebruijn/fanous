@@ -3,7 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script module lang="ts">
   // Module scope: the router unmounts this screen on navigation, the selected layer should survive that.
-  const ui = $state({ selected: 1 });
+  const ui = $state({ selected: 1, fixture: null as string | null });
 </script>
 
 <script lang="ts">
@@ -46,6 +46,9 @@
   const liveByIndex = $derived(new Map(app.live.layers.map((layer) => [layer.index, layer])));
   const patchByFixture = $derived(new Map(app.project.patch.map((entry) => [entry.fixture, entry])));
   const thumbs = $derived(thumbnailIndex(library));
+  // Master or an output picked in the strips; null = the selected layer
+  const fixture = $derived(ui.fixture !== null && app.live.dmx.fixtures[ui.fixture] ? ui.fixture : null);
+  const fixtureMode = $derived(fixture === 'Master' ? 'master' : 'output');
 </script>
 
 <div class="toolbar">
@@ -53,7 +56,7 @@
   <span class="caption">Canvas 1 · {layerCount} layers · <span title="Layer limit of this Mac's performance tier (chip class, see System). Add layer on Patch stops at this number so the show does not drop frames.">tier allows {app.caps.maxLayers ?? '—'} layers</span></span>
 </div>
 
-<LayerStrips />
+<LayerStrips selected={fixture} onselect={(f) => (ui.fixture = f)} />
 
 {#if layerCount === 0}
   <div class="panel empty">
@@ -84,8 +87,11 @@
               params={app.live.dmx.fixtures[`Layer ${n}`]}
               policy={app.live.dmx.policies[`Layer ${n}`] ?? app.project.policy}
               thumb={thumbnailFor(thumbs, layer)}
-              selected={n === selected}
-              onselect={() => (ui.selected = n)}
+              selected={n === selected && fixture === null}
+              onselect={() => {
+                ui.selected = n;
+                ui.fixture = null;
+              }}
             />
           </li>
         {/each}
@@ -95,6 +101,17 @@
       {#if app.live.engine.rendering}
         <Preview />
       {/if}
+      {#if fixture !== null}
+        <LayerDetail
+          n={0}
+          name={fixture}
+          layer={undefined}
+          params={app.live.dmx.fixtures[fixture]}
+          entry={patchByFixture.get(fixture)}
+          specs={channelMap?.modes[fixtureMode]}
+          footprint={channelMap?.footprints[fixtureMode] ?? 8}
+        />
+      {:else}
       <LayerDetail
         n={selected}
         layer={liveByIndex.get(selected)}
@@ -104,6 +121,7 @@
         {library}
         footprint={channelMap?.footprints.layer ?? 64}
       />
+      {/if}
     </div>
   </div>
 {/if}

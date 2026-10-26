@@ -37,6 +37,8 @@ public struct LiveSnapshot: Encodable, Sendable {
     public var policies: [String: String]
     /// Internal (cue/OSC/UI) values per fixture, including those the policy currently ignores.
     public var internalValues: [String: [InternalValueInfo]]
+    /// Seconds until the UI values of a fixture are released, for fixtures whose console is being received (B27).
+    public var uiExpiresIn: [String: Double]
 }
 
 /// Owns the universe table and one resolver per patched fixture. Everything
@@ -56,6 +58,10 @@ public final class DMXStore: @unchecked Sendable {
     /// Render-side parameters, one write per resolved DMX packet (ADR-0002 hand-off).
     public let snapshots = TripleBuffer { ParameterSnapshotSlot(maxLayers: 32) }
     private var sequence: UInt64 = 0
+    /// When the UI expiry clock of a fixture with UI values started: its last UI change, or later while no console was received.
+    private var uiSince: [FixtureRef: TimeInterval] = [:]
+    /// DESIGN.md §7.2: UI values that mask a live console are released this long after the last UI change.
+    static let uiExpiry: TimeInterval = 600
 
     public init(patch: Patch, logger: Logger) {
         self.logger = logger
@@ -74,6 +80,7 @@ public final class DMXStore: @unchecked Sendable {
             for entry in patch.entries where !table.status(for: entry.universe, at: now).active {
                 resolvers[entry.fixture]?.markDMXLost()
             }
+            expireUI(at: now)
         }
         timer.resume()
         self.timer = timer
@@ -123,6 +130,35 @@ public final class DMXStore: @unchecked Sendable {
         default:
             if let onCommand { onCommand(command) } else { logger.info("OSC command not wired", metadata: ["command": "\(command)"]) }
         }
+    }
+
+    /// UI values expire only while they mask a console: without console traffic for the fixture the clock is held at
+    /// `now`, so a UI used to test before the desk is on site keeps its values until Release.
+    func expireUI(at now: TimeInterval) {
+        var changed = false
+        for (fixture, since) in uiSince {
+            guard let resolver = resolvers[fixture] else { uiSince[fixture] = nil; continue }
+            if !resolver.hasDMX {
+                uiSince[fixture] = now
+            } else if now - since >= Self.uiExpiry {
+                resolvers[fixture]?.clearInternal(source: .ui)
+                uiSince[fixture] = nil
+                changed = true
+                logger.info("UI values released after 10 minutes with the console active", metadata: ["fixture": "\(fixture)"])
+            }
+        }
+        if changed { publish(receivedAt: 0) }
+    }
+
+    func applyUI(_ fixture: FixtureRef, _ parameter: ParameterID, raw: UInt16, at now: TimeInterval) {
+        guard resolvers[fixture] != nil else { return }
+        resolvers[fixture]?.setInternal(parameter, raw: raw, source: .ui, at: now)
+        uiSince[fixture] = now
+        publish(receivedAt: 0)
+    }
+
+    func keepUI(_ fixture: FixtureRef, at now: TimeInterval) {
+        if uiSince[fixture] != nil { uiSince[fixture] = now }
     }
 
     /// Logs a universe/source pair once; the string is only built when the pair differs from the previous packet's.
@@ -175,16 +211,21 @@ public final class DMXStore: @unchecked Sendable {
 
     /// A value from the UI (`fixture.set`): the `ui` internal source.
     public func setUI(_ fixture: FixtureRef, _ parameter: ParameterID, raw: UInt16) {
-        queue.async { [self] in
-            resolvers[fixture]?.setInternal(parameter, raw: raw, source: .ui, at: Self.now)
-            publish(receivedAt: 0)
-        }
+        queue.async { [self] in applyUI(fixture, parameter, raw: raw, at: Self.now) }
+    }
+
+    /// `fixture.keep`: restart the expiry clock of a fixture's UI values.
+    public func keepUI(_ fixture: FixtureRef) {
+        queue.async { [self] in keepUI(fixture, at: Self.now) }
     }
 
     /// `fixture.release`: drop UI values of one fixture (nil = all).
     public func releaseUI(_ fixture: FixtureRef?) {
         queue.async { [self] in
-            for key in resolvers.keys where fixture == nil || key == fixture { resolvers[key]?.clearInternal(source: .ui) }
+            for key in resolvers.keys where fixture == nil || key == fixture {
+                resolvers[key]?.clearInternal(source: .ui)
+                uiSince[key] = nil
+            }
             publish(receivedAt: 0)
         }
     }
@@ -235,7 +276,11 @@ public final class DMXStore: @unchecked Sendable {
                 }
                 policies[fixture.description] = resolver.policy.rawValue
             }
-            return LiveSnapshot(universes: universes, fixtures: fixtures, policies: policies, internalValues: internalValues)
+            var uiExpiresIn: [String: Double] = [:]
+            for (fixture, since) in uiSince where resolvers[fixture]?.hasDMX == true {
+                uiExpiresIn[fixture.description] = max(0, (since + Self.uiExpiry - now).rounded(.up))
+            }
+            return LiveSnapshot(universes: universes, fixtures: fixtures, policies: policies, internalValues: internalValues, uiExpiresIn: uiExpiresIn)
         }
     }
 }

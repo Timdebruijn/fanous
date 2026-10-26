@@ -181,6 +181,20 @@ only. With latest wins, whoever moved last wins between console and UI.
 **Release** hands the layer back to the console. UI control is refused while the
 show is locked.
 
+**Master and outputs.** The strips above the layer list have a **Select**
+button: it puts Master (intensity and speed) or an output (intensity and test
+pattern) in the side panel, with the same **Control** switch, **Release** and
+rules as a layer. Select a layer row to go back to the layer.
+
+**Expiry.** UI values stay until **Release** as long as no console is sending
+for that fixture, so testing before the desk is on site never loses them. Once
+Art-Net or sACN for the fixture's universe comes in, the UI values mask the
+console and are released 10 minutes after the last UI change. The panel then
+says "UI control · console active, releases in 7:42"; **Keep** (or any change
+from the UI) restarts the 10 minutes. Without console traffic it says just "UI
+control". The countdown starts when the console appears, not at the last
+change.
+
 **Media from the library** lists every playable file as "Folder 3 · Intro / 12 ·
 loop.mov" and puts the choice on the layer (folder and file, and intensity to
 full if it was 0). The same works from the Media screen: select a file and pick

@@ -12,9 +12,15 @@ public enum ControlCommands {
         public var set: @Sendable (FixtureRef, ParameterID, UInt16) -> Void
         /// nil = every fixture
         public var release: @Sendable (FixtureRef?) -> Void
-        public init(set: @escaping @Sendable (FixtureRef, ParameterID, UInt16) -> Void, release: @escaping @Sendable (FixtureRef?) -> Void) {
+        /// Restart the 10-minute expiry of a fixture's UI values (it only runs while a console is received).
+        public var keep: @Sendable (FixtureRef) -> Void
+        public init(
+            set: @escaping @Sendable (FixtureRef, ParameterID, UInt16) -> Void, release: @escaping @Sendable (FixtureRef?) -> Void,
+            keep: @escaping @Sendable (FixtureRef) -> Void
+        ) {
             self.set = set
             self.release = release
+            self.keep = keep
         }
     }
 
@@ -44,6 +50,16 @@ public enum ControlCommands {
                 } else {
                     hooks.release(nil)
                 }
+                return nil
+            })
+        store.register(
+            CommandSpec(
+                name: "fixture.keep", role: .programmer, undoable: false,
+                summary: "Restart the 10-minute expiry of a fixture's UI values (it runs only while a console is received for the fixture).",
+                argsType: "{ fixture: string }"
+            ) { _, args in
+                guard let name = args["fixture"]?.string, let fixture = FixtureRef(parsing: name) else { throw CommandError.invalidArgs("fixture: \"Layer n\", \"Master\" or \"Output n\"") }
+                hooks.keep(fixture)
                 return nil
             })
     }
