@@ -923,6 +923,8 @@ matching), checkerboard (pixel-exact). Selectable per output and globally
 
 ### 9.8 Syphon
 
+**As built (2026-10-26, Syphon orientation):** Syphon surfaces hold the picture in OpenGL order (row 0 at the bottom). `SyphonOutput` publishes the canvas with `flipped: true` so OpenGL clients (Syphon Simple Client) and Metal clients both see it upright; `SyphonInput` reports `bottomUp`, and the compositor samples such frames with v0/v1 swapped (`Compositor.uvRect`), so crops keep their meaning. Before this the own round trip looked right while every other app saw the canvas upside down.
+
 `SyphonMetalServer` per canvas, named `Fanous – <canvas name>`, published
 from the compositor after the canvas pass with the same completed texture
 (no copy; Syphon shares the IOSurface). Per-output Syphon (post-warp) later.

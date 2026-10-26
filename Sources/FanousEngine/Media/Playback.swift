@@ -15,7 +15,14 @@ import UniformTypeIdentifiers
 /// their newest texture; the compositor samples it directly (DESIGN.md §4.1).
 public protocol LiveTextureSource: AnyObject, Sendable {
     var latestTexture: MTLTexture? { get }
+    /// True when row 0 of `latestTexture` is the bottom of the picture (OpenGL order, as Syphon surfaces are);
+    /// the compositor then samples it upside down so the layer is upright. Default false (Metal order, top first).
+    var bottomUp: Bool { get }
     func stop()
+}
+
+extension LiveTextureSource {
+    public var bottomUp: Bool { false }
 }
 
 /// Stills: decoded once by ImageIO into a resident straight-alpha RGBA texture.
@@ -154,6 +161,7 @@ public final class LayerPlayback: @unchecked Sendable {
         if let still { return still }
         if let live {
             liveFrame.texture0 = live.latestTexture
+            liveFrame.bottomUp = live.bottomUp
             return liveFrame.texture0 == nil ? nil : liveFrame
         }
         return select(index: index, direction: direction)
