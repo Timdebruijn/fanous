@@ -2,8 +2,11 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
+import CoreGraphics
 import CoreVideo
 import Foundation
+import ImageIO
+import Metal
 import Logging
 import Synchronization
 import Testing
@@ -141,6 +144,115 @@ struct LibraryIndexTests {
             try await Task.sleep(for: .milliseconds(50))
         }
         #expect(seen, "the watcher did not pick up the new file within 5 s")
+    }
+
+    /// A 2×2 PNG: enough for the still probe to call it playable.
+    static func png(_ url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let context = CGContext(data: nil, width: 2, height: 2, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+        #expect(CGImageDestinationFinalize(destination))
+    }
+
+    static func eventually(_ condition: () -> Bool) async throws -> Bool {
+        for _ in 0..<100 {
+            if condition() { return true }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        return condition()
+    }
+
+    @Test func rootProblems() throws {
+        let root = try Self.temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Self.touch(root.appending(path: "file.txt"))
+        #expect(LibraryIndex.rootProblem(root.path) == nil)
+        #expect(LibraryIndex.rootProblem("Movies/Fanous Library")?.contains("absolute") == true)
+        #expect(LibraryIndex.rootProblem(root.appending(path: "missing").path)?.contains("does not exist") == true)
+        #expect(LibraryIndex.rootProblem(root.appending(path: "file.txt").path)?.contains("not a folder") == true)
+    }
+
+    /// B51: a root change on a running engine. The old index stops watching and is freed, the new one indexes its root,
+    /// layers re-resolve against it: a file not probed yet shows "missing" until its probe makes it playable, a file
+    /// the root lacks stays "missing". Switching back needs no new probes.
+    @Test func switchingRootsReindexesAndReresolvesLayers() async throws {
+        let a = try Self.temporaryRoot(), b = try Self.temporaryRoot(), cache = try Self.temporaryRoot()
+        defer { for url in [a, b, cache] { try? FileManager.default.removeItem(at: url) } }
+        try Self.png(a.appending(path: "001_A/001_one.png"))
+        try Self.png(a.appending(path: "001_A/002_two.png"))
+        try Self.png(b.appending(path: "001_B/001_uno.png"))
+        try Self.png(b.appending(path: "001_B/002_dos.png"))
+        final class Observer: Sendable {
+            let changes = Atomic<Int>(0)
+            let holdProbes = Atomic<Bool>(false)
+        }
+        let observer = Observer()
+        // the engine's wiring: one box with the index of the moment (and no other strong reference), the loader
+        // resolving through it, every library change asking the loader to retry its missing layers
+        let current = Mutex<LibraryIndex?>(LibraryIndex(root: a, cacheDirectory: cache, logger: Logger(label: "test")))
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let layer = RenderLayer(index: 0)
+        let loader = MediaLoader(layers: [layer], media: [], device: device, ringCapacity: 4, logger: Logger(label: "test"))
+        loader.resolver = { key in current.withLock { $0 }?.resolve(key) }
+        current.withLock { first in
+            first!.onChange = {
+                observer.changes.wrappingAdd(1, ordering: .relaxed)
+                loader.reresolveMissingLibrary()
+            }
+            // a probe of a fresh file waits here while the test holds it: the window right after a switch
+            first!.thumbnailer = { _, _, _ in
+                while observer.holdProbes.load(ordering: .relaxed) { usleep(10_000) }
+                return nil
+            }
+            first!.start()
+        }
+        #expect(try await Self.eventually { current.withLock { $0 }?.resolve(MediaKey(folder: 1, file: 2)) != nil })
+        loader.start()
+        defer { loader.stop() }
+        layer.wanted.store(MediaKey(folder: 1, file: 2).packed, ordering: .relaxed)
+        loader.wake.signal()
+        #expect(try await Self.eventually { layer.mediaStatus.withLock { $0.name } == "002_two.png" })
+
+        // as Engine.switchLibrary: build the new index, swap, re-resolve, stop the old one last
+        observer.holdProbes.store(true, ordering: .relaxed)
+        weak var old = current.withLock { $0 }
+        let second = try #require(current.withLock { $0 }?.replacement(root: b))
+        do {
+            let replaced = current.withLock { box in
+                defer { box = second }
+                return box
+            }
+            loader.reresolveLibrary()
+            replaced?.stop()
+        }
+        #expect(second.snapshot.root == b.path && second.snapshot.folders.map(\.name) == ["001_B"])
+        // B's files have never been probed: 1/2 does not resolve yet, so layer 1 shows "missing"
+        #expect(second.resolve(MediaKey(folder: 1, file: 2)) == nil)
+        #expect(try await Self.eventually { layer.mediaStatus.withLock { $0.kind == "missing" && $0.error == "no file 2 in folder 1" } })
+        // the probe makes it playable; the change hook retries the missing layer
+        observer.holdProbes.store(false, ordering: .relaxed)
+        #expect(try await Self.eventually { layer.mediaStatus.withLock { $0.name } == "002_dos.png" }, "the missing layer was not retried")
+        #expect(try await Self.eventually { second.resolve(MediaKey(folder: 1, file: 1))?.lastPathComponent == "001_uno.png" })
+        // a number the root lacks: the existing "missing" state, no crash
+        layer.wanted.store(MediaKey(folder: 1, file: 3).packed, ordering: .relaxed)
+        loader.wake.signal()
+        #expect(try await Self.eventually { layer.mediaStatus.withLock { $0.kind == "missing" && $0.error == "no file 3 in folder 1" } })
+
+        // the old root is no longer watched and its index is gone
+        #expect(try await Self.eventually { old == nil }, "the replaced index is still alive")
+        let settled = observer.changes.load(ordering: .relaxed)
+        try Self.png(a.appending(path: "001_A/003_three.png"))
+        try await Task.sleep(for: .milliseconds(1500))
+        #expect(observer.changes.load(ordering: .relaxed) == settled, "an event from the old root reached the index")
+        #expect(second.snapshot.root == b.path)
+
+        // back to A: the probes are cached by path, so 1/2 resolves straight from the scan in start()
+        let third = second.replacement(root: a)
+        current.withLock { $0 = third }
+        second.stop()
+        defer { third.stop() }
+        #expect(third.resolve(MediaKey(folder: 1, file: 2))?.lastPathComponent == "002_two.png")
     }
 
     @Test func ingestTargets() throws {

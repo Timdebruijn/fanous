@@ -233,6 +233,39 @@ extension StateStoreTests {
         #expect(store.execute("canvas.set", args: ["id": 1, "path": "/width", "value": 10], role: .programmer).failureCode == "invalidArgs")
     }
 
+    /// B51: `project.set /library/root` expands `~`, normalises the path and asks the engine; refusals leave the project as it was.
+    @Test func libraryRootIsNormalisedAndChecked() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "fanous-root-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
+        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx), logger: Self.logger)
+        let state = Mutex((showMode: false, ingestBusy: false))
+        ProjectDocument.registerCommands(
+            on: store, auth: auth,
+            checkLibraryRoot: { path in
+                let s = state.withLock { $0 }
+                if let refusal = Engine.libraryRootRefusal(path, showMode: s.showMode, ingestBusy: s.ingestBusy) { throw refusal }
+            })
+        func set(_ value: JSONValue) -> Result<CommandResult, CommandError> { store.execute("project.set", args: ["path": "/library/root", "value": value], role: .programmer) }
+
+        _ = try set(.string(root.path + "/")).get()
+        let canonical = URL(fileURLWithPath: root.path).standardizedFileURL.path
+        #expect(store.project["library"]?["root"]?.string == canonical)
+        #expect(set("relative/path").failureCode == "invalidArgs")
+        #expect(set(.string(root.appending(path: "missing").path)).failureCode == "invalidArgs")
+        #expect(set(1).failureCode == "invalidArgs")
+        #expect(set("~").failureCode == nil && store.project["library"]?["root"]?.string == NSHomeDirectory())
+        state.withLock { $0.showMode = true }
+        #expect(set(.string(root.path)).failureCode == "showMode")
+        state.withLock { $0 = (false, true) }
+        #expect(set(.string(root.path)).failureCode == "ingestBusy")
+        #expect(store.project["library"]?["root"]?.string == NSHomeDirectory())
+        state.withLock { $0.ingestBusy = false }
+        _ = try store.execute("show.lock", role: .programmer).get()
+        #expect(set(.string(root.path)) == .failure(.showLocked))
+    }
+
     @Test func canvasSetChangesSizeAndRateWithinLimits() throws {
         let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
         let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx), logger: Self.logger)

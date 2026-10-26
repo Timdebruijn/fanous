@@ -71,6 +71,8 @@ public final class SyphonInput: @unchecked Sendable {
     /// The newest frame, or nil before the first frame or after `disconnect`. The texture is backed by the
     /// server's IOSurface and may update in place; take it again every frame rather than holding on to it.
     public var latestTexture: MTLTexture? { slot.load() }
+    /// Syphon surfaces hold the picture in OpenGL order (row 0 at the bottom), whatever kind of server wrote them.
+    public var bottomUp: Bool { true }
 
     public var isConnected: Bool { client?.isValid ?? false }
 
