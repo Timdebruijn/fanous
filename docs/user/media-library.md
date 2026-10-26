@@ -61,7 +61,10 @@ press **Apply**. `~` stands for your home folder. The change takes effect at
 once: the engine stops watching the old folder, indexes the new one and every
 layer looks up its folder and file number again in the new library. A layer
 whose number does not exist there shows "no file N in folder M"; the outputs
-keep running. Metadata and thumbnails are cached per file, so switching back to
+keep running. A file the engine has not seen before shows that message until it
+has been probed (a moment per file), then it plays. While the switch runs (the
+scan of a large library can take a few seconds), entering show mode and adding
+ingest jobs are refused; try again a moment later. Metadata and thumbnails are cached per file, so switching back to
 a library that was used before needs no new probing.
 
 - The folder must already exist and be readable; the engine does not create it
