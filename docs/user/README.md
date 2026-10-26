@@ -54,7 +54,7 @@ Switch screens with the left rail or the keys 1 to 6.
 | 3 | Outputs (Outputs & Mapping) | Canvases, outputs, blend, warp, slices, masks |
 | 4 | Patch (Patch / DMX) | Fixture table, DMX monitor, GDTF export |
 | 5 | Show (Show control) | Timecode, cues, OSC, MIDI sources |
-| 6 | System (System / Health) | Show mode and readiness, metrics, network, project versions, roles, logs |
+| 6 | System (System / Health) | Show mode and readiness, library root, metrics, network, project versions, roles, logs |
 
 Other keys: Cmd-Z undo and Shift-Cmd-Z redo (programmer), L lock or unlock the
 show (programmer; it only asks first when you unlock while show mode is on),

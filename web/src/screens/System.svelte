@@ -149,7 +149,7 @@
           <input class="input mono" type="text" aria-label="Library root path" autocomplete="off" spellcheck="false" value={rootValue} disabled={lockedProgrammer} title={lockedProgrammer ? LOCKED_TITLE : undefined} oninput={(event) => (rootDraft = event.currentTarget.value)} />
           <button type="submit" class="btn" disabled={lockedProgrammer || !rootDirty} title={lockedProgrammer ? LOCKED_TITLE : undefined}>Apply</button>
         </form>
-        <div class="caption">A new root is indexed after the engine restarts (Engine › Restart Engine in the app).</div>
+        <div class="caption">Apply switches at once to an existing folder; refused in show mode and while ingest jobs are queued or running.</div>
       </dd>
     </dl>
 
