@@ -1113,6 +1113,32 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
 - Machine settings (library root, interfaces, audio devices, TLS identity
   reference, role passwords, last project) live outside the project in
   `~/Library/Application Support/Fanous/settings.json`.
+- **As built (versions, B23/B35, 2026-10-26):** still one project per machine
+  (`project.json`, autosaved 2 s after the last command); no bundle, no
+  `thumbs/`, no diff view. `ProjectVersions` (`State/ProjectVersions.swift`)
+  keeps full documents in `versions/` next to it, one file per version,
+  `<UTC yyyyMMddTHHmmss.SSSZ>-<slug>.json`: the project document plus a
+  `snapshot` member `{name, at, automatic}`, so a version file still loads as a
+  project (`ProjectDocument.load`), and the id is the file name. Automatic
+  versions: the loaded file at engine start, every show-mode enter, every
+  10 minutes (feed-queue timer), each skipped when the project equals the
+  newest version apart from `showLock`; the newest 50 automatic ones are kept,
+  named ones never expire (retention instead of 200 + one per day). Writes are
+  atomic; a file that does not load as a project is skipped and logged once.
+  Commands: `project.snapshot {name?}` (programmer, allowed under show lock;
+  without a name it is an automatic "Manual" version), `project.versions`
+  (monitor; id, at, name, automatic, layer/output/canvas/cue counts, newest
+  first), `project.revert {id}` (programmer, `mutatesConfig`, refused in show
+  mode with `showMode`), `project.deleteVersion {id}` (named only). A revert is
+  an ordinary undoable command: it saves the current project as an automatic
+  "Before revert to …" version first (refused if that save fails), keeps the
+  current `showLock`, and replaces the document, so the diff goes out as one
+  patch and `projectChanged` applies it like any other change (canvas switch,
+  patch, cues, timecode). The history is not cleared. `live.versions`
+  `{lastAutomatic, serial}` feeds the status bar and tells the System screen to
+  re-list. OSC `/fanous/project/load s` resolves the newest named version with
+  that name (case-insensitive), else a version id, on the feed queue and runs
+  `project.revert` as programmer; refusals are logged.
 
 ### 11.6 Phase 5 as built (2026-10-23)
 
@@ -1402,7 +1428,8 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
 - **OSC**: the full §15.3 address map is routed through `DMXStore.onCommand`
   into the state store (cue, show lock/mode, timecode enable); bundles with
   timetags are scheduled on Control; `live.osc.recent` is the log the Show
-  screen shows. `/fanous/project/load` waits for project bundles (B35).
+  screen shows. `/fanous/project/load` restores a named project version
+  (B35, §11.5 as built).
 - **Show mode and readiness** (`ShowControl/ShowMode.swift`): IOPM assertions
   (`PreventUserIdleDisplaySleep`, `PreventUserIdleSystemSleep`),
   `beginActivity` (latency critical, no App Nap), ingest paused. Readiness

@@ -110,6 +110,7 @@ the parameter's range, an int is the raw value.
 | `/fanous/show/lock` | i | 1 locks the show, 0 unlocks |
 | `/fanous/show/mode` | i | 1 enters show mode, 0 leaves |
 | `/fanous/timecode/enable` | i | 1 switches timecode on, 0 off |
+| `/fanous/project/load` | s | Revert to the newest named project version with this name (or to a version id); refused in show mode and while the show is locked |
 
 OSC bundles with timetags are honoured: the contents run at the given time.
 Send a burst slowly: messages sent back to back from one socket can be partly
@@ -140,7 +141,6 @@ MSEX versions 1.0 to 1.2 are negotiated; the highest common one is used.
   on the Patch screen for every fixture.
 - No OSC feedback (query or notify). MIDI notes and CC as parameters, MIDI Show
   Control and MIDI-triggered cue recording do not exist (B36).
-- `/fanous/project/load` is refused; projects have no versions yet (B23, B35).
 - CITP: only the canvas can be streamed, not single layers; thumbnails are sent
   at their stored size whatever the console asks for (B41). No real console has
   been tried (B40).
