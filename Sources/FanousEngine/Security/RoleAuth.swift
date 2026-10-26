@@ -17,6 +17,8 @@ public struct MachineSettings: Codable, Sendable, Equatable {
     }
     /// Keyed by `Role.rawValue`; a role without a record is open.
     public var passwords: [String: PasswordRecord] = [:]
+    /// OSC feedback to a fixed host:port for controllers that cannot subscribe (B36); edited in the file, read at start.
+    public var oscFeedback: OSCFeedbackTarget?
 
     public init() {}
 

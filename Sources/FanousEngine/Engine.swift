@@ -39,6 +39,7 @@ public final class Engine: @unchecked Sendable {
     private var artnet: ArtNetReceiver?
     private var sacn: SACNReceiver?
     private var osc: OSCReceiver?
+    private var oscFeedback: OSCFeedbackServer?
     private var render: RenderService?
     private var library: LibraryIndex?
     private var ingest: IngestQueue?
@@ -169,7 +170,11 @@ public final class Engine: @unchecked Sendable {
         try artnet.start()
         let sacn = SACNReceiver(store: dmx, logger: logger)
         try sacn.start(universes: Self.sacnUniverses(patch))
-        let osc = OSCReceiver(store: dmx, logger: logger)
+        let oscFeedback = OSCFeedbackServer(fixed: MachineSettings.load(from: AppPaths.settingsFile).oscFeedback, logger: logger) { [weak self] in
+            self?.oscFeedbackState() ?? [:]
+        }
+        self.oscFeedback = oscFeedback
+        let osc = OSCReceiver(store: dmx, logger: logger, feedback: oscFeedback)
         try osc.start()
         self.dmx = dmx
         self.artnet = artnet
@@ -233,7 +238,9 @@ public final class Engine: @unchecked Sendable {
         ShowCommands.register(
             on: store,
             hooks: ShowCommands.Hooks(
-                go: { cues.go() }, back: { cues.back() }, goto: { cues.goto($0) },
+                // every go re-sends the cue state to OSC subscribers, also when it lands on the same cue
+                go: { cues.go(); oscFeedback.invalidate(prefix: "/fanous/cue") }, back: { cues.back(); oscFeedback.invalidate(prefix: "/fanous/cue") },
+                goto: { cues.goto($0); oscFeedback.invalidate(prefix: "/fanous/cue") },
                 showMode: { [weak self] on in self?.setShowMode(on) ?? nil },
                 acknowledge: { [weak self] id in
                     // flag the stored items too, so the UI sees it now and not at the next 30 s run
@@ -597,6 +604,37 @@ public final class Engine: @unchecked Sendable {
                 index: layer.index + 1, folder: s.folder, file: s.file, name: s.name ?? "", positionMs: UInt32(clamping: Int(Double(layer.currentFrame) * 1000 / fps)),
                 lengthMs: UInt32(clamping: Int(Double(s.frames) * 1000 / fps)), fps: UInt8(clamping: Int(s.fps.rounded())), flags: flags)
         }
+    }
+
+    /// Every readable OSC address (B36, docs/user/show-control.md). Nothing that names a path (library root, files).
+    private func oscFeedbackState() -> OSCFeedback.State {
+        var state = dmx?.oscFeedbackValues() ?? [:]
+        let p = OSCAddressMap.prefix
+        let project = store?.project ?? .null
+        let flag = { (on: Bool) in [OSCArgument.int32(on ? 1 : 0)] }
+        let cue = cues?.status.withLock { $0 }
+        state[p + "/cue/current"] = [.float32(cue?.current.map { Float($0) } ?? -1)]
+        state[p + "/cue/current/name"] = [.string(cue?.currentName ?? "")]
+        state[p + "/cue/next"] = [.float32(cue?.next.map { Float($0) } ?? -1)]
+        state[p + "/cue/next/name"] = [.string(cue?.nextName ?? "")]
+        state[p + "/cue/fading"] = flag(cue?.fading ?? false)
+        state[p + "/cue/count"] = [.int32(Int32(cue?.count ?? 0))]
+        state[p + "/show/mode"] = flag(showMode.isOn)
+        state[p + "/show/lock"] = flag(project["showLock"]?.bool ?? false)
+        state[p + "/show/ready"] = flag(!readiness.withLock { $0.items.contains { $0.blocks } })
+        let tc = timecodeClock.current()
+        state[p + "/timecode/enable"] = flag(ShowCommands.timecodeSettings(from: project).enabled != false)
+        state[p + "/timecode/state"] = [.string(tc.state.rawValue)]
+        state[p + "/timecode/value"] = [.string(tc.state == .off ? "--:--:--:--" : tc.timecode.description)]
+        for output in outputStatus.withLock({ $0 }) {
+            state[p + "/output/\(output.id)/state"] = [.string(output.state.rawValue)]
+            state[p + "/output/\(output.id)/bound"] = flag(output.state == .bound)
+        }
+        let summary = metrics.summary(seconds: 1, now: CACurrentMediaTime())
+        state[p + "/engine/version"] = [.string(FanousVersion.string)]
+        state[p + "/engine/fps"] = [.float32(Float(Double(summary.frames) / max(summary.seconds, 0.001)))]
+        state[p + "/engine/missed"] = [.int32(Int32(clamping: summary.missed))]
+        return state
     }
 
     private func citpLive() -> JSONValue {
@@ -1114,6 +1152,7 @@ public final class Engine: @unchecked Sendable {
         artnet?.stop()
         sacn?.stop()
         osc?.stop()
+        oscFeedback?.stop()
         dmx?.stop()
         logger.info("fanousd stopped")
     }

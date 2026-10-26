@@ -264,6 +264,15 @@ public final class DMXStore: @unchecked Sendable {
 
     public var currentPatch: Patch { queue.sync { patch } }
 
+    /// Resolved values of every patched fixture as OSC feedback addresses (B36).
+    public func oscFeedbackValues() -> OSCFeedback.State {
+        queue.sync {
+            var state: OSCFeedback.State = [:]
+            for (fixture, resolver) in resolvers { OSCFeedback.parameterValues(fixture, raw: resolver.resolvedAll().map(\.raw), into: &state) }
+            return state
+        }
+    }
+
     /// The merged 512 slots of a universe for the DMX monitor stream; nil until a packet arrived.
     public func slots(for universe: UniverseID) -> [UInt8]? { queue.sync { table.slots(for: universe) } }
 
