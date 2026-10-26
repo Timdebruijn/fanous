@@ -4,8 +4,8 @@
 // Every test gets its own real engine: `fanousd --no-network` on a free port with FANOUS_HOME in a fresh temporary
 // directory, so it never touches the user's data, logs or library and runs next to an engine on 8443.
 import { test as base, expect, type APIRequestContext, type Page } from '@playwright/test';
-import { spawn, type ChildProcess } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { copyFileSync, existsSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -14,14 +14,14 @@ const repo = resolve(import.meta.dirname, '../..');
 const binary = process.env.FANOUSD ?? join(repo, '.build/debug/fanousd');
 const webRoot = join(repo, 'web/dist');
 
-// Known engine races found by these tests and not fixed yet: drop an entry once fixed, so the tests catch it again.
-const KNOWN = [
-  // StateStore.commit broadcasts a project patch before onProjectChanged applies it: a preview of a just added (or
-  // undone) output can be asked for before the engine knows the output
-  /^preview target output:\d+ is not /,
-  // a new canvas renders only after the canvas switch: its preview, asked for at once by the Canvases tab, is refused
-  /^preview target canvas:\d+ is not /,
-];
+// Two known engine races, not fixed yet, both a preview refused for a target that has only just appeared in the
+// project (within RACE_MS of the patch that added it); any other refusal fails. Drop this once they are fixed:
+// - StateStore.commit broadcasts a project patch before onProjectChanged applies it, so the preview of a just added
+//   (or undone) output can be asked for before the engine knows the output;
+// - a new canvas renders only after the canvas switch, but the Canvases tab asks for its preview at once.
+const RACE_MS = 1500;
+const REFUSED_TARGET = /^preview target ((?:output|canvas):\d+) is not /;
+const LIST_OR_ITEM = /^\/(outputs|canvases)(?:\/\d+)?$/;
 
 export type Engine = { url: string; home: string; token: string; api: APIRequestContext };
 
@@ -46,10 +46,30 @@ function stopped(child: ChildProcess, ms: number): Promise<boolean> {
   });
 }
 
+/** Engines left by an aborted run (their test runner gone, so launchd adopted them): killed, their homes removed. */
+function reapOrphans(): void {
+  for (const name of readdirSync(tmpdir()).filter((n) => n.startsWith('fanous-e2e-'))) {
+    const home = join(tmpdir(), name);
+    const pid = Number(existsSync(join(home, 'fanousd.pid')) ? readFileSync(join(home, 'fanousd.pid'), 'utf8') : NaN);
+    if (!pid) continue;  // being set up right now, or not ours
+    let ps = '';
+    try {
+      ps = execFileSync('ps', ['-o', 'ppid=,comm=', '-p', String(pid)], { encoding: 'utf8' }).trim();
+    } catch {
+      // no such process: only the directory is left
+    }
+    const [ppid, command = ''] = ps.split(/\s+/, 2);
+    if (ps && !(ppid === '1' && command.endsWith('fanousd'))) continue;  // a live engine of a running test
+    if (ps) process.kill(pid, 'SIGKILL');
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 export const test = base.extend<{ engine: Engine }>({
   engine: async ({ playwright }, use, testInfo) => {
     if (!existsSync(binary)) throw new Error(`${binary} is missing: run \`swift build\` in the repository first`);
     if (!existsSync(join(webRoot, 'index.html'))) throw new Error('web/dist is missing: run `npm run build` first');
+    reapOrphans();
     const home = mkdtempSync(join(tmpdir(), 'fanous-e2e-'));
     const port = await freePort();
     const url = `https://127.0.0.1:${port}`;
@@ -59,6 +79,7 @@ export const test = base.extend<{ engine: Engine }>({
       env: { ...process.env, FANOUS_HOME: home },
       stdio: ['ignore', fd, fd],
     });
+    writeFileSync(join(home, 'fanousd.pid'), String(child.pid));
     const api = await playwright.request.newContext({ baseURL: url, ignoreHTTPSErrors: true });
     try {
       const deadline = Date.now() + 20_000;
@@ -93,14 +114,29 @@ export const test = base.extend<{ engine: Engine }>({
     page.on('console', (message) => {
       if (message.type() === 'error') errors.push(`console error: ${message.text()}`);
     });
+    const appeared = new Map<string, number>();  // "output:1", "canvas:2" → when a project patch added it
     page.on('websocket', (socket) =>
       socket.on('framereceived', ({ payload }) => {
         if (typeof payload !== 'string') return;
-        const message = JSON.parse(payload) as { t: string; ok?: boolean; error?: unknown; code?: string; message?: string; id?: number };
+        const message = JSON.parse(payload) as {
+          t: string; ok?: boolean; error?: unknown; code?: string; message?: string; id?: number;
+          doc?: string; ops?: { path: string; value?: unknown }[];
+        };
+        if (message.t === 'patch' && message.doc === 'project') {
+          for (const op of message.ops ?? []) {
+            const list = LIST_OR_ITEM.exec(op.path)?.[1];
+            if (!list) continue;
+            for (const item of [op.value].flat() as { id?: unknown }[]) {
+              if (typeof item?.id === 'number') appeared.set(`${list === 'outputs' ? 'output' : 'canvas'}:${item.id}`, Date.now());
+            }
+          }
+        }
         if (message.t === 'ack' && !message.ok) errors.push(`command refused: ${JSON.stringify(message.error)}`);
         // an error with a stream id ends a stream that went away (a removed canvas); without one a request was refused
-        if (message.t === 'error' && message.id === undefined && !KNOWN.some((k) => k.test(message.message ?? ''))) {
-          errors.push(`protocol error: ${message.code}: ${message.message}`);
+        if (message.t === 'error' && message.id === undefined) {
+          const target = REFUSED_TARGET.exec(message.message ?? '')?.[1];
+          const race = target !== undefined && Date.now() - (appeared.get(target) ?? -Infinity) < RACE_MS;
+          if (!race) errors.push(`protocol error: ${message.code}: ${message.message}`);
         }
       }),
     );

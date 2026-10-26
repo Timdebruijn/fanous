@@ -9,6 +9,7 @@ export default defineConfig({
   // one engine per test; one at a time keeps the GPU and the machine quiet
   workers: 1,
   timeout: 60_000,
+  globalTimeout: 10 * 60_000,
   forbidOnly: !!process.env.CI,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
