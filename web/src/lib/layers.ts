@@ -37,10 +37,58 @@ export interface ChannelMap {
   modes: { layer: ChannelSpec[]; master: ChannelSpec[]; output: ChannelSpec[] };
 }
 
-/** The part of GET /api/library the Layers screen reads (thumbnails only). */
+/** The part of GET /api/library the Layers screen reads: thumbnails and the names for the media picker. */
 export interface LibrarySnapshot {
-  folders: { number: number; items: { folder: number; file: number; thumbnail?: string | null }[] }[];
+  folders: { number: number | null; name?: string; items: { folder: number; file: number | null; name?: string; status?: string; thumbnail?: string | null }[] }[];
   scannedAt: number;
+}
+
+/** What the source policy means to an operator; the stored values stay dmx / internal / ltp / htp. */
+export const POLICY_NAMES: Record<string, string> = {
+  dmx: 'Console only',
+  internal: 'UI and cues only',
+  ltp: 'Console + UI (latest wins)',
+  htp: 'Console + UI (highest wins)',
+};
+
+export function policyName(policy: string): string {
+  return POLICY_NAMES[policy] ?? policy;
+}
+
+export const RELEASE_TEXT = 'Console and this screen both control the layer; whoever moved last wins. Release hands it back to the console.';
+
+/** "012_Intro" → "Intro" (the number has its own place in the label). */
+function plainName(name: string): string {
+  const rest = name.replace(/^\d{1,3}[ _-]*/, '');
+  return rest === '' || rest.startsWith('.') ? name : rest;
+}
+
+/** "Folder 3 · Intro / 12 · loop.mov" from the library; null when the folder or file is not in it. */
+export function mediaPath(library: LibrarySnapshot | null, folder: number, file: number): string | null {
+  const f = library?.folders.find((x) => x.number === folder);
+  const item = f?.items.find((x) => x.file === file);
+  if (!f || !item?.name) return null;
+  return `Folder ${folder}${f.name ? ` · ${plainName(f.name)}` : ''} / ${file} · ${item.name}`;
+}
+
+/** Every addressable, playable item in numeric order, labelled for a picker. */
+export function mediaOptions(library: LibrarySnapshot | null): { folder: number; file: number; label: string }[] {
+  const out: { folder: number; file: number; label: string }[] = [];
+  for (const f of library?.folders ?? []) {
+    if (f.number === null) continue;
+    for (const item of f.items) {
+      if (item.file === null || item.status === 'invalid' || item.status === 'unreadable') continue;
+      out.push({ folder: f.number, file: item.file, label: mediaPath(library, f.number, item.file) ?? `Folder ${f.number} / ${item.file}` });
+    }
+  }
+  return out.sort((a, b) => a.folder - b.folder || a.file - b.file);
+}
+
+/** The fixture.set calls that put a file on a layer: folder, file, and full intensity when it is at 0. */
+export function playSteps(params: ResolvedParameter[] | undefined, folder: number, file: number): { parameter: string; raw: number }[] {
+  const steps = [{ parameter: 'folder', raw: folder }, { parameter: 'file', raw: file }];
+  if (params?.find((p) => p.key === 'intensity')?.raw === 0) steps.push({ parameter: 'intensity', raw: 65535 });
+  return steps;
 }
 
 export type Tone = 'normal' | 'faint' | 'error';
@@ -110,11 +158,13 @@ export function mediaLine(layer: LayerStatus | undefined): { text: string; title
   }
 }
 
-/** Status dot: red only for a missing file or a decoder error, off without media, green otherwise. */
-export function layerState(layer: LayerStatus | undefined): { dot: DotColor; label: string } {
-  if (!layer || layer.kind === 'none') return { dot: 'off', label: 'No media' };
-  if (layer.kind === 'missing' || layer.error) return { dot: 'red', label: 'Media missing or decoder error' };
-  return { dot: 'green', label: 'Media OK' };
+/** Status dot plus the same state as a short word, so the colour never carries it alone. */
+export function layerState(layer: LayerStatus | undefined): { dot: DotColor; label: string; chip: string } {
+  if (!layer || layer.kind === 'none') return { dot: 'off', label: 'No media', chip: 'NO MEDIA' };
+  if (layer.kind === 'missing') return { dot: 'red', label: 'Media file is missing', chip: 'MISSING FILE' };
+  if (layer.error) return { dot: 'red', label: 'Decoder error', chip: 'DECODER ERROR' };
+  if (layer.kind === 'live') return { dot: 'green', label: 'Live input', chip: 'LIVE' };
+  return { dot: 'green', label: 'Media OK', chip: 'OK' };
 }
 
 export function findParam(params: ResolvedParameter[] | undefined, key: string): ResolvedParameter | undefined {

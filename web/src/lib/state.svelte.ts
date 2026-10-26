@@ -3,6 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { FanousClient, patchDoc, type ConnectionState, type Doc, type PreviewInfo, type StreamDescription } from './client';
 import { makeMessage, pushMessage, TOAST_MS, type UIMessage } from './errors';
+import { playSteps } from './layers';
 import { emptyLive, emptyProject, type LiveDoc, type ProjectDoc } from './docs';
 import type { CommandArgs, CommandName, JSONValue, Role } from './protocol';
 
@@ -142,6 +143,15 @@ export async function toggleLock(): Promise<void> {
   }
   if (app.live.show.mode && !confirm('Show mode is on. Unlock the show? Configuration commands are accepted again.')) return;
   await cmd('show.unlock');
+}
+
+/** Puts a file on a layer from the UI (source ui): folder, file, and full intensity when the layer is dark. */
+export async function playOnLayer(n: number, folder: number, file: number): Promise<boolean> {
+  const fixture = `Layer ${n}`;
+  for (const step of playSteps(app.live.dmx.fixtures[fixture], folder, file)) {
+    if ((await cmd('fixture.set', { fixture, ...step })) === undefined) return false;
+  }
+  return true;
 }
 
 export async function subscribeDMX(universe: string, listener: (payload: Uint8Array) => void): Promise<() => void> {

@@ -2,7 +2,7 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
-  import { app, can, cmd } from '../lib/state.svelte';
+  import { app, can, cmd, toastUndo } from '../lib/state.svelte';
   import { LOCKED_TITLE, rangeText, rowStatus, rowSummary, universeName, type FixtureRow } from '../lib/patch-screen';
 
   let { rows, selected, onselect }: { rows: FixtureRow[]; selected: string; onselect: (name: string) => void } = $props();
@@ -15,6 +15,10 @@
 
   function setLayerCount(count: number) {
     void cmd('layers.setCount', { count });
+  }
+  async function removeLast() {
+    const n = layerCount;
+    if ((await cmd('layers.setCount', { count: n - 1 })) !== undefined) toastUndo(`Layer ${n} removed.`);
   }
 </script>
 
@@ -42,10 +46,10 @@
     {/each}
   </div>
   <div class="foot">
-    <button type="button" class="btn" disabled={locked || atLimit} title={locked ? LOCKED_TITLE : atLimit ? 'Tier limit' : undefined} onclick={() => setLayerCount(layerCount + 1)}>Add layer</button>
-    <span class="caption">{layerCount} of {maxLayers ?? '?'} layers · tier limit measured on this machine</span>
+    <button type="button" class="btn" disabled={locked || atLimit} title={locked ? LOCKED_TITLE : atLimit ? 'Layer limit of this Mac (performance tier)' : undefined} onclick={() => setLayerCount(layerCount + 1)}>Add layer</button>
+    <span class="caption">{layerCount} of {maxLayers ?? '?'} layers · <span title="The layer limit of this Mac's performance tier; Add layer stops there so the show does not drop frames.">tier limit</span> measured on this machine</span>
     <span class="spacer"></span>
-    <button type="button" class="btn btn-danger" disabled={locked || layerCount <= 1} title={locked ? LOCKED_TITLE : undefined} onclick={() => setLayerCount(layerCount - 1)}>Remove last layer</button>
+    <button type="button" class="btn btn-danger" disabled={locked || layerCount <= 1} title={locked ? LOCKED_TITLE : undefined} onclick={removeLast}>Remove layer {layerCount}</button>
   </div>
 </section>
 

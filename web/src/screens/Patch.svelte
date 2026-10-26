@@ -30,7 +30,7 @@
     return known[0] ?? null;
   });
 
-  const policyTitle = $derived(!can('programmer') ? 'Locked: programmer only' : app.project.showLock ? 'Locked: show lock is on' : 'Which sources control the fixtures: DMX only, internal only (cues, OSC), or merged');
+  const policyTitle = $derived(!can('programmer') ? 'Locked: programmer only' : app.project.showLock ? 'Locked: show lock is on' : 'Which sources control the fixtures: the console only, the UI and cues only, or both merged');
 
   function select(name: string) {
     selectedName = name;
@@ -48,10 +48,10 @@
   <label class="caption policy" title={policyTitle}>
     Source policy
     <select class="input" value={app.project.policy} disabled={policyTitle.startsWith('Locked')} onchange={(e) => void cmd('project.set', { path: '/policy', value: e.currentTarget.value })}>
-      <option value="dmx">DMX only</option>
-      <option value="internal">Internal only (cues, OSC)</option>
-      <option value="ltp">LTP · merge, latest wins</option>
-      <option value="htp">HTP · merge, highest wins</option>
+      <option value="dmx">Console only</option>
+      <option value="internal">UI and cues only (cues, OSC, this screen)</option>
+      <option value="ltp">Console + UI (latest wins)</option>
+      <option value="htp">Console + UI (highest wins)</option>
     </select>
   </label>
   <a class="link" href="/api/channel-map.md" target="_blank" rel="noopener">Channel map</a>

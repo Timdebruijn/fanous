@@ -5,7 +5,8 @@
   import { untrack } from 'svelte';
   import MediaIngestQueue from '../components/MediaIngestQueue.svelte';
   import MediaTile from '../components/MediaTile.svelte';
-  import { app, authHeaders, can } from '../lib/state.svelte';
+  import PolicyHint from '../components/PolicyHint.svelte';
+  import { app, authHeaders, can, playOnLayer } from '../lib/state.svelte';
   import {
     LOCKED_TITLE,
     activeSources,
@@ -47,6 +48,17 @@
   const probing = $derived(folders.some((f) => f.items.some((i) => i.status === 'probing')));
   const inFlight = $derived(activeSources(app.live.ingest));
   const locked = $derived(!can('programmer'));
+  const picked = $derived(shown.find((i) => i.path === selectedItem));
+  const playable = $derived(picked !== undefined && picked.file !== null && current?.number != null && picked.status === 'playable');
+  const layerNumbers = $derived(Array.from({ length: Math.max(0, Math.floor(app.project.layerCount) || 0) }, (_, i) => i + 1));
+  const playLock = $derived(locked ? LOCKED_TITLE : app.project.showLock ? 'Locked: show lock is on' : undefined);
+  let playNote = $state('');
+
+  async function playOn(n: number) {
+    if (!picked || picked.file === null || current?.number == null) return;
+    const ok = await playOnLayer(n, current.number, picked.file);
+    playNote = ok ? `Layer ${n} now plays ${current.number} / ${picked.file} · ${picked.name}.` : '';
+  }
   const canImport = $derived(current?.number != null);
   /** "folder/file" → the layers playing it, for the tile badge */
   const playing = $derived.by(() => {
@@ -179,7 +191,7 @@
         </form>
       {/if}
       {#if folders.length === 0}
-        <p class="caption pad">{library ? 'No folders yet. Create the first one; the console addresses folders by number.' : 'Loading…'}</p>
+        <p class="caption pad">{library ? 'No folders yet. Press New folder below to create the first one (the console addresses folders by number), then Import… to add files.' : 'Loading…'}</p>
       {:else}
         <ul>
           {#each folders as folder (folder.path)}
@@ -224,6 +236,26 @@
         <input type="file" multiple hidden bind:this={picker} onchange={upload} />
       </div>
 
+      {#if picked}
+        <div class="panel playbar" role="group" aria-label="Selected file">
+          <span class="ellipsis grow" title={picked.name}><strong>{picked.file ?? '—'}</strong> · {picked.name}</span>
+          {#if playable}
+            <select class="select" aria-label="Play on layer" disabled={playLock !== undefined || layerNumbers.length === 0} title={playLock} value="" onchange={(e) => {
+              const n = Number(e.currentTarget.value);
+              e.currentTarget.value = '';
+              if (n) void playOn(n);
+            }}>
+              <option value="">Play on layer ▾</option>
+              {#each layerNumbers as n (n)}<option value={n}>Layer {n}</option>{/each}
+            </select>
+          {:else}
+            <span class="caption">{picked.status === 'needsTranscode' ? 'Transcode this file first to play it.' : 'This file cannot be played on a layer.'}</span>
+          {/if}
+        </div>
+        {#if playable}<PolicyHint what="files put on a layer from here" />{/if}
+        {#if playNote}<p class="caption" role="status">{playNote}</p>{/if}
+      {/if}
+
       {#if uploads.length > 0}
         <ul class="uploads panel" aria-label="Uploads">
           {#each uploads as file, index (index)}
@@ -242,7 +274,7 @@
       {#if !current}
         <p class="caption">{library ? 'Nothing to show.' : 'Loading the library…'}</p>
       {:else if shown.length === 0}
-        <p class="caption">{items.length === 0 ? 'No files in this folder.' : `No files match "${query.trim()}".`}</p>
+        <p class="caption">{items.length === 0 ? (canImport ? 'No files in this folder. Press Import… to add files, or copy them into the folder on disk; the list updates by itself.' : 'No files here. Select a numbered folder, then press Import….') : `No files match "${query.trim()}".`}</p>
       {:else}
         <div class="grid">
           {#each shown as item (item.path)}
@@ -287,6 +319,8 @@
   .uploads li.end { justify-content: flex-end; }
   .run { color: var(--accent); }
   .fail { color: var(--red); }
+  .playbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 12px; }
+  .playbar .select { min-width: 180px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
   @media (max-width: 900px) {
     .cols { flex-direction: column; align-items: stretch; }
