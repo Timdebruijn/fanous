@@ -66,26 +66,45 @@ public final class GeneratorSource: LiveTextureSource, @unchecked Sendable {
     var drawnSecond = -1
     /// Draws encoded so far (the first one is the creation draw); diagnostics and tests.
     private(set) var encodeCount = 0
-    let texture: MTLTexture
+    /// Replaced only by `resize` on the compositor thread, which is also the only reader once the layer has it.
+    private(set) var texture: MTLTexture
     private let context: MetalContext
     public var latestTexture: MTLTexture? { texture }
 
     init?(context: MetalContext, file: Int, width: Int, height: Int) {
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
-        descriptor.usage = [.renderTarget, .shaderRead]
-        descriptor.storageMode = .private
-        guard Generators.names[file] != nil, let texture = context.device.makeTexture(descriptor: descriptor) else { return nil }
-        texture.label = "generator \(file)"
+        guard Generators.names[file] != nil, let texture = Self.makeTexture(context, file: file, width: width, height: height) else { return nil }
         self.kind = UInt32(file)
         self.texture = texture
         self.context = context
-        // first frame now, so the layer never shows an empty texture before the compositor's next tick
+        drawFirstFrame()
+    }
+
+    private static func makeTexture(_ context: MetalContext, file: Int, width: Int, height: Int) -> MTLTexture? {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
+        descriptor.usage = [.renderTarget, .shaderRead]
+        descriptor.storageMode = .private
+        let texture = context.device.makeTexture(descriptor: descriptor)
+        texture?.label = "generator \(file)"
+        return texture
+    }
+
+    /// First frame now, so the layer never shows an empty texture before the compositor's next tick.
+    private func drawFirstFrame() {
         var u = GeneratorUniforms()
         u.kind = kind
+        drawnSecond = -1
         if let commandBuffer = context.queue.makeCommandBuffer() {
             encode(into: commandBuffer, uniforms: u)
             commandBuffer.commit()
         }
+    }
+
+    /// The canvas changed size (B31): a new texture at that size, drawn before the tick's own command buffer.
+    /// Compositor thread only; keeps the old texture when the new one cannot be made.
+    func resize(width: Int, height: Int) {
+        guard let texture = Self.makeTexture(context, file: Int(kind), width: width, height: height) else { return }
+        self.texture = texture
+        drawFirstFrame()
     }
 
     func encode(into commandBuffer: MTLCommandBuffer, uniforms: GeneratorUniforms) {

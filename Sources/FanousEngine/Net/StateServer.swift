@@ -19,7 +19,8 @@ public final class StateServer: @unchecked Sendable {
     public let auth: RoleAuth
     /// Installed by the engine when it renders; nil → preview subscriptions are refused.
     nonisolated(unsafe) public var preview: PreviewHub?
-    private let caps: JSONValue
+    private let capsBox: Mutex<JSONValue>
+    private var caps: JSONValue { capsBox.withLock { $0 } }
     private let logger: Logger
     private let connections = Mutex<[ObjectIdentifier: Connection]>([:])
     private let nextStream = Atomic<UInt32>(1)
@@ -27,8 +28,13 @@ public final class StateServer: @unchecked Sendable {
     public init(store: StateStore, auth: RoleAuth, caps: JSONValue, logger: Logger) {
         self.store = store
         self.auth = auth
-        self.caps = caps
+        capsBox = Mutex(caps)
         self.logger = logger
+    }
+
+    /// The canvas rate changed (B31): clients that connect from now on get it in their welcome.
+    public func setCaps(fps: Double) {
+        capsBox.withLock { try? $0.set(.number(fps), at: "/fps") }
     }
 
     /// `HTTPSServer.upgradeRoute`: same-origin check, then a connection pre-authenticated from the session cookie.

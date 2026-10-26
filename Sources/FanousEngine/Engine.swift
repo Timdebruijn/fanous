@@ -55,6 +55,8 @@ public final class Engine: @unchecked Sendable {
     private let modeChecks = Mutex<[Int: DisplayModeMatching.Check]>([:])
     private var lastOutputs: [OutputConfig] = []
     private var lastClockMaster: Int?
+    /// B31: keeps the rendered canvas in step with the project's.
+    private var canvasSwitch: CanvasSwitch?
     // Phase 7: show control
     private let timecodeClock = TimecodeClock()
     private var ltc: LTCInput?
@@ -109,9 +111,23 @@ public final class Engine: @unchecked Sendable {
             logger: logger)
         tlsFingerprint = identity.fingerprintSHA256
         // The project document comes first: without a scene file (the bundled agent) it is the source of the layer
-        // count, canvas, source policy and library root (DESIGN.md §2.4); a scene file (development, bench) wins.
-        let defaultCanvas = (width: options.scene?.canvasWidth ?? 1920, height: options.scene?.canvasHeight ?? 1080)
-        let loadedProject = ProjectDocument.load(from: AppPaths.projectFile, canvas: defaultCanvas)
+        // count, canvas, source policy and library root (DESIGN.md §2.4); a scene file (development, bench) wins,
+        // and its canvas is mirrored into the project so the UI shows what renders.
+        var loadedProject = ProjectDocument.load(from: AppPaths.projectFile)
+        let startCanvas = Self.startCanvas(project: loadedProject, scene: options.scene)
+        if options.scene != nil, var project = loadedProject {
+            try? ProjectDocument.setCanvasFormat(startCanvas, in: &project)
+            loadedProject = project
+        }
+        let canvasSwitch = CanvasSwitch(
+            rendered: startCanvas, isDeferred: { [weak self] in self?.showMode.isOn ?? false },
+            apply: { [weak self] format in
+                guard let coordinator = self?.coordinator else { throw RenderError.pipeline("no compositor") }
+                try coordinator.setCanvas(width: format.width, height: format.height, fps: format.fps)
+            },
+            revert: { [weak self] rendered, error in self?.canvasSwitchFailed(keeping: rendered, error: error) })
+        canvasSwitch.applied = { [weak self] format in self?.canvasSwitched(to: format) }
+        self.canvasSwitch = canvasSwitch
         let layerCount = options.scene?.layerCount ?? loadedProject?["layerCount"]?.int ?? 8
         let patch = ProjectDocument.effectivePatch(from: loadedProject ?? .null) ?? Patch.standard(layers: layerCount, outputs: 4)
         let policy = options.scene?.policy ?? loadedProject?["policy"]?.string.flatMap(SourcePolicy.init(rawValue:)) ?? .dmx
@@ -143,15 +159,15 @@ public final class Engine: @unchecked Sendable {
         // Ingest queue (DESIGN.md §8.3): one job at a time at utility priority; yields while the compositor is busy.
         let ingest = IngestQueue(persistenceURL: AppPaths.ingestQueueFile, logger: logger)
         let metrics = self.metrics
-        let fps = options.scene?.fps ?? 60
-        ingest.shouldYield = {
-            let budget = 0.7 / fps * 1e6
+        let fps = startCanvas.fps
+        ingest.shouldYield = { [weak self] in
+            let budget = 0.7 / (self?.canvasSwitch?.rendered.fps ?? fps) * 1e6
             return metrics.recent(seconds: 0.25, now: CACurrentMediaTime()).contains { Double($0.cpuMicros + $0.gpuMicros) > budget }
         }
         ingest.start()
         self.ingest = ingest
 
-        var sceneWithOutputs = options.scene ?? Self.defaultScene(project: loadedProject, layerCount: layerCount, policy: policy, library: libraryRoot)
+        var sceneWithOutputs = options.scene ?? Self.defaultScene(canvas: startCanvas, layerCount: layerCount, policy: policy, library: libraryRoot)
         sceneWithOutputs.managedOutputs = true  // the coordinator below owns displays and drivers (DESIGN.md §9.6)
         do {
             let scene = sceneWithOutputs
@@ -165,9 +181,9 @@ public final class Engine: @unchecked Sendable {
 
         // Phase 5: roles, the project and live documents and the WebSocket state server (DESIGN.md §11).
         let auth = RoleAuth(settingsURL: AppPaths.settingsFile, shellTokenURL: AppPaths.shellTokenFile, logger: logger)
-        let project = loadedProject ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: policy, canvas: defaultCanvas)
+        let project = loadedProject ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: policy, canvas: startCanvas)
         let store = StateStore(project: project, logger: logger)
-        ProjectDocument.registerCommands(on: store, auth: auth)
+        ProjectDocument.registerCommands(on: store, auth: auth, showModeOn: { [weak self] in self?.showMode.isOn ?? false })
         // Phase 7: cues, timecode, show mode (DESIGN.md §14–15)
         let cues = CueRunner(dmx: dmx, logger: logger)
         cues.replace(list: ShowCommands.cueList(from: project))
@@ -211,6 +227,7 @@ public final class Engine: @unchecked Sendable {
             guard let self else { return }
             self.ingest?.paused = on  // DESIGN.md §14: ingest paused in show mode
             if on { self.startReadinessTimer() } else { self.stopReadinessTimer() }
+            if !on { self.canvasSwitch?.run() }  // a canvas change deferred during show mode (B31)
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated {
                     self?.coordinator?.setCursorHidden(on)
@@ -227,11 +244,12 @@ public final class Engine: @unchecked Sendable {
         let stateServer = StateServer(store: store, auth: auth, caps: caps, logger: logger)
         render?.compositor.timecode = timecodeClock
         if let render {
-            // 640×360 at 30 fps (DESIGN.md §11.3 default), on the compositor's own command buffer
-            let height = 640 * render.scene.canvasHeight / max(1, render.scene.canvasWidth)
-            let previewWidth = 640, previewHeight = max(2, height)
-            let makePreview: @Sendable () throws -> PreviewStreamer = { [parameters = dmx.snapshots, logger] in
-                try PreviewStreamer(context: context, width: previewWidth, height: previewHeight, fps: min(30, fps), canvasFPS: fps, parameters: parameters, logger: logger)
+            // 640 wide in the canvas aspect at 30 fps (DESIGN.md §11.3 default), on the compositor's own command buffer;
+            // made again from the rendered canvas when it changes (B31)
+            let makePreview: @Sendable () throws -> PreviewStreamer = { [weak self, parameters = dmx.snapshots, logger] in
+                let canvas = self?.canvasSwitch?.rendered ?? startCanvas
+                let height = max(2, 640 * canvas.height / max(1, canvas.width))
+                return try PreviewStreamer(context: context, width: 640, height: height, fps: min(30, canvas.fps), canvasFPS: canvas.fps, parameters: parameters, logger: logger)
             }
             // one streamer per target that has subscribers (canvas, output:<id>); the canvas one also serves CITP
             let preview = PreviewHub(canvas: try makePreview(), make: makePreview)
@@ -672,14 +690,37 @@ public final class Engine: @unchecked Sendable {
         readinessTimer = nil
     }
 
+    /// After a canvas switch (B31): previews at the new aspect and rate, caps for new clients, display-mode checks.
+    @MainActor private func canvasSwitched(to format: ProjectDocument.CanvasFormat) {
+        logger.info("canvas changed", metadata: ["size": "\(format.width)×\(format.height)", "fps": "\(format.fps)"])
+        do { try stateServer?.preview?.rebuild() } catch { logger.error("preview rebuild failed", metadata: ["error": "\(error)"]) }
+        stateServer?.setCaps(fps: format.fps)
+        syncDisplayModes()
+    }
+
+    /// A canvas switch failed: the old canvas still renders, so it goes back into the project (no history entry).
+    @MainActor private func canvasSwitchFailed(keeping rendered: ProjectDocument.CanvasFormat, error: any Error) {
+        logger.error("canvas change failed; the previous canvas keeps running", metadata: ["error": "\(error)"])
+        guard let store else { return }
+        var project = store.project
+        if (try? ProjectDocument.setCanvasFormat(rendered, in: &project)) != nil, let canvases = project["canvases"] { store.correct(canvases, at: "/canvases") }
+    }
+
+    /// Canvas at start (B31): a `--scene` file wins (development, bench), then the project's first canvas, then
+    /// 1920×1080 at 60. A hand-edited project canvas that `canvas.set` would refuse falls back to the default.
+    static func startCanvas(project: JSONValue?, scene: SceneConfig?) -> ProjectDocument.CanvasFormat {
+        if let scene { return (scene.canvasWidth, scene.canvasHeight, scene.fps) }
+        guard let canvas = project.map(ProjectDocument.canvases(from:))?.first else { return ProjectDocument.defaultCanvas }
+        return (try? ProjectDocument.validated((canvas.width, canvas.height, canvas.fps))) ?? ProjectDocument.defaultCanvas
+    }
+
     /// Control queue: re-applies the patch when it changed and schedules the autosave (2 s after the last change).
     /// The bundled agent runs without a scene file: canvas from the project's first canvas, media from the library.
-    static func defaultScene(project: JSONValue?, layerCount: Int, policy: SourcePolicy, library: URL) -> SceneConfig {
+    static func defaultScene(canvas: ProjectDocument.CanvasFormat, layerCount: Int, policy: SourcePolicy, library: URL) -> SceneConfig {
         var scene = SceneConfig()
-        if let canvas = project.map(ProjectDocument.canvases(from:))?.first {
-            scene.canvasWidth = canvas.width
-            scene.canvasHeight = canvas.height
-        }
+        scene.canvasWidth = canvas.width
+        scene.canvasHeight = canvas.height
+        scene.fps = canvas.fps
         scene.layerCount = layerCount
         scene.policy = policy
         scene.library = library.path
@@ -709,6 +750,10 @@ public final class Engine: @unchecked Sendable {
         }
         let timecodeSettings = ShowCommands.timecodeSettings(from: document)
         if timecodeSettings != lastTimecodeSettings { applyTimecodeSettings(timecodeSettings) }
+        // canvas size or rate (canvas.set, undo/redo, project load): applied unless show mode is on
+        if let canvas = ProjectDocument.canvases(from: document).first, let format = try? ProjectDocument.validated((canvas.width, canvas.height, canvas.fps)) {
+            canvasSwitch?.request(format)
+        }
         let outputs = ProjectDocument.outputs(from: document)
         let clockMaster = ProjectDocument.canvases(from: document).first?.clockMaster
         if outputs != lastOutputs || clockMaster != lastClockMaster, let coordinator {
@@ -783,6 +828,7 @@ public final class Engine: @unchecked Sendable {
         let snapshot = library.snapshot
         let modeNotes = modeChecks.withLock { $0 }.compactMapValues(\.note)
         let live: JSONValue = [
+            "canvas": canvasSwitch?.live ?? .null,
             "engine": [
                 "version": .string(FanousVersion.string), "chip": .string(SystemInfo.chipName),
                 "uptimeSeconds": .number(Date().timeIntervalSince(startedAt).rounded()), "rendering": .bool(render != nil),

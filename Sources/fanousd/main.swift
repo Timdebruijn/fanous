@@ -19,7 +19,8 @@ func usage() -> String {
       --port N         HTTPS port (default 8443)
       --web-root PATH  directory with the built web UI (default: auto-detect)
       --foreground     run attached to the terminal (default when started by hand)
-      --scene FILE     render a scene (JSON: canvasWidth, canvasHeight, fps, layerCount, media[{folder,file,path|syphon}], display)
+      --scene FILE     render a scene (JSON: canvasWidth, canvasHeight, fps, layerCount, media[{folder,file,path|syphon}], display);
+                       its canvas size and fps override the project's for this run
       --version        print the version and exit
     """
 }

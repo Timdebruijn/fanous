@@ -177,10 +177,23 @@ public struct CanvasConfig: Codable, Equatable, Sendable, Identifiable {
     public var height: Int
     /// Output whose display drives the compositor clock; nil = the first bound output.
     public var clockMaster: Int? = nil
-    public init(id: Int, name: String, width: Int, height: Int) {
+    /// Canvas rate (B31); projects saved before it existed read as 60.
+    public var fps: Double = 60
+    public init(id: Int, name: String, width: Int, height: Int, fps: Double = 60) {
         self.id = id
         self.name = name
         self.width = width
         self.height = height
+        self.fps = fps
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        width = try c.decode(Int.self, forKey: .width)
+        height = try c.decode(Int.self, forKey: .height)
+        clockMaster = try c.decodeIfPresent(Int.self, forKey: .clockMaster)
+        fps = try c.decodeIfPresent(Double.self, forKey: .fps) ?? 60
     }
 }

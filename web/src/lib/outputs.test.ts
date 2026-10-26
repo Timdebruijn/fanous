@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
-import { sourceFromPixels, sourcePixels, blendCurvePath, handles, insertPoint, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
+import { canvasSizeError, sourceFromPixels, sourcePixels, blendCurvePath, handles, insertPoint, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
 
 const output: OutputConfig = {
   id: 1,
@@ -60,5 +60,15 @@ describe('slice source in pixels', () => {
     expect(sourceFromPixels('h', 540, canvas)).toBe(0.5);
     expect(sourceFromPixels('w', 99999, canvas)).toBe(1);
     expect(sourceFromPixels('w', Number.NaN, canvas)).toBeNull();
+  });
+});
+
+describe('canvasSizeError', () => {
+  it('accepts even sizes from 320 to 8192 and names the first problem', () => {
+    expect(canvasSizeError(3840, 2160)).toBeNull();
+    expect(canvasSizeError(320, 8192)).toBeNull();
+    expect(canvasSizeError(1921, 1080)).toBe('Width must be even.');
+    expect(canvasSizeError(1920, 200)).toMatch(/^Height must be a whole number/);
+    expect(canvasSizeError(Number.NaN, 1080)).toMatch(/^Width/);
   });
 });

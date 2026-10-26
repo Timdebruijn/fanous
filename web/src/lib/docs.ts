@@ -98,6 +98,8 @@ export interface IngestJobDoc {
 }
 
 export interface LiveDoc {
+  /** What renders (B31); pending = the project asks for another canvas (deferred in show mode); error = last failed switch. Absent before the first live update. */
+  canvas?: { width: number; height: number; fps: number; pending: boolean; error: string | null } | null;
   engine: { version: string; chip: string; uptimeSeconds: number; rendering: boolean };
   metrics: {
     frames: number;

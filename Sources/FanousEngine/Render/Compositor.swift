@@ -14,9 +14,9 @@ import Synchronization
 /// output pass (DESIGN.md §4.3–4.5). Allocation-free in steady state.
 public final class Compositor: @unchecked Sendable {
     public let context: MetalContext
-    public let canvasWidth: Int
-    public let canvasHeight: Int
-    public let fps: Double
+    public private(set) var canvasWidth: Int
+    public private(set) var canvasHeight: Int
+    public private(set) var fps: Double
     public let metrics: MetricsRing
     public let parameters: TripleBuffer<ParameterSnapshotSlot>
     public private(set) var layers: [RenderLayer] = []
@@ -45,8 +45,8 @@ public final class Compositor: @unchecked Sendable {
     /// 256 bytes per slice draw: enough for 64 slices across the outputs of one display.
     static let mappedUniformsLength = 256 * 64
 
-    private let canvases: [MTLTexture]
-    private let canvasPasses: [MTLRenderPassDescriptor]
+    private var canvases: [MTLTexture]
+    private var canvasPasses: [MTLRenderPassDescriptor]
     private let outputPass = MTLRenderPassDescriptor()
     private let uniformBuffers: [MTLBuffer]
     private let outputUniformBuffers: [MTLBuffer]
@@ -81,28 +81,14 @@ public final class Compositor: @unchecked Sendable {
         self.canvasWidth = canvasWidth
         self.canvasHeight = canvasHeight
         self.fps = fps
+        canvasSize = Atomic(Self.pack(canvasWidth, canvasHeight))
         self.maxLayers = maxLayers
         self.metrics = metrics
         self.parameters = parameters
         self.logger = logger
         drawItems.reserveCapacity(maxLayers * 2)
         drawnItems.reserveCapacity(maxLayers * 2)
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.canvasFormat, width: canvasWidth, height: canvasHeight, mipmapped: false)
-        descriptor.usage = [.renderTarget, .shaderRead]
-        descriptor.storageMode = .private
-        canvases = try (0..<3).map { i in
-            guard let texture = context.device.makeTexture(descriptor: descriptor) else { throw RenderError.pipeline("canvas texture") }
-            texture.label = "canvas \(i)"
-            return texture
-        }
-        canvasPasses = canvases.map { texture in
-            let pass = MTLRenderPassDescriptor()
-            pass.colorAttachments[0].texture = texture
-            pass.colorAttachments[0].loadAction = .clear
-            pass.colorAttachments[0].storeAction = .store
-            pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-            return pass
-        }
+        (canvases, canvasPasses) = try Self.makeCanvases(device: context.device, width: canvasWidth, height: canvasHeight)
         outputPass.colorAttachments[0].loadAction = .dontCare
         outputPass.colorAttachments[0].storeAction = .store
         // two uniform slots per layer: the playing media and the outgoing one during a dissolve
@@ -120,6 +106,69 @@ public final class Compositor: @unchecked Sendable {
         }
         outputPass.colorAttachments[0].loadAction = .clear
         outputPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+    }
+
+    private static func makeCanvases(device: MTLDevice, width: Int, height: Int) throws -> ([MTLTexture], [MTLRenderPassDescriptor]) {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.canvasFormat, width: width, height: height, mipmapped: false)
+        descriptor.usage = [.renderTarget, .shaderRead]
+        descriptor.storageMode = .private
+        let textures = try (0..<3).map { i in
+            guard let texture = device.makeTexture(descriptor: descriptor) else { throw RenderError.pipeline("canvas texture \(width)×\(height)") }
+            texture.label = "canvas \(i)"
+            return texture
+        }
+        let passes = textures.map { texture in
+            let pass = MTLRenderPassDescriptor()
+            pass.colorAttachments[0].texture = texture
+            pass.colorAttachments[0].loadAction = .clear
+            pass.colorAttachments[0].storeAction = .store
+            pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+            return pass
+        }
+        return (textures, passes)
+    }
+
+    /// New canvas size and rate (B31). Only while no driver ticks or presents (`OutputCoordinator.setCanvas` stops
+    /// them); throws before changing anything when the textures cannot be made, so the old canvas keeps running.
+    public func reconfigure(width: Int, height: Int, fps: Double) throws {
+        // Metal asserts (instead of returning nil) beyond its texture limit; refuse here so the old canvas runs on
+        guard (1...16384).contains(width), (1...16384).contains(height), fps > 0 else { throw RenderError.pipeline("canvas \(width)×\(height) at \(fps) fps is not possible") }
+        let (textures, passes) = try Self.makeCanvases(device: context.device, width: width, height: height)
+        // Clear the new canvases to black (latestCanvas is defined before the first tick) on the shared queue and
+        // wait: command buffers on one queue run in commit order, so every in-flight tick has finished with the
+        // old textures and the uniform slots when this one completes.
+        guard let commandBuffer = context.queue.makeCommandBuffer() else { throw RenderError.pipeline("canvas clear") }
+        for pass in passes {
+            guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { throw RenderError.pipeline("canvas clear") }
+            encoder.endEncoding()
+        }
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        canvases = textures
+        canvasPasses = passes
+        canvasWidth = width
+        canvasHeight = height
+        self.fps = fps
+        canvasSize.store(Self.pack(width, height), ordering: .releasing)
+        canvasIndex = 0
+        canvasValid = false
+        lastTarget = 0
+    }
+
+    private let canvasSize: Atomic<UInt64>
+    private static func pack(_ width: Int, _ height: Int) -> UInt64 { UInt64(width) << 32 | UInt64(height) }
+    /// Canvas size for other threads (the media loader making generators): both values from one change.
+    public var canvasSizeSnapshot: (width: Int, height: Int) {
+        let packed = canvasSize.load(ordering: .acquiring)
+        return (Int(packed >> 32), Int(packed & 0xFFFF_FFFF))
+    }
+
+    /// A generator made before a canvas change (or still on a layer) is re-made at the canvas size.
+    private func fitGenerator(_ playback: LayerPlayback?) {
+        guard let generator = playback?.live as? GeneratorSource,
+            generator.texture.width != canvasWidth || generator.texture.height != canvasHeight
+        else { return }
+        generator.resize(width: canvasWidth, height: canvasHeight)
     }
 
     public func setLayers(_ layers: [RenderLayer]) { self.layers = Array(layers.prefix(maxLayers)) }
@@ -216,6 +265,8 @@ public final class Compositor: @unchecked Sendable {
         for layer in layers {
             let p = layer.index < snapshot.layers.count ? snapshot.layers[layer.index] : LayerParameters()
             handOff(layer: layer, p: p, target: target)
+            fitGenerator(layer.current)
+            fitGenerator(layer.outgoing)
             var progress: Float = 1
             if let outgoing = layer.outgoing {
                 let elapsed = target - layer.dissolveStart

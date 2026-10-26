@@ -92,14 +92,16 @@ final class SecondaryDriver: @unchecked Sendable {
         self.thread = thread
     }
 
-    func stop() {
+    /// False when the thread did not finish within the join timeout.
+    @discardableResult func stop() -> Bool {
         running.store(false, ordering: .relaxed)
-        thread.map { Self.join($0) }
+        return thread.map { Self.join($0) } ?? true
     }
 
-    static func join(_ thread: Thread) {
+    @discardableResult static func join(_ thread: Thread) -> Bool {
         let deadline = Date().addingTimeInterval(1)
         while !thread.isFinished && Date() < deadline { usleep(2000) }
+        return thread.isFinished
     }
 }
 
@@ -117,7 +119,7 @@ public final class OutputCoordinator {
     private let compositor: Compositor
     private let context: MetalContext
     private let compiler: OutputCompiler
-    private let fps: Double
+    private var fps: Double
     private let logger: Logger
     public private(set) var outputs: [OutputConfig] = []
     private var clockMaster: Int?
@@ -156,6 +158,25 @@ public final class OutputCoordinator {
         for displayID in bound.keys {
             if hidden { CGDisplayHideCursor(displayID) } else { CGDisplayShowCursor(displayID) }
         }
+    }
+
+    /// New canvas size and rate (B31): every driver stops (outputs hold their last frame), the compositor makes new
+    /// canvas textures, then the drivers start again at the new rate. Windows and bindings stay; slices are stored
+    /// as fractions of the canvas, so mappings stay valid. On failure the old canvas runs on and the error is thrown.
+    /// A driver that does not stop within its join timeout aborts the change: the textures are not swapped under a tick.
+    public func setCanvas(width: Int, height: Int, fps: Double) throws {
+        var stopped = masterDriver?.stop() ?? true
+        stopMaster()
+        stopped = (headless?.stop() ?? true) && stopped
+        headless = nil
+        for id in bound.keys {
+            stopped = (bound[id]?.secondary?.stop() ?? true) && stopped
+            bound[id]?.secondary = nil
+        }
+        defer { rebind() }
+        guard stopped else { throw RenderError.pipeline("a render thread did not stop within 1 s; canvas unchanged") }
+        try compositor.reconfigure(width: width, height: height, fps: fps)
+        self.fps = fps
     }
 
     public func displaysChanged(_ displays: [DisplayInfo]) {

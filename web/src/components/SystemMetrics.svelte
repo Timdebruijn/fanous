@@ -56,7 +56,9 @@
   });
 
   const tiles = $derived(metricTiles(metrics, app.live.show.mode));
-  const budget = $derived(typeof app.caps.fps === 'number' && app.caps.fps > 0 ? 1000 / app.caps.fps : 0);
+  // the project's canvas rate follows canvas.set (B31); caps.fps is the rate at engine start
+  const fps = $derived(app.project.canvases?.[0]?.fps ?? app.caps.fps);
+  const budget = $derived(typeof fps === 'number' && fps > 0 ? 1000 / fps : 0);
   const trace = $derived(sparkline(history, W, H, budget));
   const latest = $derived(history.at(-1));
 </script>

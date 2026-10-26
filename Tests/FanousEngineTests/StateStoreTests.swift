@@ -233,6 +233,102 @@ extension StateStoreTests {
         #expect(store.execute("canvas.set", args: ["id": 1, "path": "/width", "value": 10], role: .programmer).failureCode == "invalidArgs")
     }
 
+    @Test func canvasSetChangesSizeAndRateWithinLimits() throws {
+        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
+        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx), logger: Self.logger)
+        let showMode = Mutex(false)
+        ProjectDocument.registerCommands(on: store, auth: auth, showModeOn: { showMode.withLock { $0 } })
+        func format(_ w: Int, _ h: Int, _ fps: Double) -> JSONValue { ["id": 1, "width": .number(Double(w)), "height": .number(Double(h)), "fps": .number(fps)] }
+        #expect(ProjectDocument.canvases(from: store.project).first?.fps == 60)
+
+        _ = try store.execute("canvas.set", args: format(3840, 2160, 50), role: .programmer).get()
+        var canvas = try #require(ProjectDocument.canvases(from: store.project).first)
+        #expect((canvas.width, canvas.height, canvas.fps) == (3840, 2160, 50))
+        _ = try store.execute("canvas.set", args: format(1280, 720, 24000.0 / 1001), role: .programmer).get()
+        #expect(ProjectDocument.canvases(from: store.project).first?.fps == 23.976, "snapped to the list entry")
+
+        for bad in [format(1921, 1080, 60), format(200, 200, 60), format(8194, 1080, 60), format(1920, 1080, 48), format(1920, 1080, 0)] {
+            #expect(store.execute("canvas.set", args: bad, role: .programmer).failureCode == "invalidArgs")
+        }
+        #expect(store.execute("canvas.set", args: format(1920, 1080, 60), role: .operator).failureCode == "forbidden")
+        showMode.withLock { $0 = true }
+        #expect(store.execute("canvas.set", args: format(1920, 1080, 60), role: .programmer).failureCode == "showMode")
+        _ = try store.execute("canvas.set", args: ["id": 1, "path": "/name", "value": "Main"], role: .programmer).get()
+        showMode.withLock { $0 = false }
+        _ = try store.execute("show.lock", role: .programmer).get()
+        #expect(store.execute("canvas.set", args: format(1920, 1080, 60), role: .programmer) == .failure(.showLocked))
+        _ = try store.execute("show.unlock", role: .programmer).get()
+
+        _ = try store.execute("undo", role: .programmer).get()  // the name
+        _ = try store.execute("undo", role: .programmer).get()  // 1280×720
+        canvas = try #require(ProjectDocument.canvases(from: store.project).first)
+        #expect((canvas.width, canvas.height, canvas.fps, canvas.name) == (3840, 2160, 50, "Canvas 1"))
+    }
+
+    /// B31: undo in show mode changes the project but not the render until show mode ends; a failed switch puts the
+    /// rendered canvas back into the project and reports the error.
+    @MainActor @Test func canvasSwitchDefersInShowModeAndRevertsOnFailure() async throws {
+        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
+        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/x", policy: .dmx), logger: Self.logger)
+        let showMode = Mutex(false), fail = Mutex(false), applied = Mutex<[Int]>([])
+        ProjectDocument.registerCommands(on: store, auth: auth, showModeOn: { showMode.withLock { $0 } })
+        let switcher = CanvasSwitch(
+            rendered: ProjectDocument.defaultCanvas, isDeferred: { showMode.withLock { $0 } },
+            apply: { format in
+                if fail.withLock({ $0 }) { throw RenderError.pipeline("no memory") }
+                applied.withLock { $0.append(format.width) }
+            },
+            revert: { rendered, _ in
+                var project = store.project
+                try? ProjectDocument.setCanvasFormat(rendered, in: &project)
+                store.correct(project["canvases"]!, at: "/canvases")
+            })
+        store.onProjectChanged = { document in
+            if let c = ProjectDocument.canvases(from: document).first { switcher.request((c.width, c.height, c.fps)) }
+        }
+        func settle() async throws { for _ in 0..<50 { try await Task.sleep(for: .milliseconds(5)) } }
+
+        _ = try store.execute("canvas.set", args: ["id": 1, "width": 3840, "height": 2160, "fps": 50], role: .programmer).get()
+        try await settle()
+        #expect(applied.withLock { $0 } == [3840])
+        showMode.withLock { $0 = true }
+        _ = try store.execute("undo", role: .programmer).get()
+        try await settle()
+        #expect(ProjectDocument.canvases(from: store.project).first?.width == 1920)
+        #expect(applied.withLock { $0 } == [3840], "not applied in show mode")
+        #expect(switcher.live["pending"]?.bool == true && switcher.live["width"]?.int == 3840)
+        showMode.withLock { $0 = false }
+        switcher.run()  // the engine calls this when show mode ends
+        try await settle()
+        #expect(applied.withLock { $0 } == [3840, 1920])
+        #expect(switcher.live["pending"]?.bool == false)
+
+        fail.withLock { $0 = true }
+        _ = try store.execute("canvas.set", args: ["id": 1, "width": 1280, "height": 720, "fps": 25], role: .programmer).get()
+        try await settle()
+        let canvas = try #require(ProjectDocument.canvases(from: store.project).first)
+        #expect((canvas.width, canvas.fps) == (1920, 60), "the rendered canvas is back in the project")
+        #expect(switcher.live["error"]?.string?.contains("no memory") == true && switcher.live["pending"]?.bool == false)
+    }
+
+    @Test func projectCanvasWinsOverSceneDefaultsAndASceneFileWinsOverTheProject() throws {
+        var project = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/x", policy: .dmx)
+        #expect(Engine.startCanvas(project: nil, scene: nil) == (1920, 1080, 60))
+        try ProjectDocument.setCanvasFormat((3840, 2160, 50), in: &project)
+        #expect(Engine.startCanvas(project: project, scene: nil) == (3840, 2160, 50))
+        var scene = SceneConfig()
+        scene.canvasWidth = 1280
+        scene.canvasHeight = 720
+        scene.fps = 30
+        #expect(Engine.startCanvas(project: project, scene: scene) == (1280, 720, 30))
+        try ProjectDocument.setCanvasFormat((7, 7, 13), in: &project)  // hand-edited
+        #expect(Engine.startCanvas(project: project, scene: nil) == (1920, 1080, 60))
+
+        // a project saved before canvases had a rate reads as 60
+        let old = try JSONDecoder().decode(CanvasConfig.self, from: Data(#"{"id":1,"name":"Canvas 1","width":1920,"height":1080}"#.utf8))
+        #expect(old.fps == 60)
+    }
+
     @Test func removingTheClockMasterOutputClearsIt() throws {
         let (store, _) = Self.makeStore()
         _ = try store.execute("output.add", role: .programmer).get()

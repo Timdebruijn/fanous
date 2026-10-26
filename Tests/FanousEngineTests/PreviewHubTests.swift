@@ -6,6 +6,7 @@ import FanousCore
 import Foundation
 import Logging
 import Metal
+import Synchronization
 import Testing
 
 @testable import FanousEngine
@@ -110,5 +111,28 @@ import Testing
         let beforeH264 = rig.hub.framesIn
         rig.tick(60)
         #expect(rig.hub.framesIn - beforeH264 == 30)
+    }
+
+    /// B31: after a canvas change every streamer is made again (new size) and keeps its subscribers.
+    @Test func rebuildRemakesStreamersAndMovesSubscribers() throws {
+        let context = try MetalContext()
+        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
+        let height = Mutex(90)
+        let hub = PreviewHub(canvas: try PreviewStreamer(context: context, width: 160, height: 90, fps: 30, canvasFPS: 60, parameters: parameters, logger: Self.logger)) {
+            try PreviewStreamer(context: context, width: 160, height: height.withLock { $0 }, fps: 30, canvasFPS: 60, parameters: parameters, logger: Self.logger)
+        }
+        hub.configure = { target, _ in target == "output:1" }
+        let rig = try Rig()
+        let (a, b) = (rig.connection(), rig.connection())
+        #expect(hub.attach(target: "canvas", connection: a, stream: 1, jpeg: false) { _ in })
+        #expect(hub.attach(target: "output:1", connection: b, stream: 2, jpeg: true) { _ in })
+        let oldCanvas = hub.canvas
+        height.withLock { $0 = 120 }
+        try hub.rebuild()
+        #expect(hub.canvas !== oldCanvas && hub.canvas.height == 120)
+        #expect(hub.canvas.subscriberList.map(\.stream) == [1])
+        #expect(hub.targets.sorted() == ["canvas", "output:1"])
+        hub.unsubscribe(connection: b, stream: 2)
+        #expect(hub.targets == ["canvas"], "the moved output subscriber is the one that counts")
     }
 }
