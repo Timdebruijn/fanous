@@ -103,6 +103,11 @@ mode gets its mode again.
   a yellow warning) name the closest mode that is available.
 - A refresh rate that is not a whole multiple of the canvas frame rate (50 Hz
   for a 60 fps canvas) is warned about the same way: motion judders.
+- macOS refuses display changes while the screen is locked. The output then
+  says "Not applied: screen locked: modes applied when unlocked", and Fanous
+  switches as soon as the screen is unlocked (or wakes) while show mode is
+  still on. Any other refusal shows the macOS error the same way, in the
+  output list and in the readiness check.
 - If several outputs share a display, the first output with a Mode decides.
   An output on the same display that wants another mode says "Conflicts with
   Output N on the same display" in yellow and in the readiness check.

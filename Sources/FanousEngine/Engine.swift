@@ -51,6 +51,7 @@ public final class Engine: @unchecked Sendable {
     /// Main actor only: desired display modes in show mode (DESIGN.md §9.6).
     private var modeSwitcher: DisplayModeSwitcher?
     private var lastModeConflicts: [Int: Int] = [:]
+    private var unlockObservers: [NSObjectProtocol] = []
     /// Output id → what the status line and readiness say about its display mode; written on the main actor.
     private let modeChecks = Mutex<[Int: DisplayModeMatching.Check]>([:])
     private var lastOutputs: [OutputConfig] = []
@@ -291,7 +292,10 @@ public final class Engine: @unchecked Sendable {
                     // after the rebind returned: a mode switch reconfigures the displays and rebinds again
                     DispatchQueue.main.async { MainActor.assumeIsolated { self?.syncDisplayModes() } }
                 }
-                modeSwitcher = DisplayModeSwitcher(logger: logger, ledgerURL: AppPaths.displayModesFile)
+                let switcher = DisplayModeSwitcher(logger: logger, ledgerURL: AppPaths.displayModesFile)
+                switcher.onResult = { [weak self] in self?.modeSwitched() }
+                modeSwitcher = switcher
+                observeUnlock()
                 let manager = DisplayManager(logger: logger)
                 manager.onChange = { [weak self] list in
                     self?.displays.withLock { $0 = list }
@@ -643,12 +647,12 @@ public final class Engine: @unchecked Sendable {
     }
 
     /// Show mode on: the bound outputs' desired modes (first output per display wins); off: the previous modes back.
-    /// Runs after every rebind too, so a replugged display gets its mode again. Then refreshes the mode notes.
+    /// Runs after every rebind, on unlock and wake too, so a replugged display gets its mode again. The switcher works
+    /// on its own queue and refreshes the notes when done (`modeSwitched`).
     @MainActor private func syncDisplayModes() {
         guard let coordinator, let modeSwitcher else { return }
-        var displays = coordinator.connectedDisplays
-        let outputs = coordinator.outputs, show = showMode.isOn
-        let resolved = DisplayModeMatching.resolve(outputs)
+        let displays = coordinator.connectedDisplays
+        let resolved = DisplayModeMatching.resolve(coordinator.outputs)
         let conflicts = resolved.conflicts.mapValues(\.id)
         if conflicts != lastModeConflicts {
             lastModeConflicts = conflicts
@@ -656,13 +660,19 @@ public final class Engine: @unchecked Sendable {
                 logger.warning("display mode conflict: the first output with a mode wins", metadata: ["output": "\(loser)", "winner": "\(winner.name)"])
             }
         }
-        if show {
-            let wanted = displays.compactMap { d in resolved.wanted[d.uuid].map { (display: d, mode: $0) } }
-            // CG reports the new modes at once; the rebind that follows the reconfiguration refreshes them again
-            if modeSwitcher.apply(wanted, connected: displays) { displays = DisplayManager.current() }
+        if showMode.isOn {
+            modeSwitcher.apply(displays.compactMap { d in resolved.wanted[d.uuid].map { (display: d, mode: $0) } }, connected: displays)
         } else {
             modeSwitcher.restore(connected: displays)
         }
+        refreshModeChecks(displays: displays)
+    }
+
+    /// The status-line notes and readiness issues of every bound output's display mode.
+    @MainActor private func refreshModeChecks(displays: [DisplayInfo]) {
+        guard let coordinator, let modeSwitcher else { return }
+        let outputs = coordinator.outputs, show = showMode.isOn, failures = modeSwitcher.failures
+        let resolved = DisplayModeMatching.resolve(outputs)
         let fps = render?.compositor.fps ?? 60
         var checks: [Int: DisplayModeMatching.Check] = [:]
         for output in outputs {
@@ -671,9 +681,33 @@ public final class Engine: @unchecked Sendable {
                 checks[output.id] = DisplayModeMatching.conflict(with: winner)
                 continue
             }
-            checks[output.id] = DisplayModeMatching.check(desired: output.mode, current: display.mode, available: display.modes, showMode: show, fps: fps)
+            checks[output.id] = DisplayModeMatching.check(
+                desired: output.mode, current: display.mode, available: display.modes, showMode: show, fps: fps, failure: failures[display.uuid])
         }
         modeChecks.withLock { $0 = checks }
+    }
+
+    /// Switcher queue: an apply or restore finished. Fresh modes from CG (the reconfiguration rebind comes later),
+    /// and in show mode the readiness item at once instead of at the next 30 s run.
+    private func modeSwitched() {
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.refreshModeChecks(displays: DisplayManager.current())
+                if self.showMode.isOn { self.runReadiness() }
+            }
+        }
+    }
+
+    /// Locked screen: CG refuses display configuration, so modes wait for the unlock (or wake) and are synced then.
+    @MainActor private func observeUnlock() {
+        let sync: @Sendable (Notification) -> Void = { [weak self] _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.syncDisplayModes() } }
+        }
+        unlockObservers = [
+            DistributedNotificationCenter.default().addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: nil, using: sync),
+            NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: nil, using: sync),
+        ]
     }
 
     private func startReadinessTimer() {
@@ -910,7 +944,13 @@ public final class Engine: @unchecked Sendable {
         if let coordinator, let displayManager {
             MainActor.assumeIsolated {
                 displayManager.stop()
-                modeSwitcher?.restore(connected: coordinator.connectedDisplays)  // leave() above only queued it
+                // leave() above only queued it; supersedes a pending apply and waits for the one in flight
+                modeSwitcher?.restore(connected: coordinator.connectedDisplays)
+                modeSwitcher?.flush()
+                for observer in unlockObservers {
+                    DistributedNotificationCenter.default().removeObserver(observer)
+                    NSWorkspace.shared.notificationCenter.removeObserver(observer)
+                }
                 coordinator.stop()
             }
         }

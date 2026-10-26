@@ -114,10 +114,11 @@ public enum DisplayModeMatching {
         return Check(note: line, issue: line)
     }
 
-    /// `available` is the display's mode list (empty = unknown, not checked).
+    /// `available` is the display's mode list (empty = unknown, not checked); `failure` why show mode could not
+    /// switch the display (CG error, locked screen).
     public static func check(
         desired: DisplayModeConfig?, current: DisplayModeConfig, available: [DisplayModeConfig], showMode: Bool,
-        fps: Double
+        fps: Double, failure: String? = nil
     ) -> Check {
         guard let desired else { return Check() }
         var note: String?
@@ -133,7 +134,9 @@ public enum DisplayModeMatching {
                     ? "@ \(rate(desired.hz))" : text(desired)
                 note =
                     "Mode differs: \(text(current)), wanted \(wanted)."
-                    + (showMode ? " Not applied: see the log." : " Applied in show mode.")
+                    + (showMode
+                        ? " Not applied: \(failure ?? "switching, or refused by the display")."
+                        : " Applied in show mode.")
                 if showMode { issue = note }
             }
         }

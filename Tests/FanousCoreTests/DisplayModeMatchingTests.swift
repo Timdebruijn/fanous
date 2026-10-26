@@ -75,7 +75,17 @@ struct DisplayModeMatchingTests {
         #expect(outside.issue == nil)
         let inside = DisplayModeMatching.check(
             desired: want50, current: current, available: available + [want50], showMode: true, fps: 50)
-        #expect(inside.issue == "Mode differs: 1920 × 1080 @ 59.94, wanted @ 50. Not applied: see the log.")
+        #expect(
+            inside.issue
+                == "Mode differs: 1920 × 1080 @ 59.94, wanted @ 50. Not applied: switching, or refused by the display.")
+        let locked = DisplayModeMatching.check(
+            desired: want50, current: current, available: available + [want50], showMode: true, fps: 50,
+            failure: "screen locked: modes applied when unlocked")
+        #expect(
+            locked.note
+                == "Mode differs: 1920 × 1080 @ 59.94, wanted @ 50. Not applied: screen locked: modes applied when unlocked."
+        )
+        #expect(locked.issue == locked.note)
 
         let uhd60 = DisplayModeConfig(width: 3840, height: 2160, hz: 60)
         let missing = DisplayModeMatching.check(
