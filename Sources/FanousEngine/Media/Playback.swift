@@ -347,7 +347,9 @@ public final class MediaLoader: @unchecked Sendable {
             logger.warning("media not found", metadata: ["layer": "\(layer + 1)", "media": "\(key)"])
             failures.wrappingAdd(1, ordering: .relaxed)
             status.kind = "missing"
-            status.error = "no file \(key.file) in folder \(key.folder)"
+            status.error = key.folder == 0
+                ? "no built-in content \(key.file) in folder 0 (100–107, 110–113)"
+                : "no file \(key.file) in folder \(key.folder)"
             return nil
         }
         do {
