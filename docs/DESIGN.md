@@ -557,16 +557,53 @@ can never disagree). `[OPEN-9]` exact bands and the speed/scale upper limits.
   wrap is handled.
 - Loss of signal: after 2.5 s without packets on a universe, its fixtures
   **hold last values** (Catalyst behaviour) and the universe turns red in the
-  status bar. Hold-vs-release is a project setting.
+  status bar. Hold-vs-release is a project setting (per universe, §6.5a).
 - The server answers `ArtPoll` with `ArtPollReply` (name, IP, port
   addresses; unicast back to the poller, one reply per Net/Sub-Net group of
   four ports) and sACN discovery (E1.31 universe discovery packets are
   received; the server advertises nothing in v1 as it only receives).
-- sACN multicast groups are joined on the default-route interface until the
-  per-protocol interface setting exists (Phase 5); unicast sACN on port 5568
-  is accepted on every interface.
+- sACN multicast groups are joined on the default-route interface, or per
+  universe on its interface (§6.5a); unicast sACN on port 5568 is accepted
+  on every interface.
 - `ArtSync` and E1.31 synchronization packets: when received, a universe
   update is applied at the sync packet, otherwise immediately.
+
+### 6.5a Per-universe settings as built (2026-10-26, B28)
+
+- The project's `/universes` list holds one entry per changed universe,
+  keyed by the patch's universe id: `protocol` (`artnet | sacn | both`),
+  `interface` (`any`, a BSD name or an IPv4 address of the Mac),
+  `holdOnLoss` (`hold | zero | internal`), `lossTimeout` (0.5–60 s),
+  `sacnPriorityMode` (`highest | htp`) and `pair`. A universe without an
+  entry runs the defaults (own protocol, any interface, hold, 2.5 s,
+  highest), which are the behaviour before B28; an entry set back to the
+  defaults is removed. `universe.set {id, path, value}` (programmer, refused
+  under show lock, undoable) validates the whole entry; an interface that is
+  not present is accepted. Hand-edited invalid entries run the defaults.
+- Ids stay transport-specific, so "one source protocol per universe" is
+  expressed with `pair`: the other transport's wire universe (default sACN
+  n ↔ Art-Net port-address n − 1). `UniverseTable` (Core) routes each wire
+  packet to its own universe (unless that one listens only to the other
+  transport) and to every universe whose pair it is; state (sequence gates,
+  sACN sources) is per universe and reset when its routing changes. With
+  `both`, Art-Net competes as an sACN source at priority 100 while it is not
+  silent; `htp` merges the sources at the top priority per slot.
+- `interface` filters by sender: a packet is accepted when its source address
+  is in a subnet of that interface (getifaddrs, re-read on the 0.5 s tick
+  while a universe names one, so adapters may come and go). sACN joins one
+  `NWConnectionGroup` per interface (`requiredInterface` from an
+  `NWPathMonitor`; a group on any interface always exists for unicast);
+  changing one interface's universes recreates only that group, and the
+  Art-Net listener never rebinds. Everything is reconfigured on the DMX
+  queue. A missing interface is a readiness warning (`interfaces`).
+- Loss is per universe's `lossTimeout` (also the sACN source timeout).
+  On the transition `hold` keeps the values (as before), `zero` feeds a frame
+  of zeros, `internal` makes the fixtures resolve as policy `internal`
+  until packets return (`FixtureResolver.internalWithoutDMX`; also while a
+  universe has never been received).
+- Not built: per-packet receive interface (a routed console on another subnet
+  is rejected by the subnet filter), Art-Net output/ArtAddress, per-address
+  sACN priority (`[OPEN-10]`).
 
 ---
 
