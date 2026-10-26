@@ -8,3 +8,6 @@ dist/
 
 # internal kickoff brief: never in the repository (kept outside by the owner)
 docs/BRIEF.md
+
+# local editor and assistant settings
+.claude/
