@@ -217,6 +217,49 @@ struct CompositorIdleTests {
         #expect(canvas.width == 320 && canvas.rgba.allSatisfy { $0 == 0 || $0 == 255 }, "new canvases are cleared before the first tick")
         rig.tick(1, from: 2)
         #expect((generator.texture.width, generator.texture.height) == (320, 240))
+        // a layer on another canvas: the generator takes that canvas's size
+        try rig.compositor.reconfigure(.init(fps: 25, canvases: [.init(id: 1, width: 320, height: 240), .init(id: 2, width: 640, height: 360)]))
+        rig.compositor.layerCanvas = [2]
+        rig.tick(1, from: 3)
+        #expect((generator.texture.width, generator.texture.height) == (640, 360))
+    }
+
+    /// Multiple canvases: a layer on canvas 2 is drawn there and not on canvas 1; an output slice takes its picture from
+    /// the canvas it names, and a slice on a canvas that does not render stays black instead of failing.
+    @Test func aLayerRendersIntoItsCanvasAndSlicesSampleTheirCanvas() throws {
+        let rig = try Rig(idleWork: false, offscreen: true)
+        try rig.compositor.reconfigure(.init(fps: 60, canvases: [.init(id: 1, width: Self.width, height: Self.height), .init(id: 2, width: 320, height: 240)]))
+        #expect(rig.compositor.canvasIDs == [1, 2])
+        func centre(_ image: (width: Int, height: Int, rgba: [UInt8])) -> UInt8 { image.rgba[(image.height / 2 * image.width + image.width / 2) * 4] }
+
+        rig.tick(2)
+        #expect(centre(rig.compositor.readback(canvas: 1)) > 150, "canvas 1 by default")
+        #expect(centre(rig.compositor.readback(canvas: 2)) == 0)
+
+        rig.compositor.layerCanvas = [2]
+        rig.tick(2, from: 2)
+        #expect(centre(rig.compositor.readback(canvas: 1)) == 0, "absent from canvas 1")
+        let second = rig.compositor.readback(canvas: 2)
+        #expect((second.width, second.height) == (320, 240) && centre(second) > 150, "present on canvas 2")
+        #expect(rig.compositor.readback(canvas: 3).rgba.isEmpty)
+
+        let compiler = try OutputCompiler(device: rig.context.device)
+        func show(canvas: Int) throws -> Int {
+            var config = OutputConfig(id: 1)
+            config.slices[0].canvas = canvas
+            rig.compositor.outputSet = OutputSet(plans: [try compiler.compile(config, index: 1, drawable: (Self.width, Self.height))])
+            rig.tick(1, from: 10)
+            return rig.centre()
+        }
+        #expect(try show(canvas: 2) > 150, "the slice takes canvas 2")
+        #expect(try show(canvas: 1) <= 1, "canvas 1 is black now")
+        #expect(try show(canvas: 3) <= 1, "a removed canvas fails safe: black")
+
+        // removing canvas 2 again: the layer is not drawn anywhere, canvas 1 stays black, the slice on 2 is black
+        try rig.compositor.reconfigure(.init(fps: 60, canvases: [.init(id: 1, width: Self.width, height: Self.height)]))
+        #expect(try show(canvas: 2) <= 1)
+        rig.compositor.layerCanvas = [1]
+        #expect(try show(canvas: 1) > 150, "back on canvas 1")
     }
 
     @Test func invisibleLayersStopAskingForFramesAfterTwoSecondsAndResumeWhenVisible() {

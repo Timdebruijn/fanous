@@ -113,6 +113,32 @@ import Testing
         #expect(rig.hub.framesIn - beforeH264 == 30)
     }
 
+    /// Multiple canvases: "canvas:1" is the canvas streamer, "canvas:<id>" gets its own streamer at that canvas's size
+    /// and taps that canvas; an unknown canvas is refused; a rebuild remakes it too.
+    @Test func canvasTargetsPreviewTheirCanvas() throws {
+        let rig = try Rig()
+        try rig.compositor.reconfigure(.init(fps: 60, canvases: [.init(id: 1, width: 160, height: 90), .init(id: 2, width: 320, height: 320)]))
+        let context = rig.context, parameters = rig.parameters
+        let made = Mutex(0)
+        rig.hub.makeCanvas = { id in
+            guard id == 2 else { return nil }
+            made.withLock { $0 += 1 }
+            return try PreviewStreamer(context: context, width: 160, height: 160, fps: 30, canvasFPS: 60, parameters: parameters, logger: Self.logger)
+        }
+        rig.hub.canvasTexture = { [compositor = rig.compositor] id in compositor.tickCanvas(id) }
+        let (a, b) = (rig.connection(), rig.connection())
+        #expect(rig.attach("canvas:1", a))
+        #expect(rig.hub.targets == ["canvas"], "canvas:1 is the canvas streamer")
+        #expect(rig.attach("canvas:2", b, stream: 2))
+        #expect(!rig.attach("canvas:3", rig.connection()))
+        #expect(!rig.attach("canvas:x", rig.connection()))
+        rig.tick(30)
+        let second = rig.hub.framesIn - rig.hub.canvas.framesIn.load(ordering: .relaxed)
+        #expect(second == 15, "the canvas 2 streamer taps its canvas (got \(second))")
+        try rig.hub.rebuild()
+        #expect(made.withLock { $0 } == 2 && Set(rig.hub.targets) == ["canvas", "canvas:2"])
+    }
+
     /// B31: after a canvas change every streamer is made again (new size) and keeps its subscribers.
     @Test func rebuildRemakesStreamersAndMovesSubscribers() throws {
         let context = try MetalContext()
