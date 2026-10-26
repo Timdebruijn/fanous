@@ -16,6 +16,8 @@ export interface PatchOp {
 }
 
 export type CommandName =
+  | 'canvas.add'
+  | 'canvas.remove'
   | 'canvas.set'
   | 'cue.add'
   | 'cue.back'
@@ -26,6 +28,7 @@ export type CommandName =
   | 'fixture.keep'
   | 'fixture.release'
   | 'fixture.set'
+  | 'layer.set'
   | 'layers.setCount'
   | 'output.add'
   | 'output.remove'
@@ -44,7 +47,11 @@ export type CommandName =
   | 'undo';
 
 export interface CommandArgs {
-  /** Set the canvas name or clock-master output, or its size and rate (even 320–8192 px; 23.976, 24, 25, 29.97, 30, 50, 59.94 or 60 fps; re-initialises the canvas so outputs blank briefly; refused in show mode). Role: programmer, refused under show lock, undoable. */
+  /** Add a canvas (up to 4; even 320–8192 px) at the shared frame rate of canvas 1; outputs blank briefly; refused in show mode. Returns the new id. Role: programmer, refused under show lock, undoable. */
+  'canvas.add': { width: number; height: number; fps?: number; name?: string };
+  /** Remove a canvas (not canvas 1): its layers and slices move to canvas 1; outputs blank briefly; refused in show mode. Role: programmer, refused under show lock, undoable. */
+  'canvas.remove': { id: number };
+  /** Set the canvas name or clock-master output, or its size and rate (even 320–8192 px; 23.976, 24, 25, 29.97, 30, 50, 59.94 or 60 fps, set on canvas 1 for every canvas; re-initialises the canvas so outputs blank briefly; refused in show mode). Role: programmer, refused under show lock, undoable. */
   'canvas.set': { id: number; path: '/name' | '/clockMaster'; value: JSONValue } | { id: number; width: number; height: number; fps: number };
   /** Add a cue: { number, name, fade?, values?: [{fixture, parameter, raw, fade?}], trigger?: "hh:mm:ss:ff@rate", follow? }. Role: programmer, refused under show lock, undoable. */
   'cue.add': { number: number; name: string; fade?: number; values?: { fixture: string; parameter: string; raw: number; fade?: number }[]; trigger?: string | null; follow?: number | null };
@@ -64,6 +71,8 @@ export interface CommandArgs {
   'fixture.release': { fixture?: string };
   /** Set one fixture parameter from the UI (source ui; shown when the source policy is internal, ltp or htp). Role: programmer, refused under show lock. */
   'fixture.set': { fixture: string; parameter: string; raw: number };
+  /** Set a layer's project setting: the canvas it renders into (a project setting, not a DMX channel). Role: programmer, refused under show lock, undoable. */
+  'layer.set': { layer: number; canvas: number };
   /** Set the number of layers (1–64): new layers are patched at their standard address when that range is free, dropped layers are unpatched. Role: programmer, refused under show lock, undoable. */
   'layers.setCount': { count: number };
   /** Add an output (one full-canvas slice, no blend, identity warp), optionally bound to a display. Role: programmer, refused under show lock, undoable. */

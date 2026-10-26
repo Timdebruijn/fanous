@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
-import { canvasSizeError, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, handles, insertPoint, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
+import { canvasSizeError, canvasTarget, layerCanvas, layerRuns, layersOn, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, handles, insertPoint, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
 
 const output: OutputConfig = {
   id: 1,
@@ -79,6 +79,26 @@ describe('slice source in pixels', () => {
     expect(sourceFromPixels('h', 540, canvas)).toBe(0.5);
     expect(sourceFromPixels('w', 99999, canvas)).toBe(1);
     expect(sourceFromPixels('w', Number.NaN, canvas)).toBeNull();
+  });
+});
+
+describe('multiple canvases', () => {
+  it('names preview targets, keeping "canvas" for canvas 1', () => {
+    expect(canvasTarget(1)).toBe('canvas');
+    expect(canvasTarget(3)).toBe('canvas:3');
+  });
+  it('finds the canvas of a layer and the layers of a canvas', () => {
+    const assigned = { '5': 2, '6': 2, '7': 2, '8': 2 };
+    expect(layerCanvas(assigned, 5)).toBe(2);
+    expect(layerCanvas(assigned, 1)).toBe(1);
+    expect(layerCanvas(undefined, 3)).toBe(1);
+    expect(layersOn(assigned, 8, 1)).toEqual([1, 2, 3, 4]);
+    expect(layersOn(assigned, 6, 2)).toEqual([5, 6]);
+    expect(layersOn(assigned, 8, 3)).toEqual([]);
+  });
+  it('writes layer numbers as runs', () => {
+    expect(layerRuns([1, 2, 3, 4, 7, 9, 10])).toBe('1–4, 7, 9–10');
+    expect(layerRuns([])).toBe('');
   });
 });
 

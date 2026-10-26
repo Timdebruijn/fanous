@@ -21,6 +21,8 @@ export interface ProjectDoc {
   policy: 'dmx' | 'internal' | 'ltp' | 'htp';
   library: { root: string };
   canvases: CanvasConfig[];
+  /** layer number → canvas id; a layer not listed is on canvas 1 (`layer.set`) */
+  layerCanvas?: Record<string, number>;
   outputs: OutputConfig[];
   /** cue list (DESIGN §15.2): fixture and parameter by name, raw DMX values */
   cues: CueDoc[];
@@ -99,7 +101,7 @@ export interface IngestJobDoc {
 
 export interface LiveDoc {
   /** What renders (B31); pending = the project asks for another canvas (deferred in show mode); error = last failed switch. Absent before the first live update. */
-  canvas?: { width: number; height: number; fps: number; pending: boolean; error: string | null } | null;
+  canvas?: { width: number; height: number; fps: number; canvases?: { id: number; width: number; height: number }[]; pending: boolean; error: string | null } | null;
   engine: { version: string; chip: string; uptimeSeconds: number; rendering: boolean };
   metrics: {
     frames: number;
@@ -167,6 +169,7 @@ export const emptyProject: ProjectDoc = {
   policy: 'dmx',
   library: { root: '' },
   canvases: [],
+  layerCanvas: {},
   outputs: [],
   cues: [],
   timecode: { source: 'off', device: null, channel: 0, offset: 0, freewheel: 2, layerOffsets: {} },

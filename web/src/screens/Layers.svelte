@@ -3,7 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script module lang="ts">
   // Module scope: the router unmounts this screen on navigation, the selected layer should survive that.
-  const ui = $state({ selected: 1, fixture: null as string | null });
+  const ui = $state({ selected: 1, fixture: null as string | null, preview: 1 });
 </script>
 
 <script lang="ts">
@@ -13,6 +13,7 @@
   import LayerStrips from '../components/LayerStrips.svelte';
   import Preview from '../components/Preview.svelte';
   import { thumbnailFor, thumbnailIndex, type ChannelMap, type LibrarySnapshot } from '../lib/layers';
+  import { canvasTarget } from '../lib/outputs';
   import { go } from '../lib/router.svelte';
   import { app } from '../lib/state.svelte';
 
@@ -49,11 +50,14 @@
   // Master or an output picked in the strips; null = the selected layer
   const fixture = $derived(ui.fixture !== null && app.live.dmx.fixtures[ui.fixture] ? ui.fixture : null);
   const fixtureMode = $derived(fixture === 'Master' ? 'master' : 'output');
+  const canvases = $derived(app.project.canvases);
+  // the canvas the preview shows (canvas 1 when the chosen one is gone)
+  const previewCanvas = $derived(canvases.find((c) => c.id === ui.preview) ?? canvases[0]);
 </script>
 
 <div class="toolbar">
   <h1>Layers</h1>
-  <span class="caption">Canvas 1 · {layerCount} layers · <span title="Layer limit of this Mac's performance tier (chip class, see System). Add layer on Patch stops at this number so the show does not drop frames.">tier allows {app.caps.maxLayers ?? '—'} layers</span></span>
+  <span class="caption">{canvases.length > 1 ? `${canvases.length} canvases` : (canvases[0]?.name ?? 'Canvas 1')} · {layerCount} layers · <span title="Layer limit of this Mac's performance tier (chip class, see System). Add layer on Patch stops at this number so the show does not drop frames.">tier allows {app.caps.maxLayers ?? '—'} layers</span></span>
 </div>
 
 <LayerStrips selected={fixture} onselect={(f) => (ui.fixture = f)} />
@@ -116,7 +120,12 @@
     </div>
     <div class="side">
       {#if app.live.engine.rendering}
-        <Preview />
+        {#if canvases.length > 1}
+          <div class="segmented" role="group" aria-label="Canvas in the preview">
+            {#each canvases as c (c.id)}<button type="button" class="btn" aria-pressed={previewCanvas?.id === c.id} onclick={() => (ui.preview = c.id)}>{c.name}</button>{/each}
+          </div>
+        {/if}
+        <Preview target={canvasTarget(previewCanvas?.id ?? 1)} aspect={previewCanvas ? `${previewCanvas.width} / ${previewCanvas.height}` : '16 / 9'} />
       {/if}
       {#if fixture !== null}
         {@render fixturePanel(fixture)}

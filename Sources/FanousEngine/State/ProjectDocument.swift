@@ -371,7 +371,7 @@ public enum ProjectDocument {
         store.register(
             CommandSpec(
                 name: "canvas.set", role: .programmer,
-                summary: "Set the canvas name or clock-master output, or its size and rate (even 320–8192 px; 23.976, 24, 25, 29.97, 30, 50, 59.94 or 60 fps; re-initialises the canvas so outputs blank briefly; refused in show mode).",
+                summary: "Set the canvas name or clock-master output, or its size and rate (even 320–8192 px; 23.976, 24, 25, 29.97, 30, 50, 59.94 or 60 fps, set on canvas 1 for every canvas; re-initialises the canvas so outputs blank briefly; refused in show mode).",
                 argsType: "{ id: number; path: '/name' | '/clockMaster'; value: JSONValue } | { id: number; width: number; height: number; fps: number }"
             ) { project, args in
                 guard let id = args["id"]?.int else { throw CommandError.invalidArgs("args: { id, path, value } or { id, width, height, fps }") }

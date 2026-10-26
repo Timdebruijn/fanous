@@ -2,7 +2,7 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script module lang="ts">
-  const ui = $state({ selected: 0, tab: 'outputs' as 'canvases' | 'outputs' | 'warp', mapper: 'cornerPin' as MapperMode, slice: 0, handle: null as string | null, maskAdd: false, draft: null as MapPoint[] | null });
+  const ui = $state({ selected: 0, canvas: 1, tab: 'outputs' as 'canvases' | 'outputs' | 'warp', mapper: 'cornerPin' as MapperMode, slice: 0, handle: null as string | null, maskAdd: false, draft: null as MapPoint[] | null });
 </script>
 
 <script lang="ts">
@@ -10,7 +10,7 @@
   import OutputMapper from '../components/OutputMapper.svelte';
   import Preview from '../components/Preview.svelte';
   import {
-    CANVAS_PRESETS, CANVAS_RATES, canvasSizeError, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, meshIdentity, modeText, nextSliceId, outputSize, spreadSources, statusText,
+    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, meshIdentity, modeText, nextSliceId, outputSize, spreadSources, statusText,
     type MapPoint, type MapperMode, type OutputConfig,
   } from '../lib/outputs';
   import { app, can, cmd, toastUndo } from '../lib/state.svelte';
@@ -25,17 +25,21 @@
   const outputs = $derived(app.project.outputs);
   const displays = $derived(app.live.displays);
   const statuses = $derived(new Map(app.live.outputs.map((s) => [s.id, s])));
-  const canvas = $derived(app.project.canvases[0]);
+  const canvases = $derived(app.project.canvases);
+  /** canvas 1: its rate is every canvas's rate, its clock master drives the compositor */
+  const first = $derived(canvases[0]);
+  /** the canvas shown on the Canvases tab */
+  const canvas = $derived(canvases.find((c) => c.id === ui.canvas) ?? first);
   const output = $derived(outputs.find((o) => o.id === ui.selected) ?? outputs[0]);
   const status = $derived(output ? statuses.get(output.id) : undefined);
   const size = $derived(output ? outputSize(output, displays) : { w: 1920, h: 1080 });
   const lost = $derived(app.live.outputs.filter((s) => s.state === 'lost'));
   const display = $derived(displays.find((d) => d.uuid === output?.display?.uuid));
-  const previewTarget = $derived(output && ui.tab !== 'canvases' ? `output:${output.id}` : 'canvas');
+  const previewTarget = $derived(output && ui.tab !== 'canvases' ? `output:${output.id}` : canvasTarget(canvas?.id ?? 1));
   const previewAspect = $derived(output && ui.tab !== 'canvases' ? `${size.w} / ${size.h}` : canvas ? `${canvas.width} / ${canvas.height}` : '16 / 9');
   /** canvas size and rate being edited; null = what the project has */
-  let formatDraft = $state<{ width: number; height: number; fps: number } | null>(null);
-  const format = $derived(formatDraft ?? { width: canvas?.width ?? 1920, height: canvas?.height ?? 1080, fps: canvas?.fps ?? 60 });
+  let formatDraft = $state<{ id: number; width: number; height: number; fps: number } | null>(null);
+  const format = $derived(formatDraft && formatDraft.id === canvas?.id ? formatDraft : { id: canvas?.id ?? 1, width: canvas?.width ?? 1920, height: canvas?.height ?? 1080, fps: first?.fps ?? 60 });
   const formatChanged = $derived(!!canvas && (format.width !== canvas.width || format.height !== canvas.height || format.fps !== (canvas.fps ?? 60)));
   const formatError = $derived(formatChanged ? canvasSizeError(format.width, format.height) : null);
   function editFormat(change: Partial<{ width: number; height: number; fps: number }>) {
@@ -44,9 +48,26 @@
   async function applyFormat() {
     if (!canvas || formatError) return;
     const { width, height, fps } = format;
-    if (!confirm(`Change the canvas to ${width} × ${height} at ${fps} fps? The canvas is re-created: every output blanks briefly. Slices and outputs keep their settings.`)) return;
+    const all = canvas.id === first?.id && canvases.length > 1 && fps !== (first?.fps ?? 60) ? ' The rate applies to every canvas.' : '';
+    if (!confirm(`Change ${canvas.name} to ${width} × ${height} at ${fps} fps? The canvases are re-created: every output blanks briefly. Slices and outputs keep their settings.${all}`)) return;
     if ((await cmd('canvas.set', { id: canvas.id, width, height, fps })) !== undefined) formatDraft = null;
   }
+  async function addCanvas() {
+    const size = first ? { width: first.width, height: first.height } : { width: 1920, height: 1080 };
+    if (!confirm(`Add a canvas of ${size.width} × ${size.height}? The canvases are re-created: every output blanks briefly.`)) return;
+    const id = await cmd('canvas.add', size);
+    if (typeof id === 'number') ui.canvas = id;
+  }
+  async function removeCanvas() {
+    if (!canvas || canvas.id === 1) return;
+    const name = canvas.name;
+    if (!confirm(`Remove ${name}? Its layers and the slices that show it move to ${first?.name ?? 'Canvas 1'}; every output blanks briefly.`)) return;
+    if ((await cmd('canvas.remove', { id: canvas.id })) !== undefined) {
+      ui.canvas = 1;
+      toastUndo(`${name} removed.`);
+    }
+  }
+  const canvasLayers = $derived(canvas ? layerRuns(layersOn(app.project.layerCanvas, app.project.layerCount, canvas.id)) : '');
   const sliceIndex = $derived(Math.min(ui.slice, Math.max(0, (output?.slices.length ?? 1) - 1)));
 
   function set(path: string, value: JSONValue) {
@@ -82,7 +103,7 @@
   function addSlice() {
     if (!output) return;
     // output.set only replaces existing pointers, so append by setting the whole list
-    const slice = { id: nextSliceId(output), canvas: 1, source: { x: 0, y: 0, w: 1, h: 1 }, dest: UNIT_QUAD, mask: null, opacity: 1 };
+    const slice = { id: nextSliceId(output), canvas: output.slices[sliceIndex]?.canvas ?? 1, source: { x: 0, y: 0, w: 1, h: 1 }, dest: UNIT_QUAD, mask: null, opacity: 1 };
     set('/slices', [...output.slices, slice] as unknown as JSONValue);
     ui.slice = output.slices.length;
   }
@@ -127,11 +148,16 @@
     if (!output || !ui.handle || !selectedHandle) return;
     point(ui.handle, nudgeStored(output, ui.mapper, selectedHandle, dx, dy, size));
   }
+  /** the canvas the selected slice takes its picture from */
+  const sliceCanvas = $derived(canvases.find((c) => c.id === output?.slices[sliceIndex]?.canvas));
   async function exportTemplate() {
-    if (!output || !canvas) return;
-    const size = { width: canvas.width, height: canvas.height };
+    if (!output || !sliceCanvas) return;
+    const size = { width: sliceCanvas.width, height: sliceCanvas.height };
     const name = output.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    await downloadTemplatePNG(templateSVG(output, size), size.width, size.height, `fanous-template-${name}-${size.width}x${size.height}.png`);
+    // the slices on the selected slice's canvas (a template is drawn on one canvas)
+    const onCanvas = { ...output, slices: output.slices.filter((s) => s.canvas === sliceCanvas.id) };
+    const suffix = canvases.length > 1 ? `-canvas${sliceCanvas.id}` : '';
+    await downloadTemplatePNG(templateSVG(onCanvas, size), size.width, size.height, `fanous-template-${name}${suffix}-${size.width}x${size.height}.png`);
   }
   /** a tap or double-click on the picture in Mask mode: a corner of a mask being drawn, or a new point on the nearest edge */
   function addMaskAt(p: MapPoint) {
@@ -244,8 +270,15 @@
 
     {#if ui.tab === 'canvases'}
       <section class="panel form" aria-label="Canvas">
+        <div class="head2">
+          <div class="segmented" role="group" aria-label="Canvas">
+            {#each canvases as c (c.id)}<button type="button" class="btn" aria-pressed={canvas?.id === c.id} onclick={() => (ui.canvas = c.id)}>{c.name}</button>{/each}
+          </div>
+          <button type="button" class="btn" disabled={locked || canvases.length >= MAX_CANVASES || app.live.show.mode} title={locked ? LOCKED : canvases.length >= MAX_CANVASES ? `At most ${MAX_CANVASES} canvases` : app.live.show.mode ? 'Leave show mode to add a canvas' : 'Another canvas for other layers, e.g. an LED wall next to the projectors'} onclick={addCanvas}>Add canvas</button>
+          <span class="spacer"></span>
+          {#if canvas && canvas.id !== 1}<button type="button" class="btn btn-danger" disabled={locked || app.live.show.mode} title={locked ? LOCKED : app.live.show.mode ? 'Leave show mode to remove a canvas' : undefined} onclick={removeCanvas}>Remove canvas</button>{/if}
+        </div>
         {#if canvas}
-          <h2>{canvas.name}</h2>
           <div class="fields">
             <label class="field"><span>Name</span><input class="input" type="text" value={canvas.name} disabled={locked} onchange={(e) => void cmd('canvas.set', { id: canvas.id, path: '/name', value: e.currentTarget.value })} /></label>
             <div class="field" role="group" aria-label="Canvas size"><span>Size w × h (px)</span>
@@ -259,7 +292,7 @@
               </span>
             </div>
             <label class="field"><span>Frame rate</span>
-              <select class="select" disabled={locked} value={String(format.fps)} onchange={(e) => editFormat({ fps: Number(e.currentTarget.value) })}>
+              <select class="select" disabled={locked || canvas.id !== first?.id} title={canvas.id !== first?.id ? `All canvases run at the rate of ${first?.name ?? 'Canvas 1'}; change it there` : undefined} value={String(format.fps)} onchange={(e) => editFormat({ fps: Number(e.currentTarget.value) })}>
                 {#each CANVAS_RATES as r (r)}<option value={String(r)}>{r} fps</option>{/each}
               </select>
             </label>
@@ -269,17 +302,19 @@
                 {#if formatChanged}<button type="button" class="btn btn-ghost" onclick={() => (formatDraft = null)}>Revert</button>{/if}
               </span>
             </div>
+            {#if canvas.id === first?.id}
             <label class="field"><span>Clock master</span>
               <select class="select" disabled={locked} value={canvas.clockMaster ?? ''} onchange={(e) => void cmd('canvas.set', { id: canvas.id, path: '/clockMaster', value: e.currentTarget.value ? Number(e.currentTarget.value) : null })}>
                 <option value="">First bound output</option>
                 {#each outputs as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
               </select>
             </label>
+            {/if}
           </div>
           {#if formatError}<p class="caption tone-red">{formatError}</p>{/if}
           {#if app.live.canvas?.error}<p class="caption tone-red">Canvas change failed, the previous canvas is still running: {app.live.canvas.error}</p>{/if}
           {#if app.live.canvas?.pending}<p class="caption">Rendering {app.live.canvas.width} × {app.live.canvas.height} at {app.live.canvas.fps} fps. {app.live.show.mode ? 'The project canvas applies when show mode ends.' : 'Applying the project canvas…'}</p>{/if}
-          <p class="caption">Layers are assigned to this canvas by the patch. Applying a new size or frame rate re-creates the canvas: outputs blank briefly. Slices keep their place (they are stored as fractions of the canvas).</p>
+          <p class="caption">Layers on this canvas: {canvasLayers || 'none'}. Pick a layer's canvas under its name on the Layers screen; a slice picks its canvas on Warp &amp; Slices. Applying a new size or frame rate re-creates the canvases: outputs blank briefly. Slices keep their place (they are stored as fractions of the canvas).</p>
         {/if}
       </section>
     {:else if !output}
@@ -354,7 +389,7 @@
             <button type="button" class="btn" aria-pressed={ui.mapper === 'slices'} onclick={() => (ui.mapper = 'slices')}>Slices</button>
             <button type="button" class="btn" aria-pressed={ui.mapper === 'mask'} onclick={() => (ui.mapper = 'mask')}>Mask</button>
           </div>
-          <button type="button" class="btn" disabled={!canvas} title="A PNG at canvas size showing which part of the canvas each slice uses and what its mask leaves visible: a guide for making content" onclick={exportTemplate}>Content template (PNG)</button>
+          <button type="button" class="btn" disabled={!sliceCanvas} title="A PNG at canvas size showing which part of the canvas each slice uses and what its mask leaves visible: a guide for making content" onclick={exportTemplate}>Content template (PNG)</button>
           <span class="spacer"></span>
           {#if selectedHandle && selectedScreen}
             <span class="caption">Selected point (px)</span>
@@ -393,10 +428,16 @@
             </label>
             {#if output.slices[sliceIndex]}
               {@const s = output.slices[sliceIndex]!}
+              <label class="field"><span>Canvas</span>
+                <select class="select" disabled={locked} title={locked ? LOCKED : 'The canvas this slice takes its picture from'} value={s.canvas} onchange={(e) => set(`/slices/${sliceIndex}/canvas`, Number(e.currentTarget.value))}>
+                  {#if !sliceCanvas}<option value={s.canvas}>Canvas {s.canvas} · missing (black)</option>{/if}
+                  {#each canvases as c (c.id)}<option value={c.id}>{c.name} · {c.width} × {c.height}</option>{/each}
+                </select>
+              </label>
               <div class="field" role="group" aria-label="Source rectangle on the canvas, in pixels"><span>Source x · y · w · h (canvas px)</span>
                 <span class="row4">
                   {#each ['x', 'y', 'w', 'h'] as k (k)}
-                    <input class="input mono" type="number" step="1" min="0" aria-label="Source {k} in pixels" title="Stored as {Math.round(s.source[k as 'x'] * 10000) / 10000} (0–1 of the canvas)" value={sourcePixels(s.source, canvas)[k as 'x']} disabled={locked} onchange={(e) => { const v = sourceFromPixels(k as 'x', Number(e.currentTarget.value), canvas); if (v !== null) set(`/slices/${sliceIndex}/source/${k}`, v); }} />
+                    <input class="input mono" type="number" step="1" min="0" aria-label="Source {k} in pixels" title="Stored as {Math.round(s.source[k as 'x'] * 10000) / 10000} (0–1 of the canvas)" value={sourcePixels(s.source, sliceCanvas)[k as 'x']} disabled={locked} onchange={(e) => { const v = sourceFromPixels(k as 'x', Number(e.currentTarget.value), sliceCanvas); if (v !== null) set(`/slices/${sliceIndex}/source/${k}`, v); }} />
                   {/each}
                 </span>
               </div>
