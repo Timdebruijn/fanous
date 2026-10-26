@@ -94,14 +94,17 @@ public final class HeadlessDriver: @unchecked Sendable {
 /// the surface. Used because CAMetalDisplayLink stops delivering updates after
 /// its first drawables are presented on macOS 27.0.1 (measured 2026-10-23 in
 /// every configuration tried, bundled app included; see ADR-0006 amendment).
-/// `displaySyncEnabled` keeps presentation on vsync; `maximumDrawableCount = 2`
-/// bounds latency to one frame.
+/// `displaySyncEnabled` keeps presentation on vsync. Three drawables, not two: this clock and the display's drift
+/// against each other (a 120 Hz ProMotion panel most of all), and with two drawables both were periodically still in
+/// flight, so `nextDrawable()` blocked and 15–25 frames were missed in a 2–3 s burst every 15–20 s (measured
+/// 2026-10-26; 0 missed in 6 min with three). The loop still produces at the canvas rate, so the queue stays short and
+/// the third drawable only absorbs the phase drift.
 public final class DrawableLoopDriver: @unchecked Sendable {
     private let running = Atomic<Bool>(true)
     private var thread: Thread?
 
     public init(layer: CAMetalLayer, fps: Double, compositor: Compositor) {
-        layer.maximumDrawableCount = 2
+        layer.maximumDrawableCount = 3
         layer.displaySyncEnabled = true
         let thread = Thread { [self] in
             var timebase = mach_timebase_info()

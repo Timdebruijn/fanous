@@ -67,7 +67,7 @@ final class SecondaryDriver: @unchecked Sendable {
     init(layer: CAMetalLayer, hz: Double, compositor: Compositor, set: OutputSet, uniforms: MTLBuffer) {
         self.set = set
         self.uniforms = uniforms
-        layer.maximumDrawableCount = 2
+        layer.maximumDrawableCount = 3  // see DrawableLoopDriver: two drawables block periodically against the display's clock
         layer.displaySyncEnabled = true
         let thread = Thread { [self] in
             var timebase = mach_timebase_info()

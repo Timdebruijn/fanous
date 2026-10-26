@@ -235,3 +235,22 @@ after warm-up (max 278 MB), average 60.7 fps, GPU p99 ≤ 8.0 ms, DMX→photon p
 30 ms, thermal state nominal throughout; 5 late presents (one vsync late) in
 8 h (B52).** The 8 h criterion of §19 is met on the reference machine; other
 machines remain owner runs (`docs/RELEASE.md` §3, B49).
+
+## Display output drops (2026-10-26)
+
+With an output on the built-in 120 Hz ProMotion panel the engine missed 15–25
+frames in a 2–3 s burst every 15–20 s, while CPU (0.15 ms) and GPU (≤ 4 ms)
+were idle. Same scene (motion test, colour sweep, clock, ProRes 4444 1080p60),
+2 min each, release builds:
+
+| Build | No viewer | Preview viewer |
+|---|---|---|
+| before the review round (`7513cf1`), 2 drawables | 48 missed / 77 late | 40 / 58 |
+| after the review round, 2 drawables | 0 / 0 | 73 / 93 |
+| after the review round, **3 drawables**, 3 min each | **0 / 0** | **0 / 0** |
+
+Cause: the drawable loop runs on its own 60 Hz clock, the display on its own;
+with two drawables both were periodically still in flight when the phases met
+badly, so `nextDrawable()` blocked. Not a regression of the review round (the
+older build shows it too). The 8 h soak ran headless and did not see it.
+

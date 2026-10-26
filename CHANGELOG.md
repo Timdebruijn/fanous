@@ -22,6 +22,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: opening the app showed no window when the engine was running (the engine registered as the app;
   it is now a helper app, `Contents/Helpers/FanousEngine.app`); service dialogs are sheets on the window;
   opening the app no longer restarts the engine in local builds.
+- Fixed: periodic frame-drop bursts on a display output (two drawables blocked against the display's clock;
+  now three, 0 missed in 6 min on the 120 Hz built-in panel).
 - Review round (three review agents, then three fix branches):
   - Bugs: a projector could stay black after a display mode change; cue follow without a fade never fired;
     timecode triggers fired early across frame rates; malformed OSC numbers could crash the engine; output
