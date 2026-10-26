@@ -56,9 +56,9 @@ public struct SACNUniverseMerger: Sendable {
     }
 
     @discardableResult
-    public mutating func expire(at time: TimeInterval) -> Bool {
+    public mutating func expire(at time: TimeInterval, timeout: TimeInterval = Self.timeout) -> Bool {
         let before = sources.count
-        sources = sources.filter { time - $0.value.lastSeen <= Self.timeout }
+        sources = sources.filter { time - $0.value.lastSeen <= timeout }
         return sources.count != before
     }
 
@@ -67,6 +67,26 @@ public struct SACNUniverseMerger: Sendable {
     }
 
     public var slots: [UInt8]? { winner?.slots }
+
+    /// The sources at the highest priority, oldest first.
+    private var top: [Source] {
+        guard let priority = winner?.priority else { return [] }
+        return sources.values.filter { $0.priority == priority }.sorted { $0.lastSeen < $1.lastSeen }
+    }
+
+    /// `highest`: the winner's slots. `htp`: the sources at the highest priority merged, highest value per slot.
+    public func slots(_ mode: UniverseSettings.PriorityMode) -> [UInt8]? {
+        let top = mode == .htp ? self.top : []
+        guard top.count > 1 else { return slots }
+        return top.dropFirst().reduce(top[0].slots) { merged, source in zip(merged, source.slots).map { max($0, $1) } }
+    }
+
+    /// "Console A (p100)", or "Console A + Console B (p100)" for an HTP merge.
+    public func sourceName(_ mode: UniverseSettings.PriorityMode) -> String {
+        guard let winner else { return "" }
+        let names = mode == .htp ? top.map(\.name) : [winner.name]
+        return "\(names.joined(separator: " + ")) (p\(winner.priority))"
+    }
 }
 
 public struct ArtNetUniverseState: Sendable, Equatable {
@@ -97,63 +117,147 @@ public struct UniverseStatus: Equatable, Sendable {
     public var source: String
 }
 
-/// All received universes, both transports. Used on the DMX queue; copies
-/// are cheap enough for the UI's 20 Hz snapshots.
+/// All received universes, both transports, routed by the per-universe settings (B28): a wire packet feeds its own
+/// universe (unless that one listens only to the other transport) and every universe that has it as its `pair`.
+/// Used on the DMX queue; copies are cheap enough for the UI's 20 Hz snapshots.
 public struct UniverseTable: Sendable {
-    public static let lossTimeout: TimeInterval = 2.5
-    private var artnet: [Int: ArtNetUniverseState] = [:]
-    private var sacn: [Int: SACNUniverseMerger] = [:]
-    private var packets: [UniverseID: Int] = [:]
-    private var lastSeen: [UniverseID: TimeInterval] = [:]
+    public static let lossTimeout = UniverseSettings.defaultLossTimeout
+    private struct Entry: Sendable {
+        var artnet = ArtNetUniverseState()
+        var sacn = SACNUniverseMerger()
+        var packets = 0
+        var lastSeen: TimeInterval = 0
+        var slots: [UInt8]?
+        var source = ""
+    }
+    private var entries: [UniverseID: Entry] = [:]
+    public private(set) var settings: [UniverseID: UniverseSettings] = [:]
+    /// Wire universe → the universes with settings it feeds.
+    private var routes: [UniverseID: [UniverseID]] = [:]
+    /// Senders a universe accepts (its `interface`); no entry = every sender.
+    private var filters: [UniverseID: [IPv4Subnet]] = [:]
 
     public init() {}
 
+    public func settings(for id: UniverseID) -> UniverseSettings { settings[id] ?? UniverseSettings(for: id) }
+
+    public mutating func configure(_ settings: [UniverseID: UniverseSettings], at time: TimeInterval) {
+        // a universe fed from other wire universes starts clean (sequence numbers differ per wire universe)
+        for id in entries.keys {
+            let (old, new) = (self.settings(for: id), settings[id] ?? UniverseSettings(for: id))
+            if old.protocols != new.protocols || old.pair != new.pair {
+                entries[id]?.artnet = ArtNetUniverseState()
+                entries[id]?.sacn = SACNUniverseMerger()
+            }
+        }
+        self.settings = settings
+        routes = [:]
+        for (id, s) in settings {
+            for transport in [UniverseID.Transport.artnet, .sacn] where s.listens(to: transport) {
+                routes[s.wire(of: id, over: transport), default: []].append(id)
+            }
+        }
+        for id in entries.keys { refresh(id, at: time) }
+    }
+
+    /// Per universe with an interface: the subnets of that interface (empty when it is not present).
+    public mutating func setFilters(_ filters: [UniverseID: [IPv4Subnet]]) { self.filters = filters }
+
+    private func targets(of wire: UniverseID) -> [UniverseID] {
+        let routed = routes[wire] ?? []
+        return settings[wire] == nil ? [wire] + routed : routed
+    }
+
+    private func accepts(_ id: UniverseID, from sender: String) -> Bool {
+        guard let subnets = filters[id] else { return true }
+        return subnets.contains { $0.contains(sender) }
+    }
+
+    /// The universes the packet fed (empty: wrong interface, out of sequence, or nobody listens).
     @discardableResult
-    public mutating func apply(artnet packet: ArtDmx, from source: String, at time: TimeInterval) -> UniverseID? {
-        let id = packet.universeID
-        var state = artnet[id.number] ?? ArtNetUniverseState()
-        let accepted = state.apply(packet, from: source, at: time)
-        artnet[id.number] = state
-        guard accepted else { return nil }
-        packets[id, default: 0] += 1
-        lastSeen[id] = time
-        return id
+    public mutating func apply(artnet packet: ArtDmx, from source: String, at time: TimeInterval) -> [UniverseID] {
+        var fed: [UniverseID] = []
+        for id in targets(of: packet.universeID) where accepts(id, from: source) {
+            var entry = entries[id] ?? Entry()
+            let accepted = entry.artnet.apply(packet, from: source, at: time)
+            entries[id] = entry
+            if accepted { fed.append(id) }
+        }
+        for id in fed { count(id, at: time) }
+        return fed
     }
 
     @discardableResult
-    public mutating func apply(sacn packet: SACNData, at time: TimeInterval) -> UniverseID? {
-        let id = packet.universeID
-        var merger = sacn[id.number] ?? SACNUniverseMerger()
-        let accepted = merger.apply(packet, at: time)
-        sacn[id.number] = merger
-        guard accepted else { return nil }
-        packets[id, default: 0] += 1
-        lastSeen[id] = time
-        return id
+    public mutating func apply(sacn packet: SACNData, from sender: String = "", at time: TimeInterval) -> [UniverseID] {
+        var fed: [UniverseID] = []
+        for id in targets(of: packet.universeID) where accepts(id, from: sender) {
+            var entry = entries[id] ?? Entry()
+            let accepted = entry.sacn.apply(packet, at: time)
+            entries[id] = entry
+            if accepted { fed.append(id) }
+        }
+        for id in fed { count(id, at: time) }
+        return fed
     }
 
+    private mutating func count(_ id: UniverseID, at time: TimeInterval) {
+        entries[id]?.packets += 1
+        entries[id]?.lastSeen = time
+        refresh(id, at: time)
+    }
+
+    /// Recomputes a universe's slots and source from what its transports hold. Both transports: the higher priority
+    /// wins (Art-Net counts as 100 while it is not silent), equal priorities by the priority mode.
+    private mutating func refresh(_ id: UniverseID, at time: TimeInterval) {
+        guard var entry = entries[id] else { return }
+        let s = settings(for: id)
+        let artnet = s.listens(to: .artnet) && entry.artnet.slots != nil
+        let winner = s.listens(to: .sacn) ? entry.sacn.winner : nil
+        var useSACN = winner != nil
+        var merge = false
+        if artnet, let winner, time - entry.artnet.lastSeen <= s.lossTimeout {
+            if winner.priority == UniverseSettings.artnetPriority {
+                merge = s.priorityMode == .htp
+                useSACN = winner.lastSeen >= entry.artnet.lastSeen
+            } else {
+                useSACN = winner.priority > UniverseSettings.artnetPriority
+            }
+        }
+        if merge, let a = entry.artnet.slots, let b = entry.sacn.slots(s.priorityMode) {
+            entry.slots = zip(a, b).map { max($0, $1) }
+            entry.source = "\(entry.artnet.lastSource) + \(entry.sacn.sourceName(s.priorityMode))"
+        } else if useSACN {
+            entry.slots = entry.sacn.slots(s.priorityMode)
+            entry.source = entry.sacn.sourceName(s.priorityMode)
+        } else if artnet {
+            entry.slots = entry.artnet.slots
+            entry.source = entry.artnet.lastSource
+        } else {
+            entry.slots = nil
+            entry.source = ""
+        }
+        entries[id] = entry
+    }
+
+    /// sACN sources silent for longer than their universe's loss timeout are dropped.
     public mutating func expire(at time: TimeInterval) {
-        for key in sacn.keys { sacn[key]?.expire(at: time) }
-    }
-
-    public func slots(for id: UniverseID) -> [UInt8]? {
-        switch id.transport {
-        case .artnet: artnet[id.number]?.slots
-        case .sacn: sacn[id.number]?.slots
+        for id in entries.keys {
+            let timeout = settings(for: id).lossTimeout
+            entries[id]?.sacn.expire(at: time, timeout: timeout)
+            refresh(id, at: time)
         }
     }
+
+    public func slots(for id: UniverseID) -> [UInt8]? { entries[id]?.slots }
 
     public func status(for id: UniverseID, at time: TimeInterval) -> UniverseStatus {
-        let seen = lastSeen[id] ?? 0
-        let source: String
-        switch id.transport {
-        case .artnet: source = artnet[id.number]?.lastSource ?? ""
-        case .sacn: source = sacn[id.number]?.winner.map { "\($0.name) (p\($0.priority))" } ?? ""
-        }
+        let entry = entries[id]
+        let seen = entry?.lastSeen ?? 0
         return UniverseStatus(
-            universe: id, active: seen > 0 && time - seen <= Self.lossTimeout, lastSeen: seen, packets: packets[id] ?? 0,
-            source: source)
+            universe: id, active: seen > 0 && time - seen <= settings(for: id).lossTimeout, lastSeen: seen, packets: entry?.packets ?? 0,
+            source: entry?.source ?? "")
     }
 
-    public var knownUniverses: [UniverseID] { packets.keys.sorted() }
+    public var knownUniverses: [UniverseID] { entries.filter { $0.value.packets > 0 }.keys.sorted() }
 }
+

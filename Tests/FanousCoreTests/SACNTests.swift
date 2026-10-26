@@ -128,13 +128,13 @@ import Testing
     @Test func universeTableTracksBothTransports() {
         var table = UniverseTable()
         let artnet = ArtDmx(sequence: 1, portAddress: 0, data: [1, 2])
-        do { let outcome = table.apply(artnet: artnet, from: "10.0.0.5", at: 0) == UniverseID(.artnet, 0); #expect(outcome) }
-        do { let outcome = table.apply(artnet: artnet, from: "10.0.0.5", at: 0.1) == nil; #expect(outcome) }  // repeated sequence 1
-        do { let outcome = table.apply(artnet: ArtDmx(sequence: 0, portAddress: 0, data: [3, 4]), from: "10.0.0.6", at: 0.2) != nil; #expect(outcome) }
+        do { let outcome = table.apply(artnet: artnet, from: "10.0.0.5", at: 0) == [UniverseID(.artnet, 0)]; #expect(outcome) }
+        do { let outcome = table.apply(artnet: artnet, from: "10.0.0.5", at: 0.1).isEmpty; #expect(outcome) }  // repeated sequence 1
+        do { let outcome = table.apply(artnet: ArtDmx(sequence: 0, portAddress: 0, data: [3, 4]), from: "10.0.0.6", at: 0.2).count == 1; #expect(outcome) }
         #expect(table.slots(for: UniverseID(.artnet, 0))?.prefix(2) == [3, 4])
         #expect(table.slots(for: UniverseID(.artnet, 0))?.count == 512)
         let sacn = SACNData(cid: Self.cidA, sourceName: "A", universe: 5, slots: [9])
-        do { let outcome = table.apply(sacn: sacn, at: 0.3) == UniverseID(.sacn, 5); #expect(outcome) }
+        do { let outcome = table.apply(sacn: sacn, at: 0.3) == [UniverseID(.sacn, 5)]; #expect(outcome) }
         #expect(table.knownUniverses == [UniverseID(.artnet, 0), UniverseID(.sacn, 5)])
         let status = table.status(for: UniverseID(.artnet, 0), at: 1.0)
         #expect(status.active && status.packets == 2 && status.source == "10.0.0.6")
