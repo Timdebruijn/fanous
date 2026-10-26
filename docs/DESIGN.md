@@ -20,9 +20,10 @@ the lighting desk sending DMX.
 show, 2) predictable DMX behaviour, 3) a UI that shows at a glance what the
 server is doing and why, 4) feature count.
 
-**v1 scope** is the brief's "Scope v1" list plus the clarifications in
-`docs/BRIEF.md` (audio, stills, image sequences, Syphon input, 3D layer
-rotation, Output fixture). Everything under "Later" is designed for (an
+**v1 scope** is the owner's kickoff brief "Scope v1" list plus its
+clarifications (audio, stills, image sequences, Syphon input, 3D layer
+rotation, Output fixture); the brief itself is internal and not in the
+repository. Everything under "Later" is designed for (an
 extension point exists) but not built.
 
 **Non-goals:** SMPTE ST 2110, generative/real-time 3D engines, XR, Windows,
@@ -1385,8 +1386,8 @@ contribution is covered by the CLA, so the whole can also be offered under a
 commercial license. Vendored BSD code (hap, snappy, Syphon) keeps its own
 notices in `THIRD-PARTY-NOTICES.md` and is compatible with both licenses.
 
-Release checklist items that come from this section: remove `docs/BRIEF.md`;
-lawyer review of `PLUGIN-EXCEPTION.md`, `CLA.md` and `ATTRIBUTION.md`;
+Release checklist items that come from this section (the internal brief was
+removed from the repository and its history on 2026-10-26): lawyer review of `PLUGIN-EXCEPTION.md`, `CLA.md` and `ATTRIBUTION.md`;
 trademark search for "Fanous" (`[OPEN-21]`).
 
 ---

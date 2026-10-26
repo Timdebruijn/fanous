@@ -5,3 +5,6 @@ web/node_modules/
 web/dist/
 .DS_Store
 dist/
+
+# internal kickoff brief: never in the repository (kept outside by the owner)
+docs/BRIEF.md

@@ -85,7 +85,7 @@ On a fresh macOS user account (or a fresh Mac) with the notarized dmg:
 
 ## 7. Legal and naming (owner)
 
-- [ ] remove `docs/BRIEF.md` (DESIGN §17) and this line from the design
+- [x] remove `docs/BRIEF.md` (DESIGN §17): removed from the repository and its whole history on 2026-10-26, before the first push; kept outside the repo by the owner
 - [ ] lawyer review of `docs/licensing/PLUGIN-EXCEPTION.md`, `CLA.md`,
       `ATTRIBUTION.md` (all marked DRAFT until then)
 - [ ] trademark search for "Fanous" (OPEN-21); `TRADEMARKS.md` final.
