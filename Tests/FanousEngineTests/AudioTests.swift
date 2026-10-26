@@ -429,6 +429,36 @@ extension LayerAudioChannel {
         #expect(channel.statistics.underruns == 0)
     }
 
+    /// B3: a forward loop is read across the wrap, so 120 wraps of a 1 s file never run the ring dry.
+    @Test func loopWrapIsGaplessOverManyWraps() async throws {
+        let directory = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appending(path: "loop.mov")
+        try Self.writeMovie(to: url, seconds: 1)
+        let reader = try await AudioTrackReader.open(url: url)
+
+        for looped in [true, false] {
+            let channel = LayerAudioChannel()
+            let frames = 480  // 10 ms callbacks
+            var silent = 0
+            channel.setState(wantedPTS: 0, active: true, volume: 1, pan: -1, loop: looped ? (0, 1) : nil)
+            channel.fill(from: reader, wanted: 0)
+            for step in 0..<(120 * 100) {
+                let wanted = Double(step * frames % 48_000) / 48_000
+                channel.setState(wantedPTS: wanted, active: true, volume: 1, pan: -1, loop: looped ? (0, 1) : nil)
+                // the callback runs before the producer thread gets to react to this tick's clock
+                let out = Self.pull(channel, frames: frames, wanted: wanted)
+                if step > 0 && out.left.allSatisfy({ $0 == 0 }) { silent += 1 }  // a silent callback (the tone is never 0 for 10 ms)
+                channel.fill(from: reader, wanted: wanted)
+            }
+            print("loop wraps looped=\(looped): underruns \(channel.statistics.underruns), silent callbacks \(silent)")
+            if looped {
+                #expect(channel.statistics.underruns == 0)
+                #expect(silent == 0)
+            }
+        }
+    }
+
     // MARK: AudioMixer
 
     @Test func mixerSumsChannelsAndAppliesMasterVolume() {
