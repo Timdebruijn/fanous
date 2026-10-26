@@ -254,8 +254,8 @@ a handle stays on the spot you touch while a warp is active.
   leaves visible. Give it to whoever makes the content, as a layer under their
   design, so windows and edges land where the mapping expects them.
 
-Canvas 1 is also published as the Syphon server "Fanous – Canvas" (upright in
-OpenGL and Metal clients alike; checked with the Syphon Simple Client), so
+Canvas 1 is also published as the Syphon server "Fanous – Canvas" (in Syphon's
+OpenGL row order; checked upright in the Syphon Simple Client), so
 another app on the same Mac can receive it (the other canvases are not
 published). This was checked between processes
 by the bench tool, not yet with a third-party app (B6).
