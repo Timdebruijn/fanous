@@ -80,8 +80,13 @@ On a fresh macOS user account (or a fresh Mac) with the notarized dmg:
 - [ ] an iPad on the same network reaches `https://<mac>.local:8443`, accepts
       the certificate once (fingerprint under System › Network), WebCodecs
       preview plays (B46: done once on 2026-10-26, repeat per release)
-- [ ] Quit the app: the engine keeps running; `Engine › Stop Engine…` removes
-      the service; the next launch installs it again
+- [ ] Quit the app with the engine running: "Quit Fanous?" appears as a sheet;
+      Return (Keep Engine Running) quits and the engine keeps running; Cancel
+      keeps the app; Stop Engine and Quit removes the service (outputs black);
+      "Don't ask again" with Keep skips the question next time; with the
+      engine stopped the app quits without asking
+- [ ] `Engine › Stop Engine…` removes the service; the next launch installs
+      it again
 
 ## 7. Legal and naming (owner)
 

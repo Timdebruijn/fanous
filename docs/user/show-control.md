@@ -181,6 +181,23 @@ only. With latest wins, whoever moved last wins between console and UI.
 **Release** hands the layer back to the console. UI control is refused while the
 show is locked.
 
+**Master and outputs.** The strips above the layer list have a **Select**
+button: it puts Master (intensity and speed) or an output (intensity and test
+pattern) in the side panel, with the same **Control** switch, **Release** and
+rules as a layer. Select a layer row to go back to the layer.
+
+**Expiry.** UI values only run down while they mask a console: Art-Net or sACN
+comes in for the fixture's universe and at least one UI value is what the layer
+shows. That is never the case with **Console only** (UI values are not shown),
+with latest wins only until the desk moves that channel again, and with highest
+wins only where the UI value is the higher one. After 10 minutes of masking
+since the last UI change the UI values are released and the log says so. While
+it runs, the panel says "UI control · console active, releases in 7:42";
+**Keep** (or any change from the UI) restarts the 10 minutes. Otherwise it says
+just "UI control" and the count pauses: a console that drops out and comes back
+continues where it was, and testing before the desk is on site never loses the
+values (they stay until **Release**).
+
 **Media from the library** lists every playable file as "Folder 3 · Intro / 12 ·
 loop.mov" and puts the choice on the layer (folder and file, and intensity to
 full if it was 0). The same works from the Media screen: select a file and pick

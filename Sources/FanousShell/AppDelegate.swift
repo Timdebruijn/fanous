@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = Attribution.projectName
         window.contentView = browser.webView
+        window.isReleasedWhenClosed = false  // re-shown for the quit question and on a Dock click
         window.setFrameAutosaveName("FanousMain")
         window.center()
         window.makeKeyAndOrderFront(nil)
@@ -32,6 +33,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { window?.makeKeyAndOrderFront(nil) }
+        return true
+    }
+
+    static let keepEngineOnQuitKey = "KeepEngineOnQuit"
+    private var quitPending = false
+
+    /// Quitting leaves a service engine running; ask once per quit unless "keep running" was remembered.
+    /// A child engine stops with the app (applicationWillTerminate), so there is nothing to ask.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if quitPending { return .terminateCancel }  // a second Cmd-Q while the probe or the question is open
+        guard engine.usesAgent, !Self.isSystemQuit, !UserDefaults.standard.bool(forKey: Self.keepEngineOnQuitKey) else {
+            return .terminateNow
+        }
+        quitPending = true
+        // one probe with a 1 s timeout: a slow or dead engine never holds the quit for long
+        EngineManager.engineAnswers(within: 1) { [weak self] running in
+            guard let self else { return sender.reply(toApplicationShouldTerminate: true) }
+            guard running else { return self.reply(sender, quit: true) }
+            self.askAboutEngine(sender)
+        }
+        return .terminateLater
+    }
+
+    /// Logout, restart or shutdown: never ask, or macOS reports that Fanous interrupted it.
+    private static var isSystemQuit: Bool {
+        guard let reason = NSAppleEventManager.shared().currentAppleEvent?.attributeDescriptor(forKeyword: kAEQuitReason)?.typeCodeValue
+        else { return false }
+        return [kAELogOut, kAEReallyLogOut, kAEShowRestartDialog, kAERestart, kAEShowShutdownDialog, kAEShutDown].contains(reason)
+    }
+
+    private func reply(_ sender: NSApplication, quit: Bool) {
+        quitPending = false
+        sender.reply(toApplicationShouldTerminate: quit)
+    }
+
+    private func askAboutEngine(_ sender: NSApplication) {
+        let alert = NSAlert()
+        alert.messageText = "Quit \(Attribution.projectName)?"
+        alert.informativeText = "The engine keeps the outputs running after the app quits. Stop it too?"
+        alert.addButton(withTitle: "Keep Engine Running")  // first button: default, Return
+        alert.addButton(withTitle: "Stop Engine and Quit")
+        alert.addButton(withTitle: "Cancel")  // Escape
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = "Don't ask again"
+        // closing the last window also quits: bring the window back so the question is a sheet on it, and Cancel
+        // leaves a usable app
+        window?.makeKeyAndOrderFront(nil)
+        engine.present(alert) { [self] response in
+            switch response {
+            case .alertFirstButtonReturn:
+                // only "keep running" is remembered; stopping is always asked for
+                if alert.suppressionButton?.state == .on { UserDefaults.standard.set(true, forKey: Self.keepEngineOnQuitKey) }
+                reply(sender, quit: true)
+            case .alertSecondButtonReturn:
+                // a failed stop shows its own alert and keeps the app open
+                reply(sender, quit: engine.stopEngine())
+            default:
+                reply(sender, quit: false)
+            }
+        }
+    }
 
     func applicationWillTerminate(_ notification: Notification) { engine.stopIfChild() }
 

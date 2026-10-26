@@ -107,9 +107,10 @@ frames, GPU and CPU time, texture misses. In show mode any dropped frame is red.
   readiness list), pause Time Machine, switch Spotlight off for the library
   volume, turn show mode on (it pauses ingest). Many open browser previews also
   cost time: see the clients tile.
-- **Display mode**: the display must run at the canvas frame rate and not be
-  mirrored. Fanous does not apply display modes (B33): set them in System
-  Settings › Displays and compare with the Outputs status line ("@ 60").
+- **Display mode**: the display must run at (a multiple of) the canvas frame
+  rate and not be mirrored. Set the output's Mode; show mode applies it. A
+  yellow line in the output list says when the display runs another mode or
+  the mode is not available (with the closest one).
 - **Too much media**: 4K60 ProRes, many effects (Blur, Edge) and dissolves cost
   more than they look. See the performance advice in media-library.md.
 
@@ -154,16 +155,18 @@ a network MIDI session, then choose it under Device (or "All sources").
 
 Engine › **Restart Engine**. Outputs go black for a moment and the UI reloads.
 DMX restores the state at once; playback positions are not restored. Do not do
-this during a show. Quitting the app does not stop the engine; **Stop Engine…**
-does, and **Start Engine** starts it again.
+this during a show. Quitting the app does not stop the engine unless you choose
+**Stop Engine and Quit** in the quit question; **Stop Engine…** does, and
+**Start Engine** starts it again.
 
 ## Reset the project
 
 This deletes your patch changes, outputs, cues and timecode settings. Copy
 `project.json` first if you might want it back.
 
-1. Engine › **Stop Engine…** (quitting the app alone leaves the engine running
-   with the old project in memory).
+1. Engine › **Stop Engine…**, or quit and choose **Stop Engine and Quit**
+   (Keep Engine Running leaves the engine running with the old project in
+   memory).
 2. In Finder move `~/Library/Application Support/Fanous/project.json` away,
    for example to the Desktop.
 3. Engine › **Start Engine**. The engine starts with the standard patch (8 layers).

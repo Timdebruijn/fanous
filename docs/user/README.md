@@ -67,16 +67,13 @@ the number key next to each screen. Keys do nothing while you type in a field.
 Everything below is also in [BACKLOG.md](../BACKLOG.md) under the given number.
 The pages that follow repeat the ones that matter for their topic.
 
-- Display modes (resolution, refresh rate) stored on an output are not applied;
-  set them in System Settings › Displays (B33).
 - Hot-plugging a display has only been tested through unit tests and the
   built-in display (B34).
 - Project versions do not exist yet: there is one `project.json`, autosaved,
   with no named versions and no "revert to" (B23). The OSC message
   `/fanous/project/load` is refused (B35).
 - Layers show the library thumbnail of the playing file, not a live picture of
-  the layer (B29). UI values do not expire on their own (B27). Per-universe
-  settings are read-only (B28).
+  the layer (B29). Per-universe settings are read-only (B28).
 - Consoles over CITP/MSEX get the canvas only, as a 640x360 JPEG stream; there
   are no per-layer streams and thumbnails ignore the requested size (B41). No
   real console has talked to Fanous over CITP yet (B40).

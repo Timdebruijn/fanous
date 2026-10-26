@@ -100,6 +100,8 @@
         </div>
         {#if item.state === 'hard'}
           <span class="badge badge-err">blocking</span>
+        {:else if item.state === 'warn'}
+          <span class="badge badge-warn">warning</span>
         {:else if item.state === 'manual'}
           <span class="badge badge-outline">manual</span>
         {:else if item.state === 'fail'}

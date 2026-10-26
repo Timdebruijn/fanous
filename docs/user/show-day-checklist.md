@@ -37,9 +37,10 @@ Mac: ______________ Fanous version: ______________
 - [ ] **One network interface** for the console network. Turn Wi-Fi off if the
       console is on Ethernet. sACN multicast is joined on the default-route
       interface only, so a second active interface can put it on the wrong network.
-- [ ] Displays are **not mirrored**, and each has the resolution and refresh rate
-      you want (System Settings › Displays). Fanous does not apply display
-      modes (B33) and does not check for mirroring (B42).
+- [ ] Displays are **not mirrored** (System Settings › Displays). Fanous does
+      not check for mirroring (B42). Set each output's **Mode** in Outputs:
+      show mode applies it, and the output list warns in yellow when the
+      display runs a different mode.
 - [ ] Firewall allows `fanousd` (see getting-started.md).
 
 ## In Fanous
@@ -70,6 +71,7 @@ is on. Each item shows a fix hint.
 | Memory headroom | quit other applications |
 | All patched universes receiving | console output and network |
 | All outputs bound to their displays | displays connected, outputs assigned |
+| Outputs in their desired display mode | the output's Mode is available and a multiple of the canvas rate (warning only) |
 | No decoder errors | no layer showing a media error |
 | Library on a local volume | library on the internal disk |
 | Spotlight indexing off for the library volume | see above |
@@ -85,6 +87,10 @@ no longer blocks. Do this only for things you decided on purpose, for example a
 spare display that is not connected. A setting Fanous cannot read is shown as
 "unknown"; check those yourself (B38).
 
+**Warnings** (yellow, "warning" badge) never block show mode. Today that is
+the display mode item: it names the closest mode a display offers when the
+output's Mode is not available.
+
 **Manual** items (Focus) have no button; the check is yours.
 
 **Blocking** items (shown with a "blocking" badge) cannot be acknowledged. Today
@@ -92,8 +98,9 @@ that is Supported hardware: the Mac has no ProRes engine and cannot run a show.
 Use a Mac with an M1 Pro or newer.
 
 While show mode is on, the Mac does not sleep (display and system), the engine is
-exempt from App Nap, the ingest queue is paused and the cursor is hidden over
-the outputs. Leave show mode to resume ingest.
+exempt from App Nap, the ingest queue is paused, the cursor is hidden over
+the outputs and every output's display runs the output's Mode. Leave show mode
+to resume ingest and put the previous display modes back.
 
 ## During the show
 

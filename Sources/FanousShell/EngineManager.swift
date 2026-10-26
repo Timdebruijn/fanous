@@ -48,7 +48,7 @@ final class EngineManager {
         }
         var request = URLRequest(url: URL(string: "https://127.0.0.1:8443/healthz")!)
         request.timeoutInterval = 1
-        let task = URLSession(configuration: .ephemeral, delegate: TrustAnyLocalhost.shared, delegateQueue: nil).dataTask(with: request) { data, _, _ in
+        let task = Self.probeSession.dataTask(with: request) { data, _, _ in
             let version = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["version"] as? String
             let engine = version.map { "Engine \($0) running" } ?? "Engine not running"
             DispatchQueue.main.async { MainActor.assumeIsolated { completion("\(engine) · \(service)") } }
@@ -67,12 +67,18 @@ final class EngineManager {
     }
 
     /// Stop: a KeepAlive agent only stays down when its registration goes; the next start registers it again.
-    func stopEngine() {
+    /// False (after an alert) when the service could not be removed.
+    @discardableResult
+    func stopEngine() -> Bool {
         if usesAgent {
-            do { try SMAppService.agent(plistName: Self.agentPlist).unregister() } catch { alert("The engine service could not be removed.", "\(error)") }
+            do { try SMAppService.agent(plistName: Self.agentPlist).unregister() } catch {
+                alert("The engine service could not be removed.", "\(error)")
+                return false
+            }
         } else {
             stopIfChild()
         }
+        return true
     }
 
     func restart() {
@@ -118,14 +124,17 @@ final class EngineManager {
         registerAgent()
     }
 
-    /// Polls /healthz once a second for up to `seconds` (a freshly started agent needs a moment).
+    /// One session for all probes: a session per request is never invalidated and leaks.
+    private static let probeSession = URLSession(configuration: .ephemeral, delegate: TrustAnyLocalhost.shared, delegateQueue: nil)
+
+    /// Polls /healthz once a second for up to `seconds` (a freshly started agent needs a moment); answers as soon as
+    /// the last attempt finishes.
     static func engineAnswers(within seconds: Int, then: @escaping @MainActor (Bool) -> Void) {
         var request = URLRequest(url: URL(string: "https://127.0.0.1:8443/healthz")!)
         request.timeoutInterval = 1
-        let session = URLSession(configuration: .ephemeral, delegate: TrustAnyLocalhost.shared, delegateQueue: nil)
-        session.dataTask(with: request) { data, response, _ in
+        probeSession.dataTask(with: request) { data, response, _ in
             let ok = (response as? HTTPURLResponse)?.statusCode == 200 && data != nil
-            DispatchQueue.main.asyncAfter(deadline: .now() + (ok ? 0 : 1)) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + (ok || seconds <= 1 ? 0 : 1)) {
                 MainActor.assumeIsolated {
                     if ok || seconds <= 1 { then(ok) } else { engineAnswers(within: seconds - 1, then: then) }
                 }
@@ -200,7 +209,7 @@ final class EngineManager {
 
     /// A sheet on the main window, never an app-modal dialog: a dialog that ends up behind another window or on another
     /// display blocks the app while the user sees nothing (seen 2026-10-26).
-    private func present(_ alert: NSAlert, then: @escaping @MainActor (NSApplication.ModalResponse) -> Void) {
+    func present(_ alert: NSAlert, then: @escaping @MainActor (NSApplication.ModalResponse) -> Void) {
         if let window = NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }) {
             NSApp.activate()
             alert.beginSheetModal(for: window) { response in MainActor.assumeIsolated { then(response) } }

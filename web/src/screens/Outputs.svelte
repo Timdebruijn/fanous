@@ -193,6 +193,7 @@
       <button type="button" class="row out" aria-pressed={output?.id === o.id} onclick={() => (ui.selected = o.id)}>
         <span class="head"><span class="dot dot-{st.tone === 'green' ? 'green' : st.tone === 'red' ? 'red' : 'off'}"></span><span class="nm">{o.name}</span><span class="spacer"></span><span class="caption mono">{Math.round(o.intensity * 100)} %</span></span>
         <span class="caption ellipsis tone-{st.tone}">{st.text}</span>
+        {#if statuses.get(o.id)?.modeNote}<span class="caption yellow">{statuses.get(o.id)?.modeNote}</span>{/if}
       </button>
     {:else}
       <p class="caption pad">No outputs yet. Add one for each projector or display with "Add output on" below; a new output shows the whole canvas.</p>
@@ -297,6 +298,7 @@
           </div>
           <label class="field"><span>Intensity %</span><input class="input mono" type="number" min="0" max="100" value={Math.round(output.intensity * 100)} disabled={locked} onchange={(e) => number(e, '/intensity', 0.01)} /></label>
         </div>
+        {#if status?.modeNote}<p class="caption yellow">{status.modeNote}</p>{/if}
         {#if display?.builtin}<p class="caption yellow">This output uses the Mac's own display: the local UI shell will be hidden behind it.</p>{/if}
 
         <h3>Blend edges</h3>

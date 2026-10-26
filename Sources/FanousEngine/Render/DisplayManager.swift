@@ -46,9 +46,7 @@ public final class DisplayManager {
             guard let uuid = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue() else { return nil }
             let mode = CGDisplayCopyDisplayMode(id)
             let screen = screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == id }
-            let modes = (CGDisplayCopyAllDisplayModes(id, nil) as? [CGDisplayMode] ?? []).map {
-                DisplayModeConfig(width: $0.pixelWidth, height: $0.pixelHeight, hz: $0.refreshRate)
-            }
+            let modes = DisplayModeMatching.offered(DisplayModeSwitcher.modes(id).map(DisplayModeSwitcher.descriptor)).map(\.config)
             var unique: [DisplayModeConfig] = []
             for m in modes where !unique.contains(m) { unique.append(m) }
             let hz = mode?.refreshRate ?? 0

@@ -604,7 +604,7 @@ into the `ParameterSnapshot` the compositor reads:
 | DMX | raw channel values for the patched fixture | per universe packet (≈ 44 Hz) |
 | Internal: cue engine | target values + fade progress for parameters the cue touches | per Control tick (100 Hz) |
 | Internal: OSC | last received value per address | on receipt |
-| Internal: UI override | programmer-set values (only while "override" is on in the UI; auto-expires after 10 min to avoid show-time surprises) | on command |
+| Internal: UI override | programmer-set values (only while "override" is on in the UI; auto-expires after masking a received console for 10 min since the last UI change, to avoid show-time surprises; the count pauses while there is no console traffic or the console wins, so without a console they stay until released) | on command |
 
 Per-layer **source policy** (project setting, default `dmx`):
 
@@ -1337,11 +1337,15 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
 - **Show mode and readiness** (`ShowControl/ShowMode.swift`): IOPM assertions
   (`PreventUserIdleDisplaySleep`, `PreventUserIdleSystemSleep`),
   `beginActivity` (latency critical, no App Nap), ingest paused. Readiness
-  runs the 14 §14 items on entering and every 30 s while on
+  runs the §14 items (15 with display modes) on entering and every 30 s while on
   (`readiness.run`, `readiness.acknowledge`); `show.mode` is refused with the
-  blocking ids (`notReady`). The remaining §14 side effects (display modes,
-  shielding level and cursor, log level, thumbnail/preview throttling) are
-  B33/B42.
+  blocking ids (`notReady`). Desired display modes are applied on entering
+  and restored on leaving (B33, `DisplayModeSwitcher`, matching in
+  `DisplayModeMatching`; one `.forSession` transaction, re-applied on
+  re-plug; previous modes persisted in `display-modes.json` and restored on
+  the next start after a crash; unavailable modes are a non-blocking `warn` readiness item). The
+  remaining §14 side effects (shielding level, log level, thumbnail/preview
+  throttling) are B42.
 - **System**: `/metrics` (JSON: frames, GPU/CPU timing, DMX age, audio,
   preview, clients), `/api/logs` (ring tail), Bonjour `_fanous._tcp`,
   `live.system` (thermal, power, memory, OS, host, addresses, TLS fingerprint).

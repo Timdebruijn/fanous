@@ -119,7 +119,7 @@ public final class OutputCoordinator {
     private let compiler: OutputCompiler
     private var fps: Double
     private let logger: Logger
-    private var outputs: [OutputConfig] = []
+    public private(set) var outputs: [OutputConfig] = []
     private var clockMaster: Int?
     private var displays: [DisplayInfo]
     private var bound: [CGDirectDisplayID: Bound] = [:]

@@ -3,7 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script module lang="ts">
   // Module scope: the router unmounts this screen on navigation, the selected layer should survive that.
-  const ui = $state({ selected: 1 });
+  const ui = $state({ selected: 1, fixture: null as string | null });
 </script>
 
 <script lang="ts">
@@ -46,6 +46,9 @@
   const liveByIndex = $derived(new Map(app.live.layers.map((layer) => [layer.index, layer])));
   const patchByFixture = $derived(new Map(app.project.patch.map((entry) => [entry.fixture, entry])));
   const thumbs = $derived(thumbnailIndex(library));
+  // Master or an output picked in the strips; null = the selected layer
+  const fixture = $derived(ui.fixture !== null && app.live.dmx.fixtures[ui.fixture] ? ui.fixture : null);
+  const fixtureMode = $derived(fixture === 'Master' ? 'master' : 'output');
 </script>
 
 <div class="toolbar">
@@ -53,13 +56,30 @@
   <span class="caption">Canvas 1 · {layerCount} layers · <span title="Layer limit of this Mac's performance tier (chip class, see System). Add layer on Patch stops at this number so the show does not drop frames.">tier allows {app.caps.maxLayers ?? '—'} layers</span></span>
 </div>
 
-<LayerStrips />
+<LayerStrips selected={fixture} onselect={(f) => (ui.fixture = f)} />
+
+<!-- keyed: the Control switch starts off for every fixture picked -->
+{#snippet fixturePanel(name: string)}
+  {#key name}
+    <LayerDetail
+      n={0}
+      {name}
+      layer={undefined}
+      params={app.live.dmx.fixtures[name]}
+      entry={patchByFixture.get(name)}
+      specs={channelMap?.modes[fixtureMode]}
+      footprint={channelMap?.footprints[fixtureMode] ?? 8}
+    />
+  {/key}
+{/snippet}
 
 {#if layerCount === 0}
   <div class="panel empty">
     <p class="muted">The project has no layers, so there is nothing to play on. Add layers on the Patch screen (this Mac's tier allows {app.caps.maxLayers ?? '—'}).</p>
     <button type="button" class="btn btn-primary" onclick={() => go('patch')}>Go to Patch</button>
   </div>
+  <!-- Master and outputs stay controllable without layers -->
+  {#if fixture !== null}<div class="alone">{@render fixturePanel(fixture)}</div>{/if}
 {:else}
   <div class="layout">
     <div class="table">
@@ -84,8 +104,11 @@
               params={app.live.dmx.fixtures[`Layer ${n}`]}
               policy={app.live.dmx.policies[`Layer ${n}`] ?? app.project.policy}
               thumb={thumbnailFor(thumbs, layer)}
-              selected={n === selected}
-              onselect={() => (ui.selected = n)}
+              selected={n === selected && fixture === null}
+              onselect={() => {
+                ui.selected = n;
+                ui.fixture = null;
+              }}
             />
           </li>
         {/each}
@@ -95,6 +118,9 @@
       {#if app.live.engine.rendering}
         <Preview />
       {/if}
+      {#if fixture !== null}
+        {@render fixturePanel(fixture)}
+      {:else}
       <LayerDetail
         n={selected}
         layer={liveByIndex.get(selected)}
@@ -104,6 +130,7 @@
         {library}
         footprint={channelMap?.footprints.layer ?? 64}
       />
+      {/if}
     </div>
   </div>
 {/if}
@@ -111,6 +138,7 @@
 <style>
   .empty { padding: 32px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
   .empty p { margin: 0; }
+  .alone { max-width: 360px; margin-top: 12px; }
   .layout { display: flex; gap: 12px; align-items: flex-start; }
   .table {
     /* LayerRow reads these two; the heads below use the same grid so the columns line up. */
