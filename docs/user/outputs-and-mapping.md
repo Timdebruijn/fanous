@@ -48,7 +48,8 @@ goes back to the previous size.
 ## Several canvases
 
 Not every layer has to be on every output. **Add canvas** on the Canvases tab
-adds a canvas (at most four; it starts at the size of Canvas 1); the buttons
+adds a canvas (at most four, and all canvases together at most four times
+3840 × 2160 pixels, for GPU memory; it starts at the size of Canvas 1); the buttons
 above the editor pick which canvas the editor and the preview show. Each canvas
 has its own name and size. All canvases run at the frame rate of Canvas 1: the
 **Frame rate** list is only enabled on Canvas 1, and changing it there changes
@@ -67,10 +68,18 @@ every canvas. The clock master is set on Canvas 1 too.
   move to Canvas 1, in one step that Undo reverses.
 - Adding, removing or resizing a canvas re-creates the canvases: outputs blank
   briefly, so do it before the show. It is refused in show mode and under show
-  lock. A layer costs the same layer capacity on any canvas; each extra canvas
-  costs one more render pass and three textures of its size in GPU memory.
+  lock. An undo, redo or project load in show mode that brings back a canvas
+  waits for the end of show mode like a size change; until then its layers
+  are drawn on Canvas 1 and the slices that show it show Canvas 1, so nothing
+  goes dark. If a canvas cannot be made (not enough memory), the canvases go
+  back to what renders, the tab shows the error and what was on the missing
+  canvas moves to Canvas 1. A layer costs the same layer capacity on any
+  canvas; each extra canvas costs one more render pass while it has layers, and
+  three textures of its size in GPU memory.
 - A slice whose canvas no longer exists (a hand-edited project) stays black and
-  the engine log says which slice; pick another canvas for it.
+  the engine log says which slice; pick another canvas for it. A browser
+  previewing a canvas that was removed gets an error instead of a frozen
+  picture.
 
 The size and rate are saved in the project and used at every start. Developers
 who start the engine with `--scene FILE` override them: the scene file's canvas

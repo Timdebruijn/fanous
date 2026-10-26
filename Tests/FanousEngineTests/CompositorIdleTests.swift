@@ -255,6 +255,16 @@ struct CompositorIdleTests {
         #expect(try show(canvas: 1) <= 1, "canvas 1 is black now")
         #expect(try show(canvas: 3) <= 1, "a removed canvas fails safe: black")
 
+        // the layer leaves canvas 2: cleared in all three textures, then no longer cleared, and black whatever is read
+        rig.compositor.layerCanvas = [1]
+        for i in 0..<6 {
+            rig.tick(1, from: 20 + i)
+            #expect(centre(rig.compositor.readback(canvas: 2)) == 0, "empty canvas 2 is black (tick \(i))")
+        }
+        rig.compositor.layerCanvas = [2]
+        rig.tick(1, from: 30)
+        #expect(centre(rig.compositor.readback(canvas: 2)) > 150, "drawn again when a layer comes back")
+
         // removing canvas 2 again: the layer is not drawn anywhere, canvas 1 stays black, the slice on 2 is black
         try rig.compositor.reconfigure(.init(fps: 60, canvases: [.init(id: 1, width: Self.width, height: Self.height)]))
         #expect(try show(canvas: 2) <= 1)

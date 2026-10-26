@@ -138,6 +138,40 @@ import Testing
         #expect(second == 15, "the canvas 2 streamer taps its canvas (got \(second))")
         try rig.hub.rebuild()
         #expect(made.withLock { $0 } == 2 && Set(rig.hub.targets) == ["canvas", "canvas:2"])
+
+        // canvas 2 removed: its streamer goes (its viewer gets badTarget) instead of showing a frozen picture
+        rig.hub.makeCanvas = { _ in nil }
+        try rig.hub.rebuild()
+        #expect(rig.hub.targets == ["canvas"])
+    }
+
+    /// A layer.set with a layer:<n> subscriber: the preview rebuild reads the project, so it must not run on the
+    /// store's queue (it did, and deadlocked). Wired like the engine: Control hops to the main actor.
+    @Test(.timeLimit(.minutes(1))) func layerSetWithALayerSubscriberDoesNotHang() async throws {
+        let rig = try LayerRig()
+        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
+        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/x", policy: .dmx), logger: Self.logger)
+        ProjectDocument.registerCommands(on: store, auth: auth)
+        let compositor = rig.compositor, made = rig.made
+        rig.hub.canvasOfLayer = { target in ProjectDocument.layerCanvases(from: store.project)[Int(target.dropFirst(6)) ?? 0] ?? 1 }
+        rig.hub.configure = { target, streamer in
+            guard let index = PreviewHub.layerIndex(of: target, layerCount: store.project["layerCount"]?.int ?? 0), (try? streamer.showLayer(index, of: compositor)) != nil else { return false }
+            made.withLock { $0[target] = streamer }
+            return true
+        }
+        let rebuilt = Mutex(0)
+        store.onProjectChanged = { [hub = rig.hub] _ in
+            Task { @MainActor in
+                try? hub.rebuild()
+                rebuilt.withLock { $0 += 1 }
+            }
+        }
+        #expect(rig.attach("layer:2"))
+        _ = try store.execute("canvas.add", args: ["width": 640, "height": 640], role: .programmer).get()
+        _ = try store.execute("layer.set", args: ["layer": 2, "canvas": 2], role: .programmer).get()
+        for _ in 0..<200 where rebuilt.withLock({ $0 }) < 2 { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(rebuilt.withLock { $0 } == 2)
+        #expect(rig.hub.targets.contains("layer:2"))
     }
 
     /// A solid-colour still for a layer (RGBA 8-bit).

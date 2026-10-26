@@ -38,6 +38,15 @@ final class CanvasSwitch: @unchecked Sendable {
 
     var rendered: Layout { state.withLock { $0.rendered } }
 
+    /// The project's canvases could not be made at start: `rendering` is what runs, `live.canvas` shows the error.
+    func startFailed(rendering: Layout, error: String) {
+        state.withLock {
+            $0.rendered = rendering
+            $0.wanted = rendering
+            $0.error = error
+        }
+    }
+
     /// The project's canvases, from `projectChanged` (`ProjectDocument.layout`, invalid ones already dropped).
     func request(_ layout: Layout) {
         state.withLock { $0.wanted = layout }

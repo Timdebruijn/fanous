@@ -855,7 +855,9 @@ applied entirely on the GPU in the final output pass" is satisfied.
 
 ### 9.5b Multiple canvases as built (2026-10-26)
 
-- Project: `canvases` holds up to 4 (`ProjectDocument.maxCanvases`); canvas 1
+- Project: `canvases` holds up to 4 (`ProjectDocument.maxCanvases`) with at most
+  4 × 3840 × 2160 pixels together (`maxCanvasPixels`, ≈ 800 MB of rgba16Float
+  triple buffers), checked by `canvas.add`/`canvas.set`; canvas 1
   cannot be removed (the clock master, Syphon and CITP follow it). One compositor
   clock, so one rate: `canvas.set` on canvas 1 sets it on every canvas,
   `canvas.add`/`canvas.set` on another canvas refuse a differing rate.
@@ -877,6 +879,15 @@ applied entirely on the GPU in the final output pass" is satisfied.
   Generators take the size of their layer's canvas (made at canvas 1's size,
   resized on the first tick). Layer capacity is unchanged: a layer costs the
   same on any canvas.
+- Assignment against what renders: Control records the project's layer and
+  slice canvases; the main actor applies them (`Engine.applyCanvasUse`, after
+  every project change and canvas switch) with layers and slices on a canvas
+  that does not render yet (switch deferred in show mode, or failed) mapped to
+  canvas 1. A failed switch also moves what used the missing canvas to canvas 1
+  in the project. `Compositor.layerCanvas` is a mutex-guarded swap read once per
+  tick. Previews are never rebuilt on Control (they read the project). A canvas
+  with no layers is cleared three times (all textures) and then skipped.
+  Secondary displays read one tick's canvases per present.
 - Output pass: each slice samples its own canvas (`SlicePlan.canvas`); Freeze
   holds a copy per canvas a plan uses. A slice whose canvas does not render is
   skipped (black) and the coordinator logs it once per change.

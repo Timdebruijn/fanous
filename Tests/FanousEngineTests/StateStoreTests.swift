@@ -380,6 +380,31 @@ extension StateStoreTests {
         var project = store.project
         try ProjectDocument.setCanvasLayout(.init(fps: 50, canvases: [.init(id: 1, width: 1920, height: 1080), .init(id: 2, width: 1280, height: 720)]), in: &project)
         #expect(ProjectDocument.canvases(from: project).map(\.id) == [1, 2] && ProjectDocument.canvases(from: project)[1].width == 1280)
+        // …and what was put on canvas 3 meanwhile goes back to canvas 1
+        _ = try store.execute("layer.set", args: ["layer": 6, "canvas": 3], role: .programmer).get()
+        project = store.project
+        try ProjectDocument.moveToCanvas1(keeping: [1, 2], in: &project)
+        #expect(ProjectDocument.layerCanvases(from: project) == [5: 2])
+
+        // GPU memory: all canvases together at most 4 × UHD
+        _ = try store.execute("canvas.set", args: ["id": 2, "width": 7680, "height": 3840, "fps": 50], role: .programmer).get()
+        let tooMuch = store.execute("canvas.set", args: ["id": 3, "width": 3840, "height": 2160, "fps": 50], role: .programmer)
+        #expect(tooMuch.failureCode == "invalidArgs")
+        #expect(store.execute("canvas.add", args: ["width": 3840, "height": 2160], role: .programmer).failureCode == "invalidArgs")
+    }
+
+    /// While a canvas does not render (switch deferred in show mode, or failed), its layers draw into canvas 1 and the
+    /// slices that show it show canvas 1; a slice on a canvas the project does not have stays black.
+    @Test func layersAndSlicesWaitingForACanvasUseCanvas1() {
+        var output = OutputConfig(id: 1)
+        output.slices = [SliceConfig(id: 1), SliceConfig(id: 2), SliceConfig(id: 3)]
+        output.slices[1].canvas = 2
+        output.slices[2].canvas = 9
+        let use = Engine.effectiveCanvasUse(layers: [1, 2, 3], outputs: [output], rendering: [1, 3], project: [1, 2, 3])
+        #expect(use.layers == [1, 1, 3])
+        #expect(use.outputs[0].slices.map(\.canvas) == [1, 1, 9])
+        let rendering = Engine.effectiveCanvasUse(layers: [1, 2, 3], outputs: [output], rendering: [1, 2, 3], project: [1, 2, 3])
+        #expect(rendering.layers == [1, 2, 3] && rendering.outputs == [output])
     }
 
     @Test func projectCanvasWinsOverSceneDefaultsAndASceneFileWinsOverTheProject() throws {

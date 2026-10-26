@@ -53,6 +53,8 @@ public final class Compositor: @unchecked Sendable {
         let label: String
         let textures: [MTLTexture]
         let passes: [MTLRenderPassDescriptor]
+        /// Passes in a row that drew nothing: after three every texture is black, so an empty canvas is not cleared again.
+        var emptyPasses = 0
         init(device: MTLDevice, id: Int, width: Int, height: Int) throws {
             self.id = id
             self.width = width
@@ -66,7 +68,13 @@ public final class Compositor: @unchecked Sendable {
     private var targets: [CanvasTarget]
     /// Canvas id per layer index (a project setting, `layer.set`); layers beyond the list are on canvas 1, a layer on a
     /// canvas that does not exist (yet) is not drawn. Replaced as a whole by Control.
-    nonisolated(unsafe) public var layerCanvas: [Int] = []
+    public var layerCanvas: [Int] {
+        get { layerCanvasBox.withLock { $0 } }
+        set { layerCanvasBox.withLock { $0 = newValue } }
+    }
+    private let layerCanvasBox = Mutex<[Int]>([])
+    /// `layerCanvas` as this tick reads it: taken once per tick (no lock wait on the render thread).
+    private var tickLayerCanvas: [Int] = []
     /// Canvas ids that render, canvas 1 first.
     public var canvasIDs: [Int] { targets.map(\.id) }
     /// Texture index the outputs and taps of the running tick read (the drawn one, or the latest on reuse).
@@ -215,7 +223,7 @@ public final class Compositor: @unchecked Sendable {
 
     /// Index into `targets` of a layer's canvas, nil when that canvas does not render.
     private func target(forLayer index: Int) -> Int? {
-        let id = index < layerCanvas.count ? layerCanvas[index] : 1
+        let id = index < tickLayerCanvas.count ? tickLayerCanvas[index] : 1
         return targets.firstIndex { $0.id == id }
     }
 
@@ -283,6 +291,9 @@ public final class Compositor: @unchecked Sendable {
     /// A canvas as completed by the previous tick; nil when it does not render.
     public func latestCanvas(id: Int) -> MTLTexture? { targets.first { $0.id == id }?.textures[(canvasIndex + 2) % 3] }
 
+    /// Every canvas of one completed tick, by id: read the index and the targets once (secondary displays).
+    private func completedCanvases() -> (targets: [CanvasTarget], index: Int) { (targets, (canvasIndex + 2) % 3) }
+
     /// Compositor thread, during a tick (previews, taps): the canvas this tick shows; nil when it does not render.
     public func tickCanvas(_ id: Int) -> MTLTexture? { targets.first { $0.id == id }?.textures[tickIndex] }
 
@@ -315,6 +326,7 @@ public final class Compositor: @unchecked Sendable {
             masterSpeed: snapshot.masterSpeed, time: Float(target.truncatingRemainder(dividingBy: 3600)))  // ponytail: one strobe phase jump per hour; per-layer Double phase if it shows
         drawItems.removeAll(keepingCapacity: true)
 
+        layerCanvasBox.withLockIfAvailable { tickLayerCanvas = $0 }  // busy: last tick's assignment once more
         // Everything that is not GPU work: hand-off, clocks, audio, decoder requests, frame selection.
         for layer in layers {
             let p = layer.index < snapshot.layers.count ? snapshot.layers[layer.index] : LayerParameters()
@@ -382,6 +394,10 @@ public final class Compositor: @unchecked Sendable {
             // one pass per canvas; each draws only the layers assigned to it (a canvas without any still clears)
             let uniforms = uniformBuffers[canvasIndex]
             for (index, canvas) in targets.enumerated() {
+                // an empty canvas that is already black in all three textures is not cleared again
+                let empty = !drawItems.contains { $0.canvas == index }
+                canvas.emptyPasses = empty ? canvas.emptyPasses + 1 : 0
+                if empty && canvas.emptyPasses > 3 { continue }
                 guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: canvas.passes[canvasIndex]) else {
                     encoderFailures.wrappingAdd(1, ordering: .relaxed)
                     canvasValid = false
@@ -691,6 +707,8 @@ public final class Compositor: @unchecked Sendable {
     /// its own command buffer on the caller's thread; `uniforms` belongs to that caller.
     public func present(_ set: OutputSet, to drawable: CAMetalDrawable, uniforms: MTLBuffer) {
         let snapshot = parameters.read()
+        // one tick's canvases for the whole draw (the compositor may complete another meanwhile)
+        let (frame, index) = completedCanvases()
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = drawable.texture
         pass.colorAttachments[0].loadAction = .clear
@@ -700,14 +718,14 @@ public final class Compositor: @unchecked Sendable {
             outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
             return
         }
-        OutputPass.holdFrozen(set, canvas: { latestCanvas(id: $0) }, outputs: snapshot.outputs, buffer: commandBuffer)
+        OutputPass.holdFrozen(set, canvas: { id in frame.first { $0.id == id }?.textures[index] }, outputs: snapshot.outputs, buffer: commandBuffer)
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else {
             outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
             return
         }
         encoder.label = "secondary output"
         OutputPass.draw(
-            set, canvas: { latestCanvas(id: $0) }, encoder: encoder, context: context, uniforms: uniforms,
+            set, canvas: { id in frame.first { $0.id == id }?.textures[index] }, encoder: encoder, context: context, uniforms: uniforms,
             master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs)
         encoder.endEncoding()
         commandBuffer.present(drawable)

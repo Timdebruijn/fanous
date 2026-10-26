@@ -47,7 +47,7 @@ export type CommandName =
   | 'undo';
 
 export interface CommandArgs {
-  /** Add a canvas (up to 4; even 320–8192 px) at the shared frame rate of canvas 1; outputs blank briefly; refused in show mode. Returns the new id. Role: programmer, refused under show lock, undoable. */
+  /** Add a canvas (up to 4, at most 4 × 3840 × 2160 pixels together; even 320–8192 px) at the shared frame rate of canvas 1; outputs blank briefly; refused in show mode. Returns the new id. Role: programmer, refused under show lock, undoable. */
   'canvas.add': { width: number; height: number; fps?: number; name?: string };
   /** Remove a canvas (not canvas 1): its layers and slices move to canvas 1; outputs blank briefly; refused in show mode. Role: programmer, refused under show lock, undoable. */
   'canvas.remove': { id: number };

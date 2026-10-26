@@ -92,7 +92,16 @@ public final class PreviewHub: @unchecked Sendable {
             for subscriber in old.subscriberList { fresh.subscribe(subscriber) }
             canvasBox.withLock { $0 = fresh }
             for (target, previous) in all {
-                guard let replacement = outputs[target] else { continue }
+                guard let replacement = outputs[target] else {
+                    // a removed canvas: its viewers are told instead of left on a frozen picture
+                    if target.hasPrefix("canvas:") {
+                        all.removeValue(forKey: target)
+                        for s in previous.subscriberList {
+                            _ = s.connection.send(text: #"{"t":"error","code":"badTarget","message":"preview target \#(target) no longer exists","id":\#(s.stream)}"#, droppable: false)
+                        }
+                    }
+                    continue
+                }
                 for subscriber in previous.subscriberList { replacement.subscribe(subscriber) }
                 all[target] = replacement
             }
