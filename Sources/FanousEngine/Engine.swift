@@ -514,7 +514,7 @@ public final class Engine: @unchecked Sendable {
         ]
     }
 
-    private func systemLive() -> JSONValue {
+    private func systemLive(addresses: [String]) -> JSONValue {
         let power = Readiness.powerState()
         let memory = Readiness.memoryHeadroom()
         let thermal = ProcessInfo.processInfo.thermalState
@@ -522,7 +522,7 @@ public final class Engine: @unchecked Sendable {
             "thermal": .string(thermal == .nominal ? "nominal" : thermal == .fair ? "fair" : thermal == .serious ? "serious" : "critical"),
             "onAC": .bool(power.onAC), "power": .string(power.detail), "memoryFreeFraction": .number((memory.fraction * 1000).rounded() / 1000),
             "memoryGB": .number(Double(SystemInfo.physicalMemoryBytes / 1_073_741_824)), "os": .string(SystemInfo.osVersion), "host": .string(SystemInfo.hostName),
-            "addresses": .array(SystemInfo.ipv4Addresses.map { .string($0) }), "port": .number(Double(options.port)),
+            "addresses": .array(addresses.map { .string($0) }), "port": .number(Double(options.port)),
             "tlsFingerprint": .string(tlsFingerprint), "bonjour": .string("\(SystemInfo.hostName)._fanous._tcp"),
         ]
     }
@@ -683,8 +683,27 @@ public final class Engine: @unchecked Sendable {
         dmxTimer = dmxStream
     }
 
+    /// CoreAudio/CoreMIDI/getifaddrs lookups are slow and rarely change: refreshed every 5 s on the feed queue.
+    private struct HostFacts {
+        var at: CFTimeInterval = 0
+        var midiSources: [String] = []
+        var audioInputs: [String] = []
+        var addresses: [String] = []
+    }
+    private var hostFacts = HostFacts()
+    private func currentHostFacts() -> HostFacts {
+        let now = CACurrentMediaTime()
+        if now - hostFacts.at >= 5 {
+            hostFacts = HostFacts(at: now, midiSources: MTCInput.sources(), audioInputs: LTCInput.inputDevices(), addresses: SystemInfo.ipv4Addresses)
+        }
+        return hostFacts
+    }
+
     private func publishLive() {
         guard let dmx, let store, let auth, let ingest, let library else { return }
+        // nobody to tell; a client that connects gets the full live document in its welcome and a fresh one within 100 ms
+        guard store.clientCount > 0 else { return }
+        let facts = currentHostFacts()
         let summary = metrics.summary(seconds: 1, now: CACurrentMediaTime())
         func ms(_ v: Double) -> JSONValue { .number((v * 100).rounded() / 100) }
         let snapshot = library.snapshot
@@ -735,8 +754,8 @@ public final class Engine: @unchecked Sendable {
             "timecode": timecodeLive(),
             "cue": cueLive(),
             "show": showLive(),
-            "system": systemLive(),
-            "osc": ["port": 8000, "recent": .array(oscLog.withLock { $0 }), "midiSources": .array(MTCInput.sources().map { .string($0) }), "audioInputs": .array(LTCInput.inputDevices().map { .string($0) })],
+            "system": systemLive(addresses: facts.addresses),
+            "osc": ["port": 8000, "recent": .array(oscLog.withLock { $0 }), "midiSources": .array(facts.midiSources.map { .string($0) }), "audioInputs": .array(facts.audioInputs.map { .string($0) })],
             "citp": citpLive(),
         ]
         store.updateLive(live)
