@@ -43,8 +43,8 @@ export type CommandName =
   | 'undo';
 
 export interface CommandArgs {
-  /** Set the canvas name or clock-master output (size changes need a restart, B31). Role: programmer, refused under show lock, undoable. */
-  'canvas.set': { id: number; path: '/name' | '/clockMaster'; value: JSONValue };
+  /** Set the canvas name or clock-master output, or its size and rate (even 320–8192 px; 23.976, 24, 25, 29.97, 30, 50, 59.94 or 60 fps; re-initialises the canvas so outputs blank briefly; refused in show mode). Role: programmer, refused under show lock, undoable. */
+  'canvas.set': { id: number; path: '/name' | '/clockMaster'; value: JSONValue } | { id: number; width: number; height: number; fps: number };
   /** Add a cue: { number, name, fade?, values?: [{fixture, parameter, raw, fade?}], trigger?: "hh:mm:ss:ff@rate", follow? }. Role: programmer, refused under show lock, undoable. */
   'cue.add': { number: number; name: string; fade?: number; values?: { fixture: string; parameter: string; raw: number; fade?: number }[]; trigger?: string | null; follow?: number | null };
   /** Fire the previous cue. Role: operator. */

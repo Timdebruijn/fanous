@@ -10,7 +10,7 @@
   import OutputMapper from '../components/OutputMapper.svelte';
   import Preview from '../components/Preview.svelte';
   import {
-    EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, meshIdentity, modeText, nextSliceId, outputSize, statusText,
+    CANVAS_PRESETS, CANVAS_RATES, canvasSizeError, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, meshIdentity, modeText, nextSliceId, outputSize, statusText,
     type MapPoint, type MapperMode, type OutputConfig,
   } from '../lib/outputs';
   import { app, can, cmd, toastUndo } from '../lib/state.svelte';
@@ -32,7 +32,21 @@
   const lost = $derived(app.live.outputs.filter((s) => s.state === 'lost'));
   const display = $derived(displays.find((d) => d.uuid === output?.display?.uuid));
   const previewTarget = $derived(output && ui.tab !== 'canvases' ? `output:${output.id}` : 'canvas');
-  const previewAspect = $derived(output && ui.tab !== 'canvases' ? `${size.w} / ${size.h}` : '16 / 9');
+  const previewAspect = $derived(output && ui.tab !== 'canvases' ? `${size.w} / ${size.h}` : canvas ? `${canvas.width} / ${canvas.height}` : '16 / 9');
+  /** canvas size and rate being edited; null = what the project has */
+  let formatDraft = $state<{ width: number; height: number; fps: number } | null>(null);
+  const format = $derived(formatDraft ?? { width: canvas?.width ?? 1920, height: canvas?.height ?? 1080, fps: canvas?.fps ?? 60 });
+  const formatChanged = $derived(!!canvas && (format.width !== canvas.width || format.height !== canvas.height || format.fps !== (canvas.fps ?? 60)));
+  const formatError = $derived(formatChanged ? canvasSizeError(format.width, format.height) : null);
+  function editFormat(change: Partial<{ width: number; height: number; fps: number }>) {
+    formatDraft = { ...format, ...change };
+  }
+  async function applyFormat() {
+    if (!canvas || formatError) return;
+    const { width, height, fps } = format;
+    if (!confirm(`Change the canvas to ${width} × ${height} at ${fps} fps? The canvas is re-created: every output blanks briefly. Slices and outputs keep their settings.`)) return;
+    if ((await cmd('canvas.set', { id: canvas.id, width, height, fps })) !== undefined) formatDraft = null;
+  }
   const sliceIndex = $derived(Math.min(ui.slice, Math.max(0, (output?.slices.length ?? 1) - 1)));
 
   function set(path: string, value: JSONValue) {
@@ -220,7 +234,27 @@
           <h2>{canvas.name}</h2>
           <div class="fields">
             <label class="field"><span>Name</span><input class="input" type="text" value={canvas.name} disabled={locked} onchange={(e) => void cmd('canvas.set', { id: canvas.id, path: '/name', value: e.currentTarget.value })} /></label>
-            <div class="field"><span>Size</span><span class="ro mono">{canvas.width} × {canvas.height} · {app.caps.fps ?? '—'} Hz</span></div>
+            <div class="field" role="group" aria-label="Canvas size"><span>Size w × h (px)</span>
+              <span class="row4">
+                <input class="input mono" type="number" min="320" max="8192" step="2" aria-label="Canvas width" value={format.width} disabled={locked} onchange={(e) => editFormat({ width: Number(e.currentTarget.value) })} />
+                <input class="input mono" type="number" min="320" max="8192" step="2" aria-label="Canvas height" value={format.height} disabled={locked} onchange={(e) => editFormat({ height: Number(e.currentTarget.value) })} />
+                <select class="select" aria-label="Canvas size preset" disabled={locked} value={`${format.width}x${format.height}`} onchange={(e) => { const [w, h] = e.currentTarget.value.split('x').map(Number); if (w && h) editFormat({ width: w, height: h }); }}>
+                  {#if !CANVAS_PRESETS.some((p) => p.width === format.width && p.height === format.height)}<option value={`${format.width}x${format.height}`}>Custom</option>{/if}
+                  {#each CANVAS_PRESETS as p (`${p.width}x${p.height}`)}<option value={`${p.width}x${p.height}`}>{p.width} × {p.height}</option>{/each}
+                </select>
+              </span>
+            </div>
+            <label class="field"><span>Frame rate</span>
+              <select class="select" disabled={locked} value={String(format.fps)} onchange={(e) => editFormat({ fps: Number(e.currentTarget.value) })}>
+                {#each CANVAS_RATES as r (r)}<option value={String(r)}>{r} fps</option>{/each}
+              </select>
+            </label>
+            <div class="field"><span>&nbsp;</span>
+              <span class="row4">
+                <button type="button" class="btn" disabled={locked || !formatChanged || !!formatError || app.live.show.mode} title={locked ? LOCKED : app.live.show.mode ? 'Leave show mode to change the canvas' : undefined} onclick={applyFormat}>Apply</button>
+                {#if formatChanged}<button type="button" class="btn btn-ghost" onclick={() => (formatDraft = null)}>Revert</button>{/if}
+              </span>
+            </div>
             <label class="field"><span>Clock master</span>
               <select class="select" disabled={locked} value={canvas.clockMaster ?? ''} onchange={(e) => void cmd('canvas.set', { id: canvas.id, path: '/clockMaster', value: e.currentTarget.value ? Number(e.currentTarget.value) : null })}>
                 <option value="">First bound output</option>
@@ -228,7 +262,8 @@
               </select>
             </label>
           </div>
-          <p class="caption">Layers are assigned to this canvas by the patch. Changing the canvas size needs a restart with a new scene (B31).</p>
+          {#if formatError}<p class="caption tone-red">{formatError}</p>{/if}
+          <p class="caption">Layers are assigned to this canvas by the patch. Applying a new size or frame rate re-creates the canvas: outputs blank briefly. Slices keep their place (they are stored as fractions of the canvas).</p>
         {/if}
       </section>
     {:else if !output}

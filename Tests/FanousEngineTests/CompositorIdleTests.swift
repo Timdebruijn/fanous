@@ -178,6 +178,30 @@ struct CompositorIdleTests {
         #expect(generator.encodeCount == 2, "drawn in the tick it becomes visible")
     }
 
+    /// B31: the headless loop of an output coordinator without displays keeps running through a canvas change, at the
+    /// new size and rate; a canvas that cannot be made leaves the old one running.
+    @MainActor @Test func setCanvasRunsTheCompositorAtTheNewSizeAndRate() async throws {
+        let rig = try Rig(idleWork: false, offscreen: false)
+        let compositor = rig.compositor
+        let coordinator = try OutputCoordinator(compositor: compositor, context: rig.context, fps: 60, displays: [], logger: Logger(label: "canvas-test"))
+        coordinator.apply(outputs: [], clockMaster: nil)
+        defer { coordinator.stop() }
+        func ticksAdvance() async throws {
+            let start = compositor.completed.load(ordering: .relaxed)
+            for _ in 0..<200 where compositor.completed.load(ordering: .relaxed) < start + 5 { try await Task.sleep(for: .milliseconds(10)) }
+            #expect(compositor.completed.load(ordering: .relaxed) >= start + 5, "the render loop runs")
+        }
+        try await ticksAdvance()
+
+        try coordinator.setCanvas(width: 320, height: 180, fps: 50)
+        try await ticksAdvance()
+        let canvas = compositor.readback()
+        #expect((canvas.width, canvas.height, compositor.fps) == (320, 180, 50))
+        #expect(canvas.rgba[(canvas.height / 2 * canvas.width + canvas.width / 2) * 4] > 150, "the layer is drawn on the new canvas")
+        // ponytail: the failure path (makeTexture returns nil, old canvas kept) is not forced here: Metal asserts on
+        // oversized descriptors instead of returning nil, and running out of memory is not reproducible in a test
+    }
+
     @Test func invisibleLayersStopAskingForFramesAfterTwoSecondsAndResumeWhenVisible() {
         var hold = InvisibilityHold()
         let visible = hold.allowsRequests(visible: true, at: 0)

@@ -4,8 +4,8 @@
 
 # Outputs and mapping
 
-All layers are composited into one **canvas** (1920x1080 unless the engine was
-started with another scene). **Outputs** take parts of the canvas to displays
+All layers are composited into one **canvas** (1920x1080 at 60 fps in a new
+project; change it on the Canvases tab, see below). **Outputs** take parts of the canvas to displays
 and projectors. An output is a display, a region of it, an intensity, blend
 edges, a warp and one or more slices. A new output shows the whole canvas with
 no blend and no warp. Everything is applied on the GPU in the last step, so it
@@ -17,8 +17,31 @@ on top shows the canvas on the Canvases tab and the selected output on the other
 two. The output preview has the output's own aspect ratio (4:3, 16:10, an
 ultra-wide LED wall), and the handles are drawn over exactly the same box, so
 they sit on the picture whatever the display. The Canvases tab shows the canvas
-at 16:9. The preview image itself is a 640 x 360 stream stretched back into the
-output's shape.
+in its own aspect ratio. The preview image itself is a 640-pixel-wide stream
+stretched back into the canvas's or output's shape.
+
+## Canvas size and frame rate
+
+On the Canvases tab, **Size w × h** sets the canvas in pixels (or pick a preset:
+1920 × 1080, 3840 × 2160, 1280 × 720) and **Frame rate** the rate the engine
+renders at: 23.976, 24, 25, 29.97, 30, 50, 59.94 or 60 fps. Width and height
+must be even and between 320 and 8192. Nothing changes until you press
+**Apply** and confirm; **Revert** drops your edits.
+
+Applying re-creates the canvas: every output blanks (or holds its last picture)
+for a moment, so do it before the show, not during it. It is refused while the
+show is locked or show mode is on. Outputs keep their display, blend, warp and
+slices: slice sources are stored as fractions of the canvas, so a slice that
+showed the left half still shows the left half (in pixels, the numbers double
+when you go from 1920 × 1080 to 3840 × 2160). Content that was made for the
+old size is scaled to the new canvas by each layer's fit mode. Undo (Cmd-Z)
+goes back to the previous size.
+
+The size and rate are saved in the project and used at every start. Developers
+who start the engine with `--scene FILE` override them: the scene file's canvas
+wins for that run and is shown (and saved, on the next edit) in the project.
+Keep the frame rate equal to the refresh rate of the displays (see "Not done
+yet": display modes are not set by Fanous).
 
 After you add an output, a yellow bar says **Next: align this output**; its
 button opens the Warp & Slices tab for that output.
@@ -157,7 +180,6 @@ is locked.
 - **Hot-plug** (unplug and replug) is only partly tested: through unit tests and
   by binding and releasing the built-in display. Test it on your machine before
   the show (B34).
-- The canvas size and frame rate cannot be changed from the UI (B31).
 - Dithering is a simple noise function; if you see banding on a projector, tell
   the developers (B34).
 - Not available: per-output Syphon, 10-bit output, separate blend gamma for red,

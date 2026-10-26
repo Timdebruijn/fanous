@@ -11,7 +11,40 @@ import Logging
 public enum ProjectDocument {
     public static let schema = 1
 
-    public static func initial(patch: Patch, layerCount: Int, libraryRoot: String, policy: SourcePolicy, canvas: (width: Int, height: Int) = (1920, 1080)) -> JSONValue {
+    /// Canvas size and rate (B31).
+    public typealias CanvasFormat = (width: Int, height: Int, fps: Double)
+    public static let defaultCanvas: CanvasFormat = (1920, 1080, 60)
+    /// Canvas rates `canvas.set` accepts.
+    public static let frameRates: [Double] = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60]
+
+    /// Checks a canvas format and returns it with the rate snapped to the list entry (23.976 for 24000/1001).
+    /// Even sizes only (the H.264 preview halves them); no multiple of 4 is needed: HAP's 4×4 blocks apply to media,
+    /// the canvas is never block-compressed.
+    public static func validated(_ format: CanvasFormat) throws -> CanvasFormat {
+        guard (320...8192).contains(format.width), (320...8192).contains(format.height), format.width % 2 == 0, format.height % 2 == 0 else {
+            throw CommandError.invalidArgs("width and height must be even and 320–8192")
+        }
+        guard let fps = frameRates.first(where: { abs($0 - format.fps) < 0.01 }) else {
+            throw CommandError.invalidArgs("fps must be one of \(frameRates.map { String(format: "%g", $0) }.joined(separator: ", "))")
+        }
+        return (format.width, format.height, fps)
+    }
+
+    static func canvasValue(_ format: CanvasFormat) -> JSONValue {
+        (try? JSONValue(encoding: [CanvasConfig(id: 1, name: "Canvas 1", width: format.width, height: format.height, fps: format.fps)])) ?? []
+    }
+
+    /// Writes a format into the first canvas (name and clock master stay).
+    public static func setCanvasFormat(_ format: CanvasFormat, in project: inout JSONValue) throws {
+        var list = canvases(from: project)
+        guard !list.isEmpty else { return try project.set(canvasValue(format), at: "/canvases") }
+        list[0].width = format.width
+        list[0].height = format.height
+        list[0].fps = format.fps
+        try project.set(try JSONValue(encoding: list), at: "/canvases")
+    }
+
+    public static func initial(patch: Patch, layerCount: Int, libraryRoot: String, policy: SourcePolicy, canvas: CanvasFormat = defaultCanvas) -> JSONValue {
         [
             "schema": .number(Double(schema)),
             "name": "Untitled",
@@ -20,7 +53,7 @@ public enum ProjectDocument {
             "patch": patchValue(patch),
             "policy": .string(policy.rawValue),
             "library": ["root": .string(libraryRoot)],
-            "canvases": (try? JSONValue(encoding: [CanvasConfig(id: 1, name: "Canvas 1", width: canvas.width, height: canvas.height)])) ?? [],
+            "canvases": canvasValue(canvas),
             "outputs": [],
             "ui": [:],
         ]
@@ -99,14 +132,14 @@ public enum ProjectDocument {
         return Patch(entries: result)
     }
 
-    public static func load(from url: URL, canvas: (width: Int, height: Int) = (1920, 1080)) -> JSONValue? {
+    public static func load(from url: URL, canvas: CanvasFormat = defaultCanvas) -> JSONValue? {
         guard let data = try? Data(contentsOf: url), var document = try? JSONDecoder().decode(JSONValue.self, from: data),
             document["schema"]?.int == schema, document["patch"]?.array != nil
         else { return nil }
         // keys added within schema 1 (Phase 6): give older files their defaults
         if document["outputs"] == nil { try? document.set([], at: "/outputs") }
         if document["canvases"] == nil {
-            try? document.set((try? JSONValue(encoding: [CanvasConfig(id: 1, name: "Canvas 1", width: canvas.width, height: canvas.height)])) ?? [], at: "/canvases")
+            try? document.set(canvasValue(canvas), at: "/canvases")
         }
         if document["ui"] == nil { try? document.set([:], at: "/ui") }
         return document
@@ -121,7 +154,8 @@ public enum ProjectDocument {
     /// Paths `project.set` may touch; everything else has a command of its own or is engine-owned.
     static let settablePrefixes = ["/name", "/policy", "/library/root", "/ui"]
 
-    public static func registerCommands(on store: StateStore, auth: RoleAuth) {
+    /// `showModeOn`: canvas format changes are refused while show mode is on (they re-initialise the canvas).
+    public static func registerCommands(on store: StateStore, auth: RoleAuth, showModeOn: @escaping @Sendable () -> Bool = { false }) {
         store.register(
             CommandSpec(
                 name: "project.set", role: .programmer, summary: "Set one project value (name, policy, library.root, ui.*); layers.setCount changes the layer count.",
@@ -237,19 +271,29 @@ public enum ProjectDocument {
             })
         store.register(
             CommandSpec(
-                name: "canvas.set", role: .programmer, summary: "Set the canvas name or clock-master output (size changes need a restart, B31).",
-                argsType: "{ id: number; path: '/name' | '/clockMaster'; value: JSONValue }"
+                name: "canvas.set", role: .programmer,
+                summary: "Set the canvas name or clock-master output, or its size and rate (even 320–8192 px; 23.976, 24, 25, 29.97, 30, 50, 59.94 or 60 fps; re-initialises the canvas so outputs blank briefly; refused in show mode).",
+                argsType: "{ id: number; path: '/name' | '/clockMaster'; value: JSONValue } | { id: number; width: number; height: number; fps: number }"
             ) { project, args in
-                guard let id = args["id"]?.int, let path = args["path"]?.string, ["/name", "/clockMaster"].contains(path), let value = args["value"] else {
-                    throw CommandError.invalidArgs("args: { id, path: /name | /clockMaster, value }")
-                }
+                guard let id = args["id"]?.int else { throw CommandError.invalidArgs("args: { id, path, value } or { id, width, height, fps }") }
                 var canvases = ProjectDocument.canvases(from: project)
                 guard let index = canvases.firstIndex(where: { $0.id == id }) else { throw CommandError.invalidArgs("no canvas \(id)") }
-                if path == "/name" {
-                    guard let name = value.string, !name.isEmpty else { throw CommandError.invalidArgs("name must be a string") }
-                    canvases[index].name = name
+                if let width = args["width"]?.int, let height = args["height"]?.int, let fps = args["fps"]?.double {
+                    guard !showModeOn() else { throw CommandError("showMode", "the canvas format cannot change in show mode; leave show mode first") }
+                    let format = try validated((width, height, fps))
+                    canvases[index].width = format.width
+                    canvases[index].height = format.height
+                    canvases[index].fps = format.fps
                 } else {
-                    canvases[index].clockMaster = value.int
+                    guard let path = args["path"]?.string, ["/name", "/clockMaster"].contains(path), let value = args["value"] else {
+                        throw CommandError.invalidArgs("args: { id, path: /name | /clockMaster, value } or { id, width, height, fps }")
+                    }
+                    if path == "/name" {
+                        guard let name = value.string, !name.isEmpty else { throw CommandError.invalidArgs("name must be a string") }
+                        canvases[index].name = name
+                    } else {
+                        canvases[index].clockMaster = value.int
+                    }
                 }
                 try project.set(try JSONValue(encoding: canvases), at: "/canvases")
                 return nil

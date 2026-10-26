@@ -117,7 +117,7 @@ public final class OutputCoordinator {
     private let compositor: Compositor
     private let context: MetalContext
     private let compiler: OutputCompiler
-    private let fps: Double
+    private var fps: Double
     private let logger: Logger
     private var outputs: [OutputConfig] = []
     private var clockMaster: Int?
@@ -156,6 +156,22 @@ public final class OutputCoordinator {
         for displayID in bound.keys {
             if hidden { CGDisplayHideCursor(displayID) } else { CGDisplayShowCursor(displayID) }
         }
+    }
+
+    /// New canvas size and rate (B31): every driver stops (outputs hold their last frame), the compositor makes new
+    /// canvas textures, then the drivers start again at the new rate. Windows and bindings stay; slices are stored
+    /// as fractions of the canvas, so mappings stay valid. On failure the old canvas runs on and the error is thrown.
+    public func setCanvas(width: Int, height: Int, fps: Double) throws {
+        stopMaster()
+        headless?.stop()
+        headless = nil
+        for id in bound.keys {
+            bound[id]?.secondary?.stop()
+            bound[id]?.secondary = nil
+        }
+        defer { rebind() }
+        try compositor.reconfigure(width: width, height: height, fps: fps)
+        self.fps = fps
     }
 
     public func displaysChanged(_ displays: [DisplayInfo]) {

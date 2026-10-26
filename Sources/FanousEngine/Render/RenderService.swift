@@ -92,8 +92,8 @@ public final class RenderService {
         compositor.setLayers(layers)
         compositor.loaderWake = loader.wake
         let device = context.device
-        let canvas = (scene.canvasWidth, scene.canvasHeight)
-        loader.generatorFactory = { file in GeneratorSource(context: context, file: file, width: canvas.0, height: canvas.1) }
+        // generators are made at the canvas size of the moment (it changes with canvas.set, B31)
+        loader.generatorFactory = { [compositor] file in GeneratorSource(context: context, file: file, width: compositor.canvasWidth, height: compositor.canvasHeight) }
         loader.liveFactory = { spec in
             let parts = spec.split(separator: "/", maxSplits: 1).map(String.init)
             guard parts.count == 2 else { return nil }

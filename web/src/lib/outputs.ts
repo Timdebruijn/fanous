@@ -68,6 +68,25 @@ export interface CanvasConfig {
   width: number;
   height: number;
   clockMaster: number | null;
+  /** absent in projects saved before B31: 60 */
+  fps?: number;
+}
+
+/** Canvas presets and rates `canvas.set` accepts (engine: ProjectDocument.validated). */
+export const CANVAS_PRESETS = [
+  { width: 1920, height: 1080 },
+  { width: 3840, height: 2160 },
+  { width: 1280, height: 720 },
+] as const;
+export const CANVAS_RATES = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60] as const;
+
+/** Why the engine would refuse this canvas size, or null when it is fine. */
+export function canvasSizeError(width: number, height: number): string | null {
+  for (const [name, v] of [['Width', width], ['Height', height]] as const) {
+    if (!Number.isInteger(v) || v < 320 || v > 8192) return `${name} must be a whole number from 320 to 8192.`;
+    if (v % 2 !== 0) return `${name} must be even.`;
+  }
+  return null;
 }
 
 export interface DisplayDoc {
