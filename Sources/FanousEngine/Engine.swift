@@ -92,9 +92,13 @@ public final class Engine: @unchecked Sendable {
     private var liveTimer: DispatchSourceTimer?
     private var dmxTimer: DispatchSourceTimer?
     private var autosave: DispatchWorkItem?
-    /// B23: project versions and the 10-minute snapshot timer (feed queue).
+    /// B23: project versions; their file work (start, show mode, 10-minute timer, OSC load) runs on `versionsQueue`.
     private var versions: ProjectVersions?
     private var versionTimer: DispatchSourceTimer?
+    private let versionsQueue = DispatchQueue(label: "org.fanous.versions", qos: .utility)
+    /// Versions queue only: the last OSC project load, so a repeat of the same version within the window is ignored.
+    private var lastOSCLoad: (id: String, at: TimeInterval)?
+    static let oscLoadRepeatWindow: TimeInterval = 2
     private let feedQueue = DispatchQueue(label: "org.fanous.feed", qos: .utility)
     public let metrics = MetricsRing()
 
@@ -232,10 +236,10 @@ public final class Engine: @unchecked Sendable {
         versions.registerCommands(on: store, showModeOn: { [weak self] in self?.showMode.isOn ?? false })
         self.versions = versions
         let startProject = loadedProject
-        feedQueue.async {
+        versionsQueue.async {
             if let startProject { versions.saveAutomatic(startProject, reason: .start) } else { _ = versions.list() }
         }
-        let versionTimer = DispatchSource.makeTimerSource(queue: feedQueue)
+        let versionTimer = DispatchSource.makeTimerSource(queue: versionsQueue)
         versionTimer.schedule(deadline: .now() + ProjectVersions.periodicInterval, repeating: ProjectVersions.periodicInterval)
         versionTimer.setEventHandler { versions.saveAutomatic(store.project, reason: .periodic) }
         versionTimer.resume()
@@ -276,13 +280,18 @@ public final class Engine: @unchecked Sendable {
             case .showMode(let on): _ = store.execute("show.mode", args: ["on": .bool(on)], role: .operator)
             case .timecodeEnable(let on): _ = store.execute("timecode.enable", args: ["on": .bool(on)], role: .operator)
             case .projectLoad(let key):
-                // B35: a named version (or a version id); off the DMX queue, the lookup reads the versions directory
+                // B35: a named version (or a version id); off the DMX and feed queues, the lookup reads the versions directory
                 let logger = self.logger
-                self.feedQueue.async { [weak self] in
-                    guard let id = self?.versions?.resolve(key) else {
+                self.versionsQueue.async { [weak self] in
+                    guard let self else { return }
+                    guard let id = self.versions?.resolve(key) else {
                         logger.warning("OSC project load: no such version", metadata: ["version": "\(key)"])
                         return
                     }
+                    // a console repeating the message (or a bundle sent twice) loads once
+                    let now = ProcessInfo.processInfo.systemUptime
+                    if let last = self.lastOSCLoad, last.id == id, now - last.at < Self.oscLoadRepeatWindow { return }
+                    self.lastOSCLoad = (id, now)
                     if case .failure(let error) = store.execute("project.revert", args: ["id": .string(id)], role: .programmer) {
                         logger.warning("OSC project load refused", metadata: ["version": "\(key)", "code": "\(error.code)", "reason": "\(error.message)"])
                     }
@@ -293,7 +302,7 @@ public final class Engine: @unchecked Sendable {
         showMode.onChange = { [weak self] on in
             guard let self else { return }
             self.ingest?.paused = on  // DESIGN.md §14: ingest paused in show mode
-            if on { self.feedQueue.async { versions.saveAutomatic(store.project, reason: .showMode) } }  // B23
+            if on { self.versionsQueue.async { versions.saveAutomatic(store.project, reason: .showMode) } }  // B23
             if on { self.startReadinessTimer() } else { self.stopReadinessTimer() }
             if !on {
                 self.showResumedAt.withLock { $0 = nil }

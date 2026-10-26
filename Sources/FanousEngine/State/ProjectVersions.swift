@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
+import CryptoKit
 import Foundation
 import FanousCore
 import Logging
@@ -36,6 +37,17 @@ public final class ProjectVersions: Sendable {
         public var canvases: Int
         public var cues: Int
 
+        init(id: String, at: Double, name: String, automatic: Bool, project: JSONValue) {
+            self.id = id
+            self.at = at
+            self.name = name
+            self.automatic = automatic
+            layers = project["layerCount"]?.int ?? 0
+            outputs = project["outputs"]?.array?.count ?? 0
+            canvases = project["canvases"]?.array?.count ?? 0
+            cues = project["cues"]?.array?.count ?? 0
+        }
+
         var json: JSONValue {
             [
                 "id": .string(id), "at": .number(at), "name": .string(name), "automatic": .bool(automatic),
@@ -46,15 +58,21 @@ public final class ProjectVersions: Sendable {
 
     private struct State {
         var lastAt: Double = 0
-        var lastAutomatic: Double?
         /// Bumped on every write or delete, so the UI knows to fetch the list again.
         var serial = 0
-        var warnedCorrupt: Set<String> = []
+        /// Version metadata per file name: a version file is never rewritten, so each is parsed once.
+        var cache: [String: Version] = [:]
+        /// File names that did not load as a version (logged once).
+        var unreadable: Set<String> = []
+        var loaded = false
+        /// Digest of the newest version's document, so "changed since the last version" reads no file.
+        var newestID: String?
+        var newestDigest: Data?
     }
 
     public let directory: URL
     private let logger: Logger
-    /// Also serializes the file operations: the control queue (commands) and the feed queue (automatic) both write.
+    /// Also serializes the file operations: the control queue (commands) and the versions queue (automatic) both write.
     private let state = Mutex(State())
 
     public init(directory: URL, logger: Logger) {
@@ -64,12 +82,15 @@ public final class ProjectVersions: Sendable {
 
     /// `live.versions`: when the newest automatic version was written and a change counter.
     public var live: JSONValue {
-        state.withLock { s in ["lastAutomatic": s.lastAutomatic.map { .number($0) } ?? .null, "serial": .number(Double(s.serial))] }
+        state.withLock { s in
+            let last = s.cache.values.filter(\.automatic).map(\.at).max()
+            return ["lastAutomatic": last.map { .number($0) } ?? .null, "serial": .number(Double(s.serial))]
+        }
     }
 
     // MARK: Files
 
-    /// Newest first; files that do not load as a project are skipped (logged once per file).
+    /// Newest first; files that do not load as a version are skipped (logged once per file).
     public func list() -> [Version] {
         state.withLock { listLocked(&$0) }
     }
@@ -84,22 +105,31 @@ public final class ProjectVersions: Sendable {
     /// Errors are logged: an automatic snapshot never fails what triggered it.
     @discardableResult
     public func saveAutomatic(_ project: JSONValue, reason: Reason, now: Date = Date()) -> Version? {
-        state.withLock { s in
-            if let newest = listLocked(&s).first, let document = try? documentLocked(newest.id), Self.comparable(document) == Self.comparable(project) {
-                return nil
+        do {
+            return try saveIfChanged(project, name: reason.rawValue, now: now)
+        } catch {
+            logger.error("automatic project version failed", metadata: ["reason": "\(reason.rawValue)", "error": "\(error)"])
+            return nil
+        }
+    }
+
+    /// An automatic version named `name`, nil when the project equals the newest version.
+    func saveIfChanged(_ project: JSONValue, name: String, now: Date = Date()) throws -> Version? {
+        try state.withLock { s in
+            if let newest = listLocked(&s).first {
+                if s.newestID != newest.id {
+                    s.newestID = newest.id
+                    s.newestDigest = (try? documentLocked(newest.id, &s)).flatMap(Self.digest)
+                }
+                if s.newestDigest != nil, s.newestDigest == Self.digest(project) { return nil }
             }
-            do {
-                return try saveLocked(project, name: reason.rawValue, automatic: true, now: now, &s)
-            } catch {
-                logger.error("automatic project version failed", metadata: ["reason": "\(reason.rawValue)", "error": "\(error)"])
-                return nil
-            }
+            return try saveLocked(project, name: name, automatic: true, now: now, &s)
         }
     }
 
     /// The project document of a version, without its `snapshot` member.
     public func document(id: String) throws -> JSONValue {
-        try state.withLock { _ in try documentLocked(id) }
+        try state.withLock { s in try documentLocked(id, &s) }
     }
 
     /// Deletes a named version; automatic ones expire by themselves.
@@ -108,6 +138,7 @@ public final class ProjectVersions: Sendable {
             guard let version = listLocked(&s).first(where: { $0.id == id }) else { throw Self.notFound(id) }
             guard !version.automatic else { throw CommandError.invalidArgs("automatic versions expire by themselves; only named versions can be deleted") }
             try FileManager.default.removeItem(at: url(id))
+            s.cache[id] = nil
             s.serial += 1
         }
     }
@@ -123,61 +154,85 @@ public final class ProjectVersions: Sendable {
 
     private static func notFound(_ id: String) -> CommandError { CommandError("notFound", "no project version \(id)") }
 
-    /// What "the same project" means for skipping a snapshot: the show lock and the version info do not count.
-    private static func comparable(_ project: JSONValue) -> JSONValue {
+    /// What "the same project" means for skipping a snapshot or a revert: the show lock and the version info do not count.
+    static func comparable(_ project: JSONValue) -> JSONValue {
         guard case .object(var o) = project else { return project }
         o[metaKey] = nil
         o["showLock"] = nil
         return .object(o)
     }
 
+    static func digest(_ project: JSONValue) -> Data? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return (try? encoder.encode(comparable(project))).map { Data(SHA256.hash(data: $0)) }
+    }
+
     private func listLocked(_ s: inout State) -> [Version] {
-        let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
-        var versions: [Version] = []
-        for file in files where file.pathExtension == "json" {
-            let id = file.deletingPathExtension().lastPathComponent
-            guard let document = ProjectDocument.load(from: file), let meta = document[Self.metaKey], let at = meta["at"]?.double else {
-                if s.warnedCorrupt.insert(id).inserted { logger.warning("project version skipped: not a readable project", metadata: ["file": "\(file.lastPathComponent)"]) }
+        let names = Set(
+            ((try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [])
+                .filter { $0.pathExtension == "json" }.map { $0.deletingPathExtension().lastPathComponent })
+        s.cache = s.cache.filter { names.contains($0.key) }  // deleted by hand
+        for id in names where s.cache[id] == nil && !s.unreadable.contains(id) {
+            guard let document = ProjectDocument.load(from: url(id)), let meta = document[Self.metaKey], let at = meta["at"]?.double else {
+                s.unreadable.insert(id)
+                logger.warning("project version skipped: not a readable version", metadata: ["file": "\(id).json"])
                 continue
             }
-            versions.append(
-                Version(
-                    id: id, at: at, name: meta["name"]?.string ?? id, automatic: meta["automatic"]?.bool ?? true,
-                    layers: document["layerCount"]?.int ?? 0, outputs: document["outputs"]?.array?.count ?? 0,
-                    canvases: document["canvases"]?.array?.count ?? 0, cues: document["cues"]?.array?.count ?? 0))
+            s.cache[id] = Version(id: id, at: at, name: meta["name"]?.string ?? id, automatic: meta["automatic"]?.bool ?? true, project: document)
         }
-        versions.sort { ($0.at, $0.id) > ($1.at, $1.id) }
-        s.lastAutomatic = versions.first(where: \.automatic)?.at
+        let versions = s.cache.values.sorted { ($0.at, $0.id) > ($1.at, $1.id) }
+        if !s.loaded {
+            s.loaded = true
+            // a clock set back since the newest version must not make the next one sort (or prune) below it
+            s.lastAt = max(s.lastAt, versions.first?.at ?? 0)
+        }
         return versions
     }
 
-    private func documentLocked(_ id: String) throws -> JSONValue {
-        // ids come from clients and OSC: only a plain file name in the versions directory
-        guard !id.isEmpty, !id.contains("/"), !id.hasPrefix("."), FileManager.default.fileExists(atPath: url(id).path) else { throw Self.notFound(id) }
-        guard var document = ProjectDocument.load(from: url(id)) else { throw CommandError("corrupt", "project version \(id) is not a readable project") }
+    private func documentLocked(_ id: String, _ s: inout State) throws -> JSONValue {
+        // ids come from clients and OSC: only a listed version (a plain file name in the directory, with snapshot info)
+        guard !id.isEmpty, !id.contains("/"), !id.hasPrefix("."), listLocked(&s).contains(where: { $0.id == id }) else { throw Self.notFound(id) }
+        guard var document = ProjectDocument.load(from: url(id)), document[Self.metaKey] != nil else {
+            throw CommandError("corrupt", "project version \(id) is not a readable version")
+        }
         try? document.remove(at: JSONPointer(tokens: [Self.metaKey]))
         return document
     }
 
     private func saveLocked(_ project: JSONValue, name: String, automatic: Bool, now: Date, _ s: inout State) throws -> Version {
-        // strictly increasing times: the newest version is always the last one written
-        let at = max(now.timeIntervalSince1970, s.lastAt + 0.001)
+        let existing = listLocked(&s)
+        // strictly increasing times: the newest version is always the last one written, also when the clock went back
+        let at = max(now.timeIntervalSince1970, s.lastAt + 0.000_001)
         s.lastAt = at
         var document = project
         try document.set(["name": .string(name), "at": .number(at), "automatic": .bool(automatic)], at: JSONPointer(tokens: [Self.metaKey]))
-        let id = "\(Self.stamp(at))-\(Self.slug(automatic ? "auto-\(name)" : name))"
+        // two saves within one millisecond share the stamp: a counter keeps the ids apart
+        let stamp = Self.stamp(at), slug = Self.slug(automatic ? "auto-\(name)" : name)
+        var id = "\(stamp)-\(slug)"
+        var n = 1
+        while s.cache[id] != nil || s.unreadable.contains(id) || FileManager.default.fileExists(atPath: url(id).path) {
+            n += 1
+            id = "\(stamp)-\(n)-\(slug)"
+        }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try ProjectDocument.save(document, to: url(id))  // atomic
+        let version = Version(id: id, at: at, name: name, automatic: automatic, project: project)
+        s.cache[id] = version
+        s.newestID = id
+        s.newestDigest = Self.digest(project)
         s.serial += 1
         if automatic {
-            for old in listLocked(&s).filter(\.automatic).dropFirst(Self.keepAutomatic) {
-                do { try FileManager.default.removeItem(at: url(old.id)) } catch { logger.warning("old project version not deleted", metadata: ["id": "\(old.id)", "error": "\(error)"]) }
+            // by time, newest first; the version just written stays whatever the clock says
+            let older = existing.filter(\.automatic).dropFirst(Self.keepAutomatic - 1)
+            for old in older where old.id != id {
+                do {
+                    try FileManager.default.removeItem(at: url(old.id))
+                    s.cache[old.id] = nil
+                } catch { logger.warning("old project version not deleted", metadata: ["id": "\(old.id)", "error": "\(error)"]) }
             }
-            s.lastAutomatic = at
         }
-        return Version(
-            id: id, at: at, name: name, automatic: automatic, layers: project["layerCount"]?.int ?? 0, outputs: project["outputs"]?.array?.count ?? 0,
-            canvases: project["canvases"]?.array?.count ?? 0, cues: project["cues"]?.array?.count ?? 0)
+        return version
     }
 
     /// "20261026T143012.345Z" (UTC, sorts by time).
@@ -194,6 +249,22 @@ public final class ProjectVersions: Sendable {
         let trimmed = String(out.trimmingCharacters(in: CharacterSet(charactersIn: "-")).prefix(40))
         return trimmed.isEmpty ? "version" : trimmed
     }
+
+    /// A version is restored only when a live command could have made it: the same limits as `layers.setCount`,
+    /// `patch.set` and `canvas.*`.
+    static func checkRestorable(_ project: JSONValue) throws {
+        func refuse(_ reason: String) -> CommandError { CommandError.invalidArgs("this version cannot be restored: \(reason)") }
+        guard let layers = project["layerCount"]?.int, (1...64).contains(layers) else { throw refuse("the layer count must be 1–64") }
+        guard ProjectDocument.effectivePatch(from: project) != nil else { throw refuse("the patch has an unknown fixture, universe or address") }
+        let canvases = ProjectDocument.canvases(from: project)
+        guard (1...ProjectDocument.maxCanvases).contains(canvases.count) else { throw refuse("it needs 1–\(ProjectDocument.maxCanvases) readable canvases") }
+        do {
+            for c in canvases { _ = try ProjectDocument.validated((c.width, c.height, c.fps)) }
+            try ProjectDocument.checkTotalPixels(canvases)
+        } catch let error as CommandError {
+            throw refuse(error.message)
+        }
+    }
 }
 
 // MARK: Commands
@@ -201,8 +272,9 @@ public final class ProjectVersions: Sendable {
 extension ProjectVersions {
     public static let maxNameLength = 80
 
-    /// `showModeOn`: a revert is refused in show mode, like any other project load.
+    /// `showModeOn`: a revert is refused in show mode, like any other project load, and so is its undo or redo.
     public func registerCommands(on store: StateStore, showModeOn: @escaping @Sendable () -> Bool = { false }) {
+        let showModeRefusal = CommandError("showMode", "a version cannot be restored in show mode; leave show mode first")
         store.register(
             CommandSpec(
                 name: "project.snapshot", role: .programmer, mutatesConfig: false, undoable: false,
@@ -225,23 +297,30 @@ extension ProjectVersions {
         store.register(
             CommandSpec(
                 name: "project.revert", role: .programmer,
-                summary: "Restore a project version (refused in show mode). The current project is saved as a version first; the show lock stays as it is.",
-                argsType: "{ id: string }"
+                summary: "Restore a project version (refused in show mode, also its undo and redo). The current project is saved as a version first; the show lock stays as it is.",
+                argsType: "{ id: string }",
+                replayCheck: { if showModeOn() { throw showModeRefusal } }
             ) { [self] project, args in
                 guard let id = args["id"]?.string else { throw CommandError.invalidArgs("id must be a version id") }
-                guard !showModeOn() else { throw CommandError("showMode", "a version cannot be restored in show mode; leave show mode first") }
+                guard !showModeOn() else { throw showModeRefusal }
                 var target = try document(id: id)
+                try Self.checkRestorable(target)
+                if Self.comparable(target) == Self.comparable(project) {
+                    logger.info("revert skipped: the project already equals the version", metadata: ["id": "\(id)"])
+                    return ["reverted": .string(id), "unchanged": true]
+                }
                 let targetName = list().first { $0.id == id }?.name ?? id
-                // the state being left is a version too, so the revert can be reverted after a restart
-                let before: Version
+                // the state being left is a version too (unless the newest one already is), so a revert can be
+                // reverted after a restart
+                let before: Version?
                 do {
-                    before = try save(project, name: "\(Reason.beforeRevert.rawValue) to \(targetName)", automatic: true)
+                    before = try saveIfChanged(project, name: "\(Reason.beforeRevert.rawValue) to \(targetName)")
                 } catch {
                     throw CommandError("failed", "cannot save the current project first: \(error)")
                 }
                 try target.set(project["showLock"] ?? false, at: "/showLock")
                 project = target
-                return ["reverted": .string(id), "saved": .string(before.id)]
+                return ["reverted": .string(id), "saved": before.map { .string($0.id) } ?? .null]
             })
         store.register(
             CommandSpec(

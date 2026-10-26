@@ -89,7 +89,7 @@ export interface CommandArgs {
   'patch.set': { fixture: string; universe: string; address: number };
   /** Delete a named project version (automatic ones expire by themselves). Role: programmer, refused under show lock. */
   'project.deleteVersion': { id: string };
-  /** Restore a project version (refused in show mode). The current project is saved as a version first; the show lock stays as it is. Role: programmer, refused under show lock, undoable. */
+  /** Restore a project version (refused in show mode, also its undo and redo). The current project is saved as a version first; the show lock stays as it is. Role: programmer, refused under show lock, undoable. */
   'project.revert': { id: string };
   /** Set one project value (name, policy, library.root, ui.*); layers.setCount changes the layer count. Role: programmer, refused under show lock, undoable. */
   'project.set': { path: string; value: JSONValue };
