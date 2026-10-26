@@ -54,7 +54,7 @@ Switch screens with the left rail or the keys 1 to 6.
 | 3 | Outputs (Outputs & Mapping) | Canvases, outputs, blend, warp, slices, masks |
 | 4 | Patch (Patch / DMX) | Fixture table, DMX monitor, GDTF export |
 | 5 | Show (Show control) | Timecode, cues, OSC, MIDI sources |
-| 6 | System (System / Health) | Show mode and readiness, library root, metrics, network, roles, logs |
+| 6 | System (System / Health) | Show mode and readiness, library root, metrics, network, project versions, roles, logs |
 
 Other keys: Cmd-Z undo and Shift-Cmd-Z redo (programmer), L lock or unlock the
 show (programmer; it only asks first when you unlock while show mode is on),
@@ -69,9 +69,9 @@ The pages that follow repeat the ones that matter for their topic.
 
 - Hot-plugging a display has only been tested through unit tests and the
   built-in display (B34).
-- Project versions do not exist yet: there is one `project.json`, autosaved,
-  with no named versions and no "revert to" (B23). The OSC message
-  `/fanous/project/load` is refused (B35).
+- There is one project per machine; versions of it can be restored (System ›
+  Project versions), but there are no project bundles to open or switch
+  between, and no diff between two versions (B23).
 - Layers show the library thumbnail of the playing file, not a live picture of
   the layer (B29). Per-universe settings are read-only (B28).
 - Consoles over CITP/MSEX get the canvas only, as a 640x360 JPEG stream; there

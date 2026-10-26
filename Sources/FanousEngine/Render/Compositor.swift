@@ -605,6 +605,14 @@ public final class Compositor: @unchecked Sendable {
         drawItems.append(DrawItem(playback: playback, frame: frame, frameIndex: frameIndex, p: p, intensity: intensity, slot: slot, canvas: canvas))
     }
 
+    /// u0 v0 u1 v1 after crop, v0 at the picture's top: for a bottom-up texture (Syphon) the top of the picture
+    /// is at v = 1, so v0 and v1 swap and the crop sides swap with them.
+    static func uvRect(cropLeft: Float, cropTop: Float, cropRight: Float, cropBottom: Float, bottomUp: Bool) -> SIMD4<Float> {
+        bottomUp
+            ? SIMD4(cropLeft, 1 - cropTop, 1 - cropRight, cropBottom)
+            : SIMD4(cropLeft, cropTop, 1 - cropRight, 1 - cropBottom)
+    }
+
     private func encode(_ item: DrawItem, uniforms: MTLBuffer, time: Float, canvasWidth: Int, canvasHeight: Int, with encoder: MTLRenderCommandEncoder) {
         let p = item.p, playback = item.playback, frame = item.frame
         guard let texture0 = frame.texture0 else { return }
@@ -614,10 +622,10 @@ public final class Compositor: @unchecked Sendable {
         var u = LayerUniforms()
         u.transform = transform
         u.quadRect = quad
-        u.uvRect = SIMD4(p.cropLeft, p.cropTop, 1 - p.cropRight, 1 - p.cropBottom)
+        u.uvRect = Self.uvRect(cropLeft: p.cropLeft, cropTop: p.cropTop, cropRight: p.cropRight, cropBottom: p.cropBottom, bottomUp: frame.bottomUp)
         u.colour = SIMD4(p.red, p.green, p.blue, item.intensity)
         u.adjust = SIMD4(p.brightness, p.contrast, p.saturation, p.hue)
-        u.effect1 = SIMD4(Float(p.effect1.rawValue), p.effect1A, p.effect1B, 0)
+        u.effect1 = SIMD4(Float(p.effect1.rawValue), p.effect1A, p.effect1B, frame.bottomUp ? 1 : 0)  // w: rows bottom-up
         u.effect2 = SIMD4(Float(p.effect2.rawValue), p.effect2A, p.effect2B, 0)
         u.texel = SIMD4(1 / Float(max(1, mediaWidth)), 1 / Float(max(1, mediaHeight)), Float(mediaWidth) / Float(max(1, mediaHeight)), time)
         u.kind = frame.kind.rawValue

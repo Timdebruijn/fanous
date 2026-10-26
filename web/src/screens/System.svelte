@@ -5,6 +5,7 @@
   import SystemLogs from '../components/SystemLogs.svelte';
   import SystemMetrics from '../components/SystemMetrics.svelte';
   import SystemRoles from '../components/SystemRoles.svelte';
+  import SystemVersions from '../components/SystemVersions.svelte';
   import { modeText } from '../lib/outputs';
   import { app, can, cmd } from '../lib/state.svelte';
   import { LOCKED_TITLE, OPERATOR_TITLE, ageText, headerCaption, memoryText, outputTone, readinessBadge, readinessSummary, resumedText, stampText, thermalTone } from '../lib/system';
@@ -238,6 +239,7 @@
   </section>
 </div>
 
+<SystemVersions />
 <SystemRoles />
 <SystemLogs />
 

@@ -162,10 +162,37 @@ displays keep their show modes. Quitting the app does not stop the engine unless
 **Stop Engine and Quit** in the quit question; **Stop Engine…** does, and
 **Start Engine** starts it again.
 
+## Go back to an earlier version
+
+A change made the show worse and Undo is no help (the engine restarted, or too
+much happened since). The project has versions: System › **Project versions**.
+
+- The engine saves one by itself at every start, every time show mode is
+  entered, and every 10 minutes when the project changed (badge
+  **automatic**; the newest 50 are kept). The status bar shows when it saved
+  the last one ("auto version").
+- **Save version…** saves a named one; named versions are kept until you
+  delete them.
+
+To go back: leave show mode and unlock the show (**L**), then press
+**Revert…** on the version and confirm. Everything in the project goes back:
+layers, patch, outputs, canvases, cues and timecode settings. The show lock
+stays as it is. The project you leave is saved as a version first ("Before
+revert to …"), and Undo takes the revert back, so a revert is never a dead end.
+Reverting is refused in show mode and while the show is locked.
+
+A console can do the same with OSC: `/fanous/project/load "Doors 19:30"`
+restores the newest named version with that name (the same rules apply).
+
+The versions are files in `~/Library/Application Support/Fanous/versions/`,
+one per version, `<time>-<name>.json`. A file that does not read as a project is
+skipped and named in the log.
+
 ## Reset the project
 
-This deletes your patch changes, outputs, cues and timecode settings. Copy
-`project.json` first if you might want it back.
+This deletes your patch changes, outputs, cues and timecode settings. Save a
+named version first (System › Project versions) or copy `project.json` if you
+might want it back; the `versions/` folder is not touched.
 
 1. Engine › **Stop Engine…**, or quit and choose **Stop Engine and Quit**
    (Keep Engine Running leaves the engine running with the old project in

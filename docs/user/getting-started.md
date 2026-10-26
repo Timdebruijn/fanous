@@ -150,11 +150,14 @@ The app window on the Mac itself is always programmer; it needs no password.
 |---|---|
 | Media library | `~/Movies/Fanous Library` |
 | Project (patch, outputs, cues, timecode settings) | `~/Library/Application Support/Fanous/project.json` |
+| Project versions | `~/Library/Application Support/Fanous/versions/` |
 | Machine settings, role passwords (hashed) | `~/Library/Application Support/Fanous/settings.json` |
 | Certificate and fingerprint | `~/Library/Application Support/Fanous/tls/` |
 | Thumbnail and metadata cache | `~/Library/Application Support/Fanous/cache/` |
 | Ingest queue | `~/Library/Application Support/Fanous/ingest-queue.json` |
 | Logs | `~/Library/Logs/Fanous/fanousd.log` |
 
-The project is saved automatically two seconds after your last change. Back it
-up by copying `project.json`.
+The project is saved automatically two seconds after your last change. Versions
+of it are saved at every engine start, on entering show mode and every 10
+minutes after a change; save a named one with System › Project versions ›
+**Save version…**. Back it up by copying `project.json` and `versions/`.
