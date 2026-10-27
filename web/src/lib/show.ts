@@ -2,8 +2,8 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Pure logic of the Show control screen: cue numbering and reordering, trigger text, fixture and parameter
-// choices for cue values, value controls from the channel map, timecode wording, OSC log times.
-import type { CueDoc, CueValueDoc, LiveDoc, PatchEntry } from './docs';
+// choices for cue values, value controls from the channel map, timecode wording, OSC log times, MIDI map wording.
+import type { CueDoc, CueValueDoc, LiveDoc, MIDIMappingDoc, PatchEntry } from './docs';
 import { LOCKED_TITLE, type ChannelMap, type FixtureType, type ParamSpec } from './patch-screen';
 
 export const LOCKED_OPERATOR = 'Locked: operator only';
@@ -263,4 +263,33 @@ export function offsetText(frames: number, rate: string): string {
   const unit = Math.abs(frames) === 1 ? 'frame' : 'frames';
   const at = fps === null ? 'assuming 25 fps until a source locks' : `at ${rate.replace(/ (DF|NDF)$/, '')} fps`;
   return `${sign}${frames} ${unit} = ${sign}${seconds.toFixed(2)} s ${at}`;
+}
+
+// ---- MIDI map (B36) ------------------------------------------------------------------------------------------
+
+/** "ch 1 · note 36", "any ch · CC 1/33 (14-bit)", "ch 10 · any program". */
+export function midiControlText(m: Pick<MIDIMappingDoc, 'channel' | 'kind' | 'number'>): string {
+  const ch = m.channel === 0 ? 'any ch' : `ch ${m.channel}`;
+  const n = m.number ?? 0;
+  const what = { note: `note ${n}`, cc: `CC ${n}`, cc14: `CC ${n}/${n + 32} (14-bit)`, pc: m.number == null ? 'any program' : `program ${n}` }[m.kind];
+  return `${ch} · ${what}`;
+}
+
+/** The fixture and parameter key a parameter target names; null for cue targets and anything unknown. */
+export function midiParameterTarget(target: string): { fixture: string; parameter: string } | null {
+  const path = target.startsWith('fixture:') ? target.slice(8) : target.startsWith('master/') ? `Master${target.slice(6)}` : null;
+  const slash = path?.lastIndexOf('/') ?? -1;
+  if (!path || slash < 1) return null;
+  return { fixture: path.slice(0, slash), parameter: path.slice(slash + 1) };
+}
+
+/** "GO", "Back", "Go to cue 3", "Go to cue (program + 1)", "Layer 2 · Intensity". */
+export function midiTargetText(m: Pick<MIDIMappingDoc, 'target' | 'cue'>, map: ChannelMap | null): string {
+  if (m.target === 'cue.go') return 'GO';
+  if (m.target === 'cue.back') return 'Back';
+  if (m.target === 'cue.goto') return m.cue == null ? 'Go to cue (program + 1)' : `Go to cue ${formatNumber(m.cue)}`;
+  const p = midiParameterTarget(m.target);
+  if (!p) return m.target;
+  const spec = specsFor(map, p.fixture).find((s) => s.key === p.parameter);
+  return `${p.fixture} · ${spec?.name ?? p.parameter}`;
 }

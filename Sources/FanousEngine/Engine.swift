@@ -84,6 +84,8 @@ public final class Engine: @unchecked Sendable {
     private var ltc: LTCInput?
     private var mtc: MTCInput?
     private var lastTimecodeSettings = ShowCommands.TimecodeSettings()
+    private var midi: MIDIInput?
+    private var lastMIDISettings = MIDISettings()
     private var cues: CueRunner?
     private var lastCues = CueList()
     private let showMode: ShowModeController
@@ -128,6 +130,7 @@ public final class Engine: @unchecked Sendable {
         ProjectDocument.registerCommands(on: store, auth: RoleAuth(settingsURL: nil, shellTokenURL: nil, logger: logger))
         ShowCommands.register(on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in nil }, acknowledge: { _ in }, runReadiness: {}))
         ControlCommands.register(on: store, hooks: ControlCommands.Hooks(set: { _, _, _ in }, release: { _ in }, keep: { _ in }))
+        MIDICommands.register(on: store, hooks: MIDICommands.Hooks(learn: { _, _ in }))
         ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger).registerCommands(on: store)
         return store.commandSpecs
     }
@@ -267,7 +270,9 @@ public final class Engine: @unchecked Sendable {
 
         // Phase 5: roles, the project and live documents and the WebSocket state server (DESIGN.md §11).
         let auth = RoleAuth(settingsURL: AppPaths.settingsFile, shellTokenURL: AppPaths.shellTokenFile, logger: logger)
-        let project = loadedProject ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: policy, canvas: startCanvas)
+        var project = loadedProject ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: policy, canvas: startCanvas)
+        // hand-written MIDI map entries get an id on load, so per-entry state and midi.map.remove can address them
+        if let fixed = MIDISettings.assigningIDs(project) { project = fixed }
         let store = StateStore(project: project, logger: logger)
         ProjectDocument.registerCommands(
             on: store, auth: auth, showModeOn: { [weak self] in self?.showMode.isOn ?? false },
@@ -309,6 +314,26 @@ public final class Engine: @unchecked Sendable {
                     self?.publishReadiness()
                 },
                 runReadiness: { [weak self] in self?.runReadiness() }))
+        // MIDI control (B36): cue actions run as commands like OSC's; parameter values go straight to the resolvers
+        let midi = MIDIInput(dmx: dmx, logger: logger)
+        midi.onCue = { action in
+            switch action {
+            case .cueGo: _ = store.execute("cue.go", role: .operator)
+            case .cueBack: _ = store.execute("cue.back", role: .operator)
+            case .cueGoto(let number): _ = store.execute("cue.goto", args: ["number": .number(number)], role: .operator)
+            case .set: break
+            }
+        }
+        midi.onLearn = { mapping in
+            guard let args = try? JSONValue(encoding: mapping) else { return "cannot encode" }
+            if case .failure(let error) = store.execute("midi.map.set", args: args, role: .programmer) { return error.message }
+            return nil
+        }
+        MIDICommands.register(on: store, hooks: MIDICommands.Hooks(learn: { midi.learn(target: $0, cue: $1) }))
+        lastMIDISettings = MIDISettings.from(project: project)
+        midi.apply(lastMIDISettings)
+        midi.start()  // on main, the first CoreMIDI call of the process: hot-plug notifications need its run loop
+        self.midi = midi
         // OSC: cue, show and timecode commands (DESIGN.md §15.3); the parameter ones stay on the DMX queue
         dmx.onCommand = { [weak self] command in
             guard let self, let store = self.store else { return }
@@ -752,6 +777,16 @@ public final class Engine: @unchecked Sendable {
         ]
     }
 
+    private func midiLive() -> JSONValue {
+        guard let s = midi?.status.withLock({ $0 }) else { return [:] }
+        return [
+            "connected": .array(s.connected.map { .string($0) }), "last": s.last.map { .string($0) } ?? .null, "lastAt": s.lastAt.map { .number($0) } ?? .null,
+            "learning": s.learning.map { ["target": .string($0.target), "cue": $0.cue.map { .number($0) } ?? .null] } ?? .null,
+            "learned": s.learned.map { .string($0) } ?? .null,
+            "error": s.error == nil && s.problems.isEmpty ? .null : .string(([s.error].compactMap { $0 } + s.problems).joined(separator: "; ")),
+        ]
+    }
+
     private func showLive() -> JSONValue {
         let r = readiness.withLock { $0 }
         return [
@@ -1064,6 +1099,16 @@ public final class Engine: @unchecked Sendable {
         }
         let timecodeSettings = ShowCommands.timecodeSettings(from: document)
         if timecodeSettings != lastTimecodeSettings { applyTimecodeSettings(timecodeSettings) }
+        if let fixed = MIDISettings.assigningIDs(document), let map = fixed["midi"]?["map"], let store {
+            // a loaded or replaced project with hand-written entries; not from this queue (correct syncs on it).
+            // ponytail: replaces the whole map, so a map edit landing in between is lost; ids then come on the next change
+            DispatchQueue.global(qos: .utility).async { store.correct(map, at: "/midi/map") }
+        }
+        let midiSettings = MIDISettings.from(project: document)
+        if midiSettings != lastMIDISettings {
+            lastMIDISettings = midiSettings
+            midi?.apply(midiSettings)
+        }
         // canvases, sizes or rate (canvas.add/remove/set, undo/redo, project load): applied unless show mode is on
         if let c = ProjectDocument.canvases(from: document).first, (try? ProjectDocument.validated((c.width, c.height, c.fps))) != nil {
             canvasSwitch?.request(ProjectDocument.layout(from: document))
@@ -1271,6 +1316,7 @@ public final class Engine: @unchecked Sendable {
             "show": showLive(),
             "system": systemLive(addresses: facts.addresses),
             "osc": ["port": 8000, "recent": .array(oscLog.withLock { $0 }), "midiSources": .array(facts.midiSources.map { .string($0) }), "audioInputs": .array(facts.audioInputs.map { .string($0) })],
+            "midi": midiLive(),
             "citp": citpLive(),
             "versions": versions?.live ?? .null,
         ]
@@ -1303,6 +1349,7 @@ public final class Engine: @unchecked Sendable {
         let keepShow = showMode.stop(keepingState: ShowModeState.takeRestartMarker(at: AppPaths.restartPendingFile))
         ltc?.stop()
         mtc?.stop()
+        midi?.stop()
         cues?.stop()
         if let coordinator, let displayManager {
             MainActor.assumeIsolated {

@@ -6,7 +6,7 @@ import Foundation
 
 public enum SourcePolicy: String, Codable, Sendable, CaseIterable { case dmx, `internal`, ltp, htp }
 
-public enum ValueSource: String, Codable, Sendable, Equatable { case none, dmx, cue, osc, ui }
+public enum ValueSource: String, Codable, Sendable, Equatable { case none, dmx, cue, osc, ui, midi }
 
 public struct ResolvedValue: Equatable, Sendable {
     public var raw: UInt16
@@ -62,6 +62,14 @@ public struct FixtureResolver: Sendable {
         internalRaw[i] = specs[i].clamped(raw)
         internalSource[i] = source
         internalChangedAt[i] = time
+    }
+
+    /// One parameter, only when `source` set it.
+    public mutating func clearInternal(_ id: ParameterID, source: ValueSource) {
+        let i = ChannelMap.index(of: id)
+        guard internalSource[i] == source else { return }
+        internalRaw[i] = nil
+        internalSource[i] = .none
     }
 
     public mutating func clearInternal(source: ValueSource) {
