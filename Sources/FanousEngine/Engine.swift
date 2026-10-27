@@ -425,6 +425,7 @@ public final class Engine: @unchecked Sendable {
                 return try PreviewStreamer(context: context, width: 640, height: height, fps: min(30, canvas.fps), canvasFPS: canvas.fps, parameters: parameters, logger: logger)
             }
             // one streamer per target that has subscribers (canvas, canvas:<id>, output:<id>, layer:<n>); the canvas one also serves CITP
+            logger.info("engine start", metadata: ["step": "preview encoders"])  // the CI VM once hung between the MIDI input and the HTTPS listener (B66): these lines locate it
             let preview = PreviewHub(canvas: try makePreview(), make: makePreview)
             preview.makeCanvas = { [weak self, parameters = dmx.snapshots, logger] id in
                 guard let layout = self?.canvasSwitch?.rendered, let canvas = layout.canvases.first(where: { $0.id == id }) else { return nil }
@@ -442,6 +443,7 @@ public final class Engine: @unchecked Sendable {
             render.compositor.skipsIdleWork = true
             render.compositor.previewWanted = { preview.wantsFrames }
             stateServer.preview = preview
+            logger.info("engine start", metadata: ["step": "output shaders"])
             let compiler = try OutputCompiler(device: context.device)
             preview.configure = { [weak self, compositor = render.compositor] target, streamer in
                 guard let self else { return false }
@@ -474,6 +476,7 @@ public final class Engine: @unchecked Sendable {
             }
 
         // Displays and output windows (DESIGN.md §9.6); the render service starts after the coordinator exists.
+            logger.info("engine start", metadata: ["step": "outputs"])
             let coordinator = try MainActor.assumeIsolated { () throws -> OutputCoordinator in
                 let coordinator = try OutputCoordinator(compositor: render.compositor, context: context, fps: fps, displays: DisplayManager.current(), logger: logger)
                 displays.withLock { $0 = coordinator.connectedDisplays }
@@ -536,6 +539,7 @@ public final class Engine: @unchecked Sendable {
             return auth.grant(requested: role, sessionRole: sessionRole) == role
         }
         @Sendable func programmerAllowed(_ request: HTTPRequest) -> Bool { allowed(.programmer, request) }
+        logger.info("engine start", metadata: ["step": "https"])
         let server = try HTTPSServer(port: options.port, identity: identity, webRoot: options.webRoot, loopbackOnly: !options.network, logger: logger) { request in
             if request.path.hasPrefix("/api/ingest") || request.path.hasPrefix("/api/upload/") {
                 if request.method != "GET", !programmerAllowed(request) { return .text(403, "programmer role required") }
