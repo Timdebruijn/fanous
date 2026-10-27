@@ -145,6 +145,35 @@ import Testing
         #expect(rig.hub.targets == ["canvas"])
     }
 
+    /// B62: the UI subscribes to a new canvas as soon as the live document lists it, which can be while the canvas switch
+    /// is still rebuilding the previews. That streamer was made for the new canvases: the rebuild must not drop it (and
+    /// tell its viewer the canvas is gone) because it was not there when the rebuild started.
+    @Test func aCanvasSubscribedDuringARebuildIsKept() throws {
+        let rig = try Rig()
+        let context = rig.context, parameters = rig.parameters
+        let hub = rig.hub
+        let viewer = rig.connection()
+        let rendered = Mutex<Set<Int>>([2])
+        let rebuilding = Mutex(false)
+        let subscribed = Mutex<Bool?>(nil)
+        hub.makeCanvas = { id in
+            guard rendered.withLock({ $0.contains(id) }) else { return nil }
+            if id == 2, rebuilding.withLock({ $0 }), subscribed.withLock({ $0 }) == nil {
+                // canvas 3 starts rendering and its viewer subscribes while the rebuild makes canvas 2 again
+                rendered.withLock { _ = $0.insert(3) }
+                subscribed.withLock { $0 = false }
+                let attached = hub.attach(target: "canvas:3", connection: viewer, stream: 3, jpeg: true) { _ in }
+                subscribed.withLock { $0 = attached }
+            }
+            return try PreviewStreamer(context: context, width: 160, height: 160, fps: 30, canvasFPS: 60, parameters: parameters, logger: Self.logger)
+        }
+        #expect(rig.attach("canvas:2", rig.connection(), stream: 2))
+        rebuilding.withLock { $0 = true }
+        try hub.rebuild()
+        #expect(subscribed.withLock { $0 } == true)
+        #expect(Set(hub.targets) == ["canvas", "canvas:2", "canvas:3"])
+    }
+
     /// A layer.set with a layer:<n> subscriber: the preview rebuild reads the project, so it must not run on the
     /// store's queue (it did, and deadlocked). Wired like the engine: Control hops to the main actor.
     @Test(.timeLimit(.minutes(1))) func layerSetWithALayerSubscriberDoesNotHang() async throws {

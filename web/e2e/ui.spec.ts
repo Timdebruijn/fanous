@@ -119,6 +119,8 @@ test('canvases: add a canvas, put a layer on it, remove it', async ({ page }) =>
   await page.getByRole('button', { name: 'Add canvas' }).click();
   const canvases = page.getByRole('group', { name: 'Canvas', exact: true });
   await expect(canvases.getByRole('button', { name: 'Canvas 2' })).toBeVisible();
+  // its preview really starts once the canvas renders (B62): one left on "starting…" or "connecting…" fails here
+  await expect(page.getByRole('figure').locator('figcaption')).toContainText(/H\.264|JPEG/);
 
   await openScreen(page, 'Layers');
   await page.getByLabel('Canvas of layer 2').selectOption({ label: 'Canvas 2' });

@@ -95,6 +95,8 @@ describe('multiple canvases', () => {
     expect(previewReady('canvas:2', rendered)).toBe(true);
     expect(previewReady('canvas:3', rendered)).toBe(false);
     expect(previewReady('canvas:3', undefined)).toBe(false);
+    expect(previewReady('canvas:1', undefined)).toBe(true);  // the default canvas always renders
+    expect(previewReady('canvas:x', [])).toBe(true);  // not a canvas id: asked for, and refused by the engine
   });
   it('finds the canvas of a layer and the layers of a canvas', () => {
     const assigned = { '5': 2, '6': 2, '7': 2, '8': 2 };

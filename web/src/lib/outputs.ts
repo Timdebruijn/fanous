@@ -92,7 +92,8 @@ export function canvasTarget(id: number): string {
  * renders only after the asynchronous canvas switch, and the engine refuses a preview of it until then (B62). */
 export function previewReady(target: string, rendered: { id: number }[] | undefined): boolean {
   const canvas = /^canvas:(\d+)$/.exec(target);
-  return !canvas || !!rendered?.some((c) => c.id === Number(canvas[1]));
+  const id = Number(canvas?.[1] ?? 1);  // "canvas" and anything else: not waited for (the engine answers those itself)
+  return id === 1 || !!rendered?.some((c) => c.id === id);
 }
 
 /** The canvas a layer renders into (`project.layerCanvas`, canvas 1 when unset). */
