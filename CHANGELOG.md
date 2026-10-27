@@ -34,6 +34,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   real engine, also in CI (B47). Syphon: the canvas arrives upright in other apps and Syphon inputs are sampled
   the right way up, effects included (B6). A scene may name a Syphon app without a server name
   (`"syphon": "App/"`): the first server of that app, for apps with a single server.
+- Per-universe settings on the Patch screen: protocol, interface, hold-on-loss and sACN priority (B28). sACN
+  listens on all interfaces and shares its port with other sACN apps on the Mac; readiness warns about a
+  missing or unusable interface and a failed sACN bind.
 - Audio: forward loops are gapless (B3). Ingest makes rotated and flipped phone footage upright (B18).
   State sync and HTTP endpoints hide paths, host and TLS details from lower roles (B25). OSC burst
   regression tests; the reported loss is not reproducible (B30).

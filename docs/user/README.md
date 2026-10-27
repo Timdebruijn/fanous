@@ -73,7 +73,7 @@ The pages that follow repeat the ones that matter for their topic.
   Project versions), but there are no project bundles to open or switch
   between, and no diff between two versions.
 - Layers show the library thumbnail of the playing file, not a live picture of
-  the layer (B29). Per-universe settings are read-only (B28).
+  the layer (B29).
 - Consoles over CITP/MSEX get the canvas only, as a 640x360 JPEG stream; there
   are no per-layer streams and thumbnails ignore the requested size (B41). No
   real console has talked to Fanous over CITP yet (B40).
