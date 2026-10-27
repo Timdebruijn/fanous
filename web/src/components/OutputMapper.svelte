@@ -121,6 +121,8 @@
   const colours = ['#4C9EFF', '#35D07F', '#FFC532', '#FF5A5F', '#A3AAB4'];
 </script>
 
+<!-- role="application" is the ARIA role for a focusable widget that handles its own keys; Svelte counts it as non-interactive -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
 <svg bind:this={svg} class="mapper" viewBox="0 0 {W} {H}" role="application" aria-label="Mapping editor: drag the handles, arrow keys nudge the selected point" tabindex="0" class:adding={mode === 'mask' && (addMode || draft)} onkeydown={key} onpointerdown={background} ondblclick={doubleClick} onpointermove={move} onpointerup={up} onpointercancel={up}>
   {#if draft && draft.length > 0}
     {@const pts = draft.map((p) => toScreen(output, mode, p))}
