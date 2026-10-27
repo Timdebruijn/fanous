@@ -60,6 +60,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: mask and warp handles did not line up with the picture on outputs that are not 16:9 (the
   preview filled 16:9, the handles used the output's shape); the output preview now has the output's shape.
 - Layers can be controlled from the UI (layer panel Control switch, `fixture.set`/`fixture.release`).
+- Fixed: the first live document after a client joined could stall for seconds while the engine enumerated
+  CoreMIDI and CoreAudio devices (over 5 s on the CI virtual machine: an empty status bar and no preview); the
+  5 s refresh of those lookups also ran on the live feed. They now run off it, the first one at start, and a
+  slow one is logged.
 
 - Hardening: one engine per user (`engine.lock`), cumulative frame counters in
   `/metrics`, show mode hides the cursor over the outputs.

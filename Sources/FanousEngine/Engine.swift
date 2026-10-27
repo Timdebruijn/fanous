@@ -1085,6 +1085,7 @@ public final class Engine: @unchecked Sendable {
 
     /// Live document at 10 Hz and the DMX monitor stream at 20 Hz, both off the render and DMX threads.
     private func startFeeds() {
+        feedQueue.async { [self] in _ = currentHostFacts() }  // the slow first lookup runs now, not at the first join
         let live = DispatchSource.makeTimerSource(queue: feedQueue)
         live.schedule(deadline: .now() + 0.1, repeating: 0.1)
         live.setEventHandler { [weak self] in self?.publishLive() }
@@ -1108,20 +1109,42 @@ public final class Engine: @unchecked Sendable {
         }
     }
 
-    /// CoreAudio/CoreMIDI/getifaddrs lookups are slow and rarely change: refreshed every 5 s on the feed queue.
+    /// CoreAudio/CoreMIDI/getifaddrs lookups are slow and rarely change: refreshed every 5 s off the feed queue. The
+    /// first CoreAudio/CoreMIDI call of a process can take seconds (a CI virtual machine took over 5 s); the live
+    /// document goes out with the last known facts (none at start) and carries the fresh ones on the next tick.
     private struct HostFacts {
         var at: CFTimeInterval = 0
         var midiSources: [String] = []
         var audioInputs: [String] = []
         var addresses: [String] = []
     }
-    private var hostFacts = HostFacts()
+    private let hostFacts = Mutex<HostFacts>(HostFacts())
+    private var hostFactsRefreshing = false  // feed queue only
+    private var hostFactsLookups = 0  // feed queue only; the first lookup of a process is expected to be slow
     private func currentHostFacts() -> HostFacts {
-        let now = CACurrentMediaTime()
-        if now - hostFacts.at >= 5 {
-            hostFacts = HostFacts(at: now, midiSources: MTCInput.sources(), audioInputs: LTCInput.inputDevices(), addresses: SystemInfo.ipv4Addresses)
+        let facts = hostFacts.withLock { $0 }
+        if CACurrentMediaTime() - facts.at >= 5, !hostFactsRefreshing {
+            hostFactsRefreshing = true
+            hostFactsLookups += 1
+            let first = hostFactsLookups == 1
+            DispatchQueue.global(qos: .utility).async { [self] in
+                var seconds: [String: Double] = [:]
+                func timed<T>(_ what: String, _ lookup: () -> T) -> T {
+                    let started = CACurrentMediaTime()
+                    let value = lookup()
+                    seconds[what] = CACurrentMediaTime() - started
+                    return value
+                }
+                let midi = timed("midi", MTCInput.sources)
+                let audio = timed("audio", LTCInput.inputDevices)
+                let addresses = timed("addresses") { SystemInfo.ipv4Addresses }
+                let metadata: Logger.Metadata = seconds.mapValues { "\(String(format: "%.2f", $0)) s" }
+                if first { logger.info("host lookups", metadata: metadata) } else if seconds.values.reduce(0, +) > 0.5 { logger.warning("host lookups slow", metadata: metadata) }
+                hostFacts.withLock { $0 = HostFacts(at: CACurrentMediaTime(), midiSources: midi, audioInputs: audio, addresses: addresses) }
+                feedQueue.async { self.hostFactsRefreshing = false }
+            }
         }
-        return hostFacts
+        return facts
     }
 
     private func publishLive() {
