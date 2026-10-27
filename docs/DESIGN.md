@@ -1419,10 +1419,11 @@ later deliverable (`[OPEN-20]`).
   thread (a runtime `timecode.set` arrives on the control queue and hops
   there), reconnects on `msgSetupChanged`, and handles everything on its own
   serial queue with one assembly state per source unique id; the packet's host
-  time travels with each word. When the source that fed the clock goes away the
-  clock turns lost at once (`TimecodeClock.lose`, at the last decoded frame)
-  instead of freewheeling; `live.timecode.device` lists the connected sources
-  and `error` says "MTC source … is not connected" while none matches.
+  time travels with each word. A source that goes away takes its assembly state
+  with it; for the clock that is signal loss like a stopped sender (freewheel,
+  then lost after the freewheel time). `live.timecode.device` lists the
+  connected sources and drops a gone one at once, and `error` says "MTC source
+  … is not connected" (or "no MIDI source connected") while none matches.
 - One active source per project; offset per project and per layer (Layer
   timecode chase = `tc − projectOffset − layerOffset` at the file's fps,
   looped within in/out if the layer's loop flag is set).

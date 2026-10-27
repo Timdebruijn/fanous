@@ -98,8 +98,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   switch timecode on and off (`timecode.enable`, also under show lock); the
   Patch screen has the source-policy selector.
 - Fixed: an MTC source plugged in after the timecode source was set was only picked up after a settings
-  change or an engine restart; MTC now reconnects when MIDI sources come and go, and an unplugged MTC
-  source turns the clock Lost at once with "MTC source … is not connected" in `live.timecode.error` (B64).
+  change or an engine restart; MTC now reconnects when MIDI sources come and go. An unplugged MTC source
+  is signal loss (Freewheel, then Lost after the freewheel time), leaves `live.timecode.device` at once,
+  and `live.timecode.error` says "MTC source … is not connected" when none is left (B64).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

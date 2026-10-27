@@ -312,8 +312,10 @@ The same check for **MTC**: set the timecode Source to MTC and the Device to
 your MTC interface (or All sources) while it is unplugged; the Timecode panel
 says "MTC source … is not connected". Plug it in and start the timecode: within
 a second the log says `MTC input listening sources=["…"]`, the panel shows the
-device and goes Locked. Unplug it: the panel turns Lost at once (red, layers
-stop chasing) and says the source is not connected again.
+device and goes Locked. Unplug it: the device leaves the panel at once, the
+state turns Freewheel (yellow), then Lost (red, layers stop chasing) after the
+Freewheel time, as when the timecode stops. When it was the only source the
+panel says the source is not connected again.
 
 ## CITP/MSEX
 

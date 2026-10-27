@@ -114,8 +114,8 @@ struct ShowControlTests {
     }
 
     /// B64: one parse state per source (two senders interleaved still assemble), and the source feeding the clock
-    /// leaving loses the clock at once, with late words from it dropped.
-    @Test func mtcSourcesKeepTheirOwnStateAndLeavingLosesTheClock() {
+    /// leaving is signal loss (freewheel, then lost), with late words from it dropped.
+    @Test func mtcSourcesKeepTheirOwnStateAndLeavingFreewheelsTheClock() {
         let clock = TimecodeClock()
         let input = MTCInput(clock: clock, logger: Self.logger)
         input.queue.sync { input.setSources([1: "Pad", 2: "Console"]) }
@@ -133,18 +133,19 @@ struct ShowControlTests {
         #expect(input.status.withLock { $0.connected } == ["Console", "Pad"])
         // the console (last to feed) is unplugged; the pad stays
         input.queue.sync { input.setSources([1: "Pad"]) }
-        #expect(clock.current(at: 10.01).state == .lost, "an unplugged source is not freewheeled over")
-        #expect(clock.current(at: 10.01).frameCount == 180_002, "lost at the last decoded frame")
-        #expect(clock.frames(at: 10.01) == nil)
+        #expect(input.status.withLock { $0.connected } == ["Pad"], "the device list drops it at once")
+        #expect(clock.current(at: 10.5).state == .freewheel, "an unplugged source is signal loss: freewheel")
         input.queue.sync { input.receive(b.map { ($0, 11) }, uid: 2) }
-        #expect(clock.current(at: 11).state == .lost, "words in flight from the gone source are dropped")
+        #expect(clock.current(at: 11).state == .freewheel, "words in flight from the gone source are dropped")
+        #expect(clock.current(at: 12.5).state == .lost, "lost after the freewheel time (2 s)")
+        #expect(clock.frames(at: 12.5) == nil)
         // the pad sends again: locked
-        Self.feed(input, a, at: 12, uid: 1, name: "Pad")
-        #expect(clock.current(at: 12).state == .locked)
+        Self.feed(input, a, at: 13, uid: 1, name: "Pad")
+        #expect(clock.current(at: 13).state == .locked)
         input.queue.sync { input.setSources([:]) }
         #expect(input.status.withLock { $0 }.error == "no MIDI source connected")
         input.stop()
-        #expect(clock.current(at: 13).state == .off)
+        #expect(clock.current(at: 14).state == .off)
     }
 
     @Test func cueJSONRoundTripAndCommands() throws {

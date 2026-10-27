@@ -51,9 +51,6 @@ public final class TimecodeClock: @unchecked Sendable {
 
     public func stop() { sample.withLock { $0 = Sample() } }
 
-    /// The source went away (unplugged): lost at once, at the last decoded frame, until a source sends frames again.
-    public func lose() { sample.withLock { if $0.state != .off { $0.state = .lost } } }
-
     /// Compositor thread: the last sample without ever blocking (a contended lock returns the previous read).
     public func read(at now: Double) -> Sample {
         if let latest = sample.withLockIfAvailable({ $0 }) { cached = latest }
@@ -66,7 +63,7 @@ public final class TimecodeClock: @unchecked Sendable {
 
     /// Locked within one frame of the last decode, freewheeling up to `freewheel` seconds, then lost.
     static func extrapolate(_ s: Sample, at now: Double, freewheel: Double) -> Sample {
-        guard s.state != .off, s.state != .lost else { return s }
+        guard s.state != .off else { return s }
         var out = s
         let age = now - s.hostTime
         let frameDuration = 1 / s.rate.exactFrameRate
@@ -268,8 +265,6 @@ public final class MTCInput: @unchecked Sendable {
     /// Connected sources by CoreMIDI unique id: two identical interfaces share a name, not an id.
     private var names: [MIDIUniqueID: String] = [:]
     private var parsers: [MIDIUniqueID: Parse] = [:]
-    /// The source whose frame the clock holds: when it goes away the clock is lost.
-    private var feeding: MIDIUniqueID?
     public let status = Mutex(Status())
 
     public init(clock: TimecodeClock, logger: Logger) {
@@ -371,16 +366,10 @@ public final class MTCInput: @unchecked Sendable {
         logger.info("MTC input listening", metadata: ["sources": "\(connected.values.sorted())"])
     }
 
-    /// On `queue`: the sources now connected. One that went away takes its parse state with it, and the clock is lost
-    /// at once when it was the one feeding it: an unplugged source is not a dropout to freewheel over.
+    /// On `queue`: the sources now connected. One that went away takes its parse state with it; for the clock an
+    /// unplugged source is signal loss like a stopped sender: freewheel, then lost after the freewheel time.
     func setSources(_ connected: [MIDIUniqueID: String]) {
-        for uid in Set(names.keys).subtracting(connected.keys) {
-            parsers[uid] = nil
-            if feeding == uid {
-                feeding = nil
-                clock.lose()
-            }
-        }
+        for uid in Set(names.keys).subtracting(connected.keys) { parsers[uid] = nil }
         names = connected
         let list = connected.values.sorted()
         let error = list.isEmpty ? Self.missing(wanted) : nil
@@ -398,7 +387,6 @@ public final class MTCInput: @unchecked Sendable {
         for (word, hostTime) in words {
             guard let timecode = parse.feed(word) else { continue }
             clock.update(timecode, at: hostTime, source: "MTC")
-            feeding = uid
         }
         parsers[uid] = parse
     }
@@ -412,7 +400,6 @@ public final class MTCInput: @unchecked Sendable {
             client = 0
             names = [:]
             parsers = [:]
-            feeding = nil
         }
         status.withLock { $0 = Status() }
         clock.stop()
