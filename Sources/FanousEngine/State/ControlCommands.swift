@@ -42,7 +42,7 @@ public enum ControlCommands {
         store.register(
             CommandSpec(
                 name: "fixture.release", role: .programmer, mutatesConfig: false, undoable: false,
-                summary: "Drop the UI values of one fixture, or of all fixtures without a fixture argument.", argsType: "{ fixture?: string }"
+                summary: "Drop the UI and MIDI values of one fixture, or of all fixtures without a fixture argument.", argsType: "{ fixture?: string }"
             ) { _, args in
                 if let name = args["fixture"]?.string {
                     guard let fixture = FixtureRef(parsing: name) else { throw CommandError.invalidArgs("fixture: \"Layer n\", \"Master\" or \"Output n\"") }

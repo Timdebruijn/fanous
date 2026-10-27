@@ -43,7 +43,10 @@
   const options = $derived(mediaOptions(library));
   const current = $derived(layer && layer.folder > 0 && layer.file > 0 ? `${layer.folder}/${layer.file}` : '');
   const currentName = $derived(layer && layer.folder > 0 ? mediaPath(library, layer.folder, layer.file) : null);
-  const hasUI = $derived((params ?? []).some((p) => p.source === 'ui') || (app.live.dmx.internalValues[fixture] ?? []).some((v) => v.source === 'ui'));
+  // MIDI values are a controller like the UI (B36): same expiry, Keep and Release
+  const isController = (source: string) => source === 'ui' || source === 'midi';
+  const hasUI = $derived((params ?? []).some((p) => isController(p.source)) || (app.live.dmx.internalValues[fixture] ?? []).some((v) => isController(v.source)));
+  const controlLabel = $derived((app.live.dmx.internalValues[fixture] ?? []).some((v) => v.source === 'ui') ? 'UI control' : 'MIDI control');
 
   // at most ~20 commands a second per parameter while a slider moves; the last value always goes out
   const pending = new Map<string, number>();
@@ -76,7 +79,7 @@
     {#if currentName}<p class="caption">{currentName}</p>{/if}
     {#if hasUI}
       <p class="caption uinote">
-        <span class="ui">UI control</span>{#if expiresIn !== undefined}<span>· console active, releases in <span class="mono">{clockText(expiresIn)}</span></span>
+        <span class="ui">{controlLabel}</span>{#if expiresIn !== undefined}<span>· console active, releases in <span class="mono">{clockText(expiresIn)}</span></span>
           <button type="button" class="btn" disabled={lockTitle !== undefined} title={lockTitle ?? 'Restart the 10 minutes'} onclick={() => void cmd('fixture.keep', { fixture })}>Keep</button>{/if}
       </p>
     {/if}
@@ -121,7 +124,7 @@
         <span class="ch mono faint">{channelRange(specByKey.get(param.key))}</span>
         <span class="nm ellipsis" title={param.name}>{param.name}</span>
         <span class="raw mono">{param.raw}</span>
-        <span class="val mono ellipsis" class:red={missing && (param.key === 'file' || param.key === 'folder')} title={valueText(param)}>{valueText(param)}{#if param.source === 'ui'}<span class="ui"> · UI</span>{/if}</span>
+        <span class="val mono ellipsis" class:red={missing && (param.key === 'file' || param.key === 'folder')} title={valueText(param)}>{valueText(param)}{#if param.source === 'ui'}<span class="ui"> · UI</span>{:else if param.source === 'midi'}<span class="ui"> · MIDI</span>{/if}</span>
         {#if control}
           {@const spec = specByKey.get(param.key)}
           <span class="ctl">
