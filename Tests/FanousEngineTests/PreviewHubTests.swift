@@ -156,13 +156,13 @@ import Testing
         let rendered = Mutex<Set<Int>>([2])
         let rebuilding = Mutex(false)
         let subscribed = Mutex<Bool?>(nil)
-        hub.makeCanvas = { id in
+        hub.makeCanvas = { [weak hub] id in
             guard rendered.withLock({ $0.contains(id) }) else { return nil }
             if id == 2, rebuilding.withLock({ $0 }), subscribed.withLock({ $0 }) == nil {
                 // canvas 3 starts rendering and its viewer subscribes while the rebuild makes canvas 2 again
                 rendered.withLock { _ = $0.insert(3) }
                 subscribed.withLock { $0 = false }
-                let attached = hub.attach(target: "canvas:3", connection: viewer, stream: 3, jpeg: true) { _ in }
+                let attached = hub?.attach(target: "canvas:3", connection: viewer, stream: 3, jpeg: true) { _ in } ?? false
                 subscribed.withLock { $0 = attached }
             }
             return try PreviewStreamer(context: context, width: 160, height: 160, fps: 30, canvasFPS: 60, parameters: parameters, logger: Self.logger)

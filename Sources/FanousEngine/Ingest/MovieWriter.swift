@@ -196,6 +196,9 @@ public final class MovieWriter {
         }
     }
 
+    /// Blocks until AVFoundation has finished the file. Call it from a plain thread (the ingest worker, a CLI), never from a
+    /// Swift concurrency task: with the cooperative pool full of tasks parked here the completion never arrives (B63; likely
+    /// because the completion queue, `com.apple.root.default-qos`, then gets no worker thread).
     public func finish() throws {
         input.markAsFinished()
         audioInput?.markAsFinished()

@@ -40,7 +40,11 @@ extension LayerAudioChannel {
     }
 
     /// 320×180 ProRes 422 HQ at 30 fps, `seconds` long, with the `TestTone` track when `audio` is set.
-    static func writeMovie(to url: URL, seconds: Int = 3, audio: Bool = true) throws {
+    static func writeMovie(to url: URL, seconds: Int = 3, audio: Bool = true) async throws {
+        try await offPool { try writeMovieBlocking(to: url, seconds: seconds, audio: audio) }
+    }
+
+    private static func writeMovieBlocking(to url: URL, seconds: Int, audio: Bool) throws {
         let fps: Int32 = 30
         let writer = try MovieWriter(url: url, width: 320, height: 180, fps: fps, codec: .proRes422HQ, audio: audio)
         for frame in 0..<(seconds * Int(fps)) {
@@ -58,7 +62,11 @@ extension LayerAudioChannel {
     }
 
     /// An audio-only movie, one second, 16-bit LPCM; channel `c` holds the constant `(c + 1) * 3000`.
-    static func writeConstantAudio(to url: URL, rate: Double, channels: Int) throws {
+    static func writeConstantAudio(to url: URL, rate: Double, channels: Int) async throws {
+        try await offPool { try writeConstantAudioBlocking(to: url, rate: rate, channels: channels) }
+    }
+
+    private static func writeConstantAudioBlocking(to url: URL, rate: Double, channels: Int) throws {
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         var description = AudioStreamBasicDescription(
@@ -133,7 +141,7 @@ extension LayerAudioChannel {
         let directory = try Self.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "tone.mov")
-        try Self.writeMovie(to: url)
+        try await Self.writeMovie(to: url)
 
         let reader = try await AudioTrackReader.open(url: url)
         #expect(reader.hasAudio)
@@ -166,7 +174,7 @@ extension LayerAudioChannel {
         let directory = try Self.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "end.mov")
-        try Self.writeMovie(to: url)
+        try await Self.writeMovie(to: url)
 
         let reader = try await AudioTrackReader.open(url: url)
         reader.seek(toSeconds: 2.9)
@@ -183,7 +191,7 @@ extension LayerAudioChannel {
         let directory = try Self.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "silent.mov")
-        try Self.writeMovie(to: url, seconds: 1, audio: false)
+        try await Self.writeMovie(to: url, seconds: 1, audio: false)
 
         let reader = try await AudioTrackReader.open(url: url)
         #expect(!reader.hasAudio)
@@ -196,7 +204,7 @@ extension LayerAudioChannel {
         let directory = try Self.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "constant.mov")
-        try Self.writeConstantAudio(to: url, rate: rate, channels: channels)
+        try await Self.writeConstantAudio(to: url, rate: rate, channels: channels)
 
         let reader = try await AudioTrackReader.open(url: url)
         #expect(reader.sampleRate == rate)
@@ -365,7 +373,7 @@ extension LayerAudioChannel {
         let directory = try Self.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "jump.mov")
-        try Self.writeMovie(to: url)
+        try await Self.writeMovie(to: url)
         let reader = try await AudioTrackReader.open(url: url)
 
         let channel = LayerAudioChannel()
@@ -411,7 +419,7 @@ extension LayerAudioChannel {
         let directory = try Self.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "tail.mov")
-        try Self.writeMovie(to: url)
+        try await Self.writeMovie(to: url)
         let reader = try await AudioTrackReader.open(url: url)
 
         let channel = LayerAudioChannel()
@@ -434,7 +442,7 @@ extension LayerAudioChannel {
         let directory = try Self.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "loop.mov")
-        try Self.writeMovie(to: url, seconds: 1)
+        try await Self.writeMovie(to: url, seconds: 1)
         let reader = try await AudioTrackReader.open(url: url)
 
         for looped in [true, false] {
@@ -465,7 +473,7 @@ extension LayerAudioChannel {
         let directory = try Self.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "edge.mov")
-        try Self.writeConstantAudio(to: url, rate: 44_100, channels: 2)
+        try await Self.writeConstantAudio(to: url, rate: 44_100, channels: 2)
         let reader = try await AudioTrackReader.open(url: url)
 
         func run(loopEnd: Double, startWanted: Double = 0, laps: Int = 30) -> (underruns: UInt64, silent: Int, channel: LayerAudioChannel) {

@@ -95,7 +95,9 @@ public final class PreviewHub: @unchecked Sendable {
             for (target, previous) in all {
                 guard let replacement = outputs[target] else {
                     // a removed canvas: its viewers are told instead of left on a frozen picture. A target subscribed
-                    // while we built (not in `targets`) was made for the new canvases and stays (B62)
+                    // while we built (not in `targets`) was made after the switch began and stays (B62); in the rare
+                    // case it was made just before the switch for a canvas that went, its viewer drops it when
+                    // `live.canvas` no longer lists that canvas
                     if target.hasPrefix("canvas:"), targets.contains(target) {
                         all.removeValue(forKey: target)
                         for s in previous.subscriberList {
