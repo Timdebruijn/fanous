@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it, vi } from 'vitest';
-import { latestOnly } from './preview';
+import { classChanged, latestOnly, previewClass, wantedWidth } from './preview';
 
 const resolveIn = (ms: number, stop: () => void) => new Promise<() => void>((r) => setTimeout(() => r(stop), ms));
 
@@ -29,5 +29,23 @@ describe('latestOnly', () => {
     expect(pending.current()).toBe(false);
     expect(pending.keep(stop)).toBe(false);
     expect(stop).toHaveBeenCalledOnce();
+  });
+});
+
+describe('preview size', () => {
+  it('asks for the rendered width in device pixels and maps it to the class the engine picks', () => {
+    expect(wantedWidth(300, 2)).toBe(600);
+    expect(wantedWidth(300.2, 1)).toBe(301);
+    expect(wantedWidth(0, 2)).toBeUndefined();
+    expect(wantedWidth(500, 0)).toBe(500);
+    expect([100, 320, 321, 600, 640, 641, 961, 4000].map(previewClass)).toEqual([320, 320, 640, 640, 640, 960, 1280, 1280]);
+  });
+
+  it('re-subscribes only when a resize crosses into another class', () => {
+    expect(classChanged(600, 630)).toBe(false);
+    expect(classChanged(630, 700)).toBe(true);
+    expect(classChanged(1300, 2000)).toBe(false);
+    expect(classChanged(undefined, 600)).toBe(false); // no width yet: the engine's 640
+    expect(classChanged(undefined, 300)).toBe(true);
   });
 });

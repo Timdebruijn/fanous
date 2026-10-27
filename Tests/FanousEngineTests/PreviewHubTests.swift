@@ -17,26 +17,33 @@ import Testing
 @Suite(.serialized) struct PreviewHubTests {
     static let logger = Logger(label: "preview-hub-test")
 
+    /// The hub's `make`: a streamer of the asked size at 30 of 60 fps.
+    static func make(_ context: MetalContext, _ parameters: TripleBuffer<ParameterSnapshotSlot>) -> @Sendable (Int, Int) throws -> PreviewStreamer {
+        { width, height in try PreviewStreamer(context: context, width: width, height: height, fps: 30, canvasFPS: 60, parameters: parameters, logger: logger) }
+    }
+
     struct Rig {
         let context: MetalContext
         let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
         let server: StateServer
         let hub: PreviewHub
         let compositor: Compositor
+        /// Picture sizes by target (the engine's `previewShape`); any other target is 160×90 and `configure` decides,
+        /// except "canvas:<id>" (no such canvas).
+        let shapes = OSAllocatedUnfairLock<[String: (width: Int, height: Int)]>(initialState: [:])
 
         init() throws {
             context = try MetalContext()
             let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: PreviewHubTests.logger)
             let project = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx)
             server = StateServer(store: StateStore(project: project, logger: PreviewHubTests.logger), auth: auth, caps: ["schema": 1], logger: PreviewHubTests.logger)
-            let context = context, parameters = parameters
-            let make: @Sendable () throws -> PreviewStreamer = {
-                try PreviewStreamer(context: context, width: 160, height: 90, fps: 30, canvasFPS: 60, parameters: parameters, logger: PreviewHubTests.logger)
+            let context = context, parameters = parameters, shapes = shapes
+            hub = try PreviewHub(make: PreviewHubTests.make(context, parameters)) { target in
+                shapes.withLock { $0[target] } ?? (target.hasPrefix("canvas:") ? nil : (160, 90))
             }
-            hub = PreviewHub(canvas: try make(), make: make)
             let compiler = try OutputCompiler(device: context.device)
             hub.configure = { target, streamer in
-                guard target == "output:1", let set = try? OutputSet(plans: [compiler.compile(OutputConfig(id: 1), index: 1, drawable: (160, 90))]) else { return false }
+                guard target == "output:1", let set = try? OutputSet(plans: [compiler.compile(OutputConfig(id: 1), index: 1, drawable: (streamer.width, streamer.height))]) else { return false }
                 streamer.outputSet = set
                 return true
             }
@@ -50,6 +57,13 @@ import Testing
 
         func attach(_ target: String, _ connection: StateServer.Connection, stream: UInt32 = 1, jpeg: Bool = false) -> Bool {
             hub.attach(target: target, connection: connection, stream: stream, jpeg: jpeg) { _ in }
+        }
+
+        /// Subscribes with a wanted width; the streamer it got (nil: refused).
+        func streamer(_ target: String, width: Int?, _ connection: StateServer.Connection, stream: UInt32 = 1) -> PreviewStreamer? {
+            var got: PreviewStreamer?
+            _ = hub.attach(target: target, width: width, connection: connection, stream: stream, jpeg: false) { got = $0 }
+            return got
         }
 
         func tick(_ n: Int) {
@@ -119,28 +133,24 @@ import Testing
     @Test func canvasTargetsPreviewTheirCanvas() throws {
         let rig = try Rig()
         try rig.compositor.reconfigure(.init(fps: 60, canvases: [.init(id: 1, width: 160, height: 90), .init(id: 2, width: 320, height: 320)]))
-        let context = rig.context, parameters = rig.parameters
-        let made = Mutex(0)
-        rig.hub.makeCanvas = { id in
-            guard id == 2 else { return nil }
-            made.withLock { $0 += 1 }
-            return try PreviewStreamer(context: context, width: 160, height: 160, fps: 30, canvasFPS: 60, parameters: parameters, logger: Self.logger)
-        }
+        rig.shapes.withLock { $0["canvas:2"] = (320, 320) }
         rig.hub.canvasTexture = { [compositor = rig.compositor] id in compositor.tickCanvas(id) }
         let (a, b) = (rig.connection(), rig.connection())
         #expect(rig.attach("canvas:1", a))
         #expect(rig.hub.targets == ["canvas"], "canvas:1 is the canvas streamer")
-        #expect(rig.attach("canvas:2", b, stream: 2))
+        let square = try #require(rig.streamer("canvas:2", width: nil, b, stream: 2))
+        #expect((square.width, square.height, square.canvasID) == (640, 640, 2), "the default class in canvas 2's shape")
         #expect(!rig.attach("canvas:3", rig.connection()))
         #expect(!rig.attach("canvas:x", rig.connection()))
         rig.tick(30)
         let second = rig.hub.framesIn - rig.hub.canvas.framesIn.load(ordering: .relaxed)
         #expect(second == 15, "the canvas 2 streamer taps its canvas (got \(second))")
         try rig.hub.rebuild()
-        #expect(made.withLock { $0 } == 2 && Set(rig.hub.targets) == ["canvas", "canvas:2"])
+        #expect(Set(rig.hub.targets) == ["canvas", "canvas:2"])
+        #expect(rig.streamer("canvas:2", width: nil, b, stream: 4) !== square, "made again")
 
         // canvas 2 removed: its streamer goes (its viewer gets badTarget) instead of showing a frozen picture
-        rig.hub.makeCanvas = { _ in nil }
+        rig.shapes.withLock { $0["canvas:2"] = nil }
         try rig.hub.rebuild()
         #expect(rig.hub.targets == ["canvas"])
     }
@@ -150,24 +160,27 @@ import Testing
     /// tell its viewer the canvas is gone) because it was not there when the rebuild started.
     @Test func aCanvasSubscribedDuringARebuildIsKept() throws {
         let rig = try Rig()
-        let context = rig.context, parameters = rig.parameters
-        let hub = rig.hub
         let viewer = rig.connection()
+        final class Weak: @unchecked Sendable { weak var hub: PreviewHub? }
+        let ref = Weak()
         let rendered = Mutex<Set<Int>>([2])
         let rebuilding = Mutex(false)
         let subscribed = Mutex<Bool?>(nil)
-        hub.makeCanvas = { [weak hub] id in
+        let hub = try PreviewHub(make: Self.make(rig.context, rig.parameters)) { target in
+            guard target.hasPrefix("canvas:") else { return (160, 90) }
+            let id = Int(target.dropFirst(7)) ?? 0
             guard rendered.withLock({ $0.contains(id) }) else { return nil }
             if id == 2, rebuilding.withLock({ $0 }), subscribed.withLock({ $0 }) == nil {
                 // canvas 3 starts rendering and its viewer subscribes while the rebuild makes canvas 2 again
                 rendered.withLock { _ = $0.insert(3) }
                 subscribed.withLock { $0 = false }
-                let attached = hub?.attach(target: "canvas:3", connection: viewer, stream: 3, jpeg: true) { _ in } ?? false
+                let attached = ref.hub?.attach(target: "canvas:3", connection: viewer, stream: 3, jpeg: true) { _ in } ?? false
                 subscribed.withLock { $0 = attached }
             }
-            return try PreviewStreamer(context: context, width: 160, height: 160, fps: 30, canvasFPS: 60, parameters: parameters, logger: Self.logger)
+            return (160, 160)
         }
-        #expect(rig.attach("canvas:2", rig.connection(), stream: 2))
+        ref.hub = hub
+        #expect(hub.attach(target: "canvas:2", connection: rig.connection(), stream: 2, jpeg: true) { _ in })
         rebuilding.withLock { $0 = true }
         try hub.rebuild()
         #expect(subscribed.withLock { $0 } == true)
@@ -182,7 +195,6 @@ import Testing
         let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/x", policy: .dmx), logger: Self.logger)
         ProjectDocument.registerCommands(on: store, auth: auth)
         let compositor = rig.compositor, made = rig.made
-        rig.hub.canvasOfLayer = { target in ProjectDocument.layerCanvases(from: store.project)[Int(target.dropFirst(6)) ?? 0] ?? 1 }
         rig.hub.configure = { target, streamer in
             guard let index = PreviewHub.layerIndex(of: target, layerCount: store.project["layerCount"]?.int ?? 0), (try? streamer.showLayer(index, of: compositor)) != nil else { return false }
             made.withLock { $0[target] = streamer }
@@ -239,7 +251,8 @@ import Testing
         let hub: PreviewHub
         // copyable locks: the hub's closures share them
         let made = OSAllocatedUnfairLock<[String: PreviewStreamer]>(initialState: [:])
-        let previewSize = OSAllocatedUnfairLock(initialState: (160, 90))
+        /// Picture sizes by target; a target without its own is canvas 1's ("canvas").
+        let shapes = OSAllocatedUnfairLock<[String: (width: Int, height: Int)]>(initialState: ["canvas": (320, 180)])
         let connections: Rig
         private var sequence: UInt64 = 0
         private var ticks = 0
@@ -256,12 +269,8 @@ import Testing
             layers[1].current = try PreviewHubTests.solid(context, [0, 255, 0, 255], file: 2)
             for (i, layer) in layers.enumerated() { layer.wanted.store(MediaKey(folder: 1, file: i + 1).packed, ordering: .relaxed) }
             compositor.setLayers(layers)
-            let parameters = parameters, previewSize = previewSize, made = made
-            let make: @Sendable () throws -> PreviewStreamer = {
-                let (w, h) = previewSize.withLock { $0 }
-                return try PreviewStreamer(context: context, width: w, height: h, fps: 30, canvasFPS: 60, parameters: parameters, logger: PreviewHubTests.logger)
-            }
-            hub = PreviewHub(canvas: try make(), make: make)
+            let shapes = shapes, made = made
+            hub = try PreviewHub(make: PreviewHubTests.make(context, parameters)) { target in shapes.withLock { $0[target] ?? $0["canvas"] } }
             hub.configure = { target, streamer in
                 guard let index = PreviewHub.layerIndex(of: target, layerCount: 2), (try? streamer.showLayer(index, of: compositor)) != nil else { return false }
                 made.withLock { $0[target] = streamer }
@@ -350,26 +359,22 @@ import Testing
         #expect(try rig.pixel("layer:2", 0.5, 0.5) == Self.green)
     }
 
-    /// Multiple canvases: a layer on canvas 2 is previewed at canvas 2's aspect (the hub makes it with `makeCanvas`),
-    /// drawn as on that canvas; layer 1 stays on canvas 1.
+    /// Multiple canvases: a layer on canvas 2 is previewed at canvas 2's aspect (the engine's `previewShape` gives the
+    /// hub its canvas's size), drawn as on that canvas; layer 1 stays on canvas 1.
     @Test func aLayerPreviewTakesItsCanvasAspect() throws {
         let rig = try LayerRig()
         try rig.compositor.reconfigure(.init(fps: 60, canvases: [.init(id: 1, width: 320, height: 180), .init(id: 2, width: 240, height: 240)]))
         rig.compositor.layerCanvas = [1, 2]
-        let context = rig.context, parameters = rig.parameters
-        rig.hub.canvasOfLayer = { target in target == "layer:2" ? 2 : 1 }
-        rig.hub.makeCanvas = { id in
-            id == 2 ? try PreviewStreamer(context: context, width: 120, height: 120, fps: 30, canvasFPS: 60, parameters: parameters, logger: Self.logger) : nil
-        }
+        rig.shapes.withLock { $0["layer:2"] = (240, 240) }
         #expect(rig.attach("layer:1"))
         #expect(rig.attach("layer:2", stream: 2))
         rig.tick(4)
         let square = try #require(rig.made.withLock { $0["layer:2"] })
-        #expect((square.width, square.height) == (120, 120) && square.framesIn.load(ordering: .relaxed) == 2)
+        #expect((square.width, square.height) == (640, 640) && square.framesIn.load(ordering: .relaxed) == 2)
         #expect(try rig.pixel("layer:2", 0.5, 0.5) == Self.green)
         #expect(try rig.pixel("layer:2", 0.1, 0.1) == Self.black, "half size on its square canvas")
         #expect(try rig.pixel("layer:1", 0.5, 0.5) == Self.red)
-        #expect(rig.made.withLock { $0["layer:1"] }?.height == 90, "layer 1 at canvas 1's aspect")
+        #expect(rig.made.withLock { $0["layer:1"] }?.height == 360, "layer 1 at canvas 1's aspect")
     }
 
     /// B31 with a layer target: after a canvas change of aspect the old streamer draws nothing (not stretched), and
@@ -385,10 +390,10 @@ import Testing
         #expect(rig.hub.framesIn == framesBefore, "4:3 canvas, 16:9 layer streamer: no frames until the rebuild")
         #expect(old.skipped.load(ordering: .relaxed) == 2)
 
-        rig.previewSize.withLock { $0 = (160, 120) }
+        rig.shapes.withLock { $0["canvas"] = (320, 240) }
         try rig.hub.rebuild()
         let fresh = try #require(rig.made.withLock { $0["layer:2"] })
-        #expect(fresh !== old && fresh.layer == 1 && fresh.height == 120)
+        #expect(fresh !== old && fresh.layer == 1 && fresh.height == 480)
         #expect(fresh.subscriberList.map(\.stream) == [1], "the subscriber moved over")
         rig.tick(4)
         #expect(fresh.framesIn.load(ordering: .relaxed) == 2)
@@ -400,22 +405,64 @@ import Testing
     @Test func rebuildRemakesStreamersAndMovesSubscribers() throws {
         let context = try MetalContext()
         let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
-        let height = Mutex(90)
-        let hub = PreviewHub(canvas: try PreviewStreamer(context: context, width: 160, height: 90, fps: 30, canvasFPS: 60, parameters: parameters, logger: Self.logger)) {
-            try PreviewStreamer(context: context, width: 160, height: height.withLock { $0 }, fps: 30, canvasFPS: 60, parameters: parameters, logger: Self.logger)
-        }
+        let shape = Mutex((160, 90))
+        let hub = try PreviewHub(make: Self.make(context, parameters)) { _ in shape.withLock { $0 } }
         hub.configure = { target, _ in target == "output:1" }
         let rig = try Rig()
         let (a, b) = (rig.connection(), rig.connection())
         #expect(hub.attach(target: "canvas", connection: a, stream: 1, jpeg: false) { _ in })
         #expect(hub.attach(target: "output:1", connection: b, stream: 2, jpeg: true) { _ in })
         let oldCanvas = hub.canvas
-        height.withLock { $0 = 120 }
+        shape.withLock { $0 = (160, 120) }
         try hub.rebuild()
-        #expect(hub.canvas !== oldCanvas && hub.canvas.height == 120)
+        #expect(hub.canvas !== oldCanvas && hub.canvas.height == 480)
         #expect(hub.canvas.subscriberList.map(\.stream) == [1])
         #expect(hub.targets.sorted() == ["canvas", "output:1"])
         hub.unsubscribe(connection: b, stream: 2)
         #expect(hub.targets == ["canvas"], "the moved output subscriber is the one that counts")
+    }
+
+    /// B32: one streamer per (target, size class); at 4 encoders a new size of a target that has one attaches to its
+    /// nearest size, a new target still gets its own; a size goes with its last subscriber.
+    @Test func sizeClassesHaveTheirOwnStreamerUpToFourEncoders() throws {
+        let rig = try Rig()
+        rig.shapes.withLock { $0["canvas:2"] = (160, 160) }
+        let (a, b, c) = (rig.connection(), rig.connection(), rig.connection())
+        #expect(rig.streamer("canvas", width: nil, a) === rig.hub.canvas, "no width: the canvas streamer (640)")
+        let small = try #require(rig.streamer("canvas", width: 300, a, stream: 2))
+        #expect((small.width, small.height) == (320, 180))
+        #expect(rig.streamer("canvas", width: 1600, b)?.width == 1280, "clamped to the largest class")
+        #expect(rig.streamer("output:1", width: 700, b, stream: 2)?.width == 960)
+        #expect(rig.hub.encoders == 4)
+        #expect(rig.hub.keys == [.init(target: "canvas", width: 320), .init(target: "canvas", width: 1280), .init(target: "output:1", width: 960)])
+
+        // at the limit: the nearest size the target has (the larger on a tie), no new encoder
+        #expect(rig.streamer("output:1", width: 200, c)?.width == 960)
+        #expect(rig.streamer("canvas", width: 900, c, stream: 2)?.width == 1280, "960 wanted: 640 and 1280 are as near")
+        #expect(rig.streamer("canvas", width: 200, c, stream: 3) === small && rig.streamer("canvas", width: 400, c, stream: 5) === rig.hub.canvas)
+        #expect(rig.hub.encoders == 4)
+        // a new target is never refused
+        #expect(rig.streamer("canvas:2", width: 320, c, stream: 4)?.width == 320)
+        #expect(rig.hub.encoders == 5)
+
+        rig.hub.remove(connection: c)
+        rig.hub.unsubscribe(connection: a, stream: 2)
+        #expect(rig.hub.keys == [.init(target: "canvas", width: 1280), .init(target: "output:1", width: 960)], "320 and canvas:2 lost their last subscriber")
+    }
+
+    /// B32: an output preview has the output's shape, and a changed shape (region) is a reason to rebuild.
+    @Test func anOutputPreviewHasTheOutputsShape() throws {
+        let rig = try Rig()
+        rig.shapes.withLock { $0["output:1"] = (1440, 1080) }
+        let a = rig.connection()
+        let fourThree = try #require(rig.streamer("output:1", width: nil, a))
+        #expect((fourThree.width, fourThree.height) == (640, 480))
+        #expect(!rig.hub.shapeChanged)
+        rig.shapes.withLock { $0["output:1"] = (1920, 1080) }
+        #expect(rig.hub.shapeChanged)
+        try rig.hub.rebuild()
+        #expect(!rig.hub.shapeChanged)
+        let wide = try #require(rig.streamer("output:1", width: nil, a, stream: 2))
+        #expect((wide.width, wide.height) == (640, 360) && wide.subscriberList.map(\.stream) == [1, 2], "the subscriber moved over")
     }
 }

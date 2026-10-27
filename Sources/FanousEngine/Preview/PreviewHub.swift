@@ -2,54 +2,72 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
+import FanousCore
 import Foundation
 import Metal
 import Synchronization
 
-/// One preview streamer per target ("canvas" = "canvas:1", "canvas:<id>", "output:<id>", "layer:<n>") that has subscribers,
-/// created on demand and released with its last subscriber, so one client's target never changes what another sees. The
-/// canvas 1 streamer always exists: CITP consoles stream it.
+/// One preview streamer per (target, size class) that has subscribers ("canvas" = "canvas:1", "canvas:<id>",
+/// "output:<id>", "layer:<n>"; DESIGN.md §11.3, B32), created on demand and released with its last subscriber, so one
+/// client's target or size never changes what another sees. The canvas 1 streamer at the default class always exists:
+/// CITP consoles stream it.
 public final class PreviewHub: @unchecked Sendable {
+    /// A streamer's key: its target and its size class (`PreviewSize`).
+    public struct Key: Hashable, Sendable {
+        public var target: String
+        public var width: Int
+    }
+
     /// Replaced by `rebuild` (canvas size or rate changed); taken under `streamers` when both are needed.
     private let canvasBox: Mutex<PreviewStreamer>
     public var canvas: PreviewStreamer { canvasBox.withLock { $0 } }
-    private let make: @Sendable () throws -> PreviewStreamer
-    private let streamers = Mutex<[String: PreviewStreamer]>([:])
+    /// Makes a streamer of a pixel size at the rendered canvas rate.
+    private let make: @Sendable (Int, Int) throws -> PreviewStreamer
+    /// A target's picture size in pixels: canvas 1, a canvas that renders, a layer's canvas, an output's region; nil =
+    /// no such target (refused).
+    private let shape: @Sendable (String) -> (width: Int, height: Int)?
+    private let streamers = Mutex<[Key: PreviewStreamer]>([:])
     /// The streamers `tap` walks; replaced (never mutated) when the set changes, so a tick takes one lock and a retain.
     private let active: Mutex<[PreviewStreamer]>
-    /// Points a new streamer at its target; false for an unknown target. Set by the engine (output compile needs its project).
+    /// Points a new output or layer streamer at its target; false for an unknown target. Set by the engine (output
+    /// compile needs its project).
     nonisolated(unsafe) public var configure: (@Sendable (String, PreviewStreamer) -> Bool)?
-    /// Makes the streamer of another canvas (its size and aspect); nil when that canvas does not render. Set by the engine.
-    nonisolated(unsafe) public var makeCanvas: (@Sendable (Int) throws -> PreviewStreamer?)?
     /// Compositor thread: a canvas of the running tick by id (`Compositor.tickCanvas`).
     nonisolated(unsafe) public var canvasTexture: ((Int) -> MTLTexture?)?
-    /// The canvas id of a "layer:<n>" target's layer (its preview takes that canvas's aspect). Set by the engine.
-    nonisolated(unsafe) public var canvasOfLayer: (@Sendable (String) -> Int?)?
 
-    public init(canvas: PreviewStreamer, make: @escaping @Sendable () throws -> PreviewStreamer) {
+    public init(make: @escaping @Sendable (Int, Int) throws -> PreviewStreamer, shape: @escaping @Sendable (String) -> (width: Int, height: Int)?) throws {
+        let canvas = try Self.canvasStreamer(make, shape)
         canvasBox = Mutex(canvas)
         self.make = make
+        self.shape = shape
         active = Mutex([canvas])
     }
 
-    /// Subscribes `connection`'s stream to `target`, creating that target's streamer when this is its first subscriber.
-    /// `announce` runs before the first frame can be sent (the `sub` reply carries the stream's size). False: bad target.
-    public func attach(target requested: String, connection: StateServer.Connection, stream: UInt32, jpeg: Bool, announce: (PreviewStreamer) -> Void) -> Bool {
-        let target = requested == "canvas:1" ? "canvas" : requested
+    private static func canvasStreamer(_ make: (Int, Int) throws -> PreviewStreamer, _ shape: (String) -> (width: Int, height: Int)?) throws -> PreviewStreamer {
+        let size = PreviewSize.size(class: PreviewSize.defaultClass, shape: shape("canvas") ?? (16, 9))
+        return try make(size.width, size.height)
+    }
+
+    /// Subscribes `connection`'s stream to `target` at the size class for `width` (nil: the default), creating that
+    /// streamer when this is its first subscriber. At `PreviewSize.maxEncoders` a new size of a target that already
+    /// has one attaches to its nearest size instead; a new target always gets its streamer. `announce` runs before the
+    /// first frame can be sent (the `sub` reply carries the stream's size). False: bad target.
+    public func attach(
+        target requested: String, width: Int? = nil, connection: StateServer.Connection, stream: UInt32, jpeg: Bool, announce: (PreviewStreamer) -> Void
+    ) -> Bool {
+        let key = Key(target: requested == "canvas:1" ? "canvas" : requested, width: PreviewSize.sizeClass(wanted: width))
         // compiling an output reads the project (the store's queue): never under our lock, the store calls `refreshOutputs` from there
         var fresh: PreviewStreamer?
-        if target != "canvas", !streamers.withLock({ $0[target] != nil }) {
-            guard let created = try? create(target) else { return false }
+        if streamers.withLock({ existing(key, in: $0) }) == nil {
+            guard let created = try? create(key) else { return false }
             fresh = created
         }
         return streamers.withLock { all in
             let streamer: PreviewStreamer
-            if target == "canvas" {
-                streamer = canvas
-            } else if let existing = all[target] {
-                streamer = existing  // another client got there first; ours is dropped
+            if let found = existing(key, in: all) {
+                streamer = found  // another client got there first, or the limit was reached meanwhile; ours is dropped
             } else if let fresh {
-                all[target] = fresh
+                all[key] = fresh
                 streamer = fresh
                 publishActive(all)
             } else {
@@ -59,6 +77,15 @@ public final class PreviewHub: @unchecked Sendable {
             streamer.subscribe(PreviewStreamer.Subscriber(connection: connection, stream: stream, jpeg: jpeg))
             return true
         }
+    }
+
+    /// The streamer `key` gets without a new encoder: its own, or at the encoder limit the nearest size of its target.
+    private func existing(_ key: Key, in all: [Key: PreviewStreamer]) -> PreviewStreamer? {
+        var sizes = all.filter { $0.key.target == key.target }
+        if key.target == "canvas" { sizes[Key(target: "canvas", width: PreviewSize.defaultClass)] = canvas }
+        if let own = sizes[key] { return own }
+        guard 1 + all.count >= PreviewSize.maxEncoders, let nearest = PreviewSize.nearest(key.width, in: sizes.keys.map(\.width)) else { return nil }
+        return sizes[Key(target: key.target, width: nearest)]
     }
 
     public func unsubscribe(connection: StateServer.Connection, stream: UInt32) {
@@ -77,63 +104,76 @@ public final class PreviewHub: @unchecked Sendable {
         }
     }
 
-    /// The canvas changed size or rate (B31): every streamer is made again by `make` (new size, new frame interval)
-    /// and its subscribers move over; they get a new `stream` description with the first frame. Output streamers are
-    /// configured outside the lock (that reads the project); one that no longer configures keeps its old streamer.
+    /// The canvas changed size or rate (B31), or a target its shape: every streamer is made again (new size, new frame
+    /// interval) and its subscribers move over; they get a new `stream` description with the first frame. Output
+    /// streamers are configured outside the lock (that reads the project); one that no longer configures keeps its old
+    /// streamer.
     public func rebuild() throws {
-        let fresh = try make()
-        var outputs: [String: PreviewStreamer] = [:]
-        let targets = Set(streamers.withLock { $0.keys })
-        for target in targets {
-            if let streamer = try create(target) { outputs[target] = streamer }
+        let fresh = try Self.canvasStreamer(make, shape)
+        var remade: [Key: PreviewStreamer] = [:]
+        let keys = Set(streamers.withLock { $0.keys })
+        for key in keys {
+            if let streamer = try create(key) { remade[key] = streamer }
         }
         streamers.withLock { all in
             let old = canvas
             fresh.externalJPEGWanted = old.externalJPEGWanted
             for subscriber in old.subscriberList { fresh.subscribe(subscriber) }
             canvasBox.withLock { $0 = fresh }
-            for (target, previous) in all {
-                guard let replacement = outputs[target] else {
-                    // a removed canvas: its viewers are told instead of left on a frozen picture. A target subscribed
-                    // while we built (not in `targets`) was made after the switch began and stays (B62); in the rare
+            for (key, previous) in all {
+                guard let replacement = remade[key] else {
+                    // a removed canvas: its viewers are told instead of left on a frozen picture. A key subscribed
+                    // while we built (not in `keys`) was made after the switch began and stays (B62); in the rare
                     // case it was made just before the switch for a canvas that went, its viewer drops it when
                     // `live.canvas` no longer lists that canvas
-                    if target.hasPrefix("canvas:"), targets.contains(target) {
-                        all.removeValue(forKey: target)
+                    if key.target.hasPrefix("canvas:"), keys.contains(key) {
+                        all.removeValue(forKey: key)
                         for s in previous.subscriberList {
-                            _ = s.connection.send(text: #"{"t":"error","code":"badTarget","message":"preview target \#(target) no longer exists","id":\#(s.stream)}"#, droppable: false)
+                            _ = s.connection.send(text: #"{"t":"error","code":"badTarget","message":"preview target \#(key.target) no longer exists","id":\#(s.stream)}"#, droppable: false)
                         }
                     }
                     continue
                 }
                 for subscriber in previous.subscriberList { replacement.subscribe(subscriber) }
-                all[target] = replacement
+                all[key] = replacement
             }
             publishActive(all)
         }
     }
 
-    /// A streamer for a target other than canvas 1: "canvas:<id>" through `makeCanvas`, anything else through `make` and `configure`.
-    private func create(_ target: String) throws -> PreviewStreamer? {
-        if target.hasPrefix("canvas:") {
-            guard let id = Int(target.dropFirst(7)), let streamer = try makeCanvas?(id) else { return nil }
+    /// True when a streamer's target changed shape (an output's region, a layer's canvas): `rebuild` makes it again.
+    /// The canvas streamers follow the canvas switch, which rebuilds anyway.
+    public var shapeChanged: Bool {
+        streamers.withLock { $0 }.contains { key, streamer in
+            guard !key.target.hasPrefix("canvas"), let shape = shape(key.target) else { return false }
+            let size = PreviewSize.size(class: key.width, shape: shape)
+            return size.width != streamer.width || size.height != streamer.height
+        }
+    }
+
+    /// A streamer other than the canvas one, at its class in its target's shape; "canvas:<id>" taps that canvas, an
+    /// output or layer goes through `configure`.
+    private func create(_ key: Key) throws -> PreviewStreamer? {
+        guard let shape = shape(key.target) else { return nil }
+        let size = PreviewSize.size(class: key.width, shape: shape)
+        let streamer = try make(size.width, size.height)
+        if key.target == "canvas" { return streamer }
+        if key.target.hasPrefix("canvas:") {
+            guard let id = Int(key.target.dropFirst(7)) else { return nil }
             streamer.canvasID = id
             return streamer
         }
-        // a layer preview is made at its canvas's aspect (`drawLayer` draws it there)
-        let canvas = target.hasPrefix("layer:") ? canvasOfLayer?(target) ?? 1 : 1
-        let streamer = try (canvas == 1 ? make() : makeCanvas?(canvas)) ?? make()
-        return configure?(target, streamer) == true ? streamer : nil
+        return configure?(key.target, streamer) == true ? streamer : nil
     }
 
     /// Output streamers without subscribers go; the canvas one stays.
-    private func release(_ all: inout [String: PreviewStreamer]) {
+    private func release(_ all: inout [Key: PreviewStreamer]) {
         let before = all.count
         all = all.filter { $0.value.hasSubscribers }
         if all.count != before { publishActive(all) }
     }
 
-    private func publishActive(_ all: [String: PreviewStreamer]) {
+    private func publishActive(_ all: [Key: PreviewStreamer]) {
         let list = [canvas] + all.values
         active.withLock { $0 = list }
     }
@@ -144,13 +184,17 @@ public final class PreviewHub: @unchecked Sendable {
         return n - 1
     }
 
-    /// Targets with a streamer right now (tests, diagnostics).
-    public var targets: [String] { streamers.withLock { Array($0.keys) } + ["canvas"] }
+    /// Targets with a streamer right now, each once (tests, diagnostics).
+    public var targets: [String] { Array(streamers.withLock { Set($0.keys.map(\.target)) }.subtracting(["canvas"])) + ["canvas"] }
+    /// Streamers right now, the canvas one included: each has its own encoder (tests, `/metrics`).
+    public var encoders: Int { 1 + streamers.withLock { $0.count } }
+    /// Streamers right now by target and size class (tests).
+    var keys: Set<Key> { streamers.withLock { Set($0.keys) } }
 
     /// Points every output streamer at its (possibly changed) output again; `reconfigure` returns false to keep the old one.
     public func refreshOutputs(_ reconfigure: (String, PreviewStreamer) -> Bool) {
         let current = streamers.withLock { $0 }
-        for (target, streamer) in current { _ = reconfigure(target, streamer) }
+        for (key, streamer) in current { _ = reconfigure(key.target, streamer) }
     }
 
     // MARK: Compositor thread

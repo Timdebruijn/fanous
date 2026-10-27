@@ -16,7 +16,7 @@ import VideoToolbox
 /// or one layer alone) is drawn through the output pass into a small BGRA `CVPixelBuffer` from a Metal-compatible pool (no
 /// readback), encoded on the preview queue as H.264 (Baseline, no B-frames, 1 s GOP) for WebCodecs, or as
 /// JPEG at 5 fps for clients without WebCodecs. One encoder, shared by every subscriber.
-/// ponytail: one size for all subscribers (the first one's); per-(target,size) encoders when a show needs them.
+/// One streamer per (target, size class): `PreviewHub`.
 public final class PreviewStreamer: @unchecked Sendable {
     public struct Subscriber: Sendable {
         public var connection: StateServer.Connection
@@ -225,7 +225,9 @@ public final class PreviewStreamer: @unchecked Sendable {
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering, value: kCFBooleanFalse)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameInterval, value: Int(fps) as CFNumber)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, value: 1 as CFNumber)
-        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: 1_500_000 as CFNumber)
+        // 1.5 Mbit/s at 640×360 (DESIGN.md §11.3); the other size classes in proportion to their pixels
+        let bitRate = max(500_000, 1_500_000 * width * height / (640 * 360))
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: bitRate as CFNumber)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ExpectedFrameRate, value: fps as CFNumber)
         VTCompressionSessionPrepareToEncodeFrames(session)
         self.session = session

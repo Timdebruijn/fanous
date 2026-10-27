@@ -1168,6 +1168,25 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   target changed again (`latestOnly`). The Layers screen toggles Canvas /
   This layer (per browser, `localStorage`). B29 thumbnails can reuse
   `drawLayer` into an atlas; not built.
+- **As built (sizes, B32, 2026-10-27):** `sub` takes an optional `w`
+  (wanted width in pixels, clamped 160–1280); the engine picks the smallest
+  size class ≥ `w` out of 320, 640, 960 and 1280 wide (640 without `w`),
+  height in the target's shape: canvas 1 or `canvas:<id>` its canvas,
+  `layer:<n>` its layer's canvas, `output:<id>` the output's region (else
+  its display, else 1920×1080), so an output preview is no longer a 16:9
+  frame stretched back. Pure functions in `FanousCore.PreviewSize`.
+  `PreviewHub` keys streamers on (target, class); the canvas 1 streamer at
+  640 always exists (CITP). With 4 encoders in total (the canvas one
+  counted, `/metrics` `preview.encoders`), a new class of a target that
+  already has one attaches to its nearest class (the larger on a tie) and
+  the `sub` reply says that size; a new target still gets its own encoder,
+  as before, so the limit bounds extra sizes, not targets. Bit rate scales
+  with the pixels (1.5 Mbit/s at 640×360, at least 0.5 Mbit/s). A changed
+  output region or layer canvas rebuilds the previews (`shapeChanged`); a
+  display hot-plug that changes an unregioned output's size does not, until
+  the next project change or re-subscription. The browser asks for its
+  element's width × `devicePixelRatio` (rounded up) and re-subscribes 300 ms
+  after a resize that crosses into another class (`latestOnly`).
 
 ### 11.4 Frontend (ADR-0012)
 

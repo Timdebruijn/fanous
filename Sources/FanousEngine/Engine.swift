@@ -418,27 +418,17 @@ public final class Engine: @unchecked Sendable {
         let stateServer = StateServer(store: store, auth: auth, caps: caps, logger: logger)
         render?.compositor.timecode = timecodeClock
         if let render {
-            // 640 wide in the canvas aspect at 30 fps (DESIGN.md §11.3 default), on the compositor's own command buffer;
-            // made again from the rendered canvas when it changes (B31)
-            let makePreview: @Sendable () throws -> PreviewStreamer = { [weak self, parameters = dmx.snapshots, logger] in
-                let canvas = self?.canvasSwitch?.rendered.first ?? startCanvas
-                let height = max(2, 640 * canvas.height / max(1, canvas.width))
-                return try PreviewStreamer(context: context, width: 640, height: height, fps: min(30, canvas.fps), canvasFPS: canvas.fps, parameters: parameters, logger: logger)
-            }
+            // a size class wide in the target's shape at 30 fps (DESIGN.md §11.3, B32), on the compositor's own command
+            // buffer; made again from the rendered canvas when it changes (B31)
             logger.info("engine start", metadata: ["step": "preview encoders"])  // B66: the last step logged is the last one entered
-            // one streamer per target that has subscribers (canvas, canvas:<id>, output:<id>, layer:<n>); the canvas one also serves CITP
-            let preview = PreviewHub(canvas: try makePreview(), make: makePreview)
-            preview.makeCanvas = { [weak self, parameters = dmx.snapshots, logger] id in
-                guard let layout = self?.canvasSwitch?.rendered, let canvas = layout.canvases.first(where: { $0.id == id }) else { return nil }
-                let height = max(2, 640 * canvas.height / max(1, canvas.width))
-                return try PreviewStreamer(context: context, width: 640, height: height, fps: min(30, layout.fps), canvasFPS: layout.fps, parameters: parameters, logger: logger)
-            }
+            // one streamer per (target, size) that has subscribers (canvas, canvas:<id>, output:<id>, layer:<n>); the canvas one also serves CITP
+            let preview = try PreviewHub(
+                make: { [weak self, parameters = dmx.snapshots, logger] width, height in
+                    let fps = self?.canvasSwitch?.rendered.fps ?? startCanvas.fps
+                    return try PreviewStreamer(context: context, width: width, height: height, fps: min(30, fps), canvasFPS: fps, parameters: parameters, logger: logger)
+                },
+                shape: { [weak self] target in self?.previewShape(target) })
             preview.canvasTexture = { [unowned compositor = render.compositor] id in compositor.tickCanvas(id) }
-            preview.canvasOfLayer = { [weak self] target in
-                guard let self, let n = Int(target.dropFirst(6)), n >= 1 else { return nil }
-                let layers = self.effectiveCanvasUse().layers
-                return n <= layers.count ? layers[n - 1] : 1
-            }
             render.compositor.previewTap = { canvas, commandBuffer, target in preview.tap(canvas: canvas, commandBuffer: commandBuffer, target: target) }
             // no GPU work for a canvas nobody sees: no output window, preview, Syphon client or CITP stream
             render.compositor.skipsIdleWork = true
@@ -608,7 +598,10 @@ public final class Engine: @unchecked Sendable {
                     m["audio"] = ["callbacks": .number(Double(audio.callbacks)), "underruns": .number(Double(audio.underruns)), "corrections": .number(Double(audio.corrections)), "maxDriftMs": .number(audio.maxDriftMillis)]
                 }
                 if let preview = stateServer.preview {
-                    m["preview"] = ["framesIn": .number(Double(preview.framesIn)), "framesOut": .number(Double(preview.framesOut)), "skipped": .number(Double(preview.skipped))]
+                    m["preview"] = [
+                        "framesIn": .number(Double(preview.framesIn)), "framesOut": .number(Double(preview.framesOut)), "skipped": .number(Double(preview.skipped)),
+                        "encoders": .number(Double(preview.encoders)),
+                    ]
                 }
                 return .json(200, Array(store.encode(.object(m)).utf8))
             case "/api/logs":
@@ -675,13 +668,37 @@ public final class Engine: @unchecked Sendable {
         self.server = server
     }
 
+    /// An output's pixels: its region, else its display's size, else 1920×1080 (the UI's `outputSize`).
+    private func outputRegion(_ output: OutputConfig) -> PixelRect {
+        output.region ?? displays.withLock { list in
+            list.first { $0.uuid == output.display?.uuid }.map { PixelRect(x: 0, y: 0, w: $0.pixelWidth, h: $0.pixelHeight) }
+        } ?? PixelRect(x: 0, y: 0, w: 1920, h: 1080)
+    }
+
+    /// A preview target's picture size (B32): canvas 1, a canvas that renders, a layer's canvas (canvas 1 when that one
+    /// does not render), an output's region; nil = no such target.
+    private func previewShape(_ target: String) -> (width: Int, height: Int)? {
+        guard let layout = canvasSwitch?.rendered else { return nil }
+        let first = (layout.first.width, layout.first.height)
+        func canvas(_ id: Int) -> (width: Int, height: Int)? { layout.canvases.first { $0.id == id }.map { ($0.width, $0.height) } }
+        if target == "canvas" { return first }
+        if target.hasPrefix("canvas:") { return Int(target.dropFirst(7)).flatMap(canvas) }
+        if target.hasPrefix("layer:") {
+            guard let n = Int(target.dropFirst(6)), n >= 1 else { return nil }
+            let layers = effectiveCanvasUse().layers
+            return canvas(n <= layers.count ? layers[n - 1] : 1) ?? first
+        }
+        let outputs = effectiveCanvasUse().outputs
+        guard target.hasPrefix("output:"), let id = Int(target.dropFirst(7)), let output = outputs.first(where: { $0.id == id }) else { return nil }
+        let region = outputRegion(output)
+        return (region.w, region.h)
+    }
+
     /// Compiles one output for the preview size; overlaps and feathers scale with the preview.
     /// `outputs` is passed in: this runs on the control queue from `projectChanged`, where `store.project` would deadlock.
     private func previewOutput(_ output: OutputConfig, in outputs: [OutputConfig], compiler: OutputCompiler, preview: PreviewStreamer) -> Bool {
         var scaled = output
-        let region = output.region ?? displays.withLock { list in
-            list.first { $0.uuid == output.display?.uuid }.map { PixelRect(x: 0, y: 0, w: $0.pixelWidth, h: $0.pixelHeight) }
-        } ?? PixelRect(x: 0, y: 0, w: 1920, h: 1080)
+        let region = outputRegion(output)
         let factor = Double(preview.width) / Double(max(1, region.w))
         scaled.region = nil
         let factorY = Double(preview.height) / Double(max(1, region.h))
@@ -1034,8 +1051,8 @@ public final class Engine: @unchecked Sendable {
         if let render, use.layers != render.compositor.layerCanvas { render.compositor.layerCanvas = use.layers }
         coordinator?.apply(outputs: use.outputs, clockMaster: use.clockMaster)
         guard let preview = stateServer?.preview else { return }
-        if rebuildLayerPreviews, preview.targets.contains(where: { $0.hasPrefix("layer:") }) {
-            // layer:<n> previews take the aspect of their layer's canvas
+        if rebuildLayerPreviews && preview.targets.contains(where: { $0.hasPrefix("layer:") }) || preview.shapeChanged {
+            // layer:<n> previews take the aspect of their layer's canvas, output:<id> previews their output's (B32)
             do { try preview.rebuild() } catch { logger.error("preview rebuild failed", metadata: ["error": "\(error)"]) }
         } else if preview.targets.contains(where: { $0.hasPrefix("output:") }), let device = render?.context.device, let compiler = try? OutputCompiler(device: device) {
             // output previews follow their output

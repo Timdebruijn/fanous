@@ -370,8 +370,8 @@ position, scale, colour, effects and dissolves apply.
 | 113 | Motion test: a bar moving 16 px per frame (at 1080p), stripes scrolling 8 px per frame and a strip of 60 cells with one lit per frame. At a steady rate every step is equal; a dropped or doubled frame shows as a jump or a stop |
 
 Judge motion on an output (a display or projector), not in the preview: the
-preview is 640 × 360 at 30 fps and shows only every second frame of a 60 fps
-canvas, so moving content always looks jerky there.
+preview is at most 1280 pixels wide at 30 fps and shows only every second frame
+of a 60 fps canvas, so moving content always looks jerky there.
 
 ## Controlling layers from the UI
 
