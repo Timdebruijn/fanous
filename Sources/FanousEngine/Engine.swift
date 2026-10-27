@@ -347,6 +347,7 @@ public final class Engine: @unchecked Sendable {
         lastMIDISettings = MIDISettings.from(project: project)
         midi.apply(lastMIDISettings)
         midi.start()  // on main, the first CoreMIDI call of the process: hot-plug notifications need its run loop
+        logger.info("engine start", metadata: ["step": "state server"])
         self.midi = midi
         // OSC: cue, show and timecode commands (DESIGN.md §15.3); the parameter ones stay on the DMX queue
         dmx.onCommand = { [weak self] command in
@@ -424,8 +425,8 @@ public final class Engine: @unchecked Sendable {
                 let height = max(2, 640 * canvas.height / max(1, canvas.width))
                 return try PreviewStreamer(context: context, width: 640, height: height, fps: min(30, canvas.fps), canvasFPS: canvas.fps, parameters: parameters, logger: logger)
             }
+            logger.info("engine start", metadata: ["step": "preview encoders"])  // B66: the last step logged is the last one entered
             // one streamer per target that has subscribers (canvas, canvas:<id>, output:<id>, layer:<n>); the canvas one also serves CITP
-            logger.info("engine start", metadata: ["step": "preview encoders"])  // the CI VM once hung between the MIDI input and the HTTPS listener (B66): these lines locate it
             let preview = PreviewHub(canvas: try makePreview(), make: makePreview)
             preview.makeCanvas = { [weak self, parameters = dmx.snapshots, logger] id in
                 guard let layout = self?.canvasSwitch?.rendered, let canvas = layout.canvases.first(where: { $0.id == id }) else { return nil }
@@ -467,6 +468,7 @@ public final class Engine: @unchecked Sendable {
                         thumbnail: { name in (try? Data(contentsOf: thumbnailer.directory.appending(path: name))).map(Array.init) },
                         frame: { [weak self] in self?.stateServer?.preview?.canvas.latestJPEG.withLock { $0 } ?? nil }), logger: logger)
                 do {
+                    logger.info("engine start", metadata: ["step": "citp"])
                     try citp.start()
                     preview.canvas.externalJPEGWanted = { citp.wantsFrames.load(ordering: .relaxed) }  // CITP always streams the canvas
                     self.citp = citp
@@ -526,6 +528,7 @@ public final class Engine: @unchecked Sendable {
         self.store = store
         stateServer.onDMXActive = { [weak self] active in self?.setDMXStream(active: active) }
         self.stateServer = stateServer
+        logger.info("engine start", metadata: ["step": "feeds"])
         startFeeds()
         oscFacts(from: store.project)
         oscFeedback?.start()  // the fixed target is notified once everything it reads exists
@@ -667,6 +670,7 @@ public final class Engine: @unchecked Sendable {
         server.uploadRoute = { request, file in ingestAPI.handle(request, uploadedFile: file) }
         server.upgradeRoute = { request in stateServer.upgrade(request) }
         if options.network { server.bonjour(name: SystemInfo.hostName) }
+        logger.info("engine start", metadata: ["step": "https listener"])
         server.start()
         self.server = server
     }
