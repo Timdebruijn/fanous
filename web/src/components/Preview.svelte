@@ -2,7 +2,7 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { latestOnly } from '../lib/preview';
   import { app, subscribePreview } from '../lib/state.svelte';
 
@@ -35,7 +35,7 @@
 
     const drawBitmap = (bitmap: ImageBitmap | VideoFrame) => {
       if (!canvas) return;
-      if (canvas.width !== bitmap.displayWidth && 'displayWidth' in bitmap) {
+      if ('displayWidth' in bitmap && canvas.width !== bitmap.displayWidth) {
         canvas.width = bitmap.displayWidth;
         canvas.height = bitmap.displayHeight;
       }
@@ -158,7 +158,7 @@
   $effect(() => {
     if (app.connection === 'open' && !hidden && stop === null && mode !== 'connecting') void start();
   });
-  let shownTarget = target;
+  let shownTarget = untrack(() => target);  // the first target; the effect below follows later changes
   $effect(() => {
     if (target === shownTarget) return;
     shownTarget = target;

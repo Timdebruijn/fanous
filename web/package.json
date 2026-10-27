@@ -9,14 +9,17 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node node_modules/@typescript/native/bin/tsc --noEmit",
+    "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "e2e": "playwright test"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@typescript/native": "npm:typescript@7.0.2",
     "svelte": "5.57.2",
-    "typescript": "7.0.2",
+    "svelte-check": "4.7.7",
+    "typescript": "6.0.3",
     "vite": "8.3.5",
     "vitest": "5.0.5"
   }

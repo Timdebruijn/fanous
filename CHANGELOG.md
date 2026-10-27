@@ -73,6 +73,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   CoreMIDI and CoreAudio devices (over 5 s on the CI virtual machine: an empty status bar and no preview); the
   5 s refresh of those lookups also ran on the live feed. They now run off it, the first one at start, and a
   slow one is logged.
+- `npm run check` (svelte-check) type-checks the `.svelte` script blocks and applies Svelte's a11y rules, in
+  CI's `web` job (B45). It found a type error in the preview's frame sizing (no behaviour change) and the
+  show-resumed notice in the status bar, which was a link announced as a status; it is a link inside a status now.
 
 - Hardening: one engine per user (`engine.lock`), cumulative frame counters in
   `/metrics`, show mode hides the cursor over the outputs.

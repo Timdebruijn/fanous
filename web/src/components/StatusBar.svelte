@@ -61,7 +61,7 @@
       <button type="button" class="tag {showMode ? 'tag-mode' : 'tag-open'}" aria-pressed={showMode} aria-expanded={refused !== null} onclick={toggleShowMode} disabled={!can('operator')} title={can('operator') ? (showMode ? 'Leave show mode' : 'Enter show mode: runs the readiness checks first') : 'Operator or programmer only'}>
         SHOW MODE: {showMode ? 'ON' : 'OFF'}
       </button>
-      {#if showMode && resumed}<a class="caption resumed" href="#/system" role="status">{resumed}</a>{/if}
+      <span role="status">{#if showMode && resumed}<a class="caption resumed" href="#/system">{resumed}</a>{/if}</span>
       {#if refused !== null}
         <div class="pop panel" role="alert">
           <strong>Cannot enter show mode</strong>
