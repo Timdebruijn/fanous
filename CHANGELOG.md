@@ -77,6 +77,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   CI's `web` job (B45). It found a type error in the preview's frame sizing (no behaviour change), a link
   announced as a status in the status bar (now a link inside a status element), a Preview prop read outside a
   reactive context, and two a11y warnings on the mapper SVG (ignored, with the reason in the source).
+- Fixed: a parallel `swift test` of the engine suite hung (every cooperative-pool thread waiting in `finishWriting`); the
+  media-writing test helpers now run on a thread of their own and `scripts/test.sh` runs the tests in parallel again (B63).
 
 - Hardening: one engine per user (`engine.lock`), cumulative frame counters in
   `/metrics`, show mode hides the cursor over the outputs.

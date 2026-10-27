@@ -264,10 +264,14 @@ struct OutputPassTests {
         o.warp.mesh = .identity(cols: 33, rows: 33)
         o.warp.mesh!.points[33 * 16 + 16] = MapPoint(0.51, 0.5)
         o.slices[0].mask = MaskSettings(path: [MapPoint(0.1, 0.1), MapPoint(0.9, 0.1), MapPoint(0.9, 0.9), MapPoint(0.1, 0.9)], feather: 8)
-        _ = try compiler.compile(o, index: 1, drawable: (1920, 1080))  // warm up
-        let start = Date()
-        let plan = try compiler.compile(o, index: 1, drawable: (1920, 1080))
-        let ms = Date().timeIntervalSince(start) * 1000
+        let plan = try compiler.compile(o, index: 1, drawable: (1920, 1080))  // also the warm-up
+        // best of five: in a parallel test run the other suites share the CPU with this measurement
+        var ms = Double.infinity
+        for _ in 0..<5 {
+            let start = Date()
+            _ = try compiler.compile(o, index: 1, drawable: (1920, 1080))
+            ms = min(ms, Date().timeIntervalSince(start) * 1000)
+        }
         #expect(plan.warpField?.width == 480)
         // the acceptance bound (100 ms) is a release-build number, see docs/benchmarks; debug builds run ~2–3× slower
         #expect(ms < 250, "compiled a 33×33 warp with a feathered mask at 1080p in \(ms) ms")

@@ -102,11 +102,13 @@ struct LibraryIndexTests {
         let folder = root.appending(path: "007_Test")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let movie = folder.appending(path: "003_clip.mov")
-        let writer = try MovieWriter(url: movie, width: 320, height: 176, fps: 25, codec: .proRes422HQ)
-        var buffer: CVPixelBuffer?
-        CVPixelBufferPoolCreatePixelBuffer(nil, writer.pixelBufferPool!, &buffer)
-        for _ in 0..<5 { try writer.append(buffer!) }
-        try writer.finish()
+        try await IngestQueueTests.offPool {
+            let writer = try MovieWriter(url: movie, width: 320, height: 176, fps: 25, codec: .proRes422HQ)
+            var buffer: CVPixelBuffer?
+            CVPixelBufferPoolCreatePixelBuffer(nil, writer.pixelBufferPool!, &buffer)
+            for _ in 0..<5 { try writer.append(buffer!) }
+            try writer.finish()
+        }
         let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
         // heap-allocated observers: callbacks may still run on the library thread after this function returns
         final class Observer: Sendable {
