@@ -1058,9 +1058,10 @@ from the compositor after the canvas pass with the same completed texture
 - Bonjour: `_fanous._tcp` and `_https._tcp` advertised so a browser on the
   iPad finds `https://<host>.local:8443`. As built (B39): `_fanous._tcp` is
   the listener's own service; `_https._tcp` (TXT `path=/`, `port`) is a
-  dns_sd registration for the same port, because an NWListener carries one
-  service and a second NWListener on the port fails with EADDRINUSE on
-  macOS 27 despite `allowLocalEndpointReuse`. Neither with `--no-network`.
+  dns_sd registration for the same port while the listener is ready, because
+  an NWListener carries one service and a second NWListener on the port
+  fails with EADDRINUSE on macOS 27 despite `allowLocalEndpointReuse`.
+  Neither with `--no-network`.
 - **Auth = roles with optional passwords**, no user accounts. Three roles
   (monitor, operator, programmer), each with an optional password stored as
   PBKDF2-HMAC-SHA256 (CommonCrypto, 600 000 iterations, per-role salt) in the

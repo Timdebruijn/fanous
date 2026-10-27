@@ -104,8 +104,8 @@ dot (OK, LIVE, NO MEDIA, MISSING FILE, DECODER ERROR).
 Browse to `https://<mac-name>.local:8443`. The exact host name, the IP
 addresses and the port are under System › Network (Host, Addresses, Port,
 Bonjour). Fanous also advertises itself as an HTTPS service (`_https._tcp`)
-under the Mac's name, so a Bonjour browser on the network lists it with the
-right port.
+under the host name shown on the Bonjour line of System › Network, so a
+Bonjour browser on the network lists it with the right port.
 
 The engine makes its own certificate the first time it runs, so the browser
 shows a certificate warning once:

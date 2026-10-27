@@ -91,7 +91,11 @@ public final class HTTPSServer: @unchecked Sendable {
             case .ready:
                 self?.boundPort = self?.listener.port?.rawValue ?? port
                 logger.info("HTTPS listening", metadata: ["port": "\(self?.boundPort ?? port)"])
-            case .failed(let error): logger.error("HTTPS listener failed", metadata: ["error": "\(error)"])
+                self?.registerHTTPS()
+            case .failed(let error):
+                logger.error("HTTPS listener failed", metadata: ["error": "\(error)"])
+                self?.deregisterHTTPS()
+            case .waiting: self?.deregisterHTTPS()
             case .cancelled: logger.info("HTTPS listener stopped")
             default: break
             }
@@ -101,23 +105,30 @@ public final class HTTPSServer: @unchecked Sendable {
             ClientConnection(connection, server: self).start()
         }
         listener.start(queue: queue)
-        if let service = httpsService, httpsRegistration == nil {
-            // Advertisement only, no socket: connections still all arrive at `listener`. No callback (mDNSResponder
-            // renames on a conflict by itself); the registration lives until DNSServiceRefDeallocate.
-            let txt = service.txtRecordObject?.data ?? Data()
-            let error = txt.withUnsafeBytes { bytes in
-                DNSServiceRegister(&httpsRegistration, 0, 0, service.name, service.type, nil, nil, port.bigEndian,
-                                   UInt16(bytes.count), bytes.baseAddress, nil, nil)
-            }
-            if error != kDNSServiceErr_NoError {
-                httpsRegistration = nil
-                logger.error("Bonjour _https._tcp registration failed", metadata: ["error": "\(error)"])
-            }
+    }
+
+    /// Synchronous, so a start right after (Restart Engine) does not collide with its own old `_https._tcp` name.
+    public func stop() {
+        listener.cancel()
+        queue.sync { deregisterHTTPS() }
+    }
+
+    /// On `queue`, while the listener is ready, like the listener's own `_fanous._tcp`. Advertisement only, no
+    /// socket: connections all arrive at `listener`. No callback (mDNSResponder renames on a conflict by itself).
+    private func registerHTTPS() {
+        guard let service = httpsService, httpsRegistration == nil else { return }
+        let txt = service.txtRecordObject?.data ?? Data()
+        let error = txt.withUnsafeBytes { bytes in
+            DNSServiceRegister(&httpsRegistration, 0, 0, service.name, service.type, nil, nil, port.bigEndian,
+                               UInt16(bytes.count), bytes.baseAddress, nil, nil)
+        }
+        if error != kDNSServiceErr_NoError {
+            httpsRegistration = nil
+            logger.error("Bonjour _https._tcp registration failed", metadata: ["error": "\(error)"])
         }
     }
 
-    public func stop() {
-        listener.cancel()
+    private func deregisterHTTPS() {
         if let registration = httpsRegistration { DNSServiceRefDeallocate(registration) }
         httpsRegistration = nil
     }

@@ -28,4 +28,11 @@ struct BonjourTests {
         server.bonjour(name: "studio")
         #expect(server.advertisedServices.isEmpty)
     }
+
+    @Test func portZeroAdvertisesNothing() throws {
+        let server = try HTTPSServer(port: 0, identity: try StateServerTests.makeIdentity(), webRoot: URL(fileURLWithPath: "/nonexistent"),
+                                     logger: Logger(label: "test")) { _ in nil }
+        server.bonjour(name: "studio")
+        #expect(server.advertisedServices.isEmpty)
+    }
 }
