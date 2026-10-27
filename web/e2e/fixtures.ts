@@ -14,13 +14,6 @@ const repo = resolve(import.meta.dirname, '../..');
 const binary = process.env.FANOUSD ?? join(repo, '.build/debug/fanousd');
 const webRoot = join(repo, 'web/dist');
 
-// A known race, not fixed yet (B62 b): a new canvas renders only after the canvas switch, but the Canvases tab asks
-// for its preview at once, so a canvas preview refused within RACE_MS of the patch that added the canvas is allowed;
-// any other refusal fails. Drop this once it is fixed.
-const RACE_MS = 1500;
-const REFUSED_TARGET = /^preview target (canvas:\d+) is not /;
-const LIST_OR_ITEM = /^\/canvases(?:\/\d+)?$/;
-
 export type Engine = { url: string; home: string; token: string; api: APIRequestContext };
 
 function freePort(): Promise<number> {
@@ -112,29 +105,15 @@ export const test = base.extend<{ engine: Engine }>({
     page.on('console', (message) => {
       if (message.type() === 'error') errors.push(`console error: ${message.text()}`);
     });
-    const appeared = new Map<string, number>();  // "canvas:2" → when a project patch added it
     page.on('websocket', (socket) =>
       socket.on('framereceived', ({ payload }) => {
         if (typeof payload !== 'string') return;
         const message = JSON.parse(payload) as {
           t: string; ok?: boolean; error?: unknown; code?: string; message?: string; id?: number;
-          doc?: string; ops?: { path: string; value?: unknown }[];
         };
-        if (message.t === 'patch' && message.doc === 'project') {
-          for (const op of message.ops ?? []) {
-            if (!LIST_OR_ITEM.test(op.path)) continue;
-            for (const item of [op.value].flat() as { id?: unknown }[]) {
-              if (typeof item?.id === 'number') appeared.set(`canvas:${item.id}`, Date.now());
-            }
-          }
-        }
         if (message.t === 'ack' && !message.ok) errors.push(`command refused: ${JSON.stringify(message.error)}`);
         // an error with a stream id ends a stream that went away (a removed canvas); without one a request was refused
-        if (message.t === 'error' && message.id === undefined) {
-          const target = REFUSED_TARGET.exec(message.message ?? '')?.[1];
-          const race = target !== undefined && Date.now() - (appeared.get(target) ?? -Infinity) < RACE_MS;
-          if (!race) errors.push(`protocol error: ${message.code}: ${message.message}`);
-        }
+        if (message.t === 'error' && message.id === undefined) errors.push(`protocol error: ${message.code}: ${message.message}`);
       }),
     );
     page.on('dialog', (dialog) => void dialog.accept());

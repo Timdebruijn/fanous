@@ -75,6 +75,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   CoreMIDI and CoreAudio devices (over 5 s on the CI virtual machine: an empty status bar and no preview); the
   5 s refresh of those lookups also ran on the live feed. They now run off it, the first one at start, and a
   slow one is logged.
+- Fixed: the preview of a just added canvas was refused and stayed empty: it was asked for before the canvas
+  rendered. A canvas preview now waits for the canvas switch, captioned "starting…", and one subscribed while the
+  switch rebuilds the previews is no longer dropped as if its canvas were gone (B62 b).
 - `npm run check` (svelte-check) type-checks the `.svelte` script blocks and applies Svelte's a11y rules, in
   CI's `web` job (B45). It found a type error in the preview's frame sizing (no behaviour change), a link
   announced as a status in the status bar (now a link inside a status element), a Preview prop read outside a

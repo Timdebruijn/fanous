@@ -83,7 +83,8 @@ public final class PreviewHub: @unchecked Sendable {
     public func rebuild() throws {
         let fresh = try make()
         var outputs: [String: PreviewStreamer] = [:]
-        for target in streamers.withLock({ Array($0.keys) }) {
+        let targets = Set(streamers.withLock { $0.keys })
+        for target in targets {
             if let streamer = try create(target) { outputs[target] = streamer }
         }
         streamers.withLock { all in
@@ -93,8 +94,11 @@ public final class PreviewHub: @unchecked Sendable {
             canvasBox.withLock { $0 = fresh }
             for (target, previous) in all {
                 guard let replacement = outputs[target] else {
-                    // a removed canvas: its viewers are told instead of left on a frozen picture
-                    if target.hasPrefix("canvas:") {
+                    // a removed canvas: its viewers are told instead of left on a frozen picture. A target subscribed
+                    // while we built (not in `targets`) was made after the switch began and stays (B62); in the rare
+                    // case it was made just before the switch for a canvas that went, its viewer drops it when
+                    // `live.canvas` no longer lists that canvas
+                    if target.hasPrefix("canvas:"), targets.contains(target) {
                         all.removeValue(forKey: target)
                         for s in previous.subscriberList {
                             _ = s.connection.send(text: #"{"t":"error","code":"badTarget","message":"preview target \#(target) no longer exists","id":\#(s.stream)}"#, droppable: false)
