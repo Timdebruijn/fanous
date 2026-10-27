@@ -1375,6 +1375,12 @@ public final class Engine: @unchecked Sendable {
             "midi": midiLive(),
             "citp": citpLive(),
             "versions": versions?.live ?? .null,
+            "syphon": [
+                "servers": .array(
+                    (render?.syphonCatalog.servers ?? []).map { s in
+                        ["file": .number(Double(s.file)), "app": .string(s.app), "server": .string(s.server), "running": .bool(s.running)]
+                    })
+            ],
         ]
         store.updateLive(live)
     }

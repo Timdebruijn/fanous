@@ -18,6 +18,7 @@
     type LibraryItem,
     type LibrarySnapshot,
   } from '../lib/media';
+  import { folderZeroItems } from '../lib/layers';
 
   interface Upload {
     name: string;
@@ -34,14 +35,20 @@
   let query = $state('');
   let uploads = $state<Upload[]>([]);
   let uploading = $state(false);
-  let picker: HTMLInputElement | undefined;
+  let picker = $state<HTMLInputElement>(); // bound inside the {#if}: reactive, or svelte-check warns
   let latest = 0;
   let creating = $state(false);
   let newNumber = $state(1);
   let newName = $state('');
 
+  /** Folder 0 (generators and Syphon servers, B61) is not a library folder; this stands for it in `selectedFolder`. */
+  const ZERO = '#0';
+  const isZero = $derived(selectedFolder === ZERO);
+  const zeroItems = $derived(folderZeroItems(app.live.syphon?.servers));
+  let pickedZero = $state<number | null>(null);
+  const pickedZeroItem = $derived(zeroItems.find((i) => i.file === pickedZero));
   const folders = $derived(library?.folders ?? []);
-  const current = $derived(folders.find((f) => f.path === selectedFolder) ?? defaultFolder(folders));
+  const current = $derived(isZero ? undefined : (folders.find((f) => f.path === selectedFolder) ?? defaultFolder(folders)));
   const items = $derived(current?.items ?? []);
   const shown = $derived(filterItems(items, query));
   const invalid = $derived(invalidCount(items));
@@ -59,12 +66,18 @@
     const ok = await playOnLayer(n, current.number, picked.file);
     playNote = ok ? `Layer ${n} now plays ${current.number} / ${picked.file} · ${picked.name}.` : '';
   }
+  async function playZero(n: number) {
+    const item = pickedZeroItem;
+    if (!item) return;
+    const ok = await playOnLayer(n, 0, item.file);
+    playNote = ok ? `Layer ${n} now shows 0 / ${item.file} · ${item.name}.` : '';
+  }
   const canImport = $derived(current?.number != null);
   /** "folder/file" → the layers playing it, for the tile badge */
   const playing = $derived.by(() => {
     const map = new Map<string, string[]>();
     for (const layer of app.live.layers) {
-      if (layer.folder > 0 && layer.file > 0) map.set(`${layer.folder}/${layer.file}`, [...(map.get(`${layer.folder}/${layer.file}`) ?? []), `Layer ${layer.index}`]);
+      if (layer.folder >= 0 && layer.file > 0) map.set(`${layer.folder}/${layer.file}`, [...(map.get(`${layer.folder}/${layer.file}`) ?? []), `Layer ${layer.index}`]);
     }
     return map;
   });
@@ -190,6 +203,15 @@
           </div>
         </form>
       {/if}
+      <ul>
+        <li>
+          <button class="list-row" aria-pressed={isZero} onclick={() => (selectedFolder = ZERO)}>
+            <span class="num mono">0</span>
+            <span class="ellipsis grow">Built-in and Syphon</span>
+            <span class="mono faint">{zeroItems.length}</span>
+          </button>
+        </li>
+      </ul>
       {#if folders.length === 0}
         <p class="caption pad">{library ? 'No folders yet. Press New folder below to create the first one (the console addresses folders by number), then Import… to add files.' : 'Loading…'}</p>
       {:else}
@@ -214,6 +236,50 @@
     </aside>
 
     <section class="main" aria-label="Files">
+      {#if isZero}
+      <div class="toolbar">
+        <div>
+          <h1>0 · Built-in and Syphon</h1>
+          <div class="caption">Drawn by the engine, and the Syphon servers of other apps on this Mac. A console selects them as folder 0, file n.</div>
+        </div>
+      </div>
+      {#if pickedZeroItem}
+        <div class="panel playbar" role="group" aria-label="Selected item">
+          <span class="ellipsis grow" title={pickedZeroItem.name}><strong>{pickedZeroItem.file}</strong> · {pickedZeroItem.name}</span>
+          <select class="select" aria-label="Play on layer" disabled={playLock !== undefined || layerNumbers.length === 0} title={playLock} value="" onchange={(e) => {
+            const n = Number(e.currentTarget.value);
+            e.currentTarget.value = '';
+            if (n) void playZero(n);
+          }}>
+            <option value="">Play on layer ▾</option>
+            {#each layerNumbers as n (n)}<option value={n}>Layer {n}</option>{/each}
+          </select>
+        </div>
+        <PolicyHint what="content put on a layer from here" />
+        {#if playNote}<p class="caption" role="status">{playNote}</p>{/if}
+      {/if}
+      {#each [{ title: 'Built-in content', list: zeroItems.filter((i) => !i.syphon) }, { title: 'Syphon servers (150–169)', list: zeroItems.filter((i) => i.syphon) }] as group (group.title)}
+        <h2 class="zero-title">{group.title}</h2>
+        {#if group.list.length === 0}
+          <p class="caption">No Syphon servers running. When another app on this Mac starts one, it appears here with the next number from 150; it keeps that number until the engine restarts.</p>
+        {:else}
+          <ul class="panel zero" aria-label={group.title}>
+            {#each group.list as item (item.file)}
+              {@const on = playing.get(`0/${item.file}`) ?? []}
+              <li>
+                <button class="list-row" aria-pressed={pickedZero === item.file} onclick={() => (pickedZero = pickedZero === item.file ? null : item.file)}>
+                  <span class="num mono">{item.file}</span>
+                  {#if item.syphon}<span class="dot {item.running ? 'dot-green' : 'dot-off'}" aria-hidden="true"></span>{/if}
+                  <span class="ellipsis grow" title={item.name}>{item.name}</span>
+                  {#if item.syphon && !item.running}<span class="caption">not running</span>{/if}
+                  {#each on as layer (layer)}<span class="badge badge-accent">{layer}</span>{/each}
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      {/each}
+      {:else}
       <div class="toolbar">
         <div>
           <h1>{current ? (current.number === null ? current.name : `${current.number} · ${displayName(current.name, true)}`) : 'Media'}</h1>
@@ -289,6 +355,7 @@
           {/each}
         </div>
       {/if}
+      {/if}
     </section>
   </div>
 
@@ -321,6 +388,8 @@
   .fail { color: var(--red); }
   .playbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 12px; }
   .playbar .select { min-width: 180px; }
+  .zero-title { margin: 8px 0 0; font-size: 15px; }
+  .zero { list-style: none; margin: 0; padding: 0; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
   @media (max-width: 900px) {
     .cols { flex-direction: column; align-items: stretch; }
