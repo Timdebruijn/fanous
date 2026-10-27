@@ -228,8 +228,9 @@ public final class StateStore: @unchecked Sendable {
     private func commit(_ next: JSONValue, patch: JSONPatch) {
         projectDocument = next
         revision += 1
-        // the engine applies the change before any client hears of it: a client that asks for the preview of an output
-        // it was just told about must find it (B62)
+        // projectChanged runs before any client hears of the change: a client that asks for the preview of an output it
+        // was just told about must find it (B62); the asynchronous parts (canvas switch, DMX patch, output windows) may
+        // still follow
         onProjectChanged?(projectDocument)
         broadcast(doc: "project", patch: patch, droppable: false)
     }

@@ -173,7 +173,7 @@ struct StateStoreTests {
     }
 
     /// B62: the engine sees a change before any client gets its patch, so a client that reacts to the patch at once
-    /// (asks for the preview of a new output) finds the engine already knows it. For commands, undo and corrections.
+    /// (asks for the preview of a new output) finds the engine already knows it. For commands, undo, corrections and redo.
     @Test func projectChangedRunsBeforeClientsGetThePatch() throws {
         let (store, _) = StateStoreTests.makeStore()
         let client = RecordingClient(role: .programmer)
@@ -183,10 +183,11 @@ struct StateStoreTests {
         _ = try store.execute("project.set", args: ["path": "/name", "value": "Tour 2026"], role: .programmer).get()
         _ = try store.execute("undo", role: .programmer).get()
         store.correct("Fixed", at: "/name")
+        _ = try store.execute("redo", role: .programmer).get()
         let calls = seen.withLock { $0 }
-        #expect(calls.map(\.name) == ["Tour 2026", "Untitled", "Fixed"])
-        #expect(calls.map(\.patchesSent) == [0, 1, 2])
-        #expect(client.patches.count == 3)
+        #expect(calls.map(\.name) == ["Tour 2026", "Untitled", "Fixed", "Tour 2026"])
+        #expect(calls.map(\.patchesSent) == [0, 1, 2, 3])
+        #expect(client.patches.count == 4)
     }
 }
 
