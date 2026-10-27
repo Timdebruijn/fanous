@@ -189,6 +189,14 @@ On an APC mini the pads are notes 0–63 and the faders CC 48–56 on channel 1,
 Learn finds the numbers for you. The pad lights are not driven: Fanous does not
 send MIDI back.
 
+**Checking plug and unplug.** With the engine running and the controller
+unplugged, plug it in: within a second it appears in the source list with a
+green dot and the log says `MIDI input listening sources=["…"]`; move a mapped
+fader and the layer follows. Unplug it: it leaves the list, and whatever it was
+holding is released (the layer goes back to the console or its default). Without
+a controller at hand, turn on the IAC Driver in Audio MIDI Setup › MIDI Studio
+(it appears as a source) and send to it from any MIDI app.
+
 ## CITP/MSEX
 
 Fanous announces itself to consoles every 5 seconds on the CITP multicast

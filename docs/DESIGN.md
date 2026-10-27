@@ -1422,7 +1422,11 @@ MSC and MIDI-triggered cues are additions, not rewrites.
   cue engine has no pause). `MIDILearner` takes the next note on, CC or program
   change; CC 0–31 waits one message for its LSB to tell a 14-bit pair.
 - `MIDIInput` opens its own CoreMIDI client and a UMP 1.0 input port on every
-  source or the named one, reconnects on `msgSetupChanged`, and handles
+  source or the named one, reconnects on `msgSetupChanged`. CoreMIDI delivers
+  setup notifications on the run loop current at the process's first CoreMIDI
+  call, so `Engine.start` makes the client on the main thread (NSApplication run
+  loop) before the host-facts lookup or MTC touch CoreMIDI; made on a dispatch
+  queue, hot-plugged sources were never seen. It handles
   everything on one serial queue (one parser per source unique id, so two
   identical controllers do not share running status). Parameter values go to
   `DMXStore.setMIDI` as the internal `midi` source (`ValueSource.midi`), so the

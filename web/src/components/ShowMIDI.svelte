@@ -158,23 +158,25 @@
   {:else}
     <div class="scroll">
       <table>
-        <thead><tr><th scope="col">Control</th><th scope="col">Target</th><th scope="col">Mode</th><th scope="col" aria-label="Remove"></th></tr></thead>
+        <thead><tr><th scope="col">Control</th><th scope="col">Target and mode</th><th scope="col" aria-label="Remove"></th></tr></thead>
         <tbody>
           {#each midi.map as m (m.id)}
             <tr>
               <td class="mono">{midiControlText(m)}<div class="faint ellipsis" title={m.source ?? 'any source'}>{m.source ?? 'any source'}</div></td>
-              <td>{midiTargetText(m, map)}</td>
               <td>
+                <div>{midiTargetText(m, map)}</div>
                 {#if midiParameterTarget(m.target)}
-                  <select class="select" aria-label="Mode" value={m.curve} disabled={!editable} title={editTitle} onchange={(e) => { const el = e.currentTarget; void save(m, { curve: el.value as MIDIMappingDoc['curve'] }, () => (el.value = m.curve)); }}>
-                    <option value="linear">Linear</option>
-                    <option value="toggle">Toggle</option>
-                  </select>
-                  <label class="pickup" title="Ignore the control until it passes the current value, so nothing jumps">
-                    <input type="checkbox" checked={m.pickup} disabled={!editable || m.curve === 'toggle'} onchange={(e) => { const el = e.currentTarget; void save(m, { pickup: el.checked }, () => (el.checked = m.pickup)); }} />
-                    Pickup
-                  </label>
-                {:else}<span class="faint">–</span>{/if}
+                  <div class="mode">
+                    <select class="select" aria-label="Mode" value={m.curve} disabled={!editable} title={editTitle} onchange={(e) => { const el = e.currentTarget; void save(m, { curve: el.value as MIDIMappingDoc['curve'] }, () => (el.value = m.curve)); }}>
+                      <option value="linear">Linear</option>
+                      <option value="toggle">Toggle</option>
+                    </select>
+                    <label class="pickup" title="Ignore the control until it passes the current value, so nothing jumps">
+                      <input type="checkbox" checked={m.pickup} disabled={!editable || m.curve === 'toggle'} onchange={(e) => { const el = e.currentTarget; void save(m, { pickup: el.checked }, () => (el.checked = m.pickup)); }} />
+                      Pickup
+                    </label>
+                  </div>
+                {/if}
               </td>
               <td><button type="button" class="btn" disabled={!editable} title={editTitle} onclick={() => void cmd('midi.map.remove', { id: m.id })}>Remove</button></td>
             </tr>
@@ -205,5 +207,8 @@
   td { padding: 6px 8px 6px 0; border-bottom: 1px solid var(--line); vertical-align: middle; }
   td .faint { font-size: 12px; max-width: 160px; }
   tbody tr:last-child td { border-bottom: 0; }
-  .pickup { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; white-space: nowrap; }
+  td:last-child { padding-right: 0; text-align: right; }
+  /* the aside can be ~290 px wide: mode and pickup sit under the target and wrap, so Remove always fits */
+  .mode { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; }
+  .pickup { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 </style>
