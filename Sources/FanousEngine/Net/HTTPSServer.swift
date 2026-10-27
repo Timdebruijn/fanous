@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
+import dnssd
 import Foundation
 import FanousCore
 import Logging
@@ -27,6 +28,11 @@ public final class HTTPSServer: @unchecked Sendable {
     nonisolated(unsafe) public private(set) var boundPort: UInt16?
 
     private let listener: NWListener
+    /// `_https._tcp` for the same port: an NWListener carries one service, and a second NWListener on the port
+    /// fails with EADDRINUSE on macOS 27 despite `allowLocalEndpointReuse`, so this one is registered with dns_sd.
+    private var httpsService: NWListener.Service?
+    private var httpsRegistration: DNSServiceRef?
+    private let loopbackOnly: Bool
     private let queue = DispatchQueue(label: "org.fanous.https", qos: .userInitiated)
     private let logger: Logger
     private let webRoot: URL
@@ -39,6 +45,7 @@ public final class HTTPSServer: @unchecked Sendable {
         self.logger = logger
         self.webRoot = webRoot.standardizedFileURL
         self.route = route
+        self.loopbackOnly = loopbackOnly
         let tls = NWProtocolTLS.Options()
         guard let secIdentity = sec_identity_create(identity.identity) else {
             throw TLSIdentityError.security(errSecInternalError, "sec_identity_create")
@@ -59,10 +66,24 @@ public final class HTTPSServer: @unchecked Sendable {
         }
     }
 
-    /// Advertises `_fanous._tcp` so browsers on the network find `https://<host>.local:<port>` (DESIGN.md §11.1).
-    public func bonjour(name: String) {
-        listener.service = NWListener.Service(name: name, type: "_fanous._tcp", domain: nil, txtRecord: NWTXTRecord(["port": "\(port)", "v": FanousVersion.string]))
+    /// The Bonjour services for `name` on `port`: `_fanous._tcp` for Fanous clients, `_https._tcp` so generic
+    /// Bonjour browsers find `https://<host>.local:<port>` (DESIGN.md §11.1).
+    static func services(name: String, port: UInt16) -> [NWListener.Service] {
+        [NWListener.Service(name: name, type: "_fanous._tcp", txtRecord: NWTXTRecord(["port": "\(port)", "v": FanousVersion.string])),
+         NWListener.Service(name: name, type: "_https._tcp", txtRecord: NWTXTRecord(["path": "/", "port": "\(port)"]))]
     }
+
+    /// Advertises both services once `start()` runs. Does nothing on a loopback-only server (`--no-network`) or on
+    /// port 0 (the advertised port would be wrong). Call before `start()`.
+    public func bonjour(name: String) {
+        guard !loopbackOnly, port != 0 else { return }
+        let services = Self.services(name: name, port: port)
+        listener.service = services[0]
+        httpsService = services[1]
+    }
+
+    /// What `start()` advertises (tests).
+    var advertisedServices: [NWListener.Service] { [listener.service, httpsService].compactMap { $0 } }
 
     public func start() {
         listener.stateUpdateHandler = { [weak self, logger, port] state in
@@ -70,7 +91,11 @@ public final class HTTPSServer: @unchecked Sendable {
             case .ready:
                 self?.boundPort = self?.listener.port?.rawValue ?? port
                 logger.info("HTTPS listening", metadata: ["port": "\(self?.boundPort ?? port)"])
-            case .failed(let error): logger.error("HTTPS listener failed", metadata: ["error": "\(error)"])
+                self?.registerHTTPS()
+            case .failed(let error):
+                logger.error("HTTPS listener failed", metadata: ["error": "\(error)"])
+                self?.deregisterHTTPS()
+            case .waiting: self?.deregisterHTTPS()
             case .cancelled: logger.info("HTTPS listener stopped")
             default: break
             }
@@ -82,7 +107,31 @@ public final class HTTPSServer: @unchecked Sendable {
         listener.start(queue: queue)
     }
 
-    public func stop() { listener.cancel() }
+    /// Synchronous, so a start right after (Restart Engine) does not collide with its own old `_https._tcp` name.
+    public func stop() {
+        listener.cancel()
+        queue.sync { deregisterHTTPS() }
+    }
+
+    /// On `queue`, while the listener is ready, like the listener's own `_fanous._tcp`. Advertisement only, no
+    /// socket: connections all arrive at `listener`. No callback (mDNSResponder renames on a conflict by itself).
+    private func registerHTTPS() {
+        guard let service = httpsService, httpsRegistration == nil else { return }
+        let txt = service.txtRecordObject?.data ?? Data()
+        let error = txt.withUnsafeBytes { bytes in
+            DNSServiceRegister(&httpsRegistration, 0, 0, service.name, service.type, nil, nil, port.bigEndian,
+                               UInt16(bytes.count), bytes.baseAddress, nil, nil)
+        }
+        if error != kDNSServiceErr_NoError {
+            httpsRegistration = nil
+            logger.error("Bonjour _https._tcp registration failed", metadata: ["error": "\(error)"])
+        }
+    }
+
+    private func deregisterHTTPS() {
+        if let registration = httpsRegistration { DNSServiceRefDeallocate(registration) }
+        httpsRegistration = nil
+    }
 
     fileprivate func respond(to request: HTTPRequest) -> HTTPResponse {
         var response = route(request) ?? staticFile(for: request)

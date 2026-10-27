@@ -40,6 +40,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Audio: forward loops are gapless (B3). Ingest makes rotated and flipped phone footage upright (B18).
   State sync and HTTP endpoints hide paths, host and TLS details from lower roles (B25). OSC burst
   regression tests; the reported loss is not reproducible (B30).
+- Bonjour also advertises `_https._tcp` (TXT `path=/`) next to `_fanous._tcp`, so Bonjour browsers list
+  the web UI with its port; `--no-network` advertises neither (B39).
 - README rewritten around the console-as-controller story with screenshots and a tour GIF
   (`docs/images/`); the developer reference moved to `docs/DEVELOPMENT.md`; market research and
   positioning in `docs/marketing/positioning.md`.
@@ -77,6 +79,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   CI's `web` job (B45). It found a type error in the preview's frame sizing (no behaviour change), a link
   announced as a status in the status bar (now a link inside a status element), a Preview prop read outside a
   reactive context, and two a11y warnings on the mapper SVG (ignored, with the reason in the source).
+- Fixed: the preview of a just added (or undone) output was sometimes refused (about 1 in 30): clients got the
+  project change before the engine's change handler ran. It now runs before any client hears of the change, so a
+  client that asks for the preview of an output it was just told about finds it; the asynchronous parts (canvas
+  switch, DMX patch, output windows) may still follow (B62).
 - Fixed: a parallel `swift test` of the engine suite hung (every cooperative-pool thread waiting in `finishWriting`); the
   media-writing test helpers now run on a thread of their own and `scripts/test.sh` runs the tests in parallel again (B63).
 
@@ -103,6 +109,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   default `dmx`); sACN joins the patched universes, not 1–3; operators can
   switch timecode on and off (`timecode.enable`, also under show lock); the
   Patch screen has the source-policy selector.
+- Fixed: an MTC source plugged in after the timecode source was set was only picked up after a settings
+  change or an engine restart; MTC now reconnects when MIDI sources come and go. An unplugged MTC source
+  is signal loss (Freewheel, then Lost after the freewheel time), leaves `live.timecode.device` at once,
+  and `live.timecode.error` says "MTC source … is not connected" when none is left (B64).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

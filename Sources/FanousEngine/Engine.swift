@@ -347,6 +347,7 @@ public final class Engine: @unchecked Sendable {
         lastMIDISettings = MIDISettings.from(project: project)
         midi.apply(lastMIDISettings)
         midi.start()  // on main, the first CoreMIDI call of the process: hot-plug notifications need its run loop
+        logger.info("engine start", metadata: ["step": "state server"])
         self.midi = midi
         // OSC: cue, show and timecode commands (DESIGN.md §15.3); the parameter ones stay on the DMX queue
         dmx.onCommand = { [weak self] command in
@@ -424,6 +425,7 @@ public final class Engine: @unchecked Sendable {
                 let height = max(2, 640 * canvas.height / max(1, canvas.width))
                 return try PreviewStreamer(context: context, width: 640, height: height, fps: min(30, canvas.fps), canvasFPS: canvas.fps, parameters: parameters, logger: logger)
             }
+            logger.info("engine start", metadata: ["step": "preview encoders"])  // B66: the last step logged is the last one entered
             // one streamer per target that has subscribers (canvas, canvas:<id>, output:<id>, layer:<n>); the canvas one also serves CITP
             let preview = PreviewHub(canvas: try makePreview(), make: makePreview)
             preview.makeCanvas = { [weak self, parameters = dmx.snapshots, logger] id in
@@ -442,6 +444,7 @@ public final class Engine: @unchecked Sendable {
             render.compositor.skipsIdleWork = true
             render.compositor.previewWanted = { preview.wantsFrames }
             stateServer.preview = preview
+            logger.info("engine start", metadata: ["step": "output shaders"])
             let compiler = try OutputCompiler(device: context.device)
             preview.configure = { [weak self, compositor = render.compositor] target, streamer in
                 guard let self else { return false }
@@ -465,6 +468,7 @@ public final class Engine: @unchecked Sendable {
                         thumbnail: { name in (try? Data(contentsOf: thumbnailer.directory.appending(path: name))).map(Array.init) },
                         frame: { [weak self] in self?.stateServer?.preview?.canvas.latestJPEG.withLock { $0 } ?? nil }), logger: logger)
                 do {
+                    logger.info("engine start", metadata: ["step": "citp"])
                     try citp.start()
                     preview.canvas.externalJPEGWanted = { citp.wantsFrames.load(ordering: .relaxed) }  // CITP always streams the canvas
                     self.citp = citp
@@ -474,6 +478,7 @@ public final class Engine: @unchecked Sendable {
             }
 
         // Displays and output windows (DESIGN.md §9.6); the render service starts after the coordinator exists.
+            logger.info("engine start", metadata: ["step": "outputs"])
             let coordinator = try MainActor.assumeIsolated { () throws -> OutputCoordinator in
                 let coordinator = try OutputCoordinator(compositor: render.compositor, context: context, fps: fps, displays: DisplayManager.current(), logger: logger)
                 displays.withLock { $0 = coordinator.connectedDisplays }
@@ -523,6 +528,7 @@ public final class Engine: @unchecked Sendable {
         self.store = store
         stateServer.onDMXActive = { [weak self] active in self?.setDMXStream(active: active) }
         self.stateServer = stateServer
+        logger.info("engine start", metadata: ["step": "feeds"])
         startFeeds()
         oscFacts(from: store.project)
         oscFeedback?.start()  // the fixed target is notified once everything it reads exists
@@ -536,6 +542,7 @@ public final class Engine: @unchecked Sendable {
             return auth.grant(requested: role, sessionRole: sessionRole) == role
         }
         @Sendable func programmerAllowed(_ request: HTTPRequest) -> Bool { allowed(.programmer, request) }
+        logger.info("engine start", metadata: ["step": "https"])
         let server = try HTTPSServer(port: options.port, identity: identity, webRoot: options.webRoot, loopbackOnly: !options.network, logger: logger) { request in
             if request.path.hasPrefix("/api/ingest") || request.path.hasPrefix("/api/upload/") {
                 if request.method != "GET", !programmerAllowed(request) { return .text(403, "programmer role required") }
@@ -663,6 +670,7 @@ public final class Engine: @unchecked Sendable {
         server.uploadRoute = { request, file in ingestAPI.handle(request, uploadedFile: file) }
         server.upgradeRoute = { request in stateServer.upgrade(request) }
         if options.network { server.bonjour(name: SystemInfo.hostName) }
+        logger.info("engine start", metadata: ["step": "https listener"])
         server.start()
         self.server = server
     }
@@ -776,10 +784,12 @@ public final class Engine: @unchecked Sendable {
 
     private func timecodeLive() -> JSONValue {
         let s = timecodeClock.current()
+        let mtcStatus = mtc?.status.withLock { $0 }
         return [
             "state": .string(s.state.rawValue), "source": .string(s.source), "value": .string(s.state == .off ? "--:--:--:--" : s.timecode.description),
             "rate": .string(s.rate.label), "frames": .number(Double(s.frameCount)), "seen": .number(Double(timecodeClock.framesSeen.load(ordering: .relaxed))),
-            "error": ltc?.lastError.map { .string($0) } ?? .null, "device": .string(ltc?.deviceName ?? mtc?.connected.joined(separator: ", ") ?? ""),
+            "error": (ltc?.lastError ?? mtcStatus?.error).map { .string($0) } ?? .null,
+            "device": .string(ltc?.deviceName ?? mtcStatus?.connected.joined(separator: ", ") ?? ""),
         ]
     }
 
@@ -825,7 +835,7 @@ public final class Engine: @unchecked Sendable {
             "memoryGB": .number(Double(SystemInfo.physicalMemoryBytes / 1_073_741_824)), "os": .string(SystemInfo.osVersion), "host": .string(SystemInfo.hostName),
             "addresses": .array(addresses.map { .string($0) }),
             "interfaces": .array(interfaces.map { ["name": .string($0.name), "address": .string($0.address)] }), "port": .number(Double(options.port)),
-            "tlsFingerprint": .string(tlsFingerprint), "bonjour": .string("\(SystemInfo.hostName)._fanous._tcp"),
+            "tlsFingerprint": .string(tlsFingerprint), "bonjour": .string((server?.advertisedServices ?? []).map { "\($0.name ?? "").\($0.type)" }.joined(separator: ", ")),
         ]
     }
     private var tlsFingerprint = ""
@@ -848,7 +858,7 @@ public final class Engine: @unchecked Sendable {
         case .mtc:
             let input = MTCInput(clock: timecodeClock, logger: logger)
             mtc = input
-            _ = input.start(source: settings.device)
+            input.start(source: settings.device)
         }
     }
 
