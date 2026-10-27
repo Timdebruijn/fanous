@@ -118,8 +118,8 @@ transcode, ingest queue) and Patch / DMX (fixture table with collisions,
 on the Layers screen uses WebCodecs (H.264 from VideoToolbox, `sub` stream
 `preview`) and falls back to JPEG at 5 fps. Keys 1–6 switch screens.
 `cd web && npm run dev` proxies `/api`, `/ws` and `/healthz` to a running
-engine; `npm run build` writes `web/dist`. The web checks CI runs:
-`npm run typecheck && npm run check && npm test && npm run build`; `check` is
+engine; `npm run build` writes `web/dist`. The web checks, in the order of
+CI's `web` job: `npm test && npm run typecheck && npm run check && npm run build`; `check` is
 `svelte-check` (types in the `.svelte` script blocks, Svelte's a11y rules,
 warnings fail). svelte-check needs the TypeScript 6 API, so `typescript` is 6
 and TypeScript 7 is installed as `@typescript/native`, which `typecheck` runs.
