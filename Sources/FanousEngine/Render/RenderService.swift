@@ -23,6 +23,15 @@ public struct SceneConfig: Codable, Sendable {
     public var useDisplayLink = false
     /// Publish the canvas as a Syphon server (DESIGN.md §9.8); the frame is only copied while a client is attached.
     public var syphonOutput = true
+
+    /// A scene's `"syphon": "App/Server name"`, split on the first `/`. `"App/"` takes the first server of that app
+    /// (for apps with a single server); an empty app name is refused, since Syphon would then match any server,
+    /// this engine's own canvas included.
+    static func syphonSpec(_ spec: String) -> (app: String, server: String)? {
+        let parts = spec.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty else { return nil }
+        return (String(parts[0]), String(parts[1]))
+    }
     /// Audio playback through the default output device (DESIGN.md §10).
     public var audio = true
     /// Source policy for every layer and the master until projects carry it (DESIGN.md §7.2): dmx, internal, ltp, htp.
@@ -98,10 +107,9 @@ public final class RenderService {
             return GeneratorSource(context: context, file: file, width: size.width, height: size.height)
         }
         loader.liveFactory = { spec in
-            let parts = spec.split(separator: "/", maxSplits: 1).map(String.init)
-            guard parts.count == 2 else { return nil }
+            guard let (app, server) = SceneConfig.syphonSpec(spec) else { return nil }
             let input = SyphonInput(device: device)
-            do { try input.connect(appName: parts[0], serverName: parts[1]) } catch { return nil }
+            do { try input.connect(appName: app, serverName: server) } catch { return nil }
             return input
         }
         if scene.syphonOutput {

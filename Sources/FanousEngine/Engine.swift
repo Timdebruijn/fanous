@@ -43,6 +43,11 @@ public final class Engine: @unchecked Sendable {
     private var artnet: ArtNetReceiver?
     private var sacn: SACNReceiver?
     private var osc: OSCReceiver?
+    private var oscFeedback: OSCFeedbackServer?
+    /// OSC feedback reads these instead of the project document (control queue) every 50 ms; set on project changes.
+    private let oscProjectFacts = Mutex((showLock: false, timecodeEnabled: false))
+    /// Frames and missed frames per second from the metric totals, sampled once a second (no percentile sort).
+    private let oscFrameRate = Mutex((at: 0.0, frames: 0, missed: 0, fps: Float(0), missedLast: Int32(0)))
     private var render: RenderService?
     /// Replaced when the library root changes (B51); read from the HTTP, CITP, loader and feed threads.
     private let libraryBox = Mutex<LibraryIndex?>(nil)
@@ -196,7 +201,12 @@ public final class Engine: @unchecked Sendable {
             try artnet.start()
             let sacn = SACNReceiver(store: dmx, logger: logger)
             try sacn.start(universes: Self.sacnUniverses(patch))
-            let osc = OSCReceiver(store: dmx, logger: logger)
+            // OSC feedback (B36) only with the network: no feedback target is reached under --no-network
+            let oscFeedback = OSCFeedbackServer(
+                fixed: MachineSettings.load(from: AppPaths.settingsFile, logger: logger).oscFeedback, logger: logger,
+                fixtures: { dmx.resolvedRaw() }, engine: { [weak self] in self?.oscFeedbackState() ?? [:] })
+            self.oscFeedback = oscFeedback
+            let osc = OSCReceiver(store: dmx, logger: logger, feedback: oscFeedback)
             try osc.start()
             self.artnet = artnet
             self.sacn = sacn
@@ -204,6 +214,7 @@ public final class Engine: @unchecked Sendable {
         } else {
             logger.warning("network off (--no-network): no Art-Net, sACN, OSC, CITP or Bonjour; HTTPS on 127.0.0.1 only")
         }
+        let oscFeedback = self.oscFeedback
 
         // The library is always indexed (DESIGN.md §8); scenes may add explicit entries (Syphon inputs, test files).
         let context = try MetalContext()
@@ -290,7 +301,9 @@ public final class Engine: @unchecked Sendable {
         ShowCommands.register(
             on: store,
             hooks: ShowCommands.Hooks(
-                go: { cues.go() }, back: { cues.back() }, goto: { cues.goto($0) },
+                // every go re-sends the cue state to OSC subscribers, also when it lands on the same cue
+                go: { cues.go(); oscFeedback?.invalidate(prefix: "/fanous/cue") }, back: { cues.back(); oscFeedback?.invalidate(prefix: "/fanous/cue") },
+                goto: { cues.goto($0); oscFeedback?.invalidate(prefix: "/fanous/cue") },
                 showMode: { [weak self] on in self?.setShowMode(on) ?? nil },
                 acknowledge: { [weak self] id in
                     // flag the stored items too, so the UI sees it now and not at the next 30 s run
@@ -497,6 +510,8 @@ public final class Engine: @unchecked Sendable {
         stateServer.onDMXActive = { [weak self] active in self?.setDMXStream(active: active) }
         self.stateServer = stateServer
         startFeeds()
+        oscFacts(from: store.project)
+        oscFeedback?.start()  // the fixed target is notified once everything it reads exists
 
         let startedAt = self.startedAt
         let webRoot = options.webRoot
@@ -690,6 +705,54 @@ public final class Engine: @unchecked Sendable {
                 index: layer.index + 1, folder: s.folder, file: s.file, name: s.name ?? "", positionMs: UInt32(clamping: Int(Double(layer.currentFrame) * 1000 / fps)),
                 lengthMs: UInt32(clamping: Int(Double(s.frames) * 1000 / fps)), fps: UInt8(clamping: Int(s.fps.rounded())), flags: flags)
         }
+    }
+
+    private func oscFacts(from project: JSONValue) {
+        let facts = (showLock: project["showLock"]?.bool ?? false, timecodeEnabled: ShowCommands.timecodeSettings(from: project).enabled != false)
+        oscProjectFacts.withLock { $0 = facts }
+    }
+
+    /// The readable OSC addresses besides fixture parameters (B36, docs/user/show-control.md), from cached copies
+    /// only: no project document, no metric percentiles. Nothing that names a path (library root, files).
+    private func oscFeedbackState() -> OSCFeedback.State {
+        var state: OSCFeedback.State = [:]
+        let p = OSCAddressMap.prefix
+        let facts = oscProjectFacts.withLock { $0 }
+        let flag = { (on: Bool) in [OSCArgument.int32(on ? 1 : 0)] }
+        let cue = cues?.status.withLock { $0 }
+        state[p + "/cue/current"] = [.float32(cue?.current.map { Float($0) } ?? -1)]
+        state[p + "/cue/current/name"] = [.string(cue?.currentName ?? "")]
+        state[p + "/cue/next"] = [.float32(cue?.next.map { Float($0) } ?? -1)]
+        state[p + "/cue/next/name"] = [.string(cue?.nextName ?? "")]
+        state[p + "/cue/fading"] = flag(cue?.fading ?? false)
+        state[p + "/cue/count"] = [.int32(Int32(cue?.count ?? 0))]
+        state[p + "/show/mode"] = flag(showMode.isOn)
+        state[p + "/show/lock"] = flag(facts.showLock)
+        state[p + "/show/ready"] = flag(!readiness.withLock { $0.items.contains { $0.blocks } })
+        let tc = timecodeClock.current()
+        state[p + "/timecode/enable"] = flag(facts.timecodeEnabled)
+        state[p + "/timecode/state"] = [.string(tc.state.rawValue)]
+        state[p + "/timecode/value"] = [.string(tc.state == .off ? "--:--:--:--" : tc.timecode.description)]
+        for output in outputStatus.withLock({ $0 }) {
+            state[p + "/output/\(output.id)/state"] = [.string(output.state.rawValue)]
+            state[p + "/output/\(output.id)/bound"] = flag(output.state == .bound)
+        }
+        let now = CACurrentMediaTime()
+        let frames = metrics.totalFrames.load(ordering: .relaxed), missed = metrics.totalMissed.load(ordering: .relaxed)
+        let rate = oscFrameRate.withLock { r in
+            if now - r.at >= 1 {
+                if r.at > 0 {
+                    r.fps = Float(Double(frames - r.frames) / (now - r.at))
+                    r.missedLast = Int32(clamping: missed - r.missed)
+                }
+                r = (now, frames, missed, r.fps, r.missedLast)
+            }
+            return r
+        }
+        state[p + "/engine/version"] = [.string(FanousVersion.string)]
+        state[p + "/engine/fps"] = [.float32(rate.fps)]
+        state[p + "/engine/missed"] = [.int32(rate.missedLast)]
+        return state
     }
 
     private func citpLive() -> JSONValue {
@@ -1001,6 +1064,7 @@ public final class Engine: @unchecked Sendable {
     static func sacnUniverses(_ patch: Patch) -> [Int] { patch.universes.filter { $0.transport == .sacn }.map(\.number) }
 
     private func projectChanged(_ document: JSONValue) {
+        oscFacts(from: document)
         if let dmx, let patch = ProjectDocument.effectivePatch(from: document), patch != dmx.currentPatch {
             dmx.setPatch(patch)
             sacn?.update(universes: Self.sacnUniverses(patch))
@@ -1314,6 +1378,7 @@ public final class Engine: @unchecked Sendable {
         artnet?.stop()
         sacn?.stop()
         osc?.stop()
+        oscFeedback?.stop()
         dmx?.stop()
         logger.info("fanousd stopped")
     }

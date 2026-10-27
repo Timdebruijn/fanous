@@ -288,6 +288,12 @@ public final class DMXStore: @unchecked Sendable {
 
     public var currentPatch: Patch { queue.sync { patch } }
 
+    /// Resolved raw values of every patched fixture, in channel-map order (OSC feedback, B36). Only copies on the DMX
+    /// queue; the addresses are built by the caller on its own queue.
+    public func resolvedRaw() -> [FixtureRef: [UInt16]] {
+        queue.sync { resolvers.mapValues { $0.resolvedAll().map(\.raw) } }
+    }
+
     /// The merged 512 slots of a universe for the DMX monitor stream; nil until a packet arrived.
     public func slots(for universe: UniverseID) -> [UInt8]? { queue.sync { table.slots(for: universe) } }
 
