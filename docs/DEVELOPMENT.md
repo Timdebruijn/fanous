@@ -20,6 +20,40 @@ swift run FanousShell          # native shell; starts fanousd as a child in deve
 scripts/bundle.sh                # dist/Fanous.app (ad-hoc signed; CODESIGN_IDENTITY=… for Developer ID)
 ```
 
+An isolated engine (tests, a second engine next to a running one):
+`FANOUS_HOME=DIR` (an absolute path; anything else is ignored with a warning,
+and `reset-tls` then refuses) puts everything the engine keeps under `DIR`
+instead of the home directory (`DIR/Library/Application Support/Fanous`,
+`DIR/Library/Logs/Fanous`, the TLS identity, the cache and the default library
+`DIR/Movies/Fanous Library`); a keychain-stored TLS key gets a tag of its own
+(`org.fanous.tls@DIR`), so `FANOUS_HOME=DIR fanousd reset-tls` never touches the
+real install's key. `--no-network` leaves out Art-Net (6454), sACN (5568),
+OSC (8000), CITP and Bonjour and binds HTTPS to 127.0.0.1 only (a fresh home has
+every role open):
+
+```bash
+FANOUS_HOME=$(mktemp -d) .build/debug/fanousd --foreground --no-network --port 18443
+```
+
+Browser end-to-end tests (`web/e2e/`, Playwright with Chromium) run the built
+UI against such an engine, one engine per test on a free port with a fresh
+temporary `FANOUS_HOME`, opened as the shell does (`?token=` from that home, so
+programmer). A page error, console error, refused command or refused stream
+fails, except a preview refused for an output or canvas that appeared less than
+1.5 s earlier (two known engine races, see `web/e2e/fixtures.ts`). Each home
+holds `fanousd.pid`; the next run kills engines an aborted run left behind. The
+tests need `.build/debug/fanousd` and `web/dist` (or `FANOUSD=/path/to/fanousd`):
+
+```bash
+swift build
+cd web && npm run build
+npx playwright install chromium   # once
+npm run e2e                       # npx playwright test --headed / --ui to watch
+```
+
+CI runs them in the `e2e` job on macOS; on a failure the traces and engine
+logs are uploaded as the `e2e-results` artifact.
+
 Protocol fixtures: `scripts/capture-dmx.py artnet|sacn|osc <name>` records
 real console packets into `Tests/Fixtures/captures/` (stop `fanousd` first;
 see the README there). `fanousd channel-map` prints the DMX channel map,
@@ -43,6 +77,9 @@ driven by the standard DMX patch:
            {"folder": 1, "file": 2, "path": "/path/still.png"},
            {"folder": 0, "file": 1, "syphon": "Some App/Server name"}]}
 ```
+
+`syphon` is `"App/Server name"`, split on the first `/`; `"App/"` takes the
+first server of that app (Syphon servers may have an empty name).
 
 Layers pick media with their Folder/File channels. The engine indexes the
 library root (`~/Movies/Fanous Library` by default, `"library"` in the

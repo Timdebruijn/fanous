@@ -71,7 +71,7 @@ The pages that follow repeat the ones that matter for their topic.
   built-in display (B34).
 - There is one project per machine; versions of it can be restored (System ›
   Project versions), but there are no project bundles to open or switch
-  between, and no diff between two versions (B23).
+  between, and no diff between two versions.
 - Layers show the library thumbnail of the playing file, not a live picture of
   the layer (B29). Per-universe settings are read-only (B28).
 - Consoles over CITP/MSEX get the canvas only, as a 640x360 JPEG stream; there

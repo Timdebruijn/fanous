@@ -1453,11 +1453,109 @@ Bundles with timetags are honoured (scheduled on Control). OSC feedback
 (query/notify) is later; the design keeps every OSC-settable value in `live`
 so a feedback sender is a subscriber like any client.
 
+**OSC feedback as built (B36, 2026-10-26).** Not through the `live` document
+after all: `OSCFeedbackServer` (Engine/Net) builds a flat map address →
+arguments on its own queue, at most once per half tick (25 ms); notifications
+and every `get` in between share it. Under the DMX lock only the resolved raw
+values are copied (`DMXStore.resolvedRaw()`); addresses are built once per
+fixture and cached, values are float 0–1 of the raw range plus `media ii` (a
+reply sent back sets the same raw value). Cue, show, readiness, timecode,
+output and engine values come from `Engine.oscFeedbackState()`, which reads
+only cached copies: show lock and timecode enable from `oscProjectFacts`
+(updated on project changes, not the project document on Control), fps and
+missed frames from the metric totals sampled once a second (no percentiles).
+No paths. Requests (`OSCFeedback.request`, Core) are handled before the
+command map, after a token bucket per source host (10/s, burst 20) and one over
+all hosts (200/s, burst 400) (`OSCRateLimiter`):
+`/fanous/<path>/get [port]` answers every address at or below the path (sorted,
+at most 256) to the sender, or to `port` on its host only if that host:port is
+a confirmed subscriber; `/fanous/get` the summary. Subscribing is a cookie
+handshake: `/fanous/subscribe host port [prefix]` (host must be the sender) is
+answered with `/fanous/subscribe/confirm <cookie>` to host:port and streams only
+after `/fanous/subscribe/ack <cookie>` from that host; pending entries take no
+slot, expire after 5 s and are capped at 64. `OSCSubscriptions` (Core, pure)
+keys confirmed subscribers by host:port with up to 8 prefixes, 16 subscribers
+(the fixed target not counted), 60 s lifetime renewed by subscribe or ping, and
+diffs the map against what each was last sent on a 50 ms tick: per address at
+most 20 messages/s, latest wins, at most 200 messages per subscriber per tick
+(rotating). The tick runs only while a confirmed subscriber or a fixed target
+with a prefix under `/fanous` exists, and only after `Engine.start` finished.
+Every cue go invalidates `/fanous/cue` so it is re-sent unchanged. Output is OSC
+bundles with timetag 1 (a real timestamp would be delayed by a receiver whose
+clock runs behind) packed under 1 200 bytes. A subscriber whose port is its
+source port, and the fixed target once it sends from that port, are answered on
+their inbound flow (from port 8000): an outbound `NWConnection` to a host:port
+that has a flow into the listener fails with EADDRINUSE. Others get one
+outbound UDP `NWConnection` each (a confirm to another port: one connection,
+cancelled after the send). Source hosts keep their IPv6 scope for these
+connections; named hosts are compared without it. The fixed target is
+`oscFeedback {host, port, prefix?}` in `settings.json` (`MachineSettings`, decoded
+field by field so a bad value never drops the role passwords; problems are
+logged), read at start; there is no UI for it. Like the OSC receiver it does not exist under
+`--no-network`.
+
 ### 15.4 MIDI
 
 MTC only in v1 (§15.1). The CoreMIDI client, port enumeration and the
 Show-control screen's MIDI section are built so that notes/CC → parameters,
 MSC and MIDI-triggered cues are additions, not rewrites.
+
+**As built (B36, 2026-10-26):** MIDI input for control, next to MTC.
+
+- Core (`MIDI/MIDI.swift`): `MIDIParser` turns a MIDI 1.0 byte stream into
+  note on/off (velocity 0 = off), CC, program change and MSC messages, with
+  running status, real-time bytes anywhere, system common cancelling running
+  status and SysEx up to 256 bytes; `MIDIParser.bytes(ump:)` turns the Universal
+  MIDI Packets CoreMIDI delivers with the 1.0 protocol (types 1, 2, 3; others
+  skipped by size) back into bytes. `MSCMessage` parses `F0 7F dev 02 fmt cmd
+  Q_number 00 Q_list 00 Q_path F7`; fields keep what was sent, and `cueNumber`
+  is nil for a cue that is present but not digits with one "." at most.
+- Engine (`ShowControl/MIDIControl.swift`): `project.midi = {source?,
+  mscDevice, mscFormat?, map[]}`, read entry by entry (an unreadable or unusable
+  entry is reported in `live.midi.error` and skipped; `midi.map.set/remove` edit
+  the raw array, so they never rewrite entries they could not read; entries
+  without an id get one on load); a map entry is `{id, source?, channel (0 = any), kind:
+  note|cc|cc14|pc, number?, target, cue?, curve: linear|toggle, pickup, low,
+  high}` with targets `cue.go`, `cue.back`, `cue.goto` (+ `cue`; a program
+  change without one goes to cue program + 1), `fixture:<Layer n|Master|Output
+  n>/<key>` and `master/<key>`. `MIDIMapper` (pure): cue targets fire on a press
+  (note on, a CC rising past 64, a program change); 14-bit pairs (CC n / n+32,
+  n < 32) follow MIDI 1.0: the MSB resets the LSB (value msb << 7), the LSB
+  refines it, the MSB kept per (source unique id, channel, controller) and
+  dropped when the source disconnects; toggles start from the shown value;
+  per-entry state is keyed by entry id; pickup holds a control until it is within one 7-bit
+  step of, or moves across, the resolved value, and releases it when another
+  source changes that value. MSC GO to our device id or the all-call, in the
+  configured command format (default video 0x30–0x3F) or all-types 0x7F →
+  `cue.go`, or `cue.goto` with a cue; a cue that does not parse does nothing; STOP/RESUME are parsed, not acted on (the
+  cue engine has no pause). `MIDILearner` takes the next note on, CC or program
+  change; CC 0–31 waits one message for its LSB to tell a 14-bit pair.
+- `MIDIInput` opens its own CoreMIDI client and a UMP 1.0 input port on every
+  source or the named one, reconnects on `msgSetupChanged`. CoreMIDI delivers
+  setup notifications on the run loop current at the process's first CoreMIDI
+  call, so `Engine.start` makes the client on the main thread (NSApplication run
+  loop) before the host-facts lookup or MTC touch CoreMIDI; made on a dispatch
+  queue, hot-plugged sources were never seen. It handles
+  everything on one serial queue (one parser per source unique id, so two
+  identical controllers do not share running status). Parameter values go to
+  `DMXStore.setMIDI` as the internal `midi` source (`ValueSource.midi`), so the
+  source policy decides, exactly as for OSC. A controller can be left holding a
+  value, so `.midi` counts as a controller like `.ui` in the B27 expiry (masking a
+  received console for 10 min releases it, `fixture.keep` restarts the count,
+  `fixture.release` clears it), and a source's values are released when it
+  disconnects and an entry's when it is removed or retargeted; cue actions run `cue.go/back/goto`
+  through the state store as the operator. Commands `midi.set`,
+  `midi.map.set` (upsert by id, or by same control and target), `midi.map.remove`
+  and `midi.learn {target?, cue?}` (arms; the learned entry is stored with
+  `midi.map.set` when the message arrives, so learn answers through
+  `live.midi.learning/learned`) are programmer commands refused under show lock;
+  MIDI values keep flowing while locked. `live.midi`: connected sources, last
+  message, learn state, error.
+- UI: the Show screen's MIDI panel (`ShowMIDI.svelte`): source picker, MSC
+  device id and format, last message and map errors, Learn with target choice, map table with mode and
+  pickup, Remove.
+- Not built: MIDI output (feedback LEDs, MSC replies), MSC group ids, a
+  CoreMIDI virtual-source test (kept out of CI; tests inject bytes).
 
 ---
 
@@ -1620,7 +1718,7 @@ trademark search for "Fanous" (`[OPEN-21]`).
 | **Benchmark** | `fanous-bench`: generates media (codec × resolution × fps), ramps layer count until any frame drops within 60 s, confirms with a 10-minute soak at the found count, with 0 and 4 preview clients; writes `docs/benchmarks/<chip>-<date>.json/.md` and the tier record the UI shows | Apple Silicon; first on the M1 Pro reference machine |
 | **Soak** | 8 h run with a scripted DMX generator (random play modes, file changes, dissolves), hot-plug of one display, engine kill/restart; pass = 0 dropped frames outside the restart window, memory flat | before each release |
 | **Protocol interop** | manual checklist with free console software (CITP thumbnails visible, GDTF imports, DMX control end-to-end) | Phase 7 |
-| **UI** | Vitest unit tests for the protocol client, state store and mapping-editor geometry; a Playwright smoke test against a mock server is `[OPEN-22]` | GitHub Actions |
+| **UI** | Vitest unit tests for the protocol client, state store and mapping-editor geometry; Playwright browser tests against a real `fanousd --no-network` per test (`[OPEN-22]`, B47) | GitHub Actions |
 
 CI (Phase 0): build all targets, Core tests, license-header check, Core
 purity check, `web` lint/typecheck/test/build. Hardware tests are a separate
@@ -1649,8 +1747,7 @@ biggest risks early.
 
 Scope guard: a feature not in the table is not in v1. Serial fixture, OSC
 feedback, per-output Syphon, 10-bit output, per-channel blend gamma, frame
-blending, varispeed audio, browser end-to-end tests (OPEN-22) and the MDM
-profile are the v1.x candidates.
+blending, varispeed audio and the MDM profile are the v1.x candidates.
 
 ---
 
@@ -1720,7 +1817,7 @@ profile are the v1.x candidates.
 | OPEN-19 | Prometheus metrics endpoint | v1.x |
 | OPEN-20 | MDM profile for show machines | later (owner's choice) |
 | OPEN-21 | Trademark search for "Fanous" before public release | owner; `docs/RELEASE.md` §7 |
-| OPEN-22 | Browser smoke tests (Playwright) | **v1.x** (B47): Vitest covers the client, store and screen helpers; the screens were checked by hand in Phases 5–7 |
+| OPEN-22 | Browser smoke tests (Playwright) | **Done** (B47, 2026-10-27): Playwright tests against a real engine per test, in CI; Vitest covers the client, store and screen helpers |
 | OPEN-23 | Library default location `~/Movies/Fanous Library` | yes |
 | OPEN-24 | Default ports: HTTPS 8443, OSC 8000/8001; configurable | yes |
 | OPEN-26 | Keychain strategy for unsigned development builds (prompt on every rebuild vs. ephemeral per-process identity) | **Decided 2026-10-23:** file-backed in-memory identity (`SecIdentityCreate`), no login keychain; ADR-0015 amendment |

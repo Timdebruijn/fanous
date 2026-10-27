@@ -5,10 +5,10 @@
 # Show control
 
 The Show screen (key 5, "Show control") holds timecode, the cue list, OSC and
-the MIDI source list. Fanous can also be seen and browsed from a console
+MIDI. Fanous can also be seen and browsed from a console
 over CITP/MSEX.
 
-Before you build a show on cues or OSC parameter values, set the project's
+Before you build a show on cues or OSC or MIDI parameter values, set the project's
 source policy (Patch screen toolbar) to **Console + UI (latest wins)**,
 **Console + UI (highest wins)** or **UI and cues only**: with the default
 **Console only** those values are recorded but do not move a layer, and the
@@ -45,7 +45,8 @@ non-drop) and 30 are detected by themselves. LTC needs the Microphone
 permission: macOS asks once when you pick an input. If you said no, turn it on
 in System Settings › Privacy & Security › Microphone. **MTC** reads quarter-frame and full-frame messages from any
 MIDI source; connected sources are listed in the MIDI panel on the right, with a
-"timecode" badge on the chosen one. MIDI is MTC only in this version.
+"timecode" badge on the chosen one. MIDI controllers and MIDI Show Control are
+described under [MIDI](#midi).
 
 Offsets: besides the project offset the engine supports one offset per layer
 (also frames); the Show screen only has the project offset field.
@@ -114,7 +115,198 @@ the parameter's range, an int is the raw value.
 
 OSC bundles with timetags are honoured: the contents run at the given time.
 Send a burst slowly: messages sent back to back from one socket can be partly
-lost, so leave about 50 ms between them (B30). Fanous does not send OSC back.
+lost, so leave about 50 ms between them (B30).
+
+### Reading state back (feedback)
+
+A controller (Bitfocus Companion, QLab, TouchOSC) can also read values back,
+in two ways.
+
+**Ask once.** Add `/get` to any address below: `/fanous/layer/3/intensity/get`
+answers with `/fanous/layer/3/intensity 0.75`, `/fanous/layer/3/get` with every
+value of layer 3, `/fanous/cue/get` with the cue state. `/fanous/get` on its own
+answers with a summary: version, show mode, show lock, ready, current cue,
+frames per second and missed frames. The answer goes back to the address and
+port the question came from. A controller that listens on another port than it
+sends from adds that port as an int (`/fanous/get 9000`); that only works once
+that port has a confirmed subscription (below), otherwise the answer still goes
+to the port the question came from. One question answers at most 256 addresses;
+ask per layer rather than for all layers at once. Answers come from a snapshot
+that is at most 25 ms old.
+
+**Subscribe** takes two steps. `/fanous/subscribe <host> <port> [prefix]`
+(s, i, s) is answered with `/fanous/subscribe/confirm <cookie>` (s) on that
+port; the controller sends `/fanous/subscribe/ack <cookie>` back within 5
+seconds, from the same computer. From then on every change under the prefix
+(default `/fanous`, everything) goes to that port. This way nobody can make
+Fanous send a stream to a computer that did not ask for it. Right after the ack
+you get all current values once, then only changes. Changes
+are collected for 50 ms and sent together, so a value goes out at most 20 times
+a second and always as its latest value; a console fading a layer does not
+flood the controller. A subscription ends after 60 seconds unless it is renewed
+with another `/fanous/subscribe` (no new cookie needed once confirmed) or a
+`/fanous/ping` (answered with `/fanous/pong`): let the controller send one every
+30 seconds.
+`/fanous/unsubscribe` ends every subscription of the sending computer;
+`/fanous/unsubscribe <host> <port> [prefix]` ends one. Every cue go (Go, Back,
+Go to, from the UI, the Space key or OSC) sends the cue addresses again, also
+when the cue did not change.
+
+Answers and changes come as OSC bundles with the timetag "immediately", each
+smaller than one network packet. Values are in the same units you send:
+parameters as a float from 0 to 1 of their range (send one back and you set the
+same value), so a fader on a controller can follow a layer.
+
+| Address | Type | Value |
+|---|---|---|
+| `/fanous/layer/{n}/{param}` | f | Layer parameter as it is applied (after the source policy) |
+| `/fanous/layer/{n}/media` | ii | Folder, file |
+| `/fanous/master/{param}` | f | Master parameter |
+| `/fanous/output/{n}/{param}` | f | Output parameter |
+| `/fanous/output/{n}/state` | s | `bound`, `lost` or `unassigned` |
+| `/fanous/output/{n}/bound` | i | 1 when the output shows on its display |
+| `/fanous/cue/current` | f | Number of the current cue, -1 for none |
+| `/fanous/cue/current/name` | s | Its name, empty for none |
+| `/fanous/cue/next` | f | Number of the next cue, -1 for none |
+| `/fanous/cue/next/name` | s | Its name |
+| `/fanous/cue/fading` | i | 1 while a cue fades |
+| `/fanous/cue/count` | i | Number of cues |
+| `/fanous/show/mode` | i | 1 in show mode |
+| `/fanous/show/lock` | i | 1 when the show is locked |
+| `/fanous/show/ready` | i | 1 when no readiness item blocks show mode |
+| `/fanous/timecode/enable` | i | 1 when timecode is switched on |
+| `/fanous/timecode/state` | s | `off`, `locked`, `freewheel` or `lost` |
+| `/fanous/timecode/value` | s | `hh:mm:ss:ff` |
+| `/fanous/engine/version` | s | Fanous version |
+| `/fanous/engine/fps` | f | Frames rendered in the last second |
+| `/fanous/engine/missed` | i | Frames missed in the last second |
+
+Nothing that names a file or folder on the Mac (library root, project file) can
+be read over OSC.
+
+**Who gets feedback.** Fanous only sends to the computer that asked: a subscribe
+naming another host is refused with `/fanous/error`, and a stream starts only
+after the cookie came back. At most 16 confirmed subscriptions exist at once.
+Each computer can send 10 feedback requests (get, subscribe, ack, ping) a second,
+20 in a burst; more are ignored. OSC has no passwords, so keep it on the show
+network. For a
+controller that cannot subscribe, set a **fixed feedback target** in
+`~/Library/Application Support/Fanous/settings.json` (next to `passwords`, keep
+those), then restart the engine:
+
+```json
+{
+  "passwords": { … },
+  "oscFeedback": { "host": "192.168.1.20", "port": 9000, "prefix": "/fanous/cue" }
+}
+```
+
+That target gets every change under the prefix (default `/fanous`) for as long
+as the engine runs, and the answers to `/get` from any controller too. There is
+no field for it on the System screen yet.
+
+**Example: Bitfocus Companion.** Add a *Generic OSC* connection with the Fanous
+Mac's address as target and port 8000, and let it listen for OSC on a port of
+its own, say 9000 (the field names differ between Companion versions). Then:
+
+- the simplest: put the Companion computer in `settings.json` as fixed target
+  (`"host": "<Companion's address>", "port": 9000`); no subscribe needed;
+- or subscribe in two steps. A trigger that runs every 30 seconds sends
+  *Send message* `/fanous/subscribe` with the arguments `<Companion's address>`
+  (string), `9000` (integer) and `/fanous/cue` (string). Store the received
+  `/fanous/subscribe/confirm` argument in a variable, and let a second trigger
+  on that variable changing send `/fanous/subscribe/ack` with the variable as
+  string argument. Once confirmed, the 30-second subscribe only renews (no new
+  cookie);
+- a button with the action *Send message* `/fanous/cue/go` fires the next cue;
+- received `/fanous/cue/current/name` and `/fanous/cue/next/name` fill
+  variables to show on that button ("Next: Chorus"), and a feedback on
+  `/fanous/show/ready` = 0 can turn a button red before show mode.
+
+TouchOSC sends from and listens on the same port: it gets the cookie on that
+port, from port 8000, and answers with the ack (a small script on a control:
+on `/fanous/subscribe/confirm`, send `/fanous/subscribe/ack` with the same
+argument); changes then come from port 8000 too.
+
+## MIDI
+
+A MIDI controller (an APC, Launchpad, nanoKONTROL, a keyboard) can fire cues
+and move parameters without a lighting desk, and a show controller can fire
+cues with MIDI Show Control. The MIDI panel on the Show screen has:
+
+- **Source**: **All sources** (default) or one MIDI source. Devices plugged in
+  later are picked up by themselves. The list below shows every source; a green
+  dot means Fanous listens to it, the "timecode" badge marks the MTC source.
+- **MSC device id** (0–111, default 0): MIDI Show Control messages to this id or
+  to all (127) are answered. **GO** fires the next cue, **GO** with a cue number
+  fires that cue. A GO whose cue is not a number (`1.2.3`, a stray byte) does
+  nothing: it never becomes a plain GO. STOP, RESUME and the other MSC commands
+  are shown but do nothing yet. Group ids (112–126) are not answered.
+- **MSC format**: the command format answered, default **Video (30–3F)**; pick
+  **Lighting (01)** or another to follow that one instead. MSC in other formats
+  is ignored (a lighting GO meant for the desk does not fire Fanous cues); "all
+  types" (7F) is always answered.
+- The **last message** received, for example `APC mini · ch 1 · CC 48 = 127`, so
+  you can see a controller is talking before you map it. Map entries that
+  cannot be read or cannot work (hand-written into a project) are listed in red
+  under it; the other entries keep working.
+- The **map**: one row per control with Control (channel and note, CC or
+  program, and the source it came from), Target, Mode and **Remove**.
+
+**Learn.** Choose a target: **GO**, **Back**, **Go to cue** (pick the cue) or
+**Parameter** (pick fixture and parameter). Press **Learn**, then press the key
+or move the control. The first note, controller or program change that arrives
+becomes a map row; "Learned: ch 1 · note 0 → …" confirms it. **Cancel** stops
+waiting. Learning the same control for the same target again replaces the row.
+A controller 0–31 followed by its partner 32–63 is learned as one 14-bit
+control (fine faders).
+
+What a control does:
+
+| Control | Cue target | Parameter target |
+|---|---|---|
+| Note | fires on key down | **Linear**: the velocity while held, back to 0 on release. **Toggle** (the default when learned): every press switches between 0 and full, starting from what the layer shows |
+| CC | fires when it rises past half way (a button sending 127/0 fires once per press) | **Linear**: 0–127 across the parameter's range. **Toggle**: every rise past half way switches |
+| CC 14-bit | as CC | as CC, with 16 384 steps: the coarse controller sets the value, its fine partner refines it |
+| Program change | fires; **Go to cue** without a number fires cue *program + 1* (program 1 on the device = cue 1) | the program number across the range |
+
+**Pickup** (Linear only): the control is ignored until it reaches the value the
+parameter shows now, then takes over. When something else changes the value
+(the console, a cue, the UI), it lets go again until it is reached once more.
+Use it for faders so a layer does not jump when you touch one.
+
+MIDI parameter values enter as their own source "MIDI", so the project's source
+policy decides whether they move a layer (not with **Console only**). A
+controller can be left holding a value, so MIDI values are treated like UI
+values: the layer panel says "MIDI control", they are released after masking a
+received console for 10 minutes (**Keep** restarts the count) and **Release**
+clears them. They are also dropped when their map row is removed or the
+controller is unplugged. Mapping changes and Learn are programmer settings and
+are refused while the show is locked; a locked show still follows its MIDI
+controllers.
+
+**Example: APC mini.** Set the source policy to **Console + UI (latest wins)**.
+In the MIDI panel:
+
+1. Target **GO**, **Learn**, press the bottom-right pad. That pad is now GO.
+2. Target **Back**, **Learn**, press the pad left of it.
+3. Target **Go to cue**, cue 1, **Learn**, press the top-left pad; repeat for
+   cues 2, 3… along the top row.
+4. Target **Parameter**, Layer 1 · Intensity, **Learn**, move fader 1; set Mode
+   to Linear and tick **Pickup**. Repeat for Layer 2 to 8 with faders 2 to 8.
+5. Target **Parameter**, Master · Intensity, **Learn**, move the ninth fader.
+
+On an APC mini the pads are notes 0–63 and the faders CC 48–56 on channel 1, but
+Learn finds the numbers for you. The pad lights are not driven: Fanous does not
+send MIDI back.
+
+**Checking plug and unplug.** With the engine running and the controller
+unplugged, plug it in: within a second it appears in the source list with a
+green dot and the log says `MIDI input listening sources=["…"]`; move a mapped
+fader and the layer follows. Unplug it: it leaves the list, and whatever it was
+holding is released (the layer goes back to the console or its default). Without
+a controller at hand, turn on the IAC Driver in Audio MIDI Setup › MIDI Studio
+(it appears as a source) and send to it from any MIDI app.
 
 ## CITP/MSEX
 
@@ -139,8 +331,11 @@ MSEX versions 1.0 to 1.2 are negotiated; the highest common one is used.
 
 - **Source policy applies to the whole project**, not per layer: one setting
   on the Patch screen for every fixture.
-- No OSC feedback (query or notify). MIDI notes and CC as parameters, MIDI Show
-  Control and MIDI-triggered cue recording do not exist (B36).
+- No MIDI output (controller lights, MSC replies) and no MIDI-triggered cue
+  recording. MIDI ranges (low/high of a mapping) can only be set with the
+  `midi.map.set` command, not in the panel. MIDI has been tested with injected
+  messages and a virtual source, not with a real controller (B36). The OSC
+  feedback target can only be set in `settings.json`, not on the System screen.
 - CITP: only the canvas can be streamed, not single layers; thumbnails are sent
   at their stored size whatever the console asks for (B41). No real console has
   been tried (B40).

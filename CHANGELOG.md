@@ -28,6 +28,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   live (B31). Show mode applies each output's display mode and restores it afterwards (B33). UI
   values release only after masking a console for 10 minutes; Master and Output fixtures can be
   set from the Layers screen (B27).
+- Project versions: `versions/` snapshots next to the project (start, show mode, every 10 minutes after a change, before a
+  revert), named versions and Revert… on the System screen, undoable; OSC `/fanous/project/load` (B23, B35). A library root
+  changed on the System screen takes effect at once, outside show mode and ingest (B51). Browser end-to-end tests with Playwright against a
+  real engine, also in CI (B47). Syphon: the canvas arrives upright in other apps and Syphon inputs are sampled
+  the right way up, effects included (B6). A scene may name a Syphon app without a server name
+  (`"syphon": "App/"`): the first server of that app, for apps with a single server.
 - Audio: forward loops are gapless (B3). Ingest makes rotated and flipped phone footage upright (B18).
   State sync and HTTP endpoints hide paths, host and TLS details from lower roles (B25). OSC burst
   regression tests; the reported loss is not reproducible (B30).
@@ -60,6 +66,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: mask and warp handles did not line up with the picture on outputs that are not 16:9 (the
   preview filled 16:9, the handles used the output's shape); the output preview now has the output's shape.
 - Layers can be controlled from the UI (layer panel Control switch, `fixture.set`/`fixture.release`).
+- Fixed: the first live document after a client joined could stall for seconds while the engine enumerated
+  CoreMIDI and CoreAudio devices (over 5 s on the CI virtual machine: an empty status bar and no preview); the
+  5 s refresh of those lookups also ran on the live feed. They now run off it, the first one at start, and a
+  slow one is logged.
 
 - Hardening: one engine per user (`engine.lock`), cumulative frame counters in
   `/metrics`, show mode hides the cursor over the outputs.

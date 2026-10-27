@@ -10,6 +10,7 @@
   import { onMount } from 'svelte';
   import ShowCueEditor from '../components/ShowCueEditor.svelte';
   import ShowCues from '../components/ShowCues.svelte';
+  import ShowMIDI from '../components/ShowMIDI.svelte';
   import ShowOSC from '../components/ShowOSC.svelte';
   import ShowTimecode from '../components/ShowTimecode.svelte';
   import { loadChannelMap, type ChannelMap } from '../lib/patch-screen';
@@ -27,8 +28,6 @@
     app.live.cue.next === null ? 'Next: no further cue' : `Next: ${formatNumber(app.live.cue.next)}${app.live.cue.nextName ? ` ${app.live.cue.nextName}` : ''}`,
   );
   const transportLock = $derived(lockTitle('operator', can('operator'), false));
-  const mtcSources = $derived(app.live.osc.midiSources);
-  const mtcDevice = $derived(app.project.timecode.source === 'mtc' ? (app.project.timecode.device ?? '') : null);
 
   onMount(() => {
     void loadChannelMap().then((map) => (channelMap = map));
@@ -94,27 +93,7 @@
   </div>
   <aside class="side" aria-label="Control inputs">
     <ShowOSC />
-    <section class="panel midi" aria-labelledby="midi-title">
-      <header>
-        <h2 id="midi-title">MIDI</h2>
-        <span class="spacer"></span>
-        <span class="caption">MTC only in v1</span>
-      </header>
-      {#if mtcSources.length === 0}
-        <p class="caption">No MIDI sources found. Connect an interface or enable a network MIDI session; the list updates by itself.</p>
-      {:else}
-        <ul>
-          {#each mtcSources as source (source)}
-            <li>
-              <span class="dot dot-off"></span>
-              <span class="ellipsis" title={source}>{source}</span>
-              <span class="spacer"></span>
-              {#if mtcDevice !== null && (mtcDevice === '' || mtcDevice === source)}<span class="badge badge-accent">timecode</span>{/if}
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    </section>
+    <ShowMIDI map={channelMap ?? null} />
   </aside>
 </div>
 
@@ -130,10 +109,4 @@
   .screen { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
   .main { flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
   .side { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
-  .midi { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
-  .midi header { display: flex; align-items: center; gap: 12px; }
-  .midi p { margin: 0; }
-  .midi ul { list-style: none; margin: 0; padding: 0; }
-  .midi li { display: flex; align-items: center; gap: 10px; min-height: var(--touch); border-bottom: 1px solid var(--line); }
-  .midi li:last-child { border-bottom: 0; }
 </style>

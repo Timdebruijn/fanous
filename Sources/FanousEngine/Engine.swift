@@ -14,11 +14,15 @@ public struct EngineOptions: Sendable {
     public var webRoot: URL
     /// Phase 2: a static scene to render (until projects exist in Phase 5).
     public var scene: SceneConfig?
+    /// false (`--no-network`): no Art-Net, sACN, OSC, CITP or Bonjour, and HTTPS on 127.0.0.1 only, so a test engine
+    /// runs next to a real one and the network cannot reach it (B47).
+    public var network: Bool
 
-    public init(port: UInt16 = 8443, webRoot: URL, scene: SceneConfig? = nil) {
+    public init(port: UInt16 = 8443, webRoot: URL, scene: SceneConfig? = nil, network: Bool = true) {
         self.port = port
         self.webRoot = webRoot
         self.scene = scene
+        self.network = network
     }
 }
 
@@ -39,6 +43,11 @@ public final class Engine: @unchecked Sendable {
     private var artnet: ArtNetReceiver?
     private var sacn: SACNReceiver?
     private var osc: OSCReceiver?
+    private var oscFeedback: OSCFeedbackServer?
+    /// OSC feedback reads these instead of the project document (control queue) every 50 ms; set on project changes.
+    private let oscProjectFacts = Mutex((showLock: false, timecodeEnabled: false))
+    /// Frames and missed frames per second from the metric totals, sampled once a second (no percentile sort).
+    private let oscFrameRate = Mutex((at: 0.0, frames: 0, missed: 0, fps: Float(0), missedLast: Int32(0)))
     private var render: RenderService?
     /// Replaced when the library root changes (B51); read from the HTTP, CITP, loader and feed threads.
     private let libraryBox = Mutex<LibraryIndex?>(nil)
@@ -75,6 +84,8 @@ public final class Engine: @unchecked Sendable {
     private var ltc: LTCInput?
     private var mtc: MTCInput?
     private var lastTimecodeSettings = ShowCommands.TimecodeSettings()
+    private var midi: MIDIInput?
+    private var lastMIDISettings = MIDISettings()
     private var cues: CueRunner?
     private var lastCues = CueList()
     private let showMode: ShowModeController
@@ -123,6 +134,7 @@ public final class Engine: @unchecked Sendable {
         ProjectDocument.registerCommands(on: store, auth: RoleAuth(settingsURL: nil, shellTokenURL: nil, logger: logger))
         ShowCommands.register(on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in nil }, acknowledge: { _ in }, runReadiness: {}))
         ControlCommands.register(on: store, hooks: ControlCommands.Hooks(set: { _, _, _ in }, release: { _ in }, keep: { _ in }))
+        MIDICommands.register(on: store, hooks: MIDICommands.Hooks(learn: { _, _ in }))
         ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger).registerCommands(on: store)
         return store.commandSpecs
     }
@@ -190,23 +202,33 @@ public final class Engine: @unchecked Sendable {
         lastUniverseSettings = universeSettings
         dmx.setUniverseSettings(universeSettings)
         dmx.start()
-        let artnet = ArtNetReceiver(store: dmx, logger: logger, nodeName: Attribution.projectName)
-        try artnet.start()
-        // a held sACN port never stops the engine: it runs without sACN and readiness says so
-        var sacn: SACNReceiver? = SACNReceiver(store: dmx, logger: logger)
-        do {
-            try sacn?.start(groups: UniverseSettings.wire(patch.universes, over: .sacn, settings: universeSettings))
-        } catch {
-            logger.error("sACN port in use; running without sACN", metadata: ["port": "\(SACN.port)", "error": "\(error)"])
-            sacnError.withLock { $0 = "\(error)" }
-            sacn = nil
-        }
-        let osc = OSCReceiver(store: dmx, logger: logger)
-        try osc.start()
         self.dmx = dmx
-        self.artnet = artnet
-        self.sacn = sacn
-        self.osc = osc
+        if options.network {
+            let artnet = ArtNetReceiver(store: dmx, logger: logger, nodeName: Attribution.projectName)
+            try artnet.start()
+            // a held sACN port never stops the engine: it runs without sACN and readiness says so
+            var sacn: SACNReceiver? = SACNReceiver(store: dmx, logger: logger)
+            do {
+                try sacn?.start(groups: UniverseSettings.wire(patch.universes, over: .sacn, settings: universeSettings))
+            } catch {
+                logger.error("sACN port in use; running without sACN", metadata: ["port": "\(SACN.port)", "error": "\(error)"])
+                sacnError.withLock { $0 = "\(error)" }
+                sacn = nil
+            }
+            // OSC feedback (B36) only with the network: no feedback target is reached under --no-network
+            let oscFeedback = OSCFeedbackServer(
+                fixed: MachineSettings.load(from: AppPaths.settingsFile, logger: logger).oscFeedback, logger: logger,
+                fixtures: { dmx.resolvedRaw() }, engine: { [weak self] in self?.oscFeedbackState() ?? [:] })
+            self.oscFeedback = oscFeedback
+            let osc = OSCReceiver(store: dmx, logger: logger, feedback: oscFeedback)
+            try osc.start()
+            self.artnet = artnet
+            self.sacn = sacn
+            self.osc = osc
+        } else {
+            logger.warning("network off (--no-network): no Art-Net, sACN, OSC, CITP or Bonjour; HTTPS on 127.0.0.1 only")
+        }
+        let oscFeedback = self.oscFeedback
 
         // The library is always indexed (DESIGN.md §8); scenes may add explicit entries (Syphon inputs, test files).
         let context = try MetalContext()
@@ -262,7 +284,9 @@ public final class Engine: @unchecked Sendable {
 
         // Phase 5: roles, the project and live documents and the WebSocket state server (DESIGN.md §11).
         let auth = RoleAuth(settingsURL: AppPaths.settingsFile, shellTokenURL: AppPaths.shellTokenFile, logger: logger)
-        let project = loadedProject ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: policy, canvas: startCanvas)
+        var project = loadedProject ?? ProjectDocument.initial(patch: patch, layerCount: layerCount, libraryRoot: libraryRoot.path, policy: policy, canvas: startCanvas)
+        // hand-written MIDI map entries get an id on load, so per-entry state and midi.map.remove can address them
+        if let fixed = MIDISettings.assigningIDs(project) { project = fixed }
         let store = StateStore(project: project, logger: logger)
         ProjectDocument.registerCommands(
             on: store, auth: auth, showModeOn: { [weak self] in self?.showMode.isOn ?? false },
@@ -291,7 +315,9 @@ public final class Engine: @unchecked Sendable {
         ShowCommands.register(
             on: store,
             hooks: ShowCommands.Hooks(
-                go: { cues.go() }, back: { cues.back() }, goto: { cues.goto($0) },
+                // every go re-sends the cue state to OSC subscribers, also when it lands on the same cue
+                go: { cues.go(); oscFeedback?.invalidate(prefix: "/fanous/cue") }, back: { cues.back(); oscFeedback?.invalidate(prefix: "/fanous/cue") },
+                goto: { cues.goto($0); oscFeedback?.invalidate(prefix: "/fanous/cue") },
                 showMode: { [weak self] on in self?.setShowMode(on) ?? nil },
                 acknowledge: { [weak self] id in
                     // flag the stored items too, so the UI sees it now and not at the next 30 s run
@@ -302,6 +328,26 @@ public final class Engine: @unchecked Sendable {
                     self?.publishReadiness()
                 },
                 runReadiness: { [weak self] in self?.runReadiness() }))
+        // MIDI control (B36): cue actions run as commands like OSC's; parameter values go straight to the resolvers
+        let midi = MIDIInput(dmx: dmx, logger: logger)
+        midi.onCue = { action in
+            switch action {
+            case .cueGo: _ = store.execute("cue.go", role: .operator)
+            case .cueBack: _ = store.execute("cue.back", role: .operator)
+            case .cueGoto(let number): _ = store.execute("cue.goto", args: ["number": .number(number)], role: .operator)
+            case .set: break
+            }
+        }
+        midi.onLearn = { mapping in
+            guard let args = try? JSONValue(encoding: mapping) else { return "cannot encode" }
+            if case .failure(let error) = store.execute("midi.map.set", args: args, role: .programmer) { return error.message }
+            return nil
+        }
+        MIDICommands.register(on: store, hooks: MIDICommands.Hooks(learn: { midi.learn(target: $0, cue: $1) }))
+        lastMIDISettings = MIDISettings.from(project: project)
+        midi.apply(lastMIDISettings)
+        midi.start()  // on main, the first CoreMIDI call of the process: hot-plug notifications need its run loop
+        self.midi = midi
         // OSC: cue, show and timecode commands (DESIGN.md §15.3); the parameter ones stay on the DMX queue
         dmx.onCommand = { [weak self] command in
             guard let self, let store = self.store else { return }
@@ -410,20 +456,22 @@ public final class Engine: @unchecked Sendable {
             }
 
             // CITP/MSEX (DESIGN.md §16.1): peer location, layer status, library, thumbnails, streaming frames
-        let citp = CITPServer(
-            name: SystemInfo.hostName, uuid: Self.installUUID(),
-            providers: CITPServer.Providers(
-                layers: { [weak self] in self?.citpLayers() ?? [] },
-                library: { [weak self] in self?.library?.snapshot ?? .empty },
-                thumbnail: { name in (try? Data(contentsOf: thumbnailer.directory.appending(path: name))).map(Array.init) },
-                frame: { [weak self] in self?.stateServer?.preview?.canvas.latestJPEG.withLock { $0 } ?? nil }), logger: logger)
-        do {
-            try citp.start()
-            preview.canvas.externalJPEGWanted = { citp.wantsFrames.load(ordering: .relaxed) }  // CITP always streams the canvas
-            self.citp = citp
-        } catch {
-            logger.error("CITP start failed", metadata: ["error": "\(error)"])
-        }
+            if options.network {
+                let citp = CITPServer(
+                    name: SystemInfo.hostName, uuid: Self.installUUID(),
+                    providers: CITPServer.Providers(
+                        layers: { [weak self] in self?.citpLayers() ?? [] },
+                        library: { [weak self] in self?.library?.snapshot ?? .empty },
+                        thumbnail: { name in (try? Data(contentsOf: thumbnailer.directory.appending(path: name))).map(Array.init) },
+                        frame: { [weak self] in self?.stateServer?.preview?.canvas.latestJPEG.withLock { $0 } ?? nil }), logger: logger)
+                do {
+                    try citp.start()
+                    preview.canvas.externalJPEGWanted = { citp.wantsFrames.load(ordering: .relaxed) }  // CITP always streams the canvas
+                    self.citp = citp
+                } catch {
+                    logger.error("CITP start failed", metadata: ["error": "\(error)"])
+                }
+            }
 
         // Displays and output windows (DESIGN.md §9.6); the render service starts after the coordinator exists.
             let coordinator = try MainActor.assumeIsolated { () throws -> OutputCoordinator in
@@ -476,6 +524,8 @@ public final class Engine: @unchecked Sendable {
         stateServer.onDMXActive = { [weak self] active in self?.setDMXStream(active: active) }
         self.stateServer = stateServer
         startFeeds()
+        oscFacts(from: store.project)
+        oscFeedback?.start()  // the fixed target is notified once everything it reads exists
 
         let startedAt = self.startedAt
         let webRoot = options.webRoot
@@ -486,7 +536,7 @@ public final class Engine: @unchecked Sendable {
             return auth.grant(requested: role, sessionRole: sessionRole) == role
         }
         @Sendable func programmerAllowed(_ request: HTTPRequest) -> Bool { allowed(.programmer, request) }
-        let server = try HTTPSServer(port: options.port, identity: identity, webRoot: options.webRoot, logger: logger) { request in
+        let server = try HTTPSServer(port: options.port, identity: identity, webRoot: options.webRoot, loopbackOnly: !options.network, logger: logger) { request in
             if request.path.hasPrefix("/api/ingest") || request.path.hasPrefix("/api/upload/") {
                 if request.method != "GET", !programmerAllowed(request) { return .text(403, "programmer role required") }
                 if request.method == "GET", !allowed(.operator, request) { return .text(403, "operator role required") }  // job lists carry file paths
@@ -612,7 +662,7 @@ public final class Engine: @unchecked Sendable {
         server.uploadSink = { request in programmerAllowed(request) ? ingestAPI.uploadTarget(for: request) : nil }
         server.uploadRoute = { request, file in ingestAPI.handle(request, uploadedFile: file) }
         server.upgradeRoute = { request in stateServer.upgrade(request) }
-        server.bonjour(name: SystemInfo.hostName)
+        if options.network { server.bonjour(name: SystemInfo.hostName) }
         server.start()
         self.server = server
     }
@@ -671,6 +721,54 @@ public final class Engine: @unchecked Sendable {
         }
     }
 
+    private func oscFacts(from project: JSONValue) {
+        let facts = (showLock: project["showLock"]?.bool ?? false, timecodeEnabled: ShowCommands.timecodeSettings(from: project).enabled != false)
+        oscProjectFacts.withLock { $0 = facts }
+    }
+
+    /// The readable OSC addresses besides fixture parameters (B36, docs/user/show-control.md), from cached copies
+    /// only: no project document, no metric percentiles. Nothing that names a path (library root, files).
+    private func oscFeedbackState() -> OSCFeedback.State {
+        var state: OSCFeedback.State = [:]
+        let p = OSCAddressMap.prefix
+        let facts = oscProjectFacts.withLock { $0 }
+        let flag = { (on: Bool) in [OSCArgument.int32(on ? 1 : 0)] }
+        let cue = cues?.status.withLock { $0 }
+        state[p + "/cue/current"] = [.float32(cue?.current.map { Float($0) } ?? -1)]
+        state[p + "/cue/current/name"] = [.string(cue?.currentName ?? "")]
+        state[p + "/cue/next"] = [.float32(cue?.next.map { Float($0) } ?? -1)]
+        state[p + "/cue/next/name"] = [.string(cue?.nextName ?? "")]
+        state[p + "/cue/fading"] = flag(cue?.fading ?? false)
+        state[p + "/cue/count"] = [.int32(Int32(cue?.count ?? 0))]
+        state[p + "/show/mode"] = flag(showMode.isOn)
+        state[p + "/show/lock"] = flag(facts.showLock)
+        state[p + "/show/ready"] = flag(!readiness.withLock { $0.items.contains { $0.blocks } })
+        let tc = timecodeClock.current()
+        state[p + "/timecode/enable"] = flag(facts.timecodeEnabled)
+        state[p + "/timecode/state"] = [.string(tc.state.rawValue)]
+        state[p + "/timecode/value"] = [.string(tc.state == .off ? "--:--:--:--" : tc.timecode.description)]
+        for output in outputStatus.withLock({ $0 }) {
+            state[p + "/output/\(output.id)/state"] = [.string(output.state.rawValue)]
+            state[p + "/output/\(output.id)/bound"] = flag(output.state == .bound)
+        }
+        let now = CACurrentMediaTime()
+        let frames = metrics.totalFrames.load(ordering: .relaxed), missed = metrics.totalMissed.load(ordering: .relaxed)
+        let rate = oscFrameRate.withLock { r in
+            if now - r.at >= 1 {
+                if r.at > 0 {
+                    r.fps = Float(Double(frames - r.frames) / (now - r.at))
+                    r.missedLast = Int32(clamping: missed - r.missed)
+                }
+                r = (now, frames, missed, r.fps, r.missedLast)
+            }
+            return r
+        }
+        state[p + "/engine/version"] = [.string(FanousVersion.string)]
+        state[p + "/engine/fps"] = [.float32(rate.fps)]
+        state[p + "/engine/missed"] = [.int32(rate.missedLast)]
+        return state
+    }
+
     private func citpLive() -> JSONValue {
         guard let s = citp?.status.withLock({ $0 }) else { return [:] }
         return ["port": .number(Double(s.port)), "clients": .array(s.clients.map { .string($0) }), "streams": .number(Double(s.streams)), "multicast": .array([.string(CITPMulticast.address), .string(CITPMulticast.addressSince2014)])]
@@ -690,6 +788,16 @@ public final class Engine: @unchecked Sendable {
         return [
             "current": s.current.map { .number($0) } ?? .null, "currentName": s.currentName.map { .string($0) } ?? .null,
             "next": s.next.map { .number($0) } ?? .null, "nextName": s.nextName.map { .string($0) } ?? .null, "fading": .bool(s.fading), "count": .number(Double(s.count)),
+        ]
+    }
+
+    private func midiLive() -> JSONValue {
+        guard let s = midi?.status.withLock({ $0 }) else { return [:] }
+        return [
+            "connected": .array(s.connected.map { .string($0) }), "last": s.last.map { .string($0) } ?? .null, "lastAt": s.lastAt.map { .number($0) } ?? .null,
+            "learning": s.learning.map { ["target": .string($0.target), "cue": $0.cue.map { .number($0) } ?? .null] } ?? .null,
+            "learned": s.learned.map { .string($0) } ?? .null,
+            "error": s.error == nil && s.problems.isEmpty ? .null : .string(([s.error].compactMap { $0 } + s.problems).joined(separator: "; ")),
         ]
     }
 
@@ -989,6 +1097,7 @@ public final class Engine: @unchecked Sendable {
     }
 
     private func projectChanged(_ document: JSONValue) {
+        oscFacts(from: document)
         // patch and per-universe settings (B28): applied on the DMX queue; sACN groups follow both
         let universeSettings = checkedUniverseSettings(from: document)
         if let dmx {
@@ -1034,6 +1143,16 @@ public final class Engine: @unchecked Sendable {
         }
         let timecodeSettings = ShowCommands.timecodeSettings(from: document)
         if timecodeSettings != lastTimecodeSettings { applyTimecodeSettings(timecodeSettings) }
+        if let fixed = MIDISettings.assigningIDs(document), let map = fixed["midi"]?["map"], let store {
+            // a loaded or replaced project with hand-written entries; not from this queue (correct syncs on it).
+            // ponytail: replaces the whole map, so a map edit landing in between is lost; ids then come on the next change
+            DispatchQueue.global(qos: .utility).async { store.correct(map, at: "/midi/map") }
+        }
+        let midiSettings = MIDISettings.from(project: document)
+        if midiSettings != lastMIDISettings {
+            lastMIDISettings = midiSettings
+            midi?.apply(midiSettings)
+        }
         // canvases, sizes or rate (canvas.add/remove/set, undo/redo, project load): applied unless show mode is on
         if let c = ProjectDocument.canvases(from: document).first, (try? ProjectDocument.validated((c.width, c.height, c.fps))) != nil {
             canvasSwitch?.request(ProjectDocument.layout(from: document))
@@ -1119,6 +1238,7 @@ public final class Engine: @unchecked Sendable {
 
     /// Live document at 10 Hz and the DMX monitor stream at 20 Hz, both off the render and DMX threads.
     private func startFeeds() {
+        feedQueue.async { [self] in _ = currentHostFacts() }  // the slow first lookup runs now, not at the first join
         let live = DispatchSource.makeTimerSource(queue: feedQueue)
         live.schedule(deadline: .now() + 0.1, repeating: 0.1)
         live.setEventHandler { [weak self] in self?.publishLive() }
@@ -1142,7 +1262,9 @@ public final class Engine: @unchecked Sendable {
         }
     }
 
-    /// CoreAudio/CoreMIDI/getifaddrs lookups are slow and rarely change: refreshed every 5 s on the feed queue.
+    /// CoreAudio/CoreMIDI/getifaddrs lookups are slow and rarely change: refreshed every 5 s off the feed queue. The
+    /// first CoreAudio/CoreMIDI call of a process can take seconds (a CI virtual machine took over 5 s); the live
+    /// document goes out with the last known facts (none at start) and carries the fresh ones on the next tick.
     private struct HostFacts {
         var at: CFTimeInterval = 0
         var midiSources: [String] = []
@@ -1150,13 +1272,34 @@ public final class Engine: @unchecked Sendable {
         var addresses: [String] = []
         var interfaces: [NetworkInterface] = []
     }
-    private var hostFacts = HostFacts()
+    private let hostFacts = Mutex<HostFacts>(HostFacts())
+    private var hostFactsRefreshing = false  // feed queue only
+    private var hostFactsLookups = 0  // feed queue only; the first lookup of a process is expected to be slow
     private func currentHostFacts() -> HostFacts {
-        let now = CACurrentMediaTime()
-        if now - hostFacts.at >= 5 {
-            hostFacts = HostFacts(at: now, midiSources: MTCInput.sources(), audioInputs: LTCInput.inputDevices(), addresses: SystemInfo.ipv4Addresses, interfaces: SystemInfo.ipv4Interfaces)
+        let facts = hostFacts.withLock { $0 }
+        if CACurrentMediaTime() - facts.at >= 5, !hostFactsRefreshing {
+            hostFactsRefreshing = true
+            hostFactsLookups += 1
+            let first = hostFactsLookups == 1
+            DispatchQueue.global(qos: .utility).async { [self] in
+                var seconds: [String: Double] = [:]
+                func timed<T>(_ what: String, _ lookup: () -> T) -> T {
+                    let started = CACurrentMediaTime()
+                    let value = lookup()
+                    seconds[what] = CACurrentMediaTime() - started
+                    return value
+                }
+                let midi = timed("midi", MTCInput.sources)
+                let audio = timed("audio", LTCInput.inputDevices)
+                let addresses = timed("addresses") { SystemInfo.ipv4Addresses }
+                let interfaces = timed("interfaces") { SystemInfo.ipv4Interfaces }
+                let metadata: Logger.Metadata = seconds.mapValues { "\(String(format: "%.2f", $0)) s" }
+                if first { logger.info("host lookups", metadata: metadata) } else if seconds.values.reduce(0, +) > 0.5 { logger.warning("host lookups slow", metadata: metadata) }
+                hostFacts.withLock { $0 = HostFacts(at: CACurrentMediaTime(), midiSources: midi, audioInputs: audio, addresses: addresses, interfaces: interfaces) }
+                feedQueue.async { self.hostFactsRefreshing = false }
+            }
         }
-        return hostFacts
+        return facts
     }
 
     private func publishLive() {
@@ -1219,6 +1362,7 @@ public final class Engine: @unchecked Sendable {
             "show": showLive(),
             "system": systemLive(addresses: facts.addresses, interfaces: facts.interfaces),
             "osc": ["port": 8000, "recent": .array(oscLog.withLock { $0 }), "midiSources": .array(facts.midiSources.map { .string($0) }), "audioInputs": .array(facts.audioInputs.map { .string($0) })],
+            "midi": midiLive(),
             "citp": citpLive(),
             "versions": versions?.live ?? .null,
         ]
@@ -1251,6 +1395,7 @@ public final class Engine: @unchecked Sendable {
         let keepShow = showMode.stop(keepingState: ShowModeState.takeRestartMarker(at: AppPaths.restartPendingFile))
         ltc?.stop()
         mtc?.stop()
+        midi?.stop()
         cues?.stop()
         if let coordinator, let displayManager {
             MainActor.assumeIsolated {
@@ -1279,6 +1424,7 @@ public final class Engine: @unchecked Sendable {
         artnet?.stop()
         sacn?.stop()
         osc?.stop()
+        oscFeedback?.stop()
         dmx?.stop()
         logger.info("fanousd stopped")
     }

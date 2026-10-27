@@ -35,7 +35,7 @@ public struct LiveSnapshot: Encodable, Sendable {
     public var universes: [UniverseInfo]
     public var fixtures: [String: [ResolvedParameterInfo]]
     public var policies: [String: String]
-    /// Internal (cue/OSC/UI) values per fixture, including those the policy currently ignores.
+    /// Internal (cue/OSC/UI/MIDI) values per fixture, including those the policy currently ignores.
     public var internalValues: [String: [InternalValueInfo]]
     /// Seconds until the UI values of a fixture are released, for fixtures whose console is being received (B27).
     public var uiExpiresIn: [String: Double]
@@ -182,11 +182,14 @@ public final class DMXStore: @unchecked Sendable {
         }
     }
 
-    /// UI values mask the console when the fixture's universe has traffic and at least one parameter resolves to the UI:
-    /// never under policy `dmx` (UI not shown), under `htp` only where the UI value is the higher one, under `ltp` until
-    /// the desk moves that parameter again.
+    /// Hand-operated sources, which can be left holding a value: the UI and a MIDI controller (B27, B36).
+    static func isController(_ source: ValueSource) -> Bool { source == .ui || source == .midi }
+
+    /// UI (and MIDI) values mask the console when the fixture's universe has traffic and at least one parameter resolves
+    /// to them: never under policy `dmx` (not shown), under `htp` only where that value is the higher one, under `ltp`
+    /// until the desk moves that parameter again.
     private static func masksConsole(_ resolver: FixtureResolver) -> Bool {
-        resolver.hasDMX && resolver.resolvedAll().contains { $0.source == .ui }
+        resolver.hasDMX && resolver.resolvedAll().contains { isController($0.source) }
     }
 
     /// Seconds left for a fixture whose UI values mask the console right now; nil otherwise (no countdown shown).
@@ -202,17 +205,18 @@ public final class DMXStore: @unchecked Sendable {
     func expireUI(at now: TimeInterval) {
         var changed = false
         for (fixture, clock) in uiClock {
-            // released, or every UI value overwritten (OSC, cue): nothing left to expire
-            guard let resolver = resolvers[fixture], resolver.internalValues().contains(where: { $0.source == .ui }) else {
+            // released, or every UI/MIDI value overwritten (OSC, cue): nothing left to expire
+            guard let resolver = resolvers[fixture], resolver.internalValues().contains(where: { Self.isController($0.source) }) else {
                 uiClock[fixture] = nil
                 continue
             }
             let masked = clock.masked + (Self.masksConsole(resolver) ? now - clock.tick : 0)
             if masked >= Self.uiExpiry {
                 resolvers[fixture]?.clearInternal(source: .ui)
+                resolvers[fixture]?.clearInternal(source: .midi)
                 uiClock[fixture] = nil
                 changed = true
-                logger.warning("UI values released: they masked the console for 10 minutes", metadata: ["fixture": "\(fixture)"])
+                logger.warning("UI and MIDI values released: they masked the console for 10 minutes", metadata: ["fixture": "\(fixture)"])
             } else {
                 uiClock[fixture] = (masked, now)
             }
@@ -220,9 +224,9 @@ public final class DMXStore: @unchecked Sendable {
         if changed { publish(receivedAt: 0) }
     }
 
-    func applyUI(_ fixture: FixtureRef, _ parameter: ParameterID, raw: UInt16, at now: TimeInterval) {
+    func applyUI(_ fixture: FixtureRef, _ parameter: ParameterID, raw: UInt16, at now: TimeInterval, source: ValueSource = .ui) {
         guard resolvers[fixture] != nil else { return }
-        resolvers[fixture]?.setInternal(parameter, raw: raw, source: .ui, at: now)
+        resolvers[fixture]?.setInternal(parameter, raw: raw, source: source, at: now)
         uiClock[fixture] = (0, now)
         publish(receivedAt: 0)
     }
@@ -284,16 +288,36 @@ public final class DMXStore: @unchecked Sendable {
         queue.async { [self] in applyUI(fixture, parameter, raw: raw, at: Self.now) }
     }
 
+    /// A value from the MIDI map (B36): the `midi` internal source, a controller like the UI (same expiry, Keep, Release).
+    public func setMIDI(_ fixture: FixtureRef, _ parameter: ParameterID, raw: UInt16) {
+        queue.async { [self] in applyUI(fixture, parameter, raw: raw, at: Self.now, source: .midi) }
+    }
+
+    /// Drops MIDI values whose mapping went away or whose source disconnected.
+    public func releaseMIDI(_ targets: [(FixtureRef, ParameterID)]) {
+        guard !targets.isEmpty else { return }
+        queue.async { [self] in
+            for (fixture, parameter) in targets { resolvers[fixture]?.clearInternal(parameter, source: .midi) }
+            publish(receivedAt: 0)
+        }
+    }
+
+    /// The value a parameter shows now (MIDI pickup); nil when the fixture is not patched.
+    public func resolvedRaw(_ fixture: FixtureRef, _ parameter: ParameterID) -> UInt16? {
+        queue.sync { resolvers[fixture]?.resolved(parameter).raw }
+    }
+
     /// `fixture.keep`: restart the expiry clock of a fixture's UI values.
     public func keepUI(_ fixture: FixtureRef) {
         queue.async { [self] in keepUI(fixture, at: Self.now) }
     }
 
-    /// `fixture.release`: drop UI values of one fixture (nil = all).
+    /// `fixture.release`: drop UI and MIDI values of one fixture (nil = all).
     public func releaseUI(_ fixture: FixtureRef?) {
         queue.async { [self] in
             for key in resolvers.keys where fixture == nil || key == fixture {
                 resolvers[key]?.clearInternal(source: .ui)
+                resolvers[key]?.clearInternal(source: .midi)
                 uiClock[key] = nil
             }
             publish(receivedAt: 0)
@@ -328,6 +352,12 @@ public final class DMXStore: @unchecked Sendable {
                 return s.subnets(in: list)?.isEmpty == true ? "\(id): \(s.interface)" : nil
             }
         }
+    }
+
+    /// Resolved raw values of every patched fixture, in channel-map order (OSC feedback, B36). Only copies on the DMX
+    /// queue; the addresses are built by the caller on its own queue.
+    public func resolvedRaw() -> [FixtureRef: [UInt16]] {
+        queue.sync { resolvers.mapValues { $0.resolvedAll().map(\.raw) } }
     }
 
     /// The merged 512 slots of a universe for the DMX monitor stream; nil until a packet arrived.
