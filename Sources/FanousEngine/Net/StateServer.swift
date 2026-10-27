@@ -175,9 +175,9 @@ public final class StateServer: @unchecked Sendable {
                     // a refused preview carries the stream id it would have had and `stream`, like the `sub` reply, so the
                     // client settles its waiting request (an error with an id and no `stream` ends a stream that went away)
                     let id = server.nextStream.add(1, ordering: .relaxed).oldValue
-                    let refused = { [server] (code: String, text: String) -> Void in
+                    func refused(_ code: String, _ text: String) {
                         let reply: JSONValue = ["t": "error", "id": .number(Double(id)), "stream": "preview", "code": .string(code), "message": .string(text)]
-                        _ = session.send(text: server.store.encode(reply), droppable: false)
+                        session.send(text: server.store.encode(reply), droppable: false)
                     }
                     guard let preview = server.preview else { return refused("noPreview", "the engine is not rendering") }
                     let jpeg = message["codec"]?.string == "jpeg"

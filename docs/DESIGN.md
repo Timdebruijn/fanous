@@ -1099,6 +1099,10 @@ server → client   {"t":"sub","id":7,"stream":"preview",…}  |  {"t":"error","
 server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H.264 AU (AVCC) , 2 = JPEG , 3 = DMX universe (512 B) , 4 = metrics ring page
 ```
 
+- The engine answers a connection's preview `sub` requests in the order they
+  were sent (one at a time, on that connection's receive queue), each with a
+  `sub` or a refusal (`error` with `stream`): the client matches replies to its
+  requests by that order.
 - Patches are RFC 6902 ops on a revision counter; a client that misses a
   revision (gap) re-requests a snapshot. Every change to `project` is a
   **command** on Control: validated, applied, inverse recorded for undo,
