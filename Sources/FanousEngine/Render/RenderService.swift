@@ -98,7 +98,7 @@ public final class RenderService {
             return GeneratorSource(context: context, file: file, width: size.width, height: size.height)
         }
         loader.liveFactory = { spec in
-            let parts = spec.split(separator: "/", maxSplits: 1).map(String.init)
+            let parts = spec.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)  // "App/" = any server of App
             guard parts.count == 2 else { return nil }
             let input = SyphonInput(device: device)
             do { try input.connect(appName: parts[0], serverName: parts[1]) } catch { return nil }
