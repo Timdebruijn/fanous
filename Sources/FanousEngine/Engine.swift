@@ -99,6 +99,10 @@ public final class Engine: @unchecked Sendable {
     private var readinessOnNextSync = false
     private let oscLog = Mutex<[JSONValue]>([])
     private var lastPolicy: SourcePolicy?
+    private var lastUniverseSettings: [UniverseID: UniverseSettings] = [:]
+    private var lastUniverseIssues: [String] = []
+    /// Why the sACN port could not be bound at start (readiness); nil while sACN runs.
+    private let sacnError = Mutex<String?>(nil)
     /// The project's library root as last seen by `projectChanged` (B51).
     private let libraryRootInProject = Mutex<String?>(nil)
     /// Root switches run here one at a time (scan, probe-thread join): never on the feed or control queue.
@@ -194,13 +198,23 @@ public final class Engine: @unchecked Sendable {
         if policy != .dmx {
             for entry in patch.entries { dmx.setPolicy(policy, for: entry.fixture) }
         }
+        let universeSettings = checkedUniverseSettings(from: loadedProject ?? .null)
+        lastUniverseSettings = universeSettings
+        dmx.setUniverseSettings(universeSettings)
         dmx.start()
         self.dmx = dmx
         if options.network {
             let artnet = ArtNetReceiver(store: dmx, logger: logger, nodeName: Attribution.projectName)
             try artnet.start()
-            let sacn = SACNReceiver(store: dmx, logger: logger)
-            try sacn.start(universes: Self.sacnUniverses(patch))
+            // a held sACN port never stops the engine: it runs without sACN and readiness says so
+            var sacn: SACNReceiver? = SACNReceiver(store: dmx, logger: logger)
+            do {
+                try sacn?.start(groups: UniverseSettings.wire(patch.universes, over: .sacn, settings: universeSettings))
+            } catch {
+                logger.error("sACN port in use; running without sACN", metadata: ["port": "\(SACN.port)", "error": "\(error)"])
+                sacnError.withLock { $0 = "\(error)" }
+                sacn = nil
+            }
             // OSC feedback (B36) only with the network: no feedback target is reached under --no-network
             let oscFeedback = OSCFeedbackServer(
                 fixed: MachineSettings.load(from: AppPaths.settingsFile, logger: logger).oscFeedback, logger: logger,
@@ -801,7 +815,7 @@ public final class Engine: @unchecked Sendable {
         ]
     }
 
-    private func systemLive(addresses: [String]) -> JSONValue {
+    private func systemLive(addresses: [String], interfaces: [NetworkInterface]) -> JSONValue {
         let power = Readiness.powerState()
         let memory = Readiness.memoryHeadroom()
         let thermal = ProcessInfo.processInfo.thermalState
@@ -809,7 +823,8 @@ public final class Engine: @unchecked Sendable {
             "thermal": .string(thermal == .nominal ? "nominal" : thermal == .fair ? "fair" : thermal == .serious ? "serious" : "critical"),
             "onAC": .bool(power.onAC), "power": .string(power.detail), "memoryFreeFraction": .number((memory.fraction * 1000).rounded() / 1000),
             "memoryGB": .number(Double(SystemInfo.physicalMemoryBytes / 1_073_741_824)), "os": .string(SystemInfo.osVersion), "host": .string(SystemInfo.hostName),
-            "addresses": .array(addresses.map { .string($0) }), "port": .number(Double(options.port)),
+            "addresses": .array(addresses.map { .string($0) }),
+            "interfaces": .array(interfaces.map { ["name": .string($0.name), "address": .string($0.address)] }), "port": .number(Double(options.port)),
             "tlsFingerprint": .string(tlsFingerprint), "bonjour": .string("\(SystemInfo.hostName)._fanous._tcp"),
         ]
     }
@@ -843,7 +858,16 @@ public final class Engine: @unchecked Sendable {
             let snapshot = dmx.snapshot()
             let patched = Set(dmx.currentPatch.universes.map(\.description))
             context.universesSilent = snapshot.universes.filter { patched.contains($0.id) && !$0.active }.map(\.id)
+            context.interfacesMissing = dmx.missingInterfaces()
+            // present, but the sACN multicast join fails on it
+            let present = dmx.interfaceList()
+            // "any …" is always reported: no multicast interface at all, or a join that failed on one of them
+            for (interface, numbers) in (sacn?.unjoined() ?? [:]).sorted(by: { $0.key < $1.key })
+            where interface.hasPrefix(UniverseSettings.anyInterface) || present.contains(where: { $0.name == interface || $0.address == interface }) {
+                context.interfacesMissing.append("\(numbers.map { "sacn:\($0)" }.joined(separator: ", ")): \(interface) (no sACN multicast)")
+            }
         }
+        context.sacnError = sacnError.withLock { $0 }
         let statuses = outputStatus.withLock { $0 }
         context.outputsLost = statuses.filter { $0.state == .lost }.map(\.id)
         context.outputsUnassigned = statuses.filter { $0.state == .unassigned }.map(\.id)
@@ -1061,13 +1085,33 @@ public final class Engine: @unchecked Sendable {
         return scene
     }
 
-    static func sacnUniverses(_ patch: Patch) -> [Int] { patch.universes.filter { $0.transport == .sacn }.map(\.number) }
+    /// The universe settings the engine runs; entries it skips are logged once, when the set of skipped entries changes
+    /// (load, a hand edit), not on every project change.
+    private func checkedUniverseSettings(from document: JSONValue) -> [UniverseID: UniverseSettings] {
+        let (settings, issues) = ProjectDocument.universeEntries(from: document)
+        if issues != lastUniverseIssues {
+            lastUniverseIssues = issues
+            for issue in issues { logger.warning("universe setting ignored", metadata: ["entry": "\(issue)"]) }
+        }
+        return settings
+    }
 
     private func projectChanged(_ document: JSONValue) {
         oscFacts(from: document)
-        if let dmx, let patch = ProjectDocument.effectivePatch(from: document), patch != dmx.currentPatch {
-            dmx.setPatch(patch)
-            sacn?.update(universes: Self.sacnUniverses(patch))
+        // patch and per-universe settings (B28): applied on the DMX queue; sACN groups follow both
+        let universeSettings = checkedUniverseSettings(from: document)
+        if let dmx {
+            var changed = false
+            if let patch = ProjectDocument.effectivePatch(from: document), patch != dmx.currentPatch {
+                dmx.setPatch(patch)
+                changed = true
+            }
+            if universeSettings != lastUniverseSettings {
+                lastUniverseSettings = universeSettings
+                dmx.setUniverseSettings(universeSettings)
+                changed = true
+            }
+            if changed { sacn?.update(groups: UniverseSettings.wire(dmx.currentPatch.universes, over: .sacn, settings: universeSettings)) }
         }
         // the source policy applies to every patched fixture, also to the resolvers a new patch created
         if let dmx, let raw = document["policy"]?.string, let policy = SourcePolicy(rawValue: raw), policy != lastPolicy {
@@ -1226,6 +1270,7 @@ public final class Engine: @unchecked Sendable {
         var midiSources: [String] = []
         var audioInputs: [String] = []
         var addresses: [String] = []
+        var interfaces: [NetworkInterface] = []
     }
     private let hostFacts = Mutex<HostFacts>(HostFacts())
     private var hostFactsRefreshing = false  // feed queue only
@@ -1247,9 +1292,10 @@ public final class Engine: @unchecked Sendable {
                 let midi = timed("midi", MTCInput.sources)
                 let audio = timed("audio", LTCInput.inputDevices)
                 let addresses = timed("addresses") { SystemInfo.ipv4Addresses }
+                let interfaces = timed("interfaces") { SystemInfo.ipv4Interfaces }
                 let metadata: Logger.Metadata = seconds.mapValues { "\(String(format: "%.2f", $0)) s" }
                 if first { logger.info("host lookups", metadata: metadata) } else if seconds.values.reduce(0, +) > 0.5 { logger.warning("host lookups slow", metadata: metadata) }
-                hostFacts.withLock { $0 = HostFacts(at: CACurrentMediaTime(), midiSources: midi, audioInputs: audio, addresses: addresses) }
+                hostFacts.withLock { $0 = HostFacts(at: CACurrentMediaTime(), midiSources: midi, audioInputs: audio, addresses: addresses, interfaces: interfaces) }
                 feedQueue.async { self.hostFactsRefreshing = false }
             }
         }
@@ -1314,7 +1360,7 @@ public final class Engine: @unchecked Sendable {
             "timecode": timecodeLive(),
             "cue": cueLive(),
             "show": showLive(),
-            "system": systemLive(addresses: facts.addresses),
+            "system": systemLive(addresses: facts.addresses, interfaces: facts.interfaces),
             "osc": ["port": 8000, "recent": .array(oscLog.withLock { $0 }), "midiSources": .array(facts.midiSources.map { .string($0) }), "audioInputs": .array(facts.audioInputs.map { .string($0) })],
             "midi": midiLive(),
             "citp": citpLive(),

@@ -3,7 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Pure logic of the Patch / DMX screen: fixture list with channel ranges and collisions, per-universe cell
 // ownership, parameter lookup by fixture-relative channel, universe naming and option lists.
-import type { PatchEntry, UniverseInfo } from './docs';
+import type { PatchEntry, UniverseInfo, UniverseSettingsDoc } from './docs';
 
 export const UNIVERSE_SIZE = 512;
 export const LOCKED_TITLE = 'Locked: programmer only';
@@ -95,13 +95,41 @@ export function universeName(id: string): string {
   return id;
 }
 
-export function universeProtocol(id: string): 'Art-Net' | 'sACN' | 'unknown' {
-  return id.startsWith('artnet:') ? 'Art-Net' : id.startsWith('sacn:') ? 'sACN' : 'unknown';
+/** "S 7" -> "sacn:7", "A 0.0.1" -> "artnet:0.0.1"; the id form passes through (the engine validates). */
+export function parseUniverseName(text: string): string {
+  const t = text.trim();
+  const m = /^([AaSs])\s*(\S+)$/.exec(t);
+  if (!m || t.includes(':')) return t;
+  return `${m[1]!.toLowerCase() === 'a' ? 'artnet' : 'sacn'}:${m[2]}`;
 }
 
-/** Per-universe settings are not editable yet (B28): what the engine does today, as display strings. */
-export function universeSettings(id: string): { protocol: string; iface: string; holdOnLoss: string; priority: string } {
-  return { protocol: universeProtocol(id), iface: 'all interfaces', holdOnLoss: '2.5 s', priority: id.startsWith('sacn:') ? '100' : 'n/a' };
+/** The other protocol's universe by the engine's default mapping: sACN n ↔ Art-Net port-address n − 1 (S 1 ↔ A 0.0.0). */
+export function defaultPair(id: string): string {
+  if (id.startsWith('sacn:')) {
+    const n = Math.min(Math.max(Number(id.slice(5)) - 1, 0), 0x7fff);
+    return `artnet:${n >> 8}.${(n >> 4) & 0xf}.${n & 0xf}`;
+  }
+  const [net = 0, sub = 0, uni = 0] = id.slice('artnet:'.length).split('.').map(Number);
+  return `sacn:${Math.min(((net << 8) | (sub << 4) | uni) + 1, 63999)}`;
+}
+
+/** A universe's receive settings (B28): its project entry, or the engine defaults when it has none. */
+export function universeSettings(list: readonly UniverseSettingsDoc[] | undefined, id: string): UniverseSettingsDoc {
+  return list?.find((u) => u.id === id) ?? {
+    id, protocol: id.startsWith('sacn:') ? 'sacn' : 'artnet', interface: 'any', holdOnLoss: 'hold', lossTimeout: 2.5, sacnPriorityMode: 'highest', pair: defaultPair(id),
+  };
+}
+
+/** Interface choices: any, every interface name and address on the Mac, and the current value (marked when absent). */
+export function interfaceOptions(interfaces: readonly { name: string; address: string }[] | undefined, current: string): { value: string; label: string }[] {
+  const options = [{ value: 'any', label: 'All interfaces' }];
+  for (const name of [...new Set((interfaces ?? []).map((i) => i.name))]) {
+    const addresses = (interfaces ?? []).filter((i) => i.name === name).map((i) => i.address);
+    options.push({ value: name, label: `${name} (${addresses.join(', ')})` });
+    for (const address of addresses) options.push({ value: address, label: `${address} (${name})` });
+  }
+  if (!options.some((o) => o.value === current)) options.push({ value: current, label: `${current} (not present)` });
+  return options;
 }
 
 function sortKey(id: string): [number, number[]] {
@@ -142,11 +170,11 @@ export interface Health {
   text: string;
 }
 
-/** active -> green, silent for at most 2.5 s or never seen -> yellow, lost after having received -> red (DESIGN §12: red = look now). */
-export function universeHealth(info: UniverseInfo | undefined): Health {
+/** active -> green, silent for at most the loss timeout or never seen -> yellow, lost after having received -> red (DESIGN §12: red = look now). */
+export function universeHealth(info: UniverseInfo | undefined, lossTimeout = 2.5): Health {
   if (info?.active) return { tone: 'green', text: `${info.packets} packets · ${info.source}` };
   if (!info || info.ageSeconds < 0) return { tone: 'yellow', text: 'never seen' };
-  if (info.ageSeconds <= 2.5) return { tone: 'yellow', text: `${info.ageSeconds.toFixed(1)} s` };
+  if (info.ageSeconds <= lossTimeout) return { tone: 'yellow', text: `${info.ageSeconds.toFixed(1)} s` };
   return { tone: 'red', text: 'lost' };
 }
 

@@ -495,6 +495,7 @@ public enum ProjectDocument {
                 }
                 return nil
             })
+        registerUniverseCommands(on: store)
     }
 }
 

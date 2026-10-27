@@ -58,18 +58,59 @@ the fixture file.
 - **Selected fixture** (programmer): choose the Universe (A 0.0.0 to 0.0.3 and
   S 1 to S 4, plus any universe that has been heard), set the Address with the
   stepper (Shift steps by 10; **0 means unpatched**), or press **Unpatch**.
-  Below it: Protocol, Interface, Hold on loss and sACN priority of the
-  universe. These four are fixed engine defaults (all interfaces, 2.5 s, priority
-  100) and read-only (B28).
+  Below it: the universe's health pill and its settings (see
+  [Universe settings](#universe-settings)).
 - **DMX monitor**: 512 cells for one universe, coloured per fixture, red where
   fixtures collide, with live values. Click a cell to pin it: you see the
   fixture, the channel inside it, the parameter, the raw value and what it means
   ("17 → Loop rev"). The buttons above the grid switch universe.
 
 The pill for a universe is green while packets arrive. It is yellow when
-nothing has been received yet or for up to 2.5 s of silence, and red when a
-patched universe has been silent longer than 2.5 s. In that case the fixtures
-**hold their last values**.
+nothing has been received yet or for up to the universe's loss timeout (2.5 s
+by default) of silence, and red when a patched universe has been silent longer.
+What the fixtures do then is the universe's **Hold on loss** setting; by
+default they **hold their last values**.
+
+## Universe settings
+
+Every universe a fixture is patched to has its own receive settings. Select a
+fixture on the Patch screen; the settings of its universe are below the
+Address (programmer; locked while the show lock is on). Changes apply at once,
+without dropping the other universes, and are part of the project and of
+undo. A universe you never changed runs the defaults, which are how Fanous
+received before these settings existed.
+
+| Setting | Choices | Default | Does |
+|---|---|---|---|
+| Protocol | Art-Net, sACN, Art-Net + sACN | the universe's own (A = Art-Net, S = sACN) | Which protocol feeds the universe. The other protocol arrives on the paired universe. |
+| sACN universe / Art-Net universe | a universe of the other protocol, e.g. `S 1` or `A 0.0.0` | S n+1 for A port-address n (A 0.0.0 ↔ S 1) | Shown when the protocol is not the universe's own. Set it when your console numbers the other way. |
+| Interface | All interfaces, an interface (`en0`) or one of its addresses | All interfaces | All interfaces: every sender is accepted and sACN multicast is joined on every interface that can multicast. A named interface: only senders in its network are accepted and sACN multicast is joined on it alone. |
+| Hold on loss | Hold last values, Go to zero, UI and cues take over | Hold last values | What the fixtures do when the universe goes silent. "UI and cues take over" resolves them as source policy *UI and cues only* until packets return. Changing it while the universe is already lost applies at once. |
+| Loss after (s) | 1 to 60 | 2.5 | Silence after which the universe counts as lost (red pill, Hold on loss applies). At least 1 s: consoles that send only on change repeat every 0.8 to 1 s. |
+| sACN priority | Highest wins, Merge equal (HTP) | Highest wins | Sources at the same, highest priority: the latest packet wins, or they merge with the highest value per channel. |
+
+There are two timeouts. **Loss after** is this universe's: when it counts as
+lost and Hold on loss applies. The **sACN source timeout** is fixed at 2.5 s
+(E1.31): a console silent that long drops out of the priority merge, so a
+backup console at a lower priority takes over after 2.5 s whatever Loss after
+says. With a Loss after above 2.5 s and no backup, the universe has no source
+between 2.5 s and Loss after; the fixtures keep their values until it is lost.
+
+**Go to zero** sets every channel of the universe's fixtures to 0 as a new DMX
+change. Under the source policies *Console + UI* (latest or highest wins) that
+change is the latest, so the zeros also win over UI and cue values set before
+the loss; the UI or a cue has to set a value again after it.
+
+With Art-Net + sACN, Art-Net competes as an sACN source at priority 100: a
+higher sACN priority wins, a lower one loses, equal priorities follow the sACN
+priority setting. Either protocol drops out after the 2.5 s source timeout.
+
+An interface that is not on this Mac (an adapter that is unplugged, or a
+project from another machine) is accepted, but the universe receives nothing
+until it is there: the Patch screen says so under the settings and the show
+readiness check warns ("Universe interfaces usable"). The check also warns when
+the interface is there but its sACN multicast could not be joined. A replugged
+adapter is joined again within 5 s.
 
 ## GDTF
 
@@ -90,13 +131,62 @@ build a fixture by hand from the channel map.
 Choose an `S n` universe in the inspector instead of an `A` one and send sACN
 (UDP 5568). The engine joins the multicast group of every sACN universe in the
 patch and follows patch changes; unicast to the Mac works for any universe.
-sACN multicast is joined on the default-route interface.
+With Interface "All interfaces" (the default) sACN multicast is joined on every
+network interface that is up and can multicast (Ethernet, Wi-Fi, a USB adapter
+without a gateway), not only on the one with the default route; with a named
+Interface only on that one. Without any sACN universe in the patch, universe 1
+is joined so the multicast path is ready. To receive an Art-Net universe from
+an sACN console without repatching, set its Protocol to sACN (see
+[Universe settings](#universe-settings)).
+
+**Sharing port 5568.** Fanous opens the sACN port so that other receivers can
+open it too (SO_REUSEPORT): sACNView or a second Fanous on the same Mac keep
+receiving multicast side by side. Unicast sACN to the Mac goes to only one of
+them, the one that opened the port last: while sACNView is receiving, Fanous
+gets no unicast. If a program holds the port exclusively (for example
+`nc -u -l 5568`), Fanous starts without sACN, logs it, and the show readiness
+check warns "sACN port 5568 available"; quit that program and restart the
+engine. `sudo lsof -nP -iUDP:5568` shows who holds the port.
+
+### sACN manual test (sACNView)
+
+The automated tests check multicast memberships in the kernel but cannot
+receive real multicast (that needs the Local Network permission). Run this
+with sACNView, or another sACN source, on a second machine, a console on a real
+network, and the Show screen's readiness list open. Patch Layer 1 on `S 1`.
+
+- [ ] **Default route.** Mac and sACNView on the default-route network (Wi-Fi or
+      Ethernet with gateway), Interface "All interfaces": S 1 multicast turns the
+      pill green and moves Layer 1.
+- [ ] **Named NIC.** A second NIC (USB Ethernet) to the console network, Interface
+      set to that NIC (`en7`): S 1 arrives; sACN sent on the other network is
+      ignored.
+- [ ] **Any with NIC.** Same NIC, no gateway on it, Interface back to "All
+      interfaces": S 1 still arrives (joined on every multicast interface).
+- [ ] **Unplug and replug.** Unplug the USB NIC: readiness warns "Universe
+      interfaces usable" for a named Interface; the pill goes red after Loss
+      after. Replug: packets return within 5 s without touching anything.
+- [ ] **Unicast.** sACNView unicast to the Mac's address on S 1: received, with
+      the sender shown in the pill.
+- [ ] **sACNView receiving on the Mac.** Open a sACNView receive window for S 1 on
+      the same Mac: both show multicast; note that unicast now goes to sACNView
+      only.
+- [ ] **Port held.** Quit Fanous, run `nc -u -l 5568`, start the engine: it runs,
+      the log says "sACN port in use", readiness warns "sACN port 5568
+      available"; Art-Net still works. Quit nc, Engine › Restart Engine: sACN is
+      back.
+- [ ] **Load.** 32 universes at full rate for 10 minutes: no silent universe,
+      DMX p99 in the status bar stays where it is with Art-Net.
+- [ ] **Priority takeover.** Two sources on S 1, priority 150 and 100, different
+      levels: 150 wins; stop it: the 100 source takes over after 2.5 s, also
+      with Loss after set to 10 s.
 
 ## Sources and merging
 
 Send each universe from one console. Within Art-Net the latest packet for a
 port-address wins. Within sACN the highest priority wins, equal priorities go to
-the most recent packet, and per-address priority is not supported.
+the most recent packet (or merge per channel, if the universe says so), and
+per-address priority is not supported.
 
 The project's **Source policy** (Patch screen toolbar, programmer) decides how
 DMX combines with values from cues and OSC: **Console only** (stored as DMX only; the

@@ -20,6 +20,8 @@ public struct FixtureResolver: Sendable {
     public let mode: FixtureMode
     public var policy: SourcePolicy
     public private(set) var hasDMX = false
+    /// Hold on loss `internal` (B28): without DMX the fixture resolves as policy `internal`.
+    public var internalWithoutDMX = false
 
     private let specs: [ParameterSpec]
     private var dmxRaw: [UInt16]
@@ -93,6 +95,7 @@ public struct FixtureResolver: Sendable {
     }
 
     private func resolved(index i: Int) -> ResolvedValue {
+        let policy = internalWithoutDMX && !hasDMX ? .internal : self.policy
         let dmx = ResolvedValue(raw: dmxRaw[i], source: hasDMX || dmxChangedAt[i] > 0 ? .dmx : .none, changedAt: dmxChangedAt[i])
         guard let internalValue = internalRaw[i] else {
             return policy == .internal ? ResolvedValue(raw: specs[i].defaultRaw, source: .none, changedAt: 0) : dmx

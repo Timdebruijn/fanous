@@ -52,7 +52,8 @@ export type CommandName =
   | 'show.unlock'
   | 'timecode.enable'
   | 'timecode.set'
-  | 'undo';
+  | 'undo'
+  | 'universe.set';
 
 export interface CommandArgs {
   /** Add a canvas (up to 4, at most 4 × 3840 × 2160 pixels together; even 320–8192 px) at the shared frame rate of canvas 1; outputs blank briefly; refused in show mode. Returns the new id. Role: programmer, refused under show lock, undoable. */
@@ -129,6 +130,8 @@ export interface CommandArgs {
   'timecode.set': { path: string; value: JSONValue };
   /** Undo the last undoable command (global history). Role: programmer, refused under show lock. */
   'undo': Record<string, never>;
+  /** Set one receive setting of a universe: protocol (artnet, sacn, both), interface (any, en0, an IPv4 address), holdOnLoss (hold, zero, internal), lossTimeout (1–60 s; the sACN source timeout stays 2.5 s), sacnPriorityMode (highest, htp), pair (the other protocol's universe; null = default); applies live. Role: programmer, refused under show lock, undoable. */
+  'universe.set': { id: string; path: '/protocol' | '/interface' | '/holdOnLoss' | '/lossTimeout' | '/sacnPriorityMode' | '/pair'; value: JSONValue };
 }
 
 export type ClientMessage =

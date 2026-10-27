@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PatchEntry, UniverseInfo } from './docs';
 import {
-  buildCells, buildFixtures, cellLabel, compareUniverse, frameValues, knownUniverses, paramAt, paramName,
+  buildCells, buildFixtures, cellLabel, compareUniverse, defaultPair, frameValues, interfaceOptions, knownUniverses, paramAt, paramName, parseUniverseName,
   parseChannelMap, rangeText, rowStatus, summarize, universeHealth, universeName, universeOptions, universeSettings,
   type ChannelMap,
 } from './patch-screen';
@@ -45,9 +45,30 @@ describe('universe naming and lists', () => {
     expect(knownUniverses([at('Layer 1', 'sacn:3', 1), at('Layer 2', 'artnet:0.0.9', 0)], [live('artnet:0.0.1'), live('sacn:3')])).toEqual(['artnet:0.0.1', 'sacn:3']);
   });
 
-  it('reports the read-only per-universe settings', () => {
-    expect(universeSettings('artnet:0.0.0')).toEqual({ protocol: 'Art-Net', iface: 'all interfaces', holdOnLoss: '2.5 s', priority: 'n/a' });
-    expect(universeSettings('sacn:1')).toMatchObject({ protocol: 'sACN', priority: '100' });
+  it('reads per-universe settings, with the engine defaults for universes without an entry', () => {
+    expect(universeSettings(undefined, 'artnet:0.0.0')).toEqual({
+      id: 'artnet:0.0.0', protocol: 'artnet', interface: 'any', holdOnLoss: 'hold', lossTimeout: 2.5, sacnPriorityMode: 'highest', pair: 'sacn:1',
+    });
+    expect(universeSettings([], 'sacn:1')).toMatchObject({ protocol: 'sacn', pair: 'artnet:0.0.0' });
+    const stored = { ...universeSettings(undefined, 'sacn:2'), holdOnLoss: 'zero' as const };
+    expect(universeSettings([stored], 'sacn:2').holdOnLoss).toBe('zero');
+  });
+
+  it('maps pairs and parses universe names like the engine', () => {
+    expect(defaultPair('artnet:0.0.0')).toBe('sacn:1');
+    expect(defaultPair('artnet:1.2.3')).toBe(`sacn:${(1 << 8) + (2 << 4) + 3 + 1}`);
+    expect(defaultPair('sacn:300')).toBe('artnet:1.2.11');
+    expect(parseUniverseName('S 7')).toBe('sacn:7');
+    expect(parseUniverseName(' a 0.0.1 ')).toBe('artnet:0.0.1');
+    expect(parseUniverseName('sacn:9')).toBe('sacn:9');
+    expect(parseUniverseName('x')).toBe('x');
+  });
+
+  it('offers every interface by name and address and marks an absent current one', () => {
+    const list = [{ name: 'lo0', address: '127.0.0.1' }, { name: 'en0', address: '10.0.0.5' }];
+    expect(interfaceOptions(list, 'any').map((o) => o.value)).toEqual(['any', 'lo0', '127.0.0.1', 'en0', '10.0.0.5']);
+    expect(interfaceOptions(list, 'en5').at(-1)).toEqual({ value: 'en5', label: 'en5 (not present)' });
+    expect(interfaceOptions(undefined, 'any')).toEqual([{ value: 'any', label: 'All interfaces' }]);
   });
 
   it('classifies universe health', () => {
@@ -56,6 +77,7 @@ describe('universe naming and lists', () => {
     expect(universeHealth({ ...base, ageSeconds: 1.26 })).toEqual({ tone: 'yellow', text: '1.3 s' });
     expect(universeHealth({ ...base, ageSeconds: 2.5 }).tone).toBe('yellow');
     expect(universeHealth({ ...base, ageSeconds: 2.6 })).toEqual({ tone: 'red', text: 'lost' });
+    expect(universeHealth({ ...base, ageSeconds: 4 }, 5).tone).toBe('yellow');
     expect(universeHealth({ ...base, ageSeconds: -1 })).toEqual({ tone: 'yellow', text: 'never seen' });
     expect(universeHealth(undefined).tone).toBe('yellow');
   });

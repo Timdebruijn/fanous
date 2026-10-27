@@ -566,16 +566,84 @@ can never disagree). `[OPEN-9]` exact bands and the speed/scale upper limits.
   wrap is handled.
 - Loss of signal: after 2.5 s without packets on a universe, its fixtures
   **hold last values** (Catalyst behaviour) and the universe turns red in the
-  status bar. Hold-vs-release is a project setting.
+  status bar. Hold-vs-release is a project setting (per universe, §6.5a).
 - The server answers `ArtPoll` with `ArtPollReply` (name, IP, port
   addresses; unicast back to the poller, one reply per Net/Sub-Net group of
   four ports) and sACN discovery (E1.31 universe discovery packets are
   received; the server advertises nothing in v1 as it only receives).
-- sACN multicast groups are joined on the default-route interface until the
-  per-protocol interface setting exists (Phase 5); unicast sACN on port 5568
-  is accepted on every interface.
+- sACN multicast groups are joined on the default-route interface, or per
+  universe on its interface (§6.5a); unicast sACN on port 5568 is accepted
+  on every interface.
 - `ArtSync` and E1.31 synchronization packets: when received, a universe
   update is applied at the sync packet, otherwise immediately.
+
+### 6.5a Per-universe settings as built (2026-10-26, B28)
+
+- The project's `/universes` list holds one entry per changed universe,
+  keyed by the patch's universe id: `protocol` (`artnet | sacn | both`),
+  `interface` (`any`, a BSD name or an IPv4 address of the Mac),
+  `holdOnLoss` (`hold | zero | internal`), `lossTimeout` (1–60 s; consoles
+  that send only on change repeat every 0.8–1 s), `sacnPriorityMode`
+  (`highest | htp`) and `pair`. A universe without an entry runs the
+  defaults (own protocol, any interface, hold, 2.5 s, highest), which are the
+  behaviour before B28; an entry set back to the defaults is removed.
+  `universe.set {id, path, value}` (programmer, refused under show lock,
+  undoable) starts from the settings the engine runs for that universe,
+  validates the whole entry and leaves exactly one entry for it; an interface
+  that is not present is accepted. The engine runs the first entry per
+  universe: an invalid one runs the defaults, a later duplicate is ignored,
+  and each is logged once (with id and field) when the set of skipped
+  entries changes.
+- Ids stay transport-specific, so "one source protocol per universe" is
+  expressed with `pair`: the other transport's wire universe (default sACN
+  n ↔ Art-Net port-address n − 1). `UniverseTable` (Core) routes each wire
+  packet to its own universe (unless that one listens only to the other
+  transport) and to every universe whose pair it is; state (sequence gates,
+  sACN sources) is per universe and reset when its routing changes. With
+  `both`, Art-Net competes as an sACN source at priority 100; `htp` merges
+  the sources at the top priority per slot.
+- Two timeouts. The **source timeout** is fixed at 2.5 s (E1.31): an sACN
+  source (and, with `both`, Art-Net) silent that long leaves the merge, so a
+  lower-priority backup takes over on time. `lossTimeout` only decides when
+  the universe counts as lost (status, readiness, hold on loss).
+- `interface` filters by sender: a packet is accepted when its source address
+  is in a subnet of that interface (getifaddrs, re-read on the 0.5 s tick
+  while a universe names one, so adapters may come and go). sACN is one BSD
+  UDP socket bound to INADDR_ANY:5568 (SO_RCVBUF 4 MB; unicast always works)
+  that joins each universe's group with `IP_ADD_MEMBERSHIP` on the interface's
+  address; `any` joins on every up, IFF_MULTICAST, non-loopback IPv4
+  interface, so a console on a NIC without a gateway works with the default.
+  EADDRINUSE on a join means "already a member" (a second address of the
+  interface, or two specs wanting it). Without any sACN universe, universe 1
+  is joined on `any` (as before B28). This replaces the `NWConnectionGroup`s:
+  a second group on the same port fails with EADDRINUSE, so Network.framework
+  cannot join per interface. Settings changes add or drop only the affected
+  memberships; the socket and the Art-Net listener never rebind. Memberships
+  are re-asserted (idempotent) on every `NWPathMonitor` update and every
+  5 s, which re-joins an adapter the kernel dropped them for (replug). A
+  read event drains at most 256 packets. Everything runs on the DMX queue.
+- The socket sets SO_REUSEPORT: a later process on the port (sACNView
+  receiving, a second Fanous) also gets multicast, but unicast is delivered
+  to one socket only, the one bound last. A port held exclusively
+  (`nc -u -l 5568`) fails the bind: the engine logs it, runs without sACN,
+  and readiness warns (`sacnport`).
+- Readiness warns (`interfaces`) for a patched universe whose interface is
+  missing or whose sACN membership could not be joined, including `any`
+  (no multicast interface at all, or a failed join on one of them, e.g.
+  EADDRNOTAVAIL on an isolated LAN).
+- Hold on loss applies on the transition to lost, and at once when the
+  setting changes while a universe that was received is lost: `hold` keeps
+  the values (as before); `zero` feeds a frame of zeros stamped now, so under
+  `ltp`/`htp` it wins over older UI and cue values; `internal` makes the
+  fixtures resolve as policy `internal` until packets return
+  (`FixtureResolver.internalWithoutDMX`; also while a universe has never
+  been received).
+- Not built: per-packet receive interface (a routed console on another subnet
+  is rejected by the subnet filter), Art-Net output/ArtAddress, per-address
+  sACN priority (`[OPEN-10]`). Multicast delivery is not covered by the
+  tests (it needs the Local Network permission); memberships are checked
+  against the kernel, and the manual sACNView checklist in
+  `docs/user/console-setup.md` covers delivery.
 
 ---
 
