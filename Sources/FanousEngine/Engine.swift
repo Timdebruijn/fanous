@@ -1108,20 +1108,31 @@ public final class Engine: @unchecked Sendable {
         }
     }
 
-    /// CoreAudio/CoreMIDI/getifaddrs lookups are slow and rarely change: refreshed every 5 s on the feed queue.
+    /// CoreAudio/CoreMIDI/getifaddrs lookups are slow and rarely change: refreshed every 5 s off the feed queue. The
+    /// first CoreAudio/CoreMIDI call of a process can take seconds (a CI virtual machine took over 5 s); the live
+    /// document goes out with the last known facts (none at start) and carries the fresh ones on the next tick.
     private struct HostFacts {
         var at: CFTimeInterval = 0
         var midiSources: [String] = []
         var audioInputs: [String] = []
         var addresses: [String] = []
     }
-    private var hostFacts = HostFacts()
+    private let hostFacts = Mutex<HostFacts>(HostFacts())
+    private var hostFactsRefreshing = false  // feed queue only
     private func currentHostFacts() -> HostFacts {
+        let facts = hostFacts.withLock { $0 }
         let now = CACurrentMediaTime()
-        if now - hostFacts.at >= 5 {
-            hostFacts = HostFacts(at: now, midiSources: MTCInput.sources(), audioInputs: LTCInput.inputDevices(), addresses: SystemInfo.ipv4Addresses)
+        if now - facts.at >= 5, !hostFactsRefreshing {
+            hostFactsRefreshing = true
+            DispatchQueue.global(qos: .utility).async { [self] in
+                let fresh = HostFacts(at: now, midiSources: MTCInput.sources(), audioInputs: LTCInput.inputDevices(), addresses: SystemInfo.ipv4Addresses)
+                let took = CACurrentMediaTime() - now
+                if took > 0.5 { logger.warning("host lookups slow", metadata: ["seconds": "\(String(format: "%.1f", took))", "what": "CoreMIDI sources, CoreAudio inputs, addresses"]) }
+                hostFacts.withLock { $0 = fresh }
+                feedQueue.async { self.hostFactsRefreshing = false }
+            }
         }
-        return hostFacts
+        return facts
     }
 
     private func publishLive() {

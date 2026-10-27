@@ -143,6 +143,9 @@ export const test = base.extend<{ engine: Engine }>({
     page.on('dialog', (dialog) => void dialog.accept());
     await page.goto(`${engine.url}/?token=${engine.token}`);
     await expect(page.getByRole('button', { name: 'PROGRAMMER' })).toBeVisible();
+    // and the first live document (the status bar counts this page): until it arrives the preview block is missing
+    // and the layout shifts under a click
+    await expect(page.getByRole('banner')).toContainText(/\b[1-9]\d* clients/);
     await use(page);
     expect(errors, 'errors in the browser').toEqual([]);
   },
