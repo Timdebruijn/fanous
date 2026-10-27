@@ -95,7 +95,7 @@ names the invariant.
 | **Control** | serial `DispatchQueue` | `.userInitiated` | project model, commands, undo, cue engine, OSC, publishes scene config + parameter snapshots to render side | may allocate; never touched by render threads |
 | **Audio out** | CoreAudio real-time render callback (`AVAudioSourceNode`) | RT | mixes per-layer PCM rings | RT-safe, no allocations/locks |
 | **Audio in / LTC** | CoreAudio real-time input callback (`AVAudioSinkNode`) | RT | LTC bit decoding | RT-safe |
-| **MIDI / MTC** | CoreMIDI callback thread | (CoreMIDI) | MTC quarter-frame assembly | no allocations |
+| **MIDI / MTC** | CoreMIDI callback thread, then one serial `DispatchQueue` per input (as built, B36/B64) | `.userInteractive` | the callback copies the words (MTC: with the packet's host time) and hops; the queue parses, assembles MTC quarter frames and follows hot-plug | one small array per packet; never touched by render threads |
 | **Network/UI** | Network.framework queues (one per listener + per connection), `.utility`/`.userInitiated` | — | HTTPS, WebSocket, state diffs, thumbnails | bounded per-client queues; drop, never block |
 | **Preview encoder** | VideoToolbox callback + serial queue | `.utility` | H.264 preview, JPEG thumbnails, CITP frames | bounded; skips frames when behind |
 | **Ingest** | serial `DispatchQueue`, one job at a time | `.utility` | transcodes | paused while show-locked (configurable) |
@@ -1414,7 +1414,15 @@ later deliverable (`[OPEN-20]`).
   default 2 s) / lost states. Requires the microphone permission (TCC); the
   engine prompts once with an explanation.
 - **MTC**: CoreMIDI input (quarter-frame + full-frame), any port; same
-  `TimecodeSource` interface.
+  `TimecodeSource` interface. **As built (B64, 2026-10-27):** `MTCInput`
+  follows hot-plug like `MIDIInput` (§15.4): its client is made on the main
+  thread (a runtime `timecode.set` arrives on the control queue and hops
+  there), reconnects on `msgSetupChanged`, and handles everything on its own
+  serial queue with one assembly state per source unique id; the packet's host
+  time travels with each word. When the source that fed the clock goes away the
+  clock turns lost at once (`TimecodeClock.lose`, at the last decoded frame)
+  instead of freewheeling; `live.timecode.device` lists the connected sources
+  and `error` says "MTC source … is not connected" while none matches.
 - One active source per project; offset per project and per layer (Layer
   timecode chase = `tc − projectOffset − layerOffset` at the file's fps,
   looped within in/out if the layer's loop flag is set).
@@ -1535,7 +1543,8 @@ MSC and MIDI-triggered cues are additions, not rewrites.
   setup notifications on the run loop current at the process's first CoreMIDI
   call, so `Engine.start` makes the client on the main thread (NSApplication run
   loop) before the host-facts lookup or MTC touch CoreMIDI; made on a dispatch
-  queue, hot-plugged sources were never seen. It handles
+  queue, hot-plugged sources were never seen (`MTCInput` makes its own client on
+  main too, B64). It handles
   everything on one serial queue (one parser per source unique id, so two
   identical controllers do not share running status). Parameter values go to
   `DMXStore.setMIDI` as the internal `midi` source (`ValueSource.midi`), so the
@@ -1604,7 +1613,7 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   (device picked by name through CoreAudio, microphone permission requested
   once) and feeds the Core `LTCDecoder`; `MTCInput` opens a CoreMIDI UMP
   (MIDI 1.0 protocol) input port, assembles quarter frames (+2 frames) and
-  reads full-frame SysEx. The compositor chases in the `timecode` play mode:
+  reads full-frame SysEx (hot-plug since B64, §15.1). The compositor chases in the `timecode` play mode:
   `(tc − projectOffset − layerOffset) / rate × fileFps`, looped inside
   in/out (`Render/TimecodeOffsets.swift`). Settings live in `project.timecode`
   (`timecode.set`); `live.timecode` carries state, value, rate, device, error.

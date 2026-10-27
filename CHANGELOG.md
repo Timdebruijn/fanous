@@ -97,6 +97,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   default `dmx`); sACN joins the patched universes, not 1–3; operators can
   switch timecode on and off (`timecode.enable`, also under show lock); the
   Patch screen has the source-policy selector.
+- Fixed: an MTC source plugged in after the timecode source was set was only picked up after a settings
+  change or an engine restart; MTC now reconnects when MIDI sources come and go, and an unplugged MTC
+  source turns the clock Lost at once with "MTC source … is not connected" in `live.timecode.error` (B64).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

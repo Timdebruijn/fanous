@@ -51,6 +51,9 @@ public final class TimecodeClock: @unchecked Sendable {
 
     public func stop() { sample.withLock { $0 = Sample() } }
 
+    /// The source went away (unplugged): lost at once, at the last decoded frame, until a source sends frames again.
+    public func lose() { sample.withLock { if $0.state != .off { $0.state = .lost } } }
+
     /// Compositor thread: the last sample without ever blocking (a contended lock returns the previous read).
     public func read(at now: Double) -> Sample {
         if let latest = sample.withLockIfAvailable({ $0 }) { cached = latest }
@@ -63,7 +66,7 @@ public final class TimecodeClock: @unchecked Sendable {
 
     /// Locked within one frame of the last decode, freewheeling up to `freewheel` seconds, then lost.
     static func extrapolate(_ s: Sample, at now: Double, freewheel: Double) -> Sample {
-        guard s.state != .off else { return s }
+        guard s.state != .off, s.state != .lost else { return s }
         var out = s
         let age = now - s.hostTime
         let frameDuration = 1 / s.rate.exactFrameRate
@@ -205,21 +208,73 @@ public final class LTCInput: @unchecked Sendable {
     }
 }
 
-/// MTC from CoreMIDI (quarter frames and full-frame SysEx) on every source, or one chosen by name.
+/// MTC from CoreMIDI (quarter frames and full-frame SysEx) on every source, or one chosen by name, reconnecting when
+/// sources come and go (B64, as `MIDIInput` does). Everything after the CoreMIDI callback runs on `queue`: one parse
+/// state per source unique id, so two senders never mix their quarter frames.
 public final class MTCInput: @unchecked Sendable {
+    public struct Status: Sendable {
+        public var connected: [String] = []
+        /// Why there is no MTC: no matching source connected, or CoreMIDI refused the client or port.
+        public var error: String?
+    }
+
+    /// One source's assembly: quarter frames, and the 64-bit SysEx UMPs (two words each) of a full frame.
+    struct Parse {
+        var decoder = MTCDecoder()
+        var sysex: [UInt8] = []
+        var pendingSysexWord: UInt32?
+
+        /// One UMP word: type 1 = system message (F1 quarter frame), type 3 = 64-bit SysEx (two words). Returns the
+        /// timecode when one is complete.
+        mutating func feed(_ word: UInt32) -> Timecode? {
+            if let first = pendingSysexWord {
+                pendingSysexWord = nil
+                return sysex(first: first, second: word)
+            }
+            switch word >> 28 {
+            case 1:
+                guard (word >> 16) & 0xFF == 0xF1, let timecode = decoder.quarterFrame(UInt8((word >> 8) & 0xFF)) else { return nil }
+                // the assembled time is that of piece 0: two frames ago
+                return Timecode(frameCount: timecode.frameCount + 2, rate: timecode.rate)
+            case 3:
+                pendingSysexWord = word
+                return nil
+            default:
+                return nil
+            }
+        }
+
+        private mutating func sysex(first: UInt32, second: UInt32) -> Timecode? {
+            let status = (first >> 20) & 0xF  // 0 complete, 1 start, 2 continue, 3 end
+            let count = Int((first >> 16) & 0xF)
+            let bytes = [UInt8((first >> 8) & 0xFF), UInt8(first & 0xFF), UInt8(second >> 24), UInt8((second >> 16) & 0xFF), UInt8((second >> 8) & 0xFF), UInt8(second & 0xFF)]
+            if status == 0 || status == 1 { sysex = [0xF0] }
+            sysex.append(contentsOf: bytes.prefix(count))
+            guard status == 0 || status == 3 else { return nil }
+            sysex.append(0xF7)
+            defer { sysex = [] }
+            return MTCDecoder.fullFrame(sysex)
+        }
+    }
+
+    let queue = DispatchQueue(label: "org.fanous.mtc", qos: .userInteractive)
     private let clock: TimecodeClock
     private let logger: Logger
     private var client = MIDIClientRef()
     private var port = MIDIPortRef()
-    nonisolated(unsafe) private var decoder = MTCDecoder()
-    nonisolated(unsafe) private var sysex: [UInt8] = []
-    private var timebase = mach_timebase_info()
-    public private(set) var connected: [String] = []
+    /// The source name chosen in the settings; nil = every source.
+    private var wanted: String?
+    private var stopped = false
+    /// Connected sources by CoreMIDI unique id: two identical interfaces share a name, not an id.
+    private var names: [MIDIUniqueID: String] = [:]
+    private var parsers: [MIDIUniqueID: Parse] = [:]
+    /// The source whose frame the clock holds: when it goes away the clock is lost.
+    private var feeding: MIDIUniqueID?
+    public let status = Mutex(Status())
 
     public init(clock: TimecodeClock, logger: Logger) {
         self.clock = clock
         self.logger = logger
-        mach_timebase_info(&timebase)
     }
 
     public static func sources() -> [String] {
@@ -232,81 +287,134 @@ public final class MTCInput: @unchecked Sendable {
         return name.takeRetainedValue() as String
     }
 
-    /// Connects every source (or the one named) with the MIDI 1.0 protocol over the UMP event list API.
-    public func start(source: String?) -> Bool {
-        guard MIDIClientCreateWithBlock("Fanous" as CFString, &client, nil) == noErr else {
-            logger.error("MTC input: cannot create the MIDI client")
-            return false
+    /// Connects every source (or the one named), now and on every CoreMIDI setup change. Setup notifications come on
+    /// the run loop that was current at the process's first CoreMIDI call (see `MIDIInput.start`), so the client is
+    /// made on the main thread here too: at engine start this runs on main, a runtime `timecode.set` on the control queue.
+    public func start(source: String?) {
+        queue.sync {
+            wanted = source
+            status.withLock { $0.error = Self.missing(source) }
         }
+        if Thread.isMainThread { open() } else { DispatchQueue.main.async { [self] in open() } }
+    }
+
+    static func missing(_ wanted: String?) -> String {
+        wanted.map { "MTC source \($0) is not connected" } ?? "no MIDI source connected"
+    }
+
+    /// On the main thread.
+    private func open() {
+        guard !queue.sync(execute: { stopped }) else { return }
+        var timebase = mach_timebase_info()
+        mach_timebase_info(&timebase)
         let secondsPerTick = Double(timebase.numer) / Double(timebase.denom) / 1e9
-        let status = MIDIInputPortCreateWithProtocol(client, "MTC in" as CFString, ._1_0, &port) { [self] eventList, _ in
-            let list = eventList.unsafeSequence()
-            for packet in list {
-                let hostTime = Double(packet.pointee.timeStamp) * secondsPerTick
+        var client = MIDIClientRef()
+        var port = MIDIPortRef()
+        let created = MIDIClientCreateWithBlock("Fanous MTC" as CFString, &client) { [weak self] notification in
+            guard notification.pointee.messageID == .msgSetupChanged, let self else { return }
+            self.queue.async { self.connect() }
+        }
+        guard created == noErr else { return fail("cannot create the MIDI client (\(created))") }
+        let made = MIDIInputPortCreateWithProtocol(client, "MTC in" as CFString, ._1_0, &port) { [weak self] eventList, refCon in
+            guard let self else { return }
+            let uid = MIDIUniqueID(bitPattern: UInt32(truncatingIfNeeded: Int(bitPattern: refCon)))
+            var words: [(word: UInt32, hostTime: Double)] = []
+            for packet in eventList.unsafeSequence() {
+                // the host time travels with the word, so the hop to the queue costs no chase accuracy
+                let stamp = packet.pointee.timeStamp
+                let hostTime = stamp == 0 ? CACurrentMediaTime() : Double(stamp) * secondsPerTick
                 let count = Int(packet.pointee.wordCount)
                 withUnsafeBytes(of: packet.pointee.words) { raw in
-                    let words = raw.bindMemory(to: UInt32.self)
-                    for i in 0..<min(count, words.count) { handle(word: words[i], at: hostTime == 0 ? CACurrentMediaTime() : hostTime) }
+                    for word in raw.bindMemory(to: UInt32.self).prefix(count) { words.append((word, hostTime)) }
                 }
             }
+            self.queue.async { self.receive(words, uid: uid) }
         }
-        guard status == noErr else {
-            logger.error("MTC input: cannot create the input port", metadata: ["status": "\(status)"])
-            return false
+        guard made == noErr else {
+            MIDIClientDispose(client)
+            return fail("cannot create the MIDI input port (\(made))")
         }
-        connected = []
+        queue.async { [self] in
+            // stopped while the main thread was getting here (the settings changed again at once)
+            guard !stopped else {
+                MIDIPortDispose(port)
+                MIDIClientDispose(client)
+                return
+            }
+            self.client = client
+            self.port = port
+            connect()
+        }
+    }
+
+    private func fail(_ error: String) {
+        status.withLock { $0.error = error }
+        logger.error("MTC input: \(error)")
+    }
+
+    /// On `queue`: every source matching the setting; the source's unique id rides along as the connection refCon.
+    private func connect() {
+        guard port != 0 else { return }
+        var connected: [MIDIUniqueID: String] = [:]
         for i in 0..<MIDIGetNumberOfSources() {
             let ref = MIDIGetSource(i)
+            MIDIPortDisconnectSource(port, ref)
             let name = Self.name(of: ref) ?? "source \(i)"
-            if let source, source != name { continue }
-            if MIDIPortConnectSource(port, ref, nil) == noErr { connected.append(name) }
+            if let wanted, wanted != name { continue }
+            var uid: MIDIUniqueID = 0
+            MIDIObjectGetIntegerProperty(ref, kMIDIPropertyUniqueID, &uid)
+            // bit 32 keeps the refCon non-null for a unique id of 0
+            let refCon = UnsafeMutableRawPointer(bitPattern: Int(UInt32(bitPattern: uid)) | 1 << 32)
+            if MIDIPortConnectSource(port, ref, refCon) == noErr { connected[uid] = name }
         }
-        logger.info("MTC input running", metadata: ["sources": "\(connected)"])
-        return !connected.isEmpty
+        setSources(connected)
+        logger.info("MTC input listening", metadata: ["sources": "\(connected.values.sorted())"])
     }
 
-    /// One UMP word: type 1 = system message (F1 quarter frame), type 3 = 64-bit SysEx (two words).
-    nonisolated(unsafe) private var pendingSysexWord: UInt32?
-
-    func handle(word: UInt32, at hostTime: Double) {
-        let type = word >> 28
-        if let first = pendingSysexWord {
-            pendingSysexWord = nil
-            handleSysex(first: first, second: word, at: hostTime)
-            return
-        }
-        switch type {
-        case 1:
-            let status = UInt8((word >> 16) & 0xFF)
-            if status == 0xF1, let timecode = decoder.quarterFrame(UInt8((word >> 8) & 0xFF)) {
-                // the assembled time is that of piece 0: two frames ago
-                clock.update(Timecode(frameCount: timecode.frameCount + 2, rate: timecode.rate), at: hostTime, source: "MTC")
+    /// On `queue`: the sources now connected. One that went away takes its parse state with it, and the clock is lost
+    /// at once when it was the one feeding it: an unplugged source is not a dropout to freewheel over.
+    func setSources(_ connected: [MIDIUniqueID: String]) {
+        for uid in Set(names.keys).subtracting(connected.keys) {
+            parsers[uid] = nil
+            if feeding == uid {
+                feeding = nil
+                clock.lose()
             }
-        case 3:
-            pendingSysexWord = word
-        default:
-            break
+        }
+        names = connected
+        let list = connected.values.sorted()
+        let error = list.isEmpty ? Self.missing(wanted) : nil
+        status.withLock {
+            $0.connected = list
+            $0.error = error
         }
     }
 
-    private func handleSysex(first: UInt32, second: UInt32, at hostTime: Double) {
-        let status = (first >> 20) & 0xF  // 0 complete, 1 start, 2 continue, 3 end
-        let count = Int((first >> 16) & 0xF)
-        let bytes = [UInt8((first >> 8) & 0xFF), UInt8(first & 0xFF), UInt8(second >> 24), UInt8((second >> 16) & 0xFF), UInt8((second >> 8) & 0xFF), UInt8(second & 0xFF)]
-        if status == 0 || status == 1 { sysex = [0xF0] }
-        sysex.append(contentsOf: bytes.prefix(count))
-        if status == 0 || status == 3 {
-            sysex.append(0xF7)
-            if let timecode = MTCDecoder.fullFrame(sysex) { clock.update(timecode, at: hostTime, source: "MTC") }
-            sysex = []
+    /// On `queue`: UMP words from one source, each with the host time of its packet.
+    func receive(_ words: [(word: UInt32, hostTime: Double)], uid: MIDIUniqueID) {
+        // still in flight from a source that has just gone, or after stop
+        guard names[uid] != nil else { return }
+        var parse = parsers[uid] ?? Parse()
+        for (word, hostTime) in words {
+            guard let timecode = parse.feed(word) else { continue }
+            clock.update(timecode, at: hostTime, source: "MTC")
+            feeding = uid
         }
+        parsers[uid] = parse
     }
 
     public func stop() {
-        if port != 0 { MIDIPortDispose(port) }
-        if client != 0 { MIDIClientDispose(client) }
-        port = 0
-        client = 0
+        queue.sync {
+            stopped = true
+            if port != 0 { MIDIPortDispose(port) }
+            if client != 0 { MIDIClientDispose(client) }
+            port = 0
+            client = 0
+            names = [:]
+            parsers = [:]
+            feeding = nil
+        }
+        status.withLock { $0 = Status() }
         clock.stop()
     }
 }

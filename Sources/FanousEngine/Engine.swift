@@ -776,10 +776,12 @@ public final class Engine: @unchecked Sendable {
 
     private func timecodeLive() -> JSONValue {
         let s = timecodeClock.current()
+        let mtcStatus = mtc?.status.withLock { $0 }
         return [
             "state": .string(s.state.rawValue), "source": .string(s.source), "value": .string(s.state == .off ? "--:--:--:--" : s.timecode.description),
             "rate": .string(s.rate.label), "frames": .number(Double(s.frameCount)), "seen": .number(Double(timecodeClock.framesSeen.load(ordering: .relaxed))),
-            "error": ltc?.lastError.map { .string($0) } ?? .null, "device": .string(ltc?.deviceName ?? mtc?.connected.joined(separator: ", ") ?? ""),
+            "error": (ltc?.lastError ?? mtcStatus?.error).map { .string($0) } ?? .null,
+            "device": .string(ltc?.deviceName ?? mtcStatus?.connected.joined(separator: ", ") ?? ""),
         ]
     }
 
@@ -848,7 +850,7 @@ public final class Engine: @unchecked Sendable {
         case .mtc:
             let input = MTCInput(clock: timecodeClock, logger: logger)
             mtc = input
-            _ = input.start(source: settings.device)
+            input.start(source: settings.device)
         }
     }
 

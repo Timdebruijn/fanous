@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
+import CoreMIDI
 import Foundation
 import FanousCore
 import Logging
@@ -77,19 +78,28 @@ struct ShowControlTests {
         #expect(abs(atLater - Double(90_000 + 61.5)) <= 1, "chased \(atLater - 90_000) half a frame later")
     }
 
-    @Test func mtcQuarterFramesAssembleATimecode() {
-        let clock = TimecodeClock()
-        let input = MTCInput(clock: clock, logger: Self.logger)
-        // 00:00:01:02 at 25 fps (rate code 1): pieces 0…7 as F1 quarter-frame UMP system messages
-        let tc = Timecode(hours: 0, minutes: 0, seconds: 1, frames: 2, rate: .fps25)
+    /// F1 quarter-frame UMP system messages (pieces 0…7) for `tc` at 25 fps (rate code 1).
+    static func quarterFrames(_ tc: Timecode) -> [UInt32] {
         let nibbles: [UInt8] = [
             UInt8(tc.frames & 0xF), UInt8(tc.frames >> 4), UInt8(tc.seconds & 0xF), UInt8(tc.seconds >> 4),
             UInt8(tc.minutes & 0xF), UInt8(tc.minutes >> 4), UInt8(tc.hours & 0xF), UInt8((tc.hours >> 4) | (1 << 1)),
         ]
-        for (piece, nibble) in nibbles.enumerated() {
-            let data = UInt8(piece << 4) | nibble
-            input.handle(word: 0x1000_0000 | (0xF1 << 16) | (UInt32(data) << 8), at: 5 + Double(piece) * 0.01)
+        return nibbles.enumerated().map { piece, nibble in 0x1000_0000 | (0xF1 << 16) | (UInt32(UInt8(piece << 4) | nibble) << 8) }
+    }
+
+    /// Words as if CoreMIDI delivered them from a connected source, handled on the input's queue before this returns.
+    static func feed(_ input: MTCInput, _ words: [UInt32], at hostTime: Double, uid: MIDIUniqueID = 1, name: String = "Pad") {
+        input.queue.sync {
+            if input.status.withLock({ !$0.connected.contains(name) }) { input.setSources([uid: name]) }
+            input.receive(words.map { ($0, hostTime) }, uid: uid)
         }
+    }
+
+    @Test func mtcQuarterFramesAssembleATimecode() {
+        let clock = TimecodeClock()
+        let input = MTCInput(clock: clock, logger: Self.logger)
+        let tc = Timecode(hours: 0, minutes: 0, seconds: 1, frames: 2, rate: .fps25)
+        for (piece, word) in Self.quarterFrames(tc).enumerated() { Self.feed(input, [word], at: 5 + Double(piece) * 0.01) }
         let sample = clock.current(at: 5.08)
         #expect(sample.state == .locked)
         #expect(sample.frameCount == tc.frameCount + 2, "quarter-frame time is two frames behind")
@@ -98,12 +108,43 @@ struct ShowControlTests {
         let first = (UInt32(3) << 28) | (UInt32(1) << 20) | (UInt32(6) << 16) | (UInt32(sysex[0]) << 8) | UInt32(sysex[1])
         let second = (UInt32(sysex[2]) << 24) | (UInt32(sysex[3]) << 16) | (UInt32(sysex[4]) << 8) | UInt32(sysex[5])
         let third = (UInt32(3) << 28) | (UInt32(3) << 20) | (UInt32(2) << 16) | (UInt32(sysex[6]) << 8) | UInt32(sysex[7])
-        input.handle(word: first, at: 6)
-        input.handle(word: second, at: 6)
-        input.handle(word: third, at: 6)
-        input.handle(word: 0, at: 6)
+        Self.feed(input, [first, second, third, 0], at: 6)
         let full = clock.current(at: 6)
         #expect(full.timecode == Timecode(hours: 2, minutes: 3, seconds: 4, frames: 5, rate: .fps25), "\(full.timecode)")
+    }
+
+    /// B64: one parse state per source (two senders interleaved still assemble), and the source feeding the clock
+    /// leaving loses the clock at once, with late words from it dropped.
+    @Test func mtcSourcesKeepTheirOwnStateAndLeavingLosesTheClock() {
+        let clock = TimecodeClock()
+        let input = MTCInput(clock: clock, logger: Self.logger)
+        input.queue.sync { input.setSources([1: "Pad", 2: "Console"]) }
+        let a = Self.quarterFrames(Timecode(hours: 1, minutes: 0, seconds: 0, frames: 0, rate: .fps25))
+        let b = Self.quarterFrames(Timecode(hours: 2, minutes: 0, seconds: 0, frames: 0, rate: .fps25))
+        let seen = Mutex<[Int]>([])
+        clock.onFrame = { tc, _ in seen.withLock { $0.append(tc.frameCount) } }
+        for i in 0..<8 {
+            input.queue.sync {
+                input.receive([(a[i], 10)], uid: 1)
+                input.receive([(b[i], 10)], uid: 2)
+            }
+        }
+        #expect(seen.withLock { $0 } == [90_002, 180_002], "each source assembled its own time")
+        #expect(input.status.withLock { $0.connected } == ["Console", "Pad"])
+        // the console (last to feed) is unplugged; the pad stays
+        input.queue.sync { input.setSources([1: "Pad"]) }
+        #expect(clock.current(at: 10.01).state == .lost, "an unplugged source is not freewheeled over")
+        #expect(clock.current(at: 10.01).frameCount == 180_002, "lost at the last decoded frame")
+        #expect(clock.frames(at: 10.01) == nil)
+        input.queue.sync { input.receive(b.map { ($0, 11) }, uid: 2) }
+        #expect(clock.current(at: 11).state == .lost, "words in flight from the gone source are dropped")
+        // the pad sends again: locked
+        Self.feed(input, a, at: 12, uid: 1, name: "Pad")
+        #expect(clock.current(at: 12).state == .locked)
+        input.queue.sync { input.setSources([:]) }
+        #expect(input.status.withLock { $0 }.error == "no MIDI source connected")
+        input.stop()
+        #expect(clock.current(at: 13).state == .off)
     }
 
     @Test func cueJSONRoundTripAndCommands() throws {
