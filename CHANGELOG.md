@@ -40,6 +40,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Audio: forward loops are gapless (B3). Ingest makes rotated and flipped phone footage upright (B18).
   State sync and HTTP endpoints hide paths, host and TLS details from lower roles (B25). OSC burst
   regression tests; the reported loss is not reproducible (B30).
+- Bonjour also advertises `_https._tcp` (TXT `path=/`) next to `_fanous._tcp`, so Bonjour browsers list
+  the web UI with its port; `--no-network` advertises neither (B39).
 - README rewritten around the console-as-controller story with screenshots and a tour GIF
   (`docs/images/`); the developer reference moved to `docs/DEVELOPMENT.md`; market research and
   positioning in `docs/marketing/positioning.md`.

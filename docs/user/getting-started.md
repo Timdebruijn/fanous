@@ -48,7 +48,8 @@ If the Mac runs Little Snitch or another firewall, allow `fanousd`:
 | out | UDP to 224.0.0.180 and 239.224.0.180, port 4809 | CITP announcements |
 
 The CITP server also listens on a TCP port the system picks; System › Network
-shows it on the CITP line. Bonjour (`_fanous._tcp`) is advertised as well.
+shows it on the CITP line. Bonjour (`_fanous._tcp` and `_https._tcp`) is
+advertised as well.
 
 ## The main window
 
@@ -102,8 +103,9 @@ dot (OK, LIVE, NO MEDIA, MISSING FILE, DECODER ERROR).
 
 Browse to `https://<mac-name>.local:8443`. The exact host name, the IP
 addresses and the port are under System › Network (Host, Addresses, Port,
-Bonjour). Fanous only advertises `_fanous._tcp`, so it will not show up in a
-browser's Bonjour list (B39); type the address.
+Bonjour). Fanous also advertises itself as an HTTPS service (`_https._tcp`)
+under the Mac's name, so a Bonjour browser on the network lists it with the
+right port.
 
 The engine makes its own certificate the first time it runs, so the browser
 shows a certificate warning once:
