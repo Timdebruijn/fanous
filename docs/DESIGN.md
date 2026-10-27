@@ -1056,7 +1056,12 @@ from the compositor after the canvas pass with the same completed texture
   the identity with their own PEM/PKCS#12 (System › Network). A downloadable
   CA profile for iPads is `[OPEN-17]` (later).
 - Bonjour: `_fanous._tcp` and `_https._tcp` advertised so a browser on the
-  iPad finds `https://<host>.local:8443`.
+  iPad finds `https://<host>.local:8443`. As built (B39): `_fanous._tcp` is
+  the listener's own service; `_https._tcp` (TXT `path=/`, `port`) is a
+  dns_sd registration for the same port while the listener is ready, because
+  an NWListener carries one service and a second NWListener on the port
+  fails with EADDRINUSE on macOS 27 despite `allowLocalEndpointReuse`.
+  Neither with `--no-network`.
 - **Auth = roles with optional passwords**, no user accounts. Three roles
   (monitor, operator, programmer), each with an optional password stored as
   PBKDF2-HMAC-SHA256 (CommonCrypto, 600 000 iterations, per-role salt) in the
@@ -1657,8 +1662,8 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   remaining §14 side effects (shielding level, log level, thumbnail/preview
   throttling) are B42.
 - **System**: `/metrics` (JSON: frames, GPU/CPU timing, DMX age, audio,
-  preview, clients), `/api/logs` (ring tail), Bonjour `_fanous._tcp`,
-  `live.system` (thermal, power, memory, OS, host, addresses, TLS fingerprint).
+  preview, clients), `/api/logs` (ring tail), Bonjour `_fanous._tcp` and
+  `_https._tcp` (B39), `live.system` (thermal, power, memory, OS, host, addresses, TLS fingerprint).
 - **CITP/MSEX**: codec in Core (`CITP/CITP.swift`, `CITP/CITPMSEX.swift`:
   PINF `PLoc`/`PNam`, MSEX 1.0–1.2 `CInf`/`SInf`/`Nack`/`LSta`/`GELI`/`ELIn`/
   `GEIn`/`MEIn`/`GETh`/`EThn`/`RqSt`/`StFr`, little-endian, byte-exact tests);

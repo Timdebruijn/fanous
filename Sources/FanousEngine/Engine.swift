@@ -825,7 +825,7 @@ public final class Engine: @unchecked Sendable {
             "memoryGB": .number(Double(SystemInfo.physicalMemoryBytes / 1_073_741_824)), "os": .string(SystemInfo.osVersion), "host": .string(SystemInfo.hostName),
             "addresses": .array(addresses.map { .string($0) }),
             "interfaces": .array(interfaces.map { ["name": .string($0.name), "address": .string($0.address)] }), "port": .number(Double(options.port)),
-            "tlsFingerprint": .string(tlsFingerprint), "bonjour": .string("\(SystemInfo.hostName)._fanous._tcp"),
+            "tlsFingerprint": .string(tlsFingerprint), "bonjour": .string((server?.advertisedServices ?? []).map { "\($0.name ?? "").\($0.type)" }.joined(separator: ", ")),
         ]
     }
     private var tlsFingerprint = ""
