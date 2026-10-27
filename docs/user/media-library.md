@@ -4,7 +4,8 @@
 
 # Media library
 
-The library is a folder on the Mac, `~/Movies/Fanous Library`. The console
+The library is a folder on the Mac, `~/Movies/Fanous Library` unless you
+choose another one (see "Change the library root" below). The console
 picks media by number: channel 3 (Folder) and channel 4 (File) of a Layer. Show
 files store those numbers, never paths, so a library on another Mac works as
 long as the numbers match.
@@ -52,6 +53,29 @@ filled in; 1 to 255) and a name, then **Create**. The engine makes
 also make folders in Finder. Creating folders is for the programmer role. If the
 screen says "The library root does not exist", create a folder this way or make
 `~/Movies/Fanous Library` yourself.
+
+## Change the library root
+
+On the System screen (Machine › Library) type the path of another folder and
+press **Apply**. `~` stands for your home folder. The change takes effect at
+once: the engine stops watching the old folder, indexes the new one and every
+layer looks up its folder and file number again in the new library. A layer
+whose number does not exist there shows "no file N in folder M"; the outputs
+keep running. A file the engine has not seen before shows that message until it
+has been probed (a moment per file), then it plays. While the switch runs (the
+scan of a large library can take a few seconds), entering show mode and adding
+ingest jobs are refused; try again a moment later. Metadata and thumbnails are cached per file, so switching back to
+a library that was used before needs no new probing.
+
+- The folder must already exist and be readable; the engine does not create it
+  or any numbered folders in it. Make it in Finder first, then create numbered
+  folders with **New folder** on the Media screen.
+- The change is refused in show mode, under show lock, and while ingest jobs
+  are queued or running (they write into the old library): let them finish or
+  cancel them first.
+- Changing the root is for the programmer role. The monitor role never sees the
+  path.
+- Undo and redo work on the root like on any other setting.
 
 ## Formats
 

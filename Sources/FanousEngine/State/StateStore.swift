@@ -20,11 +20,13 @@ public struct CommandSpec: Sendable {
     public var summary: String
     /// Arguments schema for `protocol.d.ts`, as a TypeScript type literal (`{ path: string; value: unknown }`).
     public var argsType: String
+    /// Checked before undo or redo replays this command's history entry; a thrown `CommandError` refuses the step.
+    public var replayCheck: (@Sendable () throws -> Void)?
     public var run: @Sendable (inout JSONValue, JSONValue) throws -> JSONValue?
 
     public init(
         name: String, role: Role, mutatesConfig: Bool = true, undoable: Bool = true, summary: String, argsType: String = "Record<string, never>",
-        run: @escaping @Sendable (inout JSONValue, JSONValue) throws -> JSONValue?
+        replayCheck: (@Sendable () throws -> Void)? = nil, run: @escaping @Sendable (inout JSONValue, JSONValue) throws -> JSONValue?
     ) {
         self.name = name
         self.role = role
@@ -32,6 +34,7 @@ public struct CommandSpec: Sendable {
         self.undoable = undoable
         self.summary = summary
         self.argsType = argsType
+        self.replayCheck = replayCheck
         self.run = run
     }
 }
@@ -190,7 +193,15 @@ public final class StateStore: @unchecked Sendable {
     }
 
     private func step(from source: inout [HistoryEntry], to target: inout [HistoryEntry]) -> Result<CommandResult, CommandError> {
-        guard let entry = source.popLast() else { return .failure(CommandError("nothingToUndo", "history is empty")) }
+        guard let last = source.last else { return .failure(CommandError("nothingToUndo", "history is empty")) }
+        do {
+            try commands[last.name]?.replayCheck?()
+        } catch let error as CommandError {
+            return .failure(error)
+        } catch {
+            return .failure(CommandError("failed", "\(error)"))
+        }
+        let entry = source.removeLast()
         var next = projectDocument
         do {
             try entry.inverse.apply(to: &next)

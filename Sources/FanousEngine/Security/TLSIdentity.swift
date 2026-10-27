@@ -38,7 +38,8 @@ public struct TLSIdentity: @unchecked Sendable {
     public enum Storage: String, Sendable { case dataProtectionKeychain, file }
 
     public static let label = "Fanous TLS"
-    static let keyTag = Data("org.fanous.tls".utf8)
+    /// Per `FANOUS_HOME` (AppPaths): a test engine never reads, adds or deletes the production key.
+    static var keyTag: Data { Data(AppPaths.tlsKeychainTag.utf8) }
     static var keyAttributes: [String: Any] { [
         kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
         kSecAttrKeyClass as String: kSecAttrKeyClassPrivate,
@@ -100,12 +101,20 @@ public struct TLSIdentity: @unchecked Sendable {
 
     /// Removes the key and certificate from the keychains (data-protection and
     /// any login-keychain leftovers of earlier builds) and the exported files.
+    /// Under `FANOUS_HOME` only that home's key and files: the shared certificate leftovers belong to the real install.
     public static func reset(directory: URL) {
         for dataProtection in [true, false] {
             var keyQuery: [String: Any] = [kSecClass as String: kSecClassKey, kSecAttrApplicationTag as String: keyTag]
             if dataProtection { keyQuery[kSecUseDataProtectionKeychain as String] = true }
             while SecItemDelete(keyQuery as CFDictionary) == errSecSuccess {}
         }
+        if AppPaths.homeOverride == nil { removeCertificateLeftovers() }
+        for file in ["certificate.der", "fingerprint.sha256", "private-key.der"] {
+            try? FileManager.default.removeItem(at: directory.appending(path: file))
+        }
+    }
+
+    private static func removeCertificateLeftovers() {
         let certificateQuery: [String: Any] = [
             kSecClass as String: kSecClassCertificate,
             kSecMatchSubjectContains as String: "\(Attribution.projectName) (",
@@ -118,9 +127,6 @@ public struct TLSIdentity: @unchecked Sendable {
                 let deleteQuery: [String: Any] = [kSecClass as String: kSecClassCertificate, kSecMatchItemList as String: [certificate]]
                 SecItemDelete(deleteQuery as CFDictionary)
             }
-        }
-        for file in ["certificate.der", "fingerprint.sha256", "private-key.der"] {
-            try? FileManager.default.removeItem(at: directory.appending(path: file))
         }
     }
 

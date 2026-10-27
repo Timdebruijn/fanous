@@ -53,6 +53,8 @@ public final class DecodedFrame {
     /// Texture-cache wrappers must outlive the Metal textures they back.
     var metalTextures: (CVMetalTexture?, CVMetalTexture?, CVMetalTexture?) = (nil, nil, nil)
     public var decodeNanos: UInt64 = 0
+    /// Row 0 is the bottom of the picture (Syphon surfaces); sampled flipped, see `Compositor.uvRect`.
+    public var bottomUp = false
 
     public init(poolIndex: Int) { self.poolIndex = poolIndex }
 
@@ -63,6 +65,7 @@ public final class DecodedFrame {
         texture2 = nil
         pixelBuffer = nil
         metalTextures = (nil, nil, nil)
+        bottomUp = false
     }
 }
 

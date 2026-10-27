@@ -6,7 +6,24 @@ import Foundation
 
 /// Machine-local directories shared by the engine and the shell.
 public enum AppPaths {
-    public static var home: URL { FileManager.default.homeDirectoryForCurrentUser }
+    /// `FANOUS_HOME` when it is an absolute path (B47): every path below (Application Support, logs, cache, TLS, the
+    /// default library) and the keychain tag of the TLS key then belong to that directory, so a test engine never
+    /// touches the user's data. Empty is unset; anything else is ignored and `homeOverrideProblem` says why.
+    public static let homeOverride: URL? = parseHome(ProcessInfo.processInfo.environment["FANOUS_HOME"]).url
+    public static let homeOverrideProblem: String? = parseHome(ProcessInfo.processInfo.environment["FANOUS_HOME"]).problem
+    public static var home: URL { homeOverride ?? FileManager.default.homeDirectoryForCurrentUser }
+    /// Keychain application tag of the TLS key: the production one, or one of this `FANOUS_HOME` only.
+    public static var tlsKeychainTag: String { tlsKeychainTag(home: homeOverride) }
+
+    static func parseHome(_ value: String?) -> (url: URL?, problem: String?) {
+        guard let value, !value.isEmpty else { return (nil, nil) }
+        guard value.hasPrefix("/") else { return (nil, "FANOUS_HOME ignored: \(value) is not an absolute path") }
+        return (URL(fileURLWithPath: value, isDirectory: true).standardizedFileURL, nil)
+    }
+
+    static func tlsKeychainTag(home: URL?) -> String {
+        home.map { "org.fanous.tls@\($0.path)" } ?? "org.fanous.tls"
+    }
     public static var applicationSupport: URL { home.appending(path: "Library/Application Support/Fanous") }
     public static var logs: URL { home.appending(path: "Library/Logs/Fanous") }
     public static var tls: URL { applicationSupport.appending(path: "tls") }
@@ -22,6 +39,8 @@ public enum AppPaths {
     public static var shellTokenFile: URL { applicationSupport.appending(path: "shell-token") }
     /// The current project document until project bundles exist (DESIGN.md §11.5).
     public static var projectFile: URL { applicationSupport.appending(path: "project.json") }
+    /// Project versions next to the project (DESIGN.md §11.5, B23): `<timestamp>-<name>.json`.
+    public static var versionsDirectory: URL { applicationSupport.appending(path: "versions") }
     /// Display modes to put back after show mode (DESIGN.md §9.6); present only while a display is switched.
     public static var displayModesFile: URL { applicationSupport.appending(path: "display-modes.json") }
     /// Show mode on (DESIGN.md §14); present only while show mode is on, so a crash brings the engine back in it.
