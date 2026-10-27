@@ -79,6 +79,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   CI's `web` job (B45). It found a type error in the preview's frame sizing (no behaviour change), a link
   announced as a status in the status bar (now a link inside a status element), a Preview prop read outside a
   reactive context, and two a11y warnings on the mapper SVG (ignored, with the reason in the source).
+- Fixed: the preview of a just added (or undone) output was sometimes refused (about 1 in 30): clients got the
+  project change before the engine applied it; the engine now applies it first (B62).
 
 - Hardening: one engine per user (`engine.lock`), cumulative frame counters in
   `/metrics`, show mode hides the cursor over the outputs.

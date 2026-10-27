@@ -96,7 +96,7 @@ public final class StateStore: @unchecked Sendable {
     private var liveTimer: DispatchSourceTimer?
     private let encoder: JSONEncoder
     private let logger: Logger
-    /// Called on `queue` after every project change (autosave).
+    /// Called on `queue` after every project change (autosave), before the change goes out to clients.
     public var onProjectChanged: (@Sendable (JSONValue) -> Void)?
 
     public init(project: JSONValue, logger: Logger) {
@@ -228,8 +228,10 @@ public final class StateStore: @unchecked Sendable {
     private func commit(_ next: JSONValue, patch: JSONPatch) {
         projectDocument = next
         revision += 1
-        broadcast(doc: "project", patch: patch, droppable: false)
+        // the engine applies the change before any client hears of it: a client that asks for the preview of an output
+        // it was just told about must find it (B62)
         onProjectChanged?(projectDocument)
+        broadcast(doc: "project", patch: patch, droppable: false)
     }
 
     // MARK: Live
