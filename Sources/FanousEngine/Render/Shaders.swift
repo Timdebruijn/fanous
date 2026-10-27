@@ -24,7 +24,7 @@ public enum ShaderSource {
         float4 uvRect;        // u0 v0 u1 v1 after crop (v0 = top)
         float4 colour;        // rgb multiply, intensity
         float4 adjust;        // brightness, contrast, saturation, hue (radians)
-        float4 effect1;       // id, A, B, 0
+        float4 effect1;       // id, A, B, 1 when the texture rows are bottom-up (Syphon)
         float4 effect2;
         float4 texel;         // 1/width, 1/height, width/height, time (s)
         uint kind;            // SourcePixelKind
@@ -237,9 +237,13 @@ public enum ShaderSource {
                                    float4 dst [[color(0)]]) {
         uint e1 = uint(u.effect1.x), e2 = uint(u.effect2.x);
         float aspect = u.texel.z;
-        // slot 1 is applied to the image first, so its coordinate warp runs last
-        float2 uv = effect_uv(e2, u.effect2.y, u.effect2.z, in.uv, aspect);
+        // slot 1 is applied to the image first, so its coordinate warp runs last. Effects work in picture
+        // order (v down); a bottom-up texture is flipped into that order around them and back.
+        bool bottomUp = u.effect1.w > 0.5;
+        float2 uv = bottomUp ? float2(in.uv.x, 1.0 - in.uv.y) : in.uv;
+        uv = effect_uv(e2, u.effect2.y, u.effect2.z, uv, aspect);
         uv = effect_uv(e1, u.effect1.y, u.effect1.z, uv, aspect);
+        if (bottomUp) uv.y = 1.0 - uv.y;
 
         float4 c;
         float radius = (e1 == 1u ? u.effect1.y : 0.0) + (e2 == 1u ? u.effect2.y : 0.0);

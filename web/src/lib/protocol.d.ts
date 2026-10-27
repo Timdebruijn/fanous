@@ -38,7 +38,11 @@ export type CommandName =
   | 'output.remove'
   | 'output.set'
   | 'patch.set'
+  | 'project.deleteVersion'
+  | 'project.revert'
   | 'project.set'
+  | 'project.snapshot'
+  | 'project.versions'
   | 'readiness.acknowledge'
   | 'readiness.run'
   | 'redo'
@@ -95,8 +99,16 @@ export interface CommandArgs {
   'output.set': { id: number; path: string; value: JSONValue };
   /** Patch a fixture (layer, master, output) to a universe and address, or unpatch it with address 0. Role: programmer, refused under show lock, undoable. */
   'patch.set': { fixture: string; universe: string; address: number };
+  /** Delete a named project version (automatic ones expire by themselves). Role: programmer, refused under show lock. */
+  'project.deleteVersion': { id: string };
+  /** Restore a project version (refused in show mode, also its undo and redo). The current project is saved as a version first; the show lock stays as it is. Role: programmer, refused under show lock, undoable. */
+  'project.revert': { id: string };
   /** Set one project value (name, policy, library.root, ui.*); layers.setCount changes the layer count. Role: programmer, refused under show lock, undoable. */
   'project.set': { path: string; value: JSONValue };
+  /** Save a version of the project now; with a name it never expires, without one it is an automatic version. Role: programmer. */
+  'project.snapshot': { name?: string };
+  /** List the project versions, newest first: id, at (epoch s), name, automatic, layers, outputs, canvases, cues. Role: monitor. */
+  'project.versions': Record<string, never>;
   /** Acknowledge a failed readiness item so show mode can be entered. Role: programmer. */
   'readiness.acknowledge': { id: string };
   /** Run the readiness checks now. Role: operator. */

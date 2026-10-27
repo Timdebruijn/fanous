@@ -182,6 +182,8 @@ export interface LiveDoc {
   };
   /** CITP/MSEX media-server side: TCP port advertised by PLoc, connected consoles, open streams. */
   citp: { port: number; clients: string[]; streams: number; multicast: string[] };
+  /** Project versions (B23): when the last automatic version was saved (epoch s, null = none) and a counter bumped on every save or delete. */
+  versions?: { lastAutomatic: number | null; serial: number } | null;
 }
 
 export interface ReadinessItemDoc {

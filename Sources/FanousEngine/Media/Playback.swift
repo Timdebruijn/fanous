@@ -15,7 +15,14 @@ import UniformTypeIdentifiers
 /// their newest texture; the compositor samples it directly (DESIGN.md §4.1).
 public protocol LiveTextureSource: AnyObject, Sendable {
     var latestTexture: MTLTexture? { get }
+    /// True when row 0 of `latestTexture` is the bottom of the picture (OpenGL order, as Syphon surfaces are);
+    /// the compositor then samples it upside down so the layer is upright. Default false (Metal order, top first).
+    var bottomUp: Bool { get }
     func stop()
+}
+
+extension LiveTextureSource {
+    public var bottomUp: Bool { false }
 }
 
 /// Stills: decoded once by ImageIO into a resident straight-alpha RGBA texture.
@@ -154,6 +161,7 @@ public final class LayerPlayback: @unchecked Sendable {
         if let still { return still }
         if let live {
             liveFrame.texture0 = live.latestTexture
+            liveFrame.bottomUp = live.bottomUp
             return liveFrame.texture0 == nil ? nil : liveFrame
         }
         return select(index: index, direction: direction)
@@ -331,9 +339,36 @@ public final class MediaLoader: @unchecked Sendable {
         wake.signal()
     }
 
+    private let reresolveAll = Atomic<Bool>(false)
+    private let reresolveMissing = Atomic<Bool>(false)
+
+    /// B51: the library root changed; every layer on library media opens its folder/file again through `resolver`
+    /// (a file the new root lacks shows "missing"). Generators, scene entries and "none" are left alone.
+    public func reresolveLibrary() {
+        reresolveAll.store(true, ordering: .relaxed)
+        wake.signal()
+    }
+
+    /// The library changed (a scan, a probe that made a file playable): layers showing "missing" whose folder/file
+    /// now resolves open it. Cheap when nothing is missing; called on every library change.
+    public func reresolveMissingLibrary() {
+        reresolveMissing.store(true, ordering: .relaxed)
+        wake.signal()
+    }
+
     private func loop() {
         while running.load(ordering: .relaxed) {
             _ = wake.wait(timeout: .now() + .milliseconds(100))
+            let all = reresolveAll.exchange(false, ordering: .relaxed)
+            if reresolveMissing.exchange(false, ordering: .relaxed) || all {
+                for i in loaded.indices {
+                    let key = MediaKey(packed: loaded[i])
+                    guard !key.isNone, key.folder != 0, media[key] == nil else { continue }
+                    if all || (layers[i].mediaStatus.withLock { $0.kind == "missing" } && resolver?(key) != nil) {
+                        loaded[i] = .max  // never a packed key: opened again below
+                    }
+                }
+            }
             for (i, layer) in layers.enumerated() {
                 let retired = layer.retired.withLock { list -> [LayerPlayback] in
                     let copy = list
