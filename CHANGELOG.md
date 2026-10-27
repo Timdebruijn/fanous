@@ -83,6 +83,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   project change before the engine's change handler ran. It now runs before any client hears of the change, so a
   client that asks for the preview of an output it was just told about finds it; the asynchronous parts (canvas
   switch, DMX patch, output windows) may still follow (B62).
+- Fixed: a parallel `swift test` of the engine suite hung (every cooperative-pool thread waiting in `finishWriting`); the
+  media-writing test helpers now run on a thread of their own and `scripts/test.sh` runs the tests in parallel again (B63).
 
 - Hardening: one engine per user (`engine.lock`), cumulative frame counters in
   `/metrics`, show mode hides the cursor over the outputs.
