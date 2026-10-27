@@ -88,6 +88,13 @@ export function canvasTarget(id: number): string {
   return id === 1 ? 'canvas' : `canvas:${id}`;
 }
 
+/** False while a "canvas:<id>" preview target waits for its canvas to render (`live.canvas.canvases`): a new canvas
+ * renders only after the asynchronous canvas switch, and the engine refuses a preview of it until then (B62). */
+export function previewReady(target: string, rendered: { id: number }[] | undefined): boolean {
+  const canvas = /^canvas:(\d+)$/.exec(target);
+  return !canvas || !!rendered?.some((c) => c.id === Number(canvas[1]));
+}
+
 /** The canvas a layer renders into (`project.layerCanvas`, canvas 1 when unset). */
 export function layerCanvas(assigned: Record<string, number> | undefined, layer: number): number {
   return assigned?.[String(layer)] ?? 1;

@@ -14,14 +14,13 @@ const repo = resolve(import.meta.dirname, '../..');
 const binary = process.env.FANOUSD ?? join(repo, '.build/debug/fanousd');
 const webRoot = join(repo, 'web/dist');
 
-// Two known engine races, not fixed yet, both a preview refused for a target that has only just appeared in the
-// project (within RACE_MS of the patch that added it); any other refusal fails. Drop this once they are fixed:
-// - StateStore.commit broadcasts a project patch before onProjectChanged applies it, so the preview of a just added
-//   (or undone) output can be asked for before the engine knows the output;
-// - a new canvas renders only after the canvas switch, but the Canvases tab asks for its preview at once.
+// A known engine race, not fixed yet (B62 a): StateStore.commit broadcasts a project patch before onProjectChanged
+// applies it, so the preview of a just added (or undone) output can be asked for before the engine knows the output.
+// A refused output preview within RACE_MS of the patch that added the output is allowed; any other refusal fails
+// (a canvas preview waits until the canvas renders). Drop this once it is fixed.
 const RACE_MS = 1500;
-const REFUSED_TARGET = /^preview target ((?:output|canvas):\d+) is not /;
-const LIST_OR_ITEM = /^\/(outputs|canvases)(?:\/\d+)?$/;
+const REFUSED_TARGET = /^preview target (output:\d+) is not /;
+const LIST_OR_ITEM = /^\/outputs(?:\/\d+)?$/;
 
 export type Engine = { url: string; home: string; token: string; api: APIRequestContext };
 
@@ -114,7 +113,7 @@ export const test = base.extend<{ engine: Engine }>({
     page.on('console', (message) => {
       if (message.type() === 'error') errors.push(`console error: ${message.text()}`);
     });
-    const appeared = new Map<string, number>();  // "output:1", "canvas:2" → when a project patch added it
+    const appeared = new Map<string, number>();  // "output:1" → when a project patch added it
     page.on('websocket', (socket) =>
       socket.on('framereceived', ({ payload }) => {
         if (typeof payload !== 'string') return;
@@ -124,10 +123,9 @@ export const test = base.extend<{ engine: Engine }>({
         };
         if (message.t === 'patch' && message.doc === 'project') {
           for (const op of message.ops ?? []) {
-            const list = LIST_OR_ITEM.exec(op.path)?.[1];
-            if (!list) continue;
+            if (!LIST_OR_ITEM.test(op.path)) continue;
             for (const item of [op.value].flat() as { id?: unknown }[]) {
-              if (typeof item?.id === 'number') appeared.set(`${list === 'outputs' ? 'output' : 'canvas'}:${item.id}`, Date.now());
+              if (typeof item?.id === 'number') appeared.set(`output:${item.id}`, Date.now());
             }
           }
         }
