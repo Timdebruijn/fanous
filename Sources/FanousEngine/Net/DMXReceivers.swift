@@ -130,11 +130,14 @@ public final class OSCReceiver: @unchecked Sendable {
     private let port: UInt16
     private var udp: NWListener?
     private var tcp: NWListener?
+    /// B36: `get`, `subscribe`, `unsubscribe` and `ping`; nil ignores them.
+    private let feedback: OSCFeedbackServer?
 
-    public init(store: DMXStore, logger: Logger, port: UInt16 = 8000) {
+    public init(store: DMXStore, logger: Logger, port: UInt16 = 8000, feedback: OSCFeedbackServer? = nil) {
         self.store = store
         self.logger = logger
         self.port = port
+        self.feedback = feedback
     }
 
     public func start() throws {
@@ -148,7 +151,9 @@ public final class OSCReceiver: @unchecked Sendable {
         udp.newConnectionHandler = { [weak self] connection in
             guard let self else { return connection.cancel() }
             connection.start(queue: store.queue)
-            receiveDatagrams(on: connection)
+            let source = Self.source(connection) { connection.send(content: Data($0), completion: .idempotent) }
+            feedback?.adopt(source)
+            receiveDatagrams(on: connection, from: source)
         }
         udp.start(queue: store.queue)
         self.udp = udp
@@ -162,7 +167,8 @@ public final class OSCReceiver: @unchecked Sendable {
         tcp.newConnectionHandler = { [weak self] connection in
             guard let self else { return connection.cancel() }
             connection.start(queue: store.queue)
-            receiveStream(on: connection, decoder: SLIPDecoder())
+            receiveStream(
+                on: connection, decoder: SLIPDecoder(), from: Self.source(connection) { connection.send(content: Data(SLIPDecoder.encode($0)), completion: .idempotent) })
         }
         tcp.start(queue: store.queue)
         self.tcp = tcp
@@ -173,40 +179,52 @@ public final class OSCReceiver: @unchecked Sendable {
         tcp?.cancel()
     }
 
-    private func receiveDatagrams(on connection: NWConnection) {
+    private func receiveDatagrams(on connection: NWConnection, from source: OSCSource) {
         connection.receiveMessage { [self] data, _, _, error in
-            if let data { handle(Array(data)) }
+            if let data { handle(Array(data), from: source) }
             if error != nil { return connection.cancel() }
-            receiveDatagrams(on: connection)
+            receiveDatagrams(on: connection, from: source)
         }
     }
 
-    private func receiveStream(on connection: NWConnection, decoder: SLIPDecoder) {
+    private func receiveStream(on connection: NWConnection, decoder: SLIPDecoder, from source: OSCSource) {
         var decoder = decoder
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [self] data, _, isComplete, error in
-            if let data { for packet in decoder.feed(Array(data)) { handle(packet) } }
+            if let data { for packet in decoder.feed(Array(data)) { handle(packet, from: source) } }
             if isComplete || error != nil { return connection.cancel() }
-            receiveStream(on: connection, decoder: decoder)
+            receiveStream(on: connection, decoder: decoder, from: source)
         }
     }
 
-    private func handle(_ bytes: [UInt8]) {
-        guard let packet = try? OSCPacket.parse(bytes) else { return }
-        dispatch(packet)
+    private static func source(_ connection: NWConnection, reply: @escaping @Sendable ([UInt8]) -> Void) -> OSCSource {
+        // the IPv6 scope stays (fe80::…%en0): feedback connections to a link-local host need it
+        guard case .hostPort(let host, let port) = connection.endpoint else {
+            return OSCSource(host: "\(connection.endpoint)", port: 0, reply: reply)
+        }
+        return OSCSource(host: "\(host)", port: port.rawValue, reply: reply)
     }
 
-    private func dispatch(_ packet: OSCPacket) {
+    private func handle(_ bytes: [UInt8], from source: OSCSource) {
+        guard let packet = try? OSCPacket.parse(bytes) else { return }
+        dispatch(packet, from: source)
+    }
+
+    private func dispatch(_ packet: OSCPacket, from source: OSCSource) {
         switch packet {
         case .message(let message):
+            if let request = OSCFeedback.request(for: message) {
+                feedback?.handle(request, from: source)
+                return
+            }
             guard let command = OSCAddressMap.command(for: message) else { return }
             store.apply(command)
         case .bundle(let bundle):
             // NTP timetag: seconds since 1900 in the high word, fraction in the low word; 1 = immediately
             let delay = bundle.timetag <= 1 ? 0 : (Double(bundle.timetag >> 32) - 2_208_988_800 + Double(bundle.timetag & 0xFFFF_FFFF) / 4_294_967_296) - Date().timeIntervalSince1970
             if delay > 0.001, delay < 3600 {
-                store.queue.asyncAfter(deadline: .now() + delay) { [self] in for element in bundle.elements { dispatch(element) } }
+                store.queue.asyncAfter(deadline: .now() + delay) { [self] in for element in bundle.elements { dispatch(element, from: source) } }
             } else {
-                for element in bundle.elements { dispatch(element) }
+                for element in bundle.elements { dispatch(element, from: source) }
             }
         }
     }
