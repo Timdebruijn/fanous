@@ -167,20 +167,31 @@
     }, 1000);
     // a resize into another size class asks for a stream of that size, once the resize has settled
     let settle: ReturnType<typeof setTimeout> | undefined;
-    const resized = new ResizeObserver(() => {
+    const check = () => {
       clearTimeout(settle);
       settle = setTimeout(() => {
         if (hidden || mode === 'off' || !classChanged(asked, measure())) return;
         pause();
         void start();
       }, 300);
-    });
+    };
+    const resized = new ResizeObserver(check);
     if (canvas) resized.observe(canvas);
+    // the window moved to a screen with another pixel ratio (or the page was zoomed): same box, other device pixels
+    let ratio: MediaQueryList | undefined;
+    const onRatio = () => {
+      ratio?.removeEventListener('change', onRatio);
+      ratio = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      ratio.addEventListener('change', onRatio);
+      check();
+    };
+    onRatio();
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       clearInterval(watch);
       clearTimeout(settle);
       resized.disconnect();
+      ratio?.removeEventListener('change', onRatio);
       latest.cancel();  // unmounted while subscribing: that stream stops when it arrives
       stop?.();
       stop = null;

@@ -225,8 +225,8 @@ public final class PreviewStreamer: @unchecked Sendable {
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering, value: kCFBooleanFalse)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameInterval, value: Int(fps) as CFNumber)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, value: 1 as CFNumber)
-        // 1.5 Mbit/s at 640×360 (DESIGN.md §11.3); the other size classes in proportion to their pixels
-        let bitRate = max(500_000, 1_500_000 * width * height / (640 * 360))
+        // 1.5 Mbit/s at 640×360 (DESIGN.md §11.3); the other size classes in proportion to their pixels, 0.5–4 Mbit/s
+        let bitRate = min(4_000_000, max(500_000, 1_500_000 * width * height / (640 * 360)))
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: bitRate as CFNumber)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ExpectedFrameRate, value: fps as CFNumber)
         VTCompressionSessionPrepareToEncodeFrames(session)
@@ -284,7 +284,8 @@ public final class PreviewStreamer: @unchecked Sendable {
 
     private func sendDescription(to subs: [Subscriber]) {
         let message: JSONValue = [
-            "t": "stream", "codec": "avc1.42E01E", "description": .string(Data(avcC).base64EncodedString()),
+            // profile, constraints and level as encoded (the larger size classes are above level 3.0)
+            "t": "stream", "codec": .string(String(format: "avc1.%02X%02X%02X", avcC[1], avcC[2], avcC[3])), "description": .string(Data(avcC).base64EncodedString()),
             "w": .number(Double(width)), "h": .number(Double(height)), "fps": .number(fps),
         ]
         for s in subs {

@@ -485,6 +485,13 @@ public final class Engine: @unchecked Sendable {
                 manager.onChange = { [weak self] list in
                     self?.displays.withLock { $0 = list }
                     coordinator.displaysChanged(list)
+                    // an output without a region has its display's size: its preview follows a hot-plug (B32)
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated {
+                            guard let preview = self?.stateServer?.preview, preview.shapeChanged else { return }
+                            do { try preview.rebuild() } catch { self?.logger.error("preview rebuild failed", metadata: ["error": "\(error)"]) }
+                        }
+                    }
                 }
                 manager.start()
                 self.displayManager = manager
@@ -1066,8 +1073,9 @@ public final class Engine: @unchecked Sendable {
     @MainActor private func canvasSwitched(to layout: ProjectDocument.CanvasLayout) {
         let sizes = layout.canvases.map { "\($0.id): \($0.width)×\($0.height)" }.joined(separator: ", ")
         logger.info("canvases changed", metadata: ["canvases": "\(sizes)", "fps": "\(layout.fps)"])
-        applyCanvasUse()  // layers and slices waiting for a canvas that now renders
+        // previews first: `applyCanvasUse` then finds their shapes current and does not rebuild them a second time
         do { try stateServer?.preview?.rebuild() } catch { logger.error("preview rebuild failed", metadata: ["error": "\(error)"]) }
+        applyCanvasUse()  // layers and slices waiting for a canvas that now renders
         stateServer?.setCaps(fps: layout.fps)
         syncDisplayModes()
     }

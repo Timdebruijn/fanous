@@ -56,27 +56,37 @@ public final class PreviewHub: @unchecked Sendable {
         target requested: String, width: Int? = nil, connection: StateServer.Connection, stream: UInt32, jpeg: Bool, announce: (PreviewStreamer) -> Void
     ) -> Bool {
         let key = Key(target: requested == "canvas:1" ? "canvas" : requested, width: PreviewSize.sizeClass(wanted: width))
-        // compiling an output reads the project (the store's queue): never under our lock, the store calls `refreshOutputs` from there
-        var fresh: PreviewStreamer?
-        if streamers.withLock({ existing(key, in: $0) }) == nil {
-            guard let created = try? create(key) else { return false }
-            fresh = created
-        }
-        return streamers.withLock { all in
-            let streamer: PreviewStreamer
-            if let found = existing(key, in: all) {
-                streamer = found  // another client got there first, or the limit was reached meanwhile; ours is dropped
-            } else if let fresh {
-                all[key] = fresh
-                streamer = fresh
-                publishActive(all)
-            } else {
-                return false  // released between the check and here; the client may retry
+        // compiling an output reads the project (the store's queue): never under our lock, the store calls
+        // `refreshOutputs` from there. So the streamer is made outside it, and made again when the target changed shape
+        // meanwhile (a rebuild keeps a streamer it did not see) or the size to fall back to lost its last subscriber
+        for _ in 0..<8 {  // ponytail: bounded; a target that changes shape 8 times during one subscription is refused
+            var fresh: PreviewStreamer?
+            if streamers.withLock({ existing(key, in: $0) }) == nil {
+                guard let created = try? create(key) else { return false }
+                fresh = created
             }
-            announce(streamer)
-            streamer.subscribe(PreviewStreamer.Subscriber(connection: connection, stream: stream, jpeg: jpeg))
-            return true
+            let attached: Bool? = streamers.withLock { all in
+                let streamer: PreviewStreamer
+                if let found = existing(key, in: all) {
+                    streamer = found  // another client got there first, or the limit was reached meanwhile; ours is dropped
+                } else if let fresh {
+                    // `shape` takes only the engine's own locks, never ours
+                    guard let shape = shape(key.target) else { return false }
+                    let size = PreviewSize.size(class: key.width, shape: shape)
+                    guard size.width == fresh.width, size.height == fresh.height else { return nil }
+                    all[key] = fresh
+                    streamer = fresh
+                    publishActive(all)
+                } else {
+                    return nil
+                }
+                announce(streamer)
+                streamer.subscribe(PreviewStreamer.Subscriber(connection: connection, stream: stream, jpeg: jpeg))
+                return true
+            }
+            if let attached { return attached }
         }
+        return false
     }
 
     /// The streamer `key` gets without a new encoder: its own, or at the encoder limit the nearest size of its target.

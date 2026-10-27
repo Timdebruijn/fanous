@@ -50,7 +50,12 @@ export function wantedWidth(cssWidth: number, devicePixelRatio: number): number 
   return px > 0 ? px : undefined;
 }
 
-/** A resize from the `w` a stream was asked with to `w`: true when the engine would pick another class (re-subscribe). */
+/** A resize from the `w` a stream was asked with to `w`: true when the engine would pick another class (re-subscribe),
+ * with 5 % hysteresis at the class edges so a box at a boundary does not flip between two streams. */
 export function classChanged(asked: number | undefined, w: number | undefined): boolean {
-  return previewClass(asked ?? 640) !== previewClass(w ?? 640);
+  const current = previewClass(asked ?? 640);
+  const width = w ?? 640;
+  if (previewClass(width) === current) return false;
+  const lower = PREVIEW_CLASSES[PREVIEW_CLASSES.indexOf(current as (typeof PREVIEW_CLASSES)[number]) - 1] ?? 160;  // current covers (lower, current]
+  return width > current * 1.05 || width < lower * 0.95;
 }

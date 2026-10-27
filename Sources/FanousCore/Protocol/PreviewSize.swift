@@ -23,11 +23,14 @@ public enum PreviewSize {
         have.min { (abs($0 - wanted), -$0) < (abs($1 - wanted), -$1) }
     }
 
-    /// Even pixel size of class `width` in the aspect of a `shape` picture (a canvas, an output's region). A shape
-    /// that would pass 2160 lines gets fewer columns instead.
+    /// Even pixel size of class `width` in the aspect of a `shape` picture (a canvas, an output's region), at most the
+    /// pixels of the class's 16:9 frame: a shape narrower than 16:9 gets fewer columns, so cost and H.264 level stay
+    /// bounded (1280 class: level 3.1). Extreme strips are clamped to 2160 lines and lose their aspect.
     public static func size(class width: Int, shape: (width: Int, height: Int)) -> (width: Int, height: Int) {
         let sw = max(1, shape.width), sh = max(1, shape.height)
-        let w = max(2, min(width, 2160 * sw / sh) & ~1)
-        return (w, max(2, (w * sh / sw) & ~1))
+        // w·h ≤ width²·9/16 with h = w·sh/sw  ⇔  w ≤ width·¾·√(sw/sh)
+        let w = 16 * sh <= 9 * sw ? width : Int(Double(width) * 0.75 * (Double(sw) / Double(sh)).squareRoot())
+        let even = max(2, w & ~1)
+        return (even, min(2160, max(2, (even * sh / sw) & ~1)))
     }
 }

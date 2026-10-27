@@ -139,7 +139,7 @@ import Testing
         #expect(rig.attach("canvas:1", a))
         #expect(rig.hub.targets == ["canvas"], "canvas:1 is the canvas streamer")
         let square = try #require(rig.streamer("canvas:2", width: nil, b, stream: 2))
-        #expect((square.width, square.height, square.canvasID) == (640, 640, 2), "the default class in canvas 2's shape")
+        #expect((square.width, square.height, square.canvasID) == (480, 480, 2), "the default class in canvas 2's shape, at most 640×360's pixels")
         #expect(!rig.attach("canvas:3", rig.connection()))
         #expect(!rig.attach("canvas:x", rig.connection()))
         rig.tick(30)
@@ -370,7 +370,7 @@ import Testing
         #expect(rig.attach("layer:2", stream: 2))
         rig.tick(4)
         let square = try #require(rig.made.withLock { $0["layer:2"] })
-        #expect((square.width, square.height) == (640, 640) && square.framesIn.load(ordering: .relaxed) == 2)
+        #expect((square.width, square.height) == (480, 480) && square.framesIn.load(ordering: .relaxed) == 2)
         #expect(try rig.pixel("layer:2", 0.5, 0.5) == Self.green)
         #expect(try rig.pixel("layer:2", 0.1, 0.1) == Self.black, "half size on its square canvas")
         #expect(try rig.pixel("layer:1", 0.5, 0.5) == Self.red)
@@ -393,7 +393,7 @@ import Testing
         rig.shapes.withLock { $0["canvas"] = (320, 240) }
         try rig.hub.rebuild()
         let fresh = try #require(rig.made.withLock { $0["layer:2"] })
-        #expect(fresh !== old && fresh.layer == 1 && fresh.height == 480)
+        #expect(fresh !== old && fresh.layer == 1 && fresh.height == 414)
         #expect(fresh.subscriberList.map(\.stream) == [1], "the subscriber moved over")
         rig.tick(4)
         #expect(fresh.framesIn.load(ordering: .relaxed) == 2)
@@ -415,7 +415,7 @@ import Testing
         let oldCanvas = hub.canvas
         shape.withLock { $0 = (160, 120) }
         try hub.rebuild()
-        #expect(hub.canvas !== oldCanvas && hub.canvas.height == 480)
+        #expect(hub.canvas !== oldCanvas && hub.canvas.height == 414)
         #expect(hub.canvas.subscriberList.map(\.stream) == [1])
         #expect(hub.targets.sorted() == ["canvas", "output:1"])
         hub.unsubscribe(connection: b, stream: 2)
@@ -442,7 +442,7 @@ import Testing
         #expect(rig.streamer("canvas", width: 200, c, stream: 3) === small && rig.streamer("canvas", width: 400, c, stream: 5) === rig.hub.canvas)
         #expect(rig.hub.encoders == 4)
         // a new target is never refused
-        #expect(rig.streamer("canvas:2", width: 320, c, stream: 4)?.width == 320)
+        #expect(rig.streamer("canvas:2", width: 320, c, stream: 4)?.width == 240)
         #expect(rig.hub.encoders == 5)
 
         rig.hub.remove(connection: c)
@@ -456,7 +456,7 @@ import Testing
         rig.shapes.withLock { $0["output:1"] = (1440, 1080) }
         let a = rig.connection()
         let fourThree = try #require(rig.streamer("output:1", width: nil, a))
-        #expect((fourThree.width, fourThree.height) == (640, 480))
+        #expect((fourThree.width, fourThree.height) == (554, 414))
         #expect(!rig.hub.shapeChanged)
         rig.shapes.withLock { $0["output:1"] = (1920, 1080) }
         #expect(rig.hub.shapeChanged)
@@ -464,5 +464,21 @@ import Testing
         #expect(!rig.hub.shapeChanged)
         let wide = try #require(rig.streamer("output:1", width: nil, a, stream: 2))
         #expect((wide.width, wide.height) == (640, 360) && wide.subscriberList.map(\.stream) == [1, 2], "the subscriber moved over")
+    }
+
+    /// B32: the streamer is made outside the hub's lock; when its target changes shape meanwhile (a region edit whose
+    /// rebuild would keep a streamer it did not see), it is made again before it is published.
+    @Test func aShapeChangeWhileAttachingMakesTheStreamerAgain() throws {
+        let rig = try Rig()
+        rig.shapes.withLock { $0["output:1"] = (1920, 1080) }
+        let configured = OSAllocatedUnfairLock(initialState: 0)
+        rig.hub.configure = { [shapes = rig.shapes] target, _ in
+            configured.withLock { $0 += 1 }
+            if configured.withLock({ $0 }) == 1 { shapes.withLock { $0[target] = (1440, 1080) } }  // the region changes now
+            return true
+        }
+        let streamer = try #require(rig.streamer("output:1", width: nil, rig.connection()))
+        #expect((streamer.width, streamer.height) == (554, 414) && configured.withLock { $0 } == 2)
+        #expect(!rig.hub.shapeChanged)
     }
 }

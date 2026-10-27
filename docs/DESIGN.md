@@ -1099,7 +1099,7 @@ server → clients  {"t":"patch","rev":1235,"doc":"project","ops":[{"op":"replac
 server → clients  {"t":"patch","rev":1236,"doc":"live","ops":[…]}            // batched every 50 ms, coalesced per path
 client → server   {"t":"cmd","id":"c-77","name":"output.setBlend","args":{…}}
 server → client   {"t":"ack","id":"c-77","ok":true,"rev":1237}  |  {"t":"ack","id":"c-77","ok":false,"error":{"code":"showLocked","message":"…"}}
-client → server   {"t":"sub","stream":"dmx","universe":"artnet:0:0:1"} / {"t":"sub","stream":"preview","target":"canvas:1","w":640,"h":360,"fps":30}
+client → server   {"t":"sub","stream":"dmx","universe":"artnet:0:0:1"} / {"t":"sub","stream":"preview","target":"canvas:1","w":640}   // h and fps are ignored
 server → client   {"t":"sub","id":7,"stream":"preview",…}  |  {"t":"error","id":7,"stream":"preview","code":"badTarget","message":"…"}   // refused; an error with an id and no stream ends that stream
 server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H.264 AU (AVCC) , 2 = JPEG , 3 = DMX universe (512 B) , 4 = metrics ring page
 ```
@@ -1174,19 +1174,25 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   height in the target's shape: canvas 1 or `canvas:<id>` its canvas,
   `layer:<n>` its layer's canvas, `output:<id>` the output's region (else
   its display, else 1920×1080), so an output preview is no longer a 16:9
-  frame stretched back. Pure functions in `FanousCore.PreviewSize`.
+  frame stretched back. A stream has at most the pixels of its class's
+  16:9 frame (a 4:3 output in the 640 class is 554×414; H.264 level ≤ 3.1),
+  at most 2160 lines; the `stream` codec string is built from the avcC
+  (profile, level). Pure functions in `FanousCore.PreviewSize`.
   `PreviewHub` keys streamers on (target, class); the canvas 1 streamer at
   640 always exists (CITP). With 4 encoders in total (the canvas one
   counted, `/metrics` `preview.encoders`), a new class of a target that
   already has one attaches to its nearest class (the larger on a tie) and
   the `sub` reply says that size; a new target still gets its own encoder,
-  as before, so the limit bounds extra sizes, not targets. Bit rate scales
-  with the pixels (1.5 Mbit/s at 640×360, at least 0.5 Mbit/s). A changed
-  output region or layer canvas rebuilds the previews (`shapeChanged`); a
-  display hot-plug that changes an unregioned output's size does not, until
-  the next project change or re-subscription. The browser asks for its
-  element's width × `devicePixelRatio` (rounded up) and re-subscribes 300 ms
-  after a resize that crosses into another class (`latestOnly`).
+  as before, so the limit bounds extra sizes, not targets (B70). Bit rate
+  scales with the pixels (1.5 Mbit/s at 640×360, 0.5–4 Mbit/s). A changed
+  output region, layer canvas or display size rebuilds the previews
+  (`shapeChanged`; existing subscribers get the new size in a `stream`
+  description). `attach` makes a streamer outside the hub's lock and makes
+  it again when its target changed shape meanwhile or the size it would
+  fall back to lost its last subscriber. The browser asks for its element's
+  width × `devicePixelRatio` (rounded up), also after a pixel-ratio change,
+  and re-subscribes 300 ms after a resize that crosses into another class
+  by more than 5 % (`latestOnly`).
 
 ### 11.4 Frontend (ADR-0012)
 

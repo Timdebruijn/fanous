@@ -48,4 +48,11 @@ describe('preview size', () => {
     expect(classChanged(undefined, 600)).toBe(false); // no width yet: the engine's 640
     expect(classChanged(undefined, 300)).toBe(true);
   });
+
+  it('keeps the class within 5 % past its edges', () => {
+    expect(classChanged(640, 660)).toBe(false); // 3 % over 640
+    expect(classChanged(640, 680)).toBe(true);
+    expect(classChanged(700, 630)).toBe(false); // the 960 stream stays for a box 2 % under 640
+    expect(classChanged(700, 600)).toBe(true);
+  });
 });
