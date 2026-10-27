@@ -122,7 +122,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Syphon servers of other apps are layer content in folder 0, files 150–169, numbered in the order they
   appear and kept until the engine restarts (`live.syphon.servers`); the Media screen lists folder 0
   (generators and Syphon servers with their number and state) and the layer panel offers them. A layer on a
-  server that went says "not running" and picks the picture up again when it returns (B61).
+  server that went says "not running" (within about 11 s after a crash) and picks the picture up again when
+  it returns (B61).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

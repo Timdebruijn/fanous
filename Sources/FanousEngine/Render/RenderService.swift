@@ -78,7 +78,7 @@ public final class RenderService {
     public let loader: MediaLoader
     public private(set) var syphon: SyphonOutput?
     /// Other apps' Syphon servers as folder 0 files 150–169 (B61); lives as long as the engine.
-    public let syphonCatalog = SyphonCatalog()
+    public let syphonCatalog: SyphonCatalog
     nonisolated(unsafe) public private(set) var mixer: AudioMixer?  // assigned once at start, read by the metrics endpoint
     private let logger: Logger
     /// Keeps the audio device open while true (the engine passes show mode); read once by `start()`.
@@ -128,9 +128,10 @@ public final class RenderService {
                 if output.hasClients { output.publish(texture: texture, commandBuffer: commandBuffer) }
             }
         }
+        syphonCatalog = SyphonCatalog(excluding: syphon?.uuid)
         loader.syphonCatalog = syphonCatalog
-        syphonCatalog.onChange = { [loader] in loader.syphonServersChanged() }
-        syphonCatalog.start(device: device, excluding: syphon?.uuid)
+        syphonCatalog.onChange = { [weak loader] in loader?.syphonServersChanged() }  // the loader holds the catalog
+        syphonCatalog.start(device: device)
     }
 
     public func start() async throws {
@@ -193,6 +194,7 @@ public final class RenderService {
         compositor.setLayers([])
         compositor.canvasPublished = nil
         compositor.canvasPublishedWanted = nil
+        syphonCatalog.stop()
         syphon?.stop()
         syphon = nil
         mixer?.stop()

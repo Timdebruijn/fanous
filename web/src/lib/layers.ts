@@ -191,7 +191,8 @@ export function mediaLine(layer: LayerStatus | undefined): { text: string; title
 export function layerState(layer: LayerStatus | undefined): { dot: DotColor; label: string; chip: string } {
   if (!layer || layer.kind === 'none') return { dot: 'off', label: 'No media', chip: 'NO MEDIA' };
   if (layer.kind === 'missing') return { dot: 'red', label: 'Media file is missing', chip: 'MISSING FILE' };
-  if (layer.kind === 'live' && layer.error) return { dot: 'red', label: 'Live input not running', chip: 'NOT RUNNING' };
+  // Syphon: "not running" or "could not connect"
+  if (layer.kind === 'live' && layer.error) return { dot: 'red', label: `Live input ${layer.error}`, chip: layer.error.toUpperCase() };
   if (layer.error) return { dot: 'red', label: 'Decoder error', chip: 'DECODER ERROR' };
   if (layer.kind === 'live') return { dot: 'green', label: 'Live input', chip: 'LIVE' };
   return { dot: 'green', label: 'Media OK', chip: 'OK' };

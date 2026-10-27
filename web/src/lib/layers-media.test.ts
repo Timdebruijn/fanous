@@ -63,7 +63,8 @@ describe('folder 0 (B61)', () => {
   it('shows a gone server by name with "not running" on the layer', () => {
     const gone = layer({ folder: 0, file: 151, kind: 'live', name: 'Syphon: Simple Server', error: 'not running', width: 0, height: 0 });
     expect(mediaLine(gone)).toMatchObject({ text: 'Syphon: Simple Server · not running', tone: 'error' });
-    expect(layerState(gone)).toMatchObject({ dot: 'red', chip: 'NOT RUNNING' });
+    expect(layerState(gone)).toMatchObject({ dot: 'red', chip: 'NOT RUNNING', label: 'Live input not running' });
+    expect(layerState({ ...gone, error: 'could not connect' }).chip).toBe('COULD NOT CONNECT');
     expect(mediaLine(layer({ kind: 'live', name: 'Syphon: X', width: 0, height: 0 })).text).toBe('Syphon: X · Live');
   });
 });

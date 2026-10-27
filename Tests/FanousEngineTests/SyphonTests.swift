@@ -203,5 +203,36 @@ import Testing
         layers[1].wanted.store(MediaKey(folder: 0, file: 150).packed, ordering: .relaxed)
         loader.wake.signal()
         #expect(eventually { status(1).error == "not running" && status(1).name == "Syphon: Resolume/Out" && playback(1) == nil })
+        // ... and connects when it starts
+        catalog.update(running: [Self.info("Other", "", "b"), Self.info("Resolume", "Out", "a3")])
+        #expect(eventually { playback(1)?.uuid == "a3" && status(1).error == nil })
+
+        // a rename while playing shows without a new selection (same connection, same number)
+        let connected = try #require(playback(1))
+        catalog.update(running: [Self.info("Other", "", "b"), Self.info("Resolume", "Main", "a3")])
+        #expect(eventually { status(1).name == "Syphon: Resolume/Main" })
+        #expect(playback(1) === connected && catalog.server(file: 150)?.file == 150)
+    }
+
+    @Test func loaderSaysCouldNotConnectWhenARunningServerRefuses() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { return }
+        let layer = RenderLayer(index: 0)
+        let loader = MediaLoader(layers: [layer], media: [], device: device, ringCapacity: 4, logger: Logger(label: "test"))
+        loader.liveFactory = { _, _ in nil }
+        let catalog = SyphonCatalog()
+        catalog.update(running: [Self.info("App", "", "a")])
+        loader.syphonCatalog = catalog
+        loader.start()
+        defer { loader.stop() }
+        layer.wanted.store(MediaKey(folder: 0, file: 150).packed, ordering: .relaxed)
+        loader.wake.signal()
+        #expect(Self.wait(seconds: 5) { layer.mediaStatus.withLock { $0.error == "could not connect" && $0.name == "Syphon: App" } })
+    }
+
+    @Test func catalogLeavesTheEnginesOwnServerOut() {
+        let catalog = SyphonCatalog(excluding: "own")
+        catalog.update(running: [Self.info("fanousd", "Fanous – Canvas", "own"), Self.info("Resolume", "Out", "a")])
+        #expect(catalog.servers.map(\.name) == ["Resolume/Out"])
+        #expect(catalog.server(file: 150)?.uuid == "a")
     }
 }

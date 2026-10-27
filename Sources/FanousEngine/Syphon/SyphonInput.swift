@@ -59,7 +59,10 @@ public final class SyphonInput: @unchecked Sendable {
     }
 
     /// Servers the directory currently knows about (all processes, including this one).
-    public var servers: [ServerInfo] {
+    public var servers: [ServerInfo] { Self.directoryServers }
+
+    /// The same without an instance (the directory is one per process).
+    public static var directoryServers: [ServerInfo] {
         SyphonServerDirectory.shared().servers.map { description in
             ServerInfo(
                 appName: description[SyphonServerDescriptionAppNameKey] as? String ?? "",

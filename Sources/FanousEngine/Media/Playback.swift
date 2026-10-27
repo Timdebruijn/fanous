@@ -390,9 +390,11 @@ public final class MediaLoader: @unchecked Sendable {
             }
             if syphonChanged.exchange(false, ordering: .relaxed) {
                 for i in loaded.indices where isNumberedSyphon(MediaKey(packed: loaded[i])) {
-                    let uuid = syphonCatalog?.server(file: MediaKey(packed: loaded[i]).file)?.uuid
-                    guard uuid != syphonOpen[i] else { continue }
-                    if uuid == nil {
+                    let server = syphonCatalog?.server(file: MediaKey(packed: loaded[i]).file)
+                    if server?.uuid == syphonOpen[i] {
+                        // same connection (or still gone): only a rename (SyphonServerUpdate) can have changed
+                        if let server { layers[i].mediaStatus.withLock { $0.name = "Syphon: \(server.name)" } }
+                    } else if server?.uuid == nil {
                         syphonOpen[i] = nil
                         layers[i].mediaStatus.withLock { $0.error = "not running" }
                     } else {
@@ -438,8 +440,14 @@ public final class MediaLoader: @unchecked Sendable {
             status.kind = "live"
             status.codec = "syphon"
             status.name = "Syphon: \(server.name)"
-            guard let uuid = server.uuid, let live = liveFactory?(server.name, uuid) else {
-                status.error = "not running"
+            guard let uuid = server.uuid else {
+                status.error = "not running"  // black until it starts; then the catalog change opens it
+                return nil
+            }
+            guard let live = liveFactory?(server.name, uuid) else {
+                logger.warning("Syphon server could not connect", metadata: ["layer": "\(layer + 1)", "syphon": "\(server.name)"])
+                failures.wrappingAdd(1, ordering: .relaxed)
+                status.error = "could not connect"
                 return nil
             }
             opened.wrappingAdd(1, ordering: .relaxed)
