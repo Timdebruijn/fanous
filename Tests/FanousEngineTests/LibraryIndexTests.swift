@@ -102,7 +102,7 @@ struct LibraryIndexTests {
         let folder = root.appending(path: "007_Test")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let movie = folder.appending(path: "003_clip.mov")
-        try await IngestQueueTests.offPool {
+        try await offPool {
             let writer = try MovieWriter(url: movie, width: 320, height: 176, fps: 25, codec: .proRes422HQ)
             var buffer: CVPixelBuffer?
             CVPixelBufferPoolCreatePixelBuffer(nil, writer.pixelBufferPool!, &buffer)

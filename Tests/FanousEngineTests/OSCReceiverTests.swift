@@ -33,7 +33,7 @@ struct OSCReceiverTests {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: logger)
         let seen = Mutex<Set<Double>>([])
         store.onCommand = { if case .cueGoto(let n) = $0 { seen.withLock { _ = $0.insert(n) } } }
-        let port = UInt16.random(in: 40_000..<60_000)
+        let port = try freeUDPPort()
         let receiver = OSCReceiver(store: store, logger: logger, port: port)
         try receiver.start()
         defer { receiver.stop() }
@@ -66,7 +66,7 @@ struct OSCReceiverTests {
     @Test func layerParameterBurstResolvesEveryLayer() async throws {
         let logger = Logger(label: "test")
         let store = DMXStore(patch: .standard(layers: 4, outputs: 1), logger: logger)
-        let port = UInt16.random(in: 40_000..<60_000)
+        let port = try freeUDPPort()
         let receiver = OSCReceiver(store: store, logger: logger, port: port)
         try receiver.start()
         defer { receiver.stop() }

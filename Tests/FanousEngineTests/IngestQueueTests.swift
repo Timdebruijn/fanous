@@ -18,15 +18,6 @@ import UniformTypeIdentifiers
 @Suite(.serialized) struct IngestQueueTests {
     // MARK: Helpers
 
-    /// Runs blocking AVFoundation work (`AVAssetWriter.finishWriting` + semaphore) on a thread of its own. Swift Testing runs a
-    /// test per core on the cooperative pool, and that many threads parked in `finishWriting` leave AVFoundation no thread to
-    /// deliver the completion on: the run hangs (reproduced with a bare AVAssetWriter, no engine code).
-    static func offPool<T: Sendable>(_ body: @escaping @Sendable () throws -> T) async throws -> T {
-        try await withCheckedThrowingContinuation { continuation in
-            Thread.detachNewThread { continuation.resume(with: Result { try body() }) }
-        }
-    }
-
     static func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appending(path: "fanous-ingest-tests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -437,7 +428,7 @@ import UniformTypeIdentifiers
         #expect(await Self.wait(for: job.id, in: queue) == .done)
 
         // The library flags the source (upright size, needs ingest) and the output is plain.
-        let before = try LibraryIndex.probeMovie(source), after = try LibraryIndex.probeMovie(job.destination)
+        let (before, after) = try await offPool { (try LibraryIndex.probeMovie(source), try LibraryIndex.probeMovie(job.destination)) }
         #expect(before.rotated == true && before.width == 176 && before.height == 320)
         #expect(after.rotated == false && after.width == 176 && after.height == 320 && after.frameCount == 25)
 

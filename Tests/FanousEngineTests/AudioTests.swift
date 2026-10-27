@@ -41,7 +41,7 @@ extension LayerAudioChannel {
 
     /// 320×180 ProRes 422 HQ at 30 fps, `seconds` long, with the `TestTone` track when `audio` is set.
     static func writeMovie(to url: URL, seconds: Int = 3, audio: Bool = true) async throws {
-        try await IngestQueueTests.offPool { try writeMovieBlocking(to: url, seconds: seconds, audio: audio) }
+        try await offPool { try writeMovieBlocking(to: url, seconds: seconds, audio: audio) }
     }
 
     private static func writeMovieBlocking(to url: URL, seconds: Int, audio: Bool) throws {
@@ -63,7 +63,7 @@ extension LayerAudioChannel {
 
     /// An audio-only movie, one second, 16-bit LPCM; channel `c` holds the constant `(c + 1) * 3000`.
     static func writeConstantAudio(to url: URL, rate: Double, channels: Int) async throws {
-        try await IngestQueueTests.offPool { try writeConstantAudioBlocking(to: url, rate: rate, channels: channels) }
+        try await offPool { try writeConstantAudioBlocking(to: url, rate: rate, channels: channels) }
     }
 
     private static func writeConstantAudioBlocking(to url: URL, rate: Double, channels: Int) throws {
