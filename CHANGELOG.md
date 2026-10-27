@@ -78,6 +78,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: the preview of a just added canvas was refused and stayed empty: it was asked for before the canvas
   rendered. A canvas preview now waits for the canvas switch, captioned "starting…", and one subscribed while the
   switch rebuilds the previews is no longer dropped as if its canvas were gone (B62 b).
+- Fixed: after a refused preview request the next preview could stay on "connecting…": the refusal did not settle the
+  waiting request, so the next reply went to the wrong one. A refused preview now names its stream (`error` with `id`
+  and `stream`) and the UI shows "no preview" with the reason; a lost connection also settles waiting previews (B62 c).
 - `npm run check` (svelte-check) type-checks the `.svelte` script blocks and applies Svelte's a11y rules, in
   CI's `web` job (B45). It found a type error in the preview's frame sizing (no behaviour change), a link
   announced as a status in the status bar (now a link inside a status element), a Preview prop read outside a

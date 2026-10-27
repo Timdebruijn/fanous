@@ -54,20 +54,29 @@
       decoder?.close();
       decoder = null;
       stop?.();
-      const sub = await subscribePreview(
-        'jpeg',
-        async (_kind, payload) => {
-          if (!canvas) return;
-          const bitmap = await createImageBitmap(new Blob([payload as BlobPart], { type: 'image/jpeg' }));
-          if (canvas && (canvas.width !== bitmap.width || canvas.height !== bitmap.height)) {
-            canvas.width = bitmap.width;
-            canvas.height = bitmap.height;
-          }
-          drawBitmap(bitmap);
-        },
-        () => {},
-        target,
-      );
+      stop = null;  // a refused JPEG request must not leave the stopped stream behind: reconnects restart from null
+      let sub: Awaited<ReturnType<typeof subscribePreview>>;
+      try {
+        sub = await subscribePreview(
+          'jpeg',
+          async (_kind, payload) => {
+            if (!canvas) return;
+            const bitmap = await createImageBitmap(new Blob([payload as BlobPart], { type: 'image/jpeg' }));
+            if (canvas && (canvas.width !== bitmap.width || canvas.height !== bitmap.height)) {
+              canvas.width = bitmap.width;
+              canvas.height = bitmap.height;
+            }
+            drawBitmap(bitmap);
+          },
+          () => {},
+          target,
+        );
+      } catch (error) {
+        if (!jpegRun.current()) return;
+        mode = 'off';
+        detail = (error as { message?: string }).message ?? String(error);
+        return;
+      }
       if (!jpegRun.keep(sub.stop)) return;
       stop = sub.stop;
       mode = 'jpeg';
@@ -130,6 +139,7 @@
     latest.cancel();  // a subscription still on its way is stopped when it arrives
     stop?.();
     stop = null;
+    mode = 'connecting';  // no stale "H.264 · …" caption while the next stream is asked for
     lastFrame = 0;
     stalled = false;
   }
@@ -157,9 +167,10 @@
     };
   });
 
-  // reconnects re-subscribe; a new target restarts the stream
+  // reconnects re-subscribe (only the connection triggers this: a refusal turning mode to 'off' must not ask again at
+  // once); a new target restarts the stream
   $effect(() => {
-    if (app.connection === 'open' && !hidden && stop === null && mode !== 'connecting') void start();
+    if (app.connection === 'open' && !hidden && stop === null && untrack(() => mode) !== 'connecting') void start();
   });
   // the first target; the effect below follows later changes, and a canvas that starts (or stops) rendering
   let shownTarget = untrack(() => target);

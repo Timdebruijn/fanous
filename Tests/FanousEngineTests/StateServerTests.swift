@@ -148,11 +148,52 @@ struct StateServerTests {
         try await a.send(.string(#"{"t":"sub","stream":"dmx","universe":"artnet:0.0.0"}"#))
         let sub = try await Self.receive(a, until: "sub")
         #expect(sub["id"]?.int != nil)
+        // a refused preview (no renderer here) names its stream, so the client settles the waiting request (B62)
+        try await a.send(.string(#"{"t":"sub","stream":"preview","codec":"jpeg"}"#))
+        let refused = try await Self.receive(a, until: "error")
+        #expect(refused["code"]?.string == "noPreview")
+        #expect(refused["stream"]?.string == "preview")
+        #expect(refused["id"]?.int != nil && refused["id"]?.int != sub["id"]?.int)
 
         a.cancel(with: .normalClosure, reason: nil)
         b.cancel(with: .normalClosure, reason: nil)
         for _ in 0..<50 where f.store.clientCount > 0 { try await Task.sleep(for: .milliseconds(20)) }
         #expect(f.store.clientCount == 0)
+    }
+
+    /// B62: the client matches preview replies to its requests by order, so a refused request must be answered in its
+    /// turn, with its own stream id and `stream`, and must leave no subscription behind.
+    @Test func previewRepliesComeInRequestOrderAndARefusalKeepsNoSubscription() async throws {
+        let f = try await Self.start()
+        defer { f.server.stop() }
+        let rig = try PreviewHubTests.Rig()  // a hub that previews "canvas" and "output:1"
+        f.stateServer.preview = rig.hub
+        let connection = Mutex<StateServer.Connection?>(nil)
+        f.server.upgradeRoute = { [stateServer = f.stateServer] request in
+            let handler = stateServer.upgrade(request)
+            connection.withLock { $0 = handler as? StateServer.Connection }
+            return handler
+        }
+        let a = f.socket()
+        try await a.send(.string(#"{"t":"hello","clientId":"a","schema":1}"#))
+        _ = try await Self.receive(a, until: "welcome")
+        for target in ["canvas", "output:99", "output:1"] {
+            try await a.send(.string(#"{"t":"sub","stream":"preview","codec":"jpeg","target":"\#(target)"}"#))
+        }
+        var replies: [JSONValue] = []
+        while replies.count < 3 {
+            let message = try await Self.receive(a)
+            if ["sub", "error"].contains(message["t"]?.string) { replies.append(message) }
+        }
+        #expect(replies.map { $0["t"]?.string } == ["sub", "error", "sub"])
+        #expect(replies.map { $0["target"]?.string } == ["canvas", nil, "output:1"])
+        #expect(replies[1]["code"]?.string == "badTarget" && replies[1]["stream"]?.string == "preview")
+        let ids = replies.compactMap { $0["id"]?.int }
+        #expect(ids.count == 3 && Set(ids).count == 3, "every reply has its own stream id: \(ids)")
+        let table = try #require(connection.withLock { $0 }).subscriptions.withLock { $0 }
+        #expect(Set(table.keys) == [UInt32(ids[0]), UInt32(ids[2])], "the refused id is not subscribed")
+        #expect(!rig.hub.targets.contains("output:99"))
+        a.cancel(with: .normalClosure, reason: nil)
     }
 
     @Test func dmxMonitorTimerFollowsTheSubscriptions() async throws {
