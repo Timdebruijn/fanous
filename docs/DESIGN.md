@@ -1552,7 +1552,7 @@ trademark search for "Fanous" (`[OPEN-21]`).
 | **Benchmark** | `fanous-bench`: generates media (codec × resolution × fps), ramps layer count until any frame drops within 60 s, confirms with a 10-minute soak at the found count, with 0 and 4 preview clients; writes `docs/benchmarks/<chip>-<date>.json/.md` and the tier record the UI shows | Apple Silicon; first on the M1 Pro reference machine |
 | **Soak** | 8 h run with a scripted DMX generator (random play modes, file changes, dissolves), hot-plug of one display, engine kill/restart; pass = 0 dropped frames outside the restart window, memory flat | before each release |
 | **Protocol interop** | manual checklist with free console software (CITP thumbnails visible, GDTF imports, DMX control end-to-end) | Phase 7 |
-| **UI** | Vitest unit tests for the protocol client, state store and mapping-editor geometry; a Playwright smoke test against a mock server is `[OPEN-22]` | GitHub Actions |
+| **UI** | Vitest unit tests for the protocol client, state store and mapping-editor geometry; Playwright browser tests against a real `fanousd --no-network` per test (`[OPEN-22]`, B47) | GitHub Actions |
 
 CI (Phase 0): build all targets, Core tests, license-header check, Core
 purity check, `web` lint/typecheck/test/build. Hardware tests are a separate
@@ -1581,8 +1581,7 @@ biggest risks early.
 
 Scope guard: a feature not in the table is not in v1. Serial fixture, OSC
 feedback, per-output Syphon, 10-bit output, per-channel blend gamma, frame
-blending, varispeed audio, browser end-to-end tests (OPEN-22) and the MDM
-profile are the v1.x candidates.
+blending, varispeed audio and the MDM profile are the v1.x candidates.
 
 ---
 
@@ -1652,7 +1651,7 @@ profile are the v1.x candidates.
 | OPEN-19 | Prometheus metrics endpoint | v1.x |
 | OPEN-20 | MDM profile for show machines | later (owner's choice) |
 | OPEN-21 | Trademark search for "Fanous" before public release | owner; `docs/RELEASE.md` §7 |
-| OPEN-22 | Browser smoke tests (Playwright) | **v1.x** (B47): Vitest covers the client, store and screen helpers; the screens were checked by hand in Phases 5–7 |
+| OPEN-22 | Browser smoke tests (Playwright) | **Done** (B47, 2026-10-27): Playwright tests against a real engine per test, in CI; Vitest covers the client, store and screen helpers |
 | OPEN-23 | Library default location `~/Movies/Fanous Library` | yes |
 | OPEN-24 | Default ports: HTTPS 8443, OSC 8000/8001; configurable | yes |
 | OPEN-26 | Keychain strategy for unsigned development builds (prompt on every rebuild vs. ephemeral per-process identity) | **Decided 2026-10-23:** file-backed in-memory identity (`SecIdentityCreate`), no login keychain; ADR-0015 amendment |

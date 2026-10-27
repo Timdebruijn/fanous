@@ -28,9 +28,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   live (B31). Show mode applies each output's display mode and restores it afterwards (B33). UI
   values release only after masking a console for 10 minutes; Master and Output fixtures can be
   set from the Layers screen (B27).
-- Project versions: `versions/` snapshots next to the project (start, show mode, every 10 minutes), named
-  versions and Revert… on the System screen, undoable; OSC `/fanous/project/load` (B23, B35). A library root
-  changed on the System screen takes effect at once (B51). Browser end-to-end tests with Playwright against a
+- Project versions: `versions/` snapshots next to the project (start, show mode, every 10 minutes after a change, before a
+  revert), named versions and Revert… on the System screen, undoable; OSC `/fanous/project/load` (B23, B35). A library root
+  changed on the System screen takes effect at once, outside show mode and ingest (B51). Browser end-to-end tests with Playwright against a
   real engine, also in CI (B47). Syphon: the canvas arrives upright in other apps and Syphon inputs are sampled
   the right way up, effects included (B6).
 - Audio: forward loops are gapless (B3). Ingest makes rotated and flipped phone footage upright (B18).
