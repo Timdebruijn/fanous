@@ -479,10 +479,19 @@ public final class MIDIInput: @unchecked Sendable {
         }
     }
 
-    public func start() { queue.async { [self] in open() } }
+    /// CoreMIDI delivers setup notifications (a source plugged in or removed) on the run loop that was current when the
+    /// process first called into CoreMIDI. Only the main thread runs one (fanousd's NSApplication loop); if the first
+    /// call comes from a dispatch queue (the host-facts lookup, a client made there) no hot-plug is ever heard and the
+    /// process's view of the sources goes stale. So `Engine.start` calls this on main before anything else touches
+    /// CoreMIDI, and the client and port are made right here; connecting and receiving stay on `queue`.
+    public func start() {
+        if Thread.isMainThread { open() } else { DispatchQueue.main.async { [self] in open() } }
+    }
 
-    /// On `queue`, like everything that touches the client, the port and the source names.
+    /// On the main thread.
     private func open() {
+        var client = MIDIClientRef()
+        var port = MIDIPortRef()
         let created = MIDIClientCreateWithBlock("Fanous MIDI" as CFString, &client) { [weak self] notification in
             guard notification.pointee.messageID == .msgSetupChanged, let self else { return }
             self.queue.async { self.connect() }
@@ -504,11 +513,16 @@ public final class MIDIInput: @unchecked Sendable {
             self.queue.async { self.receive(bytes, uid: uid) }
         }
         guard made == noErr else {
+            MIDIClientDispose(client)
             status.withLock { $0.error = "cannot create the MIDI input port (\(made))" }
             logger.error("MIDI input: cannot create the input port", metadata: ["status": "\(made)"])
             return
         }
-        connect()
+        queue.async { [self] in
+            self.client = client
+            self.port = port
+            connect()
+        }
     }
 
     /// On `queue`: every source matching the setting; the source's unique id rides along as the connection refCon.

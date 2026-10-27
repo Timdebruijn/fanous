@@ -319,7 +319,7 @@ public final class Engine: @unchecked Sendable {
         MIDICommands.register(on: store, hooks: MIDICommands.Hooks(learn: { midi.learn(target: $0, cue: $1) }))
         lastMIDISettings = MIDISettings.from(project: project)
         midi.apply(lastMIDISettings)
-        midi.start()
+        midi.start()  // on main, the first CoreMIDI call of the process: hot-plug notifications need its run loop
         self.midi = midi
         // OSC: cue, show and timecode commands (DESIGN.md §15.3); the parameter ones stay on the DMX queue
         dmx.onCommand = { [weak self] command in
