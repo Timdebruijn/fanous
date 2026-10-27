@@ -257,8 +257,8 @@ a handle stays on the spot you touch while a warp is active.
 Canvas 1 is also published as the Syphon server "Fanous – Canvas" (in Syphon's
 OpenGL row order; checked upright in the Syphon Simple Client), so
 another app on the same Mac can receive it (the other canvases are not
-published). Receiving a Syphon server into a layer is checked between
-processes by the bench tool only (B6).
+published). Receiving a Syphon server into a layer was checked with a
+second engine's canvas, which arrives upright.
 
 Editing on this screen needs the programmer role and is refused while the show
 is locked.

@@ -9,6 +9,15 @@ import Testing
 @testable import FanousEngine
 
 @Suite struct SyphonTests {
+    @Test func sceneSpecSplitsOnTheFirstSlash() {
+        #expect(SceneConfig.syphonSpec("Some App/Server name")! == ("Some App", "Server name"))
+        #expect(SceneConfig.syphonSpec("Simple Server/")! == ("Simple Server", ""))
+        #expect(SceneConfig.syphonSpec("A/B/C")! == ("A", "B/C"))
+        #expect(SceneConfig.syphonSpec("App") == nil)
+        #expect(SceneConfig.syphonSpec("/Server") == nil)
+        #expect(SceneConfig.syphonSpec("/") == nil)
+    }
+
     static let size = 64
 
     /// B = x*4, G = y*4, R = 0x80, A = 0xFF: every row and column differs, so a flip in either axis shows.
