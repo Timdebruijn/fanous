@@ -78,6 +78,9 @@ driven by the standard DMX patch:
            {"folder": 0, "file": 1, "syphon": "Some App/Server name"}]}
 ```
 
+`syphon` is `"App/Server name"`, split on the first `/`; `"App/"` takes the
+first server of that app (Syphon servers may have an empty name).
+
 Layers pick media with their Folder/File channels. The engine indexes the
 library root (`~/Movies/Fanous Library` by default, `"library"` in the
 scene to override): folders `NNN_name/` and files `NNN_name.ext`, numbered

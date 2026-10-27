@@ -33,7 +33,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   changed on the System screen takes effect at once, outside show mode and ingest (B51). Browser end-to-end tests with Playwright against a
   real engine, also in CI (B47). Syphon: the canvas arrives upright in other apps and Syphon inputs are sampled
   the right way up, effects included (B6). A scene may name a Syphon app without a server name
-  (`"syphon": "App/"`): any server of that app.
+  (`"syphon": "App/"`): the first server of that app, for apps with a single server.
 - Audio: forward loops are gapless (B3). Ingest makes rotated and flipped phone footage upright (B18).
   State sync and HTTP endpoints hide paths, host and TLS details from lower roles (B25). OSC burst
   regression tests; the reported loss is not reproducible (B30).
