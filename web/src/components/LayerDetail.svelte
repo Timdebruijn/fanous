@@ -3,7 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import type { LayerStatus, PatchEntry, ResolvedParameter } from '../lib/docs';
-  import { GENERATORS, RELEASE_TEXT, channelRange, clockText, controlKeys, mediaOptions, mediaPath, patchText, reservedText, valueText, type ChannelSpec, type LibrarySnapshot } from '../lib/layers';
+  import { RELEASE_TEXT, channelRange, clockText, controlKeys, folderZeroItems, mediaOptions, mediaPath, patchText, reservedText, valueText, type ChannelSpec, type LibrarySnapshot } from '../lib/layers';
   import { app, can, cmd, playOnLayer } from '../lib/state.svelte';
   import PolicyHint from './PolicyHint.svelte';
 
@@ -41,6 +41,7 @@
   const expiresIn = $derived(app.live.dmx.uiExpiresIn?.[fixture]);
   const lockTitle = $derived(!can('programmer') ? 'Locked: programmer only' : app.project.showLock ? 'Locked: show lock is on' : undefined);
   const options = $derived(mediaOptions(library));
+  const folderZero = $derived(folderZeroItems(app.live.syphon?.servers));
   const current = $derived(layer && layer.folder > 0 && layer.file > 0 ? `${layer.folder}/${layer.file}` : '');
   const currentName = $derived(layer && layer.folder > 0 ? mediaPath(library, layer.folder, layer.file) : null);
   // MIDI values are a controller like the UI (B36): same expiry, Keep and Release
@@ -102,7 +103,7 @@
       </select>
     </label>
     <label class="field builtin">
-      <span>Built-in content (folder 0)</span>
+      <span>Built-in content and Syphon (folder 0)</span>
       <select class="select" disabled={lockTitle !== undefined} value="" onchange={(e) => {
         const file = Number(e.currentTarget.value);
         e.currentTarget.value = '';
@@ -112,7 +113,7 @@
         if ((params ?? []).find((p) => p.key === 'intensity')?.raw === 0) send('intensity', 65535);
       }}>
         <option value="">Put on this layer…</option>
-        {#each GENERATORS as g (g.file)}<option value={g.file}>{g.file} · {g.name}</option>{/each}
+        {#each folderZero as item (item.file)}<option value={item.file}>{item.label}</option>{/each}
       </select>
     </label>
     {/if}

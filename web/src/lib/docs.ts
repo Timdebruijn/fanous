@@ -125,6 +125,14 @@ export interface LayerStatus {
   error: string | null;
 }
 
+/** A Syphon server of another app as folder 0 file 150–169 (B61); a gone server keeps its number, running false. */
+export interface SyphonServerDoc {
+  file: number;
+  app: string;
+  server: string; // "" = the app's only, unnamed server
+  running: boolean;
+}
+
 export interface IngestJobDoc {
   id: string;
   source: string;
@@ -198,6 +206,8 @@ export interface LiveDoc {
   citp: { port: number; clients: string[]; streams: number; multicast: string[] };
   /** Project versions (B23): when the last automatic version was saved (epoch s, null = none) and a counter bumped on every save or delete. */
   versions?: { lastAutomatic: number | null; serial: number } | null;
+  /** Other apps' Syphon servers, numbered in folder 0 (B61). Absent from engines before B61. */
+  syphon?: { servers: SyphonServerDoc[] };
 }
 
 export interface ReadinessItemDoc {

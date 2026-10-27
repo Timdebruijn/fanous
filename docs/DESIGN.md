@@ -770,6 +770,28 @@ frame), 111 colour sweep, 112 clock. A generator is a `LiveTextureSource`
 before the canvas pass, so it costs one small full-screen pass per layer and no
 file I/O; it then goes through the layer pipeline like media.
 
+**As built (2026-10-27, B61):** files 150–169 are the Syphon servers of other
+apps instead of the project-configured 1–32 above (no project setting exists
+yet). `Syphon/SyphonCatalog.swift` follows Syphon's directory (an unconnected
+`SyphonInput` for its announce/update/retire notifications, which need the
+main run loop) and numbers servers in announce order; a server that goes keeps
+its number (`running` false) until the engine restarts, one that returns with
+the same app and server name takes it again, a rename keeps it, past 20 a new
+server gets none. Identity while running is the directory's UUID, so two
+servers with one name (two engines' canvases) get a number each and connect
+to the right one (`SyphonInput.connect(uuid:)`); the engine's own canvas
+server is left out. The catalog lives in `RenderService` (as long as the
+engine) and is published as `live.syphon.servers` `[{file, app, server,
+running}]`. `MediaLoader` resolves 0/150–169 through it with `liveFactory(name,
+uuid)` (status name "Syphon: App/Server", codec `syphon`); a scene `media`
+entry on the same number wins. On a catalog change the loader marks a layer
+whose server went "not running" and keeps its playback (the last frame stays),
+and opens a layer whose server (re)appeared again, so the picture returns
+without a new selection; the new input replaces the old one on its first frame
+like any media change. A process that dies retires its servers through
+Syphon's unload destructor; one killed with `kill -9` is only dropped when some
+app next asks the directory for announcements.
+
 ### 8.3 Ingest flow
 
 ```

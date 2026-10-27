@@ -3,7 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
 import type { LayerStatus, ResolvedParameter } from './docs';
-import { layerState, mediaOptions, mediaPath, playSteps, policyName, type LibrarySnapshot } from './layers';
+import { GENERATORS, folderZeroItems, layerState, mediaLine, mediaOptions, mediaPath, playSteps, policyName, type LibrarySnapshot } from './layers';
 
 const layer = (over: Partial<LayerStatus> = {}): LayerStatus => ({ index: 1, folder: 3, file: 12, name: 'loop.mov', kind: 'movie', codec: 'HapY', width: 1920, height: 1080, fps: 25, frames: 100, frame: 0, error: null, ...over });
 
@@ -45,6 +45,26 @@ describe('media names', () => {
   });
   it('lists playable numbered items in numeric order', () => {
     expect(mediaOptions(library).map((o) => `${o.folder}/${o.file}`)).toEqual(['1/2', '3/12']);
+  });
+});
+
+describe('folder 0 (B61)', () => {
+  const servers = [
+    { file: 151, app: 'Simple Server', server: '', running: false },
+    { file: 150, app: 'fanousd', server: 'Fanous – Canvas', running: true },
+  ];
+  it('lists the generators, then the Syphon servers by number with their state', () => {
+    const items = folderZeroItems(servers);
+    expect(items.slice(0, GENERATORS.length).map((i) => i.file)).toEqual(GENERATORS.map((g) => g.file));
+    expect(items.slice(GENERATORS.length).map((i) => i.label)).toEqual(['150 · Syphon: fanousd/Fanous – Canvas', '151 · Syphon: Simple Server (not running)']);
+    expect(items.at(-1)).toMatchObject({ syphon: true, running: false, name: 'Syphon: Simple Server' });
+    expect(folderZeroItems(undefined)).toHaveLength(GENERATORS.length);
+  });
+  it('shows a gone server by name with "not running" on the layer', () => {
+    const gone = layer({ folder: 0, file: 151, kind: 'live', name: 'Syphon: Simple Server', error: 'not running', width: 0, height: 0 });
+    expect(mediaLine(gone)).toMatchObject({ text: 'Syphon: Simple Server · not running', tone: 'error' });
+    expect(layerState(gone)).toMatchObject({ dot: 'red', chip: 'NOT RUNNING' });
+    expect(mediaLine(layer({ kind: 'live', name: 'Syphon: X', width: 0, height: 0 })).text).toBe('Syphon: X · Live');
   });
 });
 

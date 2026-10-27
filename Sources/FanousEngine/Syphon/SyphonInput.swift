@@ -84,6 +84,14 @@ public final class SyphonInput: @unchecked Sendable {
         try connect(description: description)
     }
 
+    /// Connects to the server the directory knows by `uuid` (a numbered server, B61: two servers can share a name).
+    public func connect(uuid: String) throws {
+        guard let description = SyphonServerDirectory.shared().servers.first(where: { $0[SyphonServerDescriptionUUIDKey] as? String == uuid }) else {
+            throw SyphonError.notRunning(uuid)
+        }
+        try connect(description: description)
+    }
+
     /// Connects with a server description, e.g. `SyphonOutput.serverDescription` for a private server.
     public func connect(description: [String: Any]) throws {
         disconnect()

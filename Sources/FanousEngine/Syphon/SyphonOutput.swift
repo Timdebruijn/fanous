@@ -10,12 +10,14 @@ public enum SyphonError: Error, CustomStringConvertible {
     case serverFailed(String)
     case serverNotFound(appName: String, serverName: String)
     case clientFailed(String)
+    case notRunning(String)
 
     public var description: String {
         switch self {
         case .serverFailed(let name): "Syphon server '\(name)' could not be started"
         case .serverNotFound(let app, let name): "no Syphon server '\(name)' from '\(app)'"
         case .clientFailed(let name): "Syphon client for '\(name)' could not connect"
+        case .notRunning(let uuid): "Syphon server \(uuid) is not running"
         }
     }
 }
@@ -39,6 +41,9 @@ public final class SyphonOutput: @unchecked Sendable {
 
     /// The description a client needs to connect to this server without the directory (also for private servers).
     public var serverDescription: [String: Any] { server.serverDescription.mapValues { $0 as Any } }
+
+    /// The directory's id of this server (the catalog leaves the engine's own canvas out, B61).
+    public var uuid: String? { server.serverDescription[SyphonServerDescriptionUUIDKey] as? String }
 
     public func stop() { server.stop() }
 

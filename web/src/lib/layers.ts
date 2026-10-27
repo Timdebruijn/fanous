@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Pure helpers for the Layers / Mixer screen: formatting and lookups over the live document, no DOM, no store.
-import type { LayerStatus, PatchEntry, ResolvedParameter } from './docs';
+import type { LayerStatus, PatchEntry, ResolvedParameter, SyphonServerDoc } from './docs';
 
 /** One entry of GET /api/channel-map.json `modes.*`; `channel` is the first (1-based) channel of the parameter. */
 export interface ChannelSpec {
@@ -31,6 +31,20 @@ export const GENERATORS: { file: number; name: string }[] = [
   { file: 111, name: 'Colour sweep' },
   { file: 112, name: 'Clock' },
 ];
+
+/** "App/Server", or "App" when the server has no name (engine `SyphonCatalog.Server.name`). */
+export function syphonName(server: SyphonServerDoc): string {
+  return server.server ? `${server.app}/${server.server}` : server.app;
+}
+
+/** Folder 0 as a list: the generators, then the Syphon servers of other apps by number (150–169, B61). */
+export function folderZeroItems(servers: SyphonServerDoc[] | undefined): { file: number; name: string; syphon: boolean; running: boolean; label: string }[] {
+  const syphon = [...(servers ?? [])].sort((a, b) => a.file - b.file).map((s) => {
+    const name = `Syphon: ${syphonName(s)}`;
+    return { file: s.file, name, syphon: true, running: s.running, label: `${s.file} · ${name}${s.running ? '' : ' (not running)'}` };
+  });
+  return [...GENERATORS.map((g) => ({ ...g, syphon: false, running: true, label: `${g.file} · ${g.name}` })), ...syphon];
+}
 
 export interface ChannelMap {
   footprints: { layer: number; master: number; output: number };
@@ -157,13 +171,15 @@ export function codecName(codec: string): string {
 export function mediaLine(layer: LayerStatus | undefined): { text: string; title: string; detail: string; tone: Tone } {
   const line = (title: string, detail: string, tone: Tone) => ({ text: detail ? `${title} · ${detail}` : title, title, detail, tone });
   if (!layer) return line('no live data', '', 'faint');
+  // a Syphon server that went keeps its name: "Syphon: App/Server · not running"
+  if (layer.kind === 'live' && layer.error && layer.name) return line(layer.name, layer.error, 'error');
   if (layer.kind === 'missing' || layer.error) return line(`${layer.folder} / ${layer.file}`, layer.error || 'File missing', 'error');
   const name = layer.name ?? '—';
   switch (layer.kind) {
     case 'none':
       return line('no media', '', 'faint');
     case 'live':
-      return line(name, `Live · ${layer.width}×${layer.height}`, 'normal');
+      return line(name, layer.width > 0 ? `Live · ${layer.width}×${layer.height}` : 'Live', 'normal');
     case 'still':
       return line(`${layer.folder} / ${layer.file} · ${name}`, `Still · ${layer.width}×${layer.height}`, 'normal');
     default:
@@ -175,6 +191,7 @@ export function mediaLine(layer: LayerStatus | undefined): { text: string; title
 export function layerState(layer: LayerStatus | undefined): { dot: DotColor; label: string; chip: string } {
   if (!layer || layer.kind === 'none') return { dot: 'off', label: 'No media', chip: 'NO MEDIA' };
   if (layer.kind === 'missing') return { dot: 'red', label: 'Media file is missing', chip: 'MISSING FILE' };
+  if (layer.kind === 'live' && layer.error) return { dot: 'red', label: 'Live input not running', chip: 'NOT RUNNING' };
   if (layer.error) return { dot: 'red', label: 'Decoder error', chip: 'DECODER ERROR' };
   if (layer.kind === 'live') return { dot: 'green', label: 'Live input', chip: 'LIVE' };
   return { dot: 'green', label: 'Media OK', chip: 'OK' };

@@ -45,6 +45,12 @@ the list. The library is watched, so a rename in Finder shows up after a moment;
 A layer that points at a number that does not exist, or at a file that is not
 playable, shows the red message "no file N in folder M" on the Layers screen.
 
+The first row of the folder list, **0 · Built-in and Syphon**, is folder 0: the
+content the engine draws itself and the Syphon servers of other apps on this
+Mac, each with the file number a console dials (see
+[show-control.md](show-control.md#built-in-content-folder-0)). Select an item
+and use **Play on layer** to put it on a layer from here.
+
 ## Create a folder
 
 On the Media screen press **New folder**, type a number (the first free one is
