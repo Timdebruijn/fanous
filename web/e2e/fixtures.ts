@@ -119,7 +119,7 @@ export const test = base.extend<{ engine: Engine }>({
       socket.on('framereceived', ({ payload }) => {
         if (typeof payload !== 'string') return;
         const message = JSON.parse(payload) as {
-          t: string; ok?: boolean; error?: unknown; code?: string; message?: string; id?: number;
+          t: string; ok?: boolean; error?: unknown; code?: string; message?: string; id?: number; stream?: string;
           doc?: string; ops?: { path: string; value?: unknown }[];
         };
         if (message.t === 'patch' && message.doc === 'project') {
@@ -132,8 +132,9 @@ export const test = base.extend<{ engine: Engine }>({
           }
         }
         if (message.t === 'ack' && !message.ok) errors.push(`command refused: ${JSON.stringify(message.error)}`);
-        // an error with a stream id ends a stream that went away (a removed canvas); without one a request was refused
-        if (message.t === 'error' && message.id === undefined) {
+        // an error with a stream id and no `stream` ends a stream that went away (a removed canvas); a refused request
+        // has no id, or (a refused preview) both
+        if (message.t === 'error' && (message.id === undefined || message.stream !== undefined)) {
           const target = REFUSED_TARGET.exec(message.message ?? '')?.[1];
           const race = target !== undefined && Date.now() - (appeared.get(target) ?? -Infinity) < RACE_MS;
           if (!race) errors.push(`protocol error: ${message.code}: ${message.message}`);

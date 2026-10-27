@@ -172,13 +172,16 @@ public final class StateServer: @unchecked Sendable {
                     session.send(text: server.store.encode(["t": "sub", "id": .number(Double(id)), "stream": "dmx", "universe": .string(universe)]), droppable: false)
                     server.dmxSubscriptionsChanged()
                 case "preview":
-                    guard let preview = server.preview else {
-                        session.send(text: server.store.encode(["t": "error", "code": "noPreview", "message": "the engine is not rendering"]), droppable: false)
-                        return
+                    // a refused preview carries the stream id it would have had and `stream`, like the `sub` reply, so the
+                    // client settles its waiting request (an error with an id and no `stream` ends a stream that went away)
+                    let id = server.nextStream.add(1, ordering: .relaxed).oldValue
+                    let refused = { [server] (code: String, text: String) -> Void in
+                        let reply: JSONValue = ["t": "error", "id": .number(Double(id)), "stream": "preview", "code": .string(code), "message": .string(text)]
+                        _ = session.send(text: server.store.encode(reply), droppable: false)
                     }
+                    guard let preview = server.preview else { return refused("noPreview", "the engine is not rendering") }
                     let jpeg = message["codec"]?.string == "jpeg"
                     let target = message["target"]?.string ?? "canvas"
-                    let id = server.nextStream.add(1, ordering: .relaxed).oldValue
                     subscriptions.withLock { $0[id] = .preview }
                     // each target has its own streamer: this client's choice does not change what others see
                     let attached = preview.attach(target: target, connection: self, stream: id, jpeg: jpeg) { streamer in
@@ -190,7 +193,7 @@ public final class StateServer: @unchecked Sendable {
                     }
                     if !attached {
                         subscriptions.withLock { _ = $0.removeValue(forKey: id) }
-                        session.send(text: server.store.encode(["t": "error", "code": "badTarget", "message": "preview target \(target) is not canvas, an existing canvas:<id>, an existing output:<id> or layer:<n>"]), droppable: false)
+                        refused("badTarget", "preview target \(target) is not canvas, an existing canvas:<id>, an existing output:<id> or layer:<n>")
                     }
                 default:
                     session.send(text: server.store.encode(["t": "error", "code": "badStream", "message": "streams: dmx, preview"]), droppable: false)

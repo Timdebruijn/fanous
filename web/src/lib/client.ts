@@ -69,7 +69,8 @@ export class FanousClient {
   private resync = false;
   private pending = new Map<string, { resolve: (value: JSONValue) => void; reject: (error: AckError) => void }>();
   private subs = new Map<string, { resolve: (id: number) => void }>();
-  private previewSubs: { resolve: (info: PreviewInfo) => void }[] = [];
+  /** preview `sub` requests in the order sent: the engine answers each with `sub` or a refusal (`error` with `stream`) in that order */
+  private previewSubs: { resolve: (info: PreviewInfo) => void; reject: (error: AckError) => void }[] = [];
   /** per stream id: the latest `stream` description (avcC) for H.264 previews */
   readonly descriptions = new Map<number, StreamDescription>();
   private nextId = 1;
@@ -128,7 +129,7 @@ export class FanousClient {
         reject({ code: 'offline', message: 'not connected' });
         return;
       }
-      this.previewSubs.push({ resolve });
+      this.previewSubs.push({ resolve, reject });
     });
   }
 
@@ -164,7 +165,7 @@ export class FanousClient {
     socket.onclose = (event: CloseEvent) => {
       if (this.socket !== socket) return;
       this.socket = null;
-      for (const { reject } of this.pending.values()) reject({ code: 'offline', message: 'connection closed' });
+      for (const { reject } of [...this.pending.values(), ...this.previewSubs]) reject({ code: 'offline', message: 'connection closed' });
       this.pending.clear();
       this.subs.clear();
       this.previewSubs = [];
@@ -229,7 +230,9 @@ export class FanousClient {
         break;
       }
       case 'error':
-        this.callbacks.onState(this.socket ? 'open' : 'closed', `${message.code}: ${message.message}`);
+        // a refused preview request carries `stream`; without it the error is the connection's (or a stream that went away)
+        if (message.stream === 'preview') this.previewSubs.shift()?.reject({ code: message.code, message: message.message });
+        else this.callbacks.onState(this.socket ? 'open' : 'closed', `${message.code}: ${message.message}`);
         break;
     }
   }

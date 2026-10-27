@@ -1095,6 +1095,7 @@ server → clients  {"t":"patch","rev":1236,"doc":"live","ops":[…]}           
 client → server   {"t":"cmd","id":"c-77","name":"output.setBlend","args":{…}}
 server → client   {"t":"ack","id":"c-77","ok":true,"rev":1237}  |  {"t":"ack","id":"c-77","ok":false,"error":{"code":"showLocked","message":"…"}}
 client → server   {"t":"sub","stream":"dmx","universe":"artnet:0:0:1"} / {"t":"sub","stream":"preview","target":"canvas:1","w":640,"h":360,"fps":30}
+server → client   {"t":"sub","id":7,"stream":"preview",…}  |  {"t":"error","id":7,"stream":"preview","code":"badTarget","message":"…"}   // refused; an error with an id and no stream ends that stream
 server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H.264 AU (AVCC) , 2 = JPEG , 3 = DMX universe (512 B) , 4 = metrics ring page
 ```
 

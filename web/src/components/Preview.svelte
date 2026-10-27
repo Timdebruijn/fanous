@@ -51,20 +51,28 @@
       decoder?.close();
       decoder = null;
       stop?.();
-      const sub = await subscribePreview(
-        'jpeg',
-        async (_kind, payload) => {
-          if (!canvas) return;
-          const bitmap = await createImageBitmap(new Blob([payload as BlobPart], { type: 'image/jpeg' }));
-          if (canvas && (canvas.width !== bitmap.width || canvas.height !== bitmap.height)) {
-            canvas.width = bitmap.width;
-            canvas.height = bitmap.height;
-          }
-          drawBitmap(bitmap);
-        },
-        () => {},
-        target,
-      );
+      let sub: Awaited<ReturnType<typeof subscribePreview>>;
+      try {
+        sub = await subscribePreview(
+          'jpeg',
+          async (_kind, payload) => {
+            if (!canvas) return;
+            const bitmap = await createImageBitmap(new Blob([payload as BlobPart], { type: 'image/jpeg' }));
+            if (canvas && (canvas.width !== bitmap.width || canvas.height !== bitmap.height)) {
+              canvas.width = bitmap.width;
+              canvas.height = bitmap.height;
+            }
+            drawBitmap(bitmap);
+          },
+          () => {},
+          target,
+        );
+      } catch (error) {
+        if (!jpegRun.current()) return;
+        mode = 'off';
+        detail = (error as { message?: string }).message ?? String(error);
+        return;
+      }
       if (!jpegRun.keep(sub.stop)) return;
       stop = sub.stop;
       mode = 'jpeg';

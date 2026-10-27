@@ -148,6 +148,12 @@ struct StateServerTests {
         try await a.send(.string(#"{"t":"sub","stream":"dmx","universe":"artnet:0.0.0"}"#))
         let sub = try await Self.receive(a, until: "sub")
         #expect(sub["id"]?.int != nil)
+        // a refused preview (no renderer here) names its stream, so the client settles the waiting request (B62)
+        try await a.send(.string(#"{"t":"sub","stream":"preview","codec":"jpeg"}"#))
+        let refused = try await Self.receive(a, until: "error")
+        #expect(refused["code"]?.string == "noPreview")
+        #expect(refused["stream"]?.string == "preview")
+        #expect(refused["id"]?.int != nil && refused["id"]?.int != sub["id"]?.int)
 
         a.cancel(with: .normalClosure, reason: nil)
         b.cancel(with: .normalClosure, reason: nil)

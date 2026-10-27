@@ -51,7 +51,7 @@ public enum ProtocolTypes {
               | { t: 'sub'; id: number; stream: 'dmx'; universe: string }
               | { t: 'sub'; id: number; stream: 'preview'; codec: 'avc' | 'jpeg'; w: number; h: number; fps: number; target: string }
               | { t: 'stream'; id: number; codec: string; description: string; w: number; h: number; fps: number }
-              | { t: 'error'; code: string; message: string };
+              | { t: 'error'; code: string; message: string; id?: number; stream?: 'preview' };
 
             /** Binary frame kind 1 (H.264): `[u8 key][u64 be timestamp µs][AVCC access unit]` after the 5-byte stream header; kind 2 (JPEG): the file; kind 3 (DMX): 512 slot bytes. */
 
