@@ -308,6 +308,15 @@ holding is released (the layer goes back to the console or its default). Without
 a controller at hand, turn on the IAC Driver in Audio MIDI Setup › MIDI Studio
 (it appears as a source) and send to it from any MIDI app.
 
+The same check for **MTC**: set the timecode Source to MTC and the Device to
+your MTC interface (or All sources) while it is unplugged; the Timecode panel
+says "MTC source … is not connected". Plug it in and start the timecode: within
+a second the log says `MTC input listening sources=["…"]`, the panel shows the
+device and goes Locked. Unplug it: the device leaves the panel at once, the
+state turns Freewheel (yellow), then Lost (red, layers stop chasing) after the
+Freewheel time, as when the timecode stops. When it was the only source the
+panel says the source is not connected again.
+
 ## CITP/MSEX
 
 Fanous announces itself to consoles every 5 seconds on the CITP multicast

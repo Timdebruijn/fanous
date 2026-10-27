@@ -776,10 +776,12 @@ public final class Engine: @unchecked Sendable {
 
     private func timecodeLive() -> JSONValue {
         let s = timecodeClock.current()
+        let mtcStatus = mtc?.status.withLock { $0 }
         return [
             "state": .string(s.state.rawValue), "source": .string(s.source), "value": .string(s.state == .off ? "--:--:--:--" : s.timecode.description),
             "rate": .string(s.rate.label), "frames": .number(Double(s.frameCount)), "seen": .number(Double(timecodeClock.framesSeen.load(ordering: .relaxed))),
-            "error": ltc?.lastError.map { .string($0) } ?? .null, "device": .string(ltc?.deviceName ?? mtc?.connected.joined(separator: ", ") ?? ""),
+            "error": (ltc?.lastError ?? mtcStatus?.error).map { .string($0) } ?? .null,
+            "device": .string(ltc?.deviceName ?? mtcStatus?.connected.joined(separator: ", ") ?? ""),
         ]
     }
 
@@ -825,7 +827,7 @@ public final class Engine: @unchecked Sendable {
             "memoryGB": .number(Double(SystemInfo.physicalMemoryBytes / 1_073_741_824)), "os": .string(SystemInfo.osVersion), "host": .string(SystemInfo.hostName),
             "addresses": .array(addresses.map { .string($0) }),
             "interfaces": .array(interfaces.map { ["name": .string($0.name), "address": .string($0.address)] }), "port": .number(Double(options.port)),
-            "tlsFingerprint": .string(tlsFingerprint), "bonjour": .string("\(SystemInfo.hostName)._fanous._tcp"),
+            "tlsFingerprint": .string(tlsFingerprint), "bonjour": .string((server?.advertisedServices ?? []).map { "\($0.name ?? "").\($0.type)" }.joined(separator: ", ")),
         ]
     }
     private var tlsFingerprint = ""
@@ -848,7 +850,7 @@ public final class Engine: @unchecked Sendable {
         case .mtc:
             let input = MTCInput(clock: timecodeClock, logger: logger)
             mtc = input
-            _ = input.start(source: settings.device)
+            input.start(source: settings.device)
         }
     }
 
