@@ -43,7 +43,7 @@ struct SequenceIngestTests {
         #expect(frames.count == 10)
         #expect(frames.first?.lastPathComponent == "frame_000.png")
         let output = directory.appending(path: "out.mov")
-        let written = try SequenceIngest.convert(frames: frames, to: output, fps: 25, codec: .proRes4444)
+        let written = try await offPool { try SequenceIngest.convert(frames: frames, to: output, fps: 25, codec: .proRes4444) }
         #expect(written == 10)
 
         guard let device = MTLCreateSystemDefaultDevice() else { return }

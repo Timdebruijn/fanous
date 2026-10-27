@@ -14,7 +14,7 @@ import Testing
         let directory = try IngestQueueTests.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "clip.mov")
-        try await IngestQueueTests.offPool {
+        try await offPool {
             let writer = try MovieWriter(url: url, width: 320, height: 176, fps: 10, codec: .hap(.hap), audio: false)
             for frame in 0..<4 { try writer.append(try IngestQueueTests.patternBuffer(pool: writer.pixelBufferPool, frame: frame)) }
             try writer.finish()

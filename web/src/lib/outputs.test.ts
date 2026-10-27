@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
-import { canvasSizeError, canvasTarget, layerCanvas, layerRuns, layersOn, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, handles, insertPoint, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
+import { canvasSizeError, canvasTarget, previewReady, layerCanvas, layerRuns, layersOn, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, handles, insertPoint, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
 
 const output: OutputConfig = {
   id: 1,
@@ -86,6 +86,17 @@ describe('multiple canvases', () => {
   it('names preview targets, keeping "canvas" for canvas 1', () => {
     expect(canvasTarget(1)).toBe('canvas');
     expect(canvasTarget(3)).toBe('canvas:3');
+  });
+  it('holds a canvas preview back until that canvas renders', () => {
+    const rendered = [{ id: 1 }, { id: 2 }];
+    expect(previewReady('canvas', undefined)).toBe(true);
+    expect(previewReady('output:3', undefined)).toBe(true);
+    expect(previewReady('layer:2', [])).toBe(true);
+    expect(previewReady('canvas:2', rendered)).toBe(true);
+    expect(previewReady('canvas:3', rendered)).toBe(false);
+    expect(previewReady('canvas:3', undefined)).toBe(false);
+    expect(previewReady('canvas:1', undefined)).toBe(true);  // the default canvas always renders
+    expect(previewReady('canvas:x', [])).toBe(true);  // not a canvas id: asked for, and refused by the engine
   });
   it('finds the canvas of a layer and the layers of a canvas', () => {
     const assigned = { '5': 2, '6': 2, '7': 2, '8': 2 };

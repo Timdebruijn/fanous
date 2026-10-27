@@ -76,9 +76,14 @@ struct MappingMathTests {
         var warp = WarpSettings()
         warp.mesh = .identity(cols: 33, rows: 33)
         warp.mesh!.points[33 * 16 + 16] = MapPoint(0.52, 0.49)
-        let start = Date()
         let field = WarpMath.field(warp, cols: 480, rows: 270)  // 1080p / 4
-        let ms = Date().timeIntervalSince(start) * 1000
+        // best of five: in a parallel test run the other suites share the CPU with this measurement
+        var ms = Double.infinity
+        for _ in 0..<5 {
+            let start = Date()
+            _ = WarpMath.field(warp, cols: 480, rows: 270)
+            ms = min(ms, Date().timeIntervalSince(start) * 1000)
+        }
         #expect(field.count == 480 * 270 * 2)
         // the 100 ms budget is measured on the reference Mac; a hosted CI VM (CI=true) is about 2× slower in debug, so there
         // the bound only catches a gross regression

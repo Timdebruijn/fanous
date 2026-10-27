@@ -112,28 +112,6 @@ struct UniverseSettingsEngineTests {
 
     // MARK: receivers
 
-    struct PortInUse: Error, CustomStringConvertible {
-        var port: UInt16
-        var description: String { "UDP port \(port) is in use (another engine or test?); refusing to share it" }
-    }
-
-    /// A random high UDP port, checked by binding it exclusively (no SO_REUSEADDR/SO_REUSEPORT) and releasing it.
-    /// Network.framework listeners share ports, so a port another process holds would cross-talk silently: fail instead.
-    static func freePort() throws -> UInt16 {
-        let port = UInt16.random(in: 40_000..<60_000)
-        let fd = socket(AF_INET, SOCK_DGRAM, 0)
-        defer { close(fd) }
-        var address = sockaddr_in()
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = port.bigEndian
-        address.sin_addr.s_addr = INADDR_ANY
-        let bound = withUnsafePointer(to: &address) { p in
-            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
-        }
-        guard bound == 0 else { throw PortInUse(port: port) }
-        return port
-    }
-
     static func send(_ bytes: [UInt8], to port: UInt16) {
         let fd = socket(AF_INET, SOCK_DGRAM, 0)
         defer { close(fd) }
@@ -166,7 +144,7 @@ struct UniverseSettingsEngineTests {
         var settings = UniverseSettings(for: Self.a0)
         settings.holdOnLoss = loss
         store.setUniverseSettings([Self.a0: settings])
-        let port = try Self.freePort()
+        let port = try freeUDPPort()
         let receiver = ArtNetReceiver(store: store, logger: Self.logger, nodeName: "test", port: port)
         try receiver.start()
         try await Task.sleep(for: .milliseconds(300))
@@ -233,7 +211,7 @@ struct UniverseSettingsEngineTests {
     /// Asked of the kernel (multicast delivery itself needs the Local Network permission, which a test run lacks).
     @Test func sacnMembershipsFollowSettingsAndSurviveReplug() async throws {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
-        let sacn = SACNReceiver(store: store, logger: Self.logger, port: try Self.freePort())
+        let sacn = SACNReceiver(store: store, logger: Self.logger, port: try freeUDPPort())
         try sacn.start(groups: ["lo0": [7], "en42": [8]])
         defer { sacn.stop() }
         sacn.pathUpdated()
@@ -257,7 +235,7 @@ struct UniverseSettingsEngineTests {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
         let real = SystemInfo.ipv4Interfaces.filter(\.multicast)
         store.interfaceList = { real + [NetworkInterface(name: "en99", address: "10.99.0.1", netmask: "255.255.0.0", multicast: true)] }
-        let sacn = SACNReceiver(store: store, logger: Self.logger, port: try Self.freePort())
+        let sacn = SACNReceiver(store: store, logger: Self.logger, port: try freeUDPPort())
         try sacn.start(groups: ["any": [3]])
         defer { sacn.stop() }
         sacn.pathUpdated()
@@ -275,7 +253,7 @@ struct UniverseSettingsEngineTests {
 
     /// A port someone holds without SO_REUSEPORT (nc -u -l 5568) fails the bind: the engine catches it and runs on.
     @Test func sacnBindFailureThrowsAndReadinessWarns() throws {
-        let port = try Self.freePort()
+        let port = try freeUDPPort()
         let holder = socket(AF_INET, SOCK_DGRAM, 0)
         defer { close(holder) }
         var address = sockaddr_in()
@@ -297,7 +275,7 @@ struct UniverseSettingsEngineTests {
 
     @Test func protocolSwitchesLiveToSACNOnThePair() async throws {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
-        let artPort = try Self.freePort(), sacnPort = try Self.freePort()
+        let artPort = try freeUDPPort(), sacnPort = try freeUDPPort()
         let artnet = ArtNetReceiver(store: store, logger: Self.logger, nodeName: "test", port: artPort)
         try artnet.start()
         let sacn = SACNReceiver(store: store, logger: Self.logger, port: sacnPort)
@@ -329,7 +307,7 @@ struct UniverseSettingsEngineTests {
         store.interfaceList = {
             [NetworkInterface(name: "lo0", address: "127.0.0.1", netmask: "255.0.0.0"), NetworkInterface(name: "en9", address: "10.9.0.1", netmask: "255.255.0.0")]
         }
-        let port = try Self.freePort()
+        let port = try freeUDPPort()
         let receiver = ArtNetReceiver(store: store, logger: Self.logger, nodeName: "test", port: port)
         try receiver.start()
         defer { receiver.stop() }

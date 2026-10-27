@@ -3,6 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import { previewReady } from '../lib/outputs';
   import { latestOnly } from '../lib/preview';
   import { app, subscribePreview } from '../lib/state.svelte';
 
@@ -19,12 +20,14 @@
   let stop: (() => void) | null = null;
   // a hidden tab (another tab in front, minimised window) takes no preview stream; it resumes when the tab shows again
   let hidden = typeof document !== 'undefined' && document.hidden;
+  // a new canvas renders only after the canvas switch: its preview is asked for once the engine lists it as rendered
+  const ready = $derived(previewReady(target, app.live.canvas?.canvases));
 
   // a target change while a subscription is still pending: the older one is stopped when it resolves
   const latest = latestOnly();
 
   async function start() {
-    if (!canvas || hidden) return;
+    if (!canvas || hidden || !ready) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const run = latest.begin();
@@ -169,19 +172,22 @@
   $effect(() => {
     if (app.connection === 'open' && !hidden && stop === null && untrack(() => mode) !== 'connecting') void start();
   });
-  let shownTarget = untrack(() => target);  // the first target; the effect below follows later changes
+  // the first target; the effect below follows later changes, and a canvas that starts (or stops) rendering
+  let shownTarget = untrack(() => target);
+  let shownReady = untrack(() => ready);
   $effect(() => {
-    if (target === shownTarget) return;
+    if (target === shownTarget && ready === shownReady) return;
     shownTarget = target;
+    shownReady = ready;
     pause();
-    void start();  // does nothing while hidden; the next show starts the new target
+    void start();  // does nothing while hidden or not ready; the next show or the canvas switch starts it
   });
 </script>
 
 <figure class="preview">
   <canvas bind:this={canvas} width="640" height="360" aria-label={`${label || 'Canvas'} preview`} style:aspect-ratio={aspect}></canvas>
   <figcaption class="caption">
-    {#if mode === 'avc'}H.264 · {detail}{:else if mode === 'jpeg'}JPEG 5 fps · {detail}{:else if mode === 'off'}no preview · {detail}{:else}connecting…{/if}{#if label}{' · '}{label}{/if}
+    {#if !ready}starting…{:else if mode === 'avc'}H.264 · {detail}{:else if mode === 'jpeg'}JPEG 5 fps · {detail}{:else if mode === 'off'}no preview · {detail}{:else}connecting…{/if}{#if label}{' · '}{label}{/if}
     {#if stalled}<span class="stalled"> · no new frames</span>{/if}
   </figcaption>
 </figure>

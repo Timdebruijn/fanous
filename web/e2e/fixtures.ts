@@ -14,15 +14,6 @@ const repo = resolve(import.meta.dirname, '../..');
 const binary = process.env.FANOUSD ?? join(repo, '.build/debug/fanousd');
 const webRoot = join(repo, 'web/dist');
 
-// Two known engine races, not fixed yet, both a preview refused for a target that has only just appeared in the
-// project (within RACE_MS of the patch that added it); any other refusal fails. Drop this once they are fixed:
-// - StateStore.commit broadcasts a project patch before onProjectChanged applies it, so the preview of a just added
-//   (or undone) output can be asked for before the engine knows the output;
-// - a new canvas renders only after the canvas switch, but the Canvases tab asks for its preview at once.
-const RACE_MS = 1500;
-const REFUSED_TARGET = /^preview target ((?:output|canvas):\d+) is not /;
-const LIST_OR_ITEM = /^\/(outputs|canvases)(?:\/\d+)?$/;
-
 export type Engine = { url: string; home: string; token: string; api: APIRequestContext };
 
 function freePort(): Promise<number> {
@@ -114,30 +105,17 @@ export const test = base.extend<{ engine: Engine }>({
     page.on('console', (message) => {
       if (message.type() === 'error') errors.push(`console error: ${message.text()}`);
     });
-    const appeared = new Map<string, number>();  // "output:1", "canvas:2" → when a project patch added it
     page.on('websocket', (socket) =>
       socket.on('framereceived', ({ payload }) => {
         if (typeof payload !== 'string') return;
         const message = JSON.parse(payload) as {
           t: string; ok?: boolean; error?: unknown; code?: string; message?: string; id?: number; stream?: string;
-          doc?: string; ops?: { path: string; value?: unknown }[];
         };
-        if (message.t === 'patch' && message.doc === 'project') {
-          for (const op of message.ops ?? []) {
-            const list = LIST_OR_ITEM.exec(op.path)?.[1];
-            if (!list) continue;
-            for (const item of [op.value].flat() as { id?: unknown }[]) {
-              if (typeof item?.id === 'number') appeared.set(`${list === 'outputs' ? 'output' : 'canvas'}:${item.id}`, Date.now());
-            }
-          }
-        }
         if (message.t === 'ack' && !message.ok) errors.push(`command refused: ${JSON.stringify(message.error)}`);
         // an error with a stream id and no `stream` ends a stream that went away (a removed canvas); a refused request
         // has no id, or (a refused preview) both
         if (message.t === 'error' && (message.id === undefined || message.stream !== undefined)) {
-          const target = REFUSED_TARGET.exec(message.message ?? '')?.[1];
-          const race = target !== undefined && Date.now() - (appeared.get(target) ?? -Infinity) < RACE_MS;
-          if (!race) errors.push(`protocol error: ${message.code}: ${message.message}`);
+          errors.push(`protocol error: ${message.code}: ${message.message}`);
         }
       }),
     );
