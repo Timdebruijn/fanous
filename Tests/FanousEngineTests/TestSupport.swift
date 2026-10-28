@@ -87,8 +87,8 @@ final class UDPCatcher {
 /// not counted. A logger already installed is chained and put back afterwards; windows are serialised.
 /// `malloc_logger` is exported by libsystem_malloc but declared only in its private headers, hence `dlsym`.
 /// Debug builds allocate where optimised ones do not: unspecialised generics (`Array`'s read accessor,
-/// `IndexingIterator`) put their coroutine frames on the heap, so a debug compositor tick makes 130–200 allocations
-/// that a `-c release` build does not.
+/// `IndexingIterator`) put their coroutine frames on the heap, so a debug compositor tick makes 137 (Sync off) / 201
+/// (masters) allocations that a `-c release` build does not.
 enum MallocCounter {
     /// libmalloc's `malloc_logger_t`: type, arg1–3, result, frames to skip.
     typealias Logger = @convention(c) (UInt32, UInt, UInt, UInt, UInt, UInt32) -> Void
@@ -106,13 +106,15 @@ enum MallocCounter {
         p.initialize(to: State())
         return p
     }()
-    /// `&malloc_logger`; RTLD_DEFAULT is `(void *)-2`.
-    nonisolated(unsafe) private static let slot = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "malloc_logger")!
+    /// `&malloc_logger`; RTLD_DEFAULT is `(void *)-2`. Nil if libsystem_malloc stops exporting it.
+    nonisolated(unsafe) private static let slot = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "malloc_logger")?
         .assumingMemoryBound(to: Logger?.self)
+    /// False: no `malloc_logger` to hook; tests that count gate on this (`.enabled(if:)`).
+    static let available = slot != nil
     private static let lock = NSLock()
     private static let hook: Logger = { type, arg1, arg2, arg3, result, skip in
         let state = MallocCounter.state
-        // stack_logging_type_alloc (2): malloc, calloc, valloc and the new block of a realloc; frees carry 0 or 4
+        // stack_logging_type_alloc (2): malloc, calloc, valloc and the new block of a realloc; frees carry 4|8 (= 12)
         if type & 2 != 0, let thread = state.pointee.thread, pthread_equal(pthread_self(), thread) != 0 {
             state.pointee.count += 1
         }
@@ -132,13 +134,14 @@ enum MallocCounter {
     // dropped the install as a dead store and returned the 0 it had just written (0 for 100 mallocs with -c release).
     @inline(never) @_optimize(none)
     private static func install() {
+        let slot = slot!
         state.pointee = State(thread: pthread_self(), previous: slot.pointee, count: 0)
         slot.pointee = hook
     }
 
     @inline(never) @_optimize(none)
     private static func remove() -> Int {
-        slot.pointee = state.pointee.previous
+        slot!.pointee = state.pointee.previous
         state.pointee.thread = nil
         return state.pointee.count
     }
@@ -146,7 +149,8 @@ enum MallocCounter {
 
 /// The counter sees allocations of the measured thread, malloc and Swift objects alike, and not those of another thread
 /// in the same window. Loops are `while` loops: a `for` over a range allocates in a debug build.
-@Test func mallocCounterCountsOnlyTheMeasuredThread() async throws {
+@Test(.enabled(if: MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS"))
+func mallocCounterCountsOnlyTheMeasuredThread() async throws {
     final class Other: Sendable { let state = Mutex((stop: false, allocations: 0)) }
     final class Sink { var object: Sink? }
     let other = Other()
