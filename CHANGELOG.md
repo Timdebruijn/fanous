@@ -144,6 +144,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   never finished starting, its log ending at that step (B66). A preview's encoder is now made, for its first H.264 viewer, and released with
   the last; JPEG previews and CITP streaming need none. A browser that gets no H.264 description within 5 s falls back
   to JPEG (B66).
+- The preview e2e tests wait up to 30 s on CI for the preview to stream (H.264 or JPEG) instead of 5 s (B81).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
