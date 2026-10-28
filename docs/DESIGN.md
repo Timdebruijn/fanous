@@ -1335,9 +1335,13 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   layer alone), often in another aspect: when the served size (`sub` reply,
   then each `stream` description) is another shape than the preview's box,
   the browser letterboxes it (`object-fit: contain`) and the caption says
-  "canvas fallback" (B87; a layer has its canvas's shape, so its fallback
-  is not told apart). A fallback streamer whose own
-  viewer left stays as it is: only fallback viewers keep it encoding, so no
+  "canvas fallback" (B87). A fallback in the box's shape is not told
+  apart: a layer (it has its canvas's shape) or a region crop of the same
+  ratio (960×540 of a 1920×1080 canvas) shows the whole canvas unflagged
+  and not letterboxed (B96). After a change of the box's shape (a canvas
+  format or output region change) the label also shows for a moment,
+  until the rebuilt stream's description arrives. A fallback streamer
+  whose own viewer left stays as it is: only fallback viewers keep it encoding, so no
   release is seen and nothing starts a re-balance. The canvas 1 streamer's
   own viewers are never on a fallback (it is always counted).
 
