@@ -59,7 +59,10 @@ public final class SyphonInput: @unchecked Sendable {
     }
 
     /// Servers the directory currently knows about (all processes, including this one).
-    public var servers: [ServerInfo] {
+    public var servers: [ServerInfo] { Self.directoryServers }
+
+    /// The same without an instance (the directory is one per process).
+    public static var directoryServers: [ServerInfo] {
         SyphonServerDirectory.shared().servers.map { description in
             ServerInfo(
                 appName: description[SyphonServerDescriptionAppNameKey] as? String ?? "",
@@ -80,6 +83,14 @@ public final class SyphonInput: @unchecked Sendable {
         // Syphon treats an empty name as "any", so a match here is never ambiguous in the sense of a wrong server type
         guard let description = SyphonServerDirectory.shared().servers(matchingName: serverName, appName: appName).first else {
             throw SyphonError.serverNotFound(appName: appName, serverName: serverName)
+        }
+        try connect(description: description)
+    }
+
+    /// Connects to the server the directory knows by `uuid` (a numbered server, B61: two servers can share a name).
+    public func connect(uuid: String) throws {
+        guard let description = SyphonServerDirectory.shared().servers.first(where: { $0[SyphonServerDescriptionUUIDKey] as? String == uuid }) else {
+            throw SyphonError.notRunning(uuid)
         }
         try connect(description: description)
     }

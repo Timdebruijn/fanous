@@ -260,7 +260,9 @@ Canvas 1 is also published as the Syphon server "Fanous – Canvas" (in Syphon's
 OpenGL row order; checked upright in the Syphon Simple Client), so
 another app on the same Mac can receive it (the other canvases are not
 published). Receiving a Syphon server into a layer was checked with a
-second engine's canvas, which arrives upright.
+second engine's canvas, which arrives upright. Other apps' Syphon servers are
+layer content in folder 0, files 150–169 (see
+[show-control.md](show-control.md#built-in-content-folder-0)).
 
 Editing on this screen needs the programmer role and is refused while the show
 is locked.

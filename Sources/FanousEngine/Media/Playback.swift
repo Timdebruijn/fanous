@@ -304,8 +304,11 @@ public final class MediaLoader: @unchecked Sendable {
     private let running = Atomic<Bool>(true)
     private var loaded: [UInt32]
     private var thread: Thread?
-    /// Creates live inputs ("App/Server" for Syphon); nil until the Syphon wiring is installed.
-    public var liveFactory: (@Sendable (String) -> (any LiveTextureSource)?)?
+    /// Creates live inputs: Syphon by a scene's "App/Server", or by the directory's id when given (a numbered server
+    /// of folder 0, B61, where two servers can share a name); nil until the Syphon wiring is installed.
+    public var liveFactory: (@Sendable (_ spec: String, _ uuid: String?) -> (any LiveTextureSource)?)?
+    /// Folder 0 files 150–169 (B61); nil = no numbered Syphon servers (tests, bench). Set before `start`.
+    public var syphonCatalog: SyphonCatalog?
     /// Folder 0 generators (file 100+); nil in tests without a Metal context.
     public var generatorFactory: (@Sendable (Int) -> (any LiveTextureSource)?)?
     /// Two mixer channels per layer slot (the playing media and the one dissolving out); nil = no audio.
@@ -324,6 +327,7 @@ public final class MediaLoader: @unchecked Sendable {
         self.logger = logger
         loaded = Array(repeating: 0, count: layers.count)
         parity = Array(repeating: 0, count: layers.count)
+        syphonOpen = Array(repeating: nil, count: layers.count)
     }
 
     public func start() {
@@ -341,6 +345,21 @@ public final class MediaLoader: @unchecked Sendable {
 
     private let reresolveAll = Atomic<Bool>(false)
     private let reresolveMissing = Atomic<Bool>(false)
+    private let syphonChanged = Atomic<Bool>(false)
+    /// Loader thread: the directory id of the numbered Syphon server each layer is connected to.
+    private var syphonOpen: [String?]
+
+    /// B61: a numbered Syphon server started, went or came back. A layer on one that went says "not running" and keeps
+    /// its last picture; one whose server (re)appears connects without being selected again.
+    public func syphonServersChanged() {
+        syphonChanged.store(true, ordering: .relaxed)
+        wake.signal()
+    }
+
+    /// Folder 0 files 150–169 that no scene entry claims (scene entries win on the same number).
+    private func isNumberedSyphon(_ key: MediaKey) -> Bool {
+        key.folder == 0 && SyphonCatalog.files.contains(key.file) && media[key] == nil
+    }
 
     /// B51: the library root changed; every layer on library media opens its folder/file again through `resolver`
     /// (a file the new root lacks shows "missing"). Generators, scene entries and "none" are left alone.
@@ -365,6 +384,20 @@ public final class MediaLoader: @unchecked Sendable {
                     let key = MediaKey(packed: loaded[i])
                     guard !key.isNone, key.folder != 0, media[key] == nil else { continue }
                     if all || (layers[i].mediaStatus.withLock { $0.kind == "missing" } && resolver?(key) != nil) {
+                        loaded[i] = .max  // never a packed key: opened again below
+                    }
+                }
+            }
+            if syphonChanged.exchange(false, ordering: .relaxed) {
+                for i in loaded.indices where isNumberedSyphon(MediaKey(packed: loaded[i])) {
+                    let server = syphonCatalog?.server(file: MediaKey(packed: loaded[i]).file)
+                    if server?.uuid == syphonOpen[i] {
+                        // same connection (or still gone): only a rename (SyphonServerUpdate) can have changed
+                        if let server { layers[i].mediaStatus.withLock { $0.name = "Syphon: \(server.name)" } }
+                    } else if server?.uuid == nil {
+                        syphonOpen[i] = nil
+                        layers[i].mediaStatus.withLock { $0.error = "not running" }
+                    } else {
                         loaded[i] = .max  // never a packed key: opened again below
                     }
                 }
@@ -401,7 +434,27 @@ public final class MediaLoader: @unchecked Sendable {
         status.folder = key.folder
         status.file = key.file
         defer { layers[layer].mediaStatus.withLock { $0 = status } }
+        syphonOpen[layer] = nil
         guard !key.isNone else { return nil }
+        if isNumberedSyphon(key), let server = syphonCatalog?.server(file: key.file) {
+            status.kind = "live"
+            status.codec = "syphon"
+            status.name = "Syphon: \(server.name)"
+            guard let uuid = server.uuid else {
+                status.error = "not running"  // black until it starts; then the catalog change opens it
+                return nil
+            }
+            guard let live = liveFactory?(server.name, uuid) else {
+                logger.warning("Syphon server could not connect", metadata: ["layer": "\(layer + 1)", "syphon": "\(server.name)"])
+                failures.wrappingAdd(1, ordering: .relaxed)
+                status.error = "could not connect"
+                return nil
+            }
+            opened.wrappingAdd(1, ordering: .relaxed)
+            syphonOpen[layer] = uuid
+            logger.info("layer \(layer + 1) media \(key)", metadata: ["syphon": "\(server.name)"])
+            return LayerPlayback(key: key, live: live)
+        }
         if Generators.isGenerator(key), let generator = generatorFactory?(key.file) {
             opened.wrappingAdd(1, ordering: .relaxed)
             status.kind = "live"
@@ -417,14 +470,14 @@ public final class MediaLoader: @unchecked Sendable {
             logger.warning("media not found", metadata: ["layer": "\(layer + 1)", "media": "\(key)"])
             failures.wrappingAdd(1, ordering: .relaxed)
             status.kind = "missing"
-            status.error = key.folder == 0
-                ? "no built-in content \(key.file) in folder 0 (100–107, 110–113)"
-                : "no file \(key.file) in folder \(key.folder)"
+            status.error = key.folder != 0 ? "no file \(key.file) in folder \(key.folder)"
+                : SyphonCatalog.files.contains(key.file) ? "no Syphon server numbered \(key.file) (folder 0, 150–169)"
+                : "no built-in content \(key.file) in folder 0 (100–107, 110–113, Syphon 150–169)"
             return nil
         }
         do {
             if let syphon = entry.syphon {
-                guard let live = liveFactory?(syphon) else { throw RenderError.pipeline("no live input for \(syphon)") }
+                guard let live = liveFactory?(syphon, nil) else { throw RenderError.pipeline("no live input for \(syphon)") }
                 opened.wrappingAdd(1, ordering: .relaxed)
                 status.kind = "live"
                 status.name = "Syphon: \(syphon)"

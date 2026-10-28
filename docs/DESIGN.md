@@ -770,6 +770,37 @@ frame), 111 colour sweep, 112 clock. A generator is a `LiveTextureSource`
 before the canvas pass, so it costs one small full-screen pass per layer and no
 file I/O; it then goes through the layer pipeline like media.
 
+**As built (2026-10-27, B61):** files 150–169 are the Syphon servers of other
+apps. The project-configured 1–32 above was only a plan and was never built;
+the fixed path is a scene `media` entry (`{folder: 0, file, syphon:
+"App/Server"}`) on any folder 0 number, which also beats 150–169.
+`Syphon/SyphonCatalog.swift` follows Syphon's directory (an unconnected
+`SyphonInput` for its announce/update/retire notifications, which need the
+main run loop) and numbers servers in announce order; a server that goes keeps
+its number (`running` false) until the engine restarts, one that returns with
+the same app and server name takes it again, a rename keeps it, past 20 a new
+server gets none (after an engine restart the numbers follow the order the
+servers answer the startup announce request; persisting them is B69). Identity while running is the directory's UUID, so two
+servers with one name (two engines' canvases) get a number each and connect
+to the right one (`SyphonInput.connect(uuid:)`); the engine's own canvas
+server is left out. The catalog lives in `RenderService` (as long as the
+engine) and is published as `live.syphon.servers` `[{file, app, server,
+running}]`. `MediaLoader` resolves 0/150–169 through it with `liveFactory(name,
+uuid)` (status name "Syphon: App/Server", codec `syphon`); a scene `media`
+entry on the same number wins. On a catalog change the loader marks a layer
+whose server went "not running" and keeps its playback (the last frame stays),
+and opens a layer whose server (re)appeared again, so the picture returns
+without a new selection; the new input replaces the old one on its first frame
+like any media change; a rename updates the status name in place. A layer that
+selects a server that is not running stays black until it starts; a running
+server that refuses the client reads "could not connect". A process that exits
+normally retires its servers through Syphon's unload destructor; one that
+crashes or is killed stays listed until an announce request goes unanswered for
+6 s (the catalog posts Syphon's `ServerAnnounceRequest` every 5 s while a
+server is listed as running), so it reads "not running" within about 11 s. A
+server's frame age is not used: servers publish only when their picture
+changes.
+
 ### 8.3 Ingest flow
 
 ```
@@ -1852,7 +1883,7 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | OPEN-9 | Exact DMX bands (play modes, effects), speed max 400 %, scale max 800 % | **Resolved (Phase 1):** as in §6.2, locked in `docs/channel-map.md` and the GDTF |
 | OPEN-10 | sACN per-address priority (0xDD start code) | not in v1 |
 | OPEN-11 | Per-parameter smoothing vs a global switch | per parameter, default off |
-| OPEN-12 | Folder 0 numbering for inputs/generators | **Decided 2026-10-25:** as in §8.2, plus 110 test card, 111 colour sweep, 112 clock (`Generators.names`) |
+| OPEN-12 | Folder 0 numbering for inputs/generators | **Decided 2026-10-25:** as in §8.2, plus 110 test card, 111 colour sweep, 112 clock (`Generators.names`); 150–169 other apps' Syphon servers (B61, 2026-10-27) |
 | OPEN-13 | HAP muxing via AVAssetWriter passthrough vs own muxer | **Resolved (Phases 2–4):** `AVAssetWriterInput` with a `sourceFormatHint` format description and passthrough sample buffers writes HAP `.mov` files the engine plays; no own muxer |
 | OPEN-14 | Per-channel (RGB) blend gamma | v1.x, cheap |
 | OPEN-15 | Audio varispeed / pitch at speed ≠ 100 % | v1.x; mute in v1 |
