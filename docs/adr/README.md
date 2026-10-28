@@ -26,4 +26,4 @@ Consequences. Status is one of Proposed, Accepted, Superseded by ADR-n.
 | [0018](0018-dependencies.md) | Dependency and vendoring policy | Accepted |
 | [0019](0019-audio.md) | Audio: one output device, layer clock is master | Accepted |
 | [0020](0020-minimum-macos.md) | Minimum macOS version 15 | Accepted |
-| [0021](0021-multi-server-sync.md) | Multi-server sync over the state connection | Proposed |
+| [0021](0021-multi-server-sync.md) | Multi-server sync with a Sync channel and a broadcast clock packet | Proposed |

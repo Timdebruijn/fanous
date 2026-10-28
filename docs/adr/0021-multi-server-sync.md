@@ -1,52 +1,59 @@
-# ADR-0021: Multi-server sync over the state connection
+# ADR-0021: Multi-server sync with a Sync channel and a broadcast clock packet
 
 Status: Proposed · 2026-10-28 (design only, B60)
 
 ## Context
-A show can need two Macs for one wide picture (each renders its half with a
-blend) or a hot backup. Catalyst-style servers solve this with a master that
-publishes its clock over the LAN. The brief for B60 asked for a master
-publishing its compositor clock and per-layer media positions over multicast
-UDP, every machine resolving the console on its own, and a pushed project
-version to keep the machines equal.
+A show can need two Macs for one picture: each drives one projector with
+its own slice, blend and warp, and the layers that carry the same content
+must play frame-locked. The owner's brief (B60) asked for a master that
+publishes its clock over the LAN like Art-Net, with every machine on the
+same console. Precedents: Catalyst had a play mode "Synchronize to master
+unit"; High End's Axon/DL.3 had "Sync Mode" and "Sync To" channels per layer
+(a slave points at the master's fixture id and a master layer), synced over
+Ethernet and dependent on all-I-frame content.
+
+A first draft of DESIGN.md §23 mirrored a whole machine over the WSS state
+connection (a follower rendering the master's resolved parameters, one
+project holding every machine's outputs, a `follower` role, promote and
+swap). The owner's review rejected it as the base: both machines already
+hear the same Art-Net/sACN and are set up alike, so only the clocks need
+syncing, and the sync should be a console parameter, not a machine mode.
 
 ## Decision
-- A **follower renders what the master resolved**: the master's compositor
-  publishes its per-tick `ParameterSnapshotSlot` plus the derived layer
-  clocks, loaded media and dissolve state as one binary `SyncFrame`; the
-  follower draws that frame on its own displays and does not resolve DMX,
-  OSC, MIDI, timecode, cues or UI edits of its own while following.
-- The frames travel on the **existing WSS state connection** as a binary
-  stream (kind 5), next to the `project` patches that keep the follower's
-  mirrored project current. Followers hold a `follower` role token; the
-  master's certificate is pinned on first connect; discovery is the existing
-  Bonjour record.
-- The follower's compositor **ticks on frame arrival** (a semaphore with a
-  1.5-period timeout instead of the mach wait), then presents on its own next
-  vsync. That bounds the offset to one frame without clock discipline; a
-  missing frame is freewheeled with the local `LayerClock`.
-- One shared project holds the outputs of all machines, bound by display
-  identity and tagged with the owning machine's install UUID; followers
-  report their displays and readiness up so a follower's outputs are mapped
-  from the master's UI.
-- Loss: freewheel, "lost" after the freewheel time, reconnect; **promote** is
-  an operator decision (or `onLoss: standalone`), never automatic re-follow.
-  A hot backup is a follower whose outputs are disabled until the swap.
+- **Layer channel 51, "Sync"**: off, master group 1–8, slave group 1–8.
+  A master layer publishes its clock under its group; a slave layer, on any
+  machine and any layer number, sets its clock from that group's packet and
+  keeps everything else of its own (media, intensity, geometry, effects,
+  blend, warp). Groups replace Axon's fixture ids; machines need not know
+  each other. Two masters in a group: the lowest install UUID wins.
+- **One UDP packet per tick**, broadcast on the sync interface (port 8002,
+  configurable; a unicast target for one-Mac tests), ≈ 40 B per master
+  layer: media key, fps, position, direction, finished, rate. The
+  compositor writes a triple-buffered slot; a sender thread sends it. The
+  receiver is one `SO_REUSEPORT` socket feeding a per-group table read once
+  per tick.
+- **Set, never integrate**: a slave's position each tick is the packet's
+  position plus its rate times the packet's local age, scaled by the fps
+  ratio. No clock synchronisation between machines. A missing packet is
+  freewheeled with the packet's rate; lost after the freewheel time (2 s);
+  the next packet relocks.
+- The mirror/backup design stays as "later" (DESIGN.md §23.6, OPEN-27).
 
 ## Consequences
-+ One source for everything that can diverge; the same mechanism is the
-  backup server; no second protocol, no second auth, no multicast on a LAN
-  that was never measured for it (B28).
-+ Frame cost is a copy into a triple-buffered byte slot on the compositor
-  thread and a sender thread per master; ≈ 2.5 Mbit/s per follower at 32
-  layers and 60 fps.
-− One frame of offset is the floor (no genlock on Macs); a show that needs
-  sub-frame alignment across machines needs hardware genlock, which no Mac
-  has.
-− TCP: a lost packet on a bad cable delays a frame by a retransmit (tens of
-  ms); the follower freewheels those ticks. If a measurement on real
-  hardware shows this matters, a UDP sender with the same frame format is
-  the escape hatch (DESIGN.md OPEN-27).
-− The follower's own console input is ignored while following; a show that
-  wants per-machine differences (different content on each machine driven
-  separately) runs two standalone machines, which is today's behaviour.
++ The offset between master and slave is bounded (jitter plus one sampled
+  tick) and does not grow; a retrigger is one all-intra frame of decode on
+  the slave.
++ Nothing new to pair, discover or authenticate; it behaves like DMX on the
+  same cable, and two layers on one machine can sync the same way.
++ Small: one parameter in Core, one packet codec, one sender, one receiver,
+  one branch in `prepare`.
+− One frame of display phase is the floor: Mac displays have no genlock, so
+  the moment a frame reaches the glass can differ by up to one output period
+  between machines. The frame content is the same frame.
+− Broadcast UDP is unauthenticated on the LAN, like Art-Net; a show network
+  is assumed. Packets from an unknown machine id in a group with a known
+  master are ignored (lowest id wins), so a stray sender cannot take over a
+  locked group silently; `live.sync.conflicts` names it.
+− Anything that is not DMX (OSC to one IP, MIDI on one machine, cues fired
+  in one UI) still reaches one machine only; the mirror design of §23.6
+  is the answer when a show is driven that way.
