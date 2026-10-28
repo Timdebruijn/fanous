@@ -173,22 +173,38 @@ public final class ParameterSnapshotSlot: @unchecked Sendable {
 /// Lock-free single-writer / single-reader triple buffer (DESIGN.md §2.2).
 /// The writer and the reader each own one slot; the third is "published".
 /// A single atomic exchange hands slots over, so neither side ever waits.
+/// Readers on other threads use `withLatest` (B71), never `read()`.
 public final class TripleBuffer<Slot: AnyObject>: @unchecked Sendable {
     private let slots: [Slot]
     private let published = Atomic<Int>(0)  // slot index | (hasNew << 8)
     private var writing = 1
     private var reading = 2
+    /// B71: the writer copies each slot it publishes into `latest` (only with `copy`); `latest` is only touched
+    /// under `latestLock`, which is the invariant behind `@unchecked Sendable` for it.
+    private let copy: ((_ into: Slot, _ from: Slot) -> Void)?
+    private let latest: Slot
+    private let latestLock = Mutex(())
 
-    public init(_ make: () -> Slot) { slots = [make(), make(), make()] }
+    public init(_ make: () -> Slot, copy: ((_ into: Slot, _ from: Slot) -> Void)? = nil) {
+        slots = [make(), make(), make()]
+        latest = make()
+        self.copy = copy
+    }
 
     /// Writer: fill the slot, then publish it.
     public func write(_ body: (Slot) -> Void) {
         body(slots[writing])
+        if let copy { latestLock.withLock { _ in copy(latest, slots[writing]) } }
         let old = published.exchange(writing | 0x100, ordering: .acquiringAndReleasing)
         writing = old & 0xFF
     }
 
-    /// Reader: the newest published slot (or the one read last time when nothing new arrived).
+    /// Any thread but the reader's (CITP, secondary displays): `body` on the copy of the last published slot, under a
+    /// lock the writer takes once per write. Keep `body` short and copy out what you keep (a fresh array, so the
+    /// writer's copy stays unshared and never copies on write). Never on the compositor thread: no locks there.
+    public func withLatest<R>(_ body: (Slot) -> R) -> R { latestLock.withLock { _ in body(latest) } }
+
+    /// Reader (the compositor thread only): the newest published slot (or the one read last time when nothing new arrived).
     public func read() -> Slot {
         let current = published.load(ordering: .acquiring)
         if current & 0x100 != 0 {

@@ -845,7 +845,10 @@ public final class Compositor: @unchecked Sendable {
     /// Draws the latest completed canvas through `set` into a drawable of another display (DESIGN.md §4.5):
     /// its own command buffer on the caller's thread; `uniforms` belongs to that caller.
     public func present(_ set: OutputSet, to drawable: CAMetalDrawable, uniforms: MTLBuffer) {
-        let snapshot = parameters.read()
+        // not the compositor thread: the DMX side's copy, never `read()` (B71)
+        let (master, masterPattern, outputs) = parameters.withLatest {
+            ($0.masterControl == .blackout ? 0 : $0.master, $0.testPattern, $0.outputs.map { $0 })
+        }
         // one tick's canvases for the whole draw (the compositor may complete another meanwhile)
         let (frame, index) = completedCanvases()
         let pass = MTLRenderPassDescriptor()
@@ -857,7 +860,7 @@ public final class Compositor: @unchecked Sendable {
             outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
             return
         }
-        OutputPass.holdFrozen(set, canvas: { id in frame.first { $0.id == id }?.textures[index] }, outputs: snapshot.outputs, buffer: commandBuffer)
+        OutputPass.holdFrozen(set, canvas: { id in frame.first { $0.id == id }?.textures[index] }, outputs: outputs, buffer: commandBuffer)
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else {
             outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
             return
@@ -865,7 +868,7 @@ public final class Compositor: @unchecked Sendable {
         encoder.label = "secondary output"
         OutputPass.draw(
             set, canvas: { id in frame.first { $0.id == id }?.textures[index] }, encoder: encoder, context: context, uniforms: uniforms,
-            master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs)
+            master: master, masterPattern: masterPattern, outputs: outputs)
         encoder.endEncoding()
         commandBuffer.present(drawable)
         commandBuffer.commit()

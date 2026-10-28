@@ -851,10 +851,11 @@ public final class Engine: @unchecked Sendable {
 
     private func citpLayers() -> [CITPServer.LayerInfo] {
         guard let render, let dmx else { return [] }
-        let snapshot = dmx.snapshots.read()
+        // the CITP queue is not the compositor: the DMX side's copy, never `read()` (B71)
+        let parameters = dmx.snapshots.withLatest { $0.layers.map { $0 } }
         return render.layers.map { layer in
             let s = layer.mediaStatus.withLock { $0 }
-            let p = layer.index < snapshot.layers.count ? snapshot.layers[layer.index] : LayerParameters()
+            let p = layer.index < parameters.count ? parameters[layer.index] : LayerParameters()
             let fps = max(1.0, s.fps)
             var flags: UInt32 = 0
             if s.kind == "movie" && p.intensity > 0 && p.playMode != .freeze { flags |= LayerStatus.playing }
