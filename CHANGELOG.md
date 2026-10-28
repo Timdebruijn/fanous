@@ -107,6 +107,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: a parallel `swift test` of the engine suite hung (every cooperative-pool thread waiting in `finishWriting`); the
   media-writing test helpers now run on a thread of their own and `scripts/test.sh` runs the tests in parallel again (B63).
 - Fixed: a layer detail value changed just before picking another layer went to the newly picked layer (B80).
+- Fixed: the GDTF's last channel set of Play mode, Control and other banded channels ran to 255 (a console showed
+  "Scrub" for 144–255); the exporter now ends each with a set for the rest named after the band the engine decodes there (B72).
 
 - Hardening: one engine per user (`engine.lock`), cumulative frame counters in
   `/metrics`, show mode hides the cursor over the outputs.

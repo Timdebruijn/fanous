@@ -110,4 +110,41 @@ final class XMLCollector: NSObject, XMLParserDelegate {
         #expect(markdown.components(separatedBy: "| Reserved |").count == 4)
         #expect(markdown.contains("| 6–7 | Speed | 16 | 32768 |"))
     }
+
+    /// B72: a ChannelSet runs to the next set's DMXFrom − 1, so the sets of every banded channel must cover
+    /// 0–255 and the reserved rest after the last band must carry the band the engine decodes there.
+    @Test func bandedChannelSetsEndWithTheDecodedRest() {
+        var sets: [String: [(from: Int, name: String)]] = [:]  // "<mode>/<offset>"
+        var mode = "", channel = ""
+        for element in Self.parsed().elements {
+            if element.name == "DMXMode" { mode = element.attributes["Name"]! }
+            if element.name == "DMXChannel" { channel = "\(mode)/\(element.attributes["Offset"]!)" }
+            if element.name == "ChannelSet" {
+                sets[channel, default: []].append((Int(element.attributes["DMXFrom"]!.split(separator: "/")[0])!, element.attributes["Name"]!))
+            }
+        }
+        var checked = 0
+        for fixtureMode in FixtureMode.allCases {
+            for spec in ChannelMap.specs(for: fixtureMode) {
+                guard case .bands(let bands, let fallback) = spec.kind else { continue }
+                let emitted = sets["\(fixtureMode.displayName) (\(fixtureMode.footprint)ch)/\(spec.channel)"] ?? []
+                let last = bands.last!
+                #expect(emitted.first?.from == 0, "\(spec.name)")
+                #expect(zip(emitted, emitted.dropFirst()).allSatisfy { $0.from < $1.from }, "\(spec.name)")
+                #expect(zip(emitted, bands).allSatisfy { $0.from == Int($1.from) && $0.name == $1.name }, "\(spec.name)")
+                if last.to == 255 {
+                    #expect(emitted.count == bands.count, "\(spec.name) already ends at 255")
+                } else {
+                    #expect(emitted.count == bands.count + 1, "\(spec.name)")
+                    #expect(emitted.last?.from == Int(last.to) + 1, "\(spec.name)")
+                    #expect(emitted.last?.name == bands.first { $0.value == fallback }?.name, "\(spec.name)")
+                }
+                checked += 1
+            }
+        }
+        #expect(checked == 12)
+        #expect(sets["Layer (64ch)/50"]!.last! == (32, "Idle"))
+        #expect(sets["Layer (64ch)/5"]!.last! == (160, "Loop fwd"))
+        #expect(sets["Layer (64ch)/51"]!.last! == (170, "Off"))
+    }
 }
