@@ -220,7 +220,7 @@ public final class Engine: @unchecked Sendable {
             }
             // OSC feedback (B36) only with the network: no feedback target is reached under --no-network
             let oscFeedback = OSCFeedbackServer(
-                fixed: MachineSettings.load(from: AppPaths.settingsFile, logger: logger).oscFeedback, logger: logger,
+                fixed: MachineSettings.load(from: AppPaths.settingsFile).oscFeedback, logger: logger,  // RoleAuth logs the file's problems
                 fixtures: { dmx.resolvedRaw() }, engine: { [weak self] in self?.oscFeedbackState() ?? [:] })
             self.oscFeedback = oscFeedback
             let osc = OSCReceiver(store: dmx, logger: logger, feedback: oscFeedback)
@@ -749,7 +749,7 @@ public final class Engine: @unchecked Sendable {
     /// The receiver binds 127.0.0.1 only and the sender sends to 127.0.0.1 only with `--no-network`. A port in use
     /// leaves the receiver unbound (logged): local groups and sending still work.
     private func startSync(compositor: Compositor) {
-        let settings = MachineSettings.load(from: AppPaths.settingsFile, logger: logger).sync ?? SyncSettings()
+        let settings = MachineSettings.load(from: AppPaths.settingsFile).sync ?? SyncSettings()  // RoleAuth logs its problems
         let machine = UUID(uuidString: Self.installUUID()) ?? UUID()
         let receiver = SyncReceiver(machine: machine, logger: logger)
         do {
@@ -1012,7 +1012,10 @@ public final class Engine: @unchecked Sendable {
         var masters: [Int: Int] = [:]
         for layer in render?.layers ?? [] {
             let s = layer.syncStatus.withLock { $0 }
-            if case .master(let group) = s.role { masters[group, default: 0] += 1 }
+            // a master publishes only with a movie of more than one frame playing (as `Compositor.publishMaster`)
+            if case .master(let group) = s.role, layer.mediaStatus.withLock({ $0.kind == "movie" && $0.frames > 1 }) {
+                masters[group, default: 0] += 1
+            }
             guard case .slave(let group) = s.role, let state = s.state else { continue }
             let name = "Layer \(layer.index + 1) (group \(group))"
             switch state {
@@ -1030,8 +1033,10 @@ public final class Engine: @unchecked Sendable {
             var table = SyncTable()
             receiver.table.withLock { table.copy(from: $0) }
             let now = CACurrentMediaTime()
-            for group in 1...LayerSync.groups {
-                if let ignored = table.conflict(group: group, now: now) { context.syncMasterIssues.append("Group \(group): a second master (\(ignored.uuidString))") }
+            // only where this machine's own master is the one ignored; a conflict it wins is the other machine's to report
+            for group in 1...LayerSync.groups where table.conflict(group: group, now: now) == receiver.machine {
+                let winner = table.entries[group - 1]?.machine.uuidString ?? "another machine"
+                context.syncMasterIssues.append("Group \(group): this machine's master is outranked by \(winner)")
             }
         }
         return context

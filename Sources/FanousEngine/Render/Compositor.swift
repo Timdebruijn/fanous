@@ -684,7 +684,7 @@ public final class Compositor: @unchecked Sendable {
         let clock = playback.clock
         let direction: Double = (p.playMode.isReverse ? -1 : 1) * (clock.direction < 0 ? -1 : 1)
         let last = Float(playback.frameCount - 1)
-        let range = (p.inPoint * last).rounded() != (p.outPoint * last).rounded()  // in == out: the clock stands
+        let range = (p.outPoint * last).rounded() > (p.inPoint * last).rounded()  // as `prepare`; in ≥ out: the clock stands
         let moving = ctx.dt > 0 && range && !clock.finished && !(p.playMode == .freeze || p.playMode == .scrub || p.playMode == .timecode)
         let entry = SyncPacket.Layer(
             group: UInt8(group), layer: UInt8(layer + 1), mediaKey: UInt16(truncatingIfNeeded: playback.key.packed), fps: Float(playback.frameRate),
