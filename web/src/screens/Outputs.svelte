@@ -17,7 +17,7 @@
   import { go } from '../lib/router.svelte';
   import { sourcePixels, sourceFromPixels } from '../lib/outputs';
   import { downloadTemplatePNG, templateSVG } from '../lib/template';
-  import { fromScreen, nudgeStored, toScreen } from '../lib/warp';
+  import { fromScreen, nudgeStored, resampleMesh, toScreen } from '../lib/warp';
   import type { JSONValue } from '../lib/protocol';
 
   const LOCKED = 'Locked: programmer only';
@@ -97,8 +97,12 @@
   function point(path: string, p: MapPoint) {
     set(path, { x: p.x, y: p.y });
   }
+  /** A new density keeps the current shape: the new points are placed on the current surface. */
   function setMesh(n: number) {
-    set('/warp/mesh', n <= 1 ? null : (meshIdentity(n, n) as unknown as JSONValue));
+    set('/warp/mesh', n <= 1 ? null : (resampleMesh(output?.warp.mesh, n, n) as unknown as JSONValue));
+  }
+  function resetMesh(n: number) {
+    set('/warp/mesh', meshIdentity(n, n) as unknown as JSONValue);
   }
   function addSlice() {
     if (!output) return;
@@ -416,8 +420,8 @@
                 {#each [2, 3, 5, 9, 17, 33] as n (n)}<option value={n}>{n} × {n}</option>{/each}
               </select>
             </label>
-            <button type="button" class="btn" disabled={locked || !output.warp.mesh} onclick={() => output.warp.mesh && setMesh(output.warp.mesh.cols)}>Reset mesh</button>
-            <p class="caption grow">A change of density starts from a flat grid. The mesh is a smooth surface through its points.</p>
+            <button type="button" class="btn" disabled={locked || !output.warp.mesh} onclick={() => output.warp.mesh && resetMesh(output.warp.mesh.cols)}>Reset mesh</button>
+            <p class="caption grow">A change of density keeps the shape: the new points sit on the current surface. Reset mesh flattens it. The mesh is a smooth surface through its points.</p>
           </div>
         {:else if ui.mapper === 'slices'}
           <div class="fields">

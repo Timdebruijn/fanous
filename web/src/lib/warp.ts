@@ -66,6 +66,19 @@ export function meshPoint(mesh: MeshWarp, u: number, v: number): MapPoint {
   return { x: catmullRom(xs, v), y: catmullRom(ys, v) };
 }
 
+/** A `cols × rows` mesh whose points lie on the surface of `mesh` (flat when there is none), so a density change
+ *  keeps the shape. Points shared by both grids (3 → 5, 5 → 9 …) keep their exact position. */
+export function resampleMesh(mesh: MeshWarp | null | undefined, cols: number, rows: number): MeshWarp {
+  const points: MapPoint[] = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const u = c / (cols - 1), v = r / (rows - 1);
+      points.push(mesh ? meshPoint(mesh, u, v) : { x: u, y: v });
+    }
+  }
+  return { cols, rows, points };
+}
+
 /** Where the undistorted point (u, v) lands on the output: mesh first (if any), then the corner pin. */
 export function warped(warp: WarpSettings, u: number, v: number, h: Mat3 = homography(warp.cornerPin)): MapPoint {
   const p = warp.mesh ? meshPoint(warp.mesh, u, v) : { x: u, y: v };
