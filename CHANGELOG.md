@@ -154,6 +154,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   file that does not parse is refused, not overwritten (B79).
 - Fixed: a preview that was streaming stayed frozen ("no new frames") after a reconnect; it now lets go of its stream
   when the connection closes and subscribes again, once, when it is back (B68).
+- Fixed: engine tests that slept a fixed time or waited a fixed budget failed in a parallel run on a loaded Mac; they now
+  poll with a deadline or probe the listener first, so `scripts/test.sh` stays green under load (B67).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

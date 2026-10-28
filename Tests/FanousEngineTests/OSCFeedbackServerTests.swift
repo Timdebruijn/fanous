@@ -65,9 +65,11 @@ import Testing
             return n > 0 ? try? OSCPacket.parse(Array(buffer[0..<n])) : nil
         }
 
-        /// Messages from bundles and plain messages received within the window.
-        func messages(for seconds: Double) -> [OSCMessage] {
-            var out: [OSCMessage] = []
+        /// Messages from bundles and plain messages received within `seconds` of the first one, which may take up to
+        /// `first` seconds: a loaded Mac answers late (B67). Empty when nothing came; "nothing comes" is `receive(timeout:)`.
+        func messages(for seconds: Double, first: Double = 5) -> [OSCMessage] {
+            guard let packet = receive(timeout: first) else { return [] }
+            var out = Self.flatten(packet)
             let end = Date().addingTimeInterval(seconds)
             while Date() < end, let packet = receive(timeout: max(0.01, end.timeIntervalSinceNow)) {
                 out += Self.flatten(packet)
@@ -83,23 +85,20 @@ import Testing
         }
     }
 
-    /// A random port that is free for UDP and TCP right now; another one when it is taken (EADDRINUSE).
+    /// A port that is free for UDP and TCP right now (the receiver listens on both): the kernel's UDP pick, kept when
+    /// TCP can bind it too.
     static func freePort() throws -> UInt16 {
         for _ in 0..<20 {
-            let port = UInt16.random(in: 40_000..<60_000)
-            let free = [SOCK_DGRAM, SOCK_STREAM].allSatisfy { type in
-                let fd = socket(AF_INET, type, 0)
-                defer { _ = Darwin.close(fd) }
-                var address = sockaddr_in()
-                address.sin_family = sa_family_t(AF_INET)
-                address.sin_port = port.bigEndian
-                return withUnsafePointer(to: &address) { p in
-                    p.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                        bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-                    }
-                } == 0
+            let port = try freeUDPPort()
+            let fd = socket(AF_INET, SOCK_STREAM, 0)
+            defer { _ = Darwin.close(fd) }
+            var address = sockaddr_in()
+            address.sin_family = sa_family_t(AF_INET)
+            address.sin_port = port.bigEndian
+            let bound = withUnsafePointer(to: &address) { p in
+                p.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
             }
-            if free { return port }
+            if bound == 0 { return port }
         }
         throw POSIXError(.EADDRINUSE)
     }
@@ -114,7 +113,14 @@ import Testing
         let receiver = OSCReceiver(store: store, logger: logger, port: port, feedback: feedback)
         try receiver.start()
         feedback.start()
-        try await Task.sleep(for: .milliseconds(300))
+        // listening once a ping is answered (a fixed 300 ms was too short on a loaded Mac, B67)
+        let probe = try Client()
+        defer { probe.close() }
+        let ready = await waitUntil {
+            probe.send(OSCMessage("/fanous/ping"), to: port)
+            return probe.receive(timeout: 0.1) != nil
+        }
+        try #require(ready, "no pong from the OSC receiver on \(port)")
         return (receiver, feedback, port)
     }
 
@@ -154,10 +160,13 @@ import Testing
 
         // a whole layer, media included
         client.send(OSCMessage("/fanous/layer/2/media", [.int32(3), .int32(7)]), to: port)
-        try await Task.sleep(for: .milliseconds(50))  // answers come from a state at most half a tick (25 ms) old
-        client.send(OSCMessage("/fanous/layer/2/get"), to: port)
-        let layer = client.messages(for: 0.5)
-        #expect(layer.contains(OSCMessage("/fanous/layer/2/media", [.int32(3), .int32(7)])))
+        // answers come from a state at most half a tick (25 ms) old, once the store has the set
+        var layer: [OSCMessage] = []
+        #expect(await waitUntil {
+            client.send(OSCMessage("/fanous/layer/2/get"), to: port)
+            layer = client.messages(for: 0.5)
+            return layer.contains(OSCMessage("/fanous/layer/2/media", [.int32(3), .int32(7)]))
+        })
         #expect(layer.count == ChannelMap.specs(for: .layer).count + 1)
         #expect(layer.allSatisfy { $0.address.hasPrefix("/fanous/layer/2/") })
 
@@ -170,7 +179,7 @@ import Testing
         defer { other.close() }
         client.send(OSCMessage("/fanous/layer/1/intensity/get", [.int32(Int32(other.port))]), to: port)
         #expect(client.messages(for: 0.3).map(\.address) == ["/fanous/layer/1/intensity"])
-        #expect(other.messages(for: 0.1).isEmpty)
+        #expect(other.receive(timeout: 0.1) == nil)
 
         // a burst of 40 requests from one host: the bucket answers about 20 of them
         for _ in 0..<40 { client.send(OSCMessage("/fanous/ping"), to: port) }
@@ -210,10 +219,11 @@ import Testing
                 try? await Task.sleep(for: .milliseconds(2))
             }
         }
-        var flood = client.messages(for: 0.5)
+        var flood: [OSCMessage] = []
+        while flood.last != OSCMessage("/fanous/cue/current", [.float32(300)]), let packet = client.receive(timeout: 10) {
+            flood += Client.flatten(packet).filter { $0.address == "/fanous/cue/current" }
+        }
         await writer.value
-        flood += client.messages(for: 0.3)
-        flood = flood.filter { $0.address == "/fanous/cue/current" }
         #expect(flood.count >= 2)
         #expect(flood.count <= Int(Date().timeIntervalSince(started) / OSCFeedbackServer.tick) + 2)
         #expect(flood.last == OSCMessage("/fanous/cue/current", [.float32(300)]))
@@ -223,9 +233,10 @@ import Testing
         #expect(Set(client.messages(for: 0.3).map(\.address)) == ["/fanous/cue/current", "/fanous/cue/count"])
 
         client.send(OSCMessage("/fanous/unsubscribe"), to: port)
-        try await Task.sleep(for: .milliseconds(100))
+        client.send(OSCMessage("/fanous/ping"), to: port)  // requests are handled in order: the pong means unsubscribed
+        #expect(client.messages(for: 0.1).contains(OSCMessage("/fanous/pong")))
         box.state.withLock { $0["/fanous/cue/count"] = [.int32(5)] }
-        #expect(client.messages(for: 0.3).isEmpty)
+        #expect(client.receive(timeout: 0.3) == nil)
     }
 
     /// Feedback never goes to a third party: a subscribe naming another host is refused with an error to the sender.
@@ -283,15 +294,15 @@ import Testing
             listener.close()
         }
         let cookie = try Self.subscribe(sender, listener: listener, prefix: "/fanous", to: port)
-        #expect(sender.messages(for: 0.1).isEmpty)
-        #expect(listener.messages(for: 0.2).isEmpty)  // nothing before the ack
+        #expect(sender.receive(timeout: 0.1) == nil)
+        #expect(listener.receive(timeout: 0.2) == nil)  // nothing before the ack
         sender.send(OSCMessage("/fanous/subscribe/ack", [.string("wrong")]), to: port)
         #expect(sender.messages(for: 0.3).map(\.address) == ["/fanous/error"])
         sender.send(OSCMessage("/fanous/subscribe/ack", [.string(cookie)]), to: port)
         #expect(listener.messages(for: 0.3) == [OSCMessage("/fanous/show/mode", [.int32(1)])])
         sender.send(OSCMessage("/fanous/show/mode/get", [.int32(Int32(listener.port))]), to: port)
         #expect(listener.messages(for: 0.3) == [OSCMessage("/fanous/show/mode", [.int32(1)])])
-        #expect(sender.messages(for: 0.1).isEmpty)
+        #expect(sender.receive(timeout: 0.1) == nil)
     }
 
     /// Link-local IPv6 senders keep their scope for the connection back; the host a request names is compared without it.

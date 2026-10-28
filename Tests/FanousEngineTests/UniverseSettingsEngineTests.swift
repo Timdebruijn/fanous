@@ -112,7 +112,9 @@ struct UniverseSettingsEngineTests {
 
     // MARK: receivers
 
-    static func send(_ bytes: [UInt8], to port: UInt16) {
+    /// One datagram to 127.0.0.1:`port`; with a `reply` time, whether an answer came back to the same socket within it.
+    @discardableResult
+    static func send(_ bytes: [UInt8], to port: UInt16, reply: Double = 0) -> Bool {
         let fd = socket(AF_INET, SOCK_DGRAM, 0)
         defer { close(fd) }
         var address = sockaddr_in()
@@ -122,19 +124,26 @@ struct UniverseSettingsEngineTests {
         _ = withUnsafePointer(to: &address) { p in
             p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sendto(fd, bytes, bytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
         }
+        guard reply > 0 else { return false }
+        var wait = timeval(tv_sec: 0, tv_usec: Int32(reply * 1e6))
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &wait, socklen_t(MemoryLayout<timeval>.size))
+        var buffer = [UInt8](repeating: 0, count: 1500)
+        return recv(fd, &buffer, buffer.count, 0) > 0
+    }
+
+    /// The Art-Net listener on `port` is ready some time after `start()`, later on a loaded Mac (B67): an answered
+    /// ArtPoll says it is, without touching the DMX state the test looks at next.
+    static func listening(_ port: UInt16) async -> Bool {
+        await waitUntil { send(ArtPoll().encoded(), to: port, reply: 0.1) }
     }
 
     static func intensity(_ store: DMXStore, at now: Double = DMXStore.now) -> ResolvedParameterInfo? {
         store.snapshot(at: now).fixtures["Layer 1"]?.first { $0.key == "intensity" }
     }
 
-    /// Waits (≤ 3 s) until Layer 1's intensity is `raw`.
+    /// Waits (≤ 10 s) until Layer 1's intensity is `raw`.
     static func wait(_ store: DMXStore, for raw: UInt16) async throws -> Bool {
-        for _ in 0..<60 {
-            if intensity(store)?.raw == raw { return true }
-            try await Task.sleep(for: .milliseconds(50))
-        }
-        return false
+        await waitUntil { intensity(store)?.raw == raw }
     }
 
     static func artnet(_ level: UInt8, sequence: UInt8 = 0) -> [UInt8] { ArtDmx(sequence: sequence, portAddress: 0, data: [UInt8](repeating: level, count: 512)).encoded() }
@@ -147,7 +156,7 @@ struct UniverseSettingsEngineTests {
         let port = try freeUDPPort()
         let receiver = ArtNetReceiver(store: store, logger: Self.logger, nodeName: "test", port: port)
         try receiver.start()
-        try await Task.sleep(for: .milliseconds(300))
+        #expect(await Self.listening(port))
         Self.send(Self.artnet(255), to: port)
         #expect(try await Self.wait(store, for: 65535))
         return (store, receiver, port)
@@ -284,7 +293,7 @@ struct UniverseSettingsEngineTests {
             artnet.stop()
             sacn.stop()
         }
-        try await Task.sleep(for: .milliseconds(300))
+        #expect(await Self.listening(artPort))  // the sACN socket is bound in start()
         let cid: [UInt8] = (1...16).map { UInt8($0) }
         Self.send(SACNData(cid: cid, sourceName: "Desk", sequence: 1, universe: 1, slots: [UInt8](repeating: 64, count: 512)).encoded(), to: sacnPort)
         try await Task.sleep(for: .milliseconds(200))
@@ -311,7 +320,7 @@ struct UniverseSettingsEngineTests {
         let receiver = ArtNetReceiver(store: store, logger: Self.logger, nodeName: "test", port: port)
         try receiver.start()
         defer { receiver.stop() }
-        try await Task.sleep(for: .milliseconds(300))
+        #expect(await Self.listening(port))
 
         var settings = UniverseSettings(for: Self.a0)
         settings.interface = "en9"

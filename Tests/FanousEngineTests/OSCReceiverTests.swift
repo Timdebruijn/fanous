@@ -37,12 +37,16 @@ struct OSCReceiverTests {
         let receiver = OSCReceiver(store: store, logger: logger, port: port)
         try receiver.start()
         defer { receiver.stop() }
-        try await Task.sleep(for: .milliseconds(300))
+        // listening once a goto 0 (no cue of the burst) arrives; a fixed 300 ms was too short on a loaded Mac (B67)
+        #expect(await waitUntil(every: .milliseconds(50)) {
+            Self.send([OSCMessage("/fanous/cue/goto", [.float32(0)])], to: port)
+            return seen.withLock { $0.contains(0) }
+        })
 
         // the engine's DMX queue is busy for a moment (Art-Net frames, snapshot publishing) while the console fires
         store.queue.async { Thread.sleep(forTimeInterval: 0.2) }
         // fresh socket per burst: the first datagram of a flow is the one that creates the connection
-        let count = 5 * 200
+        let count = 5 * 200 + 1  // and the probe's 0
         for burst in 0..<5 {
             let fd = socket(AF_INET, SOCK_DGRAM, 0)
             defer { close(fd) }
@@ -66,11 +70,17 @@ struct OSCReceiverTests {
     @Test func layerParameterBurstResolvesEveryLayer() async throws {
         let logger = Logger(label: "test")
         let store = DMXStore(patch: .standard(layers: 4, outputs: 1), logger: logger)
+        let listening = Mutex(false)
+        store.onCommand = { _ in listening.withLock { $0 = true } }
         let port = try freeUDPPort()
         let receiver = OSCReceiver(store: store, logger: logger, port: port)
         try receiver.start()
         defer { receiver.stop() }
-        try await Task.sleep(for: .milliseconds(300))
+        // listening once a probe command arrives; a fixed 300 ms was too short on a loaded Mac (B67)
+        #expect(await waitUntil(every: .milliseconds(50)) {
+            Self.send([OSCMessage("/fanous/cue/goto", [.float32(0)])], to: port)
+            return listening.withLock { $0 }
+        })
 
         var messages: [OSCMessage] = []
         for n in 1...4 {

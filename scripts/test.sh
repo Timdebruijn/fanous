@@ -9,7 +9,8 @@ cd "$(dirname "$0")/.."
 # Tests run in parallel (engine suite ~15 s, ~58 s serially). Swift Testing runs every test as a task on
 # the cooperative pool: blocking AVFoundation work in a test (MovieWriter.finish, finishWriting + semaphore)
 # goes through offPool (Tests/FanousEngineTests/TestSupport.swift), or enough of those tests at once hang
-# the run (B63). A few tests are wall-clock bound: on a loaded machine use `scripts/test.sh --no-parallel`.
+# the run (B63). Tests that wait for something poll with a deadline (waitUntil in TestSupport.swift), so a loaded
+# machine makes the run slower, not red (B67).
 plugins="$(xcode-select -p)/usr/lib/swift/host/plugins/testing"
 if [[ -d "$plugins" ]]; then
   exec swift test -Xswiftc -plugin-path -Xswiftc "$plugins" "$@"
