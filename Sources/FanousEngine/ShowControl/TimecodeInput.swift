@@ -23,6 +23,8 @@ public final class TimecodeClock: @unchecked Sendable {
         public var hostTime: Double = 0
         public var state: State = .off
         public var source: String = ""
+        /// Frames between the source's updates: LTC decodes every frame, MTC assembles a time every 2 (B65).
+        public var updateFrames: Int = 1
 
         public var timecode: Timecode { Timecode(frameCount: max(0, frameCount), rate: rate) }
     }
@@ -36,14 +38,16 @@ public final class TimecodeClock: @unchecked Sendable {
 
     public init() {}
 
-    /// Source thread: one decoded frame at the host time its last bit ended.
-    public func update(_ timecode: Timecode, at hostTime: Double, source: String) {
+    /// Source thread: one decoded frame at the host time its last bit ended; `everyFrames` is the update interval
+    /// the source promises, which sets the lock window.
+    public func update(_ timecode: Timecode, at hostTime: Double, source: String, everyFrames: Int = 1) {
         sample.withLock { s in
             s.frameCount = timecode.frameCount
             s.rate = timecode.rate
             s.hostTime = hostTime
             s.state = .locked
             s.source = source
+            s.updateFrames = everyFrames
         }
         framesSeen.wrappingAdd(1, ordering: .relaxed)
         onFrame?(timecode, hostTime)
@@ -61,17 +65,17 @@ public final class TimecodeClock: @unchecked Sendable {
         Self.extrapolate(sample.withLock { $0 }, at: now, freewheel: freewheelSeconds)
     }
 
-    /// Locked within one frame of the last decode, freewheeling up to `freewheel` seconds, then lost.
+    /// Locked within 1.5 update intervals of the last decode, freewheeling up to `freewheel` seconds, then lost.
     static func extrapolate(_ s: Sample, at now: Double, freewheel: Double) -> Sample {
         guard s.state != .off else { return s }
         var out = s
         let age = now - s.hostTime
-        let frameDuration = 1 / s.rate.exactFrameRate
+        let interval = Double(s.updateFrames) / s.rate.exactFrameRate
         if age > freewheel {
             out.state = .lost
             out.frameCount = s.frameCount + Int((freewheel * s.rate.exactFrameRate).rounded(.down))
         } else {
-            out.state = age > frameDuration * 1.5 ? .freewheel : .locked
+            out.state = age > interval * 1.5 ? .freewheel : .locked
             out.frameCount = s.frameCount + Int((max(0, age) * s.rate.exactFrameRate).rounded(.down))
         }
         return out
@@ -386,7 +390,7 @@ public final class MTCInput: @unchecked Sendable {
         var parse = parsers[uid] ?? Parse()
         for (word, hostTime) in words {
             guard let timecode = parse.feed(word) else { continue }
-            clock.update(timecode, at: hostTime, source: "MTC")
+            clock.update(timecode, at: hostTime, source: "MTC", everyFrames: 2)
         }
         parsers[uid] = parse
     }
