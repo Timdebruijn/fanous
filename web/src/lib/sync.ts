@@ -24,8 +24,8 @@ export function offsetText(ms: number): string {
 
 /**
  * The badge of layer `n` (`M3` / `S3`), its colour and the state in words (title and layer detail); null with Sync off.
- * A master is green while it is its group's clock, red when another master in the group wins or a second machine
- * masters it too, grey while it sends nothing (no movie playing). A slave: locked green, freewheel yellow, lost or
+ * A master is green while it is its group's clock, red when a second machine masters the group too (`conflicts`), grey
+ * while it sends nothing (no movie playing, or another layer holds the group). A slave: locked green, freewheel yellow, lost or
  * conflict red, no master or no movie grey.
  */
 export function syncStatus(n: number, sync: LayerSyncDoc | undefined, live: SyncLiveDoc | null | undefined): { label: string; tone: SyncTone; text: string } | null {
@@ -34,10 +34,11 @@ export function syncStatus(n: number, sync: LayerSyncDoc | undefined, live: Sync
   if (sync.role === 'master') {
     const label = `M${g}`;
     const clock = live?.masters[String(g)];
-    if (!clock) return { label, tone: 'grey', text: `master of group ${g}, not sending (no movie playing)` };
-    if (clock.machine !== live?.machine || clock.layer !== n) return { label, tone: 'red', text: `two masters in group ${g}; ${masterText(clock)} wins` };
-    if (live.conflicts.includes(g)) return { label, tone: 'red', text: `two masters in group ${g}; this one wins` };
-    return { label, tone: 'green', text: `master of group ${g}, sending` };
+    const mine = clock !== undefined && clock.machine === live?.machine && clock.layer === n;
+    if (live?.conflicts.includes(g)) return { label, tone: 'red', text: `two masters in group ${g}; ${mine || !clock ? 'this one' : masterText(clock)} wins` };
+    if (mine) return { label, tone: 'green', text: `master of group ${g}, sending` };
+    if (clock) return { label, tone: 'grey', text: `master of group ${g}, sends nothing; ${masterText(clock)} holds the group` };
+    return { label, tone: 'grey', text: `master of group ${g}, sends nothing (no movie playing)` };
   }
   const label = `S${g}`;
   const who = sync.master ? masterText(sync.master) : `the master of group ${g}`;
@@ -66,8 +67,9 @@ export function mastersHere(live: SyncLiveDoc): { group: number; layer: number }
     .sort((a, b) => a.group - b.group);
 }
 
-/** Sync interface choices: any, each interface name once, and the current setting (an address, a gone interface) when it is none of them. */
-export function interfaceChoices(interfaces: { name: string; address: string }[] | undefined, current: string): string[] {
-  const names = ['any', ...new Set((interfaces ?? []).map((i) => i.name))];
+/** Sync interface choices: any, each interface the sender can use (broadcast and multicast) once, and the current setting
+ * (an address, a gone interface) when it is none of them. */
+export function interfaceChoices(interfaces: { name: string; address: string; broadcast?: boolean; multicast?: boolean }[] | undefined, current: string): string[] {
+  const names = ['any', ...new Set((interfaces ?? []).filter((i) => i.broadcast && i.multicast).map((i) => i.name))];
   return names.includes(current) ? names : [...names, current];
 }

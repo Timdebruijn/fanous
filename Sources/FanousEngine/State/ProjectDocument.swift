@@ -511,6 +511,9 @@ public enum ProjectDocument {
                 }
                 if let value = args["port"] {
                     guard let port = value.int, (1...65535).contains(port) else { throw CommandError.invalidArgs("port must be 1–65535") }
+                    // sACN shares its port with SO_REUSEPORT: a sync receiver there would take sACN datagrams
+                    let taken = [ArtNet.port, SACN.port, OSCReceiver.defaultPort, OSCReceiver.defaultPort + 1]
+                    guard !taken.contains(UInt16(port)) else { throw CommandError.invalidArgs("port \(port) is used by Art-Net, sACN or OSC") }
                     sync.port = UInt16(port)
                 }
                 if let value = args["target"] {

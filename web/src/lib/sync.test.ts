@@ -17,14 +17,16 @@ describe('syncStatus', () => {
     expect(syncStatus(1, { role: 'off' }, live())).toBeNull();
   });
 
-  it('a master: green while it is the clock, grey while it sends nothing, red with a second master', () => {
+  it('a master: green while it is the clock, grey while it sends nothing, red only in a conflict', () => {
     const m = { role: 'master' as const, group: 3 };
     expect(syncStatus(1, m, live({ masters: { '3': { machine: A, layer: 1, name: 'A' } } }))).toEqual({ label: 'M3', tone: 'green', text: 'master of group 3, sending' });
-    expect(syncStatus(1, m, live())).toEqual({ label: 'M3', tone: 'grey', text: 'master of group 3, not sending (no movie playing)' });
+    expect(syncStatus(1, m, live())).toEqual({ label: 'M3', tone: 'grey', text: 'master of group 3, sends nothing (no movie playing)' });
     expect(syncStatus(1, m, null)?.tone).toBe('grey');
     expect(syncStatus(1, m, live({ masters: { '3': { machine: A, layer: 1 } }, conflicts: [3] }))).toEqual({ label: 'M3', tone: 'red', text: 'two masters in group 3; this one wins' });
     expect(syncStatus(1, m, live({ masters: { '3': { machine: B, layer: 2 } }, conflicts: [3] }))).toEqual({ label: 'M3', tone: 'red', text: 'two masters in group 3; Layer 2 on 9F8E7D6C wins' });
-    expect(syncStatus(4, m, live({ masters: { '3': { machine: A, layer: 1, name: 'A' } } }))?.text).toBe('two masters in group 3; Layer 1 on A wins');
+    // another machine's clock holds the group and this layer publishes nothing: no conflict
+    expect(syncStatus(1, m, live({ masters: { '3': { machine: B, layer: 2 } } }))).toEqual({ label: 'M3', tone: 'grey', text: 'master of group 3, sends nothing; Layer 2 on 9F8E7D6C holds the group' });
+    expect(syncStatus(4, m, live({ masters: { '3': { machine: A, layer: 1, name: 'A' } } }))?.tone).toBe('grey');
   });
 
   it('a slave in every state', () => {
@@ -55,10 +57,15 @@ describe('System › Sync', () => {
     ]);
   });
 
-  it('offers any, each interface once, and keeps a setting that is not among them', () => {
-    const ifs = [{ name: 'lo0', address: '127.0.0.1' }, { name: 'en0', address: '10.0.0.2' }, { name: 'en0', address: '10.0.1.2' }];
-    expect(interfaceChoices(ifs, 'any')).toEqual(['any', 'lo0', 'en0']);
-    expect(interfaceChoices(ifs, 'en7')).toEqual(['any', 'lo0', 'en0', 'en7']);
+  it('offers any, each usable interface once, and keeps a setting that is not among them', () => {
+    const ifs = [
+      { name: 'lo0', address: '127.0.0.1', broadcast: false, multicast: false },
+      { name: 'en0', address: '10.0.0.2', broadcast: true, multicast: true },
+      { name: 'en0', address: '10.0.1.2', broadcast: true, multicast: true },
+      { name: 'utun3', address: '10.8.0.2', broadcast: false, multicast: true },
+    ];
+    expect(interfaceChoices(ifs, 'any')).toEqual(['any', 'en0']);
+    expect(interfaceChoices(ifs, 'en7')).toEqual(['any', 'en0', 'en7']);
     expect(interfaceChoices(undefined, 'any')).toEqual(['any']);
   });
 });

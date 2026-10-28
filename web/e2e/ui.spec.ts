@@ -115,7 +115,7 @@ test('sync: a slave layer locks to a master layer of its group, and loses it whe
   await rows.nth(0).click();
   await sync.selectOption('0');
   await expect(master).toHaveCount(0);
-  await expect(slave).toHaveAttribute('title', /^Sync: (lost|no master)/, { timeout: 3_000 });
+  await expect(slave).toHaveAttribute('title', /^Sync: (lost|no master)/);
   await expect(slave).toHaveClass(/sync-(red|grey)/);
 });
 

@@ -69,12 +69,12 @@ side with a soft-edge blend in the middle, one console.
    ([media-library.md](media-library.md)). With pre-split files (below) the
    numbers are the same and the contents differ.
 2. **One set of layer fixtures per Mac on the console.** The Sync channel has
-   to say "master" on one Mac and "slave" on the other, so the console needs
-   to address the two machines separately: give the second Mac's fixtures
-   their own universes on its Patch screen (for example Layer 1 to 8 on
-   A 0.0.4 and up) and patch both sets on the console. Keep the layer layout
-   the same on both, so a console group of "Layer 1 on both" sets folder, file
-   and intensity in one go.
+   to say "master" on one Mac and "slave" on the other, so the two Macs' layer
+   fixtures need different DMX addresses: on the second Mac's Patch screen move
+   its layers to free addresses, in another universe (for example Layer 1 to 8
+   on A 0.0.4) or at other start addresses in the same one, and patch both sets
+   on the console. Keep the layer layout the same on both, so a console group
+   of "Layer 1 on both" sets folder, file and intensity in one go.
 3. **The console reaches both Macs**: Art-Net broadcast, or sACN (multicast
    reaches every machine that listens to the universe). Check on each Mac's
    Patch screen that its universe pills are green.
@@ -125,7 +125,7 @@ Hover it (or tap the layer and read the detail) for the state in words.
 
 The layer detail repeats the state under the Sync channel, for a slave with the
 master's layer and machine and the correction of the last frame, for example
-"locked to Layer 1 on mini-left, −0.2 ms". The machine is its name for a master
+"locked to Layer 1 on 415FF791, −0.2 ms". The machine is its name for a master
 on the same Mac and the first 8 characters of its machine id otherwise (System ›
 Sync shows each machine's id).
 
@@ -186,6 +186,11 @@ or undo does not change them) and restarts sending and receiving at once.
 Broadcast is right for almost every show. A unicast target only reaches the Mac
 it names, so with more than two Macs every one but that one stops hearing the
 master.
+
+The port must be free: the ports of Art-Net (6454), sACN (5568) and OSC (8000,
+8001) are refused. If another program holds the port you apply, the settings are
+saved but this Mac receives no sync packets until you apply a port that works;
+the message on screen and the log say so.
 
 ## The camera check
 

@@ -216,8 +216,8 @@ export interface LiveDoc {
     os: string;
     host: string;
     addresses: string[];
-    /** every IPv4 interface address, loopback included (universe Interface choices) */
-    interfaces?: { name: string; address: string }[];
+    /** every IPv4 interface address, loopback included (universe Interface choices); broadcast and multicast: usable for sync */
+    interfaces?: { name: string; address: string; broadcast?: boolean; multicast?: boolean }[];
     port: number;
     tlsFingerprint: string;
     bonjour: string;

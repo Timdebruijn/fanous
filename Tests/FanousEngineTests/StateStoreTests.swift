@@ -340,7 +340,8 @@ extension StateStoreTests {
         #expect(store.rev == 0, "a machine setting, not a project change")
 
         for bad: JSONValue in [
-            [:], ["port": 0], ["port": 65536], ["port": 8002.5], ["port": "8002"], ["interface": ""], ["interface": 1],
+            [:], ["port": 0], ["port": 65536], ["port": 8002.5], ["port": "8002"], ["port": 6454], ["port": 5568], ["port": 8000], ["port": 8001],
+            ["interface": ""], ["interface": 1],
             ["target": "nope"], ["target": "10.0.0.256"], ["target": "10.0.0.2:0"], ["target": "10.0.0.2:x"], ["target": "10.0.0.2:1:2"],
         ] {
             #expect(store.execute("sync.set", args: bad, role: .programmer).failureCode == "invalidArgs", "\(bad)")

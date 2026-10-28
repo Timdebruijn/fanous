@@ -973,7 +973,7 @@ public final class Engine: @unchecked Sendable {
             "onAC": .bool(power.onAC), "power": .string(power.detail), "memoryFreeFraction": .number((memory.fraction * 1000).rounded() / 1000),
             "memoryGB": .number(Double(SystemInfo.physicalMemoryBytes / 1_073_741_824)), "os": .string(SystemInfo.osVersion), "host": .string(SystemInfo.hostName),
             "addresses": .array(addresses.map { .string($0) }),
-            "interfaces": .array(interfaces.map { ["name": .string($0.name), "address": .string($0.address)] }), "port": .number(Double(options.port)),
+            "interfaces": .array(interfaces.map { ["name": .string($0.name), "address": .string($0.address), "broadcast": .bool($0.broadcast), "multicast": .bool($0.multicast)] }), "port": .number(Double(options.port)),
             "tlsFingerprint": .string(tlsFingerprint), "bonjour": .string((server?.advertisedServices ?? []).map { "\($0.name ?? "").\($0.type)" }.joined(separator: ", ")),
         ]
     }
