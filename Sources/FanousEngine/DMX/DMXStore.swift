@@ -55,8 +55,9 @@ public final class DMXStore: @unchecked Sendable {
     private var announced: Set<String> = []
     private var lastAnnounced: (universe: UniverseID, source: String, priority: UInt8?)?
     private var timer: DispatchSourceTimer?
-    /// Render-side parameters, one write per resolved DMX packet (ADR-0002 hand-off).
-    public let snapshots = TripleBuffer { ParameterSnapshotSlot(maxLayers: 32) }
+    /// Render-side parameters, one write per resolved DMX packet (ADR-0002 hand-off): the compositor reads them,
+    /// every other thread takes the copy (`withLatest`, B71).
+    public let snapshots = TripleBuffer({ ParameterSnapshotSlot(maxLayers: 32) }, copy: { $0.copy(from: $1) })
     private var sequence: UInt64 = 0
     /// Per fixture with UI values: seconds they have masked the console since the last UI change, and the tick that was counted to.
     private(set) var uiClock: [FixtureRef: (masked: TimeInterval, tick: TimeInterval)] = [:]
