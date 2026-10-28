@@ -1338,7 +1338,9 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   own viewers are never on a fallback (it is always counted). A rebuild that
   removes a canvas tells only that canvas's own viewers `badTarget`; another
   target's viewer on its stream as a fallback is chosen again for its own
-  target, and every rebuild ends with a re-balance (B88).
+  target (one refused to JPEG is told `badTarget` too: the browser cannot
+  take JPEG frames on a stream that was H.264, B86), and every rebuild ends
+  with a re-balance, synchronously after the rebuild (B88).
 
 ### 11.4 Frontend (ADR-0012)
 

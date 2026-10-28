@@ -166,7 +166,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Syphon numbers (folder 0, 150–169) are kept in the project (`syphon`), so they survive an engine restart; a server not
   seen since the start is listed greyed (`gone`), and `syphon.forget` (Media screen **Forget**) frees a number (B69).
 - Fixed: removing a canvas ended the preview of a viewer that watched it only as a fallback (an output or layer at the
-  encoder limit); it now keeps its own target, and an encoder the removal frees goes to a waiting viewer (B88).
+  encoder limit); it now keeps its own target when an encoder or another fallback is free, and an encoder the removal
+  frees goes to a waiting viewer (B88).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

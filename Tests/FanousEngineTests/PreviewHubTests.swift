@@ -641,6 +641,29 @@ import Testing
         }
     }
 
+    /// B88 review: an orphan that `choose` would refuse to JPEG is told its target is gone (as before B88), not moved to
+    /// JPEG on the stream id it got H.264 on, where the browser drops JPEG frames and freezes (B86).
+    @Test func anOrphanRefusedToJPEGIsToldGone() throws {
+        let r = try LimitRig(), rig = r.rig
+        let (a, b, c, d) = (rig.connection(), rig.connection(), rig.connection(), rig.connection())
+        let (e, f) = (rig.connection(), rig.connection())
+        #expect(rig.streamer("canvas", width: nil, a) === rig.hub.canvas)
+        let output1 = try #require(rig.streamer("output:1", width: 640, b))
+        _ = try #require(rig.streamer("output:2", width: 640, c))
+        let canvas2 = try #require(rig.streamer("canvas:2", width: 640, d))
+        #expect(rig.streamer("output:1", width: 320, f) === output1, "older fallback: takes the freed encoder")
+        #expect(rig.streamer("output:3", width: 1280, e) === canvas2, "fallback: canvas 2")
+
+        // canvas 2 goes, output:3 still on it (no canvas fallback left): the limit and no encoding stream of its own
+        rig.shapes.withLock { $0["canvas:2"] = nil }
+        try rig.hub.rebuild()
+        #expect(rig.hub.keys.contains(.init(target: "output:1", width: 320)), "f got its own size")
+        #expect(!rig.hub.keys.contains { $0.target == "output:3" }, "no JPEG streamer for e")
+        #expect(!rig.hub.canvas.subscriberList.contains { $0.connection === e })
+        #expect(rig.hub.fallbackCount == 0, "e left the fallbacks")
+        #expect(rig.hub.encoders == 4)
+    }
+
     /// B88: a rebuild that removes a target with an encoder gives it to a viewer waiting on a fallback.
     @Test func aRebuildThatFreesAnEncoderRebalances() throws {
         let r = try LimitRig(), rig = r.rig
