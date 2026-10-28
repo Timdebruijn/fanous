@@ -166,6 +166,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Syphon numbers (folder 0, 150–169) are kept in the project (`syphon`), so they survive an engine restart; a server not
   seen since the start is listed greyed (`gone`), and `syphon.forget` (Media screen **Forget**) frees a number (B69).
 - The §4.6 zero-malloc test counts only the compositor thread's allocations (a `malloc_logger` hook), not the process (B89).
+- Fixed: the shell token test failed 1 run in 16, when the token ended in "0" (B84).
+- Fixed: undoing `syphon.forget` overwrote a Syphon number another server had taken meanwhile; the undo is now refused (B90).
+- Fixed: the preview left its H.264 decoder open after every target change and disconnect; it now closes it (B85).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

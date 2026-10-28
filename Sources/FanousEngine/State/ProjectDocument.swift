@@ -371,7 +371,15 @@ public enum ProjectDocument {
             CommandSpec(
                 name: "syphon.forget", role: .programmer,
                 summary: "Forget a numbered Syphon server that is not running (folder 0, 150–169), or without file every one not running: the number is free again.",
-                argsType: "{ file?: number }"
+                argsType: "{ file?: number }",
+                // an undo puts the number back with `add /syphon/N`, which would overwrite a server numbered N meanwhile (B90)
+                replayCheck: { patch, project in
+                    for case .add(let pointer, let entry) in patch.operations where pointer.tokens.count == 2 && pointer.tokens[0] == "syphon" {
+                        guard let held = project[pointer], held["app"] != entry["app"] || held["server"] != entry["server"] else { continue }
+                        let name = "\(held["app"]?.string ?? "")/\(held["server"]?.string ?? "")"
+                        throw CommandError("historyConflict", "Syphon number \(pointer.tokens[1]) is now held by \(name); undo refused")
+                    }
+                }
             ) { project, args in
                 let running = syphonRunning()
                 var numbers = syphonNumbers(from: project)

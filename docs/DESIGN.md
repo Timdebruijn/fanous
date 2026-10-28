@@ -1202,7 +1202,8 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   1 s GOP, 1.5 Mbit/s at 640×360@30 default) encodes on its own queue;
   AVCC access units go out as binary frames with the `avcC` record in the
   stream's first message. The browser decodes with WebCodecs `VideoDecoder`
-  (`avc` with `description`) into a `<canvas>`.
+  (`avc` with `description`) into a `<canvas>`. One decoder per preview,
+  closed when its stream stops (target change, disconnect, hidden tab; B85).
 - Fallback when WebCodecs is unavailable or fails a real decode test at
   connect time: JPEG at 5 fps on the same stream id.
 - Encoding cost is bounded: one encoder per distinct (target, size) pair,
@@ -1408,7 +1409,11 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   as one patch and `projectChanged` applies it like any other change (canvas
   switch, patch, cues, timecode). The history is not cleared; undo and redo of a
   revert entry are refused in show mode (`CommandSpec.replayCheck`, checked by
-  `StateStore.step` before it pops). `live.versions` `{lastAutomatic, serial}`
+  `StateStore.step` before it pops). The check sees the patch the step would
+  apply and the current project: `syphon.forget` refuses an undo whose
+  `add /syphon/N` would overwrite another app/server on that number, and that
+  `historyConflict` drops the entry (B90); the undo of a forget without file is
+  refused as a whole when any of its numbers conflicts. `live.versions` `{lastAutomatic, serial}`
   feeds the status bar and tells the System screen to re-list. OSC
   `/fanous/project/load s` resolves the newest named version with that name
   (case-insensitive), else a version id, on the versions queue, ignores a
