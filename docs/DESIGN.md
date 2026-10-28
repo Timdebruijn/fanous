@@ -1332,7 +1332,11 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   which ends the refused subscription, so a refused viewer stays on JPEG
   until it subscribes again (B86). A canvas-stream fallback shows other
   content than asked (the whole canvas, not the output's region or the
-  layer alone), often in another aspect (B87). A fallback streamer whose own
+  layer alone), often in another aspect: when the served size (`sub` reply,
+  then each `stream` description) is another shape than the preview's box,
+  the browser letterboxes it (`object-fit: contain`) and the caption says
+  "canvas fallback" (B87; a layer has its canvas's shape, so its fallback
+  is not told apart). A fallback streamer whose own
   viewer left stays as it is: only fallback viewers keep it encoding, so no
   release is seen and nothing starts a re-balance. The canvas 1 streamer's
   own viewers are never on a fallback (it is always counted).

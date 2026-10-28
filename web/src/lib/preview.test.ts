@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it, vi } from 'vitest';
-import { classChanged, latestOnly, previewClass, wantedWidth } from './preview';
+import { classChanged, latestOnly, otherShape, previewClass, wantedWidth } from './preview';
 
 const resolveIn = (ms: number, stop: () => void) => new Promise<() => void>((r) => setTimeout(() => r(stop), ms));
 
@@ -54,5 +54,26 @@ describe('preview size', () => {
     expect(classChanged(640, 680)).toBe(true);
     expect(classChanged(700, 630)).toBe(false); // the 960 stream stays for a box 2 % under 640
     expect(classChanged(700, 600)).toBe(true);
+  });
+});
+
+describe('otherShape', () => {
+  it('takes a stream of the box shape at any size class as the same shape', () => {
+    expect(otherShape(640, 360, '16 / 9')).toBe(false);
+    expect(otherShape(320, 180, '1920 / 1080')).toBe(false);
+    expect(otherShape(554, 414, '1440 / 1080')).toBe(false);  // 4:3 in the 640 class (B32)
+    expect(otherShape(276, 206, '4 / 3')).toBe(false);  // 4:3 in the 320 class: 207 lines rounded down to even
+    expect(otherShape(320, 40, '3840 / 480')).toBe(false);  // an 8:1 strip in the 320 class
+  });
+
+  it("flags the canvas stream in an output region's box", () => {
+    expect(otherShape(640, 360, '1440 / 1080')).toBe(true);
+    expect(otherShape(640, 360, '1920 / 1000')).toBe(true);
+  });
+
+  it('flags nothing without a size or an aspect', () => {
+    expect(otherShape(0, 0, '16 / 9')).toBe(false);
+    expect(otherShape(640, 360, '')).toBe(false);
+    expect(otherShape(640, 360, 'auto')).toBe(false);
   });
 });

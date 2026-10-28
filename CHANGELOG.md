@@ -165,6 +165,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   poll with a deadline or probe the listener first, so `scripts/test.sh` stays green under load (B67).
 - Syphon numbers (folder 0, 150–169) are kept in the project (`syphon`), so they survive an engine restart; a server not
   seen since the start is listed greyed (`gone`), and `syphon.forget` (Media screen **Forget**) frees a number (B69).
+- Fixed: an output preview on the canvas stream at the encoder limit was stretched to the output's shape; it is now
+  letterboxed and its caption says "canvas fallback" (B87).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
