@@ -34,6 +34,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   real engine, also in CI (B47). Syphon: the canvas arrives upright in other apps and Syphon inputs are sampled
   the right way up, effects included (B6). A scene may name a Syphon app without a server name
   (`"syphon": "App/"`): the first server of that app, for apps with a single server.
+- Live layer thumbnails (B29): the Layers screen rows show each layer's own picture, 4 times a second, from one
+  atlas pass on the GPU that runs only while someone watches (`sub {stream:"thumbs"}`); a layer that shows nothing
+  keeps the library thumbnail. CITP consoles can stream single layers: `GVSr`/`VSrc` list the canvas and each layer
+  as video sources (B41, scaling to a requested size still open).
 - Per-universe settings on the Patch screen: protocol, interface, hold-on-loss and sACN priority (B28). sACN
   listens on all interfaces and shares its port with other sACN apps on the Mac; readiness warns about a
   missing or unusable interface and a failed sACN bind.

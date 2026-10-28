@@ -43,3 +43,19 @@ describe('FanousClient preview subscriptions (B62)', () => {
     client.close();
   });
 });
+
+describe('FanousClient thumbnail subscriptions (B29)', () => {
+  it('resolves with the stream id, rejects a refusal and does not mix with preview replies', async () => {
+    const { client, onState, deliver } = connected();
+    const refused = client.subscribeThumbs();
+    const preview = client.subscribePreview('avc');
+    const thumbs = client.subscribeThumbs();
+    deliver({ t: 'error', id: 4, stream: 'thumbs', code: 'noPreview', message: 'the engine is not rendering' });
+    deliver({ t: 'sub', id: 5, stream: 'preview', codec: 'avc', w: 640, h: 360, fps: 30, target: 'canvas' });
+    deliver({ t: 'sub', id: 6, stream: 'thumbs', w: 160, fps: 4 });
+    await expect(refused).rejects.toEqual({ code: 'noPreview', message: 'the engine is not rendering' });
+    await expect(preview).resolves.toMatchObject({ id: 5 });
+    await expect(thumbs).resolves.toBe(6);
+    expect(onState).toHaveBeenCalledTimes(1);
+  });
+});

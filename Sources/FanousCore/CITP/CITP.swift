@@ -110,6 +110,8 @@ public enum CITPPacket: Equatable, Sendable {
     case mediaElementInformation(MediaElementInformation)
     case getElementThumbnail(GetElementThumbnail)
     case elementThumbnail(ElementThumbnail)
+    case getVideoSources
+    case videoSources([VideoSource])
     case requestStream(RequestStream)
     case streamFrame(StreamFrame)
     /// Any layer or message this codec does not model (SDMX, FPTC, MSEX EEIn/GLEI/ELUp/..., unknown PINF).
@@ -172,6 +174,8 @@ public enum CITPPacket: Equatable, Sendable {
         case .mediaElementInformation(let m): body = Self.msex("MEIn", version, m.write)
         case .getElementThumbnail(let m): body = Self.msex("GETh", version, m.write)
         case .elementThumbnail(let m): body = Self.msex("EThn", version, m.write)
+        case .getVideoSources: body = Self.msex("GVSr", version) { _, _ in }
+        case .videoSources(let sources): body = Self.msex("VSrc", version) { out, _ in VideoSource.write(sources, to: &out) }
         case .requestStream(let m): body = Self.msex("RqSt", version, m.write)
         case .streamFrame(let m): body = Self.msex("StFr", version, m.write)
         }

@@ -1002,8 +1002,8 @@ applied entirely on the GPU in the final output pass" is satisfied.
 - Preview: `canvas:<id>` targets ("canvas" = "canvas:1"), sized to their canvas;
   `layer:<n>` is made at its layer's canvas aspect and rebuilt when the layer
   changes canvas; output previews sample every canvas of the tick.
-- Not built: Syphon for canvases other than canvas 1, CITP streams canvas 1
-  only, a rate per canvas.
+- Not built: Syphon for canvases other than canvas 1, a CITP stream of a canvas
+  other than canvas 1 (layers on any canvas stream since B29), a rate per canvas.
 
 ### 9.6 Display identity, modes, hot-plug
 
@@ -1197,8 +1197,8 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   canvas-reuse tick), so their ring frames are protected exactly as for the
   canvas pass. The browser stops a subscription that resolves after the
   target changed again (`latestOnly`). The Layers screen toggles Canvas /
-  This layer (per browser, `localStorage`). B29 thumbnails can reuse
-  `drawLayer` into an atlas; not built.
+  This layer (per browser, `localStorage`). B29 thumbnails reuse its layer
+  draw in an atlas (below).
 - **As built (sizes, B32, 2026-10-27):** `sub` takes an optional `w`
   (wanted width in pixels, clamped 160–1280); the engine picks the smallest
   size class ≥ `w` out of 320, 640, 960 and 1280 wide (640 without `w`),
@@ -1224,6 +1224,37 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   width × `devicePixelRatio` (rounded up), also after a pixel-ratio change,
   and re-subscribes 300 ms after a resize that crosses into another class
   by more than 5 % (`latestOnly`).
+- **As built (live layer thumbnails, B29, 2026-10-28):** `sub {stream:"thumbs"}`
+  (no target) is answered like the other subs, `{"t":"sub","id":n,"stream":
+  "thumbs","w":160,"fps":4}` (refused without a renderer: `error` with
+  `stream: "thumbs"`, code `noPreview`); `unsub` ends it. One producer
+  (`Preview/ThumbnailStreamer`, owned by `PreviewHub` like the streamers) for
+  every subscriber and CITP layer stream; it draws only while one of them
+  exists (`/metrics` `preview.thumbnailPasses` stands still otherwise, and with
+  nothing else watching the tick encodes no GPU work). Every
+  `ThumbnailAtlas.everyNth` tick (250 ms: every 15th at 60 fps), on the tick's
+  command buffer after the canvas pass, `Compositor.drawThumbnails` draws every
+  render layer that shows something this tick (an item with intensity > 0 on a
+  canvas that renders; the same draw items, frame lifetime and Normal blend as
+  `drawLayer`) alone into its cell of one canvas-format atlas, one render pass,
+  viewport and scissor per cell, cleared to black; cost ≤ 32 quads (64 during
+  dissolves) per pass, uniforms in three rotating thirds of one buffer. Cells
+  are 160 wide in the layer's canvas aspect (2–480 lines, even); layer i sits in
+  slot i of a 4-column grid whose slots are as tall as the tallest visible cell
+  (32 layers of 16:9: 640×720). With no visible layer there is no pass at all.
+  The atlas is copied 1:1 through the output pipeline into a pooled BGRA pixel
+  buffer (`CVMetalTextureCache`, no readback; the pool only grows); on the
+  thumbnail queue (utility) Core Image cuts one JPEG per visible cell (quality
+  0.7, 2–4 KB). Binary frames are kind 2 on the `thumbs` stream id, one per
+  layer: `[u8 layer number, 1-based][u16 width][u16 height][JPEG]`, big-endian
+  like the stream header; width and height 0 without JPEG bytes = the layer
+  shows nothing. A frame is sent only when that layer's JPEG changed (a still
+  layer costs one frame); a new subscriber first gets the current set. The
+  Layers screen subscribes while it is shown, the tab is visible and the engine
+  renders (`latestOnly` against late replies), shows each frame as an object URL
+  in its layer row (`img[data-live]`) and falls back to the library thumbnail
+  for an empty frame or without a stream. Pure functions in
+  `FanousCore.ThumbnailAtlas`. CITP layer streams (§16.1) send the same JPEGs.
 
 ### 11.4 Frontend (ADR-0012)
 
@@ -1320,7 +1351,7 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   pooled BGRA pixel buffer on the compositor's command buffer every N-th tick,
   VideoToolbox H.264 Baseline (1 s GOP, 1.5 Mbit/s, 640×360@30) on a utility
   queue, JPEG at 5 fps for clients without WebCodecs; one encoder shared by
-  all subscribers. Per-layer live thumbnails are deferred (B29).
+  all subscribers. Per-layer live thumbnails were deferred (B29, built 2026-10-28, §11.3).
 - UI: Svelte 5 runes, hash router, one deep `$state` tree patched in place,
   `protocol.d.ts` generated from the command registry; status bar, Layers,
   Media and Patch/DMX screens follow the approved design canvas; system fonts
@@ -1737,16 +1768,21 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   `_https._tcp` (B39), `live.system` (thermal, power, memory, OS, host, addresses, TLS fingerprint).
 - **CITP/MSEX**: codec in Core (`CITP/CITP.swift`, `CITP/CITPMSEX.swift`:
   PINF `PLoc`/`PNam`, MSEX 1.0–1.2 `CInf`/`SInf`/`Nack`/`LSta`/`GELI`/`ELIn`/
-  `GEIn`/`MEIn`/`GETh`/`EThn`/`RqSt`/`StFr`, little-endian, byte-exact tests);
+  `GEIn`/`MEIn`/`GETh`/`EThn`/`GVSr`/`VSrc`/`RqSt`/`StFr`, little-endian, byte-exact tests);
   transport in Engine (`Net/CITPServer.swift`): one `NWListener` on an
   ephemeral TCP port, `PLoc` every 5 s to `224.0.0.180` and `239.224.0.180`
   (both groups, port 4809, a BSD socket: `NWConnection` does not deliver to
   multicast groups), per session the highest common version ≤ 1.2,
   `SInf` with one DMX source string per layer, `LSta` at 4 Hz from the layer
   status, libraries = numbered folders, elements = numbered files with their
-  probed metadata, thumbnails from the library cache, streaming frames = the
-  canvas JPEG from the preview path (≤ 10 fps, only encoded while a console
-  streams), `Nack` for MSEX types we do not model. The server UUID is a
+  probed metadata, thumbnails from the library cache, `GVSr` answered with
+  `VSrc` (source 0 = canvas 1 at its preview size, source n = layer n with its
+  0-based layer number and thumbnail size), streaming frames = the canvas JPEG
+  from the preview path for source 0 (and any id that is no layer, for consoles
+  that never ask for the sources) or layer n's live thumbnail (B29; black while
+  it shows nothing) (≤ 10 fps, only encoded while a console streams that kind of
+  source: `wantsFrames` / `wantsLayerFrames`), `Nack` for MSEX types we do not
+  model. `VSrc` follows the spec text's layout; no console capture yet (B40). The server UUID is a
   per-install file in Application Support. `live.citp` lists port, consoles
   and open streams. Verified in loopback only (B40).
 - **UI**: Show screen (Go / Back / Go to, Space = go, timecode panel with

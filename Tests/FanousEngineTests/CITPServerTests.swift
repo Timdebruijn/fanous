@@ -98,7 +98,7 @@ struct CITPServerTests {
 
         let server = CITPServer(
             name: "beacon-test", uuid: "550e8400-e29b-41d4-a716-446655440000",
-            providers: CITPServer.Providers(layers: { [] }, library: Self.library, thumbnail: { _ in nil }, frame: { nil }), logger: Self.logger)
+            providers: CITPServer.Providers(layers: { [] }, library: Self.library, thumbnail: { _ in nil }, frame: { _ in nil }), logger: Self.logger)
         try server.start()
         defer { server.stop() }
         var buffer = [UInt8](repeating: 0, count: 512)
@@ -121,10 +121,12 @@ struct CITPServerTests {
             providers: CITPServer.Providers(
                 layers: { [CITPServer.LayerInfo(index: 1, folder: 1, file: 3, name: "Intro", positionMs: 400, lengthMs: 10_000, fps: 25, flags: LayerStatus.playing)] },
                 library: Self.library, thumbnail: { $0 == "intro.jpg" ? Self.jpeg : nil },
-                frame: {
+                frame: { source in
                     frames.withLock { $0 += 1 }
-                    return (Self.jpeg, 640, 360)
-                }), logger: Self.logger)
+                    return source == 1 ? (Self.jpeg, 160, 90) : (Self.jpeg, 640, 360)  // layer 1's thumbnail, else the canvas
+                },
+                sources: { [VideoSource(sourceIdentifier: 0, name: "Canvas", width: 640, height: 360), VideoSource(sourceIdentifier: 1, name: "Layer 1", layerNumber: 0, width: 160, height: 90)] }),
+            logger: Self.logger)
         try server.start()
         defer { server.stop() }
         var port: UInt16 = 0
@@ -163,9 +165,22 @@ struct CITPServerTests {
         client.send(.requestStream(RequestStream(sourceIdentifier: 0, frameFormat: "JPEG", frameWidth: 640, frameHeight: 360, fps: 10, timeout: 5)))
         let frame = try #require(client.wait(2) { if case .streamFrame(let f) = $0 { return f } else { return nil } })
         #expect(frame.buffer == Self.jpeg && frame.frameWidth == 640 && frame.frameFormat == "JPEG")
-        #expect(server.wantsFrames.load(ordering: .relaxed) == true)
+        #expect(server.wantsFrames.load(ordering: .relaxed) == true && server.wantsLayerFrames.load(ordering: .relaxed) == false)
         #expect(server.status.withLock { $0.streams } == 1)
         #expect(server.activeTimers == (true, true), "streaming: frame timer runs")
+
+        // per-layer streams (B29/B41): the sources, then layer 1's live thumbnail
+        client.send(.getVideoSources)
+        let sources = try #require(client.wait(1) { if case .videoSources(let s) = $0 { return s } else { return nil } })
+        #expect(sources.map(\.sourceIdentifier) == [0, 1] && sources[1].layerNumber == 0 && sources[0].layerNumber == VideoSource.none)
+        client.send(.requestStream(RequestStream(sourceIdentifier: 1, frameFormat: "JPEG", frameWidth: 160, frameHeight: 90, fps: 4, timeout: 5)))
+        let layerFrame = try #require(client.wait(2) { if case .streamFrame(let f) = $0, f.sourceIdentifier == 1 { return f } else { return nil } })
+        #expect(layerFrame.frameWidth == 160 && layerFrame.frameHeight == 90)
+        #expect(server.wantsLayerFrames.load(ordering: .relaxed) == true && server.status.withLock { $0.streams } == 2)
+        client.send(.requestStream(RequestStream(sourceIdentifier: 1, frameFormat: "JPEG", frameWidth: 160, frameHeight: 90, fps: 0, timeout: 5)))
+        for _ in 0..<50 where server.wantsLayerFrames.load(ordering: .relaxed) { usleep(20_000) }
+        #expect(server.wantsLayerFrames.load(ordering: .relaxed) == false && server.wantsFrames.load(ordering: .relaxed) == true, "the canvas stream stays")
+        #expect(CITPServer.layer(ofSource: 0, layerCount: 2) == nil && CITPServer.layer(ofSource: 2, layerCount: 2) == 1 && CITPServer.layer(ofSource: 3, layerCount: 2) == nil)
 
         client.send(.unknown(contentType: "MSEX", body: [1, 2] + Array("XXXX".utf8)))
         let nack = try #require(client.wait(1) { if case .nack(let n) = $0 { return n } else { return nil } })

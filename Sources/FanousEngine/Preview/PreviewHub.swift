@@ -34,6 +34,9 @@ public final class PreviewHub: @unchecked Sendable {
     nonisolated(unsafe) public var configure: (@Sendable (String, PreviewStreamer) -> Bool)?
     /// Compositor thread: a canvas of the running tick by id (`Compositor.tickCanvas`).
     nonisolated(unsafe) public var canvasTexture: ((Int) -> MTLTexture?)?
+    /// Live layer thumbnails (B29): one producer for every `thumbs` subscriber and CITP layer stream. Set by the engine
+    /// before the first tick.
+    nonisolated(unsafe) public var thumbnails: ThumbnailStreamer?
 
     public init(make: @escaping @Sendable (Int, Int) throws -> PreviewStreamer, shape: @escaping @Sendable (String) -> (width: Int, height: Int)?) throws {
         let canvas = try Self.canvasStreamer(make, shape)
@@ -101,6 +104,7 @@ public final class PreviewHub: @unchecked Sendable {
     public func unsubscribe(connection: StateServer.Connection, stream: UInt32) {
         streamers.withLock { all in
             canvas.unsubscribe(connection: connection, stream: stream)
+            thumbnails?.unsubscribe(connection: connection, stream: stream)
             for streamer in all.values { streamer.unsubscribe(connection: connection, stream: stream) }
             release(&all)
         }
@@ -109,6 +113,7 @@ public final class PreviewHub: @unchecked Sendable {
     public func remove(connection: StateServer.Connection) {
         streamers.withLock { all in
             canvas.remove(connection: connection)
+            thumbnails?.remove(connection: connection)
             for streamer in all.values { streamer.remove(connection: connection) }
             release(&all)
         }
@@ -209,8 +214,8 @@ public final class PreviewHub: @unchecked Sendable {
 
     // MARK: Compositor thread
 
-    /// Anyone who needs canvas frames: a subscriber of any target or a CITP console.
-    public var wantsFrames: Bool { active.withLock { $0 }.contains { $0.wantsFrames } }
+    /// Anyone who needs canvas frames: a subscriber of any target, of thumbnails or a CITP console.
+    public var wantsFrames: Bool { active.withLock { $0 }.contains { $0.wantsFrames } || thumbnails?.wantsFrames == true }
 
     /// `Compositor.previewTap`.
     public func tap(canvas texture: MTLTexture, commandBuffer: MTLCommandBuffer, target: Double) {
@@ -218,6 +223,7 @@ public final class PreviewHub: @unchecked Sendable {
             guard let canvas = streamer.canvasID == 1 ? texture : canvasTexture?(streamer.canvasID) else { continue }
             streamer.tap(canvas: canvas, commandBuffer: commandBuffer, target: target, canvases: canvasTexture)
         }
+        thumbnails?.tap(commandBuffer: commandBuffer)
     }
 
     // MARK: Counters

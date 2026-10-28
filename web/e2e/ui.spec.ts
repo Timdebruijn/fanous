@@ -57,6 +57,18 @@ test('layers: Control puts content on a layer, and the engine resolves folder, f
   await expect(row).toContainText('Colour bars');
 });
 
+test('layers: a layer showing built-in content gets a live thumbnail, an empty layer none (B29)', async ({ page }) => {
+  const row = page.locator('.row.layer').nth(1);
+  await row.click();
+  await page.getByRole('switch', { name: 'Control' }).check({ force: true }); // the drawn track covers the input
+  await page.getByRole('button', { name: /^Use / }).click();
+  await page.getByLabel('Built-in content and Syphon (folder 0)').selectOption({ label: '101 · Grid' });
+  await expect(row).toContainText('Grid');
+  // 4 atlas passes a second: the row's picture turns live well within 2 s
+  await expect(row.locator('img[data-live="true"]')).toBeVisible({ timeout: 2_000 });
+  await expect(page.locator('.row.layer').nth(0).locator('img[data-live="true"]')).toHaveCount(0);
+});
+
 test('media: folder 0 lists the generators and the Syphon servers, and puts one on a layer', async ({ page }) => {
   await openScreen(page, 'Media');
   await page.getByRole('button', { name: /^0 Built-in and Syphon/ }).click();

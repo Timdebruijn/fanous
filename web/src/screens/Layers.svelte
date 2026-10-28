@@ -29,15 +29,65 @@
 </script>
 
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import LayerDetail from '../components/LayerDetail.svelte';
   import LayerRow from '../components/LayerRow.svelte';
   import LayerStrips from '../components/LayerStrips.svelte';
   import Preview from '../components/Preview.svelte';
-  import { layerPreview, thumbnailFor, thumbnailIndex, type ChannelMap, type LibrarySnapshot } from '../lib/layers';
+  import { layerPreview, parseThumbFrame, rowThumb, thumbnailFor, thumbnailIndex, type ChannelMap, type LibrarySnapshot } from '../lib/layers';
   import { canvasTarget, layerCanvas } from '../lib/outputs';
+  import { latestOnly } from '../lib/preview';
   import { go } from '../lib/router.svelte';
-  import { app } from '../lib/state.svelte';
+  import { app, subscribeThumbs } from '../lib/state.svelte';
+
+  // Live layer thumbnails (B29): layer number → object URL of its latest JPEG. Subscribed while this screen is shown,
+  // the tab is visible and the engine renders; a layer the engine reports empty, or no stream, shows the library thumbnail.
+  let live = $state<Record<number, string>>({});
+  let stopThumbs: (() => void) | null = null;
+  const thumbsRun = latestOnly();
+
+  function onThumb(payload: Uint8Array) {
+    const frame = parseThumbFrame(payload);
+    if (!frame) return;
+    const old = live[frame.layer];
+    if (frame.w === 0) delete live[frame.layer];
+    else live[frame.layer] = URL.createObjectURL(new Blob([frame.jpeg as BlobPart], { type: 'image/jpeg' }));
+    if (old) URL.revokeObjectURL(old);
+  }
+
+  async function startThumbs() {
+    if (stopThumbs || document.hidden || app.connection !== 'open' || !app.live.engine.rendering) return;
+    const run = thumbsRun.begin();
+    try {
+      const stop = await subscribeThumbs(onThumb);
+      if (run.keep(stop)) stopThumbs = stop;
+    } catch {
+      // offline or refused: the library thumbnails stay
+    }
+  }
+
+  function stopLive() {
+    thumbsRun.cancel();  // a subscription still on its way is stopped when it arrives
+    stopThumbs?.();
+    stopThumbs = null;
+    for (const url of Object.values(live)) URL.revokeObjectURL(url);
+    live = {};
+  }
+
+  onMount(() => {
+    const visibility = () => (document.hidden ? stopLive() : void startThumbs());
+    document.addEventListener('visibilitychange', visibility);
+    return () => {
+      document.removeEventListener('visibilitychange', visibility);
+      stopLive();
+    };
+  });
+
+  // (re)connects and the engine starting or stopping to render
+  $effect(() => {
+    if (app.connection === 'open' && app.live.engine.rendering) untrack(() => void startThumbs());
+    else untrack(stopLive);
+  });
 
   let channelMap = $state.raw<ChannelMap | null>(null);
   let library = $state.raw<LibrarySnapshot | null>(null);
@@ -138,7 +188,7 @@
               {layer}
               params={app.live.dmx.fixtures[`Layer ${n}`]}
               policy={app.live.dmx.policies[`Layer ${n}`] ?? app.project.policy}
-              thumb={thumbnailFor(thumbs, layer)}
+              thumb={rowThumb(live[n], thumbnailFor(thumbs, layer))}
               selected={n === selected && fixture === null}
               onselect={() => {
                 ui.selected = n;
