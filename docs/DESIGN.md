@@ -1924,7 +1924,7 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | HAP R | `bc7_rgbaUnorm` in the HAP texture path; ingest encoder flag |
 | NDI in/out, DeckLink in/out | `FanousPluginAPI` (ADR-0016): C ABI, `dlopen`ed from `~/Library/Application Support/Fanous/Plugins/`, sources hand over IOSurfaces into the same frame rings; sinks subscribe to completed canvas textures like Syphon |
 | Pixel mapping to DMX fixtures | Art-Net/sACN *builders* already exist in Core (needed for tests); a GPU sampling pass reads canvas regions into a small buffer per universe on the preview thread |
-| Main/backup failover (v2) | projects reference media by number; `live` is a replicable document; a backup engine subscribes to the main's state over WSS and runs the same DMX; outputs are switched by the operator (status bar "backup" slot reserved) |
+| Main/backup failover, multi-server sync | designed in §23 (B60, ADR-0021): a follower mirrors the master's project over WSS and renders the master's per-tick sync frames on its own outputs; a backup is a follower whose outputs are enabled by the swap |
 | 3D projection mapping | the output pass already renders arbitrary meshes through a displacement field; a projected OBJ with a calibrated camera matrix replaces the slice mesh |
 | 3D-model layers (media as texture on a mesh) | the layer pass is one quad in a perspective camera (§4.3); a mesh from Model I/O (USDZ/OBJ) with its own UVs replaces the quad, the fragment shader is unchanged; needs a depth attachment on the canvas pass and a "Geometry" parameter in the reserved Layer channels 51–64 (0 = flat, 1–255 = model from the library); `docs/BACKLOG.md` B9 |
 | Motion: tracking in, movement out (B53) | **Tracking as a source:** a PosiStageNet receiver in Core (UDP multicast, position/speed/orientation per tracker) and OSC trackers become an extra *internal source* in the resolver (§7.2), mapped per project ("tracker 3 → Layer 2 position X/Y, scale") through a stage-to-canvas calibration (metres → canvas) set on the Outputs screen; on-device person tracking through the Vision framework on a capture input (folder 0); depth/lidar SDKs only through the plugin boundary (ADR-0016). **Movement out:** DMX-controlled motion (mirror heads, pan/tilt yokes, winches, rotators) via the Art-Net/sACN builders of the pixel-mapping pass; small motors (ESP32 steppers/servos) via OSC output (B36) or an MQTT bridge. **Moving screens:** encoder positions in over PSN/OSC update an output's corner-pin homography per frame. **Hard rule:** Fanous sends cues and target positions only; it is never the safety layer of stage automation (e-stops, SIL-rated controllers stay in charge). Camera tracking of people is processed on the device and never stored (GDPR). Expected tracker → photon ≈ 35–40 ms, enough to follow a performer, not for locked-on AR. |
@@ -1962,4 +1962,268 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | OPEN-23 | Library default location `~/Movies/Fanous Library` | yes |
 | OPEN-24 | Default ports: HTTPS 8443, OSC 8000/8001; configurable | yes |
 | OPEN-26 | Keychain strategy for unsigned development builds (prompt on every rebuild vs. ephemeral per-process identity) | **Decided 2026-10-23:** file-backed in-memory identity (`SecIdentityCreate`), no login keychain; ADR-0015 amendment |
+| OPEN-27 | Multi-server sync frames over UDP (unicast or multicast) next to the WSS stream | only if the two-Mac measurement (§23.10) shows TCP retransmit delays; same frame format |
+| OPEN-28 | Hash-based library sync master → followers | later; a copy by hand is the v1 way (§23.7) |
 | OPEN-25 | Register an Art-Net OEM code with Artistic Licence (free, needed for a proper `ArtPollReply`) | owner, `docs/RELEASE.md` §4; 0xFFFF until then |
+
+---
+
+## 23. Multi-server sync (B60, ADR-0021)
+
+Two or more Macs show one picture: each renders its own outputs (its slices
+of the shared canvases, with blends where they meet), frame-locked to one
+machine. The same mechanism gives a hot backup: a second Mac mirrors the
+first and takes the outputs over when asked. Designed 2026-10-28; nothing of
+it is built yet.
+
+### 23.1 Roles and the one sentence that defines them
+
+A machine is **standalone** (today), the **master** of a group, or a
+**follower** of one master. **A follower renders what the master resolved,
+from the master's project, on its own displays.** It does not resolve DMX,
+OSC, MIDI, timecode, cues or UI edits of its own while it follows; it
+receives the master's per-tick result and draws it. Everything that can
+diverge between two machines (which packet a tick sampled, a cue fired by
+OSC on one machine, a dissolve that started one tick later, smoothing state,
+a programmer edit) therefore has exactly one source. The alternative, every
+machine resolving the console on its own with only the clocks synchronised,
+was rejected: it needs the console, OSC, MIDI and timecode to reach every
+machine identically and still drifts on everything that is not DMX.
+
+### 23.2 Transport: the state connection, not a second protocol
+
+A follower is a client of the master's existing WSS state server (§11.2):
+it connects like a browser does, gets `welcome` with the master's `project`,
+receives `project` patches, and subscribes to one more binary stream:
+
+```
+follower → master   {"t":"sub","stream":"sync"}
+master → follower   {"t":"sub","id":9,"stream":"sync","fps":60,"layers":32}
+master → follower   binary [u8 kind=5][u32 streamId][SyncFrame]        // one per compositor tick
+follower → master   {"t":"cmd","name":"sync.ping","args":{"t1":…}}     // 1 Hz; the ack carries t2 and t3
+follower → master   {"t":"cmd","name":"sync.report","args":{…}}        // 1 Hz: lag, drops, media, displays, readiness
+```
+
+Why TCP/WSS and not multicast UDP like Art-Net: the frames are small (≈ 5 KB
+at 32 layers, ≈ 2.5 Mbit/s per follower at 60 fps), a group has ≤ 4
+followers, a wired LAN loses nothing, a late frame costs one freewheel tick
+(§23.5) and nothing else, and the connection brings TLS, roles, Bonjour
+discovery, reconnect and the project mirror for free. Multicast across real
+interfaces is still unverified in this codebase (B28) and WiFi throttles it.
+The frame format is transport-independent; a UDP sender can be added if a
+measurement ever asks for it (OPEN-27).
+
+Discovery and pairing: the master is picked on the follower's System screen
+from the `_fanous._tcp` Bonjour list (or typed as host:port). The master's
+programmer makes a **follower token** ("Add follower…" on the System screen,
+shown once, stored hashed in the master's `settings.json` like the role
+passwords); the follower stores it in its own `settings.json` and sends it
+in `hello` as `token`. A token grants the new **`follower` role**: monitor
+rights plus the `sync` stream and the `sync.*` commands, nothing else. The
+master's certificate is pinned on the first connection (fingerprint shown on
+both System screens, as the shell already does for browsers).
+
+### 23.3 The sync frame
+
+What the master's compositor consumes each tick is what a follower needs:
+the published `ParameterSnapshotSlot` (master, outputs, 32 ×
+`LayerParameters`) plus what the compositor derived from it: per layer the
+media that is actually loaded, its `LayerClock` (position, direction,
+finished), the outgoing media and dissolve progress, and the tick's `target`
+time. Little-endian, fixed layout, no JSON on this path:
+
+```
+SyncFrame
+  u32 tick            compositor tick index (Compositor.ticks)
+  f64 target          master's tick target time (its CACurrentMediaTime base)
+  u64 snapshot        ParameterSnapshotSlot.sequence
+  u32 projectRev      state rev the frame was rendered under
+  f32 master, u8 masterControl, f32 masterSpeed, u8 testPattern
+  u8  outputCount, OutputParameters × outputCount (f32 intensity, u8 control, u8 testPattern, u8 raw)
+  u8  layerCount, per layer:
+      LayerParameters as wired (f32 for every Float, u8 for every enum/byte, ≈ 150 B)
+      u16 currentKey (packed MediaKey of the loaded media; 0 = none)
+      f64 position, i8 direction, u8 finished
+      u16 outgoingKey, f64 outgoingPosition, f32 dissolveProgress  (outgoingKey 0 = no dissolve)
+```
+
+The compositor writes the frame into a triple-buffered byte slot at the end
+of its CPU work (no allocation: the slot is sized at `reconfigure`); a sender
+thread per master wakes on a semaphore and writes the newest slot to every
+`sync` subscriber's socket. A subscriber whose send queue is full drops sync
+frames (never project patches, §11.2) and is marked lagging in `live.sync`.
+`SyncFrame` encode/decode lives in `FanousEngine/Sync/` next to
+`ParameterSnapshot.swift` (it is engine data, not Core data); a round-trip
+test and a size assertion are the tests.
+
+### 23.4 How a follower ticks
+
+While following, the follower's compositor does not advance its own clocks:
+
+- Its driver (`DrawableLoopDriver`/`HeadlessDriver`) runs in **follow
+  pacing**: instead of `mach_wait_until(next)` it waits on the sync frame
+  semaphore with a timeout of 1.5 periods, then ticks. A tick is therefore
+  triggered by the master's frame arriving, and presents on the follower's
+  next vsync. Master: render → wait for vsync (0–1 period). Follower: network
+  (< 1 ms on a LAN) → render → wait for vsync (0–1 period). The two pictures
+  are therefore never more than **one frame** apart, without any clock
+  discipline. Genlock-grade phase lock is not possible on Macs without
+  hardware genlock; the vsync of two displays is never aligned, so one frame
+  is the floor and the target (B60: ±1 frame).
+- The tick uses the frame's `target` as its time (generators, strobe phase,
+  dissolve timing), the frame's snapshot as `parameters` (the local
+  `TripleBuffer` is bypassed: `Compositor.followFrame` is a second input read
+  before the local snapshot and wins while set), and **sets** each layer's
+  clock from the frame instead of calling `advance`. The decoder read-ahead
+  is unchanged: predicted positions come from position and speed as today. A
+  retrigger on the master shows up as a position jump larger than the ring
+  and flushes the ring exactly like a local retrigger.
+- `wanted` media per layer comes from the frame's `currentKey` (the master's
+  resolved media, not the follower's own folder/file resolution), through
+  the existing `Playback` path; the follower's library must therefore hold
+  the same numbers (§23.7).
+- Everything per machine stays local: its displays, output pass, blends,
+  warps, slices (from the mirrored project, bound by display identity), its
+  previews, Syphon and CITP, its metrics.
+- Audio: a follower is **muted** by default (two machines playing the same
+  sound is wrong more often than right); `project.machines[id].audio = true`
+  turns one machine's audio on. Later: audio on one machine only, chosen in
+  the project.
+
+### 23.5 Loss, freewheel, promote
+
+- No frame within 1.5 periods: the follower ticks anyway and **freewheels**:
+  it advances its layer clocks locally with `LayerClock.advance` from the last
+  frame's speed and mode, so playback never stutters on a late packet; the
+  next frame snaps the position back (normally < 1 frame). Counted in
+  `live.sync.freewheelTicks`.
+- No frame for the **freewheel time** (2 s, same default as timecode) or the
+  connection drops: state **lost**. The follower keeps freewheeling from the
+  last snapshot (the show goes on with the last look), reconnects every
+  second, and shows "master lost" in red in the status bar and the readiness
+  list.
+- **Promote** (operator button on the follower's System screen, OSC
+  `/fanous/sync/promote`, or automatic after the freewheel time when
+  `onLoss: standalone` is set): the follower stops following and resolves its
+  own inputs from the current snapshot onwards (its resolver starts from the
+  last frame's values, so nothing jumps until the console sends something
+  else). Its mirrored project is now its own project. It does not re-follow
+  by itself when the master returns; the operator re-enables following, so
+  outputs never flip back on their own during a show.
+- Master restart (Engine › Restart, crash): followers see "lost" and
+  freewheel; the master comes back with the same project and the followers'
+  reconnect lands within a second; show mode survives on every machine as
+  today (§14).
+
+### 23.6 One project, many machines
+
+The master's project is the truth; a follower's `StateStore` runs in
+**mirror mode**: `welcome.project` replaces its document, every `project`
+patch is applied as-is (no command, no undo entry; the history is cleared),
+and it autosaves to its own `project.json` and `versions/` like any change,
+so a promoted follower runs on the latest copy. Local commands that touch
+the project or the show (anything `mutatesConfig`, cue go, transport,
+timecode, test patterns) are refused with a new error code `following`;
+previews, subscriptions, `sync.*` and `show.promote` stay. Its own UI shows
+"following <master>" and links to the master's UI.
+
+Outputs are already bound by display identity, which is unique per physical
+display, so one shared project simply holds **all outputs of all machines**.
+Two additions make that workable:
+
+- `OutputConfig.machine` (the engine's install UUID, `Engine.installUUID()`):
+  which machine owns the output. Set when the output is made; the master's
+  Outputs screen gets a machine picker that lists each follower's displays
+  (reported by `sync.report`), so a follower's outputs are mapped from the
+  master's UI without touching the follower. Readiness "all outputs bound"
+  checks only the machine's own outputs; a follower reports its result up.
+- `project.machines`: `{id: {name, audio, outputsEnabled}}`, the group as
+  the project knows it. `canvases[].clockMaster` stays the master's; a
+  follower paces on frames (§23.4), so it has no clock-master display.
+
+Every machine has its own `settings.json` (library root, interfaces, audio
+device, follower config: `master: host:port`, token, `onLoss`), as today.
+
+### 23.7 Media library
+
+Projects reference media by number (folder/file), so a follower needs a
+library with the same numbers, not the same bytes: a copy of the master's
+library (rsync, external disk) is enough and is the v1 way. The follower
+reports per-layer media status in `sync.report`; the master shows "missing on
+B" on the Layers screen and a readiness item "Followers have all media" lists
+the numbers that do not resolve on a follower. Hash-based library sync over
+the state connection (the master serves files, the follower pulls what
+differs) is designed for later (OPEN-28): the ingest path already writes to a
+library root, so the puller is an ingest job with a network source.
+
+### 23.8 Hot backup
+
+A backup machine is a follower whose outputs go to the same projectors (or a
+seamless switcher) as the master's. Both render all the time; `project.
+machines[id].outputsEnabled` decides whose outputs show pixels (disabled =
+black, the drivers keep running so the swap is one tick). "Swap outputs to
+B" on the System screen (operator), OSC `/fanous/sync/outputs <machine> <0|1>`,
+or the Master fixture's reserved control band later. The swap is a project
+change on the master; if the master is gone, promote B and enable its outputs
+in the same button ("Take over": promote + outputs on). Replacing a dead
+master with the backup is thus: Take over on B, point the console at B's IP
+if it unicasts (sACN multicast and Art-Net broadcast need no change).
+
+### 23.9 UI
+
+- Status bar: "master · 2 followers" / "following A · 0.4 ms" / "master lost"
+  (red), on every machine.
+- System screen, section **Multi-server**: this machine's name and role;
+  as master the follower list (name, lag ms, dropped frames, freewheel ticks,
+  media missing, readiness summary, outputs enabled toggle, Swap, Add
+  follower… which shows the token once); as follower the master picker
+  (Bonjour or host:port), token field, `onLoss`, Promote, and Take over.
+- Outputs screen: outputs grouped by machine; a follower's displays appear in
+  its group once it reports; the binding UI is unchanged otherwise.
+- Readiness (§14): "All followers connected", "Followers ready" (their own
+  readiness rolled up), "Followers have all media"; on a follower "Master
+  reachable" (hard fail while lost, because show mode on a follower without
+  a master is a promote decision, not a check).
+- `live.sync`: `{role, master: {host, name, lag, state}, followers: [{id, name, lag, dropped, freewheel, mediaMissing, ready, outputsEnabled}]}`.
+
+### 23.10 Measurement and tests
+
+- Engine test, one Mac: a headless master engine and a headless follower
+  engine (own `FANOUS_HOME`, own ports, as the existing test engines run)
+  with the same library; the follower follows the master. Asserts: the
+  follower's layer positions equal the master's within 1 frame over 60 s of
+  play (read from `/metrics`); a master retrigger lands on the follower in
+  the next frame; stopping the master's sender → freewheel within 1.5
+  periods, lost after 2 s, reconnect when it returns; `project.set` on the
+  master reaches the follower's document (rev); promote makes the follower
+  resolve its own DMX (send a universe to it, see it move).
+- Bench (`fanous-bench`): sync encode per tick ≤ 50 µs at 32 layers; sender
+  thread never on the compositor's critical path (the frame slot hand-off is
+  one atomic exchange, like the parameter triple buffer).
+- Two Macs and a camera (owner, B60's acceptance): both machines show the
+  clock generator (folder 0 file 112) on one layer each on a canvas split
+  left/right; a phone filming both screens at 240 fps shows the frame offset
+  directly. Pass: ≤ 1 frame apart over 10 minutes, no visible stutter on the
+  follower, a blend seam that does not breathe.
+
+### 23.11 Build order (one PR each)
+
+1. **Docs**: this section, ADR-0021, backlog (this design).
+2. **Sync frame**: `FanousEngine/Sync/SyncFrame.swift` encode/decode of the
+   snapshot and clocks; round-trip and size tests; the compositor fills a
+   triple-buffered frame slot per tick (no subscribers yet: measured cost in
+   the bench, idle when nobody subscribes).
+3. **Master**: `follower` role and token, `sub {stream:"sync"}` with the
+   sender thread, `sync.ping`, `sync.report`, `live.sync`, `project.machines`,
+   `OutputConfig.machine`. Checked with a scripted client.
+4. **Follower**: the WSS client (`NWConnection` + the Core frame codec with
+   masking, certificate pinning), mirror-mode `StateStore`, follow pacing in
+   the drivers and `Compositor.followFrame`, freewheel/lost/promote, outputs
+   enabled. The one-Mac engine test above.
+5. **UI**: status bar, System screen section, Outputs grouping, readiness
+   items; `docs/user/multi-server.md`.
+6. **Owner**: the two-Mac camera test; then the hash-based library sync and
+   the UDP sender only if the measurements ask for them.
+
+Steps 2–4 are engine-critical (compositor, drivers, state store): Opus for
+the agent and the review, live check on two engines before each merge.
