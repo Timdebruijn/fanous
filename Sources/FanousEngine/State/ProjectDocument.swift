@@ -187,7 +187,7 @@ public enum ProjectDocument {
 
     static func validate(_ output: inout OutputConfig) throws {
         output.intensity = min(1, max(0, output.intensity))
-        output.testPattern = min(7, max(0, output.testPattern))
+        output.testPattern = min(TestPattern.allCases.count - 1, max(0, output.testPattern))
         for edge in [\OutputConfig.blend.left, \.blend.right, \.blend.top, \.blend.bottom] {
             output[keyPath: edge].overlap = max(0, output[keyPath: edge].overlap)
             output[keyPath: edge].power = min(10, max(0.1, output[keyPath: edge].power))

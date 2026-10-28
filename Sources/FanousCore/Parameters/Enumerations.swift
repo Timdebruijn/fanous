@@ -41,6 +41,8 @@ public enum OutputControl: Int, CaseIterable, Codable, Sendable { case normal, b
 
 public enum TestPattern: Int, CaseIterable, Codable, Sendable {
     case off, grid, colourBars, blendCheck, outputID, crosshair, greySteps, checkerboard
+    /// Flat full-field signal levels for the seam check (DESIGN §9.9); Blend check is the 50 % field.
+    case grey0, grey25, grey75, white
 }
 
 public enum BlendSwitch: Int, CaseIterable, Codable, Sendable { case on, raw }

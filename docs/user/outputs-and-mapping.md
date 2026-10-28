@@ -186,8 +186,9 @@ ramps.
 ### Test patterns
 
 Buttons: Off, Grid, Colour bars, Blend check, Output ID, Crosshair, Grey steps,
-Checkerboard. The Test pattern channel of the Output fixture (per projector) and
-of the Master (all outputs) overrides the button, so a console can call them up.
+Checkerboard, Grey 0 %, Grey 25 %, Grey 75 %, White. The Test pattern channel
+of the Output fixture (per projector) and of the Master (all outputs) overrides
+the button, so a console can call them up.
 Patterns follow the corner pin and mesh and show the blend map; set the Output
 fixture's **Blend** channel to 128 or more (Raw) to see them without blend, warp
 and mask. Line widths and cells follow the output's height, so a pattern reads
@@ -202,9 +203,21 @@ the same on a monitor and on a 4K projector.
 | Crosshair | centre and focus, circles every 1/8 of the height |
 | Grey steps | 0–100 % in 10 % steps (top) and 0–10 % in 1 % steps (bottom): gamma and black level, black lift |
 | Checkerboard | focus and pixel geometry |
+| Grey 0 % | black floor: a seam lighter than the rest needs more black lift on the projectors next to it |
+| Grey 25 % | dark-grey match: one projector darker than its neighbours or tinted, or a colour shift only inside a seam |
+| Grey 75 % | light-grey match, as Grey 25 %, where the projectors' upper range differs |
+| White | full-level match: brightness and colour of each projector, and a seam that stays bright or dark at full level |
 
-The same patterns, a moving test card and a few more are also available as layer
-content in folder 0 (see [show-control.md](show-control.md#built-in-content-folder-0)).
+Grey 0 %, 25 % and 75 % and White are flat fields at that output signal level
+(25 % is code 64 of 255, 75 % is 191), on the same scale as Blend check's 50 %
+grey; they ignore the output and master intensity, like the other patterns. A
+console calls them up on Test pattern channel 4: 128 Grey 0 %, 144 Grey 25 %,
+160 Grey 75 %, 176 White.
+
+The first seven patterns, a moving test card and a few more are also available
+as layer content in folder 0 (see
+[show-control.md](show-control.md#built-in-content-folder-0)); for a flat grey
+on a layer use Solid colour (file 100) with the layer's Red, Green and Blue.
 
 ## Warp & Slices tab
 

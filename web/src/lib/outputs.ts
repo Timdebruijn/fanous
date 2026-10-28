@@ -150,7 +150,11 @@ export interface OutputStatusDoc {
   modeNote?: string | null;
 }
 
-export const TEST_PATTERNS = ['Off', 'Grid', 'Colour bars', 'Blend check', 'Output ID', 'Crosshair', 'Grey steps', 'Checkerboard'] as const;
+/** Index = the engine's TestPattern raw value (Output/Master channel 4 band order). */
+export const TEST_PATTERNS = [
+  'Off', 'Grid', 'Colour bars', 'Blend check', 'Output ID', 'Crosshair', 'Grey steps', 'Checkerboard',
+  'Grey 0 %', 'Grey 25 %', 'Grey 75 %', 'White',
+] as const;
 export const EDGES = ['left', 'right', 'top', 'bottom'] as const;
 export type Edge = (typeof EDGES)[number];
 export type MapperMode = 'cornerPin' | 'mesh' | 'slices' | 'mask';

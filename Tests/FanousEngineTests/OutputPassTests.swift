@@ -206,6 +206,43 @@ struct OutputPassTests {
         #expect(px(warped, 250, 90).r < 3 && px(warped, 250, 90).g < 3, "outside the pinned quad: \(px(warped, 250, 90))")
     }
 
+    /// Seam-check fields (DESIGN §9.9) read back at their output signal level, the same scale as Blend check's 50 % (128):
+    /// Grey 25 % is code 64, Grey 75 % 191. Like the other patterns they go through the blend map, and Raw bypasses it.
+    @Test func seamCheckFieldsReadBackTheirLevel() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 200)
+        let compiler = try OutputCompiler(device: context.device)
+        let size = (Self.width, Self.height)
+        func image(_ config: OutputConfig, _ pattern: TestPattern, raw: Bool = false) throws -> [UInt8] {
+            var fixture = OutputParameters()  // the Output fixture's channel 4, as from the console
+            fixture.testPattern = pattern
+            fixture.raw = raw
+            return try Self.render(compiler.compile(config, index: 1, drawable: size), still: still, drawable: size, context: context, outputs: [fixture])
+        }
+        // R, G, B at (x, 97): y 97 is between the Blend check's grid lines
+        func px(_ image: [UInt8], _ x: Int) -> [Int] { let i = (97 * Self.width + x) * 4; return [Int(image[i + 2]), Int(image[i + 1]), Int(image[i])] }
+        for (pattern, level) in [(TestPattern.grey0, 0), (.grey25, 64), (.grey75, 191), (.white, 255)] {
+            let field = try image(OutputConfig(id: 1), pattern)
+            for x in [2, 167, 317] { #expect(px(field, x).allSatisfy { abs($0 - level) <= 1 }, "\(pattern) at x \(x): \(px(field, x))") }
+        }
+        #expect(px(try image(OutputConfig(id: 1), .blendCheck), 167).allSatisfy { abs($0 - 128) <= 1 }, "Blend check is the 50 % field")
+        // blend map: the left ramp darkens towards the edge, the black lift raises the field outside the overlap
+        var blended = OutputConfig(id: 1)
+        blended.blend.left = BlendEdge(overlap: 100, gamma: 1)
+        blended.blend.lift = 0.08
+        let grey25 = try image(blended, .grey25)
+        #expect(px(grey25, 2)[1] < 10 && abs(px(grey25, 300)[1] - 84) <= 1, "\(px(grey25, 2)) \(px(grey25, 300))")
+        let grey0 = try image(blended, .grey0)
+        #expect(px(grey0, 50)[1] <= 1 && abs(px(grey0, 300)[1] - 20) <= 1, "Grey 0 % shows the lift: \(px(grey0, 50)) \(px(grey0, 300))")
+        let raw = try image(blended, .grey25, raw: true)
+        #expect(abs(px(raw, 2)[1] - 64) <= 1 && abs(px(raw, 300)[1] - 64) <= 1, "Raw bypasses the blend map: \(px(raw, 2)) \(px(raw, 300))")
+        // warp: pinned onto the left half, the field stops at the pin
+        var pinned = OutputConfig(id: 1)
+        pinned.warp.cornerPin = [MapPoint(0, 0), MapPoint(0.5, 0), MapPoint(0.5, 1), MapPoint(0, 1)]
+        let warped = try image(pinned, .white)
+        #expect(px(warped, 100)[1] >= 254 && px(warped, 250)[1] <= 1, "White follows the corner pin: \(px(warped, 100)) \(px(warped, 250))")
+    }
+
     @Test func warpMaskAndSliceGoldens() throws {
         let context = try MetalContext()
         let still = try GoldenTests.pattern(device: context.device, variant: 0)
