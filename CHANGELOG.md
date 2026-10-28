@@ -143,6 +143,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   never finished starting, its log ending at that step (B66). A preview's encoder is now made, for its first H.264 viewer, and released with
   the last; JPEG previews and CITP streaming need none. A browser that gets no H.264 description within 5 s falls back
   to JPEG (B66).
+- Fixed: `roles.setPassword` and `sync.set` re-read `settings.json` and change only their own field, so unknown fields,
+  fields this version ignored and hand edits made while the engine runs are kept; a file that does not parse is refused, not overwritten (B79).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

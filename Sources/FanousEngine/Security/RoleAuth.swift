@@ -57,13 +57,6 @@ public struct MachineSettings: Codable, Sendable, Equatable {
             return MachineSettings()
         }
     }
-
-    public func save(to url: URL) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(self).write(to: url, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-    }
 }
 
 /// Roles with optional passwords (DESIGN.md §11.1): PBKDF2-HMAC-SHA256, per-role salt, HttpOnly session
@@ -110,11 +103,7 @@ public final class RoleAuth: @unchecked Sendable {
             _ = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
             return MachineSettings.PasswordRecord(salt: salt, hash: Self.pbkdf2(pw, salt: salt, iterations: iterations), iterations: iterations)
         }
-        let settings = state.withLock { s in
-            s.settings.passwords[role.rawValue] = record
-            return s.settings
-        }
-        if let settingsURL { try settings.save(to: settingsURL) }
+        try rewrite("passwords", [role.rawValue: try record.map { try JSONValue(encoding: $0) }]) { $0.passwords[role.rawValue] = record }
         logger.info("role password \(record == nil ? "cleared" : "set")", metadata: ["role": "\(role)"])
     }
 
@@ -123,12 +112,41 @@ public final class RoleAuth: @unchecked Sendable {
 
     /// Stores the sync settings (`sync.set`, DESIGN.md §23.2) next to the passwords and persists the settings.
     public func setSync(_ sync: SyncSettings) throws {
-        let settings = state.withLock { s in
-            s.settings.sync = sync
-            return s.settings
-        }
-        if let settingsURL { try settings.save(to: settingsURL) }
+        let members: [String: JSONValue?] = ["interface": .string(sync.interface), "port": .number(Double(sync.port)), "target": .string(sync.target)]
+        try rewrite("sync", members) { $0.sync = sync }
         logger.info("sync settings set", metadata: ["interface": "\(sync.interface)", "port": "\(sync.port)", "target": "\(sync.target)"])
+    }
+
+    struct UnreadableSettings: Error, CustomStringConvertible {
+        var description: String { "settings.json could not be read; fix or remove it first" }
+    }
+
+    /// Re-reads settings.json and sets only `members` of the top-level object `key` (nil removes one), keeping every
+    /// other member, unknown and unreadable ones too, and hand edits made while the engine runs (B79). A file that
+    /// exists but does not parse is not overwritten; a missing one is created. `apply` keeps the copy in memory in step.
+    private func rewrite(_ key: String, _ members: [String: JSONValue?], apply: (inout MachineSettings) -> Void) throws {
+        try state.withLock { s in
+            if let settingsURL {
+                var root: [String: JSONValue] = [:]
+                do {
+                    let data = try Data(contentsOf: settingsURL)
+                    guard let object = try JSONDecoder().decode(JSONValue.self, from: data).object else { throw UnreadableSettings() }
+                    root = object
+                } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+                } catch {
+                    logger.error("settings.json not written: it could not be read", metadata: ["error": "\(error)"])
+                    throw UnreadableSettings()
+                }
+                var object = root[key]?.object ?? [:]  // a member that is not an object was unreadable; the command replaces it
+                for (member, value) in members { object[member] = value }
+                root[key] = .object(object)
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                try encoder.encode(JSONValue.object(root)).write(to: settingsURL, options: .atomic)
+                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: settingsURL.path)
+            }
+            apply(&s.settings)
+        }
     }
 
     public func verify(_ password: String, for role: Role) -> Bool {
