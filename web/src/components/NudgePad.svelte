@@ -12,6 +12,7 @@
   let timer: ReturnType<typeof setTimeout> | undefined;
   /** the press became a long press: its click is not a step */
   let held = false;
+  $effect(() => () => clearTimeout(timer));
 
   function press(dx: number, dy: number) {
     held = false;
@@ -24,16 +25,19 @@
   function release() {
     clearTimeout(timer);
   }
-  function click(dx: number, dy: number) {
-    if (held) held = false;
-    else onnudge(dx * step, dy * step);
+  // `held` is not reset on pointerup: the click comes after it. A keyboard click (detail 0) never follows a long press,
+  // so it always steps, also when Safari skipped the click of an earlier long press.
+  function click(event: MouseEvent, dx: number, dy: number) {
+    const long = held && event.detail !== 0;
+    held = false;
+    if (!long) onnudge(dx * step, dy * step);
   }
 </script>
 
 {#snippet arrow(cls: string, name: string, glyph: string, dx: number, dy: number)}
   <button type="button" class="btn btn-icon {cls}" aria-label="{name} {step} px" title="Hold for 0.25 px" {disabled}
     onpointerdown={() => press(dx, dy)} onpointerup={release} onpointerleave={release} onpointercancel={release}
-    oncontextmenu={(e) => e.preventDefault()} onclick={() => click(dx, dy)}>{glyph}</button>
+    oncontextmenu={(e) => e.preventDefault()} onclick={(e) => click(e, dx, dy)}>{glyph}</button>
 {/snippet}
 
 <div class="pad" role="group" aria-label="Nudge the selected point">

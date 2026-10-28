@@ -138,7 +138,7 @@
 
 <!-- role="application" is the ARIA role for a focusable widget that handles its own keys; Svelte counts it as non-interactive -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-<svg bind:this={svg} class="mapper" viewBox="0 0 {W} {H}" role="application" aria-label="Mapping editor: drag the handles, arrow keys nudge the selected point, Tab steps to the next one" tabindex="0" class:adding={mode === 'mask' && (addMode || draft)} onkeydown={key} onpointerdown={background} ondblclick={doubleClick} onpointermove={move} onpointerup={up} onpointercancel={up}>
+<svg bind:this={svg} class="mapper" viewBox="0 0 {W} {H}" role="application" aria-label="Mapping editor: drag the handles, arrow keys nudge the selected point, Tab steps to the next one, Escape lets go so Tab leaves" tabindex="0" class:adding={mode === 'mask' && (addMode || draft)} onkeydown={key} onpointerdown={background} ondblclick={doubleClick} onpointermove={move} onpointerup={up} onpointercancel={up}>
   {#if draft && draft.length > 0}
     {@const pts = draft.map((p) => toScreen(output, mode, p))}
     <polyline points={pts.map((p) => `${p.x * W},${p.y * H}`).join(' ')} fill="none" stroke="#FFC532" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" />

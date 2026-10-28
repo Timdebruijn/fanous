@@ -77,8 +77,9 @@ describe('selection', () => {
     expect(label(mesh, 'mesh', 0, cells, 'column', 7)).toBe('column 3');
     expect(label(output(), 'slices', 0, quad, 'point', 3)).toBe('slice 2 · bottom-left');
     expect(label(output(), 'slices', 0, quad, 'left', 3)).toBe('slice 2 · left edge');
-    expect(label(output(), 'mask', 0, null, 'point', 4)).toBe('mask point 5');
-    expect(label(output(), 'mask', 0, null, 'all', 4)).toBe('all points');
+    expect(label(output(), 'mask', 0, null, 'point', 4)).toBe('slice 2 · mask point 5');
+    expect(label(output(), 'mask', 0, null, 'all', 4)).toBe('slice 2 · all mask points');
+    expect(label(mesh, 'mesh', 0, cells, 'all', 4)).toBe('all points');
     expect(label(output(), 'cornerPin', 0, quad, 'point', -1)).toBe('no point selected');
   });
 });
@@ -102,6 +103,38 @@ describe('nudge', () => {
     // the mask spans 0.1…0.9 across: 100 px to the left edge, so 300 px moves it 100 px
     const mask = nudgeCommand(output(), 'mask', 0, [0, 1, 2, 3, 4], -300, 0, size)!.value as unknown as MapPoint[];
     expect(mask.map((p) => Math.round(p.x * 1000) / 1000)).toEqual([0, 0.8, 0.8, 0, 0.4]);
+  });
+
+  it('under a warp a point held at 0…1 holds the whole group: nothing is squeezed or bent', () => {
+    const inset = [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 }, { x: 0.9, y: 0.9 }, { x: 0.1, y: 0.9 }];
+    const bent = { cols: 3, rows: 3, points: [[0, 0], [0.5, 0.05], [1, 0], [0.02, 0.5], [0.55, 0.45], [0.98, 0.5], [0, 1], [0.5, 0.95], [1, 1]].map(([x, y]) => ({ x: x!, y: y! })) };
+    const cases = [
+      { out: output({ cornerPin: inset, mesh: meshIdentity(3, 3) }), mode: 'mesh' as const, indices: [3, 4, 5] }, // middle row
+      { out: output({ cornerPin: inset, mesh: meshIdentity(3, 3) }), mode: 'mesh' as const, indices: [2, 5, 8] }, // right edge
+      { out: output({ cornerPin: inset, mesh: bent }), mode: 'slices' as const, indices: [0, 1] }, // slice top edge
+      { out: output({ cornerPin: inset, mesh: bent }), mode: 'slices' as const, indices: [1, 2] }, // slice right edge
+    ];
+    let movedCount = 0;
+    for (const { out, mode, indices } of cases) {
+      const all = mode === 'mesh' ? out.warp.mesh!.points : out.slices[0]!.dest;
+      for (const [dx, dy] of [[10, 0], [-10, 0], [0, 10], [0, -10]] as const) {
+        const command = nudgeCommand(out, mode, 0, indices, dx, dy, size);
+        if (!command) continue;
+        movedCount++;
+        const after = command.value as unknown as MapPoint[];
+        all.forEach((p, i) => {
+          const before = toScreen(out, mode, p), now = toScreen(out, mode, after[i]!);
+          const [ex, ey] = indices.includes(i) ? [dx, dy] : [0, 0];
+          expect((now.x - before.x) * size.w).toBeCloseTo(ex, 3);
+          expect((now.y - before.y) * size.h).toBeCloseTo(ey, 3);
+        });
+      }
+    }
+    expect(movedCount).toBeGreaterThan(0); // inward moves do happen (the row up and down, the right edge left)
+    // the cases the review found: a border point at stored x = 1 would stay while the rest of the row moves right
+    expect(nudgeCommand(cases[0]!.out, 'mesh', 0, [3, 4, 5], 10, 0, size)).toBeNull();
+    expect(nudgeCommand(cases[1]!.out, 'mesh', 0, [2, 5, 8], 10, 0, size)).toBeNull();
+    expect(nudgeCommand(cases[1]!.out, 'mesh', 0, [2, 5, 8], -10, 0, size)).not.toBeNull();
   });
 
   it('respects a warp in effect: each mesh point moves 4 px on screen through a corner pin', () => {
@@ -144,5 +177,14 @@ describe('nudgeQueue', () => {
     await vi.advanceTimersByTimeAsync(100);
     nudge('a', 1, 0, run('a')); // idle again: at once
     expect(sent).toHaveLength(4);
+  });
+
+  it('a failed send does not stall the nudges behind it', async () => {
+    const sent: number[] = [];
+    const nudge = nudgeQueue(100);
+    nudge('a', 1, 0, () => Promise.reject(new Error('socket closed')));
+    nudge('b', 2, 0, async (dx) => void sent.push(dx));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sent).toEqual([2]);
   });
 });

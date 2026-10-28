@@ -7,14 +7,14 @@
 
   // iPad remote mode (DESIGN §9.9): the selection in large type, stepping and group selection, the nudge pad and a
   // trackpad, so the finger never covers the picture. The logic lives in lib/remote.ts; this only lays it out.
-  let { label, detail, group, groups, disabled = false, onstep, ongroup, onnudge }: {
+  let { label, detail, group, groups, lock, onstep, ongroup, onnudge }: {
     label: string;
     detail: string;
     group: Group;
     /** the groups this mapper mode offers */
     groups: Group[];
-    /** moving needs the programmer role; selecting does not */
-    disabled?: boolean;
+    /** why points cannot move (the role, the show lock); selecting still works */
+    lock?: string;
     onstep: (dir: 1 | -1) => void;
     ongroup: (group: Group) => void;
     onnudge: (dx: number, dy: number) => void;
@@ -23,15 +23,16 @@
   const names: Record<Group, string> = { point: 'One point', row: 'Row', column: 'Column', all: 'All', top: 'Top', right: 'Right', bottom: 'Bottom', left: 'Left' };
   const unit = $derived(group === 'row' || group === 'column' ? group : group === 'point' || group === 'all' ? 'point' : 'edge');
 
-  /** the finger on the trackpad: only the first one counts */
+  const disabled = $derived(!!lock);
+  /** the finger on the trackpad: only the first one counts, and a mouse only with its main button */
   let finger: { id: number; x: number; y: number; t: number } | null = null;
   function down(event: PointerEvent) {
-    if (finger || disabled) return;
+    if (finger || disabled || event.button !== 0) return;
     (event.currentTarget as Element).setPointerCapture(event.pointerId);
     finger = { id: event.pointerId, x: event.clientX, y: event.clientY, t: event.timeStamp };
   }
   function move(event: PointerEvent) {
-    if (finger?.id !== event.pointerId) return;
+    if (finger?.id !== event.pointerId || disabled) return;
     const [dx, dy] = trackpad(event.clientX - finger.x, event.clientY - finger.y, event.timeStamp - finger.t);
     finger = { id: event.pointerId, x: event.clientX, y: event.clientY, t: event.timeStamp };
     if (dx || dy) onnudge(dx, dy);
@@ -42,7 +43,7 @@
 </script>
 
 <section class="remote" aria-label="Remote">
-  <p class="now" aria-live="polite"><span class="big">{label}</span><span class="caption">{detail}</span></p>
+  <p class="now"><span class="big" aria-live="polite">{label}</span><span class="caption">{detail}</span></p>
   <div class="steps">
     <button type="button" class="btn" disabled={group === 'all'} onclick={() => onstep(-1)}>← Previous {unit}</button>
     <button type="button" class="btn" disabled={group === 'all'} onclick={() => onstep(1)}>Next {unit} →</button>
@@ -64,11 +65,12 @@
   <div class="move">
     <NudgePad --cell="64px" {disabled} {onnudge} />
     <!-- svelte-ignore a11y_no_static_element_interactions: a touch surface; the arrows beside it do the same by keyboard -->
-    <div class="trackpad" class:disabled onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up}>
+    <div class="trackpad" class:disabled onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up} onlostpointercapture={up} oncontextmenu={(e) => e.preventDefault()}>
       <span class="caption">Trackpad: drag here to move the selection. A slow drag moves 1 px per 4 px of finger, a fast one four times as far.</span>
     </div>
   </div>
-  <p class="caption">Tap an arrow for 1 px (10 px with <strong>10 px</strong> on); hold it for 0.25 px. Nudges less than a second apart undo as one step.</p>
+  {#if lock}<p class="caption lock">{lock}</p>{/if}
+  <p class="caption">Tap an arrow for 1 px (10 px with <strong>10 px</strong> on); hold it for 0.25 px. Moves go out up to ten times a second; taps in between are added up. Nudges of the same point or group less than a second apart undo as one step.</p>
 </section>
 
 <style>
@@ -85,4 +87,5 @@
   .trackpad { flex: 1 1 200px; min-height: 200px; display: flex; align-items: flex-end; padding: 12px; border: 1px dashed var(--line-strong); border-radius: var(--radius-control); background: var(--ground); touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: move; }
   .trackpad.disabled { opacity: 0.5; cursor: default; }
   .remote > .caption { margin: 0; }
+  .lock { color: var(--yellow); }
 </style>

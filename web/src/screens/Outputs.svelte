@@ -18,6 +18,7 @@
   }
   function setRemote(on: boolean) {
     ui.remote = on;
+    ui.group = 'point';
     try {
       localStorage.setItem(REMOTE_KEY, on ? '1' : '0');
     } catch {
@@ -36,6 +37,7 @@
     type MapPoint, type MapperMode, type OutputConfig,
   } from '../lib/outputs';
   import { app, can, cmd, toastUndo } from '../lib/state.svelte';
+  import { lockTitle } from '../lib/show';
   import { go } from '../lib/router.svelte';
   import { sourcePixels, sourceFromPixels } from '../lib/outputs';
   import { downloadTemplatePNG, templateSVG } from '../lib/template';
@@ -45,6 +47,8 @@
 
   const LOCKED = 'Locked: programmer only';
   const locked = $derived(!can('programmer'));
+  /** why the remote cannot move points: the role, or the show lock (the engine would refuse) */
+  const moveLock = $derived(lockTitle('programmer', !locked, app.project.showLock));
   const outputs = $derived(app.project.outputs);
   const displays = $derived(app.live.displays);
   const statuses = $derived(new Map(app.live.outputs.map((s) => [s.id, s])));
@@ -105,10 +109,15 @@
     const d = displays.find((x) => x.uuid === uuid);
     void cmd('output.add', d ? { display: { uuid: d.uuid, name: d.name } } : {}).then((id) => {
       if (typeof id === 'number') {
-        ui.selected = id;
+        pickOutput(id);
         justAdded = id;
       }
     });
+  }
+  /** a row or edge of one output is not a selection on another */
+  function pickOutput(id: number) {
+    ui.selected = id;
+    ui.group = 'point';
   }
   /** the output that was just added: the screen offers the next step for it */
   let justAdded = $state<number | null>(null);
@@ -158,7 +167,8 @@
   const cells = $derived(output ? grid(output, ui.mapper, points.length) : null);
   const anchor = $derived(points.findIndex((h) => h.path === ui.handle));
   const modeGroups = $derived(groups(ui.mapper));
-  const group = $derived(modeGroups.includes(ui.group) ? ui.group : 'point');
+  /** groups are a remote-mode tool: outside it the arrows and the nudge pad move the selected point only */
+  const group = $derived(ui.remote && modeGroups.includes(ui.group) ? ui.group : 'point');
   /** the indices that move together: the selected point, or its row, column, an edge or all */
   const selection = $derived(members(cells, points.length, group, anchor));
   const selectedHandle = $derived(points[anchor]?.point ?? null);
@@ -241,6 +251,7 @@
     const index = Number(ui.handle.split('/').pop());
     set(`/slices/${sliceIndex}/mask/path`, slice.mask.path.filter((_, i) => i !== index) as unknown as JSONValue);
     ui.handle = null;
+    ui.group = 'point';
   }
 </script>
 
@@ -267,7 +278,7 @@
     <span class="dot dot-green"></span>
     <span><strong>Next: align this output.</strong> Open Warp &amp; Slices to place the picture on the projector.</span>
     <span class="spacer"></span>
-    <button type="button" class="btn btn-primary" onclick={() => { ui.selected = justAdded!; ui.tab = 'warp'; justAdded = null; }}>Align this output</button>
+    <button type="button" class="btn btn-primary" onclick={() => { pickOutput(justAdded!); ui.tab = 'warp'; justAdded = null; }}>Align this output</button>
     <button type="button" class="btn btn-ghost" onclick={() => (justAdded = null)}>Later</button>
   </div>
 {/if}
@@ -276,7 +287,7 @@
   <aside class="list">
     {#each outputs as o (o.id)}
       {@const st = statusText(statuses.get(o.id), o)}
-      <button type="button" class="row out" aria-pressed={output?.id === o.id} onclick={() => (ui.selected = o.id)}>
+      <button type="button" class="row out" aria-pressed={output?.id === o.id} onclick={() => pickOutput(o.id)}>
         <span class="head"><span class="dot dot-{st.tone === 'green' ? 'green' : st.tone === 'red' ? 'red' : 'off'}"></span><span class="nm">{o.name}</span><span class="spacer"></span><span class="caption mono">{Math.round(o.intensity * 100)} %</span></span>
         <span class="caption ellipsis tone-{st.tone}">{st.text}</span>
         {#if statuses.get(o.id)?.modeNote}<span class="caption yellow">{statuses.get(o.id)?.modeNote}</span>{/if}
@@ -446,7 +457,7 @@
           {/if}
         </div>
         {#if ui.remote}
-          <RemotePanel label={remoteLabel} detail={remoteDetail} {group} groups={modeGroups} disabled={locked} onnudge={nudgeSelected}
+          <RemotePanel label={remoteLabel} detail={remoteDetail} {group} groups={modeGroups} lock={moveLock} onnudge={nudgeSelected}
             onstep={stepSelection} ongroup={(g) => select(choose(cells, points.length, g, anchor))} />
         {:else if selectedHandle}
           <div class="nudge">

@@ -83,11 +83,11 @@ export function step(cells: number[][] | null, count: number, group: Group, anch
   return { group, anchor: order[i < 0 ? (dir > 0 ? 0 : order.length - 1) : wrap(i + dir, order.length)]! };
 }
 
-/** "corner top-left", "r3 c5", "slice 2 · bottom-right", "mask point 5", "row 3", "top edge", "all points". */
+/** "corner top-left", "r3 c5", "slice 2 · bottom-right", "slice 2 · mask point 5", "row 3", "top edge", "all points". */
 export function label(output: OutputConfig, mode: MapperMode, sliceIndex: number, cells: number[][] | null, group: Group, anchor: number): string {
-  const slice = mode === 'slices' ? `slice ${output.slices[sliceIndex]?.id ?? sliceIndex + 1} · ` : '';
+  const slice = mode === 'slices' || mode === 'mask' ? `slice ${output.slices[sliceIndex]?.id ?? sliceIndex + 1} · ` : '';
   const at = cell(cells, anchor);
-  if (group === 'all') return `${slice}all points`;
+  if (group === 'all') return `${slice}all ${mode === 'mask' ? 'mask ' : ''}points`;
   if (isSide(group)) return `${slice}${group} edge`;
   if (group === 'row' && at) return `row ${at.r + 1}`;
   if (group === 'column' && at) return `column ${at.c + 1}`;
@@ -96,14 +96,14 @@ export function label(output: OutputConfig, mode: MapperMode, sliceIndex: number
     case 'cornerPin': return `corner ${CORNERS[anchor]}`;
     case 'mesh': return at ? `r${at.r + 1} c${at.c + 1}` : `point ${anchor + 1}`;
     case 'slices': return `${slice}${CORNERS[anchor]}`;
-    case 'mask': return `mask point ${anchor + 1}`;
+    case 'mask': return `${slice}mask point ${anchor + 1}`;
   }
 }
 
 /** The one `output.set` that moves `indices` by (dx, dy) output pixels as seen on screen, through the warp
- *  (`nudgeStored`). The points move as one: the step stops where the first of them would leave the output, so a group
- *  is never squeezed against an edge. A single point writes its own path, several write their whole list. Null when
- *  nothing moves. */
+ *  (`nudgeStored`). The points move as one: the step stops where the first of them would leave the output, and under a
+ *  warp a point whose stored position would leave 0…1 holds the whole group, so a group is never squeezed or bent.
+ *  A single point writes its own path, several write their whole list. Null when nothing moves. */
 export function nudgeCommand(
   output: OutputConfig, mode: MapperMode, sliceIndex: number, indices: number[], dx: number, dy: number, size: { w: number; h: number },
 ): { path: string; value: JSONValue } | null {
@@ -116,6 +116,12 @@ export function nudgeCommand(
   const ny = limit(dy / size.h, on.map((p) => p.y));
   if (nx === 0 && ny === 0) return null;
   const moved = moving.map((i) => nudgeStored(output, mode, all[i]!.point, nx * size.w, ny * size.h, size));
+  // nudgeStored clamps the stored point; its own error is below 0.001 px, so 0.05 px off means it was held back
+  const held = moved.some((m, k) => {
+    const to = toScreen(output, mode, m);
+    return Math.abs((to.x - on[k]!.x - nx) * size.w) > 0.05 || Math.abs((to.y - on[k]!.y - ny) * size.h) > 0.05;
+  });
+  if (held || moved.every((m, k) => m.x === all[moving[k]!]!.point.x && m.y === all[moving[k]!]!.point.y)) return null;
   if (moving.length === 1) return { path: all[moving[0]!]!.path, value: { ...moved[0]! } };
   const points: MapPoint[] = all.map((h) => h.point);
   moving.forEach((i, k) => (points[i] = moved[k]!));
@@ -138,13 +144,11 @@ export function nudgeQueue(gap = 100) {
   let busy = false;
   async function drain() {
     busy = true;
-    try {
-      for (let next = queue.shift(); next; next = queue.shift()) {
-        await Promise.all([next.run(next.dx, next.dy), new Promise((done) => setTimeout(done, gap))]);
-      }
-    } finally {
-      busy = false;
+    for (let next = queue.shift(); next; next = queue.shift()) {
+      // a failed send must not stall the nudges behind it
+      await Promise.all([next.run(next.dx, next.dy).catch(() => undefined), new Promise((done) => setTimeout(done, gap))]);
     }
+    busy = false;
   }
   return (key: string, dx: number, dy: number, run: (dx: number, dy: number) => Promise<unknown>) => {
     const last = queue.at(-1);
