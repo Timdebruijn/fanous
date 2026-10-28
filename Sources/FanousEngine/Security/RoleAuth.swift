@@ -36,6 +36,7 @@ public struct MachineSettings: Codable, Sendable, Equatable {
         do { passwords = try c.decodeIfPresent([String: PasswordRecord].self, forKey: .passwords) ?? [:] } catch { problems.append("passwords: \(error)") }
         do { oscFeedback = try c.decodeIfPresent(OSCFeedbackTarget.self, forKey: .oscFeedback) } catch { problems.append("oscFeedback: \(error)") }
         do { sync = try c.decodeIfPresent(SyncSettings.self, forKey: .sync) } catch { problems.append("sync: \(error)") }
+        problems += (sync?.problems ?? []).map { "sync.\($0)" }
     }
 
     public func encode(to encoder: Encoder) throws {

@@ -17,13 +17,26 @@ public struct SyncSettings: Codable, Sendable, Equatable {
     /// "broadcast", or an IPv4 address with an optional ":port" (two engines on one Mac listen on different ports).
     public var target = "broadcast"
 
+    /// Fields that could not be read and kept their default; never written back.
+    public private(set) var problems: [String] = []
+
+    enum CodingKeys: String, CodingKey { case interface, port, target }
+
     public init() {}
 
+    /// Field by field: a bad field keeps its default, the others are still read.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        interface = try c.decodeIfPresent(String.self, forKey: .interface) ?? interface
-        port = try c.decodeIfPresent(UInt16.self, forKey: .port) ?? port
-        target = try c.decodeIfPresent(String.self, forKey: .target) ?? target
+        do { interface = try c.decodeIfPresent(String.self, forKey: .interface) ?? interface } catch {
+            problems.append("interface: \(error)")
+        }
+        do {
+            let value = try c.decodeIfPresent(UInt16.self, forKey: .port) ?? port
+            if value == 0 { problems.append("port: 0 is not a port") } else { port = value }
+        } catch { problems.append("port: \(error)") }
+        do { target = try c.decodeIfPresent(String.self, forKey: .target) ?? target } catch {
+            problems.append("target: \(error)")
+        }
     }
 }
 
@@ -57,12 +70,13 @@ final class SyncSender: @unchecked Sendable {
         slots = TripleBuffer { SyncSlot(machine: machine) }
     }
 
+    /// Once; a second call does nothing (the slot has one reader).
     func start() {
+        guard running.compareExchange(expected: false, desired: true, ordering: .relaxed).exchanged else { return }
         let fd = socket(AF_INET, SOCK_DGRAM, 0)
         guard fd >= 0 else { return logger.error("sync socket failed; not sending", metadata: ["errno": "\(errno)"]) }
         var on: Int32 = 1
         setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &on, socklen_t(MemoryLayout<Int32>.size))
-        running.store(true, ordering: .relaxed)
         let thread = Thread { [self] in loop(fd) }
         thread.name = "org.fanous.sync.send"
         thread.qualityOfService = .userInteractive
@@ -119,40 +133,43 @@ final class SyncSender: @unchecked Sendable {
     /// The target's address: the sync interface's subnet broadcast, or the unicast address (127.0.0.1 only without
     /// the network). nil = nowhere, logged when it changes to that.
     private func resolve() -> sockaddr_in? {
-        let host: String
-        var port = settings.port
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = settings.port.bigEndian
         if settings.target == "broadcast" {
             guard network else {
                 return nowhere("broadcast is not sent with --no-network; set sync.target to 127.0.0.1:<port>")
             }
-            let interfaces = SystemInfo.ipv4Interfaces.filter { $0.multicast && $0.netmask != "255.255.255.255" }
+            let interfaces = SystemInfo.ipv4Interfaces.filter { $0.multicast && $0.broadcast }
             let match =
                 settings.interface == "any"
                 ? interfaces.first
                 : interfaces.first { $0.name == settings.interface || $0.address == settings.interface }
-            guard let match else { return nowhere("sync interface \(settings.interface) not found") }
-            host = String(cString: inet_ntoa(in_addr(s_addr: inet_addr(match.address) | ~inet_addr(match.netmask))))
+            guard let match else {
+                return nowhere("sync interface \(settings.interface) not found or without broadcast")
+            }
+            address.sin_addr.s_addr = inet_addr(match.address) | ~inet_addr(match.netmask)
         } else {
-            let parts = settings.target.split(separator: ":")
-            host = String(parts[0])
+            let parts = settings.target.split(separator: ":", omittingEmptySubsequences: false)
+            guard let host = parts.first, parts.count <= 2, inet_pton(AF_INET, String(host), &address.sin_addr) == 1
+            else {
+                return nowhere("sync target \(settings.target) is not an IPv4 address with an optional :port")
+            }
             if parts.count == 2 {
-                guard let p = UInt16(parts[1]) else {
+                guard let port = UInt16(parts[1]), port > 0 else {
                     return nowhere("sync target \(settings.target) has no valid port")
                 }
-                port = p
+                address.sin_port = port.bigEndian
             }
             guard network || host == "127.0.0.1" else {
                 return nowhere("sync target \(host) is not sent to with --no-network; only 127.0.0.1")
             }
         }
-        var address = sockaddr_in()
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = port.bigEndian
-        guard inet_pton(AF_INET, host, &address.sin_addr) == 1 else {
-            return nowhere("sync target \(settings.target) is not an IPv4 address")
-        }
-        if host != lastHost { logger.info("sync sending", metadata: ["to": "\(host):\(port)"]) }
-        lastHost = host
+        var text = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+        let to =
+            "\(String(cString: inet_ntop(AF_INET, &address.sin_addr, &text, socklen_t(text.count))!)):\(UInt16(bigEndian: address.sin_port))"
+        if to != lastHost { logger.info("sync sending", metadata: ["to": "\(to)"]) }
+        lastHost = to
         return address
     }
 

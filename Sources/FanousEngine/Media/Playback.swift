@@ -102,6 +102,8 @@ public final class LayerPlayback: @unchecked Sendable {
     public let live: (any LiveTextureSource)?
     private let liveFrame = DecodedFrame(poolIndex: 0)
     var clock = LayerClock()
+    /// The clock followed a sync master last tick (DESIGN.md §23.3).
+    var following = false
     var hold = InvisibilityHold()
     var currentShown = -1
     var previousShown = -1

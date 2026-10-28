@@ -48,9 +48,20 @@ struct SlaveClockTests {
 
     @Test func stateFollowsTheAge() {
         #expect(SlaveClock.state(age: 0.02, interval: Self.interval) == .locked)
-        #expect(SlaveClock.state(age: 0.03, interval: Self.interval) == .freewheel, "more than 1.5 ticks")
+        #expect(
+            SlaveClock.state(age: 0.033, interval: Self.interval) == .locked,
+            "a 30 fps master against a 60 fps slave: one packet every other tick stays locked")
+        #expect(SlaveClock.state(age: 0.06, interval: Self.interval) == .freewheel, "past the 50 ms lock window")
+        #expect(SlaveClock.state(age: 0.06, interval: 1.0 / 24) == .locked, "1.5 ticks at 24 fps is longer")
         #expect(SlaveClock.state(age: 1.9, interval: Self.interval) == .freewheel)
         #expect(SlaveClock.state(age: 2.1, interval: Self.interval) == .lost, "past the freewheel time")
+    }
+
+    @Test func aWrapNeverReachesTheFrameCount() {
+        #expect(SlaveClock.wrap(-1e-17, 100) < 100, "−1e-17 + 100 rounds to 100")
+        #expect(Int(SlaveClock.wrap(-1e-17, 100)) == 99)
+        #expect(SlaveClock.wrap(-0.5, 100) == 99.5)
+        #expect(SlaveClock.wrap(100.5, 100) == 0.5)
     }
 
     @Test func freewheelAdvancesByTheEntrysRateAndWrapsAtTheEnd() {

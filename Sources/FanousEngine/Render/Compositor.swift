@@ -598,20 +598,32 @@ public final class Compositor: @unchecked Sendable {
         let last = playback.frameCount - 1
         let inFrame = Int((p.inPoint * Float(last)).rounded())
         let outFrame = Int((p.outPoint * Float(last)).rounded())
-        // a slave file follows its group's master and ignores its own play mode, speed, in/out, chase and retrigger
+        // a slave file follows its group's master and ignores its own play mode, speed, in/out, chase and retrigger;
+        // only the current file: a dissolve's outgoing picture keeps its own clock
         var master: SyncTable.Entry?
-        if case .slave(let group) = p.sync, playback.frameCount > 1, playback.live == nil {
+        if case .slave(let group) = p.sync, slot % 2 == 0, playback.frameCount > 1, playback.live == nil {
             master = syncTable.entries[group - 1]
             syncStatus.state = .noMaster  // no entry ever: its own clock, as if Sync were off
             if let master {
-                let follow = SlaveClock.follow(
-                    &playback.clock, entry: master.clock, age: ctx.now - master.receivedAt, dt: ctx.dt, interval: 1 / fps,
-                    fps: playback.frameRate, frameCount: playback.frameCount)
-                syncStatus.state = syncTable.conflict(group: group, now: ctx.now) == nil ? follow.state : .conflict
-                syncStatus.offsetMs = follow.offsetMs
+                let age = ctx.now - master.receivedAt
+                var state = SlaveClock.state(age: age, interval: 1 / fps)
+                if ctx.dt > 0 {  // freeze-all holds a slave like every other layer; the first tick after relocks
+                    let follow = SlaveClock.follow(
+                        &playback.clock, entry: master.clock, age: age, dt: ctx.dt, interval: 1 / fps, fps: playback.frameRate,
+                        frameCount: playback.frameCount)
+                    state = follow.state
+                    syncStatus.offsetMs = follow.offsetMs
+                }
+                syncStatus.state = syncTable.conflict(group: group, now: ctx.now) == nil ? state : .conflict
                 syncStatus.master = master
             }
         }
+        if master == nil, playback.following {
+            // the master's direction and end were never this layer's own
+            playback.clock.direction = 1
+            playback.clock.finished = false
+        }
+        playback.following = master != nil
         if retrigger && master == nil { playback.clock.retrigger(mode: p.playMode, inFrame: inFrame, outFrame: outFrame, frameCount: playback.frameCount) }
         if master == nil, p.playMode == .timecode, playback.frameCount > 1, let timecode, let frames = timecode.frames(at: ctx.target) {
             // chase: (tc − project offset − layer offset) at the file's rate, looped within in/out
@@ -643,7 +655,7 @@ public final class Compositor: @unchecked Sendable {
             let active = playing && direction > 0 && abs(speed - 100) < 0.5
             // a forward loop plays [in, out + 1) frames; the audio reads across its wrap (not when the audio is shorter than that)
             var loop: (start: Double, end: Double)?
-            if p.playMode == .loopForward, outFrame > inFrame, let reader = playback.decoder?.audio?.reader,
+            if master == nil, p.playMode == .loopForward, outFrame > inFrame, let reader = playback.decoder?.audio?.reader,
                 Double(outFrame + 1) / playback.frameRate <= reader.duration + 1 / playback.frameRate
             {
                 loop = (Double(inFrame) / playback.frameRate, Double(outFrame + 1) / playback.frameRate)
@@ -671,7 +683,9 @@ public final class Compositor: @unchecked Sendable {
         guard let sync, playback.frameCount > 1, playback.live == nil, syncClocks.count < SyncPacket.maxLayers else { return }
         let clock = playback.clock
         let direction: Double = (p.playMode.isReverse ? -1 : 1) * (clock.direction < 0 ? -1 : 1)
-        let moving = ctx.dt > 0 && !clock.finished && !(p.playMode == .freeze || p.playMode == .scrub || p.playMode == .timecode)
+        let last = Float(playback.frameCount - 1)
+        let range = (p.inPoint * last).rounded() != (p.outPoint * last).rounded()  // in == out: the clock stands
+        let moving = ctx.dt > 0 && range && !clock.finished && !(p.playMode == .freeze || p.playMode == .scrub || p.playMode == .timecode)
         let entry = SyncPacket.Layer(
             group: UInt8(group), layer: UInt8(layer + 1), mediaKey: UInt16(truncatingIfNeeded: playback.key.packed), fps: Float(playback.frameRate),
             position: clock.position, direction: Int8(direction), finished: clock.finished,

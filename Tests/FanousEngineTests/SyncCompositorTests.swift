@@ -26,25 +26,25 @@ struct SyncCompositorTests {
             machine: SyncCompositorTests.own, settings: SyncSettings(), network: false,
             logger: Logger(label: "sync-test"))
         let metrics = MetricsRing(capacity: 4096)
+        let source: MovieSource
+        private let parameters: TripleBuffer<ParameterSnapshotSlot>
         private let directory: URL
         private var ticks = 0
+        private var sequence: UInt64 = 0
+        /// Written by `publish()`, which fills a whole slot (the triple buffer's slots are not copies of each other).
+        var roles: [LayerSync]
+        var freezeAll = false
+        /// Layer 1's in and out point.
+        var inOut: (Float, Float) = (0, 1)
 
         init(_ sync: [LayerSync]) async throws {
             directory = try IngestQueueTests.temporaryDirectory()
             let url = directory.appending(path: "clip.mov")
             try await IngestQueueTests.writeSource(to: url, seconds: 2, audio: false)
             let context = try MetalContext()
-            let source = try await MovieSource.open(url: url, device: context.device, poolSize: 4)
-            let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: sync.count) }
-            parameters.write { slot in
-                slot.sequence = 1
-                for (i, role) in sync.enumerated() {
-                    slot.layers[i].intensity = 1
-                    slot.layers[i].folder = 1
-                    slot.layers[i].file = 1
-                    slot.layers[i].sync = role
-                }
-            }
+            source = try await MovieSource.open(url: url, device: context.device, poolSize: 4)
+            parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: sync.count) }
+            roles = sync
             compositor = try Compositor(
                 context: context, canvasWidth: 64, canvasHeight: 36, fps: 60, maxLayers: sync.count, metrics: metrics,
                 parameters: parameters,
@@ -52,18 +52,42 @@ struct SyncCompositorTests {
             compositor.skipsIdleWork = true  // nobody watches: clocks only, no GPU work
             layers = sync.indices.map { RenderLayer(index: $0) }
             for layer in layers {
-                let ring = FrameRing(capacity: 4)
-                layer.current = LayerPlayback(
-                    key: MediaKey(folder: 1, file: 1), movie: source,
-                    decoder: LayerDecoder(source: source, ring: ring, logger: Logger(label: "sync-test")),
-                    ring: ring)
+                layer.current = playback()
                 layer.wanted.store(MediaKey(folder: 1, file: 1).packed, ordering: .relaxed)
             }
             compositor.setLayers(layers)
             compositor.sync = (receiver, sender)
+            publish()
         }
 
         deinit { try? FileManager.default.removeItem(at: directory) }
+
+        func playback() -> LayerPlayback {
+            let ring = FrameRing(capacity: 4)
+            return LayerPlayback(
+                key: MediaKey(folder: 1, file: 1), movie: source,
+                decoder: LayerDecoder(source: source, ring: ring, logger: Logger(label: "sync-test")), ring: ring)
+        }
+
+        func publish() {
+            sequence += 1
+            let sequence = sequence
+            let roles = roles
+            let freezeAll = freezeAll
+            let inOut = inOut
+            parameters.write { slot in
+                slot.sequence = sequence
+                slot.masterControl = freezeAll ? .freezeAll : .normal
+                for (i, role) in roles.enumerated() {
+                    slot.layers[i].intensity = 1
+                    slot.layers[i].folder = 1
+                    slot.layers[i].file = 1
+                    slot.layers[i].sync = role
+                    slot.layers[i].inPoint = i == 0 ? inOut.0 : 0
+                    slot.layers[i].outPoint = i == 0 ? inOut.1 : 1
+                }
+            }
+        }
 
         func tick(_ n: Int = 1) {
             for _ in 0..<n {
@@ -75,11 +99,13 @@ struct SyncCompositorTests {
         func position(_ layer: Int) -> Double { layers[layer].current!.clock.position }
         func status(_ layer: Int) -> LayerSyncStatus { layers[layer].syncStatus.withLock { $0 } }
 
-        /// A clock from another machine for `group`, received `age` seconds ago (10 fps, playing at 1×).
-        func inject(group: Int, position: Double, age: Double = 0) {
+        /// A clock from another machine for `group`, received `age` seconds ago (10 fps, by default playing at 1×).
+        func inject(
+            group: Int, position: Double, age: Double = 0, direction: Int8 = 1, finished: Bool = false, rate: Float = 10
+        ) {
             let clock = SyncPacket.Layer(
-                group: UInt8(group), layer: 7, mediaKey: 0x0101, fps: 10, position: position, direction: 1,
-                finished: false, rate: 10)
+                group: UInt8(group), layer: 7, mediaKey: 0x0101, fps: 10, position: position, direction: direction,
+                finished: finished, rate: rate)
             receiver.table.withLock {
                 $0.offer(clock, from: SyncCompositorTests.remote, at: CACurrentMediaTime() - age)
             }
@@ -103,7 +129,7 @@ struct SyncCompositorTests {
         rig.tick()
         #expect(rig.position(0) >= 12 && rig.position(0) < 12.05, "follows the next entry: \(rig.position(0))")
 
-        // no new entry: the one there ages past 1.5 ticks, the clock runs on at the entry's rate
+        // no new entry: the one there ages past the lock window, the clock runs on at the entry's rate
         rig.inject(group: 1, position: 3, age: 0.5)
         let before = rig.position(0)
         rig.tick()
@@ -140,9 +166,65 @@ struct SyncCompositorTests {
             rig.receiver.table.withLock { $0.entries[1]?.machine } == Self.own,
             "the local table holds the master for the next tick")
         #expect(abs(rig.position(2) - 5 * 10.0 / 60) < 1e-9, "a layer with Sync off plays on its own")
+
+        // in == out: the master's clock stands, so it sends rate 0
+        rig.inOut = (0.5, 0.5)
+        rig.publish()
+        rig.tick()
+        #expect(rig.sender.slots.read().packet.layers.first?.rate == 0)
     }
 
-    /// Printed, not asserted: the compositor's CPU time per idle tick with 32 file layers, Sync off and all masters.
+    /// A dissolve on a slave: the new file follows the master, the outgoing one keeps its own clock.
+    @Test func aSlavesOutgoingPictureKeepsItsOwnClock() async throws {
+        let rig = try await Rig([.slave(group: 1)])
+        let outgoing = rig.playback()
+        rig.layers[0].outgoing = outgoing
+        rig.layers[0].dissolveStart = 3600
+        rig.layers[0].dissolveDuration = 10
+        rig.inject(group: 1, position: 15)
+        rig.tick(3)
+        #expect(rig.position(0) >= 15, "the current file follows")
+        #expect(
+            abs(outgoing.clock.position - 3 * 10.0 / 60) < 1e-9, "the outgoing one plays on: \(outgoing.clock.position)"
+        )
+        #expect(!outgoing.following)
+    }
+
+    /// Leaving the group gives the layer its own direction and end back.
+    @Test func aSlaveThatStopsFollowingDropsTheMastersDirectionAndEnd() async throws {
+        let rig = try await Rig([.slave(group: 1)])
+        rig.inject(group: 1, position: 4, direction: -1, finished: true, rate: 0)
+        rig.tick()
+        #expect(rig.layers[0].current!.clock.direction == -1 && rig.layers[0].current!.clock.finished)
+        rig.roles = [.off]
+        rig.publish()
+        rig.tick()
+        let clock = rig.layers[0].current!.clock
+        #expect(clock.direction == 1 && !clock.finished)
+        #expect(abs(clock.position - (4 + 10.0 / 60)) < 1e-9, "forward on its own loop: \(clock.position)")
+    }
+
+    /// Freeze-all holds a locked slave like any other layer; the release relocks it.
+    @Test func freezeAllHoldsASlave() async throws {
+        let rig = try await Rig([.slave(group: 1)])
+        rig.inject(group: 1, position: 6)
+        rig.tick()
+        let held = rig.position(0)
+        rig.freezeAll = true
+        rig.publish()
+        rig.inject(group: 1, position: 9)
+        rig.tick(2)
+        #expect(rig.position(0) == held, "held while frozen")
+        #expect(rig.status(0).state == .locked)
+        rig.freezeAll = false
+        rig.publish()
+        rig.inject(group: 1, position: 11)
+        rig.tick()
+        #expect(rig.position(0) >= 11 && rig.position(0) < 11.05, "relocked")
+    }
+
+    /// The compositor's CPU time per idle tick with 32 file layers, Sync off and all masters (printed), and no
+    /// allocation in steady state (§4.6).
     @Test func printMasterSlotCost() async throws {
         for role in [LayerSync.off, .master(group: 1)] {
             let rig = try await Rig(Array(repeating: role, count: SyncPacket.maxLayers))
@@ -153,11 +235,12 @@ struct SyncCompositorTests {
             var after = malloc_statistics_t()
             malloc_zone_statistics(nil, &after)
             let summary = rig.metrics.summary(seconds: 1e9, now: 1e9)
+            let delta = Int(after.blocks_in_use) - Int(before.blocks_in_use)
+            #expect(delta <= 0, "\(role): \(delta) blocks allocated while ticking")
             print(
                 String(
                     format: "sync %@ × 32: cpu p50 %.1f µs  p99 %.1f µs  malloc Δ %d blocks", "\(role)",
-                    summary.cpuP50 * 1000, summary.cpuP99 * 1000,
-                    Int(after.blocks_in_use) - Int(before.blocks_in_use)))
+                    summary.cpuP50 * 1000, summary.cpuP99 * 1000, delta))
         }
     }
 }

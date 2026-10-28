@@ -2167,7 +2167,8 @@ not needed for the two-projector show, which is what B60 asked for.
 differs from the text above:
 
 - **Settings are file-only**, read at start: `settings.json` › `sync =
-  {interface, port, target}` (defaults `any`, 8002, `broadcast`). Machine
+  {interface, port, target}` (defaults `any`, 8002, `broadcast`), field by
+  field (a bad field or port 0 keeps its default and is logged). Machine
   settings have no command path besides role passwords, so there is no
   `project.set`/`sync.set` yet; step 4 needs one for the System screen.
 - **`target` may carry a port** (`127.0.0.1:48812`): a unicast datagram to a
@@ -2175,13 +2176,22 @@ differs from the text above:
   (measured on macOS 27), so two engines on one Mac listen on different ports
   and each sends to the other's. `--no-network`: the receiver binds 127.0.0.1,
   only a 127.0.0.1 target is sent to, a broadcast target is ignored and
-  logged.
-- **`interface: any`** is the first up, non-loopback IPv4 interface with a
-  netmask other than /32, not "the interface of universe 1"; resolved every
-  5 s on the sender thread.
+  logged. A target that does not parse sends nothing and is logged.
+- **`interface: any`** is the first up, non-loopback IPv4 interface with the
+  multicast and broadcast flags, not "the interface of universe 1"; resolved
+  every 5 s on the sender thread.
 - **`direction`** in the packet is the movement direction (reverse play mode
   × bounce direction), so a slave in any play mode asks its decoder for the
   right side.
+- **Locked** means an entry younger than 1.5 ticks *or 50 ms*, so a 30 fps
+  master against a 60 fps slave (a packet every other tick) stays locked.
+- **Only the current file follows**: a dissolve's outgoing picture keeps its
+  own clock. A layer that stops following gets direction forward and
+  "not finished" back (the master's were never its own).
+- **Freewheel wraps like a loop, lock clamps**: a shorter slave file holds its
+  last frame while locked and loops while freewheeling.
+- The slave's black end (`finished` with a once-black mode) comes from its
+  own play mode; the packet has no such flag.
 - **Local masters** go into the compositor's copy of the table right after
   their layer is prepared (a slave on a higher layer number sees the same tick,
   offset 0; a lower one sees the previous tick, extrapolated) and into the
@@ -2192,11 +2202,18 @@ differs from the text above:
   shown" would be 0 by construction while locked.
 - **Two masters**: the slave shows `conflict` while a second machine was seen
   in its group within the freewheel time, and follows the winner. Machine ids
-  compare by their bytes, which is the order of their `uuidString`.
-- A master in the Timecode play mode sends rate 0 (its position still comes
-  every tick). A slave's audio plays when its master moves at 1× forward.
-  Freeze-all on the slave machine does not stop a locked slave; it stops a
-  freewheeling one.
+  compare by their bytes, which is the order of their `uuidString`. Readiness
+  "Sync groups have one master" also counts two masters in one group on this
+  machine and a group in which another machine outranks this one, with or
+  without a slave.
+- A master in the Timecode play mode, or with in = out, sends rate 0: a
+  remote slave is not extrapolated (it lags up to one tick plus the latency),
+  stands still while freewheeling and plays no audio. A slave's audio plays
+  when its master moves at 1× forward, without a loop region (its own in/out
+  do not apply). Freeze-all on the slave machine holds a slave like any other
+  layer; the first tick after it relocks.
 - `live.sync` carries packet totals (`packetsIn`, `packetsOut`,
   `decodeErrors`) and the machine id instead of `packetsPerSecond`; the UI
-  derives a rate.
+  derives a rate. A master's `name` is shown for masters on this machine only.
+- The two-engine check of §23.5 is manual (`docs/DEVELOPMENT.md`); the bench
+  numbers are printed by `SyncCompositorTests`, which asserts no allocation.

@@ -13,9 +13,10 @@ enum SlaveClock {
     /// No entry for this long: lost (the timecode default, §15).
     static let freewheelSeconds = 2.0
 
-    /// Locked within 1.5 ticks of the entry's arrival, freewheeling up to the freewheel time, then lost.
+    /// Locked within 1.5 ticks of the entry's arrival (at least 50 ms, so a master ticking slower than the slave,
+    /// 30 against 60 fps, stays locked between its packets), freewheeling up to the freewheel time, then lost.
     static func state(age: Double, interval: Double) -> State {
-        age <= 1.5 * interval ? .locked : age <= freewheelSeconds ? .freewheel : .lost
+        age <= max(1.5 * interval, 0.05) ? .locked : age <= freewheelSeconds ? .freewheel : .lost
     }
 
     /// Where the master is `age` seconds after the entry arrived, in frames of a file at `fps`.
@@ -46,7 +47,7 @@ enum SlaveClock {
 
     static func wrap(_ position: Double, _ span: Double) -> Double {
         let r = position.truncatingRemainder(dividingBy: span)
-        return r < 0 ? r + span : r
+        return r < 0 ? min(r + span, span.nextDown) : r  // −1e-17 + span rounds to span
     }
 }
 

@@ -128,5 +128,31 @@ struct SyncSenderTests {
         #expect(
             try JSONDecoder().decode(MachineSettings.self, from: written).sync == settings.sync,
             "kept when the passwords are saved")
+        // a bad field keeps its default, the others are still read, and the problem is reported
+        let bad = try JSONDecoder().decode(
+            MachineSettings.self,
+            from: Data(#"{"sync": {"port": "x", "interface": "en0", "target": "127.0.0.1:48812"}}"#.utf8))
+        #expect(bad.sync?.port == 8002 && bad.sync?.interface == "en0" && bad.sync?.target == "127.0.0.1:48812")
+        #expect(bad.problems.contains { $0.hasPrefix("sync.port") })
+        let zero = try JSONDecoder().decode(MachineSettings.self, from: Data(#"{"sync": {"port": 0}}"#.utf8))
+        #expect(zero.sync?.port == 8002, "port 0 would bind an ephemeral port")
+    }
+
+    /// A target that is not an address with an optional port sends nothing and does not crash the engine.
+    @Test func badTargetsSendNothing() async throws {
+        let targets = ["", ":", "127.0.0.1:", "127.0.0.1:abc", "127.0.0.1:0", "127.0.0.1:1:2", "not-an-address"]
+        let senders = targets.map { (target: String) -> SyncSender in
+            var settings = SyncSettings()
+            settings.target = target
+            return SyncSender(
+                machine: Self.machine, settings: settings, network: false, logger: Logger(label: "sync-test"))
+        }
+        for sender in senders {
+            sender.start()
+            sender.start()  // a second start does nothing
+        }
+        defer { for sender in senders { sender.stop() } }
+        try await Task.sleep(for: .milliseconds(1300))  // the first keepalive resolves the target
+        #expect(senders.allSatisfy { $0.packetsOut.load(ordering: .relaxed) == 0 })
     }
 }

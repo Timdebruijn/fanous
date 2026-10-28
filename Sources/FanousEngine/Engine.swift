@@ -749,7 +749,7 @@ public final class Engine: @unchecked Sendable {
     /// The receiver binds 127.0.0.1 only and the sender sends to 127.0.0.1 only with `--no-network`. A port in use
     /// leaves the receiver unbound (logged): local groups and sending still work.
     private func startSync(compositor: Compositor) {
-        let settings = MachineSettings.load(from: AppPaths.settingsFile).sync ?? SyncSettings()
+        let settings = MachineSettings.load(from: AppPaths.settingsFile, logger: logger).sync ?? SyncSettings()
         let machine = UUID(uuidString: Self.installUUID()) ?? UUID()
         let receiver = SyncReceiver(machine: machine, logger: logger)
         do {
@@ -1009,8 +1009,10 @@ public final class Engine: @unchecked Sendable {
         context.modeIssues = modeChecks.withLock { $0 }.sorted { $0.key < $1.key }.compactMap { id, check in check.issue.map { "Output \(id): \($0)" } }
         context.layerErrors = (render?.layers ?? []).compactMap { layer in layer.mediaStatus.withLock { $0.error.map { "Layer \(layer.index + 1): \($0)" } } }
         context.libraryRoot = library?.snapshot.root ?? ""
+        var masters: [Int: Int] = [:]
         for layer in render?.layers ?? [] {
             let s = layer.syncStatus.withLock { $0 }
+            if case .master(let group) = s.role { masters[group, default: 0] += 1 }
             guard case .slave(let group) = s.role, let state = s.state else { continue }
             let name = "Layer \(layer.index + 1) (group \(group))"
             switch state {
@@ -1018,6 +1020,18 @@ public final class Engine: @unchecked Sendable {
             case .conflict: context.syncMasterIssues.append("\(name): two masters")
             case .lost: context.syncLost.append(name)
             case .locked, .freewheel: break
+            }
+        }
+        // also without a slave here: a second master on this machine, or one another machine outranks
+        for (group, count) in masters.sorted(by: { $0.key < $1.key }) where count > 1 {
+            context.syncMasterIssues.append("Group \(group): \(count) masters on this machine")
+        }
+        if let receiver = syncReceiver {
+            var table = SyncTable()
+            receiver.table.withLock { table.copy(from: $0) }
+            let now = CACurrentMediaTime()
+            for group in 1...LayerSync.groups {
+                if let ignored = table.conflict(group: group, now: now) { context.syncMasterIssues.append("Group \(group): a second master (\(ignored.uuidString))") }
             }
         }
         return context
