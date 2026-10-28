@@ -720,12 +720,16 @@ public final class Compositor: @unchecked Sendable {
 
     // MARK: Thumbnail atlas (B29)
 
-    /// Render thread, after the canvas pass of the tick: per render layer the size of its canvas when it shows something
-    /// this tick (media with intensity > 0 on a canvas that renders), nil when it does not.
-    func thumbnailCanvases() -> [(width: Int, height: Int)?] {
+    /// Render thread, after the canvas pass of the tick: per render layer the size of its canvas (canvas 1's when that
+    /// canvas does not render) and whether it shows something this tick (media with intensity > 0 on a canvas that renders).
+    func thumbnailCanvases() -> [(width: Int, height: Int, visible: Bool)] {
         let items = reusedThisTick ? drawItems : drawnItems
         return layers.map { layer in
-            items.first { $0.slot / 2 == layer.index && $0.canvas >= 0 }.map { (targets[$0.canvas].width, targets[$0.canvas].height) }
+            if let item = items.first(where: { $0.slot / 2 == layer.index && $0.canvas >= 0 }) {
+                return (targets[item.canvas].width, targets[item.canvas].height, true)
+            }
+            let t = targets[target(forLayer: layer.index) ?? 0]
+            return (t.width, t.height, false)
         }
     }
 

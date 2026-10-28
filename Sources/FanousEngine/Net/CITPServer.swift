@@ -45,16 +45,19 @@ public final class CITPServer: @unchecked Sendable {
         public var frame: @Sendable (UInt16) -> ([UInt8], Int, Int)?
         /// What `VSrc` lists: the canvas (source 0) and one source per layer.
         public var sources: @Sendable () -> [VideoSource]
+        /// Render layers (layer stream sources 1…n), without reading the parameters (`layers` does).
+        public var layerCount: @Sendable () -> Int
         public init(
             layers: @escaping @Sendable () -> [LayerInfo], library: @escaping @Sendable () -> LibrarySnapshot,
             thumbnail: @escaping @Sendable (String) -> [UInt8]?, frame: @escaping @Sendable (UInt16) -> ([UInt8], Int, Int)?,
-            sources: @escaping @Sendable () -> [VideoSource] = { [] }
+            sources: @escaping @Sendable () -> [VideoSource] = { [] }, layerCount: @escaping @Sendable () -> Int = { 0 }
         ) {
             self.layers = layers
             self.library = library
             self.thumbnail = thumbnail
             self.frame = frame
             self.sources = sources
+            self.layerCount = layerCount
         }
     }
 
@@ -221,7 +224,7 @@ public final class CITPServer: @unchecked Sendable {
             $0.streams = streams
         }
         let sources = connections.values.flatMap { $0.streams.map(\.source) }
-        let layerCount = sources.isEmpty ? 0 : providers.layers().count
+        let layerCount = sources.isEmpty ? 0 : providers.layerCount()
         wantsFrames.store(sources.contains { Self.layer(ofSource: $0, layerCount: layerCount) == nil }, ordering: .relaxed)
         wantsLayerFrames.store(sources.contains { Self.layer(ofSource: $0, layerCount: layerCount) != nil }, ordering: .relaxed)
     }

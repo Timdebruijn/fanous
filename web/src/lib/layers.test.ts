@@ -135,6 +135,7 @@ describe('thumbnails', () => {
     const empty = parseThumbFrame(new Uint8Array([32, 0, 0, 0, 0]));
     expect(empty && { layer: empty.layer, w: empty.w, h: empty.h, bytes: empty.jpeg.length }).toEqual({ layer: 32, w: 0, h: 0, bytes: 0 });
     expect(parseThumbFrame(new Uint8Array([1, 0, 160, 0]))).toBeNull();
+    expect(parseThumbFrame(new Uint8Array([1, 0, 160, 0, 90])), 'a size without JPEG bytes').toBeNull();
   });
 
   it('shows the live thumbnail while there is one, else the library thumbnail', () => {

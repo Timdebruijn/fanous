@@ -214,8 +214,9 @@ public final class PreviewHub: @unchecked Sendable {
 
     // MARK: Compositor thread
 
-    /// Anyone who needs canvas frames: a subscriber of any target, of thumbnails or a CITP console.
-    public var wantsFrames: Bool { active.withLock { $0 }.contains { $0.wantsFrames } || thumbnails?.wantsFrames == true }
+    /// Anyone who needs canvas frames this tick: a subscriber of any target or a CITP console, or thumbnails on their
+    /// pass ticks (4 a second).
+    public var wantsFrames: Bool { active.withLock { $0 }.contains { $0.wantsFrames } || thumbnails?.wantsPass == true }
 
     /// `Compositor.previewTap`.
     public func tap(canvas texture: MTLTexture, commandBuffer: MTLCommandBuffer, target: Double) {

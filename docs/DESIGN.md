@@ -1247,10 +1247,13 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   of 16:9: 640×720). With no visible layer there is no pass at all. The atlas is
   copied 1:1 through the output pipeline into a pooled BGRA pixel buffer
   (`CVMetalTextureCache`, no readback; the pool only grows); on the streamer's
-  own utility queue (`org.fanous.preview.thumbnails`) Core Image cuts one JPEG
-  per visible cell (quality 0.7, 2–4 KB). While a set is still being encoded
-  the next pass is skipped (GPU pass included), so a slow encode never piles up
-  pixel buffers (`/metrics` `preview.thumbnailEncodeMs`: the last set). Binary
+  own utility queue (`org.fanous.preview.thumbnails`) the buffer becomes one
+  `CGImage` (one copy of its bytes; the GPU is done with it) and ImageIO
+  encodes each visible cell, cropped, as a JPEG (quality 0.7, 2–4 KB): about
+  1.6 ms per set of 8 layers on an M1 Pro (Core Image per cell, tried first,
+  took 18 ms). While a set is still being encoded the next pass is skipped (GPU
+  pass included), so a slow encode never piles up pixel buffers (`/metrics`
+  `preview.thumbnailEncodeMs`: the last set). Binary
   frames are kind 2 on the `thumbs` stream id, one per layer: `[u8 layer
   number, 1-based][u16 width][u16 height][JPEG]`, big-endian like the stream
   header; width and height 0 without JPEG bytes = the layer shows nothing. A

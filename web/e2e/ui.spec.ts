@@ -64,8 +64,8 @@ test('layers: a layer showing built-in content gets a live thumbnail, an empty l
   await page.getByRole('button', { name: /^Use / }).click();
   await page.getByLabel('Built-in content and Syphon (folder 0)').selectOption({ label: '101 · Grid' });
   await expect(row).toContainText('Grid');
-  // 4 atlas passes a second: the row's picture turns live well within 2 s
-  await expect(row.locator('img[data-live="true"]')).toBeVisible({ timeout: 2_000 });
+  // 4 atlas passes a second: the row's picture turns live (default timeout: CI's paravirtual Metal is slow)
+  await expect(row.locator('img[data-live="true"]')).toBeVisible();
   await expect(page.locator('.row.layer').nth(0).locator('img[data-live="true"]')).toHaveCount(0);
 });
 

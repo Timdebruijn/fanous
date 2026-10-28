@@ -125,7 +125,8 @@ struct CITPServerTests {
                     frames.withLock { $0 += 1 }
                     return source == 1 ? (Self.jpeg, 160, 90) : (Self.jpeg, 640, 360)  // layer 1's thumbnail, else the canvas
                 },
-                sources: { [VideoSource(sourceIdentifier: 0, name: "Canvas", width: 640, height: 360), VideoSource(sourceIdentifier: 1, name: "Layer 1", layerNumber: 0, width: 160, height: 90)] }),
+                sources: { [VideoSource(sourceIdentifier: 0, name: "Canvas", width: 640, height: 360), VideoSource(sourceIdentifier: 1, name: "Layer 1", layerNumber: 0, width: 160, height: 90)] },
+                layerCount: { 1 }),
             logger: Self.logger)
         try server.start()
         defer { server.stop() }

@@ -287,10 +287,10 @@ struct StateServerTests {
         let sub = try await Self.receive(a, until: "sub")
         #expect(sub["stream"]?.string == "thumbs" && sub["w"]?.int == 160 && sub["fps"]?.int == 4)
         let id = try #require(sub["id"]?.int)
-        #expect(thumbnails.hasSubscribers && rig.hub.wantsFrames)
+        #expect(thumbnails.hasSubscribers && thumbnails.wantsFrames)
         try await a.send(.string(#"{"t":"unsub","id":\#(id)}"#))
         for _ in 0..<100 where thumbnails.hasSubscribers { try await Task.sleep(for: .milliseconds(10)) }
-        #expect(!thumbnails.hasSubscribers && !rig.hub.wantsFrames, "nobody wants thumbnails: no atlas pass")
+        #expect(!thumbnails.hasSubscribers && !thumbnails.wantsFrames, "nobody wants thumbnails: no atlas pass")
         a.cancel(with: .normalClosure, reason: nil)
     }
 

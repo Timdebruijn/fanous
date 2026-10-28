@@ -430,7 +430,12 @@ public final class Engine: @unchecked Sendable {
                 shape: { [weak self] target in self?.previewShape(target) })
             preview.canvasTexture = { [unowned compositor = render.compositor] id in compositor.tickCanvas(id) }
             // live layer thumbnails (B29): an atlas pass every 250 ms while a `thumbs` subscriber or a CITP layer stream wants them
-            preview.thumbnails = try ThumbnailStreamer(context: context, compositor: render.compositor)
+            // (optional: without it `thumbs` is refused with noPreview and the engine runs on)
+            do {
+                preview.thumbnails = try ThumbnailStreamer(context: context, compositor: render.compositor)
+            } catch {
+                logger.error("live layer thumbnails unavailable", metadata: ["error": "\(error)"])
+            }
             render.compositor.previewTap = { canvas, commandBuffer, target in preview.tap(canvas: canvas, commandBuffer: commandBuffer, target: target) }
             // no GPU work for a canvas nobody sees: no output window, preview, Syphon client or CITP stream
             render.compositor.skipsIdleWork = true
@@ -458,7 +463,8 @@ public final class Engine: @unchecked Sendable {
                         layers: { [weak self] in self?.citpLayers() ?? [] },
                         library: { [weak self] in self?.library?.snapshot ?? .empty },
                         thumbnail: { name in (try? Data(contentsOf: thumbnailer.directory.appending(path: name))).map(Array.init) },
-                        frame: { [weak self] source in self?.citpFrame(source) }, sources: { [weak self] in self?.citpSources() ?? [] }), logger: logger)
+                        frame: { [weak self] source in self?.citpFrame(source) }, sources: { [weak self] in self?.citpSources() ?? [] },
+                        layerCount: { [weak self] in self?.render?.layers.count ?? 0 }), logger: logger)
                 do {
                     logger.info("engine start", metadata: ["step": "citp"])
                     try citp.start()
@@ -611,6 +617,7 @@ public final class Engine: @unchecked Sendable {
                     m["preview"] = [
                         "framesIn": .number(Double(preview.framesIn)), "framesOut": .number(Double(preview.framesOut)), "skipped": .number(Double(preview.skipped)),
                         "encoders": .number(Double(preview.encoders)), "thumbnailPasses": .number(Double(preview.thumbnails?.passes.load(ordering: .relaxed) ?? 0)),
+                        "thumbnailEncodeMs": .number(Double(preview.thumbnails?.encodeMicros.load(ordering: .relaxed) ?? 0) / 1000),
                     ]
                 }
                 return .json(200, Array(store.encode(.object(m)).utf8))
