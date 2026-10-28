@@ -203,10 +203,17 @@
   });
 
   // reconnects re-subscribe (only the connection triggers this: a refusal turning mode to 'off' must not ask again at
-  // once); a new target restarts the stream
+  // once); a closed socket took the stream with it (B68), so it is let go and the next open asks once; a new target
+  // restarts the stream
   $effect(() => {
-    if (app.connection === 'open' && !hidden && stop === null && untrack(() => mode) !== 'connecting') void start();
+    if (app.connection !== 'open') untrack(offline);
+    else if (!hidden && stop === null && untrack(() => mode) !== 'connecting') void start();
   });
+  function offline() {
+    pause();
+    mode = 'off';
+    detail = 'not connected';
+  }
   // the first target; the effect below follows later changes, and a canvas that starts (or stops) rendering
   let shownTarget = untrack(() => target);
   let shownReady = untrack(() => ready);

@@ -242,6 +242,49 @@ test('preview: Canvas / This layer and fast layer switching leave one stream run
   await expect.poll(() => streams.size).toBe(1);
 });
 
+test('preview: a streaming preview subscribes again, once, after its socket closed (B68)', async ({ page, engine }) => {
+  // the page's sockets run through the test, which closes one under the page while the engine keeps running (an engine
+  // restart would not do: the new engine's first live document has no `engine.rendering`, so the preview remounts)
+  type Message = { t: string; stream?: string; id: number };
+  const parse = (message: string | Buffer) => (typeof message === 'string' ? (JSON.parse(message) as Message) : null);
+  let sockets = 0;  // connection attempts
+  let drop = async () => {};  // closes the newest connected socket, on both sides
+  let streams = new Set<number>();  // preview streams held on the newest socket: granted (`sub`), not stopped (`unsub`)
+  let subs = 0;  // preview subscriptions asked for on the newest socket
+  await page.routeWebSocket(/\/ws$/, (ws) => {
+    if (++sockets === 2) return void ws.close({ code: 4000, reason: 'test' });  // the first reconnect attempt fails
+    const server = ws.connectToServer();
+    drop = async () => (await ws.close({ code: 4000, reason: 'test' }), await server.close());
+    const mine = (streams = new Set());
+    subs = 0;
+    ws.onMessage((message) => {
+      const m = parse(message);
+      if (m?.t === 'unsub') mine.delete(m.id);
+      if (m?.t === 'sub' && m.stream === 'preview') subs++;
+      server.send(message);
+    });
+    server.onMessage((message) => {
+      const m = parse(message);
+      if (m?.t === 'sub' && m.stream === 'preview') mine.add(m.id);
+      ws.send(message);
+    });
+  });
+  await page.goto(`${engine.url}/?token=${engine.token}`);  // again, through the route above
+  const figure = page.getByRole('figure');
+  await expectPreviewStreaming(figure);
+  await expect.poll(() => streams.size).toBe(1);
+
+  await drop();
+  await expect.poll(() => sockets, { timeout: 10_000 }).toBe(3);  // one refused attempt, then connected again
+  // the caption alone cannot tell: before B68 it kept the old stream's "H.264 · …" over a frozen picture
+  await expect.poll(() => streams.size, { timeout: previewTimeout }).toBe(1);
+  await expectPreviewStreaming(figure);
+  await expect(figure.locator('.stalled')).toHaveCount(0);
+  // one subscription on the new socket (a second when H.264 fell back to JPEG): no storm from the reconnect attempts
+  expect(subs).toBeLessThanOrEqual(/JPEG/.test(await figure.locator('figcaption').innerText()) ? 2 : 1);
+  expect(streams.size).toBe(1);
+});
+
 test("preview: an output stream has the output's shape and the size of its box (B32)", async ({ page, engine }) => {
   // what the engine told this page about its output:1 streams: the `sub` replies, then each `stream` description (a
   // rebuilt stream announces its new size there, without a new subscription)
