@@ -203,8 +203,9 @@ public final class PreviewStreamer: @unchecked Sendable {
         }
         encoder.label = "preview"
         if let set = outputSet {
-            // same thread as the compositor tick, so reading the parameter slot here is the reader's own slot
-            let snapshot = parameters.read()
+            // called from the compositor tick: the slot that tick read, never a second `read()`, which could hand
+            // the tick's slot back to the writer while the tick still draws from it (B71)
+            let snapshot = parameters.current()
             OutputPass.draw(
                 set, canvas: { $0 == canvasID ? canvas : canvases?($0) }, encoder: encoder, context: context, uniforms: mappedUniforms,
                 master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs)
