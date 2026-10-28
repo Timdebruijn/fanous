@@ -95,7 +95,8 @@ public final class PreviewHub: @unchecked Sendable {
     private func choose(_ key: Key, jpeg: Bool, in all: [Key: PreviewStreamer]) -> (streamer: PreviewStreamer?, jpeg: Bool, fallback: Bool) {
         let own = key == Key(target: "canvas", width: PreviewSize.defaultClass) ? canvas : all[key]
         if jpeg { return (own, true, false) }
-        if own.map(Self.encodes) == true || encoderCount(all) < PreviewSize.maxEncoders { return (own, false, false) }
+        // the canvas streamer is always counted: its own viewers are never on a fallback
+        if own === canvas || own.map(Self.encodes) == true || encoderCount(all) < PreviewSize.maxEncoders { return (own, false, false) }
         for target in [key.target, canvasTarget(of: key.target)] {
             var sizes = [Int: PreviewStreamer]()
             for (k, s) in all where k.target == target && Self.encodes(s) { sizes[k.width] = s }
@@ -261,6 +262,8 @@ public final class PreviewHub: @unchecked Sendable {
     public var targets: [String] { Array(streamers.withLock { Set($0.keys.map(\.target)) }.subtracting(["canvas"])) + ["canvas"] }
     /// H.264 encoders right now, the canvas one always counted; at most `PreviewSize.maxEncoders` (tests, `/metrics`).
     public var encoders: Int { streamers.withLock { encoderCount($0) } }
+    /// Subscribers on a fallback or refused to JPEG (tests).
+    var fallbackCount: Int { streamers.withLock { _ in fallbacks.count } }
     /// Streamers right now by target and size class (tests).
     var keys: Set<Key> { streamers.withLock { Set($0.keys) } }
 

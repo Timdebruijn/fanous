@@ -541,6 +541,23 @@ import Testing
         #expect(sessions == 4 && !refused.streamer.hasEncoder, "\(sessions) VideoToolbox sessions")
     }
 
+    /// B70 review: at the limit with no H.264 viewer on the canvas streamer, a canvas viewer is on its own stream (the
+    /// canvas one is always counted), not on a fallback that a release would move (and freeze until a key frame).
+    @Test func aCanvasViewerAtTheLimitIsNeverAFallback() throws {
+        let r = try LimitRig(), rig = r.rig
+        let (b, c, d) = (rig.connection(), rig.connection(), rig.connection())
+        _ = try #require(rig.streamer("output:1", width: 640, b))
+        _ = try #require(rig.streamer("output:2", width: 640, c))
+        _ = try #require(rig.streamer("canvas:2", width: 640, d))
+        #expect(rig.hub.encoders == 4 && !rig.hub.canvas.hasSubscribers)
+        let a = rig.connection()
+        let got = try #require(rig.served("canvas", width: nil, a))
+        #expect(got.streamer === rig.hub.canvas && !got.jpeg)
+        #expect(rig.hub.fallbackCount == 0)
+        rig.hub.remove(connection: c)
+        #expect(rig.hub.canvas.subscriberList.map(\.stream) == [1] && rig.hub.fallbackCount == 0)
+    }
+
     /// B70: when an encoder is released, the oldest subscriber on a fallback gets its own (target, size), up to the limit;
     /// one refused to JPEG gets H.264 the same way.
     @Test func aReleasedEncoderGoesToTheOldestFallback() throws {
