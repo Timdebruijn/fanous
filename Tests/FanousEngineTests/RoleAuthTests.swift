@@ -138,6 +138,33 @@ struct RoleAuthTests {
         #expect(MachineSettings.load(from: file).passwords.keys.sorted() == ["operator", "programmer"])
     }
 
+    @Test func handEditedPasswordsTakeEffectAtTheNextWrite() throws {
+        // B82: the copy in memory takes the passwords of the file as written by any command
+        let (auth, file) = try Self.settingsAuth(nil)
+        try auth.setPassword("op", for: .operator)
+        let (other, otherFile) = try Self.settingsAuth(nil)
+        try other.setPassword("hand", for: .programmer)
+        var edited = try Self.raw(file)
+        try edited.set(try #require(Self.raw(otherFile)["passwords"]?["programmer"]), at: "/passwords/programmer")
+        try JSONEncoder().encode(edited).write(to: file)
+        #expect(auth.isOpen(.programmer), "not before a write")
+        _ = try auth.setSync(["port": 48980])
+        #expect(!auth.isOpen(.programmer) && auth.verify("hand", for: .programmer) && !auth.verify("x", for: .programmer))
+        #expect(auth.verify("op", for: .operator) && !auth.verify("x", for: .operator))
+
+        var removed = try Self.raw(file)
+        try removed.remove(at: "/passwords/operator")
+        try JSONEncoder().encode(removed).write(to: file)
+        _ = try auth.setSync(["port": 48981])
+        #expect(auth.isOpen(.operator), "a record removed by hand opens the role, as at the next start")
+
+        var broken = try Self.raw(file)
+        try broken.set("oops", at: "/passwords")
+        try JSONEncoder().encode(broken).write(to: file)
+        _ = try auth.setSync(["port": 48982])
+        #expect(!auth.isOpen(.programmer) && auth.verify("hand", for: .programmer), "passwords that do not decode keep the copy in memory")
+    }
+
     @Test func unparsableFileIsNotOverwritten() throws {
         for contents in [#"{"passwords": "#, "[]", "\u{FF}"] {
             let (auth, file) = try Self.settingsAuth(contents)

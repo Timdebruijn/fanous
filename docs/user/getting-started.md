@@ -151,6 +151,12 @@ out** drops the session. After five wrong attempts in a minute you must wait.
 
 The app window on the Mac itself is always programmer; it needs no password.
 
+The passwords are stored hashed in `settings.json` (see below). A password
+record copied into that file by hand while the engine runs takes effect at the
+next password or sync change, or at the next engine start. If the `passwords`
+field cannot be read, the passwords in use stay as they were while the engine
+runs; fix it before the next start, which would leave every role open.
+
 ## Where files live
 
 | What | Where |
