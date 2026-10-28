@@ -1552,8 +1552,8 @@ later deliverable (`[OPEN-20]`).
   then lost after the freewheel time). `live.timecode.device` lists the
   connected sources and drops a gone one at once, and `error` says "MTC source
   … is not connected" (or "no MIDI source connected") while none matches.
-  The clock counts as locked within 1.5 of the update interval the source
-  promises: one frame for LTC, two for MTC (a quarter-frame sequence assembles
+  The clock counts as locked within 1.5 times the update interval the
+  source promises: one frame for LTC, two for MTC (a quarter-frame sequence assembles
   one time every 2 frames, 80 ms at 25 fps), so MTC no longer flickers to
   Freewheel between its updates (B65).
 - One active source per project; offset per project and per layer (Layer

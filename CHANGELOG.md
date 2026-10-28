@@ -145,7 +145,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   the last; JPEG previews and CITP streaming need none. A browser that gets no H.264 description within 5 s falls back
   to JPEG (B66).
 - The preview e2e tests wait up to 30 s on CI for the preview to stream (H.264 or JPEG) instead of 5 s (B81).
-- Fixed: MTC timecode flickered between Locked and Freewheel while the sender ran; the lock window is now 1.5 of
+- Fixed: MTC timecode flickered between Locked and Freewheel while the sender ran; the lock window is now 1.5 times
   the source's update interval (MTC assembles a time every 2 frames, LTC decodes every frame) (B65).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
