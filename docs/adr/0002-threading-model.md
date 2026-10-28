@@ -37,7 +37,8 @@ The parameter triple buffer has one reader, the compositor. CITP layer status an
 secondary displays read the parameters too. When they called the reader side
 themselves, they could hand the writer the slot the compositor was drawing from.
 They now read a copy of each published snapshot, kept behind one lock. This is
-the only lock on the render or DMX path:
+the only lock a render or DMX thread waits on; the compositor's other `Mutex`es
+are try-locks (`withLockIfAvailable`):
 
 - `Mutex` from the `Synchronization` module (`os_unfair_lock`, which donates
   priority to the holder).

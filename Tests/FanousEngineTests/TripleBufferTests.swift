@@ -72,6 +72,16 @@ final class Box { var value = 0 }
         #expect(buffer.read().value == 4)
     }
 
+    @Test func currentKeepsTheTicksSlotAndLeavesTheNewFlag() {
+        let buffer = TripleBuffer { Box() }
+        let held = buffer.read()
+        buffer.write { $0.value = 1 }
+        #expect(buffer.current() === held)  // a second `read()` here would take the new slot and free `held` to the writer
+        for i in 2...4 { buffer.write { $0.value = i } }
+        #expect(held.value == 0)
+        #expect(buffer.read().value == 4)
+    }
+
     @Test func dmxCopyEqualsTheLastPublishedSlot() {
         let store = DMXStore(patch: .standard(layers: 2, outputs: 1), logger: Logger(label: "test"))
         for i in 1...3 {
