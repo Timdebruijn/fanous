@@ -6,6 +6,7 @@
   import { RELEASE_TEXT, channelRange, clockText, controlKeys, folderZeroItems, mediaOptions, mediaPath, patchText, reservedText, valueText, type ChannelSpec, type LibrarySnapshot } from '../lib/layers';
   import { app, can, cmd, playOnLayer } from '../lib/state.svelte';
   import { syncStatus } from '../lib/sync';
+  import { throttledSender } from '../lib/throttle';
   import PolicyHint from './PolicyHint.svelte';
 
   let {
@@ -51,18 +52,14 @@
   const hasUI = $derived((params ?? []).some((p) => isController(p.source)) || (app.live.dmx.internalValues[fixture] ?? []).some((v) => isController(v.source)));
   const controlLabel = $derived((app.live.dmx.internalValues[fixture] ?? []).some((v) => v.source === 'ui') ? 'UI control' : 'MIDI control');
 
-  // at most ~20 commands a second per parameter while a slider moves; the last value always goes out
-  const pending = new Map<string, number>();
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  function send(key: string, raw: number) {
-    pending.set(key, Math.round(raw));
-    if (timer) return;
-    timer = setTimeout(() => {
-      timer = null;
-      for (const [parameter, value] of pending) void cmd('fixture.set', { fixture, parameter, raw: value });
-      pending.clear();
-    }, 50);
-  }
+  // at most ~20 commands a second per parameter while a slider moves; the last value always goes out, to the fixture
+  // it was set on, flushed when another layer is picked (B80)
+  const throttle = throttledSender((fixture, parameter, raw) => void cmd('fixture.set', { fixture, parameter, raw }));
+  const send = (key: string, raw: number) => throttle.send(fixture, key, raw);
+  $effect(() => {
+    void fixture;
+    return throttle.flush;
+  });
   const rawMax = (spec: ChannelSpec | undefined) => (spec?.bits === 16 ? 65535 : 255);
   const isNumber = (key: string) => key === 'folder' || key === 'file';
 </script>
