@@ -45,7 +45,9 @@ public struct SyncPacket: Equatable, Sendable {
     public static let maxLayers = 32
     public static let maxSize = headerSize + maxLayers * layerSize
 
-    public enum ParseError: Error, Equatable { case tooShort, badMagic, badVersion, badLength }
+    /// `badValue`: a layer field the slave clock cannot use (fps not finite and > 0, non-finite position or rate,
+    /// group outside 1–8, direction outside −1…1).
+    public enum ParseError: Error, Equatable { case tooShort, badMagic, badVersion, badLength, badValue }
 
     /// Install UUID of the sending machine.
     public var machineID: UUID
@@ -88,20 +90,23 @@ public struct SyncPacket: Equatable, Sendable {
         guard Array(bytes[0..<4]) == magic else { throw ParseError.badMagic }
         guard bytes[4] == version else { throw ParseError.badVersion }
         let count = Int(bytes[headerSize - 1])
-        guard bytes.count == headerSize + count * layerSize else { throw ParseError.badLength }
+        // Trailing bytes are ignored (as in `ArtNet.parse`); incompatible changes bump `version`.
+        guard count <= maxLayers, bytes.count >= headerSize + count * layerSize else { throw ParseError.badLength }
         var uuid: uuid_t = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         withUnsafeMutableBytes(of: &uuid) { $0.copyBytes(from: bytes[5..<21]) }
         var layers: [Layer] = []
         layers.reserveCapacity(count)
         for i in 0..<count {
             let o = headerSize + i * layerSize
-            layers.append(
-                Layer(
-                    group: bytes[o], layer: bytes[o + 1], mediaKey: read(bytes, o + 2),
-                    fps: Float(bitPattern: read(bytes, o + 4)),
-                    position: Double(bitPattern: read(bytes, o + 8)), direction: Int8(bitPattern: bytes[o + 16]),
-                    finished: bytes[o + 17] != 0,
-                    rate: Float(bitPattern: read(bytes, o + 18))))
+            let l = Layer(
+                group: bytes[o], layer: bytes[o + 1], mediaKey: read(bytes, o + 2),
+                fps: Float(bitPattern: read(bytes, o + 4)),
+                position: Double(bitPattern: read(bytes, o + 8)), direction: Int8(bitPattern: bytes[o + 16]),
+                finished: bytes[o + 17] != 0, rate: Float(bitPattern: read(bytes, o + 18)))
+            guard l.fps.isFinite, l.fps > 0, l.position.isFinite, l.rate.isFinite,
+                (1...LayerSync.groups).contains(Int(l.group)), (-1...1).contains(l.direction)
+            else { throw ParseError.badValue }
+            layers.append(l)
         }
         return SyncPacket(
             machineID: UUID(uuid: uuid), tick: read(bytes, 21), sendTime: Double(bitPattern: read(bytes, 25)),

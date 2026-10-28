@@ -118,7 +118,9 @@ public enum ChannelMap {
             + (1...2 * LayerSync.groups).map { v in
                 let name = v <= LayerSync.groups ? "Master \(v)" : "Slave \(v - LayerSync.groups)"
                 return Band(from: UInt8(10 * v), to: UInt8(10 * v + 9), name: name, value: v)
-            },
+            }
+            // Explicit, so the GDTF set "Slave 8" ends at 169 (GDTF sets run to the next set's DMXFrom − 1).
+            + [Band(from: 170, to: 255, name: "Off", value: 0)],
         fallback: 0)
 
     static let effectBands = bands(width: 16, [
