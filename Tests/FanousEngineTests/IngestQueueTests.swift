@@ -126,16 +126,19 @@ import UniformTypeIdentifiers
         guard CGImageDestinationFinalize(destination) else { throw MovieWriter.WriterError.failed("png") }
     }
 
-    /// Polls until the job is finished (or `timeout`); returns its last state. Sleeps instead of blocking: the queue's
-    /// worker needs a free thread of the cooperative pool for its async asset loads, and parallel tests would hog them.
+    /// Polls until the job is finished (or `timeout`, an issue that says how long it waited); returns its last state.
+    /// Sleeps instead of blocking: the queue's worker needs a free thread of the cooperative pool for its async asset
+    /// loads, and parallel tests would hog them. 60 s, not 8: a parallel run on a loaded Mac is that much slower (B67).
     @discardableResult
-    static func wait(for id: UUID, in queue: IngestQueue, timeout: Double = 8) async -> IngestJob.State {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if let job = queue.jobs.first(where: { $0.id == id }), job.state.isFinished { return job.state }
-            try? await Task.sleep(for: .milliseconds(10))
+    static func wait(
+        for id: UUID, in queue: IngestQueue, timeout: Duration = .seconds(60), sourceLocation: SourceLocation = #_sourceLocation
+    ) async -> IngestJob.State {
+        let started = ContinuousClock.now
+        func state() -> IngestJob.State? { queue.jobs.first(where: { $0.id == id })?.state }
+        if !(await waitUntil(timeout) { state()?.isFinished == true }) {
+            Issue.record("job not finished after \(ContinuousClock.now - started): \(String(describing: state()))", sourceLocation: sourceLocation)
         }
-        return queue.jobs.first(where: { $0.id == id })?.state ?? .cancelled
+        return state() ?? .cancelled
     }
 
     /// Opens `url` the way the engine does and checks the frame count, codec and size.

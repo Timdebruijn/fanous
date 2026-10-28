@@ -257,7 +257,7 @@ struct OutputPassTests {
         #expect(failures.isEmpty, Comment(rawValue: failures.joined(separator: "\n")))
     }
 
-    @Test func thirtyThreeByThirtyThreeWarpCompilesUnder100ms() throws {
+    @Test func thirtyThreeByThirtyThreeWarpCompilesUnder100ms() async throws {
         let context = try MetalContext()
         let compiler = try OutputCompiler(device: context.device)
         var o = OutputConfig(id: 1)
@@ -265,16 +265,23 @@ struct OutputPassTests {
         o.warp.mesh!.points[33 * 16 + 16] = MapPoint(0.51, 0.5)
         o.slices[0].mask = MaskSettings(path: [MapPoint(0.1, 0.1), MapPoint(0.9, 0.1), MapPoint(0.9, 0.9), MapPoint(0.1, 0.9)], feather: 8)
         let plan = try compiler.compile(o, index: 1, drawable: (1920, 1080))  // also the warm-up
-        // best of five: in a parallel test run the other suites share the CPU with this measurement
+        // the compile's own CPU time (it runs on this thread), best of as many tries as 10 s allow: the other suites of
+        // a parallel run and other builds share the cores, and wall time on a loaded Mac measures them too (B67)
         var ms = Double.infinity
-        for _ in 0..<5 {
-            let start = Date()
-            _ = try compiler.compile(o, index: 1, drawable: (1920, 1080))
-            ms = min(ms, Date().timeIntervalSince(start) * 1000)
+        _ = await waitUntil(every: .zero) {
+            let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+            do {
+                _ = try compiler.compile(o, index: 1, drawable: (1920, 1080))
+            } catch {
+                Issue.record(error)
+                return true  // a failed compile is no timing
+            }
+            ms = min(ms, Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e6)
+            return ms < 250
         }
         #expect(plan.warpField?.width == 480)
         // the acceptance bound (100 ms) is a release-build number, see docs/benchmarks; debug builds run ~2–3× slower
         #expect(ms < 250, "compiled a 33×33 warp with a feathered mask at 1080p in \(ms) ms")
-        print("33x33 warp + feathered mask compile at 1080p: \(String(format: "%.1f", ms)) ms")
+        print("33x33 warp + feathered mask compile at 1080p: \(String(format: "%.1f", ms)) ms CPU")
     }
 }
