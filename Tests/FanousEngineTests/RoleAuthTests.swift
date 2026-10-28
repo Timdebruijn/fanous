@@ -102,12 +102,11 @@ struct RoleAuthTests {
     @Test func writesKeepUnknownFields() throws {
         let (auth, file) = try Self.settingsAuth(#"{"future": [1, "x"], "sync": {"port": 48900, "mode": "fast"}}"#)
         try auth.setPassword("pw", for: .operator)
-        var sync = auth.syncSettings
-        sync.target = "127.0.0.1:48901"
-        try auth.setSync(sync)
+        let sync = try auth.setSync(["target": "127.0.0.1:48901"])
+        #expect(sync.port == 48900 && sync.target == "127.0.0.1:48901")
         let raw = try Self.raw(file)
         #expect(raw["future"] == [1, "x"], "an unknown top-level field survives")
-        #expect(raw["sync"] == ["interface": "any", "port": 48900, "target": "127.0.0.1:48901", "mode": "fast"], "an unknown sync field survives")
+        #expect(raw["sync"] == ["port": 48900, "target": "127.0.0.1:48901", "mode": "fast"], "an unknown sync field survives")
         #expect(raw["passwords"]?["operator"]?["iterations"] == 1000)
         #expect(auth.verify("pw", for: .operator) && !auth.verify("x", for: .operator))
         #expect(auth.syncSettings.target == "127.0.0.1:48901", "the copy in memory follows the write")
@@ -125,14 +124,17 @@ struct RoleAuthTests {
         var edited = try Self.raw(otherFile)
         try edited.set("x", at: "/note")
         try edited.set(["prot": 1], at: "/oscFeedback")
+        try edited.set(["interface": "en0", "port": 48950], at: "/sync")
         try JSONEncoder().encode(edited).write(to: file)
 
-        try auth.setSync(SyncSettings())
+        let sync = try auth.setSync(["target": "127.0.0.1:48951"])
+        #expect(sync.interface == "en0" && sync.port == 48950 && sync.target == "127.0.0.1:48951", "what is applied merges the file")
+        #expect(auth.syncSettings == sync)
         try auth.setPassword("pw", for: .operator)
         let raw = try Self.raw(file)
         #expect(raw["passwords"]?["programmer"] == edited["passwords"]?["programmer"], "the hand-set password record is kept")
         #expect(raw["note"] == "x" && raw["oscFeedback"] == ["prot": 1], "unknown and misspelled fields are kept")
-        #expect(raw["sync"] == ["interface": "any", "port": 8002, "target": "broadcast"])
+        #expect(raw["sync"] == ["interface": "en0", "port": 48950, "target": "127.0.0.1:48951"], "the hand-edited port survives a target-only sync.set")
         #expect(MachineSettings.load(from: file).passwords.keys.sorted() == ["operator", "programmer"])
     }
 
@@ -140,7 +142,7 @@ struct RoleAuthTests {
         for contents in [#"{"passwords": "#, "[]", "\u{FF}"] {
             let (auth, file) = try Self.settingsAuth(contents)
             #expect(throws: RoleAuth.UnreadableSettings.self) { try auth.setPassword("pw", for: .programmer) }
-            #expect(throws: RoleAuth.UnreadableSettings.self) { try auth.setSync(SyncSettings()) }
+            #expect(throws: RoleAuth.UnreadableSettings.self) { try auth.setSync(["port": 48960]) }
             #expect(try Data(contentsOf: file) == Data(contents.utf8), "the file is left untouched")
             #expect(auth.isOpen(.programmer), "a refused write changes nothing in memory")
             #expect("\(RoleAuth.UnreadableSettings())" == "settings.json could not be read; fix or remove it first")
@@ -149,8 +151,8 @@ struct RoleAuthTests {
 
     @Test func missingFileIsCreatedWithOnlyTheWrittenField() throws {
         let (auth, file) = try Self.settingsAuth(nil)
-        try auth.setSync(SyncSettings())
-        #expect(try Self.raw(file) == ["sync": ["interface": "any", "port": 8002, "target": "broadcast"]])
+        #expect(try auth.setSync(["target": "broadcast"]) == SyncSettings())
+        #expect(try Self.raw(file) == ["sync": ["target": "broadcast"]])
         let permissions = try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int
         #expect(permissions == 0o600)
 

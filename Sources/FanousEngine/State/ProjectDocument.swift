@@ -503,26 +503,27 @@ public enum ProjectDocument {
                 summary: "Multi-server sync settings: interface (any, en0, an IPv4 address), port (1–65535, default 8002), target (broadcast, or IPv4[:port]); machine setting, not part of the project; applies live; refused in show mode.",
                 argsType: "{ interface?: string; port?: number; target?: string }"
             ) { _, args in
-                var sync = auth.syncSettings
+                var members: [String: JSONValue] = [:]  // only these are written; the others keep the file's values (B79)
                 guard args["interface"] != nil || args["port"] != nil || args["target"] != nil else { throw CommandError.invalidArgs("args: { interface?, port?, target? }") }
                 if let value = args["interface"] {
                     guard let interface = value.string, !interface.isEmpty else { throw CommandError.invalidArgs("interface must be any, an interface name or an address") }
-                    sync.interface = interface
+                    members["interface"] = .string(interface)
                 }
                 if let value = args["port"] {
                     guard let port = value.int, (1...65535).contains(port) else { throw CommandError.invalidArgs("port must be 1–65535") }
                     // sACN shares its port with SO_REUSEPORT: a sync receiver there would take sACN datagrams
                     let taken = [ArtNet.port, SACN.port, OSCReceiver.defaultPort, OSCReceiver.defaultPort + 1]
                     guard !taken.contains(UInt16(port)) else { throw CommandError.invalidArgs("port \(port) is used by Art-Net, sACN or OSC") }
-                    sync.port = UInt16(port)
+                    members["port"] = .number(Double(port))
                 }
                 if let value = args["target"] {
                     guard let target = value.string, SyncSettings.isValidTarget(target) else { throw CommandError.invalidArgs("target must be broadcast or an IPv4 address with an optional :port") }
-                    sync.target = target
+                    members["target"] = .string(target)
                 }
                 guard !showModeOn() else { throw CommandError("showMode", "sync settings cannot change in show mode; leave show mode first") }
+                let sync: SyncSettings
                 do {
-                    try auth.setSync(sync)
+                    sync = try auth.setSync(members)
                 } catch {
                     throw CommandError("failed", "cannot save settings: \(error)")
                 }

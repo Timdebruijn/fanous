@@ -103,18 +103,23 @@ public final class RoleAuth: @unchecked Sendable {
             _ = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
             return MachineSettings.PasswordRecord(salt: salt, hash: Self.pbkdf2(pw, salt: salt, iterations: iterations), iterations: iterations)
         }
-        try rewrite("passwords", [role.rawValue: try record.map { try JSONValue(encoding: $0) }]) { $0.passwords[role.rawValue] = record }
+        try rewrite("passwords", [role.rawValue: try record.map { try JSONValue(encoding: $0) }]) { settings, _ in settings.passwords[role.rawValue] = record }
         logger.info("role password \(record == nil ? "cleared" : "set")", metadata: ["role": "\(role)"])
     }
 
     /// The sync settings as stored (defaults when the file has none).
     public var syncSettings: SyncSettings { state.withLock { $0.settings.sync } ?? SyncSettings() }
 
-    /// Stores the sync settings (`sync.set`, DESIGN.md §23.2) next to the passwords and persists the settings.
-    public func setSync(_ sync: SyncSettings) throws {
-        let members: [String: JSONValue?] = ["interface": .string(sync.interface), "port": .number(Double(sync.port)), "target": .string(sync.target)]
-        try rewrite("sync", members) { $0.sync = sync }
+    /// Stores the given sync members (`sync.set`, DESIGN.md §23.2) next to the passwords; the others keep the file's
+    /// values. Returns the merged settings, to apply live.
+    public func setSync(_ members: [String: JSONValue]) throws -> SyncSettings {
+        var sync = SyncSettings()
+        try rewrite("sync", members) { settings, object in
+            sync = (try? JSONDecoder().decode(SyncSettings.self, from: JSONEncoder().encode(JSONValue.object(object)))) ?? SyncSettings()
+            settings.sync = sync
+        }
         logger.info("sync settings set", metadata: ["interface": "\(sync.interface)", "port": "\(sync.port)", "target": "\(sync.target)"])
+        return sync
     }
 
     struct UnreadableSettings: Error, CustomStringConvertible {
@@ -123,11 +128,13 @@ public final class RoleAuth: @unchecked Sendable {
 
     /// Re-reads settings.json and sets only `members` of the top-level object `key` (nil removes one), keeping every
     /// other member, unknown and unreadable ones too, and hand edits made while the engine runs (B79). A file that
-    /// exists but does not parse is not overwritten; a missing one is created. `apply` keeps the copy in memory in step.
-    private func rewrite(_ key: String, _ members: [String: JSONValue?], apply: (inout MachineSettings) -> Void) throws {
+    /// exists but does not parse is not overwritten; a missing one is created. `apply` gets the merged `key` object and
+    /// keeps the copy in memory in step. Without a file (tests) the copy in memory is the base.
+    private func rewrite(_ key: String, _ members: [String: JSONValue?], apply: (inout MachineSettings, [String: JSONValue]) -> Void) throws {
         try state.withLock { s in
+            var root = (try? JSONValue(encoding: s.settings).object) ?? [:]
             if let settingsURL {
-                var root: [String: JSONValue] = [:]
+                root = [:]
                 do {
                     let data = try Data(contentsOf: settingsURL)
                     guard let object = try JSONDecoder().decode(JSONValue.self, from: data).object else { throw UnreadableSettings() }
@@ -137,15 +144,17 @@ public final class RoleAuth: @unchecked Sendable {
                     logger.error("settings.json not written: it could not be read", metadata: ["error": "\(error)"])
                     throw UnreadableSettings()
                 }
-                var object = root[key]?.object ?? [:]  // a member that is not an object was unreadable; the command replaces it
-                for (member, value) in members { object[member] = value }
-                root[key] = .object(object)
+            }
+            var object = root[key]?.object ?? [:]  // a member that is not an object was unreadable; the command replaces it
+            for (member, value) in members { object[member] = value }
+            root[key] = .object(object)
+            if let settingsURL {
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
                 try encoder.encode(JSONValue.object(root)).write(to: settingsURL, options: .atomic)
                 try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: settingsURL.path)
             }
-            apply(&s.settings)
+            apply(&s.settings, object)
         }
     }
 
