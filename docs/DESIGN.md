@@ -1198,7 +1198,8 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   1 s GOP, 1.5 Mbit/s at 640×360@30 default) encodes on its own queue;
   AVCC access units go out as binary frames with the `avcC` record in the
   stream's first message. The browser decodes with WebCodecs `VideoDecoder`
-  (`avc` with `description`) into a `<canvas>`.
+  (`avc` with `description`) into a `<canvas>`. One decoder per preview,
+  closed when its stream stops (target change, disconnect, hidden tab; B85).
 - Fallback when WebCodecs is unavailable or fails a real decode test at
   connect time: JPEG at 5 fps on the same stream id.
 - Encoding cost is bounded: one encoder per distinct (target, size) pair,

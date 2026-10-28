@@ -167,6 +167,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   seen since the start is listed greyed (`gone`), and `syphon.forget` (Media screen **Forget**) frees a number (B69).
 - Fixed: the shell token test failed 1 run in 16, when the token ended in "0" (B84).
 - Fixed: undoing `syphon.forget` overwrote a Syphon number another server had taken meanwhile; the undo is now refused (B90).
+- Fixed: the preview left its H.264 decoder open after every target change and disconnect; it now closes it (B85).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
