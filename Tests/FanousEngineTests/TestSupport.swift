@@ -30,3 +30,39 @@ func freeUDPPort() throws -> UInt16 {
     guard ok else { throw POSIXError(.EADDRINUSE) }
     return UInt16(bigEndian: address.sin_port)
 }
+
+/// One UDP datagram to 127.0.0.1:`port` from a throwaway socket.
+func sendUDP(_ bytes: [UInt8], to port: UInt16) {
+    let fd = socket(AF_INET, SOCK_DGRAM, 0)
+    defer { close(fd) }
+    var address = sockaddr_in()
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_port = port.bigEndian
+    address.sin_addr.s_addr = inet_addr("127.0.0.1")
+    _ = withUnsafePointer(to: &address) { p in
+        p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sendto(fd, bytes, bytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+    }
+}
+
+/// A socket on 127.0.0.1:`port` whose `receive` waits at most `timeout` seconds; nil = nothing came.
+final class UDPCatcher {
+    let fd = socket(AF_INET, SOCK_DGRAM, 0)
+    init(port: UInt16, timeout: Double) throws {
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        var wait = timeval(tv_sec: Int(timeout), tv_usec: Int32((timeout - timeout.rounded(.down)) * 1e6))
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &wait, socklen_t(MemoryLayout<timeval>.size))
+        let bound = withUnsafePointer(to: &address) { p in
+            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        guard bound == 0 else { throw POSIXError(.EADDRINUSE) }
+    }
+    deinit { close(fd) }
+    func receive() -> [UInt8]? {
+        var buffer = [UInt8](repeating: 0, count: 1500)
+        let count = recv(fd, &buffer, buffer.count, 0)
+        return count > 0 ? Array(buffer[0..<count]) : nil
+    }
+}

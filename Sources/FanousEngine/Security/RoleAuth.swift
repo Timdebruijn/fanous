@@ -19,11 +19,13 @@ public struct MachineSettings: Codable, Sendable, Equatable {
     public var passwords: [String: PasswordRecord] = [:]
     /// OSC feedback to a fixed host:port for controllers that cannot subscribe (B36); edited in the file, read at start.
     public var oscFeedback: OSCFeedbackTarget?
+    /// Multi-server sync interface, port and target (DESIGN.md §23.2); edited in the file, read at start. nil = defaults.
+    public var sync: SyncSettings?
 
     /// Fields that could not be read, with the reason; never written back.
     public private(set) var problems: [String] = []
 
-    enum CodingKeys: String, CodingKey { case passwords, oscFeedback }
+    enum CodingKeys: String, CodingKey { case passwords, oscFeedback, sync }
 
     public init() {}
 
@@ -33,12 +35,15 @@ public struct MachineSettings: Codable, Sendable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         do { passwords = try c.decodeIfPresent([String: PasswordRecord].self, forKey: .passwords) ?? [:] } catch { problems.append("passwords: \(error)") }
         do { oscFeedback = try c.decodeIfPresent(OSCFeedbackTarget.self, forKey: .oscFeedback) } catch { problems.append("oscFeedback: \(error)") }
+        do { sync = try c.decodeIfPresent(SyncSettings.self, forKey: .sync) } catch { problems.append("sync: \(error)") }
+        problems += (sync?.problems ?? []).map { "sync.\($0)" }
     }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(passwords, forKey: .passwords)
         try c.encodeIfPresent(oscFeedback, forKey: .oscFeedback)
+        try c.encodeIfPresent(sync, forKey: .sync)
     }
 
     public static func load(from url: URL, logger: Logger? = nil) -> MachineSettings {

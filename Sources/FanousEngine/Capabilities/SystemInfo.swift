@@ -63,7 +63,9 @@ public enum SystemInfo {
             else { continue }
             let flags = entry.pointee.ifa_flags
             let multicast = flags & UInt32(IFF_MULTICAST) != 0 && flags & UInt32(IFF_LOOPBACK) == 0 && flags & UInt32(IFF_UP) != 0
-            result.append(NetworkInterface(name: String(cString: entry.pointee.ifa_name), address: address, netmask: netmask, multicast: multicast))
+            let broadcast = flags & UInt32(IFF_BROADCAST) != 0
+            result.append(
+                NetworkInterface(name: String(cString: entry.pointee.ifa_name), address: address, netmask: netmask, multicast: multicast, broadcast: broadcast))
         }
         return result
     }
