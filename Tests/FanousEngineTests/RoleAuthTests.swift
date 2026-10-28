@@ -86,7 +86,8 @@ struct RoleAuthTests {
         try again.setPassword("pw", for: .programmer)
         #expect(again.grant(requested: .programmer, cookie: nil, token: token) == .programmer)
         #expect(again.grant(requested: .programmer, cookie: nil, token: "nope") == .operator)
-        #expect(again.role(forToken: String(token.dropLast()) + "0") == nil)
+        let wrong = String(token.dropLast()) + (token.last == "0" ? "1" : "0")  // differs from the token in its last character (B84)
+        #expect(again.role(forToken: wrong) == nil)
     }
 
     /// A fresh directory with `settings.json` holding `contents` (none: no file), and a `RoleAuth` that loaded it.
