@@ -106,6 +106,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   switch, DMX patch, output windows) may still follow (B62).
 - Fixed: a parallel `swift test` of the engine suite hung (every cooperative-pool thread waiting in `finishWriting`); the
   media-writing test helpers now run on a thread of their own and `scripts/test.sh` runs the tests in parallel again (B63).
+- Fixed: a layer detail value changed just before picking another layer went to the newly picked layer (B80).
 
 - Hardening: one engine per user (`engine.lock`), cumulative frame counters in
   `/metrics`, show mode hides the cursor over the outputs.
