@@ -51,6 +51,11 @@ Mac, each with the file number a console dials (see
 [show-control.md](show-control.md#built-in-content-folder-0)). Select an item
 and use **Play on layer** to put it on a layer from here.
 
+A Syphon server keeps its number, also across engine restarts, until you
+forget it: select a server that is not running and press **Forget**, or press
+**Forget all not running** above the list. Its number is then free for the
+next new server; **Undo** brings it back.
+
 ## Create a folder
 
 On the Media screen press **New folder**, type a number (the first free one is

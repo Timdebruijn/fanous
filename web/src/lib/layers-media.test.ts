@@ -50,14 +50,15 @@ describe('media names', () => {
 
 describe('folder 0 (B61)', () => {
   const servers = [
-    { file: 151, app: 'Simple Server', server: '', running: false },
+    { file: 151, app: 'Simple Server', server: '', running: false, gone: true as const },
     { file: 150, app: 'fanousd', server: 'Fanous – Canvas', running: true },
   ];
   it('lists the generators, then the Syphon servers by number with their state', () => {
     const items = folderZeroItems(servers);
     expect(items.slice(0, GENERATORS.length).map((i) => i.file)).toEqual(GENERATORS.map((g) => g.file));
     expect(items.slice(GENERATORS.length).map((i) => i.label)).toEqual(['150 · Syphon: fanousd/Fanous – Canvas', '151 · Syphon: Simple Server (not running)']);
-    expect(items.at(-1)).toMatchObject({ syphon: true, running: false, name: 'Syphon: Simple Server' });
+    expect(items.at(-1)).toMatchObject({ syphon: true, running: false, gone: true, name: 'Syphon: Simple Server' });
+    expect(items.at(-2)).toMatchObject({ running: true, gone: false });
     expect(folderZeroItems(undefined)).toHaveLength(GENERATORS.length);
   });
   it('shows a gone server by name with "not running" on the layer', () => {

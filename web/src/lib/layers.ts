@@ -38,12 +38,14 @@ export function syphonName(server: SyphonServerDoc): string {
 }
 
 /** Folder 0 as a list: the generators, then the Syphon servers of other apps by number (150–169, B61). */
-export function folderZeroItems(servers: SyphonServerDoc[] | undefined): { file: number; name: string; syphon: boolean; running: boolean; label: string }[] {
+export function folderZeroItems(
+  servers: SyphonServerDoc[] | undefined,
+): { file: number; name: string; syphon: boolean; running: boolean; gone: boolean; label: string }[] {
   const syphon = [...(servers ?? [])].sort((a, b) => a.file - b.file).map((s) => {
     const name = `Syphon: ${syphonName(s)}`;
-    return { file: s.file, name, syphon: true, running: s.running, label: `${s.file} · ${name}${s.running ? '' : ' (not running)'}` };
+    return { file: s.file, name, syphon: true, running: s.running, gone: s.gone === true, label: `${s.file} · ${name}${s.running ? '' : ' (not running)'}` };
   });
-  return [...GENERATORS.map((g) => ({ ...g, syphon: false, running: true, label: `${g.file} · ${g.name}` })), ...syphon];
+  return [...GENERATORS.map((g) => ({ ...g, syphon: false, running: true, gone: false, label: `${g.file} · ${g.name}` })), ...syphon];
 }
 
 export interface ChannelMap {

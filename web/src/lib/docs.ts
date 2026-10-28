@@ -23,6 +23,8 @@ export interface ProjectDoc {
   canvases: CanvasConfig[];
   /** layer number → canvas id; a layer not listed is on canvas 1 (`layer.set`) */
   layerCanvas?: Record<string, number>;
+  /** Syphon numbering by folder 0 file "150"–"169" (B69): written by the engine, freed by `syphon.forget` */
+  syphon?: Record<string, { app: string; server: string }>;
   /** per-universe receive settings (`universe.set`, B28); a universe without an entry runs the defaults */
   universes?: UniverseSettingsDoc[];
   outputs: OutputConfig[];
@@ -162,6 +164,8 @@ export interface SyphonServerDoc {
   app: string;
   server: string; // "" = the app's only, unnamed server
   running: boolean;
+  /** from the project and not announced since the engine started (B69) */
+  gone?: true;
 }
 
 export interface IngestJobDoc {
@@ -238,7 +242,7 @@ export interface LiveDoc {
   /** Project versions (B23): when the last automatic version was saved (epoch s, null = none) and a counter bumped on every save or delete. */
   versions?: { lastAutomatic: number | null; serial: number } | null;
   /** Other apps' Syphon servers, numbered in folder 0 (B61). Absent from engines before B61. */
-  syphon?: { servers: SyphonServerDoc[] };
+  syphon?: { servers: SyphonServerDoc[]; /** running servers past the 20 numbers, "App/Server" (B69) */ unnumbered?: string[] };
   /** Multi-server sync (B60); null without rendering, absent from engines before B60. */
   sync?: SyncLiveDoc | null;
 }
