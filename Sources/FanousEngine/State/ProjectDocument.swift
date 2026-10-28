@@ -255,9 +255,11 @@ public enum ProjectDocument {
 
     /// `showModeOn`: canvas format changes are refused while show mode is on (they re-initialise the canvas).
     /// `checkLibraryRoot`: throws when the engine cannot switch to that root now (B51); gets the expanded absolute path.
+    /// `applySync`: restarts the sync sender and receiver with saved settings; throws when the port cannot be bound.
     public static func registerCommands(
         on store: StateStore, auth: RoleAuth, showModeOn: @escaping @Sendable () -> Bool = { false },
-        checkLibraryRoot: @escaping @Sendable (String) throws -> Void = { _ in }
+        checkLibraryRoot: @escaping @Sendable (String) throws -> Void = { _ in },
+        applySync: @escaping @Sendable (SyncSettings) throws -> Void = { _ in }
     ) {
         store.register(
             CommandSpec(
@@ -493,6 +495,39 @@ public enum ProjectDocument {
                 } catch {
                     throw CommandError("failed", "cannot save settings: \(error)")
                 }
+                return nil
+            })
+        store.register(
+            CommandSpec(
+                name: "sync.set", role: .programmer, undoable: false,
+                summary: "Multi-server sync settings: interface (any, en0, an IPv4 address), port (1–65535, default 8002), target (broadcast, or IPv4[:port]); machine setting, not part of the project; applies live; refused in show mode.",
+                argsType: "{ interface?: string; port?: number; target?: string }"
+            ) { _, args in
+                var members: [String: JSONValue] = [:]  // only these are written; the others keep the file's values (B79)
+                guard args["interface"] != nil || args["port"] != nil || args["target"] != nil else { throw CommandError.invalidArgs("args: { interface?, port?, target? }") }
+                if let value = args["interface"] {
+                    guard let interface = value.string, !interface.isEmpty else { throw CommandError.invalidArgs("interface must be any, an interface name or an address") }
+                    members["interface"] = .string(interface)
+                }
+                if let value = args["port"] {
+                    guard let port = value.int, (1...65535).contains(port) else { throw CommandError.invalidArgs("port must be 1–65535") }
+                    // sACN shares its port with SO_REUSEPORT: a sync receiver there would take sACN datagrams
+                    let taken = [ArtNet.port, SACN.port, OSCReceiver.defaultPort, OSCReceiver.defaultPort + 1]
+                    guard !taken.contains(UInt16(port)) else { throw CommandError.invalidArgs("port \(port) is used by Art-Net, sACN or OSC") }
+                    members["port"] = .number(Double(port))
+                }
+                if let value = args["target"] {
+                    guard let target = value.string, SyncSettings.isValidTarget(target) else { throw CommandError.invalidArgs("target must be broadcast or an IPv4 address with an optional :port") }
+                    members["target"] = .string(target)
+                }
+                guard !showModeOn() else { throw CommandError("showMode", "sync settings cannot change in show mode; leave show mode first") }
+                let sync: SyncSettings
+                do {
+                    sync = try auth.setSync(members)
+                } catch {
+                    throw CommandError("failed", "cannot save settings: \(error)")
+                }
+                try applySync(sync)
                 return nil
             })
         registerUniverseCommands(on: store)

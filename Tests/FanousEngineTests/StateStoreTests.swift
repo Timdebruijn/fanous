@@ -316,6 +316,43 @@ extension StateStoreTests {
         #expect((canvas.width, canvas.height, canvas.fps, canvas.name) == (3840, 2160, 50, "Canvas 1"))
     }
 
+    /// B60: `sync.set` validates, writes `settings.json` › `sync` next to the passwords, applies, and is refused in show mode.
+    @Test func syncSetValidatesSavesAndApplies() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "sync-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appending(path: "settings.json")
+        let auth = RoleAuth(settingsURL: file, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
+        try auth.setPassword("pw", for: .programmer)
+        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/x", policy: .dmx), logger: Self.logger)
+        let showMode = Mutex(false), applied = Mutex<[SyncSettings]>([])
+        ProjectDocument.registerCommands(
+            on: store, auth: auth, showModeOn: { showMode.withLock { $0 } }, applySync: { s in applied.withLock { $0.append(s) } })
+        func stored() throws -> JSONValue? { try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: file))["sync"] }
+
+        _ = try store.execute("sync.set", args: ["port": 48812, "target": "127.0.0.1:48813"], role: .programmer).get()
+        #expect(try stored() == ["port": 48812, "target": "127.0.0.1:48813"], "only the members given are written")
+        _ = try store.execute("sync.set", args: ["interface": "en0", "target": "broadcast"], role: .programmer).get()
+        #expect(try stored() == ["interface": "en0", "port": 48812, "target": "broadcast"], "fields left out keep their value")
+        #expect(applied.withLock { $0.map(\.port) } == [48812, 48812])
+        #expect(auth.verify("pw", for: .programmer), "the passwords stay in the file")
+        #expect(MachineSettings.load(from: file).sync?.interface == "en0")
+        #expect(store.rev == 0, "a machine setting, not a project change")
+
+        for bad: JSONValue in [
+            [:], ["port": 0], ["port": 65536], ["port": 8002.5], ["port": "8002"], ["port": 6454], ["port": 5568], ["port": 8000], ["port": 8001],
+            ["interface": ""], ["interface": 1],
+            ["target": "nope"], ["target": "10.0.0.256"], ["target": "10.0.0.2:0"], ["target": "10.0.0.2:x"], ["target": "10.0.0.2:1:2"],
+        ] {
+            #expect(store.execute("sync.set", args: bad, role: .programmer).failureCode == "invalidArgs", "\(bad)")
+        }
+        #expect(store.execute("sync.set", args: ["port": 9000], role: .operator).failureCode == "forbidden")
+        showMode.withLock { $0 = true }
+        #expect(store.execute("sync.set", args: ["port": 9000], role: .programmer).failureCode == "showMode")
+        #expect(try stored()?["port"]?.int == 48812)
+        #expect(applied.withLock { $0.count } == 2)
+    }
+
     /// B31: undo in show mode changes the project but not the render until show mode ends; a failed switch puts the
     /// rendered canvas back into the project and reports the error.
     @MainActor @Test func canvasSwitchDefersInShowModeAndRevertsOnFailure() async throws {

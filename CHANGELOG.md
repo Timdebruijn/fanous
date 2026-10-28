@@ -40,6 +40,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   as video sources (B41, scaling to a requested size still open).
 - Layer channel 51 **Sync** (off / master group 1–8 / slave group 1–8) in the channel map, GDTF and OSC, and the
   `FSYN` clock packet codec; nothing sends or follows it yet (B60 step 2, DESIGN §23).
+- Multi-server sync in the engine (B60 step 3): master layers send their clock on UDP 8002 (broadcast, or a unicast
+  target in `settings.json` › `sync`), slave layers follow their group's master, freewheel and go lost after 2 s;
+  `live.sync`, per-layer `sync` state, two readiness items and `sync` counters in `/metrics`. No UI yet.
+- Multi-server sync in the UI (B60 step 4): `M3`/`S3` badges and the state in the layer detail, a "sync lost"
+  status-bar item, System › Sync with the `sync.set` command for interface, port and target, and
+  `docs/user/multi-server.md`.
 - Per-universe settings on the Patch screen: protocol, interface, hold-on-loss and sACN priority (B28). sACN
   listens on all interfaces and shares its port with other sACN apps on the Mac; readiness warns about a
   missing or unusable interface and a failed sACN bind.
@@ -100,6 +106,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   switch, DMX patch, output windows) may still follow (B62).
 - Fixed: a parallel `swift test` of the engine suite hung (every cooperative-pool thread waiting in `finishWriting`); the
   media-writing test helpers now run on a thread of their own and `scripts/test.sh` runs the tests in parallel again (B63).
+- Fixed: a layer detail value changed just before picking another layer went to the newly picked layer (B80).
+- Fixed: the GDTF's last channel set of Play mode, Control and other banded channels ran to 255 (a console showed
+  "Scrub" for 144–255); the exporter now ends each with a set for the rest named after the band the engine decodes there (B72).
 
 - Hardening: one engine per user (`engine.lock`), cumulative frame counters in
   `/metrics`, show mode hides the cursor over the outputs.
@@ -137,6 +146,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   never finished starting, its log ending at that step (B66). A preview's encoder is now made, for its first H.264 viewer, and released with
   the last; JPEG previews and CITP streaming need none. A browser that gets no H.264 description within 5 s falls back
   to JPEG (B66).
+- The preview e2e tests wait up to 30 s on CI for the preview to stream (H.264 or JPEG) instead of 5 s (B81).
+- Fixed: MTC timecode flickered between Locked and Freewheel while the sender ran; the lock window is now 1.5 times
+  the source's update interval (MTC assembles a time every 2 frames, LTC decodes every frame) (B65).
+- Fixed: `roles.setPassword` and `sync.set` re-read `settings.json` and write only the role's password or the sync members
+  given, so unknown fields, records that could not be read at start and hand edits to the other fields stay in the file; a
+  file that does not parse is refused, not overwritten (B79).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

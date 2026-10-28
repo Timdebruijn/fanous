@@ -45,6 +45,29 @@ struct ShowControlTests {
         #expect(clock.current(at: 14).state == .off)
     }
 
+    /// B65: the lock window is 1.5 of the source's update intervals. MTC assembles a time every 2 frames (80 ms at
+    /// 25 fps) and stays locked between them; LTC (every frame) keeps the 60 ms window.
+    @Test func timecodeClockLockWindowFollowsTheSourcesUpdateInterval() {
+        let clock = TimecodeClock()
+        clock.freewheelSeconds = 2
+        var flickers: [Double] = []
+        for i in 0..<25 {  // 2 s of MTC: an update every 2 frames
+            let t = 10 + Double(i) * 0.08
+            clock.update(Timecode(frameCount: 90_000 + 2 * i, rate: .fps25), at: t, source: "MTC", everyFrames: 2)
+            for step in 0..<8 where clock.current(at: t + Double(step) * 0.01).state != .locked { flickers.append(t + Double(step) * 0.01) }
+        }
+        #expect(flickers.isEmpty, "locked between MTC updates: \(flickers)")
+        let last = 10 + 24 * 0.08
+        #expect(clock.current(at: last + 0.11).state == .locked, "within 1.5 intervals (120 ms)")
+        #expect(clock.current(at: last + 0.13).state == .freewheel, "past 1.5 intervals")
+        #expect(clock.current(at: last + 1.9).state == .freewheel)
+        #expect(clock.current(at: last + 2.1).state == .lost, "lost after the freewheel time")
+        clock.update(Timecode(frameCount: 90_000, rate: .fps25), at: 20, source: "LTC")
+        #expect(clock.current(at: 20.05).state == .locked, "LTC: within 1.5 frames (60 ms)")
+        #expect(clock.current(at: 20.07).state == .freewheel, "LTC: past 1.5 frames, as before")
+        #expect(clock.current(at: 22.1).state == .lost)
+    }
+
     /// Acceptance: chase accuracy ±1 frame against a generated LTC file (the decoder → clock path of `LTCInput`).
     @Test func ltcFileChasesWithinOneFrame() throws {
         let sampleRate = 48_000.0
@@ -103,6 +126,7 @@ struct ShowControlTests {
         let sample = clock.current(at: 5.08)
         #expect(sample.state == .locked)
         #expect(sample.frameCount == tc.frameCount + 2, "quarter-frame time is two frames behind")
+        #expect(clock.current(at: 5.17).state == .locked, "100 ms after the last piece: MTC promises a time every 2 frames (B65)")
         // full-frame SysEx F0 7F 7F 01 01 hh mm ss ff F7 as a 64-bit UMP (start + end)
         let sysex: [UInt8] = [0x7F, 0x7F, 0x01, 0x01, UInt8(1 << 5) | 2, 3, 4, 5]
         let first = (UInt32(3) << 28) | (UInt32(1) << 20) | (UInt32(6) << 16) | (UInt32(sysex[0]) << 8) | UInt32(sysex[1])
@@ -199,10 +223,11 @@ struct ShowControlTests {
         context.outputsBound = 1
         context.modeIssues = ["Output 1: unavailable"]
         context.layerErrors = []
+        context.syncLost = ["Layer 2 (group 1)"]
         context.libraryRoot = NSHomeDirectory()
         let items = Readiness.check(context, acknowledged: ["dmx"])
         let ids = items.map(\.id)
-        #expect(ids == ["power", "thermal", "disk", "memory", "dmx", "interfaces", "sacnport", "outputs", "modes", "decoders", "library", "spotlight", "updates", "timemachine", "focus", "displaysleep", "hardware"])
+        #expect(ids == ["power", "thermal", "disk", "memory", "dmx", "interfaces", "sacnport", "outputs", "modes", "syncmaster", "syncpackets", "decoders", "library", "spotlight", "updates", "timemachine", "focus", "displaysleep", "hardware"])
         let dmx = items.first { $0.id == "dmx" }!
         #expect(dmx.state == .fail && dmx.acknowledged && !dmx.blocks)
         let outputs = items.first { $0.id == "outputs" }!
@@ -213,6 +238,9 @@ struct ShowControlTests {
         let interfaces = items.first { $0.id == "interfaces" }!
         #expect(interfaces.state == .warn && !interfaces.blocks && interfaces.detail == "not usable: sacn:2: en5")
         #expect(items.first { $0.id == "hardware" }!.state == .ok)
+        #expect(items.first { $0.id == "syncmaster" }!.state == .ok)
+        let sync = items.first { $0.id == "syncpackets" }!
+        #expect(sync.state == .warn && !sync.blocks && sync.detail.contains("Layer 2 (group 1)"))
         #expect(items.first { $0.id == "library" }!.state == .ok)
         #expect(items.allSatisfy { !$0.fix.isEmpty && !$0.detail.isEmpty })
     }

@@ -49,6 +49,9 @@ public final class Engine: @unchecked Sendable {
     /// Frames and missed frames per second from the metric totals, sampled once a second (no percentile sort).
     private let oscFrameRate = Mutex((at: 0.0, frames: 0, missed: 0, fps: Float(0), missedLast: Int32(0)))
     private var render: RenderService?
+    /// Multi-server sync (DESIGN.md §23); made with the render service.
+    private var syncReceiver: SyncReceiver?
+    private var syncSender: SyncSender?
     /// Replaced when the library root changes (B51); read from the HTTP, CITP, loader and feed threads.
     private let libraryBox = Mutex<LibraryIndex?>(nil)
     private var library: LibraryIndex? { libraryBox.withLock { $0 } }
@@ -217,7 +220,7 @@ public final class Engine: @unchecked Sendable {
             }
             // OSC feedback (B36) only with the network: no feedback target is reached under --no-network
             let oscFeedback = OSCFeedbackServer(
-                fixed: MachineSettings.load(from: AppPaths.settingsFile, logger: logger).oscFeedback, logger: logger,
+                fixed: MachineSettings.load(from: AppPaths.settingsFile).oscFeedback, logger: logger,  // RoleAuth logs the file's problems
                 fixtures: { dmx.resolvedRaw() }, engine: { [weak self] in self?.oscFeedbackState() ?? [:] })
             self.oscFeedback = oscFeedback
             let osc = OSCReceiver(store: dmx, logger: logger, feedback: oscFeedback)
@@ -280,6 +283,7 @@ public final class Engine: @unchecked Sendable {
                 }
             }
             render = service
+            startSync(compositor: service.compositor)
         }
 
         // Phase 5: roles, the project and live documents and the WebSocket state server (DESIGN.md §11).
@@ -290,7 +294,8 @@ public final class Engine: @unchecked Sendable {
         let store = StateStore(project: project, logger: logger)
         ProjectDocument.registerCommands(
             on: store, auth: auth, showModeOn: { [weak self] in self?.showMode.isOn ?? false },
-            checkLibraryRoot: { [weak self] root in if let refusal = self?.libraryRootRefusal(root) { throw refusal } })
+            checkLibraryRoot: { [weak self] root in if let refusal = self?.libraryRootRefusal(root) { throw refusal } },
+            applySync: { [weak self] in try self?.applySync($0) })
         libraryRootInProject.withLock { $0 = URL(fileURLWithPath: project["library"]?["root"]?.string ?? libraryRoot.path).path }
         // B23: a version of the project as loaded, then one every 10 minutes when it changed, and one per show-mode enter
         let versions = ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger)
@@ -613,6 +618,12 @@ public final class Engine: @unchecked Sendable {
                 if let audio = self.render?.mixer?.statistics {
                     m["audio"] = ["callbacks": .number(Double(audio.callbacks)), "underruns": .number(Double(audio.underruns)), "corrections": .number(Double(audio.corrections)), "maxDriftMs": .number(audio.maxDriftMillis)]
                 }
+                if let receiver = self.syncReceiver, let sender = self.syncSender {
+                    m["sync"] = [
+                        "packetsIn": .number(Double(receiver.packetsIn.load(ordering: .relaxed))), "packetsOut": .number(Double(sender.packetsOut.load(ordering: .relaxed))),
+                        "decodeErrors": .number(Double(receiver.decodeErrors.load(ordering: .relaxed))),
+                    ]
+                }
                 if let preview = stateServer.preview {
                     m["preview"] = [
                         "framesIn": .number(Double(preview.framesIn)), "framesOut": .number(Double(preview.framesOut)), "skipped": .number(Double(preview.skipped)),
@@ -669,6 +680,9 @@ public final class Engine: @unchecked Sendable {
                 var text = metrics.summary(seconds: 10, now: CACurrentMediaTime()).description
                 if let audio = self.render?.mixer?.statistics {
                     text += String(format: "\naudio: callbacks %llu  underruns %llu  corrections %llu  max drift %.1f ms", audio.callbacks, audio.underruns, audio.corrections, audio.maxDriftMillis)
+                }
+                if let receiver = self.syncReceiver, let sender = self.syncSender {
+                    text += "\nsync: packets in \(receiver.packetsIn.load(ordering: .relaxed))  out \(sender.packetsOut.load(ordering: .relaxed))  decode errors \(receiver.decodeErrors.load(ordering: .relaxed))"
                 }
                 return .text(200, text)
             default:
@@ -731,6 +745,78 @@ public final class Engine: @unchecked Sendable {
             logger.error("preview output compile failed", metadata: ["output": "\(output.id)", "error": "\(error)"])
             return false
         }
+    }
+
+    /// The receiver binds 127.0.0.1 only and the sender sends to 127.0.0.1 only with `--no-network`. A port in use
+    /// leaves the receiver unbound (logged): local groups and sending still work.
+    private func startSync(compositor: Compositor) {
+        let settings = MachineSettings.load(from: AppPaths.settingsFile).sync ?? SyncSettings()  // RoleAuth logs its problems
+        let machine = UUID(uuidString: Self.installUUID()) ?? UUID()
+        let receiver = SyncReceiver(machine: machine, logger: logger)
+        do {
+            try receiver.start(port: settings.port, loopbackOnly: !options.network)
+        } catch {
+            logger.error("sync port in use; not receiving sync packets", metadata: ["port": "\(settings.port)", "error": "\(error)"])
+        }
+        let sender = SyncSender(machine: machine, settings: settings, network: options.network, logger: logger)
+        sender.start()
+        compositor.sync = (receiver, sender)
+        syncReceiver = receiver
+        syncSender = sender
+    }
+
+    /// `sync.set`: the receiver rebinds, the sender sends its next packet to the new target. Without rendering there
+    /// is neither; the saved settings apply at the next start.
+    private func applySync(_ settings: SyncSettings) throws {
+        guard let receiver = syncReceiver, let sender = syncSender else { return }
+        sender.apply(settings)
+        receiver.stop()
+        do {
+            try receiver.start(port: settings.port, loopbackOnly: !options.network)
+        } catch {
+            logger.error("sync port in use; not receiving sync packets", metadata: ["port": "\(settings.port)", "error": "\(error)"])
+            throw CommandError("failed", "saved, but sync port \(settings.port) is in use: not receiving sync packets")
+        }
+    }
+
+    /// `live.layers[n].sync`: the layer's role and, for a slave playing a file, its state and master.
+    private func syncLive(_ s: LayerSyncStatus) -> JSONValue {
+        switch s.role {
+        case .off: return ["role": "off"]
+        case .master(let group): return ["role": "master", "group": .number(Double(group))]
+        case .slave(let group):
+            return [
+                "role": "slave", "group": .number(Double(group)), "state": s.state.map { .string($0.rawValue) } ?? .null,
+                "offsetMs": .number((s.offsetMs * 100).rounded() / 100), "master": s.master.map(syncMaster) ?? .null,
+            ]
+        }
+    }
+
+    /// A master as `live` shows it; the name only for this machine (the packet carries none).
+    private func syncMaster(_ entry: SyncTable.Entry) -> JSONValue {
+        var m: [String: JSONValue] = ["machine": .string(entry.machine.uuidString), "layer": .number(Double(entry.clock.layer))]
+        if entry.machine == syncReceiver?.machine { m["name"] = .string(SystemInfo.hostName) }
+        return .object(m)
+    }
+
+    /// `live.sync`: settings, counters, the fresh master per group and the groups with a second master.
+    private func syncLive() -> JSONValue {
+        guard let receiver = syncReceiver, let sender = syncSender else { return .null }
+        // element by element: a copy sharing the table's storage would make the compositor's next write reallocate
+        var table = SyncTable()
+        receiver.table.withLock { table.copy(from: $0) }
+        let now = CACurrentMediaTime()
+        var masters: [String: JSONValue] = [:]
+        for (i, entry) in table.entries.enumerated() {
+            if let entry, now - entry.receivedAt <= SlaveClock.freewheelSeconds { masters["\(i + 1)"] = syncMaster(entry) }
+        }
+        return [
+            "machine": .string(receiver.machine.uuidString), "interface": .string(sender.settings.interface),
+            "port": .number(Double(sender.settings.port)), "target": .string(sender.settings.target),
+            "packetsIn": .number(Double(receiver.packetsIn.load(ordering: .relaxed))), "packetsOut": .number(Double(sender.packetsOut.load(ordering: .relaxed))),
+            "decodeErrors": .number(Double(receiver.decodeErrors.load(ordering: .relaxed))), "masters": .object(masters),
+            "conflicts": .array((1...LayerSync.groups).filter { table.conflict(group: $0, now: now) != nil }.map { .number(Double($0)) }),
+        ]
     }
 
     // MARK: Show control
@@ -887,7 +973,7 @@ public final class Engine: @unchecked Sendable {
             "onAC": .bool(power.onAC), "power": .string(power.detail), "memoryFreeFraction": .number((memory.fraction * 1000).rounded() / 1000),
             "memoryGB": .number(Double(SystemInfo.physicalMemoryBytes / 1_073_741_824)), "os": .string(SystemInfo.osVersion), "host": .string(SystemInfo.hostName),
             "addresses": .array(addresses.map { .string($0) }),
-            "interfaces": .array(interfaces.map { ["name": .string($0.name), "address": .string($0.address)] }), "port": .number(Double(options.port)),
+            "interfaces": .array(interfaces.map { ["name": .string($0.name), "address": .string($0.address), "broadcast": .bool($0.broadcast), "multicast": .bool($0.multicast)] }), "port": .number(Double(options.port)),
             "tlsFingerprint": .string(tlsFingerprint), "bonjour": .string((server?.advertisedServices ?? []).map { "\($0.name ?? "").\($0.type)" }.joined(separator: ", ")),
         ]
     }
@@ -938,6 +1024,36 @@ public final class Engine: @unchecked Sendable {
         context.modeIssues = modeChecks.withLock { $0 }.sorted { $0.key < $1.key }.compactMap { id, check in check.issue.map { "Output \(id): \($0)" } }
         context.layerErrors = (render?.layers ?? []).compactMap { layer in layer.mediaStatus.withLock { $0.error.map { "Layer \(layer.index + 1): \($0)" } } }
         context.libraryRoot = library?.snapshot.root ?? ""
+        var masters: [Int: Int] = [:]
+        for layer in render?.layers ?? [] {
+            let s = layer.syncStatus.withLock { $0 }
+            // a master publishes only with a movie of more than one frame playing (as `Compositor.publishMaster`)
+            if case .master(let group) = s.role, layer.mediaStatus.withLock({ $0.kind == "movie" && $0.frames > 1 }) {
+                masters[group, default: 0] += 1
+            }
+            guard case .slave(let group) = s.role, let state = s.state else { continue }
+            let name = "Layer \(layer.index + 1) (group \(group))"
+            switch state {
+            case .noMaster: context.syncMasterIssues.append("\(name): no master")
+            case .conflict: context.syncMasterIssues.append("\(name): two masters")
+            case .lost: context.syncLost.append(name)
+            case .locked, .freewheel: break
+            }
+        }
+        // also without a slave here: a second master on this machine, or one another machine outranks
+        for (group, count) in masters.sorted(by: { $0.key < $1.key }) where count > 1 {
+            context.syncMasterIssues.append("Group \(group): \(count) masters on this machine")
+        }
+        if let receiver = syncReceiver {
+            var table = SyncTable()
+            receiver.table.withLock { table.copy(from: $0) }
+            let now = CACurrentMediaTime()
+            // only where this machine's own master is the one ignored; a conflict it wins is the other machine's to report
+            for group in 1...LayerSync.groups where table.conflict(group: group, now: now) == receiver.machine {
+                let winner = table.entries[group - 1]?.machine.uuidString ?? "another machine"
+                context.syncMasterIssues.append("Group \(group): this machine's master is outranked by \(winner)")
+            }
+        }
         return context
     }
 
@@ -1401,6 +1517,7 @@ public final class Engine: @unchecked Sendable {
                         "name": s.name.map { .string($0) } ?? .null, "kind": .string(s.kind), "codec": .string(s.codec),
                         "width": .number(Double(s.width)), "height": .number(Double(s.height)), "fps": .number(s.fps),
                         "frames": .number(Double(s.frames)), "frame": .number(Double(layer.currentFrame)), "error": s.error.map { .string($0) } ?? .null,
+                        "sync": syncLive(layer.syncStatus.withLock { $0 }),
                     ]
                 }),
             "clients": ["count": .number(Double(store.clientCount)), "lagging": .number(Double(store.laggingClients))],
@@ -1429,6 +1546,7 @@ public final class Engine: @unchecked Sendable {
             "midi": midiLive(),
             "citp": citpLive(),
             "versions": versions?.live ?? .null,
+            "sync": syncLive(),
             "syphon": [
                 "servers": .array(
                     (render?.syphonCatalog.servers ?? []).map { s in
@@ -1493,6 +1611,8 @@ public final class Engine: @unchecked Sendable {
         library?.stop()
         artnet?.stop()
         sacn?.stop()
+        syncSender?.stop()
+        syncReceiver?.stop()
         osc?.stop()
         oscFeedback?.stop()
         dmx?.stop()

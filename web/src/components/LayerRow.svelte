@@ -6,6 +6,7 @@
   import { clampPercent, findParam, formatPercent, layerState, mediaLine, playedPercent, policyName, positionCaption } from '../lib/layers';
   import { layerCanvas } from '../lib/outputs';
   import { lockTitle } from '../lib/show';
+  import { syncStatus } from '../lib/sync';
   import { app, can, cmd } from '../lib/state.svelte';
 
   let {
@@ -29,6 +30,7 @@
 
   const media = $derived(mediaLine(layer));
   const status = $derived(layerState(layer));
+  const sync = $derived(syncStatus(n, layer?.sync, app.live.sync));
   const isMovie = $derived(layer?.kind === 'movie');
   const intensity = $derived(findParam(params, 'intensity'));
   const playMode = $derived(findParam(params, 'playMode'));
@@ -66,6 +68,7 @@
     {:else}
       <span class="caption">{canvasName}</span>
     {/if}
+    {#if sync}<span class="pill sync sync-{sync.tone}" role="img" aria-label="Sync {sync.label}: {sync.text}" title="Sync: {sync.text}">{sync.label}</span>{/if}
   </span>
   <span class="c-media tone-{media.tone}" title={media.text}>
     <span class="lbl">Media: </span>
@@ -122,6 +125,11 @@
   .c-name { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
   .canvas { min-height: 28px; height: 28px; padding: 0 6px; font-size: 12px; max-width: 100%; }
   .nm { font-weight: 600; font-size: 14px; }
+  .sync { height: 20px; padding: 0 6px; margin-top: 2px; font-size: 11px; font-weight: 700; }
+  .sync-green { background: var(--green-bg); color: var(--green); }
+  .sync-yellow { background: var(--yellow-bg); color: var(--yellow); }
+  .sync-red { background: var(--red-bg); color: var(--red); }
+  .sync-grey { background: var(--surface-3); color: var(--text-2); }
   .c-media { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 13px; }
   .mdetail { font-size: 12px; }
   .tone-faint { color: var(--text-3); }

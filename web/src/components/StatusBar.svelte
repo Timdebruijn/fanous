@@ -36,6 +36,7 @@
     return `${name} · ${u.ageSeconds.toFixed(1)} s`;
   }
   const showMode = $derived(app.live.show.mode);
+  const syncLost = $derived(app.live.layers.filter((l) => l.sync?.state === 'lost').map((l) => `Layer ${l.index}`));
   const resumed = $derived(resumedText(app.live.show.resumedAt));
   const blocking = $derived(readinessSummary(app.live.show.readiness, app.live.show.checkedAt).blocking);
   /** set when entering show mode was refused: the popover under the button says why */
@@ -118,6 +119,9 @@
     <span class="mono value">{app.live.clients.count}</span>
     <span class="caption" class:yellow={app.live.clients.lagging > 0}>clients{app.live.clients.lagging > 0 ? ` · ${app.live.clients.lagging} lagging` : ''}</span>
   </div>
+  {#if syncLost.length > 0}
+    <a class="item red plain" href="#/layers" title="No sync packets for 2 s: {syncLost.join(', ')} play on their own clock (Layers)"><span class="dot dot-red"></span><span class="caption">sync lost</span></a>
+  {/if}
   {#if app.live.security.webUIOpen}
     <div class="item yellow caption"><span class="dot dot-yellow"></span> web UI open</div>
   {/if}

@@ -1552,6 +1552,10 @@ later deliverable (`[OPEN-20]`).
   then lost after the freewheel time). `live.timecode.device` lists the
   connected sources and drops a gone one at once, and `error` says "MTC source
   … is not connected" (or "no MIDI source connected") while none matches.
+  The clock counts as locked within 1.5 times the update interval the
+  source promises: one frame for LTC, two for MTC (a quarter-frame sequence assembles
+  one time every 2 frames, 80 ms at 25 fps), so MTC no longer flickers to
+  Freewheel between its updates (B65).
 - One active source per project; offset per project and per layer (Layer
   timecode chase = `tc − projectOffset − layerOffset` at the file's fps,
   looped within in/out if the layer's loop flag is set).
@@ -1979,7 +1983,7 @@ machine plays frame-locked with a layer on another. Catalyst (play mode
 To" per layer, over Ethernet) solved this on the console; Fanous does the
 same with one channel. Designed 2026-10-28 (owner review of the first draft,
 which mirrored whole machines over WSS; see ADR-0021); step 2 (the channel and
-the packet codec) is built (PR #31), the rest is not.
+the packet codec) is built (PR #31), and so are step 3 (the engine, §23.8) and step 4 (the UI, PR #35).
 
 ### 23.1 One channel: Sync, layer channel 51
 
@@ -2108,7 +2112,7 @@ other because the console sends both. The slave's dissolve runs on its own
   no packet for 2 s → yellow). Neither blocks show mode: a slave without a
   master plays on its own.
 - System screen, section **Sync**: interface, port, target (broadcast or an
-  address), packet rate in and out, machine id and name.
+  address), packet totals in and out, machine id and name.
 - `docs/user/multi-server.md`: two minis, one console, left/right halves
   with a blend, the three ways to split (slices on one full-canvas file,
   pre-split files, one canvas per machine), and the camera check.
@@ -2159,3 +2163,60 @@ not needed for the two-projector show, which is what B60 asked for.
    `docs/user/multi-server.md`.
 5. **Owner**: the two-mini camera test; then the B28 sACN network test on
    the same rig.
+
+### 23.8 As built (step 3, 2026-10-28)
+
+`Sources/FanousEngine/Sync/`: `SyncSender` (slot + thread), `SyncReceiver`
+(socket, `SyncTable`), `SlaveClock` (the arithmetic of §23.3). Where it
+differs from the text above:
+
+- **`target` may carry a port** (`127.0.0.1:48812`): a unicast datagram to a
+  port that two `SO_REUSEPORT` sockets share reaches only one of them
+  (measured on macOS 27), so two engines on one Mac listen on different ports
+  and each sends to the other's. `--no-network`: the receiver binds 127.0.0.1,
+  only a 127.0.0.1 target is sent to, a broadcast target is ignored and
+  logged. A target that does not parse sends nothing and is logged.
+- **`interface: any`** is the first up, non-loopback IPv4 interface with the
+  multicast and broadcast flags, not "the interface of universe 1"; resolved
+  every 5 s on the sender thread.
+- **`direction`** in the packet is the movement direction (reverse play mode
+  × bounce direction), so a slave in any play mode asks its decoder for the
+  right side.
+- **Locked** means an entry younger than 1.5 ticks *or 50 ms*, so a 30 fps
+  master against a 60 fps slave (a packet every other tick) stays locked.
+- **Only the current file follows**: a dissolve's outgoing picture keeps its
+  own clock. A layer that stops following gets direction forward and
+  "not finished" back (the master's were never its own).
+- **Freewheel wraps like a loop, lock clamps**: a shorter slave file holds its
+  last frame while locked and loops while freewheeling.
+- The slave's black end (`finished` with a once-black mode) comes from its
+  own play mode; the packet has no such flag.
+- **Local masters** go into the compositor's copy of the table right after
+  their layer is prepared (a slave on a higher layer number sees the same tick,
+  offset 0; a lower one sees the previous tick, extrapolated) and into the
+  shared table at the end of the tick.
+- **`offsetMs`** is the correction a locked tick applies: the entry's
+  position against the slave's previous position advanced by the entry's
+  rate (a whole-file jump, the master looping, does not count). "Implied minus
+  shown" would be 0 by construction while locked.
+- **Two masters**: the slave shows `conflict` while a second machine was seen
+  in its group within the freewheel time, and follows the winner. Machine ids
+  compare by their bytes, which is the order of their `uuidString`. Readiness
+  "Sync groups have one master" also counts two masters in one group on this
+  machine and a group in which another machine outranks this one, with or
+  without a slave.
+- A master in the Timecode play mode, or with in = out, sends rate 0: a
+  remote slave is not extrapolated (it lags up to one tick plus the latency),
+  stands still while freewheeling and plays no audio. A slave's audio plays
+  when its master moves at 1× forward, without a loop region (its own in/out
+  do not apply). Freeze-all on the slave machine holds a slave like any other
+  layer; the first tick after it relocks.
+- `live.sync` carries packet totals (`packetsIn`, `packetsOut`,
+  `decodeErrors`) and the machine id instead of `packetsPerSecond`; the UI
+  shows the totals. A master's `name` is shown for masters on this machine only.
+- The two-engine check of §23.5 is manual (`docs/DEVELOPMENT.md`); the bench
+  numbers are printed by `SyncCompositorTests`, which asserts no allocation.
+- Step 4: **`sync.set {interface?, port?, target?}`** (programmer, refused in show mode) writes `settings.json` ›
+  `sync` through `RoleAuth` and applies live (the receiver rebinds, the sender resolves its new target before the
+  next packet), so the settings are no longer file-only. Folder 0 content (generators, Syphon) is a live source and
+  neither sends nor follows, so the camera check of §23.5 uses a frame-numbered movie, not the clock generator.

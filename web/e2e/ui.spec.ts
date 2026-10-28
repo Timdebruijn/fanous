@@ -4,8 +4,11 @@
 // Browser end-to-end tests against a real engine (fixtures.ts). Few and robust: each covers a flow whose bugs unit
 // tests cannot see (wrong JSON pointers, overlapping handles, subscription races).
 import type { Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import { copyFileSync, mkdirSync, mkdtempSync } from 'node:fs';
+import { join } from 'node:path';
 import { previewClass } from '../src/lib/preview';
-import { expect, openScreen, test } from './fixtures';
+import { binary, expect, expectPreviewStreaming, openScreen, previewTimeout, repo, test } from './fixtures';
 
 type Param = { key: string; raw: number; source: string };
 
@@ -67,6 +70,51 @@ test('layers: a layer showing built-in content gets a live thumbnail, an empty l
   // 4 atlas passes a second: the row's picture turns live (default timeout: CI's paravirtual Metal is slow)
   await expect(row.locator('img[data-live="true"]')).toBeVisible();
   await expect(page.locator('.row.layer').nth(0).locator('img[data-live="true"]')).toHaveCount(0);
+});
+
+test('sync: a slave layer locks to a master layer of its group, and loses it when the master goes off (B60)', async ({ page, engine }) => {
+  // a 2 s movie as folder 1 file 1 of a new library (generators and stills have no clock to share), switched to on
+  // the System screen
+  const frames = mkdtempSync(join(engine.home, 'frames-'));
+  for (let i = 1; i <= 50; i++) copyFileSync(join(repo, 'Tests/Fixtures/golden/baseline.png'), join(frames, `${String(i).padStart(3, '0')}.png`));
+  const library = join(engine.home, 'library');
+  mkdirSync(join(library, '001_Sync'), { recursive: true });
+  execFileSync(binary, ['ingest', frames, join(library, '001_Sync/001_clip.mov'), '--codec', 'hap']);
+  await openScreen(page, 'System');
+  await page.getByLabel('Library root path').fill(library);
+  await page.getByRole('region', { name: 'Machine' }).getByRole('button', { name: 'Apply' }).click();
+  await openScreen(page, 'Layers');
+
+  const rows = page.locator('.row.layer');
+  const sync = page.getByRole('combobox', { name: 'Sync', exact: true });
+  async function setUp(n: number, band: string) {
+    await rows.nth(n - 1).click();
+    await expect(page.getByRole('heading', { name: `Layer ${n}` })).toBeVisible();
+    await page.getByLabel('Media from the library').selectOption('1/1');
+    await sync.selectOption({ label: band });
+  }
+  await rows.first().click();
+  await page.getByRole('switch', { name: 'Control' }).check({ force: true }); // the drawn track covers the input
+  await page.getByRole('button', { name: /^Use / }).click();
+  await expect(page.getByLabel('Media from the library').locator('option[value="1/1"]')).toHaveCount(1);
+  await setUp(1, 'Master 1');
+  await setUp(2, 'Slave 1');
+
+  const master = rows.nth(0).locator('.sync');
+  const slave = rows.nth(1).locator('.sync');
+  await expect(master).toHaveText('M1');
+  await expect(master).toHaveAttribute('title', 'Sync: master of group 1, sending');
+  await expect(slave).toHaveText('S1');
+  await expect(slave).toHaveAttribute('title', /^Sync: locked to Layer 1 on /);
+  await expect(slave).toHaveClass(/sync-green/);
+  await expect(page.locator('.syncline')).toHaveText(/^locked to Layer 1 on .+, −?\d+\.\d ms$/);
+
+  // master off: the slave freewheels, then is lost 2 s after the last clock
+  await rows.nth(0).click();
+  await sync.selectOption('0');
+  await expect(master).toHaveCount(0);
+  await expect(slave).toHaveAttribute('title', /^Sync: (lost|no master)/);
+  await expect(slave).toHaveClass(/sync-(red|grey)/);
 });
 
 test('media: folder 0 lists the generators and the Syphon servers, and puts one on a layer', async ({ page }) => {
@@ -145,7 +193,7 @@ test('canvases: add a canvas, put a layer on it, remove it', async ({ page }) =>
   const canvases = page.getByRole('group', { name: 'Canvas', exact: true });
   await expect(canvases.getByRole('button', { name: 'Canvas 2' })).toBeVisible();
   // its preview really starts once the canvas renders (B62): one left on "starting…" or "connecting…" fails here
-  await expect(page.getByRole('figure').locator('figcaption')).toContainText(/H\.264|JPEG/);
+  await expectPreviewStreaming(page.getByRole('figure'));
 
   await openScreen(page, 'Layers');
   await page.getByLabel('Canvas of layer 2').selectOption({ label: 'Canvas 2' });
@@ -175,8 +223,8 @@ test('preview: Canvas / This layer and fast layer switching leave one stream run
   await page.goto(`${engine.url}/?token=${engine.token}`);  // again, with the listener above in place
 
   const shows = page.getByRole('group', { name: 'Preview shows' });
-  const caption = page.getByRole('figure').locator('figcaption');
-  await expect(caption).toContainText(/H\.264|JPEG/);
+  const figure = page.getByRole('figure');
+  await expectPreviewStreaming(figure);
 
   await shows.getByRole('button', { name: 'This layer' }).click();
   // faster than a subscription round trip: each new layer is picked while the previous stream is still on its way
@@ -186,11 +234,11 @@ test('preview: Canvas / This layer and fast layer switching leave one stream run
       await new Promise((r) => setTimeout(r, 5));
     }
   });
-  await expect(caption).toContainText(/(H\.264|JPEG).* · Layer 8/);
+  await expectPreviewStreaming(figure, 'Layer 8');
   await expect.poll(() => streams.size).toBe(1);
 
   await shows.getByRole('button', { name: 'Canvas' }).click();
-  await expect(caption).toContainText(/(H\.264|JPEG).* · Canvas/);
+  await expectPreviewStreaming(figure, 'Canvas');
   await expect.poll(() => streams.size).toBe(1);
 });
 
@@ -226,14 +274,20 @@ test("preview: an output stream has the output's shape and the size of its box (
   };
   const w = await wanted();
   await expect.poll(() => told.at(-1)).toEqual({ w, h: (w * 9) / 16 });
-  expect([...codecs]).toEqual(['avc']);
+  // the `sub` reply alone has that size: wait for the stream itself, or the browser's JPEG fallback (5 s without a
+  // description, B66) adds a subscription below; this test needs H.264, JPEG streams have no descriptions
+  const figure = page.getByRole('figure');
+  await expectPreviewStreaming(figure);
+  const jpeg = /JPEG/.test(await figure.locator('figcaption').innerText());
+  test.skip(!!process.env.CI && jpeg, 'H.264 encoder not ready within 5 s on this runner (B66); JPEG fallback');
+  expect([...codecs], 'H.264, not the JPEG fallback').toEqual(['avc']);
 
   // a 4:3 region: the engine rebuilds the stream and says so in a new description; no new subscription is needed
   const before = subs;
   const region = page.getByLabel('Region w', { exact: true });
   await region.fill('1440');
   await region.press('Tab');
-  await expect.poll(() => told.at(-1)).toEqual(fourThree(w));
+  await expect.poll(() => told.at(-1), { timeout: previewTimeout }).toEqual(fourThree(w));  // a new encoder session
   expect(subs).toBe(before);
 
   // a narrower window: the preview asks for the smaller class it now needs

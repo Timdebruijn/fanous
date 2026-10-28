@@ -3,15 +3,15 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Every test gets its own real engine: `fanousd --no-network` on a free port with FANOUS_HOME in a fresh temporary
 // directory, so it never touches the user's data, logs or library and runs next to an engine on 8443.
-import { test as base, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { test as base, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { copyFileSync, existsSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-const repo = resolve(import.meta.dirname, '../..');
-const binary = process.env.FANOUSD ?? join(repo, '.build/debug/fanousd');
+export const repo = resolve(import.meta.dirname, '../..');
+export const binary = process.env.FANOUSD ?? join(repo, '.build/debug/fanousd');
 const webRoot = join(repo, 'web/dist');
 
 export type Engine = { url: string; home: string; token: string; api: APIRequestContext };
@@ -134,4 +134,14 @@ export { expect };
 
 export async function openScreen(page: Page, name: 'Layers' | 'Media' | 'Outputs' | 'Patch' | 'Show' | 'System'): Promise<void> {
   await page.getByRole('navigation', { name: 'Screens' }).getByRole('link', { name }).click();
+}
+
+// The engine makes a preview's H.264 encoder for its first viewer; on the CI VM that VideoToolbox session can take
+// seconds (B66), and the browser shows "connecting…" until the first description, or JPEG after 5 s without one (B81).
+export const previewTimeout = process.env.CI ? 30_000 : 5_000;
+
+/** Waits until the preview in `figure` streams, H.264 or the JPEG fallback, showing `source` ("Layer 8") if given. */
+export async function expectPreviewStreaming(figure: Locator, source?: string): Promise<void> {
+  const caption = source ? new RegExp(`(H\\.264|JPEG).* · ${source}`) : /H\.264|JPEG/;
+  await expect(figure.locator('figcaption')).toContainText(caption, { timeout: previewTimeout });
 }

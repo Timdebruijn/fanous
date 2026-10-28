@@ -35,6 +35,30 @@ every role open):
 FANOUS_HOME=$(mktemp -d) .build/debug/fanousd --foreground --no-network --port 18443
 ```
 
+Multi-server sync on one Mac (DESIGN.md §23): two such engines, each with its
+own sync port in `settings.json` and the other's port as a unicast target (a
+unicast datagram reaches only one of two sockets sharing a port, and
+`--no-network` sends to 127.0.0.1 only), the same file as folder 1 file 1:
+
+```bash
+for e in A:48802:48812 B:48812:48802; do
+  IFS=: read name port peer <<< "$e"
+  mkdir -p "/tmp/sync/$name/Library/Application Support/Fanous"
+  echo "{\"sync\": {\"port\": $port, \"target\": \"127.0.0.1:$peer\"}}" > "/tmp/sync/$name/Library/Application Support/Fanous/settings.json"
+done
+echo '{"layerCount": 2, "policy": "ltp", "audio": false, "syphonOutput": false,
+ "media": [{"folder": 1, "file": 1, "path": "/path/clip.mov"}]}' > /tmp/sync/scene.json
+FANOUS_HOME=/tmp/sync/A .build/debug/fanousd --foreground --no-network --port 48443 --scene /tmp/sync/scene.json &
+FANOUS_HOME=/tmp/sync/B .build/debug/fanousd --foreground --no-network --port 48444 --scene /tmp/sync/scene.json &
+```
+
+Then on both engines (UI or `cmd` over the WebSocket, `fixture.set` on
+`Layer 1`): intensity full, folder 1, file 1; Sync raw 10 (master group 1) on
+A and 90 (slave group 1) on B. B's live document shows
+`layers[0].sync = {role: "slave", state: "locked", offsetMs, master}` and
+`sync.packetsIn` counting at the tick rate; Sync off on A turns B to
+`freewheel`, then `lost` after 2 s. `/metrics` › `sync` has the packet totals.
+
 Browser end-to-end tests (`web/e2e/`, Playwright with Chromium) run the built
 UI against such an engine, one engine per test on a free port with a fresh
 temporary `FANOUS_HOME`, opened as the shell does (`?token=` from that home, so

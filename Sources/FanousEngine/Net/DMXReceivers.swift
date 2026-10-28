@@ -273,7 +273,10 @@ public final class OSCReceiver: @unchecked Sendable {
     /// B36: `get`, `subscribe`, `unsubscribe` and `ping`; nil ignores them.
     private let feedback: OSCFeedbackServer?
 
-    public init(store: DMXStore, logger: Logger, port: UInt16 = 8000, feedback: OSCFeedbackServer? = nil) {
+    /// OSC in; 8001 next to it is reserved for OSC out (DESIGN.md OPEN-24).
+    public static let defaultPort: UInt16 = 8000
+
+    public init(store: DMXStore, logger: Logger, port: UInt16 = defaultPort, feedback: OSCFeedbackServer? = nil) {
         self.store = store
         self.logger = logger
         self.port = port

@@ -123,6 +123,37 @@ export interface LayerStatus {
   frames: number;
   frame: number; // current frame index
   error: string | null;
+  /** Layer channel 51 (B60, DESIGN §23); absent from engines before B60. */
+  sync?: LayerSyncDoc;
+}
+
+/** A group's master as the engine saw it; `name` only for a master on the engine's own machine. */
+export interface SyncMasterDoc {
+  machine: string;
+  layer: number;
+  name?: string;
+}
+
+/** `live.layers[n].sync`: state, offset and master only for a slave; state null = no movie playing on it. */
+export interface LayerSyncDoc {
+  role: 'off' | 'master' | 'slave';
+  group?: number;
+  state?: 'locked' | 'freewheel' | 'lost' | 'noMaster' | 'conflict' | null;
+  offsetMs?: number;
+  master?: SyncMasterDoc | null;
+}
+
+/** `live.sync`: this machine's id, the settings, packet totals, the fresh master per group ("1"–"8"), groups with two masters. */
+export interface SyncLiveDoc {
+  machine: string;
+  interface: string;
+  port: number;
+  target: string;
+  packetsIn: number;
+  packetsOut: number;
+  decodeErrors: number;
+  masters: Record<string, SyncMasterDoc>;
+  conflicts: number[];
 }
 
 /** A Syphon server of another app as folder 0 file 150–169 (B61); a gone server keeps its number, running false. */
@@ -185,8 +216,8 @@ export interface LiveDoc {
     os: string;
     host: string;
     addresses: string[];
-    /** every IPv4 interface address, loopback included (universe Interface choices) */
-    interfaces?: { name: string; address: string }[];
+    /** every IPv4 interface address, loopback included (universe Interface choices); broadcast and multicast: usable for sync */
+    interfaces?: { name: string; address: string; broadcast?: boolean; multicast?: boolean }[];
     port: number;
     tlsFingerprint: string;
     bonjour: string;
@@ -208,6 +239,8 @@ export interface LiveDoc {
   versions?: { lastAutomatic: number | null; serial: number } | null;
   /** Other apps' Syphon servers, numbered in folder 0 (B61). Absent from engines before B61. */
   syphon?: { servers: SyphonServerDoc[] };
+  /** Multi-server sync (B60); null without rendering, absent from engines before B60. */
+  sync?: SyncLiveDoc | null;
 }
 
 export interface ReadinessItemDoc {

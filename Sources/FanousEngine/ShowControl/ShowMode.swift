@@ -211,6 +211,10 @@ public struct ReadinessContext: Sendable {
     public var modeIssues: [String] = []
     public var layerErrors: [String] = []
     public var libraryRoot: String = ""
+    /// "Layer 2 (group 1): no master" / "…: two masters" for slaves playing a file.
+    public var syncMasterIssues: [String] = []
+    /// "Layer 2 (group 1)" for slaves playing a file whose master is lost.
+    public var syncLost: [String] = []
     public var hardwareSupported = true
     public init() {}
 }
@@ -253,6 +257,16 @@ public enum Readiness {
                 id: "modes", title: "Outputs in their desired display mode", state: context.modeIssues.isEmpty ? .ok : .warn,
                 detail: context.modeIssues.isEmpty ? "applied in show mode, or none set" : context.modeIssues.joined(separator: "; "),
                 fix: "Pick an available mode for the output (Outputs › Mode), or set it in System Settings › Displays"))
+        items.append(
+            ReadinessItem(
+                id: "syncmaster", title: "Sync groups have one master", state: context.syncMasterIssues.isEmpty ? .ok : .warn,
+                detail: context.syncMasterIssues.isEmpty ? "every slave in use has one master, or none in use" : context.syncMasterIssues.joined(separator: "; "),
+                fix: "Set exactly one layer per group to master (Sync channel); a slave without a master plays on its own"))
+        items.append(
+            ReadinessItem(
+                id: "syncpackets", title: "Sync packets arriving", state: context.syncLost.isEmpty ? .ok : .warn,
+                detail: context.syncLost.isEmpty ? "arriving, or no slave in use" : "lost (freewheeling): \(context.syncLost.joined(separator: "; "))",
+                fix: "Check the master machine and the network; sync uses UDP port 8002 by default (System › Sync)"))
         add("decoders", "No decoder errors", context.layerErrors.isEmpty, context.layerErrors.isEmpty ? "none" : context.layerErrors.joined(separator: "; "), "Fix or replace the failing media")
         let local = volumeIsLocal(context.libraryRoot)
         add("library", "Library on a local volume", local, local ? "local" : "network or removable volume", "Copy the library to the internal disk")
