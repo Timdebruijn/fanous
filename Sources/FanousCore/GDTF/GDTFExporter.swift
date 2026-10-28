@@ -155,7 +155,12 @@ public enum GDTFExporter {
         x += "            <LogicalChannel Attribute=\"\(attribute.name)\" Snap=\"\(spec.isContinuous ? "No" : "Yes")\" Master=\"None\" MibFade=\"0\" DMXChangeTimeLimit=\"0\">\n"
         let physicalFrom = spec.physical(fromRaw: 0), physicalTo = spec.physical(fromRaw: spec.rawMax)
         x += "              <ChannelFunction Name=\"\(function)\" Attribute=\"\(attribute.name)\" OriginalAttribute=\"\" DMXFrom=\"0/\(bytes)\" Default=\"\(spec.defaultRaw)/\(bytes)\" PhysicalFrom=\"\(num(physicalFrom))\" PhysicalTo=\"\(num(physicalTo))\" RealFade=\"0\" RealAcceleration=\"0\">\n"
-        if case .bands(let bands, _) = spec.kind {
+        if case .bands(var bands, let fallback) = spec.kind {
+            // A ChannelSet has no DMXTo: it runs to the next set's DMXFrom − 1. Close the last band with the
+            // band the engine decodes for the unbanded rest, so a console does not stretch the last one to 255.
+            if let last = bands.last, last.to < 255, let rest = bands.first(where: { $0.value == fallback }) {
+                bands.append(Band(from: last.to + 1, to: 255, name: rest.name, value: rest.value))
+            }
             for band in bands {
                 x += "                <ChannelSet Name=\"\(esc(band.name))\" DMXFrom=\"\(band.from)/1\" PhysicalFrom=\"\(band.value)\" PhysicalTo=\"\(band.value)\"/>\n"
             }
