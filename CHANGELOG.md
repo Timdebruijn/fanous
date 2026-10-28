@@ -168,6 +168,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: removing a canvas ended the preview of a viewer that watched it only as a fallback (an output or layer at the
   encoder limit); it now keeps its own target when an encoder or another fallback is free, and an encoder the removal
   frees goes to a waiting viewer (B88).
+- Fixed: the shell token test failed 1 run in 16, when the token ended in "0" (B84).
+- Fixed: undoing `syphon.forget` overwrote a Syphon number another server had taken meanwhile; the undo is now refused (B90).
+- Fixed: the preview left its H.264 decoder open after every target change and disconnect; it now closes it (B85).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

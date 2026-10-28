@@ -28,6 +28,13 @@
   // the width the stream was asked for (B32): the rendered width in device pixels, so a small box gets a small stream
   let asked: number | undefined;
   const measure = () => (canvas ? wantedWidth(canvas.getBoundingClientRect().width, window.devicePixelRatio) : undefined);
+  // the H.264 decoder of the current stream: closed by `pause()` (target change, disconnect, hidden tab) and on unmount
+  // (B85); a decoder that failed closed itself, so `close()` (which throws then) only on one that is still open
+  let decoder: VideoDecoder | null = null;
+  function closeDecoder() {
+    if (decoder && decoder.state !== 'closed') decoder.close();
+    decoder = null;
+  }
 
   async function start() {
     if (!canvas || hidden || !ready) return;
@@ -36,7 +43,6 @@
     const run = latest.begin();
     asked = measure();
     const supportsWebCodecs = 'VideoDecoder' in window && 'EncodedVideoChunk' in window;
-    let decoder: VideoDecoder | null = null;
     let configured = false;
     let sawKey = false;
 
@@ -55,8 +61,7 @@
       if (!run.current()) return;  // a late error of a stream that was already replaced
       const jpegRun = latest.begin();
       detail = why;
-      decoder?.close();
-      decoder = null;
+      closeDecoder();
       stop?.();
       stop = null;  // a refused JPEG request must not leave the stopped stream behind: reconnects restart from null
       let sub: Awaited<ReturnType<typeof subscribePreview>>;
@@ -96,7 +101,7 @@
       const sub = await subscribePreview(
         'avc',
         (kind, payload) => {
-          if (kind !== 1 || !decoder || !configured || payload.length < 9) return;
+          if (kind !== 1 || decoder?.state !== 'configured' || payload.length < 9) return;
           const key = payload[0] === 1;
           if (!sawKey && !key) return;
           sawKey = true;
@@ -113,7 +118,8 @@
           try {
             const support = await VideoDecoder.isConfigSupported(config);
             if (!support.supported) throw new Error('config not supported');
-            decoder?.close();
+            if (!run.current()) return;  // paused (or fallen back) while the check ran: no decoder for a stopped stream
+            closeDecoder();
             decoder = new VideoDecoder({ output: drawBitmap, error: (e) => void fallbackToJPEG(`decoder: ${e.message}`) });
             decoder.configure(config);
             configured = true;
@@ -150,6 +156,7 @@
     latest.cancel();  // a subscription still on its way is stopped when it arrives
     stop?.();
     stop = null;
+    closeDecoder();
     mode = 'connecting';  // no stale "H.264 · …" caption while the next stream is asked for
     lastFrame = 0;
     stalled = false;
@@ -199,6 +206,7 @@
       latest.cancel();  // unmounted while subscribing: that stream stops when it arrives
       stop?.();
       stop = null;
+      closeDecoder();
     };
   });
 
