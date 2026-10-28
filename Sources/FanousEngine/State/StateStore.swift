@@ -20,13 +20,14 @@ public struct CommandSpec: Sendable {
     public var summary: String
     /// Arguments schema for `protocol.d.ts`, as a TypeScript type literal (`{ path: string; value: unknown }`).
     public var argsType: String
-    /// Checked before undo or redo replays this command's history entry; a thrown `CommandError` refuses the step.
-    public var replayCheck: (@Sendable () throws -> Void)?
+    /// Checked before undo or redo replays this command's history entry, with the patch the step would apply and the
+    /// project as it is now; a thrown `CommandError` refuses the step (the entry stays, unless the code is `historyConflict`).
+    public var replayCheck: (@Sendable (JSONPatch, JSONValue) throws -> Void)?
     public var run: @Sendable (inout JSONValue, JSONValue) throws -> JSONValue?
 
     public init(
         name: String, role: Role, mutatesConfig: Bool = true, undoable: Bool = true, summary: String, argsType: String = "Record<string, never>",
-        replayCheck: (@Sendable () throws -> Void)? = nil, run: @escaping @Sendable (inout JSONValue, JSONValue) throws -> JSONValue?
+        replayCheck: (@Sendable (JSONPatch, JSONValue) throws -> Void)? = nil, run: @escaping @Sendable (inout JSONValue, JSONValue) throws -> JSONValue?
     ) {
         self.name = name
         self.role = role
@@ -195,8 +196,10 @@ public final class StateStore: @unchecked Sendable {
     private func step(from source: inout [HistoryEntry], to target: inout [HistoryEntry]) -> Result<CommandResult, CommandError> {
         guard let last = source.last else { return .failure(CommandError("nothingToUndo", "history is empty")) }
         do {
-            try commands[last.name]?.replayCheck?()
+            try commands[last.name]?.replayCheck?(last.inverse, projectDocument)
         } catch let error as CommandError {
+            // a conflict does not clear up by itself (B90): the entry goes, as one that no longer applies does below
+            if error.code == "historyConflict" { source.removeLast() }
             return .failure(error)
         } catch {
             return .failure(CommandError("failed", "\(error)"))
