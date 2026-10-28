@@ -22,8 +22,9 @@ stay in `docs/marketing/positioning-internal.md`.
    - Their live-preview path is NDI: MA3, and also MagicQ, Onyx and Titan. Per
      the survey, Eos also takes an SRT/RTSP H.264 stream.
    - Our CITP/MSEX therefore reaches only MA2, MagicQ, Hog 4, Onyx and Titan.
-   - NDI is planned as a paid closed plugin. That choice decides whether the
-     main persona sees Fanous on the desk at all.
+   - NDI is designed as a closed plugin and deferred for its licence
+     obligations (§4, B74). Until it lands, an MA3 programmer sees no
+     Fanous picture on the desk.
 2. **Live input is the one gap every product closes.**
    - Cameras or capture cards: all 6 Mac tools, all 5 console-native servers
      and 5 of 6 touring servers. Fanous takes Syphon only.
@@ -114,7 +115,7 @@ priority for each row comes from §4.
 | # | Capability | Who has it | Fanous | Effort |
 |---|---|---|---|---|
 | G1 | Camera/capture input: UVC, and capture cards with a macOS driver | CN 5/5 · HE 5/6 · Mac 6/6 | `—` (folder 0, files 1–32 reserved, never built) | M: `AVCaptureSession` → `CVMetalTextureCache`, same ring path as Syphon |
-| G2 | NDI in and out | CN 3/5 (Ai pulled it) · HE 6/6 in · Mac 6/6 in; **the live-preview path of MA3, MagicQ, Onyx and Titan** | `D`: paid closed plugin (ADR-0016) | M, plus the plugin loader |
+| G2 | NDI in and out | CN 3/5 (Ai pulled it) · HE 6/6 in · Mac 6/6 in; **the live-preview path of MA3, MagicQ, Onyx and Titan** | `D`: closed plugin (ADR-0016), deferred for its licence (B74) | M, plus the plugin loader |
 | G3 | Screen/window capture: slides, presentation and lyrics apps | Millumin, VDMX, Isadora, Mitti | `—` | S–M: ScreenCaptureKit, same path as G1 |
 | G4 | Text layer: static and live text over OSC/API, countdown, SRT subtitles | CN 4/5 · HE 5/6 · Mac 5/6 | `◐` clock generator only | M: CoreText into a folder 0 generator; text set over OSC/WebSocket |
 | G5 | Transitions beyond crossfade: through black, fade-up-first, wipes, shader transitions | CN 4/5 (Hippotizer 3, Ai 38, Mbox ~66) · Resolume, Millumin | `◐` crossfade 0.1–25.5 s | S for through black and fade-up-first; M for a catalogue. Needs 1–2 reserved channels |
@@ -183,18 +184,25 @@ priority for each row comes from §4.
 ## 4. Proposed priorities
 
 **P1: close before 1.0 or right after.** These are the gaps a first user hits.
-1. **G2 NDI.** Owner decision: keep it paid, or ship NDI out (at least) free.
-   - Recommendation: free NDI out, because for grandMA3 users it is the only
-     way to see Fanous on the desk. NDI in can stay Pro.
-   - Check the NDI SDK licence terms for a free plugin first.
-2. **G1 and G3: live inputs** through AVFoundation and ScreenCaptureKit, in
+1. **G1 and G3: live inputs** through AVFoundation and ScreenCaptureKit, in
    folder 0, files 1–32 (already reserved). They need no SDK and are safe
    under the GPL.
-3. **G44 and G45: audio device selection** and per-layer channel pairs (B4 and
+2. **G44 and G45: audio device selection** and per-layer channel pairs (B4 and
    DESIGN §10).
-4. **G4: text layer** with text set over OSC.
-5. **G22 and G23: desk personalities and CITP compliance**, together with the
+3. **G4: text layer** with text set over OSC.
+4. **G22 and G23: desk personalities and CITP compliance**, together with the
    desk tests of B7 and B40.
+
+**Deferred: G2 NDI** (owner, 2026-10-28: later if the licence is a nuisance).
+- Nothing blocks it: the SDK is royalty-free on macOS, with no key or fee.
+- The obligations are the nuisance:
+  - our own EULA carrying NDI's terms
+  - an indemnity
+  - keeping up with the latest SDK
+  - termination on 30 days' notice
+  - trademark rules
+- Pick it up with the legal review in `docs/RELEASE.md` §7. Details are in
+  B74.
 
 **P2: v1.x**, roughly in this order:
 1. G5 transitions
@@ -286,7 +294,9 @@ reported it.
 - ChamSys's free 8-layer server against the removal of MagicHD.
 - Hippotizer hot backup.
 - Pandoras Box V10 DMX tables (the 8.11 help file was used).
-- NDI SDK licence terms for a free build (G2).
+- NDI SDK, read on 2026-10-28 (licence text of 2025-08-21). Two points are
+  open: whether `libndi.dylib` may be bundled (§2d), and whether the 6.3.2
+  licence differs (B74).
 
 ## 8. Sources (main pages per product)
 
