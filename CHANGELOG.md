@@ -158,7 +158,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   when the connection closes and subscribes again, once, when it is back (B68).
 - Fixed: the 4 preview encoders bounded extra sizes only, so viewers on several targets could run more; the limit now holds
   across targets (a fallback size of the target or its canvas, else JPEG), and a released encoder goes to a viewer on a size or
-  canvas fallback (a viewer refused to JPEG stays on JPEG in the browser) (B70). `/metrics` `preview.encoders` now counts H.264
+  canvas fallback (a viewer refused to JPEG stays on JPEG in the browser, until B86) (B70). `/metrics` `preview.encoders` now counts H.264
   encoders: canvas 1 always, the others while they have an H.264 subscriber; JPEG-only streamers no longer count. It is a
   reservation count: for a few ms around an asynchronous release and create a fifth session can exist.
 - Fixed: engine tests that slept a fixed time or waited a fixed budget failed in a parallel run on a loaded Mac; they now

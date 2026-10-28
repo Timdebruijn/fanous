@@ -54,6 +54,8 @@
     const drawJPEG = async (payload: Uint8Array) => {
       if (!canvas) return;
       const bitmap = await createImageBitmap(new Blob([payload as BlobPart], { type: 'image/jpeg' }));
+      // decoded after the H.264 path started: it must not set the canvas back to its size (`drawBitmap` compares widths)
+      if (mode === 'avc' && configured) return bitmap.close();
       if (canvas && (canvas.width !== bitmap.width || canvas.height !== bitmap.height)) {
         canvas.width = bitmap.width;
         canvas.height = bitmap.height;
@@ -67,6 +69,7 @@
       detail = why;
       decoder?.close();
       decoder = null;
+      configured = false;
       stop?.();
       stop = null;  // a refused JPEG request must not leave the stopped stream behind: reconnects restart from null
       let sub: Awaited<ReturnType<typeof subscribePreview>>;
@@ -98,8 +101,19 @@
       const sub = await subscribePreview(
         'avc',
         (kind, payload) => {
-          // refused to JPEG (B70): its frames until a `stream` description moves it to H.264, none of them after that
-          if (kind === 2 && !configured) void drawJPEG(payload);
+          // JPEG on this stream: refused at the encoder limit (B70), or moved back to JPEG by the engine (B88); drawn,
+          // and a later `stream` description upgrades it again (the engine moves a subscriber in one step)
+          if (kind === 2) {
+            if (configured) {
+              if (decoder?.state !== 'closed') decoder?.close();
+              decoder = null;
+              configured = false;
+              mode = 'jpeg';
+              detail = 'H.264 stopped by the engine';
+            }
+            void drawJPEG(payload);
+            return;
+          }
           if (kind !== 1 || !decoder || !configured || payload.length < 9) return;
           const key = payload[0] === 1;
           if (!sawKey && !key) return;

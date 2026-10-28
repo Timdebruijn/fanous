@@ -330,11 +330,11 @@ test('preview: a viewer refused H.264 at the encoder limit shows JPEG at once an
   await page.getByRole('button', { name: 'Add canvas' }).click();
   await page.getByRole('group', { name: 'Canvas', exact: true }).getByRole('button', { name: 'Canvas 2' }).click();
   const figure = page.getByRole('figure');
-  await expect.poll(() => subs).toBe(1);
+  await expect.poll(() => subs, { timeout: previewTimeout }).toBe(1);
   // the refusal says `codec: "jpeg"`: JPEG at once (not after 5 s without a description), and its frames are drawn
   await expect(figure.locator('figcaption')).toContainText(/^JPEG 5 fps · .* · H\.264 encoders busy/, { timeout: 3_000 });
   const drawn = () => figure.locator('canvas').evaluate((c: HTMLCanvasElement) => c.getContext('2d')!.getImageData(c.width / 2, c.height / 2, 1, 1).data[3]);
-  await expect.poll(drawn).toBe(255);
+  await expect.poll(drawn, { timeout: previewTimeout }).toBe(255);
 
   // the other client lets go of one encoder: the engine moves the refused viewer to its own H.264 stream, on the same
   // subscription
