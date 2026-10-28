@@ -149,11 +149,18 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - The preview e2e tests wait up to 30 s on CI for the preview to stream (H.264 or JPEG) instead of 5 s (B81).
 - Fixed: MTC timecode flickered between Locked and Freewheel while the sender ran; the lock window is now 1.5 times
   the source's update interval (MTC assembles a time every 2 frames, LTC decodes every frame) (B65).
+- Fixed: CITP layer status and secondary displays read the parameter triple buffer beside the compositor, so the DMX
+  writer could fill the slot the compositor was rendering from; they now read a copy the writer keeps (B71).
 - Fixed: `roles.setPassword` and `sync.set` re-read `settings.json` and write only the role's password or the sync members
   given, so unknown fields, records that could not be read at start and hand edits to the other fields stay in the file; a
   file that does not parse is refused, not overwritten (B79).
 - Fixed: a preview that was streaming stayed frozen ("no new frames") after a reconnect; it now lets go of its stream
   when the connection closes and subscribes again, once, when it is back (B68).
+- Fixed: the 4 preview encoders bounded extra sizes only, so viewers on several targets could run more; the limit now holds
+  across targets (a fallback size of the target or its canvas, else JPEG), and a released encoder goes to a viewer on a size or
+  canvas fallback (a viewer refused to JPEG stays on JPEG in the browser) (B70). `/metrics` `preview.encoders` now counts H.264
+  encoders: canvas 1 always, the others while they have an H.264 subscriber; JPEG-only streamers no longer count. It is a
+  reservation count: for a few ms around an asynchronous release and create a fifth session can exist.
 - Fixed: engine tests that slept a fixed time or waited a fixed budget failed in a parallel run on a loaded Mac; they now
   poll with a deadline or probe the listener first, so `scripts/test.sh` stays green under load (B67).
 

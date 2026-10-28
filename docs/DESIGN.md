@@ -88,10 +88,10 @@ names the invariant.
 | Thread / queue | Kind | QoS | Owns | Hot-path rule |
 |---|---|---|---|---|
 | **Compositor** | `Thread` with its own RunLoop hosting the master `CAMetalDisplayLink` | `.userInteractive` | layer clocks, canvas render passes, output pass for outputs on the master display, preview downscale | zero allocations, no locks, no Swift Concurrency |
-| **Output-N** (one per non-master display) | `Thread` + RunLoop + `CAMetalDisplayLink` | `.userInteractive` | output pass + present for that display | reads latest completed canvas texture via atomic index |
+| **Output-N** (one per non-master display) | `Thread` + RunLoop + `CAMetalDisplayLink` | `.userInteractive` | output pass + present for that display | reads latest completed canvas texture via atomic index; parameters from the DMX side's copy under its lock (one fixed-size copy per frame, ADR-0002 amendment) |
 | **Decode-L** (one per layer) | `Thread` | `.userInitiated` | demux + decode for layer L, frame ring producer | preallocated pixel-buffer/texture pool, no allocations after warm-up |
 | **HAP chunk pool** | fixed pool of P-core-count threads | `.userInitiated` | Snappy/DXT chunk decode for all HAP layers | work items are preallocated slots |
-| **DMX** | serial `DispatchQueue` (Network.framework requires a queue) | `.userInteractive` | Art-Net/sACN receive, parse, universe buffers, parameter resolution | packet → parameters in one pass, no allocations; measured latency, see §13 |
+| **DMX** | serial `DispatchQueue` (Network.framework requires a queue) | `.userInteractive` | Art-Net/sACN receive, parse, universe buffers, parameter resolution | packet → parameters in one pass, no allocations; measured latency, see §13; one bounded lock per published snapshot, for the non-render copy (ADR-0002 amendment) |
 | **Control** | serial `DispatchQueue` | `.userInitiated` | project model, commands, undo, cue engine, OSC, publishes scene config + parameter snapshots to render side | may allocate; never touched by render threads |
 | **Audio out** | CoreAudio real-time render callback (`AVAudioSourceNode`) | RT | mixes per-layer PCM rings | RT-safe, no allocations/locks |
 | **Audio in / LTC** | CoreAudio real-time input callback (`AVAudioSinkNode`) | RT | LTC bit decoding | RT-safe |
@@ -111,7 +111,10 @@ names the invariant.
 - *DMX/Control → Render:* a triple-buffered `ParameterSnapshot` (plain
   `Float`/`UInt8` fields, one struct per layer plus master/outputs). Writer
   (resolution step on the DMX queue) publishes a slot index atomically; the
-  compositor reads the latest at the start of each tick. Values from internal
+  compositor reads the latest at the start of each tick. The compositor is the
+  only reader: other threads (CITP layer status, secondary displays) read a
+  copy the writer makes of each published slot behind a lock (`withLatest`,
+  B71). Values from internal
   sources (cues, OSC, UI) are merged into the same snapshot by the resolver
   (§7).
 - *Decode → Render:* per-layer SPSC ring of `FrameSlot`s (preallocated;
@@ -1217,8 +1220,7 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   640 always exists (CITP). With 4 encoders in total (the canvas one
   counted, `/metrics` `preview.encoders`), a new class of a target that
   already has one attaches to its nearest class (the larger on a tie) and
-  the `sub` reply says that size; a new target still gets its own encoder,
-  as before, so the limit bounds extra sizes, not targets (B70). Bit rate
+  the `sub` reply says that size; across targets since B70 (below). Bit rate
   scales with the pixels (1.5 Mbit/s at 640×360, 0.5–4 Mbit/s). A changed
   output region, layer canvas or display size rebuilds the previews
   (`shapeChanged`; existing subscribers get the new size in a `stream`
@@ -1286,6 +1288,32 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   `stream` description arrives within 5 s of the `sub` reply. The pixel
   buffer pool, texture cache and `CIContext` stay in `init` (no
   VideoToolbox).
+- **As built (encoder limit across targets, B70, 2026-10-28):** the 4 count
+  H.264 encoders: the canvas 1 streamer always, every other streamer while
+  it has an H.264 subscriber (`/metrics` `preview.encoders`; a JPEG-only
+  streamer has no session and does not count). Past 4, `PreviewHub.choose`
+  gives a new H.264 (target, class) an encoder that runs already: its
+  target's nearest class, else the nearest class of its canvas's stream
+  (`canvas:<id>`; a layer's canvas, an output's first slice's), else it is
+  refused to JPEG on its own streamer: the `sub` reply says `codec: "jpeg"`,
+  fps 5, and the browser, seeing no `stream` description, subscribes to JPEG
+  after 5 s (an `error` reply would leave it on "no preview"). The hub
+  remembers these subscribers; when an unsubscribe or a closed connection
+  releases an encoder it moves them, oldest first and up to the limit, to
+  their own (target, class) on a global queue (the streamer is made outside
+  the lock, like `attach`'s), in one step under the lock: off the fallback,
+  onto the new streamer, whose `stream` description and first key frame come
+  with its first frame (as after a rebuild). Measured: description 53 ms
+  after the close, longest gap between frames 63 ms. In the browser this
+  holds for size and canvas fallbacks only: `Preview.svelte` ignores
+  `codec: "jpeg"` and after 5 s re-subscribes as JPEG (`fallbackToJPEG`),
+  which ends the refused subscription, so a refused viewer stays on JPEG
+  until it subscribes again (B86). A canvas-stream fallback shows other
+  content than asked (the whole canvas, not the output's region or the
+  layer alone), often in another aspect (B87). A fallback streamer whose own
+  viewer left stays as it is: only fallback viewers keep it encoding, so no
+  release is seen and nothing starts a re-balance. The canvas 1 streamer's
+  own viewers are never on a fallback (it is always counted).
 
 ### 11.4 Frontend (ADR-0012)
 

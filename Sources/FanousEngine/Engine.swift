@@ -459,6 +459,13 @@ public final class Engine: @unchecked Sendable {
                 guard target.hasPrefix("output:"), let id = Int(target.dropFirst(7)), let output = outputs.first(where: { $0.id == id }) else { return false }
                 return self.previewOutput(output, in: outputs, compiler: compiler, preview: streamer)
             }
+            // B70: the canvas a layer or an output (its first slice) shows, as rendered
+            preview.canvasOf = { [weak self] target in
+                guard let use = self?.effectiveCanvasUse() else { return nil }
+                if let index = PreviewHub.layerIndex(of: target, layerCount: use.layers.count) { return use.layers[index] }
+                guard target.hasPrefix("output:"), let id = Int(target.dropFirst(7)) else { return nil }
+                return use.outputs.first { $0.id == id }?.slices.first?.canvas
+            }
 
             // CITP/MSEX (DESIGN.md §16.1): peer location, layer status, library, thumbnails, streaming frames
             if options.network {
@@ -851,10 +858,14 @@ public final class Engine: @unchecked Sendable {
 
     private func citpLayers() -> [CITPServer.LayerInfo] {
         guard let render, let dmx else { return [] }
-        let snapshot = dmx.snapshots.read()
+        // the CITP queue is not the compositor: the DMX side's copy, never `read()`; reserved first, so the lock
+        // covers only the copy (B71)
+        var parameters: [LayerParameters] = []
+        parameters.reserveCapacity(render.layers.count)
+        dmx.snapshots.withLatest { parameters.append(contentsOf: $0.layers.prefix(render.layers.count)) }
         return render.layers.map { layer in
             let s = layer.mediaStatus.withLock { $0 }
-            let p = layer.index < snapshot.layers.count ? snapshot.layers[layer.index] : LayerParameters()
+            let p = layer.index < parameters.count ? parameters[layer.index] : LayerParameters()
             let fps = max(1.0, s.fps)
             var flags: UInt32 = 0
             if s.kind == "movie" && p.intensity > 0 && p.playMode != .freeze { flags |= LayerStatus.playing }
