@@ -108,7 +108,7 @@ struct StateStoreTests {
         store.updateLive(["metrics": ["fps": 60], "dmx": ["a": 1]])
         store.updateLive(["metrics": ["fps": 59], "dmx": ["a": 1]])
         store.setLive(.number(58), at: JSONPointer(tokens: ["metrics", "fps"]))
-        try await Task.sleep(for: .milliseconds(150))
+        #expect(await waitUntil { !client.patches.isEmpty })
         let patches = client.patches
         #expect(patches.count == 1)
         let ops = try #require(patches.first?["ops"]?.array)
@@ -123,15 +123,14 @@ struct StateStoreTests {
         #expect(client.patches.count == 1)  // no change, no patch
     }
 
-    @Test func laggingClientsDropLiveButNotProject() throws {
+    @Test func laggingClientsDropLiveButNotProject() async throws {
         let (store, _) = Self.makeStore()
         let client = RecordingClient(role: .programmer)
         store.attach(client)
         client.accepting.withLock { $0 = false }
         store.updateLive(["x": 1])
         store.queue.sync {}
-        Thread.sleep(forTimeInterval: 0.1)
-        #expect(store.laggingClients == 1)
+        #expect(await waitUntil { store.laggingClients == 1 })
         #expect(client.disconnected.withLock { $0 } == nil)
         _ = try store.execute("project.set", args: ["path": "/name", "value": "x"], role: .programmer).get()
         #expect(client.disconnected.withLock { $0 } != nil)
