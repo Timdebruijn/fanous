@@ -1132,6 +1132,8 @@ client → server   {"t":"cmd","id":"c-77","name":"output.setBlend","args":{…}
 server → client   {"t":"ack","id":"c-77","ok":true,"rev":1237}  |  {"t":"ack","id":"c-77","ok":false,"error":{"code":"showLocked","message":"…"}}
 client → server   {"t":"sub","stream":"dmx","universe":"artnet:0:0:1"} / {"t":"sub","stream":"preview","target":"canvas:1","w":640}   // h and fps are ignored
 server → client   {"t":"sub","id":7,"stream":"preview",…}  |  {"t":"error","id":7,"stream":"preview","code":"badTarget","message":"…"}   // refused; an error with an id and no stream ends that stream
+client → server   {"t":"sub","stream":"thumbs"}   // live layer thumbnails (B29, §11.3)
+server → client   {"t":"sub","id":8,"stream":"thumbs","w":160,"fps":4}  |  {"t":"error","id":8,"stream":"thumbs","code":"noPreview","message":"…"}
 server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H.264 AU (AVCC) , 2 = JPEG , 3 = DMX universe (512 B) , 4 = metrics ring page
 ```
 
@@ -1230,31 +1232,55 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   `stream: "thumbs"`, code `noPreview`); `unsub` ends it. One producer
   (`Preview/ThumbnailStreamer`, owned by `PreviewHub` like the streamers) for
   every subscriber and CITP layer stream; it draws only while one of them
-  exists (`/metrics` `preview.thumbnailPasses` stands still otherwise, and with
-  nothing else watching the tick encodes no GPU work). Every
-  `ThumbnailAtlas.everyNth` tick (250 ms: every 15th at 60 fps), on the tick's
-  command buffer after the canvas pass, `Compositor.drawThumbnails` draws every
-  render layer that shows something this tick (an item with intensity > 0 on a
-  canvas that renders; the same draw items, frame lifetime and Normal blend as
-  `drawLayer`) alone into its cell of one canvas-format atlas, one render pass,
-  viewport and scissor per cell, cleared to black; cost ≤ 32 quads (64 during
-  dissolves) per pass, uniforms in three rotating thirds of one buffer. Cells
-  are 160 wide in the layer's canvas aspect (2–480 lines, even); layer i sits in
-  slot i of a 4-column grid whose slots are as tall as the tallest visible cell
-  (32 layers of 16:9: 640×720). With no visible layer there is no pass at all.
-  The atlas is copied 1:1 through the output pipeline into a pooled BGRA pixel
-  buffer (`CVMetalTextureCache`, no readback; the pool only grows); on the
-  thumbnail queue (utility) Core Image cuts one JPEG per visible cell (quality
-  0.7, 2–4 KB). Binary frames are kind 2 on the `thumbs` stream id, one per
-  layer: `[u8 layer number, 1-based][u16 width][u16 height][JPEG]`, big-endian
-  like the stream header; width and height 0 without JPEG bytes = the layer
-  shows nothing. A frame is sent only when that layer's JPEG changed (a still
-  layer costs one frame); a new subscriber first gets the current set. The
-  Layers screen subscribes while it is shown, the tab is visible and the engine
-  renders (`latestOnly` against late replies), shows each frame as an object URL
-  in its layer row (`img[data-live]`) and falls back to the library thumbnail
-  for an empty frame or without a stream. Pure functions in
-  `FanousCore.ThumbnailAtlas`. CITP layer streams (§16.1) send the same JPEGs.
+  exists (`/metrics` `preview.thumbnailPasses` stands still otherwise). Every
+  `ThumbnailAtlas.everyNth` compositor tick (250 ms: every 15th at 60 fps; it
+  asks for pixels on those ticks only, so with nothing else watching the canvas
+  is drawn 4 times a second), on the tick's command buffer after the canvas
+  pass, `Compositor.drawThumbnails` draws every render layer that shows
+  something this tick (an item with intensity > 0 on a canvas that renders; the
+  same draw items, frame lifetime and Normal blend as `drawLayer`) alone into
+  its cell of one canvas-format atlas, one render pass, viewport and scissor per
+  cell, cleared to black; cost ≤ 32 quads (64 during dissolves) per pass,
+  uniforms in three rotating thirds of one buffer. Cells are 160 wide in the
+  layer's canvas aspect (2–480 lines, even); layer i sits in slot i of a
+  4-column grid whose slots are as tall as the tallest visible cell (32 layers
+  of 16:9: 640×720). With no visible layer there is no pass at all. The atlas is
+  copied 1:1 through the output pipeline into a pooled BGRA pixel buffer
+  (`CVMetalTextureCache`, no readback; the pool only grows); on the streamer's
+  own utility queue (`org.fanous.preview.thumbnails`) Core Image cuts one JPEG
+  per visible cell (quality 0.7, 2–4 KB). While a set is still being encoded
+  the next pass is skipped (GPU pass included), so a slow encode never piles up
+  pixel buffers (`/metrics` `preview.thumbnailEncodeMs`: the last set). Binary
+  frames are kind 2 on the `thumbs` stream id, one per layer: `[u8 layer
+  number, 1-based][u16 width][u16 height][JPEG]`, big-endian like the stream
+  header; width and height 0 without JPEG bytes = the layer shows nothing. A
+  frame is sent only when that layer's JPEG changed (a still layer costs one
+  frame); a new subscriber, and one whose frame was dropped under
+  backpressure, gets the whole current set with the next pass; the set is
+  forgotten once nobody wants thumbnails. The Layers screen subscribes while it
+  is shown, the tab is visible and the engine renders (`latestOnly` against
+  late replies), shows each frame as an object URL in its layer row
+  (`img[data-live]`) and falls back to the library thumbnail for an empty frame
+  or without a stream. Pure functions in `FanousCore.ThumbnailAtlas`. CITP
+  layer streams (§16.1) send the same JPEGs (black at the layer's cell size
+  while it shows nothing).
+- **As built (lazy encoder, B66, 2026-10-28):** a streamer's
+  `VTCompressionSession` is not made with the streamer (engine start makes
+  the canvas one) but by its first H.264 consumer: the subscription (or a
+  tapped frame that wants H.264) starts `VTCompressionSessionCreate` on a
+  global queue, never on the preview queue, so a slow or stuck VideoToolbox
+  holds neither engine start nor the streamer's JPEG/CITP frames; the
+  session is installed on the preview queue and H.264 frames are skipped
+  until then. The `stream` description (avcC) still comes after `sub` and
+  before the first access unit (with the first frame of a new session). The
+  last H.264 subscriber leaving releases the session (also on the canvas
+  streamer, which lives as long as the engine). The log says "preview
+  encoder ready" (size, ms), "preview encoder not ready after 5 s",
+  "preview encoder failed" (no retry until the next H.264 subscriber) and
+  "preview encoder released". The browser falls back to JPEG when no
+  `stream` description arrives within 5 s of the `sub` reply. The pixel
+  buffer pool, texture cache and `CIContext` stay in `init` (no
+  VideoToolbox).
 
 ### 11.4 Frontend (ADR-0012)
 
