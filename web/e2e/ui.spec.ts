@@ -274,12 +274,22 @@ test('preview: a streaming preview subscribes again, once, after its socket clos
   await expectPreviewStreaming(figure);
   await expect.poll(() => streams.size).toBe(1);
 
+  // every caption from here on: after "no preview · not connected" it says "connecting…" until the stream is back
+  await figure.locator('figcaption').evaluate((caption) => {
+    const seen: string[] = ((window as unknown as { captions: string[] }).captions = []);
+    new MutationObserver(() => seen.push(caption.textContent!.trim())).observe(caption, { subtree: true, childList: true, characterData: true });
+  });
   await drop();
   await expect.poll(() => sockets, { timeout: 10_000 }).toBe(3);  // one refused attempt, then connected again
   // the caption alone cannot tell: before B68 it kept the old stream's "H.264 · …" over a frozen picture
   await expect.poll(() => streams.size, { timeout: previewTimeout }).toBe(1);
   await expectPreviewStreaming(figure);
   await expect(figure.locator('.stalled')).toHaveCount(0);
+  const captions = await page.evaluate(() => (window as unknown as { captions: string[] }).captions);
+  const closed = captions.findLastIndex((c) => c.startsWith('no preview · not connected'));
+  expect(closed, captions.join(' | ')).toBeGreaterThanOrEqual(0);
+  expect(captions[closed + 1], captions.join(' | ')).toMatch(/^connecting…/);
+  expect(captions.slice(closed + 1).filter((c) => c.startsWith('no preview')), captions.join(' | ')).toEqual([]);
   // one subscription on the new socket (a second when H.264 fell back to JPEG): no storm from the reconnect attempts
   expect(subs).toBeLessThanOrEqual(/JPEG/.test(await figure.locator('figcaption').innerText()) ? 2 : 1);
   expect(streams.size).toBe(1);

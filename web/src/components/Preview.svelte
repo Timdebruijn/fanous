@@ -207,7 +207,10 @@
   // restarts the stream
   $effect(() => {
     if (app.connection !== 'open') untrack(offline);
-    else if (!hidden && stop === null && untrack(() => mode) !== 'connecting') void start();
+    else if (!hidden && stop === null && untrack(() => mode) !== 'connecting') {
+      mode = 'connecting';  // not "no preview" (which also ignores resizes) until the stream is back
+      void start();
+    }
   });
   function offline() {
     pause();
