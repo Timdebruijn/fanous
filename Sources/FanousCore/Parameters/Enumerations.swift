@@ -20,6 +20,21 @@ public enum Effect: Int, CaseIterable, Codable, Sendable {
 
 public enum LayerControl: Int, CaseIterable, Codable, Sendable { case idle, retrigger, resyncAudio, clearError }
 
+/// Layer channel 51 (DESIGN.md §23.1). Band values: 0 off, 1–8 master group 1–8, 9–16 slave group 1–8.
+public enum LayerSync: Equatable, Sendable {
+    case off, master(group: Int), slave(group: Int)
+
+    public static let groups = 8
+
+    public init(bandValue: Int) {
+        switch bandValue {
+        case 1...Self.groups: self = .master(group: bandValue)
+        case Self.groups + 1...2 * Self.groups: self = .slave(group: bandValue - Self.groups)
+        default: self = .off
+        }
+    }
+}
+
 public enum MasterControl: Int, CaseIterable, Codable, Sendable { case normal, freezeAll, blackout }
 
 public enum OutputControl: Int, CaseIterable, Codable, Sendable { case normal, blackout, freeze }

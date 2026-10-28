@@ -22,7 +22,7 @@ public enum LayerParameter: String, CaseIterable, Codable, Sendable {
     case positionX, positionY, positionZ, scaleX, scaleY, fitMode, rotationX, rotationY, rotationZ
     case red, green, blue, brightness, contrast, saturation, hue, blendMode
     case effect1, effect1A, effect1B, effect2, effect2A, effect2B
-    case cropLeft, cropRight, cropTop, cropBottom, audioVolume, audioPan, control
+    case cropLeft, cropRight, cropTop, cropBottom, audioVolume, audioPan, control, sync
 }
 
 public enum MasterParameter: String, CaseIterable, Codable, Sendable { case intensity, control, testPattern, speed }

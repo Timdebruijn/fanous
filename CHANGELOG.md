@@ -38,6 +38,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   atlas pass on the GPU that runs only while someone watches (`sub {stream:"thumbs"}`); a layer that shows nothing
   keeps the library thumbnail. CITP consoles can stream single layers: `GVSr`/`VSrc` list the canvas and each layer
   as video sources (B41, scaling to a requested size still open).
+- Layer channel 51 **Sync** (off / master group 1–8 / slave group 1–8) in the channel map, GDTF and OSC, and the
+  `FSYN` clock packet codec; nothing sends or follows it yet (B60 step 2, DESIGN §23).
 - Per-universe settings on the Patch screen: protocol, interface, hold-on-loss and sACN priority (B28). sACN
   listens on all interfaces and shares its port with other sACN apps on the Mac; readiness warns about a
   missing or unusable interface and a failed sACN bind.

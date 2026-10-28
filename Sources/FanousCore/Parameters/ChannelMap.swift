@@ -6,7 +6,7 @@
 /// DMX decoding, GDTF export, OSC addresses, UI labels and docs/channel-map.md
 /// are all derived from these tables.
 public enum ChannelMap {
-    public static let reservedLayerChannels = 51...64
+    public static let reservedLayerChannels = 52...64
     public static let reservedMasterChannels = 7...8
     public static let reservedOutputChannels = 6...8
 
@@ -109,7 +109,17 @@ public enum ChannelMap {
         l(.audioVolume, "Audio volume", 48, 8, 0, percent(), "Audio"),
         l(.audioPan, "Audio pan", 49, 8, 128, centred8, "Audio"),
         l(.control, "Control", 50, 8, 0, bands(width: 8, ["Idle", "Retrigger", "Resync audio", "Clear error"]), "Control"),
+        l(.sync, "Sync", 51, 8, 0, syncBands, "Playback"),
     ]
+
+    /// Layer channel 51 (DESIGN.md §23.1): band value v (1–16) covers 10v…10v+9; `LayerSync(bandValue:)` decodes it.
+    static let syncBands: ParameterKind = .bands(
+        [Band(from: 0, to: 9, name: "Off", value: 0)]
+            + (1...2 * LayerSync.groups).map { v in
+                let name = v <= LayerSync.groups ? "Master \(v)" : "Slave \(v - LayerSync.groups)"
+                return Band(from: UInt8(10 * v), to: UInt8(10 * v + 9), name: name, value: v)
+            },
+        fallback: 0)
 
     static let effectBands = bands(width: 16, [
         "None", "Blur", "Pixelate", "Mirror", "Kaleidoscope", "Invert", "Strobe", "Luma key", "Chroma key", "Edge",
