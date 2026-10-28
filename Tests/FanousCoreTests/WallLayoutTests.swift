@@ -157,16 +157,39 @@ struct WallLayoutTests {
 
     /// cols · w − (cols − 1) · overlap · w: 2 × 1920 − 0.15 · 1920 = 3552; 2 × 1920 − 0.2 · 1920 = 3456 by 2 × 1080 − 0.1 · 1080 = 2052;
     /// 2 × 1920 − 0.123 · 1920 = 3603.84 → 3604 (even). 4 × 3840 at 15 % is 13632 × 2160, scaled by 8192/13632 to 8192 × 1298.
+    /// 4 × 4 or 3 × 3 UHD at 15 % (13632 × 7668, 10368 × 5832: 16:9) are over the 4 × UHD pixel budget: scaled to
+    /// √(budget · 16/9) × √(budget · 9/16) = 7680 × 4320; with a 1920 × 1080 canvas next to it the budget is 31 104 000:
+    /// 7436.1 × 4182.8, rounded down to even 7436 × 4182 (31 097 352 pixels, within the budget).
     @Test func makeCanvasSizeIsEvenAndWithinTheCanvasLimits() {
-        let sides = 320...8192
-        func size(_ cols: Int, _ rows: Int, _ x: Double, _ y: Double, _ w: Int, _ h: Int) -> (width: Int, height: Int) {
-            WallLayout.canvasSize(Self.wall(cols: cols, rows: rows, overlap: WallOverlap(x: x, y: y)), output: (w, h), sides: sides)
+        let sides = 320...8192, budget = 4 * 3840 * 2160
+        func size(_ cols: Int, _ rows: Int, _ x: Double, _ y: Double, _ w: Int, _ h: Int, budget: Int = budget) -> (width: Int, height: Int) {
+            WallLayout.canvasSize(Self.wall(cols: cols, rows: rows, overlap: WallOverlap(x: x, y: y)), output: (w, h), sides: sides, maxPixels: budget)
         }
         #expect(size(2, 1, 0.15, 0.15, 1920, 1080) == (3552, 1080))
         #expect(size(2, 2, 0.2, 0.1, 1920, 1080) == (3456, 2052))
         #expect(size(2, 1, 0.123, 0, 1920, 1080) == (3604, 1080))
         #expect(size(4, 1, 0.15, 0, 3840, 2160) == (8192, 1298), "scaled down whole: the canvas keeps the wall's shape")
         #expect(size(2, 1, 0, 0, 200, 100) == (400, 320), "each side at least 320")
+        #expect(size(4, 4, 0.15, 0.15, 3840, 2160) == (7680, 4320), "the pixel budget, not the 8192 side, limits it")
+        #expect(size(3, 3, 0.15, 0.15, 3840, 2160) == (7680, 4320))
+        let shared = size(3, 3, 0.15, 0.15, 3840, 2160, budget: budget - 1920 * 1080)
+        #expect(shared == (7436, 4182) && shared.width * shared.height <= budget - 1920 * 1080)
+    }
+
+    /// 4 × 4 at the largest overlap, 0.5: p = 1 / (4 − 1.5) = 0.4, starts c · 0.4 · 0.5 = 0, 0.2, 0.4, 0.6; inner edges
+    /// 0.5 × 1920 = 960 and 0.5 × 1080 = 540 px; 4 rows × 3 + 4 columns × 3 = 24 seams.
+    @Test func fourByFourAtHalfOverlap() throws {
+        var outputs = Self.outputs(16)
+        let wall = Self.wall(cols: 4, rows: 4, overlap: WallOverlap(x: 0.5, y: 0.5))
+        #expect(wall.seams.count == 24)
+        try WallLayout.apply(wall, to: &outputs, displayModes: [:])
+        for (i, start) in [0, 0.2, 0.4, 0.6].enumerated() {
+            #expect(Self.near(Self.source(outputs, i + 1), MapRect(x: start, y: 0, w: 0.4, h: 0.4)), "row 1, column \(i + 1)")
+            #expect(Self.near(Self.source(outputs, 4 * i + 1), MapRect(x: 0, y: start, w: 0.4, h: 0.4)), "column 1, row \(i + 1)")
+        }
+        #expect(Self.overlaps(Self.blend(outputs, 1)) == [0, 960, 0, 540])
+        #expect(Self.overlaps(Self.blend(outputs, 6)) == [960, 960, 540, 540], "inside the grid every edge is inner")
+        #expect(Self.overlaps(Self.blend(outputs, 16)) == [960, 0, 540, 0])
     }
 
     @Test func shapeChecks() {
@@ -196,6 +219,8 @@ struct WallLayoutTests {
         tuned[0].gamma = 1.9
         let regrown = WallLayout.seams(cols: 3, rows: 1, outputs: [1, 2, 7], keeping: tuned)
         #expect(regrown == [SeamConfig(a: 1, b: 2, gamma: 1.9), SeamConfig(a: 2, b: 7)])
+        // the same projectors in mirrored order: the pair keeps its tuning, a and b follow the new order
+        #expect(WallLayout.seams(cols: 2, rows: 1, outputs: [2, 1], keeping: tuned) == [SeamConfig(a: 2, b: 1, gamma: 1.9)])
     }
 
     @Test func handEditsBecomeManualOrFollowTheSeam() throws {
@@ -243,5 +268,16 @@ struct WallLayoutTests {
         let json = try JSONEncoder().encode(wall)
         #expect(try JSONDecoder().decode(WallConfig.self, from: json) == wall)
         #expect(String(decoding: json, as: UTF8.self).contains(#""field":"overlap.top""#))
+    }
+
+    /// A hand-edited wall needs only id and the grid; the rest takes the defaults (seams: the grid's).
+    @Test func aWallWithoutOptionalFieldsDecodes() throws {
+        let sparse = #"{"id": 3, "cols": 2, "rows": 1, "outputs": [4, 5], "overlap": {"x": 0.15, "y": 0}}"#
+        let wall = try JSONDecoder().decode(WallConfig.self, from: Data(sparse.utf8))
+        #expect(wall.name == "Wall 3" && wall.canvas == 1 && wall.rect == .full && wall.manual.isEmpty)
+        #expect(wall.seams == [SeamConfig(a: 4, b: 5)])
+        let seam = try JSONDecoder().decode(SeamConfig.self, from: Data(#"{"a": 4, "b": 5, "gamma": 1.8}"#.utf8))
+        #expect(seam == SeamConfig(a: 4, b: 5, power: 2, gamma: 1.8))
+        #expect(throws: DecodingError.self) { try JSONDecoder().decode(WallConfig.self, from: Data(#"{"id": 3, "cols": 2}"#.utf8)) }
     }
 }

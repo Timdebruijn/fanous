@@ -179,7 +179,72 @@ struct WallCommandsTests {
         try ProjectDocument.save(old, to: file)
         let loaded = try #require(ProjectDocument.load(from: file))
         #expect(loaded["walls"] == [] && ProjectDocument.walls(from: loaded).isEmpty)
-        #expect(ProjectDocument.walls(from: ["walls": [["id": "garbage"]]]).isEmpty)
+    }
+
+    /// A stored wall without `manual` or `seams` (hand-edited) loads with the defaults; an unreadable one is skipped
+    /// and reported while the others stay, so the next wall command does not wipe them.
+    @Test func wallsAreReadOneByOne() throws {
+        let (store, _) = try Self.makeStore(outputs: 4)
+        var project = store.project
+        try project.set(
+            [
+                ["id": 1, "name": "Left", "cols": 2, "rows": 1, "outputs": [1, 2], "overlap": ["x": 0.15, "y": 0]],
+                ["id": 2, "cols": "two"],
+            ], at: "/walls")
+        let (walls, issues) = ProjectDocument.wallEntries(from: project)
+        #expect(walls.map(\.id) == [1] && walls[0].name == "Left" && walls[0].seams == [SeamConfig(a: 1, b: 2)] && walls[0].manual.isEmpty)
+        #expect(issues.count == 1 && issues[0].hasPrefix("walls[1] cannot be read"))
+        store.replaceProject(project)
+        _ = try Self.add(store, [3, 4], cols: 2, rows: 1).get()
+        #expect(ProjectDocument.walls(from: store.project).map(\.name) == ["Left", "Wall 2"])
+        _ = try store.execute("wall.seam", args: ["id": 1, "a": 1, "b": 2, "gamma": 2], role: .programmer).get()
+        #expect(Self.output(store, 2).blend.left.gamma == 2)
+    }
+
+    /// `wall.set {id, name}` renames without compiling, so it works while a projector is unplugged; anything more compiles.
+    @Test func renameNeedsNoPixelSize() throws {
+        let (store, _) = try Self.makeStore(outputs: 2)
+        _ = try Self.add(store, [1, 2], cols: 2, rows: 1).get()
+        _ = try store.execute("output.set", args: ["id": 2, "path": "/region", "value": .null], role: .programmer).get()
+        _ = try store.execute("wall.set", args: ["id": 1, "name": "Stage"], role: .programmer).get()
+        #expect(ProjectDocument.walls(from: store.project)[0].name == "Stage")
+        #expect(store.execute("wall.set", args: ["id": 1, "name": "Back"], role: .programmer).failureCode == nil)
+        #expect(store.execute("wall.set", args: ["id": 1, "name": "X", "overlap": ["x": 0.1, "y": 0.1]], role: .programmer).failureMessage?.hasPrefix("output 2 has no pixel size") == true)
+        #expect(store.execute("wall.set", args: ["id": 1, "name": ""], role: .programmer).failureCode == "invalidArgs")
+    }
+
+    /// 3 × 3 UHD at 15 % is 10368 × 5832; with canvas 2 (1920 × 1080) next to it the budget is 4 × UHD − 2 073 600 pixels,
+    /// so makeCanvas scales canvas 1 to 7436 × 4182 instead of refusing.
+    @Test func makeCanvasStaysWithinThePixelBudget() throws {
+        let (store, _) = try Self.makeStore(outputs: 9)
+        for id in 1...9 {
+            _ = try store.execute("output.set", args: ["id": .number(Double(id)), "path": "/region", "value": ["x": 0, "y": 0, "w": 3840, "h": 2160]], role: .programmer).get()
+        }
+        _ = try store.execute("canvas.add", args: ["width": 1920, "height": 1080], role: .programmer).get()
+        _ = try Self.add(store, Array(1...9), cols: 3, rows: 3, overlap: 0.15, fit: "makeCanvas").get()
+        let canvases = ProjectDocument.canvases(from: store.project)
+        #expect((canvases[0].width, canvases[0].height) == (7436, 4182))
+        #expect(canvases.reduce(0) { $0 + $1.width * $1.height } <= ProjectDocument.maxCanvasPixels)
+    }
+
+    /// Seam sliders: calls from one client on the same seam and fields within 1 s are one undo step; another field is not.
+    @Test func seamDragsUndoAsOneStep() throws {
+        let (store, _) = try Self.makeStore(outputs: 2)
+        _ = try Self.add(store, [1, 2], cols: 2, rows: 1).get()
+        let client = RecordingClient(role: .programmer)
+        let depth = store.historyDepth.undo
+        _ = try store.execute("wall.seam", args: ["id": 1, "a": 1, "b": 2, "gamma": 2.0], role: .programmer, from: client).get()
+        _ = try store.execute("wall.seam", args: ["id": 1, "a": 2, "b": 1, "gamma": 1.8], role: .programmer, from: client).get()
+        _ = try store.execute("wall.seam", args: ["id": 1, "a": 1, "b": 2, "power": 3], role: .programmer, from: client).get()
+        _ = try store.execute("wall.seams", args: ["id": 1, "power": 2.5], role: .programmer, from: client).get()
+        _ = try store.execute("wall.seams", args: ["id": 1, "power": 2.6], role: .programmer, from: client).get()
+        #expect(store.historyDepth.undo == depth + 3)
+        _ = try store.execute("undo", role: .programmer).get()
+        #expect(Self.output(store, 1).blend.right.power == 3, "both wall.seams steps undone at once")
+        _ = try store.execute("undo", role: .programmer).get()
+        #expect(Self.output(store, 1).blend.right.power == 2 && Self.output(store, 1).blend.right.gamma == 1.8, "power separate from gamma")
+        _ = try store.execute("undo", role: .programmer).get()
+        #expect(Self.output(store, 1).blend.right.gamma == 2.2 && Self.output(store, 2).blend.left.gamma == 2.2, "both gamma edits in one step")
     }
 }
 

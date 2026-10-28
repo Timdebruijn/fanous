@@ -180,6 +180,7 @@ public final class Engine: @unchecked Sendable {
         // count, canvas, source policy and library root (DESIGN.md §2.4); a scene file (development, bench) wins,
         // and its canvas is mirrored into the project so the UI shows what renders.
         var loadedProject = ProjectDocument.load(from: AppPaths.projectFile)
+        for issue in ProjectDocument.wallEntries(from: loadedProject ?? .null).issues { logger.warning("projector wall skipped", metadata: ["entry": "\(issue)"]) }
         let startCanvas = Self.startCanvas(project: loadedProject, scene: options.scene)
         if options.scene != nil, var project = loadedProject {
             try? ProjectDocument.setCanvasFormat(startCanvas, in: &project)

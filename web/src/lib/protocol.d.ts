@@ -151,7 +151,7 @@ export interface CommandArgs {
   'wall.seam': { id: number; a: number; b: number; power?: number; gamma?: number; gammaRGB?: [number, number, number] | null };
   /** Tune every seam of a wall to the same values (as wall.seam). Role: programmer, refused under show lock, undoable. */
   'wall.seams': { id: number; power?: number; gamma?: number; gammaRGB?: [number, number, number] | null };
-  /** Change a wall's geometry and compile it again; seams of pairs that stay keep their values. resetManual true gives every hand-edited field back to the wall, a list only those fields. fit as wall.add. Role: programmer, refused under show lock, undoable. */
+  /** Change a wall's geometry and compile it again; seams of pairs that stay keep their values. resetManual true gives every hand-edited field back to the wall, a list only those fields. fit as wall.add. With only a name it renames, without compiling. Role: programmer, refused under show lock, undoable. */
   'wall.set': { id: number; cols?: number; rows?: number; outputs?: number[]; overlap?: { x: number; y: number }; canvas?: number; name?: string; fit?: 'canvas' | 'makeCanvas'; resetManual?: true | { output: number; field: 'source' | 'overlap.left' | 'overlap.right' | 'overlap.top' | 'overlap.bottom' }[] };
 }
 

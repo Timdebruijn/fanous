@@ -34,6 +34,16 @@ public struct SeamConfig: Codable, Equatable, Sendable {
         self.gammaRGB = gammaRGB
     }
 
+    /// Missing tuning values (a hand-edited file) take the start values.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        a = try c.decode(Int.self, forKey: .a)
+        b = try c.decode(Int.self, forKey: .b)
+        power = try c.decodeIfPresent(Double.self, forKey: .power) ?? 2
+        gamma = try c.decodeIfPresent(Double.self, forKey: .gamma) ?? 2.2
+        gammaRGB = try c.decodeIfPresent([Double].self, forKey: .gammaRGB)
+    }
+
     /// Power 0.1…10, gamma 0.5…5 (each of gammaRGB too), as `output.set` clamps a blend edge.
     public mutating func clamp() {
         power = power.clamped(0.1, 10)
@@ -82,6 +92,22 @@ public struct WallConfig: Codable, Equatable, Sendable, Identifiable {
         self.rows = rows
         self.outputs = outputs
         self.overlap = overlap
+    }
+
+    /// Only the grid is required; a hand-edited wall without name, canvas, rect, seams or manual gets the defaults
+    /// (missing seams: the grid's, at the start values).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Wall \(id)"
+        canvas = try c.decodeIfPresent(Int.self, forKey: .canvas) ?? 1
+        rect = try c.decodeIfPresent(MapRect.self, forKey: .rect) ?? .full
+        cols = try c.decode(Int.self, forKey: .cols)
+        rows = try c.decode(Int.self, forKey: .rows)
+        outputs = try c.decode([Int].self, forKey: .outputs)
+        overlap = try c.decode(WallOverlap.self, forKey: .overlap)
+        seams = try c.decodeIfPresent([SeamConfig].self, forKey: .seams) ?? (cols > 0 ? WallLayout.seams(cols: cols, rows: rows, outputs: outputs) : [])
+        manual = try c.decodeIfPresent([WallManualField].self, forKey: .manual) ?? []
     }
 }
 
@@ -169,18 +195,23 @@ public enum WallLayout {
     }
 
     /// Canvas size for `fit: "makeCanvas"`: `cols · w − (cols − 1) · overlap.x · w` by the same in height, rounded to even.
-    /// A wall larger than `sides` allows is scaled down as a whole, so the canvas keeps the wall's shape; each side then
-    /// stays within `sides`.
-    public static func canvasSize(_ wall: WallConfig, output: (width: Int, height: Int), sides: ClosedRange<Int>) -> (width: Int, height: Int) {
+    /// A wall larger than `sides` allows, or with more than `maxPixels` pixels (what the other canvases leave of the
+    /// GPU budget), is scaled down as a whole and rounded down, so the canvas keeps the wall's shape and fits; each side
+    /// is at least `sides.lowerBound`.
+    public static func canvasSize(_ wall: WallConfig, output: (width: Int, height: Int), sides: ClosedRange<Int>, maxPixels: Int) -> (width: Int, height: Int) {
         let w = Double(output.width) / share(wall.cols, overlap: wall.overlap.x)
         let h = Double(output.height) / share(wall.rows, overlap: wall.overlap.y)
-        let scale = min(1, Double(sides.upperBound) / max(w, h))
-        func even(_ v: Double) -> Int { min(sides.upperBound, max(sides.lowerBound, 2 * Int((v * scale / 2).rounded()))) }
+        let scale = min(1, Double(sides.upperBound) / max(w, h), (Double(max(0, maxPixels)) / (w * h)).squareRoot())
+        func even(_ v: Double) -> Int {
+            let half = v * scale / 2
+            let rounded = scale < 1 ? (half + 1e-9).rounded(.down) : half.rounded()  // 1e-9: 8192 · (x / x) may land just below
+            return min(sides.upperBound, max(sides.lowerBound, 2 * Int(rounded)))
+        }
         return (even(w), even(h))
     }
 
     /// The seams of a grid, row-major: each output with its right neighbour, then with the one below. A pair in `old`
-    /// keeps its values; a new one starts at power 2, gamma 2.2.
+    /// (in either order, so a mirrored wall keeps its tuning) keeps its values; a new one starts at power 2, gamma 2.2.
     public static func seams(cols: Int, rows: Int, outputs: [Int], keeping old: [SeamConfig] = []) -> [SeamConfig] {
         var result: [SeamConfig] = []
         for i in outputs.indices {
@@ -189,7 +220,9 @@ public enum WallLayout {
             if i / cols + 1 < rows { neighbours.append(i + cols) }
             for j in neighbours where j < outputs.count {
                 let a = outputs[i], b = outputs[j]
-                result.append(old.first { $0.a == a && $0.b == b } ?? SeamConfig(a: a, b: b))
+                var seam = old.first { ($0.a, $0.b) == (a, b) || ($0.a, $0.b) == (b, a) } ?? SeamConfig(a: a, b: b)
+                (seam.a, seam.b) = (a, b)
+                result.append(seam)
             }
         }
         return result

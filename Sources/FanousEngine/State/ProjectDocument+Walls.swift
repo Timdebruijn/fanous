@@ -9,10 +9,22 @@ import Foundation
 /// wall into its outputs' slice 1 source and blend edges; `output.set` and `output.remove` follow a wall in
 /// `ProjectDocument.registerCommands`.
 extension ProjectDocument {
-    /// The project's walls; a project saved before walls existed (or an unreadable list) has none.
-    public static func walls(from project: JSONValue) -> [WallConfig] {
-        guard let value = project["walls"], let data = try? JSONEncoder().encode(value) else { return [] }
-        return (try? JSONDecoder().decode([WallConfig].self, from: data)) ?? []
+    /// The project's walls; a project saved before walls existed has none.
+    public static func walls(from project: JSONValue) -> [WallConfig] { wallEntries(from: project).walls }
+
+    /// The walls one by one: a wall that cannot be read (hand-edited file) is skipped with a line in `issues`, the
+    /// others stay. A skipped wall leaves the file at the next change to the walls.
+    public static func wallEntries(from project: JSONValue) -> (walls: [WallConfig], issues: [String]) {
+        var walls: [WallConfig] = []
+        var issues: [String] = []
+        for (i, entry) in (project["walls"]?.array ?? []).enumerated() {
+            do {
+                walls.append(try JSONDecoder().decode(WallConfig.self, from: JSONEncoder().encode(entry)))
+            } catch {
+                issues.append("walls[\(i)] cannot be read and is skipped: \(error)")
+            }
+        }
+        return (walls, issues)
     }
 
     static func setWalls(_ walls: [WallConfig], in project: inout JSONValue) throws {
@@ -41,12 +53,17 @@ extension ProjectDocument {
         store.register(
             CommandSpec(
                 name: "wall.set", role: .programmer,
-                summary: "Change a wall's geometry and compile it again; seams of pairs that stay keep their values. resetManual true gives every hand-edited field back to the wall, a list only those fields. fit as wall.add.",
+                summary: "Change a wall's geometry and compile it again; seams of pairs that stay keep their values. resetManual true gives every hand-edited field back to the wall, a list only those fields. fit as wall.add. With only a name it renames, without compiling.",
                 argsType: "{ id: number; \(geometry); fit?: 'canvas' | 'makeCanvas'; resetManual?: true | { output: number; field: 'source' | 'overlap.left' | 'overlap.right' | 'overlap.top' | 'overlap.bottom' }[] }"
             ) { project, args in
                 guard let id = args["id"]?.int else { throw CommandError.invalidArgs("args: { id, cols?, rows?, outputs?, overlap?, canvas?, name?, fit?, resetManual? }") }
                 guard var wall = walls(from: project).first(where: { $0.id == id }) else { throw CommandError.invalidArgs("no wall \(id)") }
                 try applyGeometry(args, to: &wall)
+                if Set((args.object ?? [:]).keys) == ["id", "name"] {
+                    // a rename needs no pixel size: it works while a projector is unplugged
+                    try setWalls(ProjectDocument.walls(from: project).map { $0.id == id ? wall : $0 }, in: &project)
+                    return nil
+                }
                 if let reset = args["resetManual"], reset != .bool(false) {
                     if reset == .bool(true) {
                         wall.manual = []
@@ -67,7 +84,12 @@ extension ProjectDocument {
             CommandSpec(
                 name: "wall.seam", role: .programmer,
                 summary: "Tune one seam of a wall (outputs a and b): power 0.1–10, gamma 0.5–5, gammaRGB [r, g, b] or null for gamma on all three; both facing edges follow.",
-                argsType: "{ id: number; a: number; b: number; power?: number; gamma?: number; gammaRGB?: [number, number, number] | null }"
+                argsType: "{ id: number; a: number; b: number; power?: number; gamma?: number; gammaRGB?: [number, number, number] | null }",
+                coalesceKey: { args in
+                    // a slider drag on one seam is one undo step: the pair (either order) and the fields it sets
+                    guard let a = args["a"]?.int, let b = args["b"]?.int else { return nil }
+                    return "\(min(a, b))-\(max(a, b))|\(tunedFields(args))"
+                }
             ) { project, args in
                 guard let id = args["id"]?.int, let a = args["a"]?.int, let b = args["b"]?.int else {
                     throw CommandError.invalidArgs("args: { id, a, b, power?, gamma?, gammaRGB? }")
@@ -84,7 +106,8 @@ extension ProjectDocument {
             CommandSpec(
                 name: "wall.seams", role: .programmer,
                 summary: "Tune every seam of a wall to the same values (as wall.seam).",
-                argsType: "{ id: number; power?: number; gamma?: number; gammaRGB?: [number, number, number] | null }"
+                argsType: "{ id: number; power?: number; gamma?: number; gammaRGB?: [number, number, number] | null }",
+                coalesceKey: { tunedFields($0) }
             ) { project, args in
                 guard let id = args["id"]?.int else { throw CommandError.invalidArgs("args: { id, power?, gamma?, gammaRGB? }") }
                 guard var wall = walls(from: project).first(where: { $0.id == id }) else { throw CommandError.invalidArgs("no wall \(id)") }
@@ -136,6 +159,11 @@ extension ProjectDocument {
         }
     }
 
+    /// The tuning fields a wall.seam / wall.seams call sets ("gamma,power"), for its undo coalescing key.
+    static func tunedFields(_ args: JSONValue) -> String {
+        ["power", "gamma", "gammaRGB"].filter { args[$0] != nil }.joined(separator: ",")
+    }
+
     /// power, gamma and gammaRGB of wall.seam / wall.seams, clamped as `output.set` clamps a blend edge.
     static func tune(_ seam: inout SeamConfig, _ args: JSONValue) throws {
         if let value = args["power"] {
@@ -181,7 +209,8 @@ extension ProjectDocument {
             if fit != nil { wall.rect = .full }
             if fit == "makeCanvas" {
                 let output = try WallLayout.outputSize(of: wall, outputs: outputs, displayModes: displayModes)
-                let size = WallLayout.canvasSize(wall, output: output, sides: canvasSides)
+                let others = canvases.indices.filter { $0 != c }.reduce(0) { $0 + canvases[$1].width * canvases[$1].height }
+                let size = WallLayout.canvasSize(wall, output: output, sides: canvasSides, maxPixels: maxCanvasPixels - others)
                 try resize(&canvases, at: c, to: (size.width, size.height, canvases[0].fps), showModeOn: showModeOn)
                 try project.set(try JSONValue(encoding: canvases), at: "/canvases")
             }
