@@ -13,11 +13,20 @@ import Testing
 @Suite(.serialized)
 struct SyncSenderTests {
     static let machine = UUID(uuidString: "20000000-0000-0000-0000-000000000000")!
-    static let clocks = (0..<SyncPacket.maxLayers).map {
-        SyncPacket.Layer(
-            group: UInt8($0 % 8 + 1), layer: UInt8($0 + 1), mediaKey: 0x0101, fps: 50, position: Double($0),
-            direction: 1, finished: false, rate: 50)
-    }
+    static let clocks: [SyncPacket.Layer] = {
+        var clocks: [SyncPacket.Layer] = []
+        for i in 0..<SyncPacket.maxLayers {
+            let group = UInt8(i % 8 + 1)
+            let layer = UInt8(i + 1)
+            let position = Double(i)
+            clocks.append(
+                SyncPacket.Layer(
+                    group: group, layer: layer, mediaKey: 0x0101, fps: 50, position: position, direction: 1,
+                    finished: false,
+                    rate: 50))
+        }
+        return clocks
+    }()
 
     static func sender(port: UInt16) -> SyncSender {
         var settings = SyncSettings()
