@@ -13,10 +13,12 @@ import {
   layerState,
   mediaLine,
   outputFixtures,
+  parseThumbFrame,
   patchText,
   playedPercent,
   positionCaption,
   reservedText,
+  rowThumb,
   thumbnailFor,
   thumbnailIndex,
   valueText,
@@ -125,6 +127,21 @@ describe('thumbnails', () => {
     expect(thumbnailFor(index, layer({ file: 6 }))).toBeNull();
     expect(thumbnailFor(index, undefined)).toBeNull();
     expect(thumbnailIndex(null).size).toBe(0);
+  });
+
+  it('parses a live thumbnail frame: layer number, big-endian size, the JPEG (B29)', () => {
+    const frame = parseThumbFrame(new Uint8Array([3, 0, 160, 1, 28, 0xff, 0xd8, 0xff, 0xd9]));
+    expect(frame && { layer: frame.layer, w: frame.w, h: frame.h, jpeg: [...frame.jpeg] }).toEqual({ layer: 3, w: 160, h: 284, jpeg: [0xff, 0xd8, 0xff, 0xd9] });
+    const empty = parseThumbFrame(new Uint8Array([32, 0, 0, 0, 0]));
+    expect(empty && { layer: empty.layer, w: empty.w, h: empty.h, bytes: empty.jpeg.length }).toEqual({ layer: 32, w: 0, h: 0, bytes: 0 });
+    expect(parseThumbFrame(new Uint8Array([1, 0, 160, 0]))).toBeNull();
+    expect(parseThumbFrame(new Uint8Array([1, 0, 160, 0, 90])), 'a size without JPEG bytes').toBeNull();
+  });
+
+  it('shows the live thumbnail while there is one, else the library thumbnail', () => {
+    expect(rowThumb('blob:live', '/api/thumbnail/abc.jpg')).toEqual({ src: 'blob:live', live: true });
+    expect(rowThumb(undefined, '/api/thumbnail/abc.jpg')).toEqual({ src: '/api/thumbnail/abc.jpg', live: false });
+    expect(rowThumb(undefined, null)).toEqual({ src: null, live: false });
   });
 });
 

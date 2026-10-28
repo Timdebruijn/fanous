@@ -72,11 +72,10 @@ The pages that follow repeat the ones that matter for their topic.
 - There is one project per machine; versions of it can be restored (System ›
   Project versions), but there are no project bundles to open or switch
   between, and no diff between two versions.
-- Layers show the library thumbnail of the playing file, not a live picture of
-  the layer (B29).
-- Consoles over CITP/MSEX get the canvas only, as a 640x360 JPEG stream; there
-  are no per-layer streams and thumbnails ignore the requested size (B41). No
-  real console has talked to Fanous over CITP yet (B40).
+- Consoles over CITP/MSEX get streams at a fixed size (the canvas at 640x360,
+  each layer at 160 pixels wide) and thumbnails at their stored size, whatever
+  size the console asks for (B41). No real console has talked to Fanous over
+  CITP yet (B40).
 - OSC has no feedback (no query, no notify); MIDI notes, MIDI Show Control and
   MIDI-triggered cues do not exist (B36).
 - Several OSC messages sent back to back from one socket may be partly lost;

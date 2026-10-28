@@ -197,8 +197,22 @@ public final class StateServer: @unchecked Sendable {
                         subscriptions.withLock { _ = $0.removeValue(forKey: id) }
                         refused("badTarget", "preview target \(target) is not canvas, an existing canvas:<id>, an existing output:<id> or layer:<n>")
                     }
+                case "thumbs":
+                    // live layer thumbnails (B29): one stream of per-layer JPEG frames, `ThumbnailAtlas.frame`
+                    let id = server.nextStream.add(1, ordering: .relaxed).oldValue
+                    guard let thumbnails = server.preview?.thumbnails else {
+                        let reply: JSONValue = ["t": "error", "id": .number(Double(id)), "stream": "thumbs", "code": "noPreview", "message": "the engine is not rendering"]
+                        session.send(text: server.store.encode(reply), droppable: false)
+                        return
+                    }
+                    subscriptions.withLock { $0[id] = .preview }
+                    let reply: JSONValue = [
+                        "t": "sub", "id": .number(Double(id)), "stream": "thumbs", "w": .number(Double(ThumbnailAtlas.cellWidth)), "fps": .number(1 / ThumbnailAtlas.interval),
+                    ]
+                    session.send(text: server.store.encode(reply), droppable: false)
+                    thumbnails.subscribe(connection: self, stream: id)
                 default:
-                    session.send(text: server.store.encode(["t": "error", "code": "badStream", "message": "streams: dmx, preview"]), droppable: false)
+                    session.send(text: server.store.encode(["t": "error", "code": "badStream", "message": "streams: dmx, preview, thumbs"]), droppable: false)
                 }
             case "unsub":
                 if let id = message["id"]?.int {

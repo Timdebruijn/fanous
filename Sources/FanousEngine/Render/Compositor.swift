@@ -95,6 +95,9 @@ public final class Compositor: @unchecked Sendable {
     /// This tick reused the last canvas: its own selection is still in `drawItems` (`drawLayer`).
     private var reusedThisTick = false
     private var canvasValid = false
+    /// `drawThumbnails`: 3 × `maxLayers` × 2 uniform slots, made on first use; the third the next call writes.
+    private var thumbnailUniforms: MTLBuffer?
+    private var thumbnailRing = 0
     private var reuseStreak = 0
     private var drawnGPUErrors = 0
     private let logger: Logger
@@ -698,14 +701,56 @@ public final class Compositor: @unchecked Sendable {
             let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass)
         else { return false }
         encoder.label = "layer preview"
+        encodeAlone(index, uniforms: uniforms, slotBase: ring * 2, canvasWidth: canvasWidth, canvasHeight: canvasHeight, with: encoder)
+        encoder.endEncoding()
+        return true
+    }
+
+    /// Layer `index`'s items of this tick (see `drawLayer`) with Normal blending; their uniforms at `slotBase` and, for
+    /// the outgoing picture of a dissolve, `slotBase + 1`.
+    private func encodeAlone(_ index: Int, uniforms: MTLBuffer, slotBase: Int, canvasWidth: Int, canvasHeight: Int, with encoder: MTLRenderCommandEncoder) {
         encoder.setFragmentSamplerState(context.linearSampler, index: 0)
         encoder.setFragmentSamplerState(context.nearestSampler, index: 1)
         for var item in reusedThisTick ? drawItems : drawnItems where item.slot / 2 == index {
             item.p.blendMode = .normal  // multiply or darken over black would show nothing
-            item.slot = ring * 2 + item.slot % 2
+            item.slot = slotBase + item.slot % 2
             encode(item, uniforms: uniforms, time: drawnTime, canvasWidth: canvasWidth, canvasHeight: canvasHeight, with: encoder)
         }
+    }
+
+    // MARK: Thumbnail atlas (B29)
+
+    /// Render thread, after the canvas pass of the tick: per render layer the size of its canvas (canvas 1's when that
+    /// canvas does not render) and whether it shows something this tick (media with intensity > 0 on a canvas that renders).
+    func thumbnailCanvases() -> [(width: Int, height: Int, visible: Bool)] {
+        let items = reusedThisTick ? drawItems : drawnItems
+        return layers.map { layer in
+            if let item = items.first(where: { $0.slot / 2 == layer.index && $0.canvas >= 0 }) {
+                return (targets[item.canvas].width, targets[item.canvas].height, true)
+            }
+            let t = targets[target(forLayer: layer.index) ?? 0]
+            return (t.width, t.height, false)
+        }
+    }
+
+    /// Draws each layer with a cell (`cells` indexed like `thumbnailCanvases`) alone into that cell of `pass`'s texture
+    /// (canvas format), as `drawLayer` does, in one render pass that clears everything else to black. Same frame
+    /// lifetime as `drawLayer`. Uniforms: three rotating thirds of a buffer the compositor keeps for this.
+    func drawThumbnails(_ cells: [ThumbnailAtlas.Cell?], into pass: MTLRenderPassDescriptor, commandBuffer: MTLCommandBuffer) -> Bool {
+        if thumbnailUniforms == nil { thumbnailUniforms = context.device.makeBuffer(length: Self.uniformStride * maxLayers * 2 * 3, options: .storageModeShared) }
+        guard let uniforms = thumbnailUniforms, let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { return false }
+        encoder.label = "thumbnail atlas"
+        let items = reusedThisTick ? drawItems : drawnItems
+        for (i, layer) in layers.enumerated() where i < cells.count {
+            guard let cell = cells[i], let canvas = items.first(where: { $0.slot / 2 == layer.index && $0.canvas >= 0 })?.canvas else { continue }
+            encoder.setViewport(MTLViewport(originX: Double(cell.x), originY: Double(cell.y), width: Double(cell.width), height: Double(cell.height), znear: 0, zfar: 1))
+            encoder.setScissorRect(MTLScissorRect(x: cell.x, y: cell.y, width: cell.width, height: cell.height))
+            encodeAlone(
+                layer.index, uniforms: uniforms, slotBase: (thumbnailRing * maxLayers + i) * 2, canvasWidth: targets[canvas].width, canvasHeight: targets[canvas].height,
+                with: encoder)
+        }
         encoder.endEncoding()
+        thumbnailRing = (thumbnailRing + 1) % 3
         return true
     }
 

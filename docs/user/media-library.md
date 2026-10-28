@@ -151,8 +151,9 @@ mode) and survive an engine restart. The status bar shows the progress too.
 The engine renders one frame from the middle of each file, 320 pixels wide, and
 caches it with the file's metadata (codec, size, frame rate, duration, alpha,
 audio) in `~/Library/Application Support/Fanous/cache/`. Tiles say "probing…"
-until it is done. The same thumbnails appear on the Layers screen and go to
-consoles over CITP. A file that changes is probed again.
+until it is done. The same thumbnails go to consoles over CITP, and appear on
+the Layers screen for a layer that shows nothing right now; a layer that shows
+something has its live picture there instead. A file that changes is probed again.
 
 ## Performance advice
 

@@ -11,7 +11,8 @@ import Synchronization
 /// CITP/MSEX media-server side (DESIGN.md §16.1): PLoc every 5 s on both multicast groups, one TCP listener
 /// (ephemeral port, advertised in PLoc), per connection the MSEX version negotiated from CInf, SInf, layer
 /// status at 4 Hz, element libraries (= numbered folders), media elements (= numbered files), JPEG thumbnails
-/// from the library cache and JPEG streaming frames from the preview path. Packets come from FanousCore.
+/// from the library cache, video sources (the canvas and each layer) and JPEG streaming frames of a source from the
+/// preview path (canvas) or the live thumbnails (layers, B29). Packets come from FanousCore.
 public final class CITPServer: @unchecked Sendable {
     public struct LayerInfo: Sendable, Equatable {
         public var index: Int  // 1-based
@@ -39,16 +40,24 @@ public final class CITPServer: @unchecked Sendable {
         public var library: @Sendable () -> LibrarySnapshot
         /// JPEG bytes of a library item's thumbnail by its cache file name.
         public var thumbnail: @Sendable (String) -> [UInt8]?
-        /// The latest canvas JPEG (bytes, width, height) for streaming, nil when none was produced yet.
-        public var frame: @Sendable () -> ([UInt8], Int, Int)?
+        /// The latest JPEG (bytes, width, height) of a stream source (`layer(ofSource:)`: the canvas or one layer), nil
+        /// when none was produced yet.
+        public var frame: @Sendable (UInt16) -> ([UInt8], Int, Int)?
+        /// What `VSrc` lists: the canvas (source 0) and one source per layer.
+        public var sources: @Sendable () -> [VideoSource]
+        /// Render layers (layer stream sources 1…n), without reading the parameters (`layers` does).
+        public var layerCount: @Sendable () -> Int
         public init(
             layers: @escaping @Sendable () -> [LayerInfo], library: @escaping @Sendable () -> LibrarySnapshot,
-            thumbnail: @escaping @Sendable (String) -> [UInt8]?, frame: @escaping @Sendable () -> ([UInt8], Int, Int)?
+            thumbnail: @escaping @Sendable (String) -> [UInt8]?, frame: @escaping @Sendable (UInt16) -> ([UInt8], Int, Int)?,
+            sources: @escaping @Sendable () -> [VideoSource] = { [] }, layerCount: @escaping @Sendable () -> Int = { 0 }
         ) {
             self.layers = layers
             self.library = library
             self.thumbnail = thumbnail
             self.frame = frame
+            self.sources = sources
+            self.layerCount = layerCount
         }
     }
 
@@ -77,8 +86,14 @@ public final class CITPServer: @unchecked Sendable {
     private var frameTimer: DispatchSourceTimer?
     private var connections: [ObjectIdentifier: Session] = [:]
     public let status = Mutex(Status(port: 0, clients: [], streams: 0))
-    /// Set while any client streams, so the preview encoder produces JPEGs.
+    /// Set while any client streams the canvas, so the preview encoder produces JPEGs.
     public let wantsFrames = Atomic<Bool>(false)
+    /// Set while any client streams a layer, so the live thumbnails (B29) are drawn.
+    public let wantsLayerFrames = Atomic<Bool>(false)
+
+    /// Stream source ids (as `VSrc` lists them): n in 1…`layerCount` is layer n (the 0-based index is returned); 0 and
+    /// anything else is the canvas, also for a console that streams without asking for the sources.
+    public static func layer(ofSource source: UInt16, layerCount: Int) -> Int? { source >= 1 && Int(source) <= layerCount ? Int(source) - 1 : nil }
 
     public init(name: String, uuid: String, providers: Providers, logger: Logger) {
         self.name = name
@@ -208,7 +223,10 @@ public final class CITPServer: @unchecked Sendable {
             $0.clients = clients
             $0.streams = streams
         }
-        wantsFrames.store(streams > 0, ordering: .relaxed)
+        let sources = connections.values.flatMap { $0.streams.map(\.source) }
+        let layerCount = sources.isEmpty ? 0 : providers.layerCount()
+        wantsFrames.store(sources.contains { Self.layer(ofSource: $0, layerCount: layerCount) == nil }, ordering: .relaxed)
+        wantsLayerFrames.store(sources.contains { Self.layer(ofSource: $0, layerCount: layerCount) != nil }, ordering: .relaxed)
     }
 
     // MARK: Periodic
@@ -232,8 +250,8 @@ public final class CITPServer: @unchecked Sendable {
             let before = session.streams.count
             session.streams.removeAll { $0.expires < now }
             if session.streams.count != before { expired = true }
-            guard let (jpeg, width, height) = providers.frame() else { continue }
             for i in session.streams.indices where now - session.streams[i].lastSent >= 1 / Double(max(1, session.streams[i].fps)) {
+                guard let (jpeg, width, height) = providers.frame(session.streams[i].source) else { continue }
                 session.streams[i].lastSent = now
                 session.send(
                     .streamFrame(
@@ -295,13 +313,15 @@ public final class CITPServer: @unchecked Sendable {
                             format: "JPEG", width: UInt16(clamping: Thumbnailer.width), height: UInt16(clamping: item.metadata.map { Thumbnailer.width * $0.height / max(1, $0.width) } ?? 180),
                             buffer: jpeg)), requestIndex: requestIndex)
             }
+        case .getVideoSources:
+            session.send(.videoSources(providers.sources()), requestIndex: requestIndex)
         case .requestStream(let request):
             session.streams.removeAll { $0.source == request.sourceIdentifier }
             if request.fps > 0 {
                 session.streams.append(Session.Stream(source: request.sourceIdentifier, fps: min(10, request.fps), expires: Date().timeIntervalSince1970 + Double(max(1, request.timeout)), lastSent: 0))
             }
             publishStatus()
-        case .peerName, .peerLocation, .layerStatus, .serverInformation, .nack, .elementLibraryInformation, .mediaElementInformation, .elementThumbnail, .streamFrame:
+        case .peerName, .peerLocation, .layerStatus, .serverInformation, .nack, .elementLibraryInformation, .mediaElementInformation, .elementThumbnail, .videoSources, .streamFrame:
             break
         case .unknown(let contentType, let body):
             // an MSEX message we do not model: the Nack names its MSEX content type (bytes 2..<6 after the version)

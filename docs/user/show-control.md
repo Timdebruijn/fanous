@@ -331,8 +331,12 @@ sees:
 - the **libraries and elements**: numbered folders and numbered files with name,
   size, frame rate and length;
 - **thumbnails** of the files (the library thumbnails);
+- the **video sources** it can stream: source 0 is the canvas, source 1 to N
+  layer 1 to N;
 - a **canvas preview stream** of Canvas 1: JPEG at 640x360, up to 10 frames per
-  second, only produced while a console asks for it.
+  second, and **layer streams**: the live picture of one layer alone, JPEG 160
+  pixels wide, 4 new pictures a second (black while the layer shows nothing).
+  Each is only produced while a console asks for it.
 
 MSEX versions 1.0 to 1.2 are negotiated; the highest common one is used.
 
@@ -345,9 +349,9 @@ MSEX versions 1.0 to 1.2 are negotiated; the highest common one is used.
   `midi.map.set` command, not in the panel. MIDI has been tested with injected
   messages and a virtual source, not with a real controller (B36). The OSC
   feedback target can only be set in `settings.json`, not on the System screen.
-- CITP: only the canvas can be streamed, not single layers; thumbnails are sent
-  at their stored size whatever the console asks for (B41). No real console has
-  been tried (B40).
+- CITP: streams and thumbnails come at a fixed size (canvas 640x360, layers 160
+  pixels wide, thumbnails as stored) whatever size the console asks for (B41).
+  No real console has been tried (B40).
 - Timecode chase is tested with generated LTC and simulated MTC, not with real
   hardware, and not at 29.97 drop frame or over long runs (B44). The
   microphone prompt has not been tested on a clean install (B37). Cue fades

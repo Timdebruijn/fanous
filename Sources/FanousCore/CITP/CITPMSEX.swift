@@ -538,6 +538,53 @@ public struct ElementThumbnail: Equatable, Sendable {
     }
 }
 
+/// One entry of MSEX/VSrc, the answer to GVSr: a source a console can stream with `RqSt` (same layout in every
+/// version: u16 count, then per source u16 id, ucs2 name, u8 output, u8 layer, u16 flags, u16 width, u16 height).
+public struct VideoSource: Equatable, Sendable {
+    /// `physicalOutput` / `layerNumber` of a source that is not an output / not a layer.
+    public static let none: UInt8 = 0xFF
+    public var sourceIdentifier: UInt16
+    public var name: String
+    /// 0-based, `none` when the source is not a physical output.
+    public var physicalOutput: UInt8
+    /// 0-based, `none` when the source is not a layer.
+    public var layerNumber: UInt8
+    /// Bit 0: without effects.
+    public var flags: UInt16
+    public var width: UInt16
+    public var height: UInt16
+
+    public init(sourceIdentifier: UInt16, name: String, physicalOutput: UInt8 = none, layerNumber: UInt8 = none, flags: UInt16 = 0, width: UInt16, height: UInt16) {
+        self.sourceIdentifier = sourceIdentifier
+        self.name = name
+        self.physicalOutput = physicalOutput
+        self.layerNumber = layerNumber
+        self.flags = flags
+        self.width = width
+        self.height = height
+    }
+
+    init(from r: inout CITPReader) throws {
+        self.init(
+            sourceIdentifier: try r.u16(), name: try r.ucs2(), physicalOutput: try r.u8(), layerNumber: try r.u8(), flags: try r.u16(), width: try r.u16(),
+            height: try r.u16())
+    }
+
+    static func write(_ sources: [VideoSource], to out: inout [UInt8]) {
+        let list = sources.prefix(0xFFFF)
+        out.put(UInt16(list.count))
+        for s in list {
+            out.put(s.sourceIdentifier)
+            out.putUCS2(s.name)
+            out.append(s.physicalOutput)
+            out.append(s.layerNumber)
+            out.put(s.flags)
+            out.put(s.width)
+            out.put(s.height)
+        }
+    }
+}
+
 /// MSEX/RqSt: ask the server to start streaming frames of a source (same layout in every version).
 public struct RequestStream: Equatable, Sendable {
     public var version: MSEXVersion
@@ -659,6 +706,10 @@ extension CITPPacket {
         case "MEIn": return .mediaElementInformation(try MediaElementInformation(version: version, from: &r))
         case "GETh": return .getElementThumbnail(try GetElementThumbnail(version: version, from: &r))
         case "EThn": return .elementThumbnail(try ElementThumbnail(version: version, from: &r))
+        case "GVSr": return .getVideoSources
+        case "VSrc":
+            let count = Int(try r.u16())
+            return .videoSources(try r.array(count) { try VideoSource(from: &$0) })
         case "RqSt": return .requestStream(try RequestStream(version: version, from: &r))
         case "StFr": return .streamFrame(try StreamFrame(version: version, from: &r))
         default: return .unknown(contentType: "MSEX", body: body)  // spec: silently ignore unrecognised cookies

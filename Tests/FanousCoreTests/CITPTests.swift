@@ -262,6 +262,22 @@ import Testing
 
     // MARK: streaming
 
+    /// GVSr has no payload; VSrc lists the sources (same layout in every version).
+    @Test func videoSourcesRoundTrip() throws {
+        let sources = [
+            VideoSource(sourceIdentifier: 0, name: "Canvas", width: 640, height: 360),
+            VideoSource(sourceIdentifier: 1, name: "Layer 1", layerNumber: 0, width: 160, height: 90),
+        ]
+        for version in Self.allVersions {
+            #expect(try Self.roundTrip(.getVideoSources, version) == .getVideoSources)
+            #expect(try Self.roundTrip(.videoSources(sources), version) == .videoSources(sources))
+        }
+        #expect(CITPPacket.getVideoSources.encoded().count == 26)
+        let bytes = CITPPacket.videoSources([VideoSource(sourceIdentifier: 1, name: "L", layerNumber: 0, width: 160, height: 90)]).encoded()
+        #expect(Array(bytes[22..<26]) == Array("VSrc".utf8))
+        #expect(Array(bytes[26...]) == [1, 0, 1, 0, 0x4C, 0, 0, 0, 0xFF, 0, 0, 0, 0xA0, 0, 0x5A, 0])
+    }
+
     @Test func requestStreamRoundTrip() throws {
         for version in Self.allVersions {
             let packet = CITPPacket.requestStream(

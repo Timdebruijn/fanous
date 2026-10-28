@@ -71,6 +71,8 @@ export class FanousClient {
   private subs = new Map<string, { resolve: (id: number) => void }>();
   /** preview `sub` requests in the order sent: the engine answers each with `sub` or a refusal (`error` with `stream`) in that order */
   private previewSubs: { resolve: (info: PreviewInfo) => void; reject: (error: AckError) => void }[] = [];
+  /** `thumbs` requests in the order sent, answered the same way */
+  private thumbSubs: { resolve: (id: number) => void; reject: (error: AckError) => void }[] = [];
   /** per stream id: the latest `stream` description (avcC) for H.264 previews */
   readonly descriptions = new Map<number, StreamDescription>();
   private nextId = 1;
@@ -134,6 +136,17 @@ export class FanousClient {
     });
   }
 
+  /** Subscribes to the live layer thumbnails (B29); resolves with the stream id of their JPEG frames. */
+  subscribeThumbs(): Promise<number> {
+    return new Promise((resolve, reject) => {
+      if (!this.send({ t: 'sub', stream: 'thumbs' })) {
+        reject({ code: 'offline', message: 'not connected' });
+        return;
+      }
+      this.thumbSubs.push({ resolve, reject });
+    });
+  }
+
   unsubscribe(id: number): void {
     this.descriptions.delete(id);
     this.send({ t: 'unsub', id });
@@ -166,10 +179,11 @@ export class FanousClient {
     socket.onclose = (event: CloseEvent) => {
       if (this.socket !== socket) return;
       this.socket = null;
-      for (const { reject } of [...this.pending.values(), ...this.previewSubs]) reject({ code: 'offline', message: 'connection closed' });
+      for (const { reject } of [...this.pending.values(), ...this.previewSubs, ...this.thumbSubs]) reject({ code: 'offline', message: 'connection closed' });
       this.pending.clear();
       this.subs.clear();
       this.previewSubs = [];
+      this.thumbSubs = [];
       this.descriptions.clear();
       this.callbacks.onState('closed', event.reason || `code ${event.code}`);
       if (this.closedByUser || event.code === 4401) return;
@@ -218,6 +232,10 @@ export class FanousClient {
           this.previewSubs.shift()?.resolve({ id: message.id, codec: message.codec, w: message.w, h: message.h, fps: message.fps });
           break;
         }
+        if (message.stream === 'thumbs') {
+          this.thumbSubs.shift()?.resolve(message.id);
+          break;
+        }
         const waiter = this.subs.get(message.universe);
         this.subs.delete(message.universe);
         waiter?.resolve(message.id);
@@ -233,6 +251,7 @@ export class FanousClient {
       case 'error':
         // a refused preview request carries `stream`; without it the error is the connection's (or a stream that went away)
         if (message.stream === 'preview') this.previewSubs.shift()?.reject({ code: message.code, message: message.message });
+        else if (message.stream === 'thumbs') this.thumbSubs.shift()?.reject({ code: message.code, message: message.message });
         else this.callbacks.onState(this.socket ? 'open' : 'closed', `${message.code}: ${message.message}`);
         break;
     }

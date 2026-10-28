@@ -186,6 +186,16 @@ export async function subscribePreview(
   };
 }
 
+/** Live layer thumbnails (B29): every frame of the `thumbs` stream (`parseThumbFrame`); resolves with its stop. */
+export async function subscribeThumbs(onFrame: (payload: Uint8Array) => void): Promise<() => void> {
+  const id = await client.subscribeThumbs();
+  binaryListeners.set(id, (_kind, payload) => onFrame(payload));
+  return () => {
+    binaryListeners.delete(id);
+    client.unsubscribe(id);
+  };
+}
+
 export function connect(): void {
   client.connect();
 }

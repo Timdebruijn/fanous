@@ -21,7 +21,8 @@
     layer: LayerStatus | undefined;
     params: ResolvedParameter[] | undefined;
     policy: string;
-    thumb: string | null;
+    /** live: the engine's current picture of this layer (B29), otherwise the library thumbnail */
+    thumb: { src: string | null; live: boolean };
     selected: boolean;
     onselect: () => void;
   } = $props();
@@ -52,7 +53,7 @@
 <!-- a div, not a button: the canvas select sits inside the row -->
 <div class="row layer" role="button" tabindex="0" aria-pressed={selected} onclick={onselect} onkeydown={keydown}>
   <span class="thumb c-thumb">
-    {#if thumb}<img src={thumb} alt="" loading="lazy" />{/if}
+    {#if thumb.src}<img src={thumb.src} alt="" loading="lazy" data-live={thumb.live ? 'true' : undefined} />{/if}
     <span class="n">{n}</span>
   </span>
   <span class="c-name">
@@ -94,7 +95,7 @@
       <span class="mode">{playMode?.label ?? '—'}</span>
       <span class="caption mono">{speed ? `speed ${speed.label}` : '—'}</span>
     </span>
-    <span class="c-audio" title="Audio volume parameter (a level meter arrives with CITP, backlog B29)">
+    <span class="c-audio" title="Audio volume parameter (no level meter yet)">
       <span class="lbl">Audio</span>
       <span class="mono">{volume ? `${formatPercent(volume.physical)} %` : '—'}</span>
       <span class="bar" aria-hidden="true"><span style:width="{level}%"></span></span>

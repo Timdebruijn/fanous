@@ -97,7 +97,11 @@ performance class of this Mac's chip (System shows the chip); N is the number of
 layers it plays without dropping frames, measured with the benchmark. **Add
 layer** on the Patch screen stops at N so a show cannot be built that the
 machine cannot play. Each layer row shows its state as a word next to the
-dot (OK, LIVE, NO MEDIA, MISSING FILE, DECODER ERROR).
+dot (OK, LIVE, NO MEDIA, MISSING FILE, DECODER ERROR), and on the left a live
+picture of that layer alone, four times a second (colour, effects and position
+included). A layer that shows nothing (no media, intensity 0) shows the library
+thumbnail of its file instead. The live pictures stop while the tab is in the
+background or another screen is open.
 
 ## Open the UI from an iPad or another computer
 

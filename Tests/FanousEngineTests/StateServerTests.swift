@@ -267,6 +267,33 @@ struct StateServerTests {
         a.cancel(with: .normalClosure, reason: nil)
     }
 
+    /// B29: `sub {stream:"thumbs"}` is answered like the other subs (stream id, cell width, rate) and subscribes this
+    /// connection to the one thumbnail producer; `unsub` ends it; without a renderer it is refused with its stream named.
+    @Test func thumbsSubIsAnsweredAndUnsubEndsIt() async throws {
+        let f = try await Self.start()
+        defer { f.server.stop() }
+        let a = f.socket()
+        try await a.send(.string(#"{"t":"hello","clientId":"a","schema":1}"#))
+        _ = try await Self.receive(a, until: "welcome")
+        try await a.send(.string(#"{"t":"sub","stream":"thumbs"}"#))
+        let refused = try await Self.receive(a, until: "error")
+        #expect(refused["code"]?.string == "noPreview" && refused["stream"]?.string == "thumbs" && refused["id"]?.int != nil)
+
+        let rig = try PreviewHubTests.Rig()
+        let thumbnails = try ThumbnailStreamer(context: rig.context, compositor: rig.compositor)
+        rig.hub.thumbnails = thumbnails
+        f.stateServer.preview = rig.hub
+        try await a.send(.string(#"{"t":"sub","stream":"thumbs"}"#))
+        let sub = try await Self.receive(a, until: "sub")
+        #expect(sub["stream"]?.string == "thumbs" && sub["w"]?.int == 160 && sub["fps"]?.int == 4)
+        let id = try #require(sub["id"]?.int)
+        #expect(thumbnails.hasSubscribers && thumbnails.wantsFrames)
+        try await a.send(.string(#"{"t":"unsub","id":\#(id)}"#))
+        for _ in 0..<100 where thumbnails.hasSubscribers { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(!thumbnails.hasSubscribers && !thumbnails.wantsFrames, "nobody wants thumbnails: no atlas pass")
+        a.cancel(with: .normalClosure, reason: nil)
+    }
+
     @Test func dmxMonitorTimerFollowsTheSubscriptions() async throws {
         let f = try await Self.start()
         defer { f.server.stop() }
