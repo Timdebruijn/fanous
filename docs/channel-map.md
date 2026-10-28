@@ -44,7 +44,8 @@ Generated from `Sources/FanousCore/Parameters/ChannelMap.swift` by `fanousd chan
 | 48 | Audio volume | 8 | 0 | 0 → 0 % · 255 → 100 % | `audioVolume` |
 | 49 | Audio pan | 8 | 128 | 0 → -100 % · 128 → 0 % · 255 → 100 % | `audioPan` |
 | 50 | Control | 8 | 0 | 0–7 Idle · 8–15 Retrigger · 16–23 Resync audio · 24–31 Clear error · rest = Idle | `control` |
-| 51–64 | Reserved | — | 0 | ignored | — |
+| 51 | Sync | 8 | 0 | 0–9 Off · 10–19 Master 1 · 20–29 Master 2 · 30–39 Master 3 · 40–49 Master 4 · 50–59 Master 5 · 60–69 Master 6 · 70–79 Master 7 · 80–89 Master 8 · 90–99 Slave 1 · 100–109 Slave 2 · 110–119 Slave 3 · 120–129 Slave 4 · 130–139 Slave 5 · 140–149 Slave 6 · 150–159 Slave 7 · 160–169 Slave 8 · 170–255 Off · rest = Off | `sync` |
+| 52–64 | Reserved | — | 0 | ignored | — |
 
 ## Master mode (8 channels)
 

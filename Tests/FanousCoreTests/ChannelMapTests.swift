@@ -29,9 +29,9 @@ import Testing
         #expect([FixtureMode.layer: 64, .master: 8, .output: 8][mode] == mode.footprint)
     }
 
-    @Test func layerUsesFiftyChannels() {
+    @Test func layerUsesFiftyOneChannels() {
         #expect(ChannelMap.layer.count == LayerParameter.allCases.count)
-        #expect(ChannelMap.layer.map(\.channels.upperBound).max() == 50)
+        #expect(ChannelMap.layer.map(\.channels.upperBound).max() == 51)
         #expect(ChannelMap.master.map(\.channels.upperBound).max() == 6)
         #expect(ChannelMap.output.map(\.channels.upperBound).max() == 5)
     }

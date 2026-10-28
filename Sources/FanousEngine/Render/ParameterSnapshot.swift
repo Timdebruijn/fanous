@@ -47,6 +47,7 @@ public struct LayerParameters: Sendable, Equatable {
     public var audioVolume: Float = 0  // 0…1
     public var audioPan: Float = 0  // −1…1
     public var control: LayerControl = .idle
+    public var sync: LayerSync = .off
 
     public init() {}
 
@@ -95,6 +96,7 @@ public struct LayerParameters: Sendable, Equatable {
         p.audioVolume = physical(.audioVolume) / 100
         p.audioPan = physical(.audioPan) / 100
         p.control = band(.control, LayerControl.self) ?? .idle
+        p.sync = LayerSync(bandValue: Int(physical(.sync)))
         return p
     }
 }

@@ -522,7 +522,7 @@ the fixture is patched and "at default". A freshly patched layer is black
 | 48 | Audio volume | 8 | 0 | 0–100 % (default silent) |
 | 49 | Audio pan | 8 | 128 | L … R |
 | 50 | Control | 8 | 0 | 0–7 idle · 8–15 **Retrigger** (jump to In point on rising edge) · 16–23 Resync audio · 24–31 Clear error · 32–255 reserved |
-| 51 | Sync | 8 | 0 | 0–9 off · 10–89 master group 1–8 · 90–169 slave group 1–8 · 170–255 reserved (§23, B60: designed, not built) |
+| 51 | Sync | 8 | 0 | 0–9 off · 10–89 master group 1–8 · 90–169 slave group 1–8 · 170–255 reserved (§23, B60) |
 | 52–64 | Reserved | — | 0 | ignored |
 
 Effect parameter semantics per effect are listed in `docs/channel-map.md`
@@ -1928,7 +1928,7 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | Pixel mapping to DMX fixtures | Art-Net/sACN *builders* already exist in Core (needed for tests); a GPU sampling pass reads canvas regions into a small buffer per universe on the preview thread |
 | Multi-server sync, main/backup failover | the Sync channel and clock packet are designed in §23 (B60, ADR-0021); a hot backup and control from one place build on the same packet plus the WSS project patches, §23.6 / OPEN-27 |
 | 3D projection mapping | the output pass already renders arbitrary meshes through a displacement field; a projected OBJ with a calibrated camera matrix replaces the slice mesh |
-| 3D-model layers (media as texture on a mesh) | the layer pass is one quad in a perspective camera (§4.3); a mesh from Model I/O (USDZ/OBJ) with its own UVs replaces the quad, the fragment shader is unchanged; needs a depth attachment on the canvas pass and a "Geometry" parameter in the reserved Layer channels 51–64 (0 = flat, 1–255 = model from the library); `docs/BACKLOG.md` B9 |
+| 3D-model layers (media as texture on a mesh) | the layer pass is one quad in a perspective camera (§4.3); a mesh from Model I/O (USDZ/OBJ) with its own UVs replaces the quad, the fragment shader is unchanged; needs a depth attachment on the canvas pass and a "Geometry" parameter in the reserved Layer channels 52–64 (0 = flat, 1–255 = model from the library); `docs/BACKLOG.md` B9 |
 | Motion: tracking in, movement out (B53) | **Tracking as a source:** a PosiStageNet receiver in Core (UDP multicast, position/speed/orientation per tracker) and OSC trackers become an extra *internal source* in the resolver (§7.2), mapped per project ("tracker 3 → Layer 2 position X/Y, scale") through a stage-to-canvas calibration (metres → canvas) set on the Outputs screen; on-device person tracking through the Vision framework on a capture input (folder 0); depth/lidar SDKs only through the plugin boundary (ADR-0016). **Movement out:** DMX-controlled motion (mirror heads, pan/tilt yokes, winches, rotators) via the Art-Net/sACN builders of the pixel-mapping pass; small motors (ESP32 steppers/servos) via OSC output (B36) or an MQTT bridge. **Moving screens:** encoder positions in over PSN/OSC update an output's corner-pin homography per frame. **Hard rule:** Fanous sends cues and target positions only; it is never the safety layer of stage automation (e-stops, SIL-rated controllers stay in charge). Camera tracking of people is processed on the device and never stored (GDPR). Expected tracker → photon ≈ 35–40 ms, enough to follow a performer, not for locked-on AR. |
 | Serial device fixture | fixture type in `ParameterSpec`; POSIX termios on `/dev/cu.*`, no dependency |
 | OSC feedback, MIDI notes/CC, MSC, timeline, varispeed audio, 10-bit output, per-channel blend gamma, frame blending, MDM profile, CA profile for iPads | noted in their sections |
@@ -1978,7 +1978,8 @@ machine plays frame-locked with a layer on another. Catalyst (play mode
 "Synchronize to master unit") and High End's Axon/DL.3 ("Sync Mode" + "Sync
 To" per layer, over Ethernet) solved this on the console; Fanous does the
 same with one channel. Designed 2026-10-28 (owner review of the first draft,
-which mirrored whole machines over WSS; see ADR-0021); nothing is built yet.
+which mirrored whole machines over WSS; see ADR-0021); step 2 (the channel and
+the packet codec) is built (PR #31), the rest is not.
 
 ### 23.1 One channel: Sync, layer channel 51
 
@@ -2014,8 +2015,8 @@ which mirrored whole machines over WSS; see ADR-0021); nothing is built yet.
 ### 23.2 The clock packet
 
 The master machine sends one UDP packet per compositor tick (only while at
-least one of its layers is a master; a 1 Hz keepalive otherwise), ≈ 40 B
-per master layer, little-endian:
+least one of its layers is a master; a 1 Hz keepalive otherwise), 22 B per
+master layer plus a 34 B header (738 B for 32 layers), little-endian:
 
 ```
 FanousSync v1

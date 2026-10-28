@@ -65,6 +65,7 @@ public enum GDTFExporter {
             case .audioVolume: return a("VideoSoundVolume1", "Volume", "Video", "Video", "Percent")
             case .audioPan: return a("AudioPan", "Pan", "Video", "Video", "Percent")
             case .control: return a("Control1", "Control", "Control", "Control", "None")
+            case .sync: return a("VideoSync", "Sync", "Video", "Video", "None")
             }
         case .master(let p):
             switch p {

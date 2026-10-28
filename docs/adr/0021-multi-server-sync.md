@@ -27,8 +27,8 @@ syncing, and the sync should be a console parameter, not a machine mode.
   blend, warp). Groups replace Axon's fixture ids; machines need not know
   each other. Two masters in a group: the lowest install UUID wins.
 - **One UDP packet per tick**, broadcast on the sync interface (port 8002,
-  configurable; a unicast target for one-Mac tests), ≈ 40 B per master
-  layer: media key, fps, position, direction, finished, rate. The
+  configurable; a unicast target for one-Mac tests), 22 B per master
+  layer plus a 34 B header (738 B for 32 layers): media key, fps, position, direction, finished, rate. The
   compositor writes a triple-buffered slot; a sender thread sends it. The
   receiver is one `SO_REUSEPORT` socket feeding a per-group table read once
   per tick.
