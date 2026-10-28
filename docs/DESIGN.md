@@ -1404,7 +1404,10 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   as one patch and `projectChanged` applies it like any other change (canvas
   switch, patch, cues, timecode). The history is not cleared; undo and redo of a
   revert entry are refused in show mode (`CommandSpec.replayCheck`, checked by
-  `StateStore.step` before it pops). `live.versions` `{lastAutomatic, serial}`
+  `StateStore.step` before it pops). The check sees the patch the step would
+  apply and the current project: `syphon.forget` refuses an undo whose
+  `add /syphon/N` would overwrite another app/server on that number, and that
+  `historyConflict` drops the entry (B90). `live.versions` `{lastAutomatic, serial}`
   feeds the status bar and tells the System screen to re-list. OSC
   `/fanous/project/load s` resolves the newest named version with that name
   (case-insensitive), else a version id, on the versions queue, ignores a
