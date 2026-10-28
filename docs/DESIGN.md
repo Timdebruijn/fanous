@@ -781,16 +781,15 @@ the fixed path is a scene `media` entry (`{folder: 0, file, syphon:
 "App/Server"}`) on any folder 0 number, which also beats 150–169.
 `Syphon/SyphonCatalog.swift` follows Syphon's directory (an unconnected
 `SyphonInput` for its announce/update/retire notifications, which need the
-main run loop) and numbers servers in announce order; a server that goes keeps
-its number (`running` false) until the engine restarts, one that returns with
+main run loop) and gives each new server the lowest free number; a server that goes keeps
+its number (`running` false), one that returns with
 the same app and server name takes it again, a rename keeps it, past 20 a new
-server gets none (after an engine restart the numbers follow the order the
-servers answer the startup announce request; persisting them is B69). Identity while running is the directory's UUID, so two
+server gets none (`live.syphon.unnumbered`). Identity while running is the directory's UUID, so two
 servers with one name (two engines' canvases) get a number each and connect
 to the right one (`SyphonInput.connect(uuid:)`); the engine's own canvas
 server is left out. The catalog lives in `RenderService` (as long as the
 engine) and is published as `live.syphon.servers` `[{file, app, server,
-running}]`. `MediaLoader` resolves 0/150–169 through it with `liveFactory(name,
+running, gone?}]`. `MediaLoader` resolves 0/150–169 through it with `liveFactory(name,
 uuid)` (status name "Syphon: App/Server", codec `syphon`); a scene `media`
 entry on the same number wins. On a catalog change the loader marks a layer
 whose server went "not running" and keeps its playback (the last frame stays),
@@ -805,6 +804,19 @@ crashes or is killed stays listed until an announce request goes unanswered for
 server is listed as running), so it reads "not running" within about 11 s. A
 server's frame age is not used: servers publish only when their picture
 changes.
+
+**As built (2026-10-28, B69):** the numbering is kept in the project,
+`syphon: [{file, app, server}]`. The catalog starts from it (`SyphonCatalog(numbers:)`)
+with every entry gone (`gone: true` until it announces), so a returning server
+takes its number back by name with a new UUID whatever the order of the startup
+announce; the engine writes the catalog back with `StateStore.correct` (no role,
+no history, also under show lock) from the 10 Hz live feed, the value made on the
+store's queue so it is never older than a `syphon.forget`. `syphon.forget {file?}`
+(programmer, undoable, refused under show lock) removes one entry, or every
+entry not running, and refuses a running one; a project change to `/syphon`
+(forget, undo, a loaded version) is adopted by the catalog: a running server
+always keeps its number, an entry on it is dropped and written back, and a
+freed number goes at once to a server waiting past the 20.
 
 ### 8.3 Ingest flow
 
@@ -1041,6 +1053,10 @@ matching), checkerboard (pixel-exact). Selectable per output and globally
 `SyphonMetalServer` per canvas, named `Fanous – <canvas name>`, published
 from the compositor after the canvas pass with the same completed texture
 (no copy; Syphon shares the IOSurface). Per-output Syphon (post-warp) later.
+
+**As built (2026-10-28, B69):** Syphon input numbers (§8.2, folder 0 files
+150–169) are kept in the project and survive an engine restart; the engine's
+own canvas servers are never numbered.
 
 ---
 

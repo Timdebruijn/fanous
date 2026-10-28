@@ -590,6 +590,36 @@ struct StateStoreRedactionTests {
     }
 }
 
+extension StateStoreTests {
+    /// B69: forget one number or every one not running; never a running one; programmer, undoable, refused under show lock.
+    @Test func syphonForgetFreesNumbersThatAreNotRunning() throws {
+        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
+        var project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
+        let numbers = [(150, "Resolume"), (151, "Simple Server"), (152, "MadMapper")].map { SyphonCatalog.Server(file: $0.0, app: $0.1, server: "") }
+        try project.set(ProjectDocument.syphonValue(numbers), at: "/syphon")
+        let store = StateStore(project: project, logger: Self.logger)
+        ProjectDocument.registerCommands(on: store, auth: auth, syphonRunning: { [150] })
+        func files() -> [Int] { ProjectDocument.syphonNumbers(from: store.project).map(\.file) }
+
+        #expect(store.execute("syphon.forget", args: ["file": 151], role: .operator).failureCode == "forbidden")
+        #expect(store.execute("syphon.forget", args: ["file": 150], role: .programmer).failureCode == "invalidArgs")
+        #expect(store.execute("syphon.forget", args: ["file": 160], role: .programmer).failureCode == "invalidArgs")
+        _ = try store.execute("syphon.forget", args: ["file": 151], role: .programmer).get()
+        #expect(files() == [150, 152])
+        _ = try store.execute("undo", role: .programmer).get()
+        #expect(files() == [150, 151, 152])
+        _ = try store.execute("syphon.forget", role: .programmer).get()
+        #expect(files() == [150])
+
+        _ = try store.execute("show.lock", role: .programmer).get()
+        #expect(store.execute("undo", role: .programmer) == .failure(.showLocked))
+        #expect(store.execute("syphon.forget", role: .programmer) == .failure(.showLocked))
+        // the engine's own numbering still lands under show lock (a new server numbered mid-show)
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue(numbers) }
+        #expect(files() == [150, 151, 152])
+    }
+}
+
 struct LibraryRedactionTests {
     @Test func monitorSnapshotHasNoAbsolutePaths() {
         let item = LibraryItem(folder: 1, file: 1, name: "a.mov", path: "/Users/x/lib/001_a/001_a.mov", kind: .movie, status: .playable, reason: nil, metadata: nil, thumbnail: nil, modified: 0, size: 1)

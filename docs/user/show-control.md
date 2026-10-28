@@ -373,23 +373,25 @@ position, scale, colour, effects and dissolves apply.
 | 111 | Colour sweep: a slow moving hue gradient |
 | 112 | Clock: time of day, hh:mm:ss |
 | 113 | Motion test: a bar moving 16 px per frame (at 1080p), stripes scrolling 8 px per frame and a strip of 60 cells with one lit per frame. At a steady rate every step is equal; a dropped or doubled frame shows as a jump or a stop |
-| 150–169 | Syphon servers of other apps on this Mac, numbered in the order the engine sees them (see below) |
+| 150–169 | Syphon servers of other apps on this Mac, numbered as the engine first sees them and kept in the project (see below) |
 
 **Syphon servers (150–169).** Every Syphon server another app on this Mac
-publishes gets the next free number from 150, up to 169, in the order the
-engine sees them; the Media screen lists them with their number, a green dot
-while the server runs and a grey ring when it has gone. A server that stops
-keeps its number until the engine restarts, so the numbers on the console
-never shift; when it starts again (same app and server name) it gets its old
-number back. When an app quits, its dot goes grey at once; when it crashes,
+publishes gets the lowest free number from 150, up to 169, when the engine
+first sees it; the Media screen lists them with their number, a green dot
+while the server runs and a grey ring when it has gone. The numbers are kept
+in the project, so they stay the same across an engine restart (also a restart
+after a crash in the middle of a show): a server that stops keeps its number,
+and when it starts again (same app and server name) it gets its old number
+back. After a restart a server that has not answered yet is listed greyed,
+"not seen since the engine started". A number is only freed with **Forget** on
+the Media screen (one server that is not running, or **Forget all not running**;
+programmer, undoable, not while the show is locked); with all 20 numbers taken a
+new server gets none and the Media screen names it. When an app quits, its dot goes grey at once; when it crashes,
 within about 11 seconds. A layer on a server that has gone keeps its last
 picture and shows "Syphon: App/Server · not running" on the Layers screen;
 when the server comes back the picture returns without selecting it again.
-Selecting a server that is not running shows black until it starts. The
-numbering starts afresh after an engine restart (in the order the servers
-answer, which can differ from before), so check the Media screen before a
-show and after any engine restart if the console relies on these numbers; a
-scene file entry for the same number wins. This engine's own canvas is not
+Selecting a server that is not running shows black until it starts. A scene
+file entry for the same number wins. This engine's own canvas is not
 listed.
 
 Judge motion on an output (a display or projector), not in the preview: the

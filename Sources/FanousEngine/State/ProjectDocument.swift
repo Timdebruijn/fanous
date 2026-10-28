@@ -100,6 +100,19 @@ public enum ProjectDocument {
         try project.set(.object(object), at: "/layerCanvas")
     }
 
+    /// The Syphon numbering (B69): `/syphon` `[{file, app, server}]`, folder 0 files 150–169, written by the engine as
+    /// it numbers servers (no command, also under show lock), freed by `syphon.forget`. Gone until they announce.
+    public static func syphonNumbers(from project: JSONValue) -> [SyphonCatalog.Server] {
+        (project["syphon"]?.array ?? []).compactMap { entry in
+            guard let file = entry["file"]?.int, let app = entry["app"]?.string else { return nil }
+            return SyphonCatalog.Server(file: file, app: app, server: entry["server"]?.string ?? "", gone: true)
+        }
+    }
+
+    public static func syphonValue(_ servers: [SyphonCatalog.Server]) -> JSONValue {
+        .array(servers.map { ["file": .number(Double($0.file)), "app": .string($0.app), "server": .string($0.server)] })
+    }
+
     /// Layers and slices on a canvas outside `keeping` move to canvas 1 (canvas.remove, a failed canvas switch).
     /// Writes only what changes.
     public static func moveToCanvas1(keeping ids: Set<Int>, in project: inout JSONValue) throws {
@@ -153,6 +166,7 @@ public enum ProjectDocument {
             "canvases": canvasValue(canvas),
             "layerCanvas": [:],
             "outputs": [],
+            "syphon": [],
             "ui": [:],
         ]
     }
@@ -241,6 +255,7 @@ public enum ProjectDocument {
         }
         if document["ui"] == nil { try? document.set([:], at: "/ui") }
         if document["layerCanvas"] == nil { try? document.set([:], at: "/layerCanvas") }
+        if document["syphon"] == nil { try? document.set([], at: "/syphon") }
         return document
     }
 
@@ -256,10 +271,12 @@ public enum ProjectDocument {
     /// `showModeOn`: canvas format changes are refused while show mode is on (they re-initialise the canvas).
     /// `checkLibraryRoot`: throws when the engine cannot switch to that root now (B51); gets the expanded absolute path.
     /// `applySync`: restarts the sync sender and receiver with saved settings; throws when the port cannot be bound.
+    /// `syphonRunning`: the numbers of the Syphon servers running now (B69: only the others can be forgotten).
     public static func registerCommands(
         on store: StateStore, auth: RoleAuth, showModeOn: @escaping @Sendable () -> Bool = { false },
         checkLibraryRoot: @escaping @Sendable (String) throws -> Void = { _ in },
-        applySync: @escaping @Sendable (SyncSettings) throws -> Void = { _ in }
+        applySync: @escaping @Sendable (SyncSettings) throws -> Void = { _ in },
+        syphonRunning: @escaping @Sendable () -> Set<Int> = { [] }
     ) {
         store.register(
             CommandSpec(
@@ -346,6 +363,24 @@ public enum ProjectDocument {
                 var assigned = layerCanvases(from: project)
                 assigned[layer] = canvas
                 try setLayerCanvases(assigned, in: &project)
+                return nil
+            })
+        store.register(
+            CommandSpec(
+                name: "syphon.forget", role: .programmer,
+                summary: "Forget a numbered Syphon server that is not running (folder 0, 150–169), or without file every one not running: the number is free again.",
+                argsType: "{ file?: number }"
+            ) { project, args in
+                let running = syphonRunning()
+                var numbers = syphonNumbers(from: project)
+                if let raw = args["file"], raw != .null {
+                    guard let file = raw.int, numbers.contains(where: { $0.file == file }) else { throw CommandError.invalidArgs("no Syphon server numbered \(raw)") }
+                    guard !running.contains(file) else { throw CommandError.invalidArgs("Syphon server \(file) is running; only one that is not running can be forgotten") }
+                    numbers.removeAll { $0.file == file }
+                } else {
+                    numbers.removeAll { !running.contains($0.file) }
+                }
+                try project.set(syphonValue(numbers), at: "/syphon")
                 return nil
             })
         store.register(

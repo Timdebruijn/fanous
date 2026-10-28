@@ -143,6 +143,50 @@ import Testing
         #expect(list.count == 20 && list.allSatisfy { !$0.running })
     }
 
+    // MARK: numbers kept in the project (B69)
+
+    @Test func numberingSurvivesARestartThroughTheProject() {
+        let first = SyphonCatalog()
+        first.update(running: [Self.info("Resolume", "Out", "a"), Self.info("Simple Server", "", "b"), Self.info("MadMapper", "", "c")])
+        let project: JSONValue = ["syphon": ProjectDocument.syphonValue(first.servers)]
+
+        // the next engine starts from the project: every number held, gone until its server announces
+        let next = SyphonCatalog(numbers: ProjectDocument.syphonNumbers(from: project))
+        #expect(next.servers.map(\.file) == [150, 151, 152])
+        #expect(next.servers.allSatisfy { $0.gone && !$0.running })
+        #expect(next.server(file: 151)?.name == "Simple Server")
+
+        // they answer in another order, with new ids: each takes its own number back by name
+        next.update(running: [Self.info("MadMapper", "", "c2"), Self.info("Resolume", "Out", "a2")])
+        #expect(next.server(file: 150)?.uuid == "a2" && next.server(file: 152)?.uuid == "c2")
+        #expect(next.server(file: 151)?.gone == true && next.server(file: 150)?.gone == false)
+        // a new server gets the lowest free number, not a held one
+        next.update(running: [Self.info("MadMapper", "", "c2"), Self.info("Resolume", "Out", "a2"), Self.info("New", "", "n")])
+        #expect(next.server(file: 153)?.name == "New")
+
+        // forgetting 151 (the project without it) frees the number for the next new server
+        let forgotten = next.servers.filter { $0.file != 151 }
+        #expect(next.adopt(forgotten))
+        #expect(next.server(file: 151) == nil)
+        next.update(running: [Self.info("MadMapper", "", "c2"), Self.info("Resolume", "Out", "a2"), Self.info("New", "", "n"), Self.info("Later", "", "l")])
+        #expect(next.server(file: 151)?.name == "Later")
+
+        // a project entry on a running server's number loses: the running server keeps it
+        #expect(!next.adopt([SyphonCatalog.Server(file: 150, app: "Elsewhere", server: "")] + next.servers.filter { $0.file != 150 }))
+        #expect(next.server(file: 150)?.uuid == "a2")
+    }
+
+    @Test func aTwentyFirstServerWaitsForAForgottenNumber() {
+        let full = (150...169).map { SyphonCatalog.Server(file: $0, app: "App", server: "S\($0)") }
+        let catalog = SyphonCatalog(numbers: full)
+        catalog.update(running: [Self.info("Other", "", "x")])
+        #expect(catalog.servers.count == 20 && catalog.server(file: 150)?.name == "App/S150")
+        #expect(catalog.unnumbered == ["Other"])
+        // forget 160: the waiting server gets it without announcing again
+        #expect(catalog.adopt(full.filter { $0.file != 160 }))
+        #expect(catalog.server(file: 160)?.uuid == "x" && catalog.unnumbered.isEmpty)
+    }
+
     final class FakeLive: LiveTextureSource, @unchecked Sendable {
         let uuid: String?
         let stopped = Atomic<Bool>(false)

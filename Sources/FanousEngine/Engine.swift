@@ -108,6 +108,8 @@ public final class Engine: @unchecked Sendable {
     private let sacnError = Mutex<String?>(nil)
     /// The project's library root as last seen by `projectChanged` (B51).
     private let libraryRootInProject = Mutex<String?>(nil)
+    /// `/syphon` as the engine last applied it (B69): the catalog is written back when it differs.
+    private let syphonInProject = Mutex<JSONValue>([])
     /// Root switches run here one at a time (scan, probe-thread join): never on the feed or control queue.
     private let libraryQueue = DispatchQueue(label: "org.fanous.library.switch", qos: .utility)
     /// Root switches queued or running; show mode is refused meanwhile.
@@ -268,8 +270,9 @@ public final class Engine: @unchecked Sendable {
         sceneWithOutputs.managedOutputs = true  // the coordinator below owns displays and drivers (DESIGN.md §9.6)
         do {
             let scene = sceneWithOutputs
+            let syphonNumbers = ProjectDocument.syphonNumbers(from: loadedProject ?? .null)
             let service = try MainActor.assumeIsolated {
-                try RenderService(scene: scene, context: context, parameters: dmx.snapshots, metrics: metrics, logger: logger)
+                try RenderService(scene: scene, context: context, parameters: dmx.snapshots, metrics: metrics, logger: logger, syphonNumbers: syphonNumbers)
             }
             service.loader.resolver = { [weak self] key in self?.library?.resolve(key) }
             service.audioKeepRunning = { [weak self] in self?.showMode.isOn ?? false }
@@ -295,7 +298,9 @@ public final class Engine: @unchecked Sendable {
         ProjectDocument.registerCommands(
             on: store, auth: auth, showModeOn: { [weak self] in self?.showMode.isOn ?? false },
             checkLibraryRoot: { [weak self] root in if let refusal = self?.libraryRootRefusal(root) { throw refusal } },
-            applySync: { [weak self] in try self?.applySync($0) })
+            applySync: { [weak self] in try self?.applySync($0) },
+            syphonRunning: { [weak self] in Set(self?.render?.syphonCatalog.servers.filter(\.running).map(\.file) ?? []) })
+        syphonInProject.withLock { $0 = project["syphon"] ?? [] }
         libraryRootInProject.withLock { $0 = URL(fileURLWithPath: project["library"]?["root"]?.string ?? libraryRoot.path).path }
         // B23: a version of the project as loaded, then one every 10 minutes when it changed, and one per show-mode enter
         let versions = ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger)
@@ -1339,6 +1344,14 @@ public final class Engine: @unchecked Sendable {
             // ponytail: replaces the whole map, so a map edit landing in between is lost; ids then come on the next change
             DispatchQueue.global(qos: .utility).async { store.correct(map, at: "/midi/map") }
         }
+        // the Syphon numbering (B69): syphon.forget, undo, a loaded project; the live feed writes the catalog back
+        let syphon = document["syphon"] ?? []
+        if syphonInProject.withLock({ old in
+            defer { old = syphon }
+            return old != syphon
+        }) {
+            render?.syphonCatalog.adopt(ProjectDocument.syphonNumbers(from: document))
+        }
         let midiSettings = MIDISettings.from(project: document)
         if midiSettings != lastMIDISettings {
             lastMIDISettings = midiSettings
@@ -1558,14 +1571,29 @@ public final class Engine: @unchecked Sendable {
             "citp": citpLive(),
             "versions": versions?.live ?? .null,
             "sync": syncLive(),
-            "syphon": [
-                "servers": .array(
-                    (render?.syphonCatalog.servers ?? []).map { s in
-                        ["file": .number(Double(s.file)), "app": .string(s.app), "server": .string(s.server), "running": .bool(s.running)]
-                    })
-            ],
+            "syphon": syphonLive(store: store),
         ]
         store.updateLive(live)
+    }
+
+    /// `live.syphon` (B61, B69), and the catalog's numbering written into the project when it changed (a new number,
+    /// a rename): through `correct`, so no role, no history and also under show lock.
+    private func syphonLive(store: StateStore) -> JSONValue {
+        guard let catalog = render?.syphonCatalog else { return ["servers": []] }
+        let servers = catalog.servers
+        if ProjectDocument.syphonValue(servers) != syphonInProject.withLock({ $0 }) {
+            // made on the store's queue: never a list from before a syphon.forget that landed meanwhile
+            store.correct(at: "/syphon") { ProjectDocument.syphonValue(catalog.servers) }
+        }
+        return [
+            "servers": .array(
+                servers.map { s in
+                    var entry: JSONValue = ["file": .number(Double(s.file)), "app": .string(s.app), "server": .string(s.server), "running": .bool(s.running)]
+                    if s.gone { try? entry.set(true, at: "/gone") }
+                    return entry
+                }),
+            "unnumbered": .array(catalog.unnumbered.map { .string($0) }),
+        ]
     }
 
     private func streamDMX() {

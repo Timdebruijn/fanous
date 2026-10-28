@@ -216,10 +216,14 @@ public final class StateStore: @unchecked Sendable {
 
     /// Engine-owned correction of a project value (a change the engine could not apply is put back): no command,
     /// no history entry, every client gets the patch. Not to be called from the store's own queue.
-    public func correct(_ value: JSONValue, at pointer: JSONPointer) {
+    public func correct(_ value: JSONValue, at pointer: JSONPointer) { correct(at: pointer) { value } }
+
+    /// As `correct(_:at:)`, with the value made on the store's queue: it cannot be older than a change committed before
+    /// it (the engine's Syphon numbering against `syphon.forget`, B69).
+    public func correct(at pointer: JSONPointer, _ make: () -> JSONValue) {
         queue.sync {
             var next = projectDocument
-            guard (try? next.set(value, at: pointer)) != nil else { return }
+            guard (try? next.set(make(), at: pointer)) != nil else { return }
             let patch = JSONPatch.diff(from: projectDocument, to: next)
             if !patch.isEmpty { commit(next, patch: patch) }
         }

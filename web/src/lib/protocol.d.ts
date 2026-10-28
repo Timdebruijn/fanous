@@ -51,6 +51,7 @@ export type CommandName =
   | 'show.mode'
   | 'show.unlock'
   | 'sync.set'
+  | 'syphon.forget'
   | 'timecode.enable'
   | 'timecode.set'
   | 'undo'
@@ -127,6 +128,8 @@ export interface CommandArgs {
   'show.unlock': Record<string, never>;
   /** Multi-server sync settings: interface (any, en0, an IPv4 address), port (1–65535, default 8002), target (broadcast, or IPv4[:port]); machine setting, not part of the project; applies live; refused in show mode. Role: programmer, refused under show lock. */
   'sync.set': { interface?: string; port?: number; target?: string };
+  /** Forget a numbered Syphon server that is not running (folder 0, 150–169), or without file every one not running: the number is free again. Role: programmer, refused under show lock, undoable. */
+  'syphon.forget': { file?: number };
   /** Operator switch: chase the configured timecode source (true) or ignore it (false). Role: operator. */
   'timecode.enable': { on: boolean };
   /** Timecode settings: source (off|ltc|mtc), device, channel, offset (frames), freewheel (s), layerOffsets. Role: programmer, refused under show lock, undoable. */
