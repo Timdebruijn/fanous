@@ -156,6 +156,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   file that does not parse is refused, not overwritten (B79).
 - Fixed: a preview that was streaming stayed frozen ("no new frames") after a reconnect; it now lets go of its stream
   when the connection closes and subscribes again, once, when it is back (B68).
+- Fixed: the 4 preview encoders bounded extra sizes only, so viewers on several targets could run more; the limit now holds
+  across targets (a fallback size of the target or its canvas, else JPEG), and a released encoder goes to a viewer on a size or
+  canvas fallback (a viewer refused to JPEG stays on JPEG in the browser) (B70). `/metrics` `preview.encoders` now counts H.264
+  encoders: canvas 1 always, the others while they have an H.264 subscriber; JPEG-only streamers no longer count. It is a
+  reservation count: for a few ms around an asynchronous release and create a fifth session can exist.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

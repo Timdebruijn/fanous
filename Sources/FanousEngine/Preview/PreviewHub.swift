@@ -10,7 +10,7 @@ import Synchronization
 /// One preview streamer per (target, size class) that has subscribers ("canvas" = "canvas:1", "canvas:<id>",
 /// "output:<id>", "layer:<n>"; DESIGN.md §11.3, B32), created on demand and released with its last subscriber, so one
 /// client's target or size never changes what another sees. The canvas 1 streamer at the default class always exists:
-/// CITP consoles stream it.
+/// CITP consoles stream it. H.264 encoders are bounded across targets (`PreviewSize.maxEncoders`, B70): `choose`.
 public final class PreviewHub: @unchecked Sendable {
     /// A streamer's key: its target and its size class (`PreviewSize`).
     public struct Key: Hashable, Sendable {
@@ -34,6 +34,12 @@ public final class PreviewHub: @unchecked Sendable {
     nonisolated(unsafe) public var configure: (@Sendable (String, PreviewStreamer) -> Bool)?
     /// Compositor thread: a canvas of the running tick by id (`Compositor.tickCanvas`).
     nonisolated(unsafe) public var canvasTexture: ((Int) -> MTLTexture?)?
+    /// The canvas an output (its first slice) or a layer shows, the second fallback at the encoder limit (B70); nil or
+    /// unset: canvas 1. Set by the engine; takes only the engine's own locks.
+    nonisolated(unsafe) public var canvasOf: (@Sendable (String) -> Int?)?
+    /// H.264 subscribers on another streamer than their (target, size) at the encoder limit, or refused to JPEG, oldest
+    /// first: `rebalance` moves them when an encoder is released (B70). Guarded by `streamers`.
+    private var fallbacks: [(subscriber: PreviewStreamer.Subscriber, key: Key)] = []
     /// Live layer thumbnails (B29): one producer for every `thumbs` subscriber and CITP layer stream. Set by the engine
     /// before the first tick.
     nonisolated(unsafe) public var thumbnails: ThumbnailStreamer?
@@ -52,11 +58,10 @@ public final class PreviewHub: @unchecked Sendable {
     }
 
     /// Subscribes `connection`'s stream to `target` at the size class for `width` (nil: the default), creating that
-    /// streamer when this is its first subscriber. At `PreviewSize.maxEncoders` a new size of a target that already
-    /// has one attaches to its nearest size instead; a new target always gets its streamer. `announce` runs before the
-    /// first frame can be sent (the `sub` reply carries the stream's size). False: bad target.
+    /// streamer when this is its first subscriber; at the encoder limit `choose` picks another. `announce` runs before
+    /// the first frame can be sent (the `sub` reply carries the stream's size and whether it is JPEG). False: bad target.
     public func attach(
-        target requested: String, width: Int? = nil, connection: StateServer.Connection, stream: UInt32, jpeg: Bool, announce: (PreviewStreamer) -> Void
+        target requested: String, width: Int? = nil, connection: StateServer.Connection, stream: UInt32, jpeg: Bool, announce: (PreviewStreamer, _ jpeg: Bool) -> Void
     ) -> Bool {
         let key = Key(target: requested == "canvas:1" ? "canvas" : requested, width: PreviewSize.sizeClass(wanted: width))
         // compiling an output reads the project (the store's queue): never under our lock, the store calls
@@ -64,27 +69,18 @@ public final class PreviewHub: @unchecked Sendable {
         // meanwhile (a rebuild keeps a streamer it did not see) or the size to fall back to lost its last subscriber
         for _ in 0..<8 {  // ponytail: bounded; a target that changes shape 8 times during one subscription is refused
             var fresh: PreviewStreamer?
-            if streamers.withLock({ existing(key, in: $0) }) == nil {
+            if streamers.withLock({ choose(key, jpeg: jpeg, in: $0).streamer }) == nil {
                 guard let created = try? create(key) else { return false }
                 fresh = created
             }
             let attached: Bool? = streamers.withLock { all in
-                let streamer: PreviewStreamer
-                if let found = existing(key, in: all) {
-                    streamer = found  // another client got there first, or the limit was reached meanwhile; ours is dropped
-                } else if let fresh {
-                    // `shape` takes only the engine's own locks, never ours
-                    guard let shape = shape(key.target) else { return false }
-                    let size = PreviewSize.size(class: key.width, shape: shape)
-                    guard size.width == fresh.width, size.height == fresh.height else { return nil }
-                    all[key] = fresh
-                    streamer = fresh
-                    publishActive(all)
-                } else {
-                    return nil
-                }
-                announce(streamer)
-                streamer.subscribe(PreviewStreamer.Subscriber(connection: connection, stream: stream, jpeg: jpeg))
+                // another client got there first, or the limit was reached meanwhile: ours is dropped
+                let choice = choose(key, jpeg: jpeg, in: all)
+                guard let streamer = choice.streamer ?? install(fresh, as: key, in: &all) else { return nil }
+                let subscriber = PreviewStreamer.Subscriber(connection: connection, stream: stream, jpeg: jpeg)
+                if choice.fallback { fallbacks.append((subscriber, key)) }
+                announce(streamer, choice.jpeg)
+                streamer.subscribe(PreviewStreamer.Subscriber(connection: connection, stream: stream, jpeg: choice.jpeg))
                 return true
             }
             if let attached { return attached }
@@ -92,31 +88,94 @@ public final class PreviewHub: @unchecked Sendable {
         return false
     }
 
-    /// The streamer `key` gets without a new encoder: its own, or at the encoder limit the nearest size of its target.
-    private func existing(_ key: Key, in all: [Key: PreviewStreamer]) -> PreviewStreamer? {
-        var sizes = all.filter { $0.key.target == key.target }
-        if key.target == "canvas" { sizes[Key(target: "canvas", width: PreviewSize.defaultClass)] = canvas }
-        if let own = sizes[key] { return own }
-        guard 1 + all.count >= PreviewSize.maxEncoders, let nearest = PreviewSize.nearest(key.width, in: sizes.keys.map(\.width)) else { return nil }
-        return sizes[Key(target: key.target, width: nearest)]
+    /// Where a subscriber of `key` goes (B70). JPEG has no encoder: its own streamer. H.264 within
+    /// `PreviewSize.maxEncoders` (the canvas one counted): its own. At the limit, a streamer that encodes already: its
+    /// target's nearest size, else its canvas's nearest size; else refused, as JPEG on its own streamer (the browser
+    /// falls back to JPEG when no `stream` description comes). `streamer` nil: make it.
+    private func choose(_ key: Key, jpeg: Bool, in all: [Key: PreviewStreamer]) -> (streamer: PreviewStreamer?, jpeg: Bool, fallback: Bool) {
+        let own = key == Key(target: "canvas", width: PreviewSize.defaultClass) ? canvas : all[key]
+        if jpeg { return (own, true, false) }
+        // the canvas streamer is always counted: its own viewers are never on a fallback
+        if own === canvas || own.map(Self.encodes) == true || encoderCount(all) < PreviewSize.maxEncoders { return (own, false, false) }
+        for target in [key.target, canvasTarget(of: key.target)] {
+            var sizes = [Int: PreviewStreamer]()
+            for (k, s) in all where k.target == target && Self.encodes(s) { sizes[k.width] = s }
+            if target == "canvas" { sizes[PreviewSize.defaultClass] = canvas }
+            if let nearest = PreviewSize.nearest(key.width, in: sizes.keys) { return (sizes[nearest], false, true) }
+        }
+        return (own, true, true)
+    }
+
+    /// The canvas target `target` shows: itself for a canvas, else `canvasOf`'s ("canvas" for canvas 1).
+    private func canvasTarget(of target: String) -> String {
+        if target.hasPrefix("canvas") { return target }
+        let id = canvasOf?(target) ?? 1
+        return id == 1 ? "canvas" : "canvas:\(id)"
+    }
+
+    /// Streamers with an H.264 subscriber, each with its VideoToolbox session (B66), and the canvas one, always counted.
+    private func encoderCount(_ all: [Key: PreviewStreamer]) -> Int { 1 + all.values.count { Self.encodes($0) } }
+    private static func encodes(_ streamer: PreviewStreamer) -> Bool { streamer.subscriberList.contains { !$0.jpeg } }
+
+    /// Publishes `fresh` as `key`'s streamer when its target still has the shape it was made for; nil otherwise.
+    private func install(_ fresh: PreviewStreamer?, as key: Key, in all: inout [Key: PreviewStreamer]) -> PreviewStreamer? {
+        // `shape` takes only the engine's own locks, never ours
+        guard let fresh, let shape = shape(key.target) else { return nil }
+        let size = PreviewSize.size(class: key.width, shape: shape)
+        guard size.width == fresh.width, size.height == fresh.height else { return nil }
+        all[key] = fresh
+        publishActive(all)
+        return fresh
+    }
+
+    /// An encoder was released (B70): subscribers on a fallback get their own (target, size) while the limit allows,
+    /// oldest first. Its streamer is made outside the lock, like `attach`'s; they leave the fallback in the same step
+    /// and get the new `stream` description with its first frame, a key frame (as after a rebuild). Off the caller's
+    /// thread: `create` can read the project.
+    private func rebalance() {
+        for wanted in streamers.withLock({ _ in fallbacks }) {
+            let first = streamers.withLock { choose(wanted.key, jpeg: false, in: $0) }
+            guard !first.fallback else { continue }
+            let fresh = first.streamer == nil ? try? create(wanted.key) : nil
+            streamers.withLock { all in
+                let sub = wanted.subscriber
+                guard let index = fallbacks.firstIndex(where: { $0.subscriber.connection === sub.connection && $0.subscriber.stream == sub.stream }) else { return }
+                let choice = choose(wanted.key, jpeg: false, in: all)
+                // the limit was reached again, or the target went or changed shape: tried again after the next release
+                guard !choice.fallback, let streamer = choice.streamer ?? install(fresh, as: wanted.key, in: &all) else { return }
+                fallbacks.remove(at: index)
+                canvas.unsubscribe(connection: sub.connection, stream: sub.stream)
+                for other in all.values { other.unsubscribe(connection: sub.connection, stream: sub.stream) }
+                streamer.subscribe(sub)
+                release(&all)
+            }
+        }
     }
 
     public func unsubscribe(connection: StateServer.Connection, stream: UInt32) {
-        streamers.withLock { all in
+        let freed = streamers.withLock { all in
+            let before = encoderCount(all)
             canvas.unsubscribe(connection: connection, stream: stream)
             thumbnails?.unsubscribe(connection: connection, stream: stream)
             for streamer in all.values { streamer.unsubscribe(connection: connection, stream: stream) }
+            fallbacks.removeAll { $0.subscriber.connection === connection && $0.subscriber.stream == stream }
             release(&all)
+            return encoderCount(all) < before && !fallbacks.isEmpty
         }
+        if freed { DispatchQueue.global(qos: .utility).async { [weak self] in self?.rebalance() } }
     }
 
     public func remove(connection: StateServer.Connection) {
-        streamers.withLock { all in
+        let freed = streamers.withLock { all in
+            let before = encoderCount(all)
             canvas.remove(connection: connection)
             thumbnails?.remove(connection: connection)
             for streamer in all.values { streamer.remove(connection: connection) }
+            fallbacks.removeAll { $0.subscriber.connection === connection }
             release(&all)
+            return encoderCount(all) < before && !fallbacks.isEmpty
         }
+        if freed { DispatchQueue.global(qos: .utility).async { [weak self] in self?.rebalance() } }
     }
 
     /// The canvas changed size or rate (B31), or a target its shape: every streamer is made again (new size, new frame
@@ -201,8 +260,10 @@ public final class PreviewHub: @unchecked Sendable {
 
     /// Targets with a streamer right now, each once (tests, diagnostics).
     public var targets: [String] { Array(streamers.withLock { Set($0.keys.map(\.target)) }.subtracting(["canvas"])) + ["canvas"] }
-    /// Streamers right now, the canvas one included: each has its own encoder (tests, `/metrics`).
-    public var encoders: Int { 1 + streamers.withLock { $0.count } }
+    /// H.264 encoders right now, the canvas one always counted; at most `PreviewSize.maxEncoders` (tests, `/metrics`).
+    public var encoders: Int { streamers.withLock { encoderCount($0) } }
+    /// Subscribers on a fallback or refused to JPEG (tests).
+    var fallbackCount: Int { streamers.withLock { _ in fallbacks.count } }
     /// Streamers right now by target and size class (tests).
     var keys: Set<Key> { streamers.withLock { Set($0.keys) } }
 

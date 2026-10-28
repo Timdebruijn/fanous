@@ -8,7 +8,8 @@ public enum PreviewSize {
     public static let classes = [320, 640, 960, 1280]
     /// Without a `w` (older clients, CITP's canvas streamer).
     public static let defaultClass = 640
-    /// Encoders in total before a new size of a target falls back to a size that target already has.
+    /// H.264 encoders in total, the canvas one counted, across targets (B70): past it a new (target, size) falls back to
+    /// an encoding size of its target or its canvas, else gets JPEG (`PreviewHub`).
     public static let maxEncoders = 4
 
     /// The smallest class at least `wanted` wide, `wanted` clamped to 160–1280; 640 without a wish.
