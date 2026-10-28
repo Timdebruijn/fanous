@@ -331,7 +331,7 @@ extension StateStoreTests {
         func stored() throws -> JSONValue? { try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: file))["sync"] }
 
         _ = try store.execute("sync.set", args: ["port": 48812, "target": "127.0.0.1:48813"], role: .programmer).get()
-        #expect(try stored() == ["interface": "any", "port": 48812, "target": "127.0.0.1:48813"])
+        #expect(try stored() == ["port": 48812, "target": "127.0.0.1:48813"], "only the members given are written")
         _ = try store.execute("sync.set", args: ["interface": "en0", "target": "broadcast"], role: .programmer).get()
         #expect(try stored() == ["interface": "en0", "port": 48812, "target": "broadcast"], "fields left out keep their value")
         #expect(applied.withLock { $0.map(\.port) } == [48812, 48812])
