@@ -43,6 +43,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Multi-server sync in the engine (B60 step 3): master layers send their clock on UDP 8002 (broadcast, or a unicast
   target in `settings.json` › `sync`), slave layers follow their group's master, freewheel and go lost after 2 s;
   `live.sync`, per-layer `sync` state, two readiness items and `sync` counters in `/metrics`. No UI yet.
+- Multi-server sync in the UI (B60 step 4): `M3`/`S3` badges and the state in the layer detail, a "sync lost"
+  status-bar item, System › Sync with the `sync.set` command for interface, port and target, and
+  `docs/user/multi-server.md`.
 - Per-universe settings on the Patch screen: protocol, interface, hold-on-loss and sACN priority (B28). sACN
   listens on all interfaces and shares its port with other sACN apps on the Mac; readiness warns about a
   missing or unusable interface and a failed sACN bind.

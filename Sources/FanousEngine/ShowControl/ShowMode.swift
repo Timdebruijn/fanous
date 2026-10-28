@@ -266,7 +266,7 @@ public enum Readiness {
             ReadinessItem(
                 id: "syncpackets", title: "Sync packets arriving", state: context.syncLost.isEmpty ? .ok : .warn,
                 detail: context.syncLost.isEmpty ? "arriving, or no slave in use" : "lost (freewheeling): \(context.syncLost.joined(separator: "; "))",
-                fix: "Check the master machine and the network; sync uses UDP port 8002 by default (settings.json › sync)"))
+                fix: "Check the master machine and the network; sync uses UDP port 8002 by default (System › Sync)"))
         add("decoders", "No decoder errors", context.layerErrors.isEmpty, context.layerErrors.isEmpty ? "none" : context.layerErrors.joined(separator: "; "), "Fix or replace the failing media")
         let local = volumeIsLocal(context.libraryRoot)
         add("library", "Library on a local volume", local, local ? "local" : "network or removable volume", "Copy the library to the internal disk")

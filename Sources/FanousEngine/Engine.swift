@@ -294,7 +294,8 @@ public final class Engine: @unchecked Sendable {
         let store = StateStore(project: project, logger: logger)
         ProjectDocument.registerCommands(
             on: store, auth: auth, showModeOn: { [weak self] in self?.showMode.isOn ?? false },
-            checkLibraryRoot: { [weak self] root in if let refusal = self?.libraryRootRefusal(root) { throw refusal } })
+            checkLibraryRoot: { [weak self] root in if let refusal = self?.libraryRootRefusal(root) { throw refusal } },
+            applySync: { [weak self] in try self?.applySync($0) })
         libraryRootInProject.withLock { $0 = URL(fileURLWithPath: project["library"]?["root"]?.string ?? libraryRoot.path).path }
         // B23: a version of the project as loaded, then one every 10 minutes when it changed, and one per show-mode enter
         let versions = ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger)
@@ -764,6 +765,20 @@ public final class Engine: @unchecked Sendable {
         syncSender = sender
     }
 
+    /// `sync.set`: the receiver rebinds, the sender sends its next packet to the new target. Without rendering there
+    /// is neither; the saved settings apply at the next start.
+    private func applySync(_ settings: SyncSettings) throws {
+        guard let receiver = syncReceiver, let sender = syncSender else { return }
+        sender.apply(settings)
+        receiver.stop()
+        do {
+            try receiver.start(port: settings.port, loopbackOnly: !options.network)
+        } catch {
+            logger.error("sync port in use; not receiving sync packets", metadata: ["port": "\(settings.port)", "error": "\(error)"])
+            throw CommandError("failed", "saved, but sync port \(settings.port) is in use: not receiving sync packets")
+        }
+    }
+
     /// `live.layers[n].sync`: the layer's role and, for a slave playing a file, its state and master.
     private func syncLive(_ s: LayerSyncStatus) -> JSONValue {
         switch s.role {
@@ -958,7 +973,7 @@ public final class Engine: @unchecked Sendable {
             "onAC": .bool(power.onAC), "power": .string(power.detail), "memoryFreeFraction": .number((memory.fraction * 1000).rounded() / 1000),
             "memoryGB": .number(Double(SystemInfo.physicalMemoryBytes / 1_073_741_824)), "os": .string(SystemInfo.osVersion), "host": .string(SystemInfo.hostName),
             "addresses": .array(addresses.map { .string($0) }),
-            "interfaces": .array(interfaces.map { ["name": .string($0.name), "address": .string($0.address)] }), "port": .number(Double(options.port)),
+            "interfaces": .array(interfaces.map { ["name": .string($0.name), "address": .string($0.address), "broadcast": .bool($0.broadcast), "multicast": .bool($0.multicast)] }), "port": .number(Double(options.port)),
             "tlsFingerprint": .string(tlsFingerprint), "bonjour": .string((server?.advertisedServices ?? []).map { "\($0.name ?? "").\($0.type)" }.joined(separator: ", ")),
         ]
     }

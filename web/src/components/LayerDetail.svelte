@@ -5,6 +5,7 @@
   import type { LayerStatus, PatchEntry, ResolvedParameter } from '../lib/docs';
   import { RELEASE_TEXT, channelRange, clockText, controlKeys, folderZeroItems, mediaOptions, mediaPath, patchText, reservedText, valueText, type ChannelSpec, type LibrarySnapshot } from '../lib/layers';
   import { app, can, cmd, playOnLayer } from '../lib/state.svelte';
+  import { syncStatus } from '../lib/sync';
   import PolicyHint from './PolicyHint.svelte';
 
   let {
@@ -30,6 +31,7 @@
 
   const specByKey = $derived(new Map((specs ?? []).map((spec) => [spec.key, spec])));
   const missing = $derived(layer?.kind === 'missing');
+  const sync = $derived(syncStatus(n, layer?.sync, app.live.sync));
 
   // UI control (DESIGN §7.2): values go in as the `ui` source; the project's source policy decides whether they win.
   let control = $state(false);
@@ -140,6 +142,7 @@
             {/if}
           </span>
         {/if}
+        {#if param.key === 'sync' && sync && isLayer}<span class="syncline caption sync-{sync.tone}">{sync.text}</span>{/if}
       </li>
     {:else}
       <li class="param none"><span class="caption">No resolved values from the engine yet.</span></li>
@@ -169,4 +172,8 @@
   .val { color: var(--text-2); font-size: 12px; }
   .val.red { color: var(--red); }
   .note { margin: 0; padding: 0 4px; }
+  .syncline { grid-column: 1 / -1; padding: 0 0 8px 48px; }
+  .sync-green { color: var(--green); }
+  .sync-yellow { color: var(--yellow); }
+  .sync-red { color: var(--red); }
 </style>

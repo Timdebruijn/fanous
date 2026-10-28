@@ -45,6 +45,7 @@ If the Mac runs Little Snitch or another firewall, allow `fanousd`:
 | in | UDP 5568 | sACN |
 | in | UDP and TCP 8000 | OSC |
 | in | TCP 8443 | web UI (HTTPS and WebSocket) |
+| in and out | UDP 8002 (System › Sync) | multi-server sync, only with several Macs |
 | out | UDP to 224.0.0.180 and 239.224.0.180, port 4809 | CITP announcements |
 
 The CITP server also listens on a TCP port the system picks; System › Network

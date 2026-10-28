@@ -14,8 +14,9 @@ mode as its own fixture on the console.
 | Output | 8 | output | Output intensity, blackout or freeze, test pattern, blend on or raw |
 
 16-bit values (intensity, speed, position, in and out points and others) are
-coarse/fine pairs on adjacent channels, coarse first. Layer channels 51 to 64
-are reserved. Every channel, default and value band is in
+coarse/fine pairs on adjacent channels, coarse first. Layer channel 51 is Sync
+(see [multi-server.md](multi-server.md)); 52 to 64 are reserved. Every channel,
+default and value band is in
 [channel-map.md](../channel-map.md); the OSC key of each parameter is in the
 same table.
 

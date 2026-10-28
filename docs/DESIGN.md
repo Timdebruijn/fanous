@@ -1979,7 +1979,7 @@ machine plays frame-locked with a layer on another. Catalyst (play mode
 To" per layer, over Ethernet) solved this on the console; Fanous does the
 same with one channel. Designed 2026-10-28 (owner review of the first draft,
 which mirrored whole machines over WSS; see ADR-0021); step 2 (the channel and
-the packet codec) is built (PR #31), step 3 (the engine) too (§23.8); the UI is not.
+the packet codec) is built (PR #31), and so are step 3 (the engine, §23.8) and step 4 (the UI, PR #35).
 
 ### 23.1 One channel: Sync, layer channel 51
 
@@ -2108,7 +2108,7 @@ other because the console sends both. The slave's dissolve runs on its own
   no packet for 2 s → yellow). Neither blocks show mode: a slave without a
   master plays on its own.
 - System screen, section **Sync**: interface, port, target (broadcast or an
-  address), packet rate in and out, machine id and name.
+  address), packet totals in and out, machine id and name.
 - `docs/user/multi-server.md`: two minis, one console, left/right halves
   with a blend, the three ways to split (slices on one full-canvas file,
   pre-split files, one canvas per machine), and the camera check.
@@ -2166,11 +2166,6 @@ not needed for the two-projector show, which is what B60 asked for.
 (socket, `SyncTable`), `SlaveClock` (the arithmetic of §23.3). Where it
 differs from the text above:
 
-- **Settings are file-only**, read at start: `settings.json` › `sync =
-  {interface, port, target}` (defaults `any`, 8002, `broadcast`), field by
-  field (a bad field or port 0 keeps its default and is logged). Machine
-  settings have no command path besides role passwords, so there is no
-  `project.set`/`sync.set` yet; step 4 needs one for the System screen.
 - **`target` may carry a port** (`127.0.0.1:48812`): a unicast datagram to a
   port that two `SO_REUSEPORT` sockets share reaches only one of them
   (measured on macOS 27), so two engines on one Mac listen on different ports
@@ -2214,6 +2209,10 @@ differs from the text above:
   layer; the first tick after it relocks.
 - `live.sync` carries packet totals (`packetsIn`, `packetsOut`,
   `decodeErrors`) and the machine id instead of `packetsPerSecond`; the UI
-  derives a rate. A master's `name` is shown for masters on this machine only.
+  shows the totals. A master's `name` is shown for masters on this machine only.
 - The two-engine check of §23.5 is manual (`docs/DEVELOPMENT.md`); the bench
   numbers are printed by `SyncCompositorTests`, which asserts no allocation.
+- Step 4: **`sync.set {interface?, port?, target?}`** (programmer, refused in show mode) writes `settings.json` ›
+  `sync` through `RoleAuth` and applies live (the receiver rebinds, the sender resolves its new target before the
+  next packet), so the settings are no longer file-only. Folder 0 content (generators, Syphon) is a live source and
+  neither sends nor follows, so the camera check of §23.5 uses a frame-numbered movie, not the clock generator.
