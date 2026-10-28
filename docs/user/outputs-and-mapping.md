@@ -211,10 +211,38 @@ content in folder 0 (see [show-control.md](show-control.md#built-in-content-fold
 Choose what to edit with **Corner pin**, **Mesh**, **Slices** or **Mask**.
 Handles sit over the output preview. Drag them with mouse or finger (the hit
 target is large for touch); with a handle selected the arrow keys move it by one
-output pixel, Shift by ten. On an iPad use the **nudge pad** that appears under
+output pixel, Shift by ten, Tab and Shift-Tab select the next and previous
+point, and Esc lets go of it. On an iPad use the **nudge pad** that appears under
 the mode buttons once a point is selected: arrows move by 1 px, the **10 px**
-key in the middle makes every press move ten. A selected point also shows
+key in the middle makes every press move ten, and holding an arrow for half a
+second moves 0.25 px. A selected point also shows
 numeric x and y fields in pixels. Changes go to the engine while you drag.
+
+**Remote mode** is for aligning from an iPad while you look at the projection
+instead of the screen. Turn it on with **Remote** next to the mode buttons; it
+is on by default on touch screens narrower than 900 px, and each browser
+remembers your choice. The controls then come before the preview:
+
+- The selection in large type: "corner top-left", "r3 c5" (row 3, column 5 of
+  the mesh), "slice 2 · bottom-right", "mask point 5", or a group such as
+  "row 3" with how many points move together.
+- **Previous** and **Next** go through the points row by row (left to right,
+  then the next row) and wrap around. With a group selected they step the
+  group: the next row, the next column, or the next edge clockwise.
+- **One point**, **Row**, **Column** (mesh only) and **All** choose what moves:
+  the selected point, its row or column, or every point. **Top**, **Right**,
+  **Bottom** and **Left** select every point on that edge; on a corner pin or a
+  slice an edge is its two corners. A mask has no rows, columns or edges.
+- The nudge pad moves the selection by 1 px, 10 px, or 0.25 px on a long press.
+  The points always move as one: when the first of them reaches the edge of the
+  output the group stops there instead of being squeezed.
+- The **trackpad** area beside it moves the selection as you drag, so your
+  finger never covers the picture: 1 output pixel per 4 screen pixels of finger
+  travel, four times as far when you drag fast.
+
+Distances are output pixels as seen on the projector, also under a corner pin
+or mesh. Every nudge is sent at once; nudges less than a second apart are one
+step for **Undo**.
 
 Slice, mask and mesh points are stored before the warp, but the preview shows
 the warped picture. The editor therefore draws these handles where the picture

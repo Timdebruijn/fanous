@@ -165,6 +165,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   poll with a deadline or probe the listener first, so `scripts/test.sh` stays green under load (B67).
 - Syphon numbers (folder 0, 150–169) are kept in the project (`syphon`), so they survive an engine restart; a server not
   seen since the start is listed greyed (`gone`), and `syphon.forget` (Media screen **Forget**) frees a number (B69).
+- Mapping, iPad remote mode on Warp & Slices (M1.4, DESIGN §9.9): a **Remote** toggle (on by default on touch screens
+  narrower than 900 px, remembered per browser) with the selection in large type ("r3 c5", "corner top-left"),
+  previous / next point row-major, select row, column, edge or all (the group moves as one, in one `output.set`), the
+  nudge pad at 1 / 10 px with a long press for 0.25 px, and a trackpad area (1 output px per 4 CSS px, ×4 above
+  600 px/s). Nudges less than a second apart are one undo step. Tab / Shift-Tab step through the points in the mapper,
+  Esc lets go; the nudge pad's long press also works outside remote mode.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

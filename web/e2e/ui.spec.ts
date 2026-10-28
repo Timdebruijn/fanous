@@ -186,6 +186,29 @@ test('outputs: remove an output, then Undo brings it back', async ({ page }) => 
   await expect(page.getByRole('button', { name: /^Output 1\b/ })).toBeVisible();
 });
 
+test('outputs: remote mode on a phone steps to the next corner and nudges it; one Undo takes the burst back', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await addUnassignedOutput(page);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  await page.getByRole('button', { name: 'Remote', exact: true }).click();
+  const remote = page.getByRole('region', { name: 'Remote' });
+  const next = remote.getByRole('button', { name: /^Next point/ });
+  await next.click();
+  await expect(remote.getByText('corner top-left')).toBeVisible();
+  await next.click();
+  await expect(remote.getByText('corner top-right')).toBeVisible();
+
+  // two nudges, each its own output.set and less than a second apart: the engine keeps them as one undo step
+  const y = page.getByLabel('Point y in pixels');
+  const down = remote.getByRole('button', { name: 'Down 1 px' });
+  await down.click();
+  await expect(y).toHaveValue('1');
+  await down.click();
+  await expect(y).toHaveValue('2');
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(y).toHaveValue('0');
+});
+
 test('canvases: add a canvas, put a layer on it, remove it', async ({ page }) => {
   await openScreen(page, 'Outputs');
   await page.getByRole('button', { name: 'Canvases' }).click();

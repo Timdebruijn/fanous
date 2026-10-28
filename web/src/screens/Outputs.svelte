@@ -2,22 +2,45 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script module lang="ts">
-  const ui = $state({ selected: 0, canvas: 1, tab: 'outputs' as 'canvases' | 'outputs' | 'warp', mapper: 'cornerPin' as MapperMode, slice: 0, handle: null as string | null, maskAdd: false, draft: null as MapPoint[] | null });
+  // handle: the selected point (JSON pointer); group: what moves with it in remote mode (lib/remote.ts)
+  const ui = $state({ selected: 0, canvas: 1, tab: 'outputs' as 'canvases' | 'outputs' | 'warp', mapper: 'cornerPin' as MapperMode, slice: 0, handle: null as string | null, group: 'point' as Group, maskAdd: false, draft: null as MapPoint[] | null, remote: storedRemote() });
+
+  // Remote mode on Warp & Slices, remembered per browser; by default on for touch screens narrower than 900 px
+  const REMOTE_KEY = 'fanous.remote';
+  function storedRemote(): boolean {
+    try {
+      const stored = localStorage.getItem(REMOTE_KEY);
+      if (stored !== null) return stored === '1';
+    } catch {
+      // blocked storage: the default
+    }
+    return matchMedia('(pointer: coarse) and (max-width: 899.98px)').matches;
+  }
+  function setRemote(on: boolean) {
+    ui.remote = on;
+    try {
+      localStorage.setItem(REMOTE_KEY, on ? '1' : '0');
+    } catch {
+      // private mode or blocked storage: the choice lasts for this page only
+    }
+  }
 </script>
 
 <script lang="ts">
   import NudgePad from '../components/NudgePad.svelte';
   import OutputMapper from '../components/OutputMapper.svelte';
+  import RemotePanel from '../components/RemotePanel.svelte';
   import Preview from '../components/Preview.svelte';
   import {
-    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, meshIdentity, modeText, nextSliceId, outputSize, spreadSources, statusText,
+    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, handles, meshIdentity, modeText, nextSliceId, outputSize, spreadSources, statusText,
     type MapPoint, type MapperMode, type OutputConfig,
   } from '../lib/outputs';
   import { app, can, cmd, toastUndo } from '../lib/state.svelte';
   import { go } from '../lib/router.svelte';
   import { sourcePixels, sourceFromPixels } from '../lib/outputs';
   import { downloadTemplatePNG, templateSVG } from '../lib/template';
-  import { fromScreen, nudgeStored, toScreen } from '../lib/warp';
+  import { choose, grid, groups, label, members, nudgeCommand, nudgeQueue, step, type Group } from '../lib/remote';
+  import { fromScreen, toScreen } from '../lib/warp';
   import type { JSONValue } from '../lib/protocol';
 
   const LOCKED = 'Locked: programmer only';
@@ -130,13 +153,15 @@
     set(`/slices/${sliceIndex}/mask`, null);
     toastUndo(`Mask of slice ${output?.slices[sliceIndex]?.id} removed.`);
   }
-  const selectedHandle = $derived.by(() => {
-    if (!ui.handle || !output) return null;
-    const parts = ui.handle.split('/').filter(Boolean);
-    let node: unknown = output;
-    for (const part of parts) node = (node as Record<string, unknown> | undefined)?.[part];
-    return node && typeof node === 'object' ? (node as MapPoint) : null;
-  });
+  /** the points of the mapper mode; the selected one is the anchor of the selection */
+  const points = $derived(output ? handles(output, ui.mapper, sliceIndex) : []);
+  const cells = $derived(output ? grid(output, ui.mapper, points.length) : null);
+  const anchor = $derived(points.findIndex((h) => h.path === ui.handle));
+  const modeGroups = $derived(groups(ui.mapper));
+  const group = $derived(modeGroups.includes(ui.group) ? ui.group : 'point');
+  /** the indices that move together: the selected point, or its row, column, an edge or all */
+  const selection = $derived(members(cells, points.length, group, anchor));
+  const selectedHandle = $derived(points[anchor]?.point ?? null);
   /** the selected point as it appears on screen (through the warp), in output pixels */
   const selectedScreen = $derived(selectedHandle && output ? toScreen(output, ui.mapper, selectedHandle) : null);
   function moveSelected(on: { x?: number; y?: number }) {
@@ -144,10 +169,32 @@
     const p = fromScreen(output, ui.mapper, { x: on.x ?? selectedScreen.x, y: on.y ?? selectedScreen.y });
     point(ui.handle, { x: Math.min(1, Math.max(0, p.x)), y: Math.min(1, Math.max(0, p.y)) });
   }
-  function nudgeSelected(dx: number, dy: number) {
-    if (!output || !ui.handle || !selectedHandle) return;
-    point(ui.handle, nudgeStored(output, ui.mapper, selectedHandle, dx, dy, size));
+  function select(next: { group: Group; anchor: number }) {
+    ui.group = next.group;
+    ui.handle = points[next.anchor]?.path ?? null;
   }
+  function stepSelection(dir: 1 | -1) {
+    select(step(cells, points.length, group, anchor, dir));
+  }
+  /** one output.set per nudge for all moved points; a burst while one is on its way is added up and sent next */
+  const nudge = nudgeQueue();
+  function nudgeSelected(dx: number, dy: number) {
+    if (!output || selection.length === 0) return;
+    const id = output.id, mode = ui.mapper, slice = sliceIndex, indices = selection;
+    nudge(`${id} ${mode} ${slice} ${group} ${anchor}`, dx, dy, async (dx, dy) => {
+      const current = app.project.outputs.find((o) => o.id === id);
+      const command = current && nudgeCommand(current, mode, slice, indices, dx, dy, outputSize(current, displays));
+      if (command) await cmd('output.set', { id, ...command });
+    });
+  }
+  const remoteLabel = $derived(output ? label(output, ui.mapper, sliceIndex, cells, group, anchor) : '');
+  /** "x 960.25 · y 0 px", "5 points move together" */
+  const remoteDetail = $derived.by(() => {
+    if (selection.length > 1) return `${selection.length} points move together`;
+    if (!selectedScreen) return points.length ? 'Tap Next, or a point on the picture' : 'No points to move in this mode';
+    const px = (v: number) => Math.round(v * 100) / 100;
+    return `x ${px(selectedScreen.x * size.w)} · y ${px(selectedScreen.y * size.h)} px`;
+  });
   /** the canvas the selected slice takes its picture from */
   const sliceCanvas = $derived(canvases.find((c) => c.id === output?.slices[sliceIndex]?.canvas));
   async function exportTemplate() {
@@ -249,7 +296,7 @@
     <p class="caption pad">Displays are matched by identity, so a replugged projector lands on the same output.</p>
   </aside>
 
-  <section class="main">
+  <section class="main" class:remote={ui.remote && ui.tab === 'warp'}>
     <div class="preview">
       {#if app.live.engine.rendering}
         <!-- an output preview takes the output's shape (so does its stream, B32), and the overlay uses exactly the
@@ -257,7 +304,7 @@
         <Preview target={previewTarget} aspect={previewAspect} />
         {#if output && ui.tab === 'warp'}
           <div class="overlay" style:aspect-ratio={previewAspect}>
-            <OutputMapper {output} mode={ui.mapper} {sliceIndex} {size} bind:selected={ui.handle} onchange={point} addMode={ui.maskAdd} draft={ui.mapper === 'mask' ? ui.draft : null} onadd={addMaskAt} onremove={removeMaskPointAt} />
+            <OutputMapper {output} mode={ui.mapper} {sliceIndex} {size} bind:selected={() => ui.handle, (path) => select({ group: 'point', anchor: points.findIndex((h) => h.path === path) })} marked={selection.length > 1 ? selection.map((i) => points[i]!.path) : []} onchange={point} onnudge={nudgeSelected} onstep={stepSelection} addMode={ui.maskAdd} draft={ui.mapper === 'mask' ? ui.draft : null} onadd={addMaskAt} onremove={removeMaskPointAt} />
           </div>
         {/if}
       {:else}
@@ -389,18 +436,22 @@
             <button type="button" class="btn" aria-pressed={ui.mapper === 'slices'} onclick={() => (ui.mapper = 'slices')}>Slices</button>
             <button type="button" class="btn" aria-pressed={ui.mapper === 'mask'} onclick={() => (ui.mapper = 'mask')}>Mask</button>
           </div>
+          <button type="button" class="btn" aria-pressed={ui.remote} title="Big controls for aligning from an iPad: step through the points, nudge them, drag on a trackpad" onclick={() => setRemote(!ui.remote)}>Remote</button>
           <button type="button" class="btn" disabled={!sliceCanvas} title="A PNG at canvas size showing which part of the canvas each slice uses and what its mask leaves visible: a guide for making content" onclick={exportTemplate}>Content template (PNG)</button>
           <span class="spacer"></span>
-          {#if selectedHandle && selectedScreen}
+          {#if selectedHandle && selectedScreen && selection.length === 1}
             <span class="caption">Selected point (px)</span>
             <input class="input mono narrow" type="number" aria-label="Point x in pixels" value={Math.round(selectedScreen.x * size.w)} disabled={locked} onchange={(e) => moveSelected({ x: Number(e.currentTarget.value) / size.w })} />
             <input class="input mono narrow" type="number" aria-label="Point y in pixels" value={Math.round(selectedScreen.y * size.h)} disabled={locked} onchange={(e) => moveSelected({ y: Number(e.currentTarget.value) / size.h })} />
           {/if}
         </div>
-        {#if selectedHandle}
+        {#if ui.remote}
+          <RemotePanel label={remoteLabel} detail={remoteDetail} {group} groups={modeGroups} disabled={locked} onnudge={nudgeSelected}
+            onstep={stepSelection} ongroup={(g) => select(choose(cells, points.length, g, anchor))} />
+        {:else if selectedHandle}
           <div class="nudge">
             <NudgePad disabled={locked} onnudge={nudgeSelected} />
-            <p class="caption">Tap a handle on the picture, then nudge it here. 10 px moves ten pixels per press. Keyboard: arrow keys, Shift for ten.</p>
+            <p class="caption">Tap a handle on the picture, then nudge it here. 10 px moves ten pixels per press; hold an arrow for 0.25 px. Keyboard: arrow keys, Shift for ten, Tab for the next point. Remote has bigger controls.</p>
           </div>
         {/if}
         {#if ui.mapper === 'cornerPin'}
@@ -493,6 +544,8 @@
   .add .select { width: 100%; }
   .main { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
   .preview { position: relative; }
+  /* remote mode: the controls come first, the picture is on the projector */
+  .main.remote > .form { order: -1; }
   .overlay { position: absolute; left: 0; top: 0; width: 100%; }
   .nopreview { padding: 32px; }
   .form { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
