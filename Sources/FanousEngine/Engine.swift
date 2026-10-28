@@ -459,6 +459,13 @@ public final class Engine: @unchecked Sendable {
                 guard target.hasPrefix("output:"), let id = Int(target.dropFirst(7)), let output = outputs.first(where: { $0.id == id }) else { return false }
                 return self.previewOutput(output, in: outputs, compiler: compiler, preview: streamer)
             }
+            // B70: the canvas a layer or an output (its first slice) shows, as rendered
+            preview.canvasOf = { [weak self] target in
+                guard let use = self?.effectiveCanvasUse() else { return nil }
+                if let index = PreviewHub.layerIndex(of: target, layerCount: use.layers.count) { return use.layers[index] }
+                guard target.hasPrefix("output:"), let id = Int(target.dropFirst(7)) else { return nil }
+                return use.outputs.first { $0.id == id }?.slices.first?.canvas
+            }
 
             // CITP/MSEX (DESIGN.md §16.1): peer location, layer status, library, thumbnails, streaming frames
             if options.network {

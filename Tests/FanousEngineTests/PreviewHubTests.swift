@@ -56,13 +56,18 @@ import Testing
         func connection() -> StateServer.Connection { StateServer.Connection(server: server, cookieRole: nil) }
 
         func attach(_ target: String, _ connection: StateServer.Connection, stream: UInt32 = 1, jpeg: Bool = false) -> Bool {
-            hub.attach(target: target, connection: connection, stream: stream, jpeg: jpeg) { _ in }
+            hub.attach(target: target, connection: connection, stream: stream, jpeg: jpeg) { _, _ in }
         }
 
         /// Subscribes with a wanted width; the streamer it got (nil: refused).
         func streamer(_ target: String, width: Int?, _ connection: StateServer.Connection, stream: UInt32 = 1) -> PreviewStreamer? {
-            var got: PreviewStreamer?
-            _ = hub.attach(target: target, width: width, connection: connection, stream: stream, jpeg: false) { got = $0 }
+            served(target, width: width, connection, stream: stream)?.streamer
+        }
+
+        /// Subscribes to H.264 with a wanted width; the streamer it got and whether it is served as JPEG (nil: refused).
+        func served(_ target: String, width: Int?, _ connection: StateServer.Connection, stream: UInt32 = 1) -> (streamer: PreviewStreamer, jpeg: Bool)? {
+            var got: (PreviewStreamer, Bool)?
+            _ = hub.attach(target: target, width: width, connection: connection, stream: stream, jpeg: false) { got = ($0, $1) }
             return got
         }
 
@@ -174,13 +179,13 @@ import Testing
                 // canvas 3 starts rendering and its viewer subscribes while the rebuild makes canvas 2 again
                 rendered.withLock { _ = $0.insert(3) }
                 subscribed.withLock { $0 = false }
-                let attached = ref.hub?.attach(target: "canvas:3", connection: viewer, stream: 3, jpeg: true) { _ in } ?? false
+                let attached = ref.hub?.attach(target: "canvas:3", connection: viewer, stream: 3, jpeg: true) { _, _ in } ?? false
                 subscribed.withLock { $0 = attached }
             }
             return (160, 160)
         }
         ref.hub = hub
-        #expect(hub.attach(target: "canvas:2", connection: rig.connection(), stream: 2, jpeg: true) { _ in })
+        #expect(hub.attach(target: "canvas:2", connection: rig.connection(), stream: 2, jpeg: true) { _, _ in })
         rebuilding.withLock { $0 = true }
         try hub.rebuild()
         #expect(subscribed.withLock { $0 } == true)
@@ -303,7 +308,7 @@ import Testing
         }
 
         func attach(_ target: String, stream: UInt32 = 1) -> Bool {
-            hub.attach(target: target, connection: connections.connection(), stream: stream, jpeg: false) { _ in }
+            hub.attach(target: target, connection: connections.connection(), stream: stream, jpeg: false) { _, _ in }
         }
 
         func tick(_ n: Int) {
@@ -410,8 +415,8 @@ import Testing
         hub.configure = { target, _ in target == "output:1" }
         let rig = try Rig()
         let (a, b) = (rig.connection(), rig.connection())
-        #expect(hub.attach(target: "canvas", connection: a, stream: 1, jpeg: false) { _ in })
-        #expect(hub.attach(target: "output:1", connection: b, stream: 2, jpeg: true) { _ in })
+        #expect(hub.attach(target: "canvas", connection: a, stream: 1, jpeg: false) { _, _ in })
+        #expect(hub.attach(target: "output:1", connection: b, stream: 2, jpeg: true) { _, _ in })
         let oldCanvas = hub.canvas
         shape.withLock { $0 = (160, 120) }
         try hub.rebuild()
@@ -423,7 +428,7 @@ import Testing
     }
 
     /// B32: one streamer per (target, size class); at 4 encoders a new size of a target that has one attaches to its
-    /// nearest size, a new target still gets its own; a size goes with its last subscriber.
+    /// nearest size; a size goes with its last subscriber. B70: a new target past the limit gets no encoder.
     @Test func sizeClassesHaveTheirOwnStreamerUpToFourEncoders() throws {
         let rig = try Rig()
         rig.shapes.withLock { $0["canvas:2"] = (160, 160) }
@@ -441,9 +446,10 @@ import Testing
         #expect(rig.streamer("canvas", width: 900, c, stream: 2)?.width == 1280, "960 wanted: 640 and 1280 are as near")
         #expect(rig.streamer("canvas", width: 200, c, stream: 3) === small && rig.streamer("canvas", width: 400, c, stream: 5) === rig.hub.canvas)
         #expect(rig.hub.encoders == 4)
-        // a new target is never refused
-        #expect(rig.streamer("canvas:2", width: 320, c, stream: 4)?.width == 240)
-        #expect(rig.hub.encoders == 5)
+        // B70: a new target with no encoding size and no canvas stream of its own canvas: JPEG on its own streamer
+        let refused = try #require(rig.served("canvas:2", width: 320, c, stream: 4))
+        #expect(refused.streamer.width == 240 && refused.jpeg)
+        #expect(rig.hub.encoders == 4)
 
         rig.hub.remove(connection: c)
         rig.hub.unsubscribe(connection: a, stream: 2)
@@ -480,5 +486,101 @@ import Testing
         let streamer = try #require(rig.streamer("output:1", width: nil, rig.connection()))
         #expect((streamer.width, streamer.height) == (554, 414) && configured.withLock { $0 } == 2)
         #expect(!rig.hub.shapeChanged)
+    }
+
+    /// B70: a rig with three outputs (output:3 on canvas 2), canvas 1, 2 and 3, and one connection per viewer.
+    struct LimitRig {
+        let rig: Rig
+        init() throws {
+            rig = try Rig()
+            rig.shapes.withLock { $0["canvas:2"] = (160, 90); $0["canvas:3"] = (160, 90) }
+            rig.hub.configure = { target, _ in target.hasPrefix("output:") }
+            rig.hub.canvasOf = { $0 == "output:3" ? 2 : 1 }
+        }
+
+        /// Waits up to 3 s for `done` (the re-balance runs on a global queue).
+        func wait(_ done: () -> Bool) {
+            for _ in 0..<300 where !done() { usleep(10_000) }
+        }
+    }
+
+    /// B70: the encoder limit holds across targets. Past 4 encoders a new (target, size) gets its target's nearest encoding
+    /// size, else its canvas's nearest encoding size, else JPEG on its own streamer (no VideoToolbox session).
+    @Test func theEncoderLimitHoldsAcrossTargets() throws {
+        let r = try LimitRig(), rig = r.rig
+        var viewers: [PreviewStreamer] = []
+        func serve(_ target: String, _ width: Int?) throws -> (streamer: PreviewStreamer, jpeg: Bool) {
+            let got = try #require(rig.served(target, width: width, rig.connection()))
+            viewers.append(got.streamer)
+            #expect(rig.hub.encoders <= PreviewSize.maxEncoders, "\(target) \(width ?? 0): \(rig.hub.encoders) encoders")
+            return got
+        }
+        #expect(try serve("canvas", nil).streamer === rig.hub.canvas)
+        let output1 = try serve("output:1", 640).streamer
+        _ = try serve("output:2", 640)
+        let canvas2 = try serve("canvas:2", 640).streamer
+        #expect(rig.hub.encoders == 4)
+        // a fifth: the same target's nearest size
+        let same = try serve("output:1", 320)
+        #expect(same.streamer === output1 && !same.jpeg)
+        // a target without one: its canvas's stream, canvas 1 …
+        let onCanvas1 = try serve("output:4", 960)
+        #expect(onCanvas1.streamer === rig.hub.canvas && !onCanvas1.jpeg)
+        // … or canvas 2
+        let onCanvas2 = try serve("output:3", 1280)
+        #expect(onCanvas2.streamer === canvas2 && !onCanvas2.jpeg)
+        // nothing fits: JPEG on its own streamer
+        let refused = try serve("canvas:3", 640)
+        #expect(refused.jpeg && refused.streamer.canvasID == 3)
+        #expect(rig.hub.keys.count == 4, "output:1, output:2, canvas:2 and canvas:3 (JPEG); no streamer for the fallbacks")
+        // the sessions that exist (made off the preview queue, B66) are within the limit too
+        let streamers = Dictionary(viewers.map { (ObjectIdentifier($0), $0) }, uniquingKeysWith: { a, _ in a }).values
+        #expect(streamers.count == 5)
+        r.wait { streamers.filter(\.hasEncoder).count >= 4 }
+        let sessions = streamers.filter(\.hasEncoder).count
+        #expect(sessions == 4 && !refused.streamer.hasEncoder, "\(sessions) VideoToolbox sessions")
+    }
+
+    /// B70: when an encoder is released, the oldest subscriber on a fallback gets its own (target, size), up to the limit;
+    /// one refused to JPEG gets H.264 the same way.
+    @Test func aReleasedEncoderGoesToTheOldestFallback() throws {
+        let r = try LimitRig(), rig = r.rig
+        let (a, b, c, d) = (rig.connection(), rig.connection(), rig.connection(), rig.connection())
+        let (e, f, g) = (rig.connection(), rig.connection(), rig.connection())
+        #expect(rig.streamer("canvas", width: nil, a) === rig.hub.canvas)
+        let output1 = try #require(rig.streamer("output:1", width: 640, b))
+        _ = try #require(rig.streamer("output:2", width: 640, c))
+        _ = try #require(rig.streamer("canvas:2", width: 640, d))
+        #expect(rig.streamer("output:1", width: 320, e) === output1, "fallback: output:1 at 640")
+        #expect(rig.streamer("output:4", width: 960, f) === rig.hub.canvas, "fallback: canvas 1")
+        let refused = try #require(rig.served("canvas:3", width: 640, g))
+        #expect(refused.jpeg)
+
+        // output:2 goes: e (the oldest fallback) gets output:1 at 320; f stays on canvas 1 (the limit again)
+        rig.hub.remove(connection: c)
+        let own = PreviewHub.Key(target: "output:1", width: 320)
+        r.wait { rig.hub.keys.contains(own) }
+        #expect(rig.hub.keys.contains(own))
+        #expect(!output1.subscriberList.contains { $0.connection === e }, "e left its fallback")
+        #expect(rig.hub.encoders == 4)
+        #expect(rig.hub.canvas.subscriberList.contains { $0.connection === f })
+        let x = rig.connection()
+        let moved = try #require(rig.streamer("output:1", width: 320, x))
+        #expect(moved.subscriberList.contains { $0.connection === e && !$0.jpeg }, "e is on its own size, H.264")
+
+        // output:1 at 640 goes: f gets output:4 at 960
+        rig.hub.remove(connection: b)
+        r.wait { rig.hub.keys.contains(.init(target: "output:4", width: 960)) }
+        #expect(rig.hub.keys.contains(.init(target: "output:4", width: 960)))
+        #expect(!rig.hub.canvas.subscriberList.contains { $0.connection === f })
+        #expect(rig.hub.encoders == 4)
+
+        // output:1 at 320 goes with its last viewer: g, refused to JPEG, gets H.264 on its own streamer
+        rig.hub.remove(connection: e)
+        #expect(refused.streamer.subscriberList.contains { $0.connection === g && $0.jpeg }, "x still keeps output:1 at 320")
+        rig.hub.remove(connection: x)
+        r.wait { refused.streamer.subscriberList.contains { $0.connection === g && !$0.jpeg } }
+        #expect(refused.streamer.subscriberList.map(\.jpeg) == [false])
+        #expect(rig.hub.encoders == 4)
     }
 }

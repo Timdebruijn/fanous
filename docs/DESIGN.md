@@ -1217,8 +1217,7 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   640 always exists (CITP). With 4 encoders in total (the canvas one
   counted, `/metrics` `preview.encoders`), a new class of a target that
   already has one attaches to its nearest class (the larger on a tie) and
-  the `sub` reply says that size; a new target still gets its own encoder,
-  as before, so the limit bounds extra sizes, not targets (B70). Bit rate
+  the `sub` reply says that size; across targets since B70 (below). Bit rate
   scales with the pixels (1.5 Mbit/s at 640×360, 0.5–4 Mbit/s). A changed
   output region, layer canvas or display size rebuilds the previews
   (`shapeChanged`; existing subscribers get the new size in a `stream`
@@ -1286,6 +1285,24 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   `stream` description arrives within 5 s of the `sub` reply. The pixel
   buffer pool, texture cache and `CIContext` stay in `init` (no
   VideoToolbox).
+- **As built (encoder limit across targets, B70, 2026-10-28):** the 4 count
+  H.264 encoders: the canvas 1 streamer always, every other streamer while
+  it has an H.264 subscriber (`/metrics` `preview.encoders`; a JPEG-only
+  streamer has no session and does not count). Past 4, `PreviewHub.choose`
+  gives a new H.264 (target, class) an encoder that runs already: its
+  target's nearest class, else the nearest class of its canvas's stream
+  (`canvas:<id>`; a layer's canvas, an output's first slice's), else it is
+  refused to JPEG on its own streamer: the `sub` reply says `codec: "jpeg"`,
+  fps 5, and the browser, seeing no `stream` description, subscribes to JPEG
+  after 5 s (an `error` reply would leave it on "no preview"). The hub
+  remembers these subscribers; when an unsubscribe or a closed connection
+  releases an encoder it moves them, oldest first and up to the limit, to
+  their own (target, class) on a global queue (the streamer is made outside
+  the lock, like `attach`'s), in one step under the lock: off the fallback,
+  onto the new streamer, whose `stream` description and first key frame come
+  with its first frame (as after a rebuild). Measured: description 53 ms
+  after the close, longest gap between frames 63 ms. A fallback streamer
+  that only fallback subscribers keep is not re-balanced (no extra encoder).
 
 ### 11.4 Frontend (ADR-0012)
 
