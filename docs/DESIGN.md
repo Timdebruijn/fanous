@@ -1335,7 +1335,10 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   layer alone), often in another aspect (B87). A fallback streamer whose own
   viewer left stays as it is: only fallback viewers keep it encoding, so no
   release is seen and nothing starts a re-balance. The canvas 1 streamer's
-  own viewers are never on a fallback (it is always counted).
+  own viewers are never on a fallback (it is always counted). A rebuild that
+  removes a canvas tells only that canvas's own viewers `badTarget`; another
+  target's viewer on its stream as a fallback is chosen again for its own
+  target, and every rebuild ends with a re-balance (B88).
 
 ### 11.4 Frontend (ADR-0012)
 
