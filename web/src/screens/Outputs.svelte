@@ -101,8 +101,9 @@
   function setMesh(n: number) {
     set('/warp/mesh', n <= 1 ? null : (resampleMesh(output?.warp.mesh, n, n) as unknown as JSONValue));
   }
-  function resetMesh(n: number) {
-    set('/warp/mesh', meshIdentity(n, n) as unknown as JSONValue);
+  function resetMesh() {
+    const mesh = output?.warp.mesh;
+    if (mesh) set('/warp/mesh', meshIdentity(mesh.cols, mesh.rows) as unknown as JSONValue);
   }
   function addSlice() {
     if (!output) return;
@@ -420,8 +421,8 @@
                 {#each [2, 3, 5, 9, 17, 33] as n (n)}<option value={n}>{n} × {n}</option>{/each}
               </select>
             </label>
-            <button type="button" class="btn" disabled={locked || !output.warp.mesh} onclick={() => output.warp.mesh && resetMesh(output.warp.mesh.cols)}>Reset mesh</button>
-            <p class="caption grow">A change of density keeps the shape: the new points sit on the current surface. Reset mesh flattens it. The mesh is a smooth surface through its points.</p>
+            <button type="button" class="btn" disabled={locked || !output.warp.mesh} onclick={resetMesh}>Reset mesh</button>
+            <p class="caption grow">A change of density keeps the shape: the new points sit on the current surface (going down keeps the overall shape, not the detail in between). Reset mesh flattens it. The mesh is a smooth surface through its points.</p>
           </div>
         {:else if ui.mapper === 'slices'}
           <div class="fields">

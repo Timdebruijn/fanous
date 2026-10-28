@@ -84,4 +84,19 @@ describe('mesh resample', () => {
     const back = resampleMesh(fine, 3, 3);
     back.points.forEach((p, i) => { expect(p.x).toBeCloseTo(bent.points[i]!.x, 12); expect(p.y).toBeCloseTo(bent.points[i]!.y, 12); });
   });
+  it('2 → 3 puts the middle at the bilinear mean and 3 → 2 keeps the corners', () => {
+    const two = { cols: 2, rows: 2, points: [{ x: 0.1, y: 0 }, { x: 1, y: 0.1 }, { x: 0, y: 0.9 }, { x: 0.8, y: 1 }] };
+    const three = resampleMesh(two, 3, 3);
+    expect(three.points[4]!.x).toBeCloseTo((0.1 + 1 + 0 + 0.8) / 4, 12);
+    expect(three.points[4]!.y).toBeCloseTo(0.5, 12);
+    resampleMesh(three, 2, 2).points.forEach((p, i) => { expect(p.x).toBeCloseTo(two.points[i]!.x, 12); expect(p.y).toBeCloseTo(two.points[i]!.y, 12); });
+  });
+  it('gives a flat grid for a mesh whose point count does not match', () => {
+    expect(resampleMesh({ cols: 3, rows: 3, points: [{ x: 0.3, y: 0.3 }] }, 2, 2).points).toEqual([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }]);
+  });
+  it('may place points slightly outside 0…1 where the spline overshoots', () => {
+    const points = resampleMesh(null, 3, 3).points;
+    points[0] = { x: 0, y: 0.1 };
+    expect(resampleMesh({ cols: 3, rows: 3, points }, 5, 5).points[3]!.y).toBeCloseTo(-0.00625, 12);
+  });
 });

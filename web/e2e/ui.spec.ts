@@ -181,7 +181,10 @@ test('outputs: a change of mesh density keeps the shape; Reset mesh flattens it'
   await page.mouse.down();
   await page.mouse.move(handle.x + handle.width / 2 + 60, handle.y + handle.height / 2 + 30, { steps: 8 });
   await page.mouse.up();
-  await expect.poll(async () => (await rounded('/warp/mesh/points/4')).x).toBeGreaterThan(flat.x + 20);
+  // wait for the drop position itself, not an echo of a step in between
+  const editor = (await page.getByRole('application', { name: /Mapping editor/ }).boundingBox())!;
+  const targetX = Math.round(((handle.x + handle.width / 2 + 60 - editor.x) / editor.width) * 1000);
+  await expect.poll(async () => Math.abs((await rounded('/warp/mesh/points/4')).x - targetX)).toBeLessThanOrEqual(1);
   const bent = await rounded('/warp/mesh/points/4');
 
   // 3 × 3 → 5 × 5: the old middle point is the new grid's middle (index 12) and stays where it was dragged

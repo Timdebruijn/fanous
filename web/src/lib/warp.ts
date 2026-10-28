@@ -67,7 +67,8 @@ export function meshPoint(mesh: MeshWarp, u: number, v: number): MapPoint {
 }
 
 /** A `cols × rows` mesh whose points lie on the surface of `mesh` (flat when there is none), so a density change
- *  keeps the shape. Points shared by both grids (3 → 5, 5 → 9 …) keep their exact position. */
+ *  keeps the shape. Points shared by both grids (3 → 5, 5 → 9 …) keep their position. Points may lie slightly
+ *  outside 0…1 where the spline overshoots; the engine accepts that, and clamping would bend the surface. */
 export function resampleMesh(mesh: MeshWarp | null | undefined, cols: number, rows: number): MeshWarp {
   const points: MapPoint[] = [];
   for (let r = 0; r < rows; r++) {

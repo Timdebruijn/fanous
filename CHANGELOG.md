@@ -166,7 +166,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Syphon numbers (folder 0, 150–169) are kept in the project (`syphon`), so they survive an engine restart; a server not
   seen since the start is listed greyed (`gone`), and `syphon.forget` (Media screen **Forget**) frees a number (B69).
 - A change of mesh density keeps the warp: the new points are placed on the current surface instead of a flat grid
-  (points shared by both grids keep their exact position); **Reset mesh** still flattens (M1, DESIGN §9.9).
+  (points shared by both grids keep their position); **Reset mesh** still flattens (M1, DESIGN §9.9).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
