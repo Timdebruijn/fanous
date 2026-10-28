@@ -95,7 +95,7 @@ import Testing
         #expect(rig.thumbnails.passes.load(ordering: .relaxed) == 2, "the last subscriber left: no more passes")
     }
 
-    /// Layer 5 sits in the second atlas row: the crop (Core Image counts rows from the bottom) must still find it.
+    /// Layer 5 sits in the second atlas row: the crop must find it in the second row.
     @Test func aLayerInTheSecondAtlasRowIsCutFromItsOwnCell() throws {
         let rig = try Rig(layers: 5, grid: 4)
         rig.thumbnails.alwaysEncode = true

@@ -87,7 +87,7 @@ public final class ThumbnailStreamer: @unchecked Sendable {
     public var hasSubscribers: Bool { subscribers.withLock { !$0.isEmpty } }
     public var wantsFrames: Bool { alwaysEncode || hasSubscribers || externalWanted?() == true }
     /// Compositor thread: thumbnails are wanted and this tick is a pass tick (the compositor needs pixels only then).
-    var wantsPass: Bool { wantsFrames && isPassTick }
+    var wantsPass: Bool { wantsFrames && isPassTick && !encoding.load(ordering: .relaxed) }
 
     private var isPassTick: Bool {
         guard let compositor else { return false }
@@ -214,9 +214,13 @@ public final class ThumbnailStreamer: @unchecked Sendable {
     private func encode(_ pixelBuffer: CVPixelBuffer, cells: [ThumbnailAtlas.Cell?], shapes: [(width: Int, height: Int)]) {
         let start = CACurrentMediaTime()
         // one copy of the atlas into a CGImage (the GPU is done with it), then each cell cropped and encoded by ImageIO
-        let atlas = Self.image(of: pixelBuffer)
+        // (the caller clears `encoding` after this returns, also on this early return)
+        guard let atlas = Self.image(of: pixelBuffer) else {
+            skipped.wrappingAdd(1, ordering: .relaxed)
+            return
+        }
         let thumbs = cells.map { cell -> Thumb? in
-            guard let cell, let image = atlas?.cropping(to: CGRect(x: cell.x, y: cell.y, width: cell.width, height: cell.height)) else { return nil }
+            guard let cell, let image = atlas.cropping(to: CGRect(x: cell.x, y: cell.y, width: cell.width, height: cell.height)) else { return nil }
             return Self.jpeg(image).map { Thumb(jpeg: $0, width: cell.width, height: cell.height) }
         }
         encodeMicros.store(Int((CACurrentMediaTime() - start) * 1e6), ordering: .relaxed)
@@ -267,6 +271,9 @@ public final class ThumbnailStreamer: @unchecked Sendable {
         stale.formIntersection(subs.map(\.key))
         for s in subs {
             let whole = stale.contains(s.key)
+            // ponytail: a stale subscriber gets layers 1…n in fixed order every pass; a whole set larger than the
+            // 256 KB send queue (32 layers on a portrait canvas) never gets the high layers through. Upgrade: stop at
+            // the first refused frame and remember per subscriber where to resume.
             var delivered = true
             for (i, thumb) in thumbs.enumerated() where whole || i >= sent.count || sent[i] != thumb {
                 let payload = ThumbnailAtlas.frame(layer: i + 1, width: thumb?.width ?? 0, height: thumb?.height ?? 0, jpeg: thumb?.jpeg ?? [])
