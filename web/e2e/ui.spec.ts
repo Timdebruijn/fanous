@@ -42,10 +42,12 @@ async function trackDecoders(page: Page): Promise<void> {
 }
 const openDecoders = (page: Page) =>
   page.evaluate(() => ((window as unknown as { decoders?: VideoDecoder[] }).decoders ?? []).filter((d) => d.state !== 'closed').length);
-/** One open decoder while the preview shows H.264, none on JPEG. */
+/** One open decoder while the preview shows H.264, none on JPEG (a leaked one makes 2). Caption and count are read
+ * together on every poll: on a slow runner the decoder can fail after the caption said H.264 and fall back to JPEG. */
 async function expectDecoders(page: Page): Promise<void> {
-  const avc = /H\.264/.test(await page.getByRole('figure').locator('figcaption').innerText());
-  await expect.poll(() => openDecoders(page)).toBe(avc ? 1 : 0);
+  const caption = page.getByRole('figure').locator('figcaption');
+  const seen = async () => `${await openDecoders(page)} open on ${/H\.264/.test(await caption.innerText()) ? 'H.264' : 'JPEG'}`;
+  await expect.poll(seen, { timeout: previewTimeout }).toMatch(/^(1 open on H\.264|0 open on JPEG)$/);
 }
 
 test('layers: Control puts content on a layer, and the engine resolves folder, file and intensity', async ({ page, engine }) => {
