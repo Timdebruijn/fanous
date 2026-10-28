@@ -165,6 +165,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   poll with a deadline or probe the listener first, so `scripts/test.sh` stays green under load (B67).
 - Syphon numbers (folder 0, 150–169) are kept in the project (`syphon`), so they survive an engine restart; a server not
   seen since the start is listed greyed (`gone`), and `syphon.forget` (Media screen **Forget**) frees a number (B69).
+- Projector walls in the engine (M1.1, DESIGN §9.9): `walls` in the project and `wall.add/set/seam/seams/remove`. A wall
+  of 1×2 … 4×4 outputs computes each projector's part of the canvas (slice 1's source) and the overlap of the inner blend
+  edges, and keeps one gamma and curve per seam for both sides; `fit: "makeCanvas"` sizes the canvas to the wall. A hand
+  edit of a wall output's source or inner overlap becomes manual and stays; editing one side of a seam moves the other.
+  `BlendEdge.gammaRGB` is stored but not rendered yet. No UI yet.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

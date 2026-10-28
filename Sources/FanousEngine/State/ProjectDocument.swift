@@ -16,12 +16,14 @@ public enum ProjectDocument {
     public static let defaultCanvas: CanvasFormat = (1920, 1080, 60)
     /// Canvas rates `canvas.set` accepts.
     public static let frameRates: [Double] = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60]
+    /// Canvas width and height `canvas.set` accepts (even values only).
+    public static let canvasSides = 320...8192
 
     /// Checks a canvas format and returns it with the rate snapped to the list entry (23.976 for 24000/1001).
     /// Even sizes only (the H.264 preview halves them); no multiple of 4 is needed: HAP's 4×4 blocks apply to media,
     /// the canvas is never block-compressed.
     public static func validated(_ format: CanvasFormat) throws -> CanvasFormat {
-        guard (320...8192).contains(format.width), (320...8192).contains(format.height), format.width % 2 == 0, format.height % 2 == 0 else {
+        guard canvasSides.contains(format.width), canvasSides.contains(format.height), format.width % 2 == 0, format.height % 2 == 0 else {
             throw CommandError.invalidArgs("width and height must be even and 320–8192")
         }
         guard let fps = frameRates.first(where: { abs($0 - format.fps) < 0.01 }) else {
@@ -115,11 +117,16 @@ public enum ProjectDocument {
         .object(Dictionary(servers.map { (String($0.file), ["app": .string($0.app), "server": .string($0.server)]) }, uniquingKeysWith: { a, _ in a }))
     }
 
-    /// Layers and slices on a canvas outside `keeping` move to canvas 1 (canvas.remove, a failed canvas switch).
+    /// Layers, slices and walls on a canvas outside `keeping` move to canvas 1 (canvas.remove, a failed canvas switch).
     /// Writes only what changes.
     public static func moveToCanvas1(keeping ids: Set<Int>, in project: inout JSONValue) throws {
         let assigned = layerCanvases(from: project)
         if assigned.values.contains(where: { !ids.contains($0) }) { try setLayerCanvases(assigned.mapValues { ids.contains($0) ? $0 : 1 }, in: &project) }
+        var walls = ProjectDocument.walls(from: project)
+        if walls.contains(where: { !ids.contains($0.canvas) }) {
+            for w in walls.indices where !ids.contains(walls[w].canvas) { walls[w].canvas = 1 }
+            try setWalls(walls, in: &project)
+        }
         var outputs = ProjectDocument.outputs(from: project)
         guard outputs.contains(where: { $0.slices.contains { !ids.contains($0.canvas) } }) else { return }
         for o in outputs.indices {
@@ -140,6 +147,21 @@ public enum ProjectDocument {
 
     static func sharedRate(_ fps: Double) -> String {
         "all canvases share one frame rate (\(String(format: "%g", fps)) fps); change it on canvas 1"
+    }
+
+    /// `canvas.set`'s size path, also taken by a wall's `fit: "makeCanvas"`: refused in show mode; canvas 1's rate is
+    /// every canvas's rate (one compositor clock).
+    static func resize(_ canvases: inout [CanvasConfig], at index: Int, to format: CanvasFormat, showModeOn: Bool) throws {
+        guard !showModeOn else { throw CommandError("showMode", "the canvas format cannot change in show mode; leave show mode first") }
+        let format = try validated(format)
+        canvases[index].width = format.width
+        canvases[index].height = format.height
+        if index == 0 {
+            for i in canvases.indices { canvases[i].fps = format.fps }
+        } else if format.fps != canvases[0].fps {
+            throw CommandError.invalidArgs(sharedRate(canvases[0].fps))
+        }
+        try checkTotalPixels(canvases)
     }
 
     static func canvasValue(_ format: CanvasFormat) -> JSONValue {
@@ -168,6 +190,7 @@ public enum ProjectDocument {
             "canvases": canvasValue(canvas),
             "layerCanvas": [:],
             "outputs": [],
+            "walls": [],
             "syphon": [:],
             "ui": [:],
         ]
@@ -192,6 +215,10 @@ public enum ProjectDocument {
             output[keyPath: edge].overlap = max(0, output[keyPath: edge].overlap)
             output[keyPath: edge].power = min(10, max(0.1, output[keyPath: edge].power))
             output[keyPath: edge].gamma = min(5, max(0.5, output[keyPath: edge].gamma))
+            if let rgb = output[keyPath: edge].gammaRGB {
+                guard rgb.count == 3 else { throw CommandError.invalidArgs("gammaRGB needs three values (r, g, b), or null") }
+                output[keyPath: edge].gammaRGB = rgb.map { min(5, max(0.5, $0)) }
+            }
         }
         output.blend.lift = min(0.5, max(0, output.blend.lift))
         output.blend.liftFeather = max(0, output.blend.liftFeather)
@@ -252,6 +279,7 @@ public enum ProjectDocument {
         else { return nil }
         // keys added within schema 1 (Phase 6): give older files their defaults
         if document["outputs"] == nil { try? document.set([], at: "/outputs") }
+        if document["walls"] == nil { try? document.set([], at: "/walls") }
         if document["canvases"] == nil {
             try? document.set(canvasValue(canvas), at: "/canvases")
         }
@@ -274,11 +302,13 @@ public enum ProjectDocument {
     /// `checkLibraryRoot`: throws when the engine cannot switch to that root now (B51); gets the expanded absolute path.
     /// `applySync`: restarts the sync sender and receiver with saved settings; throws when the port cannot be bound.
     /// `syphonRunning`: the numbers of the Syphon servers running now (B69: only the others can be forgotten).
+    /// `displayModes`: the current mode of each connected display by UUID (a wall output's pixel size, §9.9).
     public static func registerCommands(
         on store: StateStore, auth: RoleAuth, showModeOn: @escaping @Sendable () -> Bool = { false },
         checkLibraryRoot: @escaping @Sendable (String) throws -> Void = { _ in },
         applySync: @escaping @Sendable (SyncSettings) throws -> Void = { _ in },
-        syphonRunning: @escaping @Sendable () -> Set<Int> = { [] }
+        syphonRunning: @escaping @Sendable () -> Set<Int> = { [] },
+        displayModes: @escaping @Sendable () -> [String: DisplayModeConfig] = { [:] }
     ) {
         store.register(
             CommandSpec(
@@ -399,10 +429,13 @@ public enum ProjectDocument {
                 return .number(Double(id))
             })
         store.register(
-            CommandSpec(name: "output.remove", role: .programmer, summary: "Remove an output.", argsType: "{ id: number }") { project, args in
+            CommandSpec(name: "output.remove", role: .programmer, summary: "Remove an output (not one in a projector wall).", argsType: "{ id: number }") { project, args in
                 guard let id = args["id"]?.int else { throw CommandError.invalidArgs("args: { id }") }
                 var outputs = ProjectDocument.outputs(from: project)
                 guard outputs.contains(where: { $0.id == id }) else { throw CommandError.invalidArgs("no output \(id)") }
+                if let wall = walls(from: project).first(where: { $0.outputs.contains(id) }) {
+                    throw CommandError.invalidArgs("output \(id) is part of \(wall.name); remove the wall first (its outputs stay as they are)")
+                }
                 outputs.removeAll { $0.id == id }
                 try setOutputs(outputs, in: &project)
                 var canvases = ProjectDocument.canvases(from: project)
@@ -415,7 +448,7 @@ public enum ProjectDocument {
         store.register(
             CommandSpec(
                 name: "output.set", role: .programmer,
-                summary: "Set one value inside an output by JSON pointer (name, display, region, mode, intensity, blend/*, warp/*, slices/*, testPattern); the result is validated as a whole.",
+                summary: "Set one value inside an output by JSON pointer (name, display, region, mode, intensity, blend/*, warp/*, slices/*, testPattern); the result is validated as a whole. On a projector-wall output a changed slice 1 source or inner overlap becomes manual (result { wall, manual }), and an inner edge's power, gamma or gammaRGB goes to its seam, so both sides follow.",
                 argsType: "{ id: number; path: string; value: JSONValue }"
             ) { project, args in
                 guard let id = args["id"]?.int, let path = args["path"]?.string, let pointer = try? JSONPointer(path), let value = args["value"] else {
@@ -438,9 +471,17 @@ public enum ProjectDocument {
                         throw CommandError.invalidArgs("no canvas \(slice.canvas)")
                     }
                 }
+                let old = outputs[index]
                 outputs[index] = updated
+                var reply: JSONValue? = nil
+                var walls = ProjectDocument.walls(from: project)
+                if let w = walls.firstIndex(where: { $0.outputs.contains(id) }) {
+                    let marked = WallLayout.follow(edit: updated, was: old, wall: &walls[w], outputs: &outputs)
+                    try setWalls(walls, in: &project)
+                    if !marked.isEmpty { reply = ["wall": .number(Double(walls[w].id)), "manual": .array(marked.map { .string($0.rawValue) })] }
+                }
                 try setOutputs(outputs, in: &project)
-                return nil
+                return reply
             })
         store.register(
             CommandSpec(
@@ -452,17 +493,7 @@ public enum ProjectDocument {
                 var canvases = ProjectDocument.canvases(from: project)
                 guard let index = canvases.firstIndex(where: { $0.id == id }) else { throw CommandError.invalidArgs("no canvas \(id)") }
                 if let width = args["width"]?.int, let height = args["height"]?.int, let fps = args["fps"]?.double {
-                    guard !showModeOn() else { throw CommandError("showMode", "the canvas format cannot change in show mode; leave show mode first") }
-                    let format = try validated((width, height, fps))
-                    canvases[index].width = format.width
-                    canvases[index].height = format.height
-                    // one compositor clock: canvas 1's rate is every canvas's rate
-                    if index == 0 {
-                        for i in canvases.indices { canvases[i].fps = format.fps }
-                    } else if format.fps != canvases[0].fps {
-                        throw CommandError.invalidArgs(sharedRate(canvases[0].fps))
-                    }
-                    try checkTotalPixels(canvases)
+                    try resize(&canvases, at: index, to: (width, height, fps), showModeOn: showModeOn())
                 } else {
                     guard let path = args["path"]?.string, ["/name", "/clockMaster"].contains(path), let value = args["value"] else {
                         throw CommandError.invalidArgs("args: { id, path: /name | /clockMaster, value } or { id, width, height, fps }")
@@ -568,6 +599,7 @@ public enum ProjectDocument {
                 return nil
             })
         registerUniverseCommands(on: store)
+        registerWallCommands(on: store, showModeOn: showModeOn, displayModes: displayModes)
     }
 }
 

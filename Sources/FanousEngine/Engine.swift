@@ -299,7 +299,8 @@ public final class Engine: @unchecked Sendable {
             on: store, auth: auth, showModeOn: { [weak self] in self?.showMode.isOn ?? false },
             checkLibraryRoot: { [weak self] root in if let refusal = self?.libraryRootRefusal(root) { throw refusal } },
             applySync: { [weak self] in try self?.applySync($0) },
-            syphonRunning: { [weak self] in Set(self?.render?.syphonCatalog.servers.filter(\.running).map(\.file) ?? []) })
+            syphonRunning: { [weak self] in Set(self?.render?.syphonCatalog.servers.filter(\.running).map(\.file) ?? []) },
+            displayModes: { [weak self] in Dictionary((self?.displays.withLock { $0 } ?? []).map { ($0.uuid, $0.mode) }, uniquingKeysWith: { a, _ in a }) })
         syphonInProject.withLock { $0 = project["syphon"] ?? [:] }
         libraryRootInProject.withLock { $0 = URL(fileURLWithPath: project["library"]?["root"]?.string ?? libraryRoot.path).path }
         // B23: a version of the project as loaded, then one every 10 minutes when it changed, and one per show-mode enter
@@ -1249,7 +1250,7 @@ public final class Engine: @unchecked Sendable {
         guard (try? ProjectDocument.setCanvasLayout(rendered, in: &project)) != nil else { return }
         // what was put on a canvas that could not be made goes back to canvas 1, as canvas.remove does
         try? ProjectDocument.moveToCanvas1(keeping: Set(rendered.canvases.map(\.id)), in: &project)
-        for key in ["canvases", "layerCanvas", "outputs"] {
+        for key in ["canvases", "layerCanvas", "outputs", "walls"] {
             if let value = project[key], value != store.project[key], let pointer = try? JSONPointer("/" + key) { store.correct(value, at: pointer) }
         }
     }
