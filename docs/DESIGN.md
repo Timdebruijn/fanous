@@ -111,7 +111,10 @@ names the invariant.
 - *DMX/Control → Render:* a triple-buffered `ParameterSnapshot` (plain
   `Float`/`UInt8` fields, one struct per layer plus master/outputs). Writer
   (resolution step on the DMX queue) publishes a slot index atomically; the
-  compositor reads the latest at the start of each tick. Values from internal
+  compositor reads the latest at the start of each tick. The compositor is the
+  only reader: other threads (CITP layer status, secondary displays) read a
+  copy the writer makes of each published slot behind a lock (`withLatest`,
+  B71). Values from internal
   sources (cues, OSC, UI) are merged into the same snapshot by the resolver
   (§7).
 - *Decode → Render:* per-layer SPSC ring of `FrameSlot`s (preallocated;
