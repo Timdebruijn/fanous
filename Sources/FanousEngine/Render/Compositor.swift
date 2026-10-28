@@ -845,9 +845,12 @@ public final class Compositor: @unchecked Sendable {
     /// Draws the latest completed canvas through `set` into a drawable of another display (DESIGN.md §4.5):
     /// its own command buffer on the caller's thread; `uniforms` belongs to that caller.
     public func present(_ set: OutputSet, to drawable: CAMetalDrawable, uniforms: MTLBuffer) {
-        // not the compositor thread: the DMX side's copy, never `read()` (B71)
-        let (master, masterPattern, outputs) = parameters.withLatest {
-            ($0.masterControl == .blackout ? 0 : $0.master, $0.testPattern, $0.outputs.map { $0 })
+        // not the compositor thread: the DMX side's copy, never `read()`; reserved first, so the lock covers only the copy (B71)
+        var outputs: [OutputParameters] = []
+        outputs.reserveCapacity(ParameterSnapshotSlot.maxOutputs)
+        let (master, masterPattern) = parameters.withLatest {
+            outputs.append(contentsOf: $0.outputs)
+            return ($0.masterControl == .blackout ? 0 : $0.master, $0.testPattern)
         }
         // one tick's canvases for the whole draw (the compositor may complete another meanwhile)
         let (frame, index) = completedCanvases()

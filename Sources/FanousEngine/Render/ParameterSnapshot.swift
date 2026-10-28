@@ -200,9 +200,13 @@ public final class TripleBuffer<Slot: AnyObject>: @unchecked Sendable {
     }
 
     /// Any thread but the reader's (CITP, secondary displays): `body` on the copy of the last published slot, under a
-    /// lock the writer takes once per write. Keep `body` short and copy out what you keep (a fresh array, so the
-    /// writer's copy stays unshared and never copies on write). Never on the compositor thread: no locks there.
-    public func withLatest<R>(_ body: (Slot) -> R) -> R { latestLock.withLock { _ in body(latest) } }
+    /// lock the writer takes once per write (ADR-0002 amendment 2026-10-28). `body` only copies, into storage reserved
+    /// before the call: no allocation under the lock, and the writer's copy stays unshared (no copy on write).
+    /// Never on the compositor thread: no locks there.
+    public func withLatest<R>(_ body: (Slot) -> R) -> R {
+        precondition(copy != nil, "withLatest needs a copy: closure")
+        return latestLock.withLock { _ in body(latest) }
+    }
 
     /// Reader (the compositor thread only): the newest published slot (or the one read last time when nothing new arrived).
     public func read() -> Slot {
@@ -213,4 +217,8 @@ public final class TripleBuffer<Slot: AnyObject>: @unchecked Sendable {
         }
         return slots[reading]
     }
+
+    /// Reader, later in the same tick (preview tap): the slot the last `read()` returned, without taking a newer one,
+    /// which would hand the tick's own slot back to the writer while the tick still reads it (B71).
+    public func current() -> Slot { slots[reading] }
 }

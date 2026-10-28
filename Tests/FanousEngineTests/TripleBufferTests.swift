@@ -106,13 +106,15 @@ final class Box { var value = 0 }
         #expect(run.lastSeen == 1000)
     }
 
-    /// Sparse updates (one per 20 ms) with a 4 Hz copy reader (CITP layer status): the render reader sees every one.
-    @Test func renderReaderSeesEverySparseUpdateBesideA4HzCopyReader() async throws {
+    /// Sparse updates (one per 20 ms) with a 4 Hz copy reader (CITP layer status): the render reader's slot stays
+    /// intact and it ends on the last update. `missed` is printed, not asserted: it depends on the reader thread being
+    /// scheduled within each 20 ms gap.
+    @Test func sparseUpdatesBesideA4HzCopyReader() async throws {
         let run = try await offPool { readerRun(count: 100, interval: 0.02, otherHz: 4, other: copyReader) }
         print("B71 sparse (100 updates 20 ms apart, 4 Hz copy reader): \(run)")
-        #expect(run.missed == 0)
         #expect(run.changed == 0)
         #expect(run.torn == 0)
+        #expect(run.lastSeen == 100)
     }
 }
 
@@ -136,6 +138,7 @@ func readerRun(count: Int, interval: TimeInterval, otherHz: Double, other: @esca
 {
     final class Shared: @unchecked Sendable {  // `run` is written by the render reader only, read after the join
         let stop = Atomic<Bool>(false)
+        let lastSeen = Atomic<Int>(0)
         let other = Mutex((reads: 0, torn: 0))
         var run = ReaderRun()
     }
@@ -154,7 +157,9 @@ func readerRun(count: Int, interval: TimeInterval, otherHz: Double, other: @esca
             buffer.write { $0.a = k; $0.b = -k }
             usleep(UInt32(interval * 1e6))
         }
-        usleep(20_000)
+        // the render reader gets up to 2 s to see the last write, not a fixed sleep
+        let deadline = Date().addingTimeInterval(2)
+        while shared.lastSeen.load(ordering: .relaxed) != count, Date() < deadline { usleep(1000) }
         shared.stop.store(true, ordering: .relaxed)
     }
     thread {
@@ -164,7 +169,7 @@ func readerRun(count: Int, interval: TimeInterval, otherHz: Double, other: @esca
             let a = slot.a, b = slot.b
             if a != -b { shared.run.torn += 1 }
             if a > 0, a <= count { seen[a] = true }
-            shared.run.lastSeen = a
+            shared.lastSeen.store(a, ordering: .relaxed)
             usleep(200)
             if slot.a != a || slot.b != b { shared.run.changed += 1 }
             usleep(300)
@@ -180,6 +185,7 @@ func readerRun(count: Int, interval: TimeInterval, otherHz: Double, other: @esca
     }
     group.wait()
     var run = shared.run
+    run.lastSeen = shared.lastSeen.load(ordering: .relaxed)
     (run.otherReads, run.otherTorn) = shared.other.withLock { ($0.reads, $0.torn) }
     return run
 }

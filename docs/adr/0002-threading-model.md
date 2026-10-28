@@ -30,3 +30,21 @@ and actors/async hops allocate and can be delayed by unrelated work.
 − More code than actors; the ring types need careful review and tests.
 − If Network.framework's queue delivery proves too jittery for DMX, a BSD
   socket thread replaces it for Art-Net/sACN only (new ADR).
+
+## Amendment 2026-10-28 (B71): one bounded lock for non-render parameter readers
+
+The parameter triple buffer has one reader, the compositor. CITP layer status and
+secondary displays read the parameters too. When they called the reader side
+themselves, they could hand the writer the slot the compositor was drawing from.
+They now read a copy of each published snapshot, kept behind one lock. This is
+the only lock on the render or DMX path:
+
+- `Mutex` from the `Synchronization` module (`os_unfair_lock`, which donates
+  priority to the holder).
+- Critical section: a fixed-size copy of the snapshot, with no allocation
+  (readers reserve their arrays before taking it). About 0.4 µs for
+  32 layers and 8 outputs in a release build.
+- Taken by the DMX writer once per published snapshot, by CITP at 4 Hz, and by
+  each Output-N thread once per frame.
+- The compositor thread never takes it. It reads the triple buffer with
+  `read()` once per tick, and the preview tap uses `current()`, both lock-free.

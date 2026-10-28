@@ -851,8 +851,11 @@ public final class Engine: @unchecked Sendable {
 
     private func citpLayers() -> [CITPServer.LayerInfo] {
         guard let render, let dmx else { return [] }
-        // the CITP queue is not the compositor: the DMX side's copy, never `read()` (B71)
-        let parameters = dmx.snapshots.withLatest { $0.layers.map { $0 } }
+        // the CITP queue is not the compositor: the DMX side's copy, never `read()`; reserved first, so the lock
+        // covers only the copy (B71)
+        var parameters: [LayerParameters] = []
+        parameters.reserveCapacity(render.layers.count)
+        dmx.snapshots.withLatest { parameters.append(contentsOf: $0.layers.prefix(render.layers.count)) }
         return render.layers.map { layer in
             let s = layer.mediaStatus.withLock { $0 }
             let p = layer.index < parameters.count ? parameters[layer.index] : LayerParameters()
