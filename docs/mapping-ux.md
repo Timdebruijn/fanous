@@ -4,10 +4,8 @@
 
 # Fanous: blending and mapping, research and a user-friendly design
 
-**Status:** proposal, 2026-10-28. Not approved yet.
-
-**Design-first:** DESIGN §9 and the backlog change only after the owner
-approves this proposal.
+**Status:** proposal of 2026-10-28. The owner's decisions are in §6, and the
+M1 design is DESIGN §9.9. Building waits for the owner's approval of §9.9.
 
 **Research:** three web surveys:
 - professional media servers
@@ -246,9 +244,20 @@ offers.
   edited, 1–N = preset N, with a crossfade time on the existing dissolve
   logic. Hippotizer and Avolites recall warps by index; Mbox puts its
   keystone on DMX.
-- **Owner decision:** the channel is one of the three reserved channels of
-  Output mode. The GDTF ships at 1.0, so this decision belongs in that
-  window.
+- **Decided:** channel 6 is Mapping preset; it was one of the three reserved
+  channels of Output mode.
+- **Console keystone (decided for M2).** Full mesh editing from a console is
+  impractical: a 33×33 mesh would take thousands of channels. Console mapping
+  is used for three things: recalling stored mappings per scene (channel 6),
+  following moving scenery, and quick fixes from FOH.
+  - **Keystone mode:** a separate fixture mode per output, 16 ch: four corners
+    × X/Y, 16-bit.
+  - **Offsets:** they sit on top of the mapping edited in the UI, and centre
+    means no change. So the console never destroys the hand alignment.
+  - **Existing modes:** a new mode leaves the three existing modes alone.
+  - **Moving screens:** this fits B53.
+  - **Prior art:** Mbox has a DMX keystone fixture; whether Axon/Catalyst
+    worked the same way was not checked.
 
 ### 4.6 Colour match per output
 
@@ -257,14 +266,21 @@ offers.
   Watchout's white point.
 - **Later:** a 3D LUT per output (feature-gaps G18).
 
-### 4.7 Camera assistance (the Mac's camera)
+### 4.7 Camera assistance (an iPhone or webcam as the camera)
 
-- **Camera source:** any AVFoundation camera on the Mac, either a USB webcam
-  or an iPhone as **Continuity Camera** (wireless, no app). Why not the iPad
-  browser camera:
-  - Safari needs a trusted certificate for camera access (OPEN-11/OPEN-17).
-  - It gives no control over exposure or focus.
-  - It gives no full-resolution stills.
+- **Camera sources (decided):** the iPhone, by two routes. Both feed the same
+  Mac-side solver (pattern projection, dot finding, homography and mesh), so
+  most of the work is shared.
+  1. **First, Continuity Camera:** the iPhone is the Mac's wireless camera. It
+     needs no app and no certificate, but the same Apple account as the Mac.
+     A USB webcam works the same way.
+  2. **Then the iPad/iPhone browser camera,** once a trusted certificate
+     exists (CA profile, OPEN-17). Safari gives no control over exposure or
+     focus and no full-resolution stills, so patterns are decoded against
+     their inverse.
+  3. **In both cases:** the camera must not move during a scan, so use a
+     small stand or clamp. The iPad shows the camera picture, and the user
+     taps the corners there.
 - **Step A — auto corner pin, one projector** (the Mystique Lite and LuxCanvas
   flow):
   1. Put the camera where it sees the whole screen.
@@ -335,15 +351,20 @@ offers.
 | | Wall scan (§4.7 B) | L | F7 |
 | Later | Local row/column insert, sharp points, soft selection, projector calculator, 3D mapping, browser camera, MPCDI export | — | |
 
-## 6. Questions for the owner
+## 6. Decisions (owner, 2026-10-28)
 
-1. **The wall as a project entity** (recommended) or a wizard that writes the
-   fields once? The entity costs little, because it compiles at edit time, and
-   keeps "change the overlap later" possible.
-2. **Output fixture channel 6 for mapping presets**, decided before 1.0?
-3. **Camera on the Mac** (USB webcam or iPhone via Continuity Camera,
-   recommended), or wait for a browser camera?
-4. **Start with M1** (no engine changes) as the first block?
+1. **Wall: both.**
+   - A wizard creates the wall, and the project keeps it.
+   - A small change later is one control on the wall panel.
+   - **Edit layout…** re-opens the wizard pre-filled.
+   - A hand-edited field becomes "manual" and keeps its value.
+2. **Output fixture channel 6** is Mapping preset. A **Keystone** mode for
+   console corner pins comes in M2 (§4.5).
+3. **The camera is the iPhone:** Continuity Camera first, then the browser
+   camera (§4.7).
+4. **M1 first.** The design is DESIGN §9.9. RGB gamma and per-output colour
+   touch the output shader a little; everything else in M1 is model, commands
+   and UI.
 
 ## 7. Sources (main pages)
 
