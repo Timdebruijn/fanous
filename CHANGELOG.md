@@ -165,6 +165,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   poll with a deadline or probe the listener first, so `scripts/test.sh` stays green under load (B67).
 - Syphon numbers (folder 0, 150–169) are kept in the project (`syphon`), so they survive an engine restart; a server not
   seen since the start is listed greyed (`gone`), and `syphon.forget` (Media screen **Forget**) frees a number (B69).
+- Fixed: the shell token test failed 1 run in 16, when the token ended in "0" (B84).
+- Fixed: undoing `syphon.forget` overwrote a Syphon number another server had taken meanwhile; the undo is now refused (B90).
+- Fixed: the preview left its H.264 decoder open after every target change and disconnect; it now closes it (B85).
+- Fixed: a new `settings.json` (hashed role passwords) and the shell token file were readable by other users between the write
+  and the change to mode 0600; both are now written 0600 from the start, and a new Application Support folder is 0700 (B83).
 - Fixed: a role password added to `settings.json` by hand while the engine runs was kept in the file at the next write but
   the role stayed open until a restart; every write now takes the passwords from the file as written (B82).
 

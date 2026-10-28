@@ -174,8 +174,7 @@ public final class RoleAuth: @unchecked Sendable {
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
                 let data = try encoder.encode(JSONValue.object(root))
-                try data.write(to: settingsURL, options: .atomic)
-                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: settingsURL.path)
+                try Self.writePrivately(data, to: settingsURL)
                 if let file = try? JSONDecoder().decode(MachineSettings.self, from: data) {
                     for problem in file.problems { logger.error("settings.json: field ignored", metadata: ["problem": "\(problem)"]) }
                     s.settings.take(file)
@@ -298,14 +297,31 @@ public final class RoleAuth: @unchecked Sendable {
         return bytes.map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Writes `data` to `url` atomically and readable by the owner only from the start (B83): a temporary file created
+    /// with mode 0600 next to it, renamed over it. A write that fails leaves the old file and no temporary one.
+    static func writePrivately(_ data: Data, to url: URL) throws {
+        let temp = url.deletingLastPathComponent().appending(path: ".\(url.lastPathComponent).\(UUID().uuidString).tmp")
+        let fd = open(temp.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        do {
+            let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+            try handle.write(contentsOf: data)
+            try handle.synchronize()
+            try handle.close()
+            guard rename(temp.path, url.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        } catch {
+            unlink(temp.path)
+            throw error
+        }
+    }
+
     private static func loadOrCreateToken(at url: URL, logger: Logger) -> String {
         if let existing = try? String(contentsOf: url, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), existing.count == 64 {
             return existing
         }
         let token = randomToken()
         do {
-            try Data(token.utf8).write(to: url, options: .atomic)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            try writePrivately(Data(token.utf8), to: url)
         } catch {
             logger.error("cannot write shell token", metadata: ["path": "\(url.path)", "error": "\(error)"])
         }

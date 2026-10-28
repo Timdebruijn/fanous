@@ -53,7 +53,9 @@ public enum AppPaths {
     public static func ensureDirectories() throws {
         migrateFromLanthorn()
         for directory in [applicationSupport, logs, tls, cache] {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            // settings.json and the shell token live in Application Support: owner only when the engine creates it (B83)
+            let attributes: [FileAttributeKey: Any]? = directory == applicationSupport ? [.posixPermissions: 0o700] : nil
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: attributes)
         }
     }
 
