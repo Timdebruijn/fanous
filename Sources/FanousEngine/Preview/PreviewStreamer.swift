@@ -50,6 +50,8 @@ public final class PreviewStreamer: @unchecked Sendable {
     private var session: VTCompressionSession?
     /// Preview queue: a session is being made (`ensureSession`).
     private var creating = false
+    /// Preview queue: creations started, so a late "not ready" timer names only its own.
+    private var creations = 0
     /// Preview queue: the last attempt failed; frames do not retry it, a new H.264 subscriber does.
     private var sessionFailed = false
     private let uniforms: MTLBuffer
@@ -234,19 +236,35 @@ public final class PreviewStreamer: @unchecked Sendable {
     private func ensureSession() {
         guard session == nil, !creating, wantsH264 else { return }
         creating = true
+        creations &+= 1
+        let mine = creations
         let started = Date()
+        let (width, height, fps, queue) = (width, height, fps, queue)
         let size = "\(width)x\(height)"
-        queue.asyncAfter(deadline: .now() + 5) { [self] in
-            if creating { logger.warning("preview encoder not ready after 5 s", metadata: ["size": "\(size)"]) }
+        queue.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self, creating, creations == mine else { return }
+            logger.warning("preview encoder not ready after 5 s", metadata: ["size": "\(size)"])
         }
-        DispatchQueue.global(qos: .utility).async { [self] in
-            let result = Result { try makeSession() }
+        // the streamer is not captured: a create that never returns pins one thread, not the streamer's buffers
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            nonisolated(unsafe) let result = Result { try Self.makeSession(width: width, height: height, fps: fps) }
             let ms = Int(Date().timeIntervalSince(started) * 1000)
-            queue.async { [self] in
+            guard self != nil else {
+                if case .success(let made) = result { VTCompressionSessionInvalidate(made) }
+                return
+            }
+            queue.async { [weak self] in
+                guard let self else {
+                    if case .success(let made) = result { VTCompressionSessionInvalidate(made) }
+                    return
+                }
                 creating = false
                 switch result {
                 case .success(let made) where wantsH264:
                     session = made
+                    // a frame of a released session can deliver after the release and leave its avcC here; this
+                    // session's parameter sets may be byte-identical, so without a reset no description would go out
+                    avcC = []
                     logger.info("preview encoder ready", metadata: ["size": "\(size)", "ms": "\(ms)"])
                 case .success(let made):
                     VTCompressionSessionInvalidate(made)  // its viewers left meanwhile
@@ -274,8 +292,8 @@ public final class PreviewStreamer: @unchecked Sendable {
         logger.info("preview encoder released", metadata: ["size": "\(width)x\(height)"])
     }
 
-    /// Any thread (reads only constants).
-    private func makeSession() throws -> VTCompressionSession {
+    /// Any thread.
+    private static func makeSession(width: Int, height: Int, fps: Double) throws -> VTCompressionSession {
         var session: VTCompressionSession?
         let status = VTCompressionSessionCreate(
             allocator: nil, width: Int32(width), height: Int32(height), codecType: kCMVideoCodecType_H264, encoderSpecification: nil,

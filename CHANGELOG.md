@@ -127,8 +127,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   (generators and Syphon servers with their number and state) and the layer panel offers them. A layer on a
   server that went says "not running" (within about 11 s after a crash) and picks the picture up again when
   it returns (B61).
-- Fixed: the engine sometimes never finished starting on the CI virtual machine, stuck making the canvas preview's
-  H.264 encoder. A preview's encoder is now made off the start path, for its first H.264 viewer, and released with
+- The canvas preview's H.264 encoder is moved off the start path: on the CI virtual machine the engine sometimes
+  never finished starting, its log ending at that step (B66). A preview's encoder is now made, for its first H.264 viewer, and released with
   the last; JPEG previews and CITP streaming need none. A browser that gets no H.264 description within 5 s falls back
   to JPEG (B66).
 

@@ -208,7 +208,7 @@ struct StateServerTests {
         _ = try await Self.receive(a, until: "welcome")
         try await a.send(.string(#"{"t":"sub","stream":"preview","codec":"avc"}"#))
         let ticks = Task {
-            for i in 0..<600 where !Task.isCancelled {
+            for i in 0..<3000 where !Task.isCancelled {
                 rig.compositor.tick(target: 100 + Double(i) / 60, drawable: nil)
                 try? await Task.sleep(for: .milliseconds(16))
             }
@@ -216,7 +216,7 @@ struct StateServerTests {
         defer { ticks.cancel() }
         var seen: [String] = []
         var sub: JSONValue = .null, stream: JSONValue = .null
-        while seen.count < 3 {
+        for _ in 0..<200 where seen.count < 3 {
             let message = try await Self.receive(a)
             if message["binary"] != nil { seen.append("frame") }
             if message["t"]?.string == "sub" { (sub, seen) = (message, seen + ["sub"]) }
@@ -227,6 +227,22 @@ struct StateServerTests {
         #expect(stream["id"]?.int == sub["id"]?.int)
         #expect(stream["codec"]?.string?.hasPrefix("avc1.42") == true, "Baseline")
         #expect(stream["w"]?.int == sub["w"]?.int && stream["h"]?.int == sub["h"]?.int)
+
+        // re-subscribing after the encoder was released gets a description every time. Race-sensitive: a frame of the
+        // released session delivered after the release used to leave its avcC behind, and the next session's
+        // identical parameter sets then sent none (2 in 30 before the fix)
+        var id = try #require(sub["id"]?.int)
+        for round in 0..<10 {
+            try await a.send(.string(#"{"t":"unsub","id":\#(id)}"#))
+            try await a.send(.string(#"{"t":"sub","stream":"preview","codec":"avc"}"#))
+            var gotSub = false, gotStream = false
+            for _ in 0..<200 where !gotStream {
+                let message = try await Self.receive(a)
+                if message["t"]?.string == "sub" { (id, gotSub) = (message["id"]?.int ?? id, true) }
+                if gotSub, message["t"]?.string == "stream", message["id"]?.int == id { gotStream = true }
+            }
+            #expect(gotStream, "round \(round): no stream description after re-subscribing")
+        }
         a.cancel(with: .normalClosure, reason: nil)
     }
 
