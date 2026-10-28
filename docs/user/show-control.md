@@ -383,9 +383,11 @@ in the project, so they stay the same across an engine restart (also a restart
 after a crash in the middle of a show): a server that stops keeps its number,
 and when it starts again (same app and server name) it gets its old number
 back. After a restart a server that has not answered yet is listed greyed,
-"not seen since the engine started". A number is only freed with **Forget** on
+"not seen since the engine started". A number is freed with **Forget** on
 the Media screen (one server that is not running, or **Forget all not running**;
-programmer, undoable, not while the show is locked); with all 20 numbers taken a
+programmer, undoable, not while the show is locked); undo, redo and loading a
+project version also free the numbers of servers that are not running and that
+the restored project does not list; with all 20 numbers taken a
 new server gets none and the Media screen names it. When an app quits, its dot goes grey at once; when it crashes,
 within about 11 seconds. A layer on a server that has gone keeps its last
 picture and shows "Syphon: App/Server · not running" on the Layers screen;

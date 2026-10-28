@@ -100,17 +100,19 @@ public enum ProjectDocument {
         try project.set(.object(object), at: "/layerCanvas")
     }
 
-    /// The Syphon numbering (B69): `/syphon` `[{file, app, server}]`, folder 0 files 150–169, written by the engine as
-    /// it numbers servers (no command, also under show lock), freed by `syphon.forget`. Gone until they announce.
+    /// The Syphon numbering (B69): `/syphon` `{"151": {app, server}}`, folder 0 files 150–169, keyed by file like
+    /// `/layerCanvas` so a forget and its undo touch one key; written by the engine as it numbers servers (no command,
+    /// also under show lock), freed by `syphon.forget`. Gone until they announce.
     public static func syphonNumbers(from project: JSONValue) -> [SyphonCatalog.Server] {
-        (project["syphon"]?.array ?? []).compactMap { entry in
-            guard let file = entry["file"]?.int, let app = entry["app"]?.string else { return nil }
+        guard case .object(let map)? = project["syphon"] else { return [] }
+        return map.compactMap { key, entry in
+            guard let file = Int(key), let app = entry["app"]?.string else { return nil }
             return SyphonCatalog.Server(file: file, app: app, server: entry["server"]?.string ?? "", gone: true)
-        }
+        }.sorted { $0.file < $1.file }
     }
 
     public static func syphonValue(_ servers: [SyphonCatalog.Server]) -> JSONValue {
-        .array(servers.map { ["file": .number(Double($0.file)), "app": .string($0.app), "server": .string($0.server)] })
+        .object(Dictionary(servers.map { (String($0.file), ["app": .string($0.app), "server": .string($0.server)]) }, uniquingKeysWith: { a, _ in a }))
     }
 
     /// Layers and slices on a canvas outside `keeping` move to canvas 1 (canvas.remove, a failed canvas switch).
@@ -166,7 +168,7 @@ public enum ProjectDocument {
             "canvases": canvasValue(canvas),
             "layerCanvas": [:],
             "outputs": [],
-            "syphon": [],
+            "syphon": [:],
             "ui": [:],
         ]
     }
@@ -255,7 +257,7 @@ public enum ProjectDocument {
         }
         if document["ui"] == nil { try? document.set([:], at: "/ui") }
         if document["layerCanvas"] == nil { try? document.set([:], at: "/layerCanvas") }
-        if document["syphon"] == nil { try? document.set([], at: "/syphon") }
+        if document["syphon"] == nil { try? document.set([:], at: "/syphon") }
         return document
     }
 

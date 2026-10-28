@@ -9,8 +9,9 @@ import Synchronization
 /// Folder 0 files 150–169 (B61): the Syphon servers of other apps, numbered as the directory announces them (the
 /// lowest free number), so a console or the UI selects one like a generator. A server that goes keeps its number (not
 /// running); one that comes back with the same app and server name takes its old number again. The numbering is kept
-/// in the project (`syphon`, B69): the catalog starts from it, so numbers survive an engine restart, and only
-/// `syphon.forget` frees one. Safe on any thread, except `start`/`stop` (one control thread).
+/// in the project (`syphon`, B69): the catalog starts from it, so numbers survive an engine restart. `syphon.forget`
+/// frees a number; undo, redo and loading a version also drop the not-running numbers the restored project lacks.
+/// Safe on any thread, except `start`/`stop` (one control thread).
 public final class SyphonCatalog: @unchecked Sendable {
     public static let files = 150...169
     /// Syphon's `SyphonServerAnnounceRequest` (SyphonPrivate.h): every server answers, and every directory retires the
@@ -55,7 +56,8 @@ public final class SyphonCatalog: @unchecked Sendable {
     /// Running servers past the 20 numbers, as "App/Server": they get one when `syphon.forget` frees it.
     public var unnumbered: [String] {
         state.withLock { s in
-            s.running.filter { info in !s.servers.contains { $0.uuid == info.uuid } }.map { Server(file: 0, app: $0.appName, server: $0.serverName).name }
+            s.running.filter { info in !info.uuid.isEmpty && !s.servers.contains { $0.uuid == info.uuid } }
+                .map { Server(file: 0, app: $0.appName, server: $0.serverName).name }
         }
     }
     public func server(file: Int) -> Server? { state.withLock { $0.servers.first { $0.file == file } } }
@@ -103,14 +105,19 @@ public final class SyphonCatalog: @unchecked Sendable {
     }
 
     /// A server not running that `numbers` lists is kept or added (gone until it announces); one it does not list is
-    /// forgotten. A running server always keeps its number: an entry on its number is dropped (the engine then writes
-    /// the catalog back into the project).
+    /// forgotten. A running server always keeps its number: an entry on its number is dropped, and so is a new entry
+    /// with a running server's name on another number (undo, a loaded version), or that server would move to the
+    /// lower of the two at the next restart. The engine then writes the catalog back into the project.
     static func adopt(_ servers: inout [Server], numbers: [Server]) -> Bool {
         let before = servers
-        var next = servers.filter(\.running)
+        let running = servers.filter(\.running)
+        var next = running
         for entry in numbers where files.contains(entry.file) && !next.contains(where: { $0.file == entry.file }) {
-            let kept = servers.first { $0.file == entry.file && !$0.running && $0.app == entry.app && $0.server == entry.server }
-            next.append(kept ?? Server(file: entry.file, app: entry.app, server: entry.server, gone: true))
+            if let kept = servers.first(where: { $0.file == entry.file && !$0.running && $0.app == entry.app && $0.server == entry.server }) {
+                next.append(kept)  // also a gone twin of a running server (two engines' canvases share a name)
+            } else if !running.contains(where: { $0.app == entry.app && $0.server == entry.server }) {
+                next.append(Server(file: entry.file, app: entry.app, server: entry.server, gone: true))
+            }
         }
         servers = next.sorted { $0.file < $1.file }
         return servers != before

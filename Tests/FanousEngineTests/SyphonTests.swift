@@ -176,6 +176,21 @@ import Testing
         #expect(next.server(file: 150)?.uuid == "a2")
     }
 
+    /// Undo or a loaded version bringing back a name that runs on another number: dropped, or that server would move to
+    /// the lower number at the next restart. A gone twin the catalog already holds (two canvases, one name) stays.
+    @Test func adoptDropsANewEntryWithARunningServersName() {
+        let catalog = SyphonCatalog()
+        catalog.update(running: [Self.info("Other", "", "o"), Self.info("fanousd", "Fanous – Canvas", "x"), Self.info("fanousd", "Fanous – Canvas", "y")])
+        catalog.update(running: [Self.info("Other", "", "o"), Self.info("fanousd", "Fanous – Canvas", "x")])
+        #expect(catalog.server(file: 152)?.running == false)  // the twin that stopped
+        let restored = catalog.servers + [SyphonCatalog.Server(file: 160, app: "fanousd", server: "Fanous – Canvas")]
+        #expect(!catalog.adopt(restored))
+        #expect(catalog.servers.map(\.file) == [150, 151, 152])
+        // nothing running under that name: a restored entry is taken as gone
+        #expect(catalog.adopt(restored + [SyphonCatalog.Server(file: 161, app: "Gone App", server: "")]))
+        #expect(catalog.server(file: 161)?.gone == true)
+    }
+
     @Test func aTwentyFirstServerWaitsForAForgottenNumber() {
         let full = (150...169).map { SyphonCatalog.Server(file: $0, app: "App", server: "S\($0)") }
         let catalog = SyphonCatalog(numbers: full)

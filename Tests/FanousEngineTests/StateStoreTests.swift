@@ -617,6 +617,30 @@ extension StateStoreTests {
         store.correct(at: "/syphon") { ProjectDocument.syphonValue(numbers) }
         #expect(files() == [150, 151, 152])
     }
+
+    /// Keyed by file, a forget and its undo touch one key: numbers recorded in between stay (B69).
+    @Test func syphonForgetUndoKeepsNumbersRecordedMeanwhile() throws {
+        let (store, _) = Self.makeStore()
+        func server(_ file: Int, _ app: String) -> SyphonCatalog.Server { SyphonCatalog.Server(file: file, app: app, server: "") }
+        func files() -> [Int] { ProjectDocument.syphonNumbers(from: store.project).map(\.file) }
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(153, "X")]) }
+        _ = try store.execute("syphon.forget", args: ["file": 153], role: .programmer).get()
+        // Y and Z get numbers (the engine records them); Z then stops, its entry stays
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(151, "Y"), server(152, "Z")]) }
+        _ = try store.execute("undo", role: .programmer).get()
+        #expect(files() == [150, 151, 152, 153])
+        #expect(ProjectDocument.syphonNumbers(from: store.project).map(\.app) == ["A", "Y", "Z", "X"])
+    }
+
+    /// The engine records a new number with no client connected (a headless show driven by a console, B69).
+    @Test func syphonNumbersAreRecordedWithoutClients() {
+        let (store, _) = Self.makeStore()
+        let catalog = SyphonCatalog()
+        catalog.update(running: [SyphonInput.ServerInfo(appName: "Resolume", serverName: "Out", uuid: "a")])
+        #expect(store.clientCount == 0)
+        Engine.recordSyphonNumbers(catalog, into: store, applied: store.project["syphon"] ?? [:])
+        #expect(store.project["syphon"]?["150"]?["app"]?.string == "Resolume")
+    }
 }
 
 struct LibraryRedactionTests {

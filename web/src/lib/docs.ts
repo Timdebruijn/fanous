@@ -23,8 +23,8 @@ export interface ProjectDoc {
   canvases: CanvasConfig[];
   /** layer number → canvas id; a layer not listed is on canvas 1 (`layer.set`) */
   layerCanvas?: Record<string, number>;
-  /** Syphon numbering, folder 0 files 150–169 (B69): written by the engine, freed by `syphon.forget` */
-  syphon?: { file: number; app: string; server: string }[];
+  /** Syphon numbering by folder 0 file "150"–"169" (B69): written by the engine, freed by `syphon.forget` */
+  syphon?: Record<string, { app: string; server: string }>;
   /** per-universe receive settings (`universe.set`, B28); a universe without an entry runs the defaults */
   universes?: UniverseSettingsDoc[];
   outputs: OutputConfig[];

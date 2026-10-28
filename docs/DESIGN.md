@@ -806,17 +806,23 @@ server's frame age is not used: servers publish only when their picture
 changes.
 
 **As built (2026-10-28, B69):** the numbering is kept in the project,
-`syphon: [{file, app, server}]`. The catalog starts from it (`SyphonCatalog(numbers:)`)
+`syphon: {"151": {app, server}}`, keyed by file like `layerCanvas`, so a forget is
+`remove /syphon/151`, its undo `add /syphon/151`, and numbers recorded in between
+stay. The catalog starts from it (`SyphonCatalog(numbers:)`)
 with every entry gone (`gone: true` until it announces), so a returning server
 takes its number back by name with a new UUID whatever the order of the startup
 announce; the engine writes the catalog back with `StateStore.correct` (no role,
-no history, also under show lock) from the 10 Hz live feed, the value made on the
+no history, also under show lock) from the 10 Hz live feed, before its
+connected-client check (a headless show records numbers too), the value made on the
 store's queue so it is never older than a `syphon.forget`. `syphon.forget {file?}`
 (programmer, undoable, refused under show lock) removes one entry, or every
 entry not running, and refuses a running one; a project change to `/syphon`
-(forget, undo, a loaded version) is adopted by the catalog: a running server
-always keeps its number, an entry on it is dropped and written back, and a
-freed number goes at once to a server waiting past the 20.
+(forget, undo, redo, a loaded version) is adopted by the catalog: a not-running
+number the value lacks is dropped (so undo, redo and a loaded version free numbers
+too), a running server always keeps its number, an entry on it is dropped and
+written back, a new entry with a running server's name on another number is
+dropped (it would take that server to the lower number at the next restart), and
+a freed number goes at once to a server waiting past the 20.
 
 ### 8.3 Ingest flow
 
