@@ -152,6 +152,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: `roles.setPassword` and `sync.set` re-read `settings.json` and write only the role's password or the sync members
   given, so unknown fields, records that could not be read at start and hand edits to the other fields stay in the file; a
   file that does not parse is refused, not overwritten (B79).
+- Fixed: a preview that was streaming stayed frozen ("no new frames") after a reconnect; it now lets go of its stream
+  when the connection closes and subscribes again, once, when it is back (B68).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
