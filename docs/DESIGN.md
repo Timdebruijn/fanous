@@ -1979,7 +1979,7 @@ machine plays frame-locked with a layer on another. Catalyst (play mode
 To" per layer, over Ethernet) solved this on the console; Fanous does the
 same with one channel. Designed 2026-10-28 (owner review of the first draft,
 which mirrored whole machines over WSS; see ADR-0021); step 2 (the channel and
-the packet codec) is built (PR #31), step 3 (the engine) too (§23.8); the UI is not.
+the packet codec) is built (PR #31), step 3 (the engine) too (§23.8), and step 4 (the UI, PR #35).
 
 ### 23.1 One channel: Sync, layer channel 51
 
@@ -2217,3 +2217,7 @@ differs from the text above:
   derives a rate. A master's `name` is shown for masters on this machine only.
 - The two-engine check of §23.5 is manual (`docs/DEVELOPMENT.md`); the bench
   numbers are printed by `SyncCompositorTests`, which asserts no allocation.
+- Step 4: **`sync.set {interface?, port?, target?}`** (programmer, refused in show mode) writes `settings.json` ›
+  `sync` through `RoleAuth` and applies live (the receiver rebinds, the sender resolves its new target before the
+  next packet), so the settings are no longer file-only. Folder 0 content (generators, Syphon) is a live source and
+  neither sends nor follows, so the camera check of §23.5 uses a frame-numbered movie, not the clock generator.

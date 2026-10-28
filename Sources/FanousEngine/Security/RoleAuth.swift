@@ -19,7 +19,7 @@ public struct MachineSettings: Codable, Sendable, Equatable {
     public var passwords: [String: PasswordRecord] = [:]
     /// OSC feedback to a fixed host:port for controllers that cannot subscribe (B36); edited in the file, read at start.
     public var oscFeedback: OSCFeedbackTarget?
-    /// Multi-server sync interface, port and target (DESIGN.md §23.2); edited in the file, read at start. nil = defaults.
+    /// Multi-server sync interface, port and target (DESIGN.md §23.2); `sync.set` or the file. nil = defaults.
     public var sync: SyncSettings?
 
     /// Fields that could not be read, with the reason; never written back.
@@ -116,6 +116,19 @@ public final class RoleAuth: @unchecked Sendable {
         }
         if let settingsURL { try settings.save(to: settingsURL) }
         logger.info("role password \(record == nil ? "cleared" : "set")", metadata: ["role": "\(role)"])
+    }
+
+    /// The sync settings as stored (defaults when the file has none).
+    public var syncSettings: SyncSettings { state.withLock { $0.settings.sync } ?? SyncSettings() }
+
+    /// Stores the sync settings (`sync.set`, DESIGN.md §23.2) next to the passwords and persists the settings.
+    public func setSync(_ sync: SyncSettings) throws {
+        let settings = state.withLock { s in
+            s.settings.sync = sync
+            return s.settings
+        }
+        if let settingsURL { try settings.save(to: settingsURL) }
+        logger.info("sync settings set", metadata: ["interface": "\(sync.interface)", "port": "\(sync.port)", "target": "\(sync.target)"])
     }
 
     public func verify(_ password: String, for role: Role) -> Bool {

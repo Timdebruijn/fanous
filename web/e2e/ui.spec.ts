@@ -4,8 +4,11 @@
 // Browser end-to-end tests against a real engine (fixtures.ts). Few and robust: each covers a flow whose bugs unit
 // tests cannot see (wrong JSON pointers, overlapping handles, subscription races).
 import type { Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import { copyFileSync, mkdirSync, mkdtempSync } from 'node:fs';
+import { join } from 'node:path';
 import { previewClass } from '../src/lib/preview';
-import { expect, openScreen, test } from './fixtures';
+import { binary, expect, openScreen, repo, test } from './fixtures';
 
 type Param = { key: string; raw: number; source: string };
 
@@ -67,6 +70,53 @@ test('layers: a layer showing built-in content gets a live thumbnail, an empty l
   // 4 atlas passes a second: the row's picture turns live (default timeout: CI's paravirtual Metal is slow)
   await expect(row.locator('img[data-live="true"]')).toBeVisible();
   await expect(page.locator('.row.layer').nth(0).locator('img[data-live="true"]')).toHaveCount(0);
+});
+
+test('sync: a slave layer locks to a master layer of its group, and loses it when the master goes off (B60)', async ({ page, engine }) => {
+  // a 2 s movie as folder 1 file 1 of a new library (generators and stills have no clock to share), switched to on
+  // the System screen
+  const frames = mkdtempSync(join(engine.home, 'frames-'));
+  for (let i = 1; i <= 50; i++) copyFileSync(join(repo, 'Tests/Fixtures/golden/baseline.png'), join(frames, `${String(i).padStart(3, '0')}.png`));
+  const library = join(engine.home, 'library');
+  mkdirSync(join(library, '001_Sync'), { recursive: true });
+  execFileSync(binary, ['ingest', frames, join(library, '001_Sync/001_clip.mov'), '--codec', 'hap']);
+  await openScreen(page, 'System');
+  await page.getByLabel('Library root path').fill(library);
+  await page.getByRole('region', { name: 'Machine' }).getByRole('button', { name: 'Apply' }).click();
+  await openScreen(page, 'Layers');
+
+  const rows = page.locator('.row.layer');
+  const sync = page.getByRole('combobox', { name: 'Sync', exact: true });
+  async function setUp(n: number, band: string) {
+    await rows.nth(n - 1).click();
+    await expect(page.getByRole('heading', { name: `Layer ${n}` })).toBeVisible();
+    await page.getByLabel('Media from the library').selectOption('1/1');
+    await sync.selectOption({ label: band });
+    // resolved by the engine before the next layer is picked (the detail sends its changes 50 ms later)
+    await expect(page.locator('.param').filter({ has: sync })).toContainText(`${band}· UI`);
+  }
+  await rows.first().click();
+  await page.getByRole('switch', { name: 'Control' }).check({ force: true }); // the drawn track covers the input
+  await page.getByRole('button', { name: /^Use / }).click();
+  await expect(page.getByLabel('Media from the library').locator('option[value="1/1"]')).toHaveCount(1);
+  await setUp(1, 'Master 1');
+  await setUp(2, 'Slave 1');
+
+  const master = rows.nth(0).locator('.sync');
+  const slave = rows.nth(1).locator('.sync');
+  await expect(master).toHaveText('M1');
+  await expect(master).toHaveAttribute('title', 'Sync: master of group 1, sending');
+  await expect(slave).toHaveText('S1');
+  await expect(slave).toHaveAttribute('title', /^Sync: locked to Layer 1 on /);
+  await expect(slave).toHaveClass(/sync-green/);
+  await expect(page.locator('.syncline')).toHaveText(/^locked to Layer 1 on .+, −?\d+\.\d ms$/);
+
+  // master off: the slave freewheels, then is lost 2 s after the last clock
+  await rows.nth(0).click();
+  await sync.selectOption('0');
+  await expect(master).toHaveCount(0);
+  await expect(slave).toHaveAttribute('title', /^Sync: (lost|no master)/, { timeout: 3_000 });
+  await expect(slave).toHaveClass(/sync-(red|grey)/);
 });
 
 test('media: folder 0 lists the generators and the Syphon servers, and puts one on a layer', async ({ page }) => {

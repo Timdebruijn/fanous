@@ -9,7 +9,7 @@ import Logging
 import QuartzCore
 import Synchronization
 
-/// `settings.json` › `sync` (DESIGN.md §23.2); read at start.
+/// `settings.json` › `sync` (DESIGN.md §23.2); read at start, changed with `sync.set`.
 public struct SyncSettings: Codable, Sendable, Equatable {
     /// "any" (the first up, non-loopback interface) or an interface name or address; where broadcasts go out.
     public var interface = "any"
@@ -23,6 +23,15 @@ public struct SyncSettings: Codable, Sendable, Equatable {
     enum CodingKeys: String, CodingKey { case interface, port, target }
 
     public init() {}
+
+    /// "broadcast", or an IPv4 address with an optional ":port" (1–65535): what the sender can send to.
+    static func isValidTarget(_ target: String) -> Bool {
+        if target == "broadcast" { return true }
+        let parts = target.split(separator: ":", omittingEmptySubsequences: false)
+        var address = in_addr()
+        guard parts.count <= 2, inet_pton(AF_INET, String(parts[0]), &address) == 1 else { return false }
+        return parts.count == 1 || (UInt16(parts[1]) ?? 0) > 0
+    }
 
     /// Field by field: a bad field keeps its default, the others are still read.
     public init(from decoder: Decoder) throws {
@@ -53,18 +62,21 @@ final class SyncSlot: @unchecked Sendable {
 /// signals `wake`; nothing is sent while no layer is a master except a count-0 keepalive once a second.
 final class SyncSender: @unchecked Sendable {
     let machine: UUID
-    let settings: SyncSettings
+    var settings: SyncSettings { current.withLock { $0 } }
     let slots: TripleBuffer<SyncSlot>
     let wake = DispatchSemaphore(value: 0)
     let packetsOut = Atomic<Int>(0)
     private let network: Bool
     private let logger: Logger
     private let running = Atomic<Bool>(false)
+    private let current: Mutex<SyncSettings>
+    /// Set by `apply`: the sender thread resolves the target again before its next packet.
+    private let changed = Atomic<Bool>(false)
 
     /// `network` false (`--no-network`): only a unicast target on 127.0.0.1 is sent to.
     init(machine: UUID, settings: SyncSettings, network: Bool, logger: Logger) {
         self.machine = machine
-        self.settings = settings
+        current = Mutex(settings)
         self.network = network
         self.logger = logger
         slots = TripleBuffer { SyncSlot(machine: machine) }
@@ -85,6 +97,13 @@ final class SyncSender: @unchecked Sendable {
 
     func stop() {
         running.store(false, ordering: .relaxed)
+        wake.signal()
+    }
+
+    /// New interface, port or target (`sync.set`): the next packet goes to the new destination.
+    func apply(_ settings: SyncSettings) {
+        current.withLock { $0 = settings }
+        changed.store(true, ordering: .relaxed)
         wake.signal()
     }
 
@@ -110,7 +129,7 @@ final class SyncSender: @unchecked Sendable {
                 continue
             }
             lastSent = now
-            if now - resolvedAt >= 5 {  // an interface that comes up later, or a new address
+            if changed.exchange(false, ordering: .relaxed) || now - resolvedAt >= 5 {  // new settings, an interface that comes up later, or a new address
                 resolvedAt = now
                 destination = resolve()
             }
@@ -133,6 +152,7 @@ final class SyncSender: @unchecked Sendable {
     /// The target's address: the sync interface's subnet broadcast, or the unicast address (127.0.0.1 only without
     /// the network). nil = nowhere, logged when it changes to that.
     private func resolve() -> sockaddr_in? {
+        let settings = self.settings
         var address = sockaddr_in()
         address.sin_family = sa_family_t(AF_INET)
         address.sin_port = settings.port.bigEndian

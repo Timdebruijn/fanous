@@ -76,6 +76,8 @@ is on. Each item shows a fix hint.
 | All patched universes receiving | console output and network |
 | All outputs bound to their displays | displays connected, outputs assigned |
 | Outputs in their desired display mode | the output's Mode is available and a multiple of the canvas rate (warning only) |
+| Sync groups have one master | one master per Sync group in use (warning only; [multi-server.md](multi-server.md)) |
+| Sync packets arriving | the master Mac and the network, with slaves in use (warning only) |
 | No decoder errors | no layer showing a media error |
 | Library on a local volume | library on the internal disk |
 | Spotlight indexing off for the library volume | see above |
@@ -92,8 +94,9 @@ spare display that is not connected. A setting Fanous cannot read is shown as
 "unknown"; check those yourself (B38).
 
 **Warnings** (yellow, "warning" badge) never block show mode. Today that is
-the display mode item: it names the closest mode a display offers when the
-output's Mode is not available.
+the display mode item (it names the closest mode a display offers when the
+output's Mode is not available) and the two Sync items, since a slave without a
+master still plays on its own.
 
 **Manual** items (Focus) have no button; the check is yours.
 

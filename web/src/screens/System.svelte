@@ -5,6 +5,7 @@
   import SystemLogs from '../components/SystemLogs.svelte';
   import SystemMetrics from '../components/SystemMetrics.svelte';
   import SystemRoles from '../components/SystemRoles.svelte';
+  import SystemSync from '../components/SystemSync.svelte';
   import SystemVersions from '../components/SystemVersions.svelte';
   import { modeText } from '../lib/outputs';
   import { app, can, cmd } from '../lib/state.svelte';
@@ -239,6 +240,7 @@
   </section>
 </div>
 
+<SystemSync />
 <SystemVersions />
 <SystemRoles />
 <SystemLogs />

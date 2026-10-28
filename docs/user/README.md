@@ -36,6 +36,7 @@ Art-Net, sACN or console programming.
 | [media-library.md](media-library.md) | Folder and file naming, supported formats, import and ingest, thumbnails, performance advice |
 | [outputs-and-mapping.md](outputs-and-mapping.md) | Displays, outputs, blend edges, corner pin and mesh warp, slices, masks, test patterns |
 | [show-control.md](show-control.md) | Timecode (LTC, MTC), cues, OSC, CITP/MSEX |
+| [multi-server.md](multi-server.md) | Several Macs, one picture: the Sync channel, a left/right setup, badges, sync settings, the camera check |
 | [show-day-checklist.md](show-day-checklist.md) | A printable checklist for the day of the show |
 | [troubleshooting.md](troubleshooting.md) | Symptoms, causes, fixes, logs, restart and reset |
 

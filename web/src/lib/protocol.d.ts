@@ -50,6 +50,7 @@ export type CommandName =
   | 'show.lock'
   | 'show.mode'
   | 'show.unlock'
+  | 'sync.set'
   | 'timecode.enable'
   | 'timecode.set'
   | 'undo'
@@ -124,6 +125,8 @@ export interface CommandArgs {
   'show.mode': { on: boolean };
   /** Unlock the show. Role: programmer. */
   'show.unlock': Record<string, never>;
+  /** Multi-server sync settings: interface (any, en0, an IPv4 address), port (1–65535, default 8002), target (broadcast, or IPv4[:port]); machine setting, not part of the project; applies live; refused in show mode. Role: programmer, refused under show lock. */
+  'sync.set': { interface?: string; port?: number; target?: string };
   /** Operator switch: chase the configured timecode source (true) or ignore it (false). Role: operator. */
   'timecode.enable': { on: boolean };
   /** Timecode settings: source (off|ltc|mtc), device, channel, offset (frames), freewheel (s), layerOffsets. Role: programmer, refused under show lock, undoable. */

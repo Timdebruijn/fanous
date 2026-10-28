@@ -10,8 +10,8 @@ import { createServer, type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-const repo = resolve(import.meta.dirname, '../..');
-const binary = process.env.FANOUSD ?? join(repo, '.build/debug/fanousd');
+export const repo = resolve(import.meta.dirname, '../..');
+export const binary = process.env.FANOUSD ?? join(repo, '.build/debug/fanousd');
 const webRoot = join(repo, 'web/dist');
 
 export type Engine = { url: string; home: string; token: string; api: APIRequestContext };
