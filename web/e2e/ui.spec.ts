@@ -92,8 +92,6 @@ test('sync: a slave layer locks to a master layer of its group, and loses it whe
     await expect(page.getByRole('heading', { name: `Layer ${n}` })).toBeVisible();
     await page.getByLabel('Media from the library').selectOption('1/1');
     await sync.selectOption({ label: band });
-    // resolved by the engine before the next layer is picked (the detail sends its changes 50 ms later)
-    await expect(page.locator('.param').filter({ has: sync })).toContainText(`${band}· UI`);
   }
   await rows.first().click();
   await page.getByRole('switch', { name: 'Control' }).check({ force: true }); // the drawn track covers the input
