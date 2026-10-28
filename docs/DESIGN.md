@@ -465,8 +465,9 @@ in v1; every mode is patched independently as its own fixture on the console:
 | **Output** | 8 ch | output | per-output intensity, blackout/freeze, test pattern, blend on/off |
 | Serial (later) | 8 ch | serial device | selects pre-configured RS-232/RS-422 strings (projector control) — `[OPEN-7]` v1.x |
 
-64 channels per layer = 8 layers per universe exactly. Channels 51–64 of the
-Layer mode are **reserved** so that additions never change the footprint.
+64 channels per layer = 8 layers per universe exactly. Channels 52–64 of the
+Layer mode are **reserved** so that additions never change the footprint
+(51 is the Sync channel of §23).
 16-bit parameters are coarse/fine pairs on adjacent channels (MSB first), the
 convention consoles and GDTF expect.
 
@@ -521,7 +522,8 @@ the fixture is patched and "at default". A freshly patched layer is black
 | 48 | Audio volume | 8 | 0 | 0–100 % (default silent) |
 | 49 | Audio pan | 8 | 128 | L … R |
 | 50 | Control | 8 | 0 | 0–7 idle · 8–15 **Retrigger** (jump to In point on rising edge) · 16–23 Resync audio · 24–31 Clear error · 32–255 reserved |
-| 51–64 | Reserved | — | 0 | ignored |
+| 51 | Sync | 8 | 0 | 0–9 off · 10–89 master group 1–8 · 90–169 slave group 1–8 · 170–255 reserved (§23, B60: designed, not built) |
+| 52–64 | Reserved | — | 0 | ignored |
 
 Effect parameter semantics per effect are listed in `docs/channel-map.md`
 (generated from `ParameterSpec` in Phase 1 so docs, GDTF, OSC and UI labels
@@ -1924,7 +1926,7 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | HAP R | `bc7_rgbaUnorm` in the HAP texture path; ingest encoder flag |
 | NDI in/out, DeckLink in/out | `FanousPluginAPI` (ADR-0016): C ABI, `dlopen`ed from `~/Library/Application Support/Fanous/Plugins/`, sources hand over IOSurfaces into the same frame rings; sinks subscribe to completed canvas textures like Syphon |
 | Pixel mapping to DMX fixtures | Art-Net/sACN *builders* already exist in Core (needed for tests); a GPU sampling pass reads canvas regions into a small buffer per universe on the preview thread |
-| Main/backup failover (v2) | projects reference media by number; `live` is a replicable document; a backup engine subscribes to the main's state over WSS and runs the same DMX; outputs are switched by the operator (status bar "backup" slot reserved) |
+| Multi-server sync, main/backup failover | the Sync channel and clock packet are designed in §23 (B60, ADR-0021); a hot backup and control from one place build on the same packet plus the WSS project patches, §23.6 / OPEN-27 |
 | 3D projection mapping | the output pass already renders arbitrary meshes through a displacement field; a projected OBJ with a calibrated camera matrix replaces the slice mesh |
 | 3D-model layers (media as texture on a mesh) | the layer pass is one quad in a perspective camera (§4.3); a mesh from Model I/O (USDZ/OBJ) with its own UVs replaces the quad, the fragment shader is unchanged; needs a depth attachment on the canvas pass and a "Geometry" parameter in the reserved Layer channels 51–64 (0 = flat, 1–255 = model from the library); `docs/BACKLOG.md` B9 |
 | Motion: tracking in, movement out (B53) | **Tracking as a source:** a PosiStageNet receiver in Core (UDP multicast, position/speed/orientation per tracker) and OSC trackers become an extra *internal source* in the resolver (§7.2), mapped per project ("tracker 3 → Layer 2 position X/Y, scale") through a stage-to-canvas calibration (metres → canvas) set on the Outputs screen; on-device person tracking through the Vision framework on a capture input (folder 0); depth/lidar SDKs only through the plugin boundary (ADR-0016). **Movement out:** DMX-controlled motion (mirror heads, pan/tilt yokes, winches, rotators) via the Art-Net/sACN builders of the pixel-mapping pass; small motors (ESP32 steppers/servos) via OSC output (B36) or an MQTT bridge. **Moving screens:** encoder positions in over PSN/OSC update an output's corner-pin homography per frame. **Hard rule:** Fanous sends cues and target positions only; it is never the safety layer of stage automation (e-stops, SIL-rated controllers stay in charge). Camera tracking of people is processed on the device and never stored (GDPR). Expected tracker → photon ≈ 35–40 ms, enough to follow a performer, not for locked-on AR. |
@@ -1962,4 +1964,197 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | OPEN-23 | Library default location `~/Movies/Fanous Library` | yes |
 | OPEN-24 | Default ports: HTTPS 8443, OSC 8000/8001; configurable | yes |
 | OPEN-26 | Keychain strategy for unsigned development builds (prompt on every rebuild vs. ephemeral per-process identity) | **Decided 2026-10-23:** file-backed in-memory identity (`SecIdentityCreate`), no login keychain; ADR-0015 amendment |
+| OPEN-27 | Hot backup and control from one place (a machine mirroring another's whole state over WSS, one project with every machine's outputs) | later, on the sync packet of §23 plus the WSS project patches (§23.6) |
+| OPEN-28 | Hash-based library sync between machines | later; a copy by hand keeps the numbering equal (§23.1) |
 | OPEN-25 | Register an Art-Net OEM code with Artistic Licence (free, needed for a proper `ArtPollReply`) | owner, `docs/RELEASE.md` §4; 0xFFFF until then |
+
+---
+
+## 23. Multi-server sync: the Sync channel (B60, ADR-0021)
+
+Two or more Macs show one picture: each drives its own projector with its
+own slice of the canvas and its own blend and warp, and a layer on one
+machine plays frame-locked with a layer on another. Catalyst (play mode
+"Synchronize to master unit") and High End's Axon/DL.3 ("Sync Mode" + "Sync
+To" per layer, over Ethernet) solved this on the console; Fanous does the
+same with one channel. Designed 2026-10-28 (owner review of the first draft,
+which mirrored whole machines over WSS; see ADR-0021); nothing is built yet.
+
+### 23.1 One channel: Sync, layer channel 51
+
+| Channel | Parameter | Bands |
+|---|---|---|
+| 51 | Sync | 0–9 off · 10–89 **master**, group 1–8 (10 values per group) · 90–169 **slave**, group 1–8 · 170–255 reserved (off) |
+
+- A **master** layer plays as it always did and publishes its clock under
+  its group number. A **slave** layer takes the clock of its group and
+  keeps everything else of its own: folder/file, intensity, position, scale,
+  crop, effects, blend, audio, and the output's warp and blend. So the left
+  mini shows the left half (a slice, or a pre-split file) and the right mini
+  the right half, from the same console, in step.
+- Groups are what Axon's "Sync To" + "Sync Mode" pair expresses with
+  fixture ids: a slave on any machine and any layer number follows the
+  master of its group, on any machine. The machines never need to know each
+  other. A group also works inside one machine (layer 3 slaves layer 1 for
+  two halves on one Mac) at zero latency.
+- Two masters in one group: the lowest machine id (install UUID) wins,
+  the others are ignored, `live` and the readiness list say so. A group
+  without a master: the slave plays on its own clock, marked.
+- The slave's own play mode, speed, in/out and timecode chase are ignored
+  while it has a master; retrigger on a slave is ignored too (the master's
+  retrigger arrives as a position jump). Different frame rates are fine:
+  positions travel in media frames with the master's fps and are scaled
+  (`position × slaveFps / masterFps`). Files of different length drift apart
+  at the loop point, which is the user's call, not an error.
+- Channel 51 enters `ParameterSpec` like any layer parameter (so the channel
+  map document, the GDTF and the resolver carry it); channels 52–64 stay
+  reserved. Consoles already patched with the 64-channel fixture are
+  unaffected.
+
+### 23.2 The clock packet
+
+The master machine sends one UDP packet per compositor tick (only while at
+least one of its layers is a master; a 1 Hz keepalive otherwise), ≈ 40 B
+per master layer, little-endian:
+
+```
+FanousSync v1
+  u8[4] "FSYN", u8 version=1
+  u8[16] machine id (install UUID)
+  u32 tick, f64 sendTime (sender's host time; informational)
+  u8 count, per master layer:
+      u8 group, u8 layer (source, informational)
+      u16 mediaKey (packed folder/file), f32 fps
+      f64 position (media frames), i8 direction, u8 finished
+      f32 rate (media frames per second as the clock really advances: speed × master speed × fps × direction; 0 when frozen, finished or paused)
+```
+
+- **Where it goes:** the subnet broadcast address of the sync interface
+  (default: the interface of universe 1, or the first non-loopback one), UDP
+  port 8002 by default (OSC has 8000/8001), both in `settings.json` and on
+  the System screen. The target may be a unicast address (two engines on one
+  Mac send to 127.0.0.1). Broadcast like Art-Net, not multicast: it needs no
+  group join per interface and reaches every machine on the cable; the
+  multicast question of B28 does not apply.
+- **Sender:** the compositor writes the master layers' clocks into a
+  triple-buffered packet slot at the end of its CPU work (no allocation, no
+  socket on the compositor thread); a sender thread wakes on a semaphore
+  and sends the newest slot. Same pattern as the parameter triple buffer.
+- **Receiver:** one socket bound to `0.0.0.0:port` with `SO_REUSEPORT`
+  (like the sACN receiver, so two engines on one Mac both receive), on its
+  own queue. Packets from the machine's own id are dropped (local groups use
+  the table directly, below). The newest packet per group goes into a
+  table `{group: (machine, mediaKey, fps, position, direction, finished,
+  rate, receivedAt)}` behind a mutex; the compositor reads it with
+  `withLockIfAvailable` once per tick (a busy lock means last tick's entry
+  once more, as `layerCanvasBox` does).
+- Local master layers write their clock into the same table at the end of
+  the tick, so a local slave sees the same tick's position.
+
+### 23.3 How a slave ticks, and why there is no drift
+
+In `prepare` (the per-layer part of `Compositor.tick`), a slave layer does
+not call `LayerClock.advance`. With a fresh table entry for its group
+(younger than the freewheel time) it **sets** its clock:
+
+```
+age      = now − receivedAt                         (local clock only; no clock sync between machines)
+position = (entry.position + entry.rate × age) × slaveFps / entry.fps, clamped to the slave file's range
+direction, finished = entry's
+```
+
+The position is copied every tick, never integrated, so no error can
+accumulate: the difference between master and slave is bounded by packet
+jitter (well under 1 ms on a wired LAN) plus the one tick in which the
+packet was sampled, and it stays that size after an hour as after a second.
+Two residuals remain and are the floor:
+
+- **One frame of display phase.** The two Macs' vsyncs are never aligned
+  (no genlock on a Mac), so the moment a frame reaches the glass differs by
+  up to one output period. The frame *content* is the same frame.
+- **The frame boundary.** Both machines show `Int(position)`; when the
+  master's position is a hair before a boundary and the slave's a hair after
+  (extrapolation error), they show neighbouring frames for that tick. With
+  the extrapolation the error is the jitter, so this is rare and never more
+  than one frame.
+
+Loss: no packet for the group within 1.5 ticks → the slave **freewheels**:
+`LayerClock.advance` with the entry's last rate (not its own speed), so a
+late packet never stutters and the next one snaps the position back
+(normally < 1 frame). No packet for the freewheel time (2 s, as timecode)
+→ **lost**: it keeps freewheeling, `live` marks the layer, readiness goes
+yellow; the first packet relocks. Drift while freewheeling is 50 ppm × 2 s
+= 0.1 ms. A master retrigger is a position jump larger than the ring on the
+slave: the ring flushes and the previous frame holds until the new one is
+decoded, exactly like a local retrigger (HAP and ProRes are all-intra, so
+that is one frame of decode; the all-I-frame rule Axon had to impose is the
+only kind of file Fanous plays anyway).
+
+Dissolves: the master's file change (a new folder/file on its own channels)
+and the slave's are two console changes; they land within one tick of each
+other because the console sends both. The slave's dissolve runs on its own
+`dissolveStart` as today; only the clock is shared.
+
+### 23.4 What the UI shows
+
+- Layers screen: a badge per layer, `M3` / `S3` (group), green locked,
+  yellow freewheel, red lost or conflict, grey "no master"; the live
+  offset (ms) in the layer detail.
+- `live.layers[n].sync = {role, group, state, offsetMs, master: {machine, name, layer}}`
+  and `live.sync = {interface, port, target, packetsPerSecond, masters: {group: {machine, name, layer}}, conflicts: [group]}`.
+- Readiness (§14): "Sync groups have one master" (conflict or no master
+  for a slave in use → yellow), "Sync packets arriving" (a slave in use and
+  no packet for 2 s → yellow). Neither blocks show mode: a slave without a
+  master plays on its own.
+- System screen, section **Sync**: interface, port, target (broadcast or an
+  address), packet rate in and out, machine id and name.
+- `docs/user/multi-server.md`: two minis, one console, left/right halves
+  with a blend, the three ways to split (slices on one full-canvas file,
+  pre-split files, one canvas per machine), and the camera check.
+
+### 23.5 Tests and the acceptance measurement
+
+- Core: packet encode/decode round-trip and size; the band table of channel
+  51 (`ParameterSpec`), the channel-map document and the GDTF include it.
+- Engine, one Mac: two headless engines (own `FANOUS_HOME` and ports, as the
+  test engines run today) with the same library, sync target 127.0.0.1.
+  A's layer 1 master group 1, B's layer 1 slave group 1, same file, both
+  playing: positions read from `/metrics` differ by < 1 frame for 60 s and
+  do not trend; A retrigger → B's position follows within one tick; stop A's
+  sender → B freewheel within 1.5 ticks, lost after 2 s, relocked on the
+  next packet; a 25 fps file on B against a 50 fps file on A keeps the same
+  time; a local group (layer 3 slaves layer 1 on one engine) has zero
+  offset; two masters in one group → the lower id wins and `live.sync.
+  conflicts` names it.
+- Bench: writing the packet slot ≤ 10 µs at 32 master layers; the
+  compositor's malloc count stays 0 (§4.6).
+- Owner, two Mac minis and a camera (B60's acceptance): layer 1 on both
+  shows the clock generator (0/112) or a frame-numbered test file, master on
+  A, slave on B, a phone filming both projections at 240 fps. Pass: ≤ 1
+  frame apart over 10 minutes with no trend, no visible stutter on the slave,
+  a blend seam that does not breathe.
+
+### 23.6 Later, on the same packet
+
+A **hot backup** or **control from one place** (one project holding every
+machine's outputs, followers reporting their displays and readiness, a
+machine that mirrors the master's whole resolved state over the WSS
+connection and takes the outputs over on a swap) was the first draft of this
+section and stays designed for later (OPEN-27): the sync packet gives such a
+follower its clocks, the WSS project patches give it the configuration. It is
+not needed for the two-projector show, which is what B60 asked for.
+
+### 23.7 Build order (one PR each)
+
+1. **Docs**: this section, ADR-0021, backlog (this design).
+2. **Core**: channel 51 in `ParameterSpec` (bands, resolver, channel-map
+   document, GDTF) and the packet codec with its tests.
+3. **Engine**: sender (compositor slot + thread), receiver (socket, table),
+   the slave clock in `prepare`, freewheel/lost, `live.sync`, readiness
+   items, settings and `project.set` for interface/port/target; the one-Mac
+   two-engine test and the bench numbers. Engine-critical: Opus for agent and
+   review, live check with two engines before the merge.
+4. **UI and user doc**: badges, layer detail, System screen Sync section,
+   `docs/user/multi-server.md`.
+5. **Owner**: the two-mini camera test; then the B28 sACN network test on
+   the same rig.
