@@ -132,10 +132,12 @@ struct LibraryIndexTests {
         let item = index.snapshot.folders[0].items[0]
         #expect(item.status == .playable && item.metadata?.codec == "apch" && item.metadata?.frameCount == 5 && item.thumbnail == "thumb.jpg")
         #expect(observer.thumbnails.withLock { $0 } == ["003_clip.mov"])
-        // a second index on the same cache needs no probe
-        let again = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
-        again.rescan()
-        #expect(again.resolve(MediaKey(folder: 7, file: 3)) != nil)
+        // a second index on the same cache needs no probe (the first writes the cache just after it resolves)
+        #expect(await waitUntil(every: .milliseconds(50)) {
+            let again = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+            again.rescan()
+            return again.resolve(MediaKey(folder: 7, file: 3)) != nil
+        })
 
         // FSEvents: a new still appears within the debounce window plus some slack
         let before = observer.changes.load(ordering: .relaxed)

@@ -14,6 +14,17 @@ func offPool<T: Sendable>(_ body: @escaping @Sendable () throws -> T) async thro
     }
 }
 
+/// Polls `condition` every `every` until it holds or `deadline` has passed; true = it held. For "eventually" checks: a
+/// fixed sleep before an assertion encodes how fast this Mac is, and a loaded one (other builds, a parallel run) is
+/// slower (B67). Negative checks ("nothing happened") still need a fixed window: there is nothing to poll for.
+func waitUntil(_ deadline: Duration = .seconds(10), every: Duration = .milliseconds(10), _ condition: () -> Bool) async -> Bool {
+    let end = ContinuousClock.now + deadline
+    while !condition() {
+        guard ContinuousClock.now < end, (try? await Task.sleep(for: every)) != nil else { return condition() }
+    }
+    return true
+}
+
 /// A UDP port that is free right now: bind port 0 exclusively (no SO_REUSEADDR/SO_REUSEPORT), read back the port the
 /// kernel assigned, release it. Unlike a random pick, it never lands on a port another socket holds; Network.framework
 /// listeners share ports, so such a port would cross-talk silently. Still check-then-release: the window is short.

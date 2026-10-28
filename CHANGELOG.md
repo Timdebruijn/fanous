@@ -161,6 +161,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   canvas fallback (a viewer refused to JPEG stays on JPEG in the browser) (B70). `/metrics` `preview.encoders` now counts H.264
   encoders: canvas 1 always, the others while they have an H.264 subscriber; JPEG-only streamers no longer count. It is a
   reservation count: for a few ms around an asynchronous release and create a fifth session can exist.
+- Fixed: engine tests that slept a fixed time or waited a fixed budget failed in a parallel run on a loaded Mac; they now
+  poll with a deadline or probe the listener first, so `scripts/test.sh` stays green under load (B67).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

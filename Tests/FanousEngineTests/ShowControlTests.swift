@@ -22,11 +22,13 @@ struct ShowControlTests {
             Cue(number: 1, fadeTime: 0, followTime: 0.6),
             Cue(number: 2, fadeTime: 0),
         ]))
+        let started = ContinuousClock.now
         runner.go()
-        try await Task.sleep(for: .milliseconds(200))
-        #expect(runner.status.withLock { $0.current } == 1)
-        try await Task.sleep(for: .milliseconds(900))
-        #expect(runner.status.withLock { $0.current } == 2, "the follow fired although nothing was fading")
+        #expect(await waitUntil { runner.status.withLock { $0.current } != nil })
+        let first = runner.status.withLock { $0.current }
+        if ContinuousClock.now - started < .milliseconds(600) { #expect(first == 1, "the follow waits its 0.6 s") }
+        #expect(await waitUntil { runner.status.withLock { $0.current } == 2 }, "the follow fired although nothing was fading")
+        #expect(ContinuousClock.now - started >= .milliseconds(600), "not before its follow time")
     }
 
     @Test func timecodeClockExtrapolatesFreewheelsAndLoses() {
