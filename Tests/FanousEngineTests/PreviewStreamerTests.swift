@@ -26,6 +26,10 @@ struct PreviewStreamerTests {
         streamer.onFrame = { payload, avcC in frames.withLock { $0.append((payload, avcC)) } }
         streamer.alwaysEncode = true  // no WebSocket subscriber in this test
         compositor.previewTap = { canvas, buffer, target in streamer.tap(canvas: canvas, commandBuffer: buffer, target: target) }
+        // the first preview frame starts making the encoder (B66) and skips H.264 while it is made
+        for i in 0..<2 { compositor.tick(target: 0.5 + Double(i) / 60, drawable: nil) }
+        for _ in 0..<250 where !streamer.hasEncoder { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(streamer.hasEncoder)
         // every second tick is a preview frame at 30 of 60 fps
         for i in 0..<8 { compositor.tick(target: 1 + Double(i) / 60, drawable: nil) }
         for _ in 0..<100 where frames.withLock({ $0.count }) < 2 { try await Task.sleep(for: .milliseconds(20)) }
@@ -41,6 +45,37 @@ struct PreviewStreamerTests {
         var micros: UInt64 = 0
         for i in 1..<9 { micros = micros << 8 | UInt64(first.payload[i]) }
         #expect(micros >= 1_000_000 && micros < 2_000_000)
-        #expect(streamer.framesIn.load(ordering: .relaxed) == 4)
+        #expect(streamer.framesIn.load(ordering: .relaxed) == 1 + 4)
+    }
+
+    /// B66: no VideoToolbox session at init (engine start makes the canvas streamer); JPEG works without one, the first
+    /// H.264 subscriber makes it, the last one leaving releases it, and a streamer that never had one goes away fine.
+    @Test func theH264SessionIsMadeOnTheFirstH264SubscriberAndReleasedWithTheLast() async throws {
+        let rig = try PreviewHubTests.Rig()
+        let streamer = rig.hub.canvas
+        #expect(!streamer.hasEncoder, "init makes no encoder")
+        let viewer = rig.connection()
+        #expect(rig.attach("canvas", viewer, stream: 1, jpeg: true))
+        for _ in 0..<50 where streamer.latestJPEG.withLock({ $0 }) == nil {
+            rig.tick(12)
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(streamer.latestJPEG.withLock { $0 } != nil, "JPEG before any H.264 subscriber")
+        #expect(!streamer.hasEncoder)
+        #expect(rig.attach("canvas", viewer, stream: 2))
+        for _ in 0..<250 where !streamer.hasEncoder { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(streamer.hasEncoder, "the first H.264 subscriber makes the encoder")
+        rig.hub.unsubscribe(connection: viewer, stream: 2)
+        #expect(!streamer.hasEncoder, "released with the last H.264 subscriber")
+        #expect(streamer.hasSubscribers, "the JPEG viewer stays")
+        // never had a session: deinit has nothing to invalidate
+        weak var gone: PreviewStreamer?
+        do {
+            let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
+            let unused = try PreviewStreamer(context: rig.context, width: 320, height: 180, fps: 30, canvasFPS: 60, parameters: parameters, logger: Logger(label: "test"))
+            gone = unused
+            #expect(!unused.hasEncoder)
+        }
+        #expect(gone == nil)
     }
 }

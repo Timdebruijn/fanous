@@ -1224,6 +1224,23 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   width × `devicePixelRatio` (rounded up), also after a pixel-ratio change,
   and re-subscribes 300 ms after a resize that crosses into another class
   by more than 5 % (`latestOnly`).
+- **As built (lazy encoder, B66, 2026-10-28):** a streamer's
+  `VTCompressionSession` is not made with the streamer (engine start makes
+  the canvas one) but by its first H.264 consumer: the subscription (or a
+  tapped frame that wants H.264) starts `VTCompressionSessionCreate` on a
+  global queue, never on the preview queue, so a slow or stuck VideoToolbox
+  holds neither engine start nor the streamer's JPEG/CITP frames; the
+  session is installed on the preview queue and H.264 frames are skipped
+  until then. The `stream` description (avcC) still comes after `sub` and
+  before the first access unit (with the first frame of a new session). The
+  last H.264 subscriber leaving releases the session (also on the canvas
+  streamer, which lives as long as the engine). The log says "preview
+  encoder ready" (size, ms), "preview encoder not ready after 5 s",
+  "preview encoder failed" (no retry until the next H.264 subscriber) and
+  "preview encoder released". The browser falls back to JPEG when no
+  `stream` description arrives within 5 s of the `sub` reply. The pixel
+  buffer pool, texture cache and `CIContext` stay in `init` (no
+  VideoToolbox).
 
 ### 11.4 Frontend (ADR-0012)
 

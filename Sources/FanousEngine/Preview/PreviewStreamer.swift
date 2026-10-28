@@ -46,7 +46,12 @@ public final class PreviewStreamer: @unchecked Sendable {
     private let subscribers = Mutex<[Subscriber]>([])
     private var pool: CVPixelBufferPool?
     private var textureCache: CVMetalTextureCache?
+    /// Preview queue: the H.264 session, made on the first H.264 consumer and released with the last (B66).
     private var session: VTCompressionSession?
+    /// Preview queue: a session is being made (`ensureSession`).
+    private var creating = false
+    /// Preview queue: the last attempt failed; frames do not retry it, a new H.264 subscriber does.
+    private var sessionFailed = false
     private let uniforms: MTLBuffer
     private let pass = MTLRenderPassDescriptor()
     private var tickCounter = 0
@@ -99,7 +104,6 @@ public final class PreviewStreamer: @unchecked Sendable {
         var cache: CVMetalTextureCache?
         guard CVMetalTextureCacheCreate(nil, nil, context.device, nil, &cache) == kCVReturnSuccess, let cache else { throw RenderError.pipeline("preview texture cache") }
         textureCache = cache
-        try makeSession()
     }
 
     deinit {
@@ -137,20 +141,27 @@ public final class PreviewStreamer: @unchecked Sendable {
     /// Anyone who needs canvas frames: a WebSocket subscriber or a CITP console that streams.
     public var wantsFrames: Bool { alwaysEncode || hasSubscribers || externalJPEGWanted?() == true }
 
-    /// Adds a subscriber; H.264 clients get the `stream` description (avcC) right away when one exists.
+    /// Adds a subscriber; H.264 clients get the `stream` description (avcC) right away when one exists, else with the
+    /// first frame of the session their subscription starts making.
     public func subscribe(_ subscriber: Subscriber) {
         subscribers.withLock { $0.append(subscriber) }
         if !subscriber.jpeg {
-            queue.async { [self] in if !avcC.isEmpty { sendDescription(to: [subscriber]) } }
+            queue.async { [self] in
+                sessionFailed = false  // a new viewer tries again
+                ensureSession()
+                if session != nil, !avcC.isEmpty { sendDescription(to: [subscriber]) }
+            }
         }
     }
 
     public func unsubscribe(connection: StateServer.Connection, stream: UInt32) {
         subscribers.withLock { $0.removeAll { $0.connection === connection && $0.stream == stream } }
+        queue.async { [self] in releaseSessionIfUnwanted() }
     }
 
     public func remove(connection: StateServer.Connection) {
         subscribers.withLock { $0.removeAll { $0.connection === connection } }
+        queue.async { [self] in releaseSessionIfUnwanted() }
     }
 
     // MARK: Compositor thread
@@ -214,7 +225,57 @@ public final class PreviewStreamer: @unchecked Sendable {
 
     // MARK: Preview queue
 
-    private func makeSession() throws {
+    /// Tests: the H.264 session exists.
+    var hasEncoder: Bool { queue.sync { session != nil } }
+
+    /// Preview queue: starts making the H.264 session, off this queue. B66: on CI's macOS VM `VTCompressionSessionCreate`
+    /// sometimes never returned when it ran in `init` at engine start; made here it holds neither engine start nor
+    /// this streamer's JPEG frames, and H.264 frames are skipped until it is in.
+    private func ensureSession() {
+        guard session == nil, !creating, wantsH264 else { return }
+        creating = true
+        let started = Date()
+        let size = "\(width)x\(height)"
+        queue.asyncAfter(deadline: .now() + 5) { [self] in
+            if creating { logger.warning("preview encoder not ready after 5 s", metadata: ["size": "\(size)"]) }
+        }
+        DispatchQueue.global(qos: .utility).async { [self] in
+            let result = Result { try makeSession() }
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            queue.async { [self] in
+                creating = false
+                switch result {
+                case .success(let made) where wantsH264:
+                    session = made
+                    logger.info("preview encoder ready", metadata: ["size": "\(size)", "ms": "\(ms)"])
+                case .success(let made):
+                    VTCompressionSessionInvalidate(made)  // its viewers left meanwhile
+                case .failure(let error):
+                    // viewers fall back to JPEG when no `stream` description arrives (Preview.svelte)
+                    sessionFailed = true
+                    logger.warning("preview encoder failed", metadata: ["size": "\(size)", "ms": "\(ms)", "error": "\(error)"])
+                }
+            }
+        }
+    }
+
+    /// Preview queue: the session, or nil while there is none (this frame has no H.264; a missing one is started).
+    private func readySession() -> VTCompressionSession? {
+        if !sessionFailed { ensureSession() }
+        return session
+    }
+
+    /// Preview queue: the last H.264 viewer left, so the session goes (the canvas streamer lives as long as the engine).
+    private func releaseSessionIfUnwanted() {
+        guard let session, !wantsH264 else { return }
+        VTCompressionSessionInvalidate(session)
+        self.session = nil
+        avcC = []  // the next session's first frame sends its description
+        logger.info("preview encoder released", metadata: ["size": "\(width)x\(height)"])
+    }
+
+    /// Any thread (reads only constants).
+    private func makeSession() throws -> VTCompressionSession {
         var session: VTCompressionSession?
         let status = VTCompressionSessionCreate(
             allocator: nil, width: Int32(width), height: Int32(height), codecType: kCMVideoCodecType_H264, encoderSpecification: nil,
@@ -230,7 +291,7 @@ public final class PreviewStreamer: @unchecked Sendable {
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: bitRate as CFNumber)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ExpectedFrameRate, value: fps as CFNumber)
         VTCompressionSessionPrepareToEncodeFrames(session)
-        self.session = session
+        return session
     }
 
     private func encode(_ pixelBuffer: CVPixelBuffer, target: Double) {
@@ -243,7 +304,7 @@ public final class PreviewStreamer: @unchecked Sendable {
                 for s in jpeg { _ = s.connection.send(stream: s.stream, kind: .jpeg, payload: bytes) }
             }
         }
-        guard !h264.isEmpty || alwaysEncode, let session else { return }
+        guard !h264.isEmpty || alwaysEncode, let session = readySession() else { return }
         let pts = CMTime(value: Int64(target * 1_000_000), timescale: 1_000_000)
         let status = VTCompressionSessionEncodeFrame(session, imageBuffer: pixelBuffer, presentationTimeStamp: pts, duration: .invalid, frameProperties: nil, infoFlagsOut: nil) {
             [self] status, _, sampleBuffer in

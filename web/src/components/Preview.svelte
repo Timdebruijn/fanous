@@ -134,6 +134,10 @@
       if (!run.keep(sub.stop)) return;
       stop = sub.stop;
       detail = `${sub.w}×${sub.h} · ${sub.fps} fps`;
+      // the engine makes its H.264 encoder for the first viewer (B66): no description in 5 s (it failed or is stuck) → JPEG
+      setTimeout(() => {
+        if (!configured) void fallbackToJPEG('no H.264 stream from the engine');
+      }, 5000);
       if (hidden) pause();
     } catch (error) {
       if (!run.current()) return;
