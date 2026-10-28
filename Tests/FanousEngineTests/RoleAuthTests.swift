@@ -158,11 +158,23 @@ struct RoleAuthTests {
         _ = try auth.setSync(["port": 48981])
         #expect(auth.isOpen(.operator), "a record removed by hand opens the role, as at the next start")
 
+        try auth.setPassword("op", for: .operator)
+        var badRecord = try Self.raw(file)
+        try badRecord.set("junk", at: "/passwords/admin")
+        try JSONEncoder().encode(badRecord).write(to: file)
+        _ = try auth.setSync(["port": 48982])
+        #expect(auth.verify("hand", for: .programmer) && auth.verify("op", for: .operator) && !auth.isOpen(.operator),
+                "passwords that do not decode keep the copy in memory")
+
         var broken = try Self.raw(file)
         try broken.set("oops", at: "/passwords")
-        try JSONEncoder().encode(broken).write(to: file)
-        _ = try auth.setSync(["port": 48982])
-        #expect(!auth.isOpen(.programmer) && auth.verify("hand", for: .programmer), "passwords that do not decode keep the copy in memory")
+        let brokenData = try JSONEncoder().encode(broken)
+        try brokenData.write(to: file)
+        let refusal = "passwords in settings.json could not be read; fix it first"
+        #expect(throws: RoleAuth.UnreadableSettings(description: refusal)) { try auth.setPassword("mon", for: .monitor) }
+        #expect(throws: RoleAuth.UnreadableSettings(description: refusal)) { _ = try auth.setSync(["port": 48983]) }
+        #expect(try Data(contentsOf: file) == brokenData, "the file is left untouched")
+        #expect(!auth.isOpen(.programmer) && !auth.isOpen(.operator) && auth.isOpen(.monitor), "a refused write opens no role")
     }
 
     @Test func unparsableFileIsNotOverwritten() throws {

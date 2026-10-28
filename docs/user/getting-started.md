@@ -153,9 +153,13 @@ The app window on the Mac itself is always programmer; it needs no password.
 
 The passwords are stored hashed in `settings.json` (see below). A password
 record copied into that file by hand while the engine runs takes effect at the
-next password or sync change, or at the next engine start. If the `passwords`
-field cannot be read, the passwords in use stay as they were while the engine
-runs; fix it before the next start, which would leave every role open.
+next password or sync change, or at the next engine start. The file wins at
+that change: an editor that saves an older copy of it brings the old records
+back. If the `passwords` field is not an object, password and sync changes are
+refused ("passwords in settings.json could not be read; fix it first"); if a
+record in it cannot be read, the passwords in use stay as they were while the
+engine runs. Fix either before the next start, which would leave every role
+open.
 
 ## Where files live
 

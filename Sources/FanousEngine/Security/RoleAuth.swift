@@ -137,13 +137,14 @@ public final class RoleAuth: @unchecked Sendable {
         return sync
     }
 
-    struct UnreadableSettings: Error, CustomStringConvertible {
-        var description: String { "settings.json could not be read; fix or remove it first" }
+    struct UnreadableSettings: Error, CustomStringConvertible, Equatable {
+        var description = "settings.json could not be read; fix or remove it first"
     }
 
     /// Re-reads settings.json and sets only `members` of the top-level object `key` (nil removes one), keeping every
     /// other member, unknown and unreadable ones too, and hand edits made while the engine runs (B79). A file that
-    /// exists but does not parse is not overwritten; a missing one is created. The copy in memory then takes the fields of
+    /// exists but does not parse, or whose `passwords` is not an object, is not overwritten; a missing one is created.
+    /// The copy in memory then takes the fields of
     /// the file as written, so a hand-added password takes effect now, not at the next start (B82); `apply` gets the
     /// merged `key` object and sets it in memory too. Without a file (tests) the copy in memory is the base.
     private func rewrite(_ key: String, _ members: [String: JSONValue?], apply: (inout MachineSettings, [String: JSONValue]) -> Void) throws {
@@ -160,6 +161,11 @@ public final class RoleAuth: @unchecked Sendable {
                     logger.error("settings.json not written: it could not be read", metadata: ["error": "\(error)"])
                     throw UnreadableSettings()
                 }
+            }
+            if let passwords = root["passwords"], passwords.object == nil {
+                // replacing it with the one record written would open every other role in memory (B82)
+                logger.error("settings.json not written: passwords could not be read")
+                throw UnreadableSettings(description: "passwords in settings.json could not be read; fix it first")
             }
             var object = root[key]?.object ?? [:]  // a member that is not an object was unreadable; the command replaces it
             for (member, value) in members { object[member] = value }
