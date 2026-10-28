@@ -27,6 +27,27 @@ async function handleAt(page: Page, path: string): Promise<{ x: number; y: numbe
   return { x: Number(await dot.getAttribute('cx')), y: Number(await dot.getAttribute('cy')) };
 }
 
+/** Counts the page's WebCodecs decoders from its next load on: `openDecoders` says how many are not closed (B85). */
+async function trackDecoders(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    if (!('VideoDecoder' in window)) return;
+    const all: VideoDecoder[] = ((window as unknown as { decoders: VideoDecoder[] }).decoders = []);
+    window.VideoDecoder = class extends VideoDecoder {
+      constructor(init: VideoDecoderInit) {
+        super(init);
+        all.push(this);
+      }
+    };
+  });
+}
+const openDecoders = (page: Page) =>
+  page.evaluate(() => ((window as unknown as { decoders?: VideoDecoder[] }).decoders ?? []).filter((d) => d.state !== 'closed').length);
+/** One open decoder while the preview shows H.264, none on JPEG. */
+async function expectDecoders(page: Page): Promise<void> {
+  const avc = /H\.264/.test(await page.getByRole('figure').locator('figcaption').innerText());
+  await expect.poll(() => openDecoders(page)).toBe(avc ? 1 : 0);
+}
+
 test('layers: Control puts content on a layer, and the engine resolves folder, file and intensity', async ({ page, engine }) => {
   const resolved = async () => {
     const live = (await (await engine.api.get('/api/live')).json()) as { fixtures: Record<string, Param[]> };
@@ -220,6 +241,7 @@ test('preview: Canvas / This layer and fast layer switching leave one stream run
       if (m?.t === 'unsub') streams.delete(m.id);
     });
   });
+  await trackDecoders(page);
   await page.goto(`${engine.url}/?token=${engine.token}`);  // again, with the listener above in place
 
   const shows = page.getByRole('group', { name: 'Preview shows' });
@@ -236,6 +258,7 @@ test('preview: Canvas / This layer and fast layer switching leave one stream run
   });
   await expectPreviewStreaming(figure, 'Layer 8');
   await expect.poll(() => streams.size).toBe(1);
+  await expectDecoders(page);  // each target change closed its stream's decoder (B85)
 
   await shows.getByRole('button', { name: 'Canvas' }).click();
   await expectPreviewStreaming(figure, 'Canvas');
@@ -269,6 +292,7 @@ test('preview: a streaming preview subscribes again, once, after its socket clos
       ws.send(message);
     });
   });
+  await trackDecoders(page);
   await page.goto(`${engine.url}/?token=${engine.token}`);  // again, through the route above
   const figure = page.getByRole('figure');
   await expectPreviewStreaming(figure);
@@ -293,6 +317,7 @@ test('preview: a streaming preview subscribes again, once, after its socket clos
   // one subscription on the new socket (a second when H.264 fell back to JPEG): no storm from the reconnect attempts
   expect(subs).toBeLessThanOrEqual(/JPEG/.test(await figure.locator('figcaption').innerText()) ? 2 : 1);
   expect(streams.size).toBe(1);
+  await expectDecoders(page);  // the stream the closed socket took had its decoder closed too (B85)
 });
 
 test("preview: an output stream has the output's shape and the size of its box (B32)", async ({ page, engine }) => {
