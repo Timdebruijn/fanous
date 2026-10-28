@@ -246,6 +246,10 @@ public struct LayerMediaStatus: Sendable, Equatable {
 public final class RenderLayer: @unchecked Sendable {
     public let index: Int  // 0-based layer slot
     public let mediaStatus = Mutex<LayerMediaStatus>(LayerMediaStatus())
+    /// The Sync channel's role and a slave's state (DESIGN.md §23.4); the compositor writes it when it changes.
+    let syncStatus = Mutex(LayerSyncStatus())
+    /// Compositor thread: what it last wrote into `syncStatus`.
+    var syncStatusWritten = LayerSyncStatus()
     var current: LayerPlayback?
     var outgoing: LayerPlayback?
     /// Loaded but not yet shown: becomes `current` once its first frame is decoded (DESIGN.md §4.2).

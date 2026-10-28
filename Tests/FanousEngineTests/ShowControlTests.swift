@@ -199,10 +199,11 @@ struct ShowControlTests {
         context.outputsBound = 1
         context.modeIssues = ["Output 1: unavailable"]
         context.layerErrors = []
+        context.syncLost = ["Layer 2 (group 1)"]
         context.libraryRoot = NSHomeDirectory()
         let items = Readiness.check(context, acknowledged: ["dmx"])
         let ids = items.map(\.id)
-        #expect(ids == ["power", "thermal", "disk", "memory", "dmx", "interfaces", "sacnport", "outputs", "modes", "decoders", "library", "spotlight", "updates", "timemachine", "focus", "displaysleep", "hardware"])
+        #expect(ids == ["power", "thermal", "disk", "memory", "dmx", "interfaces", "sacnport", "outputs", "modes", "syncmaster", "syncpackets", "decoders", "library", "spotlight", "updates", "timemachine", "focus", "displaysleep", "hardware"])
         let dmx = items.first { $0.id == "dmx" }!
         #expect(dmx.state == .fail && dmx.acknowledged && !dmx.blocks)
         let outputs = items.first { $0.id == "outputs" }!
@@ -213,6 +214,9 @@ struct ShowControlTests {
         let interfaces = items.first { $0.id == "interfaces" }!
         #expect(interfaces.state == .warn && !interfaces.blocks && interfaces.detail == "not usable: sacn:2: en5")
         #expect(items.first { $0.id == "hardware" }!.state == .ok)
+        #expect(items.first { $0.id == "syncmaster" }!.state == .ok)
+        let sync = items.first { $0.id == "syncpackets" }!
+        #expect(sync.state == .warn && !sync.blocks && sync.detail.contains("Layer 2 (group 1)"))
         #expect(items.first { $0.id == "library" }!.state == .ok)
         #expect(items.allSatisfy { !$0.fix.isEmpty && !$0.detail.isEmpty })
     }

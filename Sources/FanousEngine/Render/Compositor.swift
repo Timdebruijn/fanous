@@ -41,6 +41,14 @@ public final class Compositor: @unchecked Sendable {
     nonisolated(unsafe) public var previewWanted: (() -> Bool)?
     /// True while a Syphon client is attached.
     nonisolated(unsafe) public var canvasPublishedWanted: (() -> Bool)?
+    /// Multi-server sync (DESIGN.md §23): the group table and the packet slot. Set before the first tick.
+    nonisolated(unsafe) var sync: (receiver: SyncReceiver, sender: SyncSender)?
+    /// The receiver's table as this tick reads it, with this tick's local masters added as they are prepared.
+    private var syncTable = SyncTable()
+    /// This tick's master clocks.
+    private var syncClocks: [SyncPacket.Layer] = []
+    /// Written by `prepare` for the layer being prepared.
+    private var syncStatus = LayerSyncStatus()
     private let mappedUniformBuffers: [MTLBuffer]
     /// 256 bytes per slice draw: enough for 64 slices across the outputs of one display.
     static let mappedUniformsLength = 256 * 64
@@ -126,6 +134,7 @@ public final class Compositor: @unchecked Sendable {
         self.logger = logger
         drawItems.reserveCapacity(maxLayers * 2)
         drawnItems.reserveCapacity(maxLayers * 2)
+        syncClocks.reserveCapacity(SyncPacket.maxLayers)
         targets = [try CanvasTarget(device: context.device, id: 1, width: canvasWidth, height: canvasHeight)]
         outputPass.colorAttachments[0].loadAction = .dontCare
         outputPass.colorAttachments[0].storeAction = .store
@@ -326,10 +335,12 @@ public final class Compositor: @unchecked Sendable {
         let wantsPixels = needsPixels(drawable: drawable)
         var frame = TickContext(
             dt: snapshot.masterControl == .freezeAll ? 0 : dt, target: target, masterIntensity: snapshot.masterControl == .blackout ? 0 : snapshot.master,
-            masterSpeed: snapshot.masterSpeed, time: Float(target.truncatingRemainder(dividingBy: 3600)))  // ponytail: one strobe phase jump per hour; per-layer Double phase if it shows
+            masterSpeed: snapshot.masterSpeed, time: Float(target.truncatingRemainder(dividingBy: 3600)), now: cpuStart)  // ponytail: one strobe phase jump per hour; per-layer Double phase if it shows
         drawItems.removeAll(keepingCapacity: true)
 
         layerCanvasBox.withLockIfAvailable { tickLayerCanvas = $0 }  // busy: last tick's assignment once more
+        sync?.receiver.table.withLockIfAvailable { syncTable.copy(from: $0) }  // busy: last tick's table once more
+        syncClocks.removeAll(keepingCapacity: true)
         // Everything that is not GPU work: hand-off, clocks, audio, decoder requests, frame selection.
         for layer in layers {
             let p = layer.index < snapshot.layers.count ? snapshot.layers[layer.index] : LayerParameters()
@@ -351,6 +362,7 @@ public final class Compositor: @unchecked Sendable {
             }
             let retrigger = p.retrigger && !layer.retriggerLatched
             layer.retriggerLatched = p.retrigger
+            syncStatus = LayerSyncStatus(role: p.sync)
             if let outgoing = layer.outgoing {
                 // normal: the old picture stays underneath while the new fades in; other modes (and a fade to
                 // no media at all) crossfade the weights
@@ -359,12 +371,32 @@ public final class Compositor: @unchecked Sendable {
             }
             if let current = layer.current {
                 prepare(current, p, weight: progress, retrigger: retrigger, slot: layer.index * 2, canvas: canvas, in: &frame)
+                if case .master(let group) = p.sync { publishMaster(current, p, group: group, layer: layer.index, in: frame) }
+            }
+            if syncStatus != layer.syncStatusWritten {  // a layer with Sync off costs no lock
+                let status = syncStatus
+                if layer.syncStatus.withLockIfAvailable({ $0 = status }) != nil { layer.syncStatusWritten = status }
             }
             if !layer.retireLater.isEmpty {
                 layer.retired.withLockIfAvailable { list in
                     list.append(contentsOf: layer.retireLater)
                     layer.retireLater.removeAll(keepingCapacity: true)
                 }
+            }
+        }
+        if let sync, !syncClocks.isEmpty {
+            // the sender thread sends the slot; local slaves read the table from the next tick on
+            let tick = UInt32(truncatingIfNeeded: ticks.load(ordering: .relaxed))
+            let sendTime = CACurrentMediaTime()
+            sync.sender.slots.write { slot in
+                slot.packet.tick = tick
+                slot.packet.sendTime = sendTime
+                slot.packet.layers.removeAll(keepingCapacity: true)
+                slot.packet.layers.append(contentsOf: syncClocks)
+            }
+            sync.sender.wake.signal()
+            sync.receiver.table.withLockIfAvailable { table in
+                for clock in syncClocks { table.offer(clock, from: sync.receiver.machine, at: frame.now) }
             }
         }
 
@@ -480,6 +512,8 @@ public final class Compositor: @unchecked Sendable {
         let masterIntensity: Float
         let masterSpeed: Float
         let time: Float
+        /// Host time at the start of the tick: the age of sync entries is taken against it.
+        let now: Double
         var drawn: UInt16 = 0
         var misses: UInt16 = 0
         /// Something on the canvas changes without its frame or the parameters changing (live texture, strobe).
@@ -564,8 +598,22 @@ public final class Compositor: @unchecked Sendable {
         let last = playback.frameCount - 1
         let inFrame = Int((p.inPoint * Float(last)).rounded())
         let outFrame = Int((p.outPoint * Float(last)).rounded())
-        if retrigger { playback.clock.retrigger(mode: p.playMode, inFrame: inFrame, outFrame: outFrame, frameCount: playback.frameCount) }
-        if p.playMode == .timecode, playback.frameCount > 1, let timecode, let frames = timecode.frames(at: ctx.target) {
+        // a slave file follows its group's master and ignores its own play mode, speed, in/out, chase and retrigger
+        var master: SyncTable.Entry?
+        if case .slave(let group) = p.sync, playback.frameCount > 1, playback.live == nil {
+            master = syncTable.entries[group - 1]
+            syncStatus.state = .noMaster  // no entry ever: its own clock, as if Sync were off
+            if let master {
+                let follow = SlaveClock.follow(
+                    &playback.clock, entry: master.clock, age: ctx.now - master.receivedAt, dt: ctx.dt, interval: 1 / fps,
+                    fps: playback.frameRate, frameCount: playback.frameCount)
+                syncStatus.state = syncTable.conflict(group: group, now: ctx.now) == nil ? follow.state : .conflict
+                syncStatus.offsetMs = follow.offsetMs
+                syncStatus.master = master
+            }
+        }
+        if retrigger && master == nil { playback.clock.retrigger(mode: p.playMode, inFrame: inFrame, outFrame: outFrame, frameCount: playback.frameCount) }
+        if master == nil, p.playMode == .timecode, playback.frameCount > 1, let timecode, let frames = timecode.frames(at: ctx.target) {
             // chase: (tc − project offset − layer offset) at the file's rate, looped within in/out
             let offsets = timecodeOffsets
             let seconds = (frames - offsets.project - (offsets.layers[slot / 2 + 1] ?? 0)) / timecode.read(at: ctx.target).rate.exactFrameRate
@@ -575,14 +623,23 @@ public final class Compositor: @unchecked Sendable {
             if span > 0 { frame = lo + (frame - lo).truncatingRemainder(dividingBy: span) + (frame < lo ? span : 0) }
             playback.clock.position = min(hi, max(lo, frame))
         }
-        let speed = Double(p.speed * ctx.masterSpeed) * 100
-        let frameIndex = playback.clock.advance(
-            dt: ctx.dt, fps: playback.frameRate, speed: speed, mode: p.playMode, inFrame: inFrame, outFrame: outFrame, frameCount: playback.frameCount)
-        let direction = (p.playMode.isReverse ? -1 : 1) * (playback.clock.direction < 0 ? -1 : 1)
+        let speed: Double
+        let frameIndex: Int?
+        let direction: Int
+        if let master {
+            speed = Double(abs(master.clock.rate / master.clock.fps)) * 100
+            frameIndex = playback.clock.finished && p.playMode.endsBlack ? nil : Int(playback.clock.position)
+            direction = playback.clock.direction < 0 ? -1 : 1
+        } else {
+            speed = Double(p.speed * ctx.masterSpeed) * 100
+            frameIndex = playback.clock.advance(
+                dt: ctx.dt, fps: playback.frameRate, speed: speed, mode: p.playMode, inFrame: inFrame, outFrame: outFrame, frameCount: playback.frameCount)
+            direction = (p.playMode.isReverse ? -1 : 1) * (playback.clock.direction < 0 ? -1 : 1)
+        }
         if let channel = playback.audioChannel {
             // audio only at 100 % forward (ADR-0019); freeze/scrub/timecode and once-finished are silent
             let playing = frameIndex != nil && !playback.clock.finished && ctx.dt > 0
-                && !(p.playMode == .freeze || p.playMode == .scrub || p.playMode == .timecode)
+                && (master != nil || !(p.playMode == .freeze || p.playMode == .scrub || p.playMode == .timecode))
             let active = playing && direction > 0 && abs(speed - 100) < 0.5
             // a forward loop plays [in, out + 1) frames; the audio reads across its wrap (not when the audio is shorter than that)
             var loop: (start: Double, end: Double)?
@@ -606,6 +663,21 @@ public final class Compositor: @unchecked Sendable {
         if playback.live != nil || p.effect1 == .strobe || p.effect2 == .strobe { ctx.dynamic = true }
         ctx.drawn += 1
         drawItems.append(DrawItem(playback: playback, frame: frame, frameIndex: frameIndex, p: p, intensity: intensity, slot: slot, canvas: canvas))
+    }
+
+    /// A master file's clock after this tick's advance (DESIGN.md §23.2): into the packet, and into this tick's table so
+    /// a local slave prepared after it sees the same tick. `rate` is how the clock really moves, 0 when it does not.
+    private func publishMaster(_ playback: LayerPlayback, _ p: LayerParameters, group: Int, layer: Int, in ctx: TickContext) {
+        guard let sync, playback.frameCount > 1, playback.live == nil, syncClocks.count < SyncPacket.maxLayers else { return }
+        let clock = playback.clock
+        let direction: Double = (p.playMode.isReverse ? -1 : 1) * (clock.direction < 0 ? -1 : 1)
+        let moving = ctx.dt > 0 && !clock.finished && !(p.playMode == .freeze || p.playMode == .scrub || p.playMode == .timecode)
+        let entry = SyncPacket.Layer(
+            group: UInt8(group), layer: UInt8(layer + 1), mediaKey: UInt16(truncatingIfNeeded: playback.key.packed), fps: Float(playback.frameRate),
+            position: clock.position, direction: Int8(direction), finished: clock.finished,
+            rate: moving ? Float(Double(p.speed * ctx.masterSpeed) * playback.frameRate * direction) : 0)
+        syncClocks.append(entry)
+        syncTable.offer(entry, from: sync.receiver.machine, at: ctx.now)
     }
 
     /// u0 v0 u1 v1 after crop, v0 at the picture's top: for a bottom-up texture (Syphon) the top of the picture

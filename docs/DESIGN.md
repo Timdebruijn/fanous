@@ -1979,7 +1979,7 @@ machine plays frame-locked with a layer on another. Catalyst (play mode
 To" per layer, over Ethernet) solved this on the console; Fanous does the
 same with one channel. Designed 2026-10-28 (owner review of the first draft,
 which mirrored whole machines over WSS; see ADR-0021); step 2 (the channel and
-the packet codec) is built (PR #31), the rest is not.
+the packet codec) is built (PR #31), step 3 (the engine) too (§23.8); the UI is not.
 
 ### 23.1 One channel: Sync, layer channel 51
 
@@ -2159,3 +2159,44 @@ not needed for the two-projector show, which is what B60 asked for.
    `docs/user/multi-server.md`.
 5. **Owner**: the two-mini camera test; then the B28 sACN network test on
    the same rig.
+
+### 23.8 As built (step 3, 2026-10-28)
+
+`Sources/FanousEngine/Sync/`: `SyncSender` (slot + thread), `SyncReceiver`
+(socket, `SyncTable`), `SlaveClock` (the arithmetic of §23.3). Where it
+differs from the text above:
+
+- **Settings are file-only**, read at start: `settings.json` › `sync =
+  {interface, port, target}` (defaults `any`, 8002, `broadcast`). Machine
+  settings have no command path besides role passwords, so there is no
+  `project.set`/`sync.set` yet; step 4 needs one for the System screen.
+- **`target` may carry a port** (`127.0.0.1:48812`): a unicast datagram to a
+  port that two `SO_REUSEPORT` sockets share reaches only one of them
+  (measured on macOS 27), so two engines on one Mac listen on different ports
+  and each sends to the other's. `--no-network`: the receiver binds 127.0.0.1,
+  only a 127.0.0.1 target is sent to, a broadcast target is ignored and
+  logged.
+- **`interface: any`** is the first up, non-loopback IPv4 interface with a
+  netmask other than /32, not "the interface of universe 1"; resolved every
+  5 s on the sender thread.
+- **`direction`** in the packet is the movement direction (reverse play mode
+  × bounce direction), so a slave in any play mode asks its decoder for the
+  right side.
+- **Local masters** go into the compositor's copy of the table right after
+  their layer is prepared (a slave on a higher layer number sees the same tick,
+  offset 0; a lower one sees the previous tick, extrapolated) and into the
+  shared table at the end of the tick.
+- **`offsetMs`** is the correction a locked tick applies: the entry's
+  position against the slave's previous position advanced by the entry's
+  rate (a whole-file jump, the master looping, does not count). "Implied minus
+  shown" would be 0 by construction while locked.
+- **Two masters**: the slave shows `conflict` while a second machine was seen
+  in its group within the freewheel time, and follows the winner. Machine ids
+  compare by their bytes, which is the order of their `uuidString`.
+- A master in the Timecode play mode sends rate 0 (its position still comes
+  every tick). A slave's audio plays when its master moves at 1× forward.
+  Freeze-all on the slave machine does not stop a locked slave; it stops a
+  freewheeling one.
+- `live.sync` carries packet totals (`packetsIn`, `packetsOut`,
+  `decodeErrors`) and the machine id instead of `packetsPerSecond`; the UI
+  derives a rate.
