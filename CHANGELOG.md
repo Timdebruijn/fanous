@@ -165,6 +165,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   poll with a deadline or probe the listener first, so `scripts/test.sh` stays green under load (B67).
 - Syphon numbers (folder 0, 150–169) are kept in the project (`syphon`), so they survive an engine restart; a server not
   seen since the start is listed greyed (`gone`), and `syphon.forget` (Media screen **Forget**) frees a number (B69).
+- Fixed: a preview refused H.264 at the encoder limit waited 5 s and re-subscribed as JPEG, so it was never upgraded; it now
+  shows the refused stream's JPEG frames at once and turns H.264 when the engine frees an encoder for it (B86).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

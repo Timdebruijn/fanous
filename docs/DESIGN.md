@@ -1318,19 +1318,18 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   target's nearest class, else the nearest class of its canvas's stream
   (`canvas:<id>`; a layer's canvas, an output's first slice's), else it is
   refused to JPEG on its own streamer: the `sub` reply says `codec: "jpeg"`,
-  fps 5, and the browser, seeing no `stream` description, subscribes to JPEG
-  after 5 s (an `error` reply would leave it on "no preview"). The hub
+  fps 5, and the browser shows its JPEG frames at once ("JPEG 5 fps · … ·
+  H.264 encoders busy") on that subscription (an `error` reply would leave
+  it on "no preview"). The hub
   remembers these subscribers; when an unsubscribe or a closed connection
   releases an encoder it moves them, oldest first and up to the limit, to
   their own (target, class) on a global queue (the streamer is made outside
   the lock, like `attach`'s), in one step under the lock: off the fallback,
   onto the new streamer, whose `stream` description and first key frame come
   with its first frame (as after a rebuild). Measured: description 53 ms
-  after the close, longest gap between frames 63 ms. In the browser this
-  holds for size and canvas fallbacks only: `Preview.svelte` ignores
-  `codec: "jpeg"` and after 5 s re-subscribes as JPEG (`fallbackToJPEG`),
-  which ends the refused subscription, so a refused viewer stays on JPEG
-  until it subscribes again (B86). A canvas-stream fallback shows other
+  after the close, longest gap between frames 63 ms. The browser keeps a
+  refused subscription (no 5 s wait, no JPEG re-subscribe) and switches to
+  its H.264 decoder when that description comes (B86). A canvas-stream fallback shows other
   content than asked (the whole canvas, not the output's region or the
   layer alone), often in another aspect (B87). A fallback streamer whose own
   viewer left stays as it is: only fallback viewers keep it encoding, so no
