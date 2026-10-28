@@ -106,6 +106,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   switch, DMX patch, output windows) may still follow (B62).
 - Fixed: a parallel `swift test` of the engine suite hung (every cooperative-pool thread waiting in `finishWriting`); the
   media-writing test helpers now run on a thread of their own and `scripts/test.sh` runs the tests in parallel again (B63).
+- Fixed: a layer detail value changed just before picking another layer went to the newly picked layer (B80).
 
 - Hardening: one engine per user (`engine.lock`), cumulative frame counters in
   `/metrics`, show mode hides the cursor over the outputs.
@@ -143,6 +144,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   never finished starting, its log ending at that step (B66). A preview's encoder is now made, for its first H.264 viewer, and released with
   the last; JPEG previews and CITP streaming need none. A browser that gets no H.264 description within 5 s falls back
   to JPEG (B66).
+- The preview e2e tests wait up to 30 s on CI for the preview to stream (H.264 or JPEG) instead of 5 s (B81).
 - Fixed: `roles.setPassword` and `sync.set` re-read `settings.json` and write only the role's password or the sync members
   given, so unknown fields, records that could not be read at start and hand edits to the other fields stay in the file; a
   file that does not parse is refused, not overwritten (B79).
