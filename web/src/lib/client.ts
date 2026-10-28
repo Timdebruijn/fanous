@@ -122,10 +122,11 @@ export class FanousClient {
     });
   }
 
-  /** Subscribes to the canvas preview; resolves with the stream id and the codec the engine chose. */
-  subscribePreview(codec: 'avc' | 'jpeg', target = 'canvas'): Promise<PreviewInfo> {
+  /** Subscribes to the canvas preview, about `w` pixels wide (B32); resolves with the stream id, the codec and the
+   * size the engine chose. */
+  subscribePreview(codec: 'avc' | 'jpeg', target = 'canvas', w?: number): Promise<PreviewInfo> {
     return new Promise((resolve, reject) => {
-      if (!this.send({ t: 'sub', stream: 'preview', codec, target })) {
+      if (!this.send({ t: 'sub', stream: 'preview', codec, target, w })) {
         reject({ code: 'offline', message: 'not connected' });
         return;
       }

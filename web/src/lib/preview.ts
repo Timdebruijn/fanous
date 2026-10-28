@@ -33,3 +33,29 @@ export function latestOnly(): { begin: () => Generation; cancel: () => void } {
     },
   };
 }
+
+/** Preview size classes (engine `PreviewSize`, DESIGN.md §11.3): the engine encodes the smallest one at least as wide as
+ * the `w` a subscription asks for, `w` clamped to 160–1280. */
+export const PREVIEW_CLASSES = [320, 640, 960, 1280] as const;
+
+export function previewClass(w: number): number {
+  const clamped = Math.min(1280, Math.max(160, w));
+  return PREVIEW_CLASSES.find((c) => c >= clamped) ?? 1280;
+}
+
+/** The `w` a preview asks for: its rendered width in device pixels, rounded up; undefined while it has no width (the
+ * engine's default then). */
+export function wantedWidth(cssWidth: number, devicePixelRatio: number): number | undefined {
+  const px = Math.ceil(cssWidth * (devicePixelRatio || 1));
+  return px > 0 ? px : undefined;
+}
+
+/** A resize from the `w` a stream was asked with to `w`: true when the engine would pick another class (re-subscribe),
+ * with 5 % hysteresis at the class edges so a box at a boundary does not flip between two streams. */
+export function classChanged(asked: number | undefined, w: number | undefined): boolean {
+  const current = previewClass(asked ?? 640);
+  const width = w ?? 640;
+  if (previewClass(width) === current) return false;
+  const lower = PREVIEW_CLASSES[PREVIEW_CLASSES.indexOf(current as (typeof PREVIEW_CLASSES)[number]) - 1] ?? 160;  // current covers (lower, current]
+  return width > current * 1.05 || width < lower * 0.95;
+}

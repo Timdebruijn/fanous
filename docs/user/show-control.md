@@ -389,8 +389,8 @@ scene file entry for the same number wins. This engine's own canvas is not
 listed.
 
 Judge motion on an output (a display or projector), not in the preview: the
-preview is 640 × 360 at 30 fps and shows only every second frame of a 60 fps
-canvas, so moving content always looks jerky there.
+preview is at most 1280 pixels wide at 30 fps and shows only every second frame
+of a 60 fps canvas, so moving content always looks jerky there.
 
 ## Controlling layers from the UI
 

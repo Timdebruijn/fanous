@@ -20,8 +20,10 @@ on top shows the canvas on the Canvases tab and the selected output on the other
 two. The output preview has the output's own aspect ratio (4:3, 16:10, an
 ultra-wide LED wall), and the handles are drawn over exactly the same box, so
 they sit on the picture whatever the display. The Canvases tab shows the canvas
-in its own aspect ratio. The preview image itself is a 640-pixel-wide stream
-stretched back into the canvas's or output's shape.
+in its own aspect ratio. The preview stream has that shape too, and is about as
+wide as the preview is on your screen in pixels: 320, 640, 960 or 1280 pixels,
+so a large or high-resolution screen gets a sharper picture. Resizing the window
+switches size after a moment.
 
 ## Canvas size and frame rate
 

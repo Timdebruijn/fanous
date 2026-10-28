@@ -139,7 +139,7 @@ export type ClientMessage =
   | { t: 'cmd'; id: string; name: CommandName; args?: JSONValue }
   | { t: 'snapshot' }
   | { t: 'sub'; stream: 'dmx'; universe: string }
-  | { t: 'sub'; stream: 'preview'; codec?: 'avc' | 'jpeg'; target?: string }
+  | { t: 'sub'; stream: 'preview'; codec?: 'avc' | 'jpeg'; target?: string; w?: number }
   | { t: 'unsub'; id: number };
 
 export type ServerMessage =

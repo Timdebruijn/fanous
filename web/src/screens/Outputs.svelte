@@ -252,8 +252,8 @@
   <section class="main">
     <div class="preview">
       {#if app.live.engine.rendering}
-        <!-- an output preview takes the output's shape (the 16:9 stream is stretched back into it), and the overlay
-             uses exactly the same box, so handles sit on the picture whatever the display's aspect ratio -->
+        <!-- an output preview takes the output's shape (so does its stream, B32), and the overlay uses exactly the
+             same box, so handles sit on the picture whatever the display's aspect ratio -->
         <Preview target={previewTarget} aspect={previewAspect} />
         {#if output && ui.tab === 'warp'}
           <div class="overlay" style:aspect-ratio={previewAspect}>

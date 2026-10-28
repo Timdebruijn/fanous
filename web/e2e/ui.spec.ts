@@ -4,6 +4,7 @@
 // Browser end-to-end tests against a real engine (fixtures.ts). Few and robust: each covers a flow whose bugs unit
 // tests cannot see (wrong JSON pointers, overlapping handles, subscription races).
 import type { Page } from '@playwright/test';
+import { previewClass } from '../src/lib/preview';
 import { expect, openScreen, test } from './fixtures';
 
 type Param = { key: string; raw: number; source: string };
@@ -179,4 +180,54 @@ test('preview: Canvas / This layer and fast layer switching leave one stream run
   await shows.getByRole('button', { name: 'Canvas' }).click();
   await expect(caption).toContainText(/(H\.264|JPEG).* · Canvas/);
   await expect.poll(() => streams.size).toBe(1);
+});
+
+test("preview: an output stream has the output's shape and the size of its box (B32)", async ({ page, engine }) => {
+  // what the engine told this page about its output:1 streams: the `sub` replies, then each `stream` description (a
+  // rebuilt stream announces its new size there, without a new subscription)
+  const ids = new Set<number>();
+  const told: { w: number; h: number }[] = [];
+  let subs = 0;
+  const codecs = new Set<string>();  // H.264: JPEG streams have no descriptions
+  page.on('websocket', (socket) =>
+    socket.on('framereceived', ({ payload }) => {
+      type Message = { t: string; id: number; stream?: string; target?: string; codec?: string; w: number; h: number };
+      const m = typeof payload === 'string' ? (JSON.parse(payload) as Message) : null;
+      if (m?.t === 'sub' && m.stream === 'preview' && m.target === 'output:1') {
+        codecs.add(m.codec ?? '');
+        ids.add(m.id);
+        subs++;
+        told.push({ w: m.w, h: m.h });
+      }
+      if (m?.t === 'stream' && ids.has(m.id)) told.push({ w: m.w, h: m.h });
+    }),
+  );
+  await page.goto(`${engine.url}/?token=${engine.token}`);  // again, with the listener above in place
+  await addUnassignedOutput(page);
+  // the class the engine picks for the preview's rendered width in device pixels
+  const wanted = async () =>
+    previewClass(await page.locator('figure canvas').evaluate((c) => Math.ceil(c.getBoundingClientRect().width * window.devicePixelRatio)));
+  // a 1440×1080 region in class c: the pixels of c's 16:9 frame at 4:3, even (engine PreviewSize.size)
+  const fourThree = (c: number) => {
+    const w = Math.floor(c * 0.75 * Math.sqrt(4 / 3)) & ~1;
+    return { w, h: Math.floor((w * 3) / 4) & ~1 };
+  };
+  const w = await wanted();
+  await expect.poll(() => told.at(-1)).toEqual({ w, h: (w * 9) / 16 });
+  expect([...codecs]).toEqual(['avc']);
+
+  // a 4:3 region: the engine rebuilds the stream and says so in a new description; no new subscription is needed
+  const before = subs;
+  const region = page.getByLabel('Region w', { exact: true });
+  await region.fill('1440');
+  await region.press('Tab');
+  await expect.poll(() => told.at(-1)).toEqual(fourThree(w));
+  expect(subs).toBe(before);
+
+  // a narrower window: the preview asks for the smaller class it now needs
+  await page.setViewportSize({ width: 800, height: 900 });
+  await expect.poll(wanted).toBeLessThan(w);
+  const narrow = await wanted();
+  await expect.poll(() => told.at(-1)).toEqual(fourThree(narrow));
+  expect(subs).toBe(before + 1);
 });

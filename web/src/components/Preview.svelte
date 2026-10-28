@@ -4,11 +4,11 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { previewReady } from '../lib/outputs';
-  import { latestOnly } from '../lib/preview';
+  import { classChanged, latestOnly, wantedWidth } from '../lib/preview';
   import { app, subscribePreview } from '../lib/state.svelte';
 
   // Canvas (or output) preview (DESIGN.md §11.3): WebCodecs H.264 when the browser decodes it, JPEG at 5 fps otherwise.
-  // aspect: CSS aspect-ratio of the picture; an output preview uses the output's own shape (the stream itself is 16:9)
+  // aspect: CSS aspect-ratio of the picture, the shape of the canvas or output shown (the stream has the same shape)
   // label: what is shown, appended to the caption ("Layer 3"); none = the caption names no source
   let { target = 'canvas', aspect = '16 / 9', label = '' }: { target?: string; aspect?: string; label?: string } = $props();
   let canvas: HTMLCanvasElement | undefined = $state();
@@ -25,12 +25,16 @@
 
   // a target change while a subscription is still pending: the older one is stopped when it resolves
   const latest = latestOnly();
+  // the width the stream was asked for (B32): the rendered width in device pixels, so a small box gets a small stream
+  let asked: number | undefined;
+  const measure = () => (canvas ? wantedWidth(canvas.getBoundingClientRect().width, window.devicePixelRatio) : undefined);
 
   async function start() {
     if (!canvas || hidden || !ready) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const run = latest.begin();
+    asked = measure();
     const supportsWebCodecs = 'VideoDecoder' in window && 'EncodedVideoChunk' in window;
     let decoder: VideoDecoder | null = null;
     let configured = false;
@@ -70,6 +74,7 @@
           },
           () => {},
           target,
+          asked,
         );
       } catch (error) {
         if (!jpegRun.current()) return;
@@ -114,6 +119,7 @@
             configured = true;
             sawKey = false;
             mode = 'avc';
+            detail = `${description.w}×${description.h} · ${description.fps} fps`;  // a rebuilt stream (new shape) too
             if (canvas) {
               canvas.width = description.w;
               canvas.height = description.h;
@@ -123,6 +129,7 @@
           }
         },
         target,
+        asked,
       );
       if (!run.keep(sub.stop)) return;
       stop = sub.stop;
@@ -158,9 +165,33 @@
       const now = !hidden && lastFrame > 0 && performance.now() - lastFrame > 2000;
       if (now !== stalled) stalled = now;
     }, 1000);
+    // a resize into another size class asks for a stream of that size, once the resize has settled
+    let settle: ReturnType<typeof setTimeout> | undefined;
+    const check = () => {
+      clearTimeout(settle);
+      settle = setTimeout(() => {
+        if (hidden || mode === 'off' || !classChanged(asked, measure())) return;
+        pause();
+        void start();
+      }, 300);
+    };
+    const resized = new ResizeObserver(check);
+    if (canvas) resized.observe(canvas);
+    // the window moved to a screen with another pixel ratio (or the page was zoomed): same box, other device pixels
+    let ratio: MediaQueryList | undefined;
+    const onRatio = () => {
+      ratio?.removeEventListener('change', onRatio);
+      ratio = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      ratio.addEventListener('change', onRatio);
+      check();
+    };
+    onRatio();
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       clearInterval(watch);
+      clearTimeout(settle);
+      resized.disconnect();
+      ratio?.removeEventListener('change', onRatio);
       latest.cancel();  // unmounted while subscribing: that stream stops when it arrives
       stop?.();
       stop = null;

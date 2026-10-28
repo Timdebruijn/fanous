@@ -75,6 +75,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   CoreMIDI and CoreAudio devices (over 5 s on the CI virtual machine: an empty status bar and no preview); the
   5 s refresh of those lookups also ran on the live feed. They now run off it, the first one at start, and a
   slow one is logged.
+- Preview streams are sized to the browser (B32): 320, 640, 960 or 1280 pixels wide by the preview's width on
+  screen, in the shape of what is shown; an output preview is no longer a 16:9 stream stretched into the output's
+  shape. One encoder per target and size; past 4 encoders a new size of a target falls back to the nearest size it has.
 - Fixed: the preview of a just added canvas was refused and stayed empty: it was asked for before the canvas
   rendered. A canvas preview now waits for the canvas switch, captioned "starting…", and one subscribed while the
   switch rebuilds the previews is no longer dropped as if its canvas were gone (B62 b).

@@ -196,6 +196,27 @@ struct StateServerTests {
         a.cancel(with: .normalClosure, reason: nil)
     }
 
+    /// B32: `w` picks the size class; the reply says the size the stream has (the target's shape, 16:9 here).
+    @Test func previewSubTakesAWantedWidthAndRepliesWithTheStreamSize() async throws {
+        let f = try await Self.start()
+        defer { f.server.stop() }
+        let rig = try PreviewHubTests.Rig()
+        f.stateServer.preview = rig.hub
+        let a = f.socket()
+        try await a.send(.string(#"{"t":"hello","clientId":"a","schema":1}"#))
+        _ = try await Self.receive(a, until: "welcome")
+        for w in ["", #","w":300"#, #","w":1e300"#, #","w":-5"#] {
+            try await a.send(.string(#"{"t":"sub","stream":"preview","codec":"jpeg","target":"output:1"\#(w)}"#))
+        }
+        var sizes: [[Int]] = []
+        while sizes.count < 4 {
+            let message = try await Self.receive(a)
+            if message["t"]?.string == "sub" { sizes.append([message["w"]?.int ?? 0, message["h"]?.int ?? 0]) }
+        }
+        #expect(sizes == [[640, 360], [320, 180], [1280, 720], [320, 180]])
+        a.cancel(with: .normalClosure, reason: nil)
+    }
+
     @Test func dmxMonitorTimerFollowsTheSubscriptions() async throws {
         let f = try await Self.start()
         defer { f.server.stop() }
