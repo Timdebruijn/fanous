@@ -270,7 +270,12 @@ struct OutputPassTests {
         var ms = Double.infinity
         _ = await waitUntil(every: .zero) {
             let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
-            _ = try? compiler.compile(o, index: 1, drawable: (1920, 1080))
+            do {
+                _ = try compiler.compile(o, index: 1, drawable: (1920, 1080))
+            } catch {
+                Issue.record(error)
+                return true  // a failed compile is no timing
+            }
             ms = min(ms, Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e6)
             return ms < 250
         }

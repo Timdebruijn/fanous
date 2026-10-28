@@ -11,8 +11,9 @@ Phase 8 deliverable of `DESIGN.md` §19; v1.0 ships when every box is ticked.
 ## 1. Code is green
 
 - [ ] `scripts/test.sh` (engine tests bind the DMX/OSC/HTTPS ports: stop any
-      running `fanousd` first). Tests run in parallel, also on a busy Mac: they
-      wait with a deadline, not a fixed sleep (B67)
+      running `fanousd` first). Tests run in parallel and wait with a deadline,
+      so a loaded Mac makes the run slower, not red, in the loads tested (load
+      average up to ~100); negative checks keep fixed windows (B67)
 - [x] `FANOUS_NET_TESTS=1 scripts/test.sh --filter CITPServerTests` on a Mac
       whose firewall allows the test runner's outgoing UDP (the CITP beacon)
 - [ ] `scripts/check-protocol-dts.sh`, `scripts/check-channel-map.sh`,

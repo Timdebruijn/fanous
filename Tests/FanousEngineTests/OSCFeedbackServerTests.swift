@@ -113,6 +113,13 @@ import Testing
         let receiver = OSCReceiver(store: store, logger: logger, port: port, feedback: feedback)
         try receiver.start()
         feedback.start()
+        var started = false
+        defer {
+            if !started {  // the caller gets nothing to stop: release the port here
+                receiver.stop()
+                feedback.stop()
+            }
+        }
         // listening once a ping is answered (a fixed 300 ms was too short on a loaded Mac, B67)
         let probe = try Client()
         defer { probe.close() }
@@ -121,6 +128,7 @@ import Testing
             return probe.receive(timeout: 0.1) != nil
         }
         try #require(ready, "no pong from the OSC receiver on \(port)")
+        started = true
         return (receiver, feedback, port)
     }
 
@@ -234,7 +242,9 @@ import Testing
 
         client.send(OSCMessage("/fanous/unsubscribe"), to: port)
         client.send(OSCMessage("/fanous/ping"), to: port)  // requests are handled in order: the pong means unsubscribed
-        #expect(client.messages(for: 0.1).contains(OSCMessage("/fanous/pong")))
+        var pong = false
+        while !pong, let packet = client.receive(timeout: 5) { pong = Client.flatten(packet).contains(OSCMessage("/fanous/pong")) }
+        #expect(pong)
         box.state.withLock { $0["/fanous/cue/count"] = [.int32(5)] }
         #expect(client.receive(timeout: 0.3) == nil)
     }

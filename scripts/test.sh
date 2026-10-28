@@ -10,7 +10,8 @@ cd "$(dirname "$0")/.."
 # the cooperative pool: blocking AVFoundation work in a test (MovieWriter.finish, finishWriting + semaphore)
 # goes through offPool (Tests/FanousEngineTests/TestSupport.swift), or enough of those tests at once hang
 # the run (B63). Tests that wait for something poll with a deadline (waitUntil in TestSupport.swift), so a loaded
-# machine makes the run slower, not red (B67).
+# Mac makes the run slower, not red, in the loads tested (load average up to ~100); negative checks keep fixed
+# windows (B67).
 plugins="$(xcode-select -p)/usr/lib/swift/host/plugins/testing"
 if [[ -d "$plugins" ]]; then
   exec swift test -Xswiftc -plugin-path -Xswiftc "$plugins" "$@"
