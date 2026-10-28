@@ -1055,43 +1055,60 @@ owner's approval of this section.
 **Scope:** M1 is the first block. M2 and M3 are listed at the end of this
 section.
 
-**Projector wall.** A wizard creates a wall, and the project keeps it, so a
-small change later is one control.
+**Projector wall.** A wizard creates a wall, and the project keeps it. The
+wall separates two kinds of work (owner, 2026-10-28: no default blend ever
+fits; projector age, ambient light and the surface always need tuning by eye):
+
+| Kind of work | What it covers | Who does it |
+|---|---|---|
+| **Geometry** | Which part of the canvas each projector shows, and the overlap in pixels, equal on both sides of a seam | The wall computes it from the grid and the overlap %. Always correct for a rig hung as that grid. |
+| **Tuning** | Gamma and curve per seam; black floor and colour per projector | Always set by eye. Start values are only a starting point; the seam check (below) is the route. |
 
 ```
 WallConfig { id, name, canvas: Int, rect: MapRect (on the canvas, default full),
              cols, rows (1…4 each; cols × rows ≥ 2),
              outputs: [Int]  (row-major, cols × rows, an output belongs to at most one wall),
              overlap: { x, y }  (fraction of one projector's width / height, 0…0.5),
-             seam: { power, gamma, gammaRGB: [r, g, b]?, floor },
-             manual: [{ output, field }] }   // field: "source" | "left" | "right" | "top" | "bottom"
+             seams: [SeamConfig],          // one per neighbouring pair, made by the wizard
+             manual: [{ output, field }] } // geometry only: "source" | "overlap.left|right|top|bottom"
+SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB: [r, g, b]? }
 ```
 
+- **Per projector:** the black floor is the output's existing `blend.lift`,
+  and the colour is `OutputConfig.color` (below). The wizard sets start
+  values; the wall never overwrites them afterwards.
 - **Compile** (Core, `WallLayout.apply`, pure and tested):
   - Each projector's share of the wall is
     `p = 1 / (cols − (cols − 1) · overlap.x)` (the same for rows).
   - Output (c, r) gets slice 1's source rectangle:
     `x = rect.x + rect.w · c · p · (1 − overlap.x)` and `w = rect.w · p`.
-  - Inner edges get `overlap.x × output width` in px, plus the seam's power
-    and gamma. Outer edges get 0.
-  - `blend.lift = seam.floor`.
-  - Fields listed in `manual` and slices other than slice 1 are left alone.
+  - Inner edges get `overlap.x × output width` in px. Outer edges get 0.
+  - Each seam's power, gamma and gammaRGB go to both facing edges, so the two
+    sides of a seam never disagree.
+  - Geometry fields listed in `manual`, and slices other than slice 1, are
+    left alone.
   - The output's pixel size comes from its region, else its desired mode, else
     the bound display's current mode.
   - A wall whose outputs differ in pixel size is refused with a message (v1).
 - **Commands.** All are programmer-only, refused under show lock, and one undo
   step each:
-  - `wall.add {cols, rows, outputs, overlap, canvas?, fit}`
+  - `wall.add {cols, rows, outputs, overlap, canvas?, fit}` makes the seams
+    with start values power 2 and gamma 2.2.
     - `fit: "canvas"` uses the whole canvas.
     - `fit: "makeCanvas"` first sets the canvas to
       `cols · w − (cols − 1) · overlap.x · w` (and likewise in height),
       rounded to even, within the `canvas.set` limits and refused in show mode
       like `canvas.set`.
-  - `wall.set {id, …}` re-compiles; `resetManual: true` empties `manual`.
+  - `wall.set {id, …}` changes geometry and re-compiles; `resetManual: true`
+    empties `manual`.
+  - `wall.seam {id, a, b, power?, gamma?, gammaRGB?}` tunes one seam.
+    `wall.seams {id, …}` applies the same values to every seam of the wall.
   - `wall.remove {id}` leaves the outputs as they are.
   - `output.set` on a wall output:
-    - If it changes slice 1's source or an inner edge, that field is added
+    - A change to slice 1's source or an inner edge's overlap adds that field
       to `manual`; the reply says so.
+    - A change to an inner edge's power or gamma updates that seam, so both
+      sides follow.
     - Removing a wall output is refused while it belongs to a wall.
 - **UI, wizard.** **New projector wall** on the Outputs tab.
   1. Every bound output shows its Output ID. The user taps the tiles in the
@@ -1099,22 +1116,42 @@ WallConfig { id, name, canvas: Int, rect: MapRect (on the canvas, default full),
      count.
   2. Overlap is a slider in %: default 15, yellow below 10 or above 25. Then
      choose: use canvas N, or make a canvas that fits.
-  3. Apply. Blend check and Grid appear on every wall output.
-- **UI, wall panel** (above the output list):
-  - **Seams:** overlap X/Y, gamma with an RGB link, curve, black floor.
-  - **Actions:** Seam check, Edit layout… (re-opens the wizard pre-filled),
+  3. Apply. Blend check and Grid appear on every wall output, and the wall
+     panel opens on the seam check.
+- **UI, wall panel** (above the output list), built around a **mini-map of
+  the wall**: one tile per projector, with the seams drawn as lines between
+  them.
+  - **Tap a seam:** gamma (RGB linked; unlink for per-channel), curve, and
+    **Apply to all seams**.
+  - **Tap a projector:** black floor, colour gain R/G/B, black offset.
+  - **Geometry:** overlap X/Y, Edit layout… (re-opens the wizard pre-filled),
     Remove wall.
-  - **Badges:** a wall output carries a "Wall 1 · r1 c2" badge. A manual field
-    shows a "manual" chip with **Back to wall**.
+  - **Badges:** a wall output carries a "Wall 1 · r1 c2" badge. A manual
+    geometry field shows a "manual" chip with **Back to wall**.
 
-**Seam check.**
+**Seam check: the tuning route.**
 - New bands on test-pattern channel 4 (Master and Output) in the reserved
   range: 128–143 Grey 0 %, 144–159 Grey 25 %, 160–175 Grey 75 %, 176–191
   White. Blend check is the 50 % field.
 - The footprint stays the same; the GDTF and `docs/channel-map.md` are
   regenerated.
-- The wall panel steps through 0/25/50/75/100 %, Blend check and Grid on every
-  wall output. Each step shows the hint card of `docs/mapping-ux.md` §4.2.
+- The wall panel steps through the patterns on every wall output. At each step
+  a card says what to look for and which control to turn:
+
+  | Step | You see | Turn |
+  |---|---|---|
+  | Grid | lines that do not meet across a seam | the warp, not the blend (opens Warp & Slices) |
+  | Blend check (50 %) | a bright band in a seam | that seam's gamma, down |
+  | | a dark band | that seam's gamma, up |
+  | | a visible edge at the start of the overlap | that seam's curve |
+  | Grey 0 % | seams lighter than the rest | black floor of the projectors next to it, up, one by one until even |
+  | Grey 25 / 75 %, White | one projector darker, or tinted | that projector's colour gain |
+  | | a colour shift only inside a seam | unlink RGB on that seam and tune the channel that is off |
+
+- The user taps the seam or projector on the mini-map; the card's control
+  opens for it. Without a camera, Fanous cannot know which seam is off, so the
+  user's eye picks it. The M3 camera can measure it later; a final pass by eye
+  stays.
 
 **RGB gamma (OPEN-14).**
 - `BlendEdge.gammaRGB: [Double]?`; nil means `gamma` for all three channels.
@@ -1126,7 +1163,8 @@ WallConfig { id, name, canvas: Int, rect: MapRect (on the canvas, default full),
   default 0)}`.
 - The output pass applies `out · gain + black` next to the lift. That is still
   before the output and master intensity, so blackout stays black.
-- It is set on the Outputs tab next to the Colour bars and Grey steps buttons.
+- It is set on the Outputs tab next to the Colour bars and Grey steps buttons,
+  and for a wall output from the wall panel's projector tile.
 
 **Mesh resample.**
 - A density change samples the current surface (`warp.ts meshPoint`) at the

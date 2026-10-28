@@ -355,9 +355,16 @@ offers.
 
 1. **Wall: both.**
    - A wizard creates the wall, and the project keeps it.
-   - A small change later is one control on the wall panel.
    - **Edit layout…** re-opens the wizard pre-filled.
-   - A hand-edited field becomes "manual" and keeps its value.
+   - **Geometry is computed; tuning is by eye.** No default blend fits, because
+     projector age, ambient light and the surface differ. So:
+     - The wall computes only the geometry: the canvas share per projector and
+       the overlap in pixels. A hand-edited geometry field becomes "manual".
+     - Tuning is first-class: gamma and curve per seam (both sides at once),
+       black floor and colour per projector.
+     - The seam check is the tuning route: per step it says what to look for
+       and which control to turn.
+     - Start values are only a starting point.
 2. **Output fixture channel 6** is Mapping preset. A **Keystone** mode for
    console corner pins comes in M2 (§4.5).
 3. **The camera is the iPhone:** Continuity Camera first, then the browser
