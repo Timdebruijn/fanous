@@ -88,7 +88,11 @@ public final class RenderService {
     private var loopDriver: DrawableLoopDriver?
     private var headlessDriver: HeadlessDriver?
 
-    public init(scene: SceneConfig, context: MetalContext, parameters: TripleBuffer<ParameterSnapshotSlot>, metrics: MetricsRing, logger: Logger) throws {
+    /// `syphonNumbers`: the project's Syphon numbering (B69), held for the servers before the first announce.
+    public init(
+        scene: SceneConfig, context: MetalContext, parameters: TripleBuffer<ParameterSnapshotSlot>, metrics: MetricsRing, logger: Logger,
+        syphonNumbers: [SyphonCatalog.Server] = []
+    ) throws {
         self.scene = scene
         self.context = context
         self.parameters = parameters
@@ -128,7 +132,7 @@ public final class RenderService {
                 if output.hasClients { output.publish(texture: texture, commandBuffer: commandBuffer) }
             }
         }
-        syphonCatalog = SyphonCatalog(excluding: syphon?.uuid)
+        syphonCatalog = SyphonCatalog(excluding: syphon?.uuid, numbers: syphonNumbers)
         loader.syphonCatalog = syphonCatalog
         syphonCatalog.onChange = { [weak loader] in loader?.syphonServersChanged() }  // the loader holds the catalog
         syphonCatalog.start(device: device)

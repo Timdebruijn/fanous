@@ -299,7 +299,7 @@ extension ProjectVersions {
                 name: "project.revert", role: .programmer,
                 summary: "Restore a project version (refused in show mode, also its undo and redo). The current project is saved as a version first; the show lock stays as it is.",
                 argsType: "{ id: string }",
-                replayCheck: { if showModeOn() { throw showModeRefusal } }
+                replayCheck: { _, _ in if showModeOn() { throw showModeRefusal } }
             ) { [self] project, args in
                 guard let id = args["id"]?.string else { throw CommandError.invalidArgs("id must be a version id") }
                 guard !showModeOn() else { throw showModeRefusal }
