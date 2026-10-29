@@ -59,7 +59,8 @@ final class SyncSlot: @unchecked Sendable {
 }
 
 /// Sends the newest master clocks (DESIGN.md §23.2) from a thread of its own: the compositor fills a slot and
-/// signals `wake`; nothing is sent while no layer is a master except a count-0 keepalive once a second.
+/// signals `wake`; a packet goes out for each new tick with master layers, and a count-0 keepalive after 1 s without
+/// one (no master, or masters whose tick did not change).
 final class SyncSender: @unchecked Sendable {
     let machine: UUID
     var settings: SyncSettings { current.withLock { $0 } }

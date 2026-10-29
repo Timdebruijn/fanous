@@ -65,8 +65,9 @@ struct SyncReceiverTests {
         #expect(entry.machine == Self.low)
         #expect(entry.clock == Self.clock(group: 4))
         #expect(entry.receivedAt >= before && entry.receivedAt <= CACurrentMediaTime())
-        // not == 1: a sender idle for 1 s sends a keepalive, which a loaded run reaches before this line (B101)
-        #expect(receiver.packetsIn.load(ordering: .relaxed) >= 1)
+        // not packetsIn == 1 (B101): a keepalive follows the data packet after 1 s, or precedes it when this test is held
+        // up for 1 s between start and signal (`lastSent` is 0 and `CACurrentMediaTime` is uptime). It sets no entry.
+        #expect(receiver.table.withLock { $0.entries.compactMap { $0 }.count } == 1, "only A's group 4 is in the table")
     }
 
     @Test func ownPacketsGarbageAndKeepalivesTouchNothing() async throws {
