@@ -290,6 +290,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   the "(in effect)" label is gone. The wall map labels such a seam RGB, and on the Outputs tab its edges show the three
   values with **One gamma for R, G, B** in place of the Gamma field. The blend map is `rgba16Float`: 8 bytes per pixel, ≈ 66 MB for a 3840×2160 output with
   a blend (was 33 MB). Without per-colour gamma the picture is unchanged.
+- Each compositor tick reads its output set once and draws its Freeze holds, the output preview and the output pass with
+  it, so an output change or display rebind that lands during a tick takes effect on the next one. The tick now holds a
+  frozen output before the preview tap; the picture is unchanged (B110).
 - Fixed: editing an output while it was frozen (Output Control = Freeze) made it, and its preview, hold a later frame.
   A frozen output now keeps the frame it held across an edit (B111).
 

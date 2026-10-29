@@ -316,7 +316,7 @@ public final class PreviewHub: @unchecked Sendable {
     /// pass ticks (4 a second).
     public var wantsFrames: Bool { active.withLock { $0 }.contains { $0.wantsFrames } || thumbnails?.wantsPass == true }
 
-    /// `Compositor.previewTap`; `live` is the tick's `Compositor.outputSet` (B107).
+    /// `Compositor.previewTap`; `live` is the output set the tick draws, as it read it (B107, B110).
     public func tap(canvas texture: MTLTexture, commandBuffer: MTLCommandBuffer, target: Double, live: OutputSet? = nil) {
         for streamer in active.withLock({ $0 }) {
             guard let canvas = streamer.canvasID == 1 ? texture : canvasTexture?(streamer.canvasID) else { continue }

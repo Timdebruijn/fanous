@@ -553,8 +553,8 @@ struct OutputPassTests {
             streamer.outputSet = OutputSet(plans: [try OutputCompiler(device: rig.context.device).compile(OutputConfig(id: 1), index: 1, drawable: (160, 90))])
             streamer.externalJPEGWanted = { true }  // a JPEG of every tap (5 fps canvas, 1 s apart)
             func watch() {
-                rig.compositor.previewTap = { [unowned compositor = rig.compositor] canvas, buffer, target in
-                    streamer.tap(canvas: canvas, commandBuffer: buffer, target: target, live: shared ? compositor.outputSet : nil)
+                rig.compositor.previewTap = { canvas, buffer, target, live in
+                    streamer.tap(canvas: canvas, commandBuffer: buffer, target: target, live: shared ? live : nil)
                 }
             }
             func preview(_ control: OutputControl, master: Float, layer: Float) async throws -> Int {
@@ -581,7 +581,27 @@ struct OutputPassTests {
                 plans: [try OutputCompiler(device: rig.context.device).compile(OutputConfig(id: 1), index: 1, drawable: (160, 90))], previous: streamer.outputSet)
             #expect(near(try await preview(.freeze, master: 1, layer: 0), 200), "shared \(shared): the held frame after a recompile")
             #expect(try await preview(.normal, master: 1, layer: 0) <= 8, "shared \(shared): released, live again")
+            // engaged while watched: the engage tick's preview equals the held frame and the next one keeps it. Whether
+            // the tick holds before or after the tap (B110) is not observable here: both draw that same frame
+            #expect(near(try await preview(.freeze, master: 1, layer: 1), 200), "shared \(shared): the engage tick")
+            #expect(near(try await preview(.freeze, master: 1, layer: 0), 200), "shared \(shared): held after engaging while watched")
         }
+    }
+
+    /// B110: the tick reads its output set once. Control swapping it during the tick (here: from the preview tap) does not
+    /// reach that tick's output pass, which draws the set the tick started with; the swap shows from the next tick.
+    @Test func aSetSwappedDuringTheTickWaitsForTheNextTick() throws {
+        let rig = try Rig(OutputConfig(id: 1), value: 200)
+        var tapped: OutputSet?
+        rig.compositor.previewTap = { [unowned compositor = rig.compositor] _, _, _, live in
+            tapped = live
+            compositor.outputSet = nil
+        }
+        // Output Blackout: black through the set, the full 200 canvas through the plain pass without one
+        #expect(rig.tick(.blackout, master: 1, layer: 1) <= 1, "this tick draws the set it read")
+        #expect(tapped != nil, "the tap gets the tick's set")
+        #expect(Self.near(rig.tick(.blackout, master: 1, layer: 1), 200), "the next tick: no set, the plain pass")
+        #expect(tapped == nil)
     }
 
     /// The black lift is the projector's floor: on live content it stays while the Master moves and is 0 at Master 0 or

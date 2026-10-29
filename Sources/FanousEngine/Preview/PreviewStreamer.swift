@@ -179,7 +179,7 @@ public final class PreviewStreamer: @unchecked Sendable {
 
     /// `Compositor.previewTap`: encodes the downscale into the tick's command buffer when a frame is due.
     /// `canvases` looks up the other canvases of this tick (outputs whose slices use them); `live` is the set the tick
-    /// draws (`Compositor.outputSet`), whose held frames an output preview shows (B107).
+    /// draws (its one read of `Compositor.outputSet`, B110), whose held frames an output preview shows (B107).
     public func tap(canvas: MTLTexture, commandBuffer: MTLCommandBuffer, target: Double, canvases: ((Int) -> MTLTexture?)? = nil, live: OutputSet? = nil) {
         tickCounter &+= 1
         guard wantsFrames, tickCounter % (wantsH264 ? everyNth : jpegEveryNth) == 0, let pool, let textureCache else { return }
@@ -210,8 +210,8 @@ public final class PreviewStreamer: @unchecked Sendable {
         let outputSet = outputSet  // read once: `Engine.previewOutput` swaps it from another thread
         if let set = outputSet, let plan = set.plans.first {
             if let shown = live?.plans.first(where: { $0.id == plan.id }) {
-                // on the clock-master display: the frame its projector holds, no copy. An earlier tick's hold: the tap
-                // precedes the tick's hold, so the engage tick draws the live canvas, which is the held frame
+                // on the clock-master display: the frame its projector holds, no copy. The tick holds before it taps
+                // (B110), so on the engage tick this is the copy blitted earlier on the same command buffer
                 (plan.held, plan.heldMaster) = (shown.held, shown.heldMaster)
                 set.previous = nil  // the live plan carries the hold across a recompile (B111)
             } else {
