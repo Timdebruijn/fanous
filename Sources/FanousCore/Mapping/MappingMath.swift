@@ -8,6 +8,9 @@ import Foundation
 // Pure functions over plain arrays; the engine uploads the results as textures and buffers.
 
 public enum BlendMath {
+    /// The projector gamma the output pass adds the black lift and offset at (DESIGN.md §9.9, M1.7); the shader uses it.
+    public static let projectorGamma = 2.2
+
     /// S-curve across an overlap zone: `t` 0 at the outer edge, 1 at the inner edge; symmetric so that
     /// `curve(t) + curve(1 − t) == 1` and two projectors sum to a flat field in linear light.
     public static func curve(_ t: Double, power p: Double) -> Double {
@@ -24,6 +27,7 @@ public enum BlendMath {
     }
 
     /// Four floats per pixel, row-major from the top-left: (factor r, g, b, lift term). `out = in · factor + lift term`.
+    /// With overlaps on both axes the lift term follows the coverage, so every point reaches the four-projector black (§9.10).
     public static func map(_ s: BlendSettings, width: Int, height: Int) -> [Float] {
         var out = [Float](repeating: 0, count: width * height * 4)
         guard width > 0, height > 0 else { return out }
@@ -52,13 +56,27 @@ public enum BlendMath {
         }
         let x = axis(width, s.left, s.right)
         let y = axis(height, s.top, s.bottom)
+        // ponytail: coverage 4 from the output's own edges (2 per axis); three projectors on one axis still count as 2,
+        // take the coverage from the wall's layout if such a rig shows up
+        let grid = (s.left.overlap > 0 || s.right.overlap > 0) && (s.top.overlap > 0 || s.bottom.overlap > 0)
+        // lift × ((4 − n) / n)^(1/γ); `pow` only on feather pixels, the whole numbers are the same floats without it
+        let single = s.lift * pow(3, 1 / projectorGamma)
+        func coverageLift(_ n: Double) -> Double {
+            switch n {
+            case 1: single
+            case 2: s.lift
+            case 4: 0
+            default: s.lift * pow((4 - n) / n, 1 / projectorGamma)
+            }
+        }
         for row in 0..<height {
             for col in 0..<width {
                 let i = (row * width + col) * 4
                 let f = x.factor[col] * y.factor[row]
                 (out[i], out[i + 1], out[i + 2]) = (Float(f.x), Float(f.y), Float(f.z))
                 let inZone = max(x.zone[col], y.zone[row])
-                out[i + 3] = Float(s.lift * (1 - inZone))
+                let n = (1 + x.zone[col]) * (1 + y.zone[row])  // projectors lighting the pixel, feathered: 1, 2 or 4
+                out[i + 3] = Float(grid ? coverageLift(n) : s.lift * (1 - inZone))
             }
         }
         return out

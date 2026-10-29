@@ -969,12 +969,18 @@ single-projector area matches the doubled black floor of the overlap:
 out = in · factor + lift · (1 − inOverlap)              // lift and inOverlap feathered over `liftFeather` px
 ```
 
+An output with overlaps on both axes (a grid wall) takes the lift by coverage
+instead, since M2.1: `lift · ((4 − n) / n)^(1/γ)` (γ the fixed projector gamma
+2.2, not the edge's) with n = (1 + zx)·(1 + zy) projectors on the pixel (zx,
+zy the feathered `inOverlap` per axis), so every point reaches the black of
+the four-projector corner (§9.10 item 1).
+
 The lift is stored as the code value it gives on black. Since M1.7 the
 output pass adds it in linear light (γ 2.2), so the `+` above is exact at
 Grey 0 % and a brighter picture gets only the light the lift adds (§9.9,
 "As built (M1.7)").
 
-Both the per-pixel `factor` and `lift·(1−inOverlap)` are precomputed into one
+Both the per-pixel `factor` and the lift term are precomputed into one
 `rgba16Float` **blend map** texture per output on Control whenever the blend
 settings change (edit-time cost only): a factor per channel (R, G, B) and the
 lift. Each channel's factor uses its own γ when the edge has per-channel (RGB)
@@ -1423,7 +1429,7 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
 ### 9.10 M2: black lift by coverage, Keystone, mapping presets, edit overlay, masks v2 (design 2026-10-29)
 
 **Status:** designed 2026-10-29, owner decisions the same day (below), and
-reviewed against the code; not built. Research and frictions F3–F6 are in
+reviewed against the code. Built: item 1 (M2.1, below). Research and frictions F3–F6 are in
 `docs/mapping-ux.md` §1 and §4.2–§4.5.
 
 **Owner decisions (2026-10-29):**
@@ -1462,9 +1468,9 @@ reviewed against the code; not built. Research and frictions F3–F6 are in
     frame.
 
 **1. Black lift by coverage (fixes F3).**
-- **Today** the lift is binary per edge: full outside every overlap, none
+- **Before M2.1** the lift was binary per edge: full outside every overlap, none
   inside. In a wall of 2 × 2 or larger, the point where four projectors overlap
-  stays lighter in black than the two-projector seams.
+  stayed lighter in black than the two-projector seams.
 - **Coverage, no new field.** `BlendMath.map` takes the coverage from the
   output's own edges: 4 when it has an overlap on both axes. A one-axis output
   keeps today's per-edge lift.
@@ -1491,6 +1497,22 @@ reviewed against the code; not built. Research and frictions F3–F6 are in
 - **Existing 2D blends change, on purpose.** Their black rises to the level of
   the four-projector point, so re-check Grey 0 %. One-axis outputs render
   bit-identically. The output pass is unchanged.
+
+**As built (M2.1, PR #103):**
+- `BlendMath.map` takes coverage 4 when the output has an overlap on both
+  axes (left or right > 0, and top or bottom > 0). zx and zy are the per-axis
+  "in an overlap" values it already computed for the lift feather; the lift
+  term is `lift × ((4 − n) / n)^(1/γ)`. Otherwise it is `lift × (1 − max(zx,
+  zy))` as before, the same floats: the golden images are unchanged (none has
+  overlaps on both axes).
+- `BlendMath.projectorGamma` (2.2) is the one constant; the shader source
+  interpolates it (as a `Float`, so the Metal literal reads `2.2`).
+- Rendered on Grey 0 % with a lift of 0.08, left and top overlaps: one
+  projector reads 0.08 × 3^(1/2.2) ≈ 34 of 255, the left overlap 20, the
+  corner 0.
+- As designed, coverage counts at most two projectors per axis: a pixel that
+  three projectors on one axis light still counts as two (a `ponytail:` in
+  `BlendMath.map`).
 
 **2. Keystone mode (§6.4a).**
 - **The mode.** A fourth fixture mode, 16 channels, patched per output next to

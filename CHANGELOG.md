@@ -303,6 +303,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   within 1 s is logged and the server is left to the process (B113).
 - Fixed: editing an output while it was frozen (Output Control = Freeze) made it, and its preview, hold a later frame.
   A frozen output now keeps the frame it held across an edit (B111).
+- Changed: the black lift follows the coverage on an output blended on both axes, such as a wall with rows and columns
+  (M2.1, F3). Every point now rises to the black level of the corner where four projectors overlap, which used to stay
+  lighter than the seams: the lift reads its value in a two-projector seam and 3^(1/2.2) times it where one projector lights alone.
+  Check Grey 0 % again on such a wall. Outputs blended on one axis are unchanged.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

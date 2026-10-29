@@ -349,6 +349,14 @@ struct OutputPassTests {
         #expect(px(grey25, 2)[1] < 10 && abs(Double(px(grey25, 300)[1]) - Self.lit(64, 0.08)) <= 1, "\(px(grey25, 2)) \(px(grey25, 300))")
         let grey0 = try image(blended, .grey0)
         #expect(px(grey0, 50)[1] <= 1 && abs(px(grey0, 300)[1] - 20) <= 1, "Grey 0 % shows the lift: \(px(grey0, 50)) \(px(grey0, 300))")
+        // overlaps on both axes (M2.1): the lift follows the coverage, up to the black of the four-projector corner
+        var grid = blended
+        grid.blend.top = BlendEdge(overlap: 40, gamma: 1)
+        let covered = try image(grid, .grey0)
+        func green(_ x: Int, _ y: Int) -> Double { Double(covered[(y * Self.width + x) * 4 + 1]) }
+        #expect(abs(green(300, 150) - 0.08 * pow(3, 1 / 2.2) * 255) <= 1, "one projector: \(green(300, 150))")
+        #expect(abs(green(50, 150) - 0.08 * 255) <= 1, "left overlap only: \(green(50, 150))")
+        #expect(green(50, 10) <= 1, "the corner: \(green(50, 10))")
         let raw = try image(blended, .grey25, raw: true)
         #expect(abs(px(raw, 2)[1] - 64) <= 1 && abs(px(raw, 300)[1] - 64) <= 1, "Raw bypasses the blend map: \(px(raw, 2)) \(px(raw, 300))")
         // warp: pinned onto the left half, the field stops at the pin
