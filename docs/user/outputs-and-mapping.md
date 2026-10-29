@@ -180,6 +180,8 @@ over two or four projectors stayed within 2 % across the overlap.
 **Black lift (%)** (0 to 50) raises the black level outside the overlaps so the
 single-projector area matches the doubled black of the overlap; **Lift feather
 px** softens where the lift ends. Use Grey 0 % (or Grey steps) to match it by eye.
+The lift adds light, as a second projector's black does, so a lift set on
+Grey 0 % stays right on brighter pictures (see the note under Test patterns).
 Grids work: a corner pixel gets the product of the horizontal and vertical
 ramps.
 
@@ -224,14 +226,44 @@ console calls them up on Test pattern channel 4: 128 Grey 0 %, 144 Grey 25 %,
 160 Grey 75 %, 176 White.
 
 These are signal levels: on a gamma-2.2 projector Grey 25 % is about 5 % of
-white's light, Grey 75 % about 53 %. Black lift adds a fixed signal, so it is
-exact only at Grey 0 %: set it there; at 25–75 % a lifted area can look
-slightly brighter than the overlap.
+white's light, Grey 75 % about 53 %. The black lift and the black offset
+(below) add the light they give on black, computed for a gamma-2.2 projector:
+set them on Grey 0 %, where they read exactly their value, and a brighter
+picture gets only that bit of light more. A lift of 8 % shows as 8 % on Grey
+0 % but raises Grey 25 % only from 64 to 66 of 255 (versions before M1.7 added
+the 8 % as signal, 64 to 84, so a lifted area looked brighter at mid greys).
 
 The first seven patterns, a moving test card and a few more are also available
 as layer content in folder 0 (see
 [show-control.md](show-control.md#built-in-content-folder-0)); for a flat grey
 on a layer use Solid colour (file 100) with the layer's Red, Green and Blue.
+
+### Colour
+
+Under the test patterns, **Colour** matches this projector to the others by
+eye. Look at Colour bars, Grey steps, Grey 25 %, Grey 75 % or White on all
+projectors at once and turn the one that is off.
+
+| Control | Range (start) | What it does |
+|---|---|---|
+| Gain R, Gain G, Gain B | 0–200 % (100 %) | scales that colour of everything this output shows: lower the channel that is too strong on a tinted projector, or all three on one that is too bright |
+| Black offset | 0–20 % (0 %) | raises this projector's black over the whole output, overlaps included: for a projector whose black is darker than its neighbours' |
+
+- The gain scales the signal, not the light: on a gamma-2.2 projector 50 %
+  gain is about a fifth of the light. Tune by eye, in small steps.
+- The black offset adds light like the black lift does (see the note above):
+  it shows its full value on Grey 0 % and adds only that light on brighter
+  pictures.
+- Colour applies to the picture and to the test patterns, and after it the
+  output's intensity: an Output or Master Blackout, or an intensity at 0, is
+  black, black offset included.
+- Gain and black offset also apply in Raw (the Output fixture's Blend channel
+  at 128 or more): they belong to the projector, not to the mapping, so its
+  colour does not change while you align. Raw leaves out the blend ramps and
+  the black lift.
+- Drag a slider or tap **−** and **+** for fine steps (0.5 % gain, 0.1 % black
+  offset). A drag is one step for **Undo**. In a projector wall the same
+  controls are on the wall panel when you tap a projector.
 
 ## Projector walls
 
@@ -243,8 +275,8 @@ kinds of work apart:
   projector its part of the canvas (slice 1's source) and sets the overlap of
   the inner blend edges, equal on both sides of every seam. That is always
   right for projectors hung as that grid.
-- **Tuning** is done by eye: gamma and curve per seam, black floor per
-  projector. No start value fits every room, because projector age, ambient
+- **Tuning** is done by eye: gamma and curve per seam, black floor and colour
+  per projector. No start value fits every room, because projector age, ambient
   light and the surface differ. The **seam check** below is the route.
 
 All wall controls need the programmer role and are refused while the show is
@@ -299,7 +331,10 @@ lines between them, each with its gamma.
     than a second apart, are one step for **Undo**.
 - **Tap a projector** for its **black floor** (the output's Black lift):
   it lifts the black outside the overlaps to match the double black inside
-  them. **Open in Warp & Slices** takes you to that projector's warp.
+  them. Below it are the projector's **Gain R, G, B** and **Black offset**
+  (see [Colour](#colour)): the gain for a projector that is darker or tinted
+  next to its neighbours, the black offset for one whose black is darker
+  everywhere. **Open in Warp & Slices** takes you to that projector's warp.
 - **Geometry**: the overlap across and down (in %), **Edit layout…** (the
   wizard again, filled in: change the order, the grid, the overlap or the
   canvas) and **Remove wall**. Removing a wall keeps the outputs as they are
@@ -328,7 +363,7 @@ Fanous cannot know which seam is off, so your eye picks it.)
 | | a dark band | that seam's gamma, up |
 | | a visible edge where the overlap starts | that seam's curve |
 | Grey 0 % | seams lighter than the rest | the black floor of the projectors next to it, up, one by one until even |
-| Grey 25 %, Grey 75 %, White | one projector darker, or tinted | that projector's colour gain (not in Fanous yet: use the projector's own colour settings) |
+| Grey 25 %, Grey 75 %, White | one projector darker, or tinted | that projector's colour gain, the colour that is off: tapping the projector opens its Gain R, G, B |
 | | a colour shift only inside a seam | unlink R, G, B on that seam and tune the colour that is off |
 
 You can switch to Warp & Slices during the check, for example to fix the
@@ -451,5 +486,6 @@ is locked.
 - Not available: per-output Syphon, Syphon for canvases other than Canvas 1,
   a frame rate per canvas, 10-bit output, separate blend gamma for red, green
   and blue (a wall stores it per seam; the output does not use it yet).
-- Projector walls: no colour gain per projector yet, and the outputs of one
-  wall need the same pixel size.
+- Projector walls: the outputs of one wall need the same pixel size.
+- Colour, black lift and black offset assume a gamma-2.2 projector; there is no
+  per-output gamma for them yet.

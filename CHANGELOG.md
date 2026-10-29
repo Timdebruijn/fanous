@@ -281,6 +281,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   colour instead of making it transparent, so the picture dims as it looks at 100 %, in every blend mode (B108).
 - Syphon publishing allocates 4 times per frame on the compositor thread instead of 8: the vendored Syphon server's flip
   draw makes its render pass descriptor once instead of every frame (B109).
+- Added: per-output colour, gain R, G, B and a black offset, set by eye on the Outputs tab and on a projector wall's
+  projector tile, where the seam check's Grey 25 %, 75 % and White steps now point (M1.7). The black lift and the black
+  offset add light in linear terms: Grey 0 % looks as before, but the area outside the overlaps no longer brightens at
+  mid greys (a lift of 8 % raised 25 % grey by 20 code values, now by 2).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

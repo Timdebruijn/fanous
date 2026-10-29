@@ -232,7 +232,7 @@ test('outputs: Spread canvas gives each slice its strip of the canvas', async ({
   await expect(x).toHaveValue(await w.inputValue());
 });
 
-test('walls: the wizard makes a 1 × 2 wall at 15 %, a seam gamma drag is one undo step, Remove wall', async ({ page, engine }) => {
+test("walls: the wizard makes a 1 × 2 wall at 15 %, a seam gamma drag is one undo step, the tint hint opens a projector's colour, Remove wall", async ({ page, engine }) => {
   // the wall.seam commands this page sends (the socket of the page as loaded again with the listener in place)
   let seamCommands = 0;
   page.on('websocket', (socket) =>
@@ -299,6 +299,16 @@ test('walls: the wizard makes a 1 × 2 wall at 15 %, a seam gamma drag is one un
   expect(seamCommands).toBeGreaterThan(1);
   await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(gamma).toHaveValue('2.2');
+
+  // on Grey 25 %, "one projector darker, or tinted" opens the colour gain of the projector tapped next
+  await panel.getByRole('group', { name: 'Seam check pattern' }).getByRole('button', { name: 'Grey 25 %' }).click();
+  await panel.getByRole('button', { name: /^One projector darker, or tinted/ }).click();
+  await panel.getByRole('button', { name: 'Output 2 · r1 c2' }).click();
+  const projector = panel.getByRole('region', { name: 'Projector' });
+  await expect(projector.getByRole('heading')).toHaveText('Output 2 · r1 c2');
+  const colour = projector.getByRole('group', { name: 'Colour' });
+  await expect(colour).toHaveClass(/focus/);
+  await expect(colour.getByRole('slider', { name: 'Gain R' })).toHaveValue('100');
 
   // Remove wall ends the seam check (each output gets its own pattern back) and keeps the outputs
   await panel.getByRole('button', { name: 'Geometry' }).click();
@@ -379,6 +389,47 @@ test('walls: Cancel changes nothing; a reload, leaving the screen and End seam c
   await expect(settings.getByRole('button', { name: 'White' })).toHaveAttribute('aria-pressed', 'true');
   await panel.getByRole('button', { name: 'End seam check' }).click();
   await own();
+});
+
+test('outputs: a colour gain drag is one undo step; the black offset steps by 0.1 %', async ({ page, engine }) => {
+  // the output.set commands for red gain this page sends (the socket of the page as loaded again with the listener in place)
+  let redSets = 0;
+  page.on('websocket', (socket) =>
+    socket.on('framesent', ({ payload }) => {
+      if (typeof payload !== 'string') return;
+      const message = JSON.parse(payload) as { name?: string; args?: { path?: string } };
+      if (message.name === 'output.set' && message.args?.path === '/color/gain/0') redSets++;
+    }),
+  );
+  await page.goto(`${engine.url}/?token=${engine.token}`);
+  await addUnassignedOutput(page);
+  const colour = page.getByRole('region', { name: 'Output settings' }).getByRole('group', { name: 'Colour' });
+  const red = colour.getByRole('slider', { name: 'Gain R' });
+  await expect(red).toHaveValue('100');
+
+  // a drag sends several output.set commands (at most one per 50 ms); the engine keeps them as one undo step
+  await red.scrollIntoViewIfNeeded();
+  const box = (await red.boundingBox())!;
+  const x = (v: number) => box.x + 8 + (v / 200) * (box.width - 16);
+  await page.mouse.move(x(100), box.y + box.height / 2);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) {
+    await page.mouse.move(x(100 - i * 3), box.y + box.height / 2);
+    await page.waitForTimeout(40);
+  }
+  const dragged = Number(await red.inputValue());
+  expect(dragged).toBeLessThan(80);
+  await page.mouse.up();
+  // the last value of the drag reaches the engine: after the release the slider shows the engine's value
+  await expect(colour.getByLabel('Gain R value')).toHaveText(`${dragged.toFixed(1)} %`);
+  await expect.poll(async () => Number(await red.inputValue())).toBe(dragged);
+  expect(redSets).toBeGreaterThan(1);
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(red).toHaveValue('100');
+
+  await colour.getByRole('button', { name: 'Black offset up' }).click();
+  await expect(colour.getByLabel('Black offset value')).toHaveText('0.1 %');
+  await expect(colour.getByRole('slider', { name: 'Black offset' })).toHaveValue('0.1');
 });
 
 test('outputs: remove an output, then Undo brings it back', async ({ page }) => {

@@ -3,6 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
+  import OutputColour from './OutputColour.svelte';
   import { lockTitle } from '../lib/show';
   import { app, can, cmd, toastUndo } from '../lib/state.svelte';
   import { throttledSender } from '../lib/throttle';
@@ -10,7 +11,7 @@
   import { SEAM_STEPS, overlapHint, rc, seamLines, wallPixels, type Control, type ManualField, type SeamLine, type WallConfig } from '../lib/walls';
 
   // A projector wall (DESIGN §9.9) around a mini-map: one tile per projector, the seams as lines between them. Tap a
-  // seam for its gamma and curve, a projector for its black floor; Geometry for the overlap, Edit layout… and Remove
+  // seam for its gamma and curve, a projector for its black floor and colour; Geometry for the overlap, Edit layout… and Remove
   // wall. The seam check steps through test patterns on every projector of the wall, with what to look for and which
   // control to turn. A slider sends at most every 50 ms; the engine keeps a drag on one seam as one undo step (wall.seam's
   // coalesce key).
@@ -54,7 +55,7 @@
    * second tap lets go of it. */
   function useHint(i: number) {
     const h = step?.hints[i];
-    if (!h?.target) return;
+    if (!h) return;
     if (wallUI.hint === i) {
       wallUI.hint = null;
       return;
@@ -195,11 +196,7 @@
           <p class="caption">Step {check.step + 1} of {SEAM_STEPS.length}, on every projector of the wall: {step.shows} Look for:</p>
           <div class="hints">
             {#each step.hints as h, i (h.see)}
-              {#if h.target}
-                <button type="button" class="hint" aria-pressed={wallUI.hint === i} onclick={() => useHint(i)}><span>{h.see}</span><span class="turn">→ {h.turn}</span></button>
-              {:else}
-                <div class="hint"><span>{h.see}</span><span class="turn">→ {h.turn}</span></div>
-              {/if}
+              <button type="button" class="hint" aria-pressed={wallUI.hint === i} onclick={() => useHint(i)}><span>{h.see}</span><span class="turn">→ {h.turn}</span></button>
             {/each}
           </div>
           {#if armed}<p class="armed" role="status">Now tap {armed.target === 'seam' ? 'that seam' : 'that projector'} on the map.</p>{/if}
@@ -241,6 +238,8 @@
           <h3>{projector.name} · r{at.row} c{at.col}</h3>
           {@render slider({ label: 'Black floor', key: `${projector.id}-lift`, value: projector.blend.lift * 100, min: 0, max: 20, step: 0.1, digits: 1, unit: ' %', set: (v) => throttle.send(`lift:${projector.id}`, 'lift', (v / 100) * SCALE), focus: wallUI.focus === 'floor' })}
           <p class="caption">Lifts this projector's black outside its overlaps, to match the double black inside them. On Grey 0 %, raise it on the projectors next to a lighter seam, one by one, until even.</p>
+          <OutputColour output={projector} focus={wallUI.focus === 'colour'} />
+          <p class="caption">Colour gain: on Grey 25 %, 75 % and White, turn down the channel that is too strong on a brighter or tinted projector (or up on a darker one) until it matches its neighbours. Black offset raises this projector's black everywhere, overlaps included, for a projector whose black is darker than the others'.</p>
           {#each wall.manual.filter((m) => m.output === projector.id) as m (m.field)}
             <p class="manual"><span class="badge badge-warn">manual</span><span>{FIELDS[m.field]} was set by hand; the wall leaves it alone.</span>
               <button type="button" class="btn" disabled={!!lock} title={lock} onclick={() => cmd('wall.set', { id: wall.id, resetManual: [m] })}>Back to wall</button></p>
@@ -267,7 +266,7 @@
           </div>
         </section>
       {:else if !check}
-        <p class="caption">Tap a seam on the map for its gamma and curve, or a projector for its black floor. Seam check guides you through the patterns.</p>
+        <p class="caption">Tap a seam on the map for its gamma and curve, or a projector for its black floor and colour. Seam check guides you through the patterns.</p>
       {:else if !armed}
         <p class="caption">Tap a line above, or a seam or projector on the map.</p>
       {/if}
@@ -306,9 +305,8 @@
     display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 4px 12px; align-items: center; min-height: var(--touch); padding: 8px 12px;
     border: 1px solid var(--line); border-radius: 6px; background: var(--surface-1); color: var(--text-1); text-align: left; font-size: 13px;
   }
-  button.hint:hover { background: var(--surface-3); }
+  .hint:hover { background: var(--surface-3); }
   .hint[aria-pressed='true'] { border-color: var(--accent); }
-  div.hint { color: var(--text-2); }
   .turn { color: var(--text-2); }
   .armed { margin: 0; padding: 8px 12px; border-radius: 6px; background: var(--accent-dim); font-weight: 600; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

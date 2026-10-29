@@ -513,8 +513,9 @@ public enum ShaderSource {
         return float4(canvas.sample(linearSampler, in.uv).rgb, 1.0);
     }
 
-    // Mapped output pass (DESIGN.md §9.5): slice mesh → warp → clip; canvas × mask × opacity → blend map →
-    // intensity → dither. Slices alpha-blend over each other in order (pipeline: one, one-minus-source-alpha).
+    // Mapped output pass (DESIGN.md §9.5): slice mesh → warp → clip; canvas × mask × opacity → blend factor → colour
+    // gain → black lift and black offset in linear light → intensity → dither. Slices alpha-blend over each other in
+    // order (pipeline: one, one-minus-source-alpha).
     struct MappedUniforms {
         float2 size;      // region size in pixels (dither, patterns)
         float intensity;  // output intensity × output fixture (0 at a blackout or Master 0); × master on a pattern (the canvas carries it)
@@ -523,6 +524,7 @@ public enum ShaderSource {
         uint pattern;     // TestPattern drawn instead of the canvas (through warp and blend, no mask), 0 = canvas
         uint index;       // output number for the "output ID" pattern
         float scale;      // canvas sample factor: a held (Freeze) canvas follows the Master on the sample, not after the lift (B100)
+        float4 color;     // per-output colour: gain r, g, b; a = black offset (the code value it gives on black)
     };
 
     struct MappedVertex {
@@ -563,6 +565,20 @@ public enum ShaderSource {
         return fract(52.9829189 * fract(0.06711056 * px.x + 0.00583715 * px.y));
     }
 
+    // ponytail: projector gamma fixed at 2.2 (the edges' default); a per-output gamma if a projector measurably differs
+    constant float projectorGamma = 2.2;
+
+    // Per-output colour and the black floor (DESIGN.md §9.9): the gain multiplies the code value per channel (tuned by
+    // eye); the black lift and the black offset add light, so they are added in linear light. Both are stored as the
+    // code value they give on black, so Grey 0 % reads them as before; a mid grey brightens by the light they add, not
+    // by their code value (a lift of 0.05 used to add 0.05 at 50 % grey instead of about 0.0013).
+    static float3 output_colour(float3 c, float lift, float4 color) {
+        c *= color.rgb;
+        if (lift <= 0.0 && color.a <= 0.0) return c;
+        float3 light = powr(max(c, 0.0), projectorGamma) + powr(max(lift, 0.0), projectorGamma) + powr(max(color.a, 0.0), projectorGamma);
+        return powr(light, 1.0 / projectorGamma);
+    }
+
     fragment float4 mapped_fragment(MappedOut in [[stage_in]],
                                     constant MappedUniforms& u [[buffer(1)]],
                                     texture2d<float> canvas [[texture(0)]],
@@ -570,24 +586,22 @@ public enum ShaderSource {
                                     texture2d<float> blend [[texture(2)]],
                                     sampler linearSampler [[sampler(0)]]) {
         bool raw = (u.flags & 4u) != 0u;
+        // blend factor and black lift: none in raw (no blend, warp or mask) or without a blend map. The colour is the
+        // projector's, not the mapping's: it applies in raw too, like the output's intensity
+        float2 b = float2(1.0, 0.0);
+        if (!raw && (u.flags & 8u) == 0u) b = blend.sample(linearSampler, in.post).rg;
         if (u.pattern != 0u) {
-            // alignment: the pattern follows the warp, the blend map shows the overlaps; at the output's level like the
-            // content (Dimmer × Master, black at a blackout, Raw included), no dither
+            // alignment: the pattern follows the warp, the blend map shows the overlaps, and the colour applies (the seam
+            // check tunes the gain on Grey 25/75 % and White); at the output's level like the content (Dimmer × Master,
+            // black at a blackout, Raw included), no dither
             float3 p = test_pattern(u.pattern, u.index, in.pre, u.size);
-            if (!raw && (u.flags & 8u) == 0u) {
-                float2 b = blend.sample(linearSampler, in.post).rg;
-                p = p * b.x + b.y;
-            }
-            return float4(p * u.intensity, 1.0);
+            return float4(output_colour(p * b.x, b.y, u.color) * u.intensity, 1.0);
         }
         float3 c = canvas.sample(linearSampler, in.uv).rgb * u.scale;
         float a = u.opacity;
         if (!raw && (u.flags & 2u) != 0u) a *= mask.sample(linearSampler, in.pre).r;
-        c *= a;
-        if (!raw && (u.flags & 8u) == 0u) {
-            float2 b = blend.sample(linearSampler, in.post).rg;
-            c = c * b.x + b.y * a;
-        }
+        // on the un-premultiplied colour, then × the slice's alpha (the lift and the black offset fade with the slice)
+        c = output_colour(c * b.x, b.y, u.color) * a;
         c *= u.intensity;
         c += (ign(in.position.xy) - 0.5) / 255.0;
         return float4(c, a);
