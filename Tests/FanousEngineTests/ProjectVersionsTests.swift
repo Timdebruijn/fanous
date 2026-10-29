@@ -143,7 +143,8 @@ struct ProjectVersionsTests {
         #expect(store.historyDepth == (2, 0))
     }
 
-    /// The undo of a revert that dropped 151 would re-add the old entry over a server that took 151 meanwhile (B91).
+    /// The undo of a revert that dropped 151 would re-add the old entry over a server that took 151 meanwhile (B91). The
+    /// refusal drops the history below the revert too: it was recorded against the project the revert replaced.
     @Test func revertUndoRefusedWhenAnotherServerTookADroppedNumber() throws {
         let f = Self.make()
         defer { try? FileManager.default.removeItem(at: f.base) }
@@ -152,13 +153,50 @@ struct ProjectVersionsTests {
         store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A")]) }
         let id = try #require(try store.execute("project.snapshot", args: ["name": "Doors"], role: .programmer).get().value?["id"]?.string)
         store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(151, "X")]) }
+        _ = try store.execute("project.set", args: ["path": "/name", "value": "Tour"], role: .programmer).get()
         _ = try store.execute("project.revert", args: ["id": .string(id)], role: .programmer).get()
         #expect(store.project["syphon"]?["151"] == nil)
         // Y takes 151 as the lowest free number, then stops: the engine leaves its entry
         store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(151, "Y")]) }
-        let depth = store.historyDepth.undo
+        #expect(store.historyDepth.undo == 2)
         #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by Y/Server; undo refused")))
         #expect(store.project["syphon"]?["151"]?["app"]?.string == "Y")
+        #expect(store.historyDepth.undo == 0)
+        #expect(Self.failure(store.execute("undo", role: .programmer))?.code == "nothingToUndo")
+        #expect(store.project["name"]?.string == "Untitled")
+    }
+
+    /// The undo of a revert that added 151 is a `remove /syphon/151`, which would free the number of a server that took
+    /// 151 meanwhile (B91).
+    @Test func revertUndoRefusedWhenItWouldFreeAnotherServersNumber() throws {
+        let f = Self.make()
+        defer { try? FileManager.default.removeItem(at: f.base) }
+        let store = f.store
+        func server(_ file: Int, _ app: String) -> SyphonCatalog.Server { SyphonCatalog.Server(file: file, app: app, server: "Server") }
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(151, "X")]) }
+        let id = try #require(try store.execute("project.snapshot", args: ["name": "Doors"], role: .programmer).get().value?["id"]?.string)
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([]) }
+        _ = try store.execute("project.revert", args: ["id": .string(id)], role: .programmer).get()
+        // X runs elsewhere: the catalog drops its twin on 151; Y takes 151, then stops
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(151, "Y")]) }
+        #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by Y/Server; undo refused")))
+        #expect(store.project["syphon"]?["151"]?["app"]?.string == "Y")
+    }
+
+    /// The undo of a revert that renamed 151, with nothing changed since, puts the old name back (B91).
+    @Test func revertUndoRestoresARenamedNumber() throws {
+        let f = Self.make()
+        defer { try? FileManager.default.removeItem(at: f.base) }
+        let store = f.store
+        func server(_ file: Int, _ app: String) -> SyphonCatalog.Server { SyphonCatalog.Server(file: file, app: app, server: "Server") }
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(151, "Z")]) }
+        let id = try #require(try store.execute("project.snapshot", args: ["name": "Doors"], role: .programmer).get().value?["id"]?.string)
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(151, "X")]) }
+        _ = try store.execute("project.revert", args: ["id": .string(id)], role: .programmer).get()
+        #expect(store.project["syphon"]?["151"]?["app"]?.string == "Z")
+        let depth = store.historyDepth.undo
+        _ = try store.execute("undo", role: .programmer).get()
+        #expect(store.project["syphon"]?["151"]?["app"]?.string == "X")
         #expect(store.historyDepth.undo == depth - 1)
     }
 

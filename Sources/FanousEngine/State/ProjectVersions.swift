@@ -299,10 +299,10 @@ extension ProjectVersions {
                 name: "project.revert", role: .programmer,
                 summary: "Restore a project version (refused in show mode, also its undo and redo). The current project is saved as a version first; the show lock stays as it is.",
                 argsType: "{ id: string }",
-                replayCheck: { patch, project in
+                replayCheck: { patch, done, project in
                     if showModeOn() { throw showModeRefusal }
-                    // the revert diffs `/syphon` too: its undo or redo must not overwrite a number taken meanwhile (B91)
-                    try ProjectDocument.checkSyphonReplay(patch, on: project)
+                    // the revert diffs `/syphon` too: its undo or redo must not change a number taken meanwhile (B91)
+                    try ProjectDocument.checkSyphonReplay(patch, undoing: done, on: project)
                 }
             ) { [self] project, args in
                 guard let id = args["id"]?.string else { throw CommandError.invalidArgs("id must be a version id") }

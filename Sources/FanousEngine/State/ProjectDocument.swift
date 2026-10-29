@@ -117,26 +117,33 @@ public enum ProjectDocument {
         .object(Dictionary(servers.map { (String($0.file), ["app": .string($0.app), "server": .string($0.server)]) }, uniquingKeysWith: { a, _ in a }))
     }
 
-    /// An undo or redo must not put another app/server on a Syphon number than the one holding it now: an
-    /// `add /syphon/N` (the undo of a forget, B90, or of a revert that dropped N) or a change of one field of N (the
-    /// undo of a revert that renamed N, B91). The `historyConflict` drops the history entry.
-    public static func checkSyphonReplay(_ patch: JSONPatch, on project: JSONValue) throws {
+    /// An undo or redo must not change a Syphon number that changed since the step it undoes (B90, B91): each op under
+    /// `/syphon/N` needs the value that step left there (`done`, nil where it removed) or already the one it writes, so
+    /// it neither overwrites, renames nor frees a server that took N meanwhile. The `historyConflict` drops the entry.
+    public static func checkSyphonReplay(_ patch: JSONPatch, undoing done: JSONPatch, on project: JSONValue) throws {
+        // diff(a, b) and diff(b, a) have the same paths, so the ops line up by pointer
+        var left: [[String]: JSONValue?] = [:]
+        for operation in done.operations {
+            switch operation {
+            case .add(let p, let v), .replace(let p, let v): left[p.tokens] = v
+            case .remove(let p): left[p.tokens] = .some(nil)
+            }
+        }
         for operation in patch.operations {
-            let pointer: JSONPointer, value: JSONValue
+            let pointer: JSONPointer, value: JSONValue?
             switch operation {
             case .add(let p, let v), .replace(let p, let v): (pointer, value) = (p, v)
-            case .remove: continue
+            case .remove(let p): (pointer, value) = (p, nil)
             }
-            guard pointer.tokens.first == "syphon", (2...3).contains(pointer.tokens.count) else { continue }
-            guard let held = project[JSONPointer(tokens: Array(pointer.tokens.prefix(2)))] else { continue }
-            var restored = value
-            if pointer.tokens.count == 3 {
-                restored = held
-                try? restored.set(value, at: JSONPointer(tokens: [pointer.tokens[2]]))
+            guard pointer.tokens.first == "syphon", (2...3).contains(pointer.tokens.count), let expected = left[pointer.tokens] else { continue }
+            let now = project[pointer]
+            guard now != expected, now != value else { continue }
+            let number = pointer.tokens[1]
+            guard let held = project[JSONPointer(tokens: ["syphon", number])] else {
+                throw CommandError("historyConflict", "Syphon number \(number) is now free; undo refused")
             }
-            guard held["app"] != restored["app"] || held["server"] != restored["server"] else { continue }
-            let name = "\(held["app"]?.string ?? "")/\(held["server"]?.string ?? "")"
-            throw CommandError("historyConflict", "Syphon number \(pointer.tokens[1]) is now held by \(name); undo refused")
+            let name = SyphonCatalog.Server(file: 0, app: held["app"]?.string ?? "", server: held["server"]?.string ?? "").name
+            throw CommandError("historyConflict", "Syphon number \(number) is now held by \(name); undo refused")
         }
     }
 
@@ -426,7 +433,7 @@ public enum ProjectDocument {
                 summary: "Forget a numbered Syphon server that is not running (folder 0, 150–169), or without file every one not running: the number is free again.",
                 argsType: "{ file?: number }",
                 // an undo puts the number back with `add /syphon/N`, which would overwrite a server numbered N meanwhile (B90)
-                replayCheck: { patch, project in try checkSyphonReplay(patch, on: project) }
+                replayCheck: { patch, done, project in try checkSyphonReplay(patch, undoing: done, on: project) }
             ) { project, args in
                 let running = syphonRunning()
                 var numbers = syphonNumbers(from: project)

@@ -1637,15 +1637,18 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   switch, patch, cues, timecode). The history is not cleared; undo and redo of a
   revert entry are refused in show mode (`CommandSpec.replayCheck`, checked by
   `StateStore.step` before it pops). The check sees the patch the step would
-  apply and the current project: `syphon.forget` refuses an undo whose
-  `add /syphon/N` would overwrite another app/server on that number, and that
-  `historyConflict` drops the entry (B90); the undo of a forget without file is
-  refused as a whole when any of its numbers conflicts. A revert runs the same
-  check (`ProjectDocument.checkSyphonReplay`, B91), which also refuses a field
-  change under `/syphon/N` that would rename the server holding N: the undo or
-  redo of a revert that renamed a held number is refused, even when nothing
-  took it meanwhile (the history keeps no name to tell the two apart); the
-  "Before revert" version still restores it. `live.versions` `{lastAutomatic, serial}`
+  apply, the patch that made the state it undoes (`HistoryEntry.forward`) and
+  the current project. `syphon.forget` and `project.revert` both run
+  `ProjectDocument.checkSyphonReplay` (B90, B91): every op under `/syphon/N`
+  (the entry, or one field of it) needs the value the undone step left there
+  (nothing, where it removed) or already the value it writes; otherwise the
+  number changed meanwhile and the step is refused with `historyConflict`
+  ("Syphon number 151 is now held by App/Server", or "is now free"), so an
+  undo or redo never overwrites, renames or frees a server that took the
+  number. Only the fields the step changed are compared (B104). The conflict
+  drops the entry; for a revert it drops the whole stack, whose entries were
+  recorded against the project the revert replaced. The undo of a forget
+  without file is refused as a whole when any of its numbers conflicts. `live.versions` `{lastAutomatic, serial}`
   feeds the status bar and tells the System screen to re-list. OSC
   `/fanous/project/load s` resolves the newest named version with that name
   (case-insensitive), else a version id, on the versions queue, ignores a
