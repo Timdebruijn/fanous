@@ -301,6 +301,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   an earlier publish was still notifying its clients. Every driver's stop now waits for its last tick, the render queue's
   completions are waited for after that, and only then is the server stopped; a thread or completion that does not finish
   within 1 s is logged and the server is left to the process (B113).
+- Fixed: editing an output while it was frozen (Output Control = Freeze) made it, and its preview, hold a later frame.
+  A frozen output now keeps the frame it held across an edit (B111).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

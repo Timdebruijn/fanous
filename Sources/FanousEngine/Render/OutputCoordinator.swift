@@ -235,7 +235,7 @@ public final class OutputCoordinator {
                     logger.error("output compile failed", metadata: ["output": "\(id)", "error": "\(error)"])
                 }
             }
-            let set = OutputSet(plans: plans)
+            let set = OutputSet(plans: plans, previous: bound[displayID]?.set.holdSource)  // a frozen output keeps its hold (B111)
             if displayID == newMaster {
                 bound[displayID]?.secondary?.stop()
                 compositor.outputSet = set
