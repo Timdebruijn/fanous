@@ -41,6 +41,40 @@ struct OutputCompileCacheTests {
         #expect(resized.blendMap !== first.blendMap && resized.warpField !== first.warpField && resized.slices[0].mask !== first.slices[0].mask)
     }
 
+    /// A key carries everything its bytes depend on: with the base output's plan alive, each variant compiled through
+    /// the warm cache has the bytes a fresh compiler gives it, so a key that drops a field fails here.
+    @Test func aCacheHitHasTheBytesOfAFreshCompile() throws {
+        let device = try MetalContext().device
+        let warm = try OutputCompiler(device: device)
+        let base = Self.output(1)
+        let basePlan = try warm.compile(base, index: 1, drawable: (320, 180))
+        func bytes(_ texture: MTLTexture?) -> [UInt8] {
+            guard let texture else { return [] }
+            let bpp = texture.pixelFormat == .r8Unorm ? 1 : 8
+            var out = [UInt8](repeating: 0, count: texture.width * texture.height * bpp)
+            texture.getBytes(&out, bytesPerRow: texture.width * bpp, from: MTLRegionMake2D(0, 0, texture.width, texture.height), mipmapLevel: 0)
+            return out
+        }
+        let edits: [(String, (inout OutputConfig) -> Void)] = [
+            ("mask feather", { $0.slices[0].mask?.feather = 3 }),
+            ("mask path", { $0.slices[0].mask?.path[2] = MapPoint(0.5, 0.7) }),
+            ("corner pin", { $0.warp.cornerPin[1] = MapPoint(0.9, 0.05) }),
+            ("gammaRGB", { $0.blend.right.gammaRGB = [1.8, 2.2, 2.6] }),
+            ("lift feather", { $0.blend.liftFeather = 12 }),
+            ("second axis", { $0.blend.top = BlendEdge(overlap: 20) }),
+        ]
+        for (name, edit) in edits {
+            var variant = base
+            edit(&variant)
+            let cached = try warm.compile(variant, index: 1, drawable: (320, 180))
+            let fresh = try OutputCompiler(device: device).compile(variant, index: 1, drawable: (320, 180))
+            #expect(bytes(cached.blendMap) == bytes(fresh.blendMap), "blend map, \(name)")
+            #expect(bytes(cached.warpField) == bytes(fresh.warpField), "warp field, \(name)")
+            #expect(bytes(cached.slices[0].mask) == bytes(fresh.slices[0].mask), "mask, \(name)")
+        }
+        withExtendedLifetime(basePlan) {}
+    }
+
     /// The coordinator compiles every output of a display while the display's current set still holds its plans.
     @Test func anEditOnOneOutputLeavesTheOthersAlone() throws {
         let compiler = try OutputCompiler(device: MetalContext().device)
