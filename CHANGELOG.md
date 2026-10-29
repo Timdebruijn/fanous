@@ -233,6 +233,16 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   switches, and the unused `run --ring` and `dmx --hz/--host/--seed` flags (repo audit 2026-10-29).
 - Removed: `fanous-bench syphon`, the Phase 3 Syphon acceptance probe; `SyphonTests` cover SyphonOutput → SyphonInput
   (repo audit 2026-10-29).
+- Fixed: a thumbnail or DMX `sub` reply could reach the client before the engine had subscribed it (thumbnails) or
+  reported the DMX monitor active (DMX), so a test that checked the subscription right after the reply failed under load
+  (B94).
+- Fixed: a role password in `settings.json` hand-edited to 0, negative or more than 10 000 000 PBKDF2 `iterations` crashed
+  the engine at the next login of that role, or stalled it; such a record now makes `passwords` unreadable: logged, a
+  running engine keeps the passwords it has, and the next start leaves every role open until it is fixed (B93).
+- Added: `/metrics` `preview.jpegOut`, `preview.jpegFailed` and `preview.jpegDropped`: JPEG preview frames made, encodes
+  that returned nil (logged once per streamer as "preview JPEG encode failed") and JPEG sends a connection refused; the
+  B86 e2e puts all three into its CI warning when a viewer refused to JPEG gets no frame, so the next occurrence names
+  the encoder, the send queue or the network (B99).
 - Fixed: a preview refused H.264 at the encoder limit froze on its last JPEG frame ("H.264 encoders busy") when the engine
   moved it to a new stream whose encoder was slow or failed. A refused preview now re-subscribes as JPEG after 5 s without
   a frame and stays on JPEG until it subscribes again; a healthy H.264 preview is never demoted after its decoder is
