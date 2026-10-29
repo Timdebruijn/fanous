@@ -262,8 +262,7 @@ struct ShowControlTests {
     /// Enter writes the state (with the boot and write time), leave removes it; a run that ends without leaving keeps
     /// it for the next start.
     @Test func showModeStateSurvivesOnlyAnUncleanEnd() throws {
-        let directory = FileManager.default.temporaryDirectory.appending(path: "fanous-show-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let directory = try tempDir("fanous-show")
         let url = directory.appending(path: "show-state.json")
         #expect(ShowModeState.load(from: url) == nil)  // normal start
 
@@ -311,8 +310,7 @@ struct ShowControlTests {
     /// Engine.stop: a fresh restart marker keeps show mode on disk (marked as a restart); no marker, an old one, or
     /// show mode off is a clean stop. Nothing enters after the stop began.
     @Test func showModeStopDecision() throws {
-        let directory = FileManager.default.temporaryDirectory.appending(path: "fanous-show-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let directory = try tempDir("fanous-show")
         let url = directory.appending(path: "show-state.json"), marker = directory.appending(path: "restart-pending")
 
         #expect(!ShowModeState.takeRestartMarker(at: marker))  // no marker: Stop Engine, logout, bootout
