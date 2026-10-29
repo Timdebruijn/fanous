@@ -8,7 +8,6 @@ import FanousCore
 import Logging
 import Metal
 import QuartzCore
-import Synchronization
 
 /// Where an output stands right now, for `live.outputs`.
 public struct OutputStatus: Sendable, Equatable {
@@ -59,50 +58,21 @@ public enum OutputBinding {
 
 /// Presents another display from the latest completed canvas (DESIGN.md §4.5), paced like the drawable loop.
 final class SecondaryDriver: @unchecked Sendable {
-    private let running = Atomic<Bool>(true)
-    private var thread: Thread?
+    private var thread: PacedThread?
     nonisolated(unsafe) var set: OutputSet
-    private let uniforms: MTLBuffer
 
     init(layer: CAMetalLayer, hz: Double, compositor: Compositor, set: OutputSet, uniforms: MTLBuffer) {
         self.set = set
-        self.uniforms = uniforms
         layer.maximumDrawableCount = 3  // see DrawableLoopDriver: two drawables block periodically against the display's clock
         layer.displaySyncEnabled = true
-        let thread = Thread { [self] in
-            var timebase = mach_timebase_info()
-            mach_timebase_info(&timebase)
-            let ticksPerSecond = 1e9 * Double(timebase.denom) / Double(timebase.numer)
-            let period = UInt64(ticksPerSecond / max(1, hz))
-            var next = mach_absolute_time() + period
-            while running.load(ordering: .relaxed) {
-                mach_wait_until(next)
-                autoreleasepool {
-                    guard let drawable = layer.nextDrawable() else { return }
-                    compositor.present(self.set, to: drawable, uniforms: uniforms)
-                }
-                next += period
-                let now = mach_absolute_time()
-                if next < now { next = now + period }
-            }
+        thread = PacedThread(name: "org.fanous.output.secondary", hz: max(1, hz)) { [self] _ in
+            guard let drawable = layer.nextDrawable() else { return }
+            compositor.present(self.set, to: drawable, uniforms: uniforms)
         }
-        thread.name = "org.fanous.output.secondary"
-        thread.qualityOfService = .userInteractive
-        thread.start()
-        self.thread = thread
     }
 
     /// False when the thread did not finish within the join timeout.
-    @discardableResult func stop() -> Bool {
-        running.store(false, ordering: .relaxed)
-        return thread.map { Self.join($0) } ?? true
-    }
-
-    @discardableResult static func join(_ thread: Thread) -> Bool {
-        let deadline = Date().addingTimeInterval(1)
-        while !thread.isFinished && Date() < deadline { usleep(2000) }
-        return thread.isFinished
-    }
+    @discardableResult func stop() -> Bool { thread?.stop() ?? true }
 }
 
 /// Binds project outputs to displays, owns their windows and drivers, elects the clock master and survives
