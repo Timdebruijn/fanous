@@ -276,6 +276,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: below a Grand Master of 100 % a lower layer showed through an opaque layer above it (green over red at 50 % gave
   (63,128,0) instead of (0,128,0)), on the canvas preview, Syphon, CITP and every output. The Master now dims each layer's
   colour instead of making it transparent, so the picture dims as it looks at 100 %, in every blend mode (B108).
+- Syphon publishing allocates 4 times per frame on the compositor thread instead of 8: the vendored Syphon server's flip
+  draw makes its render pass descriptor once instead of every frame (B109).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
