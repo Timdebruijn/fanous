@@ -236,6 +236,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: a thumbnail or DMX `sub` reply could reach the client before the engine had subscribed it (thumbnails) or
   reported the DMX monitor active (DMX), so a test that checked the subscription right after the reply failed under load
   (B94).
+- Fixed: a role password in `settings.json` hand-edited to 0, negative or more than 10 000 000 PBKDF2 `iterations` crashed
+  the engine at the next login of that role, or stalled it; such a record now makes `passwords` unreadable: logged, a
+  running engine keeps the passwords it has, and the next start leaves every role open until it is fixed (B93).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
