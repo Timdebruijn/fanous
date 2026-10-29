@@ -59,6 +59,11 @@ struct GeneratorTests {
         try GoldenTests.writePNG(rgba, width: width, height: height, to: URL(fileURLWithPath: dir).appending(path: "\(name).png"))
     }
 
+    /// Any colour byte above `threshold` (alpha is skipped: it is always 255).
+    static func lit(_ bgra: [UInt8], above threshold: UInt8 = 40) -> Bool {
+        stride(from: 0, to: bgra.count, by: 4).contains { bgra[$0] > threshold || bgra[$0 + 1] > threshold || bgra[$0 + 2] > threshold }
+    }
+
     static func pixel(_ bgra: [UInt8], _ x: Int, _ y: Int) -> (r: Int, g: Int, b: Int) {
         let i = (y * width + x) * 4
         return (Int(bgra[i + 2]), Int(bgra[i + 1]), Int(bgra[i]))
@@ -69,7 +74,7 @@ struct GeneratorTests {
         for (file, name) in Generators.names.sorted(by: { $0.key < $1.key }) {
             let generator = try #require(GeneratorSource(context: context, file: file, width: Self.width, height: Self.height))
             let (_, image) = try Self.render(LayerPlayback(key: MediaKey(folder: 0, file: file), live: generator), context: context, ticks: 2)
-            #expect(image.contains { $0 > 40 }, "\(name) drew nothing")
+            #expect(Self.lit(image), "\(name) drew nothing")
             try Self.dump(image, "generator-\(file)-\(name.lowercased().replacingOccurrences(of: " ", with: "-"))")
         }
         // solid colour is white × the layer tint
@@ -88,7 +93,7 @@ struct GeneratorTests {
         let context = try MetalContext()
         for pattern in TestPattern.allCases where pattern != .off {
             let (_, image) = try Self.render(nil, pattern: pattern.rawValue, context: context)
-            #expect(image.contains { $0 > 40 }, "\(pattern) drew nothing")
+            #expect(Self.lit(image) == (pattern != .grey0), "\(pattern): lit \(Self.lit(image))")
             try Self.dump(image, "pattern-\(pattern.rawValue)-\(pattern)")
         }
         // output ID: a large "1" through the centre of output 1, on its colour
