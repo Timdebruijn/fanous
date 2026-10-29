@@ -155,6 +155,7 @@ func mallocCounterCountsOnlyTheMeasuredThread() async throws {
     final class Helper: Sendable {
         let thread = Atomic<UInt>(0)
         let ready = DispatchSemaphore(value: 0), go = DispatchSemaphore(value: 0), done = DispatchSemaphore(value: 0)
+        let closed = DispatchSemaphore(value: 0)  // the window is closed: the helper may free and exit
     }
     let helper = Helper()
     Thread.detachNewThread {
@@ -168,6 +169,7 @@ func mallocCounterCountsOnlyTheMeasuredThread() async throws {
             i += 1
         }
         helper.done.signal()
+        helper.closed.wait()
         i = 0
         while i < 100 {
             free(blocks[i])
@@ -175,7 +177,10 @@ func mallocCounterCountsOnlyTheMeasuredThread() async throws {
         }
         blocks.deallocate()
     }
-    let helpers = try { () throws -> Int in  // synchronous: the semaphore waits are not allowed in an async context
+    // The semaphore waits are `noasync` (warned in an async context); the synchronous closure hides that diagnostic,
+    // and the waits still block this pool thread. No deadlock: every signal comes from the helper, a `Thread` off the
+    // pool.
+    let helpers = try { () throws -> Int in
         helper.ready.wait()
         MallocCounter.start(thread: try #require(pthread_t(bitPattern: helper.thread.load(ordering: .acquiring))))
         helper.go.signal()
@@ -185,6 +190,7 @@ func mallocCounterCountsOnlyTheMeasuredThread() async throws {
             i += 1
         }
         helper.done.wait()
+        defer { helper.closed.signal() }
         return MallocCounter.stop()
     }()
     i = 0

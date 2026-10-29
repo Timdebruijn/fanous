@@ -20,8 +20,8 @@ enum Benchmark {
         var textureMisses: Int
         var cpuP50: Double, cpuP99: Double, cpuMax: Double
         var gpuP50: Double, gpuP99: Double, gpuMax: Double
-        /// Allocations on the compositor thread over the window (§4.6, `MallocCounter`); nil: no `malloc_logger`, or the
-        /// warm-up never ticked.
+        /// Allocations on the compositor thread over the window (§4.6, `MallocCounter`); nil: no `malloc_logger`, or
+        /// the warm-up never ticked.
         var compositorMallocs: Int?
         /// `compositorMallocs` per frame, "n/a" when nil.
         var mallocsPerTick: String {

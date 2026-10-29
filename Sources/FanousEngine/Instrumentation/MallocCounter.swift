@@ -9,8 +9,10 @@ import Synchronization
 /// rule is about the compositor thread; `malloc_zone_statistics` is process-wide, so other threads' (decoders, I/O,
 /// other test suites) allocations and frees land in the same window. The hook sees every malloc, calloc, valloc and
 /// realloc of every thread and counts those of the measured thread (captured before the hook goes in); frees are not
-/// counted. The hook's state is atomic, so the measured thread and the one that starts and stops the window may differ
-/// (the bench counts the compositor thread from the main thread). A logger already installed is chained and put back afterwards; windows are serialised.
+/// counted. The measured thread and the one that starts and stops the window may differ (the bench counts the
+/// compositor thread from the main thread). The count is exact when the caller synchronises with the measured thread
+/// around the window (the tests); otherwise allocations racing `start`/`stop` can be missed or counted, ±a few out of
+/// thousands in the bench. A logger already installed is chained and put back afterwards; windows are serialised.
 /// `malloc_logger` is exported by libsystem_malloc but declared only in its private headers, hence `dlsym`.
 /// Debug builds allocate where optimised ones do not: unspecialised generics (`Array`'s read accessor,
 /// `IndexingIterator`) put their coroutine frames on the heap, so a debug compositor tick makes 137 (Sync off) / 201
