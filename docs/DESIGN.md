@@ -399,7 +399,11 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
 - Uniforms live in a per-frame ring of `MTLBuffer`s (3 × max layers); argument
   tables are filled by offset, never by creating objects.
 - Acceptance test (Phase 2): malloc count on the compositor thread over 1 000
-  steady-state frames is **0**, measured with `malloc_zone_statistics`.
+  steady-state frames is **0** (`scripts/check-mallocs.sh`).
+  Since B89 the tests count the ticking thread's allocations exactly with a
+  `malloc_logger` hook (`MallocCounter`), in an optimised build; a debug build
+  allocates for unspecialised generics, and the process-wide figure is printed
+  for information only.
 - Unified memory budget: engine warns at 60 % of physical memory, refuses to
   activate a layer that would exceed 75 %. Read-ahead depth is the first knob
   reduced when a 16 GB machine is detected.
@@ -538,7 +542,7 @@ can never disagree). `[OPEN-9]` exact bands and the speed/scale upper limits.
 |---|---|---|---|---|
 | 1–2 | Master intensity | 16 | 65535 | multiplies all canvases |
 | 3 | Control | 8 | 0 | 0–63 normal · 64–127 Freeze all · 128–191 Blackout · 192–255 reserved |
-| 4 | Test pattern | 8 | 0 | 0–15 off · 16–31 Grid · 32–47 Colour bars · 48–63 Blend zones · 64–79 Output ID · 80–95 Crosshair/alignment · 96–111 Grey steps · 112–127 Checkerboard · 128–255 reserved — overrides every output |
+| 4 | Test pattern | 8 | 0 | 0–15 off · 16–31 Grid · 32–47 Colour bars · 48–63 Blend zones · 64–79 Output ID · 80–95 Crosshair/alignment · 96–111 Grey steps · 112–127 Checkerboard · 128–143 Grey 0 % · 144–159 Grey 25 % · 160–175 Grey 75 % · 176–191 White (seam check, §9.9) · 192–255 reserved — overrides every output |
 | 5–6 | Master speed | 16 | 32768 | multiplies layer speed (same mapping as layer speed) |
 | 7–8 | Reserved | — | 0 | |
 

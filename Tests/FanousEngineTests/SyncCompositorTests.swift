@@ -224,30 +224,39 @@ struct SyncCompositorTests {
     }
 
     /// The compositor's CPU time per idle tick with 32 file layers, Sync off and all masters (printed), and no
-    /// allocation in steady state (§4.6).
-    @Test func printMasterSlotCost() async throws {
+    /// allocation on the ticking thread in steady state (§4.6), in an optimised build.
+    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    func printMasterSlotCost() async throws {
+        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
         for role in [LayerSync.off, .master(group: 1)] {
             let rig = try await Rig(Array(repeating: role, count: SyncPacket.maxLayers))
             rig.tick(120)
-            // `blocks_in_use` is process-wide and the other suites of a parallel run allocate and free too, so the
-            // smallest delta of the windows within 10 s counts. Limitation: memory another suite frees in a window
-            // (thousands of blocks at times) can hide allocations of the tick, so a pass here is not proof of §4.6 (B89)
-            var delta = Int.max
-            _ = await waitUntil(every: .zero) {
-                var before = malloc_statistics_t()
-                malloc_zone_statistics(nil, &before)
+            // Counted on this thread only (B89); the process-wide `blocks_in_use` delta is printed for information: in
+            // a parallel run other suites allocate and free in the same window. The rule holds for the optimised build:
+            // a debug tick allocates for unspecialised generics (see `MallocCounter`), so a debug run prints the count
+            // and `scripts/check-mallocs.sh` checks it. One malloc of our own in the window is the canary: a hook that
+            // sees nothing reads 0, not 1.
+            let canary = UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: 1)
+            defer { canary.deallocate() }
+            var before = malloc_statistics_t()
+            malloc_zone_statistics(nil, &before)
+            let allocations = MallocCounter.count {
                 rig.tick(1200)
-                var after = malloc_statistics_t()
-                malloc_zone_statistics(nil, &after)
-                delta = min(delta, Int(after.blocks_in_use) - Int(before.blocks_in_use))
-                return delta <= 0
+                canary.pointee = malloc(16)
             }
+            var after = malloc_statistics_t()
+            malloc_zone_statistics(nil, &after)
+            free(canary.pointee)
             let summary = rig.metrics.summary(seconds: 1e9, now: 1e9)
-            #expect(delta <= 0, "\(role): \(delta) blocks allocated while ticking")
+            #if !DEBUG
+                #expect(allocations == 1, "\(role): \(allocations - 1) allocations on the ticking thread + the canary")
+            #endif
             print(
                 String(
-                    format: "sync %@ × 32: cpu p50 %.1f µs  p99 %.1f µs  malloc Δ %d blocks", "\(role)",
-                    summary.cpuP50 * 1000, summary.cpuP99 * 1000, delta))
+                    format: "sync %@ × 32: cpu p50 %.1f µs  p99 %.1f µs  mallocs on the ticking thread %d (+ 1 canary)  "
+                        + "process-wide Δ %d blocks",
+                    "\(role)", summary.cpuP50 * 1000, summary.cpuP99 * 1000, allocations - 1,
+                    Int(after.blocks_in_use) - Int(before.blocks_in_use)))
         }
     }
 }

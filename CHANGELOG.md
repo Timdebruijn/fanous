@@ -165,6 +165,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   poll with a deadline or probe the listener first, so `scripts/test.sh` stays green under load (B67).
 - Syphon numbers (folder 0, 150–169) are kept in the project (`syphon`), so they survive an engine restart; a server not
   seen since the start is listed greyed (`gone`), and `syphon.forget` (Media screen **Forget**) frees a number (B69).
+- The §4.6 zero-malloc test counts only the compositor thread's allocations (a `malloc_logger` hook), not the process (B89).
 - Fixed: removing a canvas ended the preview of a viewer that watched it only as a fallback (an output or layer at the
   encoder limit); it now keeps its own target when an encoder or another fallback is free, and an encoder the removal
   frees goes to a waiting viewer (B88).
@@ -194,6 +195,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   600 px/s). Moves go out at most ten times a second, taps in between added up; nudges of the same point or group
   less than a second apart are one undo step. Tab / Shift-Tab step through the points in the mapper, Esc lets go; the
   nudge pad's long press also works outside remote mode.
+- Seam-check test patterns (M1.5, DESIGN §9.9): Grey 0 %, Grey 25 %, Grey 75 % and White, flat fields at that output
+  signal level (Blend check is the 50 % grey), on test-pattern channel 4 of the Master and Output fixtures at 128, 144, 160
+  and 176 (192–255 stays reserved), in the GDTF and the channel map, and as buttons on the Outputs tab. They follow the warp
+  and blend map like the other patterns; they are not layer content in folder 0 (Solid colour covers a flat field).
 - Mapping, projector-wall wizard and wall panel (M1.2, DESIGN §9.9): **New projector wall** on the Outputs tab (tap
   the projectors in order while each shows its Output ID, pick a grid that fits the count, overlap in % with a yellow
   hint below 10 and above 25, use a canvas or make one that fits with its size shown first; Cancel changes nothing).
