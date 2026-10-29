@@ -9,10 +9,6 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## 1.0.0-rc.1 — unreleased (Phase 8, 2026-10-24)
 
-- Design: cameras, capture cards and screens as folder 0 files 1–32 (DESIGN §8.2.1, B73): capture cards first-class
-  (UVC and driver-backed in-tree, SDK-only cards as plugins later), AVFoundation `2vuy`/`420v`/`BGRA` and
-  ScreenCaptureKit `BGRA` as `LiveTextureSource`s, one catalog with Syphon, camera and
-  screen permissions with a readiness item (R18). Not built yet.
 - Renamed Lanthorn → **Fanous** (2026-10-25; name collisions, `docs/RELEASE.md` §7). Existing machine
   state moves once from `~/Library/Application Support/Lanthorn` and `~/Library/Logs/Lanthorn`.
 - App icon and mark (a fanous lantern, `assets/`); UI fonts Atkinson Hyperlegible Next and Mono
@@ -315,6 +311,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   are cached by their settings and size, so a slider drag on one output no longer rebuilds every other output's blend map
   each time, and the output previews keep theirs too. On a 2×2 wall of 1920×1080 outputs, an overlap edit compiles in
   13 ms instead of 51. The picture is unchanged.
+- Design: cameras, capture cards and screens as folder 0 files 1–32 (DESIGN §8.2.1, B73): capture cards first-class
+  (UVC and driver-backed in-tree, SDK-only cards in-tree or as plugins after a licence check), AVFoundation
+  `2vuy`/`yuvs`/`420v`/`BGRA` and ScreenCaptureKit `BGRA` as `LiveTextureSource`s, one catalog with Syphon, camera and
+  screen permissions with a readiness item (R18).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
