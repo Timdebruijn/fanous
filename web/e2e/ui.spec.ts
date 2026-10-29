@@ -240,6 +240,52 @@ test('outputs: remove an output, then Undo brings it back', async ({ page }) => 
   await expect(page.getByRole('button', { name: /^Output 1\b/ })).toBeVisible();
 });
 
+/** Outputs › Warp & Slices with Remote on and the first corner of a new output selected; returns the remote panel. */
+async function remoteOnFirstCorner(page: Page) {
+  await addUnassignedOutput(page);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  await page.getByRole('button', { name: 'Remote', exact: true }).click();
+  const remote = page.getByRole('region', { name: 'Remote' });
+  await remote.getByRole('button', { name: /^Next point/ }).click();
+  await expect(remote.getByText('corner top-left')).toBeVisible();
+  return remote;
+}
+
+test('outputs: remote mode on a phone steps to the next corner and nudges it; one Undo takes the burst back', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const remote = await remoteOnFirstCorner(page);
+  await remote.getByRole('button', { name: /^Next point/ }).click();
+  await expect(remote.getByText('corner top-right')).toBeVisible();
+
+  // two quick taps: the first goes out at once, the second ~100 ms later as its own output.set, and the engine keeps
+  // them as one undo step
+  const y = page.getByLabel('Point y in pixels');
+  const down = remote.getByRole('button', { name: 'Down 1 px' });
+  await down.click();
+  await down.click();
+  await expect(y).toHaveValue('2');
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(y).toHaveValue('0');
+});
+
+test('outputs: remote mode, holding an arrow moves 0.25 px and a slow trackpad drag 1 px per 4 CSS px', async ({ page }) => {
+  const remote = await remoteOnFirstCorner(page);
+  const box = (await remote.getByRole('button', { name: 'Down 1 px' }).boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(600);
+  await page.mouse.up();
+  await expect(remote.getByText('x 0 · y 0.25 px')).toBeVisible();
+
+  // 4 CSS px per move is below 600 px/s however fast the moves come (an interval counts as 8 ms at least)
+  const pad = (await remote.getByText(/^Trackpad:/).boundingBox())!;
+  await page.mouse.move(pad.x + 10, pad.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 20; i++) await page.mouse.move(pad.x + 10 + 4 * i, pad.y);
+  await page.mouse.up();
+  await expect(remote.getByText('x 20 · y 0.25 px')).toBeVisible();
+});
+
 test('canvases: add a canvas, put a layer on it, remove it', async ({ page }) => {
   await openScreen(page, 'Outputs');
   await page.getByRole('button', { name: 'Canvases' }).click();
