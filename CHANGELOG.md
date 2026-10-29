@@ -273,6 +273,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - The compositor no longer registers a completion handler per tick: later ticks poll the committed command buffers and
   book GPU time, late flags, `completed` and GPU errors, so the minimum with GPU work drops from 7 to 4 allocations per
   tick (the 4 inside Metal). GPU numbers in `/metrics` arrive a few frames later (B105).
+- Fixed: the Outputs screen preview of a frozen output (Output Control = Freeze) kept moving while the projector held.
+  It now holds too, at the Grand Master level the output shows, and goes live again when Freeze is released. An output on
+  a secondary display or on no display holds from the preview's own next frame, which can be a few frames later (B107).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

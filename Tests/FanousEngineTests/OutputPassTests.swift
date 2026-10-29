@@ -409,6 +409,42 @@ struct OutputPassTests {
         #expect(near(rig.tick(.freeze, master: 1, layer: 0), 200), "held at 50 %, Master 100 %")
     }
 
+    /// B107: the preview of a frozen output holds with it: the projector's held frame for an output on the clock-master
+    /// display (also for a viewer that arrives after Freeze engaged), a copy of its own otherwise (a secondary display,
+    /// an unbound output). It follows the Master like the output and goes live when Freeze is released.
+    @Test func thePreviewOfAFrozenOutputHolds() async throws {
+        for shared in [true, false] {
+            let rig = try Rig(OutputConfig(id: 1), value: 200)
+            let streamer = try PreviewStreamer(
+                context: rig.context, width: 160, height: 90, fps: 5, canvasFPS: 5, parameters: rig.parameters, logger: Logger(label: "output-test"))
+            streamer.outputSet = OutputSet(plans: [try OutputCompiler(device: rig.context.device).compile(OutputConfig(id: 1), index: 1, drawable: (160, 90))])
+            streamer.externalJPEGWanted = { true }  // a JPEG of every tap (5 fps canvas, 1 s apart)
+            func watch() {
+                rig.compositor.previewTap = { [unowned compositor = rig.compositor] canvas, buffer, target in
+                    streamer.tap(canvas: canvas, commandBuffer: buffer, target: target, live: shared ? compositor.outputSet : nil)
+                }
+            }
+            func preview(_ control: OutputControl, master: Float, layer: Float) async throws -> Int {
+                let made = streamer.jpegOut.load(ordering: .relaxed)
+                _ = rig.tick(control, master: master, layer: layer)
+                #expect(await waitUntil { streamer.jpegOut.load(ordering: .relaxed) > made })
+                let (jpeg, width, height) = try #require(streamer.latestJPEG.withLock { $0 })
+                return try ThumbnailStreamerTests.brightest(.init(jpeg: jpeg, width: width, height: height))
+            }
+            func near(_ value: Int, _ expected: Int) -> Bool { abs(value - expected) <= 8 }  // JPEG
+            if shared {
+                _ = rig.tick(.freeze, master: 1, layer: 1)  // the projector holds a 200 frame before anyone watches
+                watch()
+            } else {
+                watch()
+                #expect(near(try await preview(.freeze, master: 1, layer: 1), 200))
+            }
+            #expect(near(try await preview(.freeze, master: 1, layer: 0), 200), "shared \(shared): the held frame, not the dark canvas")
+            #expect(near(try await preview(.freeze, master: 0.5, layer: 0), 100), "shared \(shared): frozen at 100 %, Master 50 %")
+            #expect(try await preview(.normal, master: 1, layer: 0) <= 8, "shared \(shared): released, live again")
+        }
+    }
+
     /// The black lift is the projector's floor: on live content it stays while the Master moves and is 0 at Master 0 or
     /// a Blackout. A frozen output rescales its canvas, not the lift (it read 4 × the lift after Freeze at 25 %).
     @Test func theBlackLiftStaysWhileTheMasterMoves() throws {
