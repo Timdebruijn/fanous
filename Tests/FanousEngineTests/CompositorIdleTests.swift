@@ -251,6 +251,37 @@ struct CompositorIdleTests {
         #expect((generator.texture.width, generator.texture.height) == (640, 360))
     }
 
+    /// B112: after a canvas change a generator draws into its new texture, not the one its render pass was made for.
+    /// Colour bars (102) draw only when made and resized, so they are compared byte for byte with a fresh generator at
+    /// the new size: with the re-point left out, the never-drawn texture still read as lit.
+    @Test func aStaticGeneratorIsDrawnAgainAtTheNewCanvasSize() throws {
+        let context = try MetalContext()
+        let generator = try #require(GeneratorSource(context: context, file: 102, width: Self.width, height: Self.height))
+        let rig = try Rig(playback: LayerPlayback(key: MediaKey(folder: 0, file: 102), live: generator), idleWork: false, offscreen: false)
+        rig.tick(2)
+        try rig.compositor.reconfigure(width: 320, height: 240, fps: 25)
+        rig.tick(1, from: 2)
+        let fresh = try #require(GeneratorSource(context: context, file: 102, width: 320, height: 240))
+        #expect(generator.encodeCount == 2, "the creation draw and the one at the new size")
+        #expect(try Self.bytes(generator.texture, context) == Self.bytes(fresh.texture, context))
+    }
+
+    /// The pixels of a `.private` `bgra8Unorm` texture (blocks until the GPU is done).
+    static func bytes(_ texture: MTLTexture, _ context: MetalContext) throws -> [UInt8] {
+        let bytesPerRow = texture.width * 4
+        let buffer = try #require(context.device.makeBuffer(length: bytesPerRow * texture.height, options: .storageModeShared))
+        let commandBuffer = try #require(context.queue.makeCommandBuffer())
+        let blit = try #require(commandBuffer.makeBlitCommandEncoder())
+        blit.copy(
+            from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+            sourceSize: MTLSize(width: texture.width, height: texture.height, depth: 1), to: buffer, destinationOffset: 0,
+            destinationBytesPerRow: bytesPerRow, destinationBytesPerImage: bytesPerRow * texture.height)
+        blit.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        return Array(UnsafeBufferPointer(start: buffer.contents().assumingMemoryBound(to: UInt8.self), count: buffer.length))
+    }
+
     /// Multiple canvases: a layer on canvas 2 is drawn there and not on canvas 1; an output slice takes its picture from
     /// the canvas it names, and a slice on a canvas that does not render stays black instead of failing.
     @Test func aLayerRendersIntoItsCanvasAndSlicesSampleTheirCanvas() throws {

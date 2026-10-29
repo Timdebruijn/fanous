@@ -73,7 +73,7 @@ public final class GeneratorSource: LiveTextureSource, @unchecked Sendable {
     private(set) var texture: MTLTexture
     private let context: MetalContext
     /// Made once (B112): made per draw, the descriptor added 4 allocations on the compositor thread and the label 1.
-    /// The label is an `NSString`: a Swift `String` is bridged, and allocates, on every assignment to `encoder.label`.
+    /// The label is an `NSString`: a small (≤15-byte) Swift `String` is bridged, and allocates, on every assignment.
     private let pass = MTLRenderPassDescriptor()
     private let label: NSString
     public var latestTexture: MTLTexture? { texture }
