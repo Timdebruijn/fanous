@@ -95,6 +95,7 @@ static NSString * const kSyphonMetalShaderSource =
 @implementation SyphonServerRendererMetal
 {
     id<MTLRenderPipelineState> _pipelineState;
+    MTLRenderPassDescriptor *_renderPassDescriptor; // Fanous: made once in init, only its texture changes per frame
 }
 
 - (nonnull instancetype)initWithDevice:(id<MTLDevice>)device colorPixelFormat:(MTLPixelFormat)colorPixelFormat
@@ -124,6 +125,12 @@ static NSString * const kSyphonMetalShaderSource =
         pipelineStateDescriptor.colorAttachments[0].pixelFormat = colorPixelFormat;
         
         _pipelineState = [device newRenderPipelineStateWithDescriptor:pipelineStateDescriptor error:&error];
+
+        // Fanous: the render pass descriptor is made once (was per frame in renderFromTexture:, 4 allocations, B109)
+        _renderPassDescriptor = [MTLRenderPassDescriptor renderPassDescriptor];
+        _renderPassDescriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
+        _renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0);
+        _renderPassDescriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
         
         
         if( !_pipelineState )
@@ -163,11 +170,8 @@ static NSString * const kSyphonMetalShaderSource =
     };
     
     const NSUInteger numberOfVertices = sizeof(quadVertices) / sizeof(SYPHONTextureVertex);
-    MTLRenderPassDescriptor *renderPassDescriptor = [MTLRenderPassDescriptor renderPassDescriptor];
-    renderPassDescriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
-    renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0);
+    MTLRenderPassDescriptor *renderPassDescriptor = _renderPassDescriptor; // Fanous: made once in init
     renderPassDescriptor.colorAttachments[0].texture = texture;
-    renderPassDescriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
     
     // Create a render command encoder so we can render into something
     id<MTLRenderCommandEncoder> renderEncoder = [commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];

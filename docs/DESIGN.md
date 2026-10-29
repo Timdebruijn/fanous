@@ -434,7 +434,7 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
     | Generators | +2–3 (derived) |
     | Each preview or thumbnail streamer | about +6 (derived: an encoder and a capturing handler) |
     | `present` | not measured |
-    | Syphon publish | a capturing `addCompletedHandler` block per tick (`SyphonMetalServer.m`, B109); count not measured |
+    | Syphon publish (while a client is attached) | +4: the flip draw's encoder (2) and Syphon's `addCompletedHandler` block (2); its render pass descriptor is made once (`VENDORED.md` local change 6), 8 when it was made per frame (B109; measured `-c release`, M1 Pro, 2026-10-29) |
 - Unified memory budget: engine warns at 60 % of physical memory, refuses to
   activate a layer that would exceed 75 %. Read-ahead depth is the first knob
   reduced when a 16 GB machine is detected.
@@ -1006,6 +1006,19 @@ the canvas sample, before the blend map. Freeze engaged at Master 0 holds
 nothing (a black canvas carries no picture): the output stays live, black, and
 holds the first canvas drawn above 0.
 
+The output preview (§11.3) of a frozen output holds with it (B107). For an
+output on the clock-master display its plan takes the master set's plan's
+`held` and `heldMaster` each preview frame (both written on the compositor
+thread the tap runs on). That is an earlier tick's hold: the tap precedes the
+tick's hold, so the engage tick draws the live canvas, which is the held
+frame. It is the frame the projector holds, no copy, also for a viewer that
+subscribes after Freeze engaged. An output on a secondary display (its plans
+are written on that display's thread) or one bound to no display holds a copy
+of its own with `holdFrozen` in the tap, from the first preview frame after
+Freeze engaged: it can be a few ticks later than the projector's and hold a
+later frame, and a viewer that arrives later holds what was live then. Either
+way it follows the Master through `contentScale` and goes live on release.
+
 The black lift is the projector's black floor, so it does not follow the
 Master: on content it stays at the output's level while the Grand Master moves
 (it used to go down with it; on a test pattern it still does) and is 0 at
@@ -1447,7 +1460,8 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
 
 ### 11.3 Preview streaming (ADR-0014)
 
-- Target: canvas, output (post-blend/warp, what the projector shows) or a
+- Target: canvas, output (post-blend/warp, what the projector shows, a frozen
+  output's held frame included: §9.5, B107) or a
   single layer. Compositor downscales the chosen texture into a small
   `CVPixelBuffer` (from a Metal-compatible `CVPixelBufferPool`; rendered
   into directly via `CVMetalTextureCache`, no readback) each N-th tick;
