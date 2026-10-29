@@ -403,7 +403,13 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
   Since B89 the tests count the ticking thread's allocations exactly with a
   `malloc_logger` hook (`MallocCounter`), in an optimised build; a debug build
   allocates for unspecialised generics, and the process-wide figure is printed
-  for information only.
+  for information only. Since B97 `fanous-bench` counts the compositor
+  thread with the same `MallocCounter` over each step (`compositorMallocs`),
+  not the process-wide `malloc_zone_statistics` delta. With GPU work it reads
+  about 7 per tick (M1 Pro, 4 ProRes layers, headless, 2026-10-29): five inside
+  Metal (`commandBuffer()`, `renderCommandEncoder(descriptor:)`,
+  `addCompletedHandler`) and two for the completion-handler closure; the tests'
+  0 is a tick without GPU encoding.
 - Unified memory budget: engine warns at 60 % of physical memory, refuses to
   activate a layer that would exceed 75 %. Read-ahead depth is the first knob
   reduced when a 16 GB machine is detected.
