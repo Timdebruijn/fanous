@@ -2,14 +2,15 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { lockTitle } from '../lib/show';
   import { app, can } from '../lib/state.svelte';
-  import { applyWizard, cancelWizard, wallUI, wizardBack } from '../lib/wall-session.svelte';
+  import { applyWizard, cancelWizard, showIDs, stuckText, wallUI, wizardBack } from '../lib/wall-session.svelte';
   import { MAX_CANVAS_PIXELS, fitCanvas, freeOutputs, grids, overlapHint, rc, tap, wallPixels, wallSize, type Grid } from '../lib/walls';
 
   // New projector wall / Edit layout… (DESIGN §9.9): 1 tap the projectors in order and pick a grid, 2 overlap and
-  // canvas, 3 apply, after which the wall panel opens on the seam check. The draft lives in lib/wall-session; Cancel
-  // gives every output its own test pattern back and changes nothing else.
+  // canvas; Make wall applies it and the wall panel opens on the seam check (§9.9's step 3). The draft lives in
+  // lib/wall-session; Cancel gives every output its own test pattern back and changes nothing else.
   const draft = $derived(wallUI.wizard!);
   const lock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
   const edited = $derived(draft.edit === null ? undefined : app.project.walls?.find((w) => w.id === draft.edit));
@@ -22,11 +23,27 @@
   const ready = $derived(!!draft.grid && !!size);
   const same = (a: Grid | null, b: Grid) => a?.cols === b.cols && a?.rows === b.rows;
 
-  function tapTile(id: number) {
-    draft.order = tap(draft.order, id);
-    const choices = grids(draft.order.length);
+  function setOrder(order: number[]) {
+    draft.order = order;
+    const choices = grids(order.length);
     if (!choices.some((g) => same(draft.grid, g))) draft.grid = choices[0] ?? null;
   }
+  // an output removed, or taken into another wall, meanwhile leaves the order
+  $effect(() => {
+    const ids = new Set(free.map((o) => o.id));
+    const kept = draft.order.filter((id) => ids.has(id));
+    if (kept.length !== draft.order.length) setOrder(kept);
+  });
+  // step 1: an output bound (or unbound) meanwhile shows its Output ID too
+  const boundKey = $derived(app.live.outputs.filter((s) => s.state === 'bound').map((s) => s.id).join(','));
+  $effect(() => {
+    if (draft.step !== 1) return;
+    void boundKey;
+    const current = draft;
+    untrack(() => void showIDs(current));
+  });
+  /** Edit layout… of a wall that another client or an Undo removed meanwhile */
+  const gone = $derived(draft.edit !== null && !edited);
 
   // step 2: an unchanged overlap of an edited wall keeps its own x and y
   const overlap = $derived(edited && draft.overlap === draft.overlapWas ? edited.overlap : { x: draft.overlap / 100, y: draft.overlap / 100 });
@@ -37,20 +54,22 @@
   const fit = $derived(draft.grid && size ? fitCanvas(draft.grid, overlap, size, MAX_CANVAS_PIXELS - others) : null);
   const sameShape = $derived(!!natural && !!canvas && Math.abs(natural.width / natural.height / (canvas.width / canvas.height) - 1) < 0.01);
   const showMode = $derived(app.live.show.mode);
-  const applyTitle = $derived(lock ?? (draft.fit === 'makeCanvas' && showMode ? 'Leave show mode to resize a canvas, or use the canvas as it is' : undefined));
+  const applyReason = $derived(lock ?? (gone ? 'This wall was removed.' : draft.fit === 'makeCanvas' && showMode ? 'Leave show mode to resize a canvas, or use the canvas as it is.' : null));
   function setOverlap(percent: number) {
     draft.overlap = Math.min(50, Math.max(0, Math.round(percent)));
   }
   const ordinal = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th'}`;
 </script>
 
-<section class="panel wizard" aria-label="New projector wall">
+<section class="panel wizard" aria-labelledby="wall-wizard-title">
   <header>
-    <h2>{edited ? `Edit layout · ${edited.name}` : 'New projector wall'}</h2>
-    <span class="caption">Step {draft.step} of 3 · {draft.step === 1 ? 'Order' : 'Overlap and canvas'}</span>
+    <h2 id="wall-wizard-title">{edited ? `Edit layout · ${edited.name}` : draft.edit !== null ? 'Edit layout' : 'New projector wall'}</h2>
+    <span class="caption">Step {draft.step} of 2 · {draft.step === 1 ? 'Order' : 'Overlap and canvas'}</span>
     <span class="spacer"></span>
     <button type="button" class="btn btn-ghost" onclick={cancelWizard}>Cancel</button>
   </header>
+  {#if stuckText()}<p class="caption yellow">{stuckText()}</p>{/if}
+  {#if gone}<p class="caption yellow">This wall was removed. Cancel, or start a new projector wall.</p>{/if}
 
   {#if draft.step === 1}
     <p class="muted">{free.some((o) => statuses.get(o.id)?.state === 'bound') ? 'Each projector on a display now shows its Output ID. ' : ''}Tap the tiles in the order the projectors hang: the top row from left to right, then the next row.</p>
@@ -58,10 +77,11 @@
       {#each free as o (o.id)}
         {@const n = draft.order.indexOf(o.id) + 1}
         {@const st = statuses.get(o.id)}
-        <button type="button" class="tile" aria-pressed={n > 0} aria-label="{o.name}{n ? `, ${ordinal(n)}` : ''}" onclick={() => tapTile(o.id)}>
+        {@const where = st?.state === 'bound' ? `on ${st.display}` : 'not on a display'}
+        <button type="button" class="tile" aria-pressed={n > 0} aria-label="{o.name}, {where}{n ? `, ${ordinal(n)}` : ''}" onclick={() => setOrder(tap(draft.order, o.id))}>
           <span class="id mono">{o.id}</span>
           <span class="nm ellipsis">{o.name}</span>
-          <span class="caption ellipsis">{st?.state === 'bound' ? `on ${st.display}` : 'not on a display'}</span>
+          <span class="caption ellipsis">{where}</span>
           {#if n}<span class="order mono" aria-hidden="true">{n}</span>{/if}
         </button>
       {:else}
@@ -97,7 +117,7 @@
     {/if}
 
     <footer>
-      <button type="button" class="btn btn-ghost" disabled={draft.order.length === 0} onclick={() => (draft.order = [])}>Clear order</button>
+      <button type="button" class="btn btn-ghost" disabled={draft.order.length === 0} onclick={() => setOrder([])}>Clear order</button>
       <span class="spacer"></span>
       <button type="button" class="btn btn-primary" disabled={!ready} title={!draft.grid ? 'Tap the projectors and pick a grid first' : !size ? String(pixels) : undefined} onclick={() => (draft.step = 2)}>Next</button>
     </footer>
@@ -111,7 +131,7 @@
         <span class="mono val">{draft.overlap} %</span>
       </div>
     </div>
-    <p class="caption">Of one projector: {draft.grid.cols > 1 ? `${Math.round(overlap.x * size.width)} of its ${size.width} px across` : ''}{draft.grid.cols > 1 && draft.grid.rows > 1 ? ', ' : ''}{draft.grid.rows > 1 ? `${Math.round(overlap.y * size.height)} of its ${size.height} px down` : ''} are shared with the neighbour. The wall computes each projector's part of the canvas from this.</p>
+    <p class="caption">Each projector shares {[draft.grid.cols > 1 ? `${Math.round(overlap.x * size.width)} of its ${size.width} px across` : '', draft.grid.rows > 1 ? `${Math.round(overlap.y * size.height)} of its ${size.height} px down` : ''].filter(Boolean).join(' and ')} with its neighbour. The wall computes each projector's part of the canvas from this.</p>
     {#if hint}<p class="caption yellow">{hint}</p>{/if}
 
     {#if app.project.canvases.length > 1}
@@ -140,8 +160,9 @@
     <footer>
       <button type="button" class="btn" onclick={wizardBack}>Back</button>
       <span class="spacer"></span>
-      <button type="button" class="btn btn-primary" disabled={!!applyTitle} title={applyTitle} onclick={applyWizard}>{edited ? 'Apply layout' : 'Make wall'}</button>
+      <button type="button" class="btn btn-primary" disabled={!!applyReason || wallUI.busy} onclick={applyWizard}>{draft.edit !== null ? 'Apply layout' : 'Make wall'}</button>
     </footer>
+    {#if applyReason}<p class="caption reason">{applyReason}</p>{/if}
   {:else}
     <p class="caption yellow">{size ? 'Pick a grid first.' : pixels}</p>
     <footer><button type="button" class="btn" onclick={wizardBack}>Back</button></footer>
@@ -181,4 +202,5 @@
   .choice:has(input:disabled) { cursor: default; color: var(--text-3); }
   .choice input { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--accent); flex: none; }
   .choice .caption { display: block; margin-top: 2px; }
+  .reason { text-align: right; }
 </style>

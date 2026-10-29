@@ -255,8 +255,8 @@ test('walls: the wizard makes a 1 × 2 wall at 15 %, a seam gamma drag is one un
 
   await page.getByRole('region', { name: 'Projector walls' }).getByRole('button', { name: 'New projector wall' }).click();
   const wizard = page.getByRole('region', { name: 'New projector wall' });
-  await wizard.getByRole('button', { name: 'Output 1', exact: true }).click();
-  await wizard.getByRole('button', { name: 'Output 2', exact: true }).click();
+  await wizard.getByRole('button', { name: /^Output 1, / }).click();
+  await wizard.getByRole('button', { name: /^Output 2, / }).click();
   // two projectors: 1 × 2 and 2 × 1 match, one row first
   const grid = wizard.getByRole('group', { name: 'Grid' }).getByRole('button');
   await expect(grid).toHaveText(['1 × 2', '2 × 1']);
@@ -274,14 +274,15 @@ test('walls: the wizard makes a 1 × 2 wall at 15 %, a seam gamma drag is one un
   // the inner edges overlap 0.15 × 1920 = 288 px, the outer ones not at all
   const overlap = (edge: string) => page.getByRole('group', { name: `${edge} edge` }).getByLabel('Overlap (px)');
   await row(1).click();
-  await expect(page.getByRole('button', { name: 'Blend check', exact: true }).last()).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('region', { name: 'Output settings' }).getByRole('button', { name: 'Blend check' })).toHaveAttribute('aria-pressed', 'true');
   await expect(overlap('right')).toHaveValue('288');
   await expect(overlap('left')).toHaveValue('0');
   await row(2).click();
   await expect(overlap('left')).toHaveValue('288');
   await expect(overlap('right')).toHaveValue('0');
 
-  // a drag on the seam's gamma sends several wall.seam commands; the engine keeps them as one undo step
+  // a drag on the seam's gamma sends several wall.seam commands (at most one per 50 ms); the engine keeps them as one
+  // undo step
   await panel.getByRole('button', { name: 'Seam between Output 1 and Output 2' }).click();
   const gamma = panel.getByRole('slider', { name: 'Gamma', exact: true });
   await expect(gamma).toHaveValue('2.2');
@@ -289,7 +290,10 @@ test('walls: the wizard makes a 1 × 2 wall at 15 %, a seam gamma drag is one un
   const x = (v: number) => box.x + 8 + ((v - 0.5) / 4.5) * (box.width - 16);
   await page.mouse.move(x(2.2), box.y + box.height / 2);
   await page.mouse.down();
-  await page.mouse.move(x(3.2), box.y + box.height / 2, { steps: 10 });
+  for (let i = 1; i <= 10; i++) {
+    await page.mouse.move(x(2.2 + i / 10), box.y + box.height / 2);
+    await page.waitForTimeout(40);
+  }
   await page.mouse.up();
   await expect.poll(async () => Number(await gamma.inputValue())).toBeGreaterThan(2.6);
   expect(seamCommands).toBeGreaterThan(1);
@@ -303,6 +307,78 @@ test('walls: the wizard makes a 1 × 2 wall at 15 %, a seam gamma drag is one un
   await expect(row(2)).not.toContainText('Wall 1');
   await expect(page.getByRole('button', { name: 'Off', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(overlap('left')).toHaveValue('288');
+});
+
+test('walls: Cancel changes nothing; a reload, leaving the screen and End seam check give each output its own pattern back', async ({ page, engine }) => {
+  let wallAdds = 0;
+  page.on('websocket', (socket) =>
+    socket.on('framesent', ({ payload }) => {
+      if (typeof payload === 'string' && (JSON.parse(payload) as { name?: string }).name === 'wall.add') wallAdds++;
+    }),
+  );
+  await page.goto(`${engine.url}/?token=${engine.token}`);
+  await addUnassignedOutput(page);
+  await page.getByLabel('Add output on').selectOption('none');
+  const row = (n: number) => page.locator('.row.out', { hasText: `Output ${n}` });
+  const settings = page.getByRole('region', { name: 'Output settings' });
+  for (const n of [1, 2]) {
+    await row(n).click();
+    const h = page.getByLabel('Region h', { exact: true });
+    await h.fill('1200');
+    await h.press('Tab');
+  }
+  // Output 1's own pattern is Crosshair, Output 2's Off
+  await row(1).click();
+  await settings.getByRole('button', { name: 'Crosshair' }).click();
+  const own = async () => {
+    await row(2).click();
+    await expect(settings.getByRole('button', { name: 'Off', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await row(1).click();
+    await expect(settings.getByRole('button', { name: 'Crosshair' })).toHaveAttribute('aria-pressed', 'true');
+  };
+  const walls = page.getByRole('region', { name: 'Projector walls' });
+  async function makeWall(cancel: boolean) {
+    await walls.getByRole('button', { name: 'New projector wall' }).click();
+    const wizard = page.getByRole('region', { name: 'New projector wall' });
+    await wizard.getByRole('button', { name: /^Output 1, / }).click();
+    await wizard.getByRole('button', { name: /^Output 2, / }).click();
+    await wizard.getByRole('button', { name: 'Next' }).click();
+    await wizard.getByRole('button', { name: cancel ? 'Cancel' : 'Make wall' }).click();
+    await expect(wizard).toHaveCount(0);
+  }
+
+  // Cancel at step 2: no wall, no wall.add, the patterns as they were
+  await makeWall(true);
+  await expect(page.getByRole('region', { name: 'Wall 1' })).toHaveCount(0);
+  expect(wallAdds).toBe(0);
+  await own();
+
+  // a page reloaded during the seam check offers the outputs' own patterns back
+  await makeWall(false);
+  const panel = page.getByRole('region', { name: 'Wall 1' });
+  await expect(panel.getByRole('button', { name: 'Seam check', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await row(1).click();
+  await expect(settings.getByRole('button', { name: 'Blend check' })).toHaveAttribute('aria-pressed', 'true');
+  await page.goto(`${engine.url}/?token=${engine.token}`);
+  await openScreen(page, 'Outputs');
+  await page.getByRole('button', { name: 'Give the test patterns back' }).click();
+  await expect(page.getByRole('button', { name: 'Give the test patterns back' })).toHaveCount(0);
+  await own();
+
+  // leaving the Outputs screen ends a running seam check
+  await panel.getByRole('button', { name: 'Seam check', exact: true }).click();
+  await expect(settings.getByRole('button', { name: 'Grid' })).toHaveAttribute('aria-pressed', 'true');
+  await openScreen(page, 'Layers');
+  await openScreen(page, 'Outputs');
+  await expect(panel.getByRole('button', { name: 'Seam check', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await own();
+
+  // and so does End seam check
+  await panel.getByRole('button', { name: 'Seam check', exact: true }).click();
+  await panel.getByRole('group', { name: 'Seam check pattern' }).getByRole('button', { name: 'White' }).click();
+  await expect(settings.getByRole('button', { name: 'White' })).toHaveAttribute('aria-pressed', 'true');
+  await panel.getByRole('button', { name: 'End seam check' }).click();
+  await own();
 });
 
 test('outputs: remove an output, then Undo brings it back', async ({ page }) => {

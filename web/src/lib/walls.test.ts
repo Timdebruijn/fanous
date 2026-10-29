@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { DisplayDoc, OutputConfig } from './outputs';
 import {
   MAX_CANVAS_PIXELS, SEAM_STEPS, badge, editDraft, fitCanvas, freeOutputs, grids, isManual, newDraft, overlapHint, patternChange, patternRestore, pixelSize,
-  rc, seamLines, share, tap, wallArgs, wallPixels, type WallConfig,
+  rc, savedFrom, seamLines, share, tap, unrestored, wallArgs, wallPixels, type WallConfig,
 } from './walls';
 
 const edge = { overlap: 0, power: 2, gamma: 2.2 };
@@ -107,6 +107,10 @@ describe('the wall panel', () => {
     const seams = [{ a: 1, b: 2 }, { a: 1, b: 3 }, { a: 2, b: 4 }, { a: 3, b: 4 }, { a: 2, b: 3 }].map((s) => ({ ...s, power: 2, gamma: 2.2 }));
     const lines = seamLines(wall(2, 2, [1, 2, 3, 4], { seams }));
     expect(lines.map((l) => `${l.a}-${l.b} ${l.side} r${l.row} c${l.col}`)).toEqual(['1-2 right r0 c0', '1-3 bottom r0 c0', '2-4 bottom r0 c1', '3-4 right r1 c0']);
+    // 1 × 3 and 3 × 1: the seams run between columns, or between rows
+    const row = [{ a: 5, b: 6 }, { a: 6, b: 7 }].map((s) => ({ ...s, power: 2, gamma: 2.2 }));
+    expect(seamLines(wall(3, 1, [5, 6, 7], { seams: row })).map((l) => `${l.side} c${l.col}`)).toEqual(['right c0', 'right c1']);
+    expect(seamLines(wall(1, 3, [5, 6, 7], { seams: row })).map((l) => `${l.side} r${l.row}`)).toEqual(['bottom r0', 'bottom r1']);
   });
 
   it('badges a wall output with its row and column, and knows its manual fields', () => {
@@ -120,19 +124,32 @@ describe('the wall panel', () => {
 
   it('puts a test pattern on outputs and gives each its own back afterwards', () => {
     let outputs = [output(1, { testPattern: 2 }), output(2), output(3, { testPattern: 4 })];
-    const shown = patternChange(outputs, [1, 2, 3], 4, {});
-    expect(shown.set).toEqual([{ id: 1, pattern: 4 }, { id: 2, pattern: 4 }]);
+    const shown = patternChange(outputs, [1, 2, 3, 9], 4, {});
+    // every output is sent the pattern, also one that seems to show it already (the project may lag); a missing one not
+    expect(shown.set).toEqual([{ id: 1, pattern: 4 }, { id: 2, pattern: 4 }, { id: 3, pattern: 4 }]);
     expect(shown.saved).toEqual({ 1: 2, 2: 0, 3: 4 });
     outputs = outputs.map((o) => ({ ...o, testPattern: 4 }));
     // the next pattern keeps the first saved one
     const next = patternChange(outputs, [1, 2], 3, shown.saved);
     expect(next.saved).toEqual({ 1: 2, 2: 0, 3: 4 });
-    outputs = outputs.map((o) => (o.id === 3 ? o : { ...o, testPattern: 3 }));
-    // the wall keeps outputs 1 and 2 on its pattern; output 3 was not tapped and already shows its own
-    expect(patternRestore(outputs, next.saved, [1, 2])).toEqual({ set: [], saved: { 1: 2, 2: 0 } });
+    // the wall keeps outputs 1 and 2 on its pattern; output 3 was not tapped and gets its own back
+    expect(patternRestore(outputs, next.saved, [1, 2])).toEqual({ set: [{ id: 3, pattern: 4 }], saved: { 1: 2, 2: 0 } });
     expect(patternRestore(outputs, { 1: 2, 2: 0 })).toEqual({ set: [{ id: 1, pattern: 2 }, { id: 2, pattern: 0 }], saved: {} });
     // a removed output is skipped
     expect(patternRestore(outputs.slice(1), { 1: 2 }).set).toEqual([]);
+  });
+
+  it('keeps the saved pattern of every output whose restore was refused, so it can be tried again', () => {
+    const back = patternRestore([output(1, { testPattern: 3 }), output(2, { testPattern: 3 })], { 1: 2, 2: 0, 3: 7 }, [3]);
+    expect(unrestored(back.saved, back.set, [])).toEqual({ 1: 2, 2: 0, 3: 7 });
+    expect(unrestored(back.saved, back.set, [2])).toEqual({ 1: 2, 3: 7 });
+    expect(unrestored(back.saved, back.set, [1, 2])).toEqual({ 3: 7 });
+  });
+
+  it('reads saved patterns back after a reload, and nothing else', () => {
+    expect(savedFrom(JSON.stringify({ wall: 2, saved: { 1: 0, 4: 7 } }))).toEqual({ wall: 2, saved: { 1: 0, 4: 7 } });
+    expect(savedFrom(JSON.stringify({ saved: { 1: 0 } }))).toEqual({ wall: null, saved: { 1: 0 } });
+    for (const bad of [null, '', '{', '{"saved":{}}', '{"saved":{"x":1}}', '{"saved":{"1":"0"}}', '[]']) expect(savedFrom(bad)).toBeNull();
   });
 
   it('steps through Grid, Blend check, Grey 0, 25, 75 % and White', () => {

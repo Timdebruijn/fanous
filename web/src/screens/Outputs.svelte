@@ -28,6 +28,7 @@
 </script>
 
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import NudgePad from '../components/NudgePad.svelte';
   import OutputMapper from '../components/OutputMapper.svelte';
   import RemotePanel from '../components/RemotePanel.svelte';
@@ -47,7 +48,7 @@
   import { fromScreen, resampleMesh, toScreen } from '../lib/warp';
   import type { JSONValue } from '../lib/protocol';
   import { badge, freeOutputs, isManual, SEAM_STEPS, wallOf, type ManualField } from '../lib/walls';
-  import { endCheck, startWizard, wallUI } from '../lib/wall-session.svelte';
+  import { cancelWizard, endCheck, giveBack, keepLeftover, startWizard, stuckText, wallUI } from '../lib/wall-session.svelte';
 
   const LOCKED = 'Locked: programmer only';
   const locked = $derived(!can('programmer'));
@@ -76,6 +77,14 @@
   $effect(() => {
     if (wallUI.check && !checking) void endCheck();
   });
+  // leaving the screen ends the seam check and the wizard: nothing else would show that they still hold the projectors
+  onDestroy(() => {
+    void endCheck();
+    if (wallUI.wizard) void cancelWizard();
+  });
+  /** test patterns waiting to be given back with nothing open that would: a reloaded page's, or a check whose wall went */
+  const leftBehind = $derived(!!wallUI.leftover || (!wallUI.wizard && !checking && Object.keys(wallUI.saved).length > 0));
+  const newWallReason = $derived(wallLock ?? (freeCount < 2 ? 'Add at least two outputs that are in no wall yet.' : null));
   /** a wall panel's "Open in Warp & Slices" and the Grid step of the seam check */
   function openWarp(id: number) {
     pickOutput(id);
@@ -311,6 +320,16 @@
   </div>
 {/if}
 
+{#if leftBehind}
+  <div class="banner banner-yellow" role="status">
+    <span class="dot dot-yellow"></span>
+    <span><strong>Outputs still show a projector-wall test pattern</strong> · {stuckText() ?? (wallUI.leftover ? `left by ${wallUI.leftover.wall ? `the seam check of Wall ${wallUI.leftover.wall}` : 'the wall wizard'} before this page was reloaded` : 'the seam check ended when its wall went')}</span>
+    <span class="spacer"></span>
+    <button type="button" class="btn" onclick={giveBack}>Give the test patterns back</button>
+    {#if wallUI.leftover}<button type="button" class="btn btn-ghost" onclick={keepLeftover}>Keep them</button>{/if}
+  </div>
+{/if}
+
 {#if checking && wallUI.check && ui.tab !== 'outputs'}
   <div class="banner banner-yellow" role="status">
     <span class="dot dot-yellow"></span>
@@ -328,8 +347,8 @@
       {:else}
         {#each walls as w (w.id)}<WallPanel wall={w} onwarp={openWarp} />{/each}
         <div class="wallbar">
-          <button type="button" class="btn" disabled={!!wallLock || freeCount < 2} title={wallLock ?? (freeCount < 2 ? 'Add at least two outputs that are in no wall yet' : undefined)} onclick={() => startWizard()}>New projector wall</button>
-          {#if walls.length === 0}<span class="caption">Two or more projectors side by side or stacked: the wall gives each its part of the canvas and the overlaps, then guides the blend tuning.</span>{/if}
+          <button type="button" class="btn" disabled={!!newWallReason} onclick={() => startWizard()}>New projector wall</button>
+          {#if newWallReason}<span class="caption">{newWallReason}</span>{:else if walls.length === 0}<span class="caption">Two or more projectors side by side or stacked: the wall gives each its part of the canvas and the overlaps, then guides the blend tuning.</span>{/if}
         </div>
       {/if}
     </section>

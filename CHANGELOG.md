@@ -211,8 +211,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   curve and Apply to all seams, a projector for its black floor, Geometry for the overlap, Edit layout… and Remove
   wall. Seam check steps Grid, Blend check, Grey 0/25/75 % and White over every projector of the wall with what to
   look for and which control to turn, and gives each output its own test pattern back. Wall badges in the output
-  list, "manual" chips with Back to wall on the blend edges and slice 1's source. `docs/user/outputs-and-mapping.md`
-  › Projector walls.
+  list, "manual" chips with Back to wall on the blend edges and slice 1's source. Leaving the Outputs screen ends the
+  check and the wizard; an output keeps its own pattern on record (also across a reload, with **Give the test patterns
+  back**) until the engine has taken it back. `docs/user/outputs-and-mapping.md` › Projector walls.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

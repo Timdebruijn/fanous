@@ -198,7 +198,8 @@ export function wallArgs(draft: WizardDraft & { grid: Grid }): {
 }
 
 /** Puts `pattern` on the outputs `ids`: the test patterns to set, and `saved` with each output's pattern from before
- * (an output already in `saved` keeps the pattern saved first). */
+ * (an output already in `saved` keeps the pattern saved first). Every output is sent its pattern, also one that seems
+ * to show it already: the project may still be on its way (an unchanged value is no undo step in the engine). */
 export function patternChange(outputs: OutputConfig[], ids: number[], pattern: number, saved: Record<number, number>): { set: { id: number; pattern: number }[]; saved: Record<number, number> } {
   const next = { ...saved };
   const set: { id: number; pattern: number }[] = [];
@@ -206,7 +207,7 @@ export function patternChange(outputs: OutputConfig[], ids: number[], pattern: n
     const o = outputs.find((x) => x.id === id);
     if (!o) continue;
     next[id] ??= o.testPattern;
-    if (o.testPattern !== pattern) set.push({ id, pattern });
+    set.push({ id, pattern });
   }
   return { set, saved: next };
 }
@@ -221,10 +222,31 @@ export function patternRestore(outputs: OutputConfig[], saved: Record<number, nu
       left[id] = pattern;
       continue;
     }
-    const o = outputs.find((x) => x.id === id);
-    if (o && o.testPattern !== pattern) set.push({ id, pattern });
+    if (outputs.some((x) => x.id === id)) set.push({ id, pattern });
   }
   return { set, saved: left };
+}
+
+/** What stays saved after a restore: `left`, and every pattern of `sent` the engine did not take (its id not in `ok`),
+ * so a refused restore (show lock, role, connection) can be tried again instead of losing the output's own pattern. */
+export function unrestored(left: Record<number, number>, sent: { id: number; pattern: number }[], ok: number[]): Record<number, number> {
+  const next = { ...left };
+  for (const { id, pattern } of sent) if (!ok.includes(id)) next[id] = pattern;
+  return next;
+}
+
+/** Saved patterns as read back from sessionStorage (JSON keys are strings), or null when there are none or they are
+ * not output id → pattern number. */
+export function savedFrom(json: string | null): { wall: number | null; saved: Record<number, number> } | null {
+  if (!json) return null;
+  try {
+    const value = JSON.parse(json) as { wall?: unknown; saved?: unknown };
+    const entries = Object.entries((value.saved ?? {}) as Record<string, unknown>);
+    if (entries.length === 0 || !entries.every(([k, v]) => Number.isInteger(Number(k)) && Number.isInteger(v))) return null;
+    return { wall: typeof value.wall === 'number' ? value.wall : null, saved: Object.fromEntries(entries.map(([k, v]) => [Number(k), v as number])) };
+  } catch {
+    return null;
+  }
 }
 
 export type Control = 'warp' | 'gamma' | 'curve' | 'floor' | 'colour' | 'rgb';

@@ -287,9 +287,11 @@ lines between them, each with its gamma.
 - **Tap a seam** for its controls. Both sides of the seam always follow.
   - **Gamma** (0.5 to 5, 2.2 to start): down for a bright band in the seam,
     up for a dark one.
-  - **Link R, G, B** is on: one gamma for all three colours. Turned off you
-    get a gamma per colour. Fanous stores those, but the picture still uses
-    the single gamma until a later version adds per-colour gamma to the output.
+  - **Link R, G, B** is on: one gamma for all three colours. Turned off, a
+    gamma per colour appears below the single one. Fanous stores those, but
+    the picture still uses the single gamma ("in effect") until a later
+    version adds per-colour gamma to the output. Turning the link on again
+    drops the per-colour values.
   - **Curve** (0.1 to 10, 2 to start): how steep the fade is; change it when
     you see an edge where the overlap starts.
   - **Apply to all seams** gives every seam of the wall this seam's values.
@@ -329,10 +331,17 @@ Fanous cannot know which seam is off, so your eye picks it.)
 | Grey 25 %, Grey 75 %, White | one projector darker, or tinted | that projector's colour gain (not in Fanous yet: use the projector's own colour settings) |
 | | a colour shift only inside a seam | unlink R, G, B on that seam and tune the colour that is off |
 
-You can leave the Outputs tab during the check, for example to fix the warp:
-a yellow line on the other tabs says the check is still running and takes you
-back. **End seam check** gives each output its own test pattern back. Every
-pattern change is an ordinary output change, so it is also a step for Undo.
+You can switch to Warp & Slices during the check, for example to fix the
+warp: a yellow line there says the check is still running and takes you back.
+**End seam check**, or leaving the Outputs screen, gives each output its own
+test pattern back (leaving the screen also cancels the wizard). Every pattern
+change is an ordinary output change, so it is also a step for Undo.
+
+An output keeps its own pattern on record until it really has it back. While
+the show is locked, or without the programmer role, the check stays open and
+says so: unlock the show and end it again. If the page is reloaded during the
+wizard or the check, the Outputs screen offers **Give the test patterns back**
+(or **Keep them**).
 
 ## Warp & Slices tab
 
