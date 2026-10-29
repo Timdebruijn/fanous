@@ -246,6 +246,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   that returned nil (logged once per streamer as "preview JPEG encode failed") and JPEG sends a connection refused; the
   B86 e2e puts all three into its CI warning when a viewer refused to JPEG gets no frame, so the next occurrence names
   the encoder, the send queue or the network (B99).
+- Fixed: a preview refused H.264 at the encoder limit froze on its last JPEG frame ("H.264 encoders busy") when the engine
+  moved it to a new stream whose encoder was slow or failed. A refused preview now re-subscribes as JPEG after 5 s without
+  a frame and stays on JPEG until it subscribes again; a healthy H.264 preview is never demoted after its decoder is
+  configured (B95).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
