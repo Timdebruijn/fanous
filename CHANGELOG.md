@@ -265,6 +265,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   unchanged. A frozen output follows later Grand Master moves from the level it froze at; Freeze engaged at Master 0
   holds the first picture drawn above 0. The black lift of a blend is the projector's black floor: on the picture it now
   stays put while the Grand Master moves (it used to go down with it) and is 0 at Master 0 and at either Blackout (B100).
+- Fixed: a Syphon message arriving while a Syphon input disconnected or an output stopped could crash the engine. The
+  callback used the vendored Syphon message receiver after it had been freed. The message port now keeps the receiver
+  alive until the callback returns (B106).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
