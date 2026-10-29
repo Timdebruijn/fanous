@@ -1039,7 +1039,13 @@ the one stored with its last completed canvas in one atomic with the ring
 index), so a frozen output follows later Grand Master moves; the ratio scales
 the canvas sample, before the blend map. Freeze engaged at Master 0 holds
 nothing (a black canvas carries no picture): the output stays live, black, and
-holds the first canvas drawn above 0.
+holds the first canvas drawn above 0. An edit while frozen recompiles the plans: the new
+`OutputSet` carries the last set that rendered (`previous`, behind a mutex; a set
+that never rendered drops out, so the chain is one set long), and the thread that
+renders it takes each frozen plan's hold from the replaced plan with its id, once,
+if the copies cover the plan's canvases at their sizes (`OutputPass.adopt`; not on
+MainActor, which would read `held` while the render thread writes it), so the
+output keeps its frame (B111).
 
 The output preview (§11.3) of a frozen output holds with it (B107). For an
 output on the clock-master display its plan takes the master set's plan's
