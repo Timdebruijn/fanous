@@ -90,7 +90,10 @@ static CFDataRef MessageReturnCallback (
 	{
 		if ([protocolName isEqualToString:SyphonMessagingProtocolCFMessage])
 		{
-			CFMessagePortContext context = (CFMessagePortContext){0,(__bridge void *)(self),NULL,NULL,NULL};
+			// Fanous: the port retains its info (was NULL retain/release). __CFMessagePortPerform retains the info
+			// under the port lock after its validity check and releases it after the callout, so a callback in flight
+			// keeps the receiver alive past -invalidate; CFMessagePortInvalidate releases the port's own reference.
+			CFMessagePortContext context = (CFMessagePortContext){0,(__bridge void *)(self),CFRetain,CFRelease,NULL};
 			_port = CFMessagePortCreateLocal(kCFAllocatorDefault, (CFStringRef)name, MessageReturnCallback, &context, NULL);
 		}
 		if (_port == NULL)
