@@ -170,6 +170,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: the preview left its H.264 decoder open after every target change and disconnect; it now closes it (B85).
 - Fixed: a new `settings.json` (hashed role passwords) and the shell token file were readable by other users between the write
   and the change to mode 0600; both are now written 0600 from the start, and a new Application Support folder is 0700 (B83).
+- A change of mesh density keeps the warp: the new points are placed on the current surface instead of a flat grid
+  (points shared by both grids keep their position); **Reset mesh** still flattens (M1, DESIGN §9.9).
 - Fixed: a role password added to `settings.json` by hand while the engine runs was kept in the file at the next write but
   the role stayed open until a restart; every write now takes the passwords from the file as written (B82).
 - Fixed: a preview refused H.264 at the encoder limit waited 5 s and re-subscribed as JPEG, so it was never upgraded; it now

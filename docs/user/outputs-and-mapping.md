@@ -223,7 +223,10 @@ a handle stays on the spot you touch while a warp is active.
 
 - **Corner pin**: four corners. **Reset corners** puts them back.
 - **Mesh**: **Density** is Off (corner pin only) or 2x2, 3x3, 5x5, 9x9, 17x17
-  or 33x33 points. Changing the density starts from a flat grid. The picture
+  or 33x33 points. Changing the density keeps the shape: the new points are
+  placed on the current surface, so you can start coarse and refine; going to
+  a lower density keeps the overall shape, not the detail between the points
+  that remain. The picture
   follows a smooth surface through the points. **Reset mesh** flattens it.
 - **Slices**: a slice is a piece of the canvas placed somewhere on the output.
   It takes a rectangle of the canvas (**Source x · y · w · h**, in canvas
