@@ -618,7 +618,12 @@ test('preview: a viewer refused H.264 at the encoder limit shows JPEG at once an
     const { ws, ids } = window as unknown as { ws: WebSocket; ids: number[] };
     ws.send(JSON.stringify({ t: 'unsub', id: ids[2] }));
   });
-  await expect.poll(() => upgradedAt, { timeout: previewTimeout }).toBe(1);  // on the one subscription the page sent
+  // on CI the new stream's VideoToolbox session can take over 5 s without a frame: the page then re-subscribes as JPEG
+  // (B66, B95) and the description never comes
+  const fellBack = async () => /^JPEG 5 fps · no H\.264 stream/.test(await figure.locator('figcaption').innerText());
+  await expect.poll(async () => upgradedAt || (process.env.CI && (await fellBack()) ? -1 : 0), { timeout: previewTimeout }).not.toBe(0);
+  test.skip(upgradedAt === 0, 'H.264 not ready within 5 s on this runner (B66, B95); JPEG fallback');
+  expect(upgradedAt).toBe(1);  // on the one subscription the page sent
   // the page decodes it; on CI a decoder that fails (B98) may fall back to JPEG with its reason, a new subscription
   const decoded = process.env.CI ? /^(H\.264 · |JPEG 5 fps · (?!.*encoders busy))/ : /^H\.264 · /;
   await expect(figure.locator('figcaption')).toContainText(decoded, { timeout: previewTimeout });
@@ -733,4 +738,39 @@ test('preview: an output region on the canvas stream at the encoder limit is let
   await release(0);
   await expect(caption).not.toContainText('canvas fallback', { timeout: previewTimeout });
   expect(await fit()).toBe('fill');
+});
+
+test('preview: a refused viewer the engine moves to a stream that never delivers falls back to JPEG after 5 s (B95)', async ({ page, engine }) => {
+  // the page's socket runs through the test: once `frozen`, the engine's messages on the refused canvas:2 subscription
+  // are dropped, as from a new streamer whose VideoToolbox session is stuck or failed
+  let refused = 0;  // its id
+  let subs = 0;  // the page's canvas:2 preview subscriptions
+  let frozen = false;
+  await page.routeWebSocket(/\/ws$/, (ws) => {
+    const server = ws.connectToServer();
+    server.onMessage((message) => {
+      if (typeof message === 'string') {
+        const m = JSON.parse(message) as { t: string; id: number; stream?: string; target?: string };
+        if (m.t === 'sub' && m.stream === 'preview' && m.target === 'canvas:2' && subs++ === 0) refused = m.id;
+        if (frozen && m.t === 'stream' && m.id === refused) return;
+      } else if (frozen && message.length >= 5 && message.readUInt32BE(1) === refused) return;
+      ws.send(message);
+    });
+  });
+  await page.goto(`${engine.url}/?token=${engine.token}`);  // again, through the route above
+  const release = await holdEncoders(page, engine);
+  await openScreen(page, 'Outputs');
+  await page.getByRole('button', { name: 'Canvases' }).click();
+  await page.getByRole('button', { name: 'Add canvas' }).click();
+  await page.getByRole('group', { name: 'Canvas', exact: true }).getByRole('button', { name: 'Canvas 2' }).click();
+  const caption = page.getByRole('figure').locator('figcaption');
+  await expect(caption).toContainText(/^JPEG 5 fps · .* · H\.264 encoders busy/, { timeout: previewTimeout });
+
+  // an encoder frees up: the engine moves the viewer to its own H.264 stream, which never delivers a frame
+  frozen = true;
+  await release(2);
+  // before B95 the caption stayed "H.264 encoders busy" over a frozen picture; now it re-subscribes as JPEG, once
+  await expect(caption).toContainText(/^JPEG 5 fps · no H\.264 stream from the engine/, { timeout: 10_000 });
+  expect(subs).toBe(2);
+  await expect(caption.locator('.stalled')).toHaveCount(0, { timeout: 5_000 });  // the new stream's frames are drawn
 });

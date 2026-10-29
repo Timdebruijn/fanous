@@ -49,6 +49,14 @@
     const supportsWebCodecs = 'VideoDecoder' in window && 'EncodedVideoChunk' in window;
     let configured = false;
     let sawKey = false;
+    // one watchdog per subscription (B66, B95): 5 s without a drawn frame of either kind → JPEG. Armed by the `sub`
+    // reply and by every frame: an H.264 description that never comes, and a refused (B70) or H.264 viewer the engine
+    // moved to a new streamer whose VideoToolbox session is slow or fails, frozen on its last frame
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
+    const watch = () => {
+      clearTimeout(watchdog);
+      if (run.current()) watchdog = setTimeout(() => void fallbackToJPEG('no H.264 stream from the engine'), 5000);
+    };
 
     const drawBitmap = (bitmap: ImageBitmap | VideoFrame) => {
       if (!canvas) return;
@@ -58,6 +66,7 @@
       }
       ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
       lastFrame = performance.now();
+      watch();
       bitmap.close();
     };
     // a JPEG frame (kind 2): the JPEG stream, or an H.264 one the engine refused at its encoder limit (B86)
@@ -170,11 +179,8 @@
         detail = `${sub.w}×${sub.h} · H.264 encoders busy`;
       } else {
         detail = `${sub.w}×${sub.h} · ${sub.fps} fps`;
-        // the engine makes its H.264 encoder for the first viewer (B66): no description in 5 s (it failed or is stuck) → JPEG
-        setTimeout(() => {
-          if (!configured) void fallbackToJPEG('no H.264 stream from the engine');
-        }, 5000);
       }
+      watch();  // the engine makes its H.264 encoder for the first viewer (B66): it can fail or be stuck
       if (hidden) pause();
     } catch (error) {
       if (!run.current()) return;

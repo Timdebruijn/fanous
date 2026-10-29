@@ -233,6 +233,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   switches, and the unused `run --ring` and `dmx --hz/--host/--seed` flags (repo audit 2026-10-29).
 - Removed: `fanous-bench syphon`, the Phase 3 Syphon acceptance probe; `SyphonTests` cover SyphonOutput → SyphonInput
   (repo audit 2026-10-29).
+- Fixed: a preview refused H.264 at the encoder limit froze on its last JPEG frame ("H.264 encoders busy") when the engine
+  moved it to a new stream whose encoder was slow or failed. Any preview stream now falls back to JPEG after 5 s without a
+  frame, not only an H.264 one before its first description (B95).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

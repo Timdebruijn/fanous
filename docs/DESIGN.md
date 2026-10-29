@@ -1503,11 +1503,13 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   streamer, which lives as long as the engine). The log says "preview
   encoder ready" (size, ms), "preview encoder not ready after 5 s",
   "preview encoder failed" (no retry until the next H.264 subscriber) and
-  "preview encoder released". The browser falls back to JPEG when no
-  `stream` description arrives within 5 s of an H.264 `sub` reply (not
-  after a reply refused to JPEG at the encoder limit, B70/B86); while it
-  asks for JPEG the caption says "connecting…", never "H.264" over a
-  closed decoder (B98). The pixel
+  "preview encoder released". The browser falls back to JPEG (a new JPEG
+  subscription) when it draws no frame for 5 s after a `sub` reply or its
+  last frame: a description that never comes, or a refused (B70) or H.264
+  viewer the engine moved to a new streamer whose session is slow or fails
+  (one watchdog per subscription, re-armed by every frame of either kind,
+  B95); while it asks for JPEG the caption says "connecting…", never
+  "H.264" over a closed decoder (B98). The pixel
   buffer pool, texture cache and `CIContext` stay in `init` (no
   VideoToolbox).
 - **As built (encoder limit across targets, B70, 2026-10-28):** the 4 count
@@ -1527,9 +1529,10 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   step under the lock: off the fallback, onto the new streamer, whose
   `stream` description and first key frame come with its first frame (as
   after a rebuild). Measured: description 53 ms after the close, longest gap
-  between frames 63 ms. The browser keeps a refused subscription (no 5 s
-  wait, no JPEG re-subscribe) and switches to its H.264 decoder when that
-  description comes (B86); JPEG frames arriving on an H.264 subscription
+  between frames 63 ms. The browser keeps a refused subscription (no JPEG
+  re-subscribe while its frames come) and switches to its H.264 decoder when
+  that description comes (B86), or re-subscribes as JPEG after 5 s without
+  a frame (B95); JPEG frames arriving on an H.264 subscription
   later (the engine moved it back to JPEG, B88) close the decoder and are
   drawn until the next description. A canvas-stream fallback shows other
   content than asked (the whole canvas, not the output's region or the layer
