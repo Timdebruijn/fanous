@@ -184,7 +184,7 @@ struct ProjectVersionsTests {
     }
 
     /// The undo of a revert that added 151 after the engine dropped the entry (a running server's twin) skips the remove
-    /// of the missing key instead of failing and dropping the history (B91).
+    /// of the missing key instead of failing and dropping the history; its redo is still checked (B91).
     @Test func revertUndoSkipsANumberTheEngineAlreadyDropped() throws {
         let f = Self.make()
         defer { try? FileManager.default.removeItem(at: f.base) }
@@ -202,6 +202,10 @@ struct ProjectVersionsTests {
         #expect(store.project["name"]?.string == "Tour")
         #expect(store.project["syphon"] == [:])
         #expect(store.historyDepth.undo == depth - 1)
+        // Y takes 151, then stops: the redo would put X back over it
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(151, "Y")]) }
+        #expect(store.execute("redo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by Y/Server; undo/redo refused")))
+        #expect(store.project["syphon"]?["151"]?["app"]?.string == "Y")
     }
 
     /// The undo of a revert that renamed 151, with nothing changed since, puts the old name back (B91).

@@ -227,9 +227,9 @@ public final class StateStore: @unchecked Sendable {
             return .failure(CommandError("historyConflict", "the change no longer applies"))
         }
         source.removeLast()
-        let patch = JSONPatch(operations: applied)
-        commit(next, patch: patch)
-        target.append(HistoryEntry(name: last.name, forward: patch, inverse: last.forward))
+        if !applied.isEmpty { commit(next, patch: JSONPatch(operations: applied)) }
+        // the whole patch, skipped removes included: the other direction's check needs what this step meant to leave
+        target.append(HistoryEntry(name: last.name, forward: last.inverse, inverse: last.forward))
         return .success(CommandResult(rev: revision, value: nil))
     }
 
