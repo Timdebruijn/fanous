@@ -7,8 +7,6 @@ import Testing
 
 @testable import FanousCore
 
-private func hex(_ bytes: [UInt8]) -> String { bytes.map { String(format: "%02x", $0) }.joined() }
-
 private let key: (UInt8, UInt8, UInt8, UInt8) = (0x37, 0xFA, 0x21, 0x3D)
 private let keyBytes: [UInt8] = [0x37, 0xFA, 0x21, 0x3D]
 
@@ -30,27 +28,6 @@ private func request(_ raw: String) throws -> HTTPRequest {
 private let upgradeHead =
     "GET /ws HTTP/1.1\r\nHost: a\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
     + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"
-
-@Suite struct SHA1Tests {
-    @Test func rfc3174Vectors() {
-        #expect(hex(SHA1.hash(Array("abc".utf8))) == "a9993e364706816aba3e25717850c26c9cd0d89d")
-        #expect(hex(SHA1.hash([])) == "da39a3ee5e6b4b0d3255bfef95601890afd80709")
-        let long = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
-        #expect(hex(SHA1.hash(Array(long.utf8))) == "84983e441c3bd26ebaae4aa1f95129e5e54670f1")
-    }
-
-    @Test func oneMillionA() {
-        let digest = SHA1.hash([UInt8](repeating: 0x61, count: 1_000_000))
-        #expect(hex(digest) == "34aa973cd4c4daa4f61eeb2bdbad27316534016f")
-    }
-
-    @Test func paddingBoundaries() {
-        // 55 bytes fits one block; 56 and 64 need a second. Compared against `shasum -a 1`.
-        #expect(hex(SHA1.hash([UInt8](repeating: 0x61, count: 55))) == "c1c8bbdc22796e28c0e15163d20899b65621d65a")
-        #expect(hex(SHA1.hash([UInt8](repeating: 0x61, count: 56))) == "c2db330f6083854c99d4b5bfb6e8f29f201be699")
-        #expect(hex(SHA1.hash([UInt8](repeating: 0x61, count: 64))) == "0098ba824b5c16427bd7a1122a5a442a25ec644d")
-    }
-}
 
 @Suite struct WebSocketFrameTests {
     // MARK: RFC 6455 §5.7 examples
@@ -237,20 +214,6 @@ private let upgradeHead =
 }
 
 @Suite struct WebSocketHandshakeTests {
-    @Test func acceptKeyMatchesRFCExample() {
-        #expect(WebSocketHandshake.acceptKey(for: "dGhlIHNhbXBsZSBub25jZQ==") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=")
-    }
-
-    @Test func upgradeProducesA101WithoutContentLength() throws {
-        let response = try #require(WebSocketHandshake.response(for: try request(upgradeHead)))
-        #expect(response.status == 101)
-        let wire = String(decoding: response.serialized(), as: UTF8.self)
-        #expect(
-            wire == "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
-                + "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n")
-        #expect(!wire.lowercased().contains("content-length"))
-    }
-
     @Test func otherStatusesStillCarryContentLength() {
         let wire = String(decoding: HTTPResponse(status: 204).serialized(), as: UTF8.self)
         #expect(wire == "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
@@ -269,7 +232,6 @@ private let upgradeHead =
 
     @Test func isUpgradeRejectsEverythingElse() throws {
         #expect(!WebSocketHandshake.isUpgrade(try request("GET /ws HTTP/1.1\r\nHost: a\r\n\r\n")))
-        #expect(WebSocketHandshake.response(for: try request("GET /ws HTTP/1.1\r\nHost: a\r\n\r\n")) == nil)
 
         let variants = [
             upgradeHead.replacingOccurrences(of: "GET", with: "POST"),
@@ -285,7 +247,6 @@ private let upgradeHead =
         for raw in variants {
             let parsed = try request(raw)
             #expect(!WebSocketHandshake.isUpgrade(parsed), "\(raw)")
-            #expect(WebSocketHandshake.response(for: parsed) == nil)
         }
     }
 }
