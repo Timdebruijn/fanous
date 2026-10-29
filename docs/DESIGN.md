@@ -1306,6 +1306,12 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
   with a blend, was 33 MB. An output without a blend has no map.
 - UI: unlinked, the seam's Gamma R, G and B sliders replace its single Gamma
   slider (a seam-check gamma hint highlights them); linking again drops them.
+  The wall map labels such a seam "RGB" (its title and label give the three
+  values). On the Outputs tab an edge with `gammaRGB` shows the three values in
+  place of its Gamma field, with **One gamma for R, G, B** (`output.set
+  …/gammaRGB null`, which a wall's inner edge passes on to its seam). **Apply
+  to all seams** copies the seam's R, G and B, or clears them on every seam
+  when the seam is linked.
 
 **Per-output colour.**
 - `OutputConfig.color {gain: [r, g, b] (0…2, default 1), black (0…0.2,
