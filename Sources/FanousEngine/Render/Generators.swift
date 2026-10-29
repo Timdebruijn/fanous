@@ -42,18 +42,21 @@ struct GeneratorUniforms {
     }
 
     /// "hh:mm:ss:ff" at 0…10 (ff = -1 leaves the last pair blank → "hh:mm:ss" at 0…7)
+    /// No array of the parts: the clock's array allocated on the compositor thread once per second (B112).
     mutating func putTime(h: Int, m: Int, s: Int, f: Int, at start: Int) {
-        let parts = f >= 0 ? [h, m, s, f] : [h, m, s]
-        var i = start
-        for (n, value) in parts.enumerated() {
-            if n > 0 {
-                put(10, at: i)
-                i += 1
-            }
-            put(value / 10 % 10, at: i)
-            put(value % 10, at: i + 1)
-            i += 2
-        }
+        putPair(h, at: start)
+        put(10, at: start + 2)
+        putPair(m, at: start + 3)
+        put(10, at: start + 5)
+        putPair(s, at: start + 6)
+        guard f >= 0 else { return }
+        put(10, at: start + 8)
+        putPair(f, at: start + 9)
+    }
+
+    private mutating func putPair(_ value: Int, at i: Int) {
+        put(value / 10 % 10, at: i)
+        put(value % 10, at: i + 1)
     }
 }
 
@@ -69,6 +72,10 @@ public final class GeneratorSource: LiveTextureSource, @unchecked Sendable {
     /// Replaced only by `resize` on the compositor thread, which is also the only reader once the layer has it.
     private(set) var texture: MTLTexture
     private let context: MetalContext
+    /// Made once (B112): made per draw, the descriptor added 4 allocations on the compositor thread and the label 1.
+    /// The label is an `NSString`: a Swift `String` is bridged, and allocates, on every assignment to `encoder.label`.
+    private let pass = MTLRenderPassDescriptor()
+    private let label: NSString
     public var latestTexture: MTLTexture? { texture }
 
     init?(context: MetalContext, file: Int, width: Int, height: Int) {
@@ -76,6 +83,10 @@ public final class GeneratorSource: LiveTextureSource, @unchecked Sendable {
         self.kind = UInt32(file)
         self.texture = texture
         self.context = context
+        label = "generator \(file)" as NSString
+        pass.colorAttachments[0].texture = texture
+        pass.colorAttachments[0].loadAction = .dontCare
+        pass.colorAttachments[0].storeAction = .store
         drawFirstFrame()
     }
 
@@ -104,20 +115,17 @@ public final class GeneratorSource: LiveTextureSource, @unchecked Sendable {
     func resize(width: Int, height: Int) {
         guard let texture = Self.makeTexture(context, file: Int(kind), width: width, height: height) else { return }
         self.texture = texture
+        pass.colorAttachments[0].texture = texture
         drawFirstFrame()
     }
 
     func encode(into commandBuffer: MTLCommandBuffer, uniforms: GeneratorUniforms) {
         encodeCount += 1
-        let pass = MTLRenderPassDescriptor()
-        pass.colorAttachments[0].texture = texture
-        pass.colorAttachments[0].loadAction = .dontCare
-        pass.colorAttachments[0].storeAction = .store
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { return }
         var u = uniforms
         u.kind = kind
         u.size = SIMD2(Float(texture.width), Float(texture.height))
-        encoder.label = "generator \(kind)"
+        encoder.label = label as String
         encoder.setRenderPipelineState(context.generatorPipeline)
         encoder.setFragmentBytes(&u, length: MemoryLayout<GeneratorUniforms>.stride, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)

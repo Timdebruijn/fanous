@@ -89,6 +89,52 @@ struct GeneratorTests {
         #expect(Self.pixel(first, flag.x, flag.y).g != Self.pixel(second, flag.x, flag.y).g, "frame flag did not alternate")
     }
 
+    @Test func timeDigitsAreLaidOutAsHoursMinutesSecondsFrames() {
+        var u = GeneratorUniforms()
+        u.putTime(h: 12, m: 34, s: 56, f: 7, at: 0)
+        #expect([u.d0, u.d1, u.d2] == [SIMD4(1, 2, 10, 3), SIMD4(4, 10, 5, 6), SIMD4(10, 0, 7, 11)])
+        var clock = GeneratorUniforms()
+        clock.putTime(h: 9, m: 5, s: 0, f: -1, at: 0)
+        #expect([clock.d0, clock.d1, clock.d2] == [SIMD4(0, 9, 10, 0), SIMD4(5, 10, 0, 0), SIMD4(11, 11, 11, 11)])
+    }
+
+    /// B112: a generator's draw allocates only the Metal encoder's own on the compositor thread, in an optimised build:
+    /// 2 as the first encoder of a command buffer, 3 after another one (DESIGN §4.6). Its render pass descriptor (4) and
+    /// encoder label (1) are made once per generator: 7 and 8 when they were made per draw. Filling in the time digits
+    /// allocates nothing (the clock's array of parts did, B112). The test card (110) and the clock (112) are measured.
+    /// A ratchet: fewer (or a hook that sees nothing) fails too, so the numbers here are updated with the change.
+    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    func mallocCounterGeneratorEncodeReusesItsRenderPass() throws {
+        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        let context = try MetalContext()
+        for file in [110, 112] {
+            let generator = try #require(GeneratorSource(context: context, file: file, width: 64, height: 64))
+            let other = try #require(GeneratorSource(context: context, file: 100, width: 64, height: 64))
+            var uniforms = GeneratorUniforms()
+            var digits = 0, first = 0, further = 0
+            for _ in 0..<20 {  // warm-up: Metal's caches
+                digits = MallocCounter.count {
+                    uniforms.putTime(h: 12, m: 34, s: 56, f: 7, at: 0)
+                    uniforms.putTime(h: 12, m: 34, s: 56, f: -1, at: 0)
+                }
+                let commandBuffer = try #require(context.queue.makeCommandBuffer())
+                first = MallocCounter.count { generator.encode(into: commandBuffer, uniforms: uniforms) }
+                commandBuffer.commit()
+                let second = try #require(context.queue.makeCommandBuffer())
+                other.encode(into: second, uniforms: uniforms)
+                further = MallocCounter.count { generator.encode(into: second, uniforms: uniforms) }
+                second.commit()
+                second.waitUntilCompleted()
+            }
+            #if !DEBUG
+                #expect(digits == 0, "time digits: \(digits) allocations on the calling thread")
+                #expect(first == 2, "generator \(file), first encoder: \(first) allocations on the calling thread")
+                #expect(further == 3, "generator \(file), further encoder: \(further) allocations on the calling thread")
+            #endif
+            print("generator \(file) draw: \(first) allocations as the first encoder, \(further) as a further one")
+        }
+    }
+
     @Test func testPatternsRender() throws {
         let context = try MetalContext()
         for pattern in TestPattern.allCases where pattern != .off {
