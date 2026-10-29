@@ -126,6 +126,20 @@ public final class Compositor: @unchecked Sendable {
     private let completedCanvas = Atomic<UInt64>(Compositor.packCompleted(index: 2, master: 0))
     private static func packCompleted(index: Int, master: Float) -> UInt64 { UInt64(index) << 32 | UInt64(master.bitPattern) }
     nonisolated(unsafe) public var lastGPUError: String = ""
+    /// Committed command buffers not yet booked, with their metrics slot and target time (B105): a completion handler
+    /// costs 3 mallocs per tick, polling the status costs none. Filled round-robin, so the entry at `nextInFlight` is
+    /// the oldest. Each tick books the finished ones first, so GPU time, late flags, `completed` and `gpuErrors` arrive
+    /// a few ticks late. Holding a completed buffer pins nothing: Metal releases its drawable and textures at completion
+    /// (measured, PR #88 review). When ticks stop, the last buffers stay unbooked: dropped on purpose, nothing waits on them.
+    private struct InFlight {
+        var buffer: MTLCommandBuffer?
+        var slot = 0
+        var target = 0.0
+    }
+    private var inFlight = [InFlight](repeating: InFlight(), count: 8)
+    private var nextInFlight = 0
+    /// Ticks that found all 8 entries unfinished and waited for the oldest (the GPU 8 buffers behind).
+    public let completionWaits = Atomic<Int>(0)
 
     public init(
         context: MetalContext, canvasWidth: Int, canvasHeight: Int, fps: Double, maxLayers: Int, metrics: MetricsRing,
@@ -326,6 +340,7 @@ public final class Compositor: @unchecked Sendable {
     public func tick(target: Double, drawable: CAMetalDrawable?) {
         ticks.wrappingAdd(1, ordering: .relaxed)
         tickThread.store(UInt(bitPattern: pthread_self()), ordering: .relaxed)
+        for i in inFlight.indices { harvest(i) }
         let cpuStart = CACurrentMediaTime()
         var record = FrameRecord()
         record.target = target
@@ -509,20 +524,31 @@ public final class Compositor: @unchecked Sendable {
         record.textureMisses = frame.misses
         record.cpuMicros = UInt32((CACurrentMediaTime() - cpuStart) * 1e6)
         let slot = metrics.write(record)
-        let metrics = self.metrics
-        commandBuffer.addCompletedHandler { [self] buffer in
-            completed.wrappingAdd(1, ordering: .relaxed)
-            if buffer.status == .error {
-                gpuErrors.wrappingAdd(1, ordering: .relaxed)
-                lastGPUError = "\(buffer.error.map { "\($0)" } ?? "unknown")"
-            }
-            metrics.complete(slot: slot, gpuMicros: UInt32(max(0, (buffer.gpuEndTime - buffer.gpuStartTime) * 1e6)), late: buffer.gpuEndTime > target)
-        }
         commandBuffer.commit()
+        if let oldest = inFlight[nextInFlight].buffer {
+            completionWaits.wrappingAdd(1, ordering: .relaxed)
+            oldest.waitUntilCompleted()
+            harvest(nextInFlight)
+        }
+        inFlight[nextInFlight] = InFlight(buffer: commandBuffer, slot: slot, target: target)
+        nextInFlight = (nextInFlight + 1) % inFlight.count
         if !reuse {
             completedCanvas.store(Self.packCompleted(index: canvasIndex, master: frame.masterIntensity), ordering: .releasing)
             canvasIndex = (canvasIndex + 1) % 3
         }
+    }
+
+    /// Books entry `i` of `inFlight` if its buffer finished: GPU time and lateness into its metrics record, the counters.
+    private func harvest(_ i: Int) {
+        guard let buffer = inFlight[i].buffer, buffer.status == .completed || buffer.status == .error else { return }
+        completed.wrappingAdd(1, ordering: .relaxed)
+        if buffer.status == .error {
+            gpuErrors.wrappingAdd(1, ordering: .relaxed)
+            lastGPUError = "\(buffer.error.map { "\($0)" } ?? "unknown")"
+        }
+        let gpuMicros = UInt32(max(0, (buffer.gpuEndTime - buffer.gpuStartTime) * 1e6))
+        metrics.complete(slot: inFlight[i].slot, gpuMicros: gpuMicros, late: buffer.gpuEndTime > inFlight[i].target)
+        inFlight[i].buffer = nil
     }
 
     struct TickContext {

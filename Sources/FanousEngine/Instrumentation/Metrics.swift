@@ -5,8 +5,8 @@
 import Foundation
 import Synchronization
 
-/// One compositor tick. Written on the render thread, GPU fields patched by the
-/// command-buffer completion handler; readers copy.
+/// One compositor tick. Written on the render thread, GPU fields patched by a later
+/// tick once its command buffer finished (B105); readers copy.
 public struct FrameRecord: Sendable {
     public var target: Double = 0  // target presentation time (host seconds)
     public var cpuMicros: UInt32 = 0
@@ -63,7 +63,7 @@ public final class MetricsRing: @unchecked Sendable {
         return index % capacity
     }
 
-    /// Completion handler: fills in GPU timing.
+    /// Render thread, a few ticks after `write`: fills in GPU timing.
     public func complete(slot: Int, gpuMicros: UInt32, late: Bool) {
         records[slot].gpuMicros = gpuMicros
         records[slot].late = late

@@ -168,8 +168,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - The §4.6 zero-malloc test counts only the compositor thread's allocations (a `malloc_logger` hook), not the process (B89).
 - `fanous-bench` reports the compositor thread's allocations for each step (`compositorMallocs`, also per tick). It
   counts them with the tests' `malloc_logger` counter, not the process-wide `blocks_in_use` delta. The minimum with GPU
-  work is 7 per tick (headless, one canvas, no output pass, no previews or thumbnails): 5 in Metal and 2 for our
-  completion closure. The output pass, extra canvases, generators and previews add more (DESIGN §4.6, B97, B105).
+  work was 7 per tick (headless, one canvas, no output pass, no previews or thumbnails): 4 in Metal, 1 for
+  `addCompletedHandler` and 2 for our completion closure; 4 since B105. The output pass, extra canvases, generators and previews add more (DESIGN §4.6, B97, B105).
 - Fixed: removing a canvas ended the preview of a viewer that watched it only as a fallback (an output or layer at the
   encoder limit); it now keeps its own target when an encoder or another fallback is free, and an encoder the removal
   frees goes to a waiting viewer (B88).
@@ -267,6 +267,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   unchanged. A frozen output follows later Grand Master moves from the level it froze at; Freeze engaged at Master 0
   holds the first picture drawn above 0. The black lift of a blend is the projector's black floor: on the picture it now
   stays put while the Grand Master moves (it used to go down with it) and is 0 at Master 0 and at either Blackout (B100).
+- The compositor no longer registers a completion handler per tick: later ticks poll the committed command buffers and
+  book GPU time, late flags, `completed` and GPU errors, so the minimum with GPU work drops from 7 to 4 allocations per
+  tick (the 4 inside Metal). GPU numbers in `/metrics` arrive a few frames later (B105).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
