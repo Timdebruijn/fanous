@@ -165,15 +165,17 @@ public final class OutputCoordinator {
         rebind()
     }
 
+    /// Joins every driver it owns (≤ 1 s each), so nothing ticks the compositor after this returns unless it logs (B113).
     public func stop() {
-        masterDriver?.stop()
+        var joined = masterDriver?.stop() ?? true
         masterDriver = nil
-        headless?.stop()
+        joined = (headless?.stop() ?? true) && joined
         headless = nil
         for (_, b) in bound {
-            b.secondary?.stop()
+            joined = (b.secondary?.stop() ?? true) && joined
             b.window.close()
         }
+        if !joined { logger.warning("a render thread did not stop within 1 s; a tick may still be in flight") }
         bound.removeAll()
         compositor.outputSet = nil
     }
