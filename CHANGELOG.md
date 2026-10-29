@@ -9,6 +9,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## 1.0.0-rc.1 — unreleased (Phase 8, 2026-10-24)
 
+- Design: cameras, capture cards and screens as folder 0 files 1–32 (DESIGN §8.2.1, B73): AVFoundation
+  `420v` planes and ScreenCaptureKit `BGRA` as `LiveTextureSource`s, one catalog with Syphon, camera and
+  screen permissions with a readiness item (R18). Not built yet.
 - Renamed Lanthorn → **Fanous** (2026-10-25; name collisions, `docs/RELEASE.md` §7). Existing machine
   state moves once from `~/Library/Application Support/Lanthorn` and `~/Library/Logs/Lanthorn`.
 - App icon and mark (a fanous lantern, `assets/`); UI fonts Atkinson Hyperlegible Next and Mono

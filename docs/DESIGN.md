@@ -287,6 +287,8 @@ contract; the compositor does not care where a texture came from.
 | Still (PNG/JPEG/TIFF/HEIF) | ImageIO | ImageIO → `MTLTexture` once (`rgba8`/`rgba16`) | resident | premultiplied alpha normalized on load |
 | Image sequence | not played directly: ingest converts to ProRes 4444 / HAP (§8) | — | — | keeps the engine to two movie codecs |
 | Syphon input | `SyphonMetalClient` | — | the server's `MTLTexture` is sampled directly | library folder 0 (§8.2) |
+| Camera / capture card (design, §8.2.1) | `AVCaptureSession` | — | `420v` planes through `CVMetalTextureCache` as `r8Unorm` + `rg8Unorm`, sampled directly (`.planarYCbCr`) | folder 0 files 1–20 |
+| Display / window capture (design, §8.2.1) | `SCStream` | — | `BGRA` through `CVMetalTextureCache`, sampled directly | folder 0 files 21–32 |
 | NDI / DeckLink (later) | plugin | plugin | plugin hands over an IOSurface | ADR-0016 |
 
 Why `AVSampleCursor` instead of `AVAssetReader`: the reader is forward-only
@@ -879,6 +881,134 @@ too), a running server always keeps its number, an entry on it is dropped and
 written back, a new entry with a running server's name on another number is
 dropped (it would take that server to the lower number at the next restart), and
 a freed number goes at once to a server waiting past the 20.
+
+#### 8.2.1 Cameras, capture cards and screens: files 1–32 (design 2026-10-29, B73)
+
+**Status:** design, not built. The feature-gap survey (`docs/feature-gaps.md`
+G1, G3; P1) found that every compared product takes a camera or capture card
+and that Millumin, VDMX, Isadora and Mitti take slides and lyrics apps by
+screen capture. Both are system frameworks: AVFoundation capture and
+ScreenCaptureKit (macOS 12.3+), no vendor SDK. DeckLink stays a plugin (§21).
+
+**Numbering.** Files 1–32 of folder 0, reserved since the first design, split
+by kind so a console operator can tell them apart:
+
+| Files | Source | Identity kept in the project |
+|---|---|---|
+| 1–20 | capture devices: UVC cameras and capture cards, Continuity Camera (an iPhone), CoreMediaIO camera extensions | `capture: {"3": {uid, name}}` |
+| 21–28 | whole displays (the Mac's own, a second Mac's HDMI into a capture card is a capture device) | `screens: {"21": {uuid, name}}` |
+| 29–32 | windows of other apps (slides in a window, a lyrics app): later, see below | `windows: {"29": {app, title}}` |
+
+Numbers are given the way Syphon servers get theirs (B61, B69): the lowest
+free number of the range when the engine first sees the device, kept in the
+project, back by identity (`AVCaptureDevice.uniqueID`, `CGDisplay` UUID) after
+a restart, freed by `capture.forget {file?}` (programmer, undoable, refused for
+a running device and under show lock), `gone` until seen again. One catalog
+class serves all three ranges and Syphon: `SyphonCatalog` becomes
+`LiveCatalog(range:key:)` with the same state machine, project adoption and
+`correct` write-back; `/syphon` keeps its name and shape, `/capture`,
+`/screens` and `/windows` follow it, and `StateStore`'s whole-entry folding
+(§11.5, B104) applies to every one of the four keys. The scene entry
+`{folder: 0, file, capture: uid}` on any folder 0 number wins over the
+catalog, as `syphon:` does.
+
+**Source path.** Both inputs are a `LiveTextureSource` like Syphon and the
+generators: the compositor samples the newest texture on the tick, nothing is
+copied and the tick allocates nothing (§4.6). The protocol gains what cameras
+need and Syphon does not: `latestTexture1` and `kind` (`SourcePixelKind`,
+default `.rgba`) so a frame can be two planes.
+
+| Input | Framework | Pixel path | Kind |
+|---|---|---|---|
+| Capture device | `AVCaptureSession` with one `AVCaptureVideoDataOutput` on its own serial queue; the device's active format is left as the device offers it (its highest frame rate at or below the canvas rate wins when several match) | `420v` (8-bit bi-planar 4:2:0, video range), the format AVFoundation always delivers without a CPU copy; TN3121 advises against BGRA (a conversion and 2.6× the memory) | `.planarYCbCr`: the Y plane as `r8Unorm`, CbCr as `rg8Unorm`, through `CVMetalTextureCache`; the layer shader's Rec.709 video-range matrix (§4.1) reads 8-bit planes unchanged, since it samples normalized floats and the 8-bit black level differs from 16-bit by one code |
+| Display | `SCStream` with `SCContentFilter(display:excludingApplications:)` that excludes the engine itself (an output on a captured display would feed back) | `BGRA`, ScreenCaptureKit's native output; size the display's pixel size, scaled down to fit the canvas when larger (aspect kept); `minimumFrameInterval` = the canvas rate; cursor off; no audio; `queueDepth` 4 | `.rgba` as `bgra8Unorm` through `CVMetalTextureCache`; a sample whose status is not `.complete` (an idle display) keeps the last texture |
+
+A `CVMetalTexture` must outlive the GPU's reads of its `MTLTexture`
+(`CVMetalTextureGetTexture` does not retain it). Each input keeps its last
+four (texture, pixel buffer) pairs in a small ring; the display paths cap
+command buffers in flight at three (§4.6), so a buffer is reused only after
+the GPU is done with it. Headless ticking can be eight deep and could then
+sample a buffer AVFoundation is refilling: a torn frame, never a crash. The
+capture queues allocate (texture-cache lookups), the compositor thread does
+not. Latency is one capture frame plus one tick: about 33 ms from a 30 fps
+camera, 16 ms from a 60 fps one, one or two frames for a display.
+
+Colour: a camera's frame is read as Rec.709 video range (the shader's only
+matrix); SD sources tagged Rec.601 and HDR cameras are read wrong until the
+shader takes the frame's tag (with B21). A display's BGRA is sRGB.
+Audio of a capture device is not taken (G13, separate).
+
+**Hot-plug.** The capture catalog follows
+`AVCaptureDevice.DiscoverySession` (`.external`, `.continuityCamera`,
+`.builtInWideAngleCamera`) and the connected/disconnected notifications on
+the main run loop, like the Syphon catalog follows Syphon's directory; the
+screen catalog follows `DisplayManager`'s list (§9.6). A layer whose device
+goes keeps its last frame and reads "not running"; the device returning
+reopens it, as for Syphon (B61). A device opened by another app (Continuity
+Camera in FaceTime) reads "in use".
+
+**Permissions (TCC).** The engine is the LaunchAgent helper bundle
+`org.fanous.engine` with its own Info.plist (§2.4), so prompts name "Fanous
+Engine" and carry its usage strings; `scripts/bundle.sh` adds
+`NSCameraUsageDescription` to both plists. The two permissions behave
+differently, and the design keeps them apart:
+
+- *Camera* (`AVCaptureDevice.requestAccess(for: .video)`): asked once, when a
+  layer first selects a capture file or on `capture.authorize {kind:
+  "camera"}` from the System screen; denied → the layer reads "camera
+  permission denied: allow Fanous Engine under Privacy & Security › Camera",
+  as B37 does for the microphone. Granted stays granted.
+- *Screen* (`CGPreflightScreenCaptureAccess`, `CGRequestScreenCaptureAccess`):
+  macOS applies a grant only to a new process, so `capture.authorize {kind:
+  "screen"}` prompts, and on a grant the engine exits cleanly and `KeepAlive`
+  restarts it (refused in show mode and under show lock, like `canvas.set`).
+  macOS 15 and later re-asks a screen-capturing app about monthly ("Allow For
+  One Month"), a dialog on the main display that an unattended show machine
+  cannot answer and that may sit on an output. Mitigations, in order: the
+  readiness check (below), an MDM profile (OPEN-20; a PPPC profile cannot
+  pre-approve screen capture, so the dialog stays unless Apple's
+  `persistent-content-capture` entitlement is granted to the Developer ID
+  build, B50, to be verified), and the user guide's advice to prefer a
+  capture card for a show-critical slides feed.
+
+**Readiness (§14).** A new item "Capture permissions granted": camera
+permission for a project that uses files 1–20, screen permission for 21–32;
+fails with the fix line "System Settings › Privacy & Security › Camera /
+Screen & System Audio Recording, then Engine › Restart". It blocks show mode
+until acknowledged, so no permission prompt appears during a show. The screen
+item also warns when the project uses 21–32 (the monthly re-confirmation).
+
+**Live feed and UI.** `live.capture: {devices: [{file, name, running,
+gone?, inUse?}], screens: [{file, name, running}], permissions: {camera:
+"granted" | "denied" | "notDetermined", screen: "granted" | "denied"}}`. The
+Media screen's folder 0 list gets the groups "Cameras and capture cards
+(1–20)" and "Displays (21–28)" with the green dot and Forget of the Syphon
+group; the layer panel's folder 0 picker lists them the same way; the
+System screen shows the two permissions with an Authorize button. The console
+side needs nothing: File 1–32 in folder 0 already dials them (§6).
+
+**Windows (29–32), later.** A window is named by its app's bundle id and title
+(`capture.window {file, app, title}` from a list the engine publishes as
+`live.capture.windows`, read through `SCShareableContent`); matched by app and
+title prefix, falling back to the app's frontmost window; captured with
+`SCContentFilter(desktopIndependentWindow:)`. Not in the first two steps: a
+display covers Keynote and PowerPoint in presenter mode, and a window's title
+changes with its document.
+
+**Tests.** The pixel path (a synthetic `CVPixelBuffer` through the texture
+cache into the layer shader, read back) and the catalogs (fake device lists,
+like `SyphonCatalogTests`) run on CI; a real device and a display need the
+permission, so the dev Mac's built-in camera, an iPhone over Continuity Camera
+and a display capture are the owner's live check per step. Which capture
+cards appear as AVFoundation devices (UVC ones do; DeckLink does not) is
+checked per vendor and listed in the user guide.
+
+**Order (one PR each, after approval):** 1. `LiveTextureSource` planes and
+kind, 8-bit planar readback test, `LiveCatalog` from `SyphonCatalog` (no
+behaviour change). 2. Capture devices 1–20: input, catalog, permission,
+readiness, Media and layer UI, user guide. 3. Displays 21–28: input, catalog,
+permission with restart, readiness, UI, the risk note (§20 R18), user guide.
+4. Windows 29–32 when a show asks for them.
 
 ### 8.3 Ingest flow
 
@@ -2318,7 +2448,8 @@ with public APIs:
 
 **Readiness check** (runs on entering show mode, re-checked every 30 s, each
 item with a one-line fix): on AC power; thermal state nominal; free disk >
-10 %; memory headroom; all patched universes receiving; all outputs bound
+10 %; memory headroom; all patched universes receiving; capture permissions
+granted for the folder 0 inputs the project uses (design, §8.2.1); all outputs bound
 and in the desired mode; no decoder errors; library on a local volume;
 Spotlight indexing of the library volume (`mdutil -s` state read via
 `MDQuery`/`mdutil` output) off or acknowledged; automatic macOS updates
@@ -2725,6 +2856,7 @@ and the MDM profile are the v1.x candidates.
 | R15 | Memory pressure on 16 GB machines with 4K layers | stalls | budget rules (§4.6), tier knobs, red warning before activation |
 | R16 | Thermal throttling on MacBook Pro during long shows | dropped frames late in a show | thermal state in status bar and readiness; benchmark includes a 10-min soak; recommend AC + stand/airflow in docs |
 | R17 | `CAMetalDisplayLink` stalls after three presented frames on macOS 27.0.1 (measured, ADR-0006 amendment) | the brief's render clock cannot be used as-is | drawable-loop driver with the same compositor and metrics; display-link driver kept behind a switch; re-test on each macOS release; Apple Feedback with the standalone reproduction |
+| R18 | macOS 15+ re-asks a screen-capturing engine about monthly ("Allow For One Month"), on the main display, which an unattended show machine cannot answer (§8.2.1) | a dialog over an output, or display capture stopping mid-show | readiness item before show mode; capture card for a show-critical slides feed; MDM profile (OPEN-20) and the persistent-content-capture entitlement with the Developer ID build (B50) to be verified |
 
 ---
 
@@ -2760,7 +2892,7 @@ and the MDM profile are the v1.x candidates.
 | OPEN-9 | Exact DMX bands (play modes, effects), speed max 400 %, scale max 800 % | **Resolved (Phase 1):** as in §6.2, locked in `docs/channel-map.md` and the GDTF |
 | OPEN-10 | sACN per-address priority (0xDD start code) | not in v1 |
 | OPEN-11 | Per-parameter smoothing vs a global switch | per parameter, default off |
-| OPEN-12 | Folder 0 numbering for inputs/generators | **Decided 2026-10-25:** as in §8.2, plus 110 test card, 111 colour sweep, 112 clock (`Generators.names`); 150–169 other apps' Syphon servers (B61, 2026-10-27) |
+| OPEN-12 | Folder 0 numbering for inputs/generators | **Decided 2026-10-25:** as in §8.2, plus 110 test card, 111 colour sweep, 112 clock (`Generators.names`); 150–169 other apps' Syphon servers (B61, 2026-10-27); 1–20 capture devices, 21–28 displays, 29–32 windows designed 2026-10-29 (§8.2.1, B73) |
 | OPEN-13 | HAP muxing via AVAssetWriter passthrough vs own muxer | **Resolved (Phases 2–4):** `AVAssetWriterInput` with a `sourceFormatHint` format description and passthrough sample buffers writes HAP `.mov` files the engine plays; no own muxer |
 | OPEN-14 | Per-channel (RGB) blend gamma | **Resolved (M1.6, 2026-10-29):** `rgba16Float` blend map with a factor per channel from `BlendEdge.gammaRGB`; unlinked R, G, B on the wall panel's seam (§9.2, §9.9) |
 | OPEN-15 | Audio varispeed / pitch at speed ≠ 100 % | v1.x; mute in v1 |
