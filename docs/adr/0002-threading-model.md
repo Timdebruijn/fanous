@@ -83,3 +83,14 @@ When the ring is full (the GPU 8 ticks behind), the compositor thread blocks in
 `waitUntilCompleted` on the oldest buffer, and `/metrics` counts it as
 `completionWaits`. Only headless or offscreen ticking can get there: the
 display paths cap at 3 drawables in flight.
+
+B109 removes the remaining handlers on the compositor thread. `PreviewStreamer`
+keeps its committed frames in a fixed ring of 5 and `ThumbnailStreamer` its one
+pass in flight; `Compositor.previewBook` runs at the start of every tick (also
+without GPU work, so a pending thumbnail pass is booked while `encoding` keeps
+the tap from running) and dispatches finished frames to the streamer's queue.
+The Syphon copy registers no handler either: the vendored server's
+`encodeFrameTexture:` encodes it, the tick's ring entry is marked, and booking
+that entry calls `-publish` on the compositor thread. Per frame on that thread:
+preview 16 → 13 + 2 at booking, thumbnail pass 27 → 24 + 2, Syphon 8 → 6 + 0.
+A Syphon client sees each frame up to one tick later than before.

@@ -46,6 +46,7 @@ import Testing
             thumbnails = try ThumbnailStreamer(context: context, compositor: compositor)
             hub.thumbnails = thumbnails
             compositor.previewTap = { [hub] canvas, buffer, target in hub.tap(canvas: canvas, commandBuffer: buffer, target: target) }
+            compositor.previewBook = { [hub] in hub.book() }
             compositor.skipsIdleWork = true
             compositor.previewWanted = { [hub] in hub.wantsFrames }
             thumbnails.onPublish = { [unowned self] set in published.withLock { $0.append(set) } }
@@ -58,10 +59,13 @@ import Testing
             }
         }
 
-        /// One pass period (15 ticks), then waits until its set is published.
+        /// One pass period (15 ticks) and the tick that books the pass once the GPU is done (B109), then waits until
+        /// its set is published.
         func pass() throws -> [ThumbnailStreamer.Thumb?] {
             let before = published.withLock { $0.count }
             tick(15)
+            drainGPU(compositor.context.queue)
+            tick(1)
             for _ in 0..<300 where published.withLock({ $0.count }) == before { usleep(10_000) }
             return try #require(published.withLock { $0.count > before ? $0.last : nil })
         }
@@ -79,7 +83,7 @@ import Testing
         _ = try rig.pass()
         let set = try rig.pass()
         #expect(rig.thumbnails.passes.load(ordering: .relaxed) == 2, "every 15th tick at 60 fps")
-        #expect(rig.compositor.idleTicks.load(ordering: .relaxed) == 30 + 28, "only thumbnails wanted: the canvas is drawn on pass ticks only")
+        #expect(rig.compositor.idleTicks.load(ordering: .relaxed) == 30 + 30, "only thumbnails wanted: the canvas is drawn on pass ticks only")
         #expect(set.count == 2)
         let thumb = try #require(set[0], "layer 1 shows the grid")
         #expect(thumb.width == 160 && thumb.height == 90)

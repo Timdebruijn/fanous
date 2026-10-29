@@ -432,9 +432,25 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
     | Output pass | +3 (one more encoder) |
     | Each extra canvas | +3 |
     | Generators | +2–3 (derived) |
-    | Each preview or thumbnail streamer | about +6 (derived: an encoder and a capturing handler) |
+    | Each preview frame (every 2nd tick at 30 of 60 fps) | +13 to encode (pixel buffer, Metal texture view, encoder), +2 to book |
+    | Each thumbnail pass (4 a second) | +24 to encode, +2 to book |
     | `present` | not measured |
-    | Syphon publish | a capturing `addCompletedHandler` block per tick (`SyphonMetalServer.m`, B109); count not measured |
+    | Syphon publish (while a client is attached) | +6 to encode (Syphon's flip draw), 0 to book |
+
+    The streamers and Syphon register no completion handler either (B109;
+    16, 27 and 8 with one). Each streamer keeps its committed frames in a
+    fixed ring: 5 entries for a preview streamer (at 30 of 60 fps at most 4
+    are unbooked when the compositor's ring of 8 keeps the GPU 8 ticks behind;
+    a full ring skips the frame and counts it in `skipped`), 1 for the
+    thumbnails (one set in flight). The
+    compositor calls `previewBook` at the start of every tick, also without
+    GPU work, and each streamer dispatches its finished frames to its queue
+    (the +2: closure and block). A Syphon copy marks the tick's ring entry;
+    booking that entry calls `-publish`, so a Syphon client sees a frame at
+    the first tick start after its GPU work finished, up to one tick
+    (16.7 ms at 60 fps) later than with the handler. Numbers from
+    `PreviewStreamerTests.mallocCounterStreamerTapsAndSyphonPublish`
+    (M1 Pro, `-c release`, 2026-10-29).
 - Unified memory budget: engine warns at 60 % of physical memory, refuses to
   activate a layer that would exceed 75 %. Read-ahead depth is the first knob
   reduced when a 16 GB machine is detected.

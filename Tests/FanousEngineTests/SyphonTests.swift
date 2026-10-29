@@ -81,6 +81,7 @@ import Testing
             output.publish(texture: source, commandBuffer: commandBuffer)
             commandBuffer.commit()
             commandBuffer.waitUntilCompleted()
+            output.publishCompleted()
             return input.latestTexture != nil
         }
         #expect(arrived)
@@ -102,6 +103,35 @@ import Testing
 
         input.disconnect()
         #expect(input.latestTexture == nil)
+    }
+
+    /// B109: wired as `RenderService` does it, a tick encodes the copy into its own buffer and a later tick, booking
+    /// that buffer from the compositor's ring, tells the client: no completion handler, and the frame still arrives.
+    @Test func aCompositorTickPublishesTheCanvasWhenALaterTickBooksItsBuffer() throws {
+        let context = try MetalContext()
+        let compositor = try Compositor(
+            context: context, canvasWidth: 64, canvasHeight: 64, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 64),
+            parameters: TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }, logger: Logger(label: "test"))
+        let output = try SyphonOutput(name: "FanousTest-\(UUID().uuidString)", device: context.device)
+        let input = SyphonInput(device: context.device)
+        defer {
+            input.disconnect()
+            output.stop()
+        }
+        compositor.canvasPublished = { texture, buffer in
+            output.publish(texture: texture, commandBuffer: buffer)
+            return true
+        }
+        compositor.canvasPublishedCompleted = { output.publishCompleted() }
+        try input.connect(description: output.serverDescription)
+        var ticks = 0
+        let arrived = Self.wait(seconds: 3) {
+            compositor.tick(target: 100 + Double(ticks) / 60, drawable: nil)
+            ticks += 1
+            return input.latestTexture != nil
+        }
+        #expect(arrived)
+        #expect(input.latestTexture?.width == 64 && input.latestTexture?.height == 64)
     }
 
     /// B106: a message callback already past CFMessagePort's validity check went on to use a receiver its owner had

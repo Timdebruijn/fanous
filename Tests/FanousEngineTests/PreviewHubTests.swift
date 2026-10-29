@@ -51,6 +51,7 @@ import Testing
                 context: context, canvasWidth: 160, canvasHeight: 90, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 64), parameters: parameters,
                 logger: PreviewHubTests.logger)
             compositor.previewTap = { [hub] canvas, buffer, target in hub.tap(canvas: canvas, commandBuffer: buffer, target: target) }
+            compositor.previewBook = { [hub] in hub.book() }
         }
 
         func connection() -> StateServer.Connection { StateServer.Connection(server: server, cookieRole: nil) }
@@ -282,6 +283,7 @@ import Testing
                 return true
             }
             compositor.previewTap = { [hub] canvas, buffer, target in hub.tap(canvas: canvas, commandBuffer: buffer, target: target) }
+            compositor.previewBook = { [hub] in hub.book() }
             compositor.skipsIdleWork = true
             compositor.previewWanted = { [hub] in hub.wantsFrames }
             connections = try Rig()

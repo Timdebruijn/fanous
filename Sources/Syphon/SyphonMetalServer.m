@@ -136,9 +136,20 @@
 
 - (void)publishFrameTexture:(id<MTLTexture>)textureToPublish onCommandBuffer:(id<MTLCommandBuffer>)commandBuffer imageRegion:(NSRect)region flipped:(BOOL)isFlipped
 {
+    // Fanous: the copy is encoded by encodeFrameTexture:, which registers no completion handler (B109)
+    if ([self encodeFrameTexture:textureToPublish onCommandBuffer:commandBuffer imageRegion:region flipped:isFlipped]) {
+        [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> _Nonnull commandBuffer) {
+            [self publish];
+        }];
+    }
+}
+
+// Fanous: publishFrameTexture: without the completion handler; the caller calls -publish once the buffer completed (B109)
+- (BOOL)encodeFrameTexture:(id<MTLTexture>)textureToPublish onCommandBuffer:(id<MTLCommandBuffer>)commandBuffer imageRegion:(NSRect)region flipped:(BOOL)isFlipped
+{
     if(textureToPublish == nil) {
         SYPHONLOG(@"TextureToPublish is nil. Syphon will not publish");
-        return;
+        return NO;
     }
     
     region = NSIntersectionRect(region, NSMakeRect(0, 0, textureToPublish.width, textureToPublish.height));
@@ -169,10 +180,7 @@
     {
         [_renderer renderFromTexture:textureToPublish inTexture:destination region:region onCommandBuffer:commandBuffer flip:isFlipped];
     }
-    
-    [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> _Nonnull commandBuffer) {
-        [self publish];
-    }];
+    return YES;
 }
 
 @end

@@ -129,8 +129,11 @@ public final class RenderService {
             syphon = output
             compositor.canvasPublishedWanted = { output.hasClients }
             compositor.canvasPublished = { texture, commandBuffer in
-                if output.hasClients { output.publish(texture: texture, commandBuffer: commandBuffer) }
+                guard output.hasClients else { return false }
+                output.publish(texture: texture, commandBuffer: commandBuffer)
+                return true
             }
+            compositor.canvasPublishedCompleted = { output.publishCompleted() }
         }
         syphonCatalog = SyphonCatalog(excluding: syphon?.uuid, numbers: syphonNumbers)
         loader.syphonCatalog = syphonCatalog
@@ -198,6 +201,7 @@ public final class RenderService {
         window = nil
         compositor.setLayers([])
         compositor.canvasPublished = nil
+        compositor.canvasPublishedCompleted = nil
         compositor.canvasPublishedWanted = nil
         syphonCatalog.stop()
         syphon?.stop()

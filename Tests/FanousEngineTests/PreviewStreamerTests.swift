@@ -26,12 +26,18 @@ struct PreviewStreamerTests {
         streamer.onFrame = { payload, avcC in frames.withLock { $0.append((payload, avcC)) } }
         streamer.alwaysEncode = true  // no WebSocket subscriber in this test
         compositor.previewTap = { canvas, buffer, target in streamer.tap(canvas: canvas, commandBuffer: buffer, target: target) }
-        // the first preview frame starts making the encoder (B66) and skips H.264 while it is made
+        compositor.previewBook = { streamer.book() }
+        // the first preview frame starts making the encoder (B66) and skips H.264 while it is made; a tick after the GPU
+        // finished books it (B109)
         for i in 0..<2 { compositor.tick(target: 0.5 + Double(i) / 60, drawable: nil) }
+        drainGPU(context.queue)
+        compositor.tick(target: 0.5 + 2.0 / 60, drawable: nil)
         for _ in 0..<250 where !streamer.hasEncoder { try await Task.sleep(for: .milliseconds(20)) }
         #expect(streamer.hasEncoder)
-        // every second tick is a preview frame at 30 of 60 fps
-        for i in 0..<8 { compositor.tick(target: 1 + Double(i) / 60, drawable: nil) }
+        // every second tick is a preview frame at 30 of 60 fps; the last tick only books
+        for i in 0..<7 { compositor.tick(target: 1 + Double(i) / 60, drawable: nil) }
+        drainGPU(context.queue)
+        compositor.tick(target: 1 + 7.0 / 60, drawable: nil)
         for _ in 0..<100 where frames.withLock({ $0.count }) < 2 { try await Task.sleep(for: .milliseconds(20)) }
         let delivered = frames.withLock { $0 }
         #expect(delivered.count >= 2, "expected encoded frames, got \(delivered.count)")
@@ -79,5 +85,54 @@ struct PreviewStreamerTests {
             #expect(!unused.hasEncoder)
         }
         #expect(gone == nil)
+    }
+
+    /// B109: what one preview tap, one thumbnail pass and one Syphon publish allocate on the calling (compositor) thread,
+    /// and what booking them a tick later adds. Before B109 the taps and the publish each registered a capturing
+    /// completion handler: preview tap 16, thumbnail tap 27, Syphon publish 8; after: 13 + 2, 24 + 2, 6 + 0 (M1 Pro,
+    /// macOS 27, `-c release`).
+    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    func mallocCounterStreamerTapsAndSyphonPublish() throws {
+        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        let rig = try ThumbnailStreamerTests.Rig(layers: 1, grid: 0)
+        rig.thumbnails.alwaysEncode = true
+        let context = rig.compositor.context
+        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
+        let streamer = try PreviewStreamer(context: context, width: 320, height: 180, fps: 60, canvasFPS: 60, parameters: parameters, logger: Logger(label: "test"))
+        streamer.alwaysEncode = true
+        let output = try SyphonOutput(name: "FanousTest-\(UUID().uuidString)", device: context.device)
+        defer { output.stop() }
+        let canvas = rig.compositor.latestCanvas
+        /// (encode, book): `encode` into a fresh buffer, then `book` once the GPU finished it.
+        func measure(_ encode: (MTLCommandBuffer) -> Void, book: () -> Void) throws -> (Int, Int) {
+            let buffer = try #require(context.queue.makeCommandBuffer())
+            let encoded = MallocCounter.count { encode(buffer) }
+            buffer.commit()
+            buffer.waitUntilCompleted()
+            return (encoded, MallocCounter.count(book))
+        }
+        var preview = (0, 0), syphon = (0, 0), thumbs = (0, 0)
+        for _ in 0..<20 {
+            preview = try measure({ streamer.tap(canvas: canvas, commandBuffer: $0, target: 1) }, book: streamer.book)
+            syphon = try measure({ output.publish(texture: canvas, commandBuffer: $0) }, book: output.publishCompleted)
+        }
+        _ = try rig.pass()
+        rig.hub.thumbnails = nil  // from here only this test taps the thumbnails
+        for _ in 0..<3 {
+            rig.tick(15 - rig.compositor.ticks.load(ordering: .relaxed) % 15)  // to a pass tick
+            usleep(50_000)  // the last set's encode has returned: this pass is not skipped
+            thumbs = try measure({ rig.thumbnails.tap(commandBuffer: $0) }, book: rig.thumbnails.book)
+        }
+        #expect(rig.thumbnails.passes.load(ordering: .relaxed) == 4)
+        // the last set is published before the rig goes (its `onPublish` holds the rig unowned)
+        for _ in 0..<300 where rig.published.withLock({ $0.count }) < 4 { usleep(10_000) }
+        #expect(rig.published.withLock { $0.count } == 4)
+        #expect(streamer.skipped.load(ordering: .relaxed) == 0 && rig.thumbnails.skipped.load(ordering: .relaxed) == 0)
+        // the encode side is mostly Core Video and Metal (OS-dependent, printed); booking is ours: one dispatch to the
+        // streamer's queue (closure context and block), nothing for Syphon
+        #if !DEBUG
+            #expect(preview.1 <= 2 && thumbs.1 <= 2 && syphon.1 == 0, "booking: preview \(preview.1), thumbnails \(thumbs.1), Syphon \(syphon.1)")
+        #endif
+        print("B109 mallocs (encode + book): preview tap \(preview), thumbnail tap \(thumbs), syphon publish \(syphon)")
     }
 }

@@ -62,6 +62,9 @@ public final class ThumbnailStreamer: @unchecked Sendable {
     private var poolSize = (width: 0, height: 0)
     private var atlasTexture: MTLTexture?
     private let textureCache: CVMetalTextureCache
+    /// The pass whose GPU work is committed but not yet booked (B109, the B105 pattern: `book` polls its status each
+    /// tick instead of a completion handler). One entry: `encoding` already keeps one set in flight.
+    private var pending: (buffer: MTLCommandBuffer, pixelBuffer: CVPixelBuffer, texture: CVMetalTexture, cells: [ThumbnailAtlas.Cell?], shapes: [(width: Int, height: Int)])?
 
     // thumbnail queue
     private var sent: [Thumb?] = []
@@ -167,18 +170,24 @@ public final class ThumbnailStreamer: @unchecked Sendable {
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
         passes.wrappingAdd(1, ordering: .relaxed)
-        let cells = layout.cells
         encoding.store(true, ordering: .relaxed)
-        commandBuffer.addCompletedHandler { [self] buffer in
-            _ = cvTexture  // the CVMetalTexture must outlive the GPU work
-            guard buffer.status == .completed else {
-                encoding.store(false, ordering: .relaxed)
-                return
-            }
-            queue.async { [self] in
-                encode(pixelBuffer, cells: cells, shapes: shapes)
-                encoding.store(false, ordering: .relaxed)
-            }
+        pending = (commandBuffer, pixelBuffer, cvTexture, layout.cells, shapes)
+    }
+
+    /// `PreviewHub.book`, every tick (also while `encoding` keeps the tap from being called): a finished pass goes to
+    /// the thumbnail queue; a failed one is dropped.
+    func book() {
+        guard let pass = pending, pass.buffer.status == .completed || pass.buffer.status == .error else { return }
+        pending = nil
+        guard pass.buffer.status == .completed else {
+            encoding.store(false, ordering: .relaxed)
+            return
+        }
+        nonisolated(unsafe) let pixelBuffer = pass.pixelBuffer  // the queue is its only user from here on
+        let (cells, shapes) = (pass.cells, pass.shapes)
+        queue.async { [self] in
+            encode(pixelBuffer, cells: cells, shapes: shapes)
+            encoding.store(false, ordering: .relaxed)
         }
     }
 

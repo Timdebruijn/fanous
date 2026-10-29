@@ -22,12 +22,17 @@ public final class Compositor: @unchecked Sendable {
     public private(set) var layers: [RenderLayer] = []
     /// Signalled when a layer wants other media (the media loader waits on it).
     nonisolated(unsafe) public var loaderWake: DispatchSemaphore?
-    /// Runs after the canvas pass on the same command buffer (Syphon output publishes the completed canvas).
-    nonisolated(unsafe) public var canvasPublished: ((MTLTexture, MTLCommandBuffer) -> Void)?
+    /// Runs after the canvas pass on the same command buffer (Syphon output encodes its copy of the canvas); true when
+    /// it encoded one, so `canvasPublishedCompleted` runs when the tick's ring books that buffer.
+    nonisolated(unsafe) public var canvasPublished: ((MTLTexture, MTLCommandBuffer) -> Bool)?
+    /// Compositor thread: the buffer a `canvasPublished` copy went into has completed (Syphon tells its clients), B109.
+    nonisolated(unsafe) public var canvasPublishedCompleted: (() -> Void)?
     /// Without a drawable the output pass renders into this texture instead (tests, headless previews).
     nonisolated(unsafe) public var offscreenOutput: MTLTexture?
     /// Browser previews (DESIGN.md §11.3): draws the canvas into a small pixel buffer on the same command buffer.
     nonisolated(unsafe) public var previewTap: ((MTLTexture, MTLCommandBuffer, Double) -> Void)?
+    /// Every tick, also without GPU work: the preview streamers book their finished frames (B109).
+    nonisolated(unsafe) public var previewBook: (() -> Void)?
     /// Timecode for layers in the Timecode play mode (DESIGN.md §15.1); offsets in frames of the timecode rate.
     nonisolated(unsafe) public var timecode: TimecodeClock?
     nonisolated(unsafe) public var timecodeOffsets = TimecodeOffsets(project: 0, layers: [:])
@@ -135,6 +140,8 @@ public final class Compositor: @unchecked Sendable {
         var buffer: MTLCommandBuffer?
         var slot = 0
         var target = 0.0
+        /// `canvasPublished` encoded into this buffer.
+        var publish = false
     }
     private var inFlight = [InFlight](repeating: InFlight(), count: 8)
     private var nextInFlight = 0
@@ -341,6 +348,7 @@ public final class Compositor: @unchecked Sendable {
         ticks.wrappingAdd(1, ordering: .relaxed)
         tickThread.store(UInt(bitPattern: pthread_self()), ordering: .relaxed)
         for i in inFlight.indices { harvest(i) }
+        previewBook?()
         let cpuStart = CACurrentMediaTime()
         var record = FrameRecord()
         record.target = target
@@ -484,7 +492,7 @@ public final class Compositor: @unchecked Sendable {
         }
         tickIndex = reuse ? (canvasIndex + 2) % 3 : canvasIndex
         let canvas = targets[0].textures[tickIndex]
-        canvasPublished?(canvas, commandBuffer)
+        let published = canvasPublished?(canvas, commandBuffer) ?? false
         previewTap?(canvas, commandBuffer, target)
 
         if let target = drawable?.texture ?? offscreenOutput {
@@ -530,7 +538,7 @@ public final class Compositor: @unchecked Sendable {
             oldest.waitUntilCompleted()
             harvest(nextInFlight)
         }
-        inFlight[nextInFlight] = InFlight(buffer: commandBuffer, slot: slot, target: target)
+        inFlight[nextInFlight] = InFlight(buffer: commandBuffer, slot: slot, target: target, publish: published)
         nextInFlight = (nextInFlight + 1) % inFlight.count
         if !reuse {
             completedCanvas.store(Self.packCompleted(index: canvasIndex, master: frame.masterIntensity), ordering: .releasing)
@@ -548,6 +556,7 @@ public final class Compositor: @unchecked Sendable {
         }
         let gpuMicros = UInt32(max(0, (buffer.gpuEndTime - buffer.gpuStartTime) * 1e6))
         metrics.complete(slot: inFlight[i].slot, gpuMicros: gpuMicros, late: buffer.gpuEndTime > inFlight[i].target)
+        if inFlight[i].publish { canvasPublishedCompleted?() }
         inFlight[i].buffer = nil
     }
 

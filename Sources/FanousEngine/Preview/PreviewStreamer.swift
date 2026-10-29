@@ -60,6 +60,19 @@ public final class PreviewStreamer: @unchecked Sendable {
     private let uniforms: MTLBuffer
     private let pass = MTLRenderPassDescriptor()
     private var tickCounter = 0
+    /// Compositor thread: frames whose GPU work is committed but not yet booked (B109, the B105 pattern). A completion
+    /// handler cost 3 mallocs per frame; `book` polls the status each tick instead (its dispatch costs 2). 5 entries: the
+    /// compositor's ring of 8 keeps the GPU at most 8 ticks behind, so at 30 of 60 fps at most 4 frames are unbooked
+    /// when the next is tapped (a tap every tick, 30 of 30 fps, needs 3 with the GPU two frames behind). When all are in
+    /// use the frame is skipped.
+    private struct Pending {
+        var buffer: MTLCommandBuffer?
+        var pixelBuffer: CVPixelBuffer?
+        /// The CVMetalTexture must outlive the GPU work.
+        var texture: CVMetalTexture?
+        var target = 0.0
+    }
+    private var pending = [Pending](repeating: Pending(), count: 5)
     private let everyNth: Int
     /// Tap interval while only JPEG consumers (5 fps) are listening: the GPU copy is throttled too, not just the encode.
     private let jpegEveryNth: Int
@@ -182,6 +195,10 @@ public final class PreviewStreamer: @unchecked Sendable {
     public func tap(canvas: MTLTexture, commandBuffer: MTLCommandBuffer, target: Double, canvases: ((Int) -> MTLTexture?)? = nil) {
         tickCounter &+= 1
         guard wantsFrames, tickCounter % (wantsH264 ? everyNth : jpegEveryNth) == 0, let pool, let textureCache else { return }
+        guard let entry = pending.firstIndex(where: { $0.buffer == nil }) else {
+            skipped.wrappingAdd(1, ordering: .relaxed)
+            return
+        }
         var pixelBuffer: CVPixelBuffer?
         guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer) == kCVReturnSuccess, let pixelBuffer else {
             skipped.wrappingAdd(1, ordering: .relaxed)
@@ -227,11 +244,18 @@ public final class PreviewStreamer: @unchecked Sendable {
         }
         encoder.endEncoding()
         framesIn.wrappingAdd(1, ordering: .relaxed)
-        let keep = cvTexture  // the CVMetalTexture must outlive the GPU work
-        commandBuffer.addCompletedHandler { [self] buffer in
-            _ = keep
-            guard buffer.status == .completed else { return }
-            queue.async { [self] in encode(pixelBuffer, target: target) }
+        pending[entry] = Pending(buffer: commandBuffer, pixelBuffer: pixelBuffer, texture: cvTexture, target: target)
+    }
+
+    /// `PreviewHub.book`, every tick: frames whose GPU work finished go to the preview queue; a failed one is dropped.
+    func book() {
+        for i in pending.indices {
+            guard let buffer = pending[i].buffer, buffer.status == .completed || buffer.status == .error else { continue }
+            if buffer.status == .completed, let pixelBuffer = pending[i].pixelBuffer {
+                let target = pending[i].target
+                queue.async { [self] in encode(pixelBuffer, target: target) }
+            }
+            pending[i] = Pending()
         }
     }
 

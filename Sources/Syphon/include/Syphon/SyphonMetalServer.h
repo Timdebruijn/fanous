@@ -89,6 +89,13 @@ A dictionary describing the server. Normally you won't need to access this, howe
 */
 - (void)publishFrameTexture:(id<MTLTexture>)textureToPublish onCommandBuffer:(id<MTLCommandBuffer>)commandBuffer imageRegion:(NSRect)region flipped:(BOOL)isFlipped;
 
+// Fanous: publishFrameTexture: without its completion handler (B109). Encodes the copy and returns NO when there was
+// nothing to publish; once commandBuffer has completed, the caller calls -publish to tell the clients.
+- (BOOL)encodeFrameTexture:(id<MTLTexture>)textureToPublish onCommandBuffer:(id<MTLCommandBuffer>)commandBuffer imageRegion:(NSRect)region flipped:(BOOL)isFlipped;
+
+// Fanous: SyphonServerBase's -publish (declared upstream in the private SyphonSubclassing.h), for encodeFrameTexture:.
+- (void)publish;
+
 /*!
  Returns a `MTLTexture` representing the current output from the server, valid on the server's `MTLDevice`. Call this method every time you wish to access the current server frame. This texture has a limited useful lifetime: you should release it as soon as you are finished drawing with it.
   

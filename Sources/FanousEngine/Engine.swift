@@ -449,6 +449,7 @@ public final class Engine: @unchecked Sendable {
                 logger.error("live layer thumbnails unavailable", metadata: ["error": "\(error)"])
             }
             render.compositor.previewTap = { canvas, commandBuffer, target in preview.tap(canvas: canvas, commandBuffer: commandBuffer, target: target) }
+            render.compositor.previewBook = { preview.book() }
             // no GPU work for a canvas nobody sees: no output window, preview, Syphon client or CITP stream
             render.compositor.skipsIdleWork = true
             render.compositor.previewWanted = { preview.wantsFrames }

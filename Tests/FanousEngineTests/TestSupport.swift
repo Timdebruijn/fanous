@@ -4,6 +4,7 @@
 
 import FanousEngine
 import Foundation
+import Metal
 import Synchronization
 import Testing
 
@@ -31,6 +32,14 @@ func waitUntil(_ deadline: Duration = .seconds(10), every: Duration = .milliseco
 /// A UDP port that is free right now: bind port 0 exclusively (no SO_REUSEADDR/SO_REUSEPORT), read back the port the
 /// kernel assigned, release it. Unlike a random pick, it never lands on a port another socket holds; Network.framework
 /// listeners share ports, so such a port would cross-talk silently. Still check-then-release: the window is short.
+/// Returns once the GPU finished every command buffer committed so far on `queue` (a queue completes them in order), so
+/// the next tick books them (B105, B109).
+func drainGPU(_ queue: MTLCommandQueue) {
+    guard let buffer = queue.makeCommandBuffer() else { return }
+    buffer.commit()
+    buffer.waitUntilCompleted()
+}
+
 func freeUDPPort() throws -> UInt16 {
     let fd = socket(AF_INET, SOCK_DGRAM, 0)
     defer { close(fd) }

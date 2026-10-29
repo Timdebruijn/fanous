@@ -325,6 +325,12 @@ public final class PreviewHub: @unchecked Sendable {
         thumbnails?.tap(commandBuffer: commandBuffer)
     }
 
+    /// `Compositor.previewBook`, every tick: each streamer hands its finished frames to its queue (B109).
+    public func book() {
+        for streamer in active.withLock({ $0 }) { streamer.book() }
+        thumbnails?.book()
+    }
+
     // MARK: Counters
 
     public var framesIn: Int { active.withLock { $0 }.reduce(0) { $0 + $1.framesIn.load(ordering: .relaxed) } }
