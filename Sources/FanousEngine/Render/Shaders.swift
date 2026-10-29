@@ -2,6 +2,8 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
+import FanousCore
+
 /// Metal shader source, compiled at engine start (`MTLDevice.makeLibrary(source:)`)
 /// so no offline Metal toolchain is needed. One string on purpose: the layer
 /// uber-shader (DESIGN.md §4.3) and the output pass are small enough to read.
@@ -566,7 +568,7 @@ public enum ShaderSource {
     }
 
     // ponytail: projector gamma fixed at 2.2 (the edges' default); a per-output gamma if a projector measurably differs
-    constant float projectorGamma = 2.2;
+    constant float projectorGamma = \(Float(BlendMath.projectorGamma));
 
     // Per-output colour and the black floor (DESIGN.md §9.9): the gain multiplies the code value per channel (tuned by
     // eye); the black lift and the black offset add light, so they are added in linear light. Both are stored as the

@@ -31,11 +31,12 @@ struct MappingMathTests {
         // four floats per pixel: factor r, g, b, lift term
         #expect(map.count == 8 * 4 * 4)
         func at(_ x: Int, _ y: Int) -> (Float, Float) { (map[(y * 8 + x) * 4], map[(y * 8 + x) * 4 + 3]) }
-        #expect(at(7, 3) == (1, 0.1), "outside every zone: full signal plus lift")
-        #expect(abs(at(0, 3).0 - 0.125) < 1e-6 && at(0, 3).1 == 0, "left zone: linear ramp, no lift")
+        // both axes: the lift follows the coverage (M2.1), 3^(1/γ) lifts outside every zone, 1 in a zone, 0 in the corner
+        #expect(at(7, 3).0 == 1 && abs(at(7, 3).1 - Float(0.1 * pow(3, 1 / 2.2))) < 1e-6, "outside every zone: full signal plus lift")
+        #expect(abs(at(0, 3).0 - 0.125) < 1e-6 && at(0, 3).1 == 0.1, "left zone: linear ramp, one lift")
         #expect(abs(at(3, 3).0 - 0.875) < 1e-6)
-        #expect(abs(at(0, 0).0 - 0.125 * 0.25) < 1e-6, "corner multiplies both axes")
-        #expect(at(7, 0).1 == 0, "inside the top zone")
+        #expect(abs(at(0, 0).0 - 0.125 * 0.25) < 1e-6 && at(0, 0).1 == 0, "corner multiplies both axes, no lift")
+        #expect(at(7, 0).1 == 0.1, "inside the top zone")
         #expect(BlendSettings().isIdentity)
     }
 
@@ -59,10 +60,47 @@ struct MappingMathTests {
             #expect(BlendMath.factor(0.35, edge: s.left, channel: i) == single)
             #expect(rgb(3, 0)[i] == Float(single * BlendMath.factor(0.125, edge: s.top, channel: i)), "corner, channel \(i)")
         }
-        #expect(lift(3, 6) == 0)
-        #expect(rgb(15, 6) == [1, 1, 1] && lift(15, 6) == 0.05, "outside every zone: full signal plus lift")
+        #expect(lift(3, 6) == 0.05, "one zone of a grid: one lift (M2.1)")
+        #expect(rgb(15, 6) == [1, 1, 1] && abs(lift(15, 6) - Float(0.05 * pow(3, 1 / 2.2))) < 1e-6, "outside every zone: full signal plus lift")
         // gammaRGB nil: R = G = B = the single factor
         #expect(rgb(15, 10) == Array(repeating: Float(BlendMath.factor(0.375, edge: s.bottom)), count: 3), "\(rgb(15, 10))")
+    }
+
+    /// M2.1 (DESIGN §9.10 item 1): with overlaps on both axes the lift follows the coverage n = (1 + zx)(1 + zy):
+    /// lift × ((4 − n) / n)^(1/γ), so 3^(1/γ) lifts where one projector lights the pixel, 1 in a seam, 0 where four
+    /// overlap, continuous over the lift feather. An output blended on one axis keeps lift × (1 − in a zone).
+    @Test func blendMapLiftFollowsTheCoverageOnBothAxes() {
+        let lift = 0.05, single = Float(lift * pow(3, 1 / 2.2))
+        for feather in [0.0, 4] {
+            var s = BlendSettings()
+            s.left = BlendEdge(overlap: 4)
+            s.top = BlendEdge(overlap: 2)
+            s.lift = lift
+            s.liftFeather = feather
+            let map = BlendMath.map(s, width: 16, height: 12)
+            func at(_ x: Int, _ y: Int) -> Float { map[(y * 16 + x) * 4 + 3] }
+            #expect(abs(at(15, 11) - single) < 1e-6, "n = 1, feather \(feather): \(at(15, 11))")
+            #expect(at(1, 11) == Float(lift) && at(15, 0) == Float(lift), "n = 2, feather \(feather): \(at(1, 11)) \(at(15, 0))")
+            #expect(at(1, 0) == 0, "n = 4, feather \(feather): \(at(1, 0))")
+            guard feather > 0 else { continue }
+            // the feather beyond the left zone (columns 4…7): rising from the seam's lift to the single lift
+            let band = (3...8).map { at($0, 11) }
+            #expect(band.first == Float(lift) && abs(band.last! - single) < 1e-6 && zip(band, band.dropFirst()).allSatisfy { $0 < $1 }, "\(band)")
+            let n = 1 + (1 - 1.5 / 4)  // column 5: 1.5 px into the feather
+            #expect(abs(at(5, 11) - Float(lift * pow((4 - n) / n, 1 / 2.2))) < 1e-6, "\(at(5, 11))")
+        }
+        // one axis (left and right): the lift as before, also in the feather
+        var s = BlendSettings()
+        s.left = BlendEdge(overlap: 4)
+        s.right = BlendEdge(overlap: 3)
+        s.lift = lift
+        s.liftFeather = 4
+        let map = BlendMath.map(s, width: 16, height: 2)
+        for col in 0..<16 {
+            let c = Double(col) + 0.5, d = 16 - c
+            let inZone = max(c < 4 ? 1 : 1 - min(1, (c - 4) / 4), d < 3 ? 1 : 1 - min(1, (d - 3) / 4))
+            #expect(map[col * 4 + 3] == Float(lift * (1 - inZone)) && map[(16 + col) * 4 + 3] == map[col * 4 + 3], "column \(col): \(map[col * 4 + 3])")
+        }
     }
 
     @Test func homographyMapsTheCornersAndKeepsTheIdentity() {
