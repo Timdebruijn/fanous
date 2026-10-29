@@ -317,29 +317,44 @@ struct OutputPassTests {
         }
     }
 
-    /// A frozen canvas carries the Master it was drawn with; the output follows the Master from there, once.
-    @Test func freezeFollowsTheMasterOnce() throws {
-        let context = try MetalContext()
-        let still = try Self.flat(context.device, value: 200)
-        let plan = try OutputCompiler(device: context.device).compile(OutputConfig(id: 1), index: 1, drawable: (Self.width, Self.height))
-        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
-        let compositor = try Compositor(
-            context: context, canvasWidth: Self.width, canvasHeight: Self.height, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 16),
-            parameters: parameters, logger: Logger(label: "output-test"))
-        let layer = RenderLayer(index: 0)
-        layer.current = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: still)
-        layer.wanted.store(MediaKey(folder: 1, file: 1).packed, ordering: .relaxed)
-        compositor.setLayers([layer])
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.outputFormat, width: Self.width, height: Self.height, mipmapped: false)
-        descriptor.usage = [.renderTarget, .shaderRead]
-        descriptor.storageMode = .shared
-        compositor.offscreenOutput = context.device.makeTexture(descriptor: descriptor)
-        compositor.outputSet = OutputSet(plans: [plan])
-        var sequence: UInt64 = 0
-        /// One tick; the layer goes dark once frozen, so what shows is the held canvas.
-        func tick(_ control: OutputControl, master: Float, layer: Float, blackout: Bool = false) -> Int {
+    /// One compositor over a flat still that draws `config` (nil: the plain pass) into an offscreen output. `write` sets
+    /// the layer's intensity, Output 1's Control and the Master; `tick` writes, ticks and reads back; `present` draws
+    /// `set` as a secondary display does, from the last completed canvas, without a tick. All read the centre's green.
+    final class Rig {
+        let context: MetalContext
+        let compositor: Compositor
+        let parameters = TripleBuffer({ ParameterSnapshotSlot(maxLayers: 1) }, copy: { $0.copy(from: $1) })
+        private let target: MTLTexture
+        private let uniforms: MTLBuffer
+        private var sequence: UInt64 = 0
+
+        init(_ config: OutputConfig?, value: UInt8) throws {
+            context = try MetalContext()
+            compositor = try Compositor(
+                context: context, canvasWidth: width, canvasHeight: height, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 16),
+                parameters: parameters, logger: Logger(label: "output-test"))
+            let layer = RenderLayer(index: 0)
+            layer.current = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: try flat(context.device, value: value))
+            layer.wanted.store(MediaKey(folder: 1, file: 1).packed, ordering: .relaxed)
+            compositor.setLayers([layer])
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.outputFormat, width: width, height: height, mipmapped: false)
+            descriptor.usage = [.renderTarget, .shaderRead]
+            descriptor.storageMode = .shared
+            guard let output = context.device.makeTexture(descriptor: descriptor), let target = context.device.makeTexture(descriptor: descriptor),
+                let uniforms = context.device.makeBuffer(length: Compositor.mappedUniformsLength, options: .storageModeShared)
+            else { throw RenderError.pipeline("output test rig") }
+            compositor.offscreenOutput = output
+            (self.target, self.uniforms) = (target, uniforms)
+            if let config { compositor.outputSet = OutputSet(plans: [try compile(config)]) }
+        }
+
+        func compile(_ config: OutputConfig) throws -> OutputPlan {
+            try OutputCompiler(device: context.device).compile(config, index: 1, drawable: (width, height))
+        }
+
+        func write(_ control: OutputControl, master: Float, layer: Float, blackout: Bool = false) {
             sequence += 1
-            parameters.write { slot in
+            parameters.write { [sequence] slot in
                 slot.sequence = sequence
                 slot.layers[0].intensity = layer
                 slot.layers[0].folder = 1
@@ -349,22 +364,90 @@ struct OutputPassTests {
                 slot.master = master
                 slot.masterControl = blackout ? .blackout : .normal
             }
-            compositor.tick(target: 3600 + Double(sequence), drawable: nil)
-            return Int(compositor.readbackOutput().bgra[(90 * Self.width + 160) * 4 + 1])
         }
-        func near(_ value: Int, _ expected: Int) -> Bool { abs(value - expected) <= 1 }
-        // engaged at Master 100 %: the Master after it dims the held frame once, 0 and Master Blackout are black at once
-        #expect(near(tick(.freeze, master: 1, layer: 1), 200))
-        #expect(near(tick(.freeze, master: 0.5, layer: 0), 100), "frozen at 100 %, Master 50 %")
-        #expect(tick(.freeze, master: 0, layer: 0) <= 1, "frozen, Master 0")
-        #expect(tick(.freeze, master: 1, layer: 0, blackout: true) <= 1, "frozen, Master Blackout")
-        #expect(near(tick(.freeze, master: 1, layer: 0), 200), "frozen, Master back at 100 %")
-        _ = tick(.normal, master: 1, layer: 0)  // releases the held canvas
+
+        func tick(_ control: OutputControl, master: Float, layer: Float, blackout: Bool = false) -> Int {
+            write(control, master: master, layer: layer, blackout: blackout)
+            compositor.tick(target: 3600 + Double(sequence), drawable: nil)
+            return Int(compositor.readbackOutput().bgra[(90 * width + 160) * 4 + 1])
+        }
+
+        func present(_ set: OutputSet) throws -> Int {
+            guard let commandBuffer = context.queue.makeCommandBuffer() else { throw RenderError.pipeline("present command buffer") }
+            #expect(compositor.encodePresent(set, into: target, uniforms: uniforms, commandBuffer: commandBuffer))
+            commandBuffer.commit()
+            commandBuffer.waitUntilCompleted()
+            var bgra = [UInt8](repeating: 0, count: width * height * 4)
+            target.getBytes(&bgra, bytesPerRow: width * 4, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+            return Int(bgra[(90 * width + 160) * 4 + 1])
+        }
+    }
+
+    static func near(_ value: Int, _ expected: Int) -> Bool { abs(value - expected) <= 1 }
+
+    /// A frozen canvas carries the Master it was drawn with; the output follows the Master from there, once.
+    @Test func freezeFollowsTheMasterOnce() throws {
+        let rig = try Rig(OutputConfig(id: 1), value: 200)
+        let near = Self.near
+        // engaged at Master 100 %; the layer goes dark once frozen, so what shows is the held canvas
+        #expect(near(rig.tick(.freeze, master: 1, layer: 1), 200))
+        #expect(near(rig.tick(.freeze, master: 0.5, layer: 0), 100), "frozen at 100 %, Master 50 %")
+        #expect(rig.tick(.freeze, master: 0, layer: 0) <= 1, "frozen, Master 0")
+        #expect(rig.tick(.freeze, master: 1, layer: 0, blackout: true) <= 1, "frozen, Master Blackout")
+        #expect(near(rig.tick(.freeze, master: 1, layer: 0), 200), "frozen, Master back at 100 %")
+        _ = rig.tick(.normal, master: 1, layer: 0)  // releases the held canvas
         // engaged at Master 50 %: the same 100 before and after it engaged, the full frame at Master 100 %
-        #expect(near(tick(.normal, master: 0.5, layer: 1), 100), "live at Master 50 %")
-        #expect(near(tick(.freeze, master: 0.5, layer: 1), 100), "Freeze engages at Master 50 %")
-        #expect(near(tick(.freeze, master: 0.5, layer: 0), 100), "frozen at 50 %, Master 50 %")
-        #expect(near(tick(.freeze, master: 1, layer: 0), 200), "frozen at 50 %, Master 100 %")
+        #expect(near(rig.tick(.normal, master: 0.5, layer: 1), 100), "live at Master 50 %")
+        #expect(near(rig.tick(.freeze, master: 0.5, layer: 1), 100), "Freeze engages at Master 50 %")
+        #expect(near(rig.tick(.freeze, master: 0.5, layer: 0), 100), "frozen at 50 %, Master 50 %")
+        #expect(near(rig.tick(.freeze, master: 1, layer: 0), 200), "frozen at 50 %, Master 100 %")
+        _ = rig.tick(.normal, master: 1, layer: 0)
+        // engaged at Master 0: a black canvas carries no picture, so Freeze holds the first one drawn above 0
+        #expect(rig.tick(.freeze, master: 0, layer: 1) <= 1, "Freeze engages at Master 0")
+        #expect(near(rig.tick(.freeze, master: 0.5, layer: 1), 100), "Master 50 %: the first canvas above 0")
+        #expect(near(rig.tick(.freeze, master: 0.5, layer: 0), 100), "held at 50 %")
+        #expect(near(rig.tick(.freeze, master: 1, layer: 0), 200), "held at 50 %, Master 100 %")
+    }
+
+    /// The black lift is the projector's floor: on live content it stays while the Master moves and is 0 at Master 0 or
+    /// a Blackout. A frozen output rescales its canvas, not the lift (it read 4 × the lift after Freeze at 25 %).
+    @Test func theBlackLiftStaysWhileTheMasterMoves() throws {
+        var lifted = OutputConfig(id: 1)
+        lifted.blend.lift = 0.08  // 20.4 on black content
+        let rig = try Rig(lifted, value: 0)
+        let near = Self.near
+        for master: Float in [1, 0.5, 0.05] { #expect(near(rig.tick(.normal, master: master, layer: 1), 20), "live, Master \(master)") }
+        #expect(rig.tick(.normal, master: 0, layer: 1) <= 1, "Master 0")
+        #expect(rig.tick(.normal, master: 1, layer: 1, blackout: true) <= 1, "Master Blackout")
+        #expect(rig.tick(.blackout, master: 1, layer: 1) <= 1, "Output Blackout")
+        #expect(near(rig.tick(.freeze, master: 0.25, layer: 1), 20), "Freeze engages at Master 25 %")
+        #expect(near(rig.tick(.freeze, master: 1, layer: 1), 20), "frozen at 25 %, Master 100 %")
+    }
+
+    /// A secondary display draws the last completed canvas, which can be a tick older than the Master it reads: Freeze
+    /// keeps the Master that canvas was drawn with, not the newer one.
+    @Test func aSecondaryDisplayHoldsTheMasterOfItsCanvas() throws {
+        let rig = try Rig(nil, value: 200)
+        let set = OutputSet(plans: [try rig.compile(OutputConfig(id: 1))])
+        let near = Self.near
+        #expect(near(rig.tick(.normal, master: 0.5, layer: 1), 100))  // the completed canvas, drawn at Master 50 %
+        #expect(near(try rig.present(set), 100), "live")
+        rig.write(.freeze, master: 0, layer: 1)  // Freeze and Master 0 in one DMX frame, before the next tick
+        #expect(try rig.present(set) <= 1, "frozen, Master 0")
+        rig.write(.freeze, master: 1, layer: 1)
+        #expect(near(try rig.present(set), 200), "frozen at the canvas's 50 %, Master 100 %")
+        _ = rig.tick(.freeze, master: 1, layer: 0)  // the canvas moves on
+        #expect(near(try rig.present(set), 200), "still held")
+    }
+
+    /// A content slice's canvas factor: 1 live (the canvas carries the Master), the Master since for a held canvas.
+    @Test func contentScaleFollowsTheMasterOnlyWhenHeld() {
+        let cases: [(master: Float, held: Float?, scale: Float)] = [
+            (1, nil, 1), (0.5, nil, 1), (0, nil, 1),  // live (Master 0 is the intensity's 0)
+            (1, 1, 1), (0.5, 1, 0.5), (1, 0.25, 4), (0.25, 0.5, 0.5), (0, 0.5, 0),
+            (1, 0, 0), (0, 0, 0),  // held at 0: black (holdFrozen does not take one)
+        ]
+        for c in cases { #expect(OutputPass.contentScale(master: c.master, heldMaster: c.held) == c.scale, "\(c)") }
     }
 
     @Test func warpMaskAndSliceGoldens() throws {

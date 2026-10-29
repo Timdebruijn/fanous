@@ -117,9 +117,11 @@ public final class Compositor: @unchecked Sendable {
     /// Ticks that encoded no GPU work because nobody watched, and ticks that reused the last canvas (nothing changed).
     public let idleTicks = Atomic<Int>(0)
     public let reusedCanvases = Atomic<Int>(0)
-    /// The Master intensity the latest completed canvases were drawn with (Float bits), for a secondary display's Freeze:
-    /// its canvases can be a tick older than the Master it reads (B100). Stored just before `canvasIndex` moves on.
-    private let completedMaster = Atomic<UInt32>(Float(1).bitPattern)
+    /// Ring index and Master intensity (Float bits) of the latest completed canvases, from one tick: a secondary display's
+    /// Freeze keeps the Master its canvases were drawn with, which can be a tick older than the Master it reads (B100).
+    /// Stored just before `canvasIndex` moves on.
+    private let completedCanvas = Atomic<UInt64>(Compositor.packCompleted(index: 2, master: 1))
+    private static func packCompleted(index: Int, master: Float) -> UInt64 { UInt64(index) << 32 | UInt64(master.bitPattern) }
     nonisolated(unsafe) public var lastGPUError: String = ""
 
     public init(
@@ -213,6 +215,7 @@ public final class Compositor: @unchecked Sendable {
         canvasHeight = made[0].height
         self.fps = layout.fps
         canvasSize.store(Self.pack(canvasWidth, canvasHeight), ordering: .releasing)
+        completedCanvas.store(Self.packCompleted(index: 2, master: 1), ordering: .releasing)
         canvasIndex = 0
         tickIndex = 2
         canvasValid = false
@@ -306,8 +309,12 @@ public final class Compositor: @unchecked Sendable {
     /// A canvas as completed by the previous tick; nil when it does not render.
     public func latestCanvas(id: Int) -> MTLTexture? { targets.first { $0.id == id }?.textures[(canvasIndex + 2) % 3] }
 
-    /// Every canvas of one completed tick, by id: read the index and the targets once (secondary displays).
-    private func completedCanvases() -> (targets: [CanvasTarget], index: Int) { (targets, (canvasIndex + 2) % 3) }
+    /// Every canvas of one completed tick, by id, and the Master they were drawn with: the targets and one load of the
+    /// index and Master (secondary displays).
+    private func completedCanvases() -> (targets: [CanvasTarget], index: Int, master: Float) {
+        let packed = completedCanvas.load(ordering: .acquiring)
+        return (targets, Int(packed >> 32), Float(bitPattern: UInt32(truncatingIfNeeded: packed)))
+    }
 
     /// Compositor thread, during a tick (previews, taps): the canvas this tick shows; nil when it does not render.
     public func tickCanvas(_ id: Int) -> MTLTexture? { targets.first { $0.id == id }?.textures[tickIndex] }
@@ -509,7 +516,7 @@ public final class Compositor: @unchecked Sendable {
         }
         commandBuffer.commit()
         if !reuse {
-            completedMaster.store(frame.masterIntensity.bitPattern, ordering: .releasing)
+            completedCanvas.store(Self.packCompleted(index: canvasIndex, master: frame.masterIntensity), ordering: .releasing)
             canvasIndex = (canvasIndex + 1) % 3
         }
     }
@@ -853,6 +860,18 @@ public final class Compositor: @unchecked Sendable {
     /// Draws the latest completed canvas through `set` into a drawable of another display (DESIGN.md §4.5):
     /// its own command buffer on the caller's thread; `uniforms` belongs to that caller.
     public func present(_ set: OutputSet, to drawable: CAMetalDrawable, uniforms: MTLBuffer) {
+        guard let commandBuffer = context.queue.makeCommandBuffer() else {
+            outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
+            return
+        }
+        guard encodePresent(set, into: drawable.texture, uniforms: uniforms, commandBuffer: commandBuffer) else { return }
+        commandBuffer.present(drawable)
+        commandBuffer.commit()
+    }
+
+    /// `present` up to the drawable (tests draw into a texture of their own): holds and draws into `texture` on
+    /// `commandBuffer`; false (counted) when no encoder could be made.
+    func encodePresent(_ set: OutputSet, into texture: MTLTexture, uniforms: MTLBuffer, commandBuffer: MTLCommandBuffer) -> Bool {
         // not the compositor thread: the DMX side's copy, never `read()`; reserved first, so the lock covers only the copy (B71)
         var outputs: [OutputParameters] = []
         outputs.reserveCapacity(ParameterSnapshotSlot.maxOutputs)
@@ -860,30 +879,24 @@ public final class Compositor: @unchecked Sendable {
             outputs.append(contentsOf: $0.outputs)
             return ($0.masterControl == .blackout ? 0 : $0.master, $0.testPattern)
         }
-        // one tick's canvases for the whole draw (the compositor may complete another meanwhile)
-        let (frame, index) = completedCanvases()
-        let canvasMaster = Float(bitPattern: completedMaster.load(ordering: .acquiring))
+        // one tick's canvases for the whole draw (the compositor may complete another meanwhile) and their Master
+        let (frame, index, canvasMaster) = completedCanvases()
         let pass = MTLRenderPassDescriptor()
-        pass.colorAttachments[0].texture = drawable.texture
+        pass.colorAttachments[0].texture = texture
         pass.colorAttachments[0].loadAction = .clear
         pass.colorAttachments[0].storeAction = .store
         pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-        guard let commandBuffer = context.queue.makeCommandBuffer() else {
-            outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
-            return
-        }
         OutputPass.holdFrozen(set, canvas: { id in frame.first { $0.id == id }?.textures[index] }, outputs: outputs, master: canvasMaster, buffer: commandBuffer)
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else {
             outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
-            return
+            return false
         }
         encoder.label = "secondary output"
         OutputPass.draw(
             set, canvas: { id in frame.first { $0.id == id }?.textures[index] }, encoder: encoder, context: context, uniforms: uniforms,
             master: master, masterPattern: masterPattern, outputs: outputs)
         encoder.endEncoding()
-        commandBuffer.present(drawable)
-        commandBuffer.commit()
+        return true
     }
 
     /// Reads the offscreen output (BGRA 8-bit) back; tests only.

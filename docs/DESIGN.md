@@ -540,7 +540,7 @@ can never disagree). `[OPEN-9]` exact bands and the speed/scale upper limits.
 
 | Ch | Parameter | Bits | Default | Mapping |
 |---|---|---|---|---|
-| 1–2 | Master intensity | 16 | 65535 | multiplies all canvases (each layer); outputs take it once, from the canvas (§9.5) |
+| 1–2 | Master intensity | 16 | 65535 | multiplies all canvases (each layer); outputs take it once, from the canvas (§9.5). For now it scales each layer's opacity, so below 100 % a lower layer shows through an opaque one above it (being fixed) |
 | 3 | Control | 8 | 0 | 0–63 normal · 64–127 Freeze all · 128–191 Blackout · 192–255 reserved |
 | 4 | Test pattern | 8 | 0 | 0–15 off · 16–31 Grid · 32–47 Colour bars · 48–63 Blend zones · 64–79 Output ID · 80–95 Crosshair/alignment · 96–111 Grey steps · 112–127 Checkerboard · 128–143 Grey 0 % · 144–159 Grey 25 % · 160–175 Grey 75 % · 176–191 White (seam check, §9.9) · 192–255 reserved — overrides every output |
 | 5–6 | Master speed | 16 | 32768 | multiplies layer speed (same mapping as layer speed) |
@@ -952,10 +952,11 @@ distance → smoothstep, so feathering is exact and free at render time.
 ```
 for each slice (ordered):
   vertex:   mesh vertex → warp displacement → clip
-  fragment: canvas.sample(uv) × mask(uv) × slice.opacity        (a test pattern replaces this, whole output, no mask)
+  fragment: canvas.sample(uv) × scale × mask(uv) × slice.opacity (scale 1 live; frozen: master now / master at Freeze;
+                                                                 a test pattern replaces this, whole output, no mask)
             → × blendMap.factor + blendMap.lift                 (skipped when Output "raw" is set)
-            → × output intensity                                (0 at Output or Master Blackout; patterns too)
-            → × master intensity on a test pattern only         (the canvas carries it; a frozen canvas × master / master at Freeze)
+            → × output intensity                                (0 at Output or Master Blackout, and at Master 0; patterns too)
+            → × master intensity on a test pattern only         (content: the canvas carries it)
             → blue-noise dither → drawable (bgra8 / bgr10 later) (not on a test pattern)
 ```
 
@@ -963,10 +964,18 @@ The Master intensity is applied once, per layer into the canvas, so the
 canvas preview, Syphon, CITP and every output show the same level (B100: the
 output pass multiplied it in a second time, 50 % gave 25 %). A held (Freeze)
 canvas carries the Master it was drawn with, which `holdFrozen` keeps with it
-(`OutputPlan.heldMaster`, from the compositor's tick or, on a secondary
-display, the Master its last completed canvas was drawn with), so a frozen
-output follows later Grand Master moves. Master 0 or Blackout is black at once
-also on a secondary display, which draws the last completed canvas.
+(`OutputPlan.heldMaster`: the compositor tick's own or, on a secondary display,
+the one stored with its last completed canvas in one atomic with the ring
+index), so a frozen output follows later Grand Master moves; the ratio scales
+the canvas sample, before the blend map. Freeze engaged at Master 0 holds
+nothing (a black canvas carries no picture): the output stays live, black, and
+holds the first canvas drawn above 0.
+
+The black lift is the projector's black floor, so it does not follow the
+Master: on content it stays at the output's level while the Grand Master moves
+(it used to go down with it; on a test pattern it still does) and is 0 at
+Master 0 and at an Output or Master Blackout. Master 0 or Blackout is black at
+once also on a secondary display, which draws the last completed canvas.
 
 One pass, no intermediate textures; "all output/mapping configuration is
 applied entirely on the GPU in the final output pass" is satisfied.

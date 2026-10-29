@@ -513,12 +513,12 @@ public enum ShaderSource {
     // intensity → dither. Slices alpha-blend over each other in order (pipeline: one, one-minus-source-alpha).
     struct MappedUniforms {
         float2 size;      // region size in pixels (dither, patterns)
-        float intensity;  // output intensity × output fixture (0 at a blackout); × master on a pattern (the canvas carries it, B100)
+        float intensity;  // output intensity × output fixture (0 at a blackout or Master 0); × master on a pattern (the canvas carries it)
         float opacity;    // slice opacity
         uint flags;       // 1 = warp field present, 2 = mask present, 4 = raw (no blend/warp/mask), 8 = no blend map
         uint pattern;     // TestPattern drawn instead of the canvas (through warp and blend, no mask), 0 = canvas
         uint index;       // output number for the "output ID" pattern
-        uint pad0;
+        float scale;      // canvas sample factor: a held (Freeze) canvas follows the Master on the sample, not after the lift (B100)
     };
 
     struct MappedVertex {
@@ -576,7 +576,7 @@ public enum ShaderSource {
             }
             return float4(p * u.intensity, 1.0);
         }
-        float3 c = canvas.sample(linearSampler, in.uv).rgb;
+        float3 c = canvas.sample(linearSampler, in.uv).rgb * u.scale;
         float a = u.opacity;
         if (!raw && (u.flags & 2u) != 0u) a *= mask.sample(linearSampler, in.pre).r;
         c *= a;
