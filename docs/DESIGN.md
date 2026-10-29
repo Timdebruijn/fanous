@@ -888,7 +888,31 @@ a freed number goes at once to a server waiting past the 20.
 G1, G3; P1) found that every compared product takes a camera or capture card
 and that Millumin, VDMX, Isadora and Mitti take slides and lyrics apps by
 screen capture. Both are system frameworks: AVFoundation capture and
-ScreenCaptureKit (macOS 12.3+), no vendor SDK. DeckLink stays a plugin (§21).
+ScreenCaptureKit (macOS 12.3+), no vendor SDK. Capture cards are the point
+of files 1–20 (a camera on a desk is the demo, an HDMI or SDI feed from a
+switcher, a second Mac or a camera is the show); the open build takes every
+card the OS presents as an `AVCaptureDevice`, and the cards whose only path
+is a vendor SDK that the licence does not allow in-tree come later through
+the plugin boundary (ADR-0016, §21).
+
+**Capture cards.** Three classes, by how the card reaches AVFoundation:
+
+| Class | How it appears | Cards (to be verified per model at step 2, listed in the user guide) | Fanous |
+|---|---|---|---|
+| UVC class-compliant, no driver | an `AVCaptureDevice` like a webcam; HDMI in, USB out; 1080p60 or 4K30 typical | Elgato Cam Link 4K, Magewell USB Capture (HDMI/SDI, Plus, Gen 2), AJA U-TAP (HDMI/SDI), Blackmagic ATEM Mini's webcam output and Web Presenter | in-tree, step 2 |
+| Vendor driver that registers a CoreMediaIO device | an `AVCaptureDevice` once the driver is installed; PCIe, Thunderbolt chassis, multi-input cards (one device per input) | Magewell Pro Capture family (its Mac driver carries AVFoundation support; its SDK is only for private extras) | in-tree, step 2; the driver is the user's install |
+| SDK only, no AVFoundation device | the card is invisible to AVFoundation; Desktop Video exposes UltraStudio and DeckLink to QuickTime as audio only | Blackmagic DeckLink and UltraStudio (Desktop Video SDK: EULA forbids redistribution, FFmpeg builds it `--enable-nonfree`, so it cannot ship in a GPL binary); AJA KONA, Io and T-TAP (NTV2 SDK, published as MIT on GitHub behind a developer application: to be verified, and if MIT it may be a Core source rather than a plugin) | plugin later (§21, ADR-0016); the NDI question of B74 is the same shape |
+
+A capture card differs from a webcam in what it sends, and the design takes
+that in: a card offers 4:2:2 at the source's frame rate (50, 59.94, 60), may
+offer 10-bit (`v210`) and interlaced modes (1080i50 from a broadcast camera),
+has several inputs (one `AVCaptureDevice` each), loses its signal (the device
+stays, frames stop or a "no signal" picture comes) and changes format when the
+source does (the texture size follows the frame, as a live layer's size
+already does). v1 reads 8-bit progressive or interlaced-as-progressive (an
+interlaced frame is shown woven, combing on motion; a deinterlace pass is a
+later generator-style step), 10-bit later with B10's 16-bit path; "no frames
+for 2 s" reads "no signal" in the layer status and keeps the last frame.
 
 **Numbering.** Files 1–32 of folder 0, reserved since the first design, split
 by kind so a console operator can tell them apart:
@@ -920,7 +944,7 @@ default `.rgba`) so a frame can be two planes.
 
 | Input | Framework | Pixel path | Kind |
 |---|---|---|---|
-| Capture device | `AVCaptureSession` with one `AVCaptureVideoDataOutput` on its own serial queue; the device's active format is left as the device offers it (its highest frame rate at or below the canvas rate wins when several match) | `420v` (8-bit bi-planar 4:2:0, video range), the format AVFoundation always delivers without a CPU copy; TN3121 advises against BGRA (a conversion and 2.6× the memory) | `.planarYCbCr`: the Y plane as `r8Unorm`, CbCr as `rg8Unorm`, through `CVMetalTextureCache`; the layer shader's Rec.709 video-range matrix (§4.1) reads 8-bit planes unchanged, since it samples normalized floats and the 8-bit black level differs from 16-bit by one code |
+| Capture device | `AVCaptureSession` with one `AVCaptureVideoDataOutput` on its own serial queue; the active format is the device's format whose size matches its current input and whose frame rate is the highest at or below the canvas rate (a card follows its source anyway) | in this order, the first the device offers natively (`availableVideoPixelFormatTypes`): `2vuy` (8-bit packed 4:2:2, what capture cards send: full chroma for slides and text), else `420v` (8-bit bi-planar 4:2:0, what webcams and the iPhone send, and what AVFoundation always delivers), else `BGRA`. No format is converted by AVFoundation: TN3121 advises against asking for BGRA (a conversion and 2.6× the memory) | `2vuy` → `.v216`, the existing packed 4:2:2 kind, as `rgba8Unorm` at half width (same Cb Y0 Cr Y1 layout as 16-bit `v216`); `420v` → `.planarYCbCr`, the Y plane as `r8Unorm`, CbCr as `rg8Unorm`; `BGRA` → `.rgba`. All through `CVMetalTextureCache`; the layer shader's Rec.709 video-range matrix (§4.1) reads 8-bit textures unchanged, since it samples normalized floats and the 8-bit black level differs from 16-bit by one code |
 | Display | `SCStream` with `SCContentFilter(display:excludingApplications:)` that excludes the engine itself (an output on a captured display would feed back) | `BGRA`, ScreenCaptureKit's native output; size the display's pixel size, scaled down to fit the canvas when larger (aspect kept); `minimumFrameInterval` = the canvas rate; cursor off; no audio; `queueDepth` 4 | `.rgba` as `bgra8Unorm` through `CVMetalTextureCache`; a sample whose status is not `.complete` (an idle display) keeps the last texture |
 
 A `CVMetalTexture` must outlive the GPU's reads of its `MTLTexture`
@@ -1000,13 +1024,16 @@ cache into the layer shader, read back) and the catalogs (fake device lists,
 like `SyphonCatalogTests`) run on CI; a real device and a display need the
 permission, so the dev Mac's built-in camera, an iPhone over Continuity Camera
 and a display capture are the owner's live check per step. Which capture
-cards appear as AVFoundation devices (UVC ones do; DeckLink does not) is
-checked per vendor and listed in the user guide.
+cards appear as AVFoundation devices (UVC ones do, Magewell's driver does,
+DeckLink does not) is checked per model at step 2 and listed in the user
+guide with the formats each one offered.
 
 **Order (one PR each, after approval):** 1. `LiveTextureSource` planes and
 kind, 8-bit planar readback test, `LiveCatalog` from `SyphonCatalog` (no
-behaviour change). 2. Capture devices 1–20: input, catalog, permission,
-readiness, Media and layer UI, user guide. 3. Displays 21–28: input, catalog,
+behaviour change). 2. Capture devices 1–20: input with the three pixel
+formats, catalog, permission, readiness, Media and layer UI, user guide with
+the verified card list (owner: one UVC card and a Magewell Pro Capture on the
+dev Mac, if available). 3. Displays 21–28: input, catalog,
 permission with restart, readiness, UI, the risk note (§20 R18), user guide.
 4. Windows 29–32 when a show asks for them.
 
