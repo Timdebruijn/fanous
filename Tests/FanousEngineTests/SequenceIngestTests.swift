@@ -14,8 +14,7 @@ import UniformTypeIdentifiers
 struct SequenceIngestTests {
     /// Ten PNG frames with alpha → ProRes 4444 → the engine opens it with ten frames and decodes with alpha.
     @Test func sequenceBecomesPlayableMovie() async throws {
-        let directory = FileManager.default.temporaryDirectory.appending(path: "fanous-seq-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let directory = try tempDir("fanous-seq")
         defer { try? FileManager.default.removeItem(at: directory) }
         let w = 320, h = 176
         for i in 0..<10 {

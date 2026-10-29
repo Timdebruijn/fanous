@@ -11,22 +11,6 @@ import Testing
 @testable import FanousEngine
 
 struct OSCReceiverTests {
-    /// One UDP socket to loopback; datagrams go out back-to-back.
-    static func send(_ messages: [OSCMessage], to port: UInt16) {
-        let fd = socket(AF_INET, SOCK_DGRAM, 0)
-        defer { close(fd) }
-        var address = sockaddr_in()
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = port.bigEndian
-        address.sin_addr.s_addr = UInt32(0x7F00_0001).bigEndian
-        for message in messages {
-            let bytes = message.encoded()
-            _ = withUnsafePointer(to: &address) { p in
-                p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sendto(fd, bytes, bytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
-            }
-        }
-    }
-
     /// A console fires hundreds of datagrams back-to-back from one socket; none may be lost (B30).
     @Test func udpBurstFromOneSocketArrivesComplete() async throws {
         let logger = Logger(label: "test")
@@ -39,7 +23,7 @@ struct OSCReceiverTests {
         defer { receiver.stop() }
         // listening once a goto 0 (no cue of the burst) arrives; a fixed 300 ms was too short on a loaded Mac (B67)
         #expect(await waitUntil(every: .milliseconds(50)) {
-            Self.send([OSCMessage("/fanous/cue/goto", [.float32(0)])], to: port)
+            sendUDP(OSCMessage("/fanous/cue/goto", [.float32(0)]).encoded(), to: port)
             return seen.withLock { $0.contains(0) }
         })
 
@@ -48,19 +32,8 @@ struct OSCReceiverTests {
         // fresh socket per burst: the first datagram of a flow is the one that creates the connection
         let count = 5 * 200 + 1  // and the probe's 0
         for burst in 0..<5 {
-            let fd = socket(AF_INET, SOCK_DGRAM, 0)
-            defer { close(fd) }
-            var address = sockaddr_in()
-            address.sin_family = sa_family_t(AF_INET)
-            address.sin_port = port.bigEndian
-            address.sin_addr.s_addr = UInt32(0x7F00_0001).bigEndian
-            for i in 1...200 {
-                let bytes = OSCMessage("/fanous/cue/goto", [.float32(Float(burst * 200 + i))]).encoded()
-                let sent = withUnsafePointer(to: &address) { p in
-                    p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sendto(fd, bytes, bytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
-                }
-                #expect(sent == bytes.count)
-            }
+            let datagrams = (1...200).map { i in OSCMessage("/fanous/cue/goto", [.float32(Float(burst * 200 + i))]).encoded() }
+            #expect(sendUDP(datagrams, to: port).sent == datagrams.map(\.count))
         }
         for _ in 0..<50 where seen.withLock({ $0.count }) < count { try await Task.sleep(for: .milliseconds(100)) }
         #expect(seen.withLock { $0.count } == count)
@@ -78,7 +51,7 @@ struct OSCReceiverTests {
         defer { receiver.stop() }
         // listening once a probe command arrives; a fixed 300 ms was too short on a loaded Mac (B67)
         #expect(await waitUntil(every: .milliseconds(50)) {
-            Self.send([OSCMessage("/fanous/cue/goto", [.float32(0)])], to: port)
+            sendUDP(OSCMessage("/fanous/cue/goto", [.float32(0)]).encoded(), to: port)
             return listening.withLock { $0 }
         })
 
@@ -93,7 +66,7 @@ struct OSCReceiverTests {
                 OSCMessage("/fanous/layer/\(n)/positionY", [.float32(1 - f)]),
             ]
         }
-        Self.send(messages, to: port)
+        sendUDP(messages.map { $0.encoded() }, to: port)
 
         var expected: [String: UInt16] = [:]
         for n in 1...4 {
