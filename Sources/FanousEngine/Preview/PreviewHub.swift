@@ -59,9 +59,11 @@ public final class PreviewHub: @unchecked Sendable {
 
     /// Subscribes `connection`'s stream to `target` at the size class for `width` (nil: the default), creating that
     /// streamer when this is its first subscriber; at the encoder limit `choose` picks another. `announce` runs before
-    /// the first frame can be sent (the `sub` reply carries the stream's size and whether it is JPEG). False: bad target.
+    /// the first frame can be sent (the `sub` reply carries the stream's size, whether it is JPEG and whether it is its
+    /// canvas's stream instead of the target's, B96). False: bad target.
     public func attach(
-        target requested: String, width: Int? = nil, connection: StateServer.Connection, stream: UInt32, jpeg: Bool, announce: (PreviewStreamer, _ jpeg: Bool) -> Void
+        target requested: String, width: Int? = nil, connection: StateServer.Connection, stream: UInt32, jpeg: Bool,
+        announce: (PreviewStreamer, _ jpeg: Bool, _ fallback: Bool) -> Void
     ) -> Bool {
         let key = Key(target: requested == "canvas:1" ? "canvas" : requested, width: PreviewSize.sizeClass(wanted: width))
         // compiling an output reads the project (the store's queue): never under our lock, the store calls
@@ -79,8 +81,8 @@ public final class PreviewHub: @unchecked Sendable {
                 guard let streamer = choice.streamer ?? install(fresh, as: key, in: &all) else { return nil }
                 let subscriber = PreviewStreamer.Subscriber(connection: connection, stream: stream, jpeg: jpeg)
                 if choice.fallback { fallbacks.append((subscriber, key)) }
-                announce(streamer, choice.jpeg)
-                streamer.subscribe(PreviewStreamer.Subscriber(connection: connection, stream: stream, jpeg: choice.jpeg))
+                announce(streamer, choice.jpeg, choice.canvas)
+                streamer.subscribe(PreviewStreamer.Subscriber(connection: connection, stream: stream, jpeg: choice.jpeg, fallback: choice.canvas))
                 return true
             }
             if let attached { return attached }
@@ -91,19 +93,20 @@ public final class PreviewHub: @unchecked Sendable {
     /// Where a subscriber of `key` goes (B70). JPEG has no encoder: its own streamer. H.264 within
     /// `PreviewSize.maxEncoders` (the canvas one counted): its own. At the limit, a streamer that encodes already: its
     /// target's nearest size, else its canvas's nearest size; else refused, as JPEG on its own streamer (the browser
-    /// falls back to JPEG when no `stream` description comes). `streamer` nil: make it.
-    private func choose(_ key: Key, jpeg: Bool, in all: [Key: PreviewStreamer]) -> (streamer: PreviewStreamer?, jpeg: Bool, fallback: Bool) {
+    /// falls back to JPEG when no `stream` description comes). `streamer` nil: make it. `canvas`: the streamer shows the
+    /// target's canvas, not the target (an output's region or one layer, B96), whatever its shape.
+    private func choose(_ key: Key, jpeg: Bool, in all: [Key: PreviewStreamer]) -> (streamer: PreviewStreamer?, jpeg: Bool, fallback: Bool, canvas: Bool) {
         let own = key == Key(target: "canvas", width: PreviewSize.defaultClass) ? canvas : all[key]
-        if jpeg { return (own, true, false) }
+        if jpeg { return (own, true, false, false) }
         // the canvas streamer is always counted: its own viewers are never on a fallback
-        if own === canvas || own.map(Self.encodes) == true || encoderCount(all) < PreviewSize.maxEncoders { return (own, false, false) }
+        if own === canvas || own.map(Self.encodes) == true || encoderCount(all) < PreviewSize.maxEncoders { return (own, false, false, false) }
         for target in [key.target, canvasTarget(of: key.target)] {
             var sizes = [Int: PreviewStreamer]()
             for (k, s) in all where k.target == target && Self.encodes(s) { sizes[k.width] = s }
             if target == "canvas" { sizes[PreviewSize.defaultClass] = canvas }
-            if let nearest = PreviewSize.nearest(key.width, in: sizes.keys) { return (sizes[nearest], false, true) }
+            if let nearest = PreviewSize.nearest(key.width, in: sizes.keys) { return (sizes[nearest], false, true, target != key.target) }
         }
-        return (own, true, true)
+        return (own, true, true, false)
     }
 
     /// The canvas target `target` shows: itself for a canvas, else `canvasOf`'s ("canvas" for canvas 1).
@@ -151,7 +154,9 @@ public final class PreviewHub: @unchecked Sendable {
                         if !choice.fallback { fallbacks.remove(at: index) }
                         canvas.unsubscribe(connection: sub.connection, stream: sub.stream)
                         for other in all.values { other.unsubscribe(connection: sub.connection, stream: sub.stream) }
-                        streamer.subscribe(sub)
+                        var moved = sub
+                        moved.fallback = choice.canvas  // told in the new streamer's `stream` description (B96)
+                        streamer.subscribe(moved)
                         release(&all)
                         return false
                     }

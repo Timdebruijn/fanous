@@ -187,11 +187,12 @@ public final class StateServer: @unchecked Sendable {
                     // `w` is the wanted width in pixels (B32), clamped before it becomes an Int
                     let width = message["w"]?.double.map { Int(min(1280, max(160, $0)).rounded(.up)) }
                     // past the encoder limit an H.264 request may be served as JPEG (B70): the reply says so
-                    let attached = preview.attach(target: target, width: width, connection: self, stream: id, jpeg: jpeg) { streamer, jpeg in
+                    let attached = preview.attach(target: target, width: width, connection: self, stream: id, jpeg: jpeg) { streamer, jpeg, fallback in
                         session.send(
                             text: server.store.encode([
                                 "t": "sub", "id": .number(Double(id)), "stream": "preview", "codec": jpeg ? "jpeg" : "avc", "w": .number(Double(streamer.width)),
                                 "h": .number(Double(streamer.height)), "fps": .number(jpeg ? 5 : streamer.fps), "target": .string(target),
+                                "fallback": .bool(fallback),
                             ]), droppable: false)
                     }
                     if !attached {

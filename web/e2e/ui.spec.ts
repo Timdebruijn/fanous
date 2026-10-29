@@ -550,11 +550,12 @@ test('preview: a streaming preview subscribes again, once, after its socket clos
 });
 
 test('preview: a viewer refused H.264 at the encoder limit shows JPEG at once and is upgraded when an encoder frees up (B86)', async ({ page, engine }) => {
-  // the page's preview subscriptions of canvas 2, and the JPEG frames (kind 2) the engine sends on them
+  // the page's preview subscriptions of canvas 2; the first is the refused one: the JPEG frames (kind 2) the engine
+  // sends on it, and its upgrade (not a JPEG subscription the page's B95 watchdog makes later)
   let subs = 0;
-  const ids = new Set<number>();
+  let refusedId = 0;
   let jpegFrames = 0;
-  let upgradedAt = 0;  // `subs` when the first `stream` description (H.264) came on such a subscription; 0 = none yet
+  let upgradedAt = 0;  // `subs` when the first `stream` description (H.264) came on the refused subscription; 0 = none yet
   page.on('websocket', (socket) => {
     socket.on('framesent', ({ payload }) => {
       const m = typeof payload === 'string' ? (JSON.parse(payload) as { t: string; stream?: string; target?: string }) : null;
@@ -563,9 +564,9 @@ test('preview: a viewer refused H.264 at the encoder limit shows JPEG at once an
     socket.on('framereceived', ({ payload }) => {
       if (typeof payload === 'string') {
         const m = JSON.parse(payload) as { t: string; id: number; stream?: string; target?: string };
-        if (m.t === 'sub' && m.stream === 'preview' && m.target === 'canvas:2') ids.add(m.id);
-        if (m.t === 'stream' && ids.has(m.id)) upgradedAt ||= subs;
-      } else if (payload[0] === 2 && ids.has(payload.readUInt32BE(1))) jpegFrames++;
+        if (m.t === 'sub' && m.stream === 'preview' && m.target === 'canvas:2') refusedId ||= m.id;
+        if (m.t === 'stream' && m.id === refusedId) upgradedAt ||= subs;
+      } else if (payload[0] === 2 && payload.readUInt32BE(1) === refusedId) jpegFrames++;
     });
   });
   await page.goto(`${engine.url}/?token=${engine.token}`);  // again, with the listener above in place
@@ -631,7 +632,14 @@ test('preview: a viewer refused H.264 at the encoder limit shows JPEG at once an
     const { ws, ids } = window as unknown as { ws: WebSocket; ids: number[] };
     ws.send(JSON.stringify({ t: 'unsub', id: ids[2] }));
   });
-  await expect.poll(() => upgradedAt, { timeout: previewTimeout }).toBe(1);  // on the one subscription the page sent
+  // on CI the moved stream's VideoToolbox session, or the browser's decoder config after its description, can take
+  // over 5 s without a frame: the page's B95 watchdog then re-subscribes as JPEG
+  const fellBack = async () => /^JPEG 5 fps · no H\.264 stream/.test(await figure.locator('figcaption').innerText());
+  await expect.poll(async () => upgradedAt > 0 || (!!process.env.CI && (await fellBack())), { timeout: previewTimeout }).toBe(true);
+  // a fallback after the description came is not skipped here: the poll returns on `upgradedAt` first, and `decoded`
+  // below accepts that JPEG on CI
+  test.skip(upgradedAt === 0, 'no H.264 description within 5 s of the move on this runner (B66, B95); JPEG fallback');
+  expect(upgradedAt).toBe(1);  // on the one subscription the page sent
   // the page decodes it; on CI a decoder that fails (B98) may fall back to JPEG with its reason, a new subscription
   const decoded = process.env.CI ? /^(H\.264 · |JPEG 5 fps · (?!.*encoders busy))/ : /^H\.264 · /;
   await expect(figure.locator('figcaption')).toContainText(decoded, { timeout: previewTimeout });
@@ -730,9 +738,10 @@ test('preview: an output region on the canvas stream at the encoder limit is let
   // the canvas fallback is an H.264 one: a browser that fell back to JPEG (no description within 5 s, B66) has its own
   // JPEG stream in the output's shape
   test.skip(!!process.env.CI && /^JPEG/.test(await caption.innerText()), 'H.264 not ready within 5 s on this runner (B66, B98); JPEG fallback');
-  await expect(caption).toContainText(/^H\.264/, { timeout: previewTimeout });
-  await expect(caption).not.toContainText('canvas fallback');  // a 16:9 output on the 16:9 canvas: the same shape
-  expect(await fit()).toBe('fill');
+  // a 16:9 output on the 16:9 canvas: the same shape, still the canvas stream and said so (B96); `contain` draws it as
+  // `fill` would in a box of its shape
+  await expect(caption).toContainText(/^H\.264 · \d+×\d+ · \d+ fps · canvas fallback/, { timeout: previewTimeout });
+  expect(await fit()).toBe('contain');
 
   // a 4:3 region: the 16:9 canvas stream is shown whole, letterboxed, not stretched
   const region = page.getByLabel('Region w', { exact: true });
@@ -746,4 +755,82 @@ test('preview: an output region on the canvas stream at the encoder limit is let
   await release(0);
   await expect(caption).not.toContainText('canvas fallback', { timeout: previewTimeout });
   expect(await fit()).toBe('fill');
+});
+
+test('preview: a layer on its canvas stream at the encoder limit says so, in the same shape (B96)', async ({ page, engine }) => {
+  const release = await holdEncoders(page, engine);
+  const figure = page.getByRole('figure');
+  const caption = figure.locator('figcaption');
+  await page.getByRole('group', { name: 'Preview shows' }).getByRole('button', { name: 'This layer' }).click();
+  await expectPreviewStreaming(figure, 'Layer \\d+');  // at the limit: the stream of its canvas nearest its size
+  test.skip(!!process.env.CI && /^JPEG/.test(await caption.innerText()), 'H.264 not ready within 5 s on this runner (B66, B98); JPEG fallback');
+  // a layer has its canvas's 16:9 shape: before B96 the whole canvas showed as if it were the layer, unflagged
+  await expect(caption).toContainText(/^H\.264 · \d+×\d+ · \d+ fps · canvas fallback · Layer \d+/, { timeout: previewTimeout });
+
+  // encoders free up (all three: the page's fallback keeps the one it is on encoding): the engine moves the viewer to
+  // the layer's own stream, whose description clears the flag
+  for (const i of [0, 1, 2]) await release(i);
+  await expect(caption).not.toContainText('canvas fallback', { timeout: previewTimeout });
+  await expect(caption).toContainText(/^H\.264 · .* · Layer \d+/);
+});
+
+test('preview: a refused viewer the engine moves to a stream that never delivers falls back to JPEG after 5 s (B95)', async ({ page, engine }) => {
+  // the page's socket runs through the test: once `frozen`, the engine's messages on the refused canvas:2 subscription
+  // are dropped, as from a new streamer whose VideoToolbox session is stuck or failed
+  let refused = 0;  // its id
+  let subs = 0;  // the page's canvas:2 preview subscriptions
+  let jpegFrames = 0;  // on the refused subscription
+  let frozen = false;
+  let moved = false;  // the engine's H.264 description or frame on it, dropped: it was moved to a new streamer
+  await page.routeWebSocket(/\/ws$/, (ws) => {
+    const server = ws.connectToServer();
+    server.onMessage((message) => {
+      if (typeof message === 'string') {
+        const m = JSON.parse(message) as { t: string; id: number; stream?: string; target?: string };
+        if (m.t === 'sub' && m.stream === 'preview' && m.target === 'canvas:2' && subs++ === 0) refused = m.id;
+        if (frozen && m.t === 'stream' && m.id === refused) return void (moved = true);
+      } else if (message.length >= 5 && message.readUInt32BE(1) === refused) {
+        if (frozen) return void (moved ||= message[0] === 1);
+        if (message[0] === 2) jpegFrames++;
+      }
+      ws.send(message);
+    });
+  });
+  await page.goto(`${engine.url}/?token=${engine.token}`);  // again, through the route above
+  const release = await holdEncoders(page, engine);
+  await openScreen(page, 'Outputs');
+  await page.getByRole('button', { name: 'Canvases' }).click();
+  await page.getByRole('button', { name: 'Add canvas' }).click();
+  await page.getByRole('group', { name: 'Canvas', exact: true }).getByRole('button', { name: 'Canvas 2' }).click();
+  const figure = page.getByRole('figure');
+  const caption = figure.locator('figcaption');
+  await expect(caption).toContainText(/^JPEG 5 fps · .* · H\.264 encoders busy/, { timeout: previewTimeout });
+  // the moved case needs the refused stream's JPEG first: without a frame on it (the B99 symptom) the watchdog fires
+  // before any move. A CI run without one says so (Actions warning, engine log attached) and is skipped, as in B86
+  await expect.poll(() => jpegFrames, { timeout: 4_000 }).toBeGreaterThan(0).catch(async (error: unknown) => {
+    if (!process.env.CI || !/Timeout \d+ms exceeded/.test((error as Error).message ?? '')) throw error;
+    const note = `B98: ${jpegFrames} JPEG frames on the refused canvas:2 stream within 4000 ms (B99)`;
+    console.log(`::warning::${note}`);
+    test.info().annotations.push({ type: 'B98', description: note });
+    await test.info().attach('fanousd.log (B98)', { path: join(engine.home, 'Library/Logs/Fanous/fanousd.log'), contentType: 'text/plain' });
+    test.skip(true, 'no JPEG frame for the refused viewer on this runner (B99)');
+  });
+  const drawn = () => figure.locator('canvas').evaluate((c: HTMLCanvasElement) => c.getContext('2d')!.getImageData(c.width / 2, c.height / 2, 1, 1).data[3]);
+  await expect.poll(drawn).toBe(255);
+  await expect(caption).toContainText('H.264 encoders busy');  // still the refused stream
+
+  // an encoder frees up: the engine moves the viewer to its own H.264 stream, which never delivers a frame
+  frozen = true;
+  await release(2);
+  // the watchdog would fire on the dropped JPEG alone: the move itself must be seen. A CI run whose new VideoToolbox
+  // session gives nothing before the watchdog fires (B66) is skipped
+  await expect.poll(() => moved, { timeout: previewTimeout }).toBe(true).catch((error: unknown) => {
+    if (!process.env.CI || !/Timeout \d+ms exceeded/.test((error as Error).message ?? '')) throw error;
+    test.skip(true, 'the moved stream sent no description within 5 s on this runner (B66); JPEG fallback first');
+  });
+  // before B95 the caption stayed "H.264 encoders busy" over a frozen picture; now it re-subscribes as JPEG, once
+  await expect(caption).toContainText(/^JPEG 5 fps · no H\.264 stream from the engine/, { timeout: 10_000 });
+  await page.waitForTimeout(1_000);  // the fallback stream has no watchdog: no further subscription
+  expect(subs).toBe(2);
+  await expect(caption.locator('.stalled')).toHaveCount(0, { timeout: 5_000 });  // the new stream's frames are drawn
 });

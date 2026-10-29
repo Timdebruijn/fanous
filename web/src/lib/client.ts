@@ -26,6 +26,8 @@ export interface PreviewInfo {
   w: number;
   h: number;
   fps: number;
+  /** its canvas's stream instead of the target's at the encoder limit (B70, B96) */
+  fallback: boolean;
 }
 
 export interface StreamDescription {
@@ -34,6 +36,7 @@ export interface StreamDescription {
   w: number;
   h: number;
   fps: number;
+  fallback: boolean;
 }
 
 export interface ClientCallbacks {
@@ -229,7 +232,7 @@ export class FanousClient {
       }
       case 'sub': {
         if (message.stream === 'preview') {
-          this.previewSubs.shift()?.resolve({ id: message.id, codec: message.codec, w: message.w, h: message.h, fps: message.fps });
+          this.previewSubs.shift()?.resolve({ id: message.id, codec: message.codec, w: message.w, h: message.h, fps: message.fps, fallback: message.fallback });
           break;
         }
         if (message.stream === 'thumbs') {
@@ -243,7 +246,7 @@ export class FanousClient {
       }
       case 'stream': {
         const bytes = Uint8Array.from(atob(message.description), (c) => c.charCodeAt(0));
-        const description = { codec: message.codec, description: bytes, w: message.w, h: message.h, fps: message.fps };
+        const description = { codec: message.codec, description: bytes, w: message.w, h: message.h, fps: message.fps, fallback: message.fallback };
         this.descriptions.set(message.id, description);
         this.callbacks.onStream?.({ id: message.id, ...description });
         break;
