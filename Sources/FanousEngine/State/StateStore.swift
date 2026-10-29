@@ -23,11 +23,14 @@ public struct CommandSpec: Sendable {
     /// Checked before undo or redo replays this command's history entry, with the patch the step would apply and the
     /// project as it is now; a thrown `CommandError` refuses the step (the entry stays, unless the code is `historyConflict`).
     public var replayCheck: (@Sendable (JSONPatch, JSONValue) throws -> Void)?
+    /// What makes two calls "the same edit" for undo coalescing (a slider drag), with the args' `id`; nil = their `path`.
+    public var coalesceKey: (@Sendable (JSONValue) -> String?)?
     public var run: @Sendable (inout JSONValue, JSONValue) throws -> JSONValue?
 
     public init(
         name: String, role: Role, mutatesConfig: Bool = true, undoable: Bool = true, summary: String, argsType: String = "Record<string, never>",
-        replayCheck: (@Sendable (JSONPatch, JSONValue) throws -> Void)? = nil, run: @escaping @Sendable (inout JSONValue, JSONValue) throws -> JSONValue?
+        replayCheck: (@Sendable (JSONPatch, JSONValue) throws -> Void)? = nil, coalesceKey: (@Sendable (JSONValue) -> String?)? = nil,
+        run: @escaping @Sendable (inout JSONValue, JSONValue) throws -> JSONValue?
     ) {
         self.name = name
         self.role = role
@@ -36,6 +39,7 @@ public struct CommandSpec: Sendable {
         self.summary = summary
         self.argsType = argsType
         self.replayCheck = replayCheck
+        self.coalesceKey = coalesceKey
         self.run = run
     }
 }
@@ -77,7 +81,8 @@ public final class StateStore: @unchecked Sendable {
         var name: String
         var forward: JSONPatch
         var inverse: JSONPatch
-        /// Coalescing key: same command, args id/path and client within `coalesceWindow` merge into one entry.
+        /// Coalescing key: same command, args id and path (or the command's `coalesceKey`) and client within
+        /// `coalesceWindow` merge into one entry.
         var key: String? = nil
         var client: ObjectIdentifier? = nil
         var at: TimeInterval = 0
@@ -176,7 +181,7 @@ public final class StateStore: @unchecked Sendable {
             let inverse = JSONPatch.diff(from: next, to: projectDocument)
             commit(next, patch: forward)
             if spec.undoable {
-                let key = args["path"]?.string.map { "\(name)|\(args["id"]?.int ?? -1)|\($0)" }
+                let key = (spec.coalesceKey?(args) ?? args["path"]?.string).map { "\(name)|\(args["id"]?.int ?? -1)|\($0)" }
                 let now = ProcessInfo.processInfo.systemUptime
                 if let key, let client, let last = undoStack.last, last.key == key, last.client == client, now - last.at < Self.coalesceWindow {
                     undoStack[undoStack.count - 1] = HistoryEntry(

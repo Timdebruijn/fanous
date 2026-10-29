@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import { previewClass } from '../src/lib/preview';
-import { binary, expect, expectPreviewStreaming, openScreen, previewTimeout, repo, test } from './fixtures';
+import { binary, expect, expectPreviewStreaming, openScreen, previewTimeout, repo, test, type Engine } from './fixtures';
 
 type Param = { key: string; raw: number; source: string };
 
@@ -187,6 +187,37 @@ test('outputs: with two slices on the same corners, a drag moves the selected sl
   await expect.poll(() => handleAt(page, '/slices/0/dest/0')).toEqual({ x: 0, y: 0 });
 });
 
+test('outputs: a change of mesh density keeps the shape; Reset mesh flattens it', async ({ page }) => {
+  await addUnassignedOutput(page);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  await page.getByRole('button', { name: /^Mesh/ }).click();
+  await page.getByLabel('Density').selectOption('3');
+  const rounded = async (path: string) => {
+    const p = await handleAt(page, path);
+    return { x: Math.round(p.x), y: Math.round(p.y) };
+  };
+  const flat = await rounded('/warp/mesh/points/4');
+
+  // drag the middle point of the 3 × 3 grid away from the centre
+  const handle = (await page.getByRole('button', { name: '/warp/mesh/points/4', exact: true }).boundingBox())!;
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 + 60, handle.y + handle.height / 2 + 30, { steps: 8 });
+  await page.mouse.up();
+  // wait for the drop position itself, not an echo of a step in between
+  const editor = (await page.getByRole('application', { name: /Mapping editor/ }).boundingBox())!;
+  const targetX = Math.round(((handle.x + handle.width / 2 + 60 - editor.x) / editor.width) * 1000);
+  await expect.poll(async () => Math.abs((await rounded('/warp/mesh/points/4')).x - targetX)).toBeLessThanOrEqual(1);
+  const bent = await rounded('/warp/mesh/points/4');
+
+  // 3 × 3 → 5 × 5: the old middle point is the new grid's middle (index 12) and stays where it was dragged
+  await page.getByLabel('Density').selectOption('5');
+  await expect.poll(() => rounded('/warp/mesh/points/12')).toEqual(bent);
+
+  await page.getByRole('button', { name: 'Reset mesh' }).click();
+  await expect.poll(() => rounded('/warp/mesh/points/12')).toEqual(flat);
+});
+
 test('outputs: Spread canvas gives each slice its strip of the canvas', async ({ page }) => {
   await addUnassignedOutput(page);
   await page.getByRole('button', { name: 'Warp & Slices' }).click();
@@ -207,6 +238,52 @@ test('outputs: remove an output, then Undo brings it back', async ({ page }) => 
   await expect(page.getByText('No outputs yet.')).toBeVisible();
   await page.getByRole('status').getByRole('button', { name: /Undo$/ }).click();
   await expect(page.getByRole('button', { name: /^Output 1\b/ })).toBeVisible();
+});
+
+/** Outputs › Warp & Slices with Remote on and the first corner of a new output selected; returns the remote panel. */
+async function remoteOnFirstCorner(page: Page) {
+  await addUnassignedOutput(page);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  await page.getByRole('button', { name: 'Remote', exact: true }).click();
+  const remote = page.getByRole('region', { name: 'Remote' });
+  await remote.getByRole('button', { name: /^Next point/ }).click();
+  await expect(remote.getByText('corner top-left')).toBeVisible();
+  return remote;
+}
+
+test('outputs: remote mode on a phone steps to the next corner and nudges it; one Undo takes the burst back', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const remote = await remoteOnFirstCorner(page);
+  await remote.getByRole('button', { name: /^Next point/ }).click();
+  await expect(remote.getByText('corner top-right')).toBeVisible();
+
+  // two quick taps: the first goes out at once, the second ~100 ms later as its own output.set, and the engine keeps
+  // them as one undo step
+  const y = page.getByLabel('Point y in pixels');
+  const down = remote.getByRole('button', { name: 'Down 1 px' });
+  await down.click();
+  await down.click();
+  await expect(y).toHaveValue('2');
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(y).toHaveValue('0');
+});
+
+test('outputs: remote mode, holding an arrow moves 0.25 px and a slow trackpad drag 1 px per 4 CSS px', async ({ page }) => {
+  const remote = await remoteOnFirstCorner(page);
+  const box = (await remote.getByRole('button', { name: 'Down 1 px' }).boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(600);
+  await page.mouse.up();
+  await expect(remote.getByText('x 0 · y 0.25 px')).toBeVisible();
+
+  // 4 CSS px per move is below 600 px/s however fast the moves come (an interval counts as 8 ms at least)
+  const pad = (await remote.getByText(/^Trackpad:/).boundingBox())!;
+  await page.mouse.move(pad.x + 10, pad.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 20; i++) await page.mouse.move(pad.x + 10 + 4 * i, pad.y);
+  await page.mouse.up();
+  await expect(remote.getByText('x 20 · y 0.25 px')).toBeVisible();
 });
 
 test('canvases: add a canvas, put a layer on it, remove it', async ({ page }) => {
@@ -322,6 +399,58 @@ test('preview: a streaming preview subscribes again, once, after its socket clos
   await expectDecoders(page);  // the stream the closed socket took had its decoder closed too (B85)
 });
 
+test('preview: a viewer refused H.264 at the encoder limit shows JPEG at once and is upgraded when an encoder frees up (B86)', async ({ page, engine }) => {
+  // the page's preview subscriptions of canvas 2
+  let subs = 0;
+  page.on('websocket', (socket) =>
+    socket.on('framesent', ({ payload }) => {
+      const m = typeof payload === 'string' ? (JSON.parse(payload) as { t: string; stream?: string; target?: string }) : null;
+      if (m?.t === 'sub' && m.stream === 'preview' && m.target === 'canvas:2') subs++;
+    }),
+  );
+  await page.goto(`${engine.url}/?token=${engine.token}`);  // again, with the listener above in place
+
+  // another client takes 3 H.264 encoders of canvas 1 (320, 960 and 1280 wide): with canvas 1's own (640) that is the
+  // limit of 4, and canvas 2 has no stream of its own or of its canvas to fall back to, so it is refused to JPEG
+  const load = await page.context().newPage();
+  await load.goto(`${engine.url}/healthz`);
+  await load.evaluate(async (token) => {
+    const ws = new WebSocket(`wss://${location.host}/ws`);
+    const ids: number[] = [];
+    await new Promise<void>((done) => {
+      ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', clientId: 'e2e-encoders', schema: 1, role: 'programmer', token }));
+      ws.onmessage = (event) => {
+        if (typeof event.data !== 'string') return;
+        const m = JSON.parse(event.data) as { t: string; id: number; stream?: string };
+        if (m.t === 'welcome') for (const w of [320, 960, 1280]) ws.send(JSON.stringify({ t: 'sub', stream: 'preview', codec: 'avc', target: 'canvas', w }));
+        if (m.t === 'sub' && m.stream === 'preview' && ids.push(m.id) === 3) done();
+      };
+    });
+    Object.assign(window, { ws, ids });
+  }, engine.token);
+
+  await openScreen(page, 'Outputs');
+  await page.getByRole('button', { name: 'Canvases' }).click();
+  await page.getByRole('button', { name: 'Add canvas' }).click();
+  await page.getByRole('group', { name: 'Canvas', exact: true }).getByRole('button', { name: 'Canvas 2' }).click();
+  const figure = page.getByRole('figure');
+  await expect.poll(() => subs, { timeout: previewTimeout }).toBe(1);
+  // the refusal says `codec: "jpeg"`: JPEG at once (not after 5 s without a description), and its frames are drawn
+  await expect(figure.locator('figcaption')).toContainText(/^JPEG 5 fps · .* · H\.264 encoders busy/, { timeout: 3_000 });
+  const drawn = () => figure.locator('canvas').evaluate((c: HTMLCanvasElement) => c.getContext('2d')!.getImageData(c.width / 2, c.height / 2, 1, 1).data[3]);
+  await expect.poll(drawn, { timeout: previewTimeout }).toBe(255);
+
+  // the other client lets go of one encoder: the engine moves the refused viewer to its own H.264 stream, on the same
+  // subscription
+  await load.evaluate(() => {
+    const { ws, ids } = window as unknown as { ws: WebSocket; ids: number[] };
+    ws.send(JSON.stringify({ t: 'unsub', id: ids[2] }));
+  });
+  await expect(figure.locator('figcaption')).toContainText(/^H\.264/, { timeout: previewTimeout });
+  expect(subs).toBe(1);
+  await load.close();
+});
+
 test("preview: an output stream has the output's shape and the size of its box (B32)", async ({ page, engine }) => {
   // what the engine told this page about its output:1 streams: the `sub` replies, then each `stream` description (a
   // rebuilt stream announces its new size there, without a new subscription)
@@ -376,4 +505,54 @@ test("preview: an output stream has the output's shape and the size of its box (
   const narrow = await wanted();
   await expect.poll(() => told.at(-1)).toEqual(fourThree(narrow));
   expect(subs).toBe(before + 1);
+});
+
+/** Another client of the engine takes 3 H.264 encoders of canvas 1 (320, 960 and 1280 wide): with canvas 1's own (640)
+ * that is the limit of 4 (B70). Resolves with `release(i)`, which ends its i-th of those subscriptions. */
+async function holdEncoders(page: Page, engine: Engine): Promise<(i: number) => Promise<void>> {
+  const other = await page.context().newPage();
+  await other.goto(`${engine.url}/healthz`);
+  await other.evaluate(async (token) => {
+    const ws = new WebSocket(`wss://${location.host}/ws`);
+    const ids: number[] = [];
+    await new Promise<void>((done) => {
+      ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', clientId: 'e2e-encoders', schema: 1, role: 'programmer', token }));
+      ws.onmessage = (event) => {
+        if (typeof event.data !== 'string') return;
+        const m = JSON.parse(event.data) as { t: string; id: number; stream?: string };
+        if (m.t === 'welcome') for (const w of [320, 960, 1280]) ws.send(JSON.stringify({ t: 'sub', stream: 'preview', codec: 'avc', target: 'canvas', w }));
+        if (m.t === 'sub' && m.stream === 'preview' && ids.push(m.id) === 3) done();
+      };
+    });
+    Object.assign(window, { ws, ids });
+  }, engine.token);
+  return (i) =>
+    other.evaluate((i) => {
+      const { ws, ids } = window as unknown as { ws: WebSocket; ids: number[] };
+      ws.send(JSON.stringify({ t: 'unsub', id: ids[i] }));
+    }, i);
+}
+
+test('preview: an output region on the canvas stream at the encoder limit is letterboxed and says so (B87)', async ({ page, engine }) => {
+  const release = await holdEncoders(page, engine);
+  await addUnassignedOutput(page);  // its preview falls back to the canvas stream nearest its size
+  const figure = page.getByRole('figure');
+  const caption = figure.locator('figcaption');
+  const fit = () => figure.locator('canvas').evaluate((c) => getComputedStyle(c).objectFit);
+  await expect(caption).toContainText(/^H\.264/, { timeout: previewTimeout });
+  await expect(caption).not.toContainText('canvas fallback');  // a 16:9 output on the 16:9 canvas: the same shape
+  expect(await fit()).toBe('fill');
+
+  // a 4:3 region: the 16:9 canvas stream is shown whole, letterboxed, not stretched
+  const region = page.getByLabel('Region w', { exact: true });
+  await region.fill('1440');
+  await region.press('Tab');
+  await expect(caption).toContainText(/^H\.264 · \d+×\d+ · \d+ fps · canvas fallback/);
+  expect(await fit()).toBe('contain');
+
+  // an encoder frees up (not the 1280 one: the page's fallback keeps that one encoding): the engine moves the viewer
+  // to the output's own 4:3 stream, and the letterbox goes
+  await release(0);
+  await expect(caption).not.toContainText('canvas fallback', { timeout: previewTimeout });
+  expect(await fit()).toBe('fill');
 });

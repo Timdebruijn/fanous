@@ -224,10 +224,44 @@ on a layer use Solid colour (file 100) with the layer's Red, Green and Blue.
 Choose what to edit with **Corner pin**, **Mesh**, **Slices** or **Mask**.
 Handles sit over the output preview. Drag them with mouse or finger (the hit
 target is large for touch); with a handle selected the arrow keys move it by one
-output pixel, Shift by ten. On an iPad use the **nudge pad** that appears under
+output pixel, Shift by ten, Tab and Shift-Tab select the next and previous
+point, and Esc lets go of it. On an iPad use the **nudge pad** that appears under
 the mode buttons once a point is selected: arrows move by 1 px, the **10 px**
-key in the middle makes every press move ten. A selected point also shows
+key in the middle makes every press move ten, and holding an arrow for half a
+second moves 0.25 px. A selected point also shows
 numeric x and y fields in pixels. Changes go to the engine while you drag.
+
+**Remote mode** is for aligning from an iPad while you look at the projection
+instead of the screen. Turn it on with **Remote** next to the mode buttons; it
+is on by default on touch screens narrower than 900 px, and each browser
+remembers your choice. The controls then come before the preview:
+
+- The selection in large type: "corner top-left", "r3 c5" (row 3, column 5 of
+  the mesh), "slice 2 · bottom-right", "slice 2 · mask point 5", or a group such as
+  "row 3" with how many points move together.
+- **Previous** and **Next** go through the points row by row (left to right,
+  then the next row) and wrap around. With a group selected they step the
+  group: the next row, the next column, or the next edge clockwise.
+- **One point**, **Row**, **Column** (mesh only) and **All** choose what moves:
+  the selected point, its row or column, or every point. **Top**, **Right**,
+  **Bottom** and **Left** select every point on that edge; on a corner pin or a
+  slice an edge is its two corners. A mask has no rows, columns or edges.
+  Tapping or dragging a handle on the picture selects just that point again
+  (**One point**), and so does turning Remote off or picking another output.
+- The nudge pad moves the selection by 1 px, 10 px, or 0.25 px on a long press.
+  The points always move as one: when the first of them reaches the edge of the
+  output, or under a warp cannot go further, the group stops there instead of
+  being squeezed or bent.
+- The **trackpad** area beside it moves the selection as you drag, so your
+  finger never covers the picture: 1 output pixel per 4 screen pixels of finger
+  travel, four times as far when you drag fast.
+
+Distances are output pixels as seen on the projector, also under a corner pin
+or mesh. Moves go to the engine up to ten times a second; taps in between are
+added up, so none is lost. Nudges of the same point or the same group less than
+a second apart are one step for **Undo**. Without the programmer role, or while
+the show is locked, you can still select and step through points, but not move
+them.
 
 Slice, mask and mesh points are stored before the warp, but the preview shows
 the warped picture. The editor therefore draws these handles where the picture
@@ -236,7 +270,10 @@ a handle stays on the spot you touch while a warp is active.
 
 - **Corner pin**: four corners. **Reset corners** puts them back.
 - **Mesh**: **Density** is Off (corner pin only) or 2x2, 3x3, 5x5, 9x9, 17x17
-  or 33x33 points. Changing the density starts from a flat grid. The picture
+  or 33x33 points. Changing the density keeps the shape: the new points are
+  placed on the current surface, so you can start coarse and refine; going to
+  a lower density keeps the overall shape, not the detail between the points
+  that remain. The picture
   follows a smooth surface through the points. **Reset mesh** flattens it.
 - **Slices**: a slice is a piece of the canvas placed somewhere on the output.
   It takes a rectangle of the canvas (**Source x · y · w · h**, in canvas

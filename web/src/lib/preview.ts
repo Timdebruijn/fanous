@@ -59,3 +59,13 @@ export function classChanged(asked: number | undefined, w: number | undefined): 
   const lower = PREVIEW_CLASSES[PREVIEW_CLASSES.indexOf(current as (typeof PREVIEW_CLASSES)[number]) - 1] ?? 160;  // current covers (lower, current]
   return width > current * 1.05 || width < lower * 0.95;
 }
+
+/** True when a served `w`×`h` stream is another shape than the box's CSS `aspect` ("1440 / 1080"): a canvas-stream
+ * fallback at the encoder limit (B70) for an output's region (B87). The engine derives the height from the even width
+ * and rounds it down to even (`PreviewSize.size`), so a stream of the box's shape is less than 2 lines off. An extreme
+ * strip past the engine's 2160-line cap loses its aspect and counts as another shape too. */
+export function otherShape(w: number, h: number, aspect: string): boolean {
+  const [aw = NaN, ah = 1] = aspect.split('/').map(Number);
+  const box = aw / ah;
+  return w > 0 && h > 0 && box > 0 && Math.abs(h - w / box) >= 2;
+}

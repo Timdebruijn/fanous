@@ -55,7 +55,12 @@ export type CommandName =
   | 'timecode.enable'
   | 'timecode.set'
   | 'undo'
-  | 'universe.set';
+  | 'universe.set'
+  | 'wall.add'
+  | 'wall.remove'
+  | 'wall.seam'
+  | 'wall.seams'
+  | 'wall.set';
 
 export interface CommandArgs {
   /** Add a canvas (up to 4, at most 4 × 3840 × 2160 pixels together; even 320–8192 px) at the shared frame rate of canvas 1; outputs blank briefly; refused in show mode. Returns the new id. Role: programmer, refused under show lock, undoable. */
@@ -96,9 +101,9 @@ export interface CommandArgs {
   'midi.set': { source?: string | null; mscDevice?: number; mscFormat?: number | null };
   /** Add an output (one full-canvas slice, no blend, identity warp), optionally bound to a display. Role: programmer, refused under show lock, undoable. */
   'output.add': { display?: { uuid: string; name: string } };
-  /** Remove an output. Role: programmer, refused under show lock, undoable. */
+  /** Remove an output (not one in a projector wall). Role: programmer, refused under show lock, undoable. */
   'output.remove': { id: number };
-  /** Set one value inside an output by JSON pointer (name, display, region, mode, intensity, blend/*, warp/*, slices/*, testPattern); the result is validated as a whole. Role: programmer, refused under show lock, undoable. */
+  /** Set one value inside an output by JSON pointer (name, display, region, mode, intensity, blend/*, warp/*, slices/*, testPattern); the result is validated as a whole. On a projector-wall output a changed slice 1 source or inner overlap becomes manual (result { wall, manual }), and an inner edge's power, gamma or gammaRGB goes to its seam, so both sides follow. Role: programmer, refused under show lock, undoable. */
   'output.set': { id: number; path: string; value: JSONValue };
   /** Patch a fixture (layer, master, output) to a universe and address, or unpatch it with address 0. Role: programmer, refused under show lock, undoable. */
   'patch.set': { fixture: string; universe: string; address: number };
@@ -138,6 +143,16 @@ export interface CommandArgs {
   'undo': Record<string, never>;
   /** Set one receive setting of a universe: protocol (artnet, sacn, both), interface (any, en0, an IPv4 address), holdOnLoss (hold, zero, internal), lossTimeout (1–60 s; the sACN source timeout stays 2.5 s), sacnPriorityMode (highest, htp), pair (the other protocol's universe; null = default); applies live. Role: programmer, refused under show lock, undoable. */
   'universe.set': { id: string; path: '/protocol' | '/interface' | '/holdOnLoss' | '/lossTimeout' | '/sacnPriorityMode' | '/pair'; value: JSONValue };
+  /** Make a projector wall of cols × rows outputs (row-major, 1–4 each, at least 2; an output in one wall at most) with an overlap fraction of one projector (0–0.5): computes slice 1's source and the inner blend overlaps, seams start at power 2, gamma 2.2. fit canvas uses the whole canvas; makeCanvas first sizes the canvas to the wall (as canvas.set, refused in show mode). Returns the new id. Role: programmer, refused under show lock, undoable. */
+  'wall.add': { cols: number; rows: number; outputs: number[]; overlap: { x: number; y: number }; canvas?: number; fit: 'canvas' | 'makeCanvas'; name?: string };
+  /** Remove a wall; its outputs stay as they are. Role: programmer, refused under show lock, undoable. */
+  'wall.remove': { id: number };
+  /** Tune one seam of a wall (outputs a and b): power 0.1–10, gamma 0.5–5, gammaRGB [r, g, b] or null for gamma on all three; both facing edges follow. Role: programmer, refused under show lock, undoable. */
+  'wall.seam': { id: number; a: number; b: number; power?: number; gamma?: number; gammaRGB?: [number, number, number] | null };
+  /** Tune every seam of a wall to the same values (as wall.seam). Role: programmer, refused under show lock, undoable. */
+  'wall.seams': { id: number; power?: number; gamma?: number; gammaRGB?: [number, number, number] | null };
+  /** Change a wall's geometry and compile it again; seams of pairs that stay keep their values. resetManual true gives every hand-edited field back to the wall, a list only those fields. fit as wall.add. With only a name it renames, without compiling. Role: programmer, refused under show lock, undoable. */
+  'wall.set': { id: number; cols?: number; rows?: number; outputs?: number[]; overlap?: { x: number; y: number }; canvas?: number; name?: string; fit?: 'canvas' | 'makeCanvas'; resetManual?: true | { output: number; field: 'source' | 'overlap.left' | 'overlap.right' | 'overlap.top' | 'overlap.bottom' }[] };
 }
 
 export type ClientMessage =
