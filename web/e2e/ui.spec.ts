@@ -299,6 +299,20 @@ test("walls: the wizard makes a 1 × 2 wall at 15 %, a seam gamma drag is one un
   expect(seamCommands).toBeGreaterThan(1);
   await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(gamma).toHaveValue('2.2');
+  // unlinked, R, G and B replace the single gamma (each starts at it)
+  await panel.getByRole('switch', { name: 'Link R, G, B' }).uncheck({ force: true }); // the drawn track covers the input
+  await expect(panel.getByRole('slider', { name: 'Gamma B' })).toHaveValue('2.2');
+  await expect(gamma).toHaveCount(0);
+  await expect(panel.getByRole('slider', { name: /^Gamma/ })).toHaveCount(3);
+  await expect(panel.getByRole('button', { name: 'Seam between Output 1 and Output 2, gamma R 2.2 · G 2.2 · B 2.2' })).toHaveText('RGB');
+  // Output 2's inner (left) edge shows the three values instead of a gamma field; One gamma for R, G, B links the seam again
+  const left = page.getByRole('group', { name: 'left edge' });
+  await expect(left.getByLabel('Gamma R · G · B')).toHaveValue('2.20 · 2.20 · 2.20');
+  await expect(left.getByLabel('Gamma', { exact: true })).toHaveCount(0);
+  await left.getByRole('button', { name: 'One gamma for R, G, B' }).click();
+  await expect(gamma).toHaveValue('2.2');
+  await expect(panel.getByRole('slider', { name: 'Gamma B' })).toHaveCount(0);
+  await expect(left.getByLabel('Gamma', { exact: true })).toHaveValue('2.2');
 
   // on Grey 25 %, "one projector darker, or tinted" opens the colour gain of the projector tapped next
   await panel.getByRole('group', { name: 'Seam check pattern' }).getByRole('button', { name: 'Grey 25 %' }).click();

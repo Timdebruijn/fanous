@@ -13,6 +13,7 @@ export interface BlendEdge {
   overlap: number;
   power: number;
   gamma: number;
+  gammaRGB?: number[] | null;
 }
 
 export interface BlendSettings {

@@ -492,8 +492,14 @@
               <p class="caption">Overlap: width of the strip shared with the neighbouring projector, in pixels of this output.</p>
               <label class="field"><span>Power</span><input class="input mono" type="number" min="0.1" max="10" step="0.1" value={e.power} disabled={locked} onchange={(ev) => number(ev, `/blend/${edge}/power`)} /></label>
               <p class="caption">Power: steepness of the fade. 2 is a smooth S-curve; higher is sharper in the middle.</p>
-              <label class="field"><span>Gamma</span><input class="input mono" type="number" min="0.5" max="5" step="0.1" value={e.gamma} disabled={locked} onchange={(ev) => number(ev, `/blend/${edge}/gamma`)} /></label>
-              <p class="caption">Gamma: set it to the projector's gamma (usually 2.2) so the two lights add up evenly.</p>
+              {#if e.gammaRGB}
+                <label class="field"><span>Gamma R · G · B</span><input class="input mono" value={e.gammaRGB.map((g) => g.toFixed(2)).join(' · ')} disabled /></label>
+                <button type="button" class="btn" disabled={locked} onclick={() => set(`/blend/${edge}/gammaRGB`, null)}>One gamma for R, G, B</button>
+                <p class="caption">Gamma: this edge has a gamma per colour{wall ? ', tuned on its seam in the wall panel' : ''}. One gamma for R, G, B brings the single gamma back.</p>
+              {:else}
+                <label class="field"><span>Gamma</span><input class="input mono" type="number" min="0.5" max="5" step="0.1" value={e.gamma} disabled={locked} onchange={(ev) => number(ev, `/blend/${edge}/gamma`)} /></label>
+                <p class="caption">Gamma: set it to the projector's gamma (usually 2.2) so the two lights add up evenly.</p>
+              {/if}
             </div>
           {/each}
         </div>

@@ -110,7 +110,7 @@ public struct OutputCompiler: @unchecked Sendable {
         var blendMap: MTLTexture? = nil
         if !config.blend.isIdentity {
             let map = BlendMath.map(config.blend, width: w, height: h).map { Float16($0) }
-            blendMap = try texture(.rg16Float, width: w, height: h, bytesPerPixel: 4, label: "blend \(config.id)") { map.withUnsafeBytes { $0.baseAddress! } }
+            blendMap = try texture(.rgba16Float, width: w, height: h, bytesPerPixel: 8, label: "blend \(config.id)") { map.withUnsafeBytes { $0.baseAddress! } }
         }
         var warpField: MTLTexture? = nil
         if !config.warp.isIdentity {

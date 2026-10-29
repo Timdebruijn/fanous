@@ -172,7 +172,7 @@ offers.
   - Every projector covering a pixel lifts it by (n_max − n) × floor / n.
   - Each point then reaches the floor of the most-covered point, including the
     corners of a 2×2 wall.
-  - It is still one rg16Float map per output, built at edit time, so the
+  - It is still one rgba16Float map per output, built at edit time, so the
     render pass does not change.
   - Outside a wall the current per-edge lift stays.
 - **Seam check:** one button runs through these patterns on all projectors of

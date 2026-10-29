@@ -959,11 +959,12 @@ Grey 0 % and a brighter picture gets only the light the lift adds (§9.9,
 "As built (M1.7)").
 
 Both the per-pixel `factor` and `lift·(1−inOverlap)` are precomputed into one
-`rg16Float` **blend map** texture per output on Control whenever the blend
-settings change (edit-time cost only). Grid arrangements fall out naturally:
-corner pixels multiply the horizontal and vertical factors. Per-channel
-(RGB) gamma is `[OPEN-14]` (common projector need, cheap to add: `rgba16Float`
-map).
+`rgba16Float` **blend map** texture per output on Control whenever the blend
+settings change (edit-time cost only): a factor per channel (R, G, B) and the
+lift. Each channel's factor uses its own γ when the edge has per-channel (RGB)
+gamma (OPEN-14, since M1.6; §9.9), else the edge's γ for all three. Grid
+arrangements fall out naturally: corner pixels multiply the horizontal and
+vertical factors, per channel.
 
 ### 9.3 Warping
 
@@ -991,7 +992,7 @@ for each slice (ordered):
   vertex:   mesh vertex → warp displacement → clip
   fragment: canvas.sample(uv) × scale                           (scale 1 live; frozen: master now / master at Freeze;
                                                                  a test pattern replaces this, whole output)
-            → × blendMap.factor                                 (skipped when Output "raw" is set)
+            → × blendMap.factor r, g, b                         (per channel, §9.9 M1.6; skipped when Output "raw" is set)
             → × colour gain r, g, b                             (raw too)
             → + blendMap.lift + colour black offset in linear light, γ 2.2 (lift skipped in raw; §9.9 M1.7)
             → × mask(uv) × slice.opacity                        (the slice's alpha, after the lift: lift and black offset
@@ -1043,9 +1044,9 @@ applied entirely on the GPU in the final output pass" is satisfied.
 
 - Model (`FanousCore/Mapping/OutputModel.swift`) and edit-time math
   (`MappingMath.swift`, Foundation only, tested): blend map (two floats per
-  pixel: factor and lift term), warp displacement field (homography for the
-  corner pin, Catmull-Rom surface through the mesh points, evaluated
-  separably), mask raster (signed distance with the feather, on a 4× coarser
+  pixel: factor and lift term; four since M1.6, a factor per channel), warp
+  displacement field (homography for the corner pin, Catmull-Rom surface
+  through the mesh points, evaluated separably), mask raster (signed distance with the feather, on a 4× coarser
   grid for feathers ≥ 2 px; CoreGraphics fill for hard edges), 64×64 slice
   meshes.
 - Output pass (`OutputRenderer.swift`, `mapped_vertex/fragment`): per output
@@ -1160,8 +1161,8 @@ own canvas servers are never numbered.
 ### 9.9 Projector walls and the M1 mapping tools (design 2026-10-28, `docs/mapping-ux.md`)
 
 **Status:** approved 2026-10-28; M1 steps 1, 3, 4, 5 built (PRs #55, #47,
-#54, #59), step 2 in PR #63 and step 7 in PR #92 (both as built below);
-step 6 (RGB gamma rendering) open.
+#54, #59), step 2 in PR #63, step 7 in PR #92 and step 6 (RGB gamma)
+(all three as built below).
 
 **Scope:** M1 is the first block. M2 and M3 are listed at the end of this
 section.
@@ -1278,8 +1279,8 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
   per output, B102). Each output's own pattern is kept until the engine has
   taken it back, also in sessionStorage, so a reloaded page offers to give it
   back.
-- Unlinked RGB keeps the single gamma ("in effect" until RGB gamma renders),
-  with R, G, B below it; linking again drops them.
+- Unlinked RGB kept the single gamma ("in effect"), with R, G, B below it,
+  until M1.6 (below); linking again drops them.
 - The colour hints said colour gain was not built yet, and the projector tile
   had the black floor only (0–20 %), until M1.7 (below). Geometry sliders send
   on release (`wall.set` has no coalesce key); seam and floor sliders send at
@@ -1289,6 +1290,28 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
 - `BlendEdge.gammaRGB: [Double]?`; nil means `gamma` for all three channels.
 - The blend map becomes `rgba16Float`: factor R, G, B, plus the lift.
 - The output fragment shader multiplies each channel by its own factor.
+
+**As built (M1.6, PR #97):**
+- `BlendMath.map` gives four floats per pixel: factor R, G, B and the lift
+  term. `BlendMath.factor(_:edge:channel:)` takes that channel's gamma from
+  `gammaRGB`; nil, or a `gammaRGB` that is not three values (project files are
+  not clamped on load), means `gamma`. A corner multiplies the two axes per
+  channel.
+- The output pass multiplies content and test patterns alike by the map's
+  `rgb` and takes its `a` as the lift; raw or without a map it is
+  `(1, 1, 1, 0)`. Without `gammaRGB` the three factors equal the single
+  factor, so a project without RGB gamma renders as before (the golden images
+  are unchanged).
+- The blend map costs 8 bytes per pixel, was 4: ≈ 66 MB per 3840×2160 output
+  with a blend, was 33 MB. An output without a blend has no map.
+- UI: unlinked, the seam's Gamma R, G and B sliders replace its single Gamma
+  slider (a seam-check gamma hint highlights them); linking again drops them.
+  The wall map labels such a seam "RGB" (its title and label give the three
+  values). On the Outputs tab an edge with `gammaRGB` shows the three values in
+  place of its Gamma field, with **One gamma for R, G, B** (`output.set
+  …/gammaRGB null`, which a wall's inner edge passes on to its seam). **Apply
+  to all seams** copies the seam's R, G and B, or clears them on every seam
+  when the seam is linked.
 
 **Per-output colour.**
 - `OutputConfig.color {gain: [r, g, b] (0…2, default 1), black (0…0.2,
@@ -2341,8 +2364,8 @@ biggest risks early.
 | **8 — Hardening & release** | soak tests, benchmark on every available machine, notarized build, user docs (EN), release checklist (brief removed, legal review done), v1.0 | 8 h soak passes on the M1 Pro; benchmark docs committed per machine; notarized `.app` installs and registers the agent on a clean user account; all `[OPEN]` items either resolved or moved to the v1.x list |
 
 Scope guard: a feature not in the table is not in v1. Serial fixture, OSC
-feedback, per-output Syphon, 10-bit output, per-channel blend gamma, frame
-blending, varispeed audio and the MDM profile are the v1.x candidates.
+feedback, per-output Syphon, 10-bit output, frame blending, varispeed audio
+and the MDM profile are the v1.x candidates.
 
 ---
 
@@ -2383,7 +2406,7 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | 3D-model layers (media as texture on a mesh) | the layer pass is one quad in a perspective camera (§4.3); a mesh from Model I/O (USDZ/OBJ) with its own UVs replaces the quad, the fragment shader is unchanged; needs a depth attachment on the canvas pass and a "Geometry" parameter in the reserved Layer channels 52–64 (0 = flat, 1–255 = model from the library); `docs/BACKLOG.md` B9 |
 | Motion: tracking in, movement out (B53) | **Tracking as a source:** a PosiStageNet receiver in Core (UDP multicast, position/speed/orientation per tracker) and OSC trackers become an extra *internal source* in the resolver (§7.2), mapped per project ("tracker 3 → Layer 2 position X/Y, scale") through a stage-to-canvas calibration (metres → canvas) set on the Outputs screen; on-device person tracking through the Vision framework on a capture input (folder 0); depth/lidar SDKs only through the plugin boundary (ADR-0016). **Movement out:** DMX-controlled motion (mirror heads, pan/tilt yokes, winches, rotators) via the Art-Net/sACN builders of the pixel-mapping pass; small motors (ESP32 steppers/servos) via OSC output (B36) or an MQTT bridge. **Moving screens:** encoder positions in over PSN/OSC update an output's corner-pin homography per frame. **Hard rule:** Fanous sends cues and target positions only; it is never the safety layer of stage automation (e-stops, SIL-rated controllers stay in charge). Camera tracking of people is processed on the device and never stored (GDPR). Expected tracker → photon ≈ 35–40 ms, enough to follow a performer, not for locked-on AR. |
 | Serial device fixture | fixture type in `ParameterSpec`; POSIX termios on `/dev/cu.*`, no dependency |
-| OSC feedback, MIDI notes/CC, MSC, timeline, varispeed audio, 10-bit output, per-channel blend gamma, frame blending, MDM profile, CA profile for iPads | noted in their sections |
+| OSC feedback, MIDI notes/CC, MSC, timeline, varispeed audio, 10-bit output, frame blending, MDM profile, CA profile for iPads | noted in their sections |
 
 ---
 
@@ -2404,7 +2427,7 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | OPEN-11 | Per-parameter smoothing vs a global switch | per parameter, default off |
 | OPEN-12 | Folder 0 numbering for inputs/generators | **Decided 2026-10-25:** as in §8.2, plus 110 test card, 111 colour sweep, 112 clock (`Generators.names`); 150–169 other apps' Syphon servers (B61, 2026-10-27) |
 | OPEN-13 | HAP muxing via AVAssetWriter passthrough vs own muxer | **Resolved (Phases 2–4):** `AVAssetWriterInput` with a `sourceFormatHint` format description and passthrough sample buffers writes HAP `.mov` files the engine plays; no own muxer |
-| OPEN-14 | Per-channel (RGB) blend gamma | v1.x, cheap |
+| OPEN-14 | Per-channel (RGB) blend gamma | **Resolved (M1.6, 2026-10-29):** `rgba16Float` blend map with a factor per channel from `BlendEdge.gammaRGB`; unlinked R, G, B on the wall panel's seam (§9.2, §9.9) |
 | OPEN-15 | Audio varispeed / pitch at speed ≠ 100 % | v1.x; mute in v1 |
 | OPEN-16 | `NWProtocolWebSocket` in server role vs hand-written framing | **Resolved in Phase 5**: hand-written RFC 6455 framing in `FanousCore/Protocol/WebSocket.swift` (the accept key and 101 response moved to `HTTPSServer.swift` with CryptoKit SHA-1 in the 2026-10-29 audit). `NWProtocolWebSocket` owns a whole listener, so it could not share port 8443 with the HTTP/1.1 routes and static files; the upgrade is handled by the existing HTTPS connection handler. |
 | OPEN-17 | Downloadable CA profile for iPads | v1.x |

@@ -285,6 +285,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   projector tile, where the seam check's Grey 25 %, 75 % and White steps now point (M1.7). The black lift and the black
   offset add light in linear terms: Grey 0 % looks as before, but the area outside the overlaps no longer brightens at
   mid greys (a lift of 8 % raised 25 % grey by 20 code values, now by 2).
+- Added: per-colour blend gamma (M1.6, OPEN-14). With Link R, G, B off, a projector wall's seam shows Gamma R, G and B in
+  place of its single gamma, and each now changes its own colour in the overlap, for a colour shift only inside a seam;
+  the "(in effect)" label is gone. The wall map labels such a seam RGB, and on the Outputs tab its edges show the three
+  values with **One gamma for R, G, B** in place of the Gamma field. The blend map is `rgba16Float`: 8 bytes per pixel, ≈ 66 MB for a 3840×2160 output with
+  a blend (was 33 MB). Without per-colour gamma the picture is unchanged.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
