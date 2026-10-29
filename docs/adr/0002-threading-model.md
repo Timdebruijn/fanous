@@ -18,7 +18,8 @@ and actors/async hops allocate and can be delayed by unrelated work.
   No locks on the render or DMX path. Control (project model, commands) is
   a single serial queue and the only place that allocates freely.
 - Steady state: zero heap allocations on the compositor thread, verified by
-  a test (`malloc_zone_statistics` over 1 000 frames).
+  a test (`malloc_zone_statistics` over 1 000 frames). Restated by the
+  2026-10-29 amendment below.
 - Swift 6 language mode everywhere. The ring/triple-buffer types are the
   only `@unchecked Sendable` and carry a comment naming the invariant.
 - Swift Concurrency is allowed on the Control/network side where it does not
@@ -49,3 +50,22 @@ are try-locks (`withLockIfAvailable`):
   each Output-N thread once per frame.
 - The compositor thread never takes it. It reads the triple buffer with
   `read()` once per tick, and the preview tap uses `current()`, both lock-free.
+
+## Amendment 2026-10-29 (B97): what "zero allocations" covers
+
+`malloc_zone_statistics` counts the whole process, not the compositor thread.
+Since B89 the count comes from a `malloc_logger` hook (`MallocCounter`) that
+counts only the measured thread. Since B97 the benchmark counts the compositor
+thread with the same hook, and with GPU work that count is not 0. The rule is
+now:
+
+- **The tick's own work allocates 0** in steady state. `scripts/check-mallocs.sh`
+  checks it in an optimised build, without GPU encoding.
+- **Metal API objects add allocations on every tick**, and the Metal 3 API
+  cannot avoid them: 2 per `makeCommandBuffer()`, 2 for the first
+  `makeRenderCommandEncoder(descriptor:)` and 3 for each further one, and 1 per
+  `addCompletedHandler`.
+- **Our completion closure adds 2.** B105 tracks removing it.
+
+The minimum is 7 per tick (headless, one canvas, no output pass, no previews).
+DESIGN.md §4.6 lists what each feature adds.

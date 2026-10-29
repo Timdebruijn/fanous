@@ -95,7 +95,8 @@ public final class Compositor: @unchecked Sendable {
     private var canvasIndex = 0
     private var lastTarget = 0.0
     /// The thread that ran the last tick (the driver's); the bench counts its allocations (§4.6, B97).
-    nonisolated(unsafe) public private(set) var tickThread: pthread_t?
+    /// `pthread_t` bits, 0 before the first tick.
+    package let tickThread = Atomic<UInt>(0)
     private var lastSequence: UInt64 = 0
     /// Static-picture reuse (nothing visible changed since the canvas was last drawn): what the last drawn canvas showed.
     private var drawItems: [DrawItem] = []
@@ -314,7 +315,7 @@ public final class Compositor: @unchecked Sendable {
     /// One compositor tick. `target` is the target presentation time (host seconds).
     public func tick(target: Double, drawable: CAMetalDrawable?) {
         ticks.wrappingAdd(1, ordering: .relaxed)
-        tickThread = pthread_self()
+        tickThread.store(UInt(bitPattern: pthread_self()), ordering: .relaxed)
         let cpuStart = CACurrentMediaTime()
         var record = FrameRecord()
         record.target = target

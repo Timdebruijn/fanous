@@ -7,6 +7,7 @@ import Foundation
 import FanousCore
 import FanousEngine
 import Logging
+import Synchronization
 
 /// Ramps the layer count for one codec/resolution until a frame is missed or
 /// late (DESIGN.md §18), then optionally soaks at the last good count.
@@ -19,8 +20,13 @@ enum Benchmark {
         var textureMisses: Int
         var cpuP50: Double, cpuP99: Double, cpuMax: Double
         var gpuP50: Double, gpuP99: Double, gpuMax: Double
-        /// Allocations on the compositor thread over the window (§4.6, `MallocCounter`); nil: no `malloc_logger` to hook.
+        /// Allocations on the compositor thread over the window (§4.6, `MallocCounter`); nil: no `malloc_logger`, or the
+        /// warm-up never ticked.
         var compositorMallocs: Int?
+        /// `compositorMallocs` per frame, "n/a" when nil.
+        var mallocsPerTick: String {
+            compositorMallocs.map { String(format: "%d (%.2f/tick)", $0, Double($0) / Double(max(1, frames))) } ?? "n/a"
+        }
         var dmxToPhotonP50: Double
         var dmxToPhotonP99: Double
         var dmxSamples: Int
@@ -126,7 +132,7 @@ enum Benchmark {
                 for count in counts {
                     let step = try await measure(layers: count, seconds: window, file: file, width: width, height: height, fps: fps, display: useDisplay, ringCapacity: ringCapacity, context: context, metrics: metrics, parameters: parameters, logger: logger)
                     result.steps.append(step)
-                    print("layers \(count): \(step.passed ? "PASS" : "FAIL")  frames \(step.frames) missed \(step.missed) late \(step.late) textureMisses \(step.textureMisses)  cpu p99 \(String(format: "%.2f", step.cpuP99)) ms  gpu p99 \(String(format: "%.2f", step.gpuP99)) ms  compositor mallocs \(step.compositorMallocs.map(String.init) ?? "n/a")" + (step.dmxSamples > 0 ? String(format: "  dmx→photon p50 %.1f p99 %.1f ms (n=%d)", step.dmxToPhotonP50, step.dmxToPhotonP99, step.dmxSamples) : ""))
+                    print("layers \(count): \(step.passed ? "PASS" : "FAIL")  frames \(step.frames) missed \(step.missed) late \(step.late) textureMisses \(step.textureMisses)  cpu p99 \(String(format: "%.2f", step.cpuP99)) ms  gpu p99 \(String(format: "%.2f", step.gpuP99)) ms  compositor mallocs \(step.mallocsPerTick)" + (step.dmxSamples > 0 ? String(format: "  dmx→photon p50 %.1f p99 %.1f ms (n=%d)", step.dmxToPhotonP50, step.dmxToPhotonP99, step.dmxSamples) : ""))
                     if step.audioCorrections > 0 || step.audioMaxDriftMillis > 0 { print(String(format: "  audio: underruns %d corrections %d max drift %.1f ms", step.audioUnderruns, step.audioCorrections, step.audioMaxDriftMillis)) }
                     if step.passed { result.maxLayers = count } else { break }
                 }
@@ -186,7 +192,7 @@ enum Benchmark {
         }
         let start = CACurrentMediaTime()
         // the warm-up ticked, so the driver's thread is known; counted from here on, not process-wide (B97)
-        let counted = MallocCounter.available ? service.compositor.tickThread : nil
+        let counted = MallocCounter.available ? pthread_t(bitPattern: service.compositor.tickThread.load(ordering: .relaxed)) : nil
         if let counted { MallocCounter.start(thread: counted) }
         try await Task.sleep(for: .seconds(seconds))
         let now = CACurrentMediaTime()
@@ -231,7 +237,7 @@ enum Benchmark {
         md += "**Max layers without drops: \(result.maxLayers)**\n\n"
         md += "| Layers | Frames | Missed | Late | Texture misses | CPU p50/p99/max ms | GPU p50/p99/max ms | Compositor mallocs | Result |\n|---|---|---|---|---|---|---|---|---|\n"
         for s in result.steps {
-            md += String(format: "| %d | %d | %d | %d | %d | %.2f / %.2f / %.2f | %.2f / %.2f / %.2f | %@ | %@ |\n", s.layers, s.frames, s.missed, s.late, s.textureMisses, s.cpuP50, s.cpuP99, s.cpuMax, s.gpuP50, s.gpuP99, s.gpuMax, s.compositorMallocs.map(String.init) ?? "n/a", s.passed ? "pass" : "fail")
+            md += String(format: "| %d | %d | %d | %d | %d | %.2f / %.2f / %.2f | %.2f / %.2f / %.2f | %@ | %@ |\n", s.layers, s.frames, s.missed, s.late, s.textureMisses, s.cpuP50, s.cpuP99, s.cpuMax, s.gpuP50, s.gpuP99, s.gpuMax, s.mallocsPerTick, s.passed ? "pass" : "fail")
         }
         if let dmx = result.steps.last, dmx.dmxSamples > 0 {
             md += String(format: "\nDMX→photon estimate (Art-Net receive → target presentation time): p50 %.1f ms, p99 %.1f ms over %d DMX frames\n", dmx.dmxToPhotonP50, dmx.dmxToPhotonP99, dmx.dmxSamples)

@@ -149,4 +149,48 @@ func mallocCounterCountsOnlyTheMeasuredThread() async throws {
     let objects = MallocCounter.count { sink.object = Sink() }  // swift_allocObject → swift_slowAlloc
     #expect(sink.object != nil)
     #expect(objects == 1, "one Swift object: \(objects)")
+
+    // start(thread:) from another thread (the bench counts the compositor thread from the main thread): the helper's
+    // 100 mallocs count, this thread's 50 in the same window do not
+    final class Helper: Sendable {
+        let thread = Atomic<UInt>(0)
+        let ready = DispatchSemaphore(value: 0), go = DispatchSemaphore(value: 0), done = DispatchSemaphore(value: 0)
+    }
+    let helper = Helper()
+    Thread.detachNewThread {
+        let blocks = UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: 100)
+        helper.thread.store(UInt(bitPattern: pthread_self()), ordering: .releasing)
+        helper.ready.signal()
+        helper.go.wait()
+        var i = 0
+        while i < 100 {
+            blocks[i] = malloc(16)
+            i += 1
+        }
+        helper.done.signal()
+        i = 0
+        while i < 100 {
+            free(blocks[i])
+            i += 1
+        }
+        blocks.deallocate()
+    }
+    let helpers = try { () throws -> Int in  // synchronous: the semaphore waits are not allowed in an async context
+        helper.ready.wait()
+        MallocCounter.start(thread: try #require(pthread_t(bitPattern: helper.thread.load(ordering: .acquiring))))
+        helper.go.signal()
+        var i = 0
+        while i < 50 {
+            blocks[i] = malloc(16)
+            i += 1
+        }
+        helper.done.wait()
+        return MallocCounter.stop()
+    }()
+    i = 0
+    while i < 50 {
+        free(blocks[i])
+        i += 1
+    }
+    #expect(helpers == 100, "the helper's 100 mallocs, not this thread's 50: \(helpers)")
 }

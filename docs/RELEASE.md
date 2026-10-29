@@ -14,10 +14,10 @@ Phase 8 deliverable of `DESIGN.md` §19; v1.0 ships when every box is ticked.
       running `fanousd` first). Tests run in parallel and wait with a deadline,
       so a loaded Mac makes the run slower, not red, in the loads tested (load
       average up to ~100); negative checks keep fixed windows (B67)
-- [ ] `scripts/check-mallocs.sh`: the compositor tick allocates nothing in
-      steady state (DESIGN §4.6), checked in a release build without GPU work
-      (`fanous-bench` reports the thread's count with it, B97); also required
-      before merging a PR that touches the compositor path (B89)
+- [ ] `scripts/check-mallocs.sh`: 0 allocations for the tick's own work, with no
+      GPU encoding (DESIGN §4.6), in a release build. `fanous-bench` reports the
+      GPU path's count, tracked in B105. Also required before merging a PR that
+      touches the compositor path (B89)
 - [x] `FANOUS_NET_TESTS=1 scripts/test.sh --filter CITPServerTests` on a Mac
       whose firewall allows the test runner's outgoing UDP (the CITP beacon)
 - [ ] `scripts/check-protocol-dts.sh`, `scripts/check-channel-map.sh`,
