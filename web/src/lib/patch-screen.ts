@@ -202,6 +202,8 @@ export interface FixtureRow {
   colour: string;
   collisions: Collision[];
   exceeds: boolean;
+  /** an Output fixture without its output: it controls nothing, Unpatch takes it off the list */
+  orphan: boolean;
 }
 
 const TYPE_LABEL = { layer: 'Layer', master: 'Master', output: 'Output' } as const;
@@ -213,13 +215,14 @@ export function parseFixture(name: string): { type: FixtureType; index: number }
 }
 
 /**
- * Layer 1..layerCount (patched or not), Master, then every Output named in the patch. Collisions are
- * overlapping channel ranges within one universe; a range past channel 512 is flagged as exceeding.
- * Layer entries above layerCount are not fixtures any more and take no part.
+ * Layer 1..layerCount (patched or not), Master, then the Output fixture of every output (patched or not) and every
+ * other Output named in the patch (an orphan). Collisions are overlapping channel ranges within one universe; a
+ * range past channel 512 is flagged as exceeding. Layer entries above layerCount are not fixtures any more and take
+ * no part.
  */
-export function buildFixtures(patch: readonly PatchEntry[], layerCount: number, map: ChannelMap | null): FixtureRow[] {
+export function buildFixtures(patch: readonly PatchEntry[], layerCount: number, map: ChannelMap | null, outputIds: readonly number[] = []): FixtureRow[] {
   const entries = new Map(patch.map((e) => [e.fixture, e] as const));
-  const outputs = new Set<number>();
+  const outputs = new Set<number>(outputIds);
   for (const e of patch) {
     const f = parseFixture(e.fixture);
     if (f?.type === 'output') outputs.add(f.index);
@@ -230,7 +233,7 @@ export function buildFixtures(patch: readonly PatchEntry[], layerCount: number, 
     ...[...outputs].sort((a, b) => a - b).map((i) => `Output ${i}`),
   ];
   const rows: FixtureRow[] = names.map((name, i) => {
-    const type = parseFixture(name)!.type;
+    const { type, index } = parseFixture(name)!;
     const entry = entries.get(name);
     const footprint = footprintOf(map, type);
     const address = entry && entry.address >= 1 ? entry.address : 0;
@@ -239,7 +242,7 @@ export function buildFixtures(patch: readonly PatchEntry[], layerCount: number, 
       name, type, typeLabel: TYPE_LABEL[type], footprint,
       universe: entry?.universe ?? null, address, patched: address > 0, end,
       colour: FIXTURE_COLOURS[i % FIXTURE_COLOURS.length]!,
-      collisions: [], exceeds: end > UNIVERSE_SIZE,
+      collisions: [], exceeds: end > UNIVERSE_SIZE, orphan: type === 'output' && !outputIds.includes(index),
     };
   });
   for (let i = 0; i < rows.length; i++) {
@@ -284,7 +287,8 @@ export function rowStatus(r: FixtureRow): Status {
   const first = r.collisions[0];
   if (first) parts.push(`collides with ${first.with} · ${first.from}–${first.to}${r.collisions.length > 1 ? ` (+${r.collisions.length - 1})` : ''}`);
   if (r.exceeds) parts.push('exceeds universe');
-  return parts.length ? { tone: 'bad', text: parts.join('; ') } : { tone: 'ok', text: 'ok' };
+  if (parts.length) return { tone: 'bad', text: parts.join('; ') };
+  return r.orphan ? { tone: 'faint', text: 'no such output · Unpatch removes it' } : { tone: 'ok', text: 'ok' };
 }
 
 /** Accessible name of a table row (its visible cells are laid out in columns). */

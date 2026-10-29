@@ -100,6 +100,14 @@ describe('buildFixtures', () => {
     expect(buildFixtures([], 0, null).map((r) => r.name)).toEqual(['Master']);
   });
 
+  it('lists every output (patched or not) and marks a patched Output fixture without its output', () => {
+    const rows = buildFixtures([at('Output 1', 'artnet:0.0.1', 9), at('Output 4', 'artnet:0.0.1', 33)], 0, map, [1, 5]);
+    expect(rows.map((r) => [r.name, r.patched, r.orphan])).toEqual([['Master', false, false], ['Output 1', true, false], ['Output 4', true, true], ['Output 5', false, false]]);
+    expect(rowStatus(rows[1]!)).toEqual({ tone: 'ok', text: 'ok' });
+    expect(rowStatus(rows[2]!)).toEqual({ tone: 'faint', text: 'no such output · Unpatch removes it' });
+    expect(rowStatus(rows[3]!)).toEqual({ tone: 'faint', text: 'unpatched · no console control' });
+  });
+
   it('treats address 0 as unpatched', () => {
     const [row] = buildFixtures([at('Layer 1', 'artnet:0.0.0', 0)], 1, map);
     expect(row).toMatchObject({ patched: false, universe: 'artnet:0.0.0', address: 0 });

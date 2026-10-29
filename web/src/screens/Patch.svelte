@@ -19,7 +19,7 @@
   /** the universe the user picked or patched to last; falls back when it is no longer known */
   let chosenUniverse = $state<string | null>(null);
 
-  const rows = $derived(buildFixtures(app.project.patch, app.project.layerCount, map));
+  const rows = $derived(buildFixtures(app.project.patch, app.project.layerCount, map, app.project.outputs.map((o) => o.id)));
   const selected = $derived(rows.find((r) => r.name === selectedName) ?? rows[0]!);
   const summary = $derived(summarize(rows));
   const known = $derived(knownUniverses(app.project.patch, app.live.dmx.universes));
