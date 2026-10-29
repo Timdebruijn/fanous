@@ -49,10 +49,11 @@
     const supportsWebCodecs = 'VideoDecoder' in window && 'EncodedVideoChunk' in window;
     let configured = false;
     let sawKey = false;
-    // a subscription refused to JPEG at the encoder limit (B70) is watched until its `stream` description comes (B95):
-    // 5 s without a drawn frame → JPEG, as when the engine moved it to a new streamer whose VideoToolbox session is slow
-    // or fails. Armed by the `sub` reply, re-armed by each frame. A healthy H.264 stream is not watched after its
-    // description: a tick stall (display asleep, project load) must not demote it for good
+    // a subscription refused to JPEG at the encoder limit (B70) is watched until its decoder is configured (B95): 5 s
+    // without a drawn frame → JPEG, as when the engine moved it to a new streamer whose VideoToolbox session is slow or
+    // fails. Armed by the `sub` reply, re-armed by each frame (again after the engine moves it back to JPEG, B88). A
+    // healthy H.264 stream is never demoted after its decoder is configured: a tick stall (display asleep, project
+    // load) must not demote it for good
     let refused = false;
     let watchdog: ReturnType<typeof setTimeout> | undefined;
     const watch = () => {

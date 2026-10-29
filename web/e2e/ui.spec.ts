@@ -623,11 +623,9 @@ test('preview: a viewer refused H.264 at the encoder limit shows JPEG at once an
   // over 5 s without a frame: the page's B95 watchdog then re-subscribes as JPEG
   const fellBack = async () => /^JPEG 5 fps · no H\.264 stream/.test(await figure.locator('figcaption').innerText());
   await expect.poll(async () => upgradedAt > 0 || (!!process.env.CI && (await fellBack())), { timeout: previewTimeout }).toBe(true);
-  if (process.env.CI && (await fellBack())) {
-    test.skip(true, upgradedAt
-      ? 'fell back to JPEG after the H.264 description came: decoder not ready within 5 s on this runner (B95, B98)'
-      : 'no H.264 description within 5 s of the move on this runner (B66, B95); JPEG fallback');
-  }
+  // a fallback after the description came is not skipped here: the poll returns on `upgradedAt` first, and `decoded`
+  // below accepts that JPEG on CI
+  test.skip(upgradedAt === 0, 'no H.264 description within 5 s of the move on this runner (B66, B95); JPEG fallback');
   expect(upgradedAt).toBe(1);  // on the one subscription the page sent
   // the page decodes it; on CI a decoder that fails (B98) may fall back to JPEG with its reason, a new subscription
   const decoded = process.env.CI ? /^(H\.264 · |JPEG 5 fps · (?!.*encoders busy))/ : /^H\.264 · /;
@@ -752,15 +750,16 @@ test('preview: a refused viewer the engine moves to a stream that never delivers
   let subs = 0;  // the page's canvas:2 preview subscriptions
   let jpegFrames = 0;  // on the refused subscription
   let frozen = false;
+  let moved = false;  // the engine's H.264 description or frame on it, dropped: it was moved to a new streamer
   await page.routeWebSocket(/\/ws$/, (ws) => {
     const server = ws.connectToServer();
     server.onMessage((message) => {
       if (typeof message === 'string') {
         const m = JSON.parse(message) as { t: string; id: number; stream?: string; target?: string };
         if (m.t === 'sub' && m.stream === 'preview' && m.target === 'canvas:2' && subs++ === 0) refused = m.id;
-        if (frozen && m.t === 'stream' && m.id === refused) return;
+        if (frozen && m.t === 'stream' && m.id === refused) return void (moved = true);
       } else if (message.length >= 5 && message.readUInt32BE(1) === refused) {
-        if (frozen) return;
+        if (frozen) return void (moved ||= message[0] === 1);
         if (message[0] === 2) jpegFrames++;
       }
       ws.send(message);
@@ -792,6 +791,12 @@ test('preview: a refused viewer the engine moves to a stream that never delivers
   // an encoder frees up: the engine moves the viewer to its own H.264 stream, which never delivers a frame
   frozen = true;
   await release(2);
+  // the watchdog would fire on the dropped JPEG alone: the move itself must be seen. A CI run whose new VideoToolbox
+  // session gives nothing before the watchdog fires (B66) is skipped
+  await expect.poll(() => moved, { timeout: previewTimeout }).toBe(true).catch((error: unknown) => {
+    if (!process.env.CI || !/Timeout \d+ms exceeded/.test((error as Error).message ?? '')) throw error;
+    test.skip(true, 'the moved stream sent no description within 5 s on this runner (B66); JPEG fallback first');
+  });
   // before B95 the caption stayed "H.264 encoders busy" over a frozen picture; now it re-subscribes as JPEG, once
   await expect(caption).toContainText(/^JPEG 5 fps · no H\.264 stream from the engine/, { timeout: 10_000 });
   await page.waitForTimeout(1_000);  // the fallback stream has no watchdog: no further subscription
