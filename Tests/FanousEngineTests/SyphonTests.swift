@@ -105,8 +105,9 @@ import Testing
     }
 
     /// B109: one publish of an `rgba16Float` texture (the canvas format; `flipped`, so Syphon's draw, never its blit)
-    /// allocates at most 4 on the calling thread in an optimised build: the encoder (2) and the completion handler block
+    /// allocates exactly 4 on the calling thread in an optimised build: the encoder (2) and the completion handler block
     /// (2). The render pass descriptor is made once (`VENDORED.md` local change 6); made per frame it added 4 (8 in all).
+    /// A ratchet: fewer (or a hook that sees nothing) fails too, so the number here is updated with the change.
     @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
     func mallocCounterSyphonPublishReusesItsRenderPass() throws {
         try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
@@ -124,7 +125,7 @@ import Testing
             commandBuffer.waitUntilCompleted()
         }
         #if !DEBUG
-            #expect(allocations <= 4, "one Syphon publish: \(allocations) allocations on the calling thread")
+            #expect(allocations == 4, "one Syphon publish: \(allocations) allocations on the calling thread")
         #endif
         print("Syphon publish: \(allocations) allocations on the calling thread")
     }
