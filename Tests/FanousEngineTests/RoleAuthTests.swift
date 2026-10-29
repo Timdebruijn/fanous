@@ -163,6 +163,27 @@ struct RoleAuthTests {
         #expect(try Self.raw(otherFile)["passwords"]?.object?.keys.sorted() == ["monitor"])
     }
 
+    @Test func settingsAreOwnerOnlyFromTheStart() throws {
+        // B83: written to a temporary file created 0600 and renamed into place, never chmod-ed after the write
+        let (auth, file) = try Self.settingsAuth(nil)
+        let directory = file.deletingLastPathComponent()
+        func mode(_ url: URL) throws -> Int? { try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int }
+        func entries() throws -> [String] { try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted() }
+        try auth.setPassword("pw", for: .programmer)
+        #expect(try mode(file) == 0o600, "a new file")
+        _ = try auth.setSync(["port": 48970])
+        #expect(try mode(file) == 0o600, "an existing file")
+        #expect(try entries() == ["settings.json", "shell-token"], "no temporary file is left")
+
+        let fresh = directory.appending(path: "fresh")
+        try RoleAuth.writePrivately(Data("x".utf8), to: fresh)
+        #expect(try mode(fresh) == 0o600, "the helper alone, with no chmod after it")
+        let blocked = directory.appending(path: "blocked")
+        try FileManager.default.createDirectory(at: blocked.appending(path: "inside"), withIntermediateDirectories: true)
+        #expect(throws: (any Error).self) { try RoleAuth.writePrivately(Data("x".utf8), to: blocked) }
+        #expect(try entries() == ["blocked", "fresh", "settings.json", "shell-token"], "a failed write leaves no temporary file")
+    }
+
     @Test func cookieParsing() throws {
         var request = try #require(try HTTPRequest.parse(Array("GET /ws HTTP/1.1\r\nCookie: theme=dark; fanous_session=abc123; other=1\r\n\r\n".utf8))).request
         #expect(RoleAuth.cookie(in: request) == "abc123")
