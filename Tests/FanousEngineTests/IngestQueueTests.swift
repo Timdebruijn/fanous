@@ -18,12 +18,6 @@ import UniformTypeIdentifiers
 @Suite(.serialized) struct IngestQueueTests {
     // MARK: Helpers
 
-    static func temporaryDirectory() throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-ingest-tests-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
-
     /// 320×176 ProRes 422 HQ with the `TestTone` track, 10 fps (20 frames: HAP Q encoding is slow in a debug build).
     static let sourceFPS: Int32 = 10
     static func writeSource(to url: URL, seconds: Int = 2, audio: Bool = true) async throws {
@@ -187,7 +181,7 @@ import UniformTypeIdentifiers
     // MARK: (a) ProRes + audio → HAP Q and ProRes 422 HQ
 
     @Test func transcodesToHAPQAndProResWithAudio() async throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "source.mov")
         try await Self.writeSource(to: source)
@@ -213,7 +207,7 @@ import UniformTypeIdentifiers
     // MARK: (b) sequence, alpha promotion
 
     @Test func sequenceJobAndAlphaPromotion() async throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let frames = directory.appending(path: "frames")
         try FileManager.default.createDirectory(at: frames, withIntermediateDirectories: true)
@@ -240,7 +234,7 @@ import UniformTypeIdentifiers
     // MARK: (c) stills, originals, overwrite
 
     @Test func stillIsCopiedAndOriginalMoved() async throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let incoming = directory.appending(path: "incoming")
         try FileManager.default.createDirectory(at: incoming, withIntermediateDirectories: true)
@@ -267,7 +261,7 @@ import UniformTypeIdentifiers
     }
 
     @Test func existingDestinationFailsUnlessOverwriteAndSourceCanBeDeleted() async throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let first = directory.appending(path: "first.png"), second = directory.appending(path: "second.png")
         try Data("one".utf8).write(to: first)
@@ -301,7 +295,7 @@ import UniformTypeIdentifiers
     // MARK: (d) persistence
 
     @Test func queueSurvivesRestart() async throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appending(path: "state/queue.json")  // parent is created on the first save
         let first = IngestQueue(persistenceURL: file)
@@ -336,7 +330,7 @@ import UniformTypeIdentifiers
     // MARK: (e) pause and cancel
 
     @Test func pauseHoldsAndCancelRemovesPartialOutput() async throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "source.mov")
         try await Self.writeSource(to: source, seconds: 5)  // 50 frames
@@ -390,7 +384,7 @@ import UniformTypeIdentifiers
     // MARK: (f) H.264
 
     @Test func h264SourceBecomesPlayableHAP() async throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "phone.mp4")
         try await Self.writeH264(to: source)
@@ -420,7 +414,7 @@ import UniformTypeIdentifiers
     }
 
     @Test func rotatedSourceIsBakedUpright() async throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "rotated.mp4")
         try await Self.writeH264(to: source, rotated: true)
@@ -461,7 +455,7 @@ import UniformTypeIdentifiers
     }
 
     @Test func cancelledSequenceLeavesNothing() async throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let frames = directory.appending(path: "frames")
         try FileManager.default.createDirectory(at: frames, withIntermediateDirectories: true)
@@ -483,7 +477,7 @@ import UniformTypeIdentifiers
     }
 
     @Test func unreadableSourceFailsCleanly() async throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
         queue.start()
@@ -502,7 +496,7 @@ import UniformTypeIdentifiers
 
     /// B51: while a library root change holds enqueues, a new job is refused with 409 and nothing is queued.
     @Test func heldEnqueueIsRefused() throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
         let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: Logger(label: "test"))
