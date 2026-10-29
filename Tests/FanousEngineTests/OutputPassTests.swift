@@ -440,6 +440,17 @@ struct OutputPassTests {
         #expect(near(try rig.present(set), 200), "still held")
     }
 
+    /// Before the first tick completes (engine start, new canvases) there is no canvas to hold: a secondary display's Freeze
+    /// waits for one instead of holding the empty ring texture.
+    @Test func aSecondaryDisplayFreezeWaitsForTheFirstCanvas() throws {
+        let rig = try Rig(nil, value: 200)
+        let set = OutputSet(plans: [try rig.compile(OutputConfig(id: 1))])
+        rig.write(.freeze, master: 1, layer: 1)
+        #expect(try rig.present(set) <= 1, "no canvas completed yet")
+        _ = rig.tick(.freeze, master: 1, layer: 1)
+        #expect(Self.near(try rig.present(set), 200), "the first completed canvas is held")
+    }
+
     /// A content slice's canvas factor: 1 live (the canvas carries the Master), the Master since for a held canvas.
     @Test func contentScaleFollowsTheMasterOnlyWhenHeld() {
         let cases: [(master: Float, held: Float?, scale: Float)] = [

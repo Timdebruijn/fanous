@@ -119,8 +119,8 @@ public final class Compositor: @unchecked Sendable {
     public let reusedCanvases = Atomic<Int>(0)
     /// Ring index and Master intensity (Float bits) of the latest completed canvases, from one tick: a secondary display's
     /// Freeze keeps the Master its canvases were drawn with, which can be a tick older than the Master it reads (B100).
-    /// Stored just before `canvasIndex` moves on.
-    private let completedCanvas = Atomic<UInt64>(Compositor.packCompleted(index: 2, master: 1))
+    /// Stored just before `canvasIndex` moves on. Master 0 until a tick completes (start, new canvases): a Freeze waits.
+    private let completedCanvas = Atomic<UInt64>(Compositor.packCompleted(index: 2, master: 0))
     private static func packCompleted(index: Int, master: Float) -> UInt64 { UInt64(index) << 32 | UInt64(master.bitPattern) }
     nonisolated(unsafe) public var lastGPUError: String = ""
 
@@ -215,7 +215,7 @@ public final class Compositor: @unchecked Sendable {
         canvasHeight = made[0].height
         self.fps = layout.fps
         canvasSize.store(Self.pack(canvasWidth, canvasHeight), ordering: .releasing)
-        completedCanvas.store(Self.packCompleted(index: 2, master: 1), ordering: .releasing)
+        completedCanvas.store(Self.packCompleted(index: 2, master: 0), ordering: .releasing)
         canvasIndex = 0
         tickIndex = 2
         canvasValid = false
@@ -864,7 +864,10 @@ public final class Compositor: @unchecked Sendable {
             outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
             return
         }
-        guard encodePresent(set, into: drawable.texture, uniforms: uniforms, commandBuffer: commandBuffer) else { return }
+        guard encodePresent(set, into: drawable.texture, uniforms: uniforms, commandBuffer: commandBuffer) else {
+            commandBuffer.commit()  // a Freeze may have encoded its copies: they must run, or the held textures stay undefined
+            return
+        }
         commandBuffer.present(drawable)
         commandBuffer.commit()
     }
