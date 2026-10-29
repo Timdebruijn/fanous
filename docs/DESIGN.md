@@ -1784,7 +1784,7 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
   from the parameter specs, like the other modes.
 - **Use.** Moving scenery (B53) and quick fixes from FOH.
 
-**As built (M2.3, PR #TBD):**
+**As built (M2.3, PR #108):**
 - **The mode.** `FixtureMode.keystone` (16 channels) with `KeystoneParameter` in the §6.4a order, eight 16-bit offsets
   on one curve (0 → −50 %, 32768 → 0, 65535 → +50 %), default 32768. No reserved channels: `ChannelMap.reserved(for:)`
   is nil for it, and the channel map, GDTF and the existing modes' tests go through that one lookup.
