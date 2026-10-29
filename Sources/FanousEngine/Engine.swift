@@ -1231,12 +1231,9 @@ public final class Engine: @unchecked Sendable {
         if rebuildLayerPreviews && preview.targets.contains(where: { $0.hasPrefix("layer:") }) || preview.shapeChanged {
             // layer:<n> previews take the aspect of their layer's canvas, output:<id> previews their output's (B32)
             do { try preview.rebuild() } catch { logger.error("preview rebuild failed", metadata: ["error": "\(error)"]) }
-        } else if preview.targets.contains(where: { $0.hasPrefix("output:") }), let device = render?.context.device, let compiler = try? OutputCompiler(device: device) {
-            // output previews follow their output
-            preview.refreshOutputs { target, streamer in
-                guard target.hasPrefix("output:"), let id = Int(target.dropFirst(7)), let output = use.outputs.first(where: { $0.id == id }) else { return false }
-                return previewOutput(output, in: use.outputs, compiler: compiler, preview: streamer)
-            }
+        } else if preview.targets.contains(where: { $0.hasPrefix("output:") }), let configure = preview.configure {
+            // output previews follow their output, through `configure`'s one compiler, so its cache keeps what did not change
+            preview.refreshOutputs { target, streamer in target.hasPrefix("output:") && configure(target, streamer) }
         }
     }
 

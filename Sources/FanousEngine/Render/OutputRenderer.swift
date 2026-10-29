@@ -98,12 +98,26 @@ public final class OutputSet: @unchecked Sendable {
     public var holdSource: OutputSet { previous.withLock { $0 } ?? self }
 }
 
-/// Compiles `OutputConfig` into textures and meshes (edit-time cost only, DESIGN.md §9.2–9.4).
-public struct OutputCompiler: @unchecked Sendable {
+/// Compiles `OutputConfig` into textures and meshes (edit-time cost only, DESIGN.md §9.2–9.4). Keep one per caller:
+/// its cache (§9.10 item 0) makes a recompile rebuild only the textures whose settings or size changed.
+public final class OutputCompiler: @unchecked Sendable {
     public static let sliceSubdivisions = 64
     public static let fieldDivisor = 4
     private let device: MTLDevice
     private let uniforms: MTLBuffer
+
+    /// What a texture is made of; a changed region, display mode or drawable size gives new keys.
+    enum Key: Hashable {
+        case blend(BlendSettings, width: Int, height: Int)
+        case warp(WarpSettings, cols: Int, rows: Int)
+        case mask(MaskSettings, width: Int, height: Int)
+    }
+    private struct Entry: @unchecked Sendable { weak var texture: MTLTexture? }  // textures are immutable once compiled
+    /// Held weakly: a texture lives exactly as long as a plan holds it (every display's set, the set a frozen output still
+    /// takes its hold from, B111, a preview's), so nothing in use is freed and one no plan uses goes when the set that held
+    /// it is swapped out; its dead entry is dropped at the next compile. Edit-time only, never touched by the render
+    /// thread; the lock is for the previews, which compile from the main actor, the network and a utility queue.
+    private let cache = Mutex<[Key: Entry]>([:])
 
     public init(device: MTLDevice) throws {
         self.device = device
@@ -111,8 +125,22 @@ public struct OutputCompiler: @unchecked Sendable {
         self.uniforms = uniforms
     }
 
+    /// Cache entries, a dead one until the next compile drops it (tests).
+    var entries: Int { cache.withLock { $0.count } }
+
+    /// The texture for `key`: the one a live plan already holds, else `make`'s.
+    private func cached(_ key: Key, _ make: () throws -> MTLTexture) rethrows -> MTLTexture {
+        if let hit = cache.withLock({ $0[key]?.texture }) { return hit }
+        // ponytail: no lock over `make` (it would queue every preview compile behind the slowest): two threads missing one
+        // key both build it, both correct, the later stays cached; track builds in flight per key if that waste shows
+        let texture = try make()
+        cache.withLock { $0[key] = Entry(texture: texture) }
+        return texture
+    }
+
     /// `drawable` is the size of the display's drawable in pixels; a nil region covers it entirely.
     public func compile(_ config: OutputConfig, index: Int, drawable: (width: Int, height: Int)) throws -> OutputPlan {
+        cache.withLock { entries in entries = entries.filter { $0.value.texture != nil } }
         let r = config.region ?? PixelRect(x: 0, y: 0, w: drawable.width, h: drawable.height)
         let x = min(max(0, r.x), max(0, drawable.width - 1)), y = min(max(0, r.y), max(0, drawable.height - 1))
         let w = max(1, min(r.w, drawable.width - x)), h = max(1, min(r.h, drawable.height - y))
@@ -120,14 +148,18 @@ public struct OutputCompiler: @unchecked Sendable {
 
         var blendMap: MTLTexture? = nil
         if !config.blend.isIdentity {
-            let map = BlendMath.map(config.blend, width: w, height: h).map { Float16($0) }
-            blendMap = try texture(.rgba16Float, width: w, height: h, bytesPerPixel: 8, label: "blend \(config.id)") { map.withUnsafeBytes { $0.baseAddress! } }
+            blendMap = try cached(.blend(config.blend, width: w, height: h)) {
+                let map = BlendMath.map(config.blend, width: w, height: h).map { Float16($0) }
+                return try texture(.rgba16Float, width: w, height: h, bytesPerPixel: 8, label: "blend \(config.id)") { map.withUnsafeBytes { $0.baseAddress! } }
+            }
         }
         var warpField: MTLTexture? = nil
         if !config.warp.isIdentity {
             let cols = max(2, w / Self.fieldDivisor), rows = max(2, h / Self.fieldDivisor)
-            let field = WarpMath.field(config.warp, cols: cols, rows: rows)
-            warpField = try texture(.rg32Float, width: cols, height: rows, bytesPerPixel: 8, label: "warp \(config.id)") { field.withUnsafeBytes { $0.baseAddress! } }
+            warpField = try cached(.warp(config.warp, cols: cols, rows: rows)) {
+                let field = WarpMath.field(config.warp, cols: cols, rows: rows)
+                return try texture(.rg32Float, width: cols, height: rows, bytesPerPixel: 8, label: "warp \(config.id)") { field.withUnsafeBytes { $0.baseAddress! } }
+            }
         }
         var slices: [SlicePlan] = []
         let full = SliceMesh.build(SliceConfig(id: 0), subdivisions: Self.sliceSubdivisions)
@@ -143,15 +175,17 @@ public struct OutputCompiler: @unchecked Sendable {
             else { throw RenderError.pipeline("slice mesh \(slice.id)") }
             vertexBuffer.label = "slice \(config.id).\(slice.id)"
             var mask: MTLTexture? = nil
+            // keyed by the mask alone: moving the slice keeps its raster
             if let m = slice.mask, m.path.count >= 3 {
-                if m.feather >= 2 {
-                    // signed-distance feather on a coarser grid (the field is smooth); 1080p with an 8 px feather → 480×270
-                    let raster = MaskMath.raster(m, width: w, height: h, step: min(4, Int(m.feather / 2)))
-                    mask = try texture(.r8Unorm, width: raster.width, height: raster.height, bytesPerPixel: 1, label: "mask \(config.id).\(slice.id)") { raster.bytes.withUnsafeBytes { $0.baseAddress! } }
-                } else {
+                mask = try cached(.mask(m, width: w, height: h)) {
+                    if m.feather >= 2 {
+                        // signed-distance feather on a coarser grid (the field is smooth); 1080p with an 8 px feather → 480×270
+                        let raster = MaskMath.raster(m, width: w, height: h, step: min(4, Int(m.feather / 2)))
+                        return try texture(.r8Unorm, width: raster.width, height: raster.height, bytesPerPixel: 1, label: "mask \(config.id).\(slice.id)") { raster.bytes.withUnsafeBytes { $0.baseAddress! } }
+                    }
                     // hard edge: CoreGraphics fills the polygon pixel-exactly at full resolution
                     let raster = Self.fill(m.path, width: w, height: h)
-                    mask = try texture(.r8Unorm, width: w, height: h, bytesPerPixel: 1, label: "mask \(config.id).\(slice.id)") { raster.withUnsafeBytes { $0.baseAddress! } }
+                    return try texture(.r8Unorm, width: w, height: h, bytesPerPixel: 1, label: "mask \(config.id).\(slice.id)") { raster.withUnsafeBytes { $0.baseAddress! } }
                 }
             }
             slices.append(SlicePlan(vertices: vertexBuffer, indices: indexBuffer, indexCount: indices.count, mask: mask, opacity: Float(slice.opacity), canvas: slice.canvas))
