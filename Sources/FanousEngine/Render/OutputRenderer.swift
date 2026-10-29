@@ -18,6 +18,8 @@ struct MappedUniforms {
     var index: UInt32 = 0
     /// Content only: the canvas sample's factor, before the blend map and lift (`OutputPass.contentScale`).
     var scale: Float = 1
+    /// Per-output colour: gain r, g, b and the black offset (`OutputPlan.color`).
+    var color: SIMD4<Float> = SIMD4(1, 1, 1, 0)
 }
 
 /// One slice ready to draw: tessellated mesh and an optional mask texture.
@@ -49,6 +51,8 @@ public final class OutputPlan: @unchecked Sendable {
     public let region: MTLRegion
     public let intensity: Float
     public let testPattern: TestPattern
+    /// Colour gain r, g, b and the black offset (`OutputConfig.color`).
+    let color: SIMD4<Float>
     let blendMap: MTLTexture?
     let warpField: MTLTexture?
     let slices: [SlicePlan]
@@ -60,8 +64,12 @@ public final class OutputPlan: @unchecked Sendable {
     /// The Master intensity `held` was drawn with (the canvas carries it); same thread as `held`.
     nonisolated(unsafe) var heldMaster: Float = 1
 
-    init(id: Int, index: Int, region: MTLRegion, intensity: Float, testPattern: TestPattern, blendMap: MTLTexture?, warpField: MTLTexture?, slices: [SlicePlan], patternMesh: SlicePlan) {
+    init(
+        id: Int, index: Int, region: MTLRegion, intensity: Float, testPattern: TestPattern, color: SIMD4<Float>, blendMap: MTLTexture?, warpField: MTLTexture?,
+        slices: [SlicePlan], patternMesh: SlicePlan
+    ) {
         self.patternMesh = patternMesh
+        self.color = color
         self.id = id
         self.index = index
         self.region = region
@@ -137,9 +145,10 @@ public struct OutputCompiler: @unchecked Sendable {
             }
             slices.append(SlicePlan(vertices: vertexBuffer, indices: indexBuffer, indexCount: indices.count, mask: mask, opacity: Float(slice.opacity), canvas: slice.canvas))
         }
+        let gain = config.color.gain.count == 3 ? config.color.gain.map(Float.init) : [1, 1, 1]
         return OutputPlan(
             id: config.id, index: index, region: region, intensity: Float(config.intensity), testPattern: TestPattern(rawValue: config.testPattern) ?? .off,
-            blendMap: blendMap, warpField: warpField, slices: slices, patternMesh: patternMesh)
+            color: SIMD4(gain[0], gain[1], gain[2], Float(config.color.black)), blendMap: blendMap, warpField: warpField, slices: slices, patternMesh: patternMesh)
     }
 
     /// Anti-aliased polygon fill, 8-bit coverage, row-major from the top-left.
@@ -252,6 +261,7 @@ enum OutputPass {
                 u.flags = (plan.warpField != nil ? 1 : 0) | (fixture.raw ? 4 : 0) | (plan.blendMap == nil ? 8 : 0)
                 u.pattern = UInt32(pattern.rawValue)
                 u.index = UInt32(plan.index)
+                u.color = plan.color
                 (uniforms.contents() + offset).assumingMemoryBound(to: MappedUniforms.self).pointee = u
                 encoder.setRenderPipelineState(context.mappedPipeline)
                 encoder.setVertexSamplerState(context.linearSampler, index: 0)
@@ -282,6 +292,7 @@ enum OutputPass {
                 u.intensity = content
                 u.scale = contentScale(master: master, heldMaster: frozen == nil ? nil : plan.heldMaster)
                 u.opacity = slice.opacity
+                u.color = plan.color
                 u.flags = (plan.warpField != nil ? 1 : 0) | (slice.mask != nil ? 2 : 0) | (fixture.raw ? 4 : 0) | (plan.blendMap == nil ? 8 : 0)
                 (uniforms.contents() + offset).assumingMemoryBound(to: MappedUniforms.self).pointee = u
                 encoder.setVertexBuffer(slice.vertices, offset: 0, index: 0)

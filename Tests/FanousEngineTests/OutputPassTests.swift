@@ -247,7 +247,8 @@ struct OutputPassTests {
         blended.blend.left = BlendEdge(overlap: 100, gamma: 1)
         blended.blend.lift = 0.08
         let grey25 = try image(blended, .grey25)
-        #expect(px(grey25, 2)[1] < 10 && abs(px(grey25, 300)[1] - 84) <= 1, "\(px(grey25, 2)) \(px(grey25, 300))")
+        // the lift adds its light (M1.7): 64 with 0.08 reads 66, not 64 + 20
+        #expect(px(grey25, 2)[1] < 10 && abs(Double(px(grey25, 300)[1]) - Self.lit(64, 0.08)) <= 1, "\(px(grey25, 2)) \(px(grey25, 300))")
         let grey0 = try image(blended, .grey0)
         #expect(px(grey0, 50)[1] <= 1 && abs(px(grey0, 300)[1] - 20) <= 1, "Grey 0 % shows the lift: \(px(grey0, 50)) \(px(grey0, 300))")
         let raw = try image(blended, .grey25, raw: true)
@@ -514,6 +515,122 @@ struct OutputPassTests {
         #expect(rig.tick(.blackout, master: 1, layer: 1) <= 1, "Output Blackout")
         #expect(near(rig.tick(.freeze, master: 0.25, layer: 1), 20), "Freeze engages at Master 25 %")
         #expect(near(rig.tick(.freeze, master: 1, layer: 1), 20), "frozen at 25 %, Master 100 %")
+    }
+
+    /// The code value of `code` (0…255) with the light of `added` code values (0…1 each, as on black) added at γ 2.2.
+    static func lit(_ code: Double, _ added: Double...) -> Double {
+        pow(added.reduce(pow(code / 255, 2.2)) { $0 + pow($1, 2.2) }, 1 / 2.2) * 255
+    }
+
+    /// Per-output colour (M1.7): the gain multiplies each channel, on content and on test patterns (the seam check tunes
+    /// it on Grey 25/75 % and White), in raw too; without a blend map as with one.
+    @Test func colourGainActsOnContentPatternsAndRaw() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 200)
+        let compiler = try OutputCompiler(device: context.device)
+        let size = (Self.width, Self.height)
+        func rgb(_ config: OutputConfig, _ edit: (inout OutputParameters) -> Void = { _ in }) throws -> [Int] {
+            var fixture = OutputParameters()
+            edit(&fixture)
+            let image = try Self.render(compiler.compile(config, index: 1, drawable: size), still: still, drawable: size, context: context, outputs: [fixture])
+            let i = (97 * Self.width + 300) * 4
+            return [Int(image[i + 2]), Int(image[i + 1]), Int(image[i])]
+        }
+        var tinted = OutputConfig(id: 1)
+        tinted.color.gain = [0.5, 1, 1.2]
+        var blended = tinted
+        blended.blend.left = BlendEdge(overlap: 20)  // a blend map; x = 300 is outside the overlap
+        let cases: [(String, [Int], [Int])] = [
+            ("content", try rgb(tinted), [100, 200, 240]),
+            ("White", try rgb(tinted) { $0.testPattern = .white }, [128, 255, 255]),
+            ("Grey 25 %", try rgb(tinted) { $0.testPattern = .grey25 }, [32, 64, 77]),
+            ("raw keeps the projector's colour", try rgb(tinted) { $0.raw = true }, [100, 200, 240]),
+            ("with a blend map", try rgb(blended), [100, 200, 240]),
+            ("the default changes nothing", try rgb(OutputConfig(id: 1)), [200, 200, 200]),
+        ]
+        for (name, read, expected) in cases { #expect(zip(read, expected).allSatisfy { abs($0 - $1) <= 1 }, "\(name): \(read)") }
+    }
+
+    /// The black lift and the black offset add light: in linear light at γ 2.2. On black they read their code value, as
+    /// the lift did before; on a grey they add the light they give on black, not their code value (0.08 on Grey 25 %
+    /// used to read 64 + 20 = 84).
+    @Test func liftAndBlackOffsetAddInLinearLight() throws {
+        func green(_ value: UInt8, lift: Double = 0, black: Double = 0, gain: Double = 1) throws -> Int {
+            var o = OutputConfig(id: 1)
+            o.blend.lift = lift
+            o.color = OutputColor(gain: [1, gain, 1], black: black)
+            return try Rig(o, value: value).tick(.normal, master: 1, layer: 1)
+        }
+        // on black content: the code value (± dither)
+        #expect(abs(Double(try green(0, lift: 0.08)) - 20.4) <= 1, "lift 0.08 on black")
+        #expect(abs(Double(try green(0, black: 0.1)) - 25.5) <= 1, "black 0.1 on black, no blend map")
+        // on greys: the light added
+        for value: UInt8 in [64, 128] {
+            let lifted = try green(value, lift: 0.08)
+            #expect(abs(Double(lifted) - Self.lit(Double(value), 0.08)) <= 1, "lift 0.08 on \(value): \(lifted), expected \(Self.lit(Double(value), 0.08))")
+            #expect(abs(lifted - (Int(value) + 20)) > 10, "not the code value added: \(lifted)")
+            let offset = try green(value, black: 0.1)
+            #expect(abs(Double(offset) - Self.lit(Double(value), 0.1)) <= 1, "black 0.1 on \(value): \(offset), expected \(Self.lit(Double(value), 0.1))")
+            let both = try green(value, lift: 0.08, black: 0.1, gain: 0.5)
+            let expected = Self.lit(Double(value) * 0.5, 0.08, 0.1)
+            #expect(abs(Double(both) - expected) <= 1, "gain 0.5, lift and black on \(value): \(both), expected \(expected)")
+        }
+    }
+
+    /// The lift and the black offset are added to the un-premultiplied colour, then the slice's alpha scales the result:
+    /// they fade with the slice's opacity and mask (a masked-out part stays black). A hand-edited negative black offset
+    /// (project files are not clamped on load) adds nothing instead of turning the picture black.
+    @Test func liftAndBlackOffsetFadeWithTheSlice() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 0)
+        let compiler = try OutputCompiler(device: context.device)
+        let size = (Self.width, Self.height)
+        func green(_ config: OutputConfig, _ x: Int, value: UInt8 = 0) throws -> Int {
+            let image = try Self.render(compiler.compile(config, index: 1, drawable: size), still: value == 0 ? still : Self.flat(context.device, value: value), drawable: size, context: context)
+            return Int(image[(90 * Self.width + x) * 4 + 1])
+        }
+        var half = OutputConfig(id: 1)
+        half.color.black = 0.1
+        half.slices[0].opacity = 0.5
+        half.slices[0].mask = MaskSettings(path: [MapPoint(0, 0), MapPoint(0.5, 0), MapPoint(0.5, 1), MapPoint(0, 1)])  // the left half
+        let inside = try green(half, 80), outside = try green(half, 240)
+        #expect(abs(Double(inside) - 12.75) <= 1, "black 0.1 at opacity 0.5: \(inside)")
+        #expect(outside <= 1, "black 0.1 where the mask is 0: \(outside)")
+        var negative = OutputConfig(id: 1)
+        negative.blend.lift = 0.08
+        negative.color.black = -0.1
+        let read = try green(negative, 160, value: 64)
+        #expect(abs(Double(read) - Self.lit(64, 0.08)) <= 1, "black -0.1 with lift 0.08 on 64: \(read)")
+    }
+
+    /// Blackout and Master 0 stay black with gain, lift and black offset set; a held (Freeze) canvas still follows the
+    /// Master, with the gain on it.
+    @Test func colourKeepsBlackoutBlackAndFreezeFollowsTheMaster() throws {
+        var o = OutputConfig(id: 1)
+        o.blend.lift = 0.08
+        o.color = OutputColor(gain: [2, 2, 2], black: 0.1)
+        let rig = try Rig(o, value: 100)
+        let near = Self.near
+        let full = Int(Self.lit(200, 0.08, 0.1).rounded())
+        #expect(near(rig.tick(.normal, master: 1, layer: 1), full), "gain 2, lift and black on 100")
+        #expect(rig.tick(.normal, master: 0, layer: 1) <= 1, "Master 0")
+        #expect(rig.tick(.normal, master: 1, layer: 1, blackout: true) <= 1, "Master Blackout")
+        #expect(rig.tick(.blackout, master: 1, layer: 1) <= 1, "Output Blackout")
+        var pattern = OutputParameters()
+        pattern.testPattern = .white
+        let still = try Self.flat(rig.context.device, value: 100)
+        let dark: [(ParameterSnapshotSlot) -> Void] = [{ $0.master = 0 }, { $0.masterControl = .blackout }]
+        for master in dark {
+            let image = try Self.render(try rig.compile(o), still: still, drawable: (Self.width, Self.height), context: rig.context, outputs: [pattern], master: master)
+            #expect(Set(stride(from: 1, to: image.count, by: 4).map { image[$0] }) == [0], "White pattern with colour at Master 0 / Blackout")
+        }
+        // held at Master 100 % (layer dark afterwards): the held canvas × the Master since, × gain, then lift and black
+        var held = OutputConfig(id: 1)
+        held.color.gain = [1, 0.5, 1]
+        let freeze = try Rig(held, value: 200)
+        #expect(near(freeze.tick(.freeze, master: 1, layer: 1), 100), "gain 0.5 on 200")
+        #expect(near(freeze.tick(.freeze, master: 0.5, layer: 0), 50), "frozen, Master 50 %")
+        #expect(freeze.tick(.freeze, master: 0, layer: 0) <= 1, "frozen, Master 0")
     }
 
     /// A secondary display draws the last completed canvas, which can be a tick older than the Master it reads: Freeze

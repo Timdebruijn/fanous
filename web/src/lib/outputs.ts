@@ -49,6 +49,12 @@ export interface SliceConfig {
   opacity: number;
 }
 
+/** Per-output colour (DESIGN §9.9): gain per channel 0–2 and the black offset 0–0.2. */
+export interface OutputColor {
+  gain: [number, number, number];
+  black: number;
+}
+
 export interface OutputConfig {
   id: number;
   name: string;
@@ -60,6 +66,8 @@ export interface OutputConfig {
   warp: WarpSettings;
   slices: SliceConfig[];
   testPattern: number;
+  /** absent in projects saved before M1.7: `colorOf` */
+  color?: OutputColor;
 }
 
 export interface CanvasConfig {
@@ -165,6 +173,11 @@ export function meshIdentity(cols: number, rows: number): MeshWarp {
   const points: MapPoint[] = [];
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) points.push({ x: c / (cols - 1), y: r / (rows - 1) });
   return { cols, rows, points };
+}
+
+/** An output's colour; gain 1 and black 0 when its project predates it, as the engine reads it. */
+export function colorOf(output: OutputConfig): OutputColor {
+  return output.color ?? { gain: [1, 1, 1], black: 0 };
 }
 
 export function clamp01(v: number): number {

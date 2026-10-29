@@ -152,6 +152,18 @@ public struct DisplayModeConfig: Codable, Equatable, Sendable {
     }
 }
 
+/// Per-output colour (DESIGN.md §9.9), tuned by eye per projector like the black floor.
+public struct OutputColor: Codable, Equatable, Sendable {
+    /// Gain per channel (r, g, b), 0…2, on the code value.
+    public var gain: [Double] = [1, 1, 1]
+    /// Black offset, 0…0.2: the code value it gives on black; the output pass adds it in linear light, like the lift.
+    public var black: Double = 0
+    public init(gain: [Double] = [1, 1, 1], black: Double = 0) {
+        self.gain = gain
+        self.black = black
+    }
+}
+
 public struct OutputConfig: Codable, Equatable, Sendable, Identifiable {
     public var id: Int
     public var name: String
@@ -166,11 +178,28 @@ public struct OutputConfig: Codable, Equatable, Sendable, Identifiable {
     public var slices: [SliceConfig]
     /// Test pattern from the UI (the Output/Master fixtures can override it).
     public var testPattern: Int = 0
+    /// Projects saved before it existed read as the default (gain 1, black 0).
+    public var color = OutputColor()
 
     public init(id: Int, name: String? = nil) {
         self.id = id
         self.name = name ?? "Output \(id)"
         slices = [SliceConfig(id: 1)]
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        display = try c.decodeIfPresent(DisplayIdentity.self, forKey: .display)
+        region = try c.decodeIfPresent(PixelRect.self, forKey: .region)
+        mode = try c.decodeIfPresent(DisplayModeConfig.self, forKey: .mode)
+        intensity = try c.decode(Double.self, forKey: .intensity)
+        blend = try c.decode(BlendSettings.self, forKey: .blend)
+        warp = try c.decode(WarpSettings.self, forKey: .warp)
+        slices = try c.decode([SliceConfig].self, forKey: .slices)
+        testPattern = try c.decode(Int.self, forKey: .testPattern)
+        color = try c.decodeIfPresent(OutputColor.self, forKey: .color) ?? OutputColor()
     }
 }
 

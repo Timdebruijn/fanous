@@ -287,6 +287,9 @@ public enum ProjectDocument {
         }
         output.blend.lift = min(0.5, max(0, output.blend.lift))
         output.blend.liftFeather = max(0, output.blend.liftFeather)
+        guard output.color.gain.count == 3 else { throw CommandError.invalidArgs("color.gain needs three values (r, g, b)") }
+        output.color.gain = output.color.gain.map { min(2, max(0, $0)) }
+        output.color.black = min(0.2, max(0, output.color.black))
         guard output.warp.cornerPin.count == 4 else { throw CommandError.invalidArgs("cornerPin needs 4 points") }
         if let mesh = output.warp.mesh {
             guard (2...33).contains(mesh.cols), (2...33).contains(mesh.rows), mesh.points.count == mesh.cols * mesh.rows else {
@@ -515,7 +518,7 @@ public enum ProjectDocument {
         store.register(
             CommandSpec(
                 name: "output.set", role: .programmer,
-                summary: "Set one value inside an output by JSON pointer (name, display, region, mode, intensity, blend/*, warp/*, slices/*, testPattern); the result is validated as a whole. On a projector-wall output a changed slice 1 source or inner overlap becomes manual (result { wall, manual }), and an inner edge's power, gamma or gammaRGB goes to its seam, so both sides follow.",
+                summary: "Set one value inside an output by JSON pointer (name, display, region, mode, intensity, blend/*, warp/*, slices/*, testPattern, color/* with gain [r, g, b] 0–2 and black 0–0.2); the result is validated as a whole. On a projector-wall output a changed slice 1 source or inner overlap becomes manual (result { wall, manual }), and an inner edge's power, gamma or gammaRGB goes to its seam, so both sides follow.",
                 argsType: "{ id: number; path: string; value: JSONValue }"
             ) { project, args in
                 guard let id = args["id"]?.int, let path = args["path"]?.string, let pointer = try? JSONPointer(path), let value = args["value"] else {
