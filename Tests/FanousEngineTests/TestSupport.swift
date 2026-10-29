@@ -109,8 +109,12 @@ enum MallocCounter {
     /// `&malloc_logger`; RTLD_DEFAULT is `(void *)-2`. Nil if libsystem_malloc stops exporting it.
     nonisolated(unsafe) private static let slot = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "malloc_logger")?
         .assumingMemoryBound(to: Logger?.self)
-    /// False: no `malloc_logger` to hook; tests that count gate on this (`.enabled(if:)`).
+    /// False: no `malloc_logger` to hook; tests that count gate on `availableOrRequired` and `#require(available)`.
     static let available = slot != nil
+    /// `FANOUS_REQUIRE_MALLOC_COUNTER=1` (set by `scripts/check-mallocs.sh`): a missing hook fails the tests instead of
+    /// skipping them, so the release gate cannot pass without measuring.
+    static let availableOrRequired =
+        available || ProcessInfo.processInfo.environment["FANOUS_REQUIRE_MALLOC_COUNTER"] == "1"
     private static let lock = NSLock()
     private static let hook: Logger = { type, arg1, arg2, arg3, result, skip in
         let state = MallocCounter.state
@@ -149,8 +153,9 @@ enum MallocCounter {
 
 /// The counter sees allocations of the measured thread, malloc and Swift objects alike, and not those of another thread
 /// in the same window. Loops are `while` loops: a `for` over a range allocates in a debug build.
-@Test(.enabled(if: MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS"))
+@Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
 func mallocCounterCountsOnlyTheMeasuredThread() async throws {
+    try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
     final class Other: Sendable { let state = Mutex((stop: false, allocations: 0)) }
     final class Sink { var object: Sink? }
     let other = Other()

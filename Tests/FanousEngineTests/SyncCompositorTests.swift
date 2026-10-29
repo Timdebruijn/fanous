@@ -225,8 +225,9 @@ struct SyncCompositorTests {
 
     /// The compositor's CPU time per idle tick with 32 file layers, Sync off and all masters (printed), and no
     /// allocation on the ticking thread in steady state (§4.6), in an optimised build.
-    @Test(.enabled(if: MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
     func printMasterSlotCost() async throws {
+        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
         for role in [LayerSync.off, .master(group: 1)] {
             let rig = try await Rig(Array(repeating: role, count: SyncPacket.maxLayers))
             rig.tick(120)
