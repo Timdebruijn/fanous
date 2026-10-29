@@ -132,7 +132,7 @@ import Testing
                     senderDone.signal()
                 }
                 if firstMessage.wait(timeout: .now() + 2) == .success { delivered += 1 }
-                weak var released = receiver
+                weak let released = receiver
                 receiver?.invalidate()
                 receiver = nil
                 senderDone.wait()
