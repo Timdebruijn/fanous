@@ -83,6 +83,10 @@ import Testing
         #expect(command("/fanous/layer/1/intensity", [.string("x")]) == nil)
         #expect(OSCAddressMap.address(.layer(3), .layer(.intensity)) == "/fanous/layer/3/intensity")
         #expect(OSCAddressMap.address(.master, .master(.speed)) == "/fanous/master/speed")
+        #expect(OSCAddressMap.address(.keystone(2), .keystone(.bottomLeftY)) == "/fanous/keystone/2/bottomLeftY")
+        #expect(command("/fanous/keystone/2/topLeftX", [.int32(40000)]) == .setParameter(.keystone(2), .keystone(.topLeftX), raw: 40000))
+        #expect(command("/fanous/keystone/2/blend", [.int32(1)]) == nil, "an Output key is not a Keystone key")
+        #expect(command("/fanous/keystone/0/topLeftX", [.int32(1)]) == nil)
     }
 
     @Test func hostileNumbersDoNotTrap() {

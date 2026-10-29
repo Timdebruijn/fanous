@@ -105,7 +105,7 @@ export interface CommandArgs {
   'output.remove': { id: number };
   /** Set one value inside an output by JSON pointer (name, display, region, mode, intensity, blend/*, warp/*, slices/*, testPattern, color/* with gain [r, g, b] 0–2 and black 0–0.2); the result is validated as a whole. On a projector-wall output a changed slice 1 source or inner overlap becomes manual (result { wall, manual }), and an inner edge's power, gamma or gammaRGB goes to its seam, so both sides follow. Role: programmer, refused under show lock, undoable. */
   'output.set': { id: number; path: string; value: JSONValue };
-  /** Patch a fixture (layer, master, output) to a universe and address, or unpatch it with address 0. Role: programmer, refused under show lock, undoable. */
+  /** Patch a fixture (layer, master, output, keystone) to a universe and address, or unpatch it with address 0. Role: programmer, refused under show lock, undoable. */
   'patch.set': { fixture: string; universe: string; address: number };
   /** Delete a named project version (automatic ones expire by themselves). Role: programmer, refused under show lock. */
   'project.deleteVersion': { id: string };

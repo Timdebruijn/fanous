@@ -7,6 +7,7 @@ import Foundation
 import FanousCore
 import Logging
 import QuartzCore
+import simd
 import Synchronization
 
 public struct EngineOptions: Sendable {
@@ -1523,6 +1524,16 @@ public final class Engine: @unchecked Sendable {
         func ms(_ v: Double) -> JSONValue { .number((v * 100).rounded() / 100) }
         let snapshot = library.snapshot
         let modeNotes = modeChecks.withLock { $0 }.compactMapValues(\.note)
+        // per output: keystone active (not the identity) and invalid (the console's quad was refused), from the DMX side's copy
+        var keystones: [(active: Bool, invalid: Bool)] = []
+        keystones.reserveCapacity(ParameterSnapshotSlot.maxOutputs)
+        dmx.snapshots.withLatest { slot in
+            // Raw bypasses the keystone (OutputPass.draw), so it is not active there
+            for i in slot.keystones.indices {
+                let raw = i < slot.outputs.count && slot.outputs[i].raw
+                keystones.append((slot.keystones[i] != matrix_identity_float3x3 && !raw, slot.keystoneInvalid[i]))
+            }
+        }
         let live: JSONValue = [
             "canvas": canvasSwitch?.live ?? .null,
             "engine": [
@@ -1567,6 +1578,8 @@ public final class Engine: @unchecked Sendable {
                         "id": .number(Double(s.id)), "state": .string(s.state.rawValue), "display": s.display.map { .string($0) } ?? .null,
                         "width": .number(Double(s.width)), "height": .number(Double(s.height)), "hz": .number(s.hz), "master": .bool(s.isMaster),
                         "modeNote": modeNotes[s.id].map { .string($0) } ?? .null,
+                        "keystone": .bool(keystones.indices.contains(s.id - 1) && keystones[s.id - 1].active),
+                        "keystoneInvalid": .bool(keystones.indices.contains(s.id - 1) && keystones[s.id - 1].invalid),
                     ]
                 }),
             "security": ["webUIOpen": .bool(auth.isOpen(.programmer))],

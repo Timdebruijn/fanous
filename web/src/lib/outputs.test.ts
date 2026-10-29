@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
-import { canvasSizeError, canvasTarget, colorOf, previewReady, layerCanvas, layerRuns, layersOn, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, handles, insertPoint, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
+import { canvasSizeError, canvasTarget, colorOf, previewReady, layerCanvas, layerRuns, layersOn, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, handles, insertPoint, keystoneBadges, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
 
 const output: OutputConfig = {
   id: 1,
@@ -65,6 +65,14 @@ describe('outputs helpers', () => {
     expect(statusText(undefined, output).tone).toBe('faint');
     expect(statusText({ id: 1, state: 'lost', display: 'Epson', width: 0, height: 0, hz: 0, master: false }, output)).toEqual({ text: 'display missing: Epson', tone: 'red' });
     expect(statusText({ id: 1, state: 'bound', display: 'Epson', width: 1920, height: 1200, hz: 60, master: true }, output).text).toContain('clock master');
+  });
+
+  it('badges the keystone as live.outputs reports it (DESIGN §9.10 item 2)', () => {
+    const bound = { id: 1, state: 'bound' as const, display: 'Epson', width: 1920, height: 1200, hz: 60, master: true };
+    expect(keystoneBadges(undefined)).toEqual([]);
+    expect(keystoneBadges({ ...bound, keystone: false, keystoneInvalid: false })).toEqual([]);
+    expect(keystoneBadges({ ...bound, keystone: true, keystoneInvalid: false })).toEqual([{ text: 'Keystone active', warn: false }]);
+    expect(keystoneBadges({ ...bound, keystone: true, keystoneInvalid: true }).map((b) => [b.text, b.warn])).toEqual([['Keystone active', false], ['Keystone invalid', true]]);
   });
 
   it('blend curve, point insertion and nudging', () => {

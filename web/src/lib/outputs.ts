@@ -157,6 +157,18 @@ export interface OutputStatusDoc {
   master: boolean;
   /** yellow display-mode warning (desired mode differs, unavailable, or not a multiple of the canvas rate) */
   modeNote?: string | null;
+  /** the Keystone fixture moves this output's corners (DESIGN §9.10 item 2) */
+  keystone?: boolean;
+  /** the console's keystone values were refused (not a convex quad): the last valid keystone stays */
+  keystoneInvalid?: boolean;
+}
+
+/** Badges for what the output shows beyond its edited mapping; the preview and the editor show the mapping as edited. */
+export function keystoneBadges(status: OutputStatusDoc | undefined): { text: string; warn: boolean }[] {
+  const badges: { text: string; warn: boolean }[] = [];
+  if (status?.keystone) badges.push({ text: 'Keystone active', warn: false });
+  if (status?.keystoneInvalid) badges.push({ text: 'Keystone invalid', warn: true });
+  return badges;
 }
 
 /** Index = the engine's TestPattern raw value (Output/Master channel 4 band order). */

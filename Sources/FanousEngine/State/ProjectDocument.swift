@@ -413,11 +413,11 @@ public enum ProjectDocument {
             })
         store.register(
             CommandSpec(
-                name: "patch.set", role: .programmer, summary: "Patch a fixture (layer, master, output) to a universe and address, or unpatch it with address 0.",
+                name: "patch.set", role: .programmer, summary: "Patch a fixture (layer, master, output, keystone) to a universe and address, or unpatch it with address 0.",
                 argsType: "{ fixture: string; universe: string; address: number }"
             ) { project, args in
                 guard let fixtureName = args["fixture"]?.string, let fixture = FixtureRef(parsing: fixtureName) else {
-                    throw CommandError.invalidArgs("fixture must be \"Layer n\", \"Master\" or \"Output n\"")
+                    throw CommandError.invalidArgs("fixture must be \"Layer n\", \"Master\", \"Output n\" or \"Keystone n\"")
                 }
                 guard let universeName = args["universe"]?.string, let universe = UniverseID(parsing: universeName) else {
                     throw CommandError.invalidArgs("universe must be artnet:net.subnet.universe or sacn:n")
@@ -687,13 +687,14 @@ extension JSONValue {
 }
 
 extension FixtureRef {
-    /// Parses the `description` form: "Layer 3", "Master", "Output 1" (case-insensitive).
+    /// Parses the `description` form: "Layer 3", "Master", "Output 1", "Keystone 1" (case-insensitive).
     public init?(parsing text: String) {
         let parts = text.split(separator: " ")
         switch (parts.first?.lowercased(), parts.count) {
         case ("master", 1): self = .master
         case ("layer", 2): guard let n = Int(parts[1]), n >= 1 else { return nil }; self = .layer(n)
         case ("output", 2): guard let n = Int(parts[1]), n >= 1 else { return nil }; self = .output(n)
+        case ("keystone", 2): guard let n = Int(parts[1]), n >= 1 else { return nil }; self = .keystone(n)
         default: return nil
         }
     }

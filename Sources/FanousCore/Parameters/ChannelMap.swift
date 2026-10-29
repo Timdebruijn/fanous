@@ -10,18 +10,29 @@ public enum ChannelMap {
     public static let reservedMasterChannels = 7...8
     public static let reservedOutputChannels = 6...8
 
+    /// The channels a mode keeps free after its last parameter; nil when it uses all of them (Keystone).
+    public static func reserved(for mode: FixtureMode) -> ClosedRange<Int>? {
+        switch mode {
+        case .layer: reservedLayerChannels
+        case .master: reservedMasterChannels
+        case .output: reservedOutputChannels
+        case .keystone: nil
+        }
+    }
+
     public static func specs(for mode: FixtureMode) -> [ParameterSpec] {
         switch mode {
         case .layer: layer
         case .master: master
         case .output: output
+        case .keystone: keystone
         }
     }
 
     /// Spec order position per parameter, built once (these lookups sit on the per-packet DMX path).
     private static let indexTable: [ParameterID: Int] = {
         var table: [ParameterID: Int] = [:]
-        for mode in [FixtureMode.layer, .master, .output] {
+        for mode in FixtureMode.allCases {
             for (i, spec) in specs(for: mode).enumerated() { table[spec.id] = i }
         }
         return table
@@ -151,6 +162,17 @@ public enum ChannelMap {
         o(.blend, "Blend", 5, 8, 0, .bands([Band(from: 0, to: 127, name: "On", value: 0), Band(from: 128, to: 255, name: "Raw", value: 1)], fallback: 0), "Mapping"),
     ]
 
+    // MARK: - Keystone (16 channels, DESIGN.md §6.4a)
+
+    /// ±50 % of the output's width (X) or height (Y); + is right / down, 32768 = no change.
+    static let offset16: ParameterKind = .curve([CurvePoint(0, -50), CurvePoint(32768, 0), CurvePoint(65535, 50)], unit: "%")
+
+    public static let keystone: [ParameterSpec] = [
+        k(.topLeftX, "Top-left X", 1), k(.topLeftY, "Top-left Y", 3), k(.topRightX, "Top-right X", 5), k(.topRightY, "Top-right Y", 7),
+        k(.bottomRightX, "Bottom-right X", 9), k(.bottomRightY, "Bottom-right Y", 11), k(.bottomLeftX, "Bottom-left X", 13),
+        k(.bottomLeftY, "Bottom-left Y", 15),
+    ]
+
     private static func l(_ p: LayerParameter, _ name: String, _ ch: Int, _ bits: Int, _ def: UInt16, _ kind: ParameterKind, _ group: String) -> ParameterSpec {
         ParameterSpec(id: .layer(p), name: name, channel: ch, bits: bits, defaultRaw: def, kind: kind, group: group)
     }
@@ -159,5 +181,8 @@ public enum ChannelMap {
     }
     private static func o(_ p: OutputParameter, _ name: String, _ ch: Int, _ bits: Int, _ def: UInt16, _ kind: ParameterKind, _ group: String) -> ParameterSpec {
         ParameterSpec(id: .output(p), name: name, channel: ch, bits: bits, defaultRaw: def, kind: kind, group: group)
+    }
+    private static func k(_ p: KeystoneParameter, _ name: String, _ ch: Int) -> ParameterSpec {
+        ParameterSpec(id: .keystone(p), name: name, channel: ch, bits: 16, defaultRaw: 32768, kind: offset16, group: "Keystone")
     }
 }
