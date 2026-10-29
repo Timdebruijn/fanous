@@ -516,6 +516,10 @@ The patch (universe, address, mode) plus per-layer settings (canvas, source
 policy §7.2) is part of the project. Patching a fixture type is also how
 "extensible beyond 16 layers" works: the layer count is a project setting,
 bounded by the tier's measured maximum (hard engine cap 32, `[OPEN-8]`).
+An Output fixture follows its output (2026-10-30): `output.add` patches Output n
+on the Master's universe at the Master's address + 8 n when those channels are
+free, `output.remove` unpatches it in the same undo step, and a new project's
+standard patch holds the layers and the Master only.
 
 ### 6.2 Layer mode (64 channels)
 
