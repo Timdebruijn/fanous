@@ -4,7 +4,7 @@
 
 # Console setup
 
-Fanous is one fixture type, "Fanous", with three DMX modes. You patch each
+Fanous is one fixture type, "Fanous", with four DMX modes. You patch each
 mode as its own fixture on the console.
 
 | Mode | Channels | Patch one per | Does |
@@ -12,6 +12,7 @@ mode as its own fixture on the console.
 | Layer | 64 | layer | Everything about one layer: intensity, media, play mode, position, colour, effects, crop, audio |
 | Master | 8 | machine | Master intensity, freeze or blackout, a global test pattern, master speed |
 | Output | 8 | output | Output intensity, blackout or freeze, test pattern, blend on or raw |
+| Keystone | 16 | output, optional | Moves the output's four corners on top of its alignment ([outputs-and-mapping.md](outputs-and-mapping.md#keystone-from-the-console)) |
 
 Test patterns follow the Master and Output Intensity and Blackout like the
 picture, so a Grand Master or DBO takes them down too: keep the Dimmer up to
@@ -68,7 +69,8 @@ the fixture file.
 - **Fixture table**: Fixture, Type (with footprint), Universe, Address,
   Footprint, Status. Status says "ok", "unpatched · no console control",
   "collides with Layer 2 · 65-128" or "exceeds universe". There is one Output
-  row per output on the Outputs & Mapping screen, no more and no fewer.
+  row (and its Keystone row) per output on the Outputs & Mapping screen, no
+  more and no fewer; removing an output unpatches both.
   Projects from before 30 October 2026 had Output 1 to 4 patched whether those
   outputs existed or not; opening such a project unpatches the ones without an
   output.
@@ -117,7 +119,8 @@ says. With a Loss after above 2.5 s and no backup, the universe has no source
 between 2.5 s and Loss after; the fixtures keep their values until it is lost.
 
 **Go to zero** sets every channel of the universe's fixtures to 0 as a new DMX
-change. Under the source policies *Console + UI* (latest or highest wins) that
+change, except a Keystone fixture's: it goes to its default, 32768 on every
+channel, so a lost universe centres the keystone instead of moving the picture. Under the source policies *Console + UI* (latest or highest wins) that
 change is the latest, so the zeros also win over UI and cue values set before
 the loss; the UI or a cue has to set a value again after it.
 
@@ -135,9 +138,12 @@ adapter is joined again within 5 s.
 ## GDTF
 
 **Patch › Export GDTF** writes `Fanous.gdtf` (GDTF 1.2). It contains the
-fixture type "Fanous" with the Layer, Master and Output modes, channel
+fixture type "Fanous" with the Layer, Master, Output and Keystone modes, channel
 functions with their physical ranges, a channel set for every band (play modes,
 blend modes, effects, test patterns), the 16-bit links and the default values.
+If you imported `Fanous.gdtf` before the Keystone mode existed, export and
+import it again: the fixture type keeps its ID, so a console may keep the older
+file with three modes until you replace it.
 The file is generated from the same table as the channel map, so they cannot
 disagree. On the command line: `fanousd gdtf FILE`.
 

@@ -1,6 +1,6 @@
 # Fanous DMX channel map
 
-Generated from `Sources/FanousCore/Parameters/ChannelMap.swift` by `fanousd channel-map`; do not edit by hand. 16-bit parameters use coarse/fine on adjacent channels. OSC: `/fanous/layer/{n}/{key}`, `/master/{key}`, `/output/{n}/{key}` (float = normalized 0–1, int = raw).
+Generated from `Sources/FanousCore/Parameters/ChannelMap.swift` by `fanousd channel-map`; do not edit by hand. 16-bit parameters use coarse/fine on adjacent channels. OSC: `/fanous/layer/{n}/{key}`, `/master/{key}`, `/output/{n}/{key}`, `/keystone/{n}/{key}` (float = normalized 0–1, int = raw).
 
 ## Layer mode (64 channels)
 
@@ -66,6 +66,19 @@ Generated from `Sources/FanousCore/Parameters/ChannelMap.swift` by `fanousd chan
 | 4 | Test pattern | 8 | 0 | 0–15 Off · 16–31 Grid · 32–47 Colour bars · 48–63 Blend check · 64–79 Output ID · 80–95 Crosshair · 96–111 Grey steps · 112–127 Checkerboard · 128–143 Grey 0 % · 144–159 Grey 25 % · 160–175 Grey 75 % · 176–191 White · rest = Off | `testPattern` |
 | 5 | Blend | 8 | 0 | 0–127 On · 128–255 Raw · rest = On | `blend` |
 | 6–8 | Reserved | — | 0 | ignored | — |
+
+## Keystone mode (16 channels)
+
+| Ch | Parameter | Bits | Default | Mapping | OSC key |
+|---|---|---|---|---|---|
+| 1–2 | Top-left X | 16 | 32768 | 0 → -50 % · 32768 → 0 % · 65535 → 50 % | `topLeftX` |
+| 3–4 | Top-left Y | 16 | 32768 | 0 → -50 % · 32768 → 0 % · 65535 → 50 % | `topLeftY` |
+| 5–6 | Top-right X | 16 | 32768 | 0 → -50 % · 32768 → 0 % · 65535 → 50 % | `topRightX` |
+| 7–8 | Top-right Y | 16 | 32768 | 0 → -50 % · 32768 → 0 % · 65535 → 50 % | `topRightY` |
+| 9–10 | Bottom-right X | 16 | 32768 | 0 → -50 % · 32768 → 0 % · 65535 → 50 % | `bottomRightX` |
+| 11–12 | Bottom-right Y | 16 | 32768 | 0 → -50 % · 32768 → 0 % · 65535 → 50 % | `bottomRightY` |
+| 13–14 | Bottom-left X | 16 | 32768 | 0 → -50 % · 32768 → 0 % · 65535 → 50 % | `bottomLeftX` |
+| 15–16 | Bottom-left Y | 16 | 32768 | 0 → -50 % · 32768 → 0 % · 65535 → 50 % | `bottomLeftY` |
 
 ## Effect parameters
 

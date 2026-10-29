@@ -31,7 +31,7 @@ public enum ControlCommands {
                 summary: "Set one fixture parameter from the UI (source ui; shown when the source policy is internal, ltp or htp).",
                 argsType: "{ fixture: string; parameter: string; raw: number }"
             ) { _, args in
-                guard let name = args["fixture"]?.string, let fixture = FixtureRef(parsing: name) else { throw CommandError.invalidArgs("fixture: \"Layer n\", \"Master\" or \"Output n\"") }
+                guard let name = args["fixture"]?.string, let fixture = FixtureRef(parsing: name) else { throw CommandError.invalidArgs("fixture: \"Layer n\", \"Master\", \"Output n\" or \"Keystone n\"") }
                 guard let key = args["parameter"]?.string, let spec = ChannelMap.specs(for: fixture.mode).first(where: { $0.id.key == key }) else {
                     throw CommandError.invalidArgs("unknown parameter for \(name)")
                 }
@@ -45,7 +45,7 @@ public enum ControlCommands {
                 summary: "Drop the UI and MIDI values of one fixture, or of all fixtures without a fixture argument.", argsType: "{ fixture?: string }"
             ) { _, args in
                 if let name = args["fixture"]?.string {
-                    guard let fixture = FixtureRef(parsing: name) else { throw CommandError.invalidArgs("fixture: \"Layer n\", \"Master\" or \"Output n\"") }
+                    guard let fixture = FixtureRef(parsing: name) else { throw CommandError.invalidArgs("fixture: \"Layer n\", \"Master\", \"Output n\" or \"Keystone n\"") }
                     hooks.release(fixture)
                 } else {
                     hooks.release(nil)
@@ -58,7 +58,7 @@ public enum ControlCommands {
                 summary: "Restart the 10-minute expiry of a fixture's UI values (it runs only while a console is received for the fixture).",
                 argsType: "{ fixture: string }"
             ) { _, args in
-                guard let name = args["fixture"]?.string, let fixture = FixtureRef(parsing: name) else { throw CommandError.invalidArgs("fixture: \"Layer n\", \"Master\" or \"Output n\"") }
+                guard let name = args["fixture"]?.string, let fixture = FixtureRef(parsing: name) else { throw CommandError.invalidArgs("fixture: \"Layer n\", \"Master\", \"Output n\" or \"Keystone n\"") }
                 hooks.keep(fixture)
                 return nil
             })

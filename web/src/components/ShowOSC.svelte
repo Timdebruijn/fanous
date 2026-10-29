@@ -12,6 +12,7 @@
     { address: '/fanous/layer/{n}/retrigger', args: '', note: 'Restart the media' },
     { address: '/fanous/master/{param}', args: 'f', note: 'Master parameter' },
     { address: '/fanous/output/{n}/{param}', args: 'f', note: 'Output parameter' },
+    { address: '/fanous/keystone/{n}/{param}', args: 'f', note: 'Keystone parameter of output n' },
     { address: '/fanous/cue/go', args: '', note: 'Fire the next cue' },
     { address: '/fanous/cue/back', args: '', note: 'Fire the previous cue' },
     { address: '/fanous/cue/goto', args: 'i', note: 'Fire the cue with this number' },

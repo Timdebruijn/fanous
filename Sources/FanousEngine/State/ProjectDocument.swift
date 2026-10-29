@@ -375,14 +375,14 @@ public enum ProjectDocument {
         if document["ui"] == nil { try? document.set([:], at: "/ui") }
         if document["layerCanvas"] == nil { try? document.set([:], at: "/layerCanvas") }
         if document["syphon"] == nil { try? document.set([:], at: "/syphon") }
-        // an Output fixture without its output, or above the console's outputs, controls nothing (until 2026-10-30 every
-        // project had Output 1–4 patched)
+        // an Output or Keystone fixture without its output, or above the console's outputs, controls nothing (until
+        // 2026-10-30 every project had Output 1–4 patched)
         if var patch = patch(from: document) {
             let ids = Set(outputs(from: document).map(\.id))
             let count = patch.entries.count
             patch.entries.removeAll {
-                if case .output(let n) = $0.fixture { return !ids.contains(n) || n > ParameterSnapshotSlot.maxOutputs }
-                return false
+                guard let n = $0.fixture.outputNumber else { return false }
+                return !ids.contains(n) || n > ParameterSnapshotSlot.maxOutputs
             }
             if patch.entries.count != count { try? document.set(patchValue(patch), at: "/patch") }
         }
@@ -437,20 +437,20 @@ public enum ProjectDocument {
             })
         store.register(
             CommandSpec(
-                name: "patch.set", role: .programmer, summary: "Patch a fixture (layer, master, output) to a universe and address, or unpatch it with address 0; an Output fixture only for an output that exists.",
+                name: "patch.set", role: .programmer, summary: "Patch a fixture (layer, master, output, keystone) to a universe and address, or unpatch it with address 0; an Output or Keystone fixture only for an output that exists (1–8).",
                 argsType: "{ fixture: string; universe: string; address: number }"
             ) { project, args in
                 guard let fixtureName = args["fixture"]?.string, let fixture = FixtureRef(parsing: fixtureName) else {
-                    throw CommandError.invalidArgs("fixture must be \"Layer n\", \"Master\" or \"Output n\"")
+                    throw CommandError.invalidArgs("fixture must be \"Layer n\", \"Master\", \"Output n\" or \"Keystone n\"")
                 }
                 guard let universeName = args["universe"]?.string, let universe = UniverseID(parsing: universeName) else {
                     throw CommandError.invalidArgs("universe must be artnet:net.subnet.universe or sacn:n")
                 }
                 guard let address = args["address"]?.int, (0...512).contains(address) else { throw CommandError.invalidArgs("address must be 0 (unpatch) or 1–512") }
-                if case .output(let n) = fixture, address > 0 {
+                if let n = fixture.outputNumber, address > 0 {
                     guard n <= ParameterSnapshotSlot.maxOutputs else { throw CommandError.invalidArgs("console control covers outputs 1–\(ParameterSnapshotSlot.maxOutputs)") }
                     guard ProjectDocument.outputs(from: project).contains(where: { $0.id == n }) else {
-                        throw CommandError.invalidArgs("there is no output \(n): add it first, its Output fixture is patched with it")
+                        throw CommandError.invalidArgs("there is no output \(n): add the output first")
                     }
                 }
                 guard var patch = ProjectDocument.patch(from: project) else { throw CommandError.invalidArgs("project has no patch") }
@@ -539,7 +539,7 @@ public enum ProjectDocument {
                 return .number(Double(id))
             })
         store.register(
-            CommandSpec(name: "output.remove", role: .programmer, summary: "Remove an output (not one in a projector wall) and unpatch its Output fixture.", argsType: "{ id: number }") { project, args in
+            CommandSpec(name: "output.remove", role: .programmer, summary: "Remove an output (not one in a projector wall) and unpatch its Output and Keystone fixtures.", argsType: "{ id: number }") { project, args in
                 guard let id = args["id"]?.int else { throw CommandError.invalidArgs("args: { id }") }
                 var outputs = ProjectDocument.outputs(from: project)
                 guard outputs.contains(where: { $0.id == id }) else { throw CommandError.invalidArgs("no output \(id)") }
@@ -548,8 +548,8 @@ public enum ProjectDocument {
                 }
                 outputs.removeAll { $0.id == id }
                 try setOutputs(outputs, in: &project)
-                if var patch = ProjectDocument.patch(from: project), patch.entry(for: .output(id)) != nil {
-                    patch.entries.removeAll { $0.fixture == .output(id) }
+                if var patch = ProjectDocument.patch(from: project), patch.entries.contains(where: { $0.fixture.outputNumber == id }) {
+                    patch.entries.removeAll { $0.fixture.outputNumber == id }
                     try project.set(patchValue(patch), at: "/patch")
                 }
                 var canvases = ProjectDocument.canvases(from: project)
@@ -723,14 +723,23 @@ extension JSONValue {
 }
 
 extension FixtureRef {
-    /// Parses the `description` form: "Layer 3", "Master", "Output 1" (case-insensitive).
+    /// Parses the `description` form: "Layer 3", "Master", "Output 1", "Keystone 1" (case-insensitive).
     public init?(parsing text: String) {
         let parts = text.split(separator: " ")
         switch (parts.first?.lowercased(), parts.count) {
         case ("master", 1): self = .master
         case ("layer", 2): guard let n = Int(parts[1]), n >= 1 else { return nil }; self = .layer(n)
         case ("output", 2): guard let n = Int(parts[1]), n >= 1 else { return nil }; self = .output(n)
+        case ("keystone", 2): guard let n = Int(parts[1]), n >= 1 else { return nil }; self = .keystone(n)
         default: return nil
+        }
+    }
+
+    /// The output an Output or Keystone fixture belongs to: it is patched only while that output exists.
+    var outputNumber: Int? {
+        switch self {
+        case .output(let n), .keystone(let n): n
+        case .layer, .master: nil
         }
     }
 }

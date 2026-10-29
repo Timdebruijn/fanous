@@ -4,6 +4,7 @@
 
 import Foundation
 import FanousCore
+import simd
 import Synchronization
 
 /// Per-layer render parameters in render units (DESIGN.md §7.3), written by
@@ -120,6 +121,14 @@ public struct OutputParameters: Sendable, Equatable {
     }
 }
 
+extension simd_float3x3 {
+    /// From a row-major 3×3 (`WarpMath.homography`, `WarpMath.keystone`).
+    init(rowMajor m: [Double]) {
+        let f = m.map(Float.init)
+        self.init(rows: [SIMD3(f[0], f[1], f[2]), SIMD3(f[3], f[4], f[5]), SIMD3(f[6], f[7], f[8])])
+    }
+}
+
 /// Folder/file pair as addressed from DMX (DESIGN.md §7.4).
 public struct MediaKey: Hashable, Sendable, Codable, CustomStringConvertible {
     public var folder: Int
@@ -148,6 +157,12 @@ public final class ParameterSnapshotSlot: @unchecked Sendable {
     public var layers: [LayerParameters]
     public static let maxOutputs = 8
     public var outputs: [OutputParameters] = Array(repeating: OutputParameters(), count: ParameterSnapshotSlot.maxOutputs)
+    /// Per output, the Keystone fixture's homography (DESIGN.md §9.10 item 2, `WarpMath.keystone`) in normalized output
+    /// coordinates: the identity while unpatched or centred. Its own array, written by the Keystone fixture: the Output
+    /// fixture rebuilds `outputs` on every publish.
+    public var keystones: [simd_float3x3] = Array(repeating: matrix_identity_float3x3, count: ParameterSnapshotSlot.maxOutputs)
+    /// The console's keystone values were refused (not a strictly convex quad): `keystones` keeps the last valid matrix.
+    public var keystoneInvalid: [Bool] = Array(repeating: false, count: ParameterSnapshotSlot.maxOutputs)
 
     public init(maxLayers: Int) { layers = Array(repeating: LayerParameters(), count: maxLayers) }
 
@@ -167,6 +182,7 @@ public final class ParameterSnapshotSlot: @unchecked Sendable {
         testPattern = other.testPattern
         for i in layers.indices { layers[i] = other.layers[i] }
         for i in outputs.indices { outputs[i] = other.outputs[i] }
+        for i in keystones.indices { (keystones[i], keystoneInvalid[i]) = (other.keystones[i], other.keystoneInvalid[i]) }
     }
 }
 

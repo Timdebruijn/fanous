@@ -160,13 +160,16 @@ struct StateStoreTests {
         try document.set(try JSONValue(encoding: [1, 2, 9].map { OutputConfig(id: $0) }), at: "/outputs")
         var nine = patch
         nine.entries.append(PatchEntry(fixture: .output(9), universe: UniverseID(.artnet, 2), address: 73))
+        nine.entries.append(PatchEntry(fixture: .keystone(3), universe: UniverseID(.artnet, 3), address: 1))
         try document.set(ProjectDocument.patchValue(nine), at: "/patch")
         try ProjectDocument.save(document, to: url)
         let loaded = try #require(ProjectDocument.load(from: url))
-        #expect(ProjectDocument.patch(from: loaded)?.entries == patch.entries.filter { $0.fixture != .output(3) && $0.fixture != .output(4) }, "and 9: above the console's outputs")
+        #expect(ProjectDocument.patch(from: loaded)?.entries == patch.entries.filter { $0.fixture != .output(3) && $0.fixture != .output(4) }, "and 9: above the console's outputs; Keystone 3 has no output")
         try? FileManager.default.removeItem(at: url)
         #expect(FixtureRef(parsing: "layer 7") == .layer(7))
         #expect(FixtureRef(parsing: "Output 0") == nil)
+        #expect(FixtureRef(parsing: "Keystone 2") == .keystone(2) && FixtureRef(parsing: "keystone 2")?.description == "Keystone 2")
+        #expect(FixtureRef(parsing: "Keystone 0") == nil && FixtureRef(parsing: "Keystone") == nil)
         #expect(UniverseID(parsing: "artnet:1.2.3") == .artnet(net: 1, subnet: 2, universe: 3))
         #expect(UniverseID(parsing: "sacn:0") == nil)
     }
@@ -237,6 +240,7 @@ extension StateStoreTests {
         _ = try store.execute("output.add", role: .programmer).get()
         #expect(ProjectDocument.patch(from: store.project)?.entry(for: .output(1)) == PatchEntry(fixture: .output(1), universe: UniverseID(.artnet, 1), address: 9))
         #expect(store.execute("patch.set", args: ["fixture": "Output 2", "universe": "sacn:5", "address": 1], role: .programmer).failureCode == "invalidArgs", "no output 2")
+        #expect(store.execute("patch.set", args: ["fixture": "Keystone 2", "universe": "sacn:5", "address": 1], role: .programmer).failureCode == "invalidArgs", "no output 2")
         // a new Output fixture goes next to the Master, wherever that is
         _ = try store.execute("patch.set", args: ["fixture": "Master", "universe": "sacn:5", "address": 101], role: .programmer).get()
         _ = try store.execute("output.add", role: .programmer).get()
@@ -246,12 +250,14 @@ extension StateStoreTests {
         _ = try store.execute("patch.set", args: ["fixture": "Layer 1", "universe": "sacn:5", "address": 125], role: .programmer).get()
         _ = try store.execute("output.add", role: .programmer).get()
         #expect(ProjectDocument.patch(from: store.project)?.entry(for: .output(3)) == nil, "125–132 overlaps Layer 1")
-        // removing the output unpatches its fixture, in the same undo step
+        // removing the output unpatches its Output and Keystone fixtures, in the same undo step
+        _ = try store.execute("patch.set", args: ["fixture": "Keystone 2", "universe": "sacn:5", "address": 201], role: .programmer).get()
         _ = try store.execute("output.remove", args: ["id": 2], role: .programmer).get()
-        #expect(ProjectDocument.patch(from: store.project)?.entry(for: .output(2)) == nil)
+        patch = try #require(ProjectDocument.patch(from: store.project))
+        #expect(patch.entry(for: .output(2)) == nil && patch.entry(for: .keystone(2)) == nil)
         _ = try store.execute("undo", role: .programmer).get()
         patch = try #require(ProjectDocument.patch(from: store.project))
-        #expect(patch.entry(for: .output(2))?.address == 117)
+        #expect(patch.entry(for: .output(2))?.address == 117 && patch.entry(for: .keystone(2))?.address == 201)
         #expect(ProjectDocument.outputs(from: store.project).map(\.id) == [1, 2, 3])
         // console control covers outputs 1–8 (ParameterSnapshotSlot.maxOutputs)
         _ = try store.execute("patch.set", args: ["fixture": "Layer 1", "universe": "artnet:0.0.0", "address": 1], role: .programmer).get()

@@ -118,6 +118,31 @@ struct MappingMathTests {
         #expect(abs(centre.x - 0.5) < 1e-9 && abs(centre.y - 1.0 / 3) < 1e-9, "the centre lands where the diagonals cross")
     }
 
+    /// Keystone (DESIGN.md §9.10 item 2): raw values → moved corners → the unit square's homography onto them; centred is
+    /// the identity; a crossed or concave quad, or a degenerate one, is refused.
+    @Test func keystoneMovesTheCornersAndRefusesQuadsThatAreNotConvex() throws {
+        func raw(_ offsets: [Double]) -> [UInt16] { zip(ChannelMap.keystone, offsets).map { $0.raw(fromPhysical: $1) } }
+        #expect(WarpMath.keystone(raw: ChannelMap.defaults(for: .keystone)) == [1, 0, 0, 0, 1, 0, 0, 0, 1])
+        // TL 10 % right, TR 5 % down, BR 20 % left and 10 % up, BL untouched
+        let m = try #require(WarpMath.keystone(raw: raw([10, 0, 0, 5, -20, -10, 0, 0])))
+        let expected = [MapPoint(0.1, 0), MapPoint(1, 0.05), MapPoint(0.8, 0.9), MapPoint(0, 1)]
+        for (i, (u, v)) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].enumerated() {
+            let p = WarpMath.apply(m, u, v)
+            #expect(abs(p.x - expected[i].x) < 1e-4 && abs(p.y - expected[i].y) < 1e-4, "corner \(i): \(p)")
+        }
+        #expect(WarpMath.keystone(raw: raw([50, 50, 0, -20, 0, 0, 0, 0])) == nil, "TL pulled in past the TR–BL diagonal: concave")
+        #expect(WarpMath.keystone(raw: raw([0, 0, 0, 0, -50, -50, 0, 50])) == nil, "BR pulled in past the TR–BL diagonal: concave")
+        #expect(WarpMath.keystone(raw: raw([50, 50, 0, 0, 0, 0, 0, 0])) == nil, "TL on the diagonal: degenerate")
+        #expect(WarpMath.keystone(raw: raw([50, 0, -50, 0, 0, 0, 0, 0])) == nil, "TL onto TR: degenerate")
+        #expect(WarpMath.keystone(raw: [0x8000]) == nil, "not a Keystone fixture's values")
+        // ±50 % cannot cross two edges (opposite edges only touch at 50 %); the guard refuses a bow-tie all the same
+        #expect(WarpMath.keystone(to: [MapPoint(0, 0), MapPoint(1, 0), MapPoint(0, 1), MapPoint(1, 1)]) == nil, "crossed")
+        #expect(WarpMath.keystone(to: [MapPoint(0.2, 0.1), MapPoint(0.9, 0), MapPoint(1, 1), MapPoint(0, 0.8)]) != nil)
+        // the extremes that stay convex: every corner 50 % outwards, or the whole picture 50 % to the left
+        #expect(WarpMath.keystone(raw: raw([-50, -50, 50, -50, 50, 50, -50, 50])) != nil)
+        #expect(WarpMath.keystone(raw: raw([-50, 0, -50, 0, -50, 0, -50, 0])) != nil)
+    }
+
     @Test func meshWarpIdentityAndSmoothness() {
         var warp = WarpSettings()
         warp.mesh = .identity(cols: 5, rows: 4)

@@ -11,10 +11,10 @@ export const LOCKED_TITLE = 'Locked: programmer only';
 /** 11 hues at one lightness: dark backgrounds that carry light mono text. */
 export const FIXTURE_COLOURS = ['#4A3A1E', '#1E4A3A', '#1F3B5E', '#3E2A5E', '#5E2A4A', '#2A5E4A', '#5E4A2A', '#2A4A5E', '#4A2A5E', '#5E2A2A', '#2A5E5E'] as const;
 
-export type FixtureType = 'layer' | 'master' | 'output';
+export type FixtureType = 'layer' | 'master' | 'output' | 'keystone';
 
 /** Used until /api/channel-map.json has arrived (or when it cannot be fetched). */
-export const FALLBACK_FOOTPRINTS: Record<FixtureType, number> = { layer: 64, master: 8, output: 8 };
+export const FALLBACK_FOOTPRINTS: Record<FixtureType, number> = { layer: 64, master: 8, output: 8, keystone: 16 };
 
 export const STANDARD_UNIVERSES: readonly string[] = [
   'artnet:0.0.0', 'artnet:0.0.1', 'artnet:0.0.2', 'artnet:0.0.3',
@@ -40,7 +40,7 @@ export interface ChannelMap {
   modes: Record<FixtureType, ParamSpec[]>;
 }
 
-const TYPES: FixtureType[] = ['layer', 'master', 'output'];
+const TYPES: FixtureType[] = ['layer', 'master', 'output', 'keystone'];
 
 /** Shallow shape check; anything else is treated as "no channel map" and the fallback footprints apply. */
 export function parseChannelMap(json: unknown): ChannelMap | null {
@@ -190,7 +190,7 @@ export interface Collision {
 export interface FixtureRow {
   name: string;
   type: FixtureType;
-  typeLabel: 'Layer' | 'Master' | 'Output';
+  typeLabel: 'Layer' | 'Master' | 'Output' | 'Keystone';
   footprint: number;
   /** as stored in the patch (also kept for an entry with address 0) */
   universe: string | null;
@@ -204,25 +204,26 @@ export interface FixtureRow {
   exceeds: boolean;
 }
 
-const TYPE_LABEL = { layer: 'Layer', master: 'Master', output: 'Output' } as const;
+const TYPE_LABEL = { layer: 'Layer', master: 'Master', output: 'Output', keystone: 'Keystone' } as const;
 
 export function parseFixture(name: string): { type: FixtureType; index: number } | null {
   if (name === 'Master') return { type: 'master', index: 0 };
-  const m = /^(Layer|Output) (\d+)$/.exec(name);
-  return m ? { type: m[1] === 'Layer' ? 'layer' : 'output', index: Number(m[2]) } : null;
+  const m = /^(Layer|Output|Keystone) (\d+)$/.exec(name);
+  return m ? { type: m[1]!.toLowerCase() as FixtureType, index: Number(m[2]) } : null;
 }
 
 /**
- * Layer 1..layerCount (patched or not), Master, then the Output fixture of every output (patched or not; the engine
- * patches it with its output). Collisions are overlapping channel ranges within one universe; a range past channel
- * 512 is flagged as exceeding. Layer entries above layerCount are not fixtures any more and take no part.
+ * Layer 1..layerCount (patched or not), Master, then for every output (patched or not; the engine patches the Output
+ * fixture with its output) its Output and Keystone fixture (DESIGN §6.4a: the Keystone is optional, patched by hand
+ * next to its Output). Collisions are overlapping channel ranges within one universe; a range past channel 512 is
+ * flagged as exceeding. Layer entries above layerCount are not fixtures any more and take no part.
  */
 export function buildFixtures(patch: readonly PatchEntry[], layerCount: number, map: ChannelMap | null, outputIds: readonly number[] = []): FixtureRow[] {
   const entries = new Map(patch.map((e) => [e.fixture, e] as const));
   const names = [
     ...Array.from({ length: Math.max(0, Math.floor(layerCount)) }, (_, i) => `Layer ${i + 1}`),
     'Master',
-    ...[...outputIds].sort((a, b) => a - b).map((i) => `Output ${i}`),
+    ...[...outputIds].sort((a, b) => a - b).flatMap((i) => [`Output ${i}`, `Keystone ${i}`]),
   ];
   const rows: FixtureRow[] = names.map((name, i) => {
     const type = parseFixture(name)!.type;
