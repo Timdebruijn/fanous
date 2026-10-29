@@ -204,6 +204,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: test patterns ignored the output's Intensity %, the Output and Master Intensity and both Blackouts, so a console's
   Grand Master or DBO left a full-field pattern (White is 100 %) on the projectors. Patterns now follow the same Dimmer and
   Blackout as the picture, Raw included; bring the Dimmer up to focus. Freeze holds the picture, not the pattern.
+- Removed: `fanous-bench spike` (the Phase 2 decode spike; `fanous-bench run` reports decode timing) with the engine's spike-only
+  switches, and the unused `run --ring` and `dmx --hz/--host/--seed` flags (repo audit 2026-10-29).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

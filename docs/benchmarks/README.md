@@ -8,7 +8,6 @@ display (Phase 5).
 swift build -c release --product fanous-bench
 BIN=$(swift build -c release --show-bin-path)
 "$BIN/fanous-bench" media --dir ~/Movies/Fanous\ Bench --seconds 3      # once: synthetic test movies
-"$BIN/fanous-bench" spike ~/Movies/Fanous\ Bench/prores422hq_1920x1080p60.mov   # decode formats and timing
 "$BIN/fanous-bench" run --media ~/Movies/Fanous\ Bench --codec prores422hq --res 1920x1080p60 --display 0 --window 60
 "$BIN/fanous-bench" run --media ~/Movies/Fanous\ Bench --codec hapq --res 3840x2160p60 --headless --window 60 --soak 600
 ```
