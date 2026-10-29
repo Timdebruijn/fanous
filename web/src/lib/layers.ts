@@ -32,7 +32,7 @@ export const GENERATORS: { file: number; name: string }[] = [
   { file: 112, name: 'Clock' },
 ];
 
-/** "App/Server", or "App" when the server has no name (engine `SyphonCatalog.Server.name`). */
+/** "App/Server", or "App" when the server has no name (engine `LiveCatalog.Entry.label`). */
 export function syphonName(server: SyphonServerDoc): string {
   return server.server ? `${server.app}/${server.server}` : server.app;
 }

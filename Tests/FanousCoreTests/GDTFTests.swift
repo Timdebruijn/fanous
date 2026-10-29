@@ -26,12 +26,12 @@ final class XMLCollector: NSObject, XMLParserDelegate {
         return collector
     }
 
-    @Test func xmlIsWellFormedWithThreeModes() {
+    @Test func xmlIsWellFormedWithFourModes() {
         let xml = Self.parsed()
         #expect(xml.elements.first?.name == "GDTF" && xml.elements.first?.attributes["DataVersion"] == "1.2")
         let fixtureType = xml.elements.first { $0.name == "FixtureType" }!
         #expect(fixtureType.attributes["FixtureTypeID"] == GDTFExporter.fixtureTypeID)
-        #expect(xml.elements.filter { $0.name == "DMXMode" }.count == 3)
+        #expect(xml.elements.filter { $0.name == "DMXMode" }.count == 4)
         #expect(xml.elements.contains { $0.name == "Revision" && $0.attributes["Date"] == "2026-09-21T14:13:20" })
     }
 
@@ -48,6 +48,7 @@ final class XMLCollector: NSObject, XMLParserDelegate {
         #expect(offsets["Layer (64ch)"]!.sorted() == Array(1...64))
         #expect(offsets["Master (8ch)"]!.sorted() == Array(1...8))
         #expect(offsets["Output (8ch)"]!.sorted() == Array(1...8))
+        #expect(offsets["Keystone (16ch)"]!.sorted() == Array(1...16))
     }
 
     @Test func attributesAndInitialFunctionsResolve() {

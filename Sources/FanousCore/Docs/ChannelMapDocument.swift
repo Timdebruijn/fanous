@@ -7,7 +7,7 @@ public enum ChannelMapDocument {
     public static func markdown() -> String {
         var md = "# Fanous DMX channel map\n\n"
         md += "Generated from `Sources/FanousCore/Parameters/ChannelMap.swift` by `fanousd channel-map`; do not edit by hand. "
-        md += "16-bit parameters use coarse/fine on adjacent channels. OSC: `\(OSCAddressMap.prefix)/layer/{n}/{key}`, `/master/{key}`, `/output/{n}/{key}` (float = normalized 0–1, int = raw).\n\n"
+        md += "16-bit parameters use coarse/fine on adjacent channels. OSC: `\(OSCAddressMap.prefix)/layer/{n}/{key}`, `/master/{key}`, `/output/{n}/{key}`, `/keystone/{n}/{key}` (float = normalized 0–1, int = raw).\n\n"
         for mode in FixtureMode.allCases {
             md += "## \(mode.displayName) mode (\(mode.footprint) channels)\n\n"
             md += "| Ch | Parameter | Bits | Default | Mapping | OSC key |\n|---|---|---|---|---|---|\n"
@@ -15,13 +15,10 @@ public enum ChannelMapDocument {
                 let channels = spec.bits == 16 ? "\(spec.channel)–\(spec.channel + 1)" : "\(spec.channel)"
                 md += "| \(channels) | \(spec.name) | \(spec.bits) | \(spec.defaultRaw) | \(mapping(spec)) | `\(spec.oscKey)` |\n"
             }
-            let reserved: ClosedRange<Int> =
-                switch mode {
-                case .layer: ChannelMap.reservedLayerChannels
-                case .master: ChannelMap.reservedMasterChannels
-                case .output: ChannelMap.reservedOutputChannels
-                }
-            md += "| \(reserved.lowerBound)–\(reserved.upperBound) | Reserved | — | 0 | ignored | — |\n\n"
+            if let reserved = ChannelMap.reserved(for: mode) {
+                md += "| \(reserved.lowerBound)–\(reserved.upperBound) | Reserved | — | 0 | ignored | — |\n"
+            }
+            md += "\n"
         }
         md += "## Effect parameters\n\n"
         md += "Effect 1 and Effect 2 (layer channels 38–43) share these meanings; both slots run in series, slot 1 first.\n\n"

@@ -235,7 +235,8 @@ public final class PreviewStreamer: @unchecked Sendable {
             let snapshot = parameters.current()
             OutputPass.draw(
                 set, canvas: { $0 == canvasID ? canvas : canvases?($0) }, encoder: encoder, context: context, uniforms: mappedUniforms,
-                master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs)
+                master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs,
+                keystones: [])  // the edited mapping, without keystone, so the editor's handles stay where the drag lands (§9.10 item 3)
         } else {
             encoder.setRenderPipelineState(context.outputPipeline)
             encoder.setFragmentBuffer(uniforms, offset: 0, index: 0)

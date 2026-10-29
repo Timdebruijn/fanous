@@ -594,7 +594,8 @@ can never disagree). `[OPEN-9]` exact bands and the speed/scale upper limits.
 
 ### 6.4a Keystone mode (16 channels, M2)
 
-Patched per output, next to that output's Output fixture (same output number).
+Patched per output, next to that output's Output fixture (same output number); "Keystone n" in the patch, OSC
+`/fanous/keystone/{n}/{key}` (as built in M2.3, §9.10).
 The offsets move the output's four corners on top of whatever mapping it shows,
 so a console never changes the hand alignment (§9.10). A new mode leaves the
 three existing modes and their footprints alone.
@@ -882,6 +883,8 @@ written back, a new entry with a running server's name on another number is
 dropped (it would take that server to the lower number at the next restart), and
 a freed number goes at once to a server waiting past the 20.
 
+Since B73 step 1b: `Media/LiveCatalog.swift`, `LiveCatalog(.syphon, …)`; the B61/B69 notes above keep the old names as history.
+
 #### 8.2.1 Cameras, capture cards and screens: files 1–32 (design 2026-10-29, B73)
 
 **Status:** design, not built. The feature-gap survey (`docs/feature-gaps.md`
@@ -979,6 +982,23 @@ white 255, black 0, Rec.709 red 255,1,0, 50 % grey 128; the `420v` Y0/Y1
 pair reads 252/3 from linear sampling half a canvas pixel off centre (`2vuy`
 picks with the nearest sampler: 255/0). 100 frame reads allocate nothing in
 release. `LiveCatalog` is step 1b.
+
+**As built (2026-10-30, step 1b, PR #106):** `Media/LiveCatalog.swift`.
+`LiveCatalog(_ kind:excluding:numbers:)` with `Kind` `.syphon` (150–169,
+`{app, server}`), `.capture` (1–20, `{uid, name}`), `.screens` (21–28,
+`{uuid, name}`) and `.windows` (29–32, `{app, title}`). The project key is
+the case name. A capture device or a display is kept by its uid or uuid alone,
+and a new name is taken when it is seen again. A Syphon server and a window
+are kept by both fields. `LiveCatalog.Entry` has `source`, `name`,
+`runtimeID`, `gone` and `label`. The instance methods ignore entries of
+another kind. Only Syphon has a source (`start` follows its directory).
+`ProjectDocument.liveNumbers(kind, from:)`/`liveValue`, `wholeLiveEntries`
+and `checkLiveReplay` (was `checkSyphonReplay`) cover the four keys in one
+path; the Syphon texts are unchanged. Not yet: the catalogs and sources for
+the other kinds. Also not yet: one `applied` value and one running set per
+kind (`recordLiveNumbers` and `checkLiveReplay` take Syphon's). The keys
+`/capture`, `/screens` and `/windows` in `initial` and the load migration
+come with their first writer (step 2).
 
 | Input | Framework | Pixel path | Kind |
 |---|---|---|---|
@@ -1653,7 +1673,7 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
 ### 9.10 M2: black lift by coverage, Keystone, mapping presets, edit overlay, masks v2 (design 2026-10-29)
 
 **Status:** designed 2026-10-29, owner decisions the same day (below), and
-reviewed against the code. Built: the compile cache of item 0 (M2.2) and item 1 (M2.1), below. Research and frictions F3–F6 are in
+reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2.1) and the Keystone mode of item 2 (M2.3), below. Research and frictions F3–F6 are in
 `docs/mapping-ux.md` §1 and §4.2–§4.5.
 
 **Owner decisions (2026-10-29):**
@@ -1799,6 +1819,50 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2) and item 1 
 - **Generated files.** OSC addresses, `docs/channel-map.md` and the GDTF follow
   from the parameter specs, like the other modes.
 - **Use.** Moving scenery (B53) and quick fixes from FOH.
+
+**As built (M2.3, PR #108):**
+- **The mode.** `FixtureMode.keystone` (16 channels) with `KeystoneParameter` in the §6.4a order, eight 16-bit offsets
+  on one curve (0 → −50 %, 32768 → 0, 65535 → +50 %), default 32768. No reserved channels: `ChannelMap.reserved(for:)`
+  is nil for it, and the channel map, GDTF and the existing modes' tests go through that one lookup.
+  - `FixtureRef.keystone(n)`, named and parsed as "Keystone n"; `patch.set` takes it like any fixture. The standard
+    patch does not include it: a console patches it per output when it wants one.
+  - OSC `/fanous/keystone/{n}/{key}`, feedback included. GDTF: a fourth DMX mode "Keystone (16ch)" with attributes
+    `KeystoneTopLeftX` … `KeystoneBottomLeftY` (feature `Position.Keystone`).
+  - The three existing modes and their footprints are unchanged. Output ch 6 and 7 (Mapping preset and fade) are not in
+    the specs yet; they stay reserved until M2.4 and M2.5.
+- **DMX queue.** `DMXStore.publish` reads each output's Keystone resolver (outputs 1–8, like `outputs`). Only when its
+  raw values change, `WarpMath.keystone(raw:)` gives the homography, stored as a `simd_float3x3` in the slot's
+  `keystones`, with `keystoneInvalid` beside it; both copy with the slot. Unpatched is the identity, centred values give
+  it exactly.
+  - **Guard** (`WarpMath.keystone(to:)`): all four corner cross products above 1e-12 or all below −1e-12, and
+    w > 0 at the corners. A refused quad keeps the last valid matrix and sets `keystoneInvalid`.
+  - Within ±50 % two edges cannot cross (opposite edges only touch at 50 %), so on stage a refusal is a concave or
+    degenerate quad (a corner pulled onto or past a diagonal). The test feeds the guard a bow-tie directly.
+- **Render.** `MappedUniforms.keystone` (a `float3x3` after `color`; the uniforms are 96 bytes of their 256).
+  - `mapped_vertex`: k = H · (p, 1) after the warp, and the clip position is homogeneous, (2k.x − k.z, k.z − 2k.y, 0,
+    k.z). The rasteriser divides, so `uv` and `pre` (masks, patterns) interpolate perspective-correct across a
+    keystoned triangle.
+  - `post` is k.xy / k.z, interpolated `[[center_no_perspective]]` (linear on screen, as the pixel position is), so
+    the blend map is sampled at the final position and stays in projector space.
+  - `OutputPass.draw` takes `keystones` by output index like `outputs`. Raw passes the identity. The clock-master
+    display passes the tick's slot, a secondary display copies them in `withLatest` beside `outputs`, and the output
+    preview passes none: it shows the edited mapping.
+  - With the identity the vertex output is the same floats as before; the golden images are unchanged.
+  - **Clip before the keystone** (review): `mapped_vertex` writes four `[[clip_distance]]` values, p.x, 1 − p.x, p.y,
+    1 − p.y, in a vertex-only output struct (a fragment's `stage_in` may not carry them). They are linear in clip space
+    (p = H⁻¹·k), so the clip is exact: a bleed the mapping puts outside the output stays outside when the keystone
+    shrinks the picture, and nothing beyond the vanishing line is drawn.
+- **DMX loss** (review). Hold "zero" feeds a Keystone fixture its defaults (32768), not raw 0: zero for a geometry
+  offset is no offset, so a keystone universe that drops alone does not move a lit picture half an output.
+- **Status.** `publishLive` copies the eight matrices and flags from the DMX side (`withLatest`, storage reserved
+  first) and adds `keystone` (not the identity, and not in Raw, which bypasses it) and `keystoneInvalid` to each
+  `live.outputs` entry. The live document
+  is diffed, so they go out only when they change.
+- **UI.** "Keystone active" and, in yellow, "Keystone invalid" on the output row and under the preview on Warp &
+  Slices. The Patch screen lists "Keystone n" after each "Output n" it lists; the cue editor lists patched Keystone
+  fixtures after the outputs.
+- **Not built here:** the edit overlay (item 4) and the preset geometry (item 3), which the keystone will sit on top
+  of. The Layers screen does not offer the Keystone fixture.
 
 **3. Mapping presets (Output ch 6 and 7).**
 - **Model.**
@@ -2390,7 +2454,8 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   `StateStore.step` before it pops). The check sees the patch the step would
   apply, the patch that made the state it undoes (`HistoryEntry.forward`) and
   the current project. `syphon.forget` and `project.revert` both run
-  `ProjectDocument.checkSyphonReplay` (B90, B91): every op on `/syphon/N`
+  `ProjectDocument.checkLiveReplay` (was `checkSyphonReplay`; B90, B91; it
+  covers `/syphon`, `/capture`, `/screens` and `/windows`): every op on `/syphon/N`
   needs the whole entry the undone step left there
   (nothing, where it removed) or already the value it writes; otherwise the
   number changed meanwhile and the step is refused with `historyConflict`
@@ -2645,7 +2710,7 @@ interface selectable. Address space generated from `ParameterSpec`:
 /fanous/layer/{1..n}/{param}  f (normalized 0–1 or unit value; both accepted via type tag)   e.g. /fanous/layer/3/intensity 0.75
 /fanous/layer/{n}/media       ii (folder, file)
 /fanous/layer/{n}/retrigger
-/fanous/master/{param}        /fanous/output/{n}/{param}
+/fanous/master/{param}        /fanous/output/{n}/{param}        /fanous/keystone/{n}/{param} (M2.3)
 /fanous/cue/go  /cue/back  /cue/goto i  /cue/{number}/go
 /fanous/show/lock i  /fanous/show/mode i  /fanous/timecode/enable i
 /fanous/project/load s (programmer; refused while show-locked)
@@ -2787,7 +2852,7 @@ MSC and MIDI-triggered cues are additions, not rewrites.
 ### 16.2 GDTF export
 
 `Patch › Export GDTF` writes `Fanous.gdtf` (zip: `description.xml` +
-thumbnail PNG) describing fixture type "Fanous" with the three DMX modes,
+thumbnail PNG) describing fixture type "Fanous" with its DMX modes (four since M2.3),
 channel functions with physical ranges, channel sets for every band (play
 modes, blend modes, effects, test patterns), 16-bit coarse/fine links and
 defaults — all generated from `ParameterSpec`. Fixture type GUID is stable

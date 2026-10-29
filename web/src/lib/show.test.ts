@@ -23,8 +23,8 @@ const playMode: ParamSpec = {
 const intensity: ParamSpec = { name: 'Intensity', key: 'intensity', channel: 1, bits: 16, default: 0, group: 'Output' };
 const control: ParamSpec = { name: 'Control', key: 'control', channel: 3, bits: 8, default: 0, group: 'Output' };
 const map: ChannelMap = {
-  footprints: { layer: 64, master: 8, output: 8 },
-  modes: { layer: [intensity, playMode], master: [{ ...intensity, name: 'Master intensity' }, control], output: [intensity, control] },
+  footprints: { layer: 64, master: 8, output: 8, keystone: 16 },
+  modes: { layer: [intensity, playMode], master: [{ ...intensity, name: 'Master intensity' }, control], output: [intensity, control], keystone: [] },
 };
 
 describe('lockTitle', () => {
@@ -145,10 +145,11 @@ describe('cue rows', () => {
 });
 
 describe('fixtures and parameters', () => {
-  const patch: PatchEntry[] = ['Layer 1', 'Output 10', 'Master', 'Output 2', 'Output 1'].map((fixture) => ({ fixture, universe: 'artnet:0.0.0', address: 1 }));
+  const patch: PatchEntry[] = ['Layer 1', 'Output 10', 'Keystone 2', 'Master', 'Output 2', 'Output 1'].map((fixture) => ({ fixture, universe: 'artnet:0.0.0', address: 1 }));
 
-  it('lists layers, the master and the patched outputs in numeric order', () => {
-    expect(fixtureNames(2, patch)).toEqual(['Layer 1', 'Layer 2', 'Master', 'Output 1', 'Output 2', 'Output 10']);
+  it('lists layers, the master and the patched outputs and keystones in numeric order', () => {
+    expect(fixtureNames(2, patch)).toEqual(['Layer 1', 'Layer 2', 'Master', 'Output 1', 'Output 2', 'Output 10', 'Keystone 2']);
+    expect(fixtureType('Keystone 2')).toBe('keystone');
     expect(fixtureNames(0, [])).toEqual(['Master']);
     expect(fixtureNames(NaN, [])).toEqual(['Master']);
   });
@@ -248,7 +249,7 @@ describe('timecode offset text', () => {
 });
 
 describe('MIDI map wording', () => {
-  const map: ChannelMap = { footprints: { layer: 64, master: 8, output: 8 }, modes: { layer: [intensity], master: [intensity], output: [] } };
+  const map: ChannelMap = { footprints: { layer: 64, master: 8, output: 8, keystone: 16 }, modes: { layer: [intensity], master: [intensity], output: [], keystone: [] } };
   it('names the control', () => {
     expect(midiControlText({ channel: 1, kind: 'note', number: 36 })).toBe('ch 1 · note 36');
     expect(midiControlText({ channel: 0, kind: 'cc14', number: 1 })).toBe('any ch · CC 1/33 (14-bit)');
