@@ -311,6 +311,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   are cached by their settings and size, so a slider drag on one output no longer rebuilds every other output's blend map
   each time, and the output previews keep theirs too. On a 2×2 wall of 1920×1080 outputs, an overlap edit compiles in
   13 ms instead of 51. The picture is unchanged.
+- Changed: the Syphon numbering (folder 0, 150–169) is one `LiveCatalog` that the coming capture inputs share (B73 step
+  1b, DESIGN §8.2.1): a kind per range (capture devices 1–20 in `capture`, displays 21–28 in `screens`, windows 29–32 in
+  `windows`), and the undo/redo checks of `syphon` cover those keys too. Syphon behaves as before; nothing is captured yet.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
