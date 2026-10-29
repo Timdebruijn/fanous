@@ -158,7 +158,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   when the connection closes and subscribes again, once, when it is back (B68).
 - Fixed: the 4 preview encoders bounded extra sizes only, so viewers on several targets could run more; the limit now holds
   across targets (a fallback size of the target or its canvas, else JPEG), and a released encoder goes to a viewer on a size or
-  canvas fallback (a viewer refused to JPEG stays on JPEG in the browser) (B70). `/metrics` `preview.encoders` now counts H.264
+  canvas fallback (a viewer refused to JPEG stays on JPEG in the browser, until B86) (B70). `/metrics` `preview.encoders` now counts H.264
   encoders: canvas 1 always, the others while they have an H.264 subscriber; JPEG-only streamers no longer count. It is a
   reservation count: for a few ms around an asynchronous release and create a fifth session can exist.
 - Fixed: engine tests that slept a fixed time or waited a fixed budget failed in a parallel run on a loaded Mac; they now
@@ -172,6 +172,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   and the change to mode 0600; both are now written 0600 from the start, and a new Application Support folder is 0700 (B83).
 - Fixed: a role password added to `settings.json` by hand while the engine runs was kept in the file at the next write but
   the role stayed open until a restart; every write now takes the passwords from the file as written (B82).
+- Fixed: a preview refused H.264 at the encoder limit waited 5 s and re-subscribed as JPEG, so it was never upgraded; it now
+  shows the refused stream's JPEG frames at once and turns H.264 when the engine frees an encoder for it (B86).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

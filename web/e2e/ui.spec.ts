@@ -322,6 +322,58 @@ test('preview: a streaming preview subscribes again, once, after its socket clos
   await expectDecoders(page);  // the stream the closed socket took had its decoder closed too (B85)
 });
 
+test('preview: a viewer refused H.264 at the encoder limit shows JPEG at once and is upgraded when an encoder frees up (B86)', async ({ page, engine }) => {
+  // the page's preview subscriptions of canvas 2
+  let subs = 0;
+  page.on('websocket', (socket) =>
+    socket.on('framesent', ({ payload }) => {
+      const m = typeof payload === 'string' ? (JSON.parse(payload) as { t: string; stream?: string; target?: string }) : null;
+      if (m?.t === 'sub' && m.stream === 'preview' && m.target === 'canvas:2') subs++;
+    }),
+  );
+  await page.goto(`${engine.url}/?token=${engine.token}`);  // again, with the listener above in place
+
+  // another client takes 3 H.264 encoders of canvas 1 (320, 960 and 1280 wide): with canvas 1's own (640) that is the
+  // limit of 4, and canvas 2 has no stream of its own or of its canvas to fall back to, so it is refused to JPEG
+  const load = await page.context().newPage();
+  await load.goto(`${engine.url}/healthz`);
+  await load.evaluate(async (token) => {
+    const ws = new WebSocket(`wss://${location.host}/ws`);
+    const ids: number[] = [];
+    await new Promise<void>((done) => {
+      ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', clientId: 'e2e-encoders', schema: 1, role: 'programmer', token }));
+      ws.onmessage = (event) => {
+        if (typeof event.data !== 'string') return;
+        const m = JSON.parse(event.data) as { t: string; id: number; stream?: string };
+        if (m.t === 'welcome') for (const w of [320, 960, 1280]) ws.send(JSON.stringify({ t: 'sub', stream: 'preview', codec: 'avc', target: 'canvas', w }));
+        if (m.t === 'sub' && m.stream === 'preview' && ids.push(m.id) === 3) done();
+      };
+    });
+    Object.assign(window, { ws, ids });
+  }, engine.token);
+
+  await openScreen(page, 'Outputs');
+  await page.getByRole('button', { name: 'Canvases' }).click();
+  await page.getByRole('button', { name: 'Add canvas' }).click();
+  await page.getByRole('group', { name: 'Canvas', exact: true }).getByRole('button', { name: 'Canvas 2' }).click();
+  const figure = page.getByRole('figure');
+  await expect.poll(() => subs, { timeout: previewTimeout }).toBe(1);
+  // the refusal says `codec: "jpeg"`: JPEG at once (not after 5 s without a description), and its frames are drawn
+  await expect(figure.locator('figcaption')).toContainText(/^JPEG 5 fps · .* · H\.264 encoders busy/, { timeout: 3_000 });
+  const drawn = () => figure.locator('canvas').evaluate((c: HTMLCanvasElement) => c.getContext('2d')!.getImageData(c.width / 2, c.height / 2, 1, 1).data[3]);
+  await expect.poll(drawn, { timeout: previewTimeout }).toBe(255);
+
+  // the other client lets go of one encoder: the engine moves the refused viewer to its own H.264 stream, on the same
+  // subscription
+  await load.evaluate(() => {
+    const { ws, ids } = window as unknown as { ws: WebSocket; ids: number[] };
+    ws.send(JSON.stringify({ t: 'unsub', id: ids[2] }));
+  });
+  await expect(figure.locator('figcaption')).toContainText(/^H\.264/, { timeout: previewTimeout });
+  expect(subs).toBe(1);
+  await load.close();
+});
+
 test("preview: an output stream has the output's shape and the size of its box (B32)", async ({ page, engine }) => {
   // what the engine told this page about its output:1 streams: the `sub` replies, then each `stream` description (a
   // rebuilt stream announces its new size there, without a new subscription)
