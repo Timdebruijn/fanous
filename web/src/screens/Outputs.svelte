@@ -31,6 +31,8 @@
   import NudgePad from '../components/NudgePad.svelte';
   import OutputMapper from '../components/OutputMapper.svelte';
   import RemotePanel from '../components/RemotePanel.svelte';
+  import WallPanel from '../components/WallPanel.svelte';
+  import WallWizard from '../components/WallWizard.svelte';
   import Preview from '../components/Preview.svelte';
   import {
     CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, handles, meshIdentity, modeText, nextSliceId, outputSize, spreadSources, statusText,
@@ -44,6 +46,8 @@
   import { choose, grid, groups, label, members, nudgeCommand, nudgeQueue, step, type Group } from '../lib/remote';
   import { fromScreen, resampleMesh, toScreen } from '../lib/warp';
   import type { JSONValue } from '../lib/protocol';
+  import { badge, freeOutputs, isManual, SEAM_STEPS, wallOf, type ManualField } from '../lib/walls';
+  import { endCheck, startWizard, wallUI } from '../lib/wall-session.svelte';
 
   const LOCKED = 'Locked: programmer only';
   const locked = $derived(!can('programmer'));
@@ -61,6 +65,25 @@
   const status = $derived(output ? statuses.get(output.id) : undefined);
   const size = $derived(output ? outputSize(output, displays) : { w: 1920, h: 1080 });
   const lost = $derived(app.live.outputs.filter((s) => s.state === 'lost'));
+  const walls = $derived(app.project.walls ?? []);
+  /** the wall the selected output is in */
+  const wall = $derived(output ? wallOf(walls, output.id) : undefined);
+  /** why a wall cannot be made or changed: the role, the show lock */
+  const wallLock = $derived(lockTitle('programmer', !locked, app.project.showLock));
+  const freeCount = $derived(freeOutputs(outputs, walls).length);
+  const checking = $derived(wallUI.check ? walls.find((w) => w.id === wallUI.check?.wall) : undefined);
+  // a seam check whose wall went (Undo, another client) ends, and its outputs get their own test patterns back
+  $effect(() => {
+    if (wallUI.check && !checking) void endCheck();
+  });
+  /** a wall panel's "Open in Warp & Slices" and the Grid step of the seam check */
+  function openWarp(id: number) {
+    pickOutput(id);
+    ui.tab = 'warp';
+  }
+  function backToWall(field: ManualField) {
+    if (wall && output) void cmd('wall.set', { id: wall.id, resetManual: [{ output: output.id, field }] });
+  }
   const display = $derived(displays.find((d) => d.uuid === output?.display?.uuid));
   const previewTarget = $derived(output && ui.tab !== 'canvases' ? `output:${output.id}` : canvasTarget(canvas?.id ?? 1));
   const previewAspect = $derived(output && ui.tab !== 'canvases' ? `${size.w} / ${size.h}` : canvas ? `${canvas.width} / ${canvas.height}` : '16 / 9');
@@ -288,7 +311,29 @@
   </div>
 {/if}
 
+{#if checking && wallUI.check && ui.tab !== 'outputs'}
+  <div class="banner banner-yellow" role="status">
+    <span class="dot dot-yellow"></span>
+    <span><strong>Seam check on {checking.name}</strong> · {SEAM_STEPS[wallUI.check.step]?.name} on every projector of the wall</span>
+    <span class="spacer"></span>
+    <button type="button" class="btn" onclick={() => (ui.tab = 'outputs')}>Back to the seam check</button>
+  </div>
+{/if}
+
 <div class="screen">
+  {#if ui.tab === 'outputs'}
+    <section class="walls" aria-label="Projector walls">
+      {#if wallUI.wizard}
+        <WallWizard />
+      {:else}
+        {#each walls as w (w.id)}<WallPanel wall={w} onwarp={openWarp} />{/each}
+        <div class="wallbar">
+          <button type="button" class="btn" disabled={!!wallLock || freeCount < 2} title={wallLock ?? (freeCount < 2 ? 'Add at least two outputs that are in no wall yet' : undefined)} onclick={() => startWizard()}>New projector wall</button>
+          {#if walls.length === 0}<span class="caption">Two or more projectors side by side or stacked: the wall gives each its part of the canvas and the overlaps, then guides the blend tuning.</span>{/if}
+        </div>
+      {/if}
+    </section>
+  {/if}
   <aside class="list">
     {#each outputs as o (o.id)}
       {@const st = statusText(statuses.get(o.id), o)}
@@ -296,6 +341,7 @@
         <span class="head"><span class="dot dot-{st.tone === 'green' ? 'green' : st.tone === 'red' ? 'red' : 'off'}"></span><span class="nm">{o.name}</span><span class="spacer"></span><span class="caption mono">{Math.round(o.intensity * 100)} %</span></span>
         <span class="caption ellipsis tone-{st.tone}">{st.text}</span>
         {#if statuses.get(o.id)?.modeNote}<span class="caption yellow">{statuses.get(o.id)?.modeNote}</span>{/if}
+        {#if wallOf(walls, o.id)}<span class="badge wallbadge">{badge(wallOf(walls, o.id)!, o.id)}</span>{/if}
       </button>
     {:else}
       <p class="caption pad">No outputs yet. Add one for each projector or display with "Add output on" below; a new output shows the whole canvas.</p>
@@ -415,12 +461,14 @@
         {#if display?.builtin}<p class="caption yellow">This output uses the Mac's own display: the local UI shell will be hidden behind it.</p>{/if}
 
         <h3>Blend edges</h3>
+        {#if wall}<p class="caption">In {wall.name}: the wall sets the overlap of the inner edges and slice 1's part of the canvas; tune the seams in its panel above. An overlap typed here becomes manual, and the wall leaves it alone.</p>{/if}
         <div class="edges">
           {#each EDGES as edge (edge)}
             {@const e = output.blend[edge]}
-            <div class="edge panel">
-              <div class="ehead"><span class="label">{edge}</span><svg class="curve" viewBox="0 0 100 40" aria-hidden="true"><path d={blendCurvePath(e, 100, 40)} fill="none" stroke="#4C9EFF" stroke-width="2" /></svg></div>
+            <div class="edge panel" role="group" aria-label="{edge} edge">
+              <div class="ehead"><span class="label">{edge}</span>{#if isManual(wall, output.id, `overlap.${edge}`)}<span class="badge badge-warn">manual</span>{/if}<svg class="curve" viewBox="0 0 100 40" aria-hidden="true"><path d={blendCurvePath(e, 100, 40)} fill="none" stroke="#4C9EFF" stroke-width="2" /></svg></div>
               <label class="field"><span>Overlap (px)</span><input class="input mono" type="number" min="0" value={e.overlap} disabled={locked} onchange={(ev) => number(ev, `/blend/${edge}/overlap`)} /></label>
+              {#if isManual(wall, output.id, `overlap.${edge}`)}<button type="button" class="btn" disabled={!!wallLock} title={wallLock ?? `Give this overlap back to ${wall?.name}`} onclick={() => backToWall(`overlap.${edge}`)}>Back to wall</button>{/if}
               <p class="caption">Overlap: width of the strip shared with the neighbouring projector, in pixels of this output.</p>
               <label class="field"><span>Power</span><input class="input mono" type="number" min="0.1" max="10" step="0.1" value={e.power} disabled={locked} onchange={(ev) => number(ev, `/blend/${edge}/power`)} /></label>
               <p class="caption">Power: steepness of the fade. 2 is a smooth S-curve; higher is sharper in the middle.</p>
@@ -501,13 +549,14 @@
                   {#each canvases as c (c.id)}<option value={c.id}>{c.name} · {c.width} × {c.height}</option>{/each}
                 </select>
               </label>
-              <div class="field" role="group" aria-label="Source rectangle on the canvas, in pixels"><span>Source x · y · w · h (canvas px)</span>
+              <div class="field" role="group" aria-label="Source rectangle on the canvas, in pixels"><span>Source x · y · w · h (canvas px){#if s.id === 1 && isManual(wall, output.id, 'source')} <span class="badge badge-warn">manual</span>{/if}</span>
                 <span class="row4">
                   {#each ['x', 'y', 'w', 'h'] as k (k)}
                     <input class="input mono" type="number" step="1" min="0" aria-label="Source {k} in pixels" title="Stored as {Math.round(s.source[k as 'x'] * 10000) / 10000} (0–1 of the canvas)" value={sourcePixels(s.source, sliceCanvas)[k as 'x']} disabled={locked} onchange={(e) => { const v = sourceFromPixels(k as 'x', Number(e.currentTarget.value), sliceCanvas); if (v !== null) set(`/slices/${sliceIndex}/source/${k}`, v); }} />
                   {/each}
                 </span>
               </div>
+              {#if s.id === 1 && isManual(wall, output.id, 'source')}<button type="button" class="btn" disabled={!!wallLock} title={wallLock ?? `Give slice 1's part of the canvas back to ${wall?.name}`} onclick={() => backToWall('source')}>Back to wall</button>{/if}
               <label class="field"><span>Opacity %</span><input class="input mono" type="number" min="0" max="100" value={Math.round(s.opacity * 100)} disabled={locked} onchange={(e) => set(`/slices/${sliceIndex}/opacity`, Number(e.currentTarget.value) / 100)} /></label>
             {/if}
             <button type="button" class="btn" disabled={locked} onclick={addSlice}>Add slice</button>
@@ -550,9 +599,13 @@
 <style>
   .screen { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
   .list { flex: 1 1 280px; max-width: 340px; display: flex; flex-direction: column; gap: 8px; }
+  .walls { flex: 1 1 100%; display: flex; flex-direction: column; gap: 12px; }
+  .wallbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .wallbar .caption { flex: 1 1 280px; }
   .out { flex-direction: column; align-items: stretch; gap: 4px; min-height: var(--touch); }
   .out .head { display: flex; align-items: center; gap: 10px; }
   .nm { font-weight: 600; font-size: 15px; }
+  .wallbadge { align-self: flex-start; }
   .tone-red { color: var(--red); }
   .tone-faint { color: var(--text-3); }
   .tone-green { color: var(--text-2); }

@@ -11,6 +11,7 @@ export interface PatchEntry {
 }
 
 import type { CanvasConfig, DisplayDoc, OutputConfig, OutputStatusDoc } from './outputs';
+import type { WallConfig } from './walls';
 
 export interface ProjectDoc {
   schema: number;
@@ -28,6 +29,8 @@ export interface ProjectDoc {
   /** per-universe receive settings (`universe.set`, B28); a universe without an entry runs the defaults */
   universes?: UniverseSettingsDoc[];
   outputs: OutputConfig[];
+  /** projector walls (`wall.*`, DESIGN §9.9); absent in projects saved before walls existed */
+  walls?: WallConfig[];
   /** cue list (DESIGN §15.2): fixture and parameter by name, raw DMX values */
   cues: CueDoc[];
   timecode: TimecodeSettingsDoc;
