@@ -545,13 +545,15 @@ public final class Compositor: @unchecked Sendable {
         var frame: DecodedFrame
         var frameIndex: Int
         var p: LayerParameters
+        /// Layer intensity × crossfade weight: the alpha. The Master scales the colour instead (B108).
         var intensity: Float
+        var master: Float
         var slot: Int
         /// Index into `targets`; −1 = the layer's canvas does not render.
         var canvas: Int
 
         static func == (l: DrawItem, r: DrawItem) -> Bool {
-            l.playback === r.playback && l.frame === r.frame && l.frameIndex == r.frameIndex && l.intensity == r.intensity && l.slot == r.slot && l.canvas == r.canvas
+            l.playback === r.playback && l.frame === r.frame && l.frameIndex == r.frameIndex && l.intensity == r.intensity && l.master == r.master && l.slot == r.slot && l.canvas == r.canvas
         }
     }
 
@@ -682,18 +684,19 @@ public final class Compositor: @unchecked Sendable {
             channel.setState(wantedPTS: playback.clock.position / max(1, playback.frameRate), active: active, volume: p.audioVolume * weight, pan: p.audioPan, loop: loop)
         }
         guard let frameIndex else { return }  // once-then-black has finished
-        let intensity = p.intensity * ctx.masterIntensity * weight
+        let intensity = p.intensity * weight
+        let visible = intensity * ctx.masterIntensity > 0
         // invisible for a while: the ring and the last frame stay, the clock keeps running, decoding resumes when visible
-        guard playback.hold.allowsRequests(visible: intensity > 0, at: ctx.target) else { return }
+        guard playback.hold.allowsRequests(visible: visible, at: ctx.target) else { return }
         playback.decoder?.request(frame: frameIndex, direction: direction)
-        guard intensity > 0 else { return }
+        guard visible else { return }
         guard let frame = playback.frame(at: frameIndex, direction: direction), frame.texture0 != nil else {
             ctx.misses += 1
             return
         }
         if playback.live != nil || p.effect1 == .strobe || p.effect2 == .strobe { ctx.dynamic = true }
         ctx.drawn += 1
-        drawItems.append(DrawItem(playback: playback, frame: frame, frameIndex: frameIndex, p: p, intensity: intensity, slot: slot, canvas: canvas))
+        drawItems.append(DrawItem(playback: playback, frame: frame, frameIndex: frameIndex, p: p, intensity: intensity, master: ctx.masterIntensity, slot: slot, canvas: canvas))
     }
 
     /// A master file's clock after this tick's advance (DESIGN.md §23.2): into the packet, and into this tick's table so
@@ -738,6 +741,7 @@ public final class Compositor: @unchecked Sendable {
         u.texel = SIMD4(1 / Float(max(1, mediaWidth)), 1 / Float(max(1, mediaHeight)), Float(mediaWidth) / Float(max(1, mediaHeight)), time)
         u.kind = frame.kind.rawValue
         u.blend = UInt32(p.blendMode.rawValue)
+        u.master = item.master
         let offset = item.slot * Self.uniformStride
         (uniforms.contents() + offset).assumingMemoryBound(to: LayerUniforms.self).pointee = u
         let blur = (p.effect1 == .blur && p.effect1A > 0) || (p.effect2 == .blur && p.effect2A > 0)

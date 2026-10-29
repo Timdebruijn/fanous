@@ -265,6 +265,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   unchanged. A frozen output follows later Grand Master moves from the level it froze at; Freeze engaged at Master 0
   holds the first picture drawn above 0. The black lift of a blend is the projector's black floor: on the picture it now
   stays put while the Grand Master moves (it used to go down with it) and is 0 at Master 0 and at either Blackout (B100).
+- Fixed: below a Grand Master of 100 % a lower layer showed through an opaque layer above it (green over red at 50 % gave
+  (63,128,0) instead of (0,128,0)), on the canvas preview, Syphon, CITP and every output. The Master now dims each layer's
+  colour instead of making it transparent, so the picture dims as it looks at 100 %, in every blend mode (B108).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

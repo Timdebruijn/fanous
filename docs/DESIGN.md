@@ -561,7 +561,7 @@ can never disagree). `[OPEN-9]` exact bands and the speed/scale upper limits.
 
 | Ch | Parameter | Bits | Default | Mapping |
 |---|---|---|---|---|
-| 1–2 | Master intensity | 16 | 65535 | multiplies all canvases (each layer); outputs take it once, from the canvas (§9.5). For now it scales each layer's opacity, so below 100 % a lower layer shows through an opaque one above it (B108) |
+| 1–2 | Master intensity | 16 | 65535 | multiplies all canvases (each layer's colour, not its opacity, §9.5); outputs take it once, from the canvas |
 | 3 | Control | 8 | 0 | 0–63 normal · 64–127 Freeze all · 128–191 Blackout · 192–255 reserved |
 | 4 | Test pattern | 8 | 0 | 0–15 off · 16–31 Grid · 32–47 Colour bars · 48–63 Blend zones · 64–79 Output ID · 80–95 Crosshair/alignment · 96–111 Grey steps · 112–127 Checkerboard · 128–143 Grey 0 % · 144–159 Grey 25 % · 160–175 Grey 75 % · 176–191 White (seam check, §9.9) · 192–255 reserved — overrides every output |
 | 5–6 | Master speed | 16 | 32768 | multiplies layer speed (same mapping as layer speed) |
@@ -983,7 +983,11 @@ for each slice (ordered):
 
 The Master intensity is applied once, per layer into the canvas, so the
 canvas preview, Syphon, CITP and every output show the same level (B100: the
-output pass multiplied it in a second time, 50 % gave 25 %). A held (Freeze)
+output pass multiplied it in a second time, 50 % gave 25 %). A layer takes it
+as a colour scale, not an opacity (its alpha is its own intensity × crossfade):
+each blend mode is the Master × that mode at dst / Master, clamped to
+[0, Master], so the canvas is exactly the Master × the canvas at 100 % and a
+lower layer never shows through an opaque one (B108). A held (Freeze)
 canvas carries the Master it was drawn with, which `holdFrozen` keeps with it
 (`OutputPlan.heldMaster`: the compositor tick's own or, on a secondary display,
 the one stored with its last completed canvas in one atomic with the ring
