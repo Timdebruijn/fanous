@@ -24,6 +24,8 @@ public struct MachineSettings: Codable, Sendable, Equatable {
 
     /// Fields that could not be read, with the reason; never written back.
     public private(set) var problems: [String] = []
+    /// The fields among them that did not decode at all.
+    private(set) var unreadable: Set<CodingKeys> = []
 
     enum CodingKeys: String, CodingKey { case passwords, oscFeedback, sync }
 
@@ -33,10 +35,23 @@ public struct MachineSettings: Codable, Sendable, Equatable {
     /// drop the role passwords and open every role).
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        do { passwords = try c.decodeIfPresent([String: PasswordRecord].self, forKey: .passwords) ?? [:] } catch { problems.append("passwords: \(error)") }
-        do { oscFeedback = try c.decodeIfPresent(OSCFeedbackTarget.self, forKey: .oscFeedback) } catch { problems.append("oscFeedback: \(error)") }
-        do { sync = try c.decodeIfPresent(SyncSettings.self, forKey: .sync) } catch { problems.append("sync: \(error)") }
+        do { passwords = try c.decodeIfPresent([String: PasswordRecord].self, forKey: .passwords) ?? [:] } catch { fail(.passwords, error) }
+        do { oscFeedback = try c.decodeIfPresent(OSCFeedbackTarget.self, forKey: .oscFeedback) } catch { fail(.oscFeedback, error) }
+        do { sync = try c.decodeIfPresent(SyncSettings.self, forKey: .sync) } catch { fail(.sync, error) }
         problems += (sync?.problems ?? []).map { "sync.\($0)" }
+    }
+
+    private mutating func fail(_ key: CodingKeys, _ error: Error) {
+        problems.append("\(key.rawValue): \(error)")
+        unreadable.insert(key)
+    }
+
+    /// Takes every field `file` could read (B82); one that did not decode keeps this copy's value, so a typo in a hand
+    /// edit does not open every role.
+    mutating func take(_ file: MachineSettings) {
+        if !file.unreadable.contains(.passwords) { passwords = file.passwords }
+        if !file.unreadable.contains(.oscFeedback) { oscFeedback = file.oscFeedback }
+        if !file.unreadable.contains(.sync) { sync = file.sync }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -122,14 +137,16 @@ public final class RoleAuth: @unchecked Sendable {
         return sync
     }
 
-    struct UnreadableSettings: Error, CustomStringConvertible {
-        var description: String { "settings.json could not be read; fix or remove it first" }
+    struct UnreadableSettings: Error, CustomStringConvertible, Equatable {
+        var description = "settings.json could not be read; fix or remove it first"
     }
 
     /// Re-reads settings.json and sets only `members` of the top-level object `key` (nil removes one), keeping every
     /// other member, unknown and unreadable ones too, and hand edits made while the engine runs (B79). A file that
-    /// exists but does not parse is not overwritten; a missing one is created. `apply` gets the merged `key` object and
-    /// keeps the copy in memory in step. Without a file (tests) the copy in memory is the base.
+    /// exists but does not parse, or whose `passwords` is not an object, is not overwritten; a missing one is created.
+    /// The copy in memory then takes the fields of
+    /// the file as written, so a hand-added password takes effect now, not at the next start (B82); `apply` gets the
+    /// merged `key` object and sets it in memory too. Without a file (tests) the copy in memory is the base.
     private func rewrite(_ key: String, _ members: [String: JSONValue?], apply: (inout MachineSettings, [String: JSONValue]) -> Void) throws {
         try state.withLock { s in
             var root = (try? JSONValue(encoding: s.settings).object) ?? [:]
@@ -145,13 +162,23 @@ public final class RoleAuth: @unchecked Sendable {
                     throw UnreadableSettings()
                 }
             }
+            if let passwords = root["passwords"], passwords.object == nil {
+                // replacing it with the one record written would open every other role in memory (B82)
+                logger.error("settings.json not written: passwords could not be read")
+                throw UnreadableSettings(description: "passwords in settings.json could not be read; fix it first")
+            }
             var object = root[key]?.object ?? [:]  // a member that is not an object was unreadable; the command replaces it
             for (member, value) in members { object[member] = value }
             root[key] = .object(object)
             if let settingsURL {
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-                try Self.writePrivately(encoder.encode(JSONValue.object(root)), to: settingsURL)
+                let data = try encoder.encode(JSONValue.object(root))
+                try Self.writePrivately(data, to: settingsURL)
+                if let file = try? JSONDecoder().decode(MachineSettings.self, from: data) {
+                    for problem in file.problems { logger.error("settings.json: field ignored", metadata: ["problem": "\(problem)"]) }
+                    s.settings.take(file)
+                }
             }
             apply(&s.settings, object)
         }
