@@ -59,6 +59,16 @@ public enum BlendMath {
         // ponytail: coverage 4 from the output's own edges (2 per axis); three projectors on one axis still count as 2,
         // take the coverage from the wall's layout if such a rig shows up
         let grid = (s.left.overlap > 0 || s.right.overlap > 0) && (s.top.overlap > 0 || s.bottom.overlap > 0)
+        // lift × ((4 − n) / n)^(1/γ); `pow` only on feather pixels, the whole numbers are the same floats without it
+        let single = s.lift * pow(3, 1 / projectorGamma)
+        func coverageLift(_ n: Double) -> Double {
+            switch n {
+            case 1: single
+            case 2: s.lift
+            case 4: 0
+            default: s.lift * pow((4 - n) / n, 1 / projectorGamma)
+            }
+        }
         for row in 0..<height {
             for col in 0..<width {
                 let i = (row * width + col) * 4
@@ -66,7 +76,7 @@ public enum BlendMath {
                 (out[i], out[i + 1], out[i + 2]) = (Float(f.x), Float(f.y), Float(f.z))
                 let inZone = max(x.zone[col], y.zone[row])
                 let n = (1 + x.zone[col]) * (1 + y.zone[row])  // projectors lighting the pixel, feathered: 1, 2 or 4
-                out[i + 3] = Float(grid ? s.lift * pow((4 - n) / n, 1 / projectorGamma) : s.lift * (1 - inZone))
+                out[i + 3] = Float(grid ? coverageLift(n) : s.lift * (1 - inZone))
             }
         }
         return out
