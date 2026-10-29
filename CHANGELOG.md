@@ -233,9 +233,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   switches, and the unused `run --ring` and `dmx --hz/--host/--seed` flags (repo audit 2026-10-29).
 - Removed: `fanous-bench syphon`, the Phase 3 Syphon acceptance probe; `SyphonTests` cover SyphonOutput → SyphonInput
   (repo audit 2026-10-29).
-- `/metrics` `preview.jpegOut` and `preview.jpegFailed`: JPEG preview frames made, and encodes that returned nil (logged
-  once per streamer as "preview JPEG encode failed"); the B86 e2e puts both into its CI warning when a viewer refused to
-  JPEG gets no frame, so the next occurrence names the engine's encoder or what comes after it (B99).
+- Added: `/metrics` `preview.jpegOut`, `preview.jpegFailed` and `preview.jpegDropped`: JPEG preview frames made, encodes
+  that returned nil (logged once per streamer as "preview JPEG encode failed") and JPEG sends a connection refused; the
+  B86 e2e puts all three into its CI warning when a viewer refused to JPEG gets no frame, so the next occurrence names
+  the encoder, the send queue or the network (B99).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

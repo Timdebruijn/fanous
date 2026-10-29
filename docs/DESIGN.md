@@ -1511,7 +1511,9 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   buffer pool, texture cache and `CIContext` stay in `init` (no
   VideoToolbox). `/metrics` `preview.jpegOut` counts the JPEG frames made,
   `preview.jpegFailed` the encodes that returned nil (logged once per
-  streamer, "preview JPEG encode failed"; B99).
+  streamer, "preview JPEG encode failed") and `preview.jpegDropped` the
+  JPEG sends a subscriber's connection refused (queue above 256 KB or a
+  closed session); all three are sums over the live streamers only (B99).
 - **As built (encoder limit across targets, B70, 2026-10-28):** the 4 count
   H.264 encoders: the canvas 1 streamer always, every other streamer while
   it has an H.264 subscriber (`/metrics` `preview.encoders`; a JPEG-only

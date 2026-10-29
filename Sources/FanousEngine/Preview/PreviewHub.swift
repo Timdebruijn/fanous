@@ -327,4 +327,5 @@ public final class PreviewHub: @unchecked Sendable {
     public var skipped: Int { active.withLock { $0 }.reduce(0) { $0 + $1.skipped.load(ordering: .relaxed) } }
     public var jpegOut: Int { active.withLock { $0 }.reduce(0) { $0 + $1.jpegOut.load(ordering: .relaxed) } }
     public var jpegFailed: Int { active.withLock { $0 }.reduce(0) { $0 + $1.jpegFailed.load(ordering: .relaxed) } }
+    public var jpegDropped: Int { active.withLock { $0 }.reduce(0) { $0 + $1.jpegDropped.load(ordering: .relaxed) } }
 }
