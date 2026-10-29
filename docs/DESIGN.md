@@ -1291,7 +1291,7 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
 - The blend map becomes `rgba16Float`: factor R, G, B, plus the lift.
 - The output fragment shader multiplies each channel by its own factor.
 
-**As built (M1.6):**
+**As built (M1.6, PR #97):**
 - `BlendMath.map` gives four floats per pixel: factor R, G, B and the lift
   term. `BlendMath.factor(_:edge:channel:)` takes that channel's gamma from
   `gammaRGB`; nil, or a `gammaRGB` that is not three values (project files are
