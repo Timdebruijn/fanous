@@ -14,6 +14,7 @@ web UI.
 ```bash
 swift build                      # engine, shell, core
 scripts/test.sh                  # Core unit tests (Swift Testing)
+scripts/check-mallocs.sh         # §4.6 zero-malloc rule, release build (before merging compositor changes)
 (cd web && npm install && npm run build)   # web UI → web/dist
 .build/debug/fanousd --foreground        # https://127.0.0.1:8443 (self-signed; fingerprint in the log)
 swift run FanousShell          # native shell; starts fanousd as a child in development

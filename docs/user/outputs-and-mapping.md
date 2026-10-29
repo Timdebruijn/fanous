@@ -179,18 +179,19 @@ over two or four projectors stayed within 2 % across the overlap.
 
 **Black lift (%)** (0 to 50) raises the black level outside the overlaps so the
 single-projector area matches the doubled black of the overlap; **Lift feather
-px** softens where the lift ends. Use the Grey steps pattern to match it by eye.
+px** softens where the lift ends. Use Grey 0 % (or Grey steps) to match it by eye.
 Grids work: a corner pixel gets the product of the horizontal and vertical
 ramps.
 
 ### Test patterns
 
 Buttons: Off, Grid, Colour bars, Blend check, Output ID, Crosshair, Grey steps,
-Checkerboard. The Test pattern channel of the Output fixture (per projector) and
-of the Master (all outputs) overrides the button, so a console can call them up.
+Checkerboard, Grey 0 %, Grey 25 %, Grey 75 %, White. The Test pattern channel
+of the Output fixture (per projector) and of the Master (all outputs) overrides
+the button, so a console can call them up.
 Patterns follow the corner pin and mesh and show the blend map; set the Output
-fixture's **Blend** channel to 128 or more (Raw) to see them without blend, warp
-and mask. Line widths and cells follow the output's height, so a pattern reads
+fixture's **Blend** channel to 128 or more (Raw) to see them without blend and
+warp. Line widths and cells follow the output's height, so a pattern reads
 the same on a monitor and on a 4K projector.
 
 | Pattern | Use it for |
@@ -202,19 +203,70 @@ the same on a monitor and on a 4K projector.
 | Crosshair | centre and focus, circles every 1/8 of the height |
 | Grey steps | 0–100 % in 10 % steps (top) and 0–10 % in 1 % steps (bottom): gamma and black level, black lift |
 | Checkerboard | focus and pixel geometry |
+| Grey 0 % | black floor: a seam lighter than the rest needs more black lift on the projectors next to it |
+| Grey 25 % | dark-grey match: one projector darker than its neighbours or tinted, or a colour shift only inside a seam |
+| Grey 75 % | light-grey match, as Grey 25 %, where the projectors' upper range differs |
+| White | full-level match: brightness and colour of each projector, and a seam that stays bright or dark at full level |
 
-The same patterns, a moving test card and a few more are also available as layer
-content in folder 0 (see [show-control.md](show-control.md#built-in-content-folder-0)).
+Grey 0 %, 25 % and 75 % and White are flat fields at that output signal level
+(25 % is code 64 of 255, 75 % is 191), on the same scale as Blend check's 50 %
+grey; they ignore the output and master intensity, like the other patterns. A
+console calls them up on Test pattern channel 4: 128 Grey 0 %, 144 Grey 25 %,
+160 Grey 75 %, 176 White.
+
+These are signal levels: on a gamma-2.2 projector Grey 25 % is about 5 % of
+white's light, Grey 75 % about 53 %. Black lift adds a fixed signal, so it is
+exact only at Grey 0 %: set it there; at 25–75 % a lifted area can look
+slightly brighter than the overlap.
+
+The first seven patterns, a moving test card and a few more are also available
+as layer content in folder 0 (see
+[show-control.md](show-control.md#built-in-content-folder-0)); for a flat grey
+on a layer use Solid colour (file 100) with the layer's Red, Green and Blue.
 
 ## Warp & Slices tab
 
 Choose what to edit with **Corner pin**, **Mesh**, **Slices** or **Mask**.
 Handles sit over the output preview. Drag them with mouse or finger (the hit
 target is large for touch); with a handle selected the arrow keys move it by one
-output pixel, Shift by ten. On an iPad use the **nudge pad** that appears under
+output pixel, Shift by ten, Tab and Shift-Tab select the next and previous
+point, and Esc lets go of it. On an iPad use the **nudge pad** that appears under
 the mode buttons once a point is selected: arrows move by 1 px, the **10 px**
-key in the middle makes every press move ten. A selected point also shows
+key in the middle makes every press move ten, and holding an arrow for half a
+second moves 0.25 px. A selected point also shows
 numeric x and y fields in pixels. Changes go to the engine while you drag.
+
+**Remote mode** is for aligning from an iPad while you look at the projection
+instead of the screen. Turn it on with **Remote** next to the mode buttons; it
+is on by default on touch screens narrower than 900 px, and each browser
+remembers your choice. The controls then come before the preview:
+
+- The selection in large type: "corner top-left", "r3 c5" (row 3, column 5 of
+  the mesh), "slice 2 · bottom-right", "slice 2 · mask point 5", or a group such as
+  "row 3" with how many points move together.
+- **Previous** and **Next** go through the points row by row (left to right,
+  then the next row) and wrap around. With a group selected they step the
+  group: the next row, the next column, or the next edge clockwise.
+- **One point**, **Row**, **Column** (mesh only) and **All** choose what moves:
+  the selected point, its row or column, or every point. **Top**, **Right**,
+  **Bottom** and **Left** select every point on that edge; on a corner pin or a
+  slice an edge is its two corners. A mask has no rows, columns or edges.
+  Tapping or dragging a handle on the picture selects just that point again
+  (**One point**), and so does turning Remote off or picking another output.
+- The nudge pad moves the selection by 1 px, 10 px, or 0.25 px on a long press.
+  The points always move as one: when the first of them reaches the edge of the
+  output, or under a warp cannot go further, the group stops there instead of
+  being squeezed or bent.
+- The **trackpad** area beside it moves the selection as you drag, so your
+  finger never covers the picture: 1 output pixel per 4 screen pixels of finger
+  travel, four times as far when you drag fast.
+
+Distances are output pixels as seen on the projector, also under a corner pin
+or mesh. Moves go to the engine up to ten times a second; taps in between are
+added up, so none is lost. Nudges of the same point or the same group less than
+a second apart are one step for **Undo**. Without the programmer role, or while
+the show is locked, you can still select and step through points, but not move
+them.
 
 Slice, mask and mesh points are stored before the warp, but the preview shows
 the warped picture. The editor therefore draws these handles where the picture
@@ -223,7 +275,10 @@ a handle stays on the spot you touch while a warp is active.
 
 - **Corner pin**: four corners. **Reset corners** puts them back.
 - **Mesh**: **Density** is Off (corner pin only) or 2x2, 3x3, 5x5, 9x9, 17x17
-  or 33x33 points. Changing the density starts from a flat grid. The picture
+  or 33x33 points. Changing the density keeps the shape: the new points are
+  placed on the current surface, so you can start coarse and refine; going to
+  a lower density keeps the overall shape, not the detail between the points
+  that remain. The picture
   follows a smooth surface through the points. **Reset mesh** flattens it.
 - **Slices**: a slice is a piece of the canvas placed somewhere on the output.
   It takes a rectangle of the canvas (**Source x · y · w · h**, in canvas

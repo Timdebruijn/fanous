@@ -235,6 +235,11 @@ extension StateStoreTests {
         #expect(outputs[0].blend.right.overlap == 240)
         #expect(outputs[0].warp.mesh?.cols == 3)
         #expect(outputs[0].intensity == 1, "clamped")
+        // the seam-check fields (8–11) are settable from the UI; beyond the last pattern clamps to it
+        _ = try store.execute("output.set", args: ["id": 1, "path": "/testPattern", "value": 11], role: .programmer).get()
+        #expect(ProjectDocument.outputs(from: store.project)[0].testPattern == TestPattern.white.rawValue)
+        _ = try store.execute("output.set", args: ["id": 1, "path": "/testPattern", "value": 99], role: .programmer).get()
+        #expect(ProjectDocument.outputs(from: store.project)[0].testPattern == TestPattern.white.rawValue, "clamped")
         #expect(store.execute("output.set", args: ["id": 1, "path": "/warp/mesh/cols", "value": 40], role: .programmer).failureCode == "invalidArgs")
         #expect(store.execute("output.set", args: ["id": 1, "path": "/slices", "value": []], role: .programmer).failureCode == "invalidArgs")
         #expect(store.execute("output.set", args: ["id": 1, "path": "/id", "value": 9], role: .programmer).failureCode == "invalidArgs")

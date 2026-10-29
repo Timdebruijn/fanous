@@ -188,6 +188,37 @@ test('outputs: with two slices on the same corners, a drag moves the selected sl
   await expect.poll(() => handleAt(page, '/slices/0/dest/0')).toEqual({ x: 0, y: 0 });
 });
 
+test('outputs: a change of mesh density keeps the shape; Reset mesh flattens it', async ({ page }) => {
+  await addUnassignedOutput(page);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  await page.getByRole('button', { name: /^Mesh/ }).click();
+  await page.getByLabel('Density').selectOption('3');
+  const rounded = async (path: string) => {
+    const p = await handleAt(page, path);
+    return { x: Math.round(p.x), y: Math.round(p.y) };
+  };
+  const flat = await rounded('/warp/mesh/points/4');
+
+  // drag the middle point of the 3 × 3 grid away from the centre
+  const handle = (await page.getByRole('button', { name: '/warp/mesh/points/4', exact: true }).boundingBox())!;
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 + 60, handle.y + handle.height / 2 + 30, { steps: 8 });
+  await page.mouse.up();
+  // wait for the drop position itself, not an echo of a step in between
+  const editor = (await page.getByRole('application', { name: /Mapping editor/ }).boundingBox())!;
+  const targetX = Math.round(((handle.x + handle.width / 2 + 60 - editor.x) / editor.width) * 1000);
+  await expect.poll(async () => Math.abs((await rounded('/warp/mesh/points/4')).x - targetX)).toBeLessThanOrEqual(1);
+  const bent = await rounded('/warp/mesh/points/4');
+
+  // 3 × 3 → 5 × 5: the old middle point is the new grid's middle (index 12) and stays where it was dragged
+  await page.getByLabel('Density').selectOption('5');
+  await expect.poll(() => rounded('/warp/mesh/points/12')).toEqual(bent);
+
+  await page.getByRole('button', { name: 'Reset mesh' }).click();
+  await expect.poll(() => rounded('/warp/mesh/points/12')).toEqual(flat);
+});
+
 test('outputs: Spread canvas gives each slice its strip of the canvas', async ({ page }) => {
   await addUnassignedOutput(page);
   await page.getByRole('button', { name: 'Warp & Slices' }).click();
@@ -208,6 +239,52 @@ test('outputs: remove an output, then Undo brings it back', async ({ page }) => 
   await expect(page.getByText('No outputs yet.')).toBeVisible();
   await page.getByRole('status').getByRole('button', { name: /Undo$/ }).click();
   await expect(page.getByRole('button', { name: /^Output 1\b/ })).toBeVisible();
+});
+
+/** Outputs › Warp & Slices with Remote on and the first corner of a new output selected; returns the remote panel. */
+async function remoteOnFirstCorner(page: Page) {
+  await addUnassignedOutput(page);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  await page.getByRole('button', { name: 'Remote', exact: true }).click();
+  const remote = page.getByRole('region', { name: 'Remote' });
+  await remote.getByRole('button', { name: /^Next point/ }).click();
+  await expect(remote.getByText('corner top-left')).toBeVisible();
+  return remote;
+}
+
+test('outputs: remote mode on a phone steps to the next corner and nudges it; one Undo takes the burst back', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const remote = await remoteOnFirstCorner(page);
+  await remote.getByRole('button', { name: /^Next point/ }).click();
+  await expect(remote.getByText('corner top-right')).toBeVisible();
+
+  // two quick taps: the first goes out at once, the second ~100 ms later as its own output.set, and the engine keeps
+  // them as one undo step
+  const y = page.getByLabel('Point y in pixels');
+  const down = remote.getByRole('button', { name: 'Down 1 px' });
+  await down.click();
+  await down.click();
+  await expect(y).toHaveValue('2');
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(y).toHaveValue('0');
+});
+
+test('outputs: remote mode, holding an arrow moves 0.25 px and a slow trackpad drag 1 px per 4 CSS px', async ({ page }) => {
+  const remote = await remoteOnFirstCorner(page);
+  const box = (await remote.getByRole('button', { name: 'Down 1 px' }).boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(600);
+  await page.mouse.up();
+  await expect(remote.getByText('x 0 · y 0.25 px')).toBeVisible();
+
+  // 4 CSS px per move is below 600 px/s however fast the moves come (an interval counts as 8 ms at least)
+  const pad = (await remote.getByText(/^Trackpad:/).boundingBox())!;
+  await page.mouse.move(pad.x + 10, pad.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 20; i++) await page.mouse.move(pad.x + 10 + 4 * i, pad.y);
+  await page.mouse.up();
+  await expect(remote.getByText('x 20 · y 0.25 px')).toBeVisible();
 });
 
 test('canvases: add a canvas, put a layer on it, remove it', async ({ page }) => {

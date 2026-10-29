@@ -341,7 +341,7 @@ public enum ShaderSource {
         return 0.0;
     }
 
-    // Test patterns (Master/Output fixtures, folder 0 files 101–107). Sizes follow the region's height, so a pattern
+    // Test patterns (Master/Output fixtures; 1–7 also as folder 0 files 101–107). Sizes follow the region's height, so a pattern
     // reads the same on a 720p monitor and a 4K projector; line width is ≥ 1 px per 540 px of height.
     static float3 test_pattern(uint pattern, uint index, float2 uv, float2 size) {
         float2 px = uv * size;
@@ -409,6 +409,11 @@ public enum ShaderSource {
             float2 k = floor(c / (h / 16.0));
             return float3(fmod(abs(k.x + k.y), 2.0) < 1.0 ? 1.0 : 0.0);
         }
+        // seam check (DESIGN §9.9): flat fields in output signal, like Blend check's 0.5 (0.25 → code 64, 0.75 → 191)
+        case 8: return float3(0.0);
+        case 9: return float3(0.25);
+        case 10: return float3(0.75);
+        case 11: return float3(1.0);
         default:
             return float3(0.0);
         }

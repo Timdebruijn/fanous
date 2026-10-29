@@ -146,5 +146,10 @@ final class XMLCollector: NSObject, XMLParserDelegate {
         #expect(sets["Layer (64ch)/50"]!.last! == (32, "Idle"))
         #expect(sets["Layer (64ch)/5"]!.last! == (160, "Loop fwd"))
         #expect(sets["Layer (64ch)/51"]!.last! == (170, "Off"))
+        // seam-check fields (DESIGN §9.9): White closes at 191, the reserved rest is its own Off set
+        for mode in ["Master (8ch)/4", "Output (8ch)/4"] {
+            let tail = sets[mode]!.suffix(5).map { "\($0.from) \($0.name)" }
+            #expect(tail == ["128 Grey 0 %", "144 Grey 25 %", "160 Grey 75 %", "176 White", "192 Off"], "\(mode)")
+        }
     }
 }
