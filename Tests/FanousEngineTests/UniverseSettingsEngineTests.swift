@@ -112,29 +112,10 @@ struct UniverseSettingsEngineTests {
 
     // MARK: receivers
 
-    /// One datagram to 127.0.0.1:`port`; with a `reply` time, whether an answer came back to the same socket within it.
-    @discardableResult
-    static func send(_ bytes: [UInt8], to port: UInt16, reply: Double = 0) -> Bool {
-        let fd = socket(AF_INET, SOCK_DGRAM, 0)
-        defer { close(fd) }
-        var address = sockaddr_in()
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = port.bigEndian
-        address.sin_addr.s_addr = UInt32(0x7F00_0001).bigEndian
-        _ = withUnsafePointer(to: &address) { p in
-            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sendto(fd, bytes, bytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
-        }
-        guard reply > 0 else { return false }
-        var wait = timeval(tv_sec: 0, tv_usec: Int32(reply * 1e6))
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &wait, socklen_t(MemoryLayout<timeval>.size))
-        var buffer = [UInt8](repeating: 0, count: 1500)
-        return recv(fd, &buffer, buffer.count, 0) > 0
-    }
-
     /// The Art-Net listener on `port` is ready some time after `start()`, later on a loaded Mac (B67): an answered
     /// ArtPoll says it is, without touching the DMX state the test looks at next.
     static func listening(_ port: UInt16) async -> Bool {
-        await waitUntil { send(ArtPoll().encoded(), to: port, reply: 0.1) }
+        await waitUntil { sendUDP([ArtPoll().encoded()], to: port, reply: 0.1).replied }
     }
 
     static func intensity(_ store: DMXStore, at now: Double = DMXStore.now) -> ResolvedParameterInfo? {
@@ -157,7 +138,7 @@ struct UniverseSettingsEngineTests {
         let receiver = ArtNetReceiver(store: store, logger: Self.logger, nodeName: "test", port: port)
         try receiver.start()
         #expect(await Self.listening(port))
-        Self.send(Self.artnet(255), to: port)
+        sendUDP(Self.artnet(255), to: port)
         #expect(try await Self.wait(store, for: 65535))
         return (store, receiver, port)
     }
@@ -182,7 +163,7 @@ struct UniverseSettingsEngineTests {
         defer { receiver.stop() }
         let later = lose(store)
         #expect(Self.intensity(store, at: later)?.raw == 0)
-        Self.send(Self.artnet(128), to: port)
+        sendUDP(Self.artnet(128), to: port)
         #expect(try await Self.wait(store, for: 0x8080))
     }
 
@@ -193,7 +174,7 @@ struct UniverseSettingsEngineTests {
         #expect(Self.intensity(store)?.source == "dmx")  // policy dmx while the console is received
         let later = lose(store)
         #expect(Self.intensity(store, at: later)?.raw == 1000 && Self.intensity(store, at: later)?.source == "ui")
-        Self.send(Self.artnet(255), to: port)
+        sendUDP(Self.artnet(255), to: port)
         #expect(try await Self.wait(store, for: 65535))
     }
 
@@ -295,7 +276,7 @@ struct UniverseSettingsEngineTests {
         }
         #expect(await Self.listening(artPort))  // the sACN socket is bound in start()
         let cid: [UInt8] = (1...16).map { UInt8($0) }
-        Self.send(SACNData(cid: cid, sourceName: "Desk", sequence: 1, universe: 1, slots: [UInt8](repeating: 64, count: 512)).encoded(), to: sacnPort)
+        sendUDP(SACNData(cid: cid, sourceName: "Desk", sequence: 1, universe: 1, slots: [UInt8](repeating: 64, count: 512)).encoded(), to: sacnPort)
         try await Task.sleep(for: .milliseconds(200))
         #expect(Self.intensity(store)?.raw != 0x4040)  // A 0.0.0 does not listen to sACN yet
 
@@ -303,9 +284,9 @@ struct UniverseSettingsEngineTests {
         settings.protocols = .sacn
         store.setUniverseSettings([Self.a0: settings])
         sacn.update(groups: UniverseSettings.wire([Self.a0], over: .sacn, settings: [Self.a0: settings]))
-        Self.send(SACNData(cid: cid, sourceName: "Desk", sequence: 2, universe: 1, slots: [UInt8](repeating: 64, count: 512)).encoded(), to: sacnPort)
+        sendUDP(SACNData(cid: cid, sourceName: "Desk", sequence: 2, universe: 1, slots: [UInt8](repeating: 64, count: 512)).encoded(), to: sacnPort)
         #expect(try await Self.wait(store, for: 0x4040))
-        Self.send(Self.artnet(255), to: artPort)  // Art-Net no longer reaches A 0.0.0
+        sendUDP(Self.artnet(255), to: artPort)  // Art-Net no longer reaches A 0.0.0
         try await Task.sleep(for: .milliseconds(200))
         #expect(Self.intensity(store)?.raw == 0x4040)
         #expect(store.queue.sync { store.universes } == [UniverseID(.artnet, 1)])  // ArtPollReply: Master and Output only
@@ -325,14 +306,14 @@ struct UniverseSettingsEngineTests {
         var settings = UniverseSettings(for: Self.a0)
         settings.interface = "en9"
         store.setUniverseSettings([Self.a0: settings])
-        Self.send(Self.artnet(255), to: port)
+        sendUDP(Self.artnet(255), to: port)
         try await Task.sleep(for: .milliseconds(200))
         #expect(Self.intensity(store)?.raw != 65535)  // loopback is not en9
         #expect(store.missingInterfaces().isEmpty)
 
         settings.interface = "127.0.0.1"  // by address: lo0
         store.setUniverseSettings([Self.a0: settings])
-        Self.send(Self.artnet(255), to: port)
+        sendUDP(Self.artnet(255), to: port)
         #expect(try await Self.wait(store, for: 65535))
 
         settings.interface = "en5"
