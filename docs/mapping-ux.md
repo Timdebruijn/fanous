@@ -372,6 +372,11 @@ offers.
 4. **M1 first.** The design is DESIGN §9.9. RGB gamma and per-output colour
    touch the output shader a little; everything else in M1 is model, commands
    and UI.
+5. **M2 (2026-10-29).** The design is DESIGN §9.10:
+   - A console preset change morphs over Output channel 7 (Mapping fade).
+   - The edit overlay is on while Warp & Slices is open, with a Show on
+     output switch.
+   - Masks v2 includes freehand drawing.
 
 ## 7. Sources (main pages)
 
