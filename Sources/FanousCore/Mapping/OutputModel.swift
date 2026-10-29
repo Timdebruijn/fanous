@@ -8,7 +8,7 @@ import Foundation
 // and mask points are normalized to the output region (0,0 = top-left, 1,1 = bottom-right); overlaps and
 // feathers are in output pixels. Everything here is plain data; the engine compiles it into textures.
 
-public struct MapPoint: Codable, Equatable, Sendable {
+public struct MapPoint: Codable, Hashable, Sendable {
     public var x: Double
     public var y: Double
     public init(_ x: Double, _ y: Double) {
@@ -46,7 +46,7 @@ public struct PixelRect: Codable, Equatable, Sendable {
     }
 }
 
-public struct BlendEdge: Codable, Equatable, Sendable {
+public struct BlendEdge: Codable, Hashable, Sendable {
     /// Overlap width in output pixels; 0 = no blend on this edge.
     public var overlap: Double = 0
     /// S-curve power (DESIGN.md §9.2).
@@ -63,7 +63,7 @@ public struct BlendEdge: Codable, Equatable, Sendable {
     }
 }
 
-public struct BlendSettings: Codable, Equatable, Sendable {
+public struct BlendSettings: Codable, Hashable, Sendable {
     public var left = BlendEdge()
     public var right = BlendEdge()
     public var top = BlendEdge()
@@ -76,7 +76,7 @@ public struct BlendSettings: Codable, Equatable, Sendable {
     public var isIdentity: Bool { left.overlap <= 0 && right.overlap <= 0 && top.overlap <= 0 && bottom.overlap <= 0 && lift <= 0 }
 }
 
-public struct MeshWarp: Codable, Equatable, Sendable {
+public struct MeshWarp: Codable, Hashable, Sendable {
     public var cols: Int
     public var rows: Int
     /// `rows × cols` control points, row-major from the top-left, in normalized output coordinates.
@@ -97,7 +97,7 @@ public struct MeshWarp: Codable, Equatable, Sendable {
     public var isIdentity: Bool { self == .identity(cols: cols, rows: rows) }
 }
 
-public struct WarpSettings: Codable, Equatable, Sendable {
+public struct WarpSettings: Codable, Hashable, Sendable {
     /// Four corners: top-left, top-right, bottom-right, bottom-left.
     public var cornerPin: [MapPoint] = [MapPoint(0, 0), MapPoint(1, 0), MapPoint(1, 1), MapPoint(0, 1)]
     /// Optional mesh on top of the corner pin (2×2 … 33×33).
@@ -106,7 +106,7 @@ public struct WarpSettings: Codable, Equatable, Sendable {
     public var isIdentity: Bool { cornerPin == WarpSettings().cornerPin && (mesh?.isIdentity ?? true) }
 }
 
-public struct MaskSettings: Codable, Equatable, Sendable {
+public struct MaskSettings: Codable, Hashable, Sendable {
     /// Polygon in normalized output coordinates (≥ 3 points); the inside is visible.
     public var path: [MapPoint]
     /// Soft edge width in output pixels.
