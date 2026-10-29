@@ -202,9 +202,7 @@ public final class Engine: @unchecked Sendable {
         let patch = ProjectDocument.effectivePatch(from: loadedProject ?? .null) ?? Patch.standard(layers: layerCount, outputs: 0)
         let policy = options.scene?.policy ?? loadedProject?["policy"]?.string.flatMap(SourcePolicy.init(rawValue:)) ?? .dmx
         let dmx = DMXStore(patch: patch, logger: logger)
-        if policy != .dmx {
-            for entry in patch.entries { dmx.setPolicy(policy, for: entry.fixture) }
-        }
+        if policy != .dmx { dmx.setPolicy(policy) }
         let universeSettings = checkedUniverseSettings(from: loadedProject ?? .null)
         lastUniverseSettings = universeSettings
         dmx.setUniverseSettings(universeSettings)
@@ -1303,13 +1301,11 @@ public final class Engine: @unchecked Sendable {
         oscFacts(from: document)
         // patch and per-universe settings (B28): applied on the DMX queue; sACN groups follow both
         let universeSettings = checkedUniverseSettings(from: document)
-        var patched = false
         if let dmx {
             var changed = false
             if let patch = ProjectDocument.effectivePatch(from: document), patch != dmx.currentPatch {
                 dmx.setPatch(patch)
                 changed = true
-                patched = true
             }
             if universeSettings != lastUniverseSettings {
                 lastUniverseSettings = universeSettings
@@ -1318,10 +1314,10 @@ public final class Engine: @unchecked Sendable {
             }
             if changed { sacn?.update(groups: UniverseSettings.wire(dmx.currentPatch.universes, over: .sacn, settings: universeSettings)) }
         }
-        // the source policy applies to every patched fixture, also to the resolvers a new patch created
-        if let dmx, let raw = document["policy"]?.string, let policy = SourcePolicy(rawValue: raw), policy != lastPolicy || patched {
+        // the source policy applies to every patched fixture; the store gives it to the fixtures a later patch adds
+        if let dmx, let raw = document["policy"]?.string, let policy = SourcePolicy(rawValue: raw), policy != lastPolicy {
             lastPolicy = policy
-            for entry in dmx.currentPatch.entries { dmx.setPolicy(policy, for: entry.fixture) }
+            dmx.setPolicy(policy)
         }
         // library root (project.set, undo, redo): switched at once on the library queue (B51)
         if let raw = document["library"]?["root"]?.string {
