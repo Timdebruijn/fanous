@@ -204,6 +204,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: test patterns ignored the output's Intensity %, the Output and Master Intensity and both Blackouts, so a console's
   Grand Master or DBO left a full-field pattern (White is 100 %) on the projectors. Patterns now follow the same Dimmer and
   Blackout as the picture, Raw included; bring the Dimmer up to focus. Freeze holds the picture, not the pattern.
+- Removed: the hand-written SHA-1 in Core; the WebSocket accept key is CryptoKit's SHA-1 in the engine, next to the
+  upgrade (repo audit 2026-10-29).
 - Removed: dead web code from the repo audit 2026-10-29: `lib/health.ts` (`parseHealth`, `formatUptime`) with its test
   and `screens/Placeholder.svelte`, none of them imported; `/healthz` itself is unchanged.
 - Changed: MIDI control and MTC input share one CoreMIDI source listener (client on the main thread, hot-plug,
