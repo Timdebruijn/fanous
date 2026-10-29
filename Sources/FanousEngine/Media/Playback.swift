@@ -11,18 +11,33 @@ import Metal
 import Synchronization
 import UniformTypeIdentifiers
 
-/// Live inputs (Syphon in v1; NDI/DeckLink plugins later) hand the compositor
-/// their newest texture; the compositor samples it directly (DESIGN.md §4.1).
-public protocol LiveTextureSource: AnyObject, Sendable {
-    var latestTexture: MTLTexture? { get }
-    /// True when row 0 of `latestTexture` is the bottom of the picture (OpenGL order, as Syphon surfaces are);
-    /// the compositor then samples it upside down so the layer is upright. Default false (Metal order, top first).
-    var bottomUp: Bool { get }
-    func stop()
+/// A live input's newest frame: its plane(s) and how the layer shader reads them (DESIGN.md §8.2.1).
+/// Class references and two small values: returning one allocates nothing.
+public struct LiveFrame {
+    public var texture0: MTLTexture
+    /// The second plane (`.planarYCbCr`: CbCr as `rg8Unorm` beside a Y `r8Unorm`), nil for one-texture kinds.
+    public var texture1: MTLTexture?
+    /// `.rgba` (Syphon, generators, BGRA), `.v216` (8-bit `2vuy` as `rgba8Unorm` at half width) or `.planarYCbCr`.
+    public var kind: SourcePixelKind
+    /// Row 0 is the bottom of the picture (OpenGL order, as Syphon surfaces are): the compositor samples it upside
+    /// down so the layer is upright.
+    public var bottomUp: Bool
+
+    public init(texture0: MTLTexture, texture1: MTLTexture? = nil, kind: SourcePixelKind = .rgba, bottomUp: Bool = false) {
+        self.texture0 = texture0
+        self.texture1 = texture1
+        self.kind = kind
+        self.bottomUp = bottomUp
+    }
 }
 
-extension LiveTextureSource {
-    public var bottomUp: Bool { false }
+/// Live inputs (Syphon, generators; cameras and screens next, NDI/DeckLink plugins later) hand the compositor
+/// their newest frame; the compositor samples it directly (DESIGN.md §4.1).
+public protocol LiveTextureSource: AnyObject, Sendable {
+    /// The newest frame, nil before the first one. One read per tick: a source that swaps frames on another thread
+    /// returns the planes, kind and orientation of one frame together (under its own lock), never a mix of two.
+    var latestFrame: LiveFrame? { get }
+    func stop()
 }
 
 /// Stills: decoded once by ImageIO into a resident straight-alpha RGBA texture.
@@ -148,13 +163,12 @@ public final class LayerPlayback: @unchecked Sendable {
         height = 0
         frameRate = 1
         frameCount = 1
-        liveFrame.kind = .rgba
     }
 
     /// True once something can be drawn: a still, a live texture, or a decoded ring frame.
     var hasFrame: Bool {
         if still != nil { return true }
-        if let live { return live.latestTexture != nil }
+        if let live { return live.latestFrame != nil }
         return !(ring?.isEmpty ?? true)
     }
 
@@ -162,9 +176,12 @@ public final class LayerPlayback: @unchecked Sendable {
     func frame(at index: Int, direction: Int) -> DecodedFrame? {
         if let still { return still }
         if let live {
-            liveFrame.texture0 = live.latestTexture
-            liveFrame.bottomUp = live.bottomUp
-            return liveFrame.texture0 == nil ? nil : liveFrame
+            let latest = live.latestFrame  // once: the fields below are one frame's
+            liveFrame.texture0 = latest?.texture0
+            liveFrame.texture1 = latest?.texture1
+            liveFrame.kind = latest?.kind ?? .rgba
+            liveFrame.bottomUp = latest?.bottomUp ?? false
+            return latest == nil ? nil : liveFrame
         }
         return select(index: index, direction: direction)
     }
@@ -465,7 +482,7 @@ public final class MediaLoader: @unchecked Sendable {
             opened.wrappingAdd(1, ordering: .relaxed)
             status.kind = "live"
             status.name = "Generator: \(Generators.names[key.file] ?? "\(key.file)")"
-            if let texture = generator.latestTexture {
+            if let texture = generator.latestFrame?.texture0 {
                 status.width = texture.width
                 status.height = texture.height
             }

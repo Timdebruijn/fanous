@@ -311,6 +311,15 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   are cached by their settings and size, so a slider drag on one output no longer rebuilds every other output's blend map
   each time, and the output previews keep theirs too. On a 2×2 wall of 1920×1080 outputs, an overlap edit compiles in
   13 ms instead of 51. The picture is unchanged.
+- Design: cameras, capture cards and screens as folder 0 files 1–32 (DESIGN §8.2.1, B73): capture cards first-class
+  (UVC and driver-backed in-tree, SDK-only cards in-tree or as plugins after a licence check), AVFoundation
+  `2vuy`/`yuvs`/`420v`/`BGRA` and ScreenCaptureKit `BGRA` as `LiveTextureSource`s, one catalog with Syphon, camera and
+  screen permissions with a readiness item (R18).
+- Live inputs hand the compositor one `LiveFrame` (B73 step 1a, DESIGN §8.2.1): up to two planes, a pixel kind and the
+  row order, read once per tick so the planes of two different frames are never mixed. An 8-bit packed 4:2:2 frame
+  (`2vuy`, a half-width `rgba8Unorm` texture) and an 8-bit bi-planar one (`420v`, `r8Unorm` + `rg8Unorm`) read through
+  the existing video-range shader paths, the packed one at its full width. Groundwork for cameras and capture cards;
+  Syphon and the generators are unchanged.
 - Changed: the Syphon numbering (folder 0, 150–169) is one `LiveCatalog` that the coming capture inputs share (B73 step
   1b, DESIGN §8.2.1): a kind per range (capture devices 1–20 in `capture`, displays 21–28 in `screens`, windows 29–32 in
   `windows`), and the undo/redo checks of `syphon` cover those keys too. Syphon behaves as before; nothing is captured yet.

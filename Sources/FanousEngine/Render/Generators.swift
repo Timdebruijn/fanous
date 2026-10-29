@@ -76,7 +76,7 @@ public final class GeneratorSource: LiveTextureSource, @unchecked Sendable {
     /// The label is an `NSString`: a small (≤15-byte) Swift `String` is bridged, and allocates, on every assignment.
     private let pass = MTLRenderPassDescriptor()
     private let label: NSString
-    public var latestTexture: MTLTexture? { texture }
+    public var latestFrame: LiveFrame? { LiveFrame(texture0: texture) }
 
     init?(context: MetalContext, file: Int, width: Int, height: Int) {
         guard Generators.names[file] != nil, let texture = Self.makeTexture(context, file: file, width: width, height: height) else { return nil }

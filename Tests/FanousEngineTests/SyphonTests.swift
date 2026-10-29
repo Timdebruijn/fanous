@@ -81,11 +81,11 @@ import Testing
             output.publish(texture: source, commandBuffer: commandBuffer)
             commandBuffer.commit()
             commandBuffer.waitUntilCompleted()
-            return input.latestTexture != nil
+            return input.latestFrame != nil
         }
         #expect(arrived)
         #expect(output.hasClients)
-        let received = try #require(input.latestTexture)
+        let received = try #require(input.latestFrame?.texture0)
         #expect(received.width == Self.size && received.height == Self.size)
         #expect(input.frames > 0)
 
@@ -95,13 +95,13 @@ import Testing
         let reversed = (0..<Self.size).reversed().flatMap { y in pattern[(y * row)..<((y + 1) * row)] }
         #expect(bytes == reversed)
         #expect(bytes != pattern)
-        #expect(input.bottomUp)
+        #expect(input.latestFrame?.bottomUp == true && input.latestFrame?.kind == .rgba)
 
         // The directory learns about servers through distributed notifications, which need the main run loop.
         #expect(Self.wait(seconds: 2) { input.servers.contains { $0.serverName == name } })
 
         input.disconnect()
-        #expect(input.latestTexture == nil)
+        #expect(input.latestFrame == nil)
     }
 
     /// B109: one publish of an `rgba16Float` texture (the canvas format; `flipped`, so Syphon's draw, never its blit)
@@ -291,7 +291,7 @@ import Testing
         let uuid: String?
         let stopped = Atomic<Bool>(false)
         init(uuid: String?) { self.uuid = uuid }
-        var latestTexture: MTLTexture? { nil }
+        var latestFrame: LiveFrame? { nil }
         func stop() { stopped.store(true, ordering: .relaxed) }
     }
 
