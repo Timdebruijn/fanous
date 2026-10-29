@@ -254,13 +254,13 @@ export type Control = 'warp' | 'gamma' | 'curve' | 'floor' | 'colour' | 'rgb';
 export interface SeamHint {
   see: string;
   turn: string;
-  /** what the user taps on the mini-map to open `control`; null: nothing to open in Fanous yet */
-  target: 'seam' | 'projector' | null;
+  /** what the user taps on the mini-map to open `control` */
+  target: 'seam' | 'projector';
   control: Control;
 }
 
 const colourHints: SeamHint[] = [
-  { see: 'One projector darker, or tinted', turn: "That projector's colour gain. Not in Fanous yet: use the projector's own colour settings for now.", target: null, control: 'colour' },
+  { see: 'One projector darker, or tinted', turn: "That projector's colour gain, the channel that is off", target: 'projector', control: 'colour' },
   { see: 'A colour shift only inside a seam', turn: 'Unlink RGB on that seam and tune the channel that is off', target: 'seam', control: 'rgb' },
 ];
 

@@ -128,9 +128,22 @@ struct MappingMathTests {
         output.blend.right = BlendEdge(overlap: 240)
         output.warp.mesh = .identity(cols: 3, rows: 3)
         output.slices[0].mask = MaskSettings(path: [MapPoint(0, 0), MapPoint(1, 0), MapPoint(0.5, 1)], feather: 12)
+        output.color = OutputColor(gain: [0.9, 1, 1.05], black: 0.02)
         let data = try JSONEncoder().encode(output)
         let back = try JSONDecoder().decode(OutputConfig.self, from: data)
         #expect(back == output)
         #expect(OutputConfig(id: 1).slices.count == 1 && OutputConfig(id: 1).name == "Output 1")
+    }
+
+    /// Projects saved before per-output colour (M1.7) load unchanged, with gain 1 and black 0.
+    @Test func anOutputWithoutColourDecodesWithTheDefault() throws {
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(OutputConfig(id: 3))) as! [String: Any]
+        json["color"] = nil
+        let old = try JSONDecoder().decode(OutputConfig.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(old == OutputConfig(id: 3))
+        #expect(old.color.gain == [1, 1, 1] && old.color.black == 0)
+        // the other fields stay required, as before
+        json["slices"] = nil
+        #expect(throws: DecodingError.self) { try JSONDecoder().decode(OutputConfig.self, from: JSONSerialization.data(withJSONObject: json)) }
     }
 }
