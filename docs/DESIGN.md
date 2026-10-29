@@ -940,7 +940,8 @@ project, back by identity (`AVCaptureDevice.uniqueID`, `CGDisplay` UUID)
 after a restart, freed by `capture.forget {file?}` (programmer, undoable,
 refused for a running device and under show lock), `gone` until seen again.
 One catalog class serves all three ranges and Syphon: `SyphonCatalog`
-becomes `LiveCatalog(range:key:)` with the same state machine, project
+becomes `LiveCatalog(_ kind:)`, whose `Kind` carries the range, the project key
+and the identity fields, with the same state machine, project
 adoption and `correct` write-back; `/syphon` keeps its name and shape,
 `/capture`, `/screens` and `/windows` follow it. `StateStore`'s whole-entry
 folding (§11.5, B104) applies to every one of the four keys, and so do the
