@@ -45,16 +45,23 @@ the list. The library is watched, so a rename in Finder shows up after a moment;
 A layer that points at a number that does not exist, or at a file that is not
 playable, shows the red message "no file N in folder M" on the Layers screen.
 
-The first row of the folder list, **0 · Built-in and Syphon**, is folder 0: the
-content the engine draws itself and the Syphon servers of other apps on this
-Mac, each with the file number a console dials (see
-[show-control.md](show-control.md#built-in-content-folder-0)). Select an item
-and use **Play on layer** to put it on a layer from here.
+The first row of the folder list, **0 · Built-in and live inputs**, is folder
+0: the content the engine draws itself, the cameras and capture cards on this
+Mac and the Syphon servers of other apps, each with the file number a console
+dials (see [show-control.md](show-control.md#built-in-content-folder-0)).
+Select an item and use **Play on layer** to put it on a layer from here.
 
-A Syphon server keeps its number, also across engine restarts, until you
-forget it: select a server that is not running and press **Forget**, or press
-**Forget all not running** above the list. Its number is then free for the
-next new server; **Undo** brings it back.
+A camera, capture card or Syphon server keeps its number, also across engine
+restarts, until you forget it: select one that is not running and press
+**Forget**, or press **Forget all not running** above its list. Its number is
+then free for the next new one; **Undo** brings it back. A green dot means it
+runs; "in use by another app" means another app has the camera open (an
+iPhone in FaceTime).
+
+**Cameras and capture cards (1–20)** need the camera permission. Until it is
+granted the list says so: press **Authorize** under Capture permissions on the
+System screen (not in show mode). If you denied it once, allow Fanous Engine
+under System Settings › Privacy & Security › Camera.
 
 ## Create a folder
 

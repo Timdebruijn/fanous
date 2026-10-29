@@ -171,6 +171,24 @@ export interface SyphonServerDoc {
   gone?: true;
 }
 
+/** A camera or capture card (folder 0 files 1–20) or a display (21–28), numbered like a Syphon server (B73, DESIGN §8.2.1). */
+export interface CaptureSourceDoc {
+  file: number;
+  name: string;
+  running: boolean;
+  /** from the project and not seen since the engine started */
+  gone?: true;
+  /** opened by another app (Continuity Camera in FaceTime); devices only */
+  inUse?: true;
+}
+
+/** `live.capture` (B73 step 2): absent from engines before it. */
+export interface CaptureLiveDoc {
+  devices: CaptureSourceDoc[];
+  screens: CaptureSourceDoc[];
+  permissions: { camera: 'granted' | 'denied' | 'notDetermined'; screen: 'granted' | 'denied' };
+}
+
 export interface IngestJobDoc {
   id: string;
   source: string;
@@ -246,6 +264,8 @@ export interface LiveDoc {
   versions?: { lastAutomatic: number | null; serial: number } | null;
   /** Other apps' Syphon servers, numbered in folder 0 (B61). Absent from engines before B61. */
   syphon?: { servers: SyphonServerDoc[]; /** running servers past the 20 numbers, "App/Server" (B69) */ unnumbered?: string[] };
+  /** Cameras, capture cards and displays in folder 0 with the permissions (B73). Absent from engines before B73 step 2. */
+  capture?: CaptureLiveDoc;
   /** Multi-server sync (B60); null without rendering, absent from engines before B60. */
   sync?: SyncLiveDoc | null;
 }

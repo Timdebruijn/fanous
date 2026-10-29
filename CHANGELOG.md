@@ -323,6 +323,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Changed: the Syphon numbering (folder 0, 150–169) is one `LiveCatalog` that the coming capture inputs share (B73 step
   1b, DESIGN §8.2.1): a kind per range (capture devices 1–20 in `capture`, displays 21–28 in `screens`, windows 29–32 in
   `windows`), and the undo/redo checks of `syphon` cover those keys too. Syphon behaves as before; nothing is captured yet.
+- The Media screen lists cameras and capture cards as folder 0 files 1–20 (B73 step 2c, DESIGN §8.2.1): a group
+  "Cameras and capture cards (1–20)" before the Syphon servers with the same green dot, "not running", "not seen since
+  the engine started" and "in use by another app", **Forget** and **Forget all not running**, a line when the camera
+  permission is not granted, and "Displays (21–28)" once displays are numbered. The layer panel's folder 0 picker lists
+  them too ("Built-in content and live inputs"), and folder 0 is now "0 · Built-in and live inputs". The System screen
+  shows the camera and screen permissions with **Authorize**. An engine without capture shows none of it.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

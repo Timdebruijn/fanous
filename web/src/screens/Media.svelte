@@ -18,7 +18,7 @@
     type LibraryItem,
     type LibrarySnapshot,
   } from '../lib/media';
-  import { folderZeroItems } from '../lib/layers';
+  import { folderZeroItems, zeroCaption, type FolderZeroItem } from '../lib/layers';
 
   interface Upload {
     name: string;
@@ -41,14 +41,30 @@
   let newNumber = $state(1);
   let newName = $state('');
 
-  /** Folder 0 (generators and Syphon servers, B61) is not a library folder; this stands for it in `selectedFolder`. */
+  /** Folder 0 (generators, capture devices and Syphon servers, B61, B73) is not a library folder; this stands for it in `selectedFolder`. */
   const ZERO = '#0';
   const isZero = $derived(selectedFolder === ZERO);
-  const zeroItems = $derived(folderZeroItems(app.live.syphon?.servers));
+  /** absent from engines before B73 step 2: then no camera or display group */
+  const capture = $derived(app.live.capture);
+  const zeroItems = $derived(folderZeroItems(app.live.syphon?.servers, capture));
+  const zeroGroups = $derived(
+    ([
+      { kind: 'generator', title: 'Built-in content', shown: true },
+      { kind: 'capture', title: 'Cameras and capture cards (1–20)', shown: capture !== undefined },
+      { kind: 'screen', title: 'Displays (21–28)', shown: (capture?.screens.length ?? 0) > 0 },
+      { kind: 'syphon', title: 'Syphon servers (150–169)', shown: true },
+    ] as const).filter((g) => g.shown).map((g) => {
+      const list = zeroItems.filter((i) => i.kind === g.kind);
+      // live inputs not running: their numbers can be forgotten (B69, B73)
+      return { ...g, list, notRunning: list.filter((i) => !i.running).length };
+    }),
+  );
   let pickedZero = $state<number | null>(null);
   const pickedZeroItem = $derived(zeroItems.find((i) => i.file === pickedZero));
-  /** Syphon servers not running: their numbers can be forgotten (B69) */
-  const notRunning = $derived(zeroItems.filter((i) => i.syphon && !i.running).length);
+  function forget(kind: FolderZeroItem['kind'], file?: number) {
+    const args = file === undefined ? {} : { file };
+    return kind === 'syphon' ? cmd('syphon.forget', args) : cmd('capture.forget', args);
+  }
   const unnumbered = $derived(app.live.syphon?.unnumbered ?? []);
   const folders = $derived(library?.folders ?? []);
   const current = $derived(isZero ? undefined : (folders.find((f) => f.path === selectedFolder) ?? defaultFolder(folders)));
@@ -210,7 +226,7 @@
         <li>
           <button class="list-row" aria-pressed={isZero} onclick={() => (selectedFolder = ZERO)}>
             <span class="num mono">0</span>
-            <span class="ellipsis grow">Built-in and Syphon</span>
+            <span class="ellipsis grow">Built-in and live inputs</span>
             <span class="mono faint">{zeroItems.length}</span>
           </button>
         </li>
@@ -242,8 +258,8 @@
       {#if isZero}
       <div class="toolbar">
         <div>
-          <h1>0 · Built-in and Syphon</h1>
-          <div class="caption">Drawn by the engine, and the Syphon servers of other apps on this Mac. A console selects them as folder 0, file n.</div>
+          <h1>0 · Built-in and live inputs</h1>
+          <div class="caption">Drawn by the engine, the cameras, capture cards and displays of this Mac, and the Syphon servers of other apps. A console selects them as folder 0, file n.</div>
         </div>
       </div>
       {#if pickedZeroItem}
@@ -257,27 +273,32 @@
             <option value="">Play on layer ▾</option>
             {#each layerNumbers as n (n)}<option value={n}>Layer {n}</option>{/each}
           </select>
-          {#if pickedZeroItem.syphon && !pickedZeroItem.running}
-            <button class="btn" disabled={playLock !== undefined} title={playLock ?? 'Free this number: a console cue on it then selects the next new server (undo brings it back)'}
-              onclick={() => void cmd('syphon.forget', { file: pickedZeroItem.file })}>Forget</button>
+          {#if pickedZeroItem.kind !== 'generator' && !pickedZeroItem.running}
+            <button class="btn" disabled={playLock !== undefined} title={playLock ?? `Free this number: a console cue on it then selects the next new ${pickedZeroItem.kind === 'syphon' ? 'server' : 'device'} (undo brings it back)`}
+              onclick={() => void forget(pickedZeroItem.kind, pickedZeroItem.file)}>Forget</button>
           {/if}
         </div>
         <PolicyHint what="content put on a layer from here" />
         {#if playNote}<p class="caption" role="status">{playNote}</p>{/if}
       {/if}
-      {#each [{ title: 'Built-in content', syphon: false, list: zeroItems.filter((i) => !i.syphon) }, { title: 'Syphon servers (150–169)', syphon: true, list: zeroItems.filter((i) => i.syphon) }] as group (group.title)}
+      {#each zeroGroups as group (group.kind)}
         <div class="zero-head">
           <h2 class="zero-title">{group.title}</h2>
-          {#if group.syphon && notRunning > 1}
-            <button class="btn" disabled={playLock !== undefined} title={playLock ?? 'Free the numbers of every server that is not running (undo brings them back)'}
-              onclick={() => void cmd('syphon.forget', {})}>Forget all not running</button>
+          {#if (group.kind === 'syphon' || group.kind === 'capture') && group.notRunning > 1}
+            <button class="btn" disabled={playLock !== undefined} title={playLock ?? `Free the numbers of every ${group.kind === 'syphon' ? 'server' : 'device'} that is not running (undo brings them back)`}
+              onclick={() => void forget(group.kind)}>Forget all not running</button>
           {/if}
         </div>
-        {#if group.syphon && unnumbered.length > 0}
+        {#if group.kind === 'syphon' && unnumbered.length > 0}
           <p class="caption" role="status">Not numbered, all 20 numbers are taken: {unnumbered.join(', ')}. Forget a server that is not running to free one.</p>
         {/if}
+        {#if group.kind === 'capture' && capture && capture.permissions.camera !== 'granted'}
+          <p class="caption" role="status">{capture.permissions.camera === 'denied' ? 'Camera permission denied: allow Fanous Engine under Privacy & Security › Camera' : 'Camera permission not granted: authorize on the System screen'}</p>
+        {/if}
         {#if group.list.length === 0}
-          <p class="caption">No Syphon servers running. When another app on this Mac starts one, it appears here with the lowest free number from 150; it keeps that number, also across engine restarts, until you forget it here.</p>
+          <p class="caption">{group.kind === 'capture'
+            ? 'No cameras or capture cards found. One connected to this Mac appears here with the lowest free number from 1; it keeps that number, also across engine restarts, until you forget it here.'
+            : 'No Syphon servers running. When another app on this Mac starts one, it appears here with the lowest free number from 150; it keeps that number, also across engine restarts, until you forget it here.'}</p>
         {:else}
           <ul class="panel zero" aria-label={group.title}>
             {#each group.list as item (item.file)}
@@ -285,9 +306,9 @@
               <li>
                 <button class="list-row" class:dim={item.gone} aria-pressed={pickedZero === item.file} onclick={() => (pickedZero = pickedZero === item.file ? null : item.file)}>
                   <span class="num mono">{item.file}</span>
-                  {#if item.syphon}<span class="dot {item.running ? 'dot-green' : 'dot-off'}" aria-hidden="true"></span>{/if}
+                  {#if item.kind !== 'generator'}<span class="dot {item.running ? 'dot-green' : 'dot-off'}" aria-hidden="true"></span>{/if}
                   <span class="ellipsis grow" title={item.name}>{item.name}</span>
-                  {#if item.syphon && !item.running}<span class="caption">{item.gone ? 'not seen since the engine started' : 'not running'}</span>{/if}
+                  {#if zeroCaption(item)}<span class="caption">{zeroCaption(item)}</span>{/if}
                   {#each on as layer (layer)}<span class="badge badge-accent">{layer}</span>{/each}
                 </button>
               </li>
