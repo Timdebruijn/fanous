@@ -351,8 +351,9 @@ struct OutputPassTests {
     }
 
     /// The Master scales each layer's colour, not its opacity: the canvas is the Master × the canvas at 100 % (B108: green
-    /// over red read (63,128,0) at Master 50 %). Every blend mode (grey 0.3 over grey 0.4, nothing clipped) and a top layer
-    /// at intensity 50 % read half at Master 50 %; an opaque canvas stays opaque.
+    /// over red read (63,128,0) at Master 50 %). Every blend mode (grey 0.3 over grey 0.4, nothing clipped), an add that
+    /// clips (grey 0.4 over white: the clamp to the Master, not to 1) and a top layer at intensity 50 % read half at Master
+    /// 50 %; an opaque canvas stays opaque.
     @Test func masterDimsStackedLayersWithoutTransparency() throws {
         let context = try MetalContext()
         let red: (inout LayerParameters) -> Void = { $0.green = 0; $0.blue = 0 }
@@ -362,6 +363,7 @@ struct OutputPassTests {
             #expect(zip(rgba, [0, g, 0, 255]).allSatisfy { abs($0 - $1) <= 1 }, "green over red, Master \(master): \(rgba)")
         }
         var cases: [(String, [Stacked])] = BlendMode.allCases.map { mode in ("\(mode)", [(102, { _ in }), (77, { $0.blendMode = mode })]) }
+        cases.append(("add clipped", [(255, { _ in }), (102, { $0.blendMode = .add })]))
         cases.append(("green 50 % over red", [(255, red), (255, { green(&$0); $0.intensity = 0.5 })]))
         for (name, layers) in cases {
             let full = try Self.canvas(layers, master: 1, context: context)
