@@ -191,6 +191,7 @@ enum Benchmark {
             print("  ingest: transcoding \(source.lastPathComponent) to HAP Q during the window")
         }
         let start = CACurrentMediaTime()
+        let waitsAtStart = service.counters.completionWaits
         // the warm-up ticked, so the driver's thread is known; counted from here on, not process-wide (B97)
         let counted = MallocCounter.available ? pthread_t(bitPattern: service.compositor.tickThread.load(ordering: .relaxed)) : nil
         if let counted { MallocCounter.start(thread: counted) }
@@ -200,8 +201,10 @@ enum Benchmark {
         let summary = metrics.summary(seconds: now - start, now: now)
         let counters = service.counters
         let audio = service.mixer?.statistics ?? AudioStatistics()
-        if counters.gpuErrors > 0 || counters.encoderFailures > 0 || counters.outputFailures > 0 || counters.completed < counters.ticks - 2 {
-            print("  diagnostics: ticks \(counters.ticks), completed \(counters.completed), gpu errors \(counters.gpuErrors) \(counters.lastError), encoder failures \(counters.encoderFailures)/\(counters.outputFailures)")
+        // ticks book the buffers that finished by then (B105): up to 8 can still be unbooked; waits within the window
+        let waits = counters.completionWaits - waitsAtStart
+        if counters.gpuErrors > 0 || counters.encoderFailures > 0 || counters.outputFailures > 0 || counters.completed < counters.ticks - 10 || waits > 0 {
+            print("  diagnostics: ticks \(counters.ticks), completed \(counters.completed), gpu errors \(counters.gpuErrors) \(counters.lastError), encoder failures \(counters.encoderFailures)/\(counters.outputFailures), completion waits \(waits)")
         }
         if let ingestQueue {
             let job = ingestQueue.jobs.first
