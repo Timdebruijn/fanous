@@ -889,9 +889,11 @@ struct OutputPassTests {
         // a parallel run and other builds share the cores, and wall time on a loaded Mac measures them too (B67)
         var ms = Double.infinity
         _ = await waitUntil(every: .zero) {
+            // a fresh compiler each try: one compiler's cache would hand back the warm-up's textures (§9.10 item 0)
+            guard let fresh = try? OutputCompiler(device: context.device) else { return true }
             let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
             do {
-                _ = try compiler.compile(o, index: 1, drawable: (1920, 1080))
+                _ = try fresh.compile(o, index: 1, drawable: (1920, 1080))
             } catch {
                 Issue.record(error)
                 return true  // a failed compile is no timing
