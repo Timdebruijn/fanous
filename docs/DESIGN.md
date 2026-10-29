@@ -399,7 +399,11 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
 - Uniforms live in a per-frame ring of `MTLBuffer`s (3 × max layers); argument
   tables are filled by offset, never by creating objects.
 - Acceptance test (Phase 2): malloc count on the compositor thread over 1 000
-  steady-state frames is **0**, measured with `malloc_zone_statistics`.
+  steady-state frames is **0** (`scripts/check-mallocs.sh`).
+  Since B89 the tests count the ticking thread's allocations exactly with a
+  `malloc_logger` hook (`MallocCounter`), in an optimised build; a debug build
+  allocates for unspecialised generics, and the process-wide figure is printed
+  for information only.
 - Unified memory budget: engine warns at 60 % of physical memory, refuses to
   activate a layer that would exceed 75 %. Read-ahead depth is the first knob
   reduced when a 16 GB machine is detected.
