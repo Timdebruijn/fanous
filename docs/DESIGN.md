@@ -354,8 +354,10 @@ triple-buffered `rgba16Float` canvas texture (ADR-0007):
      a crossfade never dips to the background), with the other modes both
      quads are weighted (1 − t) and t. A dissolve therefore costs exactly one
      extra layer (decode and draw) for its duration.
-3. Done. The canvas texture index is marked complete in the command buffer's
-   completion handler (CPU side), making it visible to output threads.
+3. Done. The canvas texture index is published right after the command
+   buffer is committed, making it visible to output threads (their own work
+   on the same queue runs after it). GPU time and errors are booked on a
+   later tick from the ring of committed buffers (§4.6, B105).
 
 A canvas with no visible layers still clears (cheap) so outputs always have a
 valid frame.

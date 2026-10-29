@@ -168,8 +168,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - The §4.6 zero-malloc test counts only the compositor thread's allocations (a `malloc_logger` hook), not the process (B89).
 - `fanous-bench` reports the compositor thread's allocations for each step (`compositorMallocs`, also per tick). It
   counts them with the tests' `malloc_logger` counter, not the process-wide `blocks_in_use` delta. The minimum with GPU
-  work is 7 per tick (headless, one canvas, no output pass, no previews or thumbnails): 5 in Metal and 2 for our
-  completion closure. The output pass, extra canvases, generators and previews add more (DESIGN §4.6, B97, B105).
+  work was 7 per tick (headless, one canvas, no output pass, no previews or thumbnails): 4 in Metal, 1 for
+  `addCompletedHandler` and 2 for our completion closure; 4 since B105. The output pass, extra canvases, generators and previews add more (DESIGN §4.6, B97, B105).
 - Fixed: removing a canvas ended the preview of a viewer that watched it only as a fallback (an output or layer at the
   encoder limit); it now keeps its own target when an encoder or another fallback is free, and an encoder the removal
   frees goes to a waiting viewer (B88).
