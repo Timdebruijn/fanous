@@ -738,9 +738,10 @@ test('preview: an output region on the canvas stream at the encoder limit is let
   // the canvas fallback is an H.264 one: a browser that fell back to JPEG (no description within 5 s, B66) has its own
   // JPEG stream in the output's shape
   test.skip(!!process.env.CI && /^JPEG/.test(await caption.innerText()), 'H.264 not ready within 5 s on this runner (B66, B98); JPEG fallback');
-  await expect(caption).toContainText(/^H\.264/, { timeout: previewTimeout });
-  await expect(caption).not.toContainText('canvas fallback');  // a 16:9 output on the 16:9 canvas: the same shape
-  expect(await fit()).toBe('fill');
+  // a 16:9 output on the 16:9 canvas: the same shape, still the canvas stream and said so (B96); `contain` draws it as
+  // `fill` would in a box of its shape
+  await expect(caption).toContainText(/^H\.264 · \d+×\d+ · \d+ fps · canvas fallback/, { timeout: previewTimeout });
+  expect(await fit()).toBe('contain');
 
   // a 4:3 region: the 16:9 canvas stream is shown whole, letterboxed, not stretched
   const region = page.getByLabel('Region w', { exact: true });
@@ -754,6 +755,23 @@ test('preview: an output region on the canvas stream at the encoder limit is let
   await release(0);
   await expect(caption).not.toContainText('canvas fallback', { timeout: previewTimeout });
   expect(await fit()).toBe('fill');
+});
+
+test('preview: a layer on its canvas stream at the encoder limit says so, in the same shape (B96)', async ({ page, engine }) => {
+  const release = await holdEncoders(page, engine);
+  const figure = page.getByRole('figure');
+  const caption = figure.locator('figcaption');
+  await page.getByRole('group', { name: 'Preview shows' }).getByRole('button', { name: 'This layer' }).click();
+  await expectPreviewStreaming(figure, 'Layer \\d+');  // at the limit: the stream of its canvas nearest its size
+  test.skip(!!process.env.CI && /^JPEG/.test(await caption.innerText()), 'H.264 not ready within 5 s on this runner (B66, B98); JPEG fallback');
+  // a layer has its canvas's 16:9 shape: before B96 the whole canvas showed as if it were the layer, unflagged
+  await expect(caption).toContainText(/^H\.264 · \d+×\d+ · \d+ fps · canvas fallback · Layer \d+/, { timeout: previewTimeout });
+
+  // encoders free up (all three: the page's fallback keeps the one it is on encoding): the engine moves the viewer to
+  // the layer's own stream, whose description clears the flag
+  for (const i of [0, 1, 2]) await release(i);
+  await expect(caption).not.toContainText('canvas fallback', { timeout: previewTimeout });
+  await expect(caption).toContainText(/^H\.264 · .* · Layer \d+/);
 });
 
 test('preview: a refused viewer the engine moves to a stream that never delivers falls back to JPEG after 5 s (B95)', async ({ page, engine }) => {

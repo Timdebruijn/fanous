@@ -250,6 +250,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   moved it to a new stream whose encoder was slow or failed. A refused preview now re-subscribes as JPEG after 5 s without
   a frame and stays on JPEG until it subscribes again; a healthy H.264 preview is never demoted after its decoder is
   configured (B95).
+- Fixed: a layer or output preview on its canvas's stream at the H.264 encoder limit, in the same aspect as its box, showed
+  the whole canvas as if it were the target. The engine now says `fallback: true` in the preview `sub` reply and `stream`
+  descriptions, and the caption says "canvas fallback" whatever the shape (B96).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
