@@ -240,7 +240,7 @@
         <section class="ctl" aria-label="Projector">
           <h3>{projector.name} · r{at.row} c{at.col}</h3>
           {@render slider({ label: 'Black floor', key: `${projector.id}-lift`, value: projector.blend.lift * 100, min: 0, max: 20, step: 0.1, digits: 1, unit: ' %', set: (v) => throttle.send(`lift:${projector.id}`, 'lift', (v / 100) * SCALE), focus: wallUI.focus === 'floor' })}
-          <p class="caption">Lifts this projector's black outside its overlaps, to match the double black inside them. On Grey 0 %, raise it on the projectors next to a lighter seam, one by one, until even.</p>
+          <p class="caption">Lifts this projector's black to match the overlaps, where the blacks of two or four projectors add up. On Grey 0 %, raise it on the projectors next to a lighter seam, one by one, until even.</p>
           <OutputColour output={projector} focus={wallUI.focus === 'colour'} />
           <p class="caption">Colour gain: on Grey 25 %, 75 % and White, turn down the channel that is too strong on a brighter or tinted projector (or up on a darker one) until it matches its neighbours. Black offset raises this projector's black everywhere, overlaps included, for a projector whose black is darker than the others'.</p>
           {#each wall.manual.filter((m) => m.output === projector.id) as m (m.field)}

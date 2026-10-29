@@ -234,8 +234,10 @@ white's light, Grey 75 % about 53 %. The black lift and the black offset
 (below) add the light they give on black, computed for a gamma-2.2 projector:
 set them on Grey 0 %, where they read exactly their value, and a brighter
 picture gets only that bit of light more. A lift of 8 % shows as 8 % on Grey
-0 % but raises Grey 25 % only from 64 to 66 of 255 (versions before M1.7 added
-the 8 % as signal, 64 to 84, so a lifted area looked brighter at mid greys).
+0 % (outside the overlaps of an output blended on one axis; on both axes see
+[Blend edges](#blend-edges)) but raises Grey 25 % only from 64 to 66 of 255
+(versions before M1.7 added the 8 % as signal, 64 to 84, so a lifted area
+looked brighter at mid greys).
 
 The first seven patterns, a moving test card and a few more are also available
 as layer content in folder 0 (see
@@ -336,8 +338,8 @@ lines between them, each with its gamma (**RGB** when R, G and B are set apart).
   - Drag a slider or tap **−** and **+** for fine steps. A drag, or taps less
     than a second apart, are one step for **Undo**.
 - **Tap a projector** for its **black floor** (the output's Black lift):
-  it lifts the black outside the overlaps to match the double black inside
-  them. Below it are the projector's **Gain R, G, B** and **Black offset**
+  it lifts the black to match the overlaps, where the blacks of two (or, on a
+  wall with rows and columns, four) projectors add up. Below it are the projector's **Gain R, G, B** and **Black offset**
   (see [Colour](#colour)): the gain for a projector that is darker or tinted
   next to its neighbours, the black offset for one whose black is darker
   everywhere. **Open in Warp & Slices** takes you to that projector's warp.
