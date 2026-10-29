@@ -493,6 +493,34 @@ layer content in folder 0, files 150–169 (see
 Editing on this screen needs the programmer role and is refused while the show
 is locked.
 
+## Keystone from the console
+
+The **Keystone** fixture (16 channels, see
+[console-setup.md](console-setup.md)) moves an output's four corners from the
+console, on top of the alignment you made here: for moving scenery, or a quick
+fix from FOH without touching the hand alignment.
+
+- Patch one per output, next to its Output fixture: "Keystone 1" belongs to
+  Output 1. The Patch screen lists a Keystone row under every Output row; it is
+  not in the standard patch, so set its address when you want it.
+- Each corner has an X and a Y channel, 16-bit, from −50 % to +50 % of the
+  output's width or height; + moves right or down. The default, 32768 (50 %
+  on a fader), is no change, so a centred or unpatched Keystone leaves the
+  output as aligned.
+- The whole mapping moves: every slice and test pattern, with their masks. The
+  blend ramps and the black lift stay where they are on the projector, so the
+  overlap of a wall stays put while the picture moves.
+- Raw on the Output fixture (Blend channel 128 or more) shows the output
+  without blend, warp and keystone, for alignment.
+- The preview and the Warp & Slices handles show the mapping as you edited it,
+  without the keystone, so a handle stays where you drag it. The output row
+  and the Warp & Slices tab say **Keystone active** while it moves the output.
+- Corners that would fold the picture (one pulled onto or past the line
+  between two others) are refused: the output keeps the last keystone that
+  worked and shows **Keystone invalid** in yellow until the console sends
+  corners that work again.
+- OSC: `/fanous/keystone/{n}/topLeftX` and the other keys of the channel map.
+
 ## Not done yet
 
 - **Hot-plug** (unplug and replug) is only partly tested: through unit tests and

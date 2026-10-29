@@ -315,6 +315,13 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   (UVC and driver-backed in-tree, SDK-only cards in-tree or as plugins after a licence check), AVFoundation
   `2vuy`/`yuvs`/`420v`/`BGRA` and ScreenCaptureKit `BGRA` as `LiveTextureSource`s, one catalog with Syphon, camera and
   screen permissions with a readiness item (R18).
+- Added: the **Keystone** DMX mode (M2.3, DESIGN §6.4a, §9.10 item 2), a fourth fixture mode of 16 channels patched per
+  output next to its Output fixture: the four corners' X and Y, 16-bit, ±50 % of the output, centred is no change. It
+  moves the whole mapping, slices, masks and test patterns, on top of the hand alignment; the blend map stays put and Raw
+  bypasses it. Corners that would fold the picture are refused and the last working keystone stays. The output row and
+  Warp & Slices show "Keystone active" or, in yellow, "Keystone invalid"; the preview shows the mapping as edited. In the
+  channel map, GDTF (a fourth mode), OSC (`/fanous/keystone/{n}/{key}`) and on the Patch screen; the other three modes
+  are unchanged.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

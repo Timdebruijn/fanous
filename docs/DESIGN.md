@@ -594,7 +594,8 @@ can never disagree). `[OPEN-9]` exact bands and the speed/scale upper limits.
 
 ### 6.4a Keystone mode (16 channels, M2)
 
-Patched per output, next to that output's Output fixture (same output number).
+Patched per output, next to that output's Output fixture (same output number); "Keystone n" in the patch, OSC
+`/fanous/keystone/{n}/{key}` (as built in M2.3, §9.10).
 The offsets move the output's four corners on top of whatever mapping it shows,
 so a console never changes the hand alignment (§9.10). A new mode leaves the
 three existing modes and their footprints alone.
@@ -1636,7 +1637,7 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
 ### 9.10 M2: black lift by coverage, Keystone, mapping presets, edit overlay, masks v2 (design 2026-10-29)
 
 **Status:** designed 2026-10-29, owner decisions the same day (below), and
-reviewed against the code. Built: the compile cache of item 0 (M2.2) and item 1 (M2.1), below. Research and frictions F3–F6 are in
+reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2.1) and the Keystone mode of item 2 (M2.3), below. Research and frictions F3–F6 are in
 `docs/mapping-ux.md` §1 and §4.2–§4.5.
 
 **Owner decisions (2026-10-29):**
@@ -1782,6 +1783,42 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2) and item 1 
 - **Generated files.** OSC addresses, `docs/channel-map.md` and the GDTF follow
   from the parameter specs, like the other modes.
 - **Use.** Moving scenery (B53) and quick fixes from FOH.
+
+**As built (M2.3, PR #TBD):**
+- **The mode.** `FixtureMode.keystone` (16 channels) with `KeystoneParameter` in the §6.4a order, eight 16-bit offsets
+  on one curve (0 → −50 %, 32768 → 0, 65535 → +50 %), default 32768. No reserved channels: `ChannelMap.reserved(for:)`
+  is nil for it, and the channel map, GDTF and the existing modes' tests go through that one lookup.
+  - `FixtureRef.keystone(n)`, named and parsed as "Keystone n"; `patch.set` takes it like any fixture. The standard
+    patch does not include it: a console patches it per output when it wants one.
+  - OSC `/fanous/keystone/{n}/{key}`, feedback included. GDTF: a fourth DMX mode "Keystone (16ch)" with attributes
+    `KeystoneTopLeftX` … `KeystoneBottomLeftY` (feature `Position.Keystone`).
+  - The three existing modes and their footprints are unchanged. Output ch 6 and 7 (Mapping preset and fade) are not in
+    the specs yet; they stay reserved until M2.4 and M2.5.
+- **DMX queue.** `DMXStore.publish` reads each output's Keystone resolver (outputs 1–8, like `outputs`). Only when its
+  raw values change, `WarpMath.keystone(raw:)` gives the homography, stored as a `simd_float3x3` in the slot's
+  `keystones`, with `keystoneInvalid` beside it; both copy with the slot. Unpatched is the identity, centred values give
+  it exactly.
+  - **Guard** (`WarpMath.keystone(to:)`): all four corner cross products above 1e-12 or all below −1e-12, and
+    w > 0 at the corners. A refused quad keeps the last valid matrix and sets `keystoneInvalid`.
+  - Within ±50 % two edges cannot cross (opposite edges only touch at 50 %), so on stage a refusal is a concave or
+    degenerate quad (a corner pulled onto or past a diagonal). The test feeds the guard a bow-tie directly.
+- **Render.** `MappedUniforms.keystone` (a `float3x3` after `color`; the uniforms are 96 bytes of their 256).
+  - `mapped_vertex`: k = H · (p, 1) after the warp, and the clip position is homogeneous, (2k.x − k.z, k.z − 2k.y, 0,
+    k.z). The rasteriser divides, so `uv` and `pre` (masks, patterns) interpolate perspective-correct across a
+    keystoned triangle.
+  - `post` is k.xy / k.z, interpolated `[[center_no_perspective]]` (linear on screen, as the pixel position is), so
+    the blend map is sampled at the final position and stays in projector space.
+  - `OutputPass.draw` takes `keystones` by output index like `outputs`. Raw passes the identity. The clock-master
+    display passes the tick's slot, a secondary display copies them in `withLatest` beside `outputs`, and the output
+    preview passes none: it shows the edited mapping.
+  - With the identity the vertex output is the same floats as before; the golden images are unchanged.
+- **Status.** `publishLive` copies the eight matrices and flags from the DMX side (`withLatest`, storage reserved
+  first) and adds `keystone` (not the identity) and `keystoneInvalid` to each `live.outputs` entry. The live document
+  is diffed, so they go out only when they change.
+- **UI.** "Keystone active" and, in yellow, "Keystone invalid" on the output row and under the preview on Warp &
+  Slices. The Patch screen lists "Keystone n" after each "Output n" it lists.
+- **Not built here:** the edit overlay (item 4) and the preset geometry (item 3), which the keystone will sit on top
+  of. The cue editor and the Layers screen do not offer the Keystone fixture; cues and OSC can set it.
 
 **3. Mapping presets (Output ch 6 and 7).**
 - **Model.**

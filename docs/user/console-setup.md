@@ -4,7 +4,7 @@
 
 # Console setup
 
-Fanous is one fixture type, "Fanous", with three DMX modes. You patch each
+Fanous is one fixture type, "Fanous", with four DMX modes. You patch each
 mode as its own fixture on the console.
 
 | Mode | Channels | Patch one per | Does |
@@ -12,6 +12,7 @@ mode as its own fixture on the console.
 | Layer | 64 | layer | Everything about one layer: intensity, media, play mode, position, colour, effects, crop, audio |
 | Master | 8 | machine | Master intensity, freeze or blackout, a global test pattern, master speed |
 | Output | 8 | output | Output intensity, blackout or freeze, test pattern, blend on or raw |
+| Keystone | 16 | output, optional | Moves the output's four corners on top of its alignment ([outputs-and-mapping.md](outputs-and-mapping.md#keystone-from-the-console)) |
 
 Test patterns follow the Master and Output Intensity and Blackout like the
 picture, so a Grand Master or DBO takes them down too: keep the Dimmer up to
@@ -120,7 +121,7 @@ adapter is joined again within 5 s.
 ## GDTF
 
 **Patch › Export GDTF** writes `Fanous.gdtf` (GDTF 1.2). It contains the
-fixture type "Fanous" with the Layer, Master and Output modes, channel
+fixture type "Fanous" with the Layer, Master, Output and Keystone modes, channel
 functions with their physical ranges, a channel set for every band (play modes,
 blend modes, effects, test patterns), the 16-bit links and the default values.
 The file is generated from the same table as the channel map, so they cannot
