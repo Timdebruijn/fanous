@@ -641,6 +641,7 @@ public final class Engine: @unchecked Sendable {
                 if let preview = stateServer.preview {
                     m["preview"] = [
                         "framesIn": .number(Double(preview.framesIn)), "framesOut": .number(Double(preview.framesOut)), "skipped": .number(Double(preview.skipped)),
+                        "jpegOut": .number(Double(preview.jpegOut)), "jpegFailed": .number(Double(preview.jpegFailed)),
                         "encoders": .number(Double(preview.encoders)), "thumbnailPasses": .number(Double(preview.thumbnails?.passes.load(ordering: .relaxed) ?? 0)),
                         "thumbnailEncodeMs": .number(Double(preview.thumbnails?.encodeMicros.load(ordering: .relaxed) ?? 0) / 1000),
                     ]

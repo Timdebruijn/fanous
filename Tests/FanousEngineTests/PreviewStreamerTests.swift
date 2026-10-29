@@ -61,6 +61,7 @@ struct PreviewStreamerTests {
             try await Task.sleep(for: .milliseconds(20))
         }
         #expect(streamer.latestJPEG.withLock { $0 } != nil, "JPEG before any H.264 subscriber")
+        #expect(streamer.jpegOut.load(ordering: .relaxed) > 0 && streamer.jpegFailed.load(ordering: .relaxed) == 0)
         #expect(!streamer.hasEncoder)
         #expect(rig.attach("canvas", viewer, stream: 2))
         for _ in 0..<250 where !streamer.hasEncoder { try await Task.sleep(for: .milliseconds(20)) }
