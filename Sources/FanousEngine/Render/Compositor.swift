@@ -26,13 +26,15 @@ public final class Compositor: @unchecked Sendable {
     nonisolated(unsafe) public var canvasPublished: ((MTLTexture, MTLCommandBuffer) -> Void)?
     /// Without a drawable the output pass renders into this texture instead (tests, headless previews).
     nonisolated(unsafe) public var offscreenOutput: MTLTexture?
-    /// Browser previews (DESIGN.md §11.3): draws the canvas into a small pixel buffer on the same command buffer.
-    nonisolated(unsafe) public var previewTap: ((MTLTexture, MTLCommandBuffer, Double) -> Void)?
+    /// Browser previews (DESIGN.md §11.3): draws the canvas into a small pixel buffer on the same command buffer. The last
+    /// argument is the output set this tick draws (B110), after its Freeze holds are encoded.
+    nonisolated(unsafe) public var previewTap: ((MTLTexture, MTLCommandBuffer, Double, OutputSet?) -> Void)?
     /// Timecode for layers in the Timecode play mode (DESIGN.md §15.1); offsets in frames of the timecode rate.
     nonisolated(unsafe) public var timecode: TimecodeClock?
     nonisolated(unsafe) public var timecodeOffsets = TimecodeOffsets(project: 0, layers: [:])
     /// Output regions of the master display (DESIGN.md §9): nil = the whole drawable shows the canvas.
-    /// Replaced as one reference by Control; the tick reads it once.
+    /// Replaced as one reference by Control while the tick runs (`OutputCoordinator`): each tick reads it once, before its
+    /// preview tap, and draws its holds, preview and output pass with that set; a swap takes effect on the next tick (B110).
     nonisolated(unsafe) public var outputSet: OutputSet?
     /// Engine only: with nothing consuming the canvas (no drawable, preview, Syphon client or CITP stream) a tick
     /// still runs hand-off, clocks, audio and decoder requests, but encodes no GPU work. Off by default (tests read back).
@@ -484,13 +486,16 @@ public final class Compositor: @unchecked Sendable {
         }
         tickIndex = reuse ? (canvasIndex + 2) % 3 : canvasIndex
         let canvas = targets[0].textures[tickIndex]
+        let set = outputSet  // once (B110): Control swaps it from the main actor without stopping the tick
+        let outputTarget = drawable?.texture ?? offscreenOutput
         canvasPublished?(canvas, commandBuffer)
-        previewTap?(canvas, commandBuffer, target)
+        // the hold before the tap: on the engage tick the preview of an output on this display shows the frame just held
+        if outputTarget != nil, let set { OutputPass.holdFrozen(set, canvas: { tickCanvas($0) }, outputs: snapshot.outputs, master: frame.masterIntensity, buffer: commandBuffer) }
+        previewTap?(canvas, commandBuffer, target, set)
 
-        if let target = drawable?.texture ?? offscreenOutput {
+        if let target = outputTarget {
             outputPass.colorAttachments[0].texture = target
-            if let set = outputSet { OutputPass.holdFrozen(set, canvas: { tickCanvas($0) }, outputs: snapshot.outputs, master: frame.masterIntensity, buffer: commandBuffer) }
-            if let set = outputSet, let output = commandBuffer.makeRenderCommandEncoder(descriptor: outputPass) {
+            if let set, let output = commandBuffer.makeRenderCommandEncoder(descriptor: outputPass) {
                 output.label = "mapped output"
                 OutputPass.draw(
                     set, canvas: { tickCanvas($0) }, encoder: output, context: context, uniforms: mappedUniformBuffers[canvasIndex],

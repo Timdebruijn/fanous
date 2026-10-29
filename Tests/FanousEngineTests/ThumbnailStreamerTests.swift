@@ -45,7 +45,7 @@ import Testing
             hub = try PreviewHub(make: PreviewHubTests.make(context, parameters)) { _ in (320, 180) }
             thumbnails = try ThumbnailStreamer(context: context, compositor: compositor)
             hub.thumbnails = thumbnails
-            compositor.previewTap = { [hub] canvas, buffer, target in hub.tap(canvas: canvas, commandBuffer: buffer, target: target) }
+            compositor.previewTap = { [hub] canvas, buffer, target, _ in hub.tap(canvas: canvas, commandBuffer: buffer, target: target) }
             compositor.skipsIdleWork = true
             compositor.previewWanted = { [hub] in hub.wantsFrames }
             thumbnails.onPublish = { [unowned self] set in published.withLock { $0.append(set) } }

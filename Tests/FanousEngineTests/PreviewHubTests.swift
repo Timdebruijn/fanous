@@ -50,7 +50,7 @@ import Testing
             compositor = try Compositor(
                 context: context, canvasWidth: 160, canvasHeight: 90, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 64), parameters: parameters,
                 logger: PreviewHubTests.logger)
-            compositor.previewTap = { [hub] canvas, buffer, target in hub.tap(canvas: canvas, commandBuffer: buffer, target: target) }
+            compositor.previewTap = { [hub] canvas, buffer, target, _ in hub.tap(canvas: canvas, commandBuffer: buffer, target: target) }
         }
 
         func connection() -> StateServer.Connection { StateServer.Connection(server: server, cookieRole: nil) }
@@ -281,7 +281,7 @@ import Testing
                 made.withLock { $0[target] = streamer }
                 return true
             }
-            compositor.previewTap = { [hub] canvas, buffer, target in hub.tap(canvas: canvas, commandBuffer: buffer, target: target) }
+            compositor.previewTap = { [hub] canvas, buffer, target, _ in hub.tap(canvas: canvas, commandBuffer: buffer, target: target) }
             compositor.skipsIdleWork = true
             compositor.previewWanted = { [hub] in hub.wantsFrames }
             connections = try Rig()
