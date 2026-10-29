@@ -77,11 +77,16 @@ struct LiveSourceTests {
         Self.expect(at(run: 1), (0, 0, 0), "\(format) black", tolerance: 0)
         Self.expect(at(run: 2), (255, 0, 0), "\(format) red")
         Self.expect(at(run: 3), (128, 128, 128), "\(format) grey")
-        // the pair's two lumas land on their own pixels; the planar Y plane is sampled linearly half a canvas pixel
-        // (1/96 source pixel) off the source pixel's centre, which bleeds 1 % of the neighbour: 3 codes at a 219-code step
-        let bleed = format == "420v" ? 3 : 0
-        Self.expect(GeneratorTests.pixel(image, Self.x(pixel: 16), y), (255, 255, 255), "\(format) Y0", tolerance: max(2, bleed))
-        Self.expect(GeneratorTests.pixel(image, Self.x(pixel: 17), y), (0, 0, 0), "\(format) Y1", tolerance: bleed)
+        // the pair's two lumas land on their own pixels. 2vuy picks them with the nearest sampler: exact. The 420v Y plane
+        // is sampled linearly, and the canvas pixel centre is 1/96 source pixel right of the source pixel's centre:
+        // Y0 = 235 − 219/96 → (232.72 − 16) × 255/219 = 252.3, Y1 = 16 + 219/96 → 2.65; asserted ±1 around the derived values
+        if format == "2vuy" {
+            Self.expect(GeneratorTests.pixel(image, Self.x(pixel: 16), y), (255, 255, 255), "2vuy Y0", tolerance: 0)
+            Self.expect(GeneratorTests.pixel(image, Self.x(pixel: 17), y), (0, 0, 0), "2vuy Y1", tolerance: 0)
+        } else {
+            Self.expect(GeneratorTests.pixel(image, Self.x(pixel: 16), y), (252, 252, 252), "420v Y0", tolerance: 1)
+            Self.expect(GeneratorTests.pixel(image, Self.x(pixel: 17), y), (3, 3, 3), "420v Y1", tolerance: 1)
+        }
         if ProcessInfo.processInfo.environment["FANOUS_LIVE_READBACK"] != nil {
             print("\(format):", (0..<4).map { at(run: $0) }, GeneratorTests.pixel(image, Self.x(pixel: 16), y), GeneratorTests.pixel(image, Self.x(pixel: 17), y))
         }
@@ -106,22 +111,26 @@ struct LiveSourceTests {
         Self.expect(GeneratorTests.pixel(image, 720, 520), (0, 0, 0), "bar below", tolerance: 0)
     }
 
-    /// The tick's one read of a live source (`LayerPlayback.frame`) allocates nothing: `LiveFrame` is returned by value.
+    /// The tick's one read of a live source (`LayerPlayback.frame`) allocates nothing: `LiveFrame` is returned by value,
+    /// from a stored property (the fake) and from a computed one (a generator).
     @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
     func mallocCounterLiveFrameReadAllocatesNothing() throws {
         try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
         let context = try MetalContext()
-        let playback = LayerPlayback(key: MediaKey(folder: 0, file: 1), live: try Self.planar(context.device))
-        var mallocs = 0
-        for _ in 0..<3 {
-            mallocs = MallocCounter.count {
-                for _ in 0..<100 { _ = playback.frame(at: 0, direction: 1) }
+        let generator = try #require(GeneratorSource(context: context, file: 100, width: 64, height: 64))
+        for live: any LiveTextureSource in [try Self.planar(context.device), generator] {
+            let playback = LayerPlayback(key: MediaKey(folder: 0, file: 1), live: live)
+            var mallocs = 0
+            for _ in 0..<3 {
+                mallocs = MallocCounter.count {
+                    for _ in 0..<100 { _ = playback.frame(at: 0, direction: 1) }
+                }
             }
+            #if !DEBUG
+                #expect(mallocs == 0, "100 live frame reads of \(type(of: live)): \(mallocs) allocations on the calling thread")
+            #endif
+            print("live frame read × 100 (\(type(of: live))): \(mallocs) allocations")
         }
-        #if !DEBUG
-            #expect(mallocs == 0, "100 live frame reads: \(mallocs) allocations on the calling thread")
-        #endif
-        print("live frame read × 100: \(mallocs) allocations")
     }
 
     /// An RGBA frame of one texture (what Syphon and the generators hand over) comes through untouched.
