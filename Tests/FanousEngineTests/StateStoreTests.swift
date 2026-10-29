@@ -157,10 +157,13 @@ struct StateStoreTests {
         try ProjectDocument.save(document, to: url)
         #expect(ProjectDocument.load(from: url) == document)
         // an Output fixture without its output is unpatched on load
-        try document.set(try JSONValue(encoding: [OutputConfig(id: 1), OutputConfig(id: 2)]), at: "/outputs")
+        try document.set(try JSONValue(encoding: [1, 2, 9].map { OutputConfig(id: $0) }), at: "/outputs")
+        var nine = patch
+        nine.entries.append(PatchEntry(fixture: .output(9), universe: UniverseID(.artnet, 2), address: 73))
+        try document.set(ProjectDocument.patchValue(nine), at: "/patch")
         try ProjectDocument.save(document, to: url)
         let loaded = try #require(ProjectDocument.load(from: url))
-        #expect(ProjectDocument.patch(from: loaded)?.entries == patch.entries.filter { $0.fixture != .output(3) && $0.fixture != .output(4) })
+        #expect(ProjectDocument.patch(from: loaded)?.entries == patch.entries.filter { $0.fixture != .output(3) && $0.fixture != .output(4) }, "and 9: above the console's outputs")
         try? FileManager.default.removeItem(at: url)
         #expect(FixtureRef(parsing: "layer 7") == .layer(7))
         #expect(FixtureRef(parsing: "Output 0") == nil)

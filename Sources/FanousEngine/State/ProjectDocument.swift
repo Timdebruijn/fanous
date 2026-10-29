@@ -367,12 +367,13 @@ public enum ProjectDocument {
         if document["ui"] == nil { try? document.set([:], at: "/ui") }
         if document["layerCanvas"] == nil { try? document.set([:], at: "/layerCanvas") }
         if document["syphon"] == nil { try? document.set([:], at: "/syphon") }
-        // an Output fixture without its output controls nothing (until 2026-10-30 every project had Output 1–4 patched)
+        // an Output fixture without its output, or above the console's outputs, controls nothing (until 2026-10-30 every
+        // project had Output 1–4 patched)
         if var patch = patch(from: document) {
             let ids = Set(outputs(from: document).map(\.id))
             let count = patch.entries.count
             patch.entries.removeAll {
-                if case .output(let n) = $0.fixture { return !ids.contains(n) }
+                if case .output(let n) = $0.fixture { return !ids.contains(n) || n > ParameterSnapshotSlot.maxOutputs }
                 return false
             }
             if patch.entries.count != count { try? document.set(patchValue(patch), at: "/patch") }
