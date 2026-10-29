@@ -169,8 +169,8 @@ public final class StateServer: @unchecked Sendable {
                     }
                     let id = server.nextStream.add(1, ordering: .relaxed).oldValue
                     subscriptions.withLock { $0[id] = .dmx(universe) }
-                    session.send(text: server.store.encode(["t": "sub", "id": .number(Double(id)), "stream": "dmx", "universe": .string(universe)]), droppable: false)
                     server.dmxSubscriptionsChanged()
+                    session.send(text: server.store.encode(["t": "sub", "id": .number(Double(id)), "stream": "dmx", "universe": .string(universe)]), droppable: false)
                 case "preview":
                     // a refused preview carries the stream id it would have had and `stream`, like the `sub` reply, so the
                     // client settles its waiting request (an error with an id and no `stream` ends a stream that went away)
@@ -210,8 +210,7 @@ public final class StateServer: @unchecked Sendable {
                     let reply: JSONValue = [
                         "t": "sub", "id": .number(Double(id)), "stream": "thumbs", "w": .number(Double(ThumbnailAtlas.cellWidth)), "fps": .number(1 / ThumbnailAtlas.interval),
                     ]
-                    session.send(text: server.store.encode(reply), droppable: false)
-                    thumbnails.subscribe(connection: self, stream: id)
+                    thumbnails.subscribe(connection: self, stream: id) { session.send(text: server.store.encode(reply), droppable: false) }
                 default:
                     session.send(text: server.store.encode(["t": "error", "code": "badStream", "message": "streams: dmx, preview, thumbs"]), droppable: false)
                 }

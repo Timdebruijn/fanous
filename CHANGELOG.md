@@ -233,6 +233,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   switches, and the unused `run --ring` and `dmx --hz/--host/--seed` flags (repo audit 2026-10-29).
 - Removed: `fanous-bench syphon`, the Phase 3 Syphon acceptance probe; `SyphonTests` cover SyphonOutput → SyphonInput
   (repo audit 2026-10-29).
+- Fixed: a thumbnail or DMX `sub` reply could reach the client before the engine had subscribed it, so a test that checked
+  the subscription right after the reply failed under load (B94).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

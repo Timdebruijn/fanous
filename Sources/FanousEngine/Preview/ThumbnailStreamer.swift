@@ -95,9 +95,14 @@ public final class ThumbnailStreamer: @unchecked Sendable {
     }
 
     /// Adds a subscriber; it gets the whole current set with the next pass (later frames only carry changes).
-    func subscribe(connection: StateServer.Connection, stream: UInt32) {
+    /// `announce` (the `sub` reply) runs under the lock a pass reads the subscribers with: it is queued before the
+    /// first frame, and the subscriber is in place once it is out (B94).
+    func subscribe(connection: StateServer.Connection, stream: UInt32, announce: () -> Void = {}) {
         let subscriber = Subscriber(connection: connection, stream: stream)
-        subscribers.withLock { $0.append(subscriber) }
+        subscribers.withLock {
+            announce()
+            $0.append(subscriber)
+        }
         queue.async { [self] in stale.insert(subscriber.key) }
     }
 
