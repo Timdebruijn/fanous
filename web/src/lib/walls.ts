@@ -3,7 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Pure logic of projector walls on the Outputs screen (DESIGN §9.9): the wall as the engine stores it (WallModel.swift),
 // the wizard's grid choice and canvas preview, the mini-map's seams, badges, test patterns and the seam check steps.
-import type { DisplayDoc, OutputConfig } from './outputs';
+import { TEST_PATTERNS, type DisplayDoc, type OutputConfig } from './outputs';
 
 export type ManualField = 'source' | 'overlap.left' | 'overlap.right' | 'overlap.top' | 'overlap.bottom';
 
@@ -37,8 +37,7 @@ export interface Grid {
   rows: number;
 }
 
-/** Test pattern raw values (engine `TestPattern`). Grey 0/25/75 % and White come with M1.5 (PR #59); an engine
- * without them shows its last pattern, Checkerboard, instead. */
+/** Test pattern raw values (engine `TestPattern`, the index into TEST_PATTERNS). */
 export const PATTERN = { grid: 1, blendCheck: 3, outputID: 4, grey0: 8, grey25: 9, grey75: 10, white: 11 } as const;
 
 /** Canvas limits of `canvas.set` and `wall.add` makeCanvas (engine ProjectDocument.canvasSides, maxCanvasPixels). */
@@ -247,11 +246,11 @@ const colourHints: SeamHint[] = [
  * control to turn. */
 export const SEAM_STEPS: { name: string; pattern: number; shows: string; hints: SeamHint[] }[] = [
   {
-    name: 'Grid', pattern: PATTERN.grid, shows: 'The alignment grid.',
+    name: TEST_PATTERNS[PATTERN.grid], pattern: PATTERN.grid, shows: 'The alignment grid.',
     hints: [{ see: 'Lines that do not meet across a seam', turn: 'The warp, not the blend: opens Warp & Slices for the projector', target: 'projector', control: 'warp' }],
   },
   {
-    name: 'Blend check', pattern: PATTERN.blendCheck, shows: "50 % grey, with each projector's grid lines in its own colour.",
+    name: TEST_PATTERNS[PATTERN.blendCheck], pattern: PATTERN.blendCheck, shows: "50 % grey, with each projector's grid lines in its own colour.",
     hints: [
       { see: 'A bright band in a seam', turn: "That seam's gamma, down", target: 'seam', control: 'gamma' },
       { see: 'A dark band in a seam', turn: "That seam's gamma, up", target: 'seam', control: 'gamma' },
@@ -259,10 +258,10 @@ export const SEAM_STEPS: { name: string; pattern: number; shows: string; hints: 
     ],
   },
   {
-    name: 'Grey 0 %', pattern: PATTERN.grey0, shows: 'Black: the light a projector gives at black.',
+    name: TEST_PATTERNS[PATTERN.grey0], pattern: PATTERN.grey0, shows: 'Black: the light a projector gives at black.',
     hints: [{ see: 'Seams lighter than the rest', turn: 'The black floor of the projectors next to it, up, one by one until even', target: 'projector', control: 'floor' }],
   },
-  { name: 'Grey 25 %', pattern: PATTERN.grey25, shows: 'Dark grey.', hints: colourHints },
-  { name: 'Grey 75 %', pattern: PATTERN.grey75, shows: 'Light grey.', hints: colourHints },
-  { name: 'White', pattern: PATTERN.white, shows: 'Full white.', hints: colourHints },
+  { name: TEST_PATTERNS[PATTERN.grey25], pattern: PATTERN.grey25, shows: 'Dark grey.', hints: colourHints },
+  { name: TEST_PATTERNS[PATTERN.grey75], pattern: PATTERN.grey75, shows: 'Light grey.', hints: colourHints },
+  { name: TEST_PATTERNS[PATTERN.white], pattern: PATTERN.white, shows: 'Full white.', hints: colourHints },
 ];
