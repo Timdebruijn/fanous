@@ -75,12 +75,12 @@ public struct MachineSettings: Codable, Sendable, Equatable {
 }
 
 extension MachineSettings.PasswordRecord {
-    /// The most PBKDF2 rounds a record may ask for. 10 M is about 16× the default 600 000 and about 1.6 s per login on
+    /// The most PBKDF2 rounds a record may ask for. 10 M is about 17× the default 600 000 and about 1.6 s per login on
     /// an Apple silicon Mac; a hand-edited count above it would stall every login of the role (B93).
     static let maxIterations = 10_000_000
 
     /// A count outside 1…`maxIterations` does not decode, so `passwords` is unreadable like any record that does not
-    /// decode, instead of trapping in `RoleAuth.pbkdf2` (`UInt32(iterations)`) at the next login (B93).
+    /// decode, instead of trapping in `RoleAuth.pbkdf2` at the next login (B93).
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(salt: try c.decode(Data.self, forKey: .salt), hash: try c.decode(Data.self, forKey: .hash), iterations: try c.decode(Int.self, forKey: .iterations))

@@ -179,15 +179,17 @@ struct RoleAuthTests {
 
     @Test(arguments: [0, -1, Int(UInt32.max) + 1, MachineSettings.PasswordRecord.maxIterations + 1])
     func outOfRangeIterationsMakePasswordsUnreadable(_ iterations: Int) throws {
-        // B93: such a record trapped in pbkdf2 (UInt32(iterations)) or stalled the role's logins
+        // B93: such a record trapped in pbkdf2 at the next login or stalled the role's logins
         let (auth, file) = try Self.settingsAuth(nil)
         try auth.setPassword("op", for: .operator)
         var edited = try Self.raw(file)
         try edited.set(.number(Double(iterations)), at: "/passwords/operator/iterations")
         try JSONEncoder().encode(edited).write(to: file)
-        #expect(MachineSettings.load(from: file).problems.contains { $0.hasPrefix("passwords:") })
+        #expect(MachineSettings.load(from: file).problems.contains { $0.hasPrefix("passwords:") && $0.contains("iterations") })
         _ = try auth.setSync(["port": 48990])
         #expect(auth.verify("op", for: .operator) && !auth.verify("x", for: .operator), "the copy in memory is kept")
+        let fresh = RoleAuth(settingsURL: file, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
+        #expect(fresh.isOpen(.operator), "the next start reads no passwords: every role is open until the file is fixed")
     }
 
     @Test func unparsableFileIsNotOverwritten() throws {
