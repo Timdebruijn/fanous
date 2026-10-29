@@ -702,6 +702,12 @@ three existing modes and their footprints alone.
   fixtures resolve as policy `internal` until packets return
   (`FixtureResolver.internalWithoutDMX`; also while a universe has never
   been received).
+- An unpatch is not a loss (2026-10-30): a layer or Master without a patch
+  entry (Unpatch, a lower layer count, `effectivePatch` beyond `layerCount`)
+  has no resolver, so no source reaches it; `DMXStore.publish` writes its
+  defaults (layer: intensity 0, no file; Master: 100 %, Normal, speed
+  100 %, no test pattern) into every snapshot instead of leaving the last
+  values in the triple-buffer slots.
 - Not built: per-packet receive interface (a routed console on another subnet
   is rejected by the subnet filter), Art-Net output/ArtAddress, per-address
   sACN priority (`[OPEN-10]`). Multicast delivery is not covered by the

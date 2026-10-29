@@ -178,6 +178,31 @@ final class Box { var value = 0 }
         #expect(simd_length(topLeft()) < 1e-6, "lost with zero: centred, not −50 %: \(topLeft())")
     }
 
+    /// An unpatched layer (Unpatch, Remove last layer, beyond the layer count) no longer plays at its last values, and
+    /// an unpatched Master no longer holds the show at its last level: both render as with no console.
+    @Test func unpatchedLayerAndMasterFallBackToDefaults() {
+        let store = DMXStore(patch: .standard(layers: 2, outputs: 0), logger: Logger(label: "test"))
+        for fixture in [FixtureRef.layer(2), .master] { store.setPolicy(.internal, for: fixture) }
+        // values in every slot: a publish writes into a slot that holds an older publish
+        for raw in UInt16(1)...3 {
+            store.queue.sync {
+                store.applyUI(.layer(2), .layer(.file), raw: raw, at: 1000)
+                store.applyUI(.layer(2), .layer(.intensity), raw: 65535, at: 1000)
+                store.applyUI(.master, .master(.intensity), raw: 0, at: 1000)
+            }
+        }
+        let playing = store.snapshots.read()
+        #expect(playing.layers[1].file == 3 && playing.layers[1].intensity == 1 && playing.master == 0)
+        var patch = Patch.standard(layers: 1, outputs: 0)
+        patch.entries.removeAll { $0.fixture == .master }
+        store.setPatch(patch)
+        _ = store.currentPatch  // the DMX queue has run the patch change
+        let slot = store.snapshots.read(), fresh = ParameterSnapshotSlot(maxLayers: 0)
+        #expect(slot.layers[1] == LayerParameters())
+        #expect(slot.master == fresh.master && slot.masterControl == fresh.masterControl)
+        #expect(slot.masterSpeed == fresh.masterSpeed && slot.testPattern == fresh.testPattern)
+    }
+
     /// Writer at ~1 kHz, the render reader on its own thread and a copy reader at ~2 kHz: no torn slot on either
     /// side, and the render reader's slot never changes under it (also run under `-sanitize=thread`).
     @Test func concurrentWriterRenderReaderAndCopyReader() async throws {
