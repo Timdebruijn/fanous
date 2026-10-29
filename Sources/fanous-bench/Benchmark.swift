@@ -7,6 +7,7 @@ import Foundation
 import FanousCore
 import FanousEngine
 import Logging
+import Synchronization
 
 /// Ramps the layer count for one codec/resolution until a frame is missed or
 /// late (DESIGN.md §18), then optionally soaks at the last good count.
@@ -19,9 +20,13 @@ enum Benchmark {
         var textureMisses: Int
         var cpuP50: Double, cpuP99: Double, cpuMax: Double
         var gpuP50: Double, gpuP99: Double, gpuMax: Double
-        /// Growth of malloc blocks in use over the window (all threads); 0 = no steady-state growth.
-        var mallocBlocksDelta: Int
-        var mallocBytesDelta: Int
+        /// Allocations on the compositor thread over the window (§4.6, `MallocCounter`); nil: no `malloc_logger`, or
+        /// the warm-up never ticked.
+        var compositorMallocs: Int?
+        /// `compositorMallocs` per frame, "n/a" when nil.
+        var mallocsPerTick: String {
+            compositorMallocs.map { String(format: "%d (%.2f/tick)", $0, Double($0) / Double(max(1, frames))) } ?? "n/a"
+        }
         var dmxToPhotonP50: Double
         var dmxToPhotonP99: Double
         var dmxSamples: Int
@@ -52,12 +57,13 @@ enum Benchmark {
 
     static func run(
         mediaDirectory: URL, codec: String, resolution: String, maxLayers: Int, window: Double, soak: Double, display: Int?,
-        headless: Bool, outputDirectory: URL, onlyLayers: Int? = nil, ringCapacity: Int? = nil, dmx: Bool = false,
+        headless: Bool, outputDirectory: URL, onlyLayers: Int? = nil, dmx: Bool = false,
         useDisplayLink: Bool = false, effects: [Effect] = [], dissolve: Double = 0, ingest: URL? = nil, logger: Logger
     ) throws {
         let parts = resolution.replacingOccurrences(of: "p", with: "x").split(separator: "x").compactMap { Double($0) }
         guard parts.count == 3 else { throw RenderError.pipeline("resolution must look like 1920x1080p60") }
         let (width, height, fps) = (Int(parts[0]), Int(parts[1]), parts[2])
+        let ringCapacity = width > 2000 ? 8 : 6
         let file = mediaDirectory.appending(path: "\(codec)_\(width)x\(height)p\(Int(fps)).mov")
         guard FileManager.default.fileExists(atPath: file.path) else { throw RenderError.pipeline("missing \(file.path); run `fanous-bench media` first") }
         let useDisplay = headless ? nil : (display ?? 0)
@@ -119,14 +125,14 @@ enum Benchmark {
             var result = Result(
                 chip: SystemInfo.chipName, gpu: context.deviceName, memoryGB: Int(SystemInfo.physicalMemoryBytes / 1_073_741_824),
                 os: SystemInfo.osVersion, media: file.lastPathComponent, codec: codec, width: width, height: height, fps: fps,
-                display: useDisplay, ringCapacity: ringCapacity ?? (width > 2000 ? 8 : 6), frameLatency: 1, windowSeconds: window, steps: [], maxLayers: 0, soakSeconds: soak, soakStep: nil,
+                display: useDisplay, ringCapacity: ringCapacity, frameLatency: 1, windowSeconds: window, steps: [], maxLayers: 0, soakSeconds: soak, soakStep: nil,
                 date: ISO8601DateFormatter().string(from: Date()))
             do {
                 let counts = onlyLayers.map { [$0] } ?? Array(1...maxLayers)
                 for count in counts {
                     let step = try await measure(layers: count, seconds: window, file: file, width: width, height: height, fps: fps, display: useDisplay, ringCapacity: ringCapacity, context: context, metrics: metrics, parameters: parameters, logger: logger)
                     result.steps.append(step)
-                    print("layers \(count): \(step.passed ? "PASS" : "FAIL")  frames \(step.frames) missed \(step.missed) late \(step.late) textureMisses \(step.textureMisses)  cpu p99 \(String(format: "%.2f", step.cpuP99)) ms  gpu p99 \(String(format: "%.2f", step.gpuP99)) ms  malloc Δ \(step.mallocBlocksDelta) blocks" + (step.dmxSamples > 0 ? String(format: "  dmx→photon p50 %.1f p99 %.1f ms (n=%d)", step.dmxToPhotonP50, step.dmxToPhotonP99, step.dmxSamples) : ""))
+                    print("layers \(count): \(step.passed ? "PASS" : "FAIL")  frames \(step.frames) missed \(step.missed) late \(step.late) textureMisses \(step.textureMisses)  cpu p99 \(String(format: "%.2f", step.cpuP99)) ms  gpu p99 \(String(format: "%.2f", step.gpuP99)) ms  compositor mallocs \(step.mallocsPerTick)" + (step.dmxSamples > 0 ? String(format: "  dmx→photon p50 %.1f p99 %.1f ms (n=%d)", step.dmxToPhotonP50, step.dmxToPhotonP99, step.dmxSamples) : ""))
                     if step.audioCorrections > 0 || step.audioMaxDriftMillis > 0 { print(String(format: "  audio: underruns %d corrections %d max drift %.1f ms", step.audioUnderruns, step.audioCorrections, step.audioMaxDriftMillis)) }
                     if step.passed { result.maxLayers = count } else { break }
                 }
@@ -153,7 +159,7 @@ enum Benchmark {
 
     @MainActor
     static func measure(
-        layers: Int, seconds: Double, file: URL, width: Int, height: Int, fps: Double, display: Int?, ringCapacity: Int?,
+        layers: Int, seconds: Double, file: URL, width: Int, height: Int, fps: Double, display: Int?, ringCapacity: Int,
         context: MetalContext, metrics: MetricsRing, parameters: TripleBuffer<ParameterSnapshotSlot>, logger: Logger
     ) async throws -> Step {
         var scene = SceneConfig()
@@ -164,7 +170,7 @@ enum Benchmark {
         scene.useDisplayLink = useDisplayLinkFlag
         scene.layerCount = layers
         scene.media = [MediaEntry(folder: 1, file: 1, path: file.path), MediaEntry(folder: 1, file: 2, path: file.path)]
-        scene.ringCapacity = ringCapacity ?? (width > 2000 ? 8 : 6)
+        scene.ringCapacity = ringCapacity
         let service = try RenderService(scene: scene, context: context, parameters: parameters, metrics: metrics, logger: logger)
         try await service.start()
         try await Task.sleep(for: .seconds(2))  // warm-up is not measured
@@ -185,10 +191,12 @@ enum Benchmark {
             print("  ingest: transcoding \(source.lastPathComponent) to HAP Q during the window")
         }
         let start = CACurrentMediaTime()
-        let mallocBefore = mallocStatistics()
+        // the warm-up ticked, so the driver's thread is known; counted from here on, not process-wide (B97)
+        let counted = MallocCounter.available ? pthread_t(bitPattern: service.compositor.tickThread.load(ordering: .relaxed)) : nil
+        if let counted { MallocCounter.start(thread: counted) }
         try await Task.sleep(for: .seconds(seconds))
         let now = CACurrentMediaTime()
-        let mallocAfter = mallocStatistics()
+        let compositorMallocs = counted.map { _ in MallocCounter.stop() }
         let summary = metrics.summary(seconds: now - start, now: now)
         let counters = service.counters
         let audio = service.mixer?.statistics ?? AudioStatistics()
@@ -205,17 +213,10 @@ enum Benchmark {
         return Step(
             layers: layers, frames: summary.frames, missed: summary.missed, late: summary.late, textureMisses: summary.textureMisses,
             cpuP50: summary.cpuP50, cpuP99: summary.cpuP99, cpuMax: summary.cpuMax, gpuP50: summary.gpuP50, gpuP99: summary.gpuP99,
-            gpuMax: summary.gpuMax, mallocBlocksDelta: Int(mallocAfter.blocks_in_use) - Int(mallocBefore.blocks_in_use),
-            mallocBytesDelta: Int(mallocAfter.size_in_use) - Int(mallocBefore.size_in_use),
+            gpuMax: summary.gpuMax, compositorMallocs: compositorMallocs,
             dmxToPhotonP50: summary.dmxP50, dmxToPhotonP99: summary.dmxP99, dmxSamples: summary.dmxSamples,
             audioUnderruns: Int(audio.underruns), audioCorrections: Int(audio.corrections), audioMaxDriftMillis: audio.maxDriftMillis,
             passed: summary.missed == 0 && summary.late == 0 && summary.textureMisses == 0 && summary.frames > 0)
-    }
-
-    static func mallocStatistics() -> malloc_statistics_t {
-        var stats = malloc_statistics_t()
-        malloc_zone_statistics(nil, &stats)
-        return stats
     }
 
     static func write(_ result: Result, to directory: URL) throws {
@@ -234,9 +235,9 @@ enum Benchmark {
         if !variant.isEmpty { md += "- Variant: \(variant.dropFirst())\n" }
         md += "\n"
         md += "**Max layers without drops: \(result.maxLayers)**\n\n"
-        md += "| Layers | Frames | Missed | Late | Texture misses | CPU p50/p99/max ms | GPU p50/p99/max ms | malloc Δ blocks / KB | Result |\n|---|---|---|---|---|---|---|---|---|\n"
+        md += "| Layers | Frames | Missed | Late | Texture misses | CPU p50/p99/max ms | GPU p50/p99/max ms | Compositor mallocs | Result |\n|---|---|---|---|---|---|---|---|---|\n"
         for s in result.steps {
-            md += String(format: "| %d | %d | %d | %d | %d | %.2f / %.2f / %.2f | %.2f / %.2f / %.2f | %d / %d | %@ |\n", s.layers, s.frames, s.missed, s.late, s.textureMisses, s.cpuP50, s.cpuP99, s.cpuMax, s.gpuP50, s.gpuP99, s.gpuMax, s.mallocBlocksDelta, s.mallocBytesDelta / 1024, s.passed ? "pass" : "fail")
+            md += String(format: "| %d | %d | %d | %d | %d | %.2f / %.2f / %.2f | %.2f / %.2f / %.2f | %@ | %@ |\n", s.layers, s.frames, s.missed, s.late, s.textureMisses, s.cpuP50, s.cpuP99, s.cpuMax, s.gpuP50, s.gpuP99, s.gpuMax, s.mallocsPerTick, s.passed ? "pass" : "fail")
         }
         if let dmx = result.steps.last, dmx.dmxSamples > 0 {
             md += String(format: "\nDMX→photon estimate (Art-Net receive → target presentation time): p50 %.1f ms, p99 %.1f ms over %d DMX frames\n", dmx.dmxToPhotonP50, dmx.dmxToPhotonP99, dmx.dmxSamples)

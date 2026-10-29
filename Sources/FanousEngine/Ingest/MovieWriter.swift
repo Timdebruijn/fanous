@@ -259,7 +259,7 @@ public enum PatternFrames {
         }
     }
 
-    /// Reads the counter back from a BGRA frame (tests and the decode spike).
+    /// Reads the counter back from a BGRA frame (tests).
     public static func counter(bgra: UnsafePointer<UInt8>, bytesPerRow: Int) -> Int {
         var value = 0
         for i in 0..<16 {
