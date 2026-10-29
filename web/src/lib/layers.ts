@@ -234,11 +234,11 @@ export function patchText(entry: PatchEntry | undefined, footprint: number): str
   return `${entry.universe} · ch ${entry.address}–${entry.address + footprint - 1} · ${footprint} ch`;
 }
 
-/** Fixture names "Output 1", "Output 2", … present in the live document whose output exists, in numeric order. */
-export function outputFixtures(fixtures: Record<string, unknown>, outputIds: readonly number[]): string[] {
+/** Fixture names "Output 1", "Output 2", … present in the live document, in numeric order. */
+export function outputFixtures(fixtures: Record<string, unknown>): string[] {
   const number = (name: string) => Number(/^Output (\d+)$/.exec(name)?.[1] ?? NaN);
   return Object.keys(fixtures)
-    .filter((name) => outputIds.includes(number(name)))
+    .filter((name) => Number.isFinite(number(name)))
     .sort((a, b) => number(a) - number(b));
 }
 

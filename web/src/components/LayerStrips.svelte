@@ -10,7 +10,7 @@
   let { selected = null, onselect }: { selected?: string | null; onselect?: (fixture: string) => void } = $props();
 
   const master = $derived(app.live.dmx.fixtures['Master']);
-  const outputs = $derived(outputFixtures(app.live.dmx.fixtures, app.project.outputs.map((o) => o.id)));
+  const outputs = $derived(outputFixtures(app.live.dmx.fixtures));
 </script>
 
 {#snippet value(params: ResolvedParameter[] | undefined, key: string, caption: string)}

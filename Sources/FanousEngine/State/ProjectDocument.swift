@@ -367,6 +367,16 @@ public enum ProjectDocument {
         if document["ui"] == nil { try? document.set([:], at: "/ui") }
         if document["layerCanvas"] == nil { try? document.set([:], at: "/layerCanvas") }
         if document["syphon"] == nil { try? document.set([:], at: "/syphon") }
+        // an Output fixture without its output controls nothing (until 2026-10-30 every project had Output 1–4 patched)
+        if var patch = patch(from: document) {
+            let ids = Set(outputs(from: document).map(\.id))
+            let count = patch.entries.count
+            patch.entries.removeAll {
+                if case .output(let n) = $0.fixture { return !ids.contains(n) }
+                return false
+            }
+            if patch.entries.count != count { try? document.set(patchValue(patch), at: "/patch") }
+        }
         return document
     }
 
@@ -418,7 +428,7 @@ public enum ProjectDocument {
             })
         store.register(
             CommandSpec(
-                name: "patch.set", role: .programmer, summary: "Patch a fixture (layer, master, output) to a universe and address, or unpatch it with address 0.",
+                name: "patch.set", role: .programmer, summary: "Patch a fixture (layer, master, output) to a universe and address, or unpatch it with address 0; an Output fixture only for an output that exists.",
                 argsType: "{ fixture: string; universe: string; address: number }"
             ) { project, args in
                 guard let fixtureName = args["fixture"]?.string, let fixture = FixtureRef(parsing: fixtureName) else {
@@ -428,6 +438,9 @@ public enum ProjectDocument {
                     throw CommandError.invalidArgs("universe must be artnet:net.subnet.universe or sacn:n")
                 }
                 guard let address = args["address"]?.int, (0...512).contains(address) else { throw CommandError.invalidArgs("address must be 0 (unpatch) or 1–512") }
+                if case .output(let n) = fixture, address > 0, !ProjectDocument.outputs(from: project).contains(where: { $0.id == n }) {
+                    throw CommandError.invalidArgs("there is no output \(n): add it first, its Output fixture is patched with it")
+                }
                 guard var patch = ProjectDocument.patch(from: project) else { throw CommandError.invalidArgs("project has no patch") }
                 patch.entries.removeAll { $0.fixture == fixture }
                 if address > 0 {

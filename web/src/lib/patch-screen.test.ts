@@ -85,7 +85,7 @@ describe('universe naming and lists', () => {
 
 describe('buildFixtures', () => {
   it('lists layers (patched or not), Master, then outputs in numeric order', () => {
-    const rows = buildFixtures([at('Output 10', 'sacn:1', 100), at('Layer 2', 'artnet:0.0.0', 65), at('Output 2', 'sacn:1', 200)], 3, map);
+    const rows = buildFixtures([at('Output 10', 'sacn:1', 100), at('Layer 2', 'artnet:0.0.0', 65), at('Output 2', 'sacn:1', 200)], 3, map, [10, 2]);
     expect(rows.map((r) => r.name)).toEqual(['Layer 1', 'Layer 2', 'Layer 3', 'Master', 'Output 2', 'Output 10']);
     expect(rows[0]).toMatchObject({ patched: false, address: 0, end: 0 });
     expect(rows[1]).toMatchObject({ patched: true, address: 65, end: 128, footprint: 64, typeLabel: 'Layer' });
@@ -100,12 +100,9 @@ describe('buildFixtures', () => {
     expect(buildFixtures([], 0, null).map((r) => r.name)).toEqual(['Master']);
   });
 
-  it('lists every output (patched or not) and marks a patched Output fixture without its output', () => {
+  it('lists every output, patched or not, and no Output fixture without its output', () => {
     const rows = buildFixtures([at('Output 1', 'artnet:0.0.1', 9), at('Output 4', 'artnet:0.0.1', 33)], 0, map, [1, 5]);
-    expect(rows.map((r) => [r.name, r.patched, r.orphan])).toEqual([['Master', false, false], ['Output 1', true, false], ['Output 4', true, true], ['Output 5', false, false]]);
-    expect(rowStatus(rows[1]!)).toEqual({ tone: 'ok', text: 'ok' });
-    expect(rowStatus(rows[2]!)).toEqual({ tone: 'faint', text: 'no such output · Unpatch removes it' });
-    expect(rowStatus(rows[3]!)).toEqual({ tone: 'faint', text: 'unpatched · no console control' });
+    expect(rows.map((r) => [r.name, r.patched])).toEqual([['Master', false], ['Output 1', true], ['Output 5', false]]);
   });
 
   it('treats address 0 as unpatched', () => {

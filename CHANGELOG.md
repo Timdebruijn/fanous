@@ -317,10 +317,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   screen permissions with a readiness item (R18).
 - An Output fixture follows its output: `output.add` patches it next to the Master (Master address + 8 per output, the
   standard addresses 9, 17, 25, 33 …) when that range is free, `output.remove` unpatches it in the same undo step, and a
-  new project no longer starts with Output 1–4 patched. The Patch screen lists every output's fixture (also unpatched
-  ones, so Output 5 and up can be patched), marks an Output fixture without its output "no such output", and has
-  **Add output** and, for a selected output, **Remove output**. The Layers screen shows strips only for outputs that
-  exist. Existing projects keep their patch: Unpatch takes an Output fixture without an output off the list.
+  new project no longer starts with Output 1–4 patched. `patch.set` refuses an Output fixture without its output, and
+  opening a project unpatches such fixtures, so the Patch and Layers screens show exactly the outputs that exist. The
+  Patch screen lists every output's fixture (also unpatched ones, so Output 5 and up can be patched), has **Add
+  output**, and for a selected output says which display shows it, links to Outputs & Mapping and has **Remove output**.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

@@ -66,13 +66,17 @@ the fixture file.
 
 - **Fixture table**: Fixture, Type (with footprint), Universe, Address,
   Footprint, Status. Status says "ok", "unpatched · no console control",
-  "collides with Layer 2 · 65-128", "exceeds universe" or, for an Output
-  fixture whose output no longer exists, "no such output · Unpatch removes it".
-  Such a fixture controls nothing; projects from before 30 October 2026 have
-  Output 1 to 4 patched whether the outputs exist or not.
+  "collides with Layer 2 · 65-128" or "exceeds universe". There is one Output
+  row per output on the Outputs & Mapping screen, no more and no fewer.
+  Projects from before 30 October 2026 had Output 1 to 4 patched whether those
+  outputs existed or not; opening such a project unpatches the ones without an
+  output.
 - **Selected fixture** (programmer): choose the Universe (A 0.0.0 to 0.0.3 and
   S 1 to S 4, plus any universe that has been heard), set the Address with the
   stepper (Shift steps by 10; **0 means unpatched**), or press **Unpatch**.
+  For an output it also says which display shows it, links to Outputs &
+  Mapping, and has **Remove output** (the output with its mapping; Undo brings
+  it back).
   Below it: the universe's health pill and its settings (see
   [Universe settings](#universe-settings)).
 - **DMX monitor**: 512 cells for one universe, coloured per fixture, red where

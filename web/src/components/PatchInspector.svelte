@@ -54,7 +54,7 @@
   }
 
   /** The output behind an Output fixture; removing it also unpatches the fixture (one undo step). */
-  const output = $derived(row.type === 'output' && !row.orphan ? app.project.outputs.find((o) => `Output ${o.id}` === row.name) : undefined);
+  const output = $derived(row.type === 'output' ? app.project.outputs.find((o) => `Output ${o.id}` === row.name) : undefined);
   async function removeOutput() {
     if (!output) return;
     const name = output.name;
@@ -72,6 +72,12 @@
 <section class="panel inspector" aria-label="Selected fixture">
   <div class="label">Selected fixture</div>
   <h2>{row.name}</h2>
+  {#if output}
+    <p class="caption">
+      The console channels of {output.name === row.name ? 'this output' : output.name}, {output.display ? `shown on ${output.display.name}` : 'not on a display yet'}.
+      Display, picture and mapping are on <a href="#/outputs">Outputs &amp; Mapping</a>.
+    </p>
+  {/if}
   <div class="fields">
     <label class="field">
       <span class="label">Universe</span>

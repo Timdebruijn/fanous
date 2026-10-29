@@ -519,7 +519,9 @@ bounded by the tier's measured maximum (hard engine cap 32, `[OPEN-8]`).
 An Output fixture follows its output (2026-10-30): `output.add` patches Output n
 on the Master's universe at the Master's address + 8 n when those channels are
 free, `output.remove` unpatches it in the same undo step, and a new project's
-standard patch holds the layers and the Master only.
+standard patch holds the layers and the Master only. `patch.set` refuses an
+Output fixture without its output and loading a project unpatches one, so an
+Output fixture exists exactly when its output does.
 
 ### 6.2 Layer mode (64 channels)
 

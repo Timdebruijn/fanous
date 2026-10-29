@@ -112,8 +112,8 @@ describe('channels and patch', () => {
     expect(patchText(undefined, 64)).toBe('unpatched');
     expect(patchText({ fixture: 'Layer 3', universe: 'artnet:0.0.1', address: 0 }, 64)).toBe('unpatched');
   });
-  it('lists the output fixtures of existing outputs in numeric order and ignores the rest', () => {
-    expect(outputFixtures({ Master: [], 'Layer 1': [], 'Output 10': [], 'Output 2': [], 'Output 1': [], 'Output 3': [] }, [1, 2, 10])).toEqual(['Output 1', 'Output 2', 'Output 10']);
+  it('lists output fixtures in numeric order and ignores the rest', () => {
+    expect(outputFixtures({ Master: [], 'Layer 1': [], 'Output 10': [], 'Output 2': [], 'Output 1': [] })).toEqual(['Output 1', 'Output 2', 'Output 10']);
   });
 });
 
