@@ -168,6 +168,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: the shell token test failed 1 run in 16, when the token ended in "0" (B84).
 - Fixed: undoing `syphon.forget` overwrote a Syphon number another server had taken meanwhile; the undo is now refused (B90).
 - Fixed: the preview left its H.264 decoder open after every target change and disconnect; it now closes it (B85).
+- Fixed: a new `settings.json` (hashed role passwords) and the shell token file were readable by other users between the write
+  and the change to mode 0600; both are now written 0600 from the start, and a new Application Support folder is 0700 (B83).
 - Seam-check test patterns (M1.5, DESIGN §9.9): Grey 0 %, Grey 25 %, Grey 75 % and White, flat fields at that output
   signal level (Blend check is the 50 % field), on test-pattern channel 4 of the Master and Output fixtures at 128, 144, 160
   and 176 (192–255 stays reserved), in the GDTF and the channel map, and as buttons on the Outputs tab. They follow the warp
