@@ -22,6 +22,9 @@ public final class PreviewStreamer: @unchecked Sendable {
         public var connection: StateServer.Connection
         public var stream: UInt32
         public var jpeg: Bool
+        /// On its canvas's stream instead of its target's at the encoder limit (B70): its `stream` descriptions say
+        /// `fallback: true` (B96)
+        public var fallback = false
     }
 
     public let width: Int
@@ -380,6 +383,7 @@ public final class PreviewStreamer: @unchecked Sendable {
         for s in subs {
             var object = message.object ?? [:]
             object["id"] = .number(Double(s.stream))
+            object["fallback"] = .bool(s.fallback)
             _ = s.connection.send(text: JSONValue.encodeCompact(.object(object)), droppable: false)
         }
     }

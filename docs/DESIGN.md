@@ -1360,6 +1360,12 @@ server → client   {"t":"sub","id":8,"stream":"thumbs","w":160,"fps":4}  |  {"t
 server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H.264 AU (AVCC) , 2 = JPEG , 3 = DMX universe (512 B) , 4 = metrics ring page
 ```
 
+- A preview `sub` reply carries `codec` (`"avc"`, or `"jpeg"` when refused
+  at the encoder limit), `w`, `h`, `fps`, `target` and `fallback`; on H.264
+  each `stream` description (`codec`, base64 avcC `description`, `w`, `h`,
+  `fps`, `fallback`) comes with the first frame of a session and after a
+  move. `fallback: true`: the stream is the target's canvas's, not the
+  target's (an output's region or one layer at the encoder limit, B70/B96).
 - The engine answers a connection's preview `sub` requests in the order they
   were sent (one at a time, on that connection's receive queue), each with a
   `sub` or a refusal (`error` with `stream`): the client matches replies to its
@@ -1548,10 +1554,13 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   alone), often in another aspect: when the served size (`sub` reply, then
   each `stream` description) is another shape than the preview's box, the
   browser letterboxes it (`object-fit: contain`) and the caption says
-  "canvas fallback" (B87). A fallback in the box's shape is not told apart:
-  a layer (it has its canvas's shape) or a region crop of the same ratio
-  (960×540 of a 1920×1080 canvas) shows the whole canvas unflagged and not
-  letterboxed (B96). After a change of the box's shape (a canvas format or
+  "canvas fallback" (B87). The engine says so too (B96): `fallback: true`
+  in the `sub` reply and in each `stream` description while the viewer is
+  on its canvas's stream (a size fallback of its own target is not one; the
+  re-balance move to its own stream sends `fallback: false`), so a fallback
+  in the box's shape (a layer, or a region crop of the same ratio, 960×540
+  of a 1920×1080 canvas) is flagged as well and letterboxed, which draws it
+  as `fill` would. After a change of the box's shape (a canvas format or
   output region change) the label also shows for a moment, until the rebuilt
   stream's description arrives. A fallback streamer whose own viewer left
   stays as it is: only fallback viewers keep it encoding, so no release is

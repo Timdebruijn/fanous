@@ -18,10 +18,10 @@
   let lastFrame = 0;
   let stalled = $state(false);
   let stop: (() => void) | null = null;
-  // the size of the stream served (the `sub` reply, then each `stream` description): another shape than the box is the
-  // canvas stream an output's region fell back to at the encoder limit (B70), shown whole, letterboxed (B87)
-  let served = $state<{ w: number; h: number } | null>(null);
-  const fallback = $derived(served !== null && otherShape(served.w, served.h, aspect));
+  // the stream served (the `sub` reply, then each `stream` description): the canvas stream an output's region or a layer
+  // fell back to at the encoder limit (B70) says so (B96); another shape than the box is shown whole, letterboxed (B87)
+  let served = $state<{ w: number; h: number; fallback: boolean } | null>(null);
+  const fallback = $derived(served !== null && (served.fallback || otherShape(served.w, served.h, aspect)));
   // a hidden tab (another tab in front, minimised window) takes no preview stream; it resumes when the tab shows again
   let hidden = typeof document !== 'undefined' && document.hidden;
   // a new canvas renders only after the canvas switch: its preview is asked for once the engine lists it as rendered
@@ -116,7 +116,7 @@
       }
       if (!jpegRun.keep(sub.stop)) return;
       stop = sub.stop;
-      served = { w: sub.w, h: sub.h };
+      served = { w: sub.w, h: sub.h, fallback: sub.fallback };
       mode = 'jpeg';
       if (hidden) pause();  // hidden while the subscription was being set up
     };
@@ -166,7 +166,7 @@
             sawKey = false;
             mode = 'avc';
             detail = `${description.w}×${description.h} · ${description.fps} fps`;  // a rebuilt stream (new shape) too
-            served = { w: description.w, h: description.h };
+            served = { w: description.w, h: description.h, fallback: description.fallback };
             if (canvas) {
               canvas.width = description.w;
               canvas.height = description.h;
@@ -180,7 +180,7 @@
       );
       if (!run.keep(sub.stop)) return;
       stop = sub.stop;
-      served = { w: sub.w, h: sub.h };
+      served = { w: sub.w, h: sub.h, fallback: sub.fallback };
       if (sub.codec === 'jpeg') {
         // all H.264 encoders busy (B70): JPEG on this stream, kept, so the engine can upgrade it when one frees up (B86)
         mode = 'jpeg';
