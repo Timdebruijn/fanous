@@ -52,6 +52,8 @@ public final class DMXStore: @unchecked Sendable {
     private var table = UniverseTable()
     private var patch: Patch
     private var resolvers: [FixtureRef: FixtureResolver] = [:]
+    /// The project's source policy: on every patched fixture, and on the fixtures a later patch adds.
+    private var policy = SourcePolicy.dmx
     private var announced: Set<String> = []
     private var lastAnnounced: (universe: UniverseID, source: String, priority: UInt8?)?
     private var timer: DispatchSourceTimer?
@@ -330,7 +332,7 @@ public final class DMXStore: @unchecked Sendable {
         queue.async { [self] in
             self.patch = patch
             var kept: [FixtureRef: FixtureResolver] = [:]
-            for entry in patch.entries { kept[entry.fixture] = resolvers[entry.fixture] ?? FixtureResolver(mode: entry.fixture.mode) }
+            for entry in patch.entries { kept[entry.fixture] = resolvers[entry.fixture] ?? FixtureResolver(mode: entry.fixture.mode, policy: policy) }
             resolvers = kept
             applyLossModes()
             publish(receivedAt: 0)
@@ -366,6 +368,14 @@ public final class DMXStore: @unchecked Sendable {
 
     public func setPolicy(_ policy: SourcePolicy, for fixture: FixtureRef) {
         queue.async { [self] in resolvers[fixture]?.policy = policy }
+    }
+
+    /// The project's source policy for every fixture, also those a later `setPatch` adds.
+    public func setPolicy(_ policy: SourcePolicy) {
+        queue.async { [self] in
+            self.policy = policy
+            for key in resolvers.keys { resolvers[key]?.policy = policy }
+        }
     }
 
     public func snapshot() -> LiveSnapshot { snapshot(at: Self.now) }
