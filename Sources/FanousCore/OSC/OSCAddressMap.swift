@@ -25,6 +25,7 @@ public enum OSCAddressMap {
         case .layer(let n): "\(prefix)/layer/\(n)/\(parameter.key)"
         case .master: "\(prefix)/master/\(parameter.key)"
         case .output(let n): "\(prefix)/output/\(n)/\(parameter.key)"
+        case .keystone(let n): "\(prefix)/keystone/\(n)/\(parameter.key)"
         }
     }
 
@@ -48,9 +49,9 @@ public enum OSCAddressMap {
         case "master":
             guard parts.count == 2 else { return nil }
             return parameterCommand(.master, parts[1], args)
-        case "output":
+        case "output", "keystone":
             guard parts.count == 3, let n = Int(parts[1]), n >= 1 else { return nil }
-            return parameterCommand(.output(n), parts[2], args)
+            return parameterCommand(parts[0] == "output" ? .output(n) : .keystone(n), parts[2], args)
         case "cue":
             guard parts.count >= 2 else { return nil }
             switch (parts.count, parts[1]) {

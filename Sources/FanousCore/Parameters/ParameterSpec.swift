@@ -5,12 +5,13 @@
 import Foundation
 
 public enum FixtureMode: String, CaseIterable, Codable, Sendable {
-    case layer, master, output
+    case layer, master, output, keystone
 
     public var footprint: Int {
         switch self {
         case .layer: 64
         case .master, .output: 8
+        case .keystone: 16
         }
     }
 
@@ -29,16 +30,23 @@ public enum MasterParameter: String, CaseIterable, Codable, Sendable { case inte
 
 public enum OutputParameter: String, CaseIterable, Codable, Sendable { case intensity, control, testPattern, blend }
 
+/// Corner offsets in channel order: TL, TR, BR, BL as `WarpSettings.cornerPin`, X then Y (DESIGN.md §6.4a).
+public enum KeystoneParameter: String, CaseIterable, Codable, Sendable {
+    case topLeftX, topLeftY, topRightX, topRightY, bottomRightX, bottomRightY, bottomLeftX, bottomLeftY
+}
+
 public enum ParameterID: Hashable, Codable, Sendable, CustomStringConvertible {
     case layer(LayerParameter)
     case master(MasterParameter)
     case output(OutputParameter)
+    case keystone(KeystoneParameter)
 
     public var mode: FixtureMode {
         switch self {
         case .layer: .layer
         case .master: .master
         case .output: .output
+        case .keystone: .keystone
         }
     }
 
@@ -48,6 +56,7 @@ public enum ParameterID: Hashable, Codable, Sendable, CustomStringConvertible {
         case .layer(let p): p.rawValue
         case .master(let p): p.rawValue
         case .output(let p): p.rawValue
+        case .keystone(let p): p.rawValue
         }
     }
 

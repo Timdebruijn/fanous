@@ -7,6 +7,7 @@ import Foundation
 import FanousCore
 import Logging
 import QuartzCore
+import simd
 import Synchronization
 
 public struct EngineOptions: Sendable {
@@ -201,9 +202,7 @@ public final class Engine: @unchecked Sendable {
         let patch = ProjectDocument.effectivePatch(from: loadedProject ?? .null) ?? Patch.standard(layers: layerCount, outputs: 4)
         let policy = options.scene?.policy ?? loadedProject?["policy"]?.string.flatMap(SourcePolicy.init(rawValue:)) ?? .dmx
         let dmx = DMXStore(patch: patch, logger: logger)
-        if policy != .dmx {
-            for entry in patch.entries { dmx.setPolicy(policy, for: entry.fixture) }
-        }
+        if policy != .dmx { dmx.setPolicy(policy) }
         let universeSettings = checkedUniverseSettings(from: loadedProject ?? .null)
         lastUniverseSettings = universeSettings
         dmx.setUniverseSettings(universeSettings)
@@ -1315,10 +1314,10 @@ public final class Engine: @unchecked Sendable {
             }
             if changed { sacn?.update(groups: UniverseSettings.wire(dmx.currentPatch.universes, over: .sacn, settings: universeSettings)) }
         }
-        // the source policy applies to every patched fixture, also to the resolvers a new patch created
+        // the source policy applies to every patched fixture; the store gives it to the fixtures a later patch adds
         if let dmx, let raw = document["policy"]?.string, let policy = SourcePolicy(rawValue: raw), policy != lastPolicy {
             lastPolicy = policy
-            for entry in dmx.currentPatch.entries { dmx.setPolicy(policy, for: entry.fixture) }
+            dmx.setPolicy(policy)
         }
         // library root (project.set, undo, redo): switched at once on the library queue (B51)
         if let raw = document["library"]?["root"]?.string {
@@ -1523,6 +1522,16 @@ public final class Engine: @unchecked Sendable {
         func ms(_ v: Double) -> JSONValue { .number((v * 100).rounded() / 100) }
         let snapshot = library.snapshot
         let modeNotes = modeChecks.withLock { $0 }.compactMapValues(\.note)
+        // per output: keystone active (not the identity) and invalid (the console's quad was refused), from the DMX side's copy
+        var keystones: [(active: Bool, invalid: Bool)] = []
+        keystones.reserveCapacity(ParameterSnapshotSlot.maxOutputs)
+        dmx.snapshots.withLatest { slot in
+            // Raw bypasses the keystone (OutputPass.draw), so it is not active there
+            for i in slot.keystones.indices {
+                let raw = i < slot.outputs.count && slot.outputs[i].raw
+                keystones.append((slot.keystones[i] != matrix_identity_float3x3 && !raw, slot.keystoneInvalid[i]))
+            }
+        }
         let live: JSONValue = [
             "canvas": canvasSwitch?.live ?? .null,
             "engine": [
@@ -1567,6 +1576,8 @@ public final class Engine: @unchecked Sendable {
                         "id": .number(Double(s.id)), "state": .string(s.state.rawValue), "display": s.display.map { .string($0) } ?? .null,
                         "width": .number(Double(s.width)), "height": .number(Double(s.height)), "hz": .number(s.hz), "master": .bool(s.isMaster),
                         "modeNote": modeNotes[s.id].map { .string($0) } ?? .null,
+                        "keystone": .bool(keystones.indices.contains(s.id - 1) && keystones[s.id - 1].active),
+                        "keystoneInvalid": .bool(keystones.indices.contains(s.id - 1) && keystones[s.id - 1].invalid),
                     ]
                 }),
             "security": ["webUIOpen": .bool(auth.isOpen(.programmer))],

@@ -6,12 +6,15 @@ public enum FixtureRef: Hashable, Codable, Sendable, CustomStringConvertible {
     case layer(Int)  // 1-based
     case master
     case output(Int)  // 1-based
+    /// The Keystone fixture of output n (DESIGN.md §6.4a), patched next to its Output fixture.
+    case keystone(Int)  // 1-based
 
     public var mode: FixtureMode {
         switch self {
         case .layer: .layer
         case .master: .master
         case .output: .output
+        case .keystone: .keystone
         }
     }
 
@@ -20,6 +23,7 @@ public enum FixtureRef: Hashable, Codable, Sendable, CustomStringConvertible {
         case .layer(let n): "Layer \(n)"
         case .master: "Master"
         case .output(let n): "Output \(n)"
+        case .keystone(let n): "Keystone \(n)"
         }
     }
 }

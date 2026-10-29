@@ -115,6 +115,29 @@ public enum WarpMath {
         return MapPoint((m[0] * u + m[1] * v + m[2]) * s, (m[3] * u + m[4] * v + m[5]) * s)
     }
 
+    /// The Keystone fixture's homography (DESIGN.md §6.4a, §9.10 item 2) from its raw values in channel-map order: the
+    /// unit square onto the corners moved by the offsets, guarded as `keystone(to:)`. Centred values give the identity exactly.
+    public static func keystone(raw: [UInt16]) -> [Double]? {
+        guard raw.count == ChannelMap.keystone.count else { return nil }
+        let offsets = zip(ChannelMap.keystone, raw).map { $0.physical(fromRaw: $1) / 100 }
+        return keystone(to: WarpSettings().cornerPin.enumerated().map { i, p in MapPoint(p.x + offsets[2 * i], p.y + offsets[2 * i + 1]) })
+    }
+
+    /// The homography onto `quad` (TL, TR, BR, BL); nil when the quad is not strictly convex (the four corner cross
+    /// products differ in sign or one is 0: crossed, concave or degenerate) or w ≤ 0 at a corner, which would turn the
+    /// picture inside out.
+    public static func keystone(to quad: [MapPoint]) -> [Double]? {
+        guard quad.count == 4 else { return nil }
+        let crosses = (0..<4).map { i in
+            let (a, b, c) = (quad[i], quad[(i + 1) % 4], quad[(i + 2) % 4])
+            return (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x)
+        }
+        guard crosses.allSatisfy({ $0 > 1e-12 }) || crosses.allSatisfy({ $0 < -1e-12 }) else { return nil }
+        let m = homography(to: quad)
+        guard [(0.0, 0.0), (1, 0), (1, 1), (0, 1)].allSatisfy({ m[6] * $0.0 + m[7] * $0.1 + m[8] > 0 }) else { return nil }
+        return m
+    }
+
     /// Catmull-Rom spline through uniformly spaced values; the phantom points beyond the ends are extrapolated
     /// linearly, so a straight sequence stays exactly straight (an undistorted mesh is the identity).
     static func catmullRom(_ values: [Double], _ t: Double) -> Double {

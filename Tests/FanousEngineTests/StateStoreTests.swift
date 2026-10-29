@@ -158,6 +158,8 @@ struct StateStoreTests {
         try? FileManager.default.removeItem(at: url)
         #expect(FixtureRef(parsing: "layer 7") == .layer(7))
         #expect(FixtureRef(parsing: "Output 0") == nil)
+        #expect(FixtureRef(parsing: "Keystone 2") == .keystone(2) && FixtureRef(parsing: "keystone 2")?.description == "Keystone 2")
+        #expect(FixtureRef(parsing: "Keystone 0") == nil && FixtureRef(parsing: "Keystone") == nil)
         #expect(UniverseID(parsing: "artnet:1.2.3") == .artnet(net: 1, subnet: 2, universe: 3))
         #expect(UniverseID(parsing: "sacn:0") == nil)
     }

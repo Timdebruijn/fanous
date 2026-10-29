@@ -21,6 +21,8 @@ struct MappedUniforms {
     var scale: Float = 1
     /// Per-output colour: gain r, g, b and the black offset (`OutputPlan.color`).
     var color: SIMD4<Float> = SIMD4(1, 1, 1, 0)
+    /// The Keystone homography after the warp (`ParameterSnapshotSlot.keystones`); the identity in raw.
+    var keystone = matrix_identity_float3x3
 }
 
 /// One slice ready to draw: tessellated mesh and an optional mask texture.
@@ -297,15 +299,18 @@ enum OutputPass {
     }
 
     /// `canvas` looks a canvas up by id; canvas 1 always renders. A slice whose canvas does not render stays black.
+    /// `keystones` by output index like `outputs`; the previews pass none: they show the mapping as edited (§9.10 item 3).
     static func draw(
         _ set: OutputSet, canvas lookup: (Int) -> MTLTexture?, encoder: MTLRenderCommandEncoder, context: MetalContext, uniforms: MTLBuffer,
-        master: Float, masterPattern: TestPattern, outputs: [OutputParameters]
+        master: Float, masterPattern: TestPattern, outputs: [OutputParameters], keystones: [simd_float3x3]
     ) {
         // bound to texture slots the shader does not sample in this draw (patterns, no blend map, no warp, no mask)
         guard let canvas = lookup(1) else { return }
         var offset = 0
         for plan in set.plans {
             let fixture = fixture(for: plan, in: outputs)
+            // raw bypasses the keystone with the warp
+            let keystone = !fixture.raw && plan.index >= 1 && plan.index - 1 < keystones.count ? keystones[plan.index - 1] : matrix_identity_float3x3
             let region = plan.region
             encoder.setViewport(MTLViewport(originX: Double(region.origin.x), originY: Double(region.origin.y), width: Double(region.size.width), height: Double(region.size.height), znear: 0, zfar: 1))
             encoder.setScissorRect(MTLScissorRect(x: region.origin.x, y: region.origin.y, width: region.size.width, height: region.size.height))
@@ -329,6 +334,7 @@ enum OutputPass {
                 u.pattern = UInt32(pattern.rawValue)
                 u.index = UInt32(plan.index)
                 u.color = plan.color
+                u.keystone = keystone
                 (uniforms.contents() + offset).assumingMemoryBound(to: MappedUniforms.self).pointee = u
                 encoder.setRenderPipelineState(context.mappedPipeline)
                 encoder.setVertexSamplerState(context.linearSampler, index: 0)
@@ -360,6 +366,7 @@ enum OutputPass {
                 u.scale = contentScale(master: master, heldMaster: frozen == nil ? nil : plan.heldMaster)
                 u.opacity = slice.opacity
                 u.color = plan.color
+                u.keystone = keystone
                 u.flags = (plan.warpField != nil ? 1 : 0) | (slice.mask != nil ? 2 : 0) | (fixture.raw ? 4 : 0) | (plan.blendMap == nil ? 8 : 0)
                 (uniforms.contents() + offset).assumingMemoryBound(to: MappedUniforms.self).pointee = u
                 encoder.setVertexBuffer(slice.vertices, offset: 0, index: 0)
