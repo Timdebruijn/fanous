@@ -199,6 +199,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   signal level (Blend check is the 50 % grey), on test-pattern channel 4 of the Master and Output fixtures at 128, 144, 160
   and 176 (192–255 stays reserved), in the GDTF and the channel map, and as buttons on the Outputs tab. They follow the warp
   and blend map like the other patterns; they are not layer content in folder 0 (Solid colour covers a flat field).
+- Fixed: the preview kept its "H.264" caption over a closed decoder while it fell back to JPEG; it now says "connecting…".
+  The preview e2e tests read the mode from the start of the caption and accept the JPEG fallback a slow runner takes (B98).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
