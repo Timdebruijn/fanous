@@ -140,10 +140,10 @@ public enum ProjectDocument {
             guard now != expected, now != value else { continue }
             let number = pointer.tokens[1]
             guard let held = project[JSONPointer(tokens: ["syphon", number])] else {
-                throw CommandError("historyConflict", "Syphon number \(number) is now free; undo refused")
+                throw CommandError("historyConflict", "Syphon number \(number) is now free; undo/redo refused")
             }
             let name = SyphonCatalog.Server(file: 0, app: held["app"]?.string ?? "", server: held["server"]?.string ?? "").name
-            throw CommandError("historyConflict", "Syphon number \(number) is now held by \(name); undo refused")
+            throw CommandError("historyConflict", "Syphon number \(number) is now held by \(name); undo/redo refused")
         }
     }
 

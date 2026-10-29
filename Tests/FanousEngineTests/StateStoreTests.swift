@@ -646,7 +646,7 @@ extension StateStoreTests {
         // Y takes 151 as the lowest free number, then stops: the engine leaves its entry
         store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(151, "App")]) }
         let refused = store.execute("undo", role: .programmer)
-        #expect(refused == .failure(CommandError("historyConflict", "Syphon number 151 is now held by App/Server; undo refused")))
+        #expect(refused == .failure(CommandError("historyConflict", "Syphon number 151 is now held by App/Server; undo/redo refused")))
         #expect(apps() == ["A", "App"])
         // the conflict does not clear up by itself: the entry is dropped, the next undo reaches the change before it
         _ = try store.execute("undo", role: .programmer).get()
@@ -679,7 +679,7 @@ extension StateStoreTests {
         _ = try store.execute("redo", role: .programmer).get()
         #expect(store.project["syphon"] == [:])
         store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(151, "App")]) }
-        #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by App/Server; undo refused")))
+        #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by App/Server; undo/redo refused")))
         #expect(ProjectDocument.syphonNumbers(from: store.project).map(\.app) == ["App"])
     }
 

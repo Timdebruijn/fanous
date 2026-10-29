@@ -171,9 +171,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   frees goes to a waiting viewer (B88).
 - Fixed: the shell token test failed 1 run in 16, when the token ended in "0" (B84).
 - Fixed: undoing `syphon.forget` overwrote a Syphon number another server had taken meanwhile; the undo is now refused (B90).
-- Fixed: undoing a version restore (`project.revert`) could overwrite, rename or free the server on a Syphon number
-  another server had taken meanwhile; that undo (or redo) is now refused like the one of `syphon.forget`, and the history
-  before the revert goes with it (B91).
+- Fixed: undoing a version restore (`project.revert`) could overwrite, rename or free a Syphon number another server had
+  taken meanwhile; that undo (or redo) is now refused like the one of `syphon.forget`, and the history recorded against
+  the replaced project goes with it (B91).
 - Fixed: the preview left its H.264 decoder open after every target change and disconnect; it now closes it (B85).
 - Fixed: a new `settings.json` (hashed role passwords) and the shell token file were readable by other users between the write
   and the change to mode 0600; both are now written 0600 from the start, and a new Application Support folder is 0700 (B83).

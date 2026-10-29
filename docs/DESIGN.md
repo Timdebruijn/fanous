@@ -1634,7 +1634,7 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   unless the newest version already equals it (refused if that save fails),
   keeps the current `showLock`, and replaces the document, so the diff goes out
   as one patch and `projectChanged` applies it like any other change (canvas
-  switch, patch, cues, timecode). The history is not cleared; undo and redo of a
+  switch, patch, cues, timecode). Undo and redo of a
   revert entry are refused in show mode (`CommandSpec.replayCheck`, checked by
   `StateStore.step` before it pops). The check sees the patch the step would
   apply, the patch that made the state it undoes (`HistoryEntry.forward`) and
@@ -1646,8 +1646,11 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   ("Syphon number 151 is now held by App/Server", or "is now free"), so an
   undo or redo never overwrites, renames or frees a server that took the
   number. Only the fields the step changed are compared (B104). The conflict
-  drops the entry; for a revert it drops the whole stack, whose entries were
-  recorded against the project the revert replaced. The undo of a forget
+  drops the entry, as does a step that no longer applies; for a revert either
+  drops the whole stack, whose entries were recorded against the project the
+  revert replaced. A step skips a `remove` whose key is already gone (the
+  engine dropped a running server's twin), so that undo still applies and no
+  client gets the remove. The undo of a forget
   without file is refused as a whole when any of its numbers conflicts. `live.versions` `{lastAutomatic, serial}`
   feeds the status bar and tells the System screen to re-list. OSC
   `/fanous/project/load s` resolves the newest named version with that name

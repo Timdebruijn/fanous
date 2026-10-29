@@ -159,7 +159,7 @@ struct ProjectVersionsTests {
         // Y takes 151 as the lowest free number, then stops: the engine leaves its entry
         store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(151, "Y")]) }
         #expect(store.historyDepth.undo == 2)
-        #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by Y/Server; undo refused")))
+        #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by Y/Server; undo/redo refused")))
         #expect(store.project["syphon"]?["151"]?["app"]?.string == "Y")
         #expect(store.historyDepth.undo == 0)
         #expect(Self.failure(store.execute("undo", role: .programmer))?.code == "nothingToUndo")
@@ -179,8 +179,29 @@ struct ProjectVersionsTests {
         _ = try store.execute("project.revert", args: ["id": .string(id)], role: .programmer).get()
         // X runs elsewhere: the catalog drops its twin on 151; Y takes 151, then stops
         store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(151, "Y")]) }
-        #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by Y/Server; undo refused")))
+        #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by Y/Server; undo/redo refused")))
         #expect(store.project["syphon"]?["151"]?["app"]?.string == "Y")
+    }
+
+    /// The undo of a revert that added 151 after the engine dropped the entry (a running server's twin) skips the remove
+    /// of the missing key instead of failing and dropping the history (B91).
+    @Test func revertUndoSkipsANumberTheEngineAlreadyDropped() throws {
+        let f = Self.make()
+        defer { try? FileManager.default.removeItem(at: f.base) }
+        let store = f.store
+        func server(_ file: Int, _ app: String) -> SyphonCatalog.Server { SyphonCatalog.Server(file: file, app: app, server: "Server") }
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(151, "X")]) }
+        let id = try #require(try store.execute("project.snapshot", args: ["name": "Doors"], role: .programmer).get().value?["id"]?.string)
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([]) }
+        _ = try store.execute("project.set", args: ["path": "/name", "value": "Tour"], role: .programmer).get()
+        _ = try store.execute("project.revert", args: ["id": .string(id)], role: .programmer).get()
+        // X runs elsewhere: the catalog drops its twin on 151 and writes /syphon back without it; nobody takes 151
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([]) }
+        let depth = store.historyDepth.undo
+        _ = try store.execute("undo", role: .programmer).get()
+        #expect(store.project["name"]?.string == "Tour")
+        #expect(store.project["syphon"] == [:])
+        #expect(store.historyDepth.undo == depth - 1)
     }
 
     /// The undo of a revert that renamed 151, with nothing changed since, puts the old name back (B91).
@@ -213,7 +234,7 @@ struct ProjectVersionsTests {
         _ = try store.execute("project.revert", args: ["id": .string(id)], role: .programmer).get()
         #expect(store.project["syphon"]?["151"]?["app"]?.string == "Z")
         store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(151, "Y")]) }
-        #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by Y/Server; undo refused")))
+        #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by Y/Server; undo/redo refused")))
         #expect(store.project["syphon"]?["151"]?["app"]?.string == "Y")
     }
 

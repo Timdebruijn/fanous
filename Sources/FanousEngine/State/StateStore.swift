@@ -22,7 +22,7 @@ public struct CommandSpec: Sendable {
     public var argsType: String
     /// Checked before undo or redo replays this command's history entry, with the patch the step would apply, the patch
     /// that made the state it undoes, and the project as it is now; a thrown `CommandError` refuses the step (the entry
-    /// stays, unless the code is `historyConflict`).
+    /// stays, unless the code is `historyConflict`; a dropped `project.revert` entry takes its whole stack with it, B91).
     public var replayCheck: (@Sendable (JSONPatch, JSONPatch, JSONValue) throws -> Void)?
     /// What makes two calls "the same edit" for undo coalescing (a slider drag), with the args' `id`; nil = their `path`.
     public var coalesceKey: (@Sendable (JSONValue) -> String?)?
@@ -213,16 +213,23 @@ public final class StateStore: @unchecked Sendable {
             return .failure(CommandError("failed", "\(error)"))
         }
         var next = projectDocument
+        var applied: [JSONPatch.Operation] = []
         do {
-            try last.inverse.apply(to: &next)
+            for operation in last.inverse.operations {
+                // already gone (the engine dropped a running server's twin): nothing to undo, and no client hears of it
+                if case .remove(let pointer) = operation, next[pointer] == nil { continue }
+                try JSONPatch(operations: [operation]).apply(to: &next)
+                applied.append(operation)
+            }
         } catch {
             drop()
             logger.error("history entry no longer applies", metadata: ["command": "\(last.name)", "error": "\(error)"])
             return .failure(CommandError("historyConflict", "the change no longer applies"))
         }
         source.removeLast()
-        commit(next, patch: last.inverse)
-        target.append(HistoryEntry(name: last.name, forward: last.inverse, inverse: last.forward))
+        let patch = JSONPatch(operations: applied)
+        commit(next, patch: patch)
+        target.append(HistoryEntry(name: last.name, forward: patch, inverse: last.forward))
         return .success(CommandResult(rev: revision, value: nil))
     }
 
