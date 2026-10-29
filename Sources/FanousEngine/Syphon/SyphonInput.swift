@@ -25,7 +25,7 @@ private final class FrameSlot: Sendable {
 }
 
 /// Watches the Syphon server directory and receives frames from one chosen server.
-/// `connect`/`disconnect` belong to one control thread; `latestTexture`, `servers` and `frames` are safe anywhere.
+/// `connect`/`disconnect` belong to one control thread; `latestFrame`, `servers` and `frames` are safe anywhere.
 public final class SyphonInput: @unchecked Sendable {
     public struct ServerInfo: Sendable, Hashable {
         public let appName: String
@@ -73,9 +73,8 @@ public final class SyphonInput: @unchecked Sendable {
 
     /// The newest frame, or nil before the first frame or after `disconnect`. The texture is backed by the
     /// server's IOSurface and may update in place; take it again every frame rather than holding on to it.
-    public var latestTexture: MTLTexture? { slot.load() }
     /// Syphon surfaces hold the picture in OpenGL order (row 0 at the bottom), whatever kind of server wrote them.
-    public var bottomUp: Bool { true }
+    public var latestFrame: LiveFrame? { slot.load().map { LiveFrame(texture0: $0, bottomUp: true) } }
 
     public var isConnected: Bool { client?.isValid ?? false }
 
