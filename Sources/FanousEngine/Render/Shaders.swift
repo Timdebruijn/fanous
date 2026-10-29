@@ -513,7 +513,7 @@ public enum ShaderSource {
     // intensity → dither. Slices alpha-blend over each other in order (pipeline: one, one-minus-source-alpha).
     struct MappedUniforms {
         float2 size;      // region size in pixels (dither, patterns)
-        float intensity;  // output intensity × master intensity × output fixture (0 at a blackout); patterns too
+        float intensity;  // output intensity × output fixture (0 at a blackout); × master on a pattern (the canvas carries it, B100)
         float opacity;    // slice opacity
         uint flags;       // 1 = warp field present, 2 = mask present, 4 = raw (no blend/warp/mask), 8 = no blend map
         uint pattern;     // TestPattern drawn instead of the canvas (through warp and blend, no mask), 0 = canvas

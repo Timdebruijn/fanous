@@ -540,7 +540,7 @@ can never disagree). `[OPEN-9]` exact bands and the speed/scale upper limits.
 
 | Ch | Parameter | Bits | Default | Mapping |
 |---|---|---|---|---|
-| 1–2 | Master intensity | 16 | 65535 | multiplies all canvases |
+| 1–2 | Master intensity | 16 | 65535 | multiplies all canvases (each layer); outputs take it once, from the canvas (§9.5) |
 | 3 | Control | 8 | 0 | 0–63 normal · 64–127 Freeze all · 128–191 Blackout · 192–255 reserved |
 | 4 | Test pattern | 8 | 0 | 0–15 off · 16–31 Grid · 32–47 Colour bars · 48–63 Blend zones · 64–79 Output ID · 80–95 Crosshair/alignment · 96–111 Grey steps · 112–127 Checkerboard · 128–143 Grey 0 % · 144–159 Grey 25 % · 160–175 Grey 75 % · 176–191 White (seam check, §9.9) · 192–255 reserved — overrides every output |
 | 5–6 | Master speed | 16 | 32768 | multiplies layer speed (same mapping as layer speed) |
@@ -954,9 +954,19 @@ for each slice (ordered):
   vertex:   mesh vertex → warp displacement → clip
   fragment: canvas.sample(uv) × mask(uv) × slice.opacity        (a test pattern replaces this, whole output, no mask)
             → × blendMap.factor + blendMap.lift                 (skipped when Output "raw" is set)
-            → × output intensity × master intensity             (0 at Output or Master Blackout; patterns too)
+            → × output intensity                                (0 at Output or Master Blackout; patterns too)
+            → × master intensity on a test pattern only         (the canvas carries it; a frozen canvas × master / master at Freeze)
             → blue-noise dither → drawable (bgra8 / bgr10 later) (not on a test pattern)
 ```
+
+The Master intensity is applied once, per layer into the canvas, so the
+canvas preview, Syphon, CITP and every output show the same level (B100: the
+output pass multiplied it in a second time, 50 % gave 25 %). A held (Freeze)
+canvas carries the Master it was drawn with, which `holdFrozen` keeps with it
+(`OutputPlan.heldMaster`, from the compositor's tick or, on a secondary
+display, the Master its last completed canvas was drawn with), so a frozen
+output follows later Grand Master moves. Master 0 or Blackout is black at once
+also on a secondary display, which draws the last completed canvas.
 
 One pass, no intermediate textures; "all output/mapping configuration is
 applied entirely on the GPU in the final output pass" is satisfied.
@@ -1028,8 +1038,9 @@ applied entirely on the GPU in the final output pass" is satisfied.
   with no layers is cleared three times (all textures) and then skipped.
   Secondary displays read one tick's canvases per present.
 - Output pass: each slice samples its own canvas (`SlicePlan.canvas`); Freeze
-  holds a copy per canvas a plan uses. A slice whose canvas does not render is
-  skipped (black) and the coordinator logs it once per change.
+  holds a copy per canvas a plan uses and the Master they were drawn with
+  (§9.5). A slice whose canvas does not render is skipped (black) and the
+  coordinator logs it once per change.
 - Preview: `canvas:<id>` targets ("canvas" = "canvas:1"), sized to their canvas;
   `layer:<n>` is made at its layer's canvas aspect and rebuilt when the layer
   changes canvas; output previews sample every canvas of the tick.

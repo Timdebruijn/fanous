@@ -117,6 +117,9 @@ public final class Compositor: @unchecked Sendable {
     /// Ticks that encoded no GPU work because nobody watched, and ticks that reused the last canvas (nothing changed).
     public let idleTicks = Atomic<Int>(0)
     public let reusedCanvases = Atomic<Int>(0)
+    /// The Master intensity the latest completed canvases were drawn with (Float bits), for a secondary display's Freeze:
+    /// its canvases can be a tick older than the Master it reads (B100). Stored just before `canvasIndex` moves on.
+    private let completedMaster = Atomic<UInt32>(Float(1).bitPattern)
     nonisolated(unsafe) public var lastGPUError: String = ""
 
     public init(
@@ -460,7 +463,7 @@ public final class Compositor: @unchecked Sendable {
 
         if let target = drawable?.texture ?? offscreenOutput {
             outputPass.colorAttachments[0].texture = target
-            if let set = outputSet { OutputPass.holdFrozen(set, canvas: { tickCanvas($0) }, outputs: snapshot.outputs, buffer: commandBuffer) }
+            if let set = outputSet { OutputPass.holdFrozen(set, canvas: { tickCanvas($0) }, outputs: snapshot.outputs, master: frame.masterIntensity, buffer: commandBuffer) }
             if let set = outputSet, let output = commandBuffer.makeRenderCommandEncoder(descriptor: outputPass) {
                 output.label = "mapped output"
                 OutputPass.draw(
@@ -505,7 +508,10 @@ public final class Compositor: @unchecked Sendable {
             metrics.complete(slot: slot, gpuMicros: UInt32(max(0, (buffer.gpuEndTime - buffer.gpuStartTime) * 1e6)), late: buffer.gpuEndTime > target)
         }
         commandBuffer.commit()
-        if !reuse { canvasIndex = (canvasIndex + 1) % 3 }
+        if !reuse {
+            completedMaster.store(frame.masterIntensity.bitPattern, ordering: .releasing)
+            canvasIndex = (canvasIndex + 1) % 3
+        }
     }
 
     struct TickContext {
@@ -856,6 +862,7 @@ public final class Compositor: @unchecked Sendable {
         }
         // one tick's canvases for the whole draw (the compositor may complete another meanwhile)
         let (frame, index) = completedCanvases()
+        let canvasMaster = Float(bitPattern: completedMaster.load(ordering: .acquiring))
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = drawable.texture
         pass.colorAttachments[0].loadAction = .clear
@@ -865,7 +872,7 @@ public final class Compositor: @unchecked Sendable {
             outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
             return
         }
-        OutputPass.holdFrozen(set, canvas: { id in frame.first { $0.id == id }?.textures[index] }, outputs: outputs, buffer: commandBuffer)
+        OutputPass.holdFrozen(set, canvas: { id in frame.first { $0.id == id }?.textures[index] }, outputs: outputs, master: canvasMaster, buffer: commandBuffer)
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else {
             outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
             return

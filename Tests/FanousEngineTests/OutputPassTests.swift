@@ -31,9 +31,10 @@ struct OutputPassTests {
     }
 
     /// Renders one output plan over the given still into a `drawable`-sized offscreen target; BGRA bytes.
-    /// `master` edits the Master fixture's values in the slot (intensity, control, test pattern).
+    /// `master` edits the Master fixture's values in the slot (intensity, control, test pattern). A nil plan draws the
+    /// plain pass (the canvas as the canvas preview, Syphon and CITP show it).
     static func render(
-        _ plan: OutputPlan, still: DecodedFrame, drawable: (Int, Int), context: MetalContext, outputs: [OutputParameters] = [],
+        _ plan: OutputPlan?, still: DecodedFrame, drawable: (Int, Int), context: MetalContext, outputs: [OutputParameters] = [],
         master: (ParameterSnapshotSlot) -> Void = { _ in }
     ) throws -> [UInt8] {
         let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
@@ -48,7 +49,7 @@ struct OutputPassTests {
         descriptor.usage = [.renderTarget, .shaderRead]
         descriptor.storageMode = .shared
         compositor.offscreenOutput = context.device.makeTexture(descriptor: descriptor)
-        compositor.outputSet = OutputSet(plans: [plan])
+        compositor.outputSet = plan.map { OutputSet(plans: [$0]) }
         parameters.write { slot in
             slot.sequence = 1
             slot.layers[0].intensity = 1
@@ -300,6 +301,70 @@ struct OutputPassTests {
             ("Grey 0 % with black lift + Output Blackout", try white({ $0.testPattern = .grey0; $0.control = .blackout }, config: lifted)),
         ]
         for (name, image) in dark { #expect(greens(image) == [0], "\(name): \(greens(image))") }
+    }
+
+    /// The canvas already carries the Master (each layer is drawn with it), so a mapped output takes it once, as the plain
+    /// pass does (B100: 50 % read 25 %).
+    @Test func masterDimsAMappedOutputOnce() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 200)
+        let plan = try OutputCompiler(device: context.device).compile(OutputConfig(id: 1), index: 1, drawable: (Self.width, Self.height))
+        for (master, expected) in [(Float(1), 200), (0.5, 100), (0.25, 50)] {
+            let mapped = try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, master: { $0.master = master })
+            let plain = try Self.render(nil, still: still, drawable: (Self.width, Self.height), context: context, master: { $0.master = master })
+            let (m, p) = (Int(mapped[(90 * Self.width + 160) * 4 + 1]), Int(plain[(90 * Self.width + 160) * 4 + 1]))
+            #expect(abs(m - expected) <= 1 && abs(m - p) <= 1, "Master \(master): mapped \(m), plain \(p)")
+        }
+    }
+
+    /// A frozen canvas carries the Master it was drawn with; the output follows the Master from there, once.
+    @Test func freezeFollowsTheMasterOnce() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 200)
+        let plan = try OutputCompiler(device: context.device).compile(OutputConfig(id: 1), index: 1, drawable: (Self.width, Self.height))
+        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
+        let compositor = try Compositor(
+            context: context, canvasWidth: Self.width, canvasHeight: Self.height, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 16),
+            parameters: parameters, logger: Logger(label: "output-test"))
+        let layer = RenderLayer(index: 0)
+        layer.current = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: still)
+        layer.wanted.store(MediaKey(folder: 1, file: 1).packed, ordering: .relaxed)
+        compositor.setLayers([layer])
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.outputFormat, width: Self.width, height: Self.height, mipmapped: false)
+        descriptor.usage = [.renderTarget, .shaderRead]
+        descriptor.storageMode = .shared
+        compositor.offscreenOutput = context.device.makeTexture(descriptor: descriptor)
+        compositor.outputSet = OutputSet(plans: [plan])
+        var sequence: UInt64 = 0
+        /// One tick; the layer goes dark once frozen, so what shows is the held canvas.
+        func tick(_ control: OutputControl, master: Float, layer: Float, blackout: Bool = false) -> Int {
+            sequence += 1
+            parameters.write { slot in
+                slot.sequence = sequence
+                slot.layers[0].intensity = layer
+                slot.layers[0].folder = 1
+                slot.layers[0].file = 1
+                slot.layers[0].fitMode = .stretch
+                slot.outputs[0].control = control
+                slot.master = master
+                slot.masterControl = blackout ? .blackout : .normal
+            }
+            compositor.tick(target: 3600 + Double(sequence), drawable: nil)
+            return Int(compositor.readbackOutput().bgra[(90 * Self.width + 160) * 4 + 1])
+        }
+        func near(_ value: Int, _ expected: Int) -> Bool { abs(value - expected) <= 1 }
+        // engaged at Master 100 %: the Master after it dims the held frame once, 0 and Master Blackout are black at once
+        #expect(near(tick(.freeze, master: 1, layer: 1), 200))
+        #expect(near(tick(.freeze, master: 0.5, layer: 0), 100), "frozen at 100 %, Master 50 %")
+        #expect(tick(.freeze, master: 0, layer: 0) <= 1, "frozen, Master 0")
+        #expect(tick(.freeze, master: 1, layer: 0, blackout: true) <= 1, "frozen, Master Blackout")
+        #expect(near(tick(.freeze, master: 1, layer: 0), 200), "frozen, Master back at 100 %")
+        _ = tick(.normal, master: 1, layer: 0)  // releases the held canvas
+        // engaged at Master 50 %: the same 100 before and after it engaged, the full frame at Master 100 %
+        #expect(near(tick(.normal, master: 0.5, layer: 1), 100), "live at Master 50 %")
+        #expect(near(tick(.freeze, master: 0.5, layer: 1), 100), "Freeze engages at Master 50 %")
+        #expect(near(tick(.freeze, master: 0.5, layer: 0), 100), "frozen at 50 %, Master 50 %")
+        #expect(near(tick(.freeze, master: 1, layer: 0), 200), "frozen at 50 %, Master 100 %")
     }
 
     @Test func warpMaskAndSliceGoldens() throws {

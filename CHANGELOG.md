@@ -204,6 +204,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: test patterns ignored the output's Intensity %, the Output and Master Intensity and both Blackouts, so a console's
   Grand Master or DBO left a full-field pattern (White is 100 %) on the projectors. Patterns now follow the same Dimmer and
   Blackout as the picture, Raw included; bring the Dimmer up to focus. Freeze holds the picture, not the pattern.
+- Fixed: the Master intensity dimmed a mapped output twice (into the canvas and again in the output pass), so a Grand
+  Master at 50 % gave 25 % on the projectors and 25 % gave 6 %. Outputs now take it once, as the canvas preview, Syphon and
+  CITP do, so they are brighter than before at Grand Master levels between 0 and 100 %; 0 %, 100 % and Master Blackout are
+  unchanged. A frozen output follows later Grand Master moves from the level it froze at (B100).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
