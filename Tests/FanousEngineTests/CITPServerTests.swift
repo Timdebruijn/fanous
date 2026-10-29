@@ -30,11 +30,26 @@ struct CITPServerTests {
             ], scannedAt: 0, fileCount: 2, invalidCount: 1)
     }
 
-    /// A blocking client: send one packet, collect decoded packets until `until` is satisfied or the time runs out.
+    /// A console's MSEX message as bytes (the codec does not encode the client direction): CITP header with
+    /// RequestIndex 7, MSEX 1.2, cookie, payload.
+    static func msex(_ cookie: String, _ payload: [UInt8]) -> [UInt8] {
+        CITPHeader(requestIndex: 7, messageSize: UInt32(26 + payload.count), contentType: "MSEX").encode() + [1, 2] + Array(cookie.utf8) + payload
+    }
+
+    /// RqSt for `source` at `fps` (0 stops it), JPEG, 5 s timeout.
+    static func requestStream(_ source: UInt16, width: UInt16, height: UInt16, fps: UInt8) -> [UInt8] {
+        func le16(_ v: UInt16) -> [UInt8] { [UInt8(v & 0xFF), UInt8(v >> 8)] }
+        return msex("RqSt", le16(source) + Array("JPEG".utf8) + le16(width) + le16(height) + [fps, 5])
+    }
+
+    /// What the server should answer, as bytes (MSEX 1.2, InResponseTo 7 unless it is unsolicited).
+    static func reply(_ packet: CITPPacket, requestIndex: UInt16 = 7) -> [UInt8] { packet.encoded(version: .v1_2, requestIndex: requestIndex) }
+
+    /// A blocking client: send raw messages, collect whole received messages until `wait` finds one or the time runs out.
     final class Client: @unchecked Sendable {
         let connection: NWConnection
         let queue = DispatchQueue(label: "test.citp.client")
-        let received = Mutex<[CITPPacket]>([])
+        let received = Mutex<[[UInt8]]>([])
         private var buffer: [UInt8] = []
         private let semaphore = DispatchSemaphore(value: 0)
 
@@ -50,7 +65,7 @@ struct CITPServerTests {
                 while buffer.count >= CITPHeader.size, let header = try? CITPHeader.parse(buffer), buffer.count >= Int(header.messageSize) {
                     let message = Array(buffer[0..<Int(header.messageSize)])
                     buffer.removeFirst(message.count)
-                    if let packet = try? CITPPacket.parse(message) { received.withLock { $0.append(packet) } }
+                    received.withLock { $0.append(message) }
                     semaphore.signal()
                 }
                 if done || error != nil { return }
@@ -58,17 +73,17 @@ struct CITPServerTests {
             }
         }
 
-        func send(_ packet: CITPPacket, requestIndex: UInt16 = 7) {
-            connection.send(content: Data(packet.encoded(version: .v1_2, requestIndex: requestIndex)), completion: .idempotent)
+        func send(_ bytes: [UInt8]) {
+            connection.send(content: Data(bytes), completion: .idempotent)
         }
 
-        /// The first received packet matching `pick`, waiting up to `timeout`.
-        func wait<T: Sendable>(_ timeout: TimeInterval = 3, _ pick: (CITPPacket) -> T?) -> T? {
+        /// Whether `expected` arrived (byte for byte), waiting up to `timeout`.
+        func wait(_ timeout: TimeInterval = 3, for expected: [UInt8]) -> Bool {
             let deadline = Date().addingTimeInterval(timeout)
             while true {
-                if let found = received.withLock({ $0.compactMap(pick).first }) { return found }
+                if received.withLock({ $0.contains(expected) }) { return true }
                 let remaining = deadline.timeIntervalSinceNow
-                if remaining <= 0 { return nil }
+                if remaining <= 0 { return false }
                 _ = semaphore.wait(timeout: .now() + remaining)
             }
         }
@@ -102,20 +117,19 @@ struct CITPServerTests {
         try server.start()
         defer { server.stop() }
         var buffer = [UInt8](repeating: 0, count: 512)
-        var packet: CITPPacket?
-        for _ in 0..<4 where packet == nil {
+        var found = false
+        for _ in 0..<4 where !found {
             let n = recv(fd, &buffer, buffer.count, 0)
             guard n > 0 else { break }
-            if case .peerLocation(let location)? = try? CITPPacket.parse(Array(buffer[0..<n])), location.name == "beacon-test" { packet = .peerLocation(location) }
+            let port = server.status.withLock { $0.port }
+            found = Array(buffer[0..<n]) == CITPPacket.peerLocation(PeerLocation(listeningTCPPort: port, type: "MediaServer", name: "beacon-test", state: "Running")).encoded()
         }
-        let location = try #require(packet, "no PLoc within 3 s (no default route, or a firewall holds the engine's UDP)")
-        if case .peerLocation(let l) = location {
-            #expect(l.listeningTCPPort == server.status.withLock { $0.port } && l.type == "MediaServer" && l.state == "Running")
-        }
+        #expect(found, "no PLoc within 3 s (no default route, or a firewall holds the engine's UDP)")
     }
 
     @Test func msexSessionOverLoopback() throws {
         let frames = Mutex(0)
+        let sources = [VideoSource(sourceIdentifier: 0, name: "Canvas", width: 640, height: 360), VideoSource(sourceIdentifier: 1, name: "Layer 1", layerNumber: 0, width: 160, height: 90)]
         let server = CITPServer(
             name: "test", uuid: "550e8400-e29b-41d4-a716-446655440000",
             providers: CITPServer.Providers(
@@ -125,7 +139,7 @@ struct CITPServerTests {
                     frames.withLock { $0 += 1 }
                     return source == 1 ? (Self.jpeg, 160, 90) : (Self.jpeg, 640, 360)  // layer 1's thumbnail, else the canvas
                 },
-                sources: { [VideoSource(sourceIdentifier: 0, name: "Canvas", width: 640, height: 360), VideoSource(sourceIdentifier: 1, name: "Layer 1", layerNumber: 0, width: 160, height: 90)] },
+                sources: { sources },
                 layerCount: { 1 }),
             logger: Self.logger)
         try server.start()
@@ -139,55 +153,58 @@ struct CITPServerTests {
         #expect(server.activeTimers == (false, false), "nobody connected: no periodic timers")
         let client = Client(port: port)
 
-        client.send(.clientInformation(ClientInformation(supportedVersions: [.v1_0, .v1_1, .v1_2, MSEXVersion(major: 2, minor: 0)])))
-        let info = try #require(client.wait { if case .serverInformation(let i) = $0 { return i } else { return nil } })
-        #expect(info.version == .v1_2, "highest common version, never above 1.2")
-        #expect(info.productName == "Fanous" && info.layerDMXSources == ["Layer 1"] && info.streamFormats == ["JPEG"])
+        client.send(Self.msex("CInf", [4, 0, 1, 1, 1, 2, 1, 0, 2]))  // 1.0, 1.1, 1.2, 2.0
+        let info = ServerInformation(
+            version: .v1_2, uuid: "550e8400-e29b-41d4-a716-446655440000", productName: "Fanous", productVersionMajor: CITPServer.productVersion.0,
+            productVersionMinor: CITPServer.productVersion.1, productVersionBugfix: CITPServer.productVersion.2, supportedVersions: [.v1_0, .v1_1, .v1_2],
+            supportedLibraryTypes: 1, thumbnailFormats: ["JPEG", "RGB8"], streamFormats: ["JPEG"], layerDMXSources: ["Layer 1"])
+        #expect(client.wait(for: Self.reply(.serverInformation(info))), "SInf in the highest common version, never above 1.2")
         #expect(server.wantsFrames.load(ordering: .relaxed) == false)
         #expect(server.activeTimers == (true, false), "negotiated: layer status runs, no frames yet")
 
-        client.send(.getElementLibraryInformation(GetElementLibraryInformation()))
-        let libraries = try #require(client.wait { if case .elementLibraryInformation(let l) = $0 { return l } else { return nil } })
-        #expect(libraries.libraries.map(\.name) == ["Bench"], "invalid folder names are not libraries")
-        #expect(libraries.libraries.first?.id == .topLevel(1) && libraries.libraries.first?.elementCount == 1)
+        client.send(Self.msex("GELI", [1, 0, 0, 0, 0, 0, 0]))  // media, below the root, all libraries
+        let bench = ElementLibrary(id: .topLevel(1), serialNumber: 2, dmxRangeMin: 1, dmxRangeMax: 1, name: "Bench", elementCount: 1)
+        #expect(
+            client.wait(for: Self.reply(.elementLibraryInformation(ElementLibraryInformation(libraries: [bench])))),
+            "invalid folder names are not libraries")
 
-        client.send(.getElementInformation(GetElementInformation(libraryID: .topLevel(1))))
-        let elements = try #require(client.wait { if case .mediaElementInformation(let e) = $0 { return e } else { return nil } })
-        let element = try #require(elements.elements.first)
-        #expect(elements.elements.count == 1 && element.number == 3 && element.name == "Intro" && element.width == 1920 && element.length == 250 && element.fps == 25)
+        client.send(Self.msex("GEIn", [1, 1, 1, 0, 0, 0, 0]))  // media, library 1, all elements
+        let intro = MediaElement(number: 3, dmxRangeMin: 3, dmxRangeMax: 3, name: "Intro", width: 1920, height: 1080, length: 250, fps: 25)
+        #expect(client.wait(for: Self.reply(.mediaElementInformation(MediaElementInformation(libraryID: .topLevel(1), elements: [intro])))))
 
-        client.send(.getElementThumbnail(GetElementThumbnail(width: 320, height: 180, libraryID: .topLevel(1), elementNumbers: [3])))
-        let thumbnail = try #require(client.wait { if case .elementThumbnail(let t) = $0 { return t } else { return nil } })
-        #expect(thumbnail.buffer == Self.jpeg && thumbnail.format == "JPEG" && thumbnail.elementNumber == 3)
+        client.send(Self.msex("GETh", Array("JPEG".utf8) + [0x40, 0x01, 0xB4, 0x00, 0, 1, 1, 1, 0, 0, 1, 0, 3]))  // 320 x 180, library 1, element 3
+        let thumbnail = ElementThumbnail(
+            libraryID: .topLevel(1), elementNumber: 3, width: UInt16(Thumbnailer.width), height: UInt16(Thumbnailer.width * 1080 / 1920), buffer: Self.jpeg)
+        #expect(client.wait(for: Self.reply(.elementThumbnail(thumbnail))))
 
-        let status = try #require(client.wait(1) { if case .layerStatus(let s) = $0 { return s } else { return nil } })
-        #expect(status.count == 1 && status.first?.layerNumber == 0 && status.first?.mediaName == "Intro" && status.first?.statusFlags == LayerStatus.playing)
+        let status = LayerStatus(
+            layerNumber: 0, mediaLibraryID: .topLevel(1), mediaNumber: 3, mediaName: "Intro", mediaPosition: 400, mediaLength: 10_000, mediaFPS: 25,
+            statusFlags: LayerStatus.playing)
+        #expect(client.wait(1, for: Self.reply(.layerStatus([status]), requestIndex: 0)))
 
-        client.send(.requestStream(RequestStream(sourceIdentifier: 0, frameFormat: "JPEG", frameWidth: 640, frameHeight: 360, fps: 10, timeout: 5)))
-        let frame = try #require(client.wait(2) { if case .streamFrame(let f) = $0 { return f } else { return nil } })
-        #expect(frame.buffer == Self.jpeg && frame.frameWidth == 640 && frame.frameFormat == "JPEG")
+        client.send(Self.requestStream(0, width: 640, height: 360, fps: 10))
+        let frame = StreamFrame(mediaServerUUID: "550e8400-e29b-41d4-a716-446655440000", sourceIdentifier: 0, frameWidth: 640, frameHeight: 360, buffer: Self.jpeg)
+        #expect(client.wait(2, for: Self.reply(.streamFrame(frame), requestIndex: 0)))
         #expect(server.wantsFrames.load(ordering: .relaxed) == true && server.wantsLayerFrames.load(ordering: .relaxed) == false)
         #expect(server.status.withLock { $0.streams } == 1)
         #expect(server.activeTimers == (true, true), "streaming: frame timer runs")
 
         // per-layer streams (B29/B41): the sources, then layer 1's live thumbnail
-        client.send(.getVideoSources)
-        let sources = try #require(client.wait(1) { if case .videoSources(let s) = $0 { return s } else { return nil } })
-        #expect(sources.map(\.sourceIdentifier) == [0, 1] && sources[1].layerNumber == 0 && sources[0].layerNumber == VideoSource.none)
-        client.send(.requestStream(RequestStream(sourceIdentifier: 1, frameFormat: "JPEG", frameWidth: 160, frameHeight: 90, fps: 4, timeout: 5)))
-        let layerFrame = try #require(client.wait(2) { if case .streamFrame(let f) = $0, f.sourceIdentifier == 1 { return f } else { return nil } })
-        #expect(layerFrame.frameWidth == 160 && layerFrame.frameHeight == 90)
+        client.send(Self.msex("GVSr", []))
+        #expect(client.wait(1, for: Self.reply(.videoSources(sources))))
+        client.send(Self.requestStream(1, width: 160, height: 90, fps: 4))
+        let layerFrame = StreamFrame(mediaServerUUID: "550e8400-e29b-41d4-a716-446655440000", sourceIdentifier: 1, frameWidth: 160, frameHeight: 90, buffer: Self.jpeg)
+        #expect(client.wait(2, for: Self.reply(.streamFrame(layerFrame), requestIndex: 0)))
         #expect(server.wantsLayerFrames.load(ordering: .relaxed) == true && server.status.withLock { $0.streams } == 2)
-        client.send(.requestStream(RequestStream(sourceIdentifier: 1, frameFormat: "JPEG", frameWidth: 160, frameHeight: 90, fps: 0, timeout: 5)))
+        client.send(Self.requestStream(1, width: 160, height: 90, fps: 0))
         for _ in 0..<50 where server.wantsLayerFrames.load(ordering: .relaxed) { usleep(20_000) }
         #expect(server.wantsLayerFrames.load(ordering: .relaxed) == false && server.wantsFrames.load(ordering: .relaxed) == true, "the canvas stream stays")
         #expect(CITPServer.layer(ofSource: 0, layerCount: 2) == nil && CITPServer.layer(ofSource: 2, layerCount: 2) == 1 && CITPServer.layer(ofSource: 3, layerCount: 2) == nil)
 
-        client.send(.unknown(contentType: "MSEX", body: [1, 2] + Array("XXXX".utf8)))
-        let nack = try #require(client.wait(1) { if case .nack(let n) = $0 { return n } else { return nil } })
-        #expect(nack.receivedContentType == "XXXX")
+        client.send(Self.msex("XXXX", []))
+        #expect(client.wait(1, for: Self.reply(.nack(Nack(receivedContentType: "XXXX")))))
 
-        client.send(.requestStream(RequestStream(sourceIdentifier: 0, frameFormat: "JPEG", frameWidth: 640, frameHeight: 360, fps: 0, timeout: 5)))
+        client.send(Self.requestStream(0, width: 640, height: 360, fps: 0))
         for _ in 0..<50 where server.status.withLock({ $0.streams }) > 0 { usleep(20_000) }
         #expect(server.status.withLock { $0.streams } == 0 && server.wantsFrames.load(ordering: .relaxed) == false, "fps 0 stops the stream")
         #expect(server.activeTimers == (true, false), "stream over: frame timer stopped")

@@ -204,6 +204,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: test patterns ignored the output's Intensity %, the Output and Master Intensity and both Blackouts, so a console's
   Grand Master or DBO left a full-field pattern (White is 100 %) on the projectors. Patterns now follow the same Dimmer and
   Blackout as the picture, Raw included; bring the Dimmer up to focus. Freeze holds the picture, not the pattern.
+- Removed: the CITP/MSEX codec's unused direction (repo audit 2026-10-29): Fanous only serves, so Core no longer
+  decodes server messages (`PLoc`, `SInf`, `LSta`, ...) or encodes client ones (`PNam`, `CInf`, `GELI`, ...); a
+  console that sends a server message is still ignored, not Nacked. Tests pin the server's bytes.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

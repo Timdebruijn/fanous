@@ -2067,9 +2067,10 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
 - **System**: `/metrics` (JSON: frames, GPU/CPU timing, DMX age, audio,
   preview, clients), `/api/logs` (ring tail), Bonjour `_fanous._tcp` and
   `_https._tcp` (B39), `live.system` (thermal, power, memory, OS, host, addresses, TLS fingerprint).
-- **CITP/MSEX**: codec in Core (`CITP/CITP.swift`, `CITP/CITPMSEX.swift`:
-  PINF `PLoc`/`PNam`, MSEX 1.0–1.2 `CInf`/`SInf`/`Nack`/`LSta`/`GELI`/`ELIn`/
-  `GEIn`/`MEIn`/`GETh`/`EThn`/`GVSr`/`VSrc`/`RqSt`/`StFr`, little-endian, byte-exact tests);
+- **CITP/MSEX**: codec in Core (`CITP/CITP.swift`, `CITP/CITPMSEX.swift`, MSEX 1.0–1.2,
+  little-endian, byte-exact tests), one way as Fanous is only a server: it decodes what a
+  console sends (`PNam`, `CInf`/`GELI`/`GEIn`/`GETh`/`GVSr`/`RqSt`) and encodes what the server
+  sends (`PLoc`, `SInf`/`Nack`/`LSta`/`ELIn`/`MEIn`/`EThn`/`VSrc`/`StFr`);
   transport in Engine (`Net/CITPServer.swift`): one `NWListener` on an
   ephemeral TCP port, `PLoc` every 5 s to `224.0.0.180` and `239.224.0.180`
   (both groups, port 4809, a BSD socket: `NWConnection` does not deliver to
