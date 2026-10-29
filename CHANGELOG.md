@@ -174,6 +174,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: undoing a version restore (`project.revert`) could overwrite, rename or free a Syphon number another server had
   taken meanwhile; that undo (or redo) is now refused like the one of `syphon.forget`, and the history recorded against
   the replaced project goes with it (B91).
+- Fixed: undoing `syphon.forget` (or a version restore) could put a Syphon server on a second number after it had taken
+  another one meanwhile; that undo (or redo) is now refused (B92).
 - Fixed: the preview left its H.264 decoder open after every target change and disconnect; it now closes it (B85).
 - Fixed: a new `settings.json` (hashed role passwords) and the shell token file were readable by other users between the write
   and the change to mode 0600; both are now written 0600 from the start, and a new Application Support folder is 0700 (B83).
