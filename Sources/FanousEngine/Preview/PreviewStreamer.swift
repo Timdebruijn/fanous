@@ -207,9 +207,11 @@ public final class PreviewStreamer: @unchecked Sendable {
             canvas = layerTexture
         }
         // Freeze holds the output preview too (B107); before the render encoder, as `holdFrozen` blits
+        let outputSet = outputSet  // read once: `Engine.previewOutput` swaps it from another thread
         if let set = outputSet, let plan = set.plans.first {
             if let shown = live?.plans.first(where: { $0.id == plan.id }) {
-                // on the clock-master display: the frame its projector holds, written by this thread's tick; no copy
+                // on the clock-master display: the frame its projector holds, no copy. An earlier tick's hold: the tap
+                // precedes the tick's hold, so the engage tick draws the live canvas, which is the held frame
                 (plan.held, plan.heldMaster) = (shown.held, shown.heldMaster)
             } else {
                 // a secondary display holds on its own thread, an unbound output nowhere: a copy of its own, from the
