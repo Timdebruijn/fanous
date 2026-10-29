@@ -18,7 +18,6 @@ func usage() -> Never {
                                   [--dmx (parameters from Art-Net on 6454; reports DMX-to-photon)] [--displaylink]
                                   [--effects blur,edge (effect slots 1 and 2 on every layer)] [--dissolve SECONDS (permanent crossfades)]
                                   [--ingest FILE (transcode FILE to HAP Q in-process during the window)]
-               fanous-bench syphon [--app NAME] [--server NAME] [--seconds N] [--out FILE.png]   receive a Syphon server from another process
                fanous-bench dmx [--layers N] [--files N] [--seconds N]   soak traffic: Art-Net at the standard patch, 40 Hz to 127.0.0.1
         """)
     exit(64)
@@ -58,10 +57,6 @@ case "run":
 case "dmx":
     DMXGenerator.run(
         layers: Int(option("--layers") ?? "4") ?? 4, files: Int(option("--files") ?? "4") ?? 4, seconds: Double(option("--seconds") ?? "3600") ?? 3600)
-case "syphon":
-    try SyphonProbe.run(
-        app: option("--app") ?? "fanousd", server: option("--server") ?? "Fanous – Canvas", seconds: Double(option("--seconds") ?? "3") ?? 3,
-        output: option("--out").map { URL(fileURLWithPath: $0) })
 default:
     usage()
 }

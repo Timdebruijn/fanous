@@ -231,6 +231,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   nothing read them.
 - Removed: `fanous-bench spike` (the Phase 2 decode spike; `fanous-bench run` reports decode timing) with the engine's spike-only
   switches, and the unused `run --ring` and `dmx --hz/--host/--seed` flags (repo audit 2026-10-29).
+- Removed: `fanous-bench syphon`, the Phase 3 Syphon acceptance probe; `SyphonTests` cover SyphonOutput → SyphonInput
+  (repo audit 2026-10-29).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
