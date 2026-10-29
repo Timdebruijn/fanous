@@ -629,6 +629,8 @@ public final class Engine: @unchecked Sendable {
                     "totalFrames": .number(Double(metrics.totalFrames.load(ordering: .relaxed))), "totalMissed": .number(Double(metrics.totalMissed.load(ordering: .relaxed))),
                     "totalLate": .number(Double(metrics.totalLate.load(ordering: .relaxed))), "pid": .number(Double(getpid())),
                 ]
+                // ticks that blocked on the GPU with the ring of 8 committed buffers full, since start (B105)
+                if let render = self.render { m["completionWaits"] = .number(Double(render.compositor.completionWaits.load(ordering: .relaxed))) }
                 if let audio = self.render?.mixer?.statistics {
                     m["audio"] = ["callbacks": .number(Double(audio.callbacks)), "underruns": .number(Double(audio.underruns)), "corrections": .number(Double(audio.corrections)), "maxDriftMs": .number(audio.maxDriftMillis)]
                 }

@@ -170,10 +170,11 @@ public final class RenderService {
         }
     }
 
-    /// Diagnostics: display-link updates seen, compositor ticks, encoder failures.
-    public var counters: (updates: Int, ticks: Int, encoderFailures: Int, completed: Int, gpuErrors: Int, outputFailures: Int, lastError: String) {
+    /// Diagnostics: display-link updates seen, compositor ticks, encoder failures, ticks that waited on a full ring (B105).
+    public var counters: (updates: Int, ticks: Int, encoderFailures: Int, completed: Int, gpuErrors: Int, outputFailures: Int, lastError: String, completionWaits: Int) {
         (displayDriver?.updates.load(ordering: .relaxed) ?? -1, compositor.ticks.load(ordering: .relaxed), compositor.encoderFailures.load(ordering: .relaxed),
-         compositor.completed.load(ordering: .relaxed), compositor.gpuErrors.load(ordering: .relaxed), compositor.outputEncoderFailures.load(ordering: .relaxed), compositor.lastGPUError)
+         compositor.completed.load(ordering: .relaxed), compositor.gpuErrors.load(ordering: .relaxed), compositor.outputEncoderFailures.load(ordering: .relaxed), compositor.lastGPUError,
+         compositor.completionWaits.load(ordering: .relaxed))
     }
 
     public func stop() {

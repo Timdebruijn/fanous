@@ -208,7 +208,8 @@ struct ProjectVersionsTests {
         #expect(store.project["syphon"]?["151"]?["app"]?.string == "Y")
     }
 
-    /// The undo of a revert that renamed 151, with nothing changed since, puts the old name back (B91).
+    /// The undo of a revert that renamed 151, with nothing changed since, puts the old name back (B91); only `app`
+    /// differs, and the whole entry comes back (B104).
     @Test func revertUndoRestoresARenamedNumber() throws {
         let f = Self.make()
         defer { try? FileManager.default.removeItem(at: f.base) }
@@ -221,11 +222,11 @@ struct ProjectVersionsTests {
         #expect(store.project["syphon"]?["151"]?["app"]?.string == "Z")
         let depth = store.historyDepth.undo
         _ = try store.execute("undo", role: .programmer).get()
-        #expect(store.project["syphon"]?["151"]?["app"]?.string == "X")
+        #expect(store.project["syphon"]?["151"] == ["app": "X", "server": "Server"])
         #expect(store.historyDepth.undo == depth - 1)
     }
 
-    /// The undo of a revert that renamed 151 is a `replace /syphon/151/app`, which would rename a server that took 151
+    /// The undo of a revert that renamed 151 is a `replace /syphon/151`, which would rename a server that took 151
     /// meanwhile (B91).
     @Test func revertUndoRefusedWhenItWouldRenameAnotherServersNumber() throws {
         let f = Self.make()
@@ -240,6 +241,24 @@ struct ProjectVersionsTests {
         store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(151, "Y")]) }
         #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by Y/Server; undo/redo refused")))
         #expect(store.project["syphon"]?["151"]?["app"]?.string == "Y")
+    }
+
+    /// A revert that renamed only `app` on 151 (X/S → Y/S) records the whole entry: a server Y/T that took 151 meanwhile
+    /// has the `app` the revert left but not its `server`, so the undo is refused instead of renaming it to X/T (B104).
+    @Test func revertUndoRefusedWhenATakerSharesOnlyTheApp() throws {
+        let f = Self.make()
+        defer { try? FileManager.default.removeItem(at: f.base) }
+        let store = f.store
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([SyphonCatalog.Server(file: 151, app: "Y", server: "S")]) }
+        let id = try #require(try store.execute("project.snapshot", args: ["name": "Doors"], role: .programmer).get().value?["id"]?.string)
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([SyphonCatalog.Server(file: 151, app: "X", server: "S")]) }
+        _ = try store.execute("project.revert", args: ["id": .string(id)], role: .programmer).get()
+        #expect(store.project["syphon"]?["151"] == ["app": "Y", "server": "S"])
+        // 151 is freed and Y/T takes it, then stops
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([]) }
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([SyphonCatalog.Server(file: 151, app: "Y", server: "T")]) }
+        #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by Y/T; undo/redo refused")))
+        #expect(store.project["syphon"]?["151"] == ["app": "Y", "server": "T"])
     }
 
     @Test func invalidVersionsAreNotRestored() throws {

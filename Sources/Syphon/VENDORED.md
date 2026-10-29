@@ -7,7 +7,7 @@ Files (upstream names; public headers live in `include/Syphon/` so that `<Syphon
 - Server: SyphonServerBase.m, SyphonMetalServer.m, SyphonServerRendererMetal.h/.m (patched), SyphonServerMetalTypes.h, SyphonServerConnectionManager.h/.m
 - Client: SyphonClientBase.m, SyphonMetalClient.m, SyphonClientConnectionManager.h/.m
 - Directory: SyphonServerDirectory.m
-- Messaging: SyphonMessaging.h/.m, SyphonMessageQueue.h/.m, SyphonMessageReceiver.h/.m, SyphonMessageSender.h/.m, SyphonCFMessageReceiver.h/.m, SyphonCFMessageSender.h/.m, SyphonDispatch.h/.c
+- Messaging: SyphonMessaging.h/.m, SyphonMessageQueue.h/.m, SyphonMessageReceiver.h/.m, SyphonMessageSender.h/.m, SyphonCFMessageReceiver.h/.m (patched), SyphonCFMessageSender.h/.m, SyphonDispatch.h/.c
 - Shared: SyphonPrivate.h (patched) /.m, SyphonSubclassing.h, Syphon_Prefix.h (upstream Syphon_Prefix.pch, renamed)
 
 Left out: everything OpenGL (SyphonOpenGL*, SyphonGL*, SyphonServerGL*, SyphonServerRendererGL/LegacyGL/CoreGL, SyphonCGL, SyphonIOSurfaceImageCore/Legacy, SyphonImageBase, which only the GL images use), the deprecated SyphonServer/SyphonClient/SyphonImage, SyphonMetalShaders.metal (embedded as a string, see below), Syphon.docc, Syphon.xcodeproj, Syphon.modulemap, Info.plist, Exported_Symbols.exp, icons, README and SDK read-me.
@@ -17,6 +17,7 @@ Local changes (all marked "Fanous" in the source except the header edits):
 2. SyphonPrivate.h: imports "Syphon_Prefix.h". Upstream gets SYPHONLOG and Cocoa from the Xcode prefix header (Syphon_Prefix.pch), which SwiftPM does not support; Syphon_Prefix.h is that file under another name, content unchanged.
 3. include/Syphon/Syphon.h: umbrella header reduced to the directory, Metal server and Metal client imports (the OpenGL and deprecated imports are gone with their files).
 4. include/Syphon/SyphonMetalServer.h, SyphonMetalClient.h: `- (id)init...` became `- (nullable id)init...` so Swift imports the initializers as failable. Both document returning nil on failure, but unannotated they import as non-failable and a nil result would be undefined behaviour in Swift.
+5. SyphonCFMessageReceiver.m: the local port's context retains and releases its info (the receiver) with `CFRetain`/`CFRelease` instead of NULL callbacks (B106). Upstream passes `self` unretained, and `-invalidate` does not wait for the shared messaging queue, so a callback already past `__CFMessagePortPerform`'s validity check could use a receiver its owner had just released. `__CFMessagePortPerform` retains the info under the port lock after that check and releases it after the callout; `CFMessagePortInvalidate` releases the port's reference, so the receiver ↔ port cycle ends at `-invalidate`, which every owner calls before dropping its receiver.
 
 Build notes: SyphonServerBase.m uses the deprecated `kIOSurfaceIsGlobal` (compiler warning, upstream behaviour, global surface IDs are how Syphon shares surfaces between processes). Quoted imports between private and public headers need `headerSearchPath("include/Syphon")` (set in Package.swift)..
 - `Syphon_Prefix.h`: `SYPHONLOG` is enabled by `SYPHON_DEBUG_LOGGING` instead of `DEBUG`, because SwiftPM defines `DEBUG` for every debug build and the engine log should stay quiet.

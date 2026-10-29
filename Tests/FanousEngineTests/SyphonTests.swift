@@ -104,6 +104,47 @@ import Testing
         #expect(input.latestTexture == nil)
     }
 
+    /// B106: a message callback already past CFMessagePort's validity check went on to use a receiver its owner had
+    /// just invalidated and released. Messages stream in from another thread while the receiver is invalidated and
+    /// dropped, 100 times; the payload takes a while to unarchive, which holds the window open between the check and
+    /// the callback's use of the receiver. Before the fix the process died here on every run.
+    @Test func receiverOutlivesACallbackInFlightWhenInvalidated() async throws {
+        let rounds = 100
+        let (created, delivered, freed) = try await offPool {  // blocks on semaphores for about a second
+            guard let receiverClass = NSClassFromString("SyphonMessageReceiver") else { return (0, 0, 0) }
+            class_addProtocol(receiverClass, SyphonMessageReceiving.self)
+            guard let receiverType = receiverClass as? SyphonMessageReceiving.Type else { return (0, 0, 0) }
+            var created = 0, delivered = 0, freed = 0
+            for _ in 0..<rounds {
+                let name = "FanousTest-\(UUID().uuidString)"
+                let firstMessage = DispatchSemaphore(value: 0), senderDone = DispatchSemaphore(value: 0)
+                var receiver = receiverType.init(
+                    forName: name, protocol: "SyphonMessagingProtocolCFMessage_v1", allowedClasses: NSSet(objects: NSArray.self, NSString.self),
+                    handler: { _, _ in firstMessage.signal() })
+                guard receiver != nil else { continue }
+                created += 1
+                Thread.detachNewThread {  // send until the port goes invalid
+                    let payload = try! NSKeyedArchiver.archivedData(withRootObject: (0..<2000).map { "\($0)" } as NSArray, requiringSecureCoding: true)
+                    if let remote = CFMessagePortCreateRemote(nil, name as CFString) {
+                        while CFMessagePortSendRequest(remote, 1, payload as CFData, 1, 0, nil, nil) == kCFMessagePortSuccess {}
+                        CFMessagePortInvalidate(remote)
+                    }
+                    senderDone.signal()
+                }
+                if firstMessage.wait(timeout: .now() + 2) == .success { delivered += 1 }
+                weak let released = receiver
+                receiver?.invalidate()
+                receiver = nil
+                senderDone.wait()
+                if Self.wait(seconds: 2, until: { released == nil }) { freed += 1 }  // the port's reference went with -invalidate
+            }
+            return (created, delivered, freed)
+        }
+        #expect(created == rounds)
+        #expect(delivered == rounds)
+        #expect(freed == rounds)
+    }
+
     // MARK: numbered servers (B61)
 
     static func info(_ app: String, _ server: String = "", _ uuid: String) -> SyphonInput.ServerInfo {
@@ -294,4 +335,11 @@ import Testing
         #expect(catalog.servers.map(\.name) == ["Resolume/Out"])
         #expect(catalog.server(file: 150)?.uuid == "a")
     }
+}
+
+/// The private SyphonMessageReceiver API, reached through the Objective-C runtime (its header is not public).
+@objc private protocol SyphonMessageReceiving {
+    @objc(initForName:protocol:allowedClasses:handler:)
+    init?(forName name: String, protocol protocolName: String, allowedClasses: NSSet, handler: @escaping (AnyObject?, UInt32) -> Void)
+    func invalidate()
 }

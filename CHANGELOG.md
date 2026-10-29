@@ -168,8 +168,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - The §4.6 zero-malloc test counts only the compositor thread's allocations (a `malloc_logger` hook), not the process (B89).
 - `fanous-bench` reports the compositor thread's allocations for each step (`compositorMallocs`, also per tick). It
   counts them with the tests' `malloc_logger` counter, not the process-wide `blocks_in_use` delta. The minimum with GPU
-  work is 7 per tick (headless, one canvas, no output pass, no previews or thumbnails): 5 in Metal and 2 for our
-  completion closure. The output pass, extra canvases, generators and previews add more (DESIGN §4.6, B97, B105).
+  work was 7 per tick (headless, one canvas, no output pass, no previews or thumbnails): 4 in Metal, 1 for
+  `addCompletedHandler` and 2 for our completion closure; 4 since B105. The output pass, extra canvases, generators and previews add more (DESIGN §4.6, B97, B105).
 - Fixed: removing a canvas ended the preview of a viewer that watched it only as a fallback (an output or layer at the
   encoder limit); it now keeps its own target when an encoder or another fallback is free, and an encoder the removal
   frees goes to a waiting viewer (B88).
@@ -180,6 +180,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   the replaced project goes with it (B91).
 - Fixed: undoing `syphon.forget` (or a version restore) could put a Syphon server on a second number after it had taken
   another one meanwhile; that undo (or redo) is now refused (B92).
+- Fixed: undoing a version restore that renamed only the app of a Syphon number could rename a server with the same app
+  that had taken the number meanwhile; the history now holds whole entries and that undo is refused (B104).
 - Fixed: the preview left its H.264 decoder open after every target change and disconnect; it now closes it (B85).
 - Fixed: a new `settings.json` (hashed role passwords) and the shell token file were readable by other users between the write
   and the change to mode 0600; both are now written 0600 from the start, and a new Application Support folder is 0700 (B83).
@@ -265,6 +267,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   unchanged. A frozen output follows later Grand Master moves from the level it froze at; Freeze engaged at Master 0
   holds the first picture drawn above 0. The black lift of a blend is the projector's black floor: on the picture it now
   stays put while the Grand Master moves (it used to go down with it) and is 0 at Master 0 and at either Blackout (B100).
+- Fixed: a Syphon message arriving while a Syphon input disconnected or an output stopped could crash the engine. The
+  callback used the vendored Syphon message receiver after it had been freed. The message port now keeps the receiver
+  alive until the callback returns (B106).
+- The compositor no longer registers a completion handler per tick: later ticks poll the committed command buffers and
+  book GPU time, late flags, `completed` and GPU errors, so the minimum with GPU work drops from 7 to 4 allocations per
+  tick (the 4 inside Metal). GPU numbers in `/metrics` arrive a few frames later (B105).
 - Fixed: below a Grand Master of 100 % a lower layer showed through an opaque layer above it (green over red at 50 % gave
   (63,128,0) instead of (0,128,0)), on the canvas preview, Syphon, CITP and every output. The Master now dims each layer's
   colour instead of making it transparent, so the picture dims as it looks at 100 %, in every blend mode (B108).
