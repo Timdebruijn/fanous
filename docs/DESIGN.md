@@ -1467,7 +1467,7 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2) and item 1 
   - The projector, a secondary display and the preview all draw the same
     frame.
 
-**As built (M2.2, PR #TBD):**
+**As built (M2.2, PR #105):**
 - `OutputCompiler` (now a class) caches by content: (blend, w, h) → blend
   map, (warp, field cols, rows) → warp field, (mask, w, h) → mask texture.
   The model types in the keys are `Hashable`, synthesized.
