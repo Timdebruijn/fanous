@@ -1701,8 +1701,8 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   `StateStore.step` before it pops). The check sees the patch the step would
   apply, the patch that made the state it undoes (`HistoryEntry.forward`) and
   the current project. `syphon.forget` and `project.revert` both run
-  `ProjectDocument.checkSyphonReplay` (B90, B91): every op under `/syphon/N`
-  (the entry, or one field of it) needs the value the undone step left there
+  `ProjectDocument.checkSyphonReplay` (B90, B91): every op on `/syphon/N`
+  needs the whole entry the undone step left there
   (nothing, where it removed) or already the value it writes; otherwise the
   number changed meanwhile and the step is refused with `historyConflict`
   ("Syphon number 151 is now held by App/Server", or "is now free"), so an
@@ -1715,7 +1715,9 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   and refuses those too. Two stopped servers that legitimately share a name
   (two engines' canvases) count as twins: the undo of a forget of one of
   them, and the undo or redo of a revert that held both, are refused.
-  Only the fields the step changed are compared (B104). The conflict
+  The history holds whole entries: `StateStore` folds a revert's diff of
+  one field (`/syphon/151/app`) into a `replace` of `/syphon/151`, so `app`
+  and `server` are compared together (B104). The conflict
   drops the entry, as does a step that no longer applies; for a revert either
   drops the whole stack, whose entries were recorded against the project the
   revert replaced. A step skips a `remove` whose key is already gone (the

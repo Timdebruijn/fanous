@@ -177,9 +177,9 @@ public final class StateStore: @unchecked Sendable {
         } catch {
             return .failure(CommandError("failed", "\(error)"))
         }
-        let forward = JSONPatch.diff(from: projectDocument, to: next)
+        let forward = ProjectDocument.wholeSyphonEntries(JSONPatch.diff(from: projectDocument, to: next), in: next)
         if !forward.isEmpty {
-            let inverse = JSONPatch.diff(from: next, to: projectDocument)
+            let inverse = ProjectDocument.wholeSyphonEntries(JSONPatch.diff(from: next, to: projectDocument), in: projectDocument)
             commit(next, patch: forward)
             if spec.undoable {
                 let key = (spec.coalesceKey?(args) ?? args["path"]?.string).map { "\(name)|\(args["id"]?.int ?? -1)|\($0)" }

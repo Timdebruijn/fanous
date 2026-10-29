@@ -117,10 +117,28 @@ public enum ProjectDocument {
         .object(Dictionary(servers.map { (String($0.file), ["app": .string($0.app), "server": .string($0.server)]) }, uniquingKeysWith: { a, _ in a }))
     }
 
-    /// An undo or redo must not change a Syphon number that changed since the step it undoes (B90, B91): each op under
-    /// `/syphon/N` needs the value that step left there (`done`, nil where it removed) or already the one it writes, so
-    /// it neither overwrites, renames nor frees a server that took N meanwhile. Nor may it put a name on N that sits on
-    /// another number by then (the server took another one meanwhile, B92), unless that number is `running`: the catalog
+    /// `patch` with every op below `/syphon/N` (a revert's diff of one field) folded into one `replace /syphon/N` of the
+    /// whole entry from `document`, the side the patch leads to: the history holds whole entries, so the replay check
+    /// compares `app` and `server` together (B104).
+    static func wholeSyphonEntries(_ patch: JSONPatch, in document: JSONValue) -> JSONPatch {
+        var folded: Set<String> = []
+        return JSONPatch(operations: patch.operations.compactMap { operation in
+            let pointer: JSONPointer
+            switch operation {
+            case .add(let p, _), .replace(let p, _), .remove(let p): pointer = p
+            }
+            guard pointer.tokens.count > 2, pointer.tokens[0] == "syphon" else { return operation }
+            let entry = JSONPointer(tokens: Array(pointer.tokens.prefix(2)))
+            guard folded.insert(pointer.tokens[1]).inserted, let value = document[entry] else { return nil }
+            return .replace(entry, value)
+        })
+    }
+
+    /// An undo or redo must not change a Syphon number that changed since the step it undoes (B90, B91): each op on a
+    /// whole entry `/syphon/N` (`wholeSyphonEntries`) needs the value that step left there (`done`, nil where it
+    /// removed) or already the one it writes, so it neither overwrites, renames nor frees a server that took N meanwhile.
+    /// Nor may it put a name on N that sits on another number by then (the server took another one meanwhile, B92),
+    /// unless that number is `running`: the catalog
     /// drops such a twin only while that server runs. The `historyConflict` drops the entry.
     public static func checkSyphonReplay(_ patch: JSONPatch, undoing done: JSONPatch, on project: JSONValue, running: Set<Int> = []) throws {
         // diff(a, b) and diff(b, a) have the same paths, so the ops line up by pointer
@@ -141,7 +159,7 @@ public enum ProjectDocument {
             }
             guard pointer.tokens.first == "syphon" else { continue }
             syphonOps.append(operation)
-            guard (2...3).contains(pointer.tokens.count), let expected = left[pointer.tokens] else { continue }
+            guard pointer.tokens.count == 2, let expected = left[pointer.tokens] else { continue }
             if value != nil, let file = Int(pointer.tokens[1]) { written.insert(file) }
             let now = project[pointer]
             guard now != expected, now != value else { continue }
