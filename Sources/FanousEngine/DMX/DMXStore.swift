@@ -375,6 +375,7 @@ public final class DMXStore: @unchecked Sendable {
         queue.async { [self] in
             self.policy = policy
             for key in resolvers.keys { resolvers[key]?.policy = policy }
+            publish(receivedAt: 0)  // the output follows at once, not at the next DMX change
         }
     }
 

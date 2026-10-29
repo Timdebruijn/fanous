@@ -33,6 +33,18 @@ struct UIExpiryTests {
         #expect(value?.raw == 40000 && value?.source == "ui", "\(String(describing: value))")
     }
 
+    /// A policy change reaches the render snapshot at once, without waiting for a DMX change.
+    @Test func aPolicyChangeReachesTheOutputAtOnce() {
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
+        store.setUI(layer, intensity, raw: 65535)
+        store.queue.sync {}
+        let rendered = { store.snapshots.withLatest { $0.layers[0].intensity } }
+        #expect(rendered() == 0, "dmx: the UI value waits")
+        store.setPolicy(.ltp)
+        store.queue.sync {}
+        #expect(rendered() == 1, "ltp: the UI value renders")
+    }
+
     func hasUI(_ store: DMXStore) -> Bool { store.snapshot().internalValues["Layer 1"]?.contains { $0.source == "ui" } ?? false }
 
     /// Seconds left as published in the live document.

@@ -322,7 +322,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   Syphon and the generators are unchanged.
 - Fixed: a fixture patched after the project's source policy was set (Console + UI or Internal) stayed on Console
   only until the policy itself changed, so its UI, cue, OSC and MIDI values were ignored. A newly patched fixture now
-  takes the project's policy.
+  takes the project's policy, and a policy change reaches the output at once instead of at the next DMX change.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
