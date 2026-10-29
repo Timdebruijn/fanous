@@ -519,7 +519,7 @@
             <button type="button" class="btn" aria-pressed={output.testPattern === i} disabled={locked} title={locked ? LOCKED : undefined} onclick={() => set('/testPattern', i)}>{name}</button>
           {/each}
         </div>
-        <p class="caption">The Output fixture's Test pattern and Master channels override this; its Blend channel at 128+ shows the raw canvas (no blend, warp or mask) for alignment.</p>
+        <p class="caption">The Output fixture's Test pattern and Master channels override this; its Blend channel at 128+ shows the raw canvas (no blend, warp, mask or keystone) for alignment.</p>
 
         <h3>Colour</h3>
         <OutputColour {output} />

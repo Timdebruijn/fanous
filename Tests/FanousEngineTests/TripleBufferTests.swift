@@ -154,6 +154,30 @@ final class Box { var value = 0 }
         }
     }
 
+    /// DMX loss with hold "zero" centres a Keystone fixture instead of putting every corner at −50 %: zero for a geometry
+    /// offset is no offset, so a keystone universe that drops alone does not shift a lit picture.
+    @Test func zeroOnLossCentresTheKeystone() {
+        let universe = UniverseID(.artnet, 0)
+        let store = DMXStore(patch: Patch(entries: [PatchEntry(fixture: .keystone(1), universe: universe, address: 1)]), logger: Logger(label: "test"))
+        var settings = UniverseSettings(for: universe)
+        settings.holdOnLoss = .zero
+        let time = 1000.0
+        store.queue.sync { store.configure([universe: settings], at: time) }
+        var data = [UInt8](repeating: 0, count: 512)
+        for i in 0..<8 { data[2 * i] = 0x80 }  // 32768: centred
+        data[0] = 0xA0  // top-left X +12.5 %
+        store.queue.sync { store.receive(artnet: ArtDmx(portAddress: 0, data: data), from: "desk", at: time + 0.02) }
+        func topLeft() -> SIMD2<Float> {
+            store.snapshots.withLatest { slot in
+                let k = slot.keystones[0] * SIMD3<Float>(0, 0, 1)
+                return SIMD2(k.x, k.y) / k.z
+            }
+        }
+        #expect(topLeft().x > 0.1, "the console's keystone applies: \(topLeft())")
+        store.queue.sync { store.tick(at: time + 10) }
+        #expect(simd_length(topLeft()) < 1e-6, "lost with zero: centred, not −50 %: \(topLeft())")
+    }
+
     /// Writer at ~1 kHz, the render reader on its own thread and a copy reader at ~2 kHz: no torn slot on either
     /// side, and the render reader's slot never changes under it (also run under `-sanitize=thread`).
     @Test func concurrentWriterRenderReaderAndCopyReader() async throws {

@@ -56,7 +56,7 @@
 <style>
   .table { container-type: inline-size; overflow: hidden; }
   .rows { max-height: 480px; overflow-y: auto; }
-  .fx { display: grid; grid-template-columns: 12px 68px 70px 60px 48px 60px minmax(0, 1fr); column-gap: 8px; align-items: center; }
+  .fx { display: grid; grid-template-columns: 12px 88px 96px 60px 48px 60px minmax(0, 1fr); column-gap: 8px; align-items: center; }
   .fx-head { min-height: 32px; padding: 0 12px; border-bottom: 1px solid var(--line); }
   .fx-head .c-name { grid-column: 1 / span 2; }
   .fx .c-addr { text-align: right; }

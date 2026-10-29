@@ -542,7 +542,16 @@ public enum ShaderSource {
         float2 post [[center_no_perspective]];  // final output coordinates (blend map, projector space): linear on screen
     };
 
-    vertex MappedOut mapped_vertex(uint vid [[vertex_id]],
+    // the vertex side of MappedOut plus the clip distances, which a fragment's stage_in may not carry
+    struct MappedVertexOut {
+        float4 position [[position]];
+        float2 uv;
+        float2 pre;
+        float2 post [[center_no_perspective]];
+        float clip [[clip_distance]] [4];  // the output's own edges, before the keystone (§6.4a: outside the quad is black)
+    };
+
+    vertex MappedVertexOut mapped_vertex(uint vid [[vertex_id]],
                                    const device MappedVertex* vertices [[buffer(0)]],
                                    constant MappedUniforms& u [[buffer(1)]],
                                    texture2d<float> warp [[texture(0)]],
@@ -556,11 +565,17 @@ public enum ShaderSource {
         }
         // homogeneous: the rasteriser divides by w, so uv and pre stay perspective-correct across a keystoned triangle
         float3 k = u.keystone * float3(p, 1.0);
-        MappedOut out;
+        MappedVertexOut out;
         out.position = float4(k.x * 2.0 - k.z, k.z - k.y * 2.0, 0.0, k.z);
         out.uv = v.uv;
         out.pre = v.pos;
         out.post = k.xy / k.z;
+        // what the mapping puts outside the output stays outside when the keystone shrinks it: clip at p in [0, 1], which
+        // is linear in clip space (p = K⁻¹·k), so the clip is exact; inside the square the DMX guard keeps w > 0
+        out.clip[0] = p.x;
+        out.clip[1] = 1.0 - p.x;
+        out.clip[2] = p.y;
+        out.clip[3] = 1.0 - p.y;
         return out;
     }
 

@@ -103,7 +103,8 @@ says. With a Loss after above 2.5 s and no backup, the universe has no source
 between 2.5 s and Loss after; the fixtures keep their values until it is lost.
 
 **Go to zero** sets every channel of the universe's fixtures to 0 as a new DMX
-change. Under the source policies *Console + UI* (latest or highest wins) that
+change, except a Keystone fixture's: it goes to its default, 32768 on every
+channel, so a lost universe centres the keystone instead of moving the picture. Under the source policies *Console + UI* (latest or highest wins) that
 change is the latest, so the zeros also win over UI and cue values set before
 the loss; the UI or a cue has to set a value again after it.
 
@@ -124,6 +125,9 @@ adapter is joined again within 5 s.
 fixture type "Fanous" with the Layer, Master, Output and Keystone modes, channel
 functions with their physical ranges, a channel set for every band (play modes,
 blend modes, effects, test patterns), the 16-bit links and the default values.
+If you imported `Fanous.gdtf` before the Keystone mode existed, export and
+import it again: the fixture type keeps its ID, so a console may keep the older
+file with three modes until you replace it.
 The file is generated from the same table as the channel map, so they cannot
 disagree. On the command line: `fanousd gdtf FILE`.
 

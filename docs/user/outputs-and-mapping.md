@@ -198,9 +198,9 @@ Buttons: Off, Grid, Colour bars, Blend check, Output ID, Crosshair, Grey steps,
 Checkerboard, Grey 0 %, Grey 25 %, Grey 75 %, White. The Test pattern channel
 of the Output fixture (per projector) and of the Master (all outputs) overrides
 the button, so a console can call them up.
-Patterns follow the corner pin and mesh and show the blend map; set the Output
-fixture's **Blend** channel to 128 or more (Raw) to see them without blend and
-warp. Line widths and cells follow the output's height, so a pattern reads
+Patterns follow the corner pin, mesh and keystone and show the blend map; set
+the Output fixture's **Blend** channel to 128 or more (Raw) to see them without
+blend, warp and keystone. Line widths and cells follow the output's height, so a pattern reads
 the same on a monitor and on a 4K projector.
 
 Patterns follow the same Dimmer and Blackout as the picture: the output's
@@ -503,10 +503,16 @@ fix from FOH without touching the hand alignment.
 - Patch one per output, next to its Output fixture: "Keystone 1" belongs to
   Output 1. The Patch screen lists a Keystone row under every Output row; it is
   not in the standard patch, so set its address when you want it.
-- Each corner has an X and a Y channel, 16-bit, from −50 % to +50 % of the
-  output's width or height; + moves right or down. The default, 32768 (50 %
-  on a fader), is no change, so a centred or unpatched Keystone leaves the
-  output as aligned.
+- The channels, in order: top-left X, top-left Y, top-right X, top-right Y,
+  bottom-right X, bottom-right Y, bottom-left X, bottom-left Y, each 16-bit
+  (coarse, then fine; [channel-map.md](../channel-map.md)). Each goes from
+  −50 % to +50 % of the output's width or height; + moves right or down.
+- The default, 32768 (50 % on a fader), is no change, so a centred or
+  unpatched Keystone leaves the output as aligned. A fixture you build by hand
+  on a console must default to 32768 too: at 0 every corner sits at −50 % and
+  the picture moves half an output up and left.
+- A universe set to **Go to zero** on DMX loss centres its Keystone fixtures
+  rather than sending them 0 (see [console-setup.md](console-setup.md)).
 - The whole mapping moves: every slice and test pattern, with their masks. The
   blend ramps and the black lift stay where they are on the projector, so the
   overlap of a wall stays put while the picture moves.
@@ -514,7 +520,8 @@ fix from FOH without touching the hand alignment.
   without blend, warp and keystone, for alignment.
 - The preview and the Warp & Slices handles show the mapping as you edited it,
   without the keystone, so a handle stays where you drag it. The output row
-  and the Warp & Slices tab say **Keystone active** while it moves the output.
+  and the Warp & Slices tab say **Keystone active** while it moves the output
+  (not in Raw, which bypasses it).
 - Corners that would fold the picture (one pulled onto or past the line
   between two others) are refused: the output keeps the last keystone that
   worked and shows **Keystone invalid** in yellow until the console sends

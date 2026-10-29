@@ -1812,13 +1812,21 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
     display passes the tick's slot, a secondary display copies them in `withLatest` beside `outputs`, and the output
     preview passes none: it shows the edited mapping.
   - With the identity the vertex output is the same floats as before; the golden images are unchanged.
+  - **Clip before the keystone** (review): `mapped_vertex` writes four `[[clip_distance]]` values, p.x, 1 − p.x, p.y,
+    1 − p.y, in a vertex-only output struct (a fragment's `stage_in` may not carry them). They are linear in clip space
+    (p = H⁻¹·k), so the clip is exact: a bleed the mapping puts outside the output stays outside when the keystone
+    shrinks the picture, and nothing beyond the vanishing line is drawn.
+- **DMX loss** (review). Hold "zero" feeds a Keystone fixture its defaults (32768), not raw 0: zero for a geometry
+  offset is no offset, so a keystone universe that drops alone does not move a lit picture half an output.
 - **Status.** `publishLive` copies the eight matrices and flags from the DMX side (`withLatest`, storage reserved
-  first) and adds `keystone` (not the identity) and `keystoneInvalid` to each `live.outputs` entry. The live document
+  first) and adds `keystone` (not the identity, and not in Raw, which bypasses it) and `keystoneInvalid` to each
+  `live.outputs` entry. The live document
   is diffed, so they go out only when they change.
 - **UI.** "Keystone active" and, in yellow, "Keystone invalid" on the output row and under the preview on Warp &
-  Slices. The Patch screen lists "Keystone n" after each "Output n" it lists.
+  Slices. The Patch screen lists "Keystone n" after each "Output n" it lists; the cue editor lists patched Keystone
+  fixtures after the outputs.
 - **Not built here:** the edit overlay (item 4) and the preset geometry (item 3), which the keystone will sit on top
-  of. The cue editor and the Layers screen do not offer the Keystone fixture; cues and OSC can set it.
+  of. The Layers screen does not offer the Keystone fixture.
 
 **3. Mapping presets (Output ch 6 and 7).**
 - **Model.**
@@ -2665,7 +2673,7 @@ interface selectable. Address space generated from `ParameterSpec`:
 /fanous/layer/{1..n}/{param}  f (normalized 0–1 or unit value; both accepted via type tag)   e.g. /fanous/layer/3/intensity 0.75
 /fanous/layer/{n}/media       ii (folder, file)
 /fanous/layer/{n}/retrigger
-/fanous/master/{param}        /fanous/output/{n}/{param}
+/fanous/master/{param}        /fanous/output/{n}/{param}        /fanous/keystone/{n}/{param} (M2.3)
 /fanous/cue/go  /cue/back  /cue/goto i  /cue/{number}/go
 /fanous/show/lock i  /fanous/show/mode i  /fanous/timecode/enable i
 /fanous/project/load s (programmer; refused while show-locked)
@@ -2807,7 +2815,7 @@ MSC and MIDI-triggered cues are additions, not rewrites.
 ### 16.2 GDTF export
 
 `Patch › Export GDTF` writes `Fanous.gdtf` (zip: `description.xml` +
-thumbnail PNG) describing fixture type "Fanous" with the three DMX modes,
+thumbnail PNG) describing fixture type "Fanous" with its DMX modes (four since M2.3),
 channel functions with physical ranges, channel sets for every band (play
 modes, blend modes, effects, test patterns), 16-bit coarse/fine links and
 defaults — all generated from `ParameterSpec`. Fixture type GUID is stable

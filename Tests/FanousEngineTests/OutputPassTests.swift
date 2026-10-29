@@ -865,6 +865,24 @@ struct OutputPassTests {
         #expect(green(white, 2, 2) <= 1 && green(white, 170, 2) == 255, "a test pattern moves with the mapping")
     }
 
+    /// A bleed the mapping puts outside the output stays outside when the keystone shrinks the picture: the output is
+    /// clipped at its own edges before the keystone, so outside the keystoned quad is black (§6.4a).
+    @Test func theKeystoneClipsTheOutputBeforeItMovesIt() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 200)
+        var o = OutputConfig(id: 1)
+        o.warp.cornerPin = [MapPoint(-0.2, -0.2), MapPoint(1.2, -0.2), MapPoint(1.2, 1.2), MapPoint(-0.2, 1.2)]  // 20 % bleed
+        let plan = try OutputCompiler(device: context.device).compile(o, index: 1, drawable: (Self.width, Self.height))
+        let half = simd_float3x3(rowMajor: WarpMath.keystone(to: [MapPoint(0.25, 0.25), MapPoint(0.75, 0.25), MapPoint(0.75, 0.75), MapPoint(0.25, 0.75)])!)
+        let image = try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [OutputParameters()]) {
+            $0.keystones[0] = half
+        }
+        func green(_ x: Double, _ y: Double) -> Int { Int(image[(Int(y * Double(Self.height)) * Self.width + Int(x * Double(Self.width))) * 4 + 1]) }
+        #expect(green(0.5, 0.5) == 200, "inside the keystoned quad")
+        // the bleed reaches 0.15…0.85 after the keystone; the output's own edges are at 0.25 and 0.75
+        #expect(green(0.2, 0.5) <= 1 && green(0.8, 0.5) <= 1 && green(0.5, 0.2) <= 1 && green(0.5, 0.8) <= 1, "the bleed stays outside")
+    }
+
     /// The output preview shows the mapping as edited, without the keystone (DESIGN.md §9.10 item 3), while the projector
     /// shows it keystoned.
     @Test func thePreviewDrawsWithoutTheKeystone() async throws {

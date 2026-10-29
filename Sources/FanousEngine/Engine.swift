@@ -1528,7 +1528,11 @@ public final class Engine: @unchecked Sendable {
         var keystones: [(active: Bool, invalid: Bool)] = []
         keystones.reserveCapacity(ParameterSnapshotSlot.maxOutputs)
         dmx.snapshots.withLatest { slot in
-            for i in slot.keystones.indices { keystones.append((slot.keystones[i] != matrix_identity_float3x3, slot.keystoneInvalid[i])) }
+            // Raw bypasses the keystone (OutputPass.draw), so it is not active there
+            for i in slot.keystones.indices {
+                let raw = i < slot.outputs.count && slot.outputs[i].raw
+                keystones.append((slot.keystones[i] != matrix_identity_float3x3 && !raw, slot.keystoneInvalid[i]))
+            }
         }
         let live: JSONValue = [
             "canvas": canvasSwitch?.live ?? .null,

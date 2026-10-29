@@ -142,7 +142,10 @@ public final class DMXStore: @unchecked Sendable {
             switch table.settings(for: entry.universe).holdOnLoss {
             case .hold: break
             case .zero:
-                let zeros = ChannelMap.rawValues(mode: entry.fixture.mode, slots: [UInt8](repeating: 0, count: 512), address: entry.address)
+                // zero for a geometry offset is no offset: a keystone universe that drops alone must not shift a lit picture
+                let zeros = entry.fixture.mode == .keystone
+                    ? ChannelMap.defaults(for: .keystone)
+                    : ChannelMap.rawValues(mode: entry.fixture.mode, slots: [UInt8](repeating: 0, count: 512), address: entry.address)
                 if let zeros, resolvers[entry.fixture]?.updateDMX(zeros, at: now) == true { changed = true }
             case .internal: changed = true
             }
