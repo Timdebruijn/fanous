@@ -474,6 +474,13 @@ public final class Compositor: @unchecked Sendable {
                 for item in drawItems where item.canvas == index {
                     encode(item, uniforms: uniforms, time: frame.time, canvasWidth: canvas.width, canvasHeight: canvas.height, with: encoder)
                 }
+                if !empty && frame.masterIntensity < 1 {
+                    // the Master once over the composite, in place (B108); at Master 0 `prepare` drew nothing
+                    var master = frame.masterIntensity
+                    encoder.setRenderPipelineState(context.masterPipeline)
+                    encoder.setFragmentBytes(&master, length: MemoryLayout<Float>.size, index: 0)
+                    encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+                }
                 encoder.endEncoding()
             }
             Swift.swap(&drawnItems, &drawItems)
@@ -708,11 +715,13 @@ public final class Compositor: @unchecked Sendable {
             channel.setState(wantedPTS: playback.clock.position / max(1, playback.frameRate), active: active, volume: p.audioVolume * weight, pan: p.audioPan, loop: loop)
         }
         guard let frameIndex else { return }  // once-then-black has finished
-        let intensity = p.intensity * ctx.masterIntensity * weight
-        // invisible for a while: the ring and the last frame stay, the clock keeps running, decoding resumes when visible
-        guard playback.hold.allowsRequests(visible: intensity > 0, at: ctx.target) else { return }
+        let intensity = p.intensity * weight  // the Master comes once per canvas, after its layers (B108)
+        // invisible for a while (Master 0 and Blackout too): the ring and the last frame stay, the clock keeps running,
+        // decoding resumes when visible
+        let visible = intensity * ctx.masterIntensity > 0
+        guard playback.hold.allowsRequests(visible: visible, at: ctx.target) else { return }
         playback.decoder?.request(frame: frameIndex, direction: direction)
-        guard intensity > 0 else { return }
+        guard visible else { return }
         guard let frame = playback.frame(at: frameIndex, direction: direction), frame.texture0 != nil else {
             ctx.misses += 1
             return
@@ -814,6 +823,7 @@ public final class Compositor: @unchecked Sendable {
 
     /// Draws layer `index` (0-based) alone as the last canvas pass drew it (transform, crop, colour, effects, intensity,
     /// both quads of a dissolve), with normal blending over black, into `pass` (canvas format, canvas aspect, any size).
+    /// The layer's own intensity: the Master is not applied (B108), except that at Master 0 nothing is drawn.
     /// Render thread, after the canvas pass of the tick (`previewTap`); a layer with nothing on the canvas stays black.
     /// `uniforms` (the caller's) holds 3 × 2 slots of `uniformStride`; `ring` (0…2) picks the pair this call writes.
     /// False (nothing encoded, the caller keeps its last frame) while the target's aspect is not the canvas aspect: after

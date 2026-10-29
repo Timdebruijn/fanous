@@ -431,6 +431,7 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
     |---|---|
     | Output pass | +3 (one more encoder) |
     | Each extra canvas | +3 |
+    | Master below 100 % | 0: a draw in the canvas encoder (4.00 at 100 % and at 50 %, `printDimmedTickMallocs`, B108) |
     | Generators | +2–3 (derived) |
     | Each preview or thumbnail streamer | about +6 (derived: an encoder and a capturing handler) |
     | `present` | not measured |
@@ -571,7 +572,7 @@ can never disagree). `[OPEN-9]` exact bands and the speed/scale upper limits.
 
 | Ch | Parameter | Bits | Default | Mapping |
 |---|---|---|---|---|
-| 1–2 | Master intensity | 16 | 65535 | multiplies all canvases (each layer); outputs take it once, from the canvas (§9.5). For now it scales each layer's opacity, so below 100 % a lower layer shows through an opaque one above it (B108) |
+| 1–2 | Master intensity | 16 | 65535 | multiplies all canvases once, after their layers (B108); outputs take it once, from the canvas (§9.5) |
 | 3 | Control | 8 | 0 | 0–63 normal · 64–127 Freeze all · 128–191 Blackout · 192–255 reserved |
 | 4 | Test pattern | 8 | 0 | 0–15 off · 16–31 Grid · 32–47 Colour bars · 48–63 Blend zones · 64–79 Output ID · 80–95 Crosshair/alignment · 96–111 Grey steps · 112–127 Checkerboard · 128–143 Grey 0 % · 144–159 Grey 25 % · 160–175 Grey 75 % · 176–191 White (seam check, §9.9) · 192–255 reserved — overrides every output |
 | 5–6 | Master speed | 16 | 32768 | multiplies layer speed (same mapping as layer speed) |
@@ -991,9 +992,20 @@ for each slice (ordered):
             → blue-noise dither → drawable (bgra8 / bgr10 later) (not on a test pattern)
 ```
 
-The Master intensity is applied once, per layer into the canvas, so the
-canvas preview, Syphon, CITP and every output show the same level (B100: the
-output pass multiplied it in a second time, 50 % gave 25 %). A held (Freeze)
+The Master intensity is applied once, into the canvas, so the canvas preview,
+Syphon, CITP and every output show the same level (B100: the output pass
+multiplied it in a second time, 50 % gave 25 %). The layers composite at their
+own intensity; below 100 % one more full-screen draw at the end of each canvas's
+render pass multiplies the composite in tile memory by the Master (framebuffer
+fetch, no sampling, no extra encoder), so an opaque layer still hides the ones
+below it and a blend mode blends at full level before the Master dims the
+result (B108: it scaled each layer's opacity, solid green over solid red at
+50 % read (64,128,0)). Scaling the source colour in the layer shader instead is
+exact only for normal, subtract, difference, lighten and darken, not for add
+(clipping), screen and multiply. At Master 0 and Blackout `prepare` draws no
+layer, as before: the canvas clears to black and the decoders hold after their
+invisible delay. Layer previews and thumbnails draw a layer at its own
+intensity, without the Master (black at Master 0). A held (Freeze)
 canvas carries the Master it was drawn with, which `holdFrozen` keeps with it
 (`OutputPlan.heldMaster`: the compositor tick's own or, on a secondary display,
 the one stored with its last completed canvas in one atomic with the ring

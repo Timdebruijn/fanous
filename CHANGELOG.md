@@ -273,6 +273,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - The compositor no longer registers a completion handler per tick: later ticks poll the committed command buffers and
   book GPU time, late flags, `completed` and GPU errors, so the minimum with GPU work drops from 7 to 4 allocations per
   tick (the 4 inside Metal). GPU numbers in `/metrics` arrive a few frames later (B105).
+- Fixed: below 100 % the Master intensity let a lower layer show through an opaque one above it (solid green over solid
+  red at 50 % gave (64,128,0) instead of (0,128,0)). The layers now composite at their own intensity and the Master dims
+  each canvas once after its layers, so blend modes blend at full level first; the canvas preview, Syphon, CITP and every
+  output follow. Layer previews and thumbnails show a layer at its own intensity, without the Master (B108).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

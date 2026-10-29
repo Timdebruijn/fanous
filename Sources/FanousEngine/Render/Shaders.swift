@@ -300,6 +300,11 @@ public enum ShaderSource {
         return float4(mix(d, saturate(b), a), a + dst.a * (1.0 - a));
     }
 
+    // The Master intensity, once per canvas after its layers (B108): the composite in tile memory × Master.
+    fragment float4 master_fragment(float4 dst [[color(0)]], constant float& master [[buffer(0)]]) {
+        return float4(dst.rgb * master, dst.a);
+    }
+
     // Plain output pass: canvas → drawable, also the canvas preview and the thumbnail copy (pattern 0). A test pattern at
     // full level only without an output set (the Master's, in tests and fanous-bench); the engine's displays always get the
     // mapped pass below, which dims patterns like the content.
