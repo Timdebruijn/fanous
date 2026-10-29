@@ -52,12 +52,12 @@ public final class OutputPlan: @unchecked Sendable {
     let warpField: MTLTexture?
     let slices: [SlicePlan]
     /// The whole output (unit quad) tessellated like a slice: test patterns are drawn through it, so they follow the warp.
-    let patternMesh: SlicePlan?
+    let patternMesh: SlicePlan
     /// Canvas copies (by canvas id) taken when the Output fixture's Control engaged Freeze; the content pass samples them
     /// instead of the live canvases. Only touched by the one thread that renders this plan's set.
     nonisolated(unsafe) var held: [Int: MTLTexture] = [:]
 
-    init(id: Int, index: Int, region: MTLRegion, intensity: Float, testPattern: TestPattern, blendMap: MTLTexture?, warpField: MTLTexture?, slices: [SlicePlan], patternMesh: SlicePlan? = nil) {
+    init(id: Int, index: Int, region: MTLRegion, intensity: Float, testPattern: TestPattern, blendMap: MTLTexture?, warpField: MTLTexture?, slices: [SlicePlan], patternMesh: SlicePlan) {
         self.patternMesh = patternMesh
         self.id = id
         self.index = index
@@ -220,12 +220,16 @@ enum OutputPass {
             encoder.setViewport(MTLViewport(originX: Double(region.origin.x), originY: Double(region.origin.y), width: Double(region.size.width), height: Double(region.size.height), znear: 0, zfar: 1))
             encoder.setScissorRect(MTLScissorRect(x: region.origin.x, y: region.origin.y, width: region.size.width, height: region.size.height))
             let pattern = masterPattern != .off ? masterPattern : (fixture.testPattern != .off ? fixture.testPattern : plan.testPattern)
+            // content and test patterns alike: a console's Grand Master or DBO takes a pattern down too
             let intensity = fixture.control == .blackout ? 0 : plan.intensity * fixture.intensity * master
-            if pattern != .off, let mesh = plan.patternMesh {
-                // through the warp (and blend map) like the content, so a grid can be aligned on the surface
+            if pattern != .off {
+                // through the warp (and blend map) like the content, so a grid can be aligned on the surface; Freeze holds
+                // the canvases, not the pattern: the pattern stays live and the held frame returns when it is switched off
                 guard offset + 256 <= uniforms.length else { return }
+                let mesh = plan.patternMesh
                 var u = MappedUniforms()
                 u.size = SIMD2(Float(region.size.width), Float(region.size.height))
+                u.intensity = intensity
                 u.flags = (plan.warpField != nil ? 1 : 0) | (fixture.raw ? 4 : 0) | (plan.blendMap == nil ? 8 : 0)
                 u.pattern = UInt32(pattern.rawValue)
                 u.index = UInt32(plan.index)
@@ -241,24 +245,6 @@ enum OutputPass {
                 encoder.setVertexBuffer(uniforms, offset: offset, index: 1)
                 encoder.setFragmentBuffer(uniforms, offset: offset, index: 1)
                 encoder.drawIndexedPrimitives(type: .triangle, indexCount: mesh.indexCount, indexType: .uint32, indexBuffer: mesh.indices, indexBufferOffset: 0)
-                offset += 256
-                continue
-            }
-            if pattern != .off {
-                // no compiled plan mesh (should not happen): the plain output pass draws the pattern unwarped
-                guard offset + 256 <= uniforms.length else { return }
-                (uniforms.contents() + offset).assumingMemoryBound(to: OutputUniforms.self).pointee = {
-                    var o = OutputUniforms()
-                    o.size = SIMD2(Float(region.size.width), Float(region.size.height))
-                    o.pattern = UInt32(pattern.rawValue)
-                    o.index = UInt32(plan.index)
-                    return o
-                }()
-                encoder.setRenderPipelineState(context.outputPipeline)
-                encoder.setFragmentBuffer(uniforms, offset: offset, index: 0)
-                encoder.setFragmentTexture(canvas, index: 0)
-                encoder.setFragmentSamplerState(context.linearSampler, index: 0)
-                encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                 offset += 256
                 continue
             }

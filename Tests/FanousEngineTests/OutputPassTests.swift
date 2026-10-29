@@ -31,7 +31,11 @@ struct OutputPassTests {
     }
 
     /// Renders one output plan over the given still into a `drawable`-sized offscreen target; BGRA bytes.
-    static func render(_ plan: OutputPlan, still: DecodedFrame, drawable: (Int, Int), context: MetalContext, outputs: [OutputParameters] = []) throws -> [UInt8] {
+    /// `master` edits the Master fixture's values in the slot (intensity, control, test pattern).
+    static func render(
+        _ plan: OutputPlan, still: DecodedFrame, drawable: (Int, Int), context: MetalContext, outputs: [OutputParameters] = [],
+        master: (ParameterSnapshotSlot) -> Void = { _ in }
+    ) throws -> [UInt8] {
         let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
         let compositor = try Compositor(
             context: context, canvasWidth: width, canvasHeight: height, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 16), parameters: parameters,
@@ -52,6 +56,7 @@ struct OutputPassTests {
             slot.layers[0].file = 1
             slot.layers[0].fitMode = .stretch
             for (i, o) in outputs.enumerated() where i < slot.outputs.count { slot.outputs[i] = o }
+            master(slot)
         }
         compositor.tick(target: 3600, drawable: nil)
         return compositor.readbackOutput().bgra
@@ -185,6 +190,16 @@ struct OutputPassTests {
             compositor.tick(target: 3601, drawable: nil)
             let after = compositor.readbackOutput().bgra[(90 * Self.width + 160) * 4 + 1]
             if control == .freeze { #expect(after == 200, "frozen output keeps the last frame") } else { #expect(after <= 1, "unfrozen output follows the canvas") }
+            guard control == .freeze else { continue }
+            // Freeze holds the canvases, not the pattern: White draws live over the frozen output, and switched off the held frame is back
+            fixture.testPattern = .white
+            write(sequence: 3, layerIntensity: 0)
+            compositor.tick(target: 3602, drawable: nil)
+            #expect(compositor.readbackOutput().bgra[(90 * Self.width + 160) * 4 + 1] == 255, "White over a frozen output")
+            fixture.testPattern = .off
+            write(sequence: 4, layerIntensity: 0)
+            compositor.tick(target: 3603, drawable: nil)
+            #expect(compositor.readbackOutput().bgra[(90 * Self.width + 160) * 4 + 1] == 200, "the held frame returns when the pattern is off")
         }
     }
 
@@ -241,6 +256,50 @@ struct OutputPassTests {
         pinned.warp.cornerPin = [MapPoint(0, 0), MapPoint(0.5, 0), MapPoint(0.5, 1), MapPoint(0, 1)]
         let warped = try image(pinned, .white)
         #expect(px(warped, 100)[1] >= 254 && px(warped, 250)[1] <= 1, "White follows the corner pin: \(px(warped, 100)) \(px(warped, 250))")
+    }
+
+    /// A console's Grand Master or DBO takes a test pattern down like the content: the pattern follows Output intensity ×
+    /// Master intensity, and Output Blackout, Master Blackout or either intensity at 0 is black, Raw and the black lift included.
+    @Test func testPatternsFollowTheDimmerAndBlackout() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 200)
+        let compiler = try OutputCompiler(device: context.device)
+        let size = (Self.width, Self.height)
+        var lifted = OutputConfig(id: 1)
+        lifted.blend.lift = 0.08
+        func white(_ edit: (inout OutputParameters) -> Void, config: OutputConfig = OutputConfig(id: 1), master: (ParameterSnapshotSlot) -> Void = { _ in }) throws -> [UInt8] {
+            var fixture = OutputParameters()
+            fixture.testPattern = .white
+            edit(&fixture)
+            return try Self.render(compiler.compile(config, index: 1, drawable: size), still: still, drawable: size, context: context, outputs: [fixture], master: master)
+        }
+        func greens(_ image: [UInt8]) -> Set<UInt8> { Set(stride(from: 1, to: image.count, by: 4).map { image[$0] }) }
+        let full = try white { _ in }
+        #expect(greens(full) == [255], "White at 100 % (defaults): \(greens(full))")
+        // half level, flat: patterns are not dithered
+        let half = try white { $0.intensity = 0.5 }
+        #expect(greens(half).count == 1 && abs(Int(greens(half).first ?? 0) - 128) <= 1, "Output intensity 50 %: \(greens(half))")
+        let masterHalf = try white({ _ in }, master: { $0.master = 0.5 })
+        #expect(greens(masterHalf).count == 1 && abs(Int(greens(masterHalf).first ?? 0) - 128) <= 1, "Master intensity 50 %: \(greens(masterHalf))")
+        var halfConfig = OutputConfig(id: 1)
+        halfConfig.intensity = 0.5  // the output's own Intensity % (Outputs tab)
+        let configHalf = try white({ _ in }, config: halfConfig)
+        #expect(greens(configHalf).count == 1 && abs(Int(greens(configHalf).first ?? 0) - 128) <= 1, "output Intensity 50 %: \(greens(configHalf))")
+        // the lift is there at full level (0.08 → 20), so the blackout case below shows it scaled to 0, not absent
+        let lift = try white({ $0.testPattern = .grey0 }, config: lifted)
+        #expect(greens(lift).count == 1 && abs(Int(greens(lift).first ?? 0) - 20) <= 1, "Grey 0 % with black lift: \(greens(lift))")
+        let dark: [(String, [UInt8])] = [
+            ("Output Blackout", try white { $0.control = .blackout }),
+            ("Output intensity 0", try white { $0.intensity = 0 }),
+            ("Freeze + Output intensity 0", try white { $0.control = .freeze; $0.intensity = 0 }),  // Freeze holds the canvases, not the level
+            ("Master Blackout", try white({ _ in }, master: { $0.masterControl = .blackout })),
+            ("Master intensity 0", try white({ _ in }, master: { $0.master = 0 })),
+            ("Raw + Output Blackout", try white { $0.raw = true; $0.control = .blackout }),
+            ("Raw + Master Blackout", try white({ $0.raw = true }, master: { $0.masterControl = .blackout })),
+            ("Master pattern + Output Blackout", try white({ $0.testPattern = .off; $0.control = .blackout }, master: { $0.testPattern = .white })),
+            ("Grey 0 % with black lift + Output Blackout", try white({ $0.testPattern = .grey0; $0.control = .blackout }, config: lifted)),
+        ]
+        for (name, image) in dark { #expect(greens(image) == [0], "\(name): \(greens(image))") }
     }
 
     @Test func warpMaskAndSliceGoldens() throws {

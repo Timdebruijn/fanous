@@ -201,6 +201,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   and blend map like the other patterns; they are not layer content in folder 0 (Solid colour covers a flat field).
 - Fixed: the preview kept its "H.264" caption over a closed decoder while it fell back to JPEG; it now says "connecting…".
   The preview e2e tests read the mode from the start of the caption and accept the JPEG fallback a slow runner takes (B98).
+- Fixed: test patterns ignored the output's Intensity %, the Output and Master Intensity and both Blackouts, so a console's
+  Grand Master or DBO left a full-field pattern (White is 100 %) on the projectors. Patterns now follow the same Dimmer and
+  Blackout as the picture, Raw included; bring the Dimmer up to focus. Freeze holds the picture, not the pattern.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
