@@ -199,6 +199,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   signal level (Blend check is the 50 % grey), on test-pattern channel 4 of the Master and Output fixtures at 128, 144, 160
   and 176 (192–255 stays reserved), in the GDTF and the channel map, and as buttons on the Outputs tab. They follow the warp
   and blend map like the other patterns; they are not layer content in folder 0 (Solid colour covers a flat field).
+- Fixed: the preview kept its "H.264" caption over a closed decoder while it fell back to JPEG; it now says "connecting…".
+  The preview e2e tests read the mode from the start of the caption and accept the JPEG fallback a slow runner takes (B98).
 - Fixed: test patterns ignored the output's Intensity %, the Output and Master Intensity and both Blackouts, so a console's
   Grand Master or DBO left a full-field pattern (White is 100 %) on the projectors. Patterns now follow the same Dimmer and
   Blackout as the picture, Raw included; bring the Dimmer up to focus. Freeze holds the picture, not the pattern.
