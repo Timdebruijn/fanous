@@ -135,9 +135,10 @@ public enum ProjectDocument {
     }
 
     /// An undo or redo must not change a Syphon number that changed since the step it undoes (B90, B91): each op on a
-    /// whole entry `/syphon/N` (`wholeSyphonEntries`) needs the value that step left there (`done`, nil where it removed) or already the one it writes, so
-    /// it neither overwrites, renames nor frees a server that took N meanwhile. Nor may it put a name on N that sits on
-    /// another number by then (the server took another one meanwhile, B92), unless that number is `running`: the catalog
+    /// whole entry `/syphon/N` (`wholeSyphonEntries`) needs the value that step left there (`done`, nil where it
+    /// removed) or already the one it writes, so it neither overwrites, renames nor frees a server that took N meanwhile.
+    /// Nor may it put a name on N that sits on another number by then (the server took another one meanwhile, B92),
+    /// unless that number is `running`: the catalog
     /// drops such a twin only while that server runs. The `historyConflict` drops the entry.
     public static func checkSyphonReplay(_ patch: JSONPatch, undoing done: JSONPatch, on project: JSONValue, running: Set<Int> = []) throws {
         // diff(a, b) and diff(b, a) have the same paths, so the ops line up by pointer

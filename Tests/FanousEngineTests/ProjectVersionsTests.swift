@@ -226,7 +226,7 @@ struct ProjectVersionsTests {
         #expect(store.historyDepth.undo == depth - 1)
     }
 
-    /// The undo of a revert that renamed 151 is a `replace /syphon/151/app`, which would rename a server that took 151
+    /// The undo of a revert that renamed 151 is a `replace /syphon/151`, which would rename a server that took 151
     /// meanwhile (B91).
     @Test func revertUndoRefusedWhenItWouldRenameAnotherServersNumber() throws {
         let f = Self.make()
