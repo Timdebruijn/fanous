@@ -84,7 +84,13 @@ public final class OutputPlan: @unchecked Sendable {
 /// The plans of one display, swapped into the compositor as one reference.
 public final class OutputSet: @unchecked Sendable {
     public let plans: [OutputPlan]
-    public init(plans: [OutputPlan]) { self.plans = plans }
+    /// The set this one replaces, whose Freeze holds its plans take over (`OutputPass.adopt`, B111). Set by the creator
+    /// before the swap; afterwards only the thread that renders this set touches it, and that thread clears it.
+    nonisolated(unsafe) var previous: OutputSet?
+    public init(plans: [OutputPlan], previous: OutputSet? = nil) {
+        self.plans = plans
+        self.previous = previous
+    }
 }
 
 /// Compiles `OutputConfig` into textures and meshes (edit-time cost only, DESIGN.md §9.2–9.4).
@@ -198,6 +204,7 @@ enum OutputPass {
     /// canvases were drawn with. At Master 0 they are black and carry no picture: the plan stays live (black at 0) and
     /// holds the first canvas drawn above 0. Call before the output render encoder is created.
     static func holdFrozen(_ set: OutputSet, canvas: (Int) -> MTLTexture?, outputs: [OutputParameters], master: Float, buffer: MTLCommandBuffer) {
+        adopt(set, canvas: canvas, outputs: outputs)
         for plan in set.plans {
             guard fixture(for: plan, in: outputs).control == .freeze else {
                 if !plan.held.isEmpty { plan.held = [:] }
@@ -218,6 +225,21 @@ enum OutputPass {
             }
             plan.held = held
             plan.heldMaster = master
+        }
+    }
+
+    /// An edit recompiles the plans while Freeze is engaged (B111): once, on the thread that renders `set`, each frozen
+    /// plan takes the hold of the plan with its id in the set it replaced, if the held copies still match the canvases (a
+    /// canvas resize blanks the outputs anyway, B59); then the replaced set is released. Not on MainActor: `held` is
+    /// written by the render thread while the edit runs.
+    static func adopt(_ set: OutputSet, canvas: (Int) -> MTLTexture?, outputs: [OutputParameters]) {
+        guard let previous = set.previous else { return }
+        set.previous = nil
+        for plan in set.plans where plan.held.isEmpty && fixture(for: plan, in: outputs).control == .freeze {
+            guard let old = previous.plans.first(where: { $0.id == plan.id }),
+                old.held.allSatisfy({ id, held in canvas(id).map { $0.width == held.width && $0.height == held.height } ?? false })
+            else { continue }
+            (plan.held, plan.heldMaster) = (old.held, old.heldMaster)
         }
     }
 

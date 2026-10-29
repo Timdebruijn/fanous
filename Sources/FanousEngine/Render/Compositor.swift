@@ -485,6 +485,8 @@ public final class Compositor: @unchecked Sendable {
         tickIndex = reuse ? (canvasIndex + 2) % 3 : canvasIndex
         let canvas = targets[0].textures[tickIndex]
         canvasPublished?(canvas, commandBuffer)
+        // a recompiled live set takes its holds before the output preview copies them (B107, B111)
+        if let set = outputSet { OutputPass.adopt(set, canvas: { tickCanvas($0) }, outputs: snapshot.outputs) }
         previewTap?(canvas, commandBuffer, target)
 
         if let target = drawable?.texture ?? offscreenOutput {

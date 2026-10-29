@@ -204,6 +204,82 @@ struct OutputPassTests {
         }
     }
 
+    /// B111: an edit while frozen recompiles the plan; the new plan of the same id keeps the held frame (the same copy)
+    /// instead of holding a later one, the replaced set is let go after the first tick, and releasing Freeze goes live.
+    @Test func freezeSurvivesARecompile() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 200)
+        let compiler = try OutputCompiler(device: context.device)
+        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
+        let compositor = try Compositor(
+            context: context, canvasWidth: Self.width, canvasHeight: Self.height, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 16),
+            parameters: parameters, logger: Logger(label: "output-test"))
+        let layer = RenderLayer(index: 0)
+        layer.current = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: still)
+        layer.wanted.store(MediaKey(folder: 1, file: 1).packed, ordering: .relaxed)
+        compositor.setLayers([layer])
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.outputFormat, width: Self.width, height: Self.height, mipmapped: false)
+        descriptor.usage = [.renderTarget, .shaderRead]
+        descriptor.storageMode = .shared
+        compositor.offscreenOutput = context.device.makeTexture(descriptor: descriptor)
+        let first = try compiler.compile(OutputConfig(id: 1), index: 1, drawable: (Self.width, Self.height))
+        let old = OutputSet(plans: [first])
+        compositor.outputSet = old
+        var fixture = OutputParameters()
+        fixture.control = .freeze
+        var sequence: UInt64 = 0, target = 3600.0
+        func tick(layerIntensity: Float) -> UInt8 {
+            sequence += 1
+            parameters.write { slot in
+                slot.sequence = sequence
+                slot.layers[0].intensity = layerIntensity
+                slot.layers[0].folder = 1
+                slot.layers[0].file = 1
+                slot.layers[0].fitMode = .stretch
+                slot.outputs[0] = fixture
+            }
+            compositor.tick(target: target, drawable: nil)
+            target += 1
+            return compositor.readbackOutput().bgra[(90 * Self.width + 160) * 4 + 1]
+        }
+        #expect(tick(layerIntensity: 1) == 200, "frame A held")
+        let heldA = try #require(first.held[1])
+        // the edit: a recompiled plan of the same output replaces the set while the canvas goes dark (frame B)
+        let recompiled = try compiler.compile(OutputConfig(id: 1), index: 1, drawable: (Self.width, Self.height))
+        compositor.outputSet = OutputSet(plans: [recompiled], previous: old)
+        #expect(tick(layerIntensity: 0) == 200, "the recompiled output keeps frame A")
+        #expect(recompiled.held[1] === heldA, "the same held copy, not a new one")
+        #expect(compositor.outputSet?.previous == nil, "the replaced set is let go after the first tick")
+        #expect(tick(layerIntensity: 0) == 200)
+        fixture.control = .normal
+        #expect(tick(layerIntensity: 0) <= 1, "released: the output follows the canvas")
+        #expect(recompiled.held.isEmpty)
+    }
+
+    /// B111: only a frozen plan of the same id adopts, and only copies that match the canvas size.
+    @Test func adoptTakesOnlyAMatchingFrozenHold() throws {
+        let context = try MetalContext()
+        let compiler = try OutputCompiler(device: context.device)
+        func texture(_ width: Int) throws -> MTLTexture {
+            try #require(context.device.makeTexture(descriptor: .texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width, height: 90, mipmapped: false)))
+        }
+        let canvas = try texture(160), held = try texture(160)
+        var frozen = OutputParameters()
+        frozen.control = .freeze
+        func adopted(id: Int, control: OutputParameters, heldWidth: Int? = nil) throws -> MTLTexture? {
+            let old = try compiler.compile(OutputConfig(id: 1), index: 1, drawable: (160, 90))
+            old.held = [1: try heldWidth.map(texture) ?? held]
+            let set = OutputSet(plans: [try compiler.compile(OutputConfig(id: id), index: 1, drawable: (160, 90))], previous: OutputSet(plans: [old]))
+            OutputPass.adopt(set, canvas: { $0 == 1 ? canvas : nil }, outputs: [control])
+            #expect(set.previous == nil)
+            return set.plans[0].held[1]
+        }
+        #expect(try adopted(id: 1, control: frozen) === held)
+        #expect(try adopted(id: 2, control: frozen) == nil, "another output")
+        #expect(try adopted(id: 1, control: OutputParameters()) == nil, "not frozen")
+        #expect(try adopted(id: 1, control: frozen, heldWidth: 320) == nil, "the canvas was resized")
+    }
+
     /// A test pattern follows the corner pin (it used to be drawn flat over the region, so warping showed nothing).
     @Test func testPatternFollowsTheWarp() throws {
         let context = try MetalContext()
@@ -498,6 +574,12 @@ struct OutputPassTests {
             }
             #expect(near(try await preview(.freeze, master: 1, layer: 0), 200), "shared \(shared): the held frame, not the dark canvas")
             #expect(near(try await preview(.freeze, master: 0.5, layer: 0), 100), "shared \(shared): frozen at 100 %, Master 50 %")
+            // B111: an edit recompiles the projector's set and the preview's; the very next preview still shows the held frame
+            let live = try #require(rig.compositor.outputSet)
+            rig.compositor.outputSet = OutputSet(plans: [try rig.compile(OutputConfig(id: 1))], previous: live)
+            streamer.outputSet = OutputSet(
+                plans: [try OutputCompiler(device: rig.context.device).compile(OutputConfig(id: 1), index: 1, drawable: (160, 90))], previous: streamer.outputSet)
+            #expect(near(try await preview(.freeze, master: 1, layer: 0), 200), "shared \(shared): the held frame after a recompile")
             #expect(try await preview(.normal, master: 1, layer: 0) <= 8, "shared \(shared): released, live again")
         }
     }

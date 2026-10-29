@@ -290,6 +290,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   the "(in effect)" label is gone. The wall map labels such a seam RGB, and on the Outputs tab its edges show the three
   values with **One gamma for R, G, B** in place of the Gamma field. The blend map is `rgba16Float`: 8 bytes per pixel, ≈ 66 MB for a 3840×2160 output with
   a blend (was 33 MB). Without per-colour gamma the picture is unchanged.
+- Fixed: editing an output while it was frozen (Output Control = Freeze) made it, and its preview, hold a later frame.
+  A frozen output now keeps the frame it held across an edit (B111).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
