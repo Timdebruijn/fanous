@@ -201,9 +201,7 @@ public final class Engine: @unchecked Sendable {
         let patch = ProjectDocument.effectivePatch(from: loadedProject ?? .null) ?? Patch.standard(layers: layerCount, outputs: 4)
         let policy = options.scene?.policy ?? loadedProject?["policy"]?.string.flatMap(SourcePolicy.init(rawValue:)) ?? .dmx
         let dmx = DMXStore(patch: patch, logger: logger)
-        if policy != .dmx {
-            for entry in patch.entries { dmx.setPolicy(policy, for: entry.fixture) }
-        }
+        if policy != .dmx { dmx.setPolicy(policy) }
         let universeSettings = checkedUniverseSettings(from: loadedProject ?? .null)
         lastUniverseSettings = universeSettings
         dmx.setUniverseSettings(universeSettings)
@@ -1318,7 +1316,7 @@ public final class Engine: @unchecked Sendable {
         // the source policy applies to every patched fixture, also to the resolvers a new patch created
         if let dmx, let raw = document["policy"]?.string, let policy = SourcePolicy(rawValue: raw), policy != lastPolicy {
             lastPolicy = policy
-            for entry in dmx.currentPatch.entries { dmx.setPolicy(policy, for: entry.fixture) }
+            dmx.setPolicy(policy)
         }
         // library root (project.set, undo, redo): switched at once on the library queue (B51)
         if let raw = document["library"]?["root"]?.string {

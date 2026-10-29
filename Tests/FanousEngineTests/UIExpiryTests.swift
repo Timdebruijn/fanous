@@ -109,4 +109,17 @@ struct UIExpiryTests {
         store.releaseUI(layer)
         #expect(store.queue.sync { store.uiClock.isEmpty })
     }
+
+    /// A policy switch reaches the render side at once, also while the console repeats the same values: an identical
+    /// packet publishes nothing, so nothing else would.
+    @Test func policySwitchPublishesWithASteadyConsole() {
+        let store = store(.dmx)
+        func published() -> Float { store.snapshots.read().layers[0].intensity }
+        console(store, at: 1000)
+        store.queue.sync { store.applyUI(layer, intensity, raw: 100, at: 1000) }
+        #expect(published() == 0)  // policy dmx: the console's 0 is shown
+        store.setPolicy(.internal)  // as the engine does for the project's policy
+        console(store, at: 1001)
+        #expect(published() > 0)
+    }
 }

@@ -364,8 +364,13 @@ public final class DMXStore: @unchecked Sendable {
     /// The merged 512 slots of a universe for the DMX monitor stream; nil until a packet arrived.
     public func slots(for universe: UniverseID) -> [UInt8]? { queue.sync { table.slots(for: universe) } }
 
-    public func setPolicy(_ policy: SourcePolicy, for fixture: FixtureRef) {
-        queue.async { [self] in resolvers[fixture]?.policy = policy }
+    /// The source policy of one fixture (nil = every patched fixture, the project's `policy`), published at once: a
+    /// steady console sends identical packets, which publish nothing.
+    public func setPolicy(_ policy: SourcePolicy, for fixture: FixtureRef? = nil) {
+        queue.async { [self] in
+            for key in resolvers.keys where fixture == nil || key == fixture { resolvers[key]?.policy = policy }
+            publish(receivedAt: 0)
+        }
     }
 
     public func snapshot() -> LiveSnapshot { snapshot(at: Self.now) }
