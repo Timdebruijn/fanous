@@ -158,13 +158,22 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   when the connection closes and subscribes again, once, when it is back (B68).
 - Fixed: the 4 preview encoders bounded extra sizes only, so viewers on several targets could run more; the limit now holds
   across targets (a fallback size of the target or its canvas, else JPEG), and a released encoder goes to a viewer on a size or
-  canvas fallback (a viewer refused to JPEG stays on JPEG in the browser) (B70). `/metrics` `preview.encoders` now counts H.264
+  canvas fallback (a viewer refused to JPEG stays on JPEG in the browser, until B86) (B70). `/metrics` `preview.encoders` now counts H.264
   encoders: canvas 1 always, the others while they have an H.264 subscriber; JPEG-only streamers no longer count. It is a
   reservation count: for a few ms around an asynchronous release and create a fifth session can exist.
 - Fixed: engine tests that slept a fixed time or waited a fixed budget failed in a parallel run on a loaded Mac; they now
   poll with a deadline or probe the listener first, so `scripts/test.sh` stays green under load (B67).
 - Syphon numbers (folder 0, 150–169) are kept in the project (`syphon`), so they survive an engine restart; a server not
   seen since the start is listed greyed (`gone`), and `syphon.forget` (Media screen **Forget**) frees a number (B69).
+- Fixed: the shell token test failed 1 run in 16, when the token ended in "0" (B84).
+- Fixed: undoing `syphon.forget` overwrote a Syphon number another server had taken meanwhile; the undo is now refused (B90).
+- Fixed: the preview left its H.264 decoder open after every target change and disconnect; it now closes it (B85).
+- Fixed: a new `settings.json` (hashed role passwords) and the shell token file were readable by other users between the write
+  and the change to mode 0600; both are now written 0600 from the start, and a new Application Support folder is 0700 (B83).
+- Fixed: a role password added to `settings.json` by hand while the engine runs was kept in the file at the next write but
+  the role stayed open until a restart; every write now takes the passwords from the file as written (B82).
+- Fixed: a preview refused H.264 at the encoder limit waited 5 s and re-subscribed as JPEG, so it was never upgraded; it now
+  shows the refused stream's JPEG frames at once and turns H.264 when the engine frees an encoder for it (B86).
 - Fixed: an output preview on the canvas stream at the encoder limit was stretched to the output's shape; it is now
   letterboxed and its caption says "canvas fallback" (B87).
 

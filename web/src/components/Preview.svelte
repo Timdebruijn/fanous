@@ -32,6 +32,13 @@
   // the width the stream was asked for (B32): the rendered width in device pixels, so a small box gets a small stream
   let asked: number | undefined;
   const measure = () => (canvas ? wantedWidth(canvas.getBoundingClientRect().width, window.devicePixelRatio) : undefined);
+  // the H.264 decoder of the current stream: closed by `pause()` (target change, disconnect, hidden tab) and on unmount
+  // (B85); a decoder that failed closed itself, so `close()` (which throws then) only on one that is still open
+  let decoder: VideoDecoder | null = null;
+  function closeDecoder() {
+    if (decoder && decoder.state !== 'closed') decoder.close();
+    decoder = null;
+  }
 
   async function start() {
     if (!canvas || hidden || !ready) return;
@@ -40,7 +47,6 @@
     const run = latest.begin();
     asked = measure();
     const supportsWebCodecs = 'VideoDecoder' in window && 'EncodedVideoChunk' in window;
-    let decoder: VideoDecoder | null = null;
     let configured = false;
     let sawKey = false;
 
@@ -54,28 +60,32 @@
       lastFrame = performance.now();
       bitmap.close();
     };
+    // a JPEG frame (kind 2): the JPEG stream, or an H.264 one the engine refused at its encoder limit (B86)
+    const drawJPEG = async (payload: Uint8Array) => {
+      if (!canvas) return;
+      const bitmap = await createImageBitmap(new Blob([payload as BlobPart], { type: 'image/jpeg' }));
+      // decoded after the H.264 path started: it must not set the canvas back to its size (`drawBitmap` compares widths)
+      if (mode === 'avc' && configured) return bitmap.close();
+      if (canvas && (canvas.width !== bitmap.width || canvas.height !== bitmap.height)) {
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+      }
+      drawBitmap(bitmap);
+    };
 
     const fallbackToJPEG = async (why: string) => {
       if (!run.current()) return;  // a late error of a stream that was already replaced
       const jpegRun = latest.begin();
       detail = why;
-      decoder?.close();
-      decoder = null;
+      closeDecoder();
+      configured = false;
       stop?.();
       stop = null;  // a refused JPEG request must not leave the stopped stream behind: reconnects restart from null
       let sub: Awaited<ReturnType<typeof subscribePreview>>;
       try {
         sub = await subscribePreview(
           'jpeg',
-          async (_kind, payload) => {
-            if (!canvas) return;
-            const bitmap = await createImageBitmap(new Blob([payload as BlobPart], { type: 'image/jpeg' }));
-            if (canvas && (canvas.width !== bitmap.width || canvas.height !== bitmap.height)) {
-              canvas.width = bitmap.width;
-              canvas.height = bitmap.height;
-            }
-            drawBitmap(bitmap);
-          },
+          (_kind, payload) => void drawJPEG(payload),
           () => {},
           target,
           asked,
@@ -101,7 +111,19 @@
       const sub = await subscribePreview(
         'avc',
         (kind, payload) => {
-          if (kind !== 1 || !decoder || !configured || payload.length < 9) return;
+          // JPEG on this stream: refused at the encoder limit (B70), or moved back to JPEG by the engine (B88); drawn,
+          // and a later `stream` description upgrades it again (the engine moves a subscriber in one step)
+          if (kind === 2) {
+            if (configured) {
+              closeDecoder();
+              configured = false;
+              mode = 'jpeg';
+              detail = 'H.264 stopped by the engine';
+            }
+            void drawJPEG(payload);
+            return;
+          }
+          if (kind !== 1 || decoder?.state !== 'configured' || payload.length < 9) return;
           const key = payload[0] === 1;
           if (!sawKey && !key) return;
           sawKey = true;
@@ -118,7 +140,8 @@
           try {
             const support = await VideoDecoder.isConfigSupported(config);
             if (!support.supported) throw new Error('config not supported');
-            decoder?.close();
+            if (!run.current()) return;  // paused (or fallen back) while the check ran: no decoder for a stopped stream
+            closeDecoder();
             decoder = new VideoDecoder({ output: drawBitmap, error: (e) => void fallbackToJPEG(`decoder: ${e.message}`) });
             decoder.configure(config);
             configured = true;
@@ -140,11 +163,17 @@
       if (!run.keep(sub.stop)) return;
       stop = sub.stop;
       served = { w: sub.w, h: sub.h };
-      detail = `${sub.w}×${sub.h} · ${sub.fps} fps`;
-      // the engine makes its H.264 encoder for the first viewer (B66): no description in 5 s (it failed or is stuck) → JPEG
-      setTimeout(() => {
-        if (!configured) void fallbackToJPEG('no H.264 stream from the engine');
-      }, 5000);
+      if (sub.codec === 'jpeg') {
+        // all H.264 encoders busy (B70): JPEG on this stream, kept, so the engine can upgrade it when one frees up (B86)
+        mode = 'jpeg';
+        detail = `${sub.w}×${sub.h} · H.264 encoders busy`;
+      } else {
+        detail = `${sub.w}×${sub.h} · ${sub.fps} fps`;
+        // the engine makes its H.264 encoder for the first viewer (B66): no description in 5 s (it failed or is stuck) → JPEG
+        setTimeout(() => {
+          if (!configured) void fallbackToJPEG('no H.264 stream from the engine');
+        }, 5000);
+      }
       if (hidden) pause();
     } catch (error) {
       if (!run.current()) return;
@@ -157,6 +186,7 @@
     latest.cancel();  // a subscription still on its way is stopped when it arrives
     stop?.();
     stop = null;
+    closeDecoder();
     mode = 'connecting';  // no stale "H.264 · …" caption while the next stream is asked for
     served = null;
     lastFrame = 0;
@@ -207,6 +237,7 @@
       latest.cancel();  // unmounted while subscribing: that stream stops when it arrives
       stop?.();
       stop = null;
+      closeDecoder();
     };
   });
 

@@ -1198,7 +1198,8 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   1 s GOP, 1.5 Mbit/s at 640×360@30 default) encodes on its own queue;
   AVCC access units go out as binary frames with the `avcC` record in the
   stream's first message. The browser decodes with WebCodecs `VideoDecoder`
-  (`avc` with `description`) into a `<canvas>`.
+  (`avc` with `description`) into a `<canvas>`. One decoder per preview,
+  closed when its stream stops (target change, disconnect, hidden tab; B85).
 - Fallback when WebCodecs is unavailable or fails a real decode test at
   connect time: JPEG at 5 fps on the same stream id.
 - Encoding cost is bounded: one encoder per distinct (target, size) pair,
@@ -1307,7 +1308,8 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   encoder ready" (size, ms), "preview encoder not ready after 5 s",
   "preview encoder failed" (no retry until the next H.264 subscriber) and
   "preview encoder released". The browser falls back to JPEG when no
-  `stream` description arrives within 5 s of the `sub` reply. The pixel
+  `stream` description arrives within 5 s of an H.264 `sub` reply (not
+  after a reply refused to JPEG at the encoder limit, B70/B86). The pixel
   buffer pool, texture cache and `CIContext` stay in `init` (no
   VideoToolbox).
 - **As built (encoder limit across targets, B70, 2026-10-28):** the 4 count
@@ -1318,32 +1320,33 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   target's nearest class, else the nearest class of its canvas's stream
   (`canvas:<id>`; a layer's canvas, an output's first slice's), else it is
   refused to JPEG on its own streamer: the `sub` reply says `codec: "jpeg"`,
-  fps 5, and the browser, seeing no `stream` description, subscribes to JPEG
-  after 5 s (an `error` reply would leave it on "no preview"). The hub
-  remembers these subscribers; when an unsubscribe or a closed connection
-  releases an encoder it moves them, oldest first and up to the limit, to
-  their own (target, class) on a global queue (the streamer is made outside
-  the lock, like `attach`'s), in one step under the lock: off the fallback,
-  onto the new streamer, whose `stream` description and first key frame come
-  with its first frame (as after a rebuild). Measured: description 53 ms
-  after the close, longest gap between frames 63 ms. In the browser this
-  holds for size and canvas fallbacks only: `Preview.svelte` ignores
-  `codec: "jpeg"` and after 5 s re-subscribes as JPEG (`fallbackToJPEG`),
-  which ends the refused subscription, so a refused viewer stays on JPEG
-  until it subscribes again (B86). A canvas-stream fallback shows other
-  content than asked (the whole canvas, not the output's region or the
-  layer alone), often in another aspect: when the served size (`sub` reply,
-  then each `stream` description) is another shape than the preview's box,
-  the browser letterboxes it (`object-fit: contain`) and the caption says
-  "canvas fallback" (B87). A fallback in the box's shape is not told
-  apart: a layer (it has its canvas's shape) or a region crop of the same
-  ratio (960×540 of a 1920×1080 canvas) shows the whole canvas unflagged
-  and not letterboxed (B96). After a change of the box's shape (a canvas
-  format or output region change) the label also shows for a moment,
-  until the rebuilt stream's description arrives. A fallback streamer
-  whose own viewer left stays as it is: only fallback viewers keep it encoding, so no
-  release is seen and nothing starts a re-balance. The canvas 1 streamer's
-  own viewers are never on a fallback (it is always counted).
+  fps 5, and the browser shows its JPEG frames at once ("JPEG 5 fps · … ·
+  H.264 encoders busy") on that subscription (an `error` reply would leave
+  it on "no preview"). The hub remembers these subscribers; when an
+  unsubscribe or a closed connection releases an encoder it moves them,
+  oldest first and up to the limit, to their own (target, class) on a global
+  queue (the streamer is made outside the lock, like `attach`'s), in one
+  step under the lock: off the fallback, onto the new streamer, whose
+  `stream` description and first key frame come with its first frame (as
+  after a rebuild). Measured: description 53 ms after the close, longest gap
+  between frames 63 ms. The browser keeps a refused subscription (no 5 s
+  wait, no JPEG re-subscribe) and switches to its H.264 decoder when that
+  description comes (B86); JPEG frames arriving on an H.264 subscription
+  later (the engine moved it back to JPEG, B88) close the decoder and are
+  drawn until the next description. A canvas-stream fallback shows other
+  content than asked (the whole canvas, not the output's region or the layer
+  alone), often in another aspect: when the served size (`sub` reply, then
+  each `stream` description) is another shape than the preview's box, the
+  browser letterboxes it (`object-fit: contain`) and the caption says
+  "canvas fallback" (B87). A fallback in the box's shape is not told apart:
+  a layer (it has its canvas's shape) or a region crop of the same ratio
+  (960×540 of a 1920×1080 canvas) shows the whole canvas unflagged and not
+  letterboxed (B96). After a change of the box's shape (a canvas format or
+  output region change) the label also shows for a moment, until the rebuilt
+  stream's description arrives. A fallback streamer whose own viewer left
+  stays as it is: only fallback viewers keep it encoding, so no release is
+  seen and nothing starts a re-balance. The canvas 1 streamer's own viewers
+  are never on a fallback (it is always counted).
 
 ### 11.4 Frontend (ADR-0012)
 
@@ -1412,7 +1415,11 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   as one patch and `projectChanged` applies it like any other change (canvas
   switch, patch, cues, timecode). The history is not cleared; undo and redo of a
   revert entry are refused in show mode (`CommandSpec.replayCheck`, checked by
-  `StateStore.step` before it pops). `live.versions` `{lastAutomatic, serial}`
+  `StateStore.step` before it pops). The check sees the patch the step would
+  apply and the current project: `syphon.forget` refuses an undo whose
+  `add /syphon/N` would overwrite another app/server on that number, and that
+  `historyConflict` drops the entry (B90); the undo of a forget without file is
+  refused as a whole when any of its numbers conflicts. `live.versions` `{lastAutomatic, serial}`
   feeds the status bar and tells the System screen to re-list. OSC
   `/fanous/project/load s` resolves the newest named version with that name
   (case-insensitive), else a version id, on the versions queue, ignores a

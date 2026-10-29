@@ -632,6 +632,54 @@ extension StateStoreTests {
         #expect(ProjectDocument.syphonNumbers(from: store.project).map(\.app) == ["A", "Y", "Z", "X"])
     }
 
+    /// Undoing a forget would overwrite a server that took the number meanwhile and has since stopped (B90).
+    @Test func syphonForgetUndoRefusedWhenAnotherServerHoldsTheNumber() throws {
+        let (store, _) = Self.makeStore()
+        func server(_ file: Int, _ app: String) -> SyphonCatalog.Server { SyphonCatalog.Server(file: file, app: app, server: "Server") }
+        func apps() -> [String] { ProjectDocument.syphonNumbers(from: store.project).map(\.app) }
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(151, "N")]) }
+        _ = try store.execute("project.set", args: ["path": "/name", "value": "Tour"], role: .programmer).get()
+        _ = try store.execute("syphon.forget", args: ["file": 151], role: .programmer).get()
+        // Y takes 151 as the lowest free number, then stops: the engine leaves its entry
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(151, "App")]) }
+        let refused = store.execute("undo", role: .programmer)
+        #expect(refused == .failure(CommandError("historyConflict", "Syphon number 151 is now held by App/Server; undo refused")))
+        #expect(apps() == ["A", "App"])
+        // the conflict does not clear up by itself: the entry is dropped, the next undo reaches the change before it
+        _ = try store.execute("undo", role: .programmer).get()
+        #expect(store.project["name"] != "Tour")
+        #expect(apps() == ["A", "App"])
+    }
+
+    /// A free number, or the same name on it (the engine wrote it back), is no conflict (B90).
+    @Test func syphonForgetUndoAllowedWhenTheNumberIsFreeOrHeldByTheSameName() throws {
+        let (store, _) = Self.makeStore()
+        func server(_ file: Int, _ app: String) -> SyphonCatalog.Server { SyphonCatalog.Server(file: file, app: app, server: "Server") }
+        func apps() -> [String] { ProjectDocument.syphonNumbers(from: store.project).map(\.app) }
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(151, "N")]) }
+        _ = try store.execute("syphon.forget", args: ["file": 151], role: .programmer).get()
+        _ = try store.execute("undo", role: .programmer).get()
+        #expect(apps() == ["A", "N"])
+        _ = try store.execute("syphon.forget", args: ["file": 151], role: .programmer).get()
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(151, "N")]) }
+        _ = try store.execute("undo", role: .programmer).get()
+        #expect(apps() == ["A", "N"])
+    }
+
+    /// The entry a redo puts back is checked too: forget, undo, redo, Y takes the number, the undo is refused (B90).
+    @Test func syphonForgetRedoneThenUndoRefusedWhenAnotherServerHoldsTheNumber() throws {
+        let (store, _) = Self.makeStore()
+        func server(_ file: Int, _ app: String) -> SyphonCatalog.Server { SyphonCatalog.Server(file: file, app: app, server: "Server") }
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(151, "N")]) }
+        _ = try store.execute("syphon.forget", args: ["file": 151], role: .programmer).get()
+        _ = try store.execute("undo", role: .programmer).get()
+        _ = try store.execute("redo", role: .programmer).get()
+        #expect(store.project["syphon"] == [:])
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(151, "App")]) }
+        #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by App/Server; undo refused")))
+        #expect(ProjectDocument.syphonNumbers(from: store.project).map(\.app) == ["App"])
+    }
+
     /// The engine records a new number with no client connected (a headless show driven by a console, B69).
     @Test func syphonNumbersAreRecordedWithoutClients() {
         let (store, _) = Self.makeStore()
