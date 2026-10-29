@@ -54,6 +54,12 @@ import Testing
         #expect(try CITPHeader.parse(bytes + [9, 9]) == header)  // trailing bytes are not the header's business
     }
 
+    @Test func multicastConstants() {
+        #expect(CITPMulticast.address == "224.0.0.180")
+        #expect(CITPMulticast.addressSince2014 == "239.224.0.180")
+        #expect(CITPMulticast.port == 4809)
+    }
+
     // MARK: PINF
 
     @Test func peerLocationByteExact() throws {
