@@ -1429,7 +1429,7 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
 ### 9.10 M2: black lift by coverage, Keystone, mapping presets, edit overlay, masks v2 (design 2026-10-29)
 
 **Status:** designed 2026-10-29, owner decisions the same day (below), and
-reviewed against the code. Built: item 1 (M2.1, below). Research and frictions F3–F6 are in
+reviewed against the code. Built: the compile cache of item 0 (M2.2) and item 1 (M2.1), below. Research and frictions F3–F6 are in
 `docs/mapping-ux.md` §1 and §4.2–§4.5.
 
 **Owner decisions (2026-10-29):**
@@ -1466,6 +1466,38 @@ reviewed against the code. Built: item 1 (M2.1, below). Research and frictions F
   - So a recompile mid-morph or mid-freeze changes nothing on screen.
   - The projector, a secondary display and the preview all draw the same
     frame.
+
+**As built (M2.2, PR #TBD):**
+- `OutputCompiler` (now a class) caches by content: (blend, w, h) → blend
+  map, (warp, field cols, rows) → warp field, (mask, w, h) → mask texture.
+  The model types in the keys are `Hashable`, synthesized.
+- **A mask is keyed by itself**, not by its slice: moving a slice keeps its
+  raster.
+- **Slice meshes are not cached.** An output whose textures all hit compiles
+  in 0.14 ms at 1080p, meshes and buffers included.
+- **Eviction is ARC.** The cache holds its textures weakly, so a texture
+  lives exactly as long as a plan holds it:
+  - every display's set;
+  - the replaced set a frozen output still takes its hold from
+    (`OutputSet.previous`, B111);
+  - a preview's set.
+
+  Nothing in use can be freed, and a texture no plan holds goes with the set
+  swapped out. Its dead entry is dropped at the next compile.
+- **Threads.** The coordinator compiles on the main actor with its own
+  compiler. The output previews share one long-lived compiler (the engine's
+  `preview.configure`); `applyCanvasUse` no longer makes one per call.
+  - Preview compiles come from the main actor, a network thread (`sub`) and
+    a utility queue (rebalance), so the cache is behind a `Mutex`.
+  - The lock is held for the lookup and the insert, not over a build. Two
+    threads missing one key both build it (a `ponytail:`).
+  - The render thread never touches the cache.
+- **Measured** (`compileCacheBench`, `FANOUS_BENCH=1`, release, CPU time per
+  rebind, median of 20 overlap edits on one output): a 2 × 2 wall of
+  1920×1080 outputs blended on both axes, on one 3840×2160 drawable, compiles
+  in 51.4 ms before and 13.3 ms after (the edited output's blend map).
+- **Not built here:** the image-mask invalidation (image masks come with
+  item 5), the presets on the plan (3) and the overlay box (4).
 
 **1. Black lift by coverage (fixes F3).**
 - **Before M2.1** the lift was binary per edge: full outside every overlap, none

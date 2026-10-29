@@ -307,6 +307,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   (M2.1, F3). Every point now rises to the black level of the corner where four projectors overlap, which used to stay
   lighter than the seams: the lift reads its value in a two-projector seam and 3^(1/2.2) times it where one projector lights alone.
   Check Grey 0 % again on such a wall. Outputs blended on one axis are unchanged.
+- An output edit recompiles only what it changed (M2.2, DESIGN §9.10 item 0): blend maps, warp fields and mask rasters
+  are cached by their settings and size, so a slider drag on one output no longer rebuilds every other output's blend map
+  each time, and the output previews keep theirs too. On a 2×2 wall of 1920×1080 outputs, an overlap edit compiles in
+  13 ms instead of 51. The picture is unchanged.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
