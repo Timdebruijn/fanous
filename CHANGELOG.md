@@ -296,6 +296,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Each compositor tick reads its output set once and draws its Freeze holds, the output preview and the output pass with
   it, so an output change or display rebind that lands during a tick takes effect on the next one. The tick now holds a
   frozen output before the preview tap; the picture is unchanged (B110).
+- Fixed: stopping a render service could stop its Syphon canvas server while a compositor tick was still publishing to
+  it (a display-link tick longer than 50 ms, or a thread that did not stop within 1 s), or while the GPU completion of
+  an earlier publish was still notifying its clients. Every driver's stop now waits for its last tick, the render queue's
+  completions are waited for after that, and only then is the server stopped; a thread or completion that does not finish
+  within 1 s is logged and the server is left to the process (B113).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
