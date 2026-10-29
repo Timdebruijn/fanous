@@ -155,5 +155,7 @@ describe('the wall panel', () => {
   it('steps through Grid, Blend check, Grey 0, 25, 75 % and White', () => {
     expect(SEAM_STEPS.map((s) => [s.name, s.pattern])).toEqual([['Grid', 1], ['Blend check', 3], ['Grey 0 %', 8], ['Grey 25 %', 9], ['Grey 75 %', 10], ['White', 11]]);
     expect(SEAM_STEPS[1]!.hints.map((h) => [h.target, h.control])).toEqual([['seam', 'gamma'], ['seam', 'gamma'], ['seam', 'curve']]);
+    // Grey 25 / 75 % and White: a darker or tinted projector opens that projector's colour gain
+    for (const step of SEAM_STEPS.slice(3)) expect(step.hints.map((h) => [h.target, h.control])).toEqual([['projector', 'colour'], ['seam', 'rgb']]);
   });
 });

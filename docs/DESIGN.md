@@ -921,7 +921,8 @@ Project
 ├── Display[]         runtime: identity (UUID + EDID name), current/available modes — matched to project outputs by identity
 ├── Output[]          id, name, display identity, region on display (origin, size in display px), desired display mode,
 │   │                 intensity, blend edges {left,right,top,bottom: overlap px, curve (power γ), black lift},
-│   │                 warp {cornerPin: 4 points, mesh: N×M control points (bezier), density}, test pattern
+│   │                 warp {cornerPin: 4 points, mesh: N×M control points (bezier), density}, test pattern,
+│   │                 colour {gain r, g, b; black offset} (§9.9)
 │   └── Slice[]       canvas id, source rect on canvas, destination: quad (4 points) or mesh (N×M) on the output,
 │                     mask: polygon/bezier path + feather px, opacity, order
 └── Serial device[]   (later)
@@ -951,6 +952,11 @@ single-projector area matches the doubled black floor of the overlap:
 ```
 out = in · factor + lift · (1 − inOverlap)              // lift and inOverlap feathered over `liftFeather` px
 ```
+
+The lift is stored as the code value it gives on black. Since M1.7 the
+output pass adds it in linear light (γ 2.2), so the `+` above is exact at
+Grey 0 % and a brighter picture gets only the light the lift adds (§9.9,
+"As built (M1.7)").
 
 Both the per-pixel `factor` and `lift·(1−inOverlap)` are precomputed into one
 `rg16Float` **blend map** texture per output on Control whenever the blend
@@ -985,7 +991,9 @@ for each slice (ordered):
   vertex:   mesh vertex → warp displacement → clip
   fragment: canvas.sample(uv) × scale × mask(uv) × slice.opacity (scale 1 live; frozen: master now / master at Freeze;
                                                                  a test pattern replaces this, whole output, no mask)
-            → × blendMap.factor + blendMap.lift                 (skipped when Output "raw" is set)
+            → × blendMap.factor                                 (skipped when Output "raw" is set)
+            → × colour gain r, g, b                             (raw too)
+            → + blendMap.lift + colour black offset in linear light, γ 2.2 (lift skipped in raw; §9.9 M1.7)
             → × output intensity                                (0 at Output or Master Blackout, and at Master 0; patterns too)
             → × master intensity on a test pattern only         (content: the canvas carries it)
             → blue-noise dither → drawable (bgra8 / bgr10 later) (not on a test pattern)
@@ -1006,11 +1014,12 @@ the canvas sample, before the blend map. Freeze engaged at Master 0 holds
 nothing (a black canvas carries no picture): the output stays live, black, and
 holds the first canvas drawn above 0.
 
-The black lift is the projector's black floor, so it does not follow the
-Master: on content it stays at the output's level while the Grand Master moves
-(it used to go down with it; on a test pattern it still does) and is 0 at
-Master 0 and at an Output or Master Blackout. Master 0 or Blackout is black at
-once also on a secondary display, which draws the last completed canvas.
+The black lift, like the colour's black offset, is the projector's black
+floor, so it does not follow the Master: on content it stays at the output's
+level while the Grand Master moves (it used to go down with it; on a test
+pattern it still does) and is 0 at Master 0 and at an Output or Master
+Blackout. Master 0 or Blackout is black at once also on a secondary display,
+which draws the last completed canvas.
 
 One pass, no intermediate textures; "all output/mapping configuration is
 applied entirely on the GPU in the final output pass" is satisfied.
@@ -1136,7 +1145,8 @@ own canvas servers are never numbered.
 ### 9.9 Projector walls and the M1 mapping tools (design 2026-10-28, `docs/mapping-ux.md`)
 
 **Status:** approved 2026-10-28; M1 steps 1, 3, 4, 5 built (PRs #55, #47,
-#54, #59), step 2 in PR #63 (as built below).
+#54, #59), step 2 in PR #63 and step 7 in M1.7 (both as built below); step 6
+(RGB gamma rendering) open.
 
 **Scope:** M1 is the first block. M2 and M3 are listed at the end of this
 section.
@@ -1255,9 +1265,10 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
   back.
 - Unlinked RGB keeps the single gamma ("in effect" until RGB gamma renders),
   with R, G, B below it; linking again drops them.
-- The colour hints say colour gain is not built yet; the projector tile has the
-  black floor only (0–20 %). Geometry sliders send on release (`wall.set` has
-  no coalesce key); seam and floor sliders send at most every 50 ms.
+- The colour hints said colour gain was not built yet, and the projector tile
+  had the black floor only (0–20 %), until M1.7 (below). Geometry sliders send
+  on release (`wall.set` has no coalesce key); seam and floor sliders send at
+  most every 50 ms.
 
 **RGB gamma (OPEN-14).**
 - `BlendEdge.gammaRGB: [Double]?`; nil means `gamma` for all three channels.
@@ -1271,6 +1282,40 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
   before the output and master intensity, so blackout stays black.
 - It is set on the Outputs tab next to the Colour bars and Grey steps buttons,
   and for a wall output from the wall panel's projector tile.
+
+**As built (M1.7):**
+- `OutputConfig.color` decodes as the default when absent, so older projects
+  load unchanged; `output.set` clamps gain to 0…2 per channel and black to
+  0…0.2, and refuses a gain that is not three values.
+- Output pass, on the un-premultiplied colour `c` of content and test patterns
+  alike, with γ fixed at 2.2 (the edges' default; a per-output gamma only if a
+  projector measurably differs):
+  ```
+  c = sample × scale × blend factor × gain
+  c = (max(c, 0)^γ + lift^γ + black^γ)^(1/γ)       // the lift and the black offset add light
+  out = c × slice alpha × intensity + dither          // dither on content only
+  ```
+  The black lift and the black offset are stored as the code value they give
+  on black, so Grey 0 % reads them exactly as before and projects tuned on it
+  keep their look; at a mid grey they now add only the light they give (a lift
+  of 0.08 on 25 % grey: 64 → 66, where it was 64 → 84). Without a lift or black
+  offset the pass skips the powers and is unchanged. The black offset is a
+  uniform: it applies also without a blend map.
+- Raw (Output Blend channel 128+) bypasses blend factor, lift, warp and mask,
+  but keeps the gain and the black offset: they describe the projector, not
+  the mapping, like the output's intensity, so switching raw on for alignment
+  does not change its colour.
+- `MappedUniforms` carries `float4 color` (gain r, g, b; black); outputs,
+  output previews and secondary displays all draw through `OutputPass.draw`.
+- UI: gain R, G, B (0–200 %) and black offset (0–20 %) sliders under the test
+  pattern buttons on the Outputs tab, and on the wall panel's projector tile
+  under the black floor (`OutputColour.svelte`). They send at most every 50 ms;
+  `output.set` merges a drag on one value into one undo step. The seam check's
+  "One projector darker, or tinted" hint on Grey 25/75 % and White opens the
+  tapped projector's colour.
+- The lift and the black offset reach only the pixels a slice covers (as the
+  lift did before); an output whose slices leave part of the raster empty has
+  true black there.
 
 **Mesh resample.**
 - A density change samples the current surface (`warp.ts meshPoint`) at the

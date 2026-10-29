@@ -30,6 +30,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import NudgePad from '../components/NudgePad.svelte';
+  import OutputColour from '../components/OutputColour.svelte';
   import OutputMapper from '../components/OutputMapper.svelte';
   import RemotePanel from '../components/RemotePanel.svelte';
   import WallPanel from '../components/WallPanel.svelte';
@@ -508,6 +509,10 @@
           {/each}
         </div>
         <p class="caption">The Output fixture's Test pattern and Master channels override this; its Blend channel at 128+ shows the raw canvas (no blend, warp or mask) for alignment.</p>
+
+        <h3>Colour</h3>
+        <OutputColour {output} />
+        <p class="caption">Match this projector to the others by eye, on Colour bars, Grey steps or the Grey and White fields: the gain scales each channel, the black offset raises its black over the whole output. Both stay in raw, like the intensity.</p>
       </section>
     {:else}
       <section class="panel form" aria-label="Warp and slices">

@@ -276,6 +276,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: below a Grand Master of 100 % a lower layer showed through an opaque layer above it (green over red at 50 % gave
   (63,128,0) instead of (0,128,0)), on the canvas preview, Syphon, CITP and every output. The Master now dims each layer's
   colour instead of making it transparent, so the picture dims as it looks at 100 %, in every blend mode (B108).
+- Added: per-output colour, gain R, G, B and a black offset, set by eye on the Outputs tab and on a projector wall's
+  projector tile, where the seam check's Grey 25 %, 75 % and White steps now point (M1.7). The black lift and the black
+  offset add light in linear terms: Grey 0 % looks as before, but the area outside the overlaps no longer brightens at
+  mid greys (a lift of 8 % raised 25 % grey by 20 code values, now by 2).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

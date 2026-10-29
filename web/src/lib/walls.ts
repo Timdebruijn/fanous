@@ -260,7 +260,7 @@ export interface SeamHint {
 }
 
 const colourHints: SeamHint[] = [
-  { see: 'One projector darker, or tinted', turn: "That projector's colour gain. Not in Fanous yet: use the projector's own colour settings for now.", target: null, control: 'colour' },
+  { see: 'One projector darker, or tinted', turn: "That projector's colour gain, the channel that is off", target: 'projector', control: 'colour' },
   { see: 'A colour shift only inside a seam', turn: 'Unlink RGB on that seam and tune the channel that is off', target: 'seam', control: 'rgb' },
 ];
 

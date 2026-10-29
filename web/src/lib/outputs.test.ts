@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
-import { canvasSizeError, canvasTarget, previewReady, layerCanvas, layerRuns, layersOn, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, handles, insertPoint, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
+import { canvasSizeError, canvasTarget, colorOf, previewReady, layerCanvas, layerRuns, layersOn, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, handles, insertPoint, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
 
 const output: OutputConfig = {
   id: 1,
@@ -18,6 +18,12 @@ const output: OutputConfig = {
 };
 
 describe('outputs helpers', () => {
+  it('reads an output without colour (saved before M1.7) as gain 1, black 0', () => {
+    expect(colorOf(output)).toEqual({ gain: [1, 1, 1], black: 0 });
+    const tinted = { gain: [0.9, 1, 1.1] as [number, number, number], black: 0.02 };
+    expect(colorOf({ ...output, color: tinted })).toEqual(tinted);
+  });
+
   it('builds handles with the JSON pointer each one edits', () => {
     expect(handles(output, 'cornerPin', 0).map((h) => h.path)).toEqual(['/warp/cornerPin/0', '/warp/cornerPin/1', '/warp/cornerPin/2', '/warp/cornerPin/3']);
     expect(handles(output, 'mesh', 0)).toHaveLength(9);
