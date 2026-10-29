@@ -37,7 +37,7 @@
       <span class="label">{s.label}</span>
       <span class="line">
         <button type="button" class="btn btn-icon" aria-label="{s.label} down" title={lock} disabled={!!lock || v <= 0} onclick={() => set(s.path, stepped(s.max, v - s.step))}>−</button>
-        <input type="range" min="0" max={s.max} step={s.step} aria-label={s.label} title={lock} disabled={!!lock} value={v}
+        <input type="range" min="0" max={s.max} step={s.step} aria-label={s.label} aria-valuetext="{v.toFixed(1)} %" title={lock} disabled={!!lock} value={v}
           oninput={(e) => { const n = Number(e.currentTarget.value); drag = { key, value: n }; set(s.path, n); }}
           onchange={() => { throttle.flush(); drag = null; }} />
         <button type="button" class="btn btn-icon" aria-label="{s.label} up" title={lock} disabled={!!lock || v >= s.max} onclick={() => set(s.path, stepped(s.max, v + s.step))}>+</button>

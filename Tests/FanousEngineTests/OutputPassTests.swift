@@ -541,6 +541,32 @@ struct OutputPassTests {
         }
     }
 
+    /// The lift and the black offset are added to the un-premultiplied colour, then the slice's alpha scales the result:
+    /// they fade with the slice's opacity and mask (a masked-out part stays black). A hand-edited negative black offset
+    /// (project files are not clamped on load) adds nothing instead of turning the picture black.
+    @Test func liftAndBlackOffsetFadeWithTheSlice() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 0)
+        let compiler = try OutputCompiler(device: context.device)
+        let size = (Self.width, Self.height)
+        func green(_ config: OutputConfig, _ x: Int, value: UInt8 = 0) throws -> Int {
+            let image = try Self.render(compiler.compile(config, index: 1, drawable: size), still: value == 0 ? still : Self.flat(context.device, value: value), drawable: size, context: context)
+            return Int(image[(90 * Self.width + x) * 4 + 1])
+        }
+        var half = OutputConfig(id: 1)
+        half.color.black = 0.1
+        half.slices[0].opacity = 0.5
+        half.slices[0].mask = MaskSettings(path: [MapPoint(0, 0), MapPoint(0.5, 0), MapPoint(0.5, 1), MapPoint(0, 1)])  // the left half
+        let inside = try green(half, 80), outside = try green(half, 240)
+        #expect(abs(Double(inside) - 12.75) <= 1, "black 0.1 at opacity 0.5: \(inside)")
+        #expect(outside <= 1, "black 0.1 where the mask is 0: \(outside)")
+        var negative = OutputConfig(id: 1)
+        negative.blend.lift = 0.08
+        negative.color.black = -0.1
+        let read = try green(negative, 160, value: 64)
+        #expect(abs(Double(read) - Self.lit(64, 0.08)) <= 1, "black -0.1 with lift 0.08 on 64: \(read)")
+    }
+
     /// Blackout and Master 0 stay black with gain, lift and black offset set; a held (Freeze) canvas still follows the
     /// Master, with the gain on it.
     @Test func colourKeepsBlackoutBlackAndFreezeFollowsTheMaster() throws {

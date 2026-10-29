@@ -304,7 +304,9 @@ test("walls: the wizard makes a 1 × 2 wall at 15 %, a seam gamma drag is one un
   await panel.getByRole('group', { name: 'Seam check pattern' }).getByRole('button', { name: 'Grey 25 %' }).click();
   await panel.getByRole('button', { name: /^One projector darker, or tinted/ }).click();
   await panel.getByRole('button', { name: 'Output 2 · r1 c2' }).click();
-  const colour = panel.getByRole('region', { name: 'Projector' }).getByRole('group', { name: 'Colour' });
+  const projector = panel.getByRole('region', { name: 'Projector' });
+  await expect(projector.getByRole('heading')).toHaveText('Output 2 · r1 c2');
+  const colour = projector.getByRole('group', { name: 'Colour' });
   await expect(colour).toHaveClass(/focus/);
   await expect(colour.getByRole('slider', { name: 'Gain R' })).toHaveValue('100');
 
@@ -415,9 +417,12 @@ test('outputs: a colour gain drag is one undo step; the black offset steps by 0.
     await page.mouse.move(x(100 - i * 3), box.y + box.height / 2);
     await page.waitForTimeout(40);
   }
+  const dragged = Number(await red.inputValue());
+  expect(dragged).toBeLessThan(80);
   await page.mouse.up();
-  await expect.poll(async () => Number(await red.inputValue())).toBeLessThan(80);
-  await expect(colour.getByLabel('Gain R value')).not.toHaveText('100.0 %');
+  // the last value of the drag reaches the engine: after the release the slider shows the engine's value
+  await expect(colour.getByLabel('Gain R value')).toHaveText(`${dragged.toFixed(1)} %`);
+  await expect.poll(async () => Number(await red.inputValue())).toBe(dragged);
   expect(redSets).toBeGreaterThan(1);
   await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(red).toHaveValue('100');

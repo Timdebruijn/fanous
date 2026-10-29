@@ -254,8 +254,8 @@ export type Control = 'warp' | 'gamma' | 'curve' | 'floor' | 'colour' | 'rgb';
 export interface SeamHint {
   see: string;
   turn: string;
-  /** what the user taps on the mini-map to open `control`; null: nothing to open in Fanous yet */
-  target: 'seam' | 'projector' | null;
+  /** what the user taps on the mini-map to open `control` */
+  target: 'seam' | 'projector';
   control: Control;
 }
 

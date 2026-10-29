@@ -989,11 +989,13 @@ distance → smoothstep, so feathering is exact and free at render time.
 ```
 for each slice (ordered):
   vertex:   mesh vertex → warp displacement → clip
-  fragment: canvas.sample(uv) × scale × mask(uv) × slice.opacity (scale 1 live; frozen: master now / master at Freeze;
-                                                                 a test pattern replaces this, whole output, no mask)
+  fragment: canvas.sample(uv) × scale                           (scale 1 live; frozen: master now / master at Freeze;
+                                                                 a test pattern replaces this, whole output)
             → × blendMap.factor                                 (skipped when Output "raw" is set)
             → × colour gain r, g, b                             (raw too)
             → + blendMap.lift + colour black offset in linear light, γ 2.2 (lift skipped in raw; §9.9 M1.7)
+            → × mask(uv) × slice.opacity                        (the slice's alpha, after the lift: lift and black offset
+                                                                 fade with the slice; no mask in raw; none on a pattern)
             → × output intensity                                (0 at Output or Master Blackout, and at Master 0; patterns too)
             → × master intensity on a test pattern only         (content: the canvas carries it)
             → blue-noise dither → drawable (bgra8 / bgr10 later) (not on a test pattern)

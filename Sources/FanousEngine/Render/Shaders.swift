@@ -575,7 +575,7 @@ public enum ShaderSource {
     static float3 output_colour(float3 c, float lift, float4 color) {
         c *= color.rgb;
         if (lift <= 0.0 && color.a <= 0.0) return c;
-        float3 light = powr(max(c, 0.0), projectorGamma) + powr(max(lift, 0.0), projectorGamma) + powr(color.a, projectorGamma);
+        float3 light = powr(max(c, 0.0), projectorGamma) + powr(max(lift, 0.0), projectorGamma) + powr(max(color.a, 0.0), projectorGamma);
         return powr(light, 1.0 / projectorGamma);
     }
 

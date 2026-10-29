@@ -55,7 +55,7 @@
    * second tap lets go of it. */
   function useHint(i: number) {
     const h = step?.hints[i];
-    if (!h?.target) return;
+    if (!h) return;
     if (wallUI.hint === i) {
       wallUI.hint = null;
       return;
@@ -196,11 +196,7 @@
           <p class="caption">Step {check.step + 1} of {SEAM_STEPS.length}, on every projector of the wall: {step.shows} Look for:</p>
           <div class="hints">
             {#each step.hints as h, i (h.see)}
-              {#if h.target}
-                <button type="button" class="hint" aria-pressed={wallUI.hint === i} onclick={() => useHint(i)}><span>{h.see}</span><span class="turn">→ {h.turn}</span></button>
-              {:else}
-                <div class="hint"><span>{h.see}</span><span class="turn">→ {h.turn}</span></div>
-              {/if}
+              <button type="button" class="hint" aria-pressed={wallUI.hint === i} onclick={() => useHint(i)}><span>{h.see}</span><span class="turn">→ {h.turn}</span></button>
             {/each}
           </div>
           {#if armed}<p class="armed" role="status">Now tap {armed.target === 'seam' ? 'that seam' : 'that projector'} on the map.</p>{/if}
@@ -309,9 +305,8 @@
     display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 4px 12px; align-items: center; min-height: var(--touch); padding: 8px 12px;
     border: 1px solid var(--line); border-radius: 6px; background: var(--surface-1); color: var(--text-1); text-align: left; font-size: 13px;
   }
-  button.hint:hover { background: var(--surface-3); }
+  .hint:hover { background: var(--surface-3); }
   .hint[aria-pressed='true'] { border-color: var(--accent); }
-  div.hint { color: var(--text-2); }
   .turn { color: var(--text-2); }
   .armed { margin: 0; padding: 8px 12px; border-radius: 6px; background: var(--accent-dim); font-weight: 600; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

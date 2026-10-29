@@ -512,7 +512,7 @@
 
         <h3>Colour</h3>
         <OutputColour {output} />
-        <p class="caption">Match this projector to the others by eye, on Colour bars, Grey steps or the Grey and White fields: the gain scales each channel, the black offset raises its black over the whole output. Both stay in raw, like the intensity.</p>
+        <p class="caption">Match this projector to the others by eye, on Colour bars, Grey steps or the Grey and White fields: the gain scales each channel, the black offset raises its black over the whole output. Gain and black offset also apply in Raw, like the intensity.</p>
       </section>
     {:else}
       <section class="panel form" aria-label="Warp and slices">
