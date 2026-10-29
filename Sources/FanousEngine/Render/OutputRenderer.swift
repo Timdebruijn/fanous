@@ -16,7 +16,8 @@ struct MappedUniforms {
     var flags: UInt32 = 0
     var pattern: UInt32 = 0
     var index: UInt32 = 0
-    var pad: UInt32 = 0
+    /// Content only: the canvas sample's factor, before the blend map and lift (`OutputPass.contentScale`).
+    var scale: Float = 1
 }
 
 /// One slice ready to draw: tessellated mesh and an optional mask texture.
@@ -56,6 +57,8 @@ public final class OutputPlan: @unchecked Sendable {
     /// Canvas copies (by canvas id) taken when the Output fixture's Control engaged Freeze; the content pass samples them
     /// instead of the live canvases. Only touched by the one thread that renders this plan's set.
     nonisolated(unsafe) var held: [Int: MTLTexture] = [:]
+    /// The Master intensity `held` was drawn with (the canvas carries it); same thread as `held`.
+    nonisolated(unsafe) var heldMaster: Float = 1
 
     init(id: Int, index: Int, region: MTLRegion, intensity: Float, testPattern: TestPattern, blendMap: MTLTexture?, warpField: MTLTexture?, slices: [SlicePlan], patternMesh: SlicePlan) {
         self.patternMesh = patternMesh
@@ -182,14 +185,16 @@ enum OutputPass {
     }
 
     /// Output Control = Freeze: keeps a copy of the canvases its slices use from the moment Freeze engaged, released
-    /// when it ends. `canvas` looks a canvas up by id (nil: it does not render). Call before the output render encoder is created.
-    static func holdFrozen(_ set: OutputSet, canvas: (Int) -> MTLTexture?, outputs: [OutputParameters], buffer: MTLCommandBuffer) {
+    /// when it ends. `canvas` looks a canvas up by id (nil: it does not render); `master` is the Master intensity those
+    /// canvases were drawn with. At Master 0 they are black and carry no picture: the plan stays live (black at 0) and
+    /// holds the first canvas drawn above 0. Call before the output render encoder is created.
+    static func holdFrozen(_ set: OutputSet, canvas: (Int) -> MTLTexture?, outputs: [OutputParameters], master: Float, buffer: MTLCommandBuffer) {
         for plan in set.plans {
             guard fixture(for: plan, in: outputs).control == .freeze else {
                 if !plan.held.isEmpty { plan.held = [:] }
                 continue
             }
-            guard plan.held.isEmpty else { continue }
+            guard plan.held.isEmpty, master > 0 else { continue }
             var held: [Int: MTLTexture] = [:]
             for slice in plan.slices where held[slice.canvas] == nil {
                 guard let source = canvas(slice.canvas) else { continue }
@@ -203,7 +208,16 @@ enum OutputPass {
                 held[slice.canvas] = copy
             }
             plan.held = held
+            plan.heldMaster = master
         }
+    }
+
+    /// A content slice's canvas sample factor (B100). A live canvas already carries the Master (each layer is drawn with
+    /// it): 1. A held one (`heldMaster`: the Master it was drawn with) follows the Master since, on the sample, so the
+    /// black lift after it stays at the output's level; one held at 0 is black.
+    static func contentScale(master: Float, heldMaster: Float?) -> Float {
+        guard let heldMaster else { return 1 }
+        return heldMaster > 0 ? master / heldMaster : 0
     }
 
     /// `canvas` looks a canvas up by id; canvas 1 always renders. A slice whose canvas does not render stays black.
@@ -220,8 +234,13 @@ enum OutputPass {
             encoder.setViewport(MTLViewport(originX: Double(region.origin.x), originY: Double(region.origin.y), width: Double(region.size.width), height: Double(region.size.height), znear: 0, zfar: 1))
             encoder.setScissorRect(MTLScissorRect(x: region.origin.x, y: region.origin.y, width: region.size.width, height: region.size.height))
             let pattern = masterPattern != .off ? masterPattern : (fixture.testPattern != .off ? fixture.testPattern : plan.testPattern)
-            // content and test patterns alike: a console's Grand Master or DBO takes a pattern down too
-            let intensity = fixture.control == .blackout ? 0 : plan.intensity * fixture.intensity * master
+            let level = fixture.control == .blackout ? 0 : plan.intensity * fixture.intensity
+            // the Master once (B100): a pattern takes it here; the canvas already carries it (each layer is drawn with it, as
+            // the canvas preview, Syphon and CITP show), so content keeps the output's level and the black lift stays while
+            // the Master moves. Master 0 or Blackout is black at once, lift included: a secondary display draws the last
+            // completed canvas, a tick behind
+            let intensity = level * master
+            let content = master <= 0 ? 0 : level
             if pattern != .off {
                 // through the warp (and blend map) like the content, so a grid can be aligned on the surface; Freeze holds
                 // the canvases, not the pattern: the pattern stays live and the held frame returns when it is switched off
@@ -260,7 +279,8 @@ enum OutputPass {
                 encoder.setFragmentTexture(source, index: 0)
                 var u = MappedUniforms()
                 u.size = SIMD2(Float(region.size.width), Float(region.size.height))
-                u.intensity = intensity
+                u.intensity = content
+                u.scale = contentScale(master: master, heldMaster: frozen == nil ? nil : plan.heldMaster)
                 u.opacity = slice.opacity
                 u.flags = (plan.warpField != nil ? 1 : 0) | (slice.mask != nil ? 2 : 0) | (fixture.raw ? 4 : 0) | (plan.blendMap == nil ? 8 : 0)
                 (uniforms.contents() + offset).assumingMemoryBound(to: MappedUniforms.self).pointee = u

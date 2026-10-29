@@ -259,6 +259,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: a layer or output preview on its canvas's stream at the H.264 encoder limit, in the same aspect as its box, showed
   the whole canvas as if it were the target. The engine now says `fallback: true` in the preview `sub` reply and `stream`
   descriptions, and the caption says "canvas fallback" whatever the shape (B96).
+- Fixed: the Master intensity dimmed a mapped output twice (into the canvas and again in the output pass), so a Grand
+  Master at 50 % gave 25 % on the projectors and 25 % gave 6 %. Outputs now take it once, as the canvas preview, Syphon and
+  CITP do, so they are brighter than before at Grand Master levels between 0 and 100 %; 0 %, 100 % and Master Blackout are
+  unchanged. A frozen output follows later Grand Master moves from the level it froze at; Freeze engaged at Master 0
+  holds the first picture drawn above 0. The black lift of a blend is the projector's black floor: on the picture it now
+  stays put while the Grand Master moves (it used to go down with it) and is 0 at Master 0 and at either Blackout (B100).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
