@@ -49,13 +49,18 @@
     const supportsWebCodecs = 'VideoDecoder' in window && 'EncodedVideoChunk' in window;
     let configured = false;
     let sawKey = false;
-    // one watchdog per subscription (B66, B95): 5 s without a drawn frame of either kind → JPEG. Armed by the `sub`
-    // reply and by every frame: an H.264 description that never comes, and a refused (B70) or H.264 viewer the engine
-    // moved to a new streamer whose VideoToolbox session is slow or fails, frozen on its last frame
+    // a subscription refused to JPEG at the encoder limit (B70) is watched until its `stream` description comes (B95):
+    // 5 s without a drawn frame → JPEG, as when the engine moved it to a new streamer whose VideoToolbox session is slow
+    // or fails. Armed by the `sub` reply, re-armed by each frame. A healthy H.264 stream is not watched after its
+    // description: a tick stall (display asleep, project load) must not demote it for good
+    let refused = false;
     let watchdog: ReturnType<typeof setTimeout> | undefined;
     const watch = () => {
       clearTimeout(watchdog);
-      if (run.current()) watchdog = setTimeout(() => void fallbackToJPEG('no H.264 stream from the engine'), 5000);
+      if (!refused || configured || !run.current()) return;
+      watchdog = setTimeout(() => {
+        if (!configured) void fallbackToJPEG('no H.264 stream from the engine');
+      }, 5000);
     };
 
     const drawBitmap = (bitmap: ImageBitmap | VideoFrame) => {
@@ -82,6 +87,8 @@
       drawBitmap(bitmap);
     };
 
+    // one way: the JPEG stream it opens has no watchdog and stays JPEG until the next re-subscribe (target change, size
+    // class, reconnect, tab hide/show)
     const fallbackToJPEG = async (why: string) => {
       if (!run.current()) return;  // a late error of a stream that was already replaced
       const jpegRun = latest.begin();
@@ -177,10 +184,15 @@
         // all H.264 encoders busy (B70): JPEG on this stream, kept, so the engine can upgrade it when one frees up (B86)
         mode = 'jpeg';
         detail = `${sub.w}×${sub.h} · H.264 encoders busy`;
+        refused = true;
+        watch();
       } else {
         detail = `${sub.w}×${sub.h} · ${sub.fps} fps`;
+        // the engine makes its H.264 encoder for the first viewer (B66): no description in 5 s (it failed or is stuck) → JPEG
+        setTimeout(() => {
+          if (!configured) void fallbackToJPEG('no H.264 stream from the engine');
+        }, 5000);
       }
-      watch();  // the engine makes its H.264 encoder for the first viewer (B66): it can fail or be stuck
       if (hidden) pause();
     } catch (error) {
       if (!run.current()) return;
