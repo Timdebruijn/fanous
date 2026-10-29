@@ -239,6 +239,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: a role password in `settings.json` hand-edited to 0, negative or more than 10 000 000 PBKDF2 `iterations` crashed
   the engine at the next login of that role, or stalled it; such a record now makes `passwords` unreadable: logged, a
   running engine keeps the passwords it has, and the next start leaves every role open until it is fixed (B93).
+- Added: `/metrics` `preview.jpegOut`, `preview.jpegFailed` and `preview.jpegDropped`: JPEG preview frames made, encodes
+  that returned nil (logged once per streamer as "preview JPEG encode failed") and JPEG sends a connection refused; the
+  B86 e2e puts all three into its CI warning when a viewer refused to JPEG gets no frame, so the next occurrence names
+  the encoder, the send queue or the network (B99).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

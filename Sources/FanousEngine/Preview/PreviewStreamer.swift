@@ -66,6 +66,12 @@ public final class PreviewStreamer: @unchecked Sendable {
     public let framesIn = Atomic<Int>(0)
     public let framesOut = Atomic<Int>(0)
     public let skipped = Atomic<Int>(0)
+    /// JPEG frames made (`/metrics` `preview.jpegOut`), frames whose JPEG encode returned nil (`preview.jpegFailed`,
+    /// logged once per streamer) and JPEG sends a subscriber's connection refused (`preview.jpegDropped`): a JPEG viewer
+    /// that gets nothing tells the encoder from the send queue and from what comes after it (B99).
+    public let jpegOut = Atomic<Int>(0)
+    public let jpegFailed = Atomic<Int>(0)
+    public let jpegDropped = Atomic<Int>(0)
     /// The latest JPEG (bytes, width, height) for CITP streaming frames; produced at 5 fps while anyone wants it.
     public let latestJPEG = Mutex<([UInt8], Int, Int)?>(nil)
     /// Set by the CITP server while a console streams; nil = only WebSocket JPEG subscribers count.
@@ -320,7 +326,10 @@ public final class PreviewStreamer: @unchecked Sendable {
             if let data = ciContext.jpegRepresentation(of: CIImage(cvPixelBuffer: pixelBuffer), colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.7]) {
                 let bytes = Array(data)
                 latestJPEG.withLock { $0 = (bytes, width, height) }
-                for s in jpeg { _ = s.connection.send(stream: s.stream, kind: .jpeg, payload: bytes) }
+                for s in jpeg where !s.connection.send(stream: s.stream, kind: .jpeg, payload: bytes) { jpegDropped.wrappingAdd(1, ordering: .relaxed) }
+                jpegOut.wrappingAdd(1, ordering: .relaxed)
+            } else if jpegFailed.wrappingAdd(1, ordering: .relaxed).oldValue == 0 {
+                logger.warning("preview JPEG encode failed", metadata: ["size": "\(width)x\(height)"])
             }
         }
         guard !h264.isEmpty || alwaysEncode, let session = readySession() else { return }

@@ -595,15 +595,28 @@ test('preview: a viewer refused H.264 at the encoder limit shows JPEG at once an
   await page.getByRole('group', { name: 'Canvas', exact: true }).getByRole('button', { name: 'Canvas 2' }).click();
   const figure = page.getByRole('figure');
   await expect.poll(() => subs, { timeout: previewTimeout }).toBe(1);
+  // the engine's JPEG counters (live streamers only) while this viewer is the only one on JPEG: JPEGs made, encodes
+  // that returned nil, sends a connection refused (B99); a failed read gives zeros, never a failed test
+  type JPEGCounters = { jpegOut: number; jpegFailed: number; jpegDropped: number };
+  const jpegCounters = async (): Promise<JPEGCounters> => {
+    try {
+      return ((await (await engine.api.get('/metrics')).json()) as { preview: JPEGCounters }).preview;
+    } catch {
+      return { jpegOut: 0, jpegFailed: 0, jpegDropped: 0 };
+    }
+  };
+  const before = await jpegCounters();
   // the refusal says `codec: "jpeg"`: JPEG at once (not after 5 s without a description), and its frames are drawn
   await expect(figure.locator('figcaption')).toContainText(/^JPEG 5 fps · .* · H\.264 encoders busy/, { timeout: 3_000 });
   const drawn = () => figure.locator('canvas').evaluate((c: HTMLCanvasElement) => c.getContext('2d')!.getImageData(c.width / 2, c.height / 2, 1, 1).data[3]);
   // B98: on CI's VM the engine has sent this refused stream no JPEG frame for 30 s (cause open): on a workstation one
-  // must come; drawing is checked once a frame came, and a CI run without one says so instead of failing (B99)
-  // once a frame came, and a CI run without one says so (Actions warning, engine log attached) and is skipped (B99)
+  // must come; drawing is checked once a frame came, and a CI run without one says so (Actions warning with the
+  // engine's JPEG counters, engine log attached) and is skipped (B99)
   await expect.poll(() => jpegFrames, { timeout: previewTimeout }).toBeGreaterThan(0).catch(async (error: unknown) => {
     if (!process.env.CI || !/Timeout \d+ms exceeded/.test((error as Error).message ?? '')) throw error;
-    const note = `B98: ${jpegFrames} JPEG frames on the refused canvas:2 stream within ${previewTimeout} ms (B99)`;
+    const after = await jpegCounters();
+    const made = (['jpegOut', 'jpegFailed', 'jpegDropped'] as const).map((k) => `${k} +${after[k] - before[k]} (now ${after[k]})`).join(', ');
+    const note = `B98: ${jpegFrames} JPEG frames on the refused canvas:2 stream within ${previewTimeout} ms; ${made} (B99)`;
     console.log(`::warning::${note}`);
     test.info().annotations.push({ type: 'B98', description: note });
     await test.info().attach('fanousd.log (B98)', { path: join(engine.home, 'Library/Logs/Fanous/fanousd.log'), contentType: 'text/plain' });
