@@ -398,12 +398,33 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
   reallocates on Control, not on the compositor.
 - Uniforms live in a per-frame ring of `MTLBuffer`s (3 × max layers); argument
   tables are filled by offset, never by creating objects.
-- Acceptance test (Phase 2): malloc count on the compositor thread over 1 000
-  steady-state frames is **0** (`scripts/check-mallocs.sh`).
-  Since B89 the tests count the ticking thread's allocations exactly with a
-  `malloc_logger` hook (`MallocCounter`), in an optimised build; a debug build
-  allocates for unspecialised generics, and the process-wide figure is printed
-  for information only.
+- Allocation rule on the compositor thread (Phase 2 acceptance, restated by
+  B97; ADR-0002 amendment 2026-10-29). Both parts are counted on that thread
+  only, with a `malloc_logger` hook (`MallocCounter`, B89), never process-wide.
+  The tests' counts are exact, because they synchronise with the counted
+  thread around the window. The bench's count is within a few out of
+  thousands. The parts:
+  - The tick's own work allocates **0** in steady state.
+    `scripts/check-mallocs.sh` checks it in an optimised build, on a
+    compositor that encodes no GPU work (`skipsIdleWork`). A debug build
+    allocates for unspecialised generics.
+  - Metal API objects add allocations on every tick: 2 per
+    `makeCommandBuffer()`, 2 for the first
+    `makeRenderCommandEncoder(descriptor:)` and 3 for each further one, and 1
+    per `addCompletedHandler`. Our completion closure adds 2: its context and
+    the block copy. B105 tracks removing those 2 plus the handler's 1.
+  - `fanous-bench` reports the thread's count per step (`compositorMallocs`,
+    B97). The minimum is 7.00 per tick (2 + 2 + 1 + 2), measured headless with
+    one canvas, no output pass and no preview or thumbnails (M1 Pro, 4 ProRes
+    layers, 2026-10-29). Additions:
+
+    | Feature | Extra allocations per tick |
+    |---|---|
+    | Output pass | +3 (one more encoder) |
+    | Each extra canvas | +3 |
+    | Generators | +2–3 (derived) |
+    | Each preview or thumbnail streamer | about +6 (derived: an encoder and a capturing handler) |
+    | `present`, Syphon publish | not measured |
 - Unified memory budget: engine warns at 60 % of physical memory, refuses to
   activate a layer that would exceed 75 %. Read-ahead depth is the first knob
   reduced when a 16 GB machine is detected.
