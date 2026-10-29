@@ -13,8 +13,7 @@ struct RoleAuthTests {
     static let logger = Logger(label: "test")
 
     static func makeAuth(persist: Bool = false) -> (RoleAuth, URL) {
-        let directory = FileManager.default.temporaryDirectory.appending(path: "auth-\(UUID().uuidString)")
-        try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let directory = try! tempDir("auth")
         let auth = RoleAuth(
             settingsURL: persist ? directory.appending(path: "settings.json") : nil, shellTokenURL: directory.appending(path: "shell-token"),
             iterations: 1000, logger: logger)
