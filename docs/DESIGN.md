@@ -1309,7 +1309,9 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   "preview encoder failed" (no retry until the next H.264 subscriber) and
   "preview encoder released". The browser falls back to JPEG when no
   `stream` description arrives within 5 s of an H.264 `sub` reply (not
-  after a reply refused to JPEG at the encoder limit, B70/B86). The pixel
+  after a reply refused to JPEG at the encoder limit, B70/B86); while it
+  asks for JPEG the caption says "connecting…", never "H.264" over a
+  closed decoder (B98). The pixel
   buffer pool, texture cache and `CIContext` stay in `init` (no
   VideoToolbox).
 - **As built (encoder limit across targets, B70, 2026-10-28):** the 4 count

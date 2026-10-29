@@ -176,6 +176,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   shows the refused stream's JPEG frames at once and turns H.264 when the engine frees an encoder for it (B86).
 - Fixed: an output preview on the canvas stream at the encoder limit was stretched to the output's shape; it is now
   letterboxed and its caption says "canvas fallback" (B87).
+- Fixed: the preview kept its "H.264" caption over a closed decoder while it fell back to JPEG; it now says "connecting…".
+  The preview e2e tests read the mode from the start of the caption and accept the JPEG fallback a slow runner takes (B98).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

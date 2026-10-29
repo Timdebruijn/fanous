@@ -76,7 +76,11 @@ npm run e2e                       # npx playwright test --headed / --ui to watch
 ```
 
 CI runs them in the `e2e` job on macOS; on a failure the traces and engine
-logs are uploaded as the `e2e-results` artifact.
+logs are uploaded as the `e2e-results` artifact. To see the preview tests as
+CI's slow VideoToolbox does (B98): `CI=1 E2E_SLOW_DECODER=6000 npm run e2e`
+delays every `VideoDecoder.isConfigSupported` by 6 s (past the browser's 5 s
+JPEG fallback), `CI=1 E2E_FAILING_DECODER=1` makes each decoder fail after its
+first picture; `CI=1` gives the CI timeouts and skips.
 
 Protocol fixtures: `scripts/capture-dmx.py artnet|sacn|osc <name>` records
 real console packets into `Tests/Fixtures/captures/` (stop `fanousd` first;

@@ -120,6 +120,39 @@ export const test = base.extend<{ engine: Engine }>({
       }),
     );
     page.on('dialog', (dialog) => void dialog.accept());
+    // CI's slow VideoToolbox on a workstation (B98): `E2E_SLOW_DECODER=<ms>` delays every `VideoDecoder.isConfigSupported`
+    // by that long (over 5000: the browser's B66 fallback to JPEG); `E2E_FAILING_DECODER=1` makes each decoder fail with
+    // an error after its first picture, as a decode the hardware gives up on does
+    const slow = Number(process.env.E2E_SLOW_DECODER ?? 0);
+    const failing = !!process.env.E2E_FAILING_DECODER;
+    if (slow || failing) {
+      await page.addInitScript(
+        ({ slow, failing }) => {
+          if (!('VideoDecoder' in window)) return;
+          const Real = window.VideoDecoder;
+          window.VideoDecoder = class extends Real {
+            static override async isConfigSupported(config: VideoDecoderConfig) {
+              await new Promise((r) => setTimeout(r, slow));
+              return Real.isConfigSupported(config);
+            }
+            constructor(init: VideoDecoderInit) {
+              let self: VideoDecoder | undefined;
+              super({
+                output: (frame) => {
+                  init.output(frame);
+                  if (!failing || self?.state !== 'configured') return;
+                  self.close();
+                  init.error(new DOMException('test: decode failed', 'EncodingError'));
+                },
+                error: init.error,
+              });
+              self = this;
+            }
+          };
+        },
+        { slow, failing },
+      );
+    }
     await page.goto(`${engine.url}/?token=${engine.token}`);
     await expect(page.getByRole('button', { name: 'PROGRAMMER' })).toBeVisible();
     // and the first live document (the status bar counts this page): until it arrives the preview block is missing
@@ -142,6 +175,7 @@ export const previewTimeout = process.env.CI ? 30_000 : 5_000;
 
 /** Waits until the preview in `figure` streams, H.264 or the JPEG fallback, showing `source` ("Layer 8") if given. */
 export async function expectPreviewStreaming(figure: Locator, source?: string): Promise<void> {
-  const caption = source ? new RegExp(`(H\\.264|JPEG).* · ${source}`) : /H\.264|JPEG/;
+  // the mode starts the caption: a JPEG caption can name H.264 later ("JPEG 5 fps · no H.264 stream …", B98)
+  const caption = source ? new RegExp(`^(H\\.264|JPEG).* · ${source}`) : /^(H\.264|JPEG)/;
   await expect(figure.locator('figcaption')).toContainText(caption, { timeout: previewTimeout });
 }
