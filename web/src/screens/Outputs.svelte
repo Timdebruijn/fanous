@@ -37,7 +37,7 @@
   import WallWizard from '../components/WallWizard.svelte';
   import Preview from '../components/Preview.svelte';
   import {
-    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, handles, meshIdentity, modeText, nextSliceId, outputSize, spreadSources, statusText,
+    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, handles, keystoneBadges, meshIdentity, modeText, nextSliceId, outputSize, spreadSources, statusText,
     type MapPoint, type MapperMode, type OutputConfig,
   } from '../lib/outputs';
   import { app, can, cmd, toastUndo } from '../lib/state.svelte';
@@ -361,6 +361,7 @@
         <span class="head"><span class="dot dot-{st.tone === 'green' ? 'green' : st.tone === 'red' ? 'red' : 'off'}"></span><span class="nm">{o.name}</span><span class="spacer"></span><span class="caption mono">{Math.round(o.intensity * 100)} %</span></span>
         <span class="caption ellipsis tone-{st.tone}">{st.text}</span>
         {#if statuses.get(o.id)?.modeNote}<span class="caption yellow">{statuses.get(o.id)?.modeNote}</span>{/if}
+        {#each keystoneBadges(statuses.get(o.id)) as b (b.text)}<span class="badge wallbadge" class:badge-warn={b.warn}>{b.text}</span>{/each}
         {#if wallOf(walls, o.id)}<span class="badge wallbadge">{badge(wallOf(walls, o.id)!, o.id)}</span>{/if}
       </button>
     {:else}
@@ -388,6 +389,10 @@
           <div class="overlay" style:aspect-ratio={previewAspect}>
             <OutputMapper {output} mode={ui.mapper} {sliceIndex} {size} bind:selected={() => ui.handle, (path) => select({ group: 'point', anchor: points.findIndex((h) => h.path === path) })} marked={selection.length > 1 ? selection.map((i) => points[i]!.path) : []} onchange={point} onnudge={nudgeSelected} onstep={stepSelection} addMode={ui.maskAdd} draft={ui.mapper === 'mask' ? ui.draft : null} onadd={addMaskAt} onremove={removeMaskPointAt} />
           </div>
+        {/if}
+        <!-- the preview and the handles show the mapping as edited; the projector shows it keystoned (DESIGN §9.10 item 3) -->
+        {#if output && ui.tab === 'warp'}
+          <div class="kbadges">{#each keystoneBadges(status) as b (b.text)}<span class="badge" class:badge-warn={b.warn}>{b.text}</span>{/each}</div>
         {/if}
       {:else}
         <div class="panel nopreview">
@@ -646,6 +651,8 @@
   /* remote mode: the controls come first, the picture is on the projector */
   .main.remote > .form { order: -1; }
   .overlay { position: absolute; left: 0; top: 0; width: 100%; }
+  .kbadges { display: flex; gap: 8px; margin-top: 8px; }
+  .kbadges:empty { display: none; }
   .nopreview { padding: 32px; }
   .form { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
   .head2 { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
