@@ -54,7 +54,8 @@ public enum ShaderSource {
         return out;
     }
 
-    // Rec.709 video range, 16-bit normalized (the ratios are the same for 10-bit).
+    // Rec.709 video range in 8-bit ratios (16/255, 255/219, 255/224): exact for 8-bit live frames; 16-/10-bit sources
+    // read about 1 code low at white and about 1 code off in neutral chroma (B119).
     static float3 ycbcr_to_rgb(float y, float cb, float cr) {
         float yy = (y - 16.0 / 255.0) * (255.0 / 219.0);
         float u = (cb - 128.0 / 255.0) * (255.0 / 224.0);

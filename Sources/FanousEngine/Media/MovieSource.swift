@@ -13,12 +13,12 @@ import VideoToolbox
 /// How the layer shader must read a frame's texture(s) (DESIGN.md §4.1, ADR-0005).
 public enum SourcePixelKind: UInt32, Sendable {
     case rgba = 0  // stills, BC1/BC3 straight RGBA
-    case v216 = 1  // packed 16-bit 4:2:2 (Cb Y0 Cr Y1) as rgba16Unorm at half width
+    case v216 = 1  // packed 16-bit 4:2:2 (Cb Y0 Cr Y1) as rgba16Unorm at half width, or 8-bit `2vuy` as rgba8Unorm at half width
     case y416 = 2  // packed 16-bit 4:4:4:4 (A Y Cb Cr) as rgba16Unorm
     case hapYCoCg = 3  // HAP Q: scaled YCoCg in a BC3 texture
     case hapAlphaOnly = 4  // BC4 alpha
     case hapYCoCgAlpha = 5  // HAP Q Alpha: BC3 YCoCg + BC4 alpha
-    case planarYCbCr = 6  // bi-planar 4:2:2 or 4:4:4 (Y plane r16, CbCr plane rg16), incl. Apple's lossless-compressed variants
+    case planarYCbCr = 6  // bi-planar (Y plane r16 or r8, CbCr rg16 or rg8; 4:2:2, 4:4:4 or 4:2:0 (`420v`)), incl. Apple's lossless-compressed variants
     case planarYCbCrA = 7  // as 6 plus an alpha plane (r16)
 }
 

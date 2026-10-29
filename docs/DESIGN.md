@@ -883,6 +883,8 @@ written back, a new entry with a running server's name on another number is
 dropped (it would take that server to the lower number at the next restart), and
 a freed number goes at once to a server waiting past the 20.
 
+Since B73 step 1b: `Media/LiveCatalog.swift`, `LiveCatalog(.syphon, …)`; the B61/B69 notes above keep the old names as history.
+
 #### 8.2.1 Cameras, capture cards and screens: files 1–32 (design 2026-10-29, B73)
 
 **Status:** design, not built. The feature-gap survey (`docs/feature-gaps.md`
@@ -963,6 +965,40 @@ copied and the tick allocates nothing (§4.6). The protocol gets one accessor,
 per tick under the source's lock, so planes and kind never tear (`kind` is
 `SourcePixelKind`, default `.rgba`). For packed 4:2:2 the live path takes
 `texture0.width × 2` as the media width (step 1a).
+
+**As built (2026-10-30, step 1a, PR #107):** the protocol is `latestFrame`
+and `stop()`; `latestTexture` and `bottomUp` are gone. `LayerPlayback.frame`
+reads `latestFrame` once per tick and copies it into the reused `liveFrame`
+(a `DecodedFrame`), so `texture1` and `kind` reach the layer uniforms by the
+movie path; `hasFrame` only tests presence. Syphon builds the frame from one
+`FrameSlot` `Mutex` read (`.rgba`, `bottomUp: true`), the generators return
+their one texture. A `.v216` live frame's width is `texture0.width × 2` for
+the geometry and for `u.texel`, from which the v216 shader case derives pair
+positions. The shader is unchanged; its matrix uses 8-bit ratios (16/255,
+255/219), exact for 8-bit live frames, while 16- and 10-bit sources read
+about one code low at white and about one code off in neutral chroma (B119).
+Readback through the compositor (`LiveSourceTests`), `2vuy` and `420v` alike:
+white 255, black 0, Rec.709 red 255,1,0, 50 % grey 128; the `420v` Y0/Y1
+pair reads 252/3 from linear sampling half a canvas pixel off centre (`2vuy`
+picks with the nearest sampler: 255/0). 100 frame reads allocate nothing in
+release. `LiveCatalog` is step 1b.
+
+**As built (2026-10-30, step 1b, PR #106):** `Media/LiveCatalog.swift`.
+`LiveCatalog(_ kind:excluding:numbers:)` with `Kind` `.syphon` (150–169,
+`{app, server}`), `.capture` (1–20, `{uid, name}`), `.screens` (21–28,
+`{uuid, name}`) and `.windows` (29–32, `{app, title}`). The project key is
+the case name. A capture device or a display is kept by its uid or uuid alone,
+and a new name is taken when it is seen again. A Syphon server and a window
+are kept by both fields. `LiveCatalog.Entry` has `source`, `name`,
+`runtimeID`, `gone` and `label`. The instance methods ignore entries of
+another kind. Only Syphon has a source (`start` follows its directory).
+`ProjectDocument.liveNumbers(kind, from:)`/`liveValue`, `wholeLiveEntries`
+and `checkLiveReplay` (was `checkSyphonReplay`) cover the four keys in one
+path; the Syphon texts are unchanged. Not yet: the catalogs and sources for
+the other kinds. Also not yet: one `applied` value and one running set per
+kind (`recordLiveNumbers` and `checkLiveReplay` take Syphon's). The keys
+`/capture`, `/screens` and `/windows` in `initial` and the load migration
+come with their first writer (step 2).
 
 | Input | Framework | Pixel path | Kind |
 |---|---|---|---|
@@ -1387,7 +1423,7 @@ draws live over a frozen output and the held frame returns when it is off.
 
 ### 9.8 Syphon
 
-**As built (2026-10-26, Syphon orientation):** Syphon surfaces hold the picture in OpenGL order (row 0 at the bottom). `SyphonOutput` publishes the canvas with `flipped: true` so OpenGL clients (checked with the Syphon Simple Client) and Metal clients that follow Syphon's GL-order convention see it upright; `SyphonInput` reports `bottomUp`, and the compositor samples such frames with v0/v1 swapped (`Compositor.uvRect`), so crops keep their meaning. Before this the own round trip looked right while every other app saw the canvas upside down.
+**As built (2026-10-26, Syphon orientation):** Syphon surfaces hold the picture in OpenGL order (row 0 at the bottom). `SyphonOutput` publishes the canvas with `flipped: true` so OpenGL clients (checked with the Syphon Simple Client) and Metal clients that follow Syphon's GL-order convention see it upright; `SyphonInput` reports it via `LiveFrame.bottomUp`, and the compositor samples such frames with v0/v1 swapped (`Compositor.uvRect`), so crops keep their meaning. Before this the own round trip looked right while every other app saw the canvas upside down.
 
 `SyphonMetalServer` per canvas, named `Fanous – <canvas name>`, published
 from the compositor after the canvas pass with the same completed texture
@@ -2418,7 +2454,8 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   `StateStore.step` before it pops). The check sees the patch the step would
   apply, the patch that made the state it undoes (`HistoryEntry.forward`) and
   the current project. `syphon.forget` and `project.revert` both run
-  `ProjectDocument.checkSyphonReplay` (B90, B91): every op on `/syphon/N`
+  `ProjectDocument.checkLiveReplay` (was `checkSyphonReplay`; B90, B91; it
+  covers `/syphon`, `/capture`, `/screens` and `/windows`): every op on `/syphon/N`
   needs the whole entry the undone step left there
   (nothing, where it removed) or already the value it writes; otherwise the
   number changed meanwhile and the step is refused with `historyConflict`

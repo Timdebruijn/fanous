@@ -765,7 +765,8 @@ public final class Compositor: @unchecked Sendable {
     private func encode(_ item: DrawItem, uniforms: MTLBuffer, time: Float, canvasWidth: Int, canvasHeight: Int, with encoder: MTLRenderCommandEncoder) {
         let p = item.p, playback = item.playback, frame = item.frame
         guard let texture0 = frame.texture0 else { return }
-        let mediaWidth = playback.live != nil ? texture0.width : playback.width
+        // a live frame's size is its texture's; packed 4:2:2 (`2vuy`, `.v216`) holds two pixels per texel
+        let mediaWidth = playback.live != nil ? texture0.width * (frame.kind == .v216 ? 2 : 1) : playback.width
         let mediaHeight = playback.live != nil ? texture0.height : playback.height
         let (transform, quad) = Self.geometry(for: p, mediaWidth: mediaWidth, mediaHeight: mediaHeight, canvasWidth: canvasWidth, canvasHeight: canvasHeight)
         var u = LayerUniforms()

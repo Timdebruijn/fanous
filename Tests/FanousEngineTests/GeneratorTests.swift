@@ -16,7 +16,9 @@ struct GeneratorTests {
     static let width = 960, height = 540
 
     /// One tick of a 960×540 canvas with `playback` on layer 1, read back through a plain full-region output.
-    static func render(_ playback: LayerPlayback?, pattern: Int = 0, context: MetalContext, ticks: Int = 1, compositor existing: Compositor? = nil) throws -> (Compositor, [UInt8]) {
+    static func render(
+        _ playback: LayerPlayback?, pattern: Int = 0, fitMode: FitMode = .stretch, context: MetalContext, ticks: Int = 1, compositor existing: Compositor? = nil
+    ) throws -> (Compositor, [UInt8]) {
         let compositor: Compositor
         if let existing {
             compositor = existing
@@ -41,7 +43,7 @@ struct GeneratorTests {
                 slot.layers[0].intensity = 1
                 slot.layers[0].folder = UInt8(clamping: playback?.key.folder ?? 0)
                 slot.layers[0].file = UInt8(clamping: playback?.key.file ?? 0)
-                slot.layers[0].fitMode = .stretch
+                slot.layers[0].fitMode = fitMode
             }
         }
         var bgra: [UInt8] = []
