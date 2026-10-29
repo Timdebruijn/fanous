@@ -56,7 +56,7 @@ import Testing
         func connection() -> StateServer.Connection { StateServer.Connection(server: server, cookieRole: nil) }
 
         func attach(_ target: String, _ connection: StateServer.Connection, stream: UInt32 = 1, jpeg: Bool = false) -> Bool {
-            hub.attach(target: target, connection: connection, stream: stream, jpeg: jpeg) { _, _ in }
+            hub.attach(target: target, connection: connection, stream: stream, jpeg: jpeg) { _, _, _ in }
         }
 
         /// Subscribes with a wanted width; the streamer it got (nil: refused).
@@ -67,7 +67,7 @@ import Testing
         /// Subscribes to H.264 with a wanted width; the streamer it got and whether it is served as JPEG (nil: refused).
         func served(_ target: String, width: Int?, _ connection: StateServer.Connection, stream: UInt32 = 1) -> (streamer: PreviewStreamer, jpeg: Bool)? {
             var got: (PreviewStreamer, Bool)?
-            _ = hub.attach(target: target, width: width, connection: connection, stream: stream, jpeg: false) { got = ($0, $1) }
+            _ = hub.attach(target: target, width: width, connection: connection, stream: stream, jpeg: false) { streamer, jpeg, _ in got = (streamer, jpeg) }
             return got
         }
 
@@ -179,13 +179,13 @@ import Testing
                 // canvas 3 starts rendering and its viewer subscribes while the rebuild makes canvas 2 again
                 rendered.withLock { _ = $0.insert(3) }
                 subscribed.withLock { $0 = false }
-                let attached = ref.hub?.attach(target: "canvas:3", connection: viewer, stream: 3, jpeg: true) { _, _ in } ?? false
+                let attached = ref.hub?.attach(target: "canvas:3", connection: viewer, stream: 3, jpeg: true) { _, _, _ in } ?? false
                 subscribed.withLock { $0 = attached }
             }
             return (160, 160)
         }
         ref.hub = hub
-        #expect(hub.attach(target: "canvas:2", connection: rig.connection(), stream: 2, jpeg: true) { _, _ in })
+        #expect(hub.attach(target: "canvas:2", connection: rig.connection(), stream: 2, jpeg: true) { _, _, _ in })
         rebuilding.withLock { $0 = true }
         try hub.rebuild()
         #expect(subscribed.withLock { $0 } == true)
@@ -308,7 +308,7 @@ import Testing
         }
 
         func attach(_ target: String, stream: UInt32 = 1) -> Bool {
-            hub.attach(target: target, connection: connections.connection(), stream: stream, jpeg: false) { _, _ in }
+            hub.attach(target: target, connection: connections.connection(), stream: stream, jpeg: false) { _, _, _ in }
         }
 
         func tick(_ n: Int) {
@@ -415,8 +415,8 @@ import Testing
         hub.configure = { target, _ in target == "output:1" }
         let rig = try Rig()
         let (a, b) = (rig.connection(), rig.connection())
-        #expect(hub.attach(target: "canvas", connection: a, stream: 1, jpeg: false) { _, _ in })
-        #expect(hub.attach(target: "output:1", connection: b, stream: 2, jpeg: true) { _, _ in })
+        #expect(hub.attach(target: "canvas", connection: a, stream: 1, jpeg: false) { _, _, _ in })
+        #expect(hub.attach(target: "output:1", connection: b, stream: 2, jpeg: true) { _, _, _ in })
         let oldCanvas = hub.canvas
         shape.withLock { $0 = (160, 120) }
         try hub.rebuild()
@@ -599,6 +599,36 @@ import Testing
         r.wait { refused.streamer.subscriberList.contains { $0.connection === g && !$0.jpeg } }
         #expect(refused.streamer.subscriberList.map(\.jpeg) == [false])
         #expect(rig.hub.encoders == 4)
+    }
+
+    /// B96: a viewer put on its canvas's stream at the limit is told so in the `sub` reply and in its subscriber (its
+    /// `stream` descriptions carry it), also in the canvas's shape (output:4 is 160×90 like canvas 1); a fallback to its
+    /// own target at another size is not; the move to its own stream clears it.
+    @Test func aCanvasFallbackIsFlaggedInTheReplyAndTheMove() throws {
+        let r = try LimitRig(), rig = r.rig
+        let (a, b, c, d, e, f) = (rig.connection(), rig.connection(), rig.connection(), rig.connection(), rig.connection(), rig.connection())
+        #expect(rig.streamer("canvas", width: nil, a) === rig.hub.canvas)
+        let output1 = try #require(rig.streamer("output:1", width: 640, b))
+        _ = try #require(rig.streamer("output:2", width: 640, c))
+        _ = try #require(rig.streamer("canvas:2", width: 640, d))
+        func flagged(_ target: String, _ width: Int, _ connection: StateServer.Connection) -> Bool? {
+            var told: Bool?
+            _ = rig.hub.attach(target: target, width: width, connection: connection, stream: 1, jpeg: false) { _, _, fallback in told = fallback }
+            return told
+        }
+        #expect(flagged("output:1", 320, e) == false, "its own target at another size")
+        #expect(flagged("output:4", 960, f) == true, "canvas 1's stream")
+        #expect(output1.subscriberList.first { $0.connection === e }?.fallback == false)
+        #expect(rig.hub.canvas.subscriberList.first { $0.connection === f }?.fallback == true)
+
+        // two encoders go: f moves to output:4's own stream at 960, no longer flagged
+        rig.hub.remove(connection: c)
+        rig.hub.remove(connection: d)
+        let own = PreviewHub.Key(target: "output:4", width: 960)
+        r.wait { rig.hub.keys.contains(own) }
+        let moved = try #require(rig.streamer("output:4", width: 960, rig.connection()))
+        #expect(moved.subscriberList.first { $0.connection === f }?.fallback == false)
+        #expect(!rig.hub.canvas.subscriberList.contains { $0.connection === f })
     }
 
     /// B88: canvas 2 removed while output:3's viewer watches canvas 2's stream as its fallback: the viewer keeps an

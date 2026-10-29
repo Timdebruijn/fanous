@@ -1381,6 +1381,12 @@ server → client   {"t":"sub","id":8,"stream":"thumbs","w":160,"fps":4}  |  {"t
 server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H.264 AU (AVCC) , 2 = JPEG , 3 = DMX universe (512 B) , 4 = metrics ring page
 ```
 
+- A preview `sub` reply carries `codec` (`"avc"`, or `"jpeg"` when refused
+  at the encoder limit), `w`, `h`, `fps`, `target` and `fallback`; on H.264
+  each `stream` description (`codec`, base64 avcC `description`, `w`, `h`,
+  `fps`, `fallback`) comes with the first frame of a session and after a
+  move. `fallback: true`: the stream is the target's canvas's, not the
+  target's (an output's region or one layer at the encoder limit, B70/B96).
 - The engine answers a connection's preview `sub` requests in the order they
   were sent (one at a time, on that connection's receive queue), each with a
   `sub` or a refusal (`error` with `stream`): the client matches replies to its
@@ -1524,13 +1530,24 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   streamer, which lives as long as the engine). The log says "preview
   encoder ready" (size, ms), "preview encoder not ready after 5 s",
   "preview encoder failed" (no retry until the next H.264 subscriber) and
-  "preview encoder released". The browser falls back to JPEG when no
-  `stream` description arrives within 5 s of an H.264 `sub` reply (not
-  after a reply refused to JPEG at the encoder limit, B70/B86); while it
-  asks for JPEG the caption says "connecting…", never "H.264" over a
-  closed decoder (B98). The pixel
+  "preview encoder released". The browser falls back to JPEG (a new JPEG
+  subscription) when no `stream` description arrives within 5 s of an
+  H.264 `sub` reply; a reply refused to JPEG at the encoder limit (B70/B86)
+  is watched instead until its decoder is configured (after the
+  description's `isConfigSupported`): 5 s without a drawn frame (the engine
+  moved it to a new streamer whose session is slow or fails) and it
+  re-subscribes as JPEG (B95); moved back to JPEG by the engine (B88), it is
+  watched again. Both are one way: the JPEG stream stays JPEG until the next
+  re-subscribe (target, size class, reconnect, tab hidden and shown). A
+  healthy H.264 stream is never demoted after its decoder is configured, so
+  a tick stall (display asleep, a long project load) does not demote it. While it asks for JPEG the caption says
+  "connecting…", never "H.264" over a closed decoder (B98). The pixel
   buffer pool, texture cache and `CIContext` stay in `init` (no
-  VideoToolbox).
+  VideoToolbox). `/metrics` `preview.jpegOut` counts the JPEG frames made,
+  `preview.jpegFailed` the encodes that returned nil (logged once per
+  streamer, "preview JPEG encode failed") and `preview.jpegDropped` the
+  JPEG sends a subscriber's connection refused (queue above 256 KB or a
+  closed session); all three are sums over the live streamers only (B99).
 - **As built (encoder limit across targets, B70, 2026-10-28):** the 4 count
   H.264 encoders: the canvas 1 streamer always, every other streamer while
   it has an H.264 subscriber (`/metrics` `preview.encoders`; a JPEG-only
@@ -1548,19 +1565,23 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   step under the lock: off the fallback, onto the new streamer, whose
   `stream` description and first key frame come with its first frame (as
   after a rebuild). Measured: description 53 ms after the close, longest gap
-  between frames 63 ms. The browser keeps a refused subscription (no 5 s
-  wait, no JPEG re-subscribe) and switches to its H.264 decoder when that
-  description comes (B86); JPEG frames arriving on an H.264 subscription
+  between frames 63 ms. The browser keeps a refused subscription (no JPEG
+  re-subscribe while its frames come) and switches to its H.264 decoder when
+  that description comes (B86), or re-subscribes as JPEG after 5 s without
+  a frame before that decoder is configured (B95); JPEG frames arriving on an H.264 subscription
   later (the engine moved it back to JPEG, B88) close the decoder and are
   drawn until the next description. A canvas-stream fallback shows other
   content than asked (the whole canvas, not the output's region or the layer
   alone), often in another aspect: when the served size (`sub` reply, then
   each `stream` description) is another shape than the preview's box, the
   browser letterboxes it (`object-fit: contain`) and the caption says
-  "canvas fallback" (B87). A fallback in the box's shape is not told apart:
-  a layer (it has its canvas's shape) or a region crop of the same ratio
-  (960×540 of a 1920×1080 canvas) shows the whole canvas unflagged and not
-  letterboxed (B96). After a change of the box's shape (a canvas format or
+  "canvas fallback" (B87). The engine says so too (B96): `fallback: true`
+  in the `sub` reply and in each `stream` description while the viewer is
+  on its canvas's stream (a size fallback of its own target is not one; the
+  re-balance move to its own stream sends `fallback: false`), so a fallback
+  in the box's shape (a layer, or a region crop of the same ratio, 960×540
+  of a 1920×1080 canvas) is flagged as well and letterboxed, which draws it
+  as `fill` would. After a change of the box's shape (a canvas format or
   output region change) the label also shows for a moment, until the rebuilt
   stream's description arrives. A fallback streamer whose own viewer left
   stays as it is: only fallback viewers keep it encoding, so no release is
@@ -1655,13 +1676,32 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   unless the newest version already equals it (refused if that save fails),
   keeps the current `showLock`, and replaces the document, so the diff goes out
   as one patch and `projectChanged` applies it like any other change (canvas
-  switch, patch, cues, timecode). The history is not cleared; undo and redo of a
+  switch, patch, cues, timecode). Undo and redo of a
   revert entry are refused in show mode (`CommandSpec.replayCheck`, checked by
   `StateStore.step` before it pops). The check sees the patch the step would
-  apply and the current project: `syphon.forget` refuses an undo whose
-  `add /syphon/N` would overwrite another app/server on that number, and that
-  `historyConflict` drops the entry (B90); the undo of a forget without file is
-  refused as a whole when any of its numbers conflicts. `live.versions` `{lastAutomatic, serial}`
+  apply, the patch that made the state it undoes (`HistoryEntry.forward`) and
+  the current project. `syphon.forget` and `project.revert` both run
+  `ProjectDocument.checkSyphonReplay` (B90, B91): every op under `/syphon/N`
+  (the entry, or one field of it) needs the value the undone step left there
+  (nothing, where it removed) or already the value it writes; otherwise the
+  number changed meanwhile and the step is refused with `historyConflict`
+  ("Syphon number 151 is now held by App/Server", or "is now free"), so an
+  undo or redo never overwrites, renames or frees a server that took the
+  number. Nor may it leave a name it writes on a second number ("Syphon
+  server N/Server is now on number 150", B92): the server took another
+  number meanwhile, and the catalog drops such a twin only while it runs.
+  `syphon.forget` passes the running numbers and lets a twin of a running
+  server through (the catalog drops it); `project.revert` has no running set
+  and refuses those too. Two stopped servers that legitimately share a name
+  (two engines' canvases) count as twins: the undo of a forget of one of
+  them, and the undo or redo of a revert that held both, are refused.
+  Only the fields the step changed are compared (B104). The conflict
+  drops the entry, as does a step that no longer applies; for a revert either
+  drops the whole stack, whose entries were recorded against the project the
+  revert replaced. A step skips a `remove` whose key is already gone (the
+  engine dropped a running server's twin), so that undo still applies and no
+  client gets the remove. The undo of a forget
+  without file is refused as a whole when any of its numbers conflicts. `live.versions` `{lastAutomatic, serial}`
   feeds the status bar and tells the System screen to re-list. OSC
   `/fanous/project/load s` resolves the newest named version with that name
   (case-insensitive), else a version id, on the versions queue, ignores a

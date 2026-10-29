@@ -18,10 +18,10 @@
   let lastFrame = 0;
   let stalled = $state(false);
   let stop: (() => void) | null = null;
-  // the size of the stream served (the `sub` reply, then each `stream` description): another shape than the box is the
-  // canvas stream an output's region fell back to at the encoder limit (B70), shown whole, letterboxed (B87)
-  let served = $state<{ w: number; h: number } | null>(null);
-  const fallback = $derived(served !== null && otherShape(served.w, served.h, aspect));
+  // the stream served (the `sub` reply, then each `stream` description): the canvas stream an output's region or a layer
+  // fell back to at the encoder limit (B70) says so (B96); another shape than the box is shown whole, letterboxed (B87)
+  let served = $state<{ w: number; h: number; fallback: boolean } | null>(null);
+  const fallback = $derived(served !== null && (served.fallback || otherShape(served.w, served.h, aspect)));
   // a hidden tab (another tab in front, minimised window) takes no preview stream; it resumes when the tab shows again
   let hidden = typeof document !== 'undefined' && document.hidden;
   // a new canvas renders only after the canvas switch: its preview is asked for once the engine lists it as rendered
@@ -49,6 +49,20 @@
     const supportsWebCodecs = 'VideoDecoder' in window && 'EncodedVideoChunk' in window;
     let configured = false;
     let sawKey = false;
+    // a subscription refused to JPEG at the encoder limit (B70) is watched until its decoder is configured (B95): 5 s
+    // without a drawn frame → JPEG, as when the engine moved it to a new streamer whose VideoToolbox session is slow or
+    // fails. Armed by the `sub` reply, re-armed by each frame (again after the engine moves it back to JPEG, B88). A
+    // healthy H.264 stream is never demoted after its decoder is configured: a tick stall (display asleep, project
+    // load) must not demote it for good
+    let refused = false;
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
+    const watch = () => {
+      clearTimeout(watchdog);
+      if (!refused || configured || !run.current()) return;
+      watchdog = setTimeout(() => {
+        if (!configured) void fallbackToJPEG('no H.264 stream from the engine');
+      }, 5000);
+    };
 
     const drawBitmap = (bitmap: ImageBitmap | VideoFrame) => {
       if (!canvas) return;
@@ -58,6 +72,7 @@
       }
       ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
       lastFrame = performance.now();
+      watch();
       bitmap.close();
     };
     // a JPEG frame (kind 2): the JPEG stream, or an H.264 one the engine refused at its encoder limit (B86)
@@ -73,6 +88,8 @@
       drawBitmap(bitmap);
     };
 
+    // one way: the JPEG stream it opens has no watchdog and stays JPEG until the next re-subscribe (target change, size
+    // class, reconnect, tab hide/show)
     const fallbackToJPEG = async (why: string) => {
       if (!run.current()) return;  // a late error of a stream that was already replaced
       const jpegRun = latest.begin();
@@ -99,7 +116,7 @@
       }
       if (!jpegRun.keep(sub.stop)) return;
       stop = sub.stop;
-      served = { w: sub.w, h: sub.h };
+      served = { w: sub.w, h: sub.h, fallback: sub.fallback };
       mode = 'jpeg';
       if (hidden) pause();  // hidden while the subscription was being set up
     };
@@ -149,7 +166,7 @@
             sawKey = false;
             mode = 'avc';
             detail = `${description.w}×${description.h} · ${description.fps} fps`;  // a rebuilt stream (new shape) too
-            served = { w: description.w, h: description.h };
+            served = { w: description.w, h: description.h, fallback: description.fallback };
             if (canvas) {
               canvas.width = description.w;
               canvas.height = description.h;
@@ -163,11 +180,13 @@
       );
       if (!run.keep(sub.stop)) return;
       stop = sub.stop;
-      served = { w: sub.w, h: sub.h };
+      served = { w: sub.w, h: sub.h, fallback: sub.fallback };
       if (sub.codec === 'jpeg') {
         // all H.264 encoders busy (B70): JPEG on this stream, kept, so the engine can upgrade it when one frees up (B86)
         mode = 'jpeg';
         detail = `${sub.w}×${sub.h} · H.264 encoders busy`;
+        refused = true;
+        watch();
       } else {
         detail = `${sub.w}×${sub.h} · ${sub.fps} fps`;
         // the engine makes its H.264 encoder for the first viewer (B66): no description in 5 s (it failed or is stuck) → JPEG

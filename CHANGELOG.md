@@ -175,6 +175,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   frees goes to a waiting viewer (B88).
 - Fixed: the shell token test failed 1 run in 16, when the token ended in "0" (B84).
 - Fixed: undoing `syphon.forget` overwrote a Syphon number another server had taken meanwhile; the undo is now refused (B90).
+- Fixed: undoing a version restore (`project.revert`) could overwrite, rename or free a Syphon number another server had
+  taken meanwhile; that undo (or redo) is now refused like the one of `syphon.forget`, and the history recorded against
+  the replaced project goes with it (B91).
+- Fixed: undoing `syphon.forget` (or a version restore) could put a Syphon server on a second number after it had taken
+  another one meanwhile; that undo (or redo) is now refused (B92).
 - Fixed: the preview left its H.264 decoder open after every target change and disconnect; it now closes it (B85).
 - Fixed: a new `settings.json` (hashed role passwords) and the shell token file were readable by other users between the write
   and the change to mode 0600; both are now written 0600 from the start, and a new Application Support folder is 0700 (B83).
@@ -237,6 +242,23 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   switches, and the unused `run --ring` and `dmx --hz/--host/--seed` flags (repo audit 2026-10-29).
 - Removed: `fanous-bench syphon`, the Phase 3 Syphon acceptance probe; `SyphonTests` cover SyphonOutput → SyphonInput
   (repo audit 2026-10-29).
+- Fixed: a thumbnail or DMX `sub` reply could reach the client before the engine had subscribed it (thumbnails) or
+  reported the DMX monitor active (DMX), so a test that checked the subscription right after the reply failed under load
+  (B94).
+- Fixed: a role password in `settings.json` hand-edited to 0, negative or more than 10 000 000 PBKDF2 `iterations` crashed
+  the engine at the next login of that role, or stalled it; such a record now makes `passwords` unreadable: logged, a
+  running engine keeps the passwords it has, and the next start leaves every role open until it is fixed (B93).
+- Added: `/metrics` `preview.jpegOut`, `preview.jpegFailed` and `preview.jpegDropped`: JPEG preview frames made, encodes
+  that returned nil (logged once per streamer as "preview JPEG encode failed") and JPEG sends a connection refused; the
+  B86 e2e puts all three into its CI warning when a viewer refused to JPEG gets no frame, so the next occurrence names
+  the encoder, the send queue or the network (B99).
+- Fixed: a preview refused H.264 at the encoder limit froze on its last JPEG frame ("H.264 encoders busy") when the engine
+  moved it to a new stream whose encoder was slow or failed. A refused preview now re-subscribes as JPEG after 5 s without
+  a frame and stays on JPEG until it subscribes again; a healthy H.264 preview is never demoted after its decoder is
+  configured (B95).
+- Fixed: a layer or output preview on its canvas's stream at the H.264 encoder limit, in the same aspect as its box, showed
+  the whole canvas as if it were the target. The engine now says `fallback: true` in the preview `sub` reply and `stream`
+  descriptions, and the caption says "canvas fallback" whatever the shape (B96).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
