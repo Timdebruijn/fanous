@@ -177,14 +177,13 @@ public final class RenderService {
          compositor.completionWaits.load(ordering: .relaxed))
     }
 
+    /// Joins the ticking thread first: the Syphon server must not stop under a `publish` in flight (B113). With
+    /// `managedOutputs` the coordinator owns the drivers and must be stopped before this.
     public func stop() {
-        displayDriver?.stop()
-        loopDriver?.stop()
-        headlessDriver?.stop()
+        let joined = [displayDriver?.stop(), loopDriver?.stop(), headlessDriver?.stop()].allSatisfy { $0 ?? true }
         displayDriver = nil
         loopDriver = nil
         headlessDriver = nil
-        usleep(50_000)
         loader.stop()
         for layer in layers {
             layer.current?.stop()
@@ -197,11 +196,16 @@ public final class RenderService {
         window?.close()
         window = nil
         compositor.setLayers([])
-        compositor.canvasPublished = nil
-        compositor.canvasPublishedWanted = nil
         syphonCatalog.stop()
-        syphon?.stop()
-        syphon = nil
+        if joined {
+            compositor.canvasPublished = nil
+            compositor.canvasPublishedWanted = nil
+            syphon?.stop()
+            syphon = nil
+        } else if syphon != nil {
+            // stopping (or releasing) the server now could free its renderer under the tick's publish; it goes with the process
+            logger.warning("the compositor thread did not stop within 1 s; a tick may be in flight, so the Syphon server is left running")
+        }
         mixer?.stop()
         mixer = nil
     }
