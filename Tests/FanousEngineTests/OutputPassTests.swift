@@ -190,6 +190,16 @@ struct OutputPassTests {
             compositor.tick(target: 3601, drawable: nil)
             let after = compositor.readbackOutput().bgra[(90 * Self.width + 160) * 4 + 1]
             if control == .freeze { #expect(after == 200, "frozen output keeps the last frame") } else { #expect(after <= 1, "unfrozen output follows the canvas") }
+            guard control == .freeze else { continue }
+            // Freeze holds the canvases, not the pattern: White draws live over the frozen output, and switched off the held frame is back
+            fixture.testPattern = .white
+            write(sequence: 3, layerIntensity: 0)
+            compositor.tick(target: 3602, drawable: nil)
+            #expect(compositor.readbackOutput().bgra[(90 * Self.width + 160) * 4 + 1] == 255, "White over a frozen output")
+            fixture.testPattern = .off
+            write(sequence: 4, layerIntensity: 0)
+            compositor.tick(target: 3603, drawable: nil)
+            #expect(compositor.readbackOutput().bgra[(90 * Self.width + 160) * 4 + 1] == 200, "the held frame returns when the pattern is off")
         }
     }
 
@@ -271,6 +281,13 @@ struct OutputPassTests {
         #expect(greens(half).count == 1 && abs(Int(greens(half).first ?? 0) - 128) <= 1, "Output intensity 50 %: \(greens(half))")
         let masterHalf = try white({ _ in }, master: { $0.master = 0.5 })
         #expect(greens(masterHalf).count == 1 && abs(Int(greens(masterHalf).first ?? 0) - 128) <= 1, "Master intensity 50 %: \(greens(masterHalf))")
+        var halfConfig = OutputConfig(id: 1)
+        halfConfig.intensity = 0.5  // the output's own Intensity % (Outputs tab)
+        let configHalf = try white({ _ in }, config: halfConfig)
+        #expect(greens(configHalf).count == 1 && abs(Int(greens(configHalf).first ?? 0) - 128) <= 1, "output Intensity 50 %: \(greens(configHalf))")
+        // the lift is there at full level (0.08 → 20), so the blackout case below shows it scaled to 0, not absent
+        let lift = try white({ $0.testPattern = .grey0 }, config: lifted)
+        #expect(greens(lift).count == 1 && abs(Int(greens(lift).first ?? 0) - 20) <= 1, "Grey 0 % with black lift: \(greens(lift))")
         let dark: [(String, [UInt8])] = [
             ("Output Blackout", try white { $0.control = .blackout }),
             ("Output intensity 0", try white { $0.intensity = 0 }),

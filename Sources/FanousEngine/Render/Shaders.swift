@@ -300,8 +300,9 @@ public enum ShaderSource {
         return float4(mix(d, saturate(b), a), a + dst.a * (1.0 - a));
     }
 
-    // Plain output pass: canvas → drawable, or the Master test pattern at full level; without an output set only (tests,
-    // fanous-bench). The engine's displays always get the mapped pass below, which dims patterns like the content.
+    // Plain output pass: canvas → drawable, also the canvas preview and the thumbnail copy (pattern 0). A test pattern at
+    // full level only without an output set (the Master's, in tests and fanous-bench); the engine's displays always get the
+    // mapped pass below, which dims patterns like the content.
     struct OutputUniforms {
         float2 size;     // drawable pixels
         uint pattern;    // TestPattern
