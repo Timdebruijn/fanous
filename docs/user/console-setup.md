@@ -13,6 +13,10 @@ mode as its own fixture on the console.
 | Master | 8 | machine | Master intensity, freeze or blackout, a global test pattern, master speed |
 | Output | 8 | output | Output intensity, blackout or freeze, test pattern, blend on or raw |
 
+Test patterns follow the Master and Output Intensity and Blackout like the
+picture, so a Grand Master or DBO takes them down too: keep the Dimmer up to
+focus.
+
 16-bit values (intensity, speed, position, in and out points and others) are
 coarse/fine pairs on adjacent channels, coarse first. Layer channel 51 is Sync
 (see [multi-server.md](multi-server.md)); 52 to 64 are reserved. Every channel,

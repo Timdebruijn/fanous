@@ -468,6 +468,8 @@ public final class Compositor: @unchecked Sendable {
                     master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs)
                 output.endEncoding()
             } else if let output = commandBuffer.makeRenderCommandEncoder(descriptor: outputPass) {
+                // no output set: tests and fanous-bench; the engine's displays always have one (OutputCoordinator), so on
+                // stage patterns go through OutputPass and follow the Dimmer and Blackout
                 output.label = "output"
                 let buffer = outputUniformBuffers[canvasIndex]
                 buffer.contents().assumingMemoryBound(to: OutputUniforms.self).pointee = {
