@@ -79,6 +79,7 @@ estimates. Competitor prices stay out of the repository.
 | At the screen | Remote apps and controls drawn on the output | Modulo Warp Remote, Q Surface (iPad), TouchOSC with camSchnappr, Millumin "Show Controls in Output", LuxCanvas phone remote, Ghost Arcade companion, Watchout gamepad |
 | Presets | Warps recalled by index, also over DMX. Live-switchable output presets. A/B warp slots | Hippotizer, Avolites (8 presets), Mbox (keystone as a DMX fixture) |
 | Masks | Freehand drag smoothed into Bezier, shape presets, invert, image masks | MadMapper, Resolume (invert by default), Watchout (alpha per junction), QLab (image mask that reloads on change) |
+| Slice shapes | Slices are rectangles, quads or triangles; round shapes are masks. Only MadMapper has a circle surface | Resolume (rectangular slice with perspective and Bezier warp; poly slice for triangles, stars and freeform, without warp; slice masks), Millumin (rectangle, quad, triangle; mask presets square, circle, triangle), MadMapper (quad, triangle, circle, line surfaces) |
 | Camera, simple | Project a few dots, tap the screen's four corners in the camera picture | LuxCanvas (9 dots, about 10 s), Christie Mystique Lite (one webcam, up to 3 projectors) |
 | Camera, full | Dot grid or Gray code from one fixed camera gives warp, blend, black level, sometimes colour | VIOSO, Scalable (about 30 s per projector), domeprojection, Modulo Kinetic, disguise OmniCal |
 | Recalibration | Saved camera plan, then one click | disguise RigCheck + Execute, Modulo "One-click" |
@@ -395,10 +396,10 @@ offers.
 - Hippotizer ScreenWarp: <https://www.manula.com/manuals/green-hippo/hippotizer-v4/4.5.5/en/topic/screen-warp-editor>
 
 **Desktop and VJ tools**
-- MadMapper: <https://docs.madmapper.com/madmapper/6/>
-- Resolume: <https://resolume.com/support/en/edge-blending>, <https://resolume.com/article/54>
+- MadMapper: <https://docs.madmapper.com/madmapper/6/>, <https://madmapper.com/madmapper/features>
+- Resolume: <https://resolume.com/support/en/edge-blending>, <https://resolume.com/article/54>, <https://resolume.com/article/50>, <https://resolume.com/support/en/output-transformation>
 - QLab: <https://qlab.app/docs/v5/video/video-output/>
-- Millumin: <https://help.millumin.com/docs/display/softedge>
+- Millumin: <https://help.millumin.com/docs/display/softedge>, <https://help.millumin.com/v4/playback/mapping/>, <https://help.millumin.com/v4/playback/masks/>
 - Mitti: <https://imimot.com/help/mitti/outputs/video-output>
 - TouchDesigner: <https://derivative.ca/UserGuide/Palette:stoner>, <https://derivative.ca/UserGuide/Palette:camSchnappr>
 - LuxCanvas: <https://github.com/dio99/luxcanvas>
