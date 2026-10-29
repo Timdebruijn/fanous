@@ -210,7 +210,8 @@ public final class StateServer: @unchecked Sendable {
                     let reply: JSONValue = [
                         "t": "sub", "id": .number(Double(id)), "stream": "thumbs", "w": .number(Double(ThumbnailAtlas.cellWidth)), "fps": .number(1 / ThumbnailAtlas.interval),
                     ]
-                    thumbnails.subscribe(connection: self, stream: id) { session.send(text: server.store.encode(reply), droppable: false) }
+                    let text = server.store.encode(reply)
+                    thumbnails.subscribe(connection: self, stream: id) { session.send(text: text, droppable: false) }
                 default:
                     session.send(text: server.store.encode(["t": "error", "code": "badStream", "message": "streams: dmx, preview, thumbs"]), droppable: false)
                 }
