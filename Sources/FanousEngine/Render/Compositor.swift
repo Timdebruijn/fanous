@@ -129,8 +129,8 @@ public final class Compositor: @unchecked Sendable {
     /// Committed command buffers not yet booked, with their metrics slot and target time (B105): a completion handler
     /// costs 3 mallocs per tick, polling the status costs none. Filled round-robin, so the entry at `nextInFlight` is
     /// the oldest. Each tick books the finished ones first, so GPU time, late flags, `completed` and `gpuErrors` arrive
-    /// a few ticks late, and a finished buffer (and the drawable it presented) is held until the next tick. When ticks
-    /// stop, the last buffers stay unbooked: dropped on purpose, nothing waits on them.
+    /// a few ticks late. Holding a completed buffer pins nothing: Metal releases its drawable and textures at completion
+    /// (measured, PR #88 review). When ticks stop, the last buffers stay unbooked: dropped on purpose, nothing waits on them.
     private struct InFlight {
         var buffer: MTLCommandBuffer?
         var slot = 0

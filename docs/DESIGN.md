@@ -418,7 +418,10 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
     status, then book GPU time, late flag, `completed` and `gpuErrors` on the
     compositor thread, 0 allocations. GPU numbers arrive a few ticks late; the
     last buffers before ticks stop stay unbooked. A handler with its capturing
-    closure cost 3 per tick.
+    closure cost 3 per tick. With the ring full (the GPU 8 ticks behind) the
+    compositor thread blocks in `waitUntilCompleted` on the oldest buffer,
+    counted as `completionWaits` in `/metrics`; only headless or offscreen
+    ticking can get there, the display paths cap at 3 drawables in flight.
   - `fanous-bench` reports the thread's count per step (`compositorMallocs`,
     B97). The minimum is 4.00 per tick (2 + 2), measured headless with one
     canvas, no output pass and no preview or thumbnails (M1 Pro, 4 ProRes
@@ -430,7 +433,8 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
     | Each extra canvas | +3 |
     | Generators | +2–3 (derived) |
     | Each preview or thumbnail streamer | about +6 (derived: an encoder and a capturing handler) |
-    | `present`, Syphon publish | not measured |
+    | `present` | not measured |
+    | Syphon publish | a capturing `addCompletedHandler` block per tick (`SyphonMetalServer.m`, B109); count not measured |
 - Unified memory budget: engine warns at 60 % of physical memory, refuses to
   activate a layer that would exceed 75 %. Read-ahead depth is the first knob
   reduced when a 16 GB machine is detected.

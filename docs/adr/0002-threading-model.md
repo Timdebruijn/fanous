@@ -63,12 +63,23 @@ now:
   checks it in an optimised build, without GPU encoding.
 - **Metal API objects add allocations on every tick**, and the Metal 3 API
   cannot avoid them: 2 per `makeCommandBuffer()`, 2 for the first
-  `makeRenderCommandEncoder(descriptor:)` and 3 for each further one.
-- **Completion bookkeeping allocates 0.** Since B105 the compositor registers no
-  completion handler (1 for `addCompletedHandler`, 2 for its closure): it keeps
-  committed buffers in a fixed ring of 8, and later ticks poll their status and
-  book GPU time, late flags and the counters on the compositor thread.
+  `makeRenderCommandEncoder(descriptor:)` and 3 for each further one, and 1 per
+  `addCompletedHandler`.
+- **Our completion closure adds 2.** B105 tracks removing it.
 
-The minimum is 4 per tick (headless, one canvas, no output pass, no previews;
-7 before B105).
+The minimum is 7 per tick (headless, one canvas, no output pass, no previews).
 DESIGN.md §4.6 lists what each feature adds.
+
+## Amendment 2026-10-29 (B105): completion bookkeeping on the compositor thread
+
+The compositor registers no completion handler any more (it cost 1 for
+`addCompletedHandler` and 2 for its closure per tick). It keeps each committed
+command buffer in a fixed ring of 8, and later ticks poll their status and book
+GPU time, late flags and the counters on the compositor thread, with 0
+allocations. The minimum is now 4 per tick (headless, one canvas, no output
+pass, no previews).
+
+When the ring is full (the GPU 8 ticks behind), the compositor thread blocks in
+`waitUntilCompleted` on the oldest buffer, and `/metrics` counts it as
+`completionWaits`. Only headless or offscreen ticking can get there: the
+display paths cap at 3 drawables in flight.
