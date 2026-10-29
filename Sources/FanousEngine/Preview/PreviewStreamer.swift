@@ -213,7 +213,7 @@ public final class PreviewStreamer: @unchecked Sendable {
                 // on the clock-master display: the frame its projector holds, no copy. The tick holds before it taps
                 // (B110), so on the engage tick this is the copy blitted earlier on the same command buffer
                 (plan.held, plan.heldMaster) = (shown.held, shown.heldMaster)
-                set.previous = nil  // the live plan carries the hold across a recompile (B111)
+                set.previous.withLock { $0 = nil }  // the live plan carries the hold across a recompile (B111)
             } else {
                 // a secondary display holds on its own thread, an unbound output nowhere: a copy of its own, from the
                 // first preview frame after Freeze engaged

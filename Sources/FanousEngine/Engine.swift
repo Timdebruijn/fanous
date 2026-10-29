@@ -760,7 +760,7 @@ public final class Engine: @unchecked Sendable {
         let index = output.id  // fixture number and ID pattern follow the output's id
         do {
             preview.outputSet = OutputSet(
-                plans: [try compiler.compile(scaled, index: index, drawable: (preview.width, preview.height))], previous: preview.outputSet)  // B111
+                plans: [try compiler.compile(scaled, index: index, drawable: (preview.width, preview.height))], previous: preview.outputSet?.holdSource)  // B111
             return true
         } catch {
             logger.error("preview output compile failed", metadata: ["output": "\(output.id)", "error": "\(error)"])

@@ -206,7 +206,10 @@ struct OutputPassTests {
 
     /// B111: an edit while frozen recompiles the plan; the new plan of the same id keeps the held frame (the same copy)
     /// instead of holding a later one, the replaced set is let go after the first tick, and releasing Freeze goes live.
-    @Test func freezeSurvivesARecompile() throws {
+    /// `chained`: a set that never rendered in between (two edits before a tick). `threeSwaps`: three edits through
+    /// `holdSource` before a tick, and the sets in between are not kept alive.
+    enum Swap: CaseIterable { case direct, chained, threeSwaps }
+    @Test(arguments: Swap.allCases) func freezeSurvivesARecompile(_ swap: Swap) throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
         let compiler = try OutputCompiler(device: context.device)
@@ -245,11 +248,27 @@ struct OutputPassTests {
         #expect(tick(layerIntensity: 1) == 200, "frame A held")
         let heldA = try #require(first.held[1])
         // the edit: a recompiled plan of the same output replaces the set while the canvas goes dark (frame B)
-        let recompiled = try compiler.compile(OutputConfig(id: 1), index: 1, drawable: (Self.width, Self.height))
-        compositor.outputSet = OutputSet(plans: [recompiled], previous: old)
+        func plan() throws -> OutputPlan { try compiler.compile(OutputConfig(id: 1), index: 1, drawable: (Self.width, Self.height)) }
+        let recompiled = try plan()
+        weak var middle: OutputSet?
+        switch swap {
+        case .direct:
+            compositor.outputSet = OutputSet(plans: [recompiled], previous: old)
+        case .chained:
+            compositor.outputSet = OutputSet(plans: [recompiled], previous: OutputSet(plans: [try plan()], previous: old))
+        case .threeSwaps:
+            try {
+                let second = OutputSet(plans: [try plan()], previous: try #require(compositor.outputSet).holdSource)
+                compositor.outputSet = second
+                middle = second
+                compositor.outputSet = OutputSet(plans: [try plan()], previous: second.holdSource)
+            }()
+            compositor.outputSet = OutputSet(plans: [recompiled], previous: try #require(compositor.outputSet).holdSource)
+            #expect(middle == nil, "a set that never rendered is not kept alive by the next edit")
+        }
         #expect(tick(layerIntensity: 0) == 200, "the recompiled output keeps frame A")
         #expect(recompiled.held[1] === heldA, "the same held copy, not a new one")
-        #expect(compositor.outputSet?.previous == nil, "the replaced set is let go after the first tick")
+        #expect(try #require(compositor.outputSet).previous.withLock { $0 } == nil, "the replaced set is let go after the first tick")
         #expect(tick(layerIntensity: 0) == 200)
         fixture.control = .normal
         #expect(tick(layerIntensity: 0) <= 1, "released: the output follows the canvas")
@@ -266,18 +285,21 @@ struct OutputPassTests {
         let canvas = try texture(160), held = try texture(160)
         var frozen = OutputParameters()
         frozen.control = .freeze
-        func adopted(id: Int, control: OutputParameters, heldWidth: Int? = nil) throws -> MTLTexture? {
+        func adopted(id: Int, control: OutputParameters, heldWidth: Int? = nil, sliceCanvas: Int = 1) throws -> MTLTexture? {
             let old = try compiler.compile(OutputConfig(id: 1), index: 1, drawable: (160, 90))
             old.held = [1: try heldWidth.map(texture) ?? held]
-            let set = OutputSet(plans: [try compiler.compile(OutputConfig(id: id), index: 1, drawable: (160, 90))], previous: OutputSet(plans: [old]))
-            OutputPass.adopt(set, canvas: { $0 == 1 ? canvas : nil }, outputs: [control])
-            #expect(set.previous == nil)
+            var config = OutputConfig(id: id)
+            config.slices[0].canvas = sliceCanvas
+            let set = OutputSet(plans: [try compiler.compile(config, index: 1, drawable: (160, 90))], previous: OutputSet(plans: [old]))
+            OutputPass.adopt(set, canvas: { $0 <= 2 ? canvas : nil }, outputs: [control])
+            #expect(set.previous.withLock { $0 } == nil)
             return set.plans[0].held[1]
         }
         #expect(try adopted(id: 1, control: frozen) === held)
         #expect(try adopted(id: 2, control: frozen) == nil, "another output")
         #expect(try adopted(id: 1, control: OutputParameters()) == nil, "not frozen")
         #expect(try adopted(id: 1, control: frozen, heldWidth: 320) == nil, "the canvas was resized")
+        #expect(try adopted(id: 1, control: frozen, sliceCanvas: 2) == nil, "the slice moved to a canvas the hold has no copy of")
     }
 
     /// A test pattern follows the corner pin (it used to be drawn flat over the region, so warping showed nothing).
@@ -576,10 +598,12 @@ struct OutputPassTests {
             #expect(near(try await preview(.freeze, master: 0.5, layer: 0), 100), "shared \(shared): frozen at 100 %, Master 50 %")
             // B111: an edit recompiles the projector's set and the preview's; the very next preview still shows the held frame
             let live = try #require(rig.compositor.outputSet)
-            rig.compositor.outputSet = OutputSet(plans: [try rig.compile(OutputConfig(id: 1))], previous: live)
+            rig.compositor.outputSet = OutputSet(plans: [try rig.compile(OutputConfig(id: 1))], previous: live.holdSource)
             streamer.outputSet = OutputSet(
-                plans: [try OutputCompiler(device: rig.context.device).compile(OutputConfig(id: 1), index: 1, drawable: (160, 90))], previous: streamer.outputSet)
+                plans: [try OutputCompiler(device: rig.context.device).compile(OutputConfig(id: 1), index: 1, drawable: (160, 90))],
+                previous: streamer.outputSet?.holdSource)
             #expect(near(try await preview(.freeze, master: 1, layer: 0), 200), "shared \(shared): the held frame after a recompile")
+            #expect(try #require(streamer.outputSet).previous.withLock { $0 } == nil, "shared \(shared): the preview lets the replaced set go")
             #expect(try await preview(.normal, master: 1, layer: 0) <= 8, "shared \(shared): released, live again")
             // engaged while watched: the engage tick's preview equals the held frame and the next one keeps it. Whether
             // the tick holds before or after the tap (B110) is not observable here: both draw that same frame
