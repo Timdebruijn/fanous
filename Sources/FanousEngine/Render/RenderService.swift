@@ -177,14 +177,17 @@ public final class RenderService {
          compositor.completionWaits.load(ordering: .relaxed))
     }
 
+    /// Joins the ticking thread first and waits for the render queue's completed handlers before the Syphon server
+    /// stops: it must not stop under a `publish` or a publish's completed handler in flight (B113). With
+    /// `managedOutputs` the coordinator owns the drivers and must be stopped before this.
     public func stop() {
-        displayDriver?.stop()
-        loopDriver?.stop()
-        headlessDriver?.stop()
+        let joined = [displayDriver?.stop(), loopDriver?.stop(), headlessDriver?.stop()].allSatisfy { $0 ?? true }
+        if !joined {
+            logger.warning("the compositor thread did not stop within 1 s; the rest of the stop runs under a tick that may be in flight, and the Syphon server is left running")
+        }
         displayDriver = nil
         loopDriver = nil
         headlessDriver = nil
-        usleep(50_000)
         loader.stop()
         for layer in layers {
             layer.current?.stop()
@@ -197,12 +200,31 @@ public final class RenderService {
         window?.close()
         window = nil
         compositor.setLayers([])
-        compositor.canvasPublished = nil
-        compositor.canvasPublishedWanted = nil
         syphonCatalog.stop()
-        syphon?.stop()
-        syphon = nil
+        // Clearing the hook races a tick's publish, and the server's stop() releases, unlocked, the renderer that publish
+        // draws with and the connection manager and surface that each publish's completed handler uses on Metal's
+        // completion thread. So both are done only after the join and the drain; otherwise the server goes with the process.
+        if let syphon, joined {
+            if gpuDrained() {
+                compositor.canvasPublished = nil
+                compositor.canvasPublishedWanted = nil
+                syphon.stop()
+                self.syphon = nil
+            } else {
+                logger.warning("the render queue's completed handlers did not run within 1 s; the Syphon server is left running")
+            }
+        }
         mixer?.stop()
         mixer = nil
+    }
+
+    /// Commits an empty command buffer on the render queue and waits (≤ 1 s) for its completed handler, which runs after
+    /// those of the buffers committed before it on that queue (B113; `RenderServiceStopTests` holds one to check).
+    private func gpuDrained() -> Bool {
+        guard let buffer = context.queue.makeCommandBuffer() else { return false }
+        let done = DispatchSemaphore(value: 0)
+        buffer.addCompletedHandler { _ in done.signal() }
+        buffer.commit()
+        return done.wait(timeout: .now() + 1) == .success
     }
 }

@@ -14,6 +14,7 @@ public final class DisplayLinkDriver: NSObject, CAMetalDisplayLinkDelegate, @unc
     private let thread: Thread
     private var runLoop: CFRunLoop?
     private let ready = DispatchSemaphore(value: 0)
+    private let done = DispatchSemaphore(value: 0)
 
     public init(layer: CAMetalLayer, fps: Double, compositor: Compositor, frameLatency: Int = 1) {
         self.compositor = compositor
@@ -23,7 +24,9 @@ public final class DisplayLinkDriver: NSObject, CAMetalDisplayLinkDelegate, @unc
         let link = self.link
         let box = RunLoopBox()
         let onMain = ProcessInfo.processInfo.environment["FANOUS_LINK_MAIN"] == "1"  // diagnostic switch
+        let done = self.done
         thread = Thread {
+            defer { done.signal() }
             box.runLoop = CFRunLoopGetCurrent()
             if !onMain { link.add(to: RunLoop.current, forMode: .default) }
             box.ready.signal()
@@ -50,10 +53,14 @@ public final class DisplayLinkDriver: NSObject, CAMetalDisplayLinkDelegate, @unc
         autoreleasepool { compositor.tick(target: update.targetPresentationTimestamp, drawable: update.drawable) }
     }
 
-    public func stop() {
+    /// Stops and waits (≤ 1 s) for the thread to leave its run loop, which returns only between callouts, so the tick
+    /// in flight has finished (B113); false = still ticking. With `FANOUS_LINK_MAIN` the ticks run on the caller's
+    /// (main) thread, so none is in flight here. Safe to call again.
+    @discardableResult public func stop() -> Bool {
         link.invalidate()
         thread.cancel()
         if let runLoop { CFRunLoopStop(runLoop) }
+        return done.join()
     }
 }
 
@@ -100,8 +107,15 @@ final class PacedThread: @unchecked Sendable {
     /// Stops and waits (≤ 1 s) for the last run of `body`; false = still running. Safe to call again.
     @discardableResult func stop() -> Bool {
         running.store(false, ordering: .relaxed)
-        guard done.wait(timeout: .now() + 1) == .success else { return false }
-        done.signal()  // a later stop() returns at once
+        return done.join()
+    }
+}
+
+extension DispatchSemaphore {
+    /// Waits ≤ 1 s for a thread's exit signal and passes it on, so a later join returns at once; false = still running.
+    fileprivate func join() -> Bool {
+        guard wait(timeout: .now() + 1) == .success else { return false }
+        signal()
         return true
     }
 }
