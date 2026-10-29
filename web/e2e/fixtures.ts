@@ -124,7 +124,7 @@ export const test = base.extend<{ engine: Engine }>({
     // by that long (over 5000: the browser's B66 fallback to JPEG); `E2E_FAILING_DECODER=1` makes each decoder fail with
     // an error after its first picture, as a decode the hardware gives up on does
     const slow = Number(process.env.E2E_SLOW_DECODER ?? 0);
-    const failing = !!process.env.E2E_FAILING_DECODER;
+    const failing = process.env.E2E_FAILING_DECODER === '1';
     if (slow || failing) {
       await page.addInitScript(
         ({ slow, failing }) => {

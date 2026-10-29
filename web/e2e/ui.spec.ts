@@ -449,11 +449,15 @@ test('preview: a viewer refused H.264 at the encoder limit shows JPEG at once an
   // the refusal says `codec: "jpeg"`: JPEG at once (not after 5 s without a description), and its frames are drawn
   await expect(figure.locator('figcaption')).toContainText(/^JPEG 5 fps · .* · H\.264 encoders busy/, { timeout: 3_000 });
   const drawn = () => figure.locator('canvas').evaluate((c: HTMLCanvasElement) => c.getContext('2d')!.getImageData(c.width / 2, c.height / 2, 1, 1).data[3]);
-  // B98: on CI's VM the engine has sent this refused stream no JPEG frame for 30 s (cause open): drawing is checked
-  // once a frame came, and a CI run without one says so instead of failing; on a workstation one must come
-  await expect.poll(() => jpegFrames, { timeout: previewTimeout }).toBeGreaterThan(0).catch((error: unknown) => {
-    if (!process.env.CI) throw error;
-    test.info().annotations.push({ type: 'B98', description: `no JPEG frame on the refused canvas:2 stream within ${previewTimeout} ms` });
+  // B98: on CI's VM the engine has sent this refused stream no JPEG frame for 30 s (cause open): on a workstation one
+  // must come; drawing is checked once a frame came, and a CI run without one says so instead of failing (B99)
+  // once a frame came, and a CI run without one says so (Actions warning, engine log attached) instead of failing (B99)
+  await expect.poll(() => jpegFrames, { timeout: previewTimeout }).toBeGreaterThan(0).catch(async (error: unknown) => {
+    if (!process.env.CI || !/Timeout \d+ms exceeded/.test((error as Error).message ?? '')) throw error;
+    const note = `B98: ${jpegFrames} JPEG frames on the refused canvas:2 stream within ${previewTimeout} ms (B99)`;
+    console.log(`::warning::${note}`);
+    test.info().annotations.push({ type: 'B98', description: note });
+    await test.info().attach('fanousd.log (B98)', { path: join(engine.home, 'Library/Logs/Fanous/fanousd.log'), contentType: 'text/plain' });
   });
   if (jpegFrames > 0) await expect.poll(drawn, { timeout: previewTimeout }).toBe(255);
 
@@ -464,8 +468,9 @@ test('preview: a viewer refused H.264 at the encoder limit shows JPEG at once an
     ws.send(JSON.stringify({ t: 'unsub', id: ids[2] }));
   });
   await expect.poll(() => upgradedAt, { timeout: previewTimeout }).toBe(1);  // on the one subscription the page sent
-  // the page decodes it; a decoder that fails (CI's VM, B98) falls back to JPEG with its reason, a new subscription
-  await expect(figure.locator('figcaption')).toContainText(/^(H\.264 · |JPEG 5 fps · (?!.*encoders busy))/, { timeout: previewTimeout });
+  // the page decodes it; on CI a decoder that fails (B98) may fall back to JPEG with its reason, a new subscription
+  const decoded = process.env.CI ? /^(H\.264 · |JPEG 5 fps · (?!.*encoders busy))/ : /^H\.264 · /;
+  await expect(figure.locator('figcaption')).toContainText(decoded, { timeout: previewTimeout });
   await load.close();
 });
 
