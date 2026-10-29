@@ -79,6 +79,7 @@
       detail = why;
       closeDecoder();
       configured = false;
+      mode = 'connecting';  // no "H.264 · …" caption over the closed decoder while JPEG is asked for (B98)
       stop?.();
       stop = null;  // a refused JPEG request must not leave the stopped stream behind: reconnects restart from null
       let sub: Awaited<ReturnType<typeof subscribePreview>>;

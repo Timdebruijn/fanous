@@ -300,7 +300,9 @@ public enum ShaderSource {
         return float4(mix(d, saturate(b), a), a + dst.a * (1.0 - a));
     }
 
-    // Output pass: canvas → drawable, or a test pattern (Master/Output fixtures).
+    // Plain output pass: canvas → drawable, also the canvas preview and the thumbnail copy (pattern 0). A test pattern at
+    // full level only without an output set (the Master's, in tests and fanous-bench); the engine's displays always get the
+    // mapped pass below, which dims patterns like the content.
     struct OutputUniforms {
         float2 size;     // drawable pixels
         uint pattern;    // TestPattern
@@ -511,7 +513,7 @@ public enum ShaderSource {
     // intensity → dither. Slices alpha-blend over each other in order (pipeline: one, one-minus-source-alpha).
     struct MappedUniforms {
         float2 size;      // region size in pixels (dither, patterns)
-        float intensity;  // output intensity × master intensity × output fixture
+        float intensity;  // output intensity × master intensity × output fixture (0 at a blackout); patterns too
         float opacity;    // slice opacity
         uint flags;       // 1 = warp field present, 2 = mask present, 4 = raw (no blend/warp/mask), 8 = no blend map
         uint pattern;     // TestPattern drawn instead of the canvas (through warp and blend, no mask), 0 = canvas
@@ -565,13 +567,14 @@ public enum ShaderSource {
                                     sampler linearSampler [[sampler(0)]]) {
         bool raw = (u.flags & 4u) != 0u;
         if (u.pattern != 0u) {
-            // alignment: the pattern follows the warp, the blend map shows the overlaps; full level, no dither
+            // alignment: the pattern follows the warp, the blend map shows the overlaps; at the output's level like the
+            // content (Dimmer × Master, black at a blackout, Raw included), no dither
             float3 p = test_pattern(u.pattern, u.index, in.pre, u.size);
             if (!raw && (u.flags & 8u) == 0u) {
                 float2 b = blend.sample(linearSampler, in.post).rg;
                 p = p * b.x + b.y;
             }
-            return float4(p, 1.0);
+            return float4(p * u.intensity, 1.0);
         }
         float3 c = canvas.sample(linearSampler, in.uv).rgb;
         float a = u.opacity;

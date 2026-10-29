@@ -952,11 +952,10 @@ distance → smoothstep, so feathering is exact and free at render time.
 ```
 for each slice (ordered):
   vertex:   mesh vertex → warp displacement → clip
-  fragment: canvas.sample(uv) × mask(uv) × slice.opacity
+  fragment: canvas.sample(uv) × mask(uv) × slice.opacity        (a test pattern replaces this, whole output, no mask)
             → × blendMap.factor + blendMap.lift                 (skipped when Output "raw" is set)
-            → × output intensity × master intensity
-            → test pattern override (if any)
-            → blue-noise dither → drawable (bgra8 / bgr10 later)
+            → × output intensity × master intensity             (0 at Output or Master Blackout; patterns too)
+            → blue-noise dither → drawable (bgra8 / bgr10 later) (not on a test pattern)
 ```
 
 One pass, no intermediate textures; "all output/mapping configuration is
@@ -1060,6 +1059,12 @@ curve drawn), output ID (big number + name + resolution + refresh), crosshair
 with concentric circles for lens centring, grey steps (for black-lift
 matching), checkerboard (pixel-exact). Selectable per output and globally
 (Master fixture / UI), and usable as layer content (§8.2).
+
+Patterns go through the output's intensity chain like the content (fixed
+2026-10-29): output intensity × Output fixture intensity × Master intensity, 0
+at an Output or Master Blackout, Raw included, so a console's Grand Master or
+DBO takes them down. Freeze holds the canvases, not the pattern: a pattern
+draws live over a frozen output and the held frame returns when it is off.
 
 ### 9.8 Syphon
 
@@ -1480,7 +1485,9 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   "preview encoder failed" (no retry until the next H.264 subscriber) and
   "preview encoder released". The browser falls back to JPEG when no
   `stream` description arrives within 5 s of an H.264 `sub` reply (not
-  after a reply refused to JPEG at the encoder limit, B70/B86). The pixel
+  after a reply refused to JPEG at the encoder limit, B70/B86); while it
+  asks for JPEG the caption says "connecting…", never "H.264" over a
+  closed decoder (B98). The pixel
   buffer pool, texture cache and `CIContext` stay in `init` (no
   VideoToolbox).
 - **As built (encoder limit across targets, B70, 2026-10-28):** the 4 count

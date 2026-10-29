@@ -194,6 +194,15 @@ fixture's **Blend** channel to 128 or more (Raw) to see them without blend and
 warp. Line widths and cells follow the output's height, so a pattern reads
 the same on a monitor and on a 4K projector.
 
+Patterns follow the same Dimmer and Blackout as the picture: the output's
+Intensity %, the Output fixture's Intensity and the Master's Intensity dim
+them, and an Output or Master Blackout makes them black, also in Raw. A
+console's Grand Master or DBO therefore takes a pattern down with the rest; to
+focus or align, bring the Output and Master Intensity up (both are 100 % when
+nothing is patched).
+Freeze holds the picture, not the pattern: a pattern shows live over a frozen
+output, and the held frame is back when the pattern is switched off.
+
 | Pattern | Use it for |
 |---|---|
 | Grid | alignment: centred square cells, border (overscan), centre cross, a circle for aspect ratio, diagonals |
@@ -209,8 +218,8 @@ the same on a monitor and on a 4K projector.
 | White | full-level match: brightness and colour of each projector, and a seam that stays bright or dark at full level |
 
 Grey 0 %, 25 % and 75 % and White are flat fields at that output signal level
-(25 % is code 64 of 255, 75 % is 191), on the same scale as Blend check's 50 %
-grey; they ignore the output and master intensity, like the other patterns. A
+(25 % is code 64 of 255, 75 % is 191) with every intensity at 100 %, on the
+same scale as Blend check's 50 % grey. A
 console calls them up on Test pattern channel 4: 128 Grey 0 %, 144 Grey 25 %,
 160 Grey 75 %, 176 White.
 
