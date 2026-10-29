@@ -74,6 +74,22 @@ public struct MachineSettings: Codable, Sendable, Equatable {
     }
 }
 
+extension MachineSettings.PasswordRecord {
+    /// The most PBKDF2 rounds a record may ask for. 10 M is about 16× the default 600 000 and about 1.6 s per login on
+    /// an Apple silicon Mac; a hand-edited count above it would stall every login of the role (B93).
+    static let maxIterations = 10_000_000
+
+    /// A count outside 1…`maxIterations` does not decode, so `passwords` is unreadable like any record that does not
+    /// decode, instead of trapping in `RoleAuth.pbkdf2` (`UInt32(iterations)`) at the next login (B93).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(salt: try c.decode(Data.self, forKey: .salt), hash: try c.decode(Data.self, forKey: .hash), iterations: try c.decode(Int.self, forKey: .iterations))
+        guard (1...Self.maxIterations).contains(iterations) else {
+            throw DecodingError.dataCorruptedError(forKey: .iterations, in: c, debugDescription: "\(iterations) is outside 1…\(Self.maxIterations)")
+        }
+    }
+}
+
 /// Roles with optional passwords (DESIGN.md §11.1): PBKDF2-HMAC-SHA256, per-role salt, HttpOnly session
 /// cookies, 5 logins per minute per address, and a per-install token for the local shell.
 public final class RoleAuth: @unchecked Sendable {

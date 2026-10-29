@@ -233,6 +233,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   switches, and the unused `run --ring` and `dmx --hz/--host/--seed` flags (repo audit 2026-10-29).
 - Removed: `fanous-bench syphon`, the Phase 3 Syphon acceptance probe; `SyphonTests` cover SyphonOutput → SyphonInput
   (repo audit 2026-10-29).
+- Fixed: a role password in `settings.json` hand-edited to 0, negative or more than 10 000 000 PBKDF2 `iterations` crashed
+  the engine at the next login of that role, or stalled it; such a record now makes `passwords` unreadable (B93).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
