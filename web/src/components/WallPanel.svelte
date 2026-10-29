@@ -112,6 +112,7 @@
     const values = { power: seam.power, gamma: seam.gamma, gammaRGB: (seam.gammaRGB ?? null) as [number, number, number] | null };
     if ((await cmd('wall.seams', { id: wall.id, ...values })) !== undefined) toastUndo(`Every seam of ${wall.name} now has these values.`);
   }
+  const gammaText = (l: SeamLine, digits: number) => (l.gammaRGB ? l.gammaRGB.map((g, i) => `${'RGB'[i]} ${g.toFixed(digits)}`).join(' · ') : l.gamma.toFixed(digits));
   const rgb = (values: number[] | null | undefined, i: number, v: number) => (values ?? [0, 0, 0]).map((x, j) => (j === i ? v : x)) as [number, number, number];
   function setOverlap(axis: 'x' | 'y', percent: number) {
     void cmd('wall.set', { id: wall.id, overlap: { ...wall.overlap, [axis]: Math.min(50, Math.max(0, Math.round(percent))) / 100 } });
@@ -179,8 +180,8 @@
       {/each}
       {#each lines as l (`${l.a}-${l.b}`)}
         <button type="button" class="seam {l.side}" style:grid-column={l.side === 'right' ? 2 * l.col + 2 : 2 * l.col + 1} style:grid-row={l.side === 'right' ? 2 * l.row + 1 : 2 * l.row + 2}
-          aria-pressed={sel?.kind === 'seam' && sel.a === l.a && sel.b === l.b} aria-label="Seam between {name(l.a)} and {name(l.b)}, gamma {l.gamma.toFixed(1)}" title="Gamma {l.gamma.toFixed(2)} · curve {l.power.toFixed(1)}" onclick={() => tapSeam(l)}>
-          <span class="mono">{l.gamma.toFixed(1)}</span>
+          aria-pressed={sel?.kind === 'seam' && sel.a === l.a && sel.b === l.b} aria-label="Seam between {name(l.a)} and {name(l.b)}, gamma {gammaText(l, 1)}" title="Gamma {gammaText(l, 2)} · curve {l.power.toFixed(1)}" onclick={() => tapSeam(l)}>
+          <span class="mono">{l.gammaRGB ? 'RGB' : l.gamma.toFixed(1)}</span>
         </button>
       {/each}
     </div>
@@ -231,7 +232,7 @@
           {@render slider({ label: 'Curve', key: `${key}-p`, value: seam.power, min: 0.1, max: 10, step: 0.1, digits: 1, set: (v) => tune(l, 'power', v), focus: wallUI.focus === 'curve' })}
           <p class="caption">Gamma: down for a bright band in the seam, up for a dark one. Curve: how steep the fade is; change it when you see an edge where the overlap starts. Both sides of the seam follow.</p>
           {#if lines.length > 1}
-            <button type="button" class="btn" disabled={!!lock} title={lock ?? 'Give every seam of the wall this gamma and curve'} onclick={applyToAll}>Apply to all seams</button>
+            <button type="button" class="btn" disabled={!!lock} title={lock ?? 'Give every seam of the wall this gamma (one, or R, G and B) and curve'} onclick={applyToAll}>Apply to all seams</button>
           {/if}
         </section>
       {:else if projector}

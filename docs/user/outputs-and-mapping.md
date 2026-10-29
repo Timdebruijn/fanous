@@ -314,19 +314,21 @@ back. **Undo** right after Make wall takes the wall away again.
 
 Each wall has a panel above the output list, built around a **map** of the
 wall: one tile per projector (name, Output ID, row and column) and the seams as
-lines between them, each with its gamma.
+lines between them, each with its gamma (**RGB** when R, G and B are set apart).
 
 - **Tap a seam** for its controls. Both sides of the seam always follow.
   - **Gamma** (0.5 to 5, 2.2 to start): down for a bright band in the seam,
     up for a dark one.
   - **Link R, G, B** is on: one gamma for all three colours. Turned off,
     **Gamma R**, **Gamma G** and **Gamma B** replace the single gamma, each
-    starting at its value, and each changes its own colour in the seam: use
+    starting at the single gamma's value, and each changes its own colour in the seam: use
     them for a colour shift only inside a seam. Turning the link on again
     drops the per-colour values and the single gamma is back.
   - **Curve** (0.1 to 10, 2 to start): how steep the fade is; change it when
     you see an edge where the overlap starts.
-  - **Apply to all seams** gives every seam of the wall this seam's values.
+  - **Apply to all seams** gives every seam of the wall this seam's values:
+    its R, G and B when they are unlinked here, else one gamma (other seams
+    lose their own R, G and B).
   - Drag a slider or tap **−** and **+** for fine steps. A drag, or taps less
     than a second apart, are one step for **Undo**.
 - **Tap a projector** for its **black floor** (the output's Black lift):
@@ -346,7 +348,9 @@ change slice 1's source on Warp & Slices, that field becomes **manual**: it
 shows a yellow "manual" chip, and the wall leaves it alone from then on, also
 when you change the wall's overlap. **Back to wall** next to the chip gives the
 field back to the wall. A power or gamma typed on an inner edge goes to its
-seam, so the neighbour follows.
+seam, so the neighbour follows. An edge whose seam has R, G and B set apart
+shows the three values instead of a gamma field; **One gamma for R, G, B**
+there links them again.
 
 ### Seam check
 
@@ -484,8 +488,7 @@ is locked.
 - Dithering is a simple noise function; if you see banding on a projector, tell
   the developers (B34).
 - Not available: per-output Syphon, Syphon for canvases other than Canvas 1,
-  a frame rate per canvas, 10-bit output, separate blend gamma for red, green
-  and blue (a wall stores it per seam; the output does not use it yet).
+  a frame rate per canvas, 10-bit output.
 - Projector walls: the outputs of one wall need the same pixel size.
 - Colour, black lift and black offset assume a gamma-2.2 projector; there is no
   per-output gamma for them yet.
