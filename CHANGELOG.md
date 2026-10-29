@@ -174,6 +174,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   the role stayed open until a restart; every write now takes the passwords from the file as written (B82).
 - Fixed: a preview refused H.264 at the encoder limit waited 5 s and re-subscribed as JPEG, so it was never upgraded; it now
   shows the refused stream's JPEG frames at once and turns H.264 when the engine frees an encoder for it (B86).
+- Fixed: an output preview on the canvas stream at the encoder limit was stretched to the output's shape; it is now
+  letterboxed and its caption says "canvas fallback" (B87).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

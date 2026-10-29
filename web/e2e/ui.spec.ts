@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import { previewClass } from '../src/lib/preview';
-import { binary, expect, expectPreviewStreaming, openScreen, previewTimeout, repo, test } from './fixtures';
+import { binary, expect, expectPreviewStreaming, openScreen, previewTimeout, repo, test, type Engine } from './fixtures';
 
 type Param = { key: string; raw: number; source: string };
 
@@ -428,4 +428,54 @@ test("preview: an output stream has the output's shape and the size of its box (
   const narrow = await wanted();
   await expect.poll(() => told.at(-1)).toEqual(fourThree(narrow));
   expect(subs).toBe(before + 1);
+});
+
+/** Another client of the engine takes 3 H.264 encoders of canvas 1 (320, 960 and 1280 wide): with canvas 1's own (640)
+ * that is the limit of 4 (B70). Resolves with `release(i)`, which ends its i-th of those subscriptions. */
+async function holdEncoders(page: Page, engine: Engine): Promise<(i: number) => Promise<void>> {
+  const other = await page.context().newPage();
+  await other.goto(`${engine.url}/healthz`);
+  await other.evaluate(async (token) => {
+    const ws = new WebSocket(`wss://${location.host}/ws`);
+    const ids: number[] = [];
+    await new Promise<void>((done) => {
+      ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', clientId: 'e2e-encoders', schema: 1, role: 'programmer', token }));
+      ws.onmessage = (event) => {
+        if (typeof event.data !== 'string') return;
+        const m = JSON.parse(event.data) as { t: string; id: number; stream?: string };
+        if (m.t === 'welcome') for (const w of [320, 960, 1280]) ws.send(JSON.stringify({ t: 'sub', stream: 'preview', codec: 'avc', target: 'canvas', w }));
+        if (m.t === 'sub' && m.stream === 'preview' && ids.push(m.id) === 3) done();
+      };
+    });
+    Object.assign(window, { ws, ids });
+  }, engine.token);
+  return (i) =>
+    other.evaluate((i) => {
+      const { ws, ids } = window as unknown as { ws: WebSocket; ids: number[] };
+      ws.send(JSON.stringify({ t: 'unsub', id: ids[i] }));
+    }, i);
+}
+
+test('preview: an output region on the canvas stream at the encoder limit is letterboxed and says so (B87)', async ({ page, engine }) => {
+  const release = await holdEncoders(page, engine);
+  await addUnassignedOutput(page);  // its preview falls back to the canvas stream nearest its size
+  const figure = page.getByRole('figure');
+  const caption = figure.locator('figcaption');
+  const fit = () => figure.locator('canvas').evaluate((c) => getComputedStyle(c).objectFit);
+  await expect(caption).toContainText(/^H\.264/, { timeout: previewTimeout });
+  await expect(caption).not.toContainText('canvas fallback');  // a 16:9 output on the 16:9 canvas: the same shape
+  expect(await fit()).toBe('fill');
+
+  // a 4:3 region: the 16:9 canvas stream is shown whole, letterboxed, not stretched
+  const region = page.getByLabel('Region w', { exact: true });
+  await region.fill('1440');
+  await region.press('Tab');
+  await expect(caption).toContainText(/^H\.264 · \d+×\d+ · \d+ fps · canvas fallback/);
+  expect(await fit()).toBe('contain');
+
+  // an encoder frees up (not the 1280 one: the page's fallback keeps that one encoding): the engine moves the viewer
+  // to the output's own 4:3 stream, and the letterbox goes
+  await release(0);
+  await expect(caption).not.toContainText('canvas fallback', { timeout: previewTimeout });
+  expect(await fit()).toBe('fill');
 });

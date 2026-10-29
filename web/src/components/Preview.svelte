@@ -4,7 +4,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { previewReady } from '../lib/outputs';
-  import { classChanged, latestOnly, wantedWidth } from '../lib/preview';
+  import { classChanged, latestOnly, otherShape, wantedWidth } from '../lib/preview';
   import { app, subscribePreview } from '../lib/state.svelte';
 
   // Canvas (or output) preview (DESIGN.md §11.3): WebCodecs H.264 when the browser decodes it, JPEG at 5 fps otherwise.
@@ -18,6 +18,10 @@
   let lastFrame = 0;
   let stalled = $state(false);
   let stop: (() => void) | null = null;
+  // the size of the stream served (the `sub` reply, then each `stream` description): another shape than the box is the
+  // canvas stream an output's region fell back to at the encoder limit (B70), shown whole, letterboxed (B87)
+  let served = $state<{ w: number; h: number } | null>(null);
+  const fallback = $derived(served !== null && otherShape(served.w, served.h, aspect));
   // a hidden tab (another tab in front, minimised window) takes no preview stream; it resumes when the tab shows again
   let hidden = typeof document !== 'undefined' && document.hidden;
   // a new canvas renders only after the canvas switch: its preview is asked for once the engine lists it as rendered
@@ -94,6 +98,7 @@
       }
       if (!jpegRun.keep(sub.stop)) return;
       stop = sub.stop;
+      served = { w: sub.w, h: sub.h };
       mode = 'jpeg';
       if (hidden) pause();  // hidden while the subscription was being set up
     };
@@ -143,6 +148,7 @@
             sawKey = false;
             mode = 'avc';
             detail = `${description.w}×${description.h} · ${description.fps} fps`;  // a rebuilt stream (new shape) too
+            served = { w: description.w, h: description.h };
             if (canvas) {
               canvas.width = description.w;
               canvas.height = description.h;
@@ -156,6 +162,7 @@
       );
       if (!run.keep(sub.stop)) return;
       stop = sub.stop;
+      served = { w: sub.w, h: sub.h };
       if (sub.codec === 'jpeg') {
         // all H.264 encoders busy (B70): JPEG on this stream, kept, so the engine can upgrade it when one frees up (B86)
         mode = 'jpeg';
@@ -181,6 +188,7 @@
     stop = null;
     closeDecoder();
     mode = 'connecting';  // no stale "H.264 · …" caption while the next stream is asked for
+    served = null;
     lastFrame = 0;
     stalled = false;
   }
@@ -261,9 +269,9 @@
 </script>
 
 <figure class="preview">
-  <canvas bind:this={canvas} width="640" height="360" aria-label={`${label || 'Canvas'} preview`} style:aspect-ratio={aspect}></canvas>
+  <canvas bind:this={canvas} width="640" height="360" aria-label={`${label || 'Canvas'} preview`} style:aspect-ratio={aspect} style:object-fit={fallback ? 'contain' : undefined}></canvas>
   <figcaption class="caption">
-    {#if !ready}starting…{:else if mode === 'avc'}H.264 · {detail}{:else if mode === 'jpeg'}JPEG 5 fps · {detail}{:else if mode === 'off'}no preview · {detail}{:else}connecting…{/if}{#if label}{' · '}{label}{/if}
+    {#if !ready}starting…{:else if mode === 'avc'}H.264 · {detail}{:else if mode === 'jpeg'}JPEG 5 fps · {detail}{:else if mode === 'off'}no preview · {detail}{:else}connecting…{/if}{#if fallback && (mode === 'avc' || mode === 'jpeg')}{' · canvas fallback'}{/if}{#if label}{' · '}{label}{/if}
     {#if stalled}<span class="stalled"> · no new frames</span>{/if}
   </figcaption>
 </figure>
