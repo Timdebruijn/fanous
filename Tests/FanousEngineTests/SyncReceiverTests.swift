@@ -65,7 +65,8 @@ struct SyncReceiverTests {
         #expect(entry.machine == Self.low)
         #expect(entry.clock == Self.clock(group: 4))
         #expect(entry.receivedAt >= before && entry.receivedAt <= CACurrentMediaTime())
-        #expect(receiver.packetsIn.load(ordering: .relaxed) == 1)
+        // not == 1: a sender idle for 1 s sends a keepalive, which a loaded run reaches before this line (B101)
+        #expect(receiver.packetsIn.load(ordering: .relaxed) >= 1)
     }
 
     @Test func ownPacketsGarbageAndKeepalivesTouchNothing() async throws {
