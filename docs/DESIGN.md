@@ -1492,7 +1492,7 @@ reviewed against the code. Built: item 1 (M2.1, below). Research and frictions F
   the four-projector point, so re-check Grey 0 %. One-axis outputs render
   bit-identically. The output pass is unchanged.
 
-**As built (M2.1, PR #TBD):**
+**As built (M2.1, PR #103):**
 - `BlendMath.map` takes coverage 4 when the output has an overlap on both
   axes (left or right > 0, and top or bottom > 0). zx and zy are the per-axis
   "in an overlap" values it already computed for the lift feather; the lift
