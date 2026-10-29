@@ -969,6 +969,23 @@ per tick under the source's lock, so planes and kind never tear (`kind` is
 `SourcePixelKind`, default `.rgba`). For packed 4:2:2 the live path takes
 `texture0.width × 2` as the media width (step 1a).
 
+**As built (2026-10-30, step 1a, PR #107):** the protocol is `latestFrame`
+and `stop()`; `latestTexture` and `bottomUp` are gone. `LayerPlayback.frame`
+reads `latestFrame` once per tick and copies it into the reused `liveFrame`
+(a `DecodedFrame`), so `texture1` and `kind` reach the layer uniforms by the
+movie path; `hasFrame` only tests presence. Syphon builds the frame from one
+`FrameSlot` `Mutex` read (`.rgba`, `bottomUp: true`), the generators return
+their one texture. A `.v216` live frame's width is `texture0.width × 2` for
+the geometry and for `u.texel`, from which the v216 shader case derives pair
+positions. The shader is unchanged; its matrix uses 8-bit ratios (16/255,
+255/219), exact for 8-bit live frames, while 16- and 10-bit sources read
+about one code low at white and about one code off in neutral chroma (B119).
+Readback through the compositor (`LiveSourceTests`), `2vuy` and `420v` alike:
+white 255, black 0, Rec.709 red 255,1,0, 50 % grey 128; the `420v` Y0/Y1
+pair reads 252/3 from linear sampling half a canvas pixel off centre (`2vuy`
+picks with the nearest sampler: 255/0). 100 frame reads allocate nothing in
+release. `LiveCatalog` is step 1b.
+
 | Input | Framework | Pixel path | Kind |
 |---|---|---|---|
 | Capture device | `AVCaptureSession` with one `AVCaptureVideoDataOutput` on its own serial queue; the active format is the device's format whose size matches its current input and whose frame rate is the highest at or below the canvas rate (a card follows its source anyway) | the native format is `AVCaptureDevice.Format.formatDescription.mediaSubType`, not `availableVideoPixelFormatTypes` (that lists what the output can convert to). The output is asked for the native subtype when it is `2vuy` (Cb Y0 Cr Y1) or `yuvs` (YUY2: Y0 Cb Y1 Cr, what Cam Link-class UVC devices send), for `420v` when native is `420v` or `420f`, else for `BGRA` (MJPEG-only webcams: AVFoundation decodes, there is no 4:2:2 to keep) | `2vuy` → `.v216` (same byte order), as `rgba8Unorm` at half width; `yuvs` → new `.yuy2`, the same texture with the pairs swapped (one more shader case, no new matrix); `420v` → `.planarYCbCr`, planes 0 and 1 as `r8Unorm` + `rg8Unorm`; `BGRA` → `.rgba`. The layer shader's Rec.709 video-range matrix (§4.1) reads 8-bit textures unchanged |
@@ -1392,7 +1409,7 @@ draws live over a frozen output and the held frame returns when it is off.
 
 ### 9.8 Syphon
 
-**As built (2026-10-26, Syphon orientation):** Syphon surfaces hold the picture in OpenGL order (row 0 at the bottom). `SyphonOutput` publishes the canvas with `flipped: true` so OpenGL clients (checked with the Syphon Simple Client) and Metal clients that follow Syphon's GL-order convention see it upright; `SyphonInput` reports `bottomUp`, and the compositor samples such frames with v0/v1 swapped (`Compositor.uvRect`), so crops keep their meaning. Before this the own round trip looked right while every other app saw the canvas upside down.
+**As built (2026-10-26, Syphon orientation):** Syphon surfaces hold the picture in OpenGL order (row 0 at the bottom). `SyphonOutput` publishes the canvas with `flipped: true` so OpenGL clients (checked with the Syphon Simple Client) and Metal clients that follow Syphon's GL-order convention see it upright; `SyphonInput` reports it via `LiveFrame.bottomUp`, and the compositor samples such frames with v0/v1 swapped (`Compositor.uvRect`), so crops keep their meaning. Before this the own round trip looked right while every other app saw the canvas upside down.
 
 `SyphonMetalServer` per canvas, named `Fanous – <canvas name>`, published
 from the compositor after the canvas pass with the same completed texture
