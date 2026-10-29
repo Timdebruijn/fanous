@@ -89,7 +89,7 @@ import Testing
         #expect(abs(decoded.last!.measuredFrameRate - 29.97) < 0.05)
     }
 
-    @Test func chunkedInputAndUserBits() {
+    @Test func chunkedInputDecodesLikeWholeInput() {
         let frames = Self.frames(from: Timecode(hours: 1, minutes: 2, seconds: 3, frames: 4, rate: .fps30), count: 12)
         let samples = frames.flatMap { LTCEncoder.samples(frames: [$0], sampleRate: 44_100, amplitude: 0.3) }
         var whole = LTCDecoder(sampleRate: 44_100, nominalFrameRate: 30)
@@ -101,17 +101,5 @@ import Testing
         }
         #expect(collected == expected)
         #expect(expected.count >= 10)
-
-        let tagged = Timecode(hours: 0, minutes: 0, seconds: 1, frames: 0, rate: .fps25)
-        let bits = LTCEncoder.bits(for: tagged, userBits: 0x1234_5678)
-        var decoder = LTCDecoder(sampleRate: 48_000)
-        var custom = LTCEncoder.samples(frames: [tagged, tagged], sampleRate: 48_000)
-        _ = bits
-        custom += custom
-        // user bits travel with each frame; the generator applies them when given
-        let withUser = LTCEncoder.samples(frames: [tagged], sampleRate: 48_000)
-        _ = withUser
-        let decoded = decoder.process(custom)
-        #expect(decoded.allSatisfy { $0.userBits == 0 })
     }
 }

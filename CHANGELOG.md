@@ -214,6 +214,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   list, "manual" chips with Back to wall on the blend edges and slice 1's source. Leaving the Outputs screen ends the
   check and the wizard; an output keeps its own pattern on record (also across a reload, with **Give the test patterns
   back**) until the engine has taken it back. `docs/user/outputs-and-mapping.md` › Projector walls.
+- Removed: `LTCFrame.userBits` (repo audit 2026-10-29): the LTC decoder unpacked the user bits of every frame and
+  nothing read them.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

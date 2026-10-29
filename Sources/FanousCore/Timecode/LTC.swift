@@ -6,7 +6,6 @@ import Foundation
 
 public struct LTCFrame: Equatable, Sendable {
     public let timecode: Timecode
-    public let userBits: UInt32
     /// Sample index (since the decoder was created) of the last sync-word transition.
     public let endSampleIndex: Int64
     public let measuredFrameRate: Double
@@ -82,11 +81,7 @@ public struct LTCDecoder: Sendable {
         let timecode = Timecode(
             hours: field(48, 4) + 10 * field(56, 2), minutes: field(32, 4) + 10 * field(40, 3),
             seconds: field(16, 4) + 10 * field(24, 3), frames: field(0, 4) + 10 * field(8, 2), rate: rate)
-        var userBits: UInt32 = 0
-        for (nibble, position) in [4, 12, 20, 28, 36, 44, 52, 60].enumerated() {
-            userBits |= UInt32(field(position, 4)) << (nibble * 4)
-        }
-        return LTCFrame(timecode: timecode, userBits: userBits, endSampleIndex: index, measuredFrameRate: measured)
+        return LTCFrame(timecode: timecode, endSampleIndex: index, measuredFrameRate: measured)
     }
 }
 
