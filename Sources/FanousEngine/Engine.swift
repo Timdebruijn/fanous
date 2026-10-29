@@ -198,7 +198,7 @@ public final class Engine: @unchecked Sendable {
         canvasSwitch.applied = { [weak self] format in self?.canvasSwitched(to: format) }
         self.canvasSwitch = canvasSwitch
         let layerCount = options.scene?.layerCount ?? loadedProject?["layerCount"]?.int ?? 8
-        let patch = ProjectDocument.effectivePatch(from: loadedProject ?? .null) ?? Patch.standard(layers: layerCount, outputs: 4)
+        let patch = ProjectDocument.effectivePatch(from: loadedProject ?? .null) ?? Patch.standard(layers: layerCount, outputs: 0)
         let policy = options.scene?.policy ?? loadedProject?["policy"]?.string.flatMap(SourcePolicy.init(rawValue:)) ?? .dmx
         let dmx = DMXStore(patch: patch, logger: logger)
         if policy != .dmx {

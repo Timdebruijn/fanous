@@ -222,6 +222,29 @@ extension StateStoreTests {
 }
 
 extension StateStoreTests {
+    @Test func outputFixtureFollowsItsOutput() throws {
+        let (store, _) = Self.makeStore()  // Master at artnet:0.0.1 1, Output 1 at 9, no outputs yet
+        let sacn5 = UniverseID(.sacn, 5)
+        _ = try store.execute("patch.set", args: ["fixture": "Master", "universe": "sacn:5", "address": 101], role: .programmer).get()
+        // an Output fixture that is already patched stays; a new one goes next to the Master, wherever that is
+        _ = try store.execute("output.add", role: .programmer).get()
+        _ = try store.execute("output.add", role: .programmer).get()
+        var patch = try #require(ProjectDocument.patch(from: store.project))
+        #expect(patch.entry(for: .output(1)) == PatchEntry(fixture: .output(1), universe: UniverseID(.artnet, 1), address: 9))
+        #expect(patch.entry(for: .output(2)) == PatchEntry(fixture: .output(2), universe: sacn5, address: 117))
+        // a taken range leaves it unpatched
+        _ = try store.execute("patch.set", args: ["fixture": "Layer 1", "universe": "sacn:5", "address": 125], role: .programmer).get()
+        _ = try store.execute("output.add", role: .programmer).get()
+        #expect(ProjectDocument.patch(from: store.project)?.entry(for: .output(3)) == nil, "125–132 overlaps Layer 1")
+        // removing the output unpatches its fixture, in the same undo step
+        _ = try store.execute("output.remove", args: ["id": 2], role: .programmer).get()
+        #expect(ProjectDocument.patch(from: store.project)?.entry(for: .output(2)) == nil)
+        _ = try store.execute("undo", role: .programmer).get()
+        patch = try #require(ProjectDocument.patch(from: store.project))
+        #expect(patch.entry(for: .output(2))?.address == 117)
+        #expect(ProjectDocument.outputs(from: store.project).map(\.id) == [1, 2, 3])
+    }
+
     @Test func outputCommandsAddSetValidateAndRemove() throws {
         let (store, _) = Self.makeStore()
         let id = try store.execute("output.add", args: ["display": ["uuid": "U1", "name": "Epson"]], role: .programmer).get().value?.int

@@ -309,6 +309,19 @@ public enum ProjectDocument {
         try project.set(try JSONValue(encoding: outputs), at: "/outputs")
     }
 
+    /// Patches Output n's fixture where the standard patch puts it, after the Master on the Master's universe (the
+    /// standard Master when it is unpatched), when that range fits and is free; otherwise the Patch screen shows it
+    /// unpatched. An Output fixture that is already patched stays where it is.
+    static func patchOutputFixture(_ n: Int, in project: inout JSONValue) throws {
+        guard var patch = ProjectDocument.patch(from: project), patch.entry(for: .output(n)) == nil,
+            let master = patch.entry(for: .master) ?? Patch.standard(layers: project["layerCount"]?.int ?? 1, outputs: 0).entry(for: .master)
+        else { return }
+        let entry = PatchEntry(fixture: .output(n), universe: master.universe, address: master.channels.upperBound + 1 + (n - 1) * FixtureMode.output.footprint)
+        guard entry.fitsInUniverse, !patch.entries.contains(where: { $0.universe == entry.universe && $0.channels.overlaps(entry.channels) }) else { return }
+        patch.entries.append(entry)
+        try project.set(patchValue(patch), at: "/patch")
+    }
+
     /// `[{"fixture":"Layer 3","universe":"artnet:0.0.1","address":17}, …]`, sorted by universe then address.
     public static func patchValue(_ patch: Patch) -> JSONValue {
         .array(
@@ -487,7 +500,8 @@ public enum ProjectDocument {
             })
         store.register(
             CommandSpec(
-                name: "output.add", role: .programmer, summary: "Add an output (one full-canvas slice, no blend, identity warp), optionally bound to a display.",
+                name: "output.add", role: .programmer,
+                summary: "Add an output (one full-canvas slice, no blend, identity warp), optionally bound to a display; its Output fixture is patched next to the Master when that range is free.",
                 argsType: "{ display?: { uuid: string; name: string } }"
             ) { project, args in
                 var outputs = ProjectDocument.outputs(from: project)
@@ -496,10 +510,11 @@ public enum ProjectDocument {
                 if let uuid = args["display"]?["uuid"]?.string { output.display = DisplayIdentity(uuid: uuid, name: args["display"]?["name"]?.string ?? uuid) }
                 outputs.append(output)
                 try setOutputs(outputs, in: &project)
+                try patchOutputFixture(id, in: &project)
                 return .number(Double(id))
             })
         store.register(
-            CommandSpec(name: "output.remove", role: .programmer, summary: "Remove an output (not one in a projector wall).", argsType: "{ id: number }") { project, args in
+            CommandSpec(name: "output.remove", role: .programmer, summary: "Remove an output (not one in a projector wall) and unpatch its Output fixture.", argsType: "{ id: number }") { project, args in
                 guard let id = args["id"]?.int else { throw CommandError.invalidArgs("args: { id }") }
                 var outputs = ProjectDocument.outputs(from: project)
                 guard outputs.contains(where: { $0.id == id }) else { throw CommandError.invalidArgs("no output \(id)") }
@@ -508,6 +523,10 @@ public enum ProjectDocument {
                 }
                 outputs.removeAll { $0.id == id }
                 try setOutputs(outputs, in: &project)
+                if var patch = ProjectDocument.patch(from: project), patch.entry(for: .output(id)) != nil {
+                    patch.entries.removeAll { $0.fixture == .output(id) }
+                    try project.set(patchValue(patch), at: "/patch")
+                }
                 var canvases = ProjectDocument.canvases(from: project)
                 if canvases.contains(where: { $0.clockMaster == id }) {
                     for i in canvases.indices where canvases[i].clockMaster == id { canvases[i].clockMaster = nil }
