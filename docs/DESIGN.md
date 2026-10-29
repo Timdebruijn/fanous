@@ -585,7 +585,7 @@ can never disagree). `[OPEN-9]` exact bands and the speed/scale upper limits.
 | 1–2 | Intensity | 16 | 65535 | output master |
 | 3 | Control | 8 | 0 | 0–63 normal · 64–127 Blackout · 128–191 Freeze (hold frame) · 192–255 reserved |
 | 4 | Test pattern | 8 | 0 | as Master ch 4, this output only |
-| 5 | Blend | 8 | 0 | 0–127 blend/warp on (default) · 128–255 raw (bypass blend, warp, mask — for alignment) |
+| 5 | Blend | 8 | 0 | 0–127 blend/warp on (default) · 128–255 raw (bypass blend, warp, mask and, from M2, keystone — for alignment) |
 | 6 | Mapping preset | 8 | 0 | 0 = as edited · 1–255 = the output's stored mapping preset with that number (M2, §9.10) |
 | 7 | Mapping fade | 8 | 0 | 0 = cut · 1–255 = 0.1–25.5 s morph when ch 6 changes, as Layer Dissolve (M2, §9.10) |
 | 8 | Reserved | — | 0 | |
@@ -997,15 +997,17 @@ never sees control points.
 
 A slice's destination quad/mesh is in output coordinates (pre-warp). The
 vertex shader: slice vertex → output coordinate → displacement field →
-clip space; UV = canvas rect. The mask path is rasterized on Control into an
-`r8` mask texture at output resolution with the feather applied as a signed
-distance → smoothstep, so feathering is exact and free at render time.
+clip space; UV = canvas rect. From M2 a Keystone homography follows the
+displacement (§9.10). The mask path is rasterized on Control into an `r8`
+mask texture at output resolution, with the feather applied as a linear ramp
+over the signed distance, so feathering is exact and free at render time.
 
 ### 9.5 Output pass, summarized
 
 ```
 for each slice (ordered):
-  vertex:   mesh vertex → warp displacement → clip
+  vertex:   mesh vertex → warp displacement → keystone → clip   (M2, §9.10: a preset morph mixes two such positions;
+                                                                 raw bypasses warp and keystone)
   fragment: canvas.sample(uv) × scale                           (scale 1 live; frozen: master now / master at Freeze;
                                                                  a test pattern replaces this, whole output)
             → × blendMap.factor r, g, b                         (per channel, §9.9 M1.6; skipped when Output "raw" is set)
@@ -1413,8 +1415,9 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
 
 ### 9.10 M2: black lift by coverage, Keystone, mapping presets, edit overlay, masks v2 (design 2026-10-29)
 
-**Status:** designed 2026-10-29, owner decisions the same day (below); not
-built. Research and frictions F3–F6: `docs/mapping-ux.md` §1, §4.2–§4.5.
+**Status:** designed 2026-10-29, owner decisions the same day (below), and
+reviewed against the code; not built. Research and frictions F3–F6 are in
+`docs/mapping-ux.md` §1 and §4.2–§4.5.
 
 **Owner decisions (2026-10-29):**
 - A console preset change **morphs** over Output channel 7 (Mapping fade). Not
@@ -1424,58 +1427,88 @@ built. Research and frictions F3–F6: `docs/mapping-ux.md` §1, §4.2–§4.5.
 - Masks v2 **includes freehand** drawing.
 - Settled in the design, not asked:
   - the Keystone range (±50 % of the output);
-  - what a preset holds (the mapping, not the projector's colour);
-  - coverage lift only on walls with at least 2 rows and 2 columns.
+  - presets hold the mapping (warp and slices). Blend, colour and black floor
+    are per-projector tuning (§9.9 owner decision) and stay live.
+
+**0. Output plans and the compile cache (groundwork).**
+- **Compile cache.** Today `OutputCoordinator.rebind` recompiles every output
+  on every output edit, on the main actor, and the preview compiles again at
+  its own size. Presets and freehand masks would make that cost grow with every
+  drag.
+  - `OutputCompiler` keeps a content-keyed cache that survives rebinds. Each
+    of these gives a texture or buffer:
+    - (warp, w, h) → warp field;
+    - (slice with its masks, w, h) → mesh and mask texture;
+    - (blend, w, h) → blend map.
+  - Entries nobody references are evicted after a swap.
+  - A changed region, display mode or drawable size simply gives new keys.
+  - A changed image-mask file invalidates the entries that use it; the library
+    triggers this.
+- **One plan per output** keeps the edited mapping and its presets' geometry
+  (`presets: [Int: PresetGeometry]`). Freeze's `held` stays on the plan.
+- **Per-frame state stays out of the plan.**
+  - The morph (3) lives on the DMX queue and travels in `OutputParameters`.
+  - The overlay (4) lives in a per-output box. The coordinator owns the box and
+    hands it to every plan it compiles.
+  - So a recompile mid-morph or mid-freeze changes nothing on screen.
+  - The projector, a secondary display and the preview all draw the same
+    frame.
 
 **1. Black lift by coverage (fixes F3).**
 - **Today** the lift is binary per edge: full outside every overlap, none
   inside. In a wall of 2 × 2 or larger, the point where four projectors overlap
   stays lighter in black than the two-projector seams.
-- **Model.** `BlendSettings.coverage: Int?` is the most projectors that cover
-  one point.
-  - The wall compile (`WallLayout.apply`) writes 4 on a wall with at least 2
-    rows and 2 columns. It is geometry, like the overlap.
-  - nil elsewhere.
-- **The lift term** follows the coverage of the pixel:
-  - The coverage is n = (1 + zx) · (1 + zy), where zx and zy are each axis's
-    feathered "in an overlap" value: 1 inside, falling to 0 over the feather.
-    Away from the feathers n is 1, 2 or 4.
+- **Coverage, no new field.** `BlendMath.map` takes the coverage from the
+  output's own edges: 4 when it has an overlap on both axes. A one-axis output
+  keeps today's per-edge lift.
+  - Every output of a grid wall with overlap on both axes has edges on both
+    axes, so all of them agree.
+  - A wall with overlap 0 on one axis, or a removed wall, follows its edges.
+- **The lift term** for coverage 4:
+  - The pixel's coverage is n = (1 + zx) · (1 + zy). zx and zy are each axis's
+    "in an overlap" value: 1 inside, falling linearly to 0 over the lift
+    feather. Away from the feathers n is 1, 2 or 4.
   - The formula:
     ```
-    lift light = (coverage − n) / n × floor light       // each covering projector adds its share
-    lift term  = floor × ((coverage − n) / n)^(1/γ)      // as a code value: the output pass adds it in linear light, γ 2.2
+    lift light = (4 − n) / n × floor light        // each covering projector adds its share
+    lift term  = floor × ((4 − n) / n)^(1/γ)      // as a code value: the output pass adds it in linear light
     ```
-  - Every point then reaches the black of the most-covered point.
-- **The floor** (`blend.lift`, the projector's black floor) keeps its meaning:
-  the black light of one projector.
-  - On a single-covered point next to one seam it gives exactly that, as today.
+  - Every point then reaches the black of the four-projector point.
+  - γ is `BlendMath.projectorGamma` (2.2), one constant in Core that the
+    shader source uses too.
+- **The floor** (`blend.lift`) stays the black light of one projector.
+  - A one-axis wall uses it as today.
+  - On a 2 × 2 wall a single-covered point gets 3 floors, a two-projector seam
+    1, and the four-projector point 0.
   - The Grey 0 % route is unchanged: raise the floor per projector until even.
-  - On a 2 × 2 wall the whole black rises to the level of the four-projector
-    point.
-- **Unchanged:**
-  - Walls of one row or one column, and outputs outside a wall, keep the
-    per-edge lift. Coverage would give them the same values outside the
-    feather, so nothing they show changes.
-  - The output pass: the lift term is already in the blend map.
+- **Existing 2D blends change, on purpose.** Their black rises to the level of
+  the four-projector point, so re-check Grey 0 %. One-axis outputs render
+  bit-identically. The output pass is unchanged.
 
 **2. Keystone mode (§6.4a).**
 - **The mode.** A fourth fixture mode, 16 channels, patched per output next to
-  its Output fixture.
+  its Output fixture. It is `FixtureRef.keystone(n)`, and the mode follows
+  from the ref, like the others.
   - Four corners × X/Y, 16-bit; centre means no change.
   - Full range is ±50 % of the output's width or height, about 0.03 px per
     step at 1920.
-- **What it moves.** The four offsets give a homography from the output's unit
-  square to the moved corners.
-  - The vertex shader applies it after the warp field, to every slice, test
-    pattern and the edit overlay. The whole mapping moves, and the hand
-    alignment stays as edited.
+- **Per frame, on the DMX queue.** When the values change they become one
+  3 × 3 homography, from the output's unit square to the moved corners.
+  - It goes in a separate `keystones` array of the snapshot slot. The Output
+    fixture's resolver builds `OutputParameters` fresh on each publish and
+    would wipe it.
+  - **Guard.** The matrix is accepted only when the moved quad is strictly
+    convex (the four corner cross products have one sign) and w > 0 at the
+    corners. Otherwise the last valid matrix stays, and `live.outputs` says
+    "keystone invalid". A crossed quad would turn the picture inside out.
+  - It is the identity while the fixture is unpatched or centred.
+- **Where it applies.** The vertex shader applies it after the warp field, to
+  every slice, test pattern and the edit overlay. The whole mapping moves; the
+  hand alignment stays as edited.
   - The blend map stays in projector space: it is sampled at the final
-    position, as after the warp today.
+    position.
   - Masks move with their slices, because they are sampled before the warp.
-- **Per frame.** The resolver's values become one 3 × 3 matrix in
-  `OutputParameters`; nothing is compiled.
-  - The matrix is the identity while the fixture is unpatched or centred.
-  - Raw (Output ch 5 ≥ 128) bypasses it together with the warp.
+  - Raw (Output ch 5 ≥ 128) bypasses the keystone together with the warp.
 - **Mapping shown.** It sits on top of whatever mapping the output shows: the
   edited one or a preset (3).
 - **Generated files.** OSC addresses, `docs/channel-map.md` and the GDTF follow
@@ -1486,13 +1519,14 @@ built. Research and frictions F3–F6: `docs/mapping-ux.md` §1, §4.2–§4.5.
 - **Model.**
   ```
   OutputConfig.presets: [MappingPreset]
-  MappingPreset { number: 1…255, name, blend, warp, slices }
+  MappingPreset { number: 1…255, name, warp, slices }
   ```
-  - A preset is a snapshot of what Blend edges and Warp & Slices edit.
-  - It holds no colour, intensity, region or display: those belong to the
-    projector.
-  - The field is written only when not empty, so older projects load
-    unchanged.
+  - A preset is a snapshot of what Warp & Slices edits, masks included.
+  - It holds no blend, black floor, colour, intensity, region or display: those
+    are the projector's tuning and stay live.
+  - A custom `encode(to:)` writes the field only when it is not empty, so older
+    projects load unchanged.
+  - `output.set` refuses paths under `/presets`.
   - A later wall change does not touch stored presets; store again after one.
 - **Commands.** All are programmer-only, refused under show lock, and one undo
   step each:
@@ -1500,95 +1534,133 @@ built. Research and frictions F3–F6: `docs/mapping-ux.md` §1, §4.2–§4.5.
     For a wall the UI sends all its outputs at once. An existing number is
     replaced, and the reply says so.
   - `output.preset.recall {ids, number}` copies the preset into the edited
-    mapping. That is an edit, and Undo takes it back.
+    mapping. That is an edit, and Undo takes it back. On a wall output a slice
+    1 source that differs from the wall's becomes manual, as with `output.set`.
   - `output.preset.remove {ids, number}` and
     `output.preset.rename {ids, number, name}`.
 - **UI.**
   - A **Presets** strip on Warp & Slices, and on the wall panel for the whole
     wall: **Store as N**, **Recall**, **Rename**, **Remove**.
-  - **Hold Compare** shows the preset on the output while held; releasing goes
-    back. It is `output.show {id, preset}`: not saved, and it ends when the
-    client leaves. While held it wins over ch 6.
+  - **Hold Compare** shows the preset on the output while held, through the
+    lease `output.show {ids, preset}` (4, "Leases").
+  - While held it wins over ch 6.
+  - Like the overlay lease, it is refused under show lock.
 - **Console.**
   - Output ch 6 = N shows preset N on that output for as long as the channel
     holds it; 0 shows the edited mapping again.
   - Nothing in the project changes.
-  - A number the output does not have keeps the current mapping, and
-    `live.outputs` says "preset N missing".
-  - The output and its preview carry a "Preset N (console)" badge.
-  - UI edits change the edited mapping, and the editor says the output shows
-    preset N.
-- **Compile.** Presets are compiled when stored and when a project loads, and
-  stay compiled, so a recall never waits.
-  - Textures are shared by content: a preset with the same blend as the edited
-    mapping uses the same blend map.
-  - `ponytail:` memory is one blend map per distinct blend (about 66 MB at
-    4K). Evict unused preset plans if that ever matters.
+  - A number the output does not have keeps the current mapping.
+  - `live.outputs` gets the shown preset, "preset N missing" and the morph.
+    `publishLive` fills them from the snapshot; today `live.outputs` is built
+    only on rebind.
+- **Preview and editor.**
+  - The output's preview and the Warp & Slices editor show the edited mapping,
+    without preset or keystone, so the handles stay where the drag lands.
+  - Badges say what the output shows instead: "Preset N (console)" and
+    "Keystone active".
+  - Freeze still shows in the preview (B107).
+- **Compile.** Presets go through the cache (0), so storing or loading compiles
+  a preset once, and a recall never waits.
+  - A preset costs its warp field (about 4 MB at 4K) plus its masked slices'
+    mask textures (about 8 MB each at 4K).
+  - The blend map is the output's own, shared by every preset.
 - **Morph (owner decision).** Output ch 7, **Mapping fade**: 0 = cut,
   1–255 = 0.1–25.5 s, the Layer Dissolve mapping.
-  - When ch 6 changes, the output draws the old and the new plan's geometry in
-    one pass and mixes the vertex positions over the fade time (smoothstep).
-    The warp position, the slice corners and the source rectangle glide.
-  - The blend map and the masks switch at the start. A blend morph would need
-    both maps per pixel, and a mapping change between scenes rarely changes
-    the blend.
-  - Slices are matched by id. A slice on one side only appears or disappears at
-    the start.
-  - Every slice mesh has the same tessellation (`sliceSubdivisions`), so vertex
-    i is the same point in both plans. The two warp fields are each sampled
-    and their results mixed, so the meshes may differ in density.
-  - `ponytail:` a change during a morph finishes the running morph at once and
-    morphs on from its target. That is a jump; a third plan in the mix would
-    avoid it.
+  - **State.** When ch 6 changes, the DMX queue (`DMXStore.publish`, the
+    single writer) records `from`, `to`, the start (host time) and the fade.
+    `OutputParameters` carries them.
+  - **Each frame**, every drawer computes s = smoothstep((now − start) / fade)
+    and draws both geometries in one pass. Nothing per output is kept between
+    frames.
+  - **Shader.** The vertex shader gets each side's vertex buffer and warp
+    field, with a "has warp field" flag per side (an identity warp has no
+    field).
+    - It mixes the two final positions by s, so the warp, the slice corners,
+      the source rectangle (UV) and the slice opacity glide.
+    - `pre`, the coordinate the masks and patterns use, is the new side's
+      vertex, so the new masks ride with the gliding slice.
+  - **Switched at the start:** the masks and the slices that exist on one side
+    only. A slice whose canvas differs counts as one-sided.
+  - **Topology.** Every slice mesh has the same tessellation
+    (`sliceSubdivisions`), and both warp fields have the output's size. Vertex
+    i is the same point in both, even across mesh densities.
+  - `ponytail:` a change during a morph finishes the running morph at once
+    and morphs on from its target. That is a visible jump; a third side in the
+    mix would avoid it.
   - Recall and Compare from the UI cut.
+  - Keystone applies on top.
 
 **4. On-output edit overlay (fixes F4).**
 - **What it draws.** While a programmer has Warp & Slices open on an output,
   the engine draws these on that output:
-  - the warp: the corner pin's edges, or the mesh's grid lines sampled along
-    their curves;
-  - each slice's outline and its mask outlines;
-  - the selected point or points as a crosshair, with the label ("r3 c5",
-    "corner 2", "slice 2 · 3", "mask 1 · 4").
-- **Not on the preview,** which has the editor's own handles.
+  - the warp: the corner pin's edges, or the mesh's grid lines sampled at the
+    slice tessellation (64 per line);
+  - each slice's outline and its mask outlines, curves flattened;
+  - the selected point as a crosshair, with a digits-only label ("3·5", or the
+    point number). The iPad's large label names the kind.
+  - The line buffer is sized by content and capped.
+- **Not drawn:**
+  - on previews, which show the editor's own handles;
+  - in raw, where the warp is bypassed;
+  - while the output shows a preset (console or Compare), because the lines
+    belong to the edited mapping. The badge says why.
 - **Look.**
-  - Lines are 2 px white with a 1 px black edge, visible on any content.
+  - Lines are 2 px white with a 1 px black edge, visible on any content. Metal
+    has no wide lines, so each segment becomes a quad, extruded in pixels after
+    the warp and the keystone.
   - The selected point is yellow and larger.
-  - The overlay goes through the warp and the keystone, like the slices.
-  - It follows the output's Blackout and the Master, so black stays black. It
-    takes no blend, colour or lift.
-- **When it shows.**
-  - **On** when the tab opens (owner decision), with a **Show on output**
-    switch that stays visible.
-  - **Off** when the tab closes or the client leaves, after 10 minutes without
-    an edit, and while show mode or show lock is on. It is never drawn in show
-    mode.
-- **Command.** `output.overlay {id, on, selected?}` is ephemeral (not saved,
-  not undoable) and coalesced like a drag. The last client that sends it owns
-  that output's overlay.
+  - The overlay follows the output's Blackout and the Master, so black stays
+    black. It takes no blend, colour or lift.
+- **Leases.** `output.overlay {id, on, selected?}` and
+  `output.show {ids, preset}` (3) are leases.
+  - Programmer-only, refused under show lock, never saved or undone.
+  - Each lasts 5 s. The UI renews it every 2 s while the tab is open or
+    Compare is held, and the engine lets it expire, so no client tracking is
+    needed. An iPad that sleeps lets it run out; its next renewal brings it
+    back.
+  - The most recent renewal decides what is shown (its selection).
+  - The overlay is **on** when the tab opens (owner decision), with a **Show on
+    output** switch that stays visible.
+  - The UI stops renewing after 10 minutes without an edit.
+  - Show mode and show lock end both at once.
+  - `selected` is `{slice, kind: corner | mesh | slice | mask, mask?, point}`.
 - **Implementation.**
-  - Control builds a line list from the mapping and the selection into a small
-    vertex buffer of the plan: at most 33 + 33 lines × 32 samples.
-  - A selection change rebuilds only that buffer. The output pass gets one
-    extra draw; nothing else is rebuilt.
-  - The label uses the test patterns' digit font plus the few letters it
-    needs.
+  - Control builds the line quads from the edited mapping and the selection
+    into the output's overlay box (0).
+  - The box is swapped atomically, so a selection change rebuilds only it.
+  - The output pass gets one extra draw.
+  - The label uses the test patterns' seven-segment digits.
 
 **5. Masks v2 (fixes F5), with freehand (owner decision).**
 - **Model.**
   ```
-  SliceConfig.masks: [MaskShape]      // replaces `mask`; an old `mask` loads as one add mask
+  SliceConfig.masks: [MaskShape]
   MaskShape { mode: add | subtract, feather, path: [MaskPoint] | image: { folder, file } }
-  MaskPoint { x, y, in: MapPoint?, out: MapPoint? }
+  MaskPoint { x, y, in: MapPoint?, out: MapPoint? }   // handles as offsets from the point
   ```
   - Points are in normalized output coordinates, as today.
+  - Handles are offsets from their point, so a nudge, or a mesh resample's
+    neighbour, moves a point together with its handles.
   - A point without handles is a corner; with handles its segments are cubic
     Bézier curves.
+  - A path needs at least 3 points, curved or not; an image has none.
+  - `masks` is decoded with `decodeIfPresent`.
+- **Older projects.**
+  - `ProjectDocument.load` turns `mask` into `masks` (one add mask), next to
+    the existing key backfills, and does the same on a version revert.
+  - The UI reads the document, and one failed slice decode blanks every
+    output, so this happens in the document and not only in Swift.
 - **Visible area.** The union of the add masks (everything when there is none)
   minus the union of the subtract masks.
   - Feathered, that is `max(adds) × (1 − max(subtracts))`.
   - Holes for doors and windows are subtract masks. **Invert** in the UI flips a
     mask's mode.
+  - Fills use the nonzero rule, so a freehand loop that crosses itself does not
+    punch a hole.
+- **Missing image.** An image mask whose file is missing covers nothing: an
+  add mask adds no area, and a subtract mask cuts no hole. Readiness warns. If
+  it was the only add mask the slice is black, which is safer on stage than
+  content spilling onto the wall.
 - **Tools.** Every tool makes a path, so there is one kind of path to store,
   rasterise and edit:
   - **Polygon:** tap the points.
@@ -1600,31 +1672,39 @@ built. Research and frictions F3–F6: `docs/mapping-ux.md` §1, §4.2–§4.5.
     - Points and handles stay draggable; a double-tap toggles corner or
       smooth.
   - **Image:** a greyscale file from the library, where luminance is
-    visibility, stretched over the output.
-    - It is reloaded when the library sees the file change.
-    - The mode applies; the feather does not, because the image carries its own
-      softness.
+    visibility, stretched over the output. The library reloads it when the
+    file changes (0). The mode applies; the feather does not, because the image
+    carries its own softness.
 - **Rasterising.**
-  - CoreGraphics fills the paths, curves included, into the existing `r8` mask
-    texture at output resolution.
-  - The feather keeps its signed distance to smoothstep, measured against the
-    flattened curve.
+  - CoreGraphics fills each path, curves included, with the nonzero rule into
+    the existing `r8` mask texture at output resolution. The fill gives the
+    sign.
+  - The feather's linear ramp needs the distance only within ±feather/2 of
+    the flattened outline. It is computed per segment over that segment's
+    widened bounding box, keeping the minimum. Today's brute force over every
+    segment for every sample would take seconds for a freehand path at 4K.
+  - Budget, checked in a test: at most 20 ms for 2,000 segments with a 2 px
+    feather at 3840 × 2160, release build.
+  - The preview scales every mask's feather, as today's preview scales its
+    one.
   - The output pass is unchanged. The edit overlay (4) draws the outlines.
 - **UI.**
   - Each slice gets a mask list (mode, feather, remove); order does not matter,
     because union and subtraction commute.
   - The tools are in the mask mode of Warp & Slices.
   - They work on the iPad too: freehand with a finger on the preview.
+  - Remote mode steps through mask points and their handles.
 
 **M2 build order** (one PR each, Opus coding agents, review before merge; the
-small engine pieces first):
+groundwork and small engine pieces first):
 1. Black lift by coverage (Core)
-2. Keystone mode (fixture, resolver, vertex shader)
-3. Mapping presets: model, commands, compile, Output ch 6, UI
-4. Preset morph on Output ch 7
-5. Edit overlay
-6. Masks v2: model, rasteriser, loading older projects
-7. Masks v2: UI and tools, freehand included
+2. Compile cache and per-output plan state (0)
+3. Keystone mode (fixture, DMX queue, vertex shader)
+4. Mapping presets: model, commands, Output ch 6, preview badges, UI
+5. Preset morph on Output ch 7
+6. Edit overlay with leases (Compare's lease arrives with 4)
+7. Masks v2: model, loading older projects, banded rasteriser
+8. Masks v2: UI and tools, freehand included
 
 ## 10. Audio
 

@@ -377,6 +377,8 @@ offers.
    - The edit overlay is on while Warp & Slices is open, with a Show on
      output switch.
    - Masks v2 includes freehand drawing.
+   - Presets hold warp, slices and masks. The blend stays live: it is the
+     projector's tuning (decision 1), so §4.5's "and blend" is dropped.
 
 ## 7. Sources (main pages)
 
