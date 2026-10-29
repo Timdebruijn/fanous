@@ -970,9 +970,10 @@ out = in · factor + lift · (1 − inOverlap)              // lift and inOverla
 ```
 
 An output with overlaps on both axes (a grid wall) takes the lift by coverage
-instead, since M2.1: `lift · ((4 − n) / n)^(1/γ)` with n = (1 + zx)·(1 + zy)
-projectors on the pixel (zx, zy the feathered `inOverlap` per axis), so every
-point reaches the black of the four-projector corner (§9.10 item 1).
+instead, since M2.1: `lift · ((4 − n) / n)^(1/γ)` (γ the fixed projector gamma
+2.2, not the edge's) with n = (1 + zx)·(1 + zy) projectors on the pixel (zx,
+zy the feathered `inOverlap` per axis), so every point reaches the black of
+the four-projector corner (§9.10 item 1).
 
 The lift is stored as the code value it gives on black. Since M1.7 the
 output pass adds it in linear light (γ 2.2), so the `+` above is exact at
@@ -1461,9 +1462,9 @@ reviewed against the code. Built: item 1 (M2.1, below). Research and frictions F
     frame.
 
 **1. Black lift by coverage (fixes F3).**
-- **Today** the lift is binary per edge: full outside every overlap, none
+- **Before M2.1** the lift was binary per edge: full outside every overlap, none
   inside. In a wall of 2 × 2 or larger, the point where four projectors overlap
-  stays lighter in black than the two-projector seams.
+  stayed lighter in black than the two-projector seams.
 - **Coverage, no new field.** `BlendMath.map` takes the coverage from the
   output's own edges: 4 when it has an overlap on both axes. A one-axis output
   keeps today's per-edge lift.

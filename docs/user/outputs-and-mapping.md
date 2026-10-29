@@ -177,13 +177,16 @@ S-curve is; set **Gamma** (0.5 to 5, default 2.2) to the projector's gamma so
 the sum of both projectors stays flat in the overlap. In tests a flat field
 over two or four projectors stayed within 2 % across the overlap.
 
-**Black lift (%)** (0 to 50) raises the black level outside the overlaps so the
-single-projector area matches the doubled black of the overlap; **Lift feather
-px** softens where the lift ends. Use Grey 0 % (or Grey steps) to match it by eye.
+**Black lift (%)** (0 to 50) raises the black level so it matches the overlaps,
+where the blacks of two projectors add up. On an output with overlaps on one
+axis it lifts the area outside the overlaps; **Lift feather px** softens where
+the lift ends. Use Grey 0 % (or Grey steps) to match it by eye.
 On an output with overlaps both across and down (a wall with rows and columns)
-the black rises everywhere to the corner where four projectors overlap: the
-lift then shows its value in the two-projector overlaps and more outside them.
-A project tuned with a version before M2.1 needs Grey 0 % checked again.
+every point rises to the black level of the corner where four projectors
+overlap: the lift then shows its value in the two-projector overlaps and about
+1.6 times it where one projector lights alone, and the feather softens each of
+those steps. A project tuned with a version before M2.1 needs Grey 0 % checked
+again.
 The lift adds light, as a second projector's black does, so a lift set on
 Grey 0 % stays right on brighter pictures (see the note under Test patterns).
 Grids work: a corner pixel gets the product of the horizontal and vertical
@@ -232,12 +235,12 @@ console calls them up on Test pattern channel 4: 128 Grey 0 %, 144 Grey 25 %,
 These are signal levels: on a gamma-2.2 projector Grey 25 % is about 5 % of
 white's light, Grey 75 % about 53 %. The black lift and the black offset
 (below) add the light they give on black, computed for a gamma-2.2 projector:
-set them on Grey 0 %, where they read exactly their value, and a brighter
-picture gets only that bit of light more. A lift of 8 % shows as 8 % on Grey
-0 % (outside the overlaps of an output blended on one axis; on both axes see
-[Blend edges](#blend-edges)) but raises Grey 25 % only from 64 to 66 of 255
-(versions before M1.7 added the 8 % as signal, 64 to 84, so a lifted area
-looked brighter at mid greys).
+set them on Grey 0 %, and a brighter picture gets only that bit of light more.
+On an output blended on one axis a lift of 8 % shows as 8 % on Grey 0 % outside
+the overlaps, but raises Grey 25 % only from 64 to 66 of 255 (versions before
+M1.7 added the 8 % as signal, 64 to 84, so a lifted area looked brighter at mid
+greys). On an output blended on both axes the single-projector area shows about
+13 % and Grey 25 % goes from 64 to 71 there (see [Blend edges](#blend-edges)).
 
 The first seven patterns, a moving test card and a few more are also available
 as layer content in folder 0 (see
@@ -376,9 +379,9 @@ Fanous cannot know which seam is off, so your eye picks it.)
 | Grey 25 %, Grey 75 %, White | one projector darker, or tinted | that projector's colour gain, the colour that is off: tapping the projector opens its Gain R, G, B |
 | | a colour shift only inside a seam | unlink R, G, B on that seam and tune the colour that is off |
 
-On a wall with rows and columns the black of Grey 0 % now rises to the corner
-where four projectors overlap, so a wall tuned with a version before M2.1 needs
-its Grey 0 % step checked again.
+On a wall with rows and columns the black of Grey 0 % now rises to the black
+level of the corner where four projectors overlap, so a wall tuned with a
+version before M2.1 needs its Grey 0 % step checked again.
 
 You can switch to Warp & Slices during the check, for example to fix the
 warp: a yellow line there says the check is still running and takes you back.

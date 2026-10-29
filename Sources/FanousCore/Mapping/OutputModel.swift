@@ -68,7 +68,7 @@ public struct BlendSettings: Codable, Equatable, Sendable {
     public var right = BlendEdge()
     public var top = BlendEdge()
     public var bottom = BlendEdge()
-    /// Black lift outside the overlap zones, 0…1 of full scale.
+    /// Black lift, 0…1 of full scale: outside the overlap zones, or by coverage with overlaps on both axes (§9.10).
     public var lift: Double = 0
     /// Feather of the lift transition at the zone boundary, output pixels.
     public var liftFeather: Double = 0
