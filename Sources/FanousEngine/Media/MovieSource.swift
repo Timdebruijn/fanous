@@ -93,16 +93,9 @@ public final class MovieSource: @unchecked Sendable {
         makeFourCC("HapR"): (.bc7_rgbaUnorm, nil, .rgba),
     ]
 
-    /// Spike switch: when false, 4444 decodes to the decoder's native alpha-less format (&sv4).
-    nonisolated(unsafe) public static var requestAlphaFor4444 = true
-    /// Spike switch: decode HAP chunks one after another instead of in parallel.
-    nonisolated(unsafe) public static var serialHAPDecode = false
-
     public let url: URL
     public let info: MovieInfo
     public private(set) var kind: SourcePixelKind
-    public private(set) var lastPixelFormat: OSType = 0
-    public private(set) var lastSurfaceBacked = false
 
     private let device: MTLDevice
     private let asset: AVAsset
@@ -161,7 +154,7 @@ public final class MovieSource: @unchecked Sendable {
                 kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
             ]
             // 4444 (XQ): the decoder's default (&sv4, bi-planar 4:4:4) drops alpha; ask for 4:4:4:4.
-            if Self.requestAlphaFor4444 && (codec == makeFourCC("ap4h") || codec == makeFourCC("ap4x")) {
+            if codec == makeFourCC("ap4h") || codec == makeFourCC("ap4x") {
                 attributes[kCVPixelBufferPixelFormatTypeKey] = kCVPixelFormatType_4444AYpCbCr16
             }
             let status = VTDecompressionSessionCreate(
@@ -234,9 +227,7 @@ public final class MovieSource: @unchecked Sendable {
             throw MovieError.decoder(status != noErr ? status : output.status)
         }
         let format = CVPixelBufferGetPixelFormatType(buffer)
-        lastPixelFormat = format
         let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
-        lastSurfaceBacked = surface != nil
         slot.pixelBuffer = buffer
         let planes = CVPixelBufferGetPlaneCount(buffer)
         switch (format, planes) {
@@ -285,7 +276,7 @@ public final class MovieSource: @unchecked Sendable {
 
     private static let decodeCallback: HapDecodeCallback = { function, context, count, _ in
         guard let function else { return }
-        if count <= 1 || MovieSource.serialHAPDecode {
+        if count <= 1 {
             for i in 0..<count { function(context, i) }
         } else {
             DispatchQueue.concurrentPerform(iterations: Int(count)) { function(context, UInt32($0)) }

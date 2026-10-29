@@ -22,7 +22,8 @@ enum DMXGenerator {
         mutating func unit() -> Double { Double(next() >> 11) / Double(1 << 53) }
     }
 
-    static func run(layers: Int, files: Int, hz: Double, seconds: Double, host: String, seed: UInt64) {
+    static func run(layers: Int, files: Int, seconds: Double) {
+        let (hz, host, seed): (Double, String, UInt64) = (40, "127.0.0.1", 1)
         let patch = Patch.standard(layers: layers, outputs: 1)
         let specs = ChannelMap.specs(for: .layer)
         var universes: [Int: [UInt8]] = [:]

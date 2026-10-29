@@ -265,7 +265,7 @@ public final class CITPServer: @unchecked Sendable {
 
     // MARK: Requests
 
-    fileprivate func handle(_ packet: CITPPacket, requestIndex: UInt16, from session: Session) {
+    fileprivate func handle(_ packet: CITPClientMessage, requestIndex: UInt16, from session: Session) {
         switch packet {
         case .clientInformation(let info):
             let version = info.supportedVersions.filter { $0 <= .v1_2 }.max() ?? .v1_0
@@ -321,7 +321,7 @@ public final class CITPServer: @unchecked Sendable {
                 session.streams.append(Session.Stream(source: request.sourceIdentifier, fps: min(10, request.fps), expires: Date().timeIntervalSince1970 + Double(max(1, request.timeout)), lastSent: 0))
             }
             publishStatus()
-        case .peerName, .peerLocation, .layerStatus, .serverInformation, .nack, .elementLibraryInformation, .mediaElementInformation, .elementThumbnail, .videoSources, .streamFrame:
+        case .peerName:
             break
         case .unknown(let contentType, let body):
             // an MSEX message we do not model: the Nack names its MSEX content type (bytes 2..<6 after the version)
@@ -387,7 +387,7 @@ public final class CITPServer: @unchecked Sendable {
                 let message = Array(buffer[0..<size])
                 buffer.removeFirst(size)
                 do {
-                    let packet = try CITPPacket.parse(message)
+                    let packet = try CITPClientMessage.parse(message)
                     server.handle(packet, requestIndex: header.requestIndex, from: self)
                 } catch {
                     server.logger.debug("CITP: unparsable \(header.contentType): \(error)")

@@ -6,7 +6,6 @@ import Foundation
 
 public struct LTCFrame: Equatable, Sendable {
     public let timecode: Timecode
-    public let userBits: UInt32
     /// Sample index (since the decoder was created) of the last sync-word transition.
     public let endSampleIndex: Int64
     public let measuredFrameRate: Double
@@ -82,18 +81,14 @@ public struct LTCDecoder: Sendable {
         let timecode = Timecode(
             hours: field(48, 4) + 10 * field(56, 2), minutes: field(32, 4) + 10 * field(40, 3),
             seconds: field(16, 4) + 10 * field(24, 3), frames: field(0, 4) + 10 * field(8, 2), rate: rate)
-        var userBits: UInt32 = 0
-        for (nibble, position) in [4, 12, 20, 28, 36, 44, 52, 60].enumerated() {
-            userBits |= UInt32(field(position, 4)) << (nibble * 4)
-        }
-        return LTCFrame(timecode: timecode, userBits: userBits, endSampleIndex: index, measuredFrameRate: measured)
+        return LTCFrame(timecode: timecode, endSampleIndex: index, measuredFrameRate: measured)
     }
 }
 
 /// LTC generator (tests now, timecode output later).
 public enum LTCEncoder {
-    /// 80 bits in transmission order, bit 27 set so the word has an even number of ones.
-    public static func bits(for timecode: Timecode, userBits: UInt32 = 0) -> [Bool] {
+    /// 80 bits in transmission order (user bits 0), bit 27 set so the word has an even number of ones.
+    public static func bits(for timecode: Timecode) -> [Bool] {
         var word = [Bool](repeating: false, count: 80)
         func set(_ value: Int, _ from: Int, _ count: Int) {
             for i in 0..<count { word[from + i] = (value >> i) & 1 == 1 }
@@ -107,9 +102,6 @@ public enum LTCEncoder {
         set(timecode.minutes / 10, 40, 3)
         set(timecode.hours % 10, 48, 4)
         set(timecode.hours / 10, 56, 2)
-        for (nibble, position) in [4, 12, 20, 28, 36, 44, 52, 60].enumerated() {
-            set(Int(userBits >> (nibble * 4)) & 0xF, position, 4)
-        }
         let sync: [Bool] = [false, false, true, true, true, true, true, true, true, true, true, true, true, true, false, true]
         word.replaceSubrange(64..<80, with: sync)
         if word.filter({ $0 }).count % 2 == 1 { word[27] = true }

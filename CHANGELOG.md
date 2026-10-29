@@ -204,6 +204,14 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: test patterns ignored the output's Intensity %, the Output and Master Intensity and both Blackouts, so a console's
   Grand Master or DBO left a full-field pattern (White is 100 %) on the projectors. Patterns now follow the same Dimmer and
   Blackout as the picture, Raw included; bring the Dimmer up to focus. Freeze holds the picture, not the pattern.
+- Removed: the hand-written SHA-1 in Core; the WebSocket accept key is CryptoKit's SHA-1 in the engine, next to the
+  upgrade (repo audit 2026-10-29).
+- Changed: the headless, drawable-loop and secondary-display drivers share one mach-clock `PacedThread`, and stopping one
+  waits on a semaphore instead of polling the thread every 2 ms (repo audit 2026-10-29).
+- Removed: dead web code from the repo audit 2026-10-29: `lib/health.ts` (`parseHealth`, `formatUptime`) with its test
+  and `screens/Placeholder.svelte`, none of them imported; `/healthz` itself is unchanged.
+- Changed: MIDI control and MTC input share one CoreMIDI source listener (client on the main thread, hot-plug,
+  sources by unique id) instead of two copies (repo audit 2026-10-29).
 - Changed: engine tests share one loopback `sendUDP` and one `tempDir` helper instead of hand-rolled copies (repo audit
   2026-10-29); no test or behaviour change.
 - Mapping, projector-wall wizard and wall panel (M1.2, DESIGN §9.9): **New projector wall** on the Outputs tab (tap
@@ -216,6 +224,13 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   list, "manual" chips with Back to wall on the blend edges and slice 1's source. Leaving the Outputs screen ends the
   check and the wizard; an output keeps its own pattern on record (also across a reload, with **Give the test patterns
   back**) until the engine has taken it back. `docs/user/outputs-and-mapping.md` › Projector walls.
+- Removed: the CITP/MSEX codec's unused direction (repo audit 2026-10-29): Fanous only serves, so Core no longer
+  decodes server messages (`PLoc`, `SInf`, `LSta`, ...) or encodes client ones (`PNam`, `CInf`, `GELI`, ...); a
+  console that sends a server message is still ignored, not Nacked. Tests pin the server's bytes.
+- Removed: `LTCFrame.userBits` (repo audit 2026-10-29): the LTC decoder unpacked the user bits of every frame and
+  nothing read them.
+- Removed: `fanous-bench spike` (the Phase 2 decode spike; `fanous-bench run` reports decode timing) with the engine's spike-only
+  switches, and the unused `run --ring` and `dmx --hz/--host/--seed` flags (repo audit 2026-10-29).
 - Removed: `fanous-bench syphon`, the Phase 3 Syphon acceptance probe; `SyphonTests` cover SyphonOutput → SyphonInput
   (repo audit 2026-10-29).
 
