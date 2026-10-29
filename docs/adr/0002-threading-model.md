@@ -90,14 +90,23 @@ Every driver's `stop()` waits (≤ 1 s) for its thread to exit and returns false
 when it did not. `PacedThread` (headless, drawable loop, secondary displays)
 already did; `DisplayLinkDriver` now signals at thread exit too, after its run
 loop returns, which happens only between callouts, so the tick in flight has
-finished. The 50 ms sleep that stood in for this join is gone.
+finished. The 50 ms sleep that stood in for this join (and, by luck, for the
+GPU completions below) is gone.
 
-Shutdown order: join every driver that ticks the compositor, then stop the
-Syphon canvas server. Its `publishFrameTexture:` reads the server's renderer
-without retaining it, and `stop()` releases it, so stopping under a tick could
-free the renderer mid-draw. `RenderService.stop()` stops the server only when
-its drivers joined; otherwise it logs and leaves the server running (it goes
-with the process). With managed outputs the `OutputCoordinator` owns the
+Shutdown order: join every driver that ticks the compositor, drain the render
+queue's completed handlers, then stop the Syphon canvas server. Its
+`publishFrameTexture:` reads the server's renderer without retaining it, and
+each publish adds a completed handler that uses the server's connection manager
+and surface on Metal's completion thread, up to 8 buffers after the tick;
+`stop()` releases all three without a lock. The drain commits an empty command
+buffer on `context.queue` and waits (≤ 1 s) for its completed handler, which
+runs after those of the buffers committed before it (a buffer's completed
+status does not say that earlier handlers have run; the order is checked by a
+test that holds one). `RenderService.stop()` stops the server only when its
+drivers joined and the drain finished; otherwise it logs and leaves the server
+running (it goes with the process). After a failed join the rest of its stop
+(loader, layer sources, window, `setLayers([])`) still runs under the tick that
+may be in flight, as before; only `fanous-bench` reaches this. With managed outputs the `OutputCoordinator` owns the
 drivers: `coordinator.stop()` comes first and logs a driver that did not join.
 `Engine.stop()` calls only `coordinator.stop()` today; the canvas server goes
 with the process.

@@ -25,21 +25,36 @@ final class HeldTick: @unchecked Sendable {
     /// Blocks until the held tick has published.
     func waitFinished() { out.wait() }
 
-    /// Wraps `compositor.canvasPublished`; the first tick blocks, later ones pass through.
-    func install(on compositor: Compositor) {
+    /// Wraps `compositor.canvasPublished`; the first tick blocks, later ones pass through. `inCompletedHandler`: the
+    /// first tick does not block, the completed handler it adds to its command buffer does (as Syphon's own does on
+    /// Metal's completion thread).
+    func install(on compositor: Compositor, inCompletedHandler: Bool = false) {
         let publish = compositor.canvasPublished
         compositor.canvasPublished = { [self] texture, commandBuffer in
             let first = entered.wrappingAdd(1, ordering: .relaxed).newValue == 1
-            if first {
+            if first, inCompletedHandler {
+                commandBuffer.addCompletedHandler { [self] _ in hold() }
+                publish?(texture, commandBuffer)
+            } else if first {
                 inside.signal()
                 release.wait()
-            }
-            publish?(texture, commandBuffer)
-            if first {
-                finished.store(true, ordering: .relaxed)
-                out.signal()
+                publish?(texture, commandBuffer)
+                done()
+            } else {
+                publish?(texture, commandBuffer)
             }
         }
+    }
+
+    private func hold() {
+        inside.signal()
+        release.wait()
+        done()
+    }
+
+    private func done() {
+        finished.store(true, ordering: .relaxed)
+        out.signal()
     }
 
     /// Releases the held tick 0.1 s later from a thread of its own (not a global queue, B63), while the caller is
@@ -74,8 +89,9 @@ struct DriverStopTests {
         #expect(driver.stop())
         // a stop that does not join returns before the release, with the tick still held
         #expect(held.isFinished)
+        // no `entries == 1` here: a release before the stop reached the loop may rightly let a tick more run
+        // (stopReportsATickThatDoesNotFinish checks it where the release comes after the stop)
         let ticks = compositor.ticks.load(ordering: .relaxed)
-        #expect(held.entries == 1)  // the loop saw the stop before another tick
         #expect(driver.stop())  // again: returns at once
         let ticksAfter = compositor.ticks.load(ordering: .relaxed)
         #expect(ticksAfter == ticks)
@@ -117,6 +133,18 @@ struct RenderServiceStopTests {
         held.install(on: service.compositor)
         try await service.start()
         held.waitInside()
+        held.releaseSoon()
+        service.stop()
+        #expect(held.isFinished)
+        #expect(service.syphon == nil)
+    }
+
+    @Test func syphonStopsAfterTheCompletedHandlersInFlight() async throws {
+        let service = try Self.service()
+        let held = HeldTick()
+        held.install(on: service.compositor, inCompletedHandler: true)
+        try await service.start()
+        held.waitInside()  // the first tick's completed handler is running and held
         held.releaseSoon()
         service.stop()
         #expect(held.isFinished)

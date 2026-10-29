@@ -291,9 +291,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   values with **One gamma for R, G, B** in place of the Gamma field. The blend map is `rgba16Float`: 8 bytes per pixel, ≈ 66 MB for a 3840×2160 output with
   a blend (was 33 MB). Without per-colour gamma the picture is unchanged.
 - Fixed: stopping a render service could stop its Syphon canvas server while a compositor tick was still publishing to
-  it (a display-link tick longer than 50 ms, or a thread that did not stop within 1 s). Every driver's stop now waits for
-  its last tick, and the server is stopped only after that; a thread that does not stop is logged and the server is left
-  to the process (B113).
+  it (a display-link tick longer than 50 ms, or a thread that did not stop within 1 s), or while the GPU completion of
+  an earlier publish was still notifying its clients. Every driver's stop now waits for its last tick, the render queue's
+  completions are waited for after that, and only then is the server stopped; a thread or completion that does not finish
+  within 1 s is logged and the server is left to the process (B113).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
