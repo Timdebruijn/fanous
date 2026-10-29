@@ -3,11 +3,12 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { clamp01, handles, outlines, type MapPoint, type MapperMode, type OutputConfig } from '../lib/outputs';
-  import { fromScreen, nudgeStored, toScreen, warpedOutline } from '../lib/warp';
+  import { fromScreen, toScreen, warpedOutline } from '../lib/warp';
 
   // Handles over the output preview (DESIGN.md §12.3): corner pin, mesh points, slice quads or a mask path.
-  // Pointer Events everywhere, 44 px hit targets, arrow keys nudge the selected point by one output pixel
-  // (Shift: ten). Changes go out as (JSON pointer, point) at most every 120 ms while dragging and on release.
+  // Pointer Events everywhere, 44 px hit targets, arrow keys nudge the selection by one output pixel (Shift: ten),
+  // Tab / Shift+Tab step to the next / previous point, Escape lets go (so Tab leaves the editor again). Drags go out
+  // as (JSON pointer, point) at most every 120 ms and on release.
   // Slice, mask and mesh points are stored before the warp but the preview shows the warped picture, so handles are
   // drawn through the warp (lib/warp.ts) and the pointer is mapped back through its inverse.
   let {
@@ -16,7 +17,10 @@
     sliceIndex,
     size,
     selected = $bindable(null),
+    marked = [],
     onchange,
+    onnudge,
+    onstep,
     addMode = false,
     draft = null,
     onadd,
@@ -28,7 +32,13 @@
     /** output size in pixels: nudge steps and the aspect ratio of the overlay */
     size: { w: number; h: number };
     selected: string | null;
+    /** further selected points (a row, an edge…), drawn like the selected one */
+    marked?: string[];
     onchange: (path: string, point: MapPoint) => void;
+    /** arrow keys, in output pixels: the screen moves the selection */
+    onnudge: (dx: number, dy: number) => void;
+    /** Tab (+1) and Shift+Tab (−1) */
+    onstep: (dir: 1 | -1) => void;
     /** mask mode: taps on the picture add points (stored, pre-warp coordinates); double-click always does */
     addMode?: boolean;
     /** a mask being drawn corner by corner, before it has three points */
@@ -40,6 +50,7 @@
   const W = 1000;
   const H = $derived(Math.round((W * size.h) / size.w));
   const points = $derived(handles(output, mode, sliceIndex));
+  const markedSet = $derived(new Set(marked));
   const lines = $derived(
     outlines(output, mode, sliceIndex).map((line) => ({
       group: line.group,
@@ -107,15 +118,19 @@
       onremove(selected);
       return;
     }
-    if (!selected) return;
-    const handle = points.find((h) => h.path === selected);
-    if (!handle) return;
+    if (!selected || !points.some((h) => h.path === selected)) return;
+    if (event.key === 'Tab' || event.key === 'Escape') {
+      event.preventDefault();
+      if (event.key === 'Tab') onstep(event.shiftKey ? -1 : 1);
+      else selected = null;
+      return;
+    }
     const step = event.shiftKey ? 10 : 1;
     const delta: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
     const d = delta[event.key];
     if (!d) return;
     event.preventDefault();
-    onchange(handle.path, nudgeStored(output, mode, handle.point, d[0], d[1], size));
+    onnudge(d[0], d[1]);
   }
 
   const colours = ['#4C9EFF', '#35D07F', '#FFC532', '#FF5A5F', '#A3AAB4'];
@@ -123,7 +138,7 @@
 
 <!-- role="application" is the ARIA role for a focusable widget that handles its own keys; Svelte counts it as non-interactive -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-<svg bind:this={svg} class="mapper" viewBox="0 0 {W} {H}" role="application" aria-label="Mapping editor: drag the handles, arrow keys nudge the selected point" tabindex="0" class:adding={mode === 'mask' && (addMode || draft)} onkeydown={key} onpointerdown={background} ondblclick={doubleClick} onpointermove={move} onpointerup={up} onpointercancel={up}>
+<svg bind:this={svg} class="mapper" viewBox="0 0 {W} {H}" role="application" aria-label="Mapping editor: drag the handles, arrow keys nudge the selected point, Tab steps to the next one, Escape lets go so Tab leaves" tabindex="0" class:adding={mode === 'mask' && (addMode || draft)} onkeydown={key} onpointerdown={background} ondblclick={doubleClick} onpointermove={move} onpointerup={up} onpointercancel={up}>
   {#if draft && draft.length > 0}
     {@const pts = draft.map((p) => toScreen(output, mode, p))}
     <polyline points={pts.map((p) => `${p.x * W},${p.y * H}`).join(' ')} fill="none" stroke="#FFC532" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" />
@@ -141,9 +156,10 @@
   {/each}
   {#each points as h (h.path)}
     {@const p = shown(h)}
-    <g class="handle" class:sel={selected === h.path} onpointerdown={(e) => down(e, h.path)} role="button" aria-label={h.path} tabindex="-1">
+    {@const sel = selected === h.path || markedSet.has(h.path)}
+    <g class="handle" class:sel onpointerdown={(e) => down(e, h.path)} role="button" aria-label={h.path} tabindex="-1">
       <circle cx={p.x * W} cy={p.y * H} r="36" fill="transparent" />
-      <circle cx={p.x * W} cy={p.y * H} r={mode === 'mesh' ? 9 : 12} fill={selected === h.path ? '#ECEEF1' : colours[h.group % colours.length]} stroke="#0B0C0E" stroke-width="3" vector-effect="non-scaling-stroke" />
+      <circle cx={p.x * W} cy={p.y * H} r={mode === 'mesh' ? 9 : 12} fill={sel ? '#ECEEF1' : colours[h.group % colours.length]} stroke="#0B0C0E" stroke-width="3" vector-effect="non-scaling-stroke" />
     </g>
   {/each}
 </svg>

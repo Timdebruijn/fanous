@@ -158,7 +158,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   when the connection closes and subscribes again, once, when it is back (B68).
 - Fixed: the 4 preview encoders bounded extra sizes only, so viewers on several targets could run more; the limit now holds
   across targets (a fallback size of the target or its canvas, else JPEG), and a released encoder goes to a viewer on a size or
-  canvas fallback (a viewer refused to JPEG stays on JPEG in the browser) (B70). `/metrics` `preview.encoders` now counts H.264
+  canvas fallback (a viewer refused to JPEG stays on JPEG in the browser, until B86) (B70). `/metrics` `preview.encoders` now counts H.264
   encoders: canvas 1 always, the others while they have an H.264 subscriber; JPEG-only streamers no longer count. It is a
   reservation count: for a few ms around an asynchronous release and create a fifth session can exist.
 - Fixed: engine tests that slept a fixed time or waited a fixed budget failed in a parallel run on a loaded Mac; they now
@@ -166,9 +166,35 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Syphon numbers (folder 0, 150–169) are kept in the project (`syphon`), so they survive an engine restart; a server not
   seen since the start is listed greyed (`gone`), and `syphon.forget` (Media screen **Forget**) frees a number (B69).
 - The §4.6 zero-malloc test counts only the compositor thread's allocations (a `malloc_logger` hook), not the process (B89).
+- Fixed: removing a canvas ended the preview of a viewer that watched it only as a fallback (an output or layer at the
+  encoder limit); it now keeps its own target when an encoder or another fallback is free, and an encoder the removal
+  frees goes to a waiting viewer (B88).
 - Fixed: the shell token test failed 1 run in 16, when the token ended in "0" (B84).
 - Fixed: undoing `syphon.forget` overwrote a Syphon number another server had taken meanwhile; the undo is now refused (B90).
 - Fixed: the preview left its H.264 decoder open after every target change and disconnect; it now closes it (B85).
+- Fixed: a new `settings.json` (hashed role passwords) and the shell token file were readable by other users between the write
+  and the change to mode 0600; both are now written 0600 from the start, and a new Application Support folder is 0700 (B83).
+- A change of mesh density keeps the warp: the new points are placed on the current surface instead of a flat grid
+  (points shared by both grids keep their position); **Reset mesh** still flattens (M1, DESIGN §9.9).
+- Fixed: a role password added to `settings.json` by hand while the engine runs was kept in the file at the next write but
+  the role stayed open until a restart; every write now takes the passwords from the file as written (B82).
+- Fixed: a preview refused H.264 at the encoder limit waited 5 s and re-subscribed as JPEG, so it was never upgraded; it now
+  shows the refused stream's JPEG frames at once and turns H.264 when the engine frees an encoder for it (B86).
+- Fixed: an output preview on the canvas stream at the encoder limit was stretched to the output's shape; it is now
+  letterboxed and its caption says "canvas fallback" (B87).
+- Projector walls in the engine (M1.1, DESIGN §9.9): `walls` in the project and `wall.add/set/seam/seams/remove`. A wall
+  of 1×2 … 4×4 outputs computes each projector's part of the canvas (slice 1's source) and the overlap of the inner blend
+  edges, and keeps one gamma and curve per seam for both sides; `fit: "makeCanvas"` sizes the canvas to the wall. A hand
+  edit of a wall output's source or inner overlap becomes manual and stays; editing one side of a seam moves the other.
+  `output.remove` refuses an output that is in a wall, and `canvas.remove` moves a wall on that canvas to canvas 1 with
+  its slices. `BlendEdge.gammaRGB` is stored but not rendered yet. No UI yet.
+- Mapping, iPad remote mode on Warp & Slices (M1.4, DESIGN §9.9): a **Remote** toggle (on by default on touch screens
+  narrower than 900 px, remembered per browser) with the selection in large type ("r3 c5", "corner top-left"),
+  previous / next point row-major, select row, column, edge or all (the group moves as one, in one `output.set`), the
+  nudge pad at 1 / 10 px with a long press for 0.25 px, and a trackpad area (1 output px per 4 CSS px, ×4 above
+  600 px/s). Moves go out at most ten times a second, taps in between added up; nudges of the same point or group
+  less than a second apart are one undo step. Tab / Shift-Tab step through the points in the mapper, Esc lets go; the
+  nudge pad's long press also works outside remote mode.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

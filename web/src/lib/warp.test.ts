@@ -3,7 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
 import type { OutputConfig, WarpSettings } from './outputs';
-import { nudgeStored, toScreen, applyHomography, homography, invert, meshPoint, unwarp, warped } from './warp';
+import { nudgeStored, toScreen, applyHomography, homography, invert, meshPoint, resampleMesh, unwarp, warped } from './warp';
 
 // Reference values printed by WarpMath (MappingMath.swift) for exactly these inputs.
 const quad = [{ x: 0.05, y: 0.1 }, { x: 0.95, y: 0 }, { x: 1, y: 0.9 }, { x: 0, y: 1 }];
@@ -58,5 +58,45 @@ describe('nudge through the warp', () => {
     const after = toScreen(output, 'slices', next);
     expect((after.x - before.x) * 1000).toBeCloseTo(10, 3);
     expect(after.y - before.y).toBeCloseTo(0, 6);
+  });
+});
+
+describe('mesh resample', () => {
+  it('gives a flat grid without a mesh', () => {
+    expect(resampleMesh(null, 2, 2).points).toEqual([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }]);
+  });
+  it('keeps shared points exactly and the shape between them', () => {
+    const bent = { cols: 3, rows: 3, points: [
+      { x: 0, y: 0 }, { x: 0.5, y: 0.05 }, { x: 1, y: 0 },
+      { x: 0.02, y: 0.5 }, { x: 0.55, y: 0.48 }, { x: 0.97, y: 0.5 },
+      { x: 0, y: 1 }, { x: 0.5, y: 0.96 }, { x: 1, y: 1 },
+    ] };
+    const fine = resampleMesh(bent, 5, 5);
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) {
+        const p = fine.points[r * 2 * 5 + c * 2]!, q = bent.points[r * 3 + c]!;
+        expect(p.x).toBeCloseTo(q.x, 12);
+        expect(p.y).toBeCloseTo(q.y, 12);
+      }
+    }
+    const between = fine.points[1]!; // u = 0.25 on the top row
+    expect(between).toEqual(meshPoint(bent, 0.25, 0));
+    const back = resampleMesh(fine, 3, 3);
+    back.points.forEach((p, i) => { expect(p.x).toBeCloseTo(bent.points[i]!.x, 12); expect(p.y).toBeCloseTo(bent.points[i]!.y, 12); });
+  });
+  it('2 → 3 puts the middle at the bilinear mean and 3 → 2 keeps the corners', () => {
+    const two = { cols: 2, rows: 2, points: [{ x: 0.1, y: 0 }, { x: 1, y: 0.1 }, { x: 0, y: 0.9 }, { x: 0.8, y: 1 }] };
+    const three = resampleMesh(two, 3, 3);
+    expect(three.points[4]!.x).toBeCloseTo((0.1 + 1 + 0 + 0.8) / 4, 12);
+    expect(three.points[4]!.y).toBeCloseTo(0.5, 12);
+    resampleMesh(three, 2, 2).points.forEach((p, i) => { expect(p.x).toBeCloseTo(two.points[i]!.x, 12); expect(p.y).toBeCloseTo(two.points[i]!.y, 12); });
+  });
+  it('gives a flat grid for a mesh whose point count does not match', () => {
+    expect(resampleMesh({ cols: 3, rows: 3, points: [{ x: 0.3, y: 0.3 }] }, 2, 2).points).toEqual([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }]);
+  });
+  it('may place points slightly outside 0…1 where the spline overshoots', () => {
+    const points = resampleMesh(null, 3, 3).points;
+    points[0] = { x: 0, y: 0.1 };
+    expect(resampleMesh({ cols: 3, rows: 3, points }, 5, 5).points[3]!.y).toBeCloseTo(-0.00625, 12);
   });
 });
