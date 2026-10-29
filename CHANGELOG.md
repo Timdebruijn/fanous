@@ -320,6 +320,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   (`2vuy`, a half-width `rgba8Unorm` texture) and an 8-bit bi-planar one (`420v`, `r8Unorm` + `rg8Unorm`) read through
   the existing video-range shader paths, the packed one at its full width. Groundwork for cameras and capture cards;
   Syphon and the generators are unchanged.
+- Fixed: a fixture patched after the project's source policy was set (Console + UI or Internal) stayed on Console
+  only until the policy itself changed, so its UI, cue, OSC and MIDI values were ignored. A newly patched fixture now
+  takes the project's policy.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
