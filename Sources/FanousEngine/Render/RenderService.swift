@@ -78,7 +78,7 @@ public final class RenderService {
     public let loader: MediaLoader
     public private(set) var syphon: SyphonOutput?
     /// Other apps' Syphon servers as folder 0 files 150–169 (B61); lives as long as the engine.
-    public let syphonCatalog: SyphonCatalog
+    public let syphonCatalog: LiveCatalog
     nonisolated(unsafe) public private(set) var mixer: AudioMixer?  // assigned once at start, read by the metrics endpoint
     private let logger: Logger
     /// Keeps the audio device open while true (the engine passes show mode); read once by `start()`.
@@ -91,7 +91,7 @@ public final class RenderService {
     /// `syphonNumbers`: the project's Syphon numbering (B69), held for the servers before the first announce.
     public init(
         scene: SceneConfig, context: MetalContext, parameters: TripleBuffer<ParameterSnapshotSlot>, metrics: MetricsRing, logger: Logger,
-        syphonNumbers: [SyphonCatalog.Server] = []
+        syphonNumbers: [LiveCatalog.Entry] = []
     ) throws {
         self.scene = scene
         self.context = context
@@ -132,7 +132,7 @@ public final class RenderService {
                 if output.hasClients { output.publish(texture: texture, commandBuffer: commandBuffer) }
             }
         }
-        syphonCatalog = SyphonCatalog(excluding: syphon?.uuid, numbers: syphonNumbers)
+        syphonCatalog = LiveCatalog(.syphon, excluding: syphon?.uuid, numbers: syphonNumbers)
         loader.syphonCatalog = syphonCatalog
         syphonCatalog.onChange = { [weak loader] in loader?.syphonServersChanged() }  // the loader holds the catalog
         syphonCatalog.start(device: device)

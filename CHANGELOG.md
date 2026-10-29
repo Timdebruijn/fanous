@@ -320,6 +320,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   (`2vuy`, a half-width `rgba8Unorm` texture) and an 8-bit bi-planar one (`420v`, `r8Unorm` + `rg8Unorm`) read through
   the existing video-range shader paths, the packed one at its full width. Groundwork for cameras and capture cards;
   Syphon and the generators are unchanged.
+- Changed: the Syphon numbering (folder 0, 150–169) is one `LiveCatalog` that the coming capture inputs share (B73 step
+  1b, DESIGN §8.2.1): a kind per range (capture devices 1–20 in `capture`, displays 21–28 in `screens`, windows 29–32 in
+  `windows`), and the undo/redo checks of `syphon` cover those keys too. Syphon behaves as before; nothing is captured yet.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

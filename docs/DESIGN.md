@@ -882,6 +882,8 @@ written back, a new entry with a running server's name on another number is
 dropped (it would take that server to the lower number at the next restart), and
 a freed number goes at once to a server waiting past the 20.
 
+Since B73 step 1b: `Media/LiveCatalog.swift`, `LiveCatalog(.syphon, …)`; the B61/B69 notes above keep the old names as history.
+
 #### 8.2.1 Cameras, capture cards and screens: files 1–32 (design 2026-10-29, B73)
 
 **Status:** design, not built. The feature-gap survey (`docs/feature-gaps.md`
@@ -979,6 +981,23 @@ white 255, black 0, Rec.709 red 255,1,0, 50 % grey 128; the `420v` Y0/Y1
 pair reads 252/3 from linear sampling half a canvas pixel off centre (`2vuy`
 picks with the nearest sampler: 255/0). 100 frame reads allocate nothing in
 release. `LiveCatalog` is step 1b.
+
+**As built (2026-10-30, step 1b, PR #106):** `Media/LiveCatalog.swift`.
+`LiveCatalog(_ kind:excluding:numbers:)` with `Kind` `.syphon` (150–169,
+`{app, server}`), `.capture` (1–20, `{uid, name}`), `.screens` (21–28,
+`{uuid, name}`) and `.windows` (29–32, `{app, title}`). The project key is
+the case name. A capture device or a display is kept by its uid or uuid alone,
+and a new name is taken when it is seen again. A Syphon server and a window
+are kept by both fields. `LiveCatalog.Entry` has `source`, `name`,
+`runtimeID`, `gone` and `label`. The instance methods ignore entries of
+another kind. Only Syphon has a source (`start` follows its directory).
+`ProjectDocument.liveNumbers(kind, from:)`/`liveValue`, `wholeLiveEntries`
+and `checkLiveReplay` (was `checkSyphonReplay`) cover the four keys in one
+path; the Syphon texts are unchanged. Not yet: the catalogs and sources for
+the other kinds. Also not yet: one `applied` value and one running set per
+kind (`recordLiveNumbers` and `checkLiveReplay` take Syphon's). The keys
+`/capture`, `/screens` and `/windows` in `initial` and the load migration
+come with their first writer (step 2).
 
 | Input | Framework | Pixel path | Kind |
 |---|---|---|---|
@@ -2390,7 +2409,8 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   `StateStore.step` before it pops). The check sees the patch the step would
   apply, the patch that made the state it undoes (`HistoryEntry.forward`) and
   the current project. `syphon.forget` and `project.revert` both run
-  `ProjectDocument.checkSyphonReplay` (B90, B91): every op on `/syphon/N`
+  `ProjectDocument.checkLiveReplay` (was `checkSyphonReplay`; B90, B91; it
+  covers `/syphon`, `/capture`, `/screens` and `/windows`): every op on `/syphon/N`
   needs the whole entry the undone step left there
   (nothing, where it removed) or already the value it writes; otherwise the
   number changed meanwhile and the step is refused with `historyConflict`
