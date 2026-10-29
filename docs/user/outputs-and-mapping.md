@@ -319,11 +319,11 @@ lines between them, each with its gamma.
 - **Tap a seam** for its controls. Both sides of the seam always follow.
   - **Gamma** (0.5 to 5, 2.2 to start): down for a bright band in the seam,
     up for a dark one.
-  - **Link R, G, B** is on: one gamma for all three colours. Turned off, a
-    gamma per colour appears below the single one. Fanous stores those, but
-    the picture still uses the single gamma ("in effect") until a later
-    version adds per-colour gamma to the output. Turning the link on again
-    drops the per-colour values.
+  - **Link R, G, B** is on: one gamma for all three colours. Turned off,
+    **Gamma R**, **Gamma G** and **Gamma B** replace the single gamma, each
+    starting at its value, and each changes its own colour in the seam: use
+    them for a colour shift only inside a seam. Turning the link on again
+    drops the per-colour values and the single gamma is back.
   - **Curve** (0.1 to 10, 2 to start): how steep the fade is; change it when
     you see an edge where the overlap starts.
   - **Apply to all seams** gives every seam of the wall this seam's values.
