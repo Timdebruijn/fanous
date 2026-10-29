@@ -9,7 +9,7 @@ set -euo pipefail
 log="$(mktemp -t check-mallocs)"
 trap 'rm -f "$log"' EXIT
 FANOUS_REQUIRE_MALLOC_COUNTER=1 "$(dirname "$0")/test.sh" -c release -Xswiftc -enable-testing \
-  --filter 'mallocCounter|printMasterSlotCost' 2>&1 | tee "$log"
+  --filter 'mallocCounter|printMasterSlotCost|printDimmedTickMallocs' 2>&1 | tee "$log"
 measured=$(command grep -c 'mallocs on the ticking thread' "$log" || true)
 if [[ "$measured" != 2 ]] || command grep -qi 'skipped' "$log"; then
   echo "check-mallocs: expected 2 measured windows and no skips, got $measured measured" >&2
