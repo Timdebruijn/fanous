@@ -25,7 +25,7 @@ struct PreviewStreamerTests {
         let frames = Mutex<[(payload: [UInt8], avcC: [UInt8])]>([])
         streamer.onFrame = { payload, avcC in frames.withLock { $0.append((payload, avcC)) } }
         streamer.alwaysEncode = true  // no WebSocket subscriber in this test
-        compositor.previewTap = { canvas, buffer, target in streamer.tap(canvas: canvas, commandBuffer: buffer, target: target) }
+        compositor.previewTap = { canvas, buffer, target, _ in streamer.tap(canvas: canvas, commandBuffer: buffer, target: target) }
         // the first preview frame starts making the encoder (B66) and skips H.264 while it is made
         for i in 0..<2 { compositor.tick(target: 0.5 + Double(i) / 60, drawable: nil) }
         for _ in 0..<250 where !streamer.hasEncoder { try await Task.sleep(for: .milliseconds(20)) }

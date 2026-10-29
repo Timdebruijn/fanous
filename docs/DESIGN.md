@@ -1038,15 +1038,16 @@ holds the first canvas drawn above 0.
 The output preview (§11.3) of a frozen output holds with it (B107). For an
 output on the clock-master display its plan takes the master set's plan's
 `held` and `heldMaster` each preview frame (both written on the compositor
-thread the tap runs on). That is an earlier tick's hold: the tap precedes the
-tick's hold, so the engage tick draws the live canvas, which is the held
-frame. It is the frame the projector holds, no copy, also for a viewer that
-subscribes after Freeze engaged. An output on a secondary display (its plans
-are written on that display's thread) or one bound to no display holds a copy
-of its own with `holdFrozen` in the tap, from the first preview frame after
-Freeze engaged: it can be a few ticks later than the projector's and hold a
-later frame, and a viewer that arrives later holds what was live then. Either
-way it follows the Master through `contentScale` and goes live on release.
+thread the tap runs on). The tick reads its output set once, holds, then taps
+with that set (B110), so on the engage tick the preview takes the copy blitted
+earlier on the same command buffer. It is the frame the projector holds, no
+copy, also for a viewer that subscribes after Freeze engaged. An output on a
+secondary display (its plans are written on that display's thread) or one
+bound to no display holds a copy of its own with `holdFrozen` in the tap, from
+the first preview frame after Freeze engaged: it can be a few ticks later than
+the projector's and hold a later frame, and a viewer that arrives later holds
+what was live then. Either way it follows the Master through `contentScale`
+and goes live on release.
 
 The black lift, like the colour's black offset, is the projector's black
 floor, so it does not follow the Master: on content it stays at the output's
