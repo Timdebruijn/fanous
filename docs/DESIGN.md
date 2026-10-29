@@ -550,7 +550,12 @@ can never disagree). `[OPEN-9]` exact bands and the speed/scale upper limits.
 | 3 | Control | 8 | 0 | 0–63 normal · 64–127 Blackout · 128–191 Freeze (hold frame) · 192–255 reserved |
 | 4 | Test pattern | 8 | 0 | as Master ch 4, this output only |
 | 5 | Blend | 8 | 0 | 0–127 blend/warp on (default) · 128–255 raw (bypass blend, warp, mask — for alignment) |
-| 6–8 | Reserved | — | 0 | |
+| 6 | Mapping preset | 8 | 0 | 0 = as edited · 1–N = stored mapping preset N (decided 2026-10-28, built in M2, §9.9) |
+| 7–8 | Reserved | — | 0 | |
+
+A separate **Keystone** mode (16 ch, per output: four corners × X/Y, 16-bit
+offsets on top of the edited mapping, centre = no change) is decided for M2
+(§9.9); a new mode leaves the three existing modes and their footprints alone.
 
 ### 6.5 Universe addressing and merge
 
@@ -1063,6 +1068,168 @@ from the compositor after the canvas pass with the same completed texture
 **As built (2026-10-28, B69):** Syphon input numbers (§8.2, folder 0 files
 150–169) are kept in the project and survive an engine restart; the engine's
 own canvas servers are never numbered.
+
+### 9.9 Projector walls and the M1 mapping tools (design 2026-10-28, `docs/mapping-ux.md`)
+
+**Status:** owner decisions of 2026-10-28 are in. Implementation waits for the
+owner's approval of this section.
+
+**Scope:** M1 is the first block. M2 and M3 are listed at the end of this
+section.
+
+**Projector wall.** A wizard creates a wall, and the project keeps it. The
+wall separates two kinds of work (owner, 2026-10-28: no default blend ever
+fits; projector age, ambient light and the surface always need tuning by eye):
+
+| Kind of work | What it covers | Who does it |
+|---|---|---|
+| **Geometry** | Which part of the canvas each projector shows, and the overlap in pixels, equal on both sides of a seam | The wall computes it from the grid and the overlap %. Always correct for a rig hung as that grid. |
+| **Tuning** | Gamma and curve per seam; black floor and colour per projector | Always set by eye. Start values are only a starting point; the seam check (below) is the route. |
+
+```
+WallConfig { id, name, canvas: Int, rect: MapRect (on the canvas, default full),
+             cols, rows (1…4 each; cols × rows ≥ 2),
+             outputs: [Int]  (row-major, cols × rows, an output belongs to at most one wall),
+             overlap: { x, y }  (fraction of one projector's width / height, 0…0.5),
+             seams: [SeamConfig],          // one per neighbouring pair, made by the wizard
+             manual: [{ output, field }] } // geometry only: "source" | "overlap.left|right|top|bottom"
+SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB: [r, g, b]? }
+```
+
+- **Per projector:** the black floor is the output's existing `blend.lift`,
+  and the colour is `OutputConfig.color` (below). The wizard sets start
+  values; the wall never overwrites them afterwards.
+- **Compile** (Core, `WallLayout.apply`, pure and tested):
+  - Each projector's share of the wall is
+    `p = 1 / (cols − (cols − 1) · overlap.x)` (the same for rows).
+  - Output (c, r) gets slice 1's source rectangle:
+    `x = rect.x + rect.w · c · p · (1 − overlap.x)` and `w = rect.w · p`.
+  - Inner edges get `overlap.x × output width` in px. Outer edges get 0.
+  - Each seam's power, gamma and gammaRGB go to both facing edges, so the two
+    sides of a seam never disagree.
+  - Geometry fields listed in `manual`, and slices other than slice 1, are
+    left alone.
+  - The output's pixel size comes from its region, else its desired mode, else
+    the bound display's current mode.
+  - A wall whose outputs differ in pixel size is refused with a message (v1).
+- **Commands.** All are programmer-only, refused under show lock, and one undo
+  step each:
+  - `wall.add {cols, rows, outputs, overlap, canvas?, fit}` makes the seams
+    with start values power 2 and gamma 2.2.
+    - `fit: "canvas"` uses the whole canvas.
+    - `fit: "makeCanvas"` first sets the canvas to
+      `cols · w − (cols − 1) · overlap.x · w` (and likewise in height),
+      rounded to even, within the `canvas.set` limits and refused in show mode
+      like `canvas.set`.
+  - `wall.set {id, …}` changes geometry and re-compiles; `resetManual: true`
+    empties `manual`.
+  - `wall.seam {id, a, b, power?, gamma?, gammaRGB?}` tunes one seam.
+    `wall.seams {id, …}` applies the same values to every seam of the wall.
+  - `wall.remove {id}` leaves the outputs as they are.
+  - `output.set` on a wall output:
+    - A change to slice 1's source or an inner edge's overlap adds that field
+      to `manual`; the reply says so.
+    - A change to an inner edge's power or gamma updates that seam, so both
+      sides follow.
+    - Removing a wall output is refused while it belongs to a wall.
+- **UI, wizard.** **New projector wall** on the Outputs tab.
+  1. Every bound output shows its Output ID. The user taps the tiles in the
+     order the projectors hang and picks a grid of 1×2 … 4×4 that matches the
+     count.
+  2. Overlap is a slider in %: default 15, yellow below 10 or above 25. Then
+     choose: use canvas N, or make a canvas that fits.
+  3. Apply. Blend check and Grid appear on every wall output, and the wall
+     panel opens on the seam check.
+- **UI, wall panel** (above the output list), built around a **mini-map of
+  the wall**: one tile per projector, with the seams drawn as lines between
+  them.
+  - **Tap a seam:** gamma (RGB linked; unlink for per-channel), curve, and
+    **Apply to all seams**.
+  - **Tap a projector:** black floor, colour gain R/G/B, black offset.
+  - **Geometry:** overlap X/Y, Edit layout… (re-opens the wizard pre-filled),
+    Remove wall.
+  - **Badges:** a wall output carries a "Wall 1 · r1 c2" badge. A manual
+    geometry field shows a "manual" chip with **Back to wall**.
+
+**Seam check: the tuning route.**
+- New bands on test-pattern channel 4 (Master and Output) in the reserved
+  range: 128–143 Grey 0 %, 144–159 Grey 25 %, 160–175 Grey 75 %, 176–191
+  White. Blend check is the 50 % field.
+- The footprint stays the same; the GDTF and `docs/channel-map.md` are
+  regenerated.
+- The wall panel steps through the patterns on every wall output. At each step
+  a card says what to look for and which control to turn:
+
+  | Step | You see | Turn |
+  |---|---|---|
+  | Grid | lines that do not meet across a seam | the warp, not the blend (opens Warp & Slices) |
+  | Blend check (50 %) | a bright band in a seam | that seam's gamma, down |
+  | | a dark band | that seam's gamma, up |
+  | | a visible edge at the start of the overlap | that seam's curve |
+  | Grey 0 % | seams lighter than the rest | black floor of the projectors next to it, up, one by one until even |
+  | Grey 25 / 75 %, White | one projector darker, or tinted | that projector's colour gain |
+  | | a colour shift only inside a seam | unlink RGB on that seam and tune the channel that is off |
+
+- The user taps the seam or projector on the mini-map; the card's control
+  opens for it. Without a camera, Fanous cannot know which seam is off, so the
+  user's eye picks it. The M3 camera can measure it later; a final pass by eye
+  stays.
+
+**RGB gamma (OPEN-14).**
+- `BlendEdge.gammaRGB: [Double]?`; nil means `gamma` for all three channels.
+- The blend map becomes `rgba16Float`: factor R, G, B, plus the lift.
+- The output fragment shader multiplies each channel by its own factor.
+
+**Per-output colour.**
+- `OutputConfig.color {gain: [r, g, b] (0…2, default 1), black (0…0.2,
+  default 0)}`.
+- The output pass applies `out · gain + black` next to the lift. That is still
+  before the output and master intensity, so blackout stays black.
+- It is set on the Outputs tab next to the Colour bars and Grey steps buttons,
+  and for a wall output from the wall panel's projector tile.
+
+**Mesh resample.**
+- A density change samples the current surface (`warp.ts meshPoint`) at the
+  new grid's points.
+- **Reset mesh** still flattens.
+- This change is UI only.
+
+**iPad remote mode** (UI only).
+- **Turning it on:** a **Remote** toggle on Warp & Slices, on by default on
+  touch screens narrower than 900 CSS px.
+- **Point selection:**
+  - previous / next point (row-major, wraps)
+  - select row, select column, select edge (every point on one border side)
+  - the selected points move together
+- **Nudge steps:** fine 1 px, coarse 10 px, and a long press for 0.25 px.
+- **Trackpad area:** a relative drag at 1 output px per 4 CSS px, ×4 above
+  600 px/s.
+- **Label:** the point label in large type ("r3 c5").
+- **Point types:** corner pin, mesh, slice and mask points.
+- **Undo:** each nudge is an `output.set`; the existing 1 s undo window merges
+  a burst into one step.
+
+**M1 build order** (one PR each, Opus coding agents, review before merge):
+1. Wall model, compile and commands (Core and engine)
+2. Wizard and wall panel (UI)
+3. Mesh resample
+4. iPad remote mode
+5. Seam-check patterns
+6. RGB gamma
+7. Per-output colour
+
+**Decided for later blocks** (designed when their block starts):
+- **M2:**
+  - coverage-aware black lift
+  - an on-output edit overlay
+  - mapping presets on Output channel 6 (§6.4)
+  - the Keystone mode (§6.4)
+  - masks v2
+- **M3:**
+  - camera calibration, with an iPhone as the camera: Continuity Camera on
+    the Mac first, then the iPad/iPhone browser camera once a trusted
+    certificate exists (OPEN-17); both feed the same Mac-side solver
+  - MPCDI 2D import
 
 ---
 
