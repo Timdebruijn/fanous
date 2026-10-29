@@ -434,7 +434,7 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
     | Generators | +2–3 (derived) |
     | Each preview or thumbnail streamer | about +6 (derived: an encoder and a capturing handler) |
     | `present` | not measured |
-    | Syphon publish | a capturing `addCompletedHandler` block per tick (`SyphonMetalServer.m`, B109); count not measured |
+    | Syphon publish (while a client is attached) | +4: the flip draw's encoder (2) and Syphon's `addCompletedHandler` block (2); its render pass descriptor is made once (`VENDORED.md` local change 6), 8 when it was made per frame (B109; measured `-c release`, M1 Pro, 2026-10-29) |
 - Unified memory budget: engine warns at 60 % of physical memory, refuses to
   activate a layer that would exceed 75 %. Read-ahead depth is the first knob
   reduced when a 16 GB machine is detected.
