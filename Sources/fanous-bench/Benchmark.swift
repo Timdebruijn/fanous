@@ -52,12 +52,13 @@ enum Benchmark {
 
     static func run(
         mediaDirectory: URL, codec: String, resolution: String, maxLayers: Int, window: Double, soak: Double, display: Int?,
-        headless: Bool, outputDirectory: URL, onlyLayers: Int? = nil, ringCapacity: Int? = nil, dmx: Bool = false,
+        headless: Bool, outputDirectory: URL, onlyLayers: Int? = nil, dmx: Bool = false,
         useDisplayLink: Bool = false, effects: [Effect] = [], dissolve: Double = 0, ingest: URL? = nil, logger: Logger
     ) throws {
         let parts = resolution.replacingOccurrences(of: "p", with: "x").split(separator: "x").compactMap { Double($0) }
         guard parts.count == 3 else { throw RenderError.pipeline("resolution must look like 1920x1080p60") }
         let (width, height, fps) = (Int(parts[0]), Int(parts[1]), parts[2])
+        let ringCapacity = width > 2000 ? 8 : 6
         let file = mediaDirectory.appending(path: "\(codec)_\(width)x\(height)p\(Int(fps)).mov")
         guard FileManager.default.fileExists(atPath: file.path) else { throw RenderError.pipeline("missing \(file.path); run `fanous-bench media` first") }
         let useDisplay = headless ? nil : (display ?? 0)
@@ -119,7 +120,7 @@ enum Benchmark {
             var result = Result(
                 chip: SystemInfo.chipName, gpu: context.deviceName, memoryGB: Int(SystemInfo.physicalMemoryBytes / 1_073_741_824),
                 os: SystemInfo.osVersion, media: file.lastPathComponent, codec: codec, width: width, height: height, fps: fps,
-                display: useDisplay, ringCapacity: ringCapacity ?? (width > 2000 ? 8 : 6), frameLatency: 1, windowSeconds: window, steps: [], maxLayers: 0, soakSeconds: soak, soakStep: nil,
+                display: useDisplay, ringCapacity: ringCapacity, frameLatency: 1, windowSeconds: window, steps: [], maxLayers: 0, soakSeconds: soak, soakStep: nil,
                 date: ISO8601DateFormatter().string(from: Date()))
             do {
                 let counts = onlyLayers.map { [$0] } ?? Array(1...maxLayers)
@@ -153,7 +154,7 @@ enum Benchmark {
 
     @MainActor
     static func measure(
-        layers: Int, seconds: Double, file: URL, width: Int, height: Int, fps: Double, display: Int?, ringCapacity: Int?,
+        layers: Int, seconds: Double, file: URL, width: Int, height: Int, fps: Double, display: Int?, ringCapacity: Int,
         context: MetalContext, metrics: MetricsRing, parameters: TripleBuffer<ParameterSnapshotSlot>, logger: Logger
     ) async throws -> Step {
         var scene = SceneConfig()
@@ -164,7 +165,7 @@ enum Benchmark {
         scene.useDisplayLink = useDisplayLinkFlag
         scene.layerCount = layers
         scene.media = [MediaEntry(folder: 1, file: 1, path: file.path), MediaEntry(folder: 1, file: 2, path: file.path)]
-        scene.ringCapacity = ringCapacity ?? (width > 2000 ? 8 : 6)
+        scene.ringCapacity = ringCapacity
         let service = try RenderService(scene: scene, context: context, parameters: parameters, metrics: metrics, logger: logger)
         try await service.start()
         try await Task.sleep(for: .seconds(2))  // warm-up is not measured

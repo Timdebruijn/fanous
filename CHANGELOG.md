@@ -229,6 +229,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   console that sends a server message is still ignored, not Nacked. Tests pin the server's bytes.
 - Removed: `LTCFrame.userBits` (repo audit 2026-10-29): the LTC decoder unpacked the user bits of every frame and
   nothing read them.
+- Removed: `fanous-bench spike` (the Phase 2 decode spike; `fanous-bench run` reports decode timing) with the engine's spike-only
+  switches, and the unused `run --ring` and `dmx --hz/--host/--seed` flags (repo audit 2026-10-29).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
