@@ -267,6 +267,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   unchanged. A frozen output follows later Grand Master moves from the level it froze at; Freeze engaged at Master 0
   holds the first picture drawn above 0. The black lift of a blend is the projector's black floor: on the picture it now
   stays put while the Grand Master moves (it used to go down with it) and is 0 at Master 0 and at either Blackout (B100).
+- Fixed: a Syphon message arriving while a Syphon input disconnected or an output stopped could crash the engine. The
+  callback used the vendored Syphon message receiver after it had been freed. The message port now keeps the receiver
+  alive until the callback returns (B106).
 - The compositor no longer registers a completion handler per tick: later ticks poll the committed command buffers and
   book GPU time, late flags, `completed` and GPU errors, so the minimum with GPU work drops from 7 to 4 allocations per
   tick (the 4 inside Metal). GPU numbers in `/metrics` arrive a few frames later (B105).
