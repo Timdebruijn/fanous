@@ -505,7 +505,8 @@ public final class Compositor: @unchecked Sendable {
                 output.label = "mapped output"
                 OutputPass.draw(
                     set, canvas: { tickCanvas($0) }, encoder: output, context: context, uniforms: mappedUniformBuffers[canvasIndex],
-                    master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs)
+                    master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs,
+                    keystones: snapshot.keystones)
                 output.endEncoding()
             } else if let output = commandBuffer.makeRenderCommandEncoder(descriptor: outputPass) {
                 // the Master pattern at full level only here, without an output set (tests, fanous-bench); the engine's
@@ -922,9 +923,12 @@ public final class Compositor: @unchecked Sendable {
     func encodePresent(_ set: OutputSet, into texture: MTLTexture, uniforms: MTLBuffer, commandBuffer: MTLCommandBuffer) -> Bool {
         // not the compositor thread: the DMX side's copy, never `read()`; reserved first, so the lock covers only the copy (B71)
         var outputs: [OutputParameters] = []
+        var keystones: [simd_float3x3] = []
         outputs.reserveCapacity(ParameterSnapshotSlot.maxOutputs)
+        keystones.reserveCapacity(ParameterSnapshotSlot.maxOutputs)
         let (master, masterPattern) = parameters.withLatest {
             outputs.append(contentsOf: $0.outputs)
+            keystones.append(contentsOf: $0.keystones)
             return ($0.masterControl == .blackout ? 0 : $0.master, $0.testPattern)
         }
         // one tick's canvases for the whole draw (the compositor may complete another meanwhile) and their Master
@@ -942,7 +946,7 @@ public final class Compositor: @unchecked Sendable {
         encoder.label = "secondary output"
         OutputPass.draw(
             set, canvas: { id in frame.first { $0.id == id }?.textures[index] }, encoder: encoder, context: context, uniforms: uniforms,
-            master: master, masterPattern: masterPattern, outputs: outputs)
+            master: master, masterPattern: masterPattern, outputs: outputs, keystones: keystones)
         encoder.endEncoding()
         return true
     }

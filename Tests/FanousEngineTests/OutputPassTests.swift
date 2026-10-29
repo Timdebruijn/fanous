@@ -4,9 +4,11 @@
 
 import Foundation
 import FanousCore
+import ImageIO
 import Logging
 import Metal
 import Testing
+import simd
 
 @testable import FanousEngine
 
@@ -490,6 +492,8 @@ struct OutputPassTests {
         private let target: MTLTexture
         private let uniforms: MTLBuffer
         private var sequence: UInt64 = 0
+        /// Output 1's Keystone (`write` puts it in the slot).
+        var keystone = matrix_identity_float3x3
 
         init(_ config: OutputConfig?, value: UInt8) throws {
             context = try MetalContext()
@@ -524,6 +528,7 @@ struct OutputPassTests {
                 slot.layers[0].file = 1
                 slot.layers[0].fitMode = .stretch
                 slot.outputs[0].control = control
+                slot.keystones[0] = keystone
                 slot.master = master
                 slot.masterControl = blackout ? .blackout : .normal
             }
@@ -824,6 +829,64 @@ struct OutputPassTests {
             (1, 0, 0), (0, 0, 0),  // held at 0: black (holdFrozen does not take one)
         ]
         for c in cases { #expect(OutputPass.contentScale(master: c.master, heldMaster: c.held) == c.scale, "\(c)") }
+    }
+
+    /// Output 1's top-left corner 50 % to the right (DESIGN.md §9.10 item 2), as the DMX side publishes it.
+    static let topLeftHalfRight = simd_float3x3(rowMajor: WarpMath.keystone(to: [MapPoint(0.5, 0), MapPoint(1, 0), MapPoint(1, 1), MapPoint(0, 1)])!)
+
+    /// The Keystone moves the whole mapping, content and test patterns, after the warp; the blend map stays in projector
+    /// space (sampled at the final position) and Raw bypasses the keystone with the warp.
+    @Test func theKeystoneMovesTheMappingButNotTheBlendMap() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 200)
+        var o = OutputConfig(id: 1)
+        o.blend.right = BlendEdge(overlap: 60, gamma: 1)
+        let plan = try OutputCompiler(device: context.device).compile(o, index: 1, drawable: (Self.width, Self.height))
+        func image(_ keystone: simd_float3x3, raw: Bool = false, pattern: TestPattern = .off) throws -> [UInt8] {
+            var fixture = OutputParameters()
+            fixture.raw = raw
+            fixture.testPattern = pattern
+            return try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [fixture]) { $0.keystones[0] = keystone }
+        }
+        func green(_ image: [UInt8], _ x: Int, _ y: Int) -> Int { Int(image[(y * Self.width + x) * 4 + 1]) }
+        let plain = try image(matrix_identity_float3x3)
+        let moved = try image(Self.topLeftHalfRight)
+        #expect(green(plain, 2, 2) == 200)
+        #expect(green(moved, 2, 2) <= 1, "the old corner is black")
+        #expect(green(moved, 150, 2) <= 1 && green(moved, 170, 2) == 200, "the corner is at x = 160 now")
+        // the content under the right-edge ramp is flat, so the ramp reads the same where the mapping moved under it; sampled
+        // before the keystone it would sit about 10 px further right
+        for x in stride(from: 265, to: 320, by: 6) {
+            #expect(abs(green(moved, x, 90) - green(plain, x, 90)) <= 2, "ramp at x \(x): \(green(moved, x, 90)) vs \(green(plain, x, 90))")
+        }
+        #expect(green(plain, 290, 90) < 150, "the ramp is there")
+        #expect(green(try image(Self.topLeftHalfRight, raw: true), 2, 2) == 200, "raw: no keystone")
+        let white = try image(Self.topLeftHalfRight, pattern: .white)
+        #expect(green(white, 2, 2) <= 1 && green(white, 170, 2) == 255, "a test pattern moves with the mapping")
+    }
+
+    /// The output preview shows the mapping as edited, without the keystone (DESIGN.md §9.10 item 3), while the projector
+    /// shows it keystoned.
+    @Test func thePreviewDrawsWithoutTheKeystone() async throws {
+        let rig = try Rig(OutputConfig(id: 1), value: 200)
+        rig.keystone = Self.topLeftHalfRight
+        let streamer = try PreviewStreamer(context: rig.context, width: 160, height: 90, fps: 5, canvasFPS: 5, parameters: rig.parameters, logger: Logger(label: "output-test"))
+        streamer.outputSet = OutputSet(plans: [try OutputCompiler(device: rig.context.device).compile(OutputConfig(id: 1), index: 1, drawable: (160, 90))])
+        streamer.externalJPEGWanted = { true }
+        rig.compositor.previewTap = { canvas, buffer, target, live in streamer.tap(canvas: canvas, commandBuffer: buffer, target: target, live: live) }
+        _ = rig.tick(.normal, master: 1, layer: 1)
+        #expect(rig.compositor.readbackOutput().bgra[(2 * Self.width + 2) * 4 + 1] <= 1, "the projector's corner moved")
+        #expect(await waitUntil { streamer.jpegOut.load(ordering: .relaxed) > 0 })
+        let (jpeg, width, height) = try #require(streamer.latestJPEG.withLock { $0 })
+        let image = try #require(CGImageSourceCreateWithData(Data(jpeg) as CFData, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) })
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        rgba.withUnsafeMutableBytes { raw in
+            CGContext(
+                data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)?
+                .draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        #expect(abs(Int(rgba[(2 * width + 2) * 4 + 1]) - 200) <= 8, "the preview's corner stays: \(rgba[(2 * width + 2) * 4 + 1])")
     }
 
     @Test func warpMaskAndSliceGoldens() throws {
