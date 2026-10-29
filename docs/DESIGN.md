@@ -1145,8 +1145,8 @@ own canvas servers are never numbered.
 ### 9.9 Projector walls and the M1 mapping tools (design 2026-10-28, `docs/mapping-ux.md`)
 
 **Status:** approved 2026-10-28; M1 steps 1, 3, 4, 5 built (PRs #55, #47,
-#54, #59), step 2 in PR #63 and step 7 in M1.7 (both as built below); step 6
-(RGB gamma rendering) open.
+#54, #59), step 2 in PR #63 and step 7 in PR #92 (both as built below);
+step 6 (RGB gamma rendering) open.
 
 **Scope:** M1 is the first block. M2 and M3 are listed at the end of this
 section.
@@ -1283,7 +1283,7 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
 - It is set on the Outputs tab next to the Colour bars and Grey steps buttons,
   and for a wall output from the wall panel's projector tile.
 
-**As built (M1.7):**
+**As built (M1.7, PR #92):**
 - `OutputConfig.color` decodes as the default when absent, so older projects
   load unchanged; `output.set` clamps gain to 0…2 per channel and black to
   0…0.2, and refuses a gain that is not three values.
