@@ -273,6 +273,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - The compositor no longer registers a completion handler per tick: later ticks poll the committed command buffers and
   book GPU time, late flags, `completed` and GPU errors, so the minimum with GPU work drops from 7 to 4 allocations per
   tick (the 4 inside Metal). GPU numbers in `/metrics` arrive a few frames later (B105).
+- Browser previews, layer thumbnails and Syphon publishing register no completion handler per frame any more. The tick
+  polls their committed command buffers instead, which saves 1–2 allocations per frame on the compositor thread. A
+  Syphon client and the preview encoder get each frame up to one tick (16.7 ms at 60 fps) later (B109).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
