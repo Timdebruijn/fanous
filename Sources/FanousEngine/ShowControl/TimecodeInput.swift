@@ -261,122 +261,49 @@ public final class MTCInput: @unchecked Sendable {
     let queue = DispatchQueue(label: "org.fanous.mtc", qos: .userInteractive)
     private let clock: TimecodeClock
     private let logger: Logger
-    private var client = MIDIClientRef()
-    private var port = MIDIPortRef()
-    /// The source name chosen in the settings; nil = every source.
-    private var wanted: String?
-    private var stopped = false
-    /// Connected sources by CoreMIDI unique id: two identical interfaces share a name, not an id.
-    private var names: [MIDIUniqueID: String] = [:]
+    /// Owns the client, the port, the chosen source and the connected sources by unique id (two identical interfaces
+    /// share a name).
+    private var listener: MIDISourceListener!
     private var parsers: [MIDIUniqueID: Parse] = [:]
     public let status = Mutex(Status())
 
     public init(clock: TimecodeClock, logger: Logger) {
         self.clock = clock
         self.logger = logger
+        listener = MIDISourceListener(
+            label: "MTC", port: "MTC in", queue: queue, logger: logger,
+            receive: { [weak self] words, uid in self?.receive(words, uid: uid) },
+            changed: { [weak self] connected, gone in self?.sourcesChanged(connected, gone: gone) },
+            failed: { [weak self] error in self?.status.withLock { $0.error = error } })
     }
 
     public static func sources() -> [String] {
-        (0..<MIDIGetNumberOfSources()).compactMap { name(of: MIDIGetSource($0)) }
+        (0..<MIDIGetNumberOfSources()).compactMap { MIDISourceListener.name(of: MIDIGetSource($0)) }
     }
 
-    static func name(of object: MIDIObjectRef) -> String? {
-        var name: Unmanaged<CFString>?
-        guard MIDIObjectGetStringProperty(object, kMIDIPropertyDisplayName, &name) == noErr, let name else { return nil }
-        return name.takeRetainedValue() as String
-    }
-
-    /// Connects every source (or the one named), now and on every CoreMIDI setup change. Setup notifications come on
-    /// the run loop that was current at the process's first CoreMIDI call (see `MIDIInput.start`), so the client is
-    /// made on the main thread here too: at engine start this runs on main, a runtime `timecode.set` on the control queue.
+    /// Connects every source (or the one named), now and on every CoreMIDI setup change. The client is made on the
+    /// main thread (see `MIDISourceListener`): at engine start this runs on main, a runtime `timecode.set` on the
+    /// control queue.
     public func start(source: String?) {
         queue.sync {
-            wanted = source
+            listener.wanted = source
             status.withLock { $0.error = Self.missing(source) }
         }
-        if Thread.isMainThread { open() } else { DispatchQueue.main.async { [self] in open() } }
+        listener.start()
     }
 
     static func missing(_ wanted: String?) -> String {
         wanted.map { "MTC source \($0) is not connected" } ?? "no MIDI source connected"
     }
 
-    /// On the main thread.
-    private func open() {
-        guard !queue.sync(execute: { stopped }) else { return }
-        var timebase = mach_timebase_info()
-        mach_timebase_info(&timebase)
-        let secondsPerTick = Double(timebase.numer) / Double(timebase.denom) / 1e9
-        var client = MIDIClientRef()
-        var port = MIDIPortRef()
-        let created = MIDIClientCreateWithBlock("Fanous MTC" as CFString, &client) { [weak self] notification in
-            guard notification.pointee.messageID == .msgSetupChanged, let self else { return }
-            self.queue.async { self.connect() }
-        }
-        guard created == noErr else { return fail("cannot create the MIDI client (\(created))") }
-        let made = MIDIInputPortCreateWithProtocol(client, "MTC in" as CFString, ._1_0, &port) { [weak self] eventList, refCon in
-            guard let self else { return }
-            let uid = MIDIUniqueID(bitPattern: UInt32(truncatingIfNeeded: Int(bitPattern: refCon)))
-            var words: [(word: UInt32, hostTime: Double)] = []
-            for packet in eventList.unsafeSequence() {
-                // the host time travels with the word, so the hop to the queue costs no chase accuracy
-                let stamp = packet.pointee.timeStamp
-                let hostTime = stamp == 0 ? CACurrentMediaTime() : Double(stamp) * secondsPerTick
-                let count = Int(packet.pointee.wordCount)
-                withUnsafeBytes(of: packet.pointee.words) { raw in
-                    for word in raw.bindMemory(to: UInt32.self).prefix(count) { words.append((word, hostTime)) }
-                }
-            }
-            self.queue.async { self.receive(words, uid: uid) }
-        }
-        guard made == noErr else {
-            MIDIClientDispose(client)
-            return fail("cannot create the MIDI input port (\(made))")
-        }
-        queue.async { [self] in
-            // stopped while the main thread was getting here (the settings changed again at once)
-            guard !stopped else {
-                MIDIPortDispose(port)
-                MIDIClientDispose(client)
-                return
-            }
-            self.client = client
-            self.port = port
-            connect()
-        }
-    }
-
-    private func fail(_ error: String) {
-        status.withLock { $0.error = error }
-        logger.error("MTC input: \(error)")
-    }
-
-    /// On `queue`: every source matching the setting; the source's unique id rides along as the connection refCon.
-    private func connect() {
-        guard port != 0 else { return }
-        var connected: [MIDIUniqueID: String] = [:]
-        for i in 0..<MIDIGetNumberOfSources() {
-            let ref = MIDIGetSource(i)
-            MIDIPortDisconnectSource(port, ref)
-            let name = Self.name(of: ref) ?? "source \(i)"
-            if let wanted, wanted != name { continue }
-            var uid: MIDIUniqueID = 0
-            MIDIObjectGetIntegerProperty(ref, kMIDIPropertyUniqueID, &uid)
-            // bit 32 keeps the refCon non-null for a unique id of 0
-            let refCon = UnsafeMutableRawPointer(bitPattern: Int(UInt32(bitPattern: uid)) | 1 << 32)
-            if MIDIPortConnectSource(port, ref, refCon) == noErr { connected[uid] = name }
-        }
-        setSources(connected)
-        logger.info("MTC input listening", metadata: ["sources": "\(connected.values.sorted())"])
-    }
-
     /// On `queue`: the sources now connected. One that went away takes its parse state with it; for the clock an
     /// unplugged source is signal loss like a stopped sender: freewheel, then lost after the freewheel time.
-    func setSources(_ connected: [MIDIUniqueID: String]) {
-        for uid in Set(names.keys).subtracting(connected.keys) { parsers[uid] = nil }
-        names = connected
+    func setSources(_ connected: [MIDIUniqueID: String]) { listener.setSources(connected) }
+
+    private func sourcesChanged(_ connected: [MIDIUniqueID: String], gone: Set<MIDIUniqueID>) {
+        for uid in gone { parsers[uid] = nil }
         let list = connected.values.sorted()
-        let error = list.isEmpty ? Self.missing(wanted) : nil
+        let error = list.isEmpty ? Self.missing(listener.wanted) : nil
         status.withLock {
             $0.connected = list
             $0.error = error
@@ -386,7 +313,7 @@ public final class MTCInput: @unchecked Sendable {
     /// On `queue`: UMP words from one source, each with the host time of its packet.
     func receive(_ words: [(word: UInt32, hostTime: Double)], uid: MIDIUniqueID) {
         // still in flight from a source that has just gone, or after stop
-        guard names[uid] != nil else { return }
+        guard listener.names[uid] != nil else { return }
         var parse = parsers[uid] ?? Parse()
         for (word, hostTime) in words {
             guard let timecode = parse.feed(word) else { continue }
@@ -397,12 +324,7 @@ public final class MTCInput: @unchecked Sendable {
 
     public func stop() {
         queue.sync {
-            stopped = true
-            if port != 0 { MIDIPortDispose(port) }
-            if client != 0 { MIDIClientDispose(client) }
-            port = 0
-            client = 0
-            names = [:]
+            listener.stop()
             parsers = [:]
         }
         status.withLock { $0 = Status() }

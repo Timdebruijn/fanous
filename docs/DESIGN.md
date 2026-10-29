@@ -1983,7 +1983,9 @@ MSC and MIDI-triggered cues are additions, not rewrites.
   call, so `Engine.start` makes the client on the main thread (NSApplication run
   loop) before the host-facts lookup or MTC touch CoreMIDI; made on a dispatch
   queue, hot-plugged sources were never seen (`MTCInput` makes its own client on
-  main too, B64). It handles
+  main too, B64; since the 2026-10-29 audit both do it through one
+  `MIDISourceListener`, which also connects, tracks sources by unique id and
+  stops). It handles
   everything on one serial queue (one parser per source unique id, so two
   identical controllers do not share running status). Parameter values go to
   `DMXStore.setMIDI` as the internal `midi` source (`ValueSource.midi`), so the

@@ -6,6 +6,7 @@ import CoreMIDI
 import Foundation
 import FanousCore
 import Logging
+import QuartzCore
 import Synchronization
 
 /// MIDI control (DESIGN.md §15.4, B36): notes, CC (7- and 14-bit), program change and MIDI Show Control from a
@@ -414,6 +415,150 @@ public enum MIDICommands {
 
 // MARK: CoreMIDI input
 
+/// One CoreMIDI client and UMP 1.0 input port on every source, or the one named in `wanted`, reconnecting when
+/// devices come and go; shared by `MIDIInput` and `MTCInput`. CoreMIDI delivers setup notifications (a source plugged
+/// in or removed) on the run loop that was current when the process first called into CoreMIDI. Only the main thread
+/// runs one (fanousd's NSApplication loop); if the first call comes from a dispatch queue (the host-facts lookup, a
+/// client made there) no hot-plug is ever heard and the process's view of the sources goes stale. So `Engine.start`
+/// starts the MIDI input on main before anything else touches CoreMIDI, and `start()` makes the client on main (a
+/// runtime `timecode.set` arrives on the control queue and hops there). Everything else runs on the owner's `queue`:
+/// the setup notification and every packet hop there, and `wanted`, `names`, `connect()`, `setSources(_:)` and
+/// `stop()` are only touched there.
+final class MIDISourceListener: @unchecked Sendable {
+    /// UMP words of one packet list, each with the host time (seconds) of its packet.
+    typealias Words = [(word: UInt32, hostTime: Double)]
+
+    let queue: DispatchQueue
+    /// The source name to listen to; nil = every source.
+    var wanted: String?
+    /// Connected sources by CoreMIDI unique id: two identical devices share a name, not an id.
+    private(set) var names: [MIDIUniqueID: String] = [:]
+    private let label: String
+    private let portName: String
+    private let logger: Logger
+    private var client = MIDIClientRef()
+    private var port = MIDIPortRef()
+    private var stopped = false
+    /// On `queue`: words from the source with this unique id.
+    private let receive: (Words, MIDIUniqueID) -> Void
+    /// On `queue`: the sources now connected, and the ids of those that went away.
+    private let changed: (_ connected: [MIDIUniqueID: String], _ gone: Set<MIDIUniqueID>) -> Void
+    /// The client or port could not be made.
+    private let failed: (String) -> Void
+
+    /// `label` names the client ("Fanous <label>") and the log lines; `port` names the input port.
+    init(
+        label: String, port portName: String, queue: DispatchQueue, logger: Logger, receive: @escaping (Words, MIDIUniqueID) -> Void,
+        changed: @escaping (_ connected: [MIDIUniqueID: String], _ gone: Set<MIDIUniqueID>) -> Void, failed: @escaping (String) -> Void
+    ) {
+        self.label = label
+        self.portName = portName
+        self.queue = queue
+        self.logger = logger
+        self.receive = receive
+        self.changed = changed
+        self.failed = failed
+    }
+
+    static func name(of object: MIDIObjectRef) -> String? {
+        var name: Unmanaged<CFString>?
+        guard MIDIObjectGetStringProperty(object, kMIDIPropertyDisplayName, &name) == noErr, let name else { return nil }
+        return name.takeRetainedValue() as String
+    }
+
+    /// Makes the client and port on the main thread, then connects on `queue`. Not on `queue` itself.
+    func start() {
+        if Thread.isMainThread { open() } else { DispatchQueue.main.async { [self] in open() } }
+    }
+
+    /// On the main thread.
+    private func open() {
+        guard !queue.sync(execute: { stopped }) else { return }
+        var timebase = mach_timebase_info()
+        mach_timebase_info(&timebase)
+        let secondsPerTick = Double(timebase.numer) / Double(timebase.denom) / 1e9
+        var client = MIDIClientRef()
+        var port = MIDIPortRef()
+        let created = MIDIClientCreateWithBlock("Fanous \(label)" as CFString, &client) { [weak self] notification in
+            guard notification.pointee.messageID == .msgSetupChanged, let self else { return }
+            self.queue.async { self.connect() }
+        }
+        guard created == noErr else { return fail("cannot create the MIDI client (\(created))") }
+        let made = MIDIInputPortCreateWithProtocol(client, portName as CFString, ._1_0, &port) { [weak self] eventList, refCon in
+            guard let self else { return }
+            let uid = MIDIUniqueID(bitPattern: UInt32(truncatingIfNeeded: Int(bitPattern: refCon)))
+            var words: Words = []
+            for packet in eventList.unsafeSequence() {
+                // the host time travels with the word, so the hop to the queue costs no chase accuracy
+                let stamp = packet.pointee.timeStamp
+                let hostTime = stamp == 0 ? CACurrentMediaTime() : Double(stamp) * secondsPerTick
+                let count = Int(packet.pointee.wordCount)
+                withUnsafeBytes(of: packet.pointee.words) { raw in
+                    for word in raw.bindMemory(to: UInt32.self).prefix(count) { words.append((word, hostTime)) }
+                }
+            }
+            self.queue.async { self.receive(words, uid) }
+        }
+        guard made == noErr else {
+            MIDIClientDispose(client)
+            return fail("cannot create the MIDI input port (\(made))")
+        }
+        queue.async { [self] in
+            // stopped while the main thread was getting here (the settings changed again at once)
+            guard !stopped else {
+                MIDIPortDispose(port)
+                MIDIClientDispose(client)
+                return
+            }
+            self.client = client
+            self.port = port
+            connect()
+        }
+    }
+
+    private func fail(_ error: String) {
+        failed(error)
+        logger.error("\(label) input: \(error)")
+    }
+
+    /// On `queue`: every source matching `wanted`; the source's unique id rides along as the connection refCon.
+    /// Does nothing before the port exists.
+    func connect() {
+        guard port != 0 else { return }
+        var connected: [MIDIUniqueID: String] = [:]
+        for i in 0..<MIDIGetNumberOfSources() {
+            let ref = MIDIGetSource(i)
+            MIDIPortDisconnectSource(port, ref)
+            let name = Self.name(of: ref) ?? "source \(i)"
+            if let wanted, wanted != name { continue }
+            var uid: MIDIUniqueID = 0
+            MIDIObjectGetIntegerProperty(ref, kMIDIPropertyUniqueID, &uid)
+            // bit 32 keeps the refCon non-null for a unique id of 0
+            let refCon = UnsafeMutableRawPointer(bitPattern: Int(UInt32(bitPattern: uid)) | 1 << 32)
+            if MIDIPortConnectSource(port, ref, refCon) == noErr { connected[uid] = name }
+        }
+        setSources(connected)
+        logger.info("\(label) input listening", metadata: ["sources": "\(connected.values.sorted())"])
+    }
+
+    /// On `queue`: the sources now connected (tests set them directly).
+    func setSources(_ connected: [MIDIUniqueID: String]) {
+        let gone = Set(names.keys).subtracting(connected.keys)
+        names = connected
+        changed(connected, gone)
+    }
+
+    /// On `queue`: disposes of the port and client and forgets the sources; words still in flight find no name.
+    func stop() {
+        stopped = true
+        if port != 0 { MIDIPortDispose(port) }
+        if client != 0 { MIDIClientDispose(client) }
+        port = 0
+        client = 0
+        names = [:]
+    }
+}
+
 /// Listens on every MIDI source (or the one chosen in `project.midi.source`), reconnecting when devices come and go.
 /// Everything after the CoreMIDI callback runs on `queue`: parsing (one running status per source), learn, the map.
 public final class MIDIInput: @unchecked Sendable {
@@ -436,10 +581,8 @@ public final class MIDIInput: @unchecked Sendable {
     let queue = DispatchQueue(label: "org.fanous.midi", qos: .userInteractive)
     private let dmx: DMXStore
     private let logger: Logger
-    private var client = MIDIClientRef()
-    private var port = MIDIPortRef()
-    /// Connected sources by CoreMIDI unique id: two identical controllers share a name, not an id.
-    private var names: [MIDIUniqueID: String] = [:]
+    /// Owns the client, the port and the connected sources by unique id (two identical controllers share a name).
+    private var listener: MIDISourceListener!
     private var parsers: [MIDIUniqueID: MIDIParser] = [:]
     /// Parameters each source has set, released when it disconnects.
     private var setBy: [MIDIUniqueID: Set<Target>] = [:]
@@ -454,6 +597,11 @@ public final class MIDIInput: @unchecked Sendable {
     public init(dmx: DMXStore, logger: Logger) {
         self.dmx = dmx
         self.logger = logger
+        listener = MIDISourceListener(
+            label: "MIDI", port: "Control in", queue: queue, logger: logger,
+            receive: { [weak self] words, uid in self?.receive(MIDIParser.bytes(ump: words.lazy.map(\.word)), uid: uid) },
+            changed: { [weak self] connected, gone in self?.sourcesChanged(connected, gone: gone) },
+            failed: { [weak self] error in self?.status.withLock { $0.error = error } })
     }
 
     public func apply(_ settings: MIDISettings) {
@@ -463,9 +611,10 @@ public final class MIDIInput: @unchecked Sendable {
             let gone = mapper.settings.parameterTargets.subtracting(settings.parameterTargets)
             dmx.releaseMIDI(gone.map { ($0.fixture, $0.parameter) })
             mapper.update(settings)
+            listener.wanted = settings.source
             status.withLock { $0.problems = settings.problems }
             if !settings.problems.isEmpty { logger.warning("MIDI map entries ignored", metadata: ["problems": "\(settings.problems)"]) }
-            if reconnect, client != 0 { connect() }
+            if reconnect { listener.connect() }
         }
     }
 
@@ -479,95 +628,34 @@ public final class MIDIInput: @unchecked Sendable {
         }
     }
 
-    /// CoreMIDI delivers setup notifications (a source plugged in or removed) on the run loop that was current when the
-    /// process first called into CoreMIDI. Only the main thread runs one (fanousd's NSApplication loop); if the first
-    /// call comes from a dispatch queue (the host-facts lookup, a client made there) no hot-plug is ever heard and the
-    /// process's view of the sources goes stale. So `Engine.start` calls this on main before anything else touches
-    /// CoreMIDI, and the client and port are made right here; connecting and receiving stay on `queue`.
-    public func start() {
-        if Thread.isMainThread { open() } else { DispatchQueue.main.async { [self] in open() } }
-    }
-
-    /// On the main thread.
-    private func open() {
-        var client = MIDIClientRef()
-        var port = MIDIPortRef()
-        let created = MIDIClientCreateWithBlock("Fanous MIDI" as CFString, &client) { [weak self] notification in
-            guard notification.pointee.messageID == .msgSetupChanged, let self else { return }
-            self.queue.async { self.connect() }
-        }
-        guard created == noErr else {
-            status.withLock { $0.error = "cannot create the MIDI client (\(created))" }
-            logger.error("MIDI input: cannot create the MIDI client", metadata: ["status": "\(created)"])
-            return
-        }
-        let made = MIDIInputPortCreateWithProtocol(client, "Control in" as CFString, ._1_0, &port) { [weak self] eventList, refCon in
-            guard let self else { return }
-            let uid = MIDIUniqueID(bitPattern: UInt32(truncatingIfNeeded: Int(bitPattern: refCon)))
-            var words: [UInt32] = []
-            for packet in eventList.unsafeSequence() {
-                let count = Int(packet.pointee.wordCount)
-                withUnsafeBytes(of: packet.pointee.words) { raw in words += raw.bindMemory(to: UInt32.self).prefix(count) }
-            }
-            let bytes = MIDIParser.bytes(ump: words)
-            self.queue.async { self.receive(bytes, uid: uid) }
-        }
-        guard made == noErr else {
-            MIDIClientDispose(client)
-            status.withLock { $0.error = "cannot create the MIDI input port (\(made))" }
-            logger.error("MIDI input: cannot create the input port", metadata: ["status": "\(made)"])
-            return
-        }
-        queue.async { [self] in
-            self.client = client
-            self.port = port
-            connect()
-        }
-    }
-
-    /// On `queue`: every source matching the setting; the source's unique id rides along as the connection refCon.
-    private func connect() {
-        var connected: [MIDIUniqueID: String] = [:]
-        for i in 0..<MIDIGetNumberOfSources() {
-            let ref = MIDIGetSource(i)
-            MIDIPortDisconnectSource(port, ref)
-            let name = MTCInput.name(of: ref) ?? "source \(i)"
-            if let wanted = mapper.settings.source, wanted != name { continue }
-            var uid: MIDIUniqueID = 0
-            MIDIObjectGetIntegerProperty(ref, kMIDIPropertyUniqueID, &uid)
-            // bit 32 keeps the refCon non-null for a unique id of 0
-            let refCon = UnsafeMutableRawPointer(bitPattern: Int(UInt32(bitPattern: uid)) | 1 << 32)
-            if MIDIPortConnectSource(port, ref, refCon) == noErr { connected[uid] = name }
-        }
-        setSources(connected)
-        status.withLock { $0.error = nil }
-        logger.info("MIDI input listening", metadata: ["sources": "\(connected.values.sorted())"])
-    }
+    /// On the main thread at engine start, before anything else touches CoreMIDI (see `MIDISourceListener`).
+    public func start() { listener.start() }
 
     /// On `queue`: the sources now connected. One that went away (unplugged, or no longer the chosen source) takes its
     /// running status, its half-received 14-bit values and the values it set with it.
-    func setSources(_ connected: [MIDIUniqueID: String]) {
-        for uid in Set(names.keys).subtracting(connected.keys) {
+    func setSources(_ connected: [MIDIUniqueID: String]) { listener.setSources(connected) }
+
+    private func sourcesChanged(_ connected: [MIDIUniqueID: String], gone: Set<MIDIUniqueID>) {
+        for uid in gone {
             dmx.releaseMIDI((setBy[uid] ?? []).map { ($0.fixture, $0.parameter) })
             setBy[uid] = nil
             parsers[uid] = nil
             mapper.forget(uid: uid)
         }
-        names = connected
         status.withLock { $0.connected = connected.values.sorted() }
     }
 
     /// Tests: bytes as if a connected source sent them, handled before this returns.
     func inject(_ bytes: [UInt8], from source: String, uid: MIDIUniqueID = 1) {
         queue.sync {
-            if names[uid] == nil { setSources(names.merging([uid: source]) { a, _ in a }) }
+            if listener.names[uid] == nil { setSources(listener.names.merging([uid: source]) { a, _ in a }) }
             receive(bytes, uid: uid)
         }
     }
 
     /// On `queue`.
     private func receive(_ bytes: [UInt8], uid: MIDIUniqueID) {
-        let source = names[uid] ?? "MIDI"
+        let source = listener.names[uid] ?? "MIDI"
         var parser = parsers[uid] ?? MIDIParser()
         let messages = parser.feed(bytes)
         parsers[uid] = parser
@@ -613,11 +701,6 @@ public final class MIDIInput: @unchecked Sendable {
     }
 
     public func stop() {
-        queue.sync {
-            if port != 0 { MIDIPortDispose(port) }
-            if client != 0 { MIDIClientDispose(client) }
-            port = 0
-            client = 0
-        }
+        queue.sync { listener.stop() }
     }
 }
