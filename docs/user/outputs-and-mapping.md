@@ -233,6 +233,116 @@ as layer content in folder 0 (see
 [show-control.md](show-control.md#built-in-content-folder-0)); for a flat grey
 on a layer use Solid colour (file 100) with the layer's Red, Green and Blue.
 
+## Projector walls
+
+A **projector wall** is two to sixteen projectors that together show one
+picture: side by side, stacked, or a grid of up to 4 × 4. Fanous keeps the two
+kinds of work apart:
+
+- **Geometry** is computed. From the grid and the overlap the wall gives each
+  projector its part of the canvas (slice 1's source) and sets the overlap of
+  the inner blend edges, equal on both sides of every seam. That is always
+  right for projectors hung as that grid.
+- **Tuning** is done by eye: gamma and curve per seam, black floor per
+  projector. No start value fits every room, because projector age, ambient
+  light and the surface differ. The **seam check** below is the route.
+
+All wall controls need the programmer role and are refused while the show is
+locked; they are greyed out with the reason.
+
+### New projector wall
+
+**New projector wall** (above the output list on the Outputs tab) opens a
+wizard. Every output of the wall needs a pixel size: a connected display, or a
+region or display mode. The outputs of one wall need the same pixel size.
+
+1. **Order.** Every output on a display shows its Output ID, a large number.
+   Tap the tiles in the order the projectors hang: the top row from left to
+   right, then the next row. A second tap takes a tile out again. Then pick the
+   grid (rows × columns); only grids that fit the number of tiles are offered,
+   for four tiles 1 × 4, 2 × 2 and 4 × 1. The drawing below shows where each
+   output lands.
+2. **Overlap and canvas.** The overlap is a percentage of one projector,
+   15 % to start with; the line below says how many pixels that is. Below
+   10 % or above 25 % a yellow line says why that is unusual. Then choose:
+   - **Use Canvas N** as it is: the wall stretches over that canvas. The
+     wizard says the wall's size at projector resolution, so you can see
+     whether the canvas has the same shape.
+   - **Make Canvas N fit the wall**: the canvas becomes the wall's size (the
+     size is shown before you apply; a very large wall is scaled down whole to
+     stay within the canvas limits). Every output blanks briefly. This is not
+     possible in show mode.
+3. **Make wall.** Blend check appears on every projector of the wall and the
+   wall's panel opens on the seam check.
+
+**Cancel** at any step changes nothing: each output gets its own test pattern
+back. **Undo** right after Make wall takes the wall away again.
+
+### The wall panel
+
+Each wall has a panel above the output list, built around a **map** of the
+wall: one tile per projector (name, Output ID, row and column) and the seams as
+lines between them, each with its gamma.
+
+- **Tap a seam** for its controls. Both sides of the seam always follow.
+  - **Gamma** (0.5 to 5, 2.2 to start): down for a bright band in the seam,
+    up for a dark one.
+  - **Link R, G, B** is on: one gamma for all three colours. Turned off, a
+    gamma per colour appears below the single one. Fanous stores those, but
+    the picture still uses the single gamma ("in effect") until a later
+    version adds per-colour gamma to the output. Turning the link on again
+    drops the per-colour values.
+  - **Curve** (0.1 to 10, 2 to start): how steep the fade is; change it when
+    you see an edge where the overlap starts.
+  - **Apply to all seams** gives every seam of the wall this seam's values.
+  - Drag a slider or tap **−** and **+** for fine steps. A drag, or taps less
+    than a second apart, are one step for **Undo**.
+- **Tap a projector** for its **black floor** (the output's Black lift):
+  it lifts the black outside the overlaps to match the double black inside
+  them. **Open in Warp & Slices** takes you to that projector's warp.
+- **Geometry**: the overlap across and down (in %), **Edit layout…** (the
+  wizard again, filled in: change the order, the grid, the overlap or the
+  canvas) and **Remove wall**. Removing a wall keeps the outputs as they are
+  now; Undo brings the wall back.
+- In the output list a wall output carries a badge such as "Wall 1 · r1 c2".
+
+**Manual fields.** If you type an inner edge's overlap on the Outputs tab, or
+change slice 1's source on Warp & Slices, that field becomes **manual**: it
+shows a yellow "manual" chip, and the wall leaves it alone from then on, also
+when you change the wall's overlap. **Back to wall** next to the chip gives the
+field back to the wall. A power or gamma typed on an inner edge goes to its
+seam, so the neighbour follows.
+
+### Seam check
+
+**Seam check** on the wall panel steps through test patterns on every
+projector of the wall at once. Each step says what to look for and which
+control to turn. Tap a line of the card, then tap the seam or projector on the
+map that shows the problem: its control opens, outlined. (Without a camera
+Fanous cannot know which seam is off, so your eye picks it.)
+
+| Step | You see | Turn |
+|---|---|---|
+| Grid | lines that do not meet across a seam | the warp, not the blend: tapping the projector opens Warp & Slices |
+| Blend check (50 % grey) | a bright band in a seam | that seam's gamma, down |
+| | a dark band | that seam's gamma, up |
+| | a visible edge where the overlap starts | that seam's curve |
+| Grey 0 % | seams lighter than the rest | the black floor of the projectors next to it, up, one by one until even |
+| Grey 25 %, Grey 75 %, White | one projector darker, or tinted | that projector's colour gain (not in Fanous yet: use the projector's own colour settings) |
+| | a colour shift only inside a seam | unlink R, G, B on that seam and tune the colour that is off |
+
+You can switch to Warp & Slices during the check, for example to fix the
+warp: a yellow line there says the check is still running and takes you back.
+**End seam check**, or leaving the Outputs screen, gives each output its own
+test pattern back (leaving the screen also cancels the wizard). Every pattern
+change is an ordinary output change, so it is also a step for Undo.
+
+An output keeps its own pattern on record until it really has it back. While
+the show is locked, or without the programmer role, the check stays open and
+says so: unlock the show and end it again. If the page is reloaded during the
+wizard or the check, the Outputs screen offers **Give the test patterns back**
+(or **Keep them**).
+
 ## Warp & Slices tab
 
 Choose what to edit with **Corner pin**, **Mesh**, **Slices** or **Mask**.
@@ -340,4 +450,6 @@ is locked.
   the developers (B34).
 - Not available: per-output Syphon, Syphon for canvases other than Canvas 1,
   a frame rate per canvas, 10-bit output, separate blend gamma for red, green
-  and blue.
+  and blue (a wall stores it per seam; the output does not use it yet).
+- Projector walls: no colour gain per projector yet, and the outputs of one
+  wall need the same pixel size.

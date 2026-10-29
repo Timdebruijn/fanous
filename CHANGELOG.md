@@ -204,6 +204,20 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: test patterns ignored the output's Intensity %, the Output and Master Intensity and both Blackouts, so a console's
   Grand Master or DBO left a full-field pattern (White is 100 %) on the projectors. Patterns now follow the same Dimmer and
   Blackout as the picture, Raw included; bring the Dimmer up to focus. Freeze holds the picture, not the pattern.
+- Removed: dead web code from the repo audit 2026-10-29: `lib/health.ts` (`parseHealth`, `formatUptime`) with its test
+  and `screens/Placeholder.svelte`, none of them imported; `/healthz` itself is unchanged.
+- Changed: engine tests share one loopback `sendUDP` and one `tempDir` helper instead of hand-rolled copies (repo audit
+  2026-10-29); no test or behaviour change.
+- Mapping, projector-wall wizard and wall panel (M1.2, DESIGN §9.9): **New projector wall** on the Outputs tab (tap
+  the projectors in order while each shows its Output ID, pick a grid that fits the count, overlap in % with a yellow
+  hint below 10 and above 25, use a canvas or make one that fits with its size shown first; Cancel changes nothing).
+  A panel per wall above the output list around a map of the wall: tap a seam for gamma (RGB linked or per colour),
+  curve and Apply to all seams, a projector for its black floor, Geometry for the overlap, Edit layout… and Remove
+  wall. Seam check steps Grid, Blend check, Grey 0/25/75 % and White over every projector of the wall with what to
+  look for and which control to turn, and gives each output its own test pattern back. Wall badges in the output
+  list, "manual" chips with Back to wall on the blend edges and slice 1's source. Leaving the Outputs screen ends the
+  check and the wizard; an output keeps its own pattern on record (also across a reload, with **Give the test patterns
+  back**) until the engine has taken it back. `docs/user/outputs-and-mapping.md` › Projector walls.
 - Removed: `fanous-bench spike` (the Phase 2 decode spike; `fanous-bench run` reports decode timing) with the engine's spike-only
   switches, and the unused `run --ring` and `dmx --hz/--host/--seed` flags (repo audit 2026-10-29).
 
