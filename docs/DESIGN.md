@@ -1091,8 +1091,8 @@ own canvas servers are never numbered.
 
 ### 9.9 Projector walls and the M1 mapping tools (design 2026-10-28, `docs/mapping-ux.md`)
 
-**Status:** owner decisions of 2026-10-28 are in. Implementation waits for the
-owner's approval of this section.
+**Status:** approved 2026-10-28; M1 steps 1, 3, 4, 5 built (PRs #55, #47,
+#54, #59), step 2 in PR #63 (as built below).
 
 **Scope:** M1 is the first block. M2 and M3 are listed at the end of this
 section.
@@ -1194,6 +1194,26 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
   opens for it. Without a camera, Fanous cannot know which seam is off, so the
   user's eye picks it. The M3 camera can measure it later; a final pass by eye
   stays.
+
+**As built (M1.2, PR #63):**
+- The wizard has two screens; Make wall is step 3 and opens the seam check on
+  Blend check (the 50 % field carries each output's grid lines, so it is
+  "Blend check and Grid" in one pattern).
+- Only bound free outputs show their Output ID; unassigned ones are tiles
+  without a pattern.
+- Make wall sets the patterns before `wall.add`, so one Undo takes the wall
+  back.
+- The wall panel sits on the Outputs tab, full width above the output list and
+  preview. Leaving the Outputs screen ends the wizard and the seam check.
+- Every pattern the wizard or the check sets is an `output.set` (one undo step
+  per output, B102). Each output's own pattern is kept until the engine has
+  taken it back, also in sessionStorage, so a reloaded page offers to give it
+  back.
+- Unlinked RGB keeps the single gamma ("in effect" until RGB gamma renders),
+  with R, G, B below it; linking again drops them.
+- The colour hints say colour gain is not built yet; the projector tile has the
+  black floor only (0–20 %). Geometry sliders send on release (`wall.set` has
+  no coalesce key); seam and floor sliders send at most every 50 ms.
 
 **RGB gamma (OPEN-14).**
 - `BlendEdge.gammaRGB: [Double]?`; nil means `gamma` for all three channels.

@@ -204,6 +204,16 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: test patterns ignored the output's Intensity %, the Output and Master Intensity and both Blackouts, so a console's
   Grand Master or DBO left a full-field pattern (White is 100 %) on the projectors. Patterns now follow the same Dimmer and
   Blackout as the picture, Raw included; bring the Dimmer up to focus. Freeze holds the picture, not the pattern.
+- Mapping, projector-wall wizard and wall panel (M1.2, DESIGN §9.9): **New projector wall** on the Outputs tab (tap
+  the projectors in order while each shows its Output ID, pick a grid that fits the count, overlap in % with a yellow
+  hint below 10 and above 25, use a canvas or make one that fits with its size shown first; Cancel changes nothing).
+  A panel per wall above the output list around a map of the wall: tap a seam for gamma (RGB linked or per colour),
+  curve and Apply to all seams, a projector for its black floor, Geometry for the overlap, Edit layout… and Remove
+  wall. Seam check steps Grid, Blend check, Grey 0/25/75 % and White over every projector of the wall with what to
+  look for and which control to turn, and gives each output its own test pattern back. Wall badges in the output
+  list, "manual" chips with Back to wall on the blend edges and slice 1's source. Leaving the Outputs screen ends the
+  check and the wizard; an output keeps its own pattern on record (also across a reload, with **Give the test patterns
+  back**) until the engine has taken it back. `docs/user/outputs-and-mapping.md` › Projector walls.
 - Fixed: the Master intensity dimmed a mapped output twice (into the canvas and again in the output pass), so a Grand
   Master at 50 % gave 25 % on the projectors and 25 % gave 6 %. Outputs now take it once, as the canvas preview, Syphon and
   CITP do, so they are brighter than before at Grand Master levels between 0 and 100 %; 0 %, 100 % and Master Blackout are
