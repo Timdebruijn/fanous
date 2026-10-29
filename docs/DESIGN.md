@@ -1514,6 +1514,29 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   stays as it is: only fallback viewers keep it encoding, so no release is
   seen and nothing starts a re-balance. The canvas 1 streamer's own viewers
   are never on a fallback (it is always counted).
+  fps 5, and the browser, seeing no `stream` description, subscribes to JPEG
+  after 5 s (an `error` reply would leave it on "no preview"). The hub
+  remembers these subscribers; when an unsubscribe or a closed connection
+  releases an encoder it moves them, oldest first and up to the limit, to
+  their own (target, class) on a global queue (the streamer is made outside
+  the lock, like `attach`'s), in one step under the lock: off the fallback,
+  onto the new streamer, whose `stream` description and first key frame come
+  with its first frame (as after a rebuild). Measured: description 53 ms
+  after the close, longest gap between frames 63 ms. In the browser this
+  holds for size and canvas fallbacks only: `Preview.svelte` ignores
+  `codec: "jpeg"` and after 5 s re-subscribes as JPEG (`fallbackToJPEG`),
+  which ends the refused subscription, so a refused viewer stays on JPEG
+  until it subscribes again (B86). A canvas-stream fallback shows other
+  content than asked (the whole canvas, not the output's region or the
+  layer alone), often in another aspect (B87). A fallback streamer whose own
+  viewer left stays as it is: only fallback viewers keep it encoding, so no
+  release is seen and nothing starts a re-balance. The canvas 1 streamer's
+  own viewers are never on a fallback (it is always counted). A rebuild that
+  removes a canvas tells only that canvas's own viewers `badTarget`; another
+  target's viewer on its stream as a fallback is chosen again for its own
+  target (one refused to JPEG is told `badTarget` too: the browser cannot
+  take JPEG frames on a stream that was H.264, B86), and every rebuild ends
+  with a re-balance, synchronously after the rebuild (B88).
 
 ### 11.4 Frontend (ADR-0012)
 

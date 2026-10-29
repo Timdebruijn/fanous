@@ -131,25 +131,47 @@ public final class PreviewHub: @unchecked Sendable {
     /// An encoder was released (B70): subscribers on a fallback get their own (target, size) while the limit allows,
     /// oldest first. Its streamer is made outside the lock, like `attach`'s; they leave the fallback in the same step
     /// and get the new `stream` description with its first frame, a key frame (as after a rebuild). Off the caller's
-    /// thread: `create` can read the project.
-    private func rebalance() {
+    /// thread: `create` can read the project. `orphans` (B88) lost their fallback stream in a rebuild and are on no
+    /// streamer: they take their own stream or another fallback; one that `choose` refuses to JPEG is told its target is
+    /// gone, as before B88 (the browser drops JPEG frames on a stream that was H.264, B86).
+    private func rebalance(placing orphans: [PreviewStreamer.Subscriber] = []) {
         for wanted in streamers.withLock({ _ in fallbacks }) {
-            let first = streamers.withLock { choose(wanted.key, jpeg: false, in: $0) }
-            guard !first.fallback else { continue }
-            let fresh = first.streamer == nil ? try? create(wanted.key) : nil
-            streamers.withLock { all in
-                let sub = wanted.subscriber
-                guard let index = fallbacks.firstIndex(where: { $0.subscriber.connection === sub.connection && $0.subscriber.stream == sub.stream }) else { return }
-                let choice = choose(wanted.key, jpeg: false, in: all)
-                // the limit was reached again, or the target went or changed shape: tried again after the next release
-                guard !choice.fallback, let streamer = choice.streamer ?? install(fresh, as: wanted.key, in: &all) else { return }
-                fallbacks.remove(at: index)
-                canvas.unsubscribe(connection: sub.connection, stream: sub.stream)
-                for other in all.values { other.unsubscribe(connection: sub.connection, stream: sub.stream) }
-                streamer.subscribe(sub)
-                release(&all)
+            let sub = wanted.subscriber
+            let orphan = orphans.contains { $0.connection === sub.connection && $0.stream == sub.stream }
+            for attempt in 0..<(orphan ? 2 : 1) {
+                let first = streamers.withLock { choose(wanted.key, jpeg: false, in: $0) }
+                guard orphan || !first.fallback else { break }
+                let fresh = first.streamer == nil && !first.jpeg ? try? create(wanted.key) : nil
+                let retry: Bool = streamers.withLock { all in
+                    guard let index = fallbacks.firstIndex(where: { $0.subscriber.connection === sub.connection && $0.subscriber.stream == sub.stream }) else { return false }
+                    let choice = choose(wanted.key, jpeg: false, in: all)
+                    // the limit was reached again: tried again after the next release
+                    guard orphan || !choice.fallback else { return false }
+                    if !choice.jpeg, let streamer = choice.streamer ?? install(fresh, as: wanted.key, in: &all) {
+                        if !choice.fallback { fallbacks.remove(at: index) }
+                        canvas.unsubscribe(connection: sub.connection, stream: sub.stream)
+                        for other in all.values { other.unsubscribe(connection: sub.connection, stream: sub.stream) }
+                        streamer.subscribe(sub)
+                        release(&all)
+                        return false
+                    }
+                    // a fallback viewer whose target went or changed shape meanwhile waits for the next release. An
+                    // orphan whose streamer was not installed (its target changed shape, or a concurrent release changed
+                    // the choice) tries once more while its target exists; ponytail: a second race ends that preview
+                    guard orphan else { return false }
+                    if !choice.jpeg, attempt == 0, shape(wanted.key.target) != nil { return true }
+                    fallbacks.remove(at: index)
+                    Self.tellGone(sub, target: wanted.key.target)
+                    return false
+                }
+                if !retry { break }
             }
         }
+    }
+
+    /// Tells a viewer its preview target is gone, instead of leaving it on a frozen picture.
+    private static func tellGone(_ s: PreviewStreamer.Subscriber, target: String) {
+        _ = s.connection.send(text: #"{"t":"error","code":"badTarget","message":"preview target \#(target) no longer exists","id":\#(s.stream)}"#, droppable: false)
     }
 
     public func unsubscribe(connection: StateServer.Connection, stream: UInt32) {
@@ -181,7 +203,8 @@ public final class PreviewHub: @unchecked Sendable {
     /// The canvas changed size or rate (B31), or a target its shape: every streamer is made again (new size, new frame
     /// interval) and its subscribers move over; they get a new `stream` description with the first frame. Output
     /// streamers are configured outside the lock (that reads the project); one that no longer configures keeps its old
-    /// streamer.
+    /// streamer. A viewer on a removed canvas's stream as a fallback is chosen again for its own target (B88); then
+    /// `rebalance` gives the encoders the rebuild freed to waiting viewers.
     public func rebuild() throws {
         let fresh = try Self.canvasStreamer(make, shape)
         var remade: [Key: PreviewStreamer] = [:]
@@ -189,6 +212,7 @@ public final class PreviewHub: @unchecked Sendable {
         for key in keys {
             if let streamer = try create(key) { remade[key] = streamer }
         }
+        var orphans: [PreviewStreamer.Subscriber] = []
         streamers.withLock { all in
             let old = canvas
             fresh.externalJPEGWanted = old.externalJPEGWanted
@@ -203,7 +227,14 @@ public final class PreviewHub: @unchecked Sendable {
                     if key.target.hasPrefix("canvas:"), keys.contains(key) {
                         all.removeValue(forKey: key)
                         for s in previous.subscriberList {
-                            _ = s.connection.send(text: #"{"t":"error","code":"badTarget","message":"preview target \#(key.target) no longer exists","id":\#(s.stream)}"#, droppable: false)
+                            let index = fallbacks.firstIndex { $0.subscriber.connection === s.connection && $0.subscriber.stream == s.stream }
+                            // another target's viewer on this canvas as a fallback, its own target still there (B88)
+                            if let index, fallbacks[index].key.target != key.target, shape(fallbacks[index].key.target) != nil {
+                                orphans.append(s)
+                                continue
+                            }
+                            let own = index.map { fallbacks.remove(at: $0).key.target }
+                            Self.tellGone(s, target: own ?? key.target)
                         }
                     }
                     continue
@@ -213,6 +244,7 @@ public final class PreviewHub: @unchecked Sendable {
             }
             publishActive(all)
         }
+        rebalance(placing: orphans)
     }
 
     /// True when a streamer's target changed shape (an output's region, a layer's canvas): `rebuild` makes it again.
