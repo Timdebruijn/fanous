@@ -551,6 +551,28 @@ struct OutputPassTests {
         for (name, read, expected) in cases { #expect(zip(read, expected).allSatisfy { abs($0 - $1) <= 1 }, "\(name): \(read)") }
     }
 
+    /// RGB gamma (M1.6, OPEN-14): inside an overlap each channel follows its own gamma, on content and on test patterns;
+    /// outside it the three channels stay equal.
+    @Test func gammaRGBBlendsEachChannelOnItsOwn() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 200)
+        let size = (Self.width, Self.height)
+        var o = OutputConfig(id: 1)
+        o.blend.left = BlendEdge(overlap: 100, gammaRGB: [1.8, 2.2, 2.6])
+        let plan = try OutputCompiler(device: context.device).compile(o, index: 1, drawable: size)
+        for pattern in [TestPattern.off, .white] {
+            var fixture = OutputParameters()
+            fixture.testPattern = pattern
+            let image = try Self.render(plan, still: still, drawable: size, context: context, outputs: [fixture])
+            func rgb(_ x: Int) -> [Int] { let i = (97 * Self.width + x) * 4; return [Int(image[i + 2]), Int(image[i + 1]), Int(image[i])] }
+            let level = pattern == .off ? 200.0 : 255
+            let inside = rgb(40), expected = (0..<3).map { level * BlendMath.factor(0.405, edge: o.blend.left, channel: $0) }
+            #expect(Set(inside).count == 3 && zip(inside, expected).allSatisfy { abs(Double($0) - $1) <= 1 }, "\(pattern) in the overlap: \(inside), expected \(expected)")
+            let outside = rgb(300)
+            #expect(Set(outside).count == 1 && abs(Double(outside[0]) - level) <= 1, "\(pattern) outside the overlap: \(outside)")
+        }
+    }
+
     /// The black lift and the black offset add light: in linear light at γ 2.2. On black they read their code value, as
     /// the lift did before; on a grey they add the light they give on black, not their code value (0.08 on Grey 25 %
     /// used to read 64 + 20 = 84).

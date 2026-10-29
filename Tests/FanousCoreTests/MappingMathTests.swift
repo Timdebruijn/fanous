@@ -28,13 +28,39 @@ struct MappingMathTests {
         s.lift = 0.1
         s.liftFeather = 0
         let map = BlendMath.map(s, width: 8, height: 4)
-        func at(_ x: Int, _ y: Int) -> (Float, Float) { (map[(y * 8 + x) * 2], map[(y * 8 + x) * 2 + 1]) }
+        // four floats per pixel: factor r, g, b, lift term
+        #expect(map.count == 8 * 4 * 4)
+        func at(_ x: Int, _ y: Int) -> (Float, Float) { (map[(y * 8 + x) * 4], map[(y * 8 + x) * 4 + 3]) }
         #expect(at(7, 3) == (1, 0.1), "outside every zone: full signal plus lift")
         #expect(abs(at(0, 3).0 - 0.125) < 1e-6 && at(0, 3).1 == 0, "left zone: linear ramp, no lift")
         #expect(abs(at(3, 3).0 - 0.875) < 1e-6)
         #expect(abs(at(0, 0).0 - 0.125 * 0.25) < 1e-6, "corner multiplies both axes")
         #expect(at(7, 0).1 == 0, "inside the top zone")
         #expect(BlendSettings().isIdentity)
+    }
+
+    /// OPEN-14: inside an overlap each channel takes its own gamma (a corner multiplies the two axes per channel);
+    /// without gammaRGB the three factors are the single factor.
+    @Test func blendMapGammaRGBGivesEachChannelItsFactor() {
+        var s = BlendSettings()
+        s.left = BlendEdge(overlap: 10, gammaRGB: [1.8, 2.2, 2.6])
+        s.top = BlendEdge(overlap: 4, gamma: 2.4)
+        s.lift = 0.05
+        let map = BlendMath.map(s, width: 20, height: 8)
+        func rgb(_ x: Int, _ y: Int) -> [Float] { Array(map[(y * 20 + x) * 4..<(y * 20 + x) * 4 + 3]) }
+        func lift(_ x: Int, _ y: Int) -> Float { map[(y * 20 + x) * 4 + 3] }
+        let inside = rgb(3, 6)  // left zone at t = 0.35, below the top zone
+        #expect(Set(inside).count == 3, "three different factors: \(inside)")
+        for (i, gamma) in [1.8, 2.2, 2.6].enumerated() {
+            let single = BlendMath.factor(0.35, edge: BlendEdge(overlap: 10, gamma: gamma))
+            #expect(inside[i] == Float(single), "channel \(i): \(inside[i]), expected \(single)")
+            #expect(BlendMath.factor(0.35, edge: s.left, channel: i) == single)
+            #expect(rgb(3, 0)[i] == Float(single * BlendMath.factor(0.125, edge: s.top)), "corner, channel \(i)")
+        }
+        #expect(lift(3, 6) == 0)
+        #expect(rgb(15, 6) == [1, 1, 1] && lift(15, 6) == 0.05, "outside every zone: full signal plus lift")
+        // gammaRGB nil: R = G = B = the single factor
+        #expect(rgb(15, 1) == Array(repeating: Float(BlendMath.factor(0.375, edge: s.top)), count: 3), "\(rgb(15, 1))")
     }
 
     @Test func homographyMapsTheCornersAndKeepsTheIdentity() {

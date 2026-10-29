@@ -588,20 +588,20 @@ public enum ShaderSource {
         bool raw = (u.flags & 4u) != 0u;
         // blend factor and black lift: none in raw (no blend, warp or mask) or without a blend map. The colour is the
         // projector's, not the mapping's: it applies in raw too, like the output's intensity
-        float2 b = float2(1.0, 0.0);
-        if (!raw && (u.flags & 8u) == 0u) b = blend.sample(linearSampler, in.post).rg;
+        float4 b = float4(1.0, 1.0, 1.0, 0.0);  // factor r, g, b (per-channel blend gamma), lift
+        if (!raw && (u.flags & 8u) == 0u) b = blend.sample(linearSampler, in.post);
         if (u.pattern != 0u) {
             // alignment: the pattern follows the warp, the blend map shows the overlaps, and the colour applies (the seam
             // check tunes the gain on Grey 25/75 % and White); at the output's level like the content (Dimmer × Master,
             // black at a blackout, Raw included), no dither
             float3 p = test_pattern(u.pattern, u.index, in.pre, u.size);
-            return float4(output_colour(p * b.x, b.y, u.color) * u.intensity, 1.0);
+            return float4(output_colour(p * b.rgb, b.a, u.color) * u.intensity, 1.0);
         }
         float3 c = canvas.sample(linearSampler, in.uv).rgb * u.scale;
         float a = u.opacity;
         if (!raw && (u.flags & 2u) != 0u) a *= mask.sample(linearSampler, in.pre).r;
         // on the un-premultiplied colour, then × the slice's alpha (the lift and the black offset fade with the slice)
-        c = output_colour(c * b.x, b.y, u.color) * a;
+        c = output_colour(c * b.rgb, b.a, u.color) * a;
         c *= u.intensity;
         c += (ign(in.position.xy) - 0.5) / 255.0;
         return float4(c, a);

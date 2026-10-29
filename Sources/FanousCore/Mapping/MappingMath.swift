@@ -15,30 +15,34 @@ public enum BlendMath {
         return t < 0.5 ? 0.5 * pow(2 * t, p) : 1 - 0.5 * pow(2 * (1 - t), p)
     }
 
-    /// The factor applied to the (gamma-encoded) signal so the projector's light follows the curve.
-    public static func factor(_ t: Double, edge: BlendEdge) -> Double {
-        pow(curve(t, power: edge.power), 1 / max(0.1, edge.gamma))
+    /// The factor applied to the (gamma-encoded) signal so the projector's light follows the curve. With a `channel`
+    /// (0 r, 1 g, 2 b) the edge's `gammaRGB` for it; nil, or not three values (project files are not clamped on load),
+    /// means `gamma`.
+    public static func factor(_ t: Double, edge: BlendEdge, channel: Int? = nil) -> Double {
+        let gamma = channel.flatMap { c in edge.gammaRGB.flatMap { $0.count == 3 ? $0[c] : nil } } ?? edge.gamma
+        return pow(curve(t, power: edge.power), 1 / max(0.1, gamma))
     }
 
-    /// Two floats per pixel, row-major from the top-left: (factor, lift term). `out = in · factor + lift term`.
+    /// Four floats per pixel, row-major from the top-left: (factor r, g, b, lift term). `out = in · factor + lift term`.
     public static func map(_ s: BlendSettings, width: Int, height: Int) -> [Float] {
-        var out = [Float](repeating: 0, count: width * height * 2)
+        var out = [Float](repeating: 0, count: width * height * 4)
         guard width > 0, height > 0 else { return out }
-        // factor and "inside a zone" per axis
-        func axis(_ n: Int, _ low: BlendEdge, _ high: BlendEdge) -> (factor: [Double], zone: [Double]) {
-            var factor = [Double](repeating: 1, count: n)
+        func rgb(_ t: Double, _ edge: BlendEdge) -> SIMD3<Double> { SIMD3((0..<3).map { factor(t, edge: edge, channel: $0) }) }
+        // factor (r, g, b) and "inside a zone" per axis
+        func axis(_ n: Int, _ low: BlendEdge, _ high: BlendEdge) -> (factor: [SIMD3<Double>], zone: [Double]) {
+            var factor = [SIMD3<Double>](repeating: .one, count: n)
             var zone = [Double](repeating: 0, count: n)  // 1 inside an overlap zone, feathered beyond it
             for i in 0..<n {
                 let c = Double(i) + 0.5
-                var f = 1.0
+                var f = SIMD3<Double>.one
                 var inZone = 0.0
                 if low.overlap > 0 {
-                    if c < low.overlap { f *= Self.factor(c / low.overlap, edge: low); inZone = 1 }
+                    if c < low.overlap { f *= rgb(c / low.overlap, low); inZone = 1 }
                     else if s.liftFeather > 0 { inZone = max(inZone, 1 - min(1, (c - low.overlap) / s.liftFeather)) }
                 }
                 if high.overlap > 0 {
                     let d = Double(n) - c
-                    if d < high.overlap { f *= Self.factor(d / high.overlap, edge: high); inZone = 1 }
+                    if d < high.overlap { f *= rgb(d / high.overlap, high); inZone = 1 }
                     else if s.liftFeather > 0 { inZone = max(inZone, 1 - min(1, (d - high.overlap) / s.liftFeather)) }
                 }
                 factor[i] = f
@@ -50,10 +54,11 @@ public enum BlendMath {
         let y = axis(height, s.top, s.bottom)
         for row in 0..<height {
             for col in 0..<width {
-                let i = (row * width + col) * 2
-                out[i] = Float(x.factor[col] * y.factor[row])
+                let i = (row * width + col) * 4
+                let f = x.factor[col] * y.factor[row]
+                (out[i], out[i + 1], out[i + 2]) = (Float(f.x), Float(f.y), Float(f.z))
                 let inZone = max(x.zone[col], y.zone[row])
-                out[i + 1] = Float(s.lift * (1 - inZone))
+                out[i + 3] = Float(s.lift * (1 - inZone))
             }
         }
         return out
