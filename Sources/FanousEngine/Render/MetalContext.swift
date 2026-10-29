@@ -18,7 +18,7 @@ public struct LayerUniforms {
     public var texel: SIMD4<Float> = SIMD4(0, 0, 1, 0)
     public var kind: UInt32 = 0
     public var blend: UInt32 = 0
-    public var pad0: UInt32 = 0
+    public var master: Float = 1
     public var pad1: UInt32 = 0
 
     public init() {}

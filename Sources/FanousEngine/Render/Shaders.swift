@@ -22,14 +22,14 @@ public enum ShaderSource {
         float4x4 transform;   // canvas units → clip space (perspective)
         float4 quadRect;      // x0 y0 x1 y1, canvas units, y up
         float4 uvRect;        // u0 v0 u1 v1 after crop (v0 = top)
-        float4 colour;        // rgb multiply, intensity
+        float4 colour;        // rgb multiply, intensity (layer × crossfade: the alpha)
         float4 adjust;        // brightness, contrast, saturation, hue (radians)
         float4 effect1;       // id, A, B, 1 when the texture rows are bottom-up (Syphon)
         float4 effect2;
         float4 texel;         // 1/width, 1/height, width/height, time (s)
         uint kind;            // SourcePixelKind
         uint blend;           // BlendMode
-        uint pad0;
+        float master;         // Master intensity: scales the colour, not the alpha (B108)
         uint pad1;
     };
 
@@ -283,21 +283,25 @@ public enum ShaderSource {
         c = effect_colour(e1, u.effect1.y, u.effect1.z, c, u.texel.w);
         c = effect_colour(e2, u.effect2.y, u.effect2.z, c, u.texel.w);
 
+        // The Master m scales the colour, not the opacity: dst is m × the canvas at Master 100 % (black at the clear),
+        // so each mode is m × its own formula at dst / m and the result stays m × that canvas (B108).
         float a = saturate(c.a) * u.colour.a;
+        float m = u.master;
         float3 s = saturate(c.rgb);
+        float3 sm = s * m;
         float3 d = dst.rgb;
         float3 b;
         switch (u.blend) {
-        case 1: b = d + s; break;                      // add
-        case 2: b = 1.0 - (1.0 - s) * (1.0 - d); break; // screen
+        case 1: b = d + sm; break;                     // add
+        case 2: b = m - (1.0 - s) * (m - d); break;    // screen
         case 3: b = s * d; break;                      // multiply
-        case 4: b = d - s; break;                      // subtract
-        case 5: b = abs(d - s); break;                 // difference
-        case 6: b = max(s, d); break;                  // lighten
-        case 7: b = min(s, d); break;                  // darken
-        default: b = s; break;                         // normal
+        case 4: b = d - sm; break;                     // subtract
+        case 5: b = abs(d - sm); break;                // difference
+        case 6: b = max(sm, d); break;                 // lighten
+        case 7: b = min(sm, d); break;                 // darken
+        default: b = sm; break;                        // normal
         }
-        return float4(mix(d, saturate(b), a), a + dst.a * (1.0 - a));
+        return float4(mix(d, clamp(b, float3(0.0), float3(m)), a), a + dst.a * (1.0 - a));
     }
 
     // Plain output pass: canvas → drawable, also the canvas preview and the thumbnail copy (pattern 0). A test pattern at

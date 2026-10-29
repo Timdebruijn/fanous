@@ -317,6 +317,62 @@ struct OutputPassTests {
         }
     }
 
+    typealias Stacked = (value: UInt8, edit: (inout LayerParameters) -> Void)
+
+    /// The canvas centre (RGBA) of `layers` stacked bottom to top, each a full-frame flat still of `value` at intensity 1,
+    /// then `edit`, at Master `master`.
+    static func canvas(_ layers: [Stacked], master: Float, context: MetalContext) throws -> [Int] {
+        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: layers.count) }
+        let compositor = try Compositor(
+            context: context, canvasWidth: width, canvasHeight: height, fps: 60, maxLayers: layers.count, metrics: MetricsRing(capacity: 16),
+            parameters: parameters, logger: Logger(label: "master-test"))
+        compositor.setLayers(
+            try layers.enumerated().map { i, layer in
+                let key = MediaKey(folder: 1, file: i + 1)
+                let render = RenderLayer(index: i)
+                render.current = LayerPlayback(key: key, still: try flat(context.device, value: layer.value))
+                render.wanted.store(key.packed, ordering: .relaxed)
+                return render
+            })
+        parameters.write { slot in
+            slot.sequence = 1
+            slot.master = master
+            for (i, layer) in layers.enumerated() {
+                slot.layers[i].intensity = 1
+                slot.layers[i].folder = 1
+                slot.layers[i].file = UInt8(i + 1)
+                slot.layers[i].fitMode = .stretch
+                layer.edit(&slot.layers[i])
+            }
+        }
+        compositor.tick(target: 3600, drawable: nil)
+        let i = (height / 2 * width + width / 2) * 4
+        return compositor.readback().rgba[i..<i + 4].map(Int.init)
+    }
+
+    /// The Master scales each layer's colour, not its opacity: the canvas is the Master × the canvas at 100 % (B108: green
+    /// over red read (63,128,0) at Master 50 %). Every blend mode (grey 0.3 over grey 0.4, nothing clipped), an add that
+    /// clips (grey 0.4 over white: the clamp to the Master, not to 1) and a top layer at intensity 50 % read half at Master
+    /// 50 %; an opaque canvas stays opaque.
+    @Test func masterDimsStackedLayersWithoutTransparency() throws {
+        let context = try MetalContext()
+        let red: (inout LayerParameters) -> Void = { $0.green = 0; $0.blue = 0 }
+        let green: (inout LayerParameters) -> Void = { $0.red = 0; $0.blue = 0 }
+        for (master, g) in [(Float(1), 255), (0.5, 128), (0.25, 64)] {
+            let rgba = try Self.canvas([(255, red), (255, green)], master: master, context: context)
+            #expect(zip(rgba, [0, g, 0, 255]).allSatisfy { abs($0 - $1) <= 1 }, "green over red, Master \(master): \(rgba)")
+        }
+        var cases: [(String, [Stacked])] = BlendMode.allCases.map { mode in ("\(mode)", [(102, { _ in }), (77, { $0.blendMode = mode })]) }
+        cases.append(("add clipped", [(255, { _ in }), (102, { $0.blendMode = .add })]))
+        cases.append(("green 50 % over red", [(255, red), (255, { green(&$0); $0.intensity = 0.5 })]))
+        for (name, layers) in cases {
+            let full = try Self.canvas(layers, master: 1, context: context)
+            let half = try Self.canvas(layers, master: 0.5, context: context)
+            let ok = (0..<3).allSatisfy { abs(Double(half[$0]) - Double(full[$0]) / 2) <= 1 } && half[3] == 255
+            #expect(ok, "\(name): Master 100 % \(full), 50 % \(half)")
+        }
+    }
+
     /// One compositor over a flat still that draws `config` (nil: the plain pass) into an offscreen output. `write` sets
     /// the layer's intensity, Output 1's Control and the Master; `tick` writes, ticks and reads back; `present` draws
     /// `set` as a secondary display does, from the last completed canvas, without a tick. All read the centre's green.
