@@ -77,6 +77,21 @@ import Testing
         #expect(Int(ChannelMap.spec(.master(.control)).physical(fromRaw: 128)) == MasterControl.blackout.rawValue)
     }
 
+    /// Seam check (DESIGN §9.9): bands 128–191 of test-pattern channel 4, Master and Output; 192–255 stays Off.
+    @Test(arguments: [ParameterID.master(.testPattern), .output(.testPattern)]) func seamCheckPatternBands(id: ParameterID) {
+        let spec = ChannelMap.spec(id)
+        #expect(spec.channel == 4)
+        let expected: [(UInt16, TestPattern)] = [
+            (127, .checkerboard), (128, .grey0), (143, .grey0), (144, .grey25), (159, .grey25), (160, .grey75), (175, .grey75),
+            (176, .white), (191, .white), (192, .off), (255, .off),
+        ]
+        for (raw, pattern) in expected {
+            #expect(TestPattern(rawValue: Int(spec.physical(fromRaw: raw))) == pattern, "\(id) raw \(raw)")
+        }
+        #expect(spec.label(forRaw: 150) == "Grey 25 %")
+        #expect(spec.raw(fromPhysical: Double(TestPattern.white.rawValue)) == 176)
+    }
+
     @Test func rawFromPhysicalRoundTrips() {
         let speed = ChannelMap.spec(.layer(.speed))
         #expect(speed.raw(fromPhysical: 100) == 32767)

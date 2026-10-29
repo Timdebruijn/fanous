@@ -195,6 +195,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   600 px/s). Moves go out at most ten times a second, taps in between added up; nudges of the same point or group
   less than a second apart are one undo step. Tab / Shift-Tab step through the points in the mapper, Esc lets go; the
   nudge pad's long press also works outside remote mode.
+- Seam-check test patterns (M1.5, DESIGN §9.9): Grey 0 %, Grey 25 %, Grey 75 % and White, flat fields at that output
+  signal level (Blend check is the 50 % grey), on test-pattern channel 4 of the Master and Output fixtures at 128, 144, 160
+  and 176 (192–255 stays reserved), in the GDTF and the channel map, and as buttons on the Outputs tab. They follow the warp
+  and blend map like the other patterns; they are not layer content in folder 0 (Solid colour covers a flat field).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

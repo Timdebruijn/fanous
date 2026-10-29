@@ -53,7 +53,7 @@ Generated from `Sources/FanousCore/Parameters/ChannelMap.swift` by `fanousd chan
 |---|---|---|---|---|---|
 | 1–2 | Master intensity | 16 | 65535 | 0 → 0 % · 65535 → 100 % | `intensity` |
 | 3 | Control | 8 | 0 | 0–63 Normal · 64–127 Freeze all · 128–191 Blackout · rest = Normal | `control` |
-| 4 | Test pattern | 8 | 0 | 0–15 Off · 16–31 Grid · 32–47 Colour bars · 48–63 Blend check · 64–79 Output ID · 80–95 Crosshair · 96–111 Grey steps · 112–127 Checkerboard · rest = Off | `testPattern` |
+| 4 | Test pattern | 8 | 0 | 0–15 Off · 16–31 Grid · 32–47 Colour bars · 48–63 Blend check · 64–79 Output ID · 80–95 Crosshair · 96–111 Grey steps · 112–127 Checkerboard · 128–143 Grey 0 % · 144–159 Grey 25 % · 160–175 Grey 75 % · 176–191 White · rest = Off | `testPattern` |
 | 5–6 | Master speed | 16 | 32768 | 0 → 0 % · 32767 → 100 % · 32768 → 100 % · 65535 → 400 % | `speed` |
 | 7–8 | Reserved | — | 0 | ignored | — |
 
@@ -63,7 +63,7 @@ Generated from `Sources/FanousCore/Parameters/ChannelMap.swift` by `fanousd chan
 |---|---|---|---|---|---|
 | 1–2 | Output intensity | 16 | 65535 | 0 → 0 % · 65535 → 100 % | `intensity` |
 | 3 | Control | 8 | 0 | 0–63 Normal · 64–127 Blackout · 128–191 Freeze · rest = Normal | `control` |
-| 4 | Test pattern | 8 | 0 | 0–15 Off · 16–31 Grid · 32–47 Colour bars · 48–63 Blend check · 64–79 Output ID · 80–95 Crosshair · 96–111 Grey steps · 112–127 Checkerboard · rest = Off | `testPattern` |
+| 4 | Test pattern | 8 | 0 | 0–15 Off · 16–31 Grid · 32–47 Colour bars · 48–63 Blend check · 64–79 Output ID · 80–95 Crosshair · 96–111 Grey steps · 112–127 Checkerboard · 128–143 Grey 0 % · 144–159 Grey 25 % · 160–175 Grey 75 % · 176–191 White · rest = Off | `testPattern` |
 | 5 | Blend | 8 | 0 | 0–127 On · 128–255 Raw · rest = On | `blend` |
 | 6–8 | Reserved | — | 0 | ignored | — |
 
