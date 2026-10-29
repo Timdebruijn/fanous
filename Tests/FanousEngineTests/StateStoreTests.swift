@@ -683,6 +683,22 @@ extension StateStoreTests {
         #expect(ProjectDocument.syphonNumbers(from: store.project).map(\.app) == ["App"])
     }
 
+    /// Undoing a forget must not put a name on a second number: forget A@150 and N@151, N takes 150 and stops, the undo
+    /// of the N forget would re-add 151=N (B92).
+    @Test func syphonForgetUndoRefusedWhenTheNameSitsOnAnotherNumber() throws {
+        let (store, _) = Self.makeStore()
+        func server(_ file: Int, _ app: String) -> SyphonCatalog.Server { SyphonCatalog.Server(file: file, app: app, server: "Server") }
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(151, "N")]) }
+        _ = try store.execute("syphon.forget", args: ["file": 150], role: .programmer).get()
+        _ = try store.execute("syphon.forget", args: ["file": 151], role: .programmer).get()
+        // N announces again and takes 150 as the lowest free number, then stops
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "N")]) }
+        let refused = store.execute("undo", role: .programmer)
+        #expect(refused == .failure(CommandError("historyConflict", "Syphon server N/Server is now on number 150; undo/redo refused")))
+        #expect(ProjectDocument.syphonNumbers(from: store.project).map(\.file) == [150])
+        #expect(store.historyDepth.undo == 1)
+    }
+
     /// The engine records a new number with no client connected (a headless show driven by a console, B69).
     @Test func syphonNumbersAreRecordedWithoutClients() {
         let (store, _) = Self.makeStore()

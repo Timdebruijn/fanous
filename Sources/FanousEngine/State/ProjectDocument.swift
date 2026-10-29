@@ -119,7 +119,9 @@ public enum ProjectDocument {
 
     /// An undo or redo must not change a Syphon number that changed since the step it undoes (B90, B91): each op under
     /// `/syphon/N` needs the value that step left there (`done`, nil where it removed) or already the one it writes, so
-    /// it neither overwrites, renames nor frees a server that took N meanwhile. The `historyConflict` drops the entry.
+    /// it neither overwrites, renames nor frees a server that took N meanwhile. Nor may it put a name on N that sits on
+    /// another number by then (the server took another one meanwhile, B92): the catalog drops such a twin only while that
+    /// server runs. The `historyConflict` drops the entry.
     public static func checkSyphonReplay(_ patch: JSONPatch, undoing done: JSONPatch, on project: JSONValue) throws {
         // diff(a, b) and diff(b, a) have the same paths, so the ops line up by pointer
         var left: [[String]: JSONValue?] = [:]
@@ -129,6 +131,7 @@ public enum ProjectDocument {
             case .remove(let p): left[p.tokens] = .some(nil)
             }
         }
+        var written: Set<Int> = []
         for operation in patch.operations {
             let pointer: JSONPointer, value: JSONValue?
             switch operation {
@@ -136,6 +139,7 @@ public enum ProjectDocument {
             case .remove(let p): (pointer, value) = (p, nil)
             }
             guard pointer.tokens.first == "syphon", (2...3).contains(pointer.tokens.count), let expected = left[pointer.tokens] else { continue }
+            if value != nil, let file = Int(pointer.tokens[1]) { written.insert(file) }
             let now = project[pointer]
             guard now != expected, now != value else { continue }
             let number = pointer.tokens[1]
@@ -144,6 +148,14 @@ public enum ProjectDocument {
             }
             let name = SyphonCatalog.Server(file: 0, app: held["app"]?.string ?? "", server: held["server"]?.string ?? "").name
             throw CommandError("historyConflict", "Syphon number \(number) is now held by \(name); undo/redo refused")
+        }
+        // the numbers as the step would leave them (an op that does not apply is skipped by the step, or fails it)
+        var after = project
+        for operation in patch.operations { try? JSONPatch(operations: [operation]).apply(to: &after) }
+        let numbers = syphonNumbers(from: after)
+        for entry in numbers where written.contains(entry.file) {
+            guard let twin = numbers.first(where: { $0.file != entry.file && $0.app == entry.app && $0.server == entry.server }) else { continue }
+            throw CommandError("historyConflict", "Syphon server \(entry.name) is now on number \(twin.file); undo/redo refused")
         }
     }
 
