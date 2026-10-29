@@ -645,11 +645,11 @@ extension StateStoreTests {
     @Test func syphonForgetFreesNumbersThatAreNotRunning() throws {
         let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
         var project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
-        let numbers = [(150, "Resolume"), (151, "Simple Server"), (152, "MadMapper")].map { SyphonCatalog.Server(file: $0.0, app: $0.1, server: "") }
-        try project.set(ProjectDocument.syphonValue(numbers), at: "/syphon")
+        let numbers = [(150, "Resolume"), (151, "Simple Server"), (152, "MadMapper")].map { LiveCatalog.Entry(kind: .syphon, file: $0.0, source: $0.1, name: "") }
+        try project.set(ProjectDocument.liveValue(numbers), at: "/syphon")
         let store = StateStore(project: project, logger: Self.logger)
         ProjectDocument.registerCommands(on: store, auth: auth, syphonRunning: { [150] })
-        func files() -> [Int] { ProjectDocument.syphonNumbers(from: store.project).map(\.file) }
+        func files() -> [Int] { ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.file) }
 
         #expect(store.execute("syphon.forget", args: ["file": 151], role: .operator).failureCode == "forbidden")
         #expect(store.execute("syphon.forget", args: ["file": 150], role: .programmer).failureCode == "invalidArgs")
@@ -665,34 +665,34 @@ extension StateStoreTests {
         #expect(store.execute("undo", role: .programmer) == .failure(.showLocked))
         #expect(store.execute("syphon.forget", role: .programmer) == .failure(.showLocked))
         // the engine's own numbering still lands under show lock (a new server numbered mid-show)
-        store.correct(at: "/syphon") { ProjectDocument.syphonValue(numbers) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue(numbers) }
         #expect(files() == [150, 151, 152])
     }
 
     /// Keyed by file, a forget and its undo touch one key: numbers recorded in between stay (B69).
     @Test func syphonForgetUndoKeepsNumbersRecordedMeanwhile() throws {
         let (store, _) = Self.makeStore()
-        func server(_ file: Int, _ app: String) -> SyphonCatalog.Server { SyphonCatalog.Server(file: file, app: app, server: "") }
-        func files() -> [Int] { ProjectDocument.syphonNumbers(from: store.project).map(\.file) }
-        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(153, "X")]) }
+        func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "") }
+        func files() -> [Int] { ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.file) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "A"), server(153, "X")]) }
         _ = try store.execute("syphon.forget", args: ["file": 153], role: .programmer).get()
         // Y and Z get numbers (the engine records them); Z then stops, its entry stays
-        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(151, "Y"), server(152, "Z")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "A"), server(151, "Y"), server(152, "Z")]) }
         _ = try store.execute("undo", role: .programmer).get()
         #expect(files() == [150, 151, 152, 153])
-        #expect(ProjectDocument.syphonNumbers(from: store.project).map(\.app) == ["A", "Y", "Z", "X"])
+        #expect(ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.source) == ["A", "Y", "Z", "X"])
     }
 
     /// Undoing a forget would overwrite a server that took the number meanwhile and has since stopped (B90).
     @Test func syphonForgetUndoRefusedWhenAnotherServerHoldsTheNumber() throws {
         let (store, _) = Self.makeStore()
-        func server(_ file: Int, _ app: String) -> SyphonCatalog.Server { SyphonCatalog.Server(file: file, app: app, server: "Server") }
-        func apps() -> [String] { ProjectDocument.syphonNumbers(from: store.project).map(\.app) }
-        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(151, "N")]) }
+        func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
+        func apps() -> [String] { ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.source) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "A"), server(151, "N")]) }
         _ = try store.execute("project.set", args: ["path": "/name", "value": "Tour"], role: .programmer).get()
         _ = try store.execute("syphon.forget", args: ["file": 151], role: .programmer).get()
         // Y takes 151 as the lowest free number, then stops: the engine leaves its entry
-        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(151, "App")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "A"), server(151, "App")]) }
         let refused = store.execute("undo", role: .programmer)
         #expect(refused == .failure(CommandError("historyConflict", "Syphon number 151 is now held by App/Server; undo/redo refused")))
         #expect(apps() == ["A", "App"])
@@ -705,14 +705,14 @@ extension StateStoreTests {
     /// A free number, or the same name on it (the engine wrote it back), is no conflict (B90).
     @Test func syphonForgetUndoAllowedWhenTheNumberIsFreeOrHeldByTheSameName() throws {
         let (store, _) = Self.makeStore()
-        func server(_ file: Int, _ app: String) -> SyphonCatalog.Server { SyphonCatalog.Server(file: file, app: app, server: "Server") }
-        func apps() -> [String] { ProjectDocument.syphonNumbers(from: store.project).map(\.app) }
-        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(151, "N")]) }
+        func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
+        func apps() -> [String] { ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.source) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "A"), server(151, "N")]) }
         _ = try store.execute("syphon.forget", args: ["file": 151], role: .programmer).get()
         _ = try store.execute("undo", role: .programmer).get()
         #expect(apps() == ["A", "N"])
         _ = try store.execute("syphon.forget", args: ["file": 151], role: .programmer).get()
-        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(151, "N")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "A"), server(151, "N")]) }
         _ = try store.execute("undo", role: .programmer).get()
         #expect(apps() == ["A", "N"])
     }
@@ -720,30 +720,30 @@ extension StateStoreTests {
     /// The entry a redo puts back is checked too: forget, undo, redo, Y takes the number, the undo is refused (B90).
     @Test func syphonForgetRedoneThenUndoRefusedWhenAnotherServerHoldsTheNumber() throws {
         let (store, _) = Self.makeStore()
-        func server(_ file: Int, _ app: String) -> SyphonCatalog.Server { SyphonCatalog.Server(file: file, app: app, server: "Server") }
-        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(151, "N")]) }
+        func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(151, "N")]) }
         _ = try store.execute("syphon.forget", args: ["file": 151], role: .programmer).get()
         _ = try store.execute("undo", role: .programmer).get()
         _ = try store.execute("redo", role: .programmer).get()
         #expect(store.project["syphon"] == [:])
-        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(151, "App")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(151, "App")]) }
         #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by App/Server; undo/redo refused")))
-        #expect(ProjectDocument.syphonNumbers(from: store.project).map(\.app) == ["App"])
+        #expect(ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.source) == ["App"])
     }
 
     /// Undoing a forget must not put a name on a second number: forget A@150 and N@151, N takes 150 and stops, the undo
     /// of the N forget would re-add 151=N (B92).
     @Test func syphonForgetUndoRefusedWhenTheNameSitsOnAnotherNumber() throws {
         let (store, _) = Self.makeStore()
-        func server(_ file: Int, _ app: String) -> SyphonCatalog.Server { SyphonCatalog.Server(file: file, app: app, server: "Server") }
-        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(151, "N")]) }
+        func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "A"), server(151, "N")]) }
         _ = try store.execute("syphon.forget", args: ["file": 150], role: .programmer).get()
         _ = try store.execute("syphon.forget", args: ["file": 151], role: .programmer).get()
         // N announces again and takes 150 as the lowest free number, then stops
-        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "N")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "N")]) }
         let refused = store.execute("undo", role: .programmer)
         #expect(refused == .failure(CommandError("historyConflict", "Syphon server N/Server is now on number 150; undo/redo refused")))
-        #expect(ProjectDocument.syphonNumbers(from: store.project).map(\.file) == [150])
+        #expect(ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.file) == [150])
         #expect(store.historyDepth.undo == 1)
     }
 
@@ -751,15 +751,15 @@ extension StateStoreTests {
     /// N starts and takes 150; the undo puts M back on 152.
     @Test func syphonForgetUndoAllowedWhenTheTwinRuns() throws {
         let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
-        func server(_ file: Int, _ app: String) -> SyphonCatalog.Server { SyphonCatalog.Server(file: file, app: app, server: "Server") }
+        func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
         var project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
-        try project.set(ProjectDocument.syphonValue([server(151, "N"), server(152, "M")]), at: "/syphon")
+        try project.set(ProjectDocument.liveValue([server(151, "N"), server(152, "M")]), at: "/syphon")
         let store = StateStore(project: project, logger: Self.logger)
         let running = Mutex<Set<Int>>([])
         ProjectDocument.registerCommands(on: store, auth: auth, syphonRunning: { running.withLock { $0 } })
         _ = try store.execute("syphon.forget", role: .programmer).get()
         running.withLock { $0 = [150] }
-        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "N")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "N")]) }
         _ = try store.execute("undo", role: .programmer).get()
         #expect(store.project["syphon"]?["150"]?["app"]?.string == "N")
         #expect(store.project["syphon"]?["152"]?["app"]?.string == "M")
@@ -768,10 +768,10 @@ extension StateStoreTests {
     /// The engine records a new number with no client connected (a headless show driven by a console, B69).
     @Test func syphonNumbersAreRecordedWithoutClients() {
         let (store, _) = Self.makeStore()
-        let catalog = SyphonCatalog()
-        catalog.update(running: [SyphonInput.ServerInfo(appName: "Resolume", serverName: "Out", uuid: "a")])
+        let catalog = LiveCatalog(.syphon)
+        catalog.update(running: [LiveCatalog.Entry(kind: .syphon, file: 0, source: "Resolume", name: "Out", runtimeID: "a")])
         #expect(store.clientCount == 0)
-        Engine.recordSyphonNumbers(catalog, into: store, applied: store.project["syphon"] ?? [:])
+        Engine.recordLiveNumbers(catalog, into: store, applied: store.project["syphon"] ?? [:])
         #expect(store.project["syphon"]?["150"]?["app"]?.string == "Resolume")
     }
 }

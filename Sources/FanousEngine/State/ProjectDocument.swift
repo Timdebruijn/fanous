@@ -102,45 +102,50 @@ public enum ProjectDocument {
         try project.set(.object(object), at: "/layerCanvas")
     }
 
-    /// The Syphon numbering (B69): `/syphon` `{"151": {app, server}}`, folder 0 files 150–169, keyed by file like
-    /// `/layerCanvas` so a forget and its undo touch one key; written by the engine as it numbers servers (no command,
-    /// also under show lock), freed by `syphon.forget`. Gone until they announce.
-    public static func syphonNumbers(from project: JSONValue) -> [SyphonCatalog.Server] {
-        guard case .object(let map)? = project["syphon"] else { return [] }
+    /// A live input numbering (B69, B73): `/syphon` `{"151": {app, server}}` (folder 0 files 150–169) and the other
+    /// kinds' keys (`LiveCatalog.Kind`), keyed by file like `/layerCanvas` so a forget and its undo touch one key;
+    /// written by the engine as it numbers sources (no command, also under show lock), freed by `syphon.forget`. Gone
+    /// until they are seen.
+    public static func liveNumbers(_ kind: LiveCatalog.Kind, from project: JSONValue) -> [LiveCatalog.Entry] {
+        guard case .object(let map)? = project[kind.projectKey] else { return [] }
         return map.compactMap { key, entry in
-            guard let file = Int(key), let app = entry["app"]?.string else { return nil }
-            return SyphonCatalog.Server(file: file, app: app, server: entry["server"]?.string ?? "", gone: true)
+            guard let file = Int(key), let source = entry[kind.fields.source]?.string else { return nil }
+            return LiveCatalog.Entry(kind: kind, file: file, source: source, name: entry[kind.fields.name]?.string ?? "", gone: true)
         }.sorted { $0.file < $1.file }
     }
 
-    public static func syphonValue(_ servers: [SyphonCatalog.Server]) -> JSONValue {
-        .object(Dictionary(servers.map { (String($0.file), ["app": .string($0.app), "server": .string($0.server)]) }, uniquingKeysWith: { a, _ in a }))
+    public static func liveValue(_ entries: [LiveCatalog.Entry]) -> JSONValue {
+        .object(
+            Dictionary(
+                entries.map { (String($0.file), [$0.kind.fields.source: .string($0.source), $0.kind.fields.name: .string($0.name)]) },
+                uniquingKeysWith: { a, _ in a }))
     }
 
-    /// `patch` with every op below `/syphon/N` (a revert's diff of one field) folded into one `replace /syphon/N` of the
-    /// whole entry from `document`, the side the patch leads to: the history holds whole entries, so the replay check
-    /// compares `app` and `server` together (B104).
-    static func wholeSyphonEntries(_ patch: JSONPatch, in document: JSONValue) -> JSONPatch {
-        var folded: Set<String> = []
+    /// `patch` with every op below `/syphon/N` (or another live key's, a revert's diff of one field) folded into one
+    /// `replace /syphon/N` of the whole entry from `document`, the side the patch leads to: the history holds whole
+    /// entries, so the replay check compares `app` and `server` together (B104).
+    static func wholeLiveEntries(_ patch: JSONPatch, in document: JSONValue) -> JSONPatch {
+        var folded: Set<[String]> = []
         return JSONPatch(operations: patch.operations.compactMap { operation in
             let pointer: JSONPointer
             switch operation {
             case .add(let p, _), .replace(let p, _), .remove(let p): pointer = p
             }
-            guard pointer.tokens.count > 2, pointer.tokens[0] == "syphon" else { return operation }
+            guard pointer.tokens.count > 2, LiveCatalog.Kind(rawValue: pointer.tokens[0]) != nil else { return operation }
             let entry = JSONPointer(tokens: Array(pointer.tokens.prefix(2)))
-            guard folded.insert(pointer.tokens[1]).inserted, let value = document[entry] else { return nil }
+            guard folded.insert(entry.tokens).inserted, let value = document[entry] else { return nil }
             return .replace(entry, value)
         })
     }
 
-    /// An undo or redo must not change a Syphon number that changed since the step it undoes (B90, B91): each op on a
-    /// whole entry `/syphon/N` (`wholeSyphonEntries`) needs the value that step left there (`done`, nil where it
-    /// removed) or already the one it writes, so it neither overwrites, renames nor frees a server that took N meanwhile.
+    /// An undo or redo must not change a live number (`/syphon` or another kind's) that changed since the step it
+    /// undoes (B90, B91): each op on a whole entry `/syphon/N` (`wholeLiveEntries`) needs the value that step left
+    /// there (`done`, nil where it removed) or already the one it writes, so it neither overwrites, renames nor frees a
+    /// server that took N meanwhile.
     /// Nor may it put a name on N that sits on another number by then (the server took another one meanwhile, B92),
     /// unless that number is `running`: the catalog
     /// drops such a twin only while that server runs. The `historyConflict` drops the entry.
-    public static func checkSyphonReplay(_ patch: JSONPatch, undoing done: JSONPatch, on project: JSONValue, running: Set<Int> = []) throws {
+    public static func checkLiveReplay(_ patch: JSONPatch, undoing done: JSONPatch, on project: JSONValue, running: Set<Int> = []) throws {
         // diff(a, b) and diff(b, a) have the same paths, so the ops line up by pointer
         var left: [[String]: JSONValue?] = [:]
         for operation in done.operations {
@@ -149,36 +154,39 @@ public enum ProjectDocument {
             case .remove(let p): left[p.tokens] = .some(nil)
             }
         }
-        var written: Set<Int> = []
-        var syphonOps: [JSONPatch.Operation] = []
+        var written: [LiveCatalog.Kind: Set<Int>] = [:]
+        var liveOps: [JSONPatch.Operation] = []
         for operation in patch.operations {
             let pointer: JSONPointer, value: JSONValue?
             switch operation {
             case .add(let p, let v), .replace(let p, let v): (pointer, value) = (p, v)
             case .remove(let p): (pointer, value) = (p, nil)
             }
-            guard pointer.tokens.first == "syphon" else { continue }
-            syphonOps.append(operation)
+            guard let kind = pointer.tokens.first.flatMap(LiveCatalog.Kind.init(rawValue:)) else { continue }
+            liveOps.append(operation)
             guard pointer.tokens.count == 2, let expected = left[pointer.tokens] else { continue }
-            if value != nil, let file = Int(pointer.tokens[1]) { written.insert(file) }
+            if value != nil, let file = Int(pointer.tokens[1]) { written[kind, default: []].insert(file) }
             let now = project[pointer]
             guard now != expected, now != value else { continue }
             let number = pointer.tokens[1]
-            guard let held = project[JSONPointer(tokens: ["syphon", number])] else {
-                throw CommandError("historyConflict", "Syphon number \(number) is now free; undo/redo refused")
+            guard let held = project[JSONPointer(tokens: [kind.projectKey, number])] else {
+                throw CommandError("historyConflict", "\(kind.title) number \(number) is now free; undo/redo refused")
             }
-            let name = SyphonCatalog.Server(file: 0, app: held["app"]?.string ?? "", server: held["server"]?.string ?? "").name
-            throw CommandError("historyConflict", "Syphon number \(number) is now held by \(name); undo/redo refused")
+            let label = LiveCatalog.Entry(kind: kind, file: 0, source: held[kind.fields.source]?.string ?? "", name: held[kind.fields.name]?.string ?? "").label
+            throw CommandError("historyConflict", "\(kind.title) number \(number) is now held by \(label); undo/redo refused")
         }
         guard !written.isEmpty else { return }
         // the numbers as the step would leave them (an op that does not apply is skipped by the step, or fails it)
         var after = project
-        for operation in syphonOps { try? JSONPatch(operations: [operation]).apply(to: &after) }
-        let numbers = syphonNumbers(from: after)
-        for entry in numbers where written.contains(entry.file) {
-            let twin = numbers.first { $0.file != entry.file && !running.contains($0.file) && $0.app == entry.app && $0.server == entry.server }
-            guard let twin else { continue }
-            throw CommandError("historyConflict", "Syphon server \(entry.name) is now on number \(twin.file); undo/redo refused")
+        for operation in liveOps { try? JSONPatch(operations: [operation]).apply(to: &after) }
+        for kind in LiveCatalog.Kind.allCases {
+            guard let files = written[kind] else { continue }
+            let numbers = liveNumbers(kind, from: after)
+            for entry in numbers where files.contains(entry.file) {
+                let twin = numbers.first { $0.file != entry.file && !running.contains($0.file) && $0.same(entry) }
+                guard let twin else { continue }
+                throw CommandError("historyConflict", "\(kind.noun) \(entry.label) is now on number \(twin.file); undo/redo refused")
+            }
         }
     }
 
@@ -501,10 +509,10 @@ public enum ProjectDocument {
                 summary: "Forget a numbered Syphon server that is not running (folder 0, 150–169), or without file every one not running: the number is free again.",
                 argsType: "{ file?: number }",
                 // an undo puts the number back with `add /syphon/N`, which would overwrite a server numbered N meanwhile (B90)
-                replayCheck: { patch, done, project in try checkSyphonReplay(patch, undoing: done, on: project, running: syphonRunning()) }
+                replayCheck: { patch, done, project in try checkLiveReplay(patch, undoing: done, on: project, running: syphonRunning()) }
             ) { project, args in
                 let running = syphonRunning()
-                var numbers = syphonNumbers(from: project)
+                var numbers = liveNumbers(.syphon, from: project)
                 if let raw = args["file"], raw != .null {
                     guard let file = raw.int, numbers.contains(where: { $0.file == file }) else { throw CommandError.invalidArgs("no Syphon server numbered \(raw)") }
                     guard !running.contains(file) else { throw CommandError.invalidArgs("Syphon server \(file) is running; only one that is not running can be forgotten") }
@@ -512,7 +520,7 @@ public enum ProjectDocument {
                 } else {
                     numbers.removeAll { !running.contains($0.file) }
                 }
-                try project.set(syphonValue(numbers), at: "/syphon")
+                try project.set(liveValue(numbers), at: "/syphon")
                 return nil
             })
         store.register(

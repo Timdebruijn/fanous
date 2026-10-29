@@ -173,100 +173,118 @@ import Testing
 
     // MARK: numbered servers (B61)
 
-    static func info(_ app: String, _ server: String = "", _ uuid: String) -> SyphonInput.ServerInfo {
-        SyphonInput.ServerInfo(appName: app, serverName: server, uuid: uuid)
+    static func info(_ app: String, _ server: String = "", _ uuid: String) -> LiveCatalog.Entry {
+        LiveCatalog.Entry(kind: .syphon, file: 0, source: app, name: server, runtimeID: uuid)
+    }
+
+    /// The directory's servers reach the catalog as entries: app → source, server name → name, directory id → runtimeID.
+    @Test func catalogReadsTheDirectoryAsEntries() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { return }  // no GPU: skip
+        let name = "FanousTest-\(UUID().uuidString)"
+        let output = try SyphonOutput(name: name, device: device)
+        let input = SyphonInput(device: device)  // keeps the directory listening
+        defer {
+            input.disconnect()
+            output.stop()
+        }
+        // The directory learns about servers through distributed notifications, which need the main run loop.
+        #expect(Self.wait(seconds: 2) { LiveCatalog.syphonDirectory.contains { $0.name == name } })
+        let info = try #require(SyphonInput.directoryServers.first { $0.serverName == name })
+        let entry = try #require(LiveCatalog.syphonDirectory.first { $0.name == name })
+        #expect(entry.kind == .syphon && entry.source == info.appName && !entry.source.isEmpty)
+        #expect(entry.runtimeID == output.uuid && entry.runtimeID == info.uuid)
     }
 
     @Test func catalogNumbersServersInAnnounceOrderAndKeepsNumbersWhenTheyGo() {
-        var list: [SyphonCatalog.Server] = []
-        #expect(SyphonCatalog.assign(&list, running: [Self.info("Resolume", "Out", "a"), Self.info("Simple Server", "", "b")]))
+        var list: [LiveCatalog.Entry] = []
+        #expect(LiveCatalog.assign(&list, running: [Self.info("Resolume", "Out", "a"), Self.info("Simple Server", "", "b")]))
         #expect(list.map(\.file) == [150, 151])
-        #expect(list.map(\.name) == ["Resolume/Out", "Simple Server"])
+        #expect(list.map(\.label) == ["Resolume/Out", "Simple Server"])
         #expect(list.allSatisfy { $0.running })
-        #expect(!SyphonCatalog.assign(&list, running: [Self.info("Resolume", "Out", "a"), Self.info("Simple Server", "", "b")]))
+        #expect(!LiveCatalog.assign(&list, running: [Self.info("Resolume", "Out", "a"), Self.info("Simple Server", "", "b")]))
 
         // a gone server keeps its number; a new one takes the next, never the gone one's
-        #expect(SyphonCatalog.assign(&list, running: [Self.info("Simple Server", "", "b"), Self.info("fanousd", "Fanous – Canvas", "c")]))
+        #expect(LiveCatalog.assign(&list, running: [Self.info("Simple Server", "", "b"), Self.info("fanousd", "Fanous – Canvas", "c")]))
         #expect(list.map(\.file) == [150, 151, 152])
-        #expect(list[0].uuid == nil && !list[0].running && list[0].name == "Resolume/Out")
-        #expect(list[2].name == "fanousd/Fanous – Canvas")
+        #expect(list[0].runtimeID == nil && !list[0].running && list[0].label == "Resolume/Out")
+        #expect(list[2].label == "fanousd/Fanous – Canvas")
 
         // back under the same name with a new id: its old number
-        #expect(SyphonCatalog.assign(&list, running: [Self.info("Resolume", "Out", "a2"), Self.info("Simple Server", "", "b"), Self.info("fanousd", "Fanous – Canvas", "c")]))
-        #expect(list.count == 3 && list[0].uuid == "a2")
+        #expect(LiveCatalog.assign(&list, running: [Self.info("Resolume", "Out", "a2"), Self.info("Simple Server", "", "b"), Self.info("fanousd", "Fanous – Canvas", "c")]))
+        #expect(list.count == 3 && list[0].runtimeID == "a2")
 
         // two servers with one name (two engines' canvases) get a number each; a rename keeps the number
-        #expect(SyphonCatalog.assign(&list, running: [Self.info("fanousd", "Fanous – Canvas", "c"), Self.info("fanousd", "Fanous – Canvas", "d"), Self.info("Simple Server", "Renamed", "b")]))
+        #expect(LiveCatalog.assign(&list, running: [Self.info("fanousd", "Fanous – Canvas", "c"), Self.info("fanousd", "Fanous – Canvas", "d"), Self.info("Simple Server", "Renamed", "b")]))
         #expect(list.map(\.file) == [150, 151, 152, 153])
-        #expect(list[1].name == "Simple Server/Renamed" && list[3].uuid == "d" && list[0].uuid == nil)
+        #expect(list[1].label == "Simple Server/Renamed" && list[3].runtimeID == "d" && list[0].runtimeID == nil)
     }
 
     @Test func catalogHasTwentyNumbers() {
-        var list: [SyphonCatalog.Server] = []
-        _ = SyphonCatalog.assign(&list, running: (0..<25).map { Self.info("App", "S\($0)", "u\($0)") })
-        #expect(list.count == 20 && list.last?.file == 169 && list.last?.server == "S19")
+        var list: [LiveCatalog.Entry] = []
+        _ = LiveCatalog.assign(&list, running: (0..<25).map { Self.info("App", "S\($0)", "u\($0)") })
+        #expect(list.count == 20 && list.last?.file == 169 && list.last?.name == "S19")
         // full: a gone server still holds its number, a new one gets none
-        _ = SyphonCatalog.assign(&list, running: [Self.info("Other", "", "x")])
+        _ = LiveCatalog.assign(&list, running: [Self.info("Other", "", "x")])
         #expect(list.count == 20 && list.allSatisfy { !$0.running })
     }
 
     // MARK: numbers kept in the project (B69)
 
     @Test func numberingSurvivesARestartThroughTheProject() {
-        let first = SyphonCatalog()
+        let first = LiveCatalog(.syphon)
         first.update(running: [Self.info("Resolume", "Out", "a"), Self.info("Simple Server", "", "b"), Self.info("MadMapper", "", "c")])
-        let project: JSONValue = ["syphon": ProjectDocument.syphonValue(first.servers)]
+        let project: JSONValue = ["syphon": ProjectDocument.liveValue(first.entries)]
 
         // the next engine starts from the project: every number held, gone until its server announces
-        let next = SyphonCatalog(numbers: ProjectDocument.syphonNumbers(from: project))
-        #expect(next.servers.map(\.file) == [150, 151, 152])
-        #expect(next.servers.allSatisfy { $0.gone && !$0.running })
-        #expect(next.server(file: 151)?.name == "Simple Server")
+        let next = LiveCatalog(.syphon, numbers: ProjectDocument.liveNumbers(.syphon, from: project))
+        #expect(next.entries.map(\.file) == [150, 151, 152])
+        #expect(next.entries.allSatisfy { $0.gone && !$0.running })
+        #expect(next.entry(file: 151)?.label == "Simple Server")
 
         // they answer in another order, with new ids: each takes its own number back by name
         next.update(running: [Self.info("MadMapper", "", "c2"), Self.info("Resolume", "Out", "a2")])
-        #expect(next.server(file: 150)?.uuid == "a2" && next.server(file: 152)?.uuid == "c2")
-        #expect(next.server(file: 151)?.gone == true && next.server(file: 150)?.gone == false)
+        #expect(next.entry(file: 150)?.runtimeID == "a2" && next.entry(file: 152)?.runtimeID == "c2")
+        #expect(next.entry(file: 151)?.gone == true && next.entry(file: 150)?.gone == false)
         // a new server gets the lowest free number, not a held one
         next.update(running: [Self.info("MadMapper", "", "c2"), Self.info("Resolume", "Out", "a2"), Self.info("New", "", "n")])
-        #expect(next.server(file: 153)?.name == "New")
+        #expect(next.entry(file: 153)?.label == "New")
 
         // forgetting 151 (the project without it) frees the number for the next new server
-        let forgotten = next.servers.filter { $0.file != 151 }
+        let forgotten = next.entries.filter { $0.file != 151 }
         #expect(next.adopt(forgotten))
-        #expect(next.server(file: 151) == nil)
+        #expect(next.entry(file: 151) == nil)
         next.update(running: [Self.info("MadMapper", "", "c2"), Self.info("Resolume", "Out", "a2"), Self.info("New", "", "n"), Self.info("Later", "", "l")])
-        #expect(next.server(file: 151)?.name == "Later")
+        #expect(next.entry(file: 151)?.label == "Later")
 
         // a project entry on a running server's number loses: the running server keeps it
-        #expect(!next.adopt([SyphonCatalog.Server(file: 150, app: "Elsewhere", server: "")] + next.servers.filter { $0.file != 150 }))
-        #expect(next.server(file: 150)?.uuid == "a2")
+        #expect(!next.adopt([LiveCatalog.Entry(kind: .syphon, file: 150, source: "Elsewhere", name: "")] + next.entries.filter { $0.file != 150 }))
+        #expect(next.entry(file: 150)?.runtimeID == "a2")
     }
 
     /// Undo or a loaded version bringing back a name that runs on another number: dropped, or that server would move to
     /// the lower number at the next restart. A gone twin the catalog already holds (two canvases, one name) stays.
     @Test func adoptDropsANewEntryWithARunningServersName() {
-        let catalog = SyphonCatalog()
+        let catalog = LiveCatalog(.syphon)
         catalog.update(running: [Self.info("Other", "", "o"), Self.info("fanousd", "Fanous – Canvas", "x"), Self.info("fanousd", "Fanous – Canvas", "y")])
         catalog.update(running: [Self.info("Other", "", "o"), Self.info("fanousd", "Fanous – Canvas", "x")])
-        #expect(catalog.server(file: 152)?.running == false)  // the twin that stopped
-        let restored = catalog.servers + [SyphonCatalog.Server(file: 160, app: "fanousd", server: "Fanous – Canvas")]
+        #expect(catalog.entry(file: 152)?.running == false)  // the twin that stopped
+        let restored = catalog.entries + [LiveCatalog.Entry(kind: .syphon, file: 160, source: "fanousd", name: "Fanous – Canvas")]
         #expect(!catalog.adopt(restored))
-        #expect(catalog.servers.map(\.file) == [150, 151, 152])
+        #expect(catalog.entries.map(\.file) == [150, 151, 152])
         // nothing running under that name: a restored entry is taken as gone
-        #expect(catalog.adopt(restored + [SyphonCatalog.Server(file: 161, app: "Gone App", server: "")]))
-        #expect(catalog.server(file: 161)?.gone == true)
+        #expect(catalog.adopt(restored + [LiveCatalog.Entry(kind: .syphon, file: 161, source: "Gone App", name: "")]))
+        #expect(catalog.entry(file: 161)?.gone == true)
     }
 
     @Test func aTwentyFirstServerWaitsForAForgottenNumber() {
-        let full = (150...169).map { SyphonCatalog.Server(file: $0, app: "App", server: "S\($0)") }
-        let catalog = SyphonCatalog(numbers: full)
+        let full = (150...169).map { LiveCatalog.Entry(kind: .syphon, file: $0, source: "App", name: "S\($0)") }
+        let catalog = LiveCatalog(.syphon, numbers: full)
         catalog.update(running: [Self.info("Other", "", "x")])
-        #expect(catalog.servers.count == 20 && catalog.server(file: 150)?.name == "App/S150")
+        #expect(catalog.entries.count == 20 && catalog.entry(file: 150)?.label == "App/S150")
         #expect(catalog.unnumbered == ["Other"])
         // forget 160: the waiting server gets it without announcing again
         #expect(catalog.adopt(full.filter { $0.file != 160 }))
-        #expect(catalog.server(file: 160)?.uuid == "x" && catalog.unnumbered.isEmpty)
+        #expect(catalog.entry(file: 160)?.runtimeID == "x" && catalog.unnumbered.isEmpty)
     }
 
     final class FakeLive: LiveTextureSource, @unchecked Sendable {
@@ -290,7 +308,7 @@ import Testing
             calls.withLock { $0.append("\(spec)|\(uuid ?? "-")") }
             return FakeLive(uuid: uuid)
         }
-        let catalog = SyphonCatalog()
+        let catalog = LiveCatalog(.syphon)
         catalog.onChange = { [loader] in loader.syphonServersChanged() }
         loader.syphonCatalog = catalog
         catalog.update(running: [Self.info("Resolume", "Out", "a"), Self.info("Other", "", "b")])
@@ -319,7 +337,7 @@ import Testing
         // it comes back with a new id: connected again without selecting the file again
         catalog.update(running: [Self.info("Other", "", "b"), Self.info("Resolume", "Out", "a2")])
         #expect(eventually { playback(0)?.uuid == "a2" && status(0).error == nil })
-        #expect(catalog.server(file: 150)?.uuid == "a2")
+        #expect(catalog.entry(file: 150)?.runtimeID == "a2")
 
         // a number no server has: missing; a gone server picked anew: not running, nothing to show
         layers[1].wanted.store(MediaKey(folder: 0, file: 160).packed, ordering: .relaxed)
@@ -337,7 +355,7 @@ import Testing
         let connected = try #require(playback(1))
         catalog.update(running: [Self.info("Other", "", "b"), Self.info("Resolume", "Main", "a3")])
         #expect(eventually { status(1).name == "Syphon: Resolume/Main" })
-        #expect(playback(1) === connected && catalog.server(file: 150)?.file == 150)
+        #expect(playback(1) === connected && catalog.entry(file: 150)?.file == 150)
     }
 
     @Test func loaderSaysCouldNotConnectWhenARunningServerRefuses() throws {
@@ -345,7 +363,7 @@ import Testing
         let layer = RenderLayer(index: 0)
         let loader = MediaLoader(layers: [layer], media: [], device: device, ringCapacity: 4, logger: Logger(label: "test"))
         loader.liveFactory = { _, _ in nil }
-        let catalog = SyphonCatalog()
+        let catalog = LiveCatalog(.syphon)
         catalog.update(running: [Self.info("App", "", "a")])
         loader.syphonCatalog = catalog
         loader.start()
@@ -356,10 +374,10 @@ import Testing
     }
 
     @Test func catalogLeavesTheEnginesOwnServerOut() {
-        let catalog = SyphonCatalog(excluding: "own")
+        let catalog = LiveCatalog(.syphon, excluding: "own")
         catalog.update(running: [Self.info("fanousd", "Fanous – Canvas", "own"), Self.info("Resolume", "Out", "a")])
-        #expect(catalog.servers.map(\.name) == ["Resolume/Out"])
-        #expect(catalog.server(file: 150)?.uuid == "a")
+        #expect(catalog.entries.map(\.label) == ["Resolume/Out"])
+        #expect(catalog.entry(file: 150)?.runtimeID == "a")
     }
 }
 
