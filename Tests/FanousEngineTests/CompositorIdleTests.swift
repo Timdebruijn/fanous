@@ -103,6 +103,24 @@ struct CompositorIdleTests {
         #expect(canvas.rgba[mid] > 150, "first watched frame is complete, got \(canvas.rgba[mid])")
     }
 
+    /// B105: later ticks book finished command buffers (no completion handler): the records get their GPU time and
+    /// `completed` catches up while ticking.
+    @Test func ticksBookFinishedCommandBuffers() throws {
+        let rig = try Rig(idleWork: false, offscreen: true)
+        rig.tick(10)
+        _ = rig.centre()  // the GPU is done with all 10
+        var ticked = 10
+        while rig.compositor.completed.load(ordering: .relaxed) < 10 && ticked < 15 {
+            rig.tick(1, from: ticked)
+            ticked += 1
+        }
+        #expect(rig.compositor.completed.load(ordering: .relaxed) >= 10, "booked within \(ticked - 10) more ticks")
+        let records = rig.metrics.recent(seconds: 10, now: 3601)
+        #expect(records.count == ticked)
+        #expect(records.prefix(10).filter(\.complete).count == 10, "the first 10 records have their GPU time")
+        #expect(rig.compositor.gpuErrors.load(ordering: .relaxed) == 0)
+    }
+
     @Test func handOffStillRunsWhileUnwatched() throws {
         let rig = try Rig(idleWork: true, offscreen: false)
         let next = try Rig.stillPlayback(rig.context)

@@ -410,13 +410,17 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
     allocates for unspecialised generics.
   - Metal API objects add allocations on every tick: 2 per
     `makeCommandBuffer()`, 2 for the first
-    `makeRenderCommandEncoder(descriptor:)` and 3 for each further one, and 1
-    per `addCompletedHandler`. Our completion closure adds 2: its context and
-    the block copy. B105 tracks removing those 2 plus the handler's 1.
+    `makeRenderCommandEncoder(descriptor:)` and 3 for each further one.
+    Completion bookkeeping uses no completion handler (B105): the tick keeps
+    its committed buffer in a fixed ring of 8 and the next ticks poll the
+    status, then book GPU time, late flag, `completed` and `gpuErrors` on the
+    compositor thread, 0 allocations. GPU numbers arrive a few ticks late; the
+    last buffers before ticks stop stay unbooked. A handler with its capturing
+    closure cost 3 per tick.
   - `fanous-bench` reports the thread's count per step (`compositorMallocs`,
-    B97). The minimum is 7.00 per tick (2 + 2 + 1 + 2), measured headless with
-    one canvas, no output pass and no preview or thumbnails (M1 Pro, 4 ProRes
-    layers, 2026-10-29). Additions:
+    B97). The minimum is 4.00 per tick (2 + 2), measured headless with one
+    canvas, no output pass and no preview or thumbnails (M1 Pro, 4 ProRes
+    layers, 2026-10-29; 7.00 before B105). Additions:
 
     | Feature | Extra allocations per tick |
     |---|---|

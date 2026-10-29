@@ -63,9 +63,12 @@ now:
   checks it in an optimised build, without GPU encoding.
 - **Metal API objects add allocations on every tick**, and the Metal 3 API
   cannot avoid them: 2 per `makeCommandBuffer()`, 2 for the first
-  `makeRenderCommandEncoder(descriptor:)` and 3 for each further one, and 1 per
-  `addCompletedHandler`.
-- **Our completion closure adds 2.** B105 tracks removing it.
+  `makeRenderCommandEncoder(descriptor:)` and 3 for each further one.
+- **Completion bookkeeping allocates 0.** Since B105 the compositor registers no
+  completion handler (1 for `addCompletedHandler`, 2 for its closure): it keeps
+  committed buffers in a fixed ring of 8, and later ticks poll their status and
+  book GPU time, late flags and the counters on the compositor thread.
 
-The minimum is 7 per tick (headless, one canvas, no output pass, no previews).
+The minimum is 4 per tick (headless, one canvas, no output pass, no previews;
+7 before B105).
 DESIGN.md §4.6 lists what each feature adds.

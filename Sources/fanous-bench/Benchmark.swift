@@ -200,8 +200,10 @@ enum Benchmark {
         let summary = metrics.summary(seconds: now - start, now: now)
         let counters = service.counters
         let audio = service.mixer?.statistics ?? AudioStatistics()
-        if counters.gpuErrors > 0 || counters.encoderFailures > 0 || counters.outputFailures > 0 || counters.completed < counters.ticks - 2 {
-            print("  diagnostics: ticks \(counters.ticks), completed \(counters.completed), gpu errors \(counters.gpuErrors) \(counters.lastError), encoder failures \(counters.encoderFailures)/\(counters.outputFailures)")
+        // ticks book the buffers that finished by then (B105): up to 8 can still be unbooked
+        let waits = service.compositor.completionWaits.load(ordering: .relaxed)
+        if counters.gpuErrors > 0 || counters.encoderFailures > 0 || counters.outputFailures > 0 || counters.completed < counters.ticks - 10 || waits > 0 {
+            print("  diagnostics: ticks \(counters.ticks), completed \(counters.completed), gpu errors \(counters.gpuErrors) \(counters.lastError), encoder failures \(counters.encoderFailures)/\(counters.outputFailures), completion waits \(waits)")
         }
         if let ingestQueue {
             let job = ingestQueue.jobs.first
