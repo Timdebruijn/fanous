@@ -227,6 +227,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Removed: the CITP/MSEX codec's unused direction (repo audit 2026-10-29): Fanous only serves, so Core no longer
   decodes server messages (`PLoc`, `SInf`, `LSta`, ...) or encodes client ones (`PNam`, `CInf`, `GELI`, ...); a
   console that sends a server message is still ignored, not Nacked. Tests pin the server's bytes.
+- Removed: `LTCFrame.userBits` (repo audit 2026-10-29): the LTC decoder unpacked the user bits of every frame and
+  nothing read them.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
