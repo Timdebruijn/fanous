@@ -271,7 +271,7 @@ public final class Engine: @unchecked Sendable {
         sceneWithOutputs.managedOutputs = true  // the coordinator below owns displays and drivers (DESIGN.md §9.6)
         do {
             let scene = sceneWithOutputs
-            let syphonNumbers = ProjectDocument.syphonNumbers(from: loadedProject ?? .null)
+            let syphonNumbers = ProjectDocument.liveNumbers(.syphon, from: loadedProject ?? .null)
             let service = try MainActor.assumeIsolated {
                 try RenderService(scene: scene, context: context, parameters: dmx.snapshots, metrics: metrics, logger: logger, syphonNumbers: syphonNumbers)
             }
@@ -300,7 +300,7 @@ public final class Engine: @unchecked Sendable {
             on: store, auth: auth, showModeOn: { [weak self] in self?.showMode.isOn ?? false },
             checkLibraryRoot: { [weak self] root in if let refusal = self?.libraryRootRefusal(root) { throw refusal } },
             applySync: { [weak self] in try self?.applySync($0) },
-            syphonRunning: { [weak self] in Set(self?.render?.syphonCatalog.servers.filter(\.running).map(\.file) ?? []) },
+            syphonRunning: { [weak self] in Set(self?.render?.syphonCatalog.entries.filter(\.running).map(\.file) ?? []) },
             displayModes: { [weak self] in Dictionary((self?.displays.withLock { $0 } ?? []).map { ($0.uuid, $0.mode) }, uniquingKeysWith: { a, _ in a }) })
         syphonInProject.withLock { $0 = project["syphon"] ?? [:] }
         libraryRootInProject.withLock { $0 = URL(fileURLWithPath: project["library"]?["root"]?.string ?? libraryRoot.path).path }
@@ -1356,7 +1356,7 @@ public final class Engine: @unchecked Sendable {
             defer { old = syphon }
             return old != syphon
         }) {
-            render?.syphonCatalog.adopt(ProjectDocument.syphonNumbers(from: document))
+            render?.syphonCatalog.adopt(ProjectDocument.liveNumbers(.syphon, from: document))
         }
         let midiSettings = MIDISettings.from(project: document)
         if midiSettings != lastMIDISettings {
@@ -1515,7 +1515,7 @@ public final class Engine: @unchecked Sendable {
     private func publishLive() {
         guard let dmx, let store, let auth, let ingest, let library else { return }
         // before the client check: a headless show driven by a console records its Syphon numbers too (B69)
-        if let catalog = render?.syphonCatalog { Self.recordSyphonNumbers(catalog, into: store, applied: syphonInProject.withLock { $0 }) }
+        if let catalog = render?.syphonCatalog { Self.recordLiveNumbers(catalog, into: store, applied: syphonInProject.withLock { $0 }) }
         // nobody to tell; a client that connects gets the full live document in its welcome and a fresh one within 100 ms
         guard store.clientCount > 0 else { return }
         let facts = currentHostFacts()
@@ -1584,22 +1584,22 @@ public final class Engine: @unchecked Sendable {
         store.updateLive(live)
     }
 
-    /// The catalog's numbering written into the project when it differs from `applied` (`/syphon` as last applied: a
-    /// new number, a rename): through `correct`, so no role, no history and also under show lock (B69).
-    static func recordSyphonNumbers(_ catalog: SyphonCatalog, into store: StateStore, applied: JSONValue) {
-        guard ProjectDocument.syphonValue(catalog.servers) != applied else { return }
+    /// The catalog's numbering written into the project when it differs from `applied` (`/syphon` or the kind's key as
+    /// last applied: a new number, a rename): through `correct`, so no role, no history and also under show lock (B69).
+    static func recordLiveNumbers(_ catalog: LiveCatalog, into store: StateStore, applied: JSONValue) {
+        guard ProjectDocument.liveValue(catalog.entries) != applied else { return }
         // made on the store's queue: never a list from before a syphon.forget that landed meanwhile
-        store.correct(at: "/syphon") { ProjectDocument.syphonValue(catalog.servers) }
+        store.correct(at: JSONPointer(tokens: [catalog.kind.projectKey])) { ProjectDocument.liveValue(catalog.entries) }
     }
 
     /// `live.syphon` (B61, B69).
     private func syphonLive() -> JSONValue {
         guard let catalog = render?.syphonCatalog else { return ["servers": []] }
-        let servers = catalog.servers
+        let servers = catalog.entries
         return [
             "servers": .array(
                 servers.map { s in
-                    var entry: JSONValue = ["file": .number(Double(s.file)), "app": .string(s.app), "server": .string(s.server), "running": .bool(s.running)]
+                    var entry: JSONValue = ["file": .number(Double(s.file)), "app": .string(s.source), "server": .string(s.name), "running": .bool(s.running)]
                     if s.gone { try? entry.set(true, at: "/gone") }
                     return entry
                 }),

@@ -302,7 +302,7 @@ extension ProjectVersions {
                 replayCheck: { patch, done, project in
                     if showModeOn() { throw showModeRefusal }
                     // the revert diffs `/syphon` too: its undo or redo must not change a number taken meanwhile (B91)
-                    try ProjectDocument.checkSyphonReplay(patch, undoing: done, on: project)
+                    try ProjectDocument.checkLiveReplay(patch, undoing: done, on: project)
                 }
             ) { [self] project, args in
                 guard let id = args["id"]?.string else { throw CommandError.invalidArgs("id must be a version id") }
