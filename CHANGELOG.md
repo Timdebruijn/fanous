@@ -273,6 +273,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - The compositor no longer registers a completion handler per tick: later ticks poll the committed command buffers and
   book GPU time, late flags, `completed` and GPU errors, so the minimum with GPU work drops from 7 to 4 allocations per
   tick (the 4 inside Metal). GPU numbers in `/metrics` arrive a few frames later (B105).
+- Fixed: the Outputs screen preview of a frozen output (Output Control = Freeze) kept moving while the projector held.
+  It now holds too, at the Grand Master level the output shows, and goes live again when Freeze is released. An output on
+  a secondary display or on no display holds from the preview's own next frame, which can be a few frames later (B107).
 - Fixed: below a Grand Master of 100 % a lower layer showed through an opaque layer above it (green over red at 50 % gave
   (63,128,0) instead of (0,128,0)), on the canvas preview, Syphon, CITP and every output. The Master now dims each layer's
   colour instead of making it transparent, so the picture dims as it looks at 100 %, in every blend mode (B108).

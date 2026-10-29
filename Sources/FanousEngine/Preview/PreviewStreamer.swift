@@ -178,8 +178,9 @@ public final class PreviewStreamer: @unchecked Sendable {
     // MARK: Compositor thread
 
     /// `Compositor.previewTap`: encodes the downscale into the tick's command buffer when a frame is due.
-    /// `canvases` looks up the other canvases of this tick (outputs whose slices use them).
-    public func tap(canvas: MTLTexture, commandBuffer: MTLCommandBuffer, target: Double, canvases: ((Int) -> MTLTexture?)? = nil) {
+    /// `canvases` looks up the other canvases of this tick (outputs whose slices use them); `live` is the set the tick
+    /// draws (`Compositor.outputSet`), whose held frames an output preview shows (B107).
+    public func tap(canvas: MTLTexture, commandBuffer: MTLCommandBuffer, target: Double, canvases: ((Int) -> MTLTexture?)? = nil, live: OutputSet? = nil) {
         tickCounter &+= 1
         guard wantsFrames, tickCounter % (wantsH264 ? everyNth : jpegEveryNth) == 0, let pool, let textureCache else { return }
         var pixelBuffer: CVPixelBuffer?
@@ -204,6 +205,22 @@ public final class PreviewStreamer: @unchecked Sendable {
             }
             layerRing = (layerRing + 1) % 3
             canvas = layerTexture
+        }
+        // Freeze holds the output preview too (B107); before the render encoder, as `holdFrozen` blits
+        let outputSet = outputSet  // read once: `Engine.previewOutput` swaps it from another thread
+        if let set = outputSet, let plan = set.plans.first {
+            if let shown = live?.plans.first(where: { $0.id == plan.id }) {
+                // on the clock-master display: the frame its projector holds, no copy. An earlier tick's hold: the tap
+                // precedes the tick's hold, so the engage tick draws the live canvas, which is the held frame
+                (plan.held, plan.heldMaster) = (shown.held, shown.heldMaster)
+            } else {
+                // a secondary display holds on its own thread, an unbound output nowhere: a copy of its own, from the
+                // first preview frame after Freeze engaged
+                let snapshot = parameters.current()
+                OutputPass.holdFrozen(
+                    set, canvas: { $0 == canvasID ? canvas : canvases?($0) }, outputs: snapshot.outputs,
+                    master: snapshot.masterControl == .blackout ? 0 : snapshot.master, buffer: commandBuffer)
+            }
         }
         pass.colorAttachments[0].texture = texture
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else {
