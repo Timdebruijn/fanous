@@ -44,17 +44,39 @@ func freeUDPPort() throws -> UInt16 {
     return UInt16(bigEndian: address.sin_port)
 }
 
-/// One UDP datagram to 127.0.0.1:`port` from a throwaway socket.
-func sendUDP(_ bytes: [UInt8], to port: UInt16) {
+/// One UDP datagram to `host`:`port` from a throwaway socket.
+func sendUDP(_ bytes: [UInt8], to port: UInt16, host: String = "127.0.0.1") {
+    sendUDP([bytes], to: port, host: host)
+}
+
+/// UDP datagrams to `host`:`port`, back-to-back from one throwaway socket (one flow, as a console sends them); `sent`
+/// is what `sendto` returned for each. With a `reply` time, `replied` says whether an answer came back to that socket
+/// within it.
+@discardableResult
+func sendUDP(_ datagrams: [[UInt8]], to port: UInt16, host: String = "127.0.0.1", reply: Double = 0) -> (sent: [Int], replied: Bool) {
     let fd = socket(AF_INET, SOCK_DGRAM, 0)
     defer { close(fd) }
     var address = sockaddr_in()
     address.sin_family = sa_family_t(AF_INET)
     address.sin_port = port.bigEndian
-    address.sin_addr.s_addr = inet_addr("127.0.0.1")
-    _ = withUnsafePointer(to: &address) { p in
-        p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sendto(fd, bytes, bytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+    address.sin_addr.s_addr = inet_addr(host)
+    let sent = datagrams.map { bytes in
+        withUnsafePointer(to: &address) { p in
+            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sendto(fd, bytes, bytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
     }
+    guard reply > 0 else { return (sent, false) }
+    var wait = timeval(tv_sec: Int(reply), tv_usec: Int32((reply - reply.rounded(.down)) * 1e6))
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &wait, socklen_t(MemoryLayout<timeval>.size))
+    var buffer = [UInt8](repeating: 0, count: 1500)
+    return (sent, recv(fd, &buffer, buffer.count, 0) > 0)
+}
+
+/// A fresh directory `prefix`-<UUID> under the temporary directory.
+func tempDir(_ prefix: String) throws -> URL {
+    let url = FileManager.default.temporaryDirectory.appending(path: "\(prefix)-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    return url
 }
 
 /// A socket on 127.0.0.1:`port` whose `receive` waits at most `timeout` seconds; nil = nothing came.

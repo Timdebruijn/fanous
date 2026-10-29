@@ -33,12 +33,6 @@ extension LayerAudioChannel {
 @Suite struct AudioTests {
     // MARK: Helpers
 
-    static func temporaryDirectory() throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-audio-tests-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
-
     /// 320×180 ProRes 422 HQ at 30 fps, `seconds` long, with the `TestTone` track when `audio` is set.
     static func writeMovie(to url: URL, seconds: Int = 3, audio: Bool = true) async throws {
         try await offPool { try writeMovieBlocking(to: url, seconds: seconds, audio: audio) }
@@ -138,7 +132,7 @@ extension LayerAudioChannel {
     // MARK: AudioTrackReader
 
     @Test func readerSeeksToOneSecondAndFindsTheTestTone() async throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-audio-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "tone.mov")
         try await Self.writeMovie(to: url)
@@ -171,7 +165,7 @@ extension LayerAudioChannel {
     }
 
     @Test func readerReturnsFewerFramesAtTheEnd() async throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-audio-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "end.mov")
         try await Self.writeMovie(to: url)
@@ -188,7 +182,7 @@ extension LayerAudioChannel {
     }
 
     @Test func movieWithoutAudioHasNoAudio() async throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-audio-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "silent.mov")
         try await Self.writeMovie(to: url, seconds: 1, audio: false)
@@ -201,7 +195,7 @@ extension LayerAudioChannel {
 
     @Test(arguments: [(48_000.0, 1), (48_000.0, 3), (44_100.0, 2)])
     func readerMapsChannelsAndConvertsTheRate(rate: Double, channels: Int) async throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-audio-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "constant.mov")
         try await Self.writeConstantAudio(to: url, rate: rate, channels: channels)
@@ -370,7 +364,7 @@ extension LayerAudioChannel {
     // MARK: Producer reseek
 
     @Test func wantedPTSJumpReseeksTheReaderAndRefills() async throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-audio-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "jump.mov")
         try await Self.writeMovie(to: url)
@@ -416,7 +410,7 @@ extension LayerAudioChannel {
     }
 
     @Test func endOfMediaIsNotAnUnderrunAndDoesNotReseekForever() async throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-audio-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "tail.mov")
         try await Self.writeMovie(to: url)
@@ -439,7 +433,7 @@ extension LayerAudioChannel {
 
     /// B3: a forward loop is read across the wrap, so 120 wraps of a 1 s file never run the ring dry.
     @Test func loopWrapIsGaplessOverManyWraps() async throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-audio-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "loop.mov")
         try await Self.writeMovie(to: url, seconds: 1)
@@ -470,7 +464,7 @@ extension LayerAudioChannel {
     /// Loop-end edge cases of the gapless wrap: a 44.1 kHz source looped over its whole (converted) length, a loop
     /// a little longer than the audio (padded), and a restart whose clock is already past the loop end.
     @Test func loopEdgeCases() async throws {
-        let directory = try Self.temporaryDirectory()
+        let directory = try tempDir("fanous-audio-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "edge.mov")
         try await Self.writeConstantAudio(to: url, rate: 44_100, channels: 2)

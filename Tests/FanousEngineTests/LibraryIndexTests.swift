@@ -14,12 +14,6 @@ import Testing
 @testable import FanousEngine
 
 struct LibraryIndexTests {
-    static func temporaryRoot() throws -> URL {
-        let root = FileManager.default.temporaryDirectory.appending(path: "fanous-library-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        return root
-    }
-
     static func touch(_ url: URL, bytes: Int = 16) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(repeating: 0, count: bytes).write(to: url)
@@ -38,7 +32,7 @@ struct LibraryIndexTests {
 
     /// Numbering, invalid names, duplicates, ignored folders; files are empty so every probe ends "unreadable".
     @Test func scanClassifiesNamesAndDuplicates() throws {
-        let root = try Self.temporaryRoot()
+        let root = try tempDir("fanous-library")
         defer { try? FileManager.default.removeItem(at: root) }
         try Self.touch(root.appending(path: "001_Opening/001_intro.mov"))
         try Self.touch(root.appending(path: "001_Opening/002_title.png"))
@@ -75,7 +69,7 @@ struct LibraryIndexTests {
 
     /// 10 000 files scan in well under a second and the probe queue stays bounded by the file count.
     @Test func tenThousandFiles() throws {
-        let root = try Self.temporaryRoot()
+        let root = try tempDir("fanous-library")
         defer { try? FileManager.default.removeItem(at: root) }
         for folder in 1...40 {
             let dir = root.appending(path: String(format: "%03d_Folder", folder))
@@ -97,7 +91,7 @@ struct LibraryIndexTests {
 
     /// A playable movie resolves after probing, its thumbnail is requested, and FSEvents picks up a new file.
     @Test func probeResolvesAndWatcherRescans() async throws {
-        let root = try Self.temporaryRoot()
+        let root = try tempDir("fanous-library")
         defer { try? FileManager.default.removeItem(at: root) }
         let folder = root.appending(path: "007_Test")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -168,7 +162,7 @@ struct LibraryIndexTests {
     }
 
     @Test func rootProblems() throws {
-        let root = try Self.temporaryRoot()
+        let root = try tempDir("fanous-library")
         defer { try? FileManager.default.removeItem(at: root) }
         try Self.touch(root.appending(path: "file.txt"))
         #expect(LibraryIndex.rootProblem(root.path) == nil)
@@ -181,7 +175,7 @@ struct LibraryIndexTests {
     /// layers re-resolve against it: a file not probed yet shows "missing" until its probe makes it playable, a file
     /// the root lacks stays "missing". Switching back needs no new probes.
     @Test func switchingRootsReindexesAndReresolvesLayers() async throws {
-        let a = try Self.temporaryRoot(), b = try Self.temporaryRoot(), cache = try Self.temporaryRoot()
+        let a = try tempDir("fanous-library"), b = try tempDir("fanous-library"), cache = try tempDir("fanous-library")
         defer { for url in [a, b, cache] { try? FileManager.default.removeItem(at: url) } }
         try Self.png(a.appending(path: "001_A/001_one.png"))
         try Self.png(a.appending(path: "001_A/002_two.png"))
@@ -260,7 +254,7 @@ struct LibraryIndexTests {
     }
 
     @Test func ingestTargets() throws {
-        let root = try Self.temporaryRoot()
+        let root = try tempDir("fanous-library")
         defer { try? FileManager.default.removeItem(at: root) }
         try Self.touch(root.appending(path: "003_Show/001_a.mov"))
         try Self.touch(root.appending(path: "003_Show/002_b.mov"))

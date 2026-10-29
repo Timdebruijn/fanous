@@ -38,7 +38,7 @@ struct SyncCompositorTests {
         var inOut: (Float, Float) = (0, 1)
 
         init(_ sync: [LayerSync]) async throws {
-            directory = try IngestQueueTests.temporaryDirectory()
+            directory = try tempDir("fanous-ingest-tests")
             let url = directory.appending(path: "clip.mov")
             try await IngestQueueTests.writeSource(to: url, seconds: 2, audio: false)
             let context = try MetalContext()
