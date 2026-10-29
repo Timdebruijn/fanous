@@ -8,6 +8,8 @@ import Foundation
 //   CITP header (20) | VersionMajor u8 | VersionMinor u8 | ContentType cookie (4) | payload
 // The structs carry the 1.2 field set; fields a given version does not have are left out when encoding
 // and come back as defaults when decoding. 1.1 shares the 1.0 layout wherever the spec has no 1.1 variant.
+// One way only: the client messages (CInf, GELI, GEIn, GETh, GVSr, RqSt) are decoded, the server messages
+// (SInf, Nack, LSta, ELIn, MEIn, EThn, VSrc, StFr) are encoded.
 
 public struct MSEXVersion: Comparable, Hashable, Sendable {
     public var major: UInt8
@@ -99,25 +101,6 @@ public struct ServerInformation: Equatable, Sendable {
         self.layerDMXSources = layerDMXSources
     }
 
-    init(version: MSEXVersion, from r: inout CITPReader) throws {
-        let wide = version >= .v1_2
-        let uuid = try wide ? r.fixedString(36) : ""
-        let name = try r.ucs2()
-        var info = ServerInformation(version: version, uuid: uuid, productName: name)
-        info.productVersionMajor = try r.u8()
-        info.productVersionMinor = try r.u8()
-        if wide {
-            info.productVersionBugfix = try r.u8()
-            info.supportedVersions = try r.versions()
-            info.supportedLibraryTypes = try r.u16()
-            info.thumbnailFormats = try r.cookies()
-            info.streamFormats = try r.cookies()
-        }
-        let layers = Int(try r.u8())
-        info.layerDMXSources = try r.array(layers) { try $0.ucs1() }
-        self = info
-    }
-
     func write(to out: inout [UInt8], as v: MSEXVersion) {
         if v >= .v1_2 { out.putFixedString(uuid, 36) }
         out.putUCS2(productName)
@@ -159,7 +142,7 @@ public struct LayerStatus: Equatable, Sendable {
 
     public var layerNumber: UInt8
     public var physicalOutput: UInt8
-    /// 1.2 only (1 = Media, 2 = Effects, ...); decodes as 1 from 1.0/1.1 messages.
+    /// 1.2 only (1 = Media, 2 = Effects, ...); not written before 1.2.
     public var mediaLibraryType: UInt8
     /// 1.0/1.1 carry only `level1` (as MediaLibraryNumber); use `MSEXLibraryID.topLevel(_:)` there.
     public var mediaLibraryID: MSEXLibraryID
@@ -186,22 +169,6 @@ public struct LayerStatus: Equatable, Sendable {
         self.mediaLength = mediaLength
         self.mediaFPS = mediaFPS
         self.statusFlags = statusFlags
-    }
-
-    init(version v: MSEXVersion, from r: inout CITPReader) throws {
-        self.init(layerNumber: try r.u8(), physicalOutput: try r.u8())
-        if v >= .v1_2 {
-            mediaLibraryType = try r.u8()
-            mediaLibraryID = try r.libraryID(v)
-        } else {
-            mediaLibraryID = .topLevel(try r.u8())
-        }
-        mediaNumber = try r.u8()
-        mediaName = try r.ucs2()
-        mediaPosition = try r.u32()
-        mediaLength = try r.u32()
-        mediaFPS = try r.u8()
-        statusFlags = try r.u32()
     }
 
     static func write(_ layers: [LayerStatus], to out: inout [UInt8], as v: MSEXVersion) {
@@ -246,14 +213,6 @@ public struct GetElementLibraryInformation: Equatable, Sendable {
         if v >= .v1_1 { parentID = try r.libraryID(v) }
         libraryNumbers = try r.array(try r.count(v)) { try $0.u8() }
     }
-
-    func write(to out: inout [UInt8], as v: MSEXVersion) {
-        out.append(libraryType)
-        if v >= .v1_1 { out.putLibraryID(parentID, v) }
-        let numbers = libraryNumbers.prefix(v.maxCount)
-        out.putCount(numbers.count, v)
-        out += numbers
-    }
 }
 
 /// One library in MSEX/ELIn.
@@ -294,23 +253,6 @@ public struct ElementLibraryInformation: Equatable, Sendable {
         self.libraries = libraries
     }
 
-    init(version v: MSEXVersion, from r: inout CITPReader) throws {
-        let type = try r.u8()
-        let libraries = try r.array(try r.count(v)) { r -> ElementLibrary in
-            let id = try r.libraryID(v)
-            let serial = try v >= .v1_2 ? r.u32() : 0
-            let min = try r.u8()
-            let max = try r.u8()
-            let name = try r.ucs2()
-            let subLibraries = try v >= .v1_1 ? r.count(v) : 0
-            let elements = try r.count(v)
-            return ElementLibrary(
-                id: id, serialNumber: serial, dmxRangeMin: min, dmxRangeMax: max, name: name,
-                libraryCount: UInt16(subLibraries), elementCount: UInt16(elements))
-        }
-        self.init(version: v, libraryType: type, libraries: libraries)
-    }
-
     func write(to out: inout [UInt8], as v: MSEXVersion) {
         out.append(libraryType)
         let libraries = libraries.prefix(v.maxCount)
@@ -344,14 +286,6 @@ public struct GetElementInformation: Equatable, Sendable {
         let type = try r.u8()
         let id = try r.libraryID(v)
         self.init(version: v, libraryType: type, libraryID: id, elementNumbers: try r.array(try r.count(v)) { try $0.u8() })
-    }
-
-    func write(to out: inout [UInt8], as v: MSEXVersion) {
-        out.append(libraryType)
-        out.putLibraryID(libraryID, v)
-        let numbers = elementNumbers.prefix(v.maxCount)
-        out.putCount(numbers.count, v)
-        out += numbers
     }
 }
 
@@ -397,21 +331,6 @@ public struct MediaElementInformation: Equatable, Sendable {
         self.version = version
         self.libraryID = libraryID
         self.elements = elements
-    }
-
-    init(version v: MSEXVersion, from r: inout CITPReader) throws {
-        let id = try r.libraryID(v)
-        let elements = try r.array(try r.count(v)) { r -> MediaElement in
-            let number = try r.u8()
-            let serial = try v >= .v1_2 ? r.u32() : 0
-            let min = try r.u8()
-            let max = try r.u8()
-            let name = try r.ucs2()
-            return MediaElement(
-                number: number, serialNumber: serial, dmxRangeMin: min, dmxRangeMax: max, name: name,
-                versionTimestamp: try r.u64(), width: try r.u16(), height: try r.u16(), length: try r.u32(), fps: try r.u8())
-        }
-        self.init(version: v, libraryID: id, elements: elements)
     }
 
     func write(to out: inout [UInt8], as v: MSEXVersion) {
@@ -472,18 +391,6 @@ public struct GetElementThumbnail: Equatable, Sendable {
             version: v, format: format, width: width, height: height, flags: flags, libraryType: type, libraryID: id,
             elementNumbers: try r.array(try r.count(v)) { try $0.u8() })
     }
-
-    func write(to out: inout [UInt8], as v: MSEXVersion) {
-        out.putCookie(format)
-        out.put(width)
-        out.put(height)
-        out.append(flags)
-        out.append(libraryType)
-        out.putLibraryID(libraryID, v)
-        let numbers = elementNumbers.prefix(v.maxCount)
-        out.putCount(numbers.count, v)
-        out += numbers
-    }
 }
 
 /// MSEX/EThn: one thumbnail. The spec has no separate 1.2 layout, so 1.2 uses the 1.1 one.
@@ -510,19 +417,6 @@ public struct ElementThumbnail: Equatable, Sendable {
         self.width = width
         self.height = height
         self.buffer = buffer
-    }
-
-    init(version v: MSEXVersion, from r: inout CITPReader) throws {
-        let type = try r.u8()
-        let id = try r.libraryID(v)
-        let number = try r.u8()
-        let format = try r.cookie()
-        let width = try r.u16()
-        let height = try r.u16()
-        let size = Int(try r.u16())
-        self.init(
-            version: v, libraryType: type, libraryID: id, elementNumber: number, format: format, width: width, height: height,
-            buffer: Array(try r.take(size)))
     }
 
     func write(to out: inout [UInt8], as v: MSEXVersion) {
@@ -562,12 +456,6 @@ public struct VideoSource: Equatable, Sendable {
         self.flags = flags
         self.width = width
         self.height = height
-    }
-
-    init(from r: inout CITPReader) throws {
-        self.init(
-            sourceIdentifier: try r.u16(), name: try r.ucs2(), physicalOutput: try r.u8(), layerNumber: try r.u8(), flags: try r.u16(), width: try r.u16(),
-            height: try r.u16())
     }
 
     static func write(_ sources: [VideoSource], to out: inout [UInt8]) {
@@ -617,15 +505,6 @@ public struct RequestStream: Equatable, Sendable {
             version: v, sourceIdentifier: try r.u16(), frameFormat: try r.cookie(), frameWidth: try r.u16(), frameHeight: try r.u16(),
             fps: try r.u8(), timeout: try r.u8())
     }
-
-    func write(to out: inout [UInt8], as v: MSEXVersion) {
-        out.put(sourceIdentifier)
-        out.putCookie(frameFormat)
-        out.put(frameWidth)
-        out.put(frameHeight)
-        out.append(fps)
-        out.append(timeout)
-    }
 }
 
 /// MSEX/StFr: one frame, multicast (never TCP from 1.1 on). 1.2 prefixes the media server UUID.
@@ -654,18 +533,6 @@ public struct StreamFrame: Equatable, Sendable {
         self.buffer = buffer
     }
 
-    init(version v: MSEXVersion, from r: inout CITPReader) throws {
-        let uuid = try v >= .v1_2 ? r.fixedString(36) : ""
-        let source = try r.u16()
-        let format = try r.cookie()
-        let width = try r.u16()
-        let height = try r.u16()
-        let size = Int(try r.u16())
-        self.init(
-            version: v, mediaServerUUID: uuid, sourceIdentifier: source, frameFormat: format, frameWidth: width, frameHeight: height,
-            buffer: Array(try r.take(size)))
-    }
-
     func write(to out: inout [UInt8], as v: MSEXVersion) {
         if v >= .v1_2 { out.putFixedString(mediaServerUUID, 36) }
         out.put(sourceIdentifier)
@@ -678,44 +545,31 @@ public struct StreamFrame: Equatable, Sendable {
     }
 }
 
-extension ClientInformation {
-    func write(to out: inout [UInt8], as v: MSEXVersion) { out.putVersions(supportedVersions) }
-}
-
 extension Nack {
     func write(to out: inout [UInt8], as v: MSEXVersion) { out.putCookie(receivedContentType) }
 }
 
 // MARK: - Dispatch
 
-extension CITPPacket {
+extension CITPClientMessage {
     /// `body` is the whole body after the CITP header (kept for `.unknown`); `r` is a fresh reader over it.
-    static func parseMSEX(_ r: inout CITPReader, body: [UInt8]) throws -> CITPPacket {
+    static func parseMSEX(_ r: inout CITPReader, body: [UInt8]) throws -> CITPClientMessage {
         let version = MSEXVersion(major: try r.u8(), minor: try r.u8())
         guard version.major == 1 else { throw CITPError.unsupportedVersion }
         switch try r.cookie() {
         case "CInf": return .clientInformation(ClientInformation(version: version, supportedVersions: try r.versions()))
-        case "SInf": return .serverInformation(try ServerInformation(version: version, from: &r))
-        case "Nack": return .nack(Nack(version: version, receivedContentType: try r.cookie()))
-        case "LSta":
-            let count = Int(try r.u8())
-            return .layerStatus(try r.array(count) { try LayerStatus(version: version, from: &$0) })
         case "GELI": return .getElementLibraryInformation(try GetElementLibraryInformation(version: version, from: &r))
-        case "ELIn": return .elementLibraryInformation(try ElementLibraryInformation(version: version, from: &r))
         case "GEIn": return .getElementInformation(try GetElementInformation(version: version, from: &r))
-        case "MEIn": return .mediaElementInformation(try MediaElementInformation(version: version, from: &r))
         case "GETh": return .getElementThumbnail(try GetElementThumbnail(version: version, from: &r))
-        case "EThn": return .elementThumbnail(try ElementThumbnail(version: version, from: &r))
         case "GVSr": return .getVideoSources
-        case "VSrc":
-            let count = Int(try r.u16())
-            return .videoSources(try r.array(count) { try VideoSource(from: &$0) })
         case "RqSt": return .requestStream(try RequestStream(version: version, from: &r))
-        case "StFr": return .streamFrame(try StreamFrame(version: version, from: &r))
+        case "SInf", "Nack", "LSta", "ELIn", "MEIn", "EThn", "VSrc", "StFr": throw CITPError.serverMessage
         default: return .unknown(contentType: "MSEX", body: body)  // spec: silently ignore unrecognised cookies
         }
     }
+}
 
+extension CITPPacket {
     /// MSEX header (version + cookie) followed by the payload `write` produces.
     static func msex(_ cookie: String, _ v: MSEXVersion, _ write: (inout [UInt8], MSEXVersion) -> Void) -> [UInt8] {
         var out = [v.major, v.minor]
@@ -752,12 +606,6 @@ extension CITPReader {
             let wire = try r.u16()
             return MSEXVersion(major: UInt8(wire >> 8), minor: UInt8(wire & 0xFF))
         }
-    }
-
-    /// u8 count, then 4-byte cookies.
-    mutating func cookies() throws -> [String] {
-        let n = Int(try u8())
-        return try array(n) { try $0.cookie() }
     }
 }
 

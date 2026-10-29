@@ -204,6 +204,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: test patterns ignored the output's Intensity %, the Output and Master Intensity and both Blackouts, so a console's
   Grand Master or DBO left a full-field pattern (White is 100 %) on the projectors. Patterns now follow the same Dimmer and
   Blackout as the picture, Raw included; bring the Dimmer up to focus. Freeze holds the picture, not the pattern.
+- Removed: the hand-written SHA-1 in Core; the WebSocket accept key is CryptoKit's SHA-1 in the engine, next to the
+  upgrade (repo audit 2026-10-29).
+- Changed: the headless, drawable-loop and secondary-display drivers share one mach-clock `PacedThread`, and stopping one
+  waits on a semaphore instead of polling the thread every 2 ms (repo audit 2026-10-29).
 - Removed: dead web code from the repo audit 2026-10-29: `lib/health.ts` (`parseHealth`, `formatUptime`) with its test
   and `screens/Placeholder.svelte`, none of them imported; `/healthz` itself is unchanged.
 - Changed: MIDI control and MTC input share one CoreMIDI source listener (client on the main thread, hot-plug,
@@ -220,6 +224,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   list, "manual" chips with Back to wall on the blend edges and slice 1's source. Leaving the Outputs screen ends the
   check and the wizard; an output keeps its own pattern on record (also across a reload, with **Give the test patterns
   back**) until the engine has taken it back. `docs/user/outputs-and-mapping.md` › Projector walls.
+- Removed: the CITP/MSEX codec's unused direction (repo audit 2026-10-29): Fanous only serves, so Core no longer
+  decodes server messages (`PLoc`, `SInf`, `LSta`, ...) or encodes client ones (`PNam`, `CInf`, `GELI`, ...); a
+  console that sends a server message is still ignored, not Nacked. Tests pin the server's bytes.
+- Removed: `LTCFrame.userBits` (repo audit 2026-10-29): the LTC decoder unpacked the user bits of every frame and
+  nothing read them.
 - Fixed: the Master intensity dimmed a mapped output twice (into the canvas and again in the output pass), so a Grand
   Master at 50 % gave 25 % on the projectors and 25 % gave 6 %. Outputs now take it once, as the canvas preview, Syphon and
   CITP do, so they are brighter than before at Grand Master levels between 0 and 100 %; 0 %, 100 % and Master Blackout are

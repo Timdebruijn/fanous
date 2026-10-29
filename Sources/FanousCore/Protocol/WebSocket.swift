@@ -133,15 +133,9 @@ public struct WebSocketFrame: Equatable, Sendable {
     }
 }
 
-/// The server side of the RFC 6455 §4 opening handshake.
+/// The server side of the RFC 6455 §4 opening handshake. The 101 response and its accept key are built in the
+/// engine (`HTTPSServer.swift`), which has CryptoKit's SHA-1.
 public enum WebSocketHandshake {
-    private static let guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-
-    /// `Sec-WebSocket-Accept` for a client's `Sec-WebSocket-Key` (§4.2.2).
-    public static func acceptKey(for clientKey: String) -> String {
-        Data(SHA1.hash(Array((clientKey + guid).utf8))).base64EncodedString()
-    }
-
     public static func isUpgrade(_ request: HTTPRequest) -> Bool {
         request.method == "GET"
             && request.version == "HTTP/1.1"
@@ -149,18 +143,6 @@ public enum WebSocketHandshake {
             && hasToken(request, "Connection", "upgrade")
             && request.header("Sec-WebSocket-Version") == "13"
             && !(request.header("Sec-WebSocket-Key") ?? "").isEmpty
-    }
-
-    /// The 101 response, or nil when `request` is not a WebSocket upgrade.
-    public static func response(for request: HTTPRequest) -> HTTPResponse? {
-        guard isUpgrade(request), let key = request.header("Sec-WebSocket-Key") else { return nil }
-        return HTTPResponse(
-            status: 101,
-            headers: [
-                HTTPHeader("Upgrade", "websocket"),
-                HTTPHeader("Connection", "Upgrade"),
-                HTTPHeader("Sec-WebSocket-Accept", acceptKey(for: key)),
-            ])
     }
 
     /// True when any `name` header (repeated headers allowed) lists `token` in its comma-separated value, case-insensitively.

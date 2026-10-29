@@ -1670,7 +1670,8 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
 ### 11.6 Phase 5 as built (2026-10-23)
 
 - Transport: hand-written RFC 6455 framing on the HTTPS listener
-  (`FanousCore/Protocol/WebSocket.swift`, SHA-1 in Core), `/ws` handled by
+  (`FanousCore/Protocol/WebSocket.swift`; the accept key is CryptoKit SHA-1 in
+  the engine's `HTTPSServer.swift` since the 2026-10-29 audit), `/ws` handled by
   `StateServer`; binary frames `[u8 kind][u32 stream][payload]` with kind 1 =
   `[u8 key][u64 µs][AVCC AU]`, 2 = JPEG, 3 = 512 DMX slots. The H.264 decoder
   configuration travels as a `stream` text message (base64 avcC) whenever the
@@ -2109,9 +2110,10 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
 - **System**: `/metrics` (JSON: frames, GPU/CPU timing, DMX age, audio,
   preview, clients), `/api/logs` (ring tail), Bonjour `_fanous._tcp` and
   `_https._tcp` (B39), `live.system` (thermal, power, memory, OS, host, addresses, TLS fingerprint).
-- **CITP/MSEX**: codec in Core (`CITP/CITP.swift`, `CITP/CITPMSEX.swift`:
-  PINF `PLoc`/`PNam`, MSEX 1.0–1.2 `CInf`/`SInf`/`Nack`/`LSta`/`GELI`/`ELIn`/
-  `GEIn`/`MEIn`/`GETh`/`EThn`/`GVSr`/`VSrc`/`RqSt`/`StFr`, little-endian, byte-exact tests);
+- **CITP/MSEX**: codec in Core (`CITP/CITP.swift`, `CITP/CITPMSEX.swift`, MSEX 1.0–1.2,
+  little-endian, byte-exact tests), one way as Fanous is only a server: it decodes what a
+  console sends (`PNam`, `CInf`/`GELI`/`GEIn`/`GETh`/`GVSr`/`RqSt`) and encodes what the server
+  sends (`PLoc`, `SInf`/`Nack`/`LSta`/`ELIn`/`MEIn`/`EThn`/`VSrc`/`StFr`);
   transport in Engine (`Net/CITPServer.swift`): one `NWListener` on an
   ephemeral TCP port, `PLoc` every 5 s to `224.0.0.180` and `239.224.0.180`
   (both groups, port 4809, a BSD socket: `NWConnection` does not deliver to
@@ -2266,7 +2268,7 @@ blending, varispeed audio and the MDM profile are the v1.x candidates.
 | OPEN-13 | HAP muxing via AVAssetWriter passthrough vs own muxer | **Resolved (Phases 2–4):** `AVAssetWriterInput` with a `sourceFormatHint` format description and passthrough sample buffers writes HAP `.mov` files the engine plays; no own muxer |
 | OPEN-14 | Per-channel (RGB) blend gamma | v1.x, cheap |
 | OPEN-15 | Audio varispeed / pitch at speed ≠ 100 % | v1.x; mute in v1 |
-| OPEN-16 | `NWProtocolWebSocket` in server role vs hand-written framing | **Resolved in Phase 5**: hand-written RFC 6455 framing in `FanousCore/Protocol/WebSocket.swift` (SHA-1 for the accept key is in Core too, Foundation-only). `NWProtocolWebSocket` owns a whole listener, so it could not share port 8443 with the HTTP/1.1 routes and static files; the upgrade is handled by the existing HTTPS connection handler. |
+| OPEN-16 | `NWProtocolWebSocket` in server role vs hand-written framing | **Resolved in Phase 5**: hand-written RFC 6455 framing in `FanousCore/Protocol/WebSocket.swift` (the accept key and 101 response moved to `HTTPSServer.swift` with CryptoKit SHA-1 in the 2026-10-29 audit). `NWProtocolWebSocket` owns a whole listener, so it could not share port 8443 with the HTTP/1.1 routes and static files; the upgrade is handled by the existing HTTPS connection handler. |
 | OPEN-17 | Downloadable CA profile for iPads | v1.x |
 | OPEN-18 | Monitor role open by default when other roles have passwords | **Decided in Phase 5**: each role is open or protected independently; a client gets the highest role ≤ the one it asked for that its session cookie or shell token entitles it to, or that is open. Monitor stays open unless it has its own password. |
 | OPEN-19 | Prometheus metrics endpoint | v1.x |

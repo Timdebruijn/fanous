@@ -57,37 +57,67 @@ public final class DisplayLinkDriver: NSObject, CAMetalDisplayLinkDelegate, @unc
     }
 }
 
-/// No display: a mach_wait_until clock at the canvas rate (previews, benchmark).
-public final class HeadlessDriver: @unchecked Sendable {
-    private let running = Atomic<Bool>(true)
-    private var thread: Thread?
+/// A `.userInteractive` thread that runs `body` once per period of the mach clock at `hz` (ADR-0006), each call in
+/// its own autorelease pool. `body` gets the target presentation time (host seconds) of the period after the one it
+/// runs in, like a display link. Paced (the drawable loops): wait for the period, run, and skip periods that were
+/// missed, so the compositor counts them from target deltas. `catchUp` (headless): run, then wait, and run late
+/// periods back to back, so every target is one period after the last.
+final class PacedThread: @unchecked Sendable {
+    static let ticksPerSecond: Double = {
+        var timebase = mach_timebase_info()
+        mach_timebase_info(&timebase)
+        return 1e9 * Double(timebase.denom) / Double(timebase.numer)
+    }()
 
-    public init(fps: Double, compositor: Compositor) {
+    private let running = Atomic<Bool>(true)
+    private let done = DispatchSemaphore(value: 0)
+
+    init(name: String, hz: Double, catchUp: Bool = false, body: @escaping (_ target: Double) -> Void) {
         let thread = Thread { [self] in
-            var timebase = mach_timebase_info()
-            mach_timebase_info(&timebase)
-            let ticksPerSecond = 1e9 * Double(timebase.denom) / Double(timebase.numer)
-            let period = UInt64(ticksPerSecond / fps)
+            let ticksPerSecond = Self.ticksPerSecond
+            let period = UInt64(ticksPerSecond / hz)
             var next = mach_absolute_time() + period
             while running.load(ordering: .relaxed) {
-                // a tick at time `next` targets the following period, like a display link does
-                let target = Double(next + period) / ticksPerSecond
-                autoreleasepool { compositor.tick(target: target, drawable: nil) }
-                next += period
-                mach_wait_until(next)
+                if catchUp {
+                    autoreleasepool { body(Double(next + period) / ticksPerSecond) }
+                    next += period
+                    mach_wait_until(next)
+                } else {
+                    mach_wait_until(next)
+                    autoreleasepool { body(Double(next + period) / ticksPerSecond) }
+                    next += period
+                    let now = mach_absolute_time()
+                    if next < now { next = now + period }  // skip missed periods; the compositor counts them from target deltas
+                }
             }
+            done.signal()
         }
-        thread.name = "org.fanous.compositor.headless"
+        thread.name = name
         thread.qualityOfService = .userInteractive
         thread.start()
-        self.thread = thread
+    }
+
+    /// Stops and waits (≤ 1 s) for the last run of `body`; false = still running. Safe to call again.
+    @discardableResult func stop() -> Bool {
+        running.store(false, ordering: .relaxed)
+        guard done.wait(timeout: .now() + 1) == .success else { return false }
+        done.signal()  // a later stop() returns at once
+        return true
+    }
+}
+
+/// No display: a mach_wait_until clock at the canvas rate (previews, benchmark).
+public final class HeadlessDriver: @unchecked Sendable {
+    private let thread: PacedThread
+
+    public init(fps: Double, compositor: Compositor) {
+        thread = PacedThread(name: "org.fanous.compositor.headless", hz: fps, catchUp: true) { target in
+            compositor.tick(target: target, drawable: nil)
+        }
     }
 
     /// Stops and waits (≤ 1 s) for the last tick, so another driver can take the compositor; false = still ticking.
-    @discardableResult public func stop() -> Bool {
-        running.store(false, ordering: .relaxed)
-        return thread.map { SecondaryDriver.join($0) } ?? true
-    }
+    @discardableResult public func stop() -> Bool { thread.stop() }
 }
 
 /// Output driver paced by the engine's own clock with `nextDrawable()` for
@@ -100,40 +130,18 @@ public final class HeadlessDriver: @unchecked Sendable {
 /// 2026-10-26; 0 missed in 6 min with three). The loop still produces at the canvas rate, so the queue stays short and
 /// the third drawable only absorbs the phase drift.
 public final class DrawableLoopDriver: @unchecked Sendable {
-    private let running = Atomic<Bool>(true)
-    private var thread: Thread?
+    private let thread: PacedThread
 
     public init(layer: CAMetalLayer, fps: Double, compositor: Compositor) {
         layer.maximumDrawableCount = 3
         layer.displaySyncEnabled = true
-        let thread = Thread { [self] in
-            var timebase = mach_timebase_info()
-            mach_timebase_info(&timebase)
-            let ticksPerSecond = 1e9 * Double(timebase.denom) / Double(timebase.numer)
-            let period = UInt64(ticksPerSecond / fps)
-            var next = mach_absolute_time() + period
-            while running.load(ordering: .relaxed) {
-                mach_wait_until(next)
-                autoreleasepool {
-                    // blocks only when both drawables are still in flight (the GPU or display is behind)
-                    guard let drawable = layer.nextDrawable() else { return }
-                    let target = Double(next + period) / ticksPerSecond
-                    compositor.tick(target: target, drawable: drawable)
-                }
-                next += period
-                let now = mach_absolute_time()
-                if next < now { next = now + period }  // skip missed periods; the compositor counts them from target deltas
-            }
+        thread = PacedThread(name: "org.fanous.compositor", hz: fps) { target in
+            // blocks only when every drawable is still in flight (the GPU or display is behind)
+            guard let drawable = layer.nextDrawable() else { return }
+            compositor.tick(target: target, drawable: drawable)
         }
-        thread.name = "org.fanous.compositor"
-        thread.qualityOfService = .userInteractive
-        thread.start()
-        self.thread = thread
     }
 
     /// Stops and waits (≤ 1 s) for the last tick, so another driver can take the compositor; false = still ticking.
-    @discardableResult public func stop() -> Bool {
-        running.store(false, ordering: .relaxed)
-        return thread.map { SecondaryDriver.join($0) } ?? true
-    }
+    @discardableResult public func stop() -> Bool { thread.stop() }
 }

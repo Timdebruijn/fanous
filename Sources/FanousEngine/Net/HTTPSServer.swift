@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
+import CryptoKit
 import dnssd
 import Foundation
 import FanousCore
@@ -299,5 +300,26 @@ private final class ClientConnection: @unchecked Sendable {
             completion: .contentProcessed { [connection] _ in
                 if close { connection.cancel() }
             })
+    }
+}
+
+extension WebSocketHandshake {
+    private static let guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+    /// `Sec-WebSocket-Accept` for a client's `Sec-WebSocket-Key` (RFC 6455 §4.2.2). SHA-1 is a protocol constant here.
+    static func acceptKey(for clientKey: String) -> String {
+        Data(Insecure.SHA1.hash(data: Data((clientKey + guid).utf8))).base64EncodedString()
+    }
+
+    /// The 101 response, or nil when `request` is not a WebSocket upgrade.
+    static func response(for request: HTTPRequest) -> HTTPResponse? {
+        guard isUpgrade(request), let key = request.header("Sec-WebSocket-Key") else { return nil }
+        return HTTPResponse(
+            status: 101,
+            headers: [
+                HTTPHeader("Upgrade", "websocket"),
+                HTTPHeader("Connection", "Upgrade"),
+                HTTPHeader("Sec-WebSocket-Accept", acceptKey(for: key)),
+            ])
     }
 }
