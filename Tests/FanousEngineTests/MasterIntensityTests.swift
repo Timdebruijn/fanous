@@ -90,6 +90,7 @@ struct MasterIntensityTests {
         guard MTLCreateSystemDefaultDevice() != nil else { return }
         let rig = try Rig()
         #expect(rig.pixel(master: 0) == [0, 0, 0], "Master 0")
+        #expect(rig.pixel(master: 1) == [0, 255, 0], "back from Master 0")
         #expect(rig.pixel(master: 1, control: .blackout) == [0, 0, 0], "Blackout")
         #expect(rig.pixel(master: 1) == [0, 255, 0], "back from Blackout")
     }
@@ -127,7 +128,9 @@ struct MasterIntensityTests {
                 })
             _ = rig.compositor.readback()  // drain the GPU between the windows
         }
-        print(String(format: "Master 100 %%: %.2f mallocs per tick, Master 50 %%: %.2f", Double(counts[0]) / 600, Double(counts[1]) / 600))
+        // one line per window in the phrasing `scripts/check-mallocs.sh` counts
+        print(String(format: "Master 100 %%: %.2f mallocs on the ticking thread per tick", Double(counts[0]) / 600))
+        print(String(format: "Master 50 %%: %.2f mallocs on the ticking thread per tick", Double(counts[1]) / 600))
         #if !DEBUG
             // Metal allocates now and then on either side (±0.02 per tick measured); a render encoder more would be +3
             #expect(abs(counts[1] - counts[0]) < 300, "Master 50 %: \(counts[1]) mallocs in 600 ticks, 100 %: \(counts[0])")
