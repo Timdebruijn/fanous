@@ -215,16 +215,18 @@
         {@const l = seam}
         <section class="ctl" aria-label="Seam">
           <h3>Seam · {name(seam.a)} | {name(seam.b)}</h3>
-          {@render slider({ label: seam.gammaRGB ? 'Gamma (in effect)' : 'Gamma', key: `${key}-g`, value: seam.gamma, min: 0.5, max: 5, step: 0.05, digits: 2, set: (v) => tune(l, 'gamma', v), focus: wallUI.focus === 'gamma' })}
+          {#if !seam.gammaRGB}
+            {@render slider({ label: 'Gamma', key: `${key}-g`, value: seam.gamma, min: 0.5, max: 5, step: 0.05, digits: 2, set: (v) => tune(l, 'gamma', v), focus: wallUI.focus === 'gamma' })}
+          {/if}
           <label class="switch" class:focus={wallUI.focus === 'rgb'} title={lock}>
             <input type="checkbox" role="switch" checked={!seam.gammaRGB} disabled={!!lock} onchange={(e) => link(l, e.currentTarget.checked)} />
             <span class="track"></span><span>Link R, G, B</span>
           </label>
           {#if seam.gammaRGB}
             {#each ['R', 'G', 'B'] as ch, i (ch)}
-              {@render slider({ label: `Gamma ${ch}`, key: `${key}-g${i}`, value: seam.gammaRGB[i] ?? seam.gamma, min: 0.5, max: 5, step: 0.05, digits: 2, set: (v) => tuneRGB(l, i, v), focus: wallUI.focus === 'rgb' })}
+              {@render slider({ label: `Gamma ${ch}`, key: `${key}-g${i}`, value: seam.gammaRGB[i] ?? seam.gamma, min: 0.5, max: 5, step: 0.05, digits: 2, set: (v) => tuneRGB(l, i, v), focus: wallUI.focus === 'rgb' || wallUI.focus === 'gamma' })}
             {/each}
-            <p class="caption yellow">The picture uses Gamma (in effect) until per-colour gamma reaches the output in a later update; R, G and B are stored with the wall. Linking R, G, B again drops them.</p>
+            <p class="caption">Linking R, G, B again drops them.</p>
           {/if}
           {@render slider({ label: 'Curve', key: `${key}-p`, value: seam.power, min: 0.1, max: 10, step: 0.1, digits: 1, set: (v) => tune(l, 'power', v), focus: wallUI.focus === 'curve' })}
           <p class="caption">Gamma: down for a bright band in the seam, up for a dark one. Curve: how steep the fade is; change it when you see an edge where the overlap starts. Both sides of the seam follow.</p>

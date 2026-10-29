@@ -299,6 +299,10 @@ test("walls: the wizard makes a 1 × 2 wall at 15 %, a seam gamma drag is one un
   expect(seamCommands).toBeGreaterThan(1);
   await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(gamma).toHaveValue('2.2');
+  // unlinked, R, G and B replace the single gamma (each starts at it)
+  await panel.getByRole('switch', { name: 'Link R, G, B' }).uncheck({ force: true }); // the drawn track covers the input
+  await expect(panel.getByRole('slider', { name: 'Gamma B' })).toHaveValue('2.2');
+  await expect(gamma).toHaveCount(0);
 
   // on Grey 25 %, "one projector darker, or tinted" opens the colour gain of the projector tapped next
   await panel.getByRole('group', { name: 'Seam check pattern' }).getByRole('button', { name: 'Grey 25 %' }).click();
