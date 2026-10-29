@@ -23,7 +23,9 @@ public enum SyphonError: Error, CustomStringConvertible {
 }
 
 /// One Syphon server (Metal path) that publishes the engine's output to other applications.
-/// Safe to call from any thread; Syphon locks internally.
+/// `publish` is single-threaded: only the compositor tick calls it (`RenderService`'s `canvasPublished`). The server's
+/// flip draw shares one render pass descriptor across frames (`Sources/Syphon/VENDORED.md` local change 6) and swaps its
+/// surface texture on a size change. The other members are safe from any thread (Syphon locks internally).
 public final class SyphonOutput: @unchecked Sendable {
     public let name: String
     private let server: SyphonMetalServer

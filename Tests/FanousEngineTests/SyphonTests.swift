@@ -104,6 +104,32 @@ import Testing
         #expect(input.latestTexture == nil)
     }
 
+    /// B109: one publish of an `rgba16Float` texture (the canvas format; `flipped`, so Syphon's draw, never its blit)
+    /// allocates exactly 4 on the calling thread in an optimised build: the encoder (2) and the completion handler block
+    /// (2). The render pass descriptor is made once (`VENDORED.md` local change 6); made per frame it added 4 (8 in all).
+    /// A ratchet: fewer (or a hook that sees nothing) fails too, so the number here is updated with the change.
+    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    func mallocCounterSyphonPublishReusesItsRenderPass() throws {
+        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else { return }  // no GPU: skip
+        let output = try SyphonOutput(name: "FanousTest-\(UUID().uuidString)", device: device)
+        defer { output.stop() }
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.canvasFormat, width: 64, height: 64, mipmapped: false)
+        descriptor.usage = [.shaderRead, .renderTarget]
+        let canvas = try #require(device.makeTexture(descriptor: descriptor))
+        var allocations = 0
+        for _ in 0..<20 {  // warm-up: the surface, Metal's caches
+            let commandBuffer = try #require(queue.makeCommandBuffer())
+            allocations = MallocCounter.count { output.publish(texture: canvas, commandBuffer: commandBuffer) }
+            commandBuffer.commit()
+            commandBuffer.waitUntilCompleted()
+        }
+        #if !DEBUG
+            #expect(allocations == 4, "one Syphon publish: \(allocations) allocations on the calling thread")
+        #endif
+        print("Syphon publish: \(allocations) allocations on the calling thread")
+    }
+
     /// B106: a message callback already past CFMessagePort's validity check went on to use a receiver its owner had
     /// just invalidated and released. Messages stream in from another thread while the receiver is invalidated and
     /// dropped, 100 times; the payload takes a while to unarchive, which holds the window open between the check and
