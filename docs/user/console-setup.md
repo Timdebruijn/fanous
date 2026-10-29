@@ -41,7 +41,8 @@ A fresh project is patched like this:
   (9, 17, 25, 33 … with the Master at 1). It is patched when the output is
   added (Patch or Outputs & Mapping screen) and only when those 8 channels are
   free; otherwise it stays unpatched until you give it an address. A new
-  project has no Output fixtures until an output is added.
+  project has no Output fixtures until an output is added. Console control
+  covers outputs 1 to 8: output 9 and up has no Output fixture.
 
 With 8 layers and four outputs:
 

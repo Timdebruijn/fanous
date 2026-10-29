@@ -321,6 +321,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   opening a project unpatches such fixtures, so the Patch and Layers screens show exactly the outputs that exist. The
   Patch screen lists every output's fixture (also unpatched ones, so Output 5 and up can be patched), has **Add
   output**, and for a selected output says which display shows it, links to Outputs & Mapping and has **Remove output**.
+  Console control covers outputs 1–8, so output 9 and up gets no Output fixture. Fixed on the way: a fixture patched
+  after start (a new output or layer) ignored the source policy until the next restart or policy change, so UI, OSC
+  and cue values for it were dropped under "UI and cues only"; and an output whose fixture was unpatched kept its last
+  console values (a Blackout stayed black).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

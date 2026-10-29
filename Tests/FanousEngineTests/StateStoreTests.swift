@@ -250,6 +250,12 @@ extension StateStoreTests {
         patch = try #require(ProjectDocument.patch(from: store.project))
         #expect(patch.entry(for: .output(2))?.address == 117)
         #expect(ProjectDocument.outputs(from: store.project).map(\.id) == [1, 2, 3])
+        // console control covers outputs 1–8 (ParameterSnapshotSlot.maxOutputs)
+        _ = try store.execute("patch.set", args: ["fixture": "Layer 1", "universe": "artnet:0.0.0", "address": 1], role: .programmer).get()
+        for _ in 4...9 { _ = try store.execute("output.add", role: .programmer).get() }
+        patch = try #require(ProjectDocument.patch(from: store.project))
+        #expect(patch.entry(for: .output(8))?.address == 165 && patch.entry(for: .output(9)) == nil)
+        #expect(store.execute("patch.set", args: ["fixture": "Output 9", "universe": "sacn:5", "address": 300], role: .programmer).failureCode == "invalidArgs")
     }
 
     @Test func outputCommandsAddSetValidateAndRemove() throws {

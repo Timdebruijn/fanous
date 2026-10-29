@@ -311,9 +311,9 @@ public enum ProjectDocument {
 
     /// Patches Output n's fixture where the standard patch puts it, after the Master on the Master's universe (the
     /// standard Master when it is unpatched), when that range fits and is free; otherwise the Patch screen shows it
-    /// unpatched. An Output fixture that is already patched stays where it is.
+    /// unpatched. Outputs above `maxOutputs` have no console control.
     static func patchOutputFixture(_ n: Int, in project: inout JSONValue) throws {
-        guard var patch = ProjectDocument.patch(from: project), patch.entry(for: .output(n)) == nil,
+        guard n <= ParameterSnapshotSlot.maxOutputs, var patch = ProjectDocument.patch(from: project), patch.entry(for: .output(n)) == nil,
             let master = patch.entry(for: .master) ?? Patch.standard(layers: project["layerCount"]?.int ?? 1, outputs: 0).entry(for: .master)
         else { return }
         let entry = PatchEntry(fixture: .output(n), universe: master.universe, address: master.channels.upperBound + 1 + (n - 1) * FixtureMode.output.footprint)
@@ -438,8 +438,11 @@ public enum ProjectDocument {
                     throw CommandError.invalidArgs("universe must be artnet:net.subnet.universe or sacn:n")
                 }
                 guard let address = args["address"]?.int, (0...512).contains(address) else { throw CommandError.invalidArgs("address must be 0 (unpatch) or 1–512") }
-                if case .output(let n) = fixture, address > 0, !ProjectDocument.outputs(from: project).contains(where: { $0.id == n }) {
-                    throw CommandError.invalidArgs("there is no output \(n): add it first, its Output fixture is patched with it")
+                if case .output(let n) = fixture, address > 0 {
+                    guard n <= ParameterSnapshotSlot.maxOutputs else { throw CommandError.invalidArgs("console control covers outputs 1–\(ParameterSnapshotSlot.maxOutputs)") }
+                    guard ProjectDocument.outputs(from: project).contains(where: { $0.id == n }) else {
+                        throw CommandError.invalidArgs("there is no output \(n): add it first, its Output fixture is patched with it")
+                    }
                 }
                 guard var patch = ProjectDocument.patch(from: project) else { throw CommandError.invalidArgs("project has no patch") }
                 patch.entries.removeAll { $0.fixture == fixture }

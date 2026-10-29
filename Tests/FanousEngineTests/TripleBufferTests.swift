@@ -105,6 +105,19 @@ final class Box { var value = 0 }
         #expect(same)
     }
 
+    /// An unpatched (or removed) Output fixture no longer holds its output at the last values: a re-added output with
+    /// the same number and no fixture renders as with no console.
+    @Test func unpatchedOutputFallsBackToDefaults() {
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Logger(label: "test"))
+        store.setPolicy(.internal, for: .output(1))
+        // Blackout in every slot: a publish writes into a slot that holds an older publish
+        for raw in UInt16(64)...70 { store.queue.sync { store.applyUI(.output(1), .output(.control), raw: raw, at: 1000) } }
+        #expect(store.snapshots.read().outputs[0].control == .blackout)
+        store.setPatch(.standard(layers: 1, outputs: 0))
+        _ = store.currentPatch  // the DMX queue has run the patch change
+        #expect(store.snapshots.read().outputs[0] == OutputParameters())
+    }
+
     /// Writer at ~1 kHz, the render reader on its own thread and a copy reader at ~2 kHz: no torn slot on either
     /// side, and the render reader's slot never changes under it (also run under `-sanitize=thread`).
     @Test func concurrentWriterRenderReaderAndCopyReader() async throws {
