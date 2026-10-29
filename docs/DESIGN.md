@@ -1023,12 +1023,13 @@ output on the clock-master display its plan takes the master set's plan's
 thread the tap runs on). The tick reads its output set once, holds, then taps
 with that set (B110), so on the engage tick the preview takes the copy blitted
 earlier on the same command buffer. It is the frame the projector holds, no
-copy, also for a viewer that subscribes after Freeze engaged. An output on a secondary display (its plans
-are written on that display's thread) or one bound to no display holds a copy
-of its own with `holdFrozen` in the tap, from the first preview frame after
-Freeze engaged: it can be a few ticks later than the projector's and hold a
-later frame, and a viewer that arrives later holds what was live then. Either
-way it follows the Master through `contentScale` and goes live on release.
+copy, also for a viewer that subscribes after Freeze engaged. An output on a
+secondary display (its plans are written on that display's thread) or one
+bound to no display holds a copy of its own with `holdFrozen` in the tap, from
+the first preview frame after Freeze engaged: it can be a few ticks later than
+the projector's and hold a later frame, and a viewer that arrives later holds
+what was live then. Either way it follows the Master through `contentScale`
+and goes live on release.
 
 The black lift, like the colour's black offset, is the projector's black
 floor, so it does not follow the Master: on content it stays at the output's

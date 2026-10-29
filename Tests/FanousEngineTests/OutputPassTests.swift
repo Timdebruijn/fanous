@@ -499,8 +499,8 @@ struct OutputPassTests {
             #expect(near(try await preview(.freeze, master: 1, layer: 0), 200), "shared \(shared): the held frame, not the dark canvas")
             #expect(near(try await preview(.freeze, master: 0.5, layer: 0), 100), "shared \(shared): frozen at 100 %, Master 50 %")
             #expect(try await preview(.normal, master: 1, layer: 0) <= 8, "shared \(shared): released, live again")
-            // engaged while watched: the engage tick shows the frame held (shared: the projector's copy, blitted before the
-            // tap on the same command buffer, B110), the next one keeps it
+            // engaged while watched: the engage tick's preview equals the held frame and the next one keeps it. Whether
+            // the tick holds before or after the tap (B110) is not observable here: both draw that same frame
             #expect(near(try await preview(.freeze, master: 1, layer: 1), 200), "shared \(shared): the engage tick")
             #expect(near(try await preview(.freeze, master: 1, layer: 0), 200), "shared \(shared): held after engaging while watched")
         }

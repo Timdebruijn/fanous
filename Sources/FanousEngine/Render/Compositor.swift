@@ -27,15 +27,21 @@ public final class Compositor: @unchecked Sendable {
     /// Without a drawable the output pass renders into this texture instead (tests, headless previews).
     nonisolated(unsafe) public var offscreenOutput: MTLTexture?
     /// Browser previews (DESIGN.md §11.3): draws the canvas into a small pixel buffer on the same command buffer. The last
-    /// argument is the output set this tick draws (B110), after its Freeze holds are encoded.
+    /// argument is the output set this tick draws (B110); with an output target (drawable or offscreen) its Freeze holds
+    /// are already encoded, without one the tick holds nothing.
     nonisolated(unsafe) public var previewTap: ((MTLTexture, MTLCommandBuffer, Double, OutputSet?) -> Void)?
     /// Timecode for layers in the Timecode play mode (DESIGN.md §15.1); offsets in frames of the timecode rate.
     nonisolated(unsafe) public var timecode: TimecodeClock?
     nonisolated(unsafe) public var timecodeOffsets = TimecodeOffsets(project: 0, layers: [:])
     /// Output regions of the master display (DESIGN.md §9): nil = the whole drawable shows the canvas.
-    /// Replaced as one reference by Control while the tick runs (`OutputCoordinator`): each tick reads it once, before its
-    /// preview tap, and draws its holds, preview and output pass with that set; a swap takes effect on the next tick (B110).
-    nonisolated(unsafe) public var outputSet: OutputSet?
+    /// Replaced as one reference by Control while the tick runs (`OutputCoordinator`, writers on the main actor): one
+    /// locked read per tick, before its preview tap, so the tick holds its own reference while a writer drops the old
+    /// set's last one; holds, preview and output pass use that set, and a swap takes effect on the next tick (B110).
+    public var outputSet: OutputSet? {
+        get { outputSetLock.withLock { $0 } }
+        set { outputSetLock.withLock { $0 = newValue } }
+    }
+    private let outputSetLock = Mutex<OutputSet?>(nil)
     /// Engine only: with nothing consuming the canvas (no drawable, preview, Syphon client or CITP stream) a tick
     /// still runs hand-off, clocks, audio and decoder requests, but encodes no GPU work. Off by default (tests read back).
     nonisolated(unsafe) public var skipsIdleWork = false
@@ -486,7 +492,7 @@ public final class Compositor: @unchecked Sendable {
         }
         tickIndex = reuse ? (canvasIndex + 2) % 3 : canvasIndex
         let canvas = targets[0].textures[tickIndex]
-        let set = outputSet  // once (B110): Control swaps it from the main actor without stopping the tick
+        let set = outputSet  // one locked read (B110): Control swaps it from the main actor without stopping the tick
         let outputTarget = drawable?.texture ?? offscreenOutput
         canvasPublished?(canvas, commandBuffer)
         // the hold before the tap: on the engage tick the preview of an output on this display shows the frame just held
