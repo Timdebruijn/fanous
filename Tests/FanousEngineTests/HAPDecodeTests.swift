@@ -11,7 +11,7 @@ import Testing
 /// HAP frames are decoded straight from the sample's block buffer; the staging-copy fallback must give the same texture.
 @Suite(.serialized) struct HAPDecodeTests {
     @Test func decodingInPlaceMatchesTheStagingCopy() async throws {
-        let directory = try IngestQueueTests.temporaryDirectory()
+        let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "clip.mov")
         try await offPool {

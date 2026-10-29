@@ -257,8 +257,7 @@ extension StateStoreTests {
 
     /// B51: `project.set /library/root` expands `~`, normalises the path and asks the engine; refusals leave the project as it was.
     @Test func libraryRootIsNormalisedAndChecked() throws {
-        let root = FileManager.default.temporaryDirectory.appending(path: "fanous-root-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let root = try tempDir("fanous-root")
         defer { try? FileManager.default.removeItem(at: root) }
         let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
         let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx), logger: Self.logger)
@@ -322,8 +321,7 @@ extension StateStoreTests {
 
     /// B60: `sync.set` validates, writes `settings.json` › `sync` next to the passwords, applies, and is refused in show mode.
     @Test func syncSetValidatesSavesAndApplies() throws {
-        let directory = FileManager.default.temporaryDirectory.appending(path: "sync-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let directory = try tempDir("sync")
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appending(path: "settings.json")
         let auth = RoleAuth(settingsURL: file, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
