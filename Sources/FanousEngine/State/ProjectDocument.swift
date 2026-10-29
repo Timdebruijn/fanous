@@ -117,6 +117,29 @@ public enum ProjectDocument {
         .object(Dictionary(servers.map { (String($0.file), ["app": .string($0.app), "server": .string($0.server)]) }, uniquingKeysWith: { a, _ in a }))
     }
 
+    /// An undo or redo must not put another app/server on a Syphon number than the one holding it now: an
+    /// `add /syphon/N` (the undo of a forget, B90, or of a revert that dropped N) or a change of one field of N (the
+    /// undo of a revert that renamed N, B91). The `historyConflict` drops the history entry.
+    public static func checkSyphonReplay(_ patch: JSONPatch, on project: JSONValue) throws {
+        for operation in patch.operations {
+            let pointer: JSONPointer, value: JSONValue
+            switch operation {
+            case .add(let p, let v), .replace(let p, let v): (pointer, value) = (p, v)
+            case .remove: continue
+            }
+            guard pointer.tokens.first == "syphon", (2...3).contains(pointer.tokens.count) else { continue }
+            guard let held = project[JSONPointer(tokens: Array(pointer.tokens.prefix(2)))] else { continue }
+            var restored = value
+            if pointer.tokens.count == 3 {
+                restored = held
+                try? restored.set(value, at: JSONPointer(tokens: [pointer.tokens[2]]))
+            }
+            guard held["app"] != restored["app"] || held["server"] != restored["server"] else { continue }
+            let name = "\(held["app"]?.string ?? "")/\(held["server"]?.string ?? "")"
+            throw CommandError("historyConflict", "Syphon number \(pointer.tokens[1]) is now held by \(name); undo refused")
+        }
+    }
+
     /// Layers, slices and walls on a canvas outside `keeping` move to canvas 1 (canvas.remove, a failed canvas switch).
     /// Writes only what changes.
     public static func moveToCanvas1(keeping ids: Set<Int>, in project: inout JSONValue) throws {
@@ -403,13 +426,7 @@ public enum ProjectDocument {
                 summary: "Forget a numbered Syphon server that is not running (folder 0, 150–169), or without file every one not running: the number is free again.",
                 argsType: "{ file?: number }",
                 // an undo puts the number back with `add /syphon/N`, which would overwrite a server numbered N meanwhile (B90)
-                replayCheck: { patch, project in
-                    for case .add(let pointer, let entry) in patch.operations where pointer.tokens.count == 2 && pointer.tokens[0] == "syphon" {
-                        guard let held = project[pointer], held["app"] != entry["app"] || held["server"] != entry["server"] else { continue }
-                        let name = "\(held["app"]?.string ?? "")/\(held["server"]?.string ?? "")"
-                        throw CommandError("historyConflict", "Syphon number \(pointer.tokens[1]) is now held by \(name); undo refused")
-                    }
-                }
+                replayCheck: { patch, project in try checkSyphonReplay(patch, on: project) }
             ) { project, args in
                 let running = syphonRunning()
                 var numbers = syphonNumbers(from: project)

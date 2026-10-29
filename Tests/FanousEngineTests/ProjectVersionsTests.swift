@@ -143,6 +143,42 @@ struct ProjectVersionsTests {
         #expect(store.historyDepth == (2, 0))
     }
 
+    /// The undo of a revert that dropped 151 would re-add the old entry over a server that took 151 meanwhile (B91).
+    @Test func revertUndoRefusedWhenAnotherServerTookADroppedNumber() throws {
+        let f = Self.make()
+        defer { try? FileManager.default.removeItem(at: f.base) }
+        let store = f.store
+        func server(_ file: Int, _ app: String) -> SyphonCatalog.Server { SyphonCatalog.Server(file: file, app: app, server: "Server") }
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A")]) }
+        let id = try #require(try store.execute("project.snapshot", args: ["name": "Doors"], role: .programmer).get().value?["id"]?.string)
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(151, "X")]) }
+        _ = try store.execute("project.revert", args: ["id": .string(id)], role: .programmer).get()
+        #expect(store.project["syphon"]?["151"] == nil)
+        // Y takes 151 as the lowest free number, then stops: the engine leaves its entry
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(150, "A"), server(151, "Y")]) }
+        let depth = store.historyDepth.undo
+        #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by Y/Server; undo refused")))
+        #expect(store.project["syphon"]?["151"]?["app"]?.string == "Y")
+        #expect(store.historyDepth.undo == depth - 1)
+    }
+
+    /// The undo of a revert that renamed 151 is a `replace /syphon/151/app`, which would rename a server that took 151
+    /// meanwhile (B91).
+    @Test func revertUndoRefusedWhenItWouldRenameAnotherServersNumber() throws {
+        let f = Self.make()
+        defer { try? FileManager.default.removeItem(at: f.base) }
+        let store = f.store
+        func server(_ file: Int, _ app: String) -> SyphonCatalog.Server { SyphonCatalog.Server(file: file, app: app, server: "Server") }
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(151, "Z")]) }
+        let id = try #require(try store.execute("project.snapshot", args: ["name": "Doors"], role: .programmer).get().value?["id"]?.string)
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(151, "X")]) }
+        _ = try store.execute("project.revert", args: ["id": .string(id)], role: .programmer).get()
+        #expect(store.project["syphon"]?["151"]?["app"]?.string == "Z")
+        store.correct(at: "/syphon") { ProjectDocument.syphonValue([server(151, "Y")]) }
+        #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by Y/Server; undo refused")))
+        #expect(store.project["syphon"]?["151"]?["app"]?.string == "Y")
+    }
+
     @Test func invalidVersionsAreNotRestored() throws {
         let f = Self.make()
         defer { try? FileManager.default.removeItem(at: f.base) }

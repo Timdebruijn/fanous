@@ -1640,7 +1640,12 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   apply and the current project: `syphon.forget` refuses an undo whose
   `add /syphon/N` would overwrite another app/server on that number, and that
   `historyConflict` drops the entry (B90); the undo of a forget without file is
-  refused as a whole when any of its numbers conflicts. `live.versions` `{lastAutomatic, serial}`
+  refused as a whole when any of its numbers conflicts. A revert runs the same
+  check (`ProjectDocument.checkSyphonReplay`, B91), which also refuses a field
+  change under `/syphon/N` that would rename the server holding N: the undo or
+  redo of a revert that renamed a held number is refused, even when nothing
+  took it meanwhile (the history keeps no name to tell the two apart); the
+  "Before revert" version still restores it. `live.versions` `{lastAutomatic, serial}`
   feeds the status bar and tells the System screen to re-list. OSC
   `/fanous/project/load s` resolves the newest named version with that name
   (case-insensitive), else a version id, on the versions queue, ignores a
