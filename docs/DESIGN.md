@@ -1660,6 +1660,11 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   number. Nor may it leave a name it writes on a second number ("Syphon
   server N/Server is now on number 150", B92): the server took another
   number meanwhile, and the catalog drops such a twin only while it runs.
+  `syphon.forget` passes the running numbers and lets a twin of a running
+  server through (the catalog drops it); `project.revert` has no running set
+  and refuses those too. Two stopped servers that legitimately share a name
+  (two engines' canvases) count as twins: the undo of a forget of one of
+  them, and the undo or redo of a revert that held both, are refused.
   Only the fields the step changed are compared (B104). The conflict
   drops the entry, as does a step that no longer applies; for a revert either
   drops the whole stack, whose entries were recorded against the project the
