@@ -53,10 +53,14 @@ public struct BlendEdge: Codable, Equatable, Sendable {
     public var power: Double = 2
     /// Projector gamma the factor is pre-compensated for.
     public var gamma: Double = 2.2
-    public init(overlap: Double = 0, power: Double = 2, gamma: Double = 2.2) {
+    /// Per-channel gamma (r, g, b; DESIGN.md §9.9, OPEN-14); nil = `gamma` for all three. Data only: the blend map
+    /// does not use it yet.
+    public var gammaRGB: [Double]? = nil
+    public init(overlap: Double = 0, power: Double = 2, gamma: Double = 2.2, gammaRGB: [Double]? = nil) {
         self.overlap = overlap
         self.power = power
         self.gamma = gamma
+        self.gammaRGB = gammaRGB
     }
 }
 

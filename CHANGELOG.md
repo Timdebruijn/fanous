@@ -181,6 +181,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   shows the refused stream's JPEG frames at once and turns H.264 when the engine frees an encoder for it (B86).
 - Fixed: an output preview on the canvas stream at the encoder limit was stretched to the output's shape; it is now
   letterboxed and its caption says "canvas fallback" (B87).
+- Projector walls in the engine (M1.1, DESIGN §9.9): `walls` in the project and `wall.add/set/seam/seams/remove`. A wall
+  of 1×2 … 4×4 outputs computes each projector's part of the canvas (slice 1's source) and the overlap of the inner blend
+  edges, and keeps one gamma and curve per seam for both sides; `fit: "makeCanvas"` sizes the canvas to the wall. A hand
+  edit of a wall output's source or inner overlap becomes manual and stays; editing one side of a seam moves the other.
+  `output.remove` refuses an output that is in a wall, and `canvas.remove` moves a wall on that canvas to canvas 1 with
+  its slices. `BlendEdge.gammaRGB` is stored but not rendered yet. No UI yet.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
