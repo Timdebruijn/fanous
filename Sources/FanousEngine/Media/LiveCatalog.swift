@@ -76,7 +76,7 @@ public final class LiveCatalog: @unchecked Sendable {
         /// From the project and not seen since the engine started (B69).
         public var gone = false
         public var running: Bool { runtimeID != nil }
-        /// "App/Server", or "App" when the server has no name; a device's or display's name.
+        /// "App/Server" (a window: "App/Title"), or "App" without a name; a device's or display's name.
         public var label: String { name.isEmpty ? source : kind.nameIsIdentity ? "\(source)/\(name)" : name }
         /// The same source by its persistent identity.
         func same(_ other: Entry) -> Bool { source == other.source && (!kind.nameIsIdentity || name == other.name) }
@@ -135,12 +135,12 @@ public final class LiveCatalog: @unchecked Sendable {
         watcher = nil
     }
 
-    /// Applies `running` (in the order they appeared, `file` unused), or Syphon's current directory when nil. The
-    /// directory is read under the lock, so two notifications racing on different threads never apply an older list
-    /// last (the directory does not call out while it holds its own lock, so this cannot deadlock).
+    /// Applies `running` (in the order they appeared, `file` unused, another kind's ignored), or Syphon's current
+    /// directory when nil. The directory is read under the lock, so two notifications racing on different threads never
+    /// apply an older list last (the directory does not call out while it holds its own lock, so this cannot deadlock).
     public func update(running: [Entry]? = nil) {
         let changed = state.withLock { s in
-            s.running = (running ?? (kind == .syphon ? Self.syphonDirectory : s.running)).filter { $0.runtimeID != excluded }
+            s.running = (running ?? (kind == .syphon ? Self.syphonDirectory : s.running)).filter { $0.kind == kind && $0.runtimeID != excluded }
             return Self.assign(&s.entries, running: s.running)
         }
         if changed { onChange?() }
@@ -153,7 +153,7 @@ public final class LiveCatalog: @unchecked Sendable {
     /// Applies the project's numbering (start, a forget, undo, a loaded project); true when anything changed.
     @discardableResult public func adopt(_ numbers: [Entry]) -> Bool {
         let changed = state.withLock { s in
-            let adopted = Self.adopt(&s.entries, numbers: numbers)
+            let adopted = Self.adopt(&s.entries, numbers: numbers.filter { $0.kind == kind })
             return Self.assign(&s.entries, running: s.running) || adopted
         }
         if changed { onChange?() }

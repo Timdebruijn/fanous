@@ -38,9 +38,16 @@ import Testing
         next.update(running: [Self.device("cam-b", "Cam Link 4K"), Self.device("iphone", "iPhone"), Self.device("usb", "USB Capture")])
         #expect(next.entry(file: 1)?.label == "USB Capture")
 
-        // past 20 a device waits for a number (1–3 are held, gone)
+        // past 20 a device waits for a number (1–3 stay held, not running)
         next.update(running: (0..<21).map { Self.device("d\($0)", "Device \($0)") })
         #expect(next.entries.count == 20 && next.unnumbered == ["Device 17", "Device 18", "Device 19", "Device 20"])
+        #expect((1...3).allSatisfy { next.entry(file: $0)?.running == false })
+
+        // entries of another kind are ignored, running or from the project
+        let syphon = LiveCatalog.Entry(kind: .syphon, file: 150, source: "App", name: "", runtimeID: "s")
+        next.update(running: [syphon])
+        #expect(!next.adopt(next.entries + [syphon]))
+        #expect(next.entries.allSatisfy { $0.kind == .capture && !$0.running } && next.unnumbered.isEmpty)
 
         // the undo/redo check of `/syphon` covers `/capture`: a number taken meanwhile is refused
         let held: JSONValue = ["capture": ["3": ["uid": "other", "name": "Other"]]]

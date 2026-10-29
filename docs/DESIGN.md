@@ -880,6 +880,8 @@ written back, a new entry with a running server's name on another number is
 dropped (it would take that server to the lower number at the next restart), and
 a freed number goes at once to a server waiting past the 20.
 
+Since B73 step 1b: `Media/LiveCatalog.swift`, `LiveCatalog(.syphon, …)`; the B61/B69 notes above keep the old names as history.
+
 ### 8.3 Ingest flow
 
 ```
@@ -2166,7 +2168,8 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   `StateStore.step` before it pops). The check sees the patch the step would
   apply, the patch that made the state it undoes (`HistoryEntry.forward`) and
   the current project. `syphon.forget` and `project.revert` both run
-  `ProjectDocument.checkSyphonReplay` (B90, B91): every op on `/syphon/N`
+  `ProjectDocument.checkLiveReplay` (was `checkSyphonReplay`; B90, B91; it
+  covers `/syphon`, `/capture`, `/screens` and `/windows`): every op on `/syphon/N`
   needs the whole entry the undone step left there
   (nothing, where it removed) or already the value it writes; otherwise the
   number changed meanwhile and the step is refused with `historyConflict`

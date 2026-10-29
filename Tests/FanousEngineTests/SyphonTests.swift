@@ -177,6 +177,24 @@ import Testing
         LiveCatalog.Entry(kind: .syphon, file: 0, source: app, name: server, runtimeID: uuid)
     }
 
+    /// The directory's servers reach the catalog as entries: app → source, server name → name, directory id → runtimeID.
+    @Test func catalogReadsTheDirectoryAsEntries() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { return }  // no GPU: skip
+        let name = "FanousTest-\(UUID().uuidString)"
+        let output = try SyphonOutput(name: name, device: device)
+        let input = SyphonInput(device: device)  // keeps the directory listening
+        defer {
+            input.disconnect()
+            output.stop()
+        }
+        // The directory learns about servers through distributed notifications, which need the main run loop.
+        #expect(Self.wait(seconds: 2) { LiveCatalog.syphonDirectory.contains { $0.name == name } })
+        let info = try #require(SyphonInput.directoryServers.first { $0.serverName == name })
+        let entry = try #require(LiveCatalog.syphonDirectory.first { $0.name == name })
+        #expect(entry.kind == .syphon && entry.source == info.appName && !entry.source.isEmpty)
+        #expect(entry.runtimeID == output.uuid && entry.runtimeID == info.uuid)
+    }
+
     @Test func catalogNumbersServersInAnnounceOrderAndKeepsNumbersWhenTheyGo() {
         var list: [LiveCatalog.Entry] = []
         #expect(LiveCatalog.assign(&list, running: [Self.info("Resolume", "Out", "a"), Self.info("Simple Server", "", "b")]))
