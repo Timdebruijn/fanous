@@ -261,7 +261,7 @@ public final class OutputCoordinator {
             if displayID == newMaster, bound[displayID]?.secondary?.stop() == false { stale.insert(displayID) }
             // a frozen output keeps its hold (B111), unless the thread that rendered the old set may still be writing it
             // (B118): the new thread would read `held` under that write, so the output holds afresh instead
-            if stale.contains(displayID) { logger.warning("a render thread did not stop within 1 s during a display role change: a frozen output on it holds afresh", metadata: ["display": "\(display.name)"]) }
+            if stale.contains(displayID) { logger.warning("a render thread did not stop within 1 s while outputs were rebound: a frozen output on it holds afresh", metadata: ["display": "\(display.name)"]) }
             let set = OutputSet(plans: plans, previous: stale.contains(displayID) ? nil : bound[displayID]?.set.holdSource)
             if displayID == newMaster {
                 headless?.stop()  // before the set is published: a headless tick hands `compositor.outputSet` to the preview tap
