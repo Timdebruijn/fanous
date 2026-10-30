@@ -9,7 +9,7 @@ import FanousCore
 /// cannot drift; `scripts/check-protocol-dts.sh` compares it in CI like the channel map.
 public enum ProtocolTypes {
     public static func typescript(commands: [CommandSpec]) -> String {
-        var out = """
+        return """
             // SPDX-License-Identifier: GPL-3.0-only
             // Copyright (c) 2026 Tim de Bruijn
             // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
@@ -58,7 +58,5 @@ public enum ProtocolTypes {
             /** Binary frame kind 1 (H.264): `[u8 key][u64 be timestamp µs][AVCC access unit]` after the 5-byte stream header; kind 2 (JPEG): the file, on a `thumbs` stream `[u8 layer number (1-based)][u16 be width][u16 be height][JPEG]` (width and height 0, no JPEG: the layer shows nothing); kind 3 (DMX): 512 slot bytes. */
 
             """
-        out = out.replacingOccurrences(of: "\n            ", with: "\n")
-        return out
     }
 }

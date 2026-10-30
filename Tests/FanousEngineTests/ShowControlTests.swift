@@ -16,7 +16,7 @@ struct ShowControlTests {
     static let logger = Logger(label: "test")
 
     @Test func cueFollowFiresWithoutAFade() async throws {
-        let runner = CueRunner(dmx: DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger), logger: Self.logger)
+        let runner = CueRunner(dmx: DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger))
         defer { runner.stop() }
         runner.replace(list: CueList(cues: [
             Cue(number: 1, fadeTime: 0, followTime: 0.6),

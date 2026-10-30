@@ -42,14 +42,12 @@ public struct IngestJob: Codable, Sendable, Identifiable {
     public var originalsDirectory: URL?
     /// With no `originalsDirectory`: delete the source after success. `originalsDirectory` wins when both are set.
     public var deleteSource: Bool
-    /// Replace a file already at `destination`; otherwise the job fails.
-    public var overwrite: Bool
     public var state: State
     public var createdAt: Date
     public var finishedAt: Date?
 
     public init(
-        source: URL, destination: URL, kind: Kind, originalsDirectory: URL? = nil, deleteSource: Bool = false, overwrite: Bool = false
+        source: URL, destination: URL, kind: Kind, originalsDirectory: URL? = nil, deleteSource: Bool = false
     ) {
         id = UUID()
         self.source = source
@@ -57,7 +55,6 @@ public struct IngestJob: Codable, Sendable, Identifiable {
         self.kind = kind
         self.originalsDirectory = originalsDirectory
         self.deleteSource = deleteSource
-        self.overwrite = overwrite
         state = .queued
         createdAt = Date()
         finishedAt = nil
@@ -250,7 +247,7 @@ public final class IngestQueue: @unchecked Sendable {
         let files = FileManager.default
         guard files.fileExists(atPath: job.source.path) else { throw IngestError.missingSource(job.source) }
         guard job.source.standardizedFileURL != job.destination.standardizedFileURL else { throw IngestError.sameFile }
-        guard job.overwrite || !files.fileExists(atPath: job.destination.path) else { throw IngestError.destinationExists(job.destination) }
+        guard !files.fileExists(atPath: job.destination.path) else { throw IngestError.destinationExists(job.destination) }
         try files.createDirectory(at: job.destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? files.removeItem(at: temporary)
 
@@ -278,7 +275,6 @@ public final class IngestQueue: @unchecked Sendable {
             try files.copyItem(at: job.source, to: temporary)
         }
         try gate.throwIfCancelled()
-        if job.overwrite { try? files.removeItem(at: job.destination) }
         try files.moveItem(at: temporary, to: job.destination)
     }
 

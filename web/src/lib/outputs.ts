@@ -295,15 +295,6 @@ export function insertNearest(path: MapPoint[], p: MapPoint): { path: MapPoint[]
   return { path: next, index: best + 1 };
 }
 
-/** Inserts a point halfway between `index` and the next one (wrapping). */
-export function insertPoint(path: MapPoint[], index: number): MapPoint[] {
-  const a = path[index] ?? path[0]!;
-  const b = path[(index + 1) % path.length]!;
-  const next = [...path];
-  next.splice(index + 1, 0, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-  return next;
-}
-
 export function nextSliceId(output: OutputConfig): number {
   return Math.max(0, ...output.slices.map((s) => s.id)) + 1;
 }
@@ -342,9 +333,4 @@ export function spreadSources(slices: SliceConfig[], size: { w: number; h: numbe
     x += w;
   }
   return out;
-}
-
-/** Nudge in pixels of the output, as a normalized delta. */
-export function nudge(point: MapPoint, dx: number, dy: number, size: { w: number; h: number }): MapPoint {
-  return { x: clamp01(point.x + dx / size.w), y: clamp01(point.y + dy / size.h) };
 }

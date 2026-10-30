@@ -38,7 +38,6 @@ public final class WebSocketSession: @unchecked Sendable {
         self.handler = handler
     }
 
-    public var queuedBytes: Int { queued.load(ordering: .relaxed) }
     public var isClosed: Bool { closed.load(ordering: .relaxed) }
 
     // MARK: Sending (any thread)

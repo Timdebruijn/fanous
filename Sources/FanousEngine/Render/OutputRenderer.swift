@@ -106,7 +106,6 @@ public final class OutputCompiler: @unchecked Sendable {
     public static let sliceSubdivisions = 64
     public static let fieldDivisor = 4
     private let device: MTLDevice
-    private let uniforms: MTLBuffer
 
     /// What a texture is made of; a changed region, display mode or drawable size gives new keys.
     enum Key: Hashable {
@@ -121,10 +120,8 @@ public final class OutputCompiler: @unchecked Sendable {
     /// thread; the lock is for the previews, which compile from the main actor, the network and a utility queue.
     private let cache = Mutex<[Key: Entry]>([:])
 
-    public init(device: MTLDevice) throws {
+    public init(device: MTLDevice) {
         self.device = device
-        guard let uniforms = device.makeBuffer(length: 256, options: .storageModeShared) else { throw RenderError.pipeline("mapped uniforms") }
-        self.uniforms = uniforms
     }
 
     /// Cache entries, a dead one until the next compile drops it (tests).

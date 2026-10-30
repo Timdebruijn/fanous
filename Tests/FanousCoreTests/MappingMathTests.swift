@@ -157,9 +157,10 @@ struct MappingMathTests {
         // move the centre control point: the surface passes through it and stays put at the corners
         var mesh = MeshWarp.identity(cols: 3, rows: 3)
         mesh.points[4] = MapPoint(0.6, 0.4)
-        let p = WarpMath.meshPoint(mesh, 0.5, 0.5)
-        #expect(abs(p.x - 0.6) < 1e-9 && abs(p.y - 0.4) < 1e-9)
-        #expect(WarpMath.meshPoint(mesh, 0, 0) == MapPoint(0, 0) && WarpMath.meshPoint(mesh, 1, 1) == MapPoint(1, 1))
+        warp.mesh = mesh
+        let moved = WarpMath.field(warp, cols: 3, rows: 3)
+        #expect(abs(moved[8] - 0.6) < 1e-6 && abs(moved[9] - 0.4) < 1e-6)
+        #expect(abs(moved[0]) < 1e-6 && abs(moved[1]) < 1e-6 && abs(moved[16] - 1) < 1e-6 && abs(moved[17] - 1) < 1e-6)
         #expect(!mesh.isIdentity)
     }
 

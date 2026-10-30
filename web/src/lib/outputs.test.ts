@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
-import { canvasSizeError, canvasTarget, colorOf, previewReady, layerCanvas, layerRuns, layersOn, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, handles, insertPoint, keystoneBadges, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
+import { canvasSizeError, canvasTarget, colorOf, previewReady, layerCanvas, layerRuns, layersOn, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, handles, keystoneBadges, meshIdentity, modeText, outlines, outputSize, statusText, type OutputConfig } from './outputs';
 
 const output: OutputConfig = {
   id: 1,
@@ -75,12 +75,9 @@ describe('outputs helpers', () => {
     expect(keystoneBadges({ ...bound, keystone: true, keystoneInvalid: true }).map((b) => [b.text, b.warn])).toEqual([['Keystone active', false], ['Keystone invalid', true]]);
   });
 
-  it('blend curve, point insertion and nudging', () => {
+  it('blend curve', () => {
     const path = blendCurvePath({ overlap: 100, power: 2, gamma: 1 }, 100, 50, 4);
     expect(path).toBe('M0.0 50.0 L25.0 43.8 L50.0 25.0 L75.0 6.3 L100.0 0.0');
-    expect(insertPoint([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }], 2)).toEqual([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0.5, y: 0.5 }]);
-    expect(nudge({ x: 0.5, y: 0.5 }, 10, -10, { w: 1000, h: 500 })).toEqual({ x: 0.51, y: 0.48 });
-    expect(nudge({ x: 0.999, y: 0 }, 10, -10, { w: 1000, h: 500 })).toEqual({ x: 1, y: 0 });
   });
 });
 

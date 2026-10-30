@@ -13,7 +13,6 @@ public struct FrameRecord: Sendable {
     public var gpuMicros: UInt32 = 0
     public var late = false
     public var missed: UInt16 = 0  // display-link ticks skipped before this one
-    public var layersDrawn: UInt16 = 0
     public var textureMisses: UInt16 = 0  // layers that had no decoded frame ready
     public var dmxToPhotonMicros: UInt32 = 0  // 0 = no new DMX this tick
     public var complete = false
@@ -71,7 +70,6 @@ public final class MetricsRing: @unchecked Sendable {
         if late { totalLate.wrappingAdd(1, ordering: .relaxed) }
     }
 
-    public var count: Int { min(capacity, writeIndex.load(ordering: .relaxed)) }
 
     /// Records written in the last `seconds` (by target time), oldest first.
     public func recent(seconds: Double, now: Double) -> [FrameRecord] {

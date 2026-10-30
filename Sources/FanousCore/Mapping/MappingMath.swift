@@ -152,26 +152,6 @@ public enum WarpMath {
         return 0.5 * ((2 * p1) + (-p0 + p2) * f + (2 * p0 - 5 * p1 + 4 * p2 - p3) * f * f + (-p0 + 3 * p1 - 3 * p2 + p3) * f * f * f)
     }
 
-    /// The mesh surface at (u, v): rows interpolated along u, then the column of results along v.
-    public static func meshPoint(_ mesh: MeshWarp, _ u: Double, _ v: Double) -> MapPoint {
-        guard mesh.cols >= 2, mesh.rows >= 2, mesh.points.count == mesh.cols * mesh.rows else { return MapPoint(u, v) }
-        var xs: [Double] = [], ys: [Double] = []
-        xs.reserveCapacity(mesh.rows)
-        ys.reserveCapacity(mesh.rows)
-        for r in 0..<mesh.rows {
-            let row = mesh.points[(r * mesh.cols)..<((r + 1) * mesh.cols)]
-            xs.append(catmullRom(row.map(\.x), u))
-            ys.append(catmullRom(row.map(\.y), u))
-        }
-        return MapPoint(catmullRom(xs, v), catmullRom(ys, v))
-    }
-
-    /// Where the undistorted normalized point (u, v) lands on the output: mesh first (if any), then corner pin.
-    public static func warped(_ warp: WarpSettings, _ u: Double, _ v: Double, homography: [Double]) -> MapPoint {
-        let p = warp.mesh.map { meshPoint($0, u, v) } ?? MapPoint(u, v)
-        return apply(homography, p.x, p.y)
-    }
-
     /// The displacement field (DESIGN.md §9.3): `cols × rows` samples of the warped position, two floats each,
     /// row-major from the top-left; sample (c, r) stands for the undistorted point (c/(cols−1), r/(rows−1)).
     /// The mesh is evaluated separably (every control row along u, then each column along v), so a 33×33 mesh

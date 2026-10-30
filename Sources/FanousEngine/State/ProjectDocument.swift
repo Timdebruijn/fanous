@@ -717,11 +717,6 @@ public enum ProjectDocument {
     }
 }
 
-extension JSONValue {
-    /// The project's outputs (empty when the document has none).
-    var outputsConfig: [OutputConfig] { ProjectDocument.outputs(from: self) }
-}
-
 extension FixtureRef {
     /// Parses the `description` form: "Layer 3", "Master", "Output 1", "Keystone 1" (case-insensitive).
     public init?(parsing text: String) {
