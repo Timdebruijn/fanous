@@ -61,14 +61,18 @@ final class SecondaryDriver: @unchecked Sendable {
     private var thread: PacedThread?
     nonisolated(unsafe) var set: OutputSet
 
-    init(layer: CAMetalLayer, hz: Double, compositor: Compositor, set: OutputSet, uniforms: MTLBuffer) {
+    /// `uniforms`: one per frame in flight, which the layer's three drawables bound; each frame takes the next, as a
+    /// preset morph changes them every frame while the previous frame may still read its own.
+    init(layer: CAMetalLayer, hz: Double, compositor: Compositor, set: OutputSet, uniforms: [MTLBuffer]) {
         self.set = set
         layer.maximumDrawableCount = 3  // see DrawableLoopDriver: two drawables block periodically against the display's clock
         layer.displaySyncEnabled = true
         let scratch = PresentParameters()  // this thread's only
+        var next = 0  // this thread's only
         thread = PacedThread(name: "org.fanous.output.secondary", hz: max(1, hz)) { [self] target in
             guard let drawable = layer.nextDrawable() else { return }
-            compositor.present(self.set, to: drawable, uniforms: uniforms, scratch: scratch, at: target)
+            compositor.present(self.set, to: drawable, uniforms: uniforms[next], scratch: scratch, at: target)
+            next = (next + 1) % uniforms.count
         }
     }
 
@@ -252,7 +256,8 @@ public final class OutputCoordinator {
                 secondary.set = set
                 bound[displayID] = Bound(window: window, display: display, set: set, secondary: secondary)
             } else {
-                guard let uniforms = context.device.makeBuffer(length: Compositor.mappedUniformsLength, options: .storageModeShared) else { continue }
+                let uniforms = (0..<3).compactMap { _ in context.device.makeBuffer(length: Compositor.mappedUniformsLength, options: .storageModeShared) }
+                guard uniforms.count == 3 else { continue }
                 let secondary = SecondaryDriver(layer: window.metalLayer, hz: display.hz, compositor: compositor, set: set, uniforms: uniforms)
                 bound[displayID] = Bound(window: window, display: display, set: set, secondary: secondary)
             }

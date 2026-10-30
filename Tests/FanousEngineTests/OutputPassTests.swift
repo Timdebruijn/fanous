@@ -1119,6 +1119,47 @@ struct OutputPassTests {
         #expect(green(end, 2) == lit, "s = 1: the edited mapping")
     }
 
+    /// Both sides warped (flags 1 and 16 at once), on output 2 (slot index 1): preset 1's corner pin squeezes the picture
+    /// into the right half, preset 2's into the left; halfway the mixed warp puts it in the middle half.
+    @Test func twoWarpsGlideOnOutputTwo() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 200)
+        var o = OutputConfig(id: 2)
+        (o.warp.cornerPin[0], o.warp.cornerPin[3]) = (MapPoint(0.5, 0), MapPoint(0.5, 1))
+        o.storePreset(1, name: nil)
+        o.warp = WarpSettings()
+        (o.warp.cornerPin[1], o.warp.cornerPin[2]) = (MapPoint(0.5, 0), MapPoint(0.5, 1))
+        o.storePreset(2, name: nil)
+        o.warp = WarpSettings()
+        let plan = try OutputCompiler(device: context.device).compile(o, index: 2, drawable: (Self.width, Self.height))
+        #expect(plan.geometry(1).warpField != nil && plan.geometry(2).warpField != nil)
+        func row(_ elapsed: Double) throws -> [Int] {
+            let image = try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context) {
+                $0.presets[1] = 2
+                $0.morphs[1] = PresetMorph(from: 1, start: 3600 - elapsed, fade: 2)
+            }
+            return Self.lit(image, y: 0.5, [0.1, 0.3, 0.45, 0.55, 0.7, 0.9])
+        }
+        #expect(try row(0) == [0, 0, 0, 1, 1, 1], "s = 0: preset 1's warp")
+        #expect(try row(1) == [0, 1, 1, 1, 1, 0], "halfway: 0.25 → 0.75")
+        #expect(try row(2) == [1, 1, 1, 0, 0, 0], "s = 1: preset 2's warp")
+    }
+
+    /// A morph changes the output pass's uniforms on every tick, also on one that reuses a static canvas, while the
+    /// previous tick's pass may still read them: each tick writes the next of the three mapped uniform buffers, so three
+    /// ticks leave three progress values (a reused tick used to overwrite the one before it).
+    @Test func eachTickWritesTheNextMappedUniformBuffer() throws {
+        let rig = try Rig(Self.morphConfig(), value: 200)
+        rig.compositor.skipsIdleWork = true
+        (rig.preset, rig.morph) = (2, PresetMorph(from: 1, start: 3600, fade: 10))
+        rig.write(.normal, master: 1, layer: 1)
+        let times = [3601.0, 3602, 3603]
+        for t in times { rig.compositor.tick(target: t, drawable: nil) }
+        #expect(rig.compositor.reusedCanvases.load(ordering: .relaxed) == 2, "a static canvas: the later two ticks reuse it")
+        let written = rig.compositor.mappedUniformBuffers.map { $0.contents().assumingMemoryBound(to: MappedUniforms.self).pointee.morph }
+        #expect(Set(written) == Set(times.map { rig.morph.progress(at: $0) }), "\(written)")
+    }
+
     /// A secondary display's copy of the output values allocates nothing on its thread (the driver's `PresentParameters`
     /// keep their size). Release only, like the other `mallocCounter` checks (`scripts/check-mallocs.sh`).
     @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))

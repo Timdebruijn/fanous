@@ -57,7 +57,11 @@ public final class Compositor: @unchecked Sendable {
     private var syncClocks: [SyncPacket.Layer] = []
     /// Written by `prepare` for the layer being prepared.
     private var syncStatus = LayerSyncStatus()
-    private let mappedUniformBuffers: [MTLBuffer]
+    let mappedUniformBuffers: [MTLBuffer]
+    /// The one of `mappedUniformBuffers` the next output pass writes. It moves every tick, not with the canvas: a preset
+    /// morph changes the uniforms on a tick that reuses the canvas, while the previous tick's pass may still read them.
+    /// Three, as the clock-master display's three drawables bound the frames in flight (`DrawableLoopDriver`).
+    private var mappedIndex = 0
     /// 256 bytes per slice draw: enough for 64 slices across the outputs of one display.
     static let mappedUniformsLength = 256 * 64
 
@@ -504,10 +508,11 @@ public final class Compositor: @unchecked Sendable {
             if let set, let output = commandBuffer.makeRenderCommandEncoder(descriptor: outputPass) {
                 output.label = "mapped output"
                 OutputPass.draw(
-                    set, canvas: { tickCanvas($0) }, encoder: output, context: context, uniforms: mappedUniformBuffers[canvasIndex],
+                    set, canvas: { tickCanvas($0) }, encoder: output, context: context, uniforms: mappedUniformBuffers[mappedIndex],
                     master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs,
                     keystones: snapshot.keystones, presets: snapshot.presets, morphs: snapshot.morphs, now: frame.target)
                 output.endEncoding()
+                mappedIndex = (mappedIndex + 1) % mappedUniformBuffers.count
             } else if let output = commandBuffer.makeRenderCommandEncoder(descriptor: outputPass) {
                 // the Master pattern at full level only here, without an output set (tests, fanous-bench); the engine's
                 // displays always have one (OutputCoordinator), so on stage patterns follow the Dimmer and Blackout

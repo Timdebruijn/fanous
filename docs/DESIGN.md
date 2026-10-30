@@ -596,7 +596,7 @@ can never disagree). `[OPEN-9]` exact bands and the speed/scale upper limits.
 | 3 | Control | 8 | 0 | 0–63 normal · 64–127 Blackout · 128–191 Freeze (hold frame) · 192–255 reserved |
 | 4 | Test pattern | 8 | 0 | as Master ch 4, this output only |
 | 5 | Blend | 8 | 0 | 0–127 blend/warp on (default) · 128–255 raw (bypass blend, warp, mask and, from M2, keystone — for alignment) |
-| 6 | Mapping preset | 8 | 0 | 0 = as edited · 1–255 = the output's stored mapping preset with that number; an index, so it cuts (M2.4, §9.10) |
+| 6 | Mapping preset | 8 | 0 | 0 = as edited · 1–255 = the output's stored mapping preset with that number; an index, so the value snaps; ch 7 morphs the output (M2.4, §9.10) |
 | 7 | Mapping fade | 8 | 0 | 0 = cut · 1–255 = 0.1–25.5 s morph when ch 6 changes, as Layer Dissolve (M2.5, §9.10) |
 | 8 | Reserved | — | 0 | |
 
@@ -2255,7 +2255,7 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
 - **One plan per output** keeps the edited mapping and its presets' geometry
   (`presets: [Int: PresetGeometry]`). Freeze's `held` stays on the plan.
 - **Per-frame state stays out of the plan.**
-  - The morph (3) lives on the DMX queue and travels in `OutputParameters`.
+  - The morph (3) lives on the DMX queue and travels in `OutputParameters` (as built: the slot's `morphs`).
   - The overlay (4) lives in a per-output box. The coordinator owns the box and
     hands it to every plan it compiles.
   - So a recompile mid-morph or mid-freeze changes nothing on screen.
@@ -2380,7 +2380,7 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
   - OSC `/fanous/keystone/{n}/{key}`, feedback included. GDTF: a fourth DMX mode "Keystone (16ch)" with attributes
     `KeystoneTopLeftX` … `KeystoneBottomLeftY` (feature `Position.Keystone`).
   - The three existing modes and their footprints are unchanged. Output ch 6 and 7 (Mapping preset and fade) are not in
-    the specs yet; they stay reserved until M2.4 and M2.5 (ch 6 since M2.4).
+    the specs yet; they stay reserved until M2.4 and M2.5 (ch 6 since M2.4, ch 7 since M2.5).
 - **DMX queue.** `DMXStore.publish` reads each output's Keystone resolver (outputs 1–8, like `outputs`). Only when its
   raw values change, `WarpMath.keystone(raw:)` gives the homography, stored as a `simd_float3x3` in the slot's
   `keystones`, with `keystoneInvalid` beside it; both copy with the slot. Unpatched is the identity, centred values give
@@ -2565,12 +2565,23 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
     in `OutputParameters` as item 0 says: the Output fixture's resolver rebuilds `outputs` every publish, which is why
     M2.4 put the preset there too.
   - **DMX loss** follows ch 6. Hold keeps the values, so nothing restarts and a running morph keeps its clock; zero
-    sends ch 6 and ch 7 to 0 in one frame, a cut to the edited mapping; internal goes to the internal values, ch 7's
-    among them. The first preset after a start morphs from the edited mapping like any change.
+    sends ch 6 and ch 7 to 0 in one frame, a cut to the edited mapping, except under `htp`, where a held internal ch 7
+    is higher than 0 and wins (`Resolver`), so it glides there over that fade; internal goes to the internal values,
+    ch 7's among them, and cuts to the edited mapping when there are none. The first preset after a start morphs from
+    the edited mapping like any change, and so does an Output fixture made anew or without DMX (undo of
+    `output.remove`, a move to another universe, `clearDMX`) once the console's values arrive.
+  - A Fanous cue snaps ch 6 at its start and fades ch 7, so a cue that changes both reads the old ch 7, as a media
+    change reads the old Dissolve.
 - **Render.** `OutputPass.draw(…, presets:, morphs:, now:)` computes s = `PresetMorph.progress(at:)`, the smoothstep of
   (now − start) / fade, per output and frame. The clock-master display passes the tick's target; a secondary display its
   paced thread's target (`present(…, at:)`), with `morphs` copied into its `PresentParameters`; the output preview none.
   While s < 1, `plan.geometry(from)` is the other side (a number the plan lacks is the edited mapping).
+  - **Uniform buffers per frame** (review): s and the paired opacity change every frame, also on a tick that reuses a
+    static canvas, where `canvasIndex` stays and the mapped uniforms used to be rewritten while the previous tick's
+    pass could still read them (byte-identical before M2.5). The compositor now takes the next of its three
+    `mappedUniformBuffers` every tick (`mappedIndex`), and a `SecondaryDriver` rotates three buffers of its own; three,
+    as each display layer's three drawables bound the frames in flight. Checked by
+    `eachTickWritesTheNextMappedUniformBuffer`; the secondary rotation has no test (it needs a display layer).
   - Each target slice pairs with the first slice of the other side with its `SliceConfig.id` (`SlicePlan.id`) and its
     canvas: a linear scan, no allocation. The pair's vertex buffer goes to vertex buffer 2 and the other side's warp
     field to vertex texture 1 (flag 16 when it has one), with `MappedUniforms.morph` = s; the opacity mixes on the CPU.
@@ -2581,14 +2592,16 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
     keystone are as M2.3 built them. At s = 1 the other side is not read.
   - Freeze: `OutputPlan.canvases` already holds every preset's canvases and a pair shares one canvas, so a morph while
     frozen glides the held frame.
-- **Status.** `live.outputs[].morph` is `{ from, to, fade }` (0 = the edited mapping) while a morph runs when
-  `publishLive` builds the document, else null (`Engine.presetLive`). No progress: the 100 ms diff sends it when a morph
-  starts and when it ends. The preset badge on the output row and under the preview reads "Preset A → B (console)"
-  ("Edited → Preset B", "Preset A → edited") while it is there.
+- **Status.** `live.outputs[].morph` is `{ from, to, fade }` while a morph runs when `publishLive` builds the document,
+  else null (`Engine.presetLive`). From and to are what is drawn (review): a number the output lacks or has broken (the
+  `validated` check of `presetMissing`) is 0, the edited mapping, and a morph whose sides both draw the same is null.
+  No progress: the 100 ms diff sends it when a morph starts and when it ends. The preset badge on the output row and
+  under the preview reads "Preset A → B", "Edited → Preset B" or "Preset A → edited" while it is there, without
+  "(console)": only the console morphs, and the shorter text does not wrap next to "Keystone active" on a phone.
 - **Checks.** The DMX queue (`TripleBufferTests`: record, restart from the target, cuts, each loss mode) and the render
   (`OutputPassTests`: s = 0, 0.16, 0.5 and 1, fade 0, a secondary display, one-sided and changed-canvas slices,
-  opacity, source rectangle, riding masks, the warp into the edited mapping for content and a pattern), each
-  mutation-checked; `mallocCounterSecondaryCopyAllocatesNothing` copies `morphs` too.
+  opacity, source rectangle, riding masks, the warp into the edited mapping for content and a pattern, two warps on
+  output 2), each mutation-checked; `mallocCounterSecondaryCopyAllocatesNothing` copies `morphs` too.
 - **Not built here:** the edit overlay (M2.6). Slice ids repeated within one mapping (`validate` allows them) pair with
   the first match.
 

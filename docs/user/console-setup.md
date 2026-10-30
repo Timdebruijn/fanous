@@ -24,8 +24,10 @@ preset with that number; a number the output does not have keeps the edited
 mapping (see [outputs-and-mapping.md](outputs-and-mapping.md#mapping-presets)).
 Output channel 7, **Mapping fade**, is how long the output glides from one
 preset to the next when channel 6 changes: 0 cuts, 1 to 255 is 0.1 to 25.5 s,
-as Layer Dissolve. Set it before you change channel 6. Output channel 8 is
-reserved.
+as Layer Dissolve. Value ÷ 10 = seconds (50 = 5 s). Fanous reads channel 7 at
+the moment channel 6 changes. Changing channel 7 during a glide does nothing to
+that glide. If your console fades channel 7 along with the cue, make it snap,
+or set it in an earlier cue. Output channel 8 is reserved.
 
 16-bit values (intensity, speed, position, in and out points and others) are
 coarse/fine pairs on adjacent channels, coarse first. Layer channel 51 is Sync

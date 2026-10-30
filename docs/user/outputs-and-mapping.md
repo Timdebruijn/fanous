@@ -516,7 +516,7 @@ output, and at the bottom of each wall panel, for the whole wall.
   number; type another to choose. A number that exists is replaced (the
   button says **Replace N**) and keeps its name.
 - **Recall** copies the chosen preset into the mapping you edit. It is an edit
-  like any other: **Undo** takes it back.
+  like any other: **Undo** takes it back. It cuts, without a glide.
 - **Name** renames the chosen preset when you leave the field; **Remove**
   deletes it (Undo brings it back).
 - In a wall panel each of these works on every output of the wall at once, as
@@ -529,39 +529,59 @@ output, and at the bottom of each wall panel, for the whole wall.
 **Hold to compare** shows the chosen preset on the output for as long as you
 hold the button (mouse, finger, or Space or Enter), and goes back when you let
 go. The preview and the handles keep showing the mapping you edit. While held,
-Compare wins over channel 6 from the console. If the browser goes away while
-you hold it, the output goes back by itself within about 5 seconds. Compare is
-off in show mode and while the show is locked, and works on outputs 1 to 8.
+Compare wins over channel 6 from the console. It cuts, when you press and when
+you let go, without a glide. If the browser goes away while you hold it, the
+output goes back by itself within about 5 seconds. Compare is off in show mode
+and while the show is locked, and works on outputs 1 to 8.
 
 ### From the console
 
-Output fixture channel 6, **Mapping preset** (see
+Output fixture channels 6, **Mapping preset**, and 7, **Mapping fade** (see
 [console-setup.md](console-setup.md)):
 
 - 0 shows the mapping as edited; N shows the output's preset N for as long as
   the channel holds it. Nothing in the project changes.
-- Output channel 7, **Mapping fade**, glides from one to the next: the warp,
-  the slice corners, their part of the canvas and their opacity move together
-  over 0.1 to 25.5 s (1 to 255, as Layer Dissolve); 0 cuts. The fade counts
-  as it is when channel 6 changes, so set it first. A slice that is in only
-  one of the two presets, or samples another canvas in each, switches at the
-  start of the glide, and so do the masks. Changing channel 6 again during a
-  glide jumps to where that glide was going and glides on from there.
+- Channel 7 makes the output glide from one preset to the next. The warp, the
+  slice corners, their part of the canvas and their opacity move together. 0
+  cuts; 1 to 255 is 0.1 to 25.5 s, as Layer Dissolve. Value ÷ 10 = seconds
+  (50 = 5 s).
+- Fanous reads channel 7 at the moment channel 6 changes. Changing channel 7
+  during a glide does nothing to that glide. If your console fades channel 7
+  along with the cue, make it snap, or set it in an earlier cue.
+- Slices are matched by number: Slice 2 glides to Slice 2. A slice that is in
+  only one preset, or shows a different canvas in each, does not glide: it
+  appears or disappears when the glide starts. The new preset's masks are on
+  from the start and move with their slice.
+- Changing channel 6 again during a glide jumps to where that glide was going
+  and glides on from there.
 - A number the output does not have keeps the edited mapping, and the output
-  row says **Preset N missing** in yellow.
-- For a wall, store the preset on the whole wall, then set channel 6 on each
-  of its Output fixtures.
+  row says **Preset N missing** in yellow. A glide to it goes to the edited
+  mapping.
+- For a wall, store the preset on the whole wall. Then set channels 6 and 7 on
+  each of its Output fixtures, to the same values, or the tiles glide out of
+  step.
 - OSC: `/fanous/output/{n}/preset` and `/fanous/output/{n}/fade`.
-- Compare and Recall always cut. On DMX loss the output does what channel 6
-  does: with **Hold last values** it stays, and a glide that runs finishes;
-  with **Go to zero** it cuts to the edited mapping; with **UI and cues take
-  over** it glides to their preset over their fade.
+- When the console's signal is lost, the output follows channel 6 (Hold on
+  loss, in [console-setup.md](console-setup.md)):
+  - **Hold last values**: the output stays as it is. A glide that is running
+    finishes.
+  - **Go to zero**: channels 6 and 7 go to 0, so the output cuts to the edited
+    mapping. Under Who controls *Console and Fanous, highest value wins*, a
+    channel 7 value from the UI or a cue is higher than 0 and wins: the output
+    glides to the edited mapping over that time instead.
+  - **UI and cues take over**: the output shows the preset and the fade the UI
+    or a cue set for channels 6 and 7. With none set, it cuts to the edited
+    mapping.
+- When the signal comes back after Go to zero or UI and cues take over, and on
+  the first packet after Fanous starts, the output glides to the console's
+  preset over the console's channel 7: from the edited mapping, or from the
+  preset the UI or a cue showed.
 
 While an output shows a preset, its row and the Warp & Slices tab say
-**Preset N (console)** or **Preset N (compare)**, and **Preset A → B
-(console)** while it glides; Warp & Slices says that
-your edits go to the mapping the output shows again when it leaves the preset.
-A Keystone fixture moves the preset like any mapping.
+**Preset N (console)** or **Preset N (compare)**. While it glides they say
+**Preset A → B**, **Edited → Preset B** or **Preset A → edited**. Warp &
+Slices says that your edits go to the mapping the output shows again when it
+leaves the preset. A Keystone fixture moves the preset like any mapping.
 
 ## Keystone from the console
 

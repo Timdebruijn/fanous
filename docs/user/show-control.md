@@ -79,7 +79,12 @@ marked current (or fading) and next.
   the parameter's raw range or, for parameters with named bands such as Play
   mode or Blend mode, a choice list. **Add value** adds a row.
 - Fades are linear for continuous parameters. Parameters that are choices
-  (play mode, blend mode, effects, folder, file) switch when the fade starts.
+  (play mode, blend mode, effects, folder, file, mapping preset) switch when the
+  fade starts.
+- A layer's media change reads Dissolve, and an output's Mapping preset change
+  reads Mapping fade, at that start. A cue that changes both with a fade still
+  reads the old Dissolve or Mapping fade: give that value a Fade of 0, or set
+  it in an earlier cue.
 - **Trigger** is `hh:mm:ss:ff@rate`, for example `00:01:30:00@25`. Rates: 24,
   25, 29.97df, 29.97ndf, 30; without `@rate` it means 25. The cue fires when the
   timecode passes that time, and arms again after a jump back.

@@ -182,16 +182,25 @@ struct PresetCommandsTests {
         #expect(presets.map(\.number) == [3, 7] && presets[0].name == "first")
     }
 
-    /// `live.outputs` says a running morph (Output ch 7) as `{ from, to, fade }`, 0 = the edited mapping; null once it
-    /// ended and after a cut. The preset fields stay as they were.
+    /// `live.outputs` says a running morph (Output ch 7) as `{ from, to, fade }` as drawn: 0 = the edited mapping, also
+    /// for a number the output lacks or has broken; null once it ended, after a cut, and when both sides draw the edited
+    /// mapping. The preset fields stay as they were.
     @Test func liveSaysTheMorphWhileItRuns() {
         var o = OutputConfig(id: 1)
         o.storePreset(2, name: nil)
+        o.storePreset(5, name: nil)
+        o.presets[1].slices[0].dest.removeLast()  // preset 5 does not validate: drawn as the edited mapping
         let morph = PresetMorph(from: 0, start: 10, fade: 2)
-        let live = Engine.presetLive((2, false, morph), config: o, at: 11)
-        #expect(live["morph"] == ["from": 0, "to": 2, "fade": 2] && live["preset"] == 2 && live["presetSource"] == "console")
-        #expect(Engine.presetLive((2, false, morph), config: o, at: 12)["morph"] == .null, "ended")
-        #expect(Engine.presetLive((0, false, PresetMorph(from: 2, start: 10, fade: 2)), config: o, at: 11)["morph"] == ["from": 2, "to": 0, "fade": 2], "into the edited mapping")
-        #expect(Engine.presetLive((2, true, PresetMorph(from: 0, start: 10, fade: 0)), config: o, at: 10)["morph"] == .null, "a cut")
+        func live(_ number: Int, from: UInt8, compare: Bool = false, fade: Double = 2, at now: Double = 11) -> [String: JSONValue] {
+            Engine.presetLive((number, compare, PresetMorph(from: from, start: 10, fade: fade)), config: o, at: now)
+        }
+        let running = Engine.presetLive((2, false, morph), config: o, at: 11)
+        #expect(running["morph"] == ["from": 0, "to": 2, "fade": 2] && running["preset"] == 2 && running["presetSource"] == "console")
+        #expect(live(2, from: 0, at: 12)["morph"] == .null, "ended")
+        #expect(live(0, from: 2)["morph"] == ["from": 2, "to": 0, "fade": 2], "into the edited mapping")
+        #expect(live(2, from: 0, compare: true, fade: 0, at: 10)["morph"] == .null, "a cut")
+        #expect(live(9, from: 2)["morph"] == ["from": 2, "to": 0, "fade": 2] && live(9, from: 2)["presetMissing"] == 9, "to a missing number: the edited mapping")
+        #expect(live(2, from: 5)["morph"] == ["from": 0, "to": 2, "fade": 2], "from a broken one: the edited mapping")
+        #expect(live(0, from: 9)["morph"] == .null && live(5, from: 0)["morph"] == .null, "both sides the edited mapping: nothing glides")
     }
 }

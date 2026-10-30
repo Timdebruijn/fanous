@@ -1652,14 +1652,19 @@ public final class Engine: @unchecked Sendable {
 
     /// `live.outputs` preset fields (§9.10 item 3): the preset shown (null: the edited mapping), where it is asked from
     /// (console or compare), a number the output does not have, or has broken (it keeps the edited mapping), and the morph
-    /// into it while it runs at `now` (Output ch 7): `{ from, to, fade }`, 0 = the edited mapping. No progress: the live
-    /// document is diffed every 100 ms, so it changes when a morph starts and ends.
+    /// into it while it runs at `now` (Output ch 7): `{ from, to, fade }` as drawn, so 0 = the edited mapping on either
+    /// side for such a number too, and null when both sides draw the same. No progress: the live document is diffed every
+    /// 100 ms, so it changes when a morph starts and ends.
     static func presetLive(_ asked: (number: Int, compare: Bool, morph: PresetMorph), config: OutputConfig?, at now: Double) -> [String: JSONValue] {
-        let morph: JSONValue = asked.morph.running(at: now)
-            ? ["from": .number(Double(asked.morph.from)), "to": .number(Double(asked.number)), "fade": .number(asked.morph.fade)] : .null
+        func drawn(_ number: Int) -> Int {
+            number > 0 && config?.preset(number).map { (try? ProjectDocument.validated($0)) != nil } == true ? number : 0
+        }
+        let (from, to) = (drawn(Int(asked.morph.from)), drawn(asked.number))
+        let morph: JSONValue = asked.morph.running(at: now) && from != to
+            ? ["from": .number(Double(from)), "to": .number(Double(to)), "fade": .number(asked.morph.fade)] : .null
         guard asked.number > 0 else { return ["preset": .null, "presetSource": .null, "presetMissing": .null, "morph": morph] }
         let number = JSONValue.number(Double(asked.number))
-        let has = config?.preset(asked.number).map { (try? ProjectDocument.validated($0)) != nil } ?? false
+        let has = to != 0
         return [
             "preset": has ? number : .null, "presetSource": .string(asked.compare ? "compare" : "console"), "presetMissing": has ? .null : number,
             "morph": morph,
