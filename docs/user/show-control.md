@@ -413,12 +413,10 @@ same way; a display that Fanous uses as an output reads "not running". A
 display layer is named `Display: <name>` and shows the whole display, scaled down to
 the canvas when larger (more in [media-library.md](media-library.md)). It
 needs the Screen permission: **Authorize screen** under Capture permissions
-on the System screen, never in show mode; macOS applies the grant only to a
-new engine, so for about two minutes the engine waits for you to allow Fanous
-Engine in System Settings and then restarts itself. If the row goes back to
-denied, press **Authorize screen** again, or allow it and choose Engine ›
-**Restart Engine**. Without the grant the layer reads "screen permission not
-granted" and stays black.
+on the System screen, never in show mode, allow Fanous Engine in System
+Settings, then choose Engine › **Restart Engine** (macOS applies the grant only
+to a new engine process). Without the grant the layer reads "screen permission
+not granted" and stays black.
 
 **Readiness.** Two items on the System screen look only at inputs in use: a
 layer that shows a camera (1–20) or a display (21–28), or an entry of a

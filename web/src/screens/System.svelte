@@ -211,9 +211,9 @@
             <span class="grow">{row.label}</span>
             <span class="muted">{p.word}</span>
             {#if p.authorize}
-              <button type="button" class="btn" disabled={authorizeLock !== undefined || p.waiting} title={authorizeLock ?? (p.waiting ? p.caption ?? undefined : undefined)} onclick={() => void cmd('capture.authorize', { kind: row.kind })}>Authorize {row.label.toLowerCase()}</button>
+              <button type="button" class="btn" disabled={authorizeLock !== undefined} title={authorizeLock} onclick={() => void cmd('capture.authorize', { kind: row.kind })}>Authorize {row.label.toLowerCase()}</button>
             {/if}
-            <!-- always rendered, so the live region announces the waiting text when it appears -->
+            <!-- always rendered, so the live region announces the caption when it appears -->
             <span class="caption" role="status">{p.caption ?? ''}</span>
           </li>
         {/each}

@@ -467,6 +467,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   showing folder 0 file 1–20 or 21–28, or a scene entry with `capture:` or `screen:` (B122, PR #133). The built-in
   camera and the main display no longer fail or warn on every machine just by having a number. Not granted still fails
   until acknowledged; a display in use with the grant still warns (the monthly re-ask); the camera never warns.
+- Changed: **Authorize screen** asks macOS once and opens System Settings; allow Fanous Engine there, then choose
+  Engine › **Restart Engine** (B125, PR #132). macOS applies the grant only to a new engine process, so the two-minute wait,
+  the "waiting" row and the engine's self-restart are gone; `live.capture.permissions.screen` reads `granted` or `denied`.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
