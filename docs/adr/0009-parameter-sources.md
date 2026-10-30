@@ -22,3 +22,25 @@ an internal source.
 + Mixed shows (console + cues) are possible per layer without global modes.
 − HTP across sources only makes sense for intensity-like parameters;
   documented.
+
+## Amendment 2026-10-30 (B120, DESIGN §6.6): a fixture exists without a patch
+
+Designed, not built yet.
+
+- Every fixture that exists has a resolver: Layer 1…`layerCount`, the Master,
+  and each output's Output and Keystone. The patch is only its console
+  address. An unpatched fixture follows the source policy: at its defaults
+  under `dmx`, controlled by the UI, cues, OSC and MIDI under the other
+  policies. Before this, an unpatched fixture had no resolver and nothing
+  could control it.
+- Unpatching resets the DMX side of the resolver to the defaults and keeps the
+  internal values, so an unpatched fixture never holds the console's last
+  look.
+- In `ltp` and `htp` the DMX side takes part only once DMX was received, so a
+  high default (Master intensity) does not beat a UI value on a fixture no
+  console reaches.
+
++ A show without a console no longer has to patch its layers; "Unpatch" means
+  only "no console address".
+− The resolver set follows the layer count and the outputs as well as the
+  patch, so `DMXStore` takes both.
