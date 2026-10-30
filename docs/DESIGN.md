@@ -3736,7 +3736,8 @@ failure while entering show mode.
 
 Keyboard: `1–6` switch screens, `Space` cue go (operator+), `Esc` closes
 panels, `Cmd/Ctrl+Z / Shift+Z` undo/redo, `L` toggles show lock (programmer,
-with confirmation).
+with confirmation). None of them act while a modal dialog is open; `?` still
+closes the shortcut list.
 
 ---
 

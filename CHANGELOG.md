@@ -509,6 +509,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   PR #138).
 - Fixed: universe pills wider than the status bar (a phone from 3 universes, an iPad from about 6) widened the page
   sideways (136 px with 3 at 375 px); the pills now wrap onto a second row (PR #140).
+- Fixed: the global keys (1–6, L, Cmd/Ctrl+Z, Space on the Show screen) acted on the page under an open dialog: after
+  Copy in the Patch sheet, 1 left the screen and L toggled the show lock. They now do nothing while a modal dialog is
+  open; ? still closes the shortcut list (PR #139).
 - Changed: **masks v2, the engine step** (M2.7, PR #141, DESIGN §9.10 item 5, F5). A slice has `masks` instead of
   `mask`: any number of add and subtract masks, each a path whose points may carry Bézier handles (offsets from the
   point) or a greyscale image from the library (luminance is visibility, stretched over the output); the slice shows the
