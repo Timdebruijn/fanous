@@ -342,7 +342,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   A Keystone fixture follows the same rule (patched by hand, unpatched with its output). Console control covers outputs
   1–8, so output 9 and up gets no Output fixture. Fixed on the way: an output whose fixture was unpatched kept its last
   console values (a Blackout stayed black).
-- Added: cameras and capture cards as live layer sources (B73 step 2a, DESIGN §8.2.1). A scene `media` entry
+- Added: cameras and capture cards as live layer sources (B73 step 2a, PR #116, DESIGN §8.2.1). A scene `media` entry
   `{folder: 0, file, capture: "<device uid>"}` shows an AVFoundation capture device (a webcam, a UVC or driver-backed
   capture card, an iPhone over Continuity Camera) at its input's size and the highest frame rate up to the canvas
   rate. `2vuy`, `yuvs` (new pixel kind `.yuy2`) and `420v` stay 4:2:2 or 4:2:0 on the GPU, other formats come as

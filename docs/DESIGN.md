@@ -1008,7 +1008,7 @@ kind (`recordLiveNumbers` and `checkLiveReplay` take Syphon's). The keys
 `/capture`, `/screens` and `/windows` in `initial` and the load migration
 come with their first writer (step 2).
 
-**As built (2026-10-30, step 2a, PR #N):** `Capture/CaptureInput.swift`.
+**As built (2026-10-30, step 2a, PR #116):** `Capture/CaptureInput.swift`.
 *Spike:* `makeTexture(descriptor:iosurface:plane: 0)` accepts `.bgrg422` on
 an IOSurface-backed `2vuy` buffer and `.gbgr422` on a `yuvs` one, at full
 width. Sampled (nearest or linear) or read, both return (r, g, b) = (Cr, Y,
