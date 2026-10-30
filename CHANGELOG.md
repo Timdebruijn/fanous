@@ -532,7 +532,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   afresh in that case, with a warning (B118, PR #147).
 - Changed: a camera (built-in, iPhone over Continuity Camera) opens at the largest size that fits canvas 1 and holds
   the canvas rate, else the largest that fits, instead of its active format's size (the iPhone stayed at 640x480);
-  capture cards and UVC devices keep following their input (B126, PR #TBD).
+  capture cards and UVC devices keep following their input (B126, PR #149).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
