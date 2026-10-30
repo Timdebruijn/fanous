@@ -512,6 +512,21 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: the global keys (1–6, L, Cmd/Ctrl+Z, Space on the Show screen) acted on the page under an open dialog: after
   Copy in the Patch sheet, 1 left the screen and L toggled the show lock. They now do nothing while a modal dialog is
   open; ? still closes the shortcut list (PR #139).
+- Changed: **masks v2, the engine step** (M2.7, PR #141, DESIGN §9.10 item 5, F5). A slice has `masks` instead of
+  `mask`: any number of add and subtract masks, each a path whose points may carry Bézier handles (offsets from the
+  point) or a greyscale image from the library (luminance is visibility, stretched over the output); the slice shows the
+  union of its add masks (all of it without one) minus the union of its subtract masks, filled with the nonzero rule.
+  Projects and stored presets from before load with their mask as one add mask (also on a version revert; a negative
+  feather becomes none); a page opened before the update is refused when it sends `mask` ("reload the page"), also
+  when it adds a slice. An old mask that crosses itself now fills by the nonzero rule (it was even-odd, which punched
+  the middle out of a star drawn in one stroke); otherwise existing masks render as before. A new banded rasteriser
+  feathers only near the filled region's edge (a path's segments running through its own fill make no ramp), on a
+  grid as coarse as before for wider feathers: 2,000 segments at 3840 × 2160 take about 1–2 ms at any feather. A
+  missing image mask, or one that names a movie, covers nothing and the new readiness warning "Image masks found"
+  names it; a saved-over file is rasterised again once, and stays in use while the library probes it. The edit
+  overlay draws every mask's outline, curves included. Warp & Slices shows every mask's points and outlines and its
+  tools act on the selected point's mask, else the first path mask; making several masks, curves and image masks in
+  the UI comes with M2.8.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

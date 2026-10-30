@@ -1992,7 +1992,8 @@ Project
 │   │                 warp {cornerPin: 4 points, mesh: N×M control points (bezier), density}, test pattern,
 │   │                 colour {gain r, g, b; black offset} (§9.9)
 │   └── Slice[]       canvas id, source rect on canvas, destination: quad (4 points) or mesh (N×M) on the output,
-│                     mask: polygon/bezier path + feather px, opacity, order
+│                     masks: add/subtract paths (corners or Bézier) or library images, feather px (§9.10 item 5),
+│                     opacity, order
 └── Serial device[]   (later)
 ```
 
@@ -2056,9 +2057,10 @@ never sees control points.
 A slice's destination quad/mesh is in output coordinates (pre-warp). The
 vertex shader: slice vertex → output coordinate → displacement field →
 clip space; UV = canvas rect. From M2 a Keystone homography follows the
-displacement (§9.10). The mask path is rasterized on Control into an `r8`
+displacement (§9.10). A slice's masks are rasterized on Control into one `r8`
 mask texture at output resolution, with the feather applied as a linear ramp
-over the signed distance, so feathering is exact and free at render time.
+over the signed distance, so feathering is exact and free at render time
+(masks v2, §9.10 item 5: the add masks' union minus the subtract masks').
 
 ### 9.5 Output pass, summarized
 
@@ -2481,7 +2483,7 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
 ### 9.10 M2: black lift by coverage, Keystone, mapping presets, edit overlay, masks v2 (design 2026-10-29)
 
 **Status:** designed 2026-10-29, owner decisions the same day (below), and
-reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2.1), the Keystone mode of item 2 (M2.3), the presets of item 3 (M2.4) and their morph (M2.5), and the edit overlay of item 4 (M2.6), below. Research and frictions F3–F6 are in
+reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2.1), the Keystone mode of item 2 (M2.3), the presets of item 3 (M2.4) and their morph (M2.5), the edit overlay of item 4 (M2.6), and the engine step of masks v2 of item 5 (M2.7: model, older projects, rasteriser; its UI and tools are M2.8), below. Research and frictions F3–F6 are in
 `docs/mapping-ux.md` §1 and §4.2–§4.5.
 
 **Owner decisions (2026-10-29):**
@@ -3085,6 +3087,114 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
     is drawn there.
   - Not built: radial mapping (content wrapped around a ring), until a show
     asks for it.
+
+**As built (M2.7, PR #141):**
+- **Model** (Core `OutputModel.swift`). `SliceConfig.masks: [MaskShape]`, read with `decodeIfPresent` and written only
+  when there are any (a custom `encode(to:)`, as `presets`), so a slice without masks saves byte for byte as before;
+  `mask` is gone from Swift. `MaskShape { mode: add | subtract, feather, path?, image? }`, `MaskPoint { x, y, in?, out? }`
+  (a point without handles encodes as a plain point), `MaskImage { folder, file }`. A mask without a mode or feather
+  decodes as an add mask without one, so a hand-edited mask cannot blank every output.
+  - `MaskShape.problem` says why a mask cannot be drawn: a non-finite feather, neither or both of path and image, a
+    path under 3 points or with a non-finite number (handles included), an image outside folder and file 1–255.
+    `ProjectDocument.validate` (`output.set`, recall, walls, `validated(preset)`) refuses it as "slice N: …" and clamps
+    a negative feather to 0, as it clamps other numbers (the number field before M2.7 could store −3, which the old
+    raster drew as a hard edge); the compile leaves a mask with a problem out. An unknown mode does not decode, so
+    `output.set` refuses it as not fitting the model.
+- **Older projects.** `ProjectDocument.load` is the only way a document enters (boot and every version revert; there is
+  no import, and sync carries no project). Next to the preset number clean-up it turns each slice's `mask` into `masks`
+  (one add mask, the same points, the feather clamped to 0 or more) in the edited slices and in every
+  `presets[].slices[]`; a null mask, or one under 3 points (which never drew), goes. **A stale page is refused**, not
+  converted: `output.set` refuses a result whose slices carry `mask` ("a slice's mask is masks now (masks v2): reload
+  the page"), also a whole slice list, so such a page cannot add a slice either. A converted edit would land while that
+  page still reads `mask` and shows nothing of it.
+- **Rasteriser** (`OutputCompiler.maskRaster`, Core `MaskMath`). `MaskMath.outline` gives a path in output pixels: a
+  line per straight segment, a curve cut into n steps with n² ≥ 3 × its larger second difference, so the chords are
+  within a quarter pixel. A feather under 2 px is CoreGraphics' anti-aliased nonzero fill at every pixel, as the hard
+  edge was. A feather from 2 px is `MaskMath.feathered` on the mask's own grid (`MaskMath.step`): up to 32 px the grid
+  of the compile before M2.7 (min(4, feather / 2) px), wider 8 samples across the ramp, so the cost stays bounded at
+  any feather and a feathered mask's texture is as small as before. `MaskMath.fill` (a nonzero scanline fill at the
+  sample centres) gives the sign, then per segment, per row only the part of the segment within feather/2 of that
+  row, widened by feather/2, is visited, keeping the nearest (a sample keeps its side, inside ≥ 128, outside ≤ 128).
+  The masks share the slice's one `r8` texture on the finest grid one of them needs (an image or an edge under 2 px:
+  every pixel); a mask on a coarser grid is resampled bilinearly into it (`MaskMath.resample`, as the shader samples).
+  They combine in place as max(adds) × (1 − max(subtracts)); none is everything. The output pass and shader are
+  unchanged.
+  - **Self-crossing paths** (review): the nonzero rule fills a loop that crosses or overlaps itself, and segments
+    running through the filled region are no edge. `MaskMath.edgeParts` finds, per segment, its parts with winding 0
+    on one side: the winding beside the path changes only where another segment crosses it, so one ray cast and a
+    walk along the path through its crossings (found per bucket) give it everywhere, and the ramp measures to those
+    parts only, including the corners where the path crosses itself. Points are shifted by up to 1e-5 px first, so a
+    path through one of its own corners crosses inside a segment (a `ponytail:`). Measured on the pentagram and a
+    freehand loop that ends inside itself (200 px, feather 8 and 12): 1,268 and 348 samples darkened farther than
+    feather/2 from the filled region's edge before, none after. A simple polygon is edge all along, so its raster is
+    the same as without this.
+  - **Changed for old projects:** an old self-crossing polygon now fills by the nonzero rule; it was even-odd, which
+    punched the middle out of a star drawn in one stroke.
+  - **Deviation:** the sign under a feather is not CoreGraphics'. Its aliased fill sets every pixel the path touches
+    (measured: a left edge at x = 2.7 still fills column 2), so its sign disagreed with the distance up to a pixel
+    outside the edge, 57 code values off at a 6 px feather on a test polygon.
+  - **Under 2 px** the feather is ignored as before M2.7: a 1 px ramp differed from the anti-aliased edge by up to 40
+    code values at corners.
+  - **Measured** (`twoThousandSegmentsAt4KWithin20msAtAnyFeather`, release, `scripts/test.sh -c release --filter
+    MaskTests`; it skips in debug), CPU, median of 5, the whole raster of a freehand-like outline of 2,000 segments
+    at 3840 × 2160: feather 2: 1.7 ms, 3: 2.0, 8: 0.9, 32: 2.0, 33: 2.2, 200: 1.6, 1,000: 1.4, 4,000: 1.0 (the review
+    measured 307 ms at 200, 5.9 s at 1,000 and 46 s at 4,000 with every pixel); beside a hard mask, resampled to every
+    pixel, 11–12 ms at any feather. The budget is 20 ms for all of them. Four hard masks take 1.7 ms against one's 0.2
+    (combined in place; with a copy per mask the review measured 57 ms).
+  - **No visible change:** an old polygon gives the old raster on the old grid, under 2 px byte for byte and
+    feathered within one code value, and the golden image `output-mask-feather` still passes, also from a project
+    saved by M2.6 and from its stored preset on Output ch 6.
+- **Image masks.** `StillSource.image` (the ImageIO decode of a still layer) is drawn by CoreGraphics into an 8-bit
+  grey context of the output's size: luminance, stretched; the mode applies, the feather does not. `OutputCompiler(media:)`
+  resolves `{folder, file}` through `LibraryIndex.still`: the still with that number in the last scan, also while the
+  library probes it again after a save (`resolve` has no file then, and a door cut out by a subtract mask would close
+  until the probe ends); a movie at that number is none. Both the coordinator's compiler and the previews' use it. A
+  missing or undecodable file covers nothing: an add mask adds no area (alone, the slice is black), a subtract mask
+  cuts no hole.
+  - **Decoded once** (review): the decoded luminance is cached by (file stamp, w, h) (`Key.image`, an `ImageRaster`
+    held by every slice plan made from it), so a drag of another mask of the slice does not read the file again:
+    a 4K picture beside a path mask compiles in 33 ms the first time and 6 ms per drag step after
+    (`aDragBesideA4KImageMaskDoesNotDecodeItAgain`, release).
+  - **Invalidation:** the `.masks`, `.slice` and `.image` keys carry each image mask's file stamp (path, modification
+    time and size, as the library keys its own cache). On a library change (a rescan after FSEvents, each probe, a new
+    root once it is the engine's) `Engine.imageMaskFilesChanged` compares the stamps of the files the image masks in
+    use point at with the last ones and calls `applyCanvasUse` only when one changed, appeared or went; the changed
+    file gets new keys and is rasterised again, everything else hits.
+  - **Readiness:** `maskimages`, "Image masks found", a warning that never blocks, names every image mask (edited or
+    in a stored preset) without a still in the library, "(not a still image)" for a movie. A listed still that does
+    not decode is not caught there.
+- **Cache key:** `.masks([MaskShape], files, w, h)` replaces `.mask(MaskSettings, …)`, still keyed by the masks and not
+  the slice, so a moved slice keeps its raster.
+- **Preview** scales every mask's feather (`Engine.previewOutput`). **Morph:** a slice plan holds one mask texture
+  whatever the count, so masks pair with their slice as M2.5 built it; nothing assumed one mask.
+- **Edit overlay:** every path mask's outline, each edge in pieces of at most 1/64 of the output by the extent of its
+  four points (a straight edge as before), sampled along the Bézier; none for an image. `selected.mask` indexes
+  `masks`; the selection is the point, not a handle.
+- **Web UI, the minimal port.** `masks?` in `lib/outputs.ts`. Mask mode shows every path mask's points
+  (`/slices/s/masks/m/path/i`) and outlines (`maskOutline`: a curved segment in 8 steps). Feather, Add points, Remove
+  point, Redraw and Remove mask act on the selected point's mask, else the slice's first path mask (`maskTarget`; an
+  image mask has no points or feather), and Remove mask removes that one only; without a path mask, Draw mask and
+  Rectangle (`defaultMask`, an add mask) append one and leave image masks alone. A point drag or nudge writes x and
+  y and keeps the point's handles; a remote group across several masks writes the slice's `masks`. The overlay
+  selection sends `mask`; the remote label says "mask 2 point 5" when the slice has several. The content template
+  fills the add masks, then cuts the subtract masks out (an SVG mask), whatever their order; image masks are not
+  drawn there.
+- **Checks.** Core (`MappingMathTests`): the round trip with handles and an image, `problem` and a mask without mode or
+  feather, curves and the outline, the ramp at the edge and ±feather/2, the banded pass and the fill against a brute
+  force (a convex and a reflex polygon, both directions), the self-crossing pentagram and loop and a bow-tie through one
+  point (the case the shift is for) against the distance to the filled region's edge on a 4 × finer grid. `MaskTests`: an M2.6 project loads, renders as the golden image and
+  its preset shows the mask on ch 6; a negative feather; a revert; `output.set` refusals and the old key; union, hole,
+  a self-crossing star, a κ circle covering π r², the old raster on the old grid, the budget at any feather; image
+  luminance, a missing file, a changed file decoded once, a file the library probes, a movie; readiness; a hole on the
+  output. `EditOverlayTests`: a curved outline on its circle. `OutputCompileCacheTests`: mode, handle and a second mask
+  in the keys. vitest (several masks' handles and outlines, the tools' mask, handles kept by a nudge, the template in
+  either order) and a Playwright mask flow. Each mutation-checked.
+- **Left for M2.8:** the tools (polygon, rectangle and ellipse, freehand, image), the mask list with mode and Invert,
+  handles in the UI and the slice shape buttons. Known and left there (review): add and subtract masks look the same in
+  the editor (the mask list will show the mode); Add points on a curved mask inserts on the chord and bends the curve
+  (it needs handle editing or a Bézier split); Redraw's mask index can go stale if another client changes the mask list
+  while a shape is drawn. No test covers the library hook's wiring (it needs the whole engine), the preview's feather
+  scaling, or a drag keeping a point's handles (no UI makes handles yet).
 
 **M2 build order** (one PR each, Opus coding agents, review before merge; the
 groundwork and small engine pieces first):

@@ -20,7 +20,7 @@ describe('inverseBilinear', () => {
 
 describe('maskPointOnCanvas', () => {
   it('maps an output point through the slice back to canvas pixels', () => {
-    const slice: SliceConfig = { id: 1, canvas: 1, source: { x: 0.5, y: 0, w: 0.5, h: 1 }, dest: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }], mask: null, opacity: 1 };
+    const slice: SliceConfig = { id: 1, canvas: 1, source: { x: 0.5, y: 0, w: 0.5, h: 1 }, dest: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }], opacity: 1 };
     const q = maskPointOnCanvas(slice, { x: 0.5, y: 0.25 }, { width: 1920, height: 1080 })!;
     expect(q.x).toBeCloseTo(1440, 3);
     expect(q.y).toBeCloseTo(270, 3);
@@ -43,14 +43,31 @@ describe('templateSVG', () => {
     const output = {
       id: 1, name: 'Output 1',
       slices: [
-        { id: 1, canvas: 1, source: { x: 0, y: 0, w: 0.5, h: 1 }, dest: skewed, mask: { path: [{ x: 0.2, y: 0.2 }, { x: 0.8, y: 0.2 }, { x: 0.5, y: 0.8 }], feather: 0 }, opacity: 1 },
-        { id: 2, canvas: 1, source: { x: 0.5, y: 0, w: 0.5, h: 1 }, dest: skewed, mask: null, opacity: 1 },
+        { id: 1, canvas: 1, source: { x: 0, y: 0, w: 0.5, h: 1 }, dest: skewed, masks: [{ mode: 'add', feather: 0, path: [{ x: 0.2, y: 0.2 }, { x: 0.8, y: 0.2 }, { x: 0.5, y: 0.8 }] }], opacity: 1 },
+        { id: 2, canvas: 1, source: { x: 0.5, y: 0, w: 0.5, h: 1 }, dest: skewed, opacity: 1 },
       ],
     } as unknown as OutputConfig;
     const svg = templateSVG(output, { width: 3840, height: 2160 });
     expect(svg).toContain('width="3840" height="2160"');
     expect(svg).toContain('Slice 1 · 0,0 · 1920×2160 px · masked');
     expect(svg).toContain('Slice 2 · 1920,0 · 1920×2160 px');
-    expect(svg.match(/<polygon/g)?.length).toBe(1);
+    expect(svg.match(/<polygon/g)?.length).toBe(2); // the mask's shape and its outline
+  });
+
+  it('cuts a subtract mask out of the slice and leaves an image mask out (its file is in the library)', () => {
+    const unit = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
+    const triangle = [{ x: 0.2, y: 0.2 }, { x: 0.8, y: 0.2 }, { x: 0.5, y: 0.8 }];
+    const masks = [{ mode: 'subtract' as const, feather: 0, path: triangle }, { mode: 'add' as const, feather: 0, image: { folder: 1, file: 1 } }];
+    const svg = templateSVG({ id: 1, name: 'O', slices: [{ id: 1, canvas: 1, source: { x: 0, y: 0, w: 1, h: 1 }, dest: unit, masks, opacity: 1 }] } as unknown as OutputConfig, { width: 100, height: 100 });
+    expect(svg).toContain('<mask id="mask0"><rect x="0" y="0" width="100" height="100" fill="white"/><polygon points="20.0,20.0 ');
+    expect(svg).toContain('fill="black"/></mask>');
+    expect(svg.match(/<polygon/g)?.length).toBe(2);
+    // listed subtract first: the add still goes first, so the hole stays a hole, as the engine draws it in any order
+    const square = [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 }, { x: 0.9, y: 0.9 }, { x: 0.1, y: 0.9 }];
+    const both = [{ mode: 'subtract' as const, feather: 0, path: triangle }, { mode: 'add' as const, feather: 0, path: square }];
+    const holed = templateSVG({ id: 1, name: 'O', slices: [{ id: 1, canvas: 1, source: { x: 0, y: 0, w: 1, h: 1 }, dest: unit, masks: both, opacity: 1 }] } as unknown as OutputConfig, { width: 100, height: 100 });
+    const inMask = holed.slice(holed.indexOf('<mask'), holed.indexOf('</mask>'));
+    expect(inMask.indexOf('fill="white"')).toBeGreaterThan(-1);
+    expect(inMask.indexOf('fill="white"')).toBeLessThan(inMask.indexOf('fill="black"'));
   });
 });

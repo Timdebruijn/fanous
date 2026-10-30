@@ -81,6 +81,7 @@ is on. Each item shows a fix hint.
 | No decoder errors | no layer showing a media error |
 | Camera permission granted | the camera permission while a layer shows a camera (folder 0, 1–20) or a `--scene` entry has `capture:` (Capture permissions on the System screen) |
 | Screen recording granted | the Screen permission while a layer shows a display (folder 0, 21–28) or a `--scene` entry has `screen:`; warns while one does, since macOS asks again about once a month |
+| Image masks found | a still image in the library for every image mask, in the edited mappings and stored presets (warning only: a missing file, or a movie, covers nothing) |
 | Library on a local volume | library on the internal disk |
 | Spotlight indexing off for the library volume | see above |
 | Automatic macOS updates off | see above |
@@ -100,8 +101,9 @@ the display mode item (it names the closest mode a display offers when the
 output's Mode is not available), the two Sync items, since a slave without a
 master still plays on its own, and Screen recording granted while a layer
 shows a display (folder 0, 21–28): macOS asks again about once a month, on the
-main display, whether Fanous may record the screen. Answer it before
-doors.
+main display, whether Fanous may record the screen. Answer it before doors.
+Image masks found warns too: a mask whose file is missing covers nothing, so
+a slice whose only add mask it is stays black.
 
 **Manual** items (Focus) have no button; the check is yours.
 

@@ -411,8 +411,8 @@ numeric x and y fields in pixels. Changes go to the engine while you drag.
 itself, so at the wall you see which point is selected:
 
 - The warp (the edges of the corner pin, or the grid lines of the mesh), every
-  slice's outline and its mask's outline. They go through the warp and the
-  keystone, so they lie on the picture.
+  slice's outline and the outline of each of its masks. They go through the
+  warp and the keystone, so they lie on the picture.
 - The selected point is a yellow cross with a gap in the middle, so you still
   see the point. Its number is next to it in yellow digits. On a mesh the
   number is row·column: **3·5** is row 3, column 5. On a corner pin or a slice,
@@ -450,15 +450,17 @@ remembers your choice. The controls then come before the preview, and the
 projector shows the selected point (**Show on output** above):
 
 - The selection in large type: "corner top-left", "r3 c5" (row 3, column 5 of
-  the mesh), "slice 2 · bottom-right", "slice 2 · mask point 5", or a group such as
-  "row 3" with how many points move together.
+  the mesh), "slice 2 · bottom-right", "slice 2 · mask point 5" ("slice 2 ·
+  mask 2 point 5" when the slice has several masks), or a group such as "row 3"
+  with how many points move together.
 - **Previous** and **Next** go through the points row by row (left to right,
   then the next row) and wrap around. With a group selected they step the
   group: the next row, the next column, or the next edge clockwise.
 - **One point**, **Row**, **Column** (mesh only) and **All** choose what moves:
   the selected point, its row or column, or every point. **Top**, **Right**,
   **Bottom** and **Left** select every point on that edge; on a corner pin or a
-  slice an edge is its two corners. A mask has no rows, columns or edges.
+  slice an edge is its two corners. A mask has no rows, columns or edges;
+  **All** moves the points of every mask of the slice.
   Tapping or dragging a handle on the picture selects just that point again
   (**One point**), and so does turning Remote off or picking another output.
 - The nudge pad moves the selection by 1 px, 10 px, or 0.25 px on a long press.
@@ -497,7 +499,7 @@ a handle stays on the spot you touch while a warp is active.
   several surfaces that each need their own part of the picture: three screens
   on a stage, the pillars of a facade, a strip next to a screen. **Opacity %**
   per slice; **Add slice**, **Reset slice** (whole canvas on the whole output,
-  the mask stays) and **Remove slice** (an output keeps at least one); later
+  the masks stay) and **Remove slice** (an output keeps at least one); later
   slices draw over earlier ones. **Spread canvas** makes one picture across all
   slices, for the faces of an object: from left to right on the output, each
   slice gets the next strip of the canvas, as wide as the slice is on the
@@ -512,12 +514,20 @@ a handle stays on the spot you touch while a warp is active.
   goes, or double-click anywhere: the point joins the nearest edge. Drag points
   to move them, nudge with the arrow keys or the pad, **Backspace** (or
   **Remove point**) deletes the selected one; a mask keeps at least three.
-  **Feather (px)** softens the edge, **Redraw** starts the shape again,
-  **Remove mask** deletes it.
+  **Feather (px)** softens the edge (from 2 px; below that the edge stays
+  plain), **Redraw** starts the shape again, **Remove mask** deletes it.
+  A slice can have several masks (the tools to make more than one, and curved
+  and image masks, come in a later step; a project file can have them
+  already): every mask's points and outline show, and the buttons act on the
+  mask of the selected point, else on the first mask with points (an image
+  mask has none); **Remove mask** removes that one only. A project saved
+  before this version opens with its masks as they were. A browser tab opened
+  before the update cannot change masks or add a slice until you reload it.
 - **Content template (PNG)**: downloads a picture at the size of the selected
-  slice's canvas that shows, per slice on that canvas, which rectangle it uses and (filled) what its mask
-  leaves visible. Give it to whoever makes the content, as a layer under their
-  design, so windows and edges land where the mapping expects them.
+  slice's canvas that shows, per slice on that canvas, which rectangle it uses
+  and (filled) what its masks leave visible (an image mask is not drawn
+  there). Give it to whoever makes the content, as a layer under their design,
+  so windows and edges land where the mapping expects them.
 
 Canvas 1 is also published as the Syphon server "Fanous – Canvas" (in Syphon's
 OpenGL row order; checked upright in the Syphon Simple Client), so

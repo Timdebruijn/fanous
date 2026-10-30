@@ -210,6 +210,8 @@ public struct ReadinessContext: Sendable {
     /// "Output 2: …" for every bound output whose desired display mode cannot be or was not applied.
     public var modeIssues: [String] = []
     public var layerErrors: [String] = []
+    /// "Output 2 slice 1: folder 3 file 5" per image mask whose file the library does not have (§9.10 item 5).
+    public var maskImagesMissing: [String] = []
     public var libraryRoot: String = ""
     /// "Layer 2 (group 1): no master" / "…: two masters" for slaves playing a file.
     public var syncMasterIssues: [String] = []
@@ -293,6 +295,12 @@ public enum Readiness {
                     : "System Settings › Privacy & Security › Screen & System Audio Recording, then Engine › Restart",
                 acknowledged: acknowledged.contains("screen")))
         add("decoders", "No decoder errors", context.layerErrors.isEmpty, context.layerErrors.isEmpty ? "none" : context.layerErrors.joined(separator: "; "), "Fix or replace the failing media")
+        // a missing image mask covers nothing: an add mask's slice may go black, a subtract mask cuts no hole
+        items.append(
+            ReadinessItem(
+                id: "maskimages", title: "Image masks found", state: context.maskImagesMissing.isEmpty ? .ok : .warn,
+                detail: context.maskImagesMissing.isEmpty ? "found, or none in use" : "missing, covering nothing: \(context.maskImagesMissing.joined(separator: "; "))",
+                fix: "Put the greyscale file in the library under that folder and file number, or change the mask (Outputs › Warp & Slices › Mask)"))
         let local = volumeIsLocal(context.libraryRoot)
         add("library", "Library on a local volume", local, local ? "local" : "network or removable volume", "Copy the library to the internal disk")
         let spotlight = spotlightIndexing(context.libraryRoot)
