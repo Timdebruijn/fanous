@@ -363,12 +363,13 @@ MSEX versions 1.0 to 1.2 are negotiated; the highest common one is used.
 
 Folder 0 holds content the engine draws itself: no files, any layer, selected
 like a clip (Folder 0, File n) from the console, from the layer panel
-(**Control** › **Built-in content and Syphon**) or from the Media screen
-(folder **0 · Built-in and Syphon**). It goes through the layer like media:
+(**Control** › **Built-in content and live inputs**) or from the Media screen
+(folder **0 · Built-in and live inputs**). It goes through the layer like media:
 position, scale, colour, effects and dissolves apply.
 
 | File | Content |
 |---|---|
+| 1–20 | Cameras and capture cards on this Mac, numbered as the engine first sees them and kept in the project (see below) |
 | 100 | Solid colour: white times the layer's Red/Green/Blue channels |
 | 101–107 | The seven output test patterns as layer content |
 | 110 | Test card: grid, aspect circle, border, colour bars, running time (or the incoming timecode when it runs) with a frame number, a bar that sweeps once a second, and two squares that swap every frame (a dropped or doubled frame shows as both lit or both dark) |
@@ -376,6 +377,29 @@ position, scale, colour, effects and dissolves apply.
 | 112 | Clock: time of day, hh:mm:ss |
 | 113 | Motion test: a bar moving 16 px per frame (at 1080p), stripes scrolling 8 px per frame and a strip of 60 cells with one lit per frame. At a steady rate every step is equal; a dropped or doubled frame shows as a jump or a stop |
 | 150–169 | Syphon servers of other apps on this Mac, numbered as the engine first sees them and kept in the project (see below) |
+
+**Cameras and capture cards (1–20).** Every camera and capture card on this
+Mac gets the lowest free number from 1, up to 20, when the engine first sees
+it; the Media screen lists them under **Cameras and capture cards (1–20)**
+with a green dot while the device delivers and a grey ring when it has gone,
+and the numbers are kept in the project like the Syphon numbers below. A
+device you unplug keeps its number and gets it back when you plug it in again;
+a USB card moved to another port is found again by its model and name when
+only one gone device matches. **Forget** frees a number (a device that is
+not running, or **Forget all not running**; programmer, undoable, not while
+the show is locked). A device another app has open (an iPhone in FaceTime)
+reads "in use by another app" with a yellow dot. A card follows its input signal: the picture takes the size and rate of what
+comes in, and a card without a signal for 2 seconds reads "no signal" on the
+Layers screen and keeps its last frame. macOS asks for the camera permission
+once, for "Fanous Engine": when a layer first selects a camera, or when you
+press **Authorize** under Capture permissions on the System screen; never in
+show mode, so authorize before the show. Denied: allow Fanous Engine under
+System Settings › Privacy & Security › Camera. Verified so far: the built-in
+camera, an iPhone over Continuity Camera; UVC cards such as Elgato Cam Link
+4K and Magewell USB Capture appear as cameras; Blackmagic DeckLink and
+UltraStudio do not (they need their own SDK, see the backlog). Displays
+(21–28) and the Screen permission arrive in a later step; they are not
+available yet.
 
 **Syphon servers (150–169).** Every Syphon server another app on this Mac
 publishes gets the lowest free number from 150, up to 169, when the engine
