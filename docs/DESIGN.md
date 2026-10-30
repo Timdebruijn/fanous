@@ -1097,7 +1097,7 @@ open two sessions today; step 2b shares one input per uid. Also not yet:
 `v210` and the card list. The subtype shown is the one at start; the size
 follows the frames.
 
-**As built (2026-10-30, step 2b, PR #PRNUM):** files 1–20 by the catalog.
+**As built (2026-10-30, step 2b, PR #120):** files 1–20 by the catalog.
 *Catalog:* `LiveCatalog.startCapture()` (`RenderService`, beside Syphon's)
 reads `AVCaptureDevice.DiscoverySession` (`.external`, `.continuityCamera`,
 `.builtInWideAngleCamera`, video) on the main queue at start, on
