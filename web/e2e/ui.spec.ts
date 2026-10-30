@@ -280,6 +280,18 @@ test('patch: the Patch sheet lists the layer block, prints alone, and counts Art
   await expect(page.getByRole('button', { name: 'Patch sheet' })).toBeFocused();
 });
 
+test('status bar: the universe pills wrap on a phone instead of widening the page', async ({ page }) => {
+  await openScreen(page, 'Outputs');
+  await page.getByLabel('Add output on').selectOption('none');
+  await openScreen(page, 'Patch');
+  await page.getByRole('region', { name: 'Outputs' }).getByLabel('Outputs block universe').selectOption('artnet:0.0.2');
+  const banner = page.getByRole('banner');
+  for (const u of ['A 0.0.0', 'A 0.0.1', 'A 0.0.2']) await expect(banner.getByText(new RegExp(`^${u.replaceAll('.', '\\.')} ·`))).toBeVisible();
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect.poll(() => banner.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+});
+
 test('keys: the global shortcuts do nothing while a modal dialog is open, and ? still closes the shortcut list', async ({ page }) => {
   await openScreen(page, 'Patch');
   await page.getByRole('button', { name: 'Patch sheet' }).click();

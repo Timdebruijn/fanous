@@ -158,7 +158,8 @@
   .tag:disabled { opacity: 0.8; }
   .resumed { margin-left: 8px; color: var(--yellow); text-decoration: none; }
   .value { font-size: 15px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
-  .dmx { gap: 6px; }
+  /* the pills wrap inside the item, so 3+ universes on a phone take a second row instead of widening the page */
+  .dmx { gap: 6px; flex-wrap: wrap; height: auto; min-height: var(--touch); padding-block: 4px; }
   .ingest { width: 150px; }
   .ingest .bar { width: 100%; height: 4px; margin-top: 4px; }
   .yellow { color: var(--yellow); }
