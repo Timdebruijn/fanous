@@ -64,6 +64,13 @@ extension ChannelMapDocument {
                     return .object(entry)
                 })
         }
-        return ["footprints": .object(Dictionary(uniqueKeysWithValues: FixtureMode.allCases.map { ($0.rawValue, JSONValue.number(Double($0.footprint))) })), "modes": .object(modes)]
+        // display order, for the Patch screen's groups (DESIGN.md §6.6 item 3)
+        let fixtures: [JSONValue] = FixtureMode.allCases.map {
+            ["mode": .string($0.rawValue), "name": .string($0.displayName), "per": .string($0.per.rawValue), "optional": .bool($0.optional)]
+        }
+        return [
+            "footprints": .object(Dictionary(uniqueKeysWithValues: FixtureMode.allCases.map { ($0.rawValue, JSONValue.number(Double($0.footprint))) })),
+            "modes": .object(modes), "fixtures": .array(fixtures),
+        ]
     }
 }

@@ -28,4 +28,22 @@ struct ChannelMapJSONTests {
         #expect(playMode["channel"]?.int == 5)
         #expect(playMode["bands"]?.array?.first?["name"]?.string == "Loop fwd")
     }
+
+    /// DESIGN.md §6.6 item 3: `fixtures` lists every mode once, in `allCases` (display) order, with what it
+    /// is patched per and whether it is optional.
+    @Test func fixturesListEveryModeInOrder() throws {
+        let fixtures = try #require(ChannelMapDocument.json()["fixtures"]?.array)
+        let expected: [(mode: String, name: String, per: String, optional: Bool)] = [
+            ("layer", "Layer", "layer", false), ("master", "Master", "machine", false),
+            ("output", "Output", "output", false), ("keystone", "Keystone", "output", true),
+        ]
+        #expect(fixtures.compactMap { $0["mode"]?.string } == FixtureMode.allCases.map(\.rawValue))
+        #expect(fixtures.count == expected.count)
+        for (entry, want) in zip(fixtures, expected) {
+            #expect(entry["mode"]?.string == want.mode)
+            #expect(entry["name"]?.string == want.name)
+            #expect(entry["per"]?.string == want.per)
+            #expect(entry["optional"]?.bool == want.optional)
+        }
+    }
 }
