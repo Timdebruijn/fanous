@@ -438,8 +438,9 @@ rules as a layer. Select a layer row to go back to the layer.
 **Expiry.** UI values only run down while they mask a console: Art-Net or sACN
 comes in for the fixture's universe and at least one UI value is what the layer
 shows. That is never the case with **Console only** (UI values are not shown),
-with latest wins only until the desk moves that channel again, and with highest
-wins only where the UI value is the higher one. After 10 minutes of masking
+with **Console and Fanous, latest change wins** only until the desk moves that
+channel again, and with **Console and Fanous, highest value wins** only where
+the UI value is the higher one. After 10 minutes of masking
 since the last UI change the UI values are released and the log says so. While
 it runs, the panel says "UI control · console active, releases in 7:42";
 **Keep** (or any change from the UI) restarts the 10 minutes. Otherwise it says

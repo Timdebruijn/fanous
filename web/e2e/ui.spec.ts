@@ -144,7 +144,7 @@ test('sync: a slave layer locks to a master layer of its group, and loses it whe
 test('patch: Hold on loss is set on the universe in the Universes panel, kept over a reload, and undone', async ({ page }) => {
   await openScreen(page, 'Patch');
   const universes = page.getByRole('region', { name: 'Universes' });
-  const row = universes.getByRole('button', { name: /^A 0\.0\.0 / });
+  const row = universes.getByRole('button', { name: /^A 0\.0\.0,/ });
   await expect(row).toContainText('Layers 1–8');
   await expect(row).toContainText('Hold last values');
   await row.click();

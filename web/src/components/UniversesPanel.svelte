@@ -29,11 +29,14 @@
   </div>
   {#each rows as u (u.id)}
     {@const expanded = u.id === open}
-    <button type="button" class="list-row uni" aria-expanded={expanded} aria-controls="universe-{u.id}" onclick={() => onopen(u.id)}>
+    <!-- a stable name: the live packet count stays out of it -->
+    <button type="button" class="list-row uni" aria-label="{universeName(u.id)}, {u.text}" aria-expanded={expanded} aria-controls="universe-{u.id}" onclick={() => onopen(u.id)}>
       <span class="name mono">{universeName(u.id)}</span>
-      <span class="fx ellipsis" class:warn={u.tone === 'warn'} class:faint={u.tone === 'faint'}>{u.text}</span>
-      <span class="pill pill-{u.health.tone}"><span class="dot"></span>{u.health.text}</span>
-      <span class="line caption ellipsis">{u.line}</span>
+      <span class="fx" class:warn={u.tone === 'warn'} class:faint={u.tone === 'faint'}>{u.text}</span>
+      <span class="meta">
+        <span class="pill pill-{u.health.tone}"><span class="dot"></span>{u.health.text}</span>
+        <span class="caption">{u.line}</span>
+      </span>
     </button>
     {#if expanded}
       {@const s = u.settings}
@@ -100,15 +103,16 @@
 <style>
   .universes { overflow: hidden; }
   .head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px 16px 8px; }
+  /* name and fixtures, then the pill and the settings on a line of their own that wraps (a long pill on a phone) */
   .uni {
-    display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; grid-template-areas: 'name fx pill' '. line line';
-    column-gap: 12px; row-gap: 2px; padding: 8px 16px;
+    display: grid; grid-template-columns: max-content minmax(0, 1fr); grid-template-areas: 'name fx' 'meta meta';
+    column-gap: 12px; row-gap: 6px; padding: 10px 16px;
   }
   .uni[aria-expanded='true'] { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent); }
   .name { grid-area: name; font-weight: 600; font-size: 14px; }
   .fx { grid-area: fx; font-size: 13px; }
-  .pill { grid-area: pill; }
-  .line { grid-area: line; }
+  .meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
+  .pill { max-width: 100%; }
   .warn { color: var(--yellow); }
   .settings { display: flex; flex-direction: column; gap: 12px; padding: 12px 16px 16px; border-bottom: 1px solid var(--line); box-shadow: inset 3px 0 0 var(--accent); }
   .fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }

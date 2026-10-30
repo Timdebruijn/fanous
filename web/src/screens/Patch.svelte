@@ -28,7 +28,8 @@
   const summary = $derived(summarize(rows));
   const universes = $derived(universeRows(rows, app.live.dmx.universes, app.project.universes));
   const known = $derived(universes.map((u) => u.id));
-  const options = $derived(universeOptions(app.project.patch, app.live.dmx.universes));
+  // every universe the panel and the monitor know, so the select never goes blank on one of them
+  const options = $derived(universeOptions(app.project.patch, app.live.dmx.universes, app.project.universes));
   const monitorUniverse = $derived.by(() => {
     if (chosenUniverse && known.includes(chosenUniverse)) return chosenUniverse;
     if (selected.patched && selected.universe) return selected.universe;
@@ -64,13 +65,13 @@
     <section class="panel who" aria-label="Who controls">
       <label class="field">
         <span class="label">Who controls</span>
-        <select class="select" value={app.project.policy} disabled={!!policyLock} title={policyLock} onchange={(e) => void cmd('project.set', { path: '/policy', value: e.currentTarget.value })}>
+        <select class="select" aria-describedby="who-line" value={app.project.policy} disabled={!!policyLock} title={policyLock} onchange={(e) => void cmd('project.set', { path: '/policy', value: e.currentTarget.value })}>
           {#each Object.entries(POLICIES) as [value, p] (value)}
             <option {value}>{p.label}</option>
           {/each}
         </select>
       </label>
-      <p class="caption">{POLICIES[app.project.policy]?.line}</p>
+      <p class="caption" id="who-line">{POLICIES[app.project.policy]?.line}</p>
     </section>
     <PatchTable {rows} selected={selected.name} onselect={select} />
     <PatchInspector row={selected} {options} defaultUniverse={monitorUniverse ?? 'artnet:0.0.0'} onpatched={(universe) => (chosenUniverse = universe)} />

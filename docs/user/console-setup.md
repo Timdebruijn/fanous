@@ -79,18 +79,32 @@ monitor; on a narrow one (an iPad upright) they stack in that order.
   outputs existed or not; opening such a project unpatches the ones without an
   output.
 - **Selected fixture** (programmer): choose the Universe (A 0.0.0 to 0.0.3 and
-  S 1 to S 4, plus any universe that has been heard), set the Address with the
+  S 1 to S 4, plus every universe that has been heard or has settings), set the Address with the
   stepper (Shift steps by 10; **0 means unpatched**), or press **Unpatch**.
   For an output it also says which display shows it, links to Outputs &
   Mapping, and has **Remove output** (the output with its mapping; Undo brings
   it back).
-- **Universes**: one row per universe that a fixture is patched to, that
-  Fanous hears, or that has settings in the project. A row shows the universe,
-  its protocol, interface and Hold on loss, the health pill, and the fixtures on
-  it ("Layers 1–8", "Master"). "heard, nothing patched" means a console sends
-  to a universe no fixture listens on: often the console's universe is one
-  off. "not used" means the universe has settings but no fixture any more; the
-  settings stay. Tap a row to open its settings (see
+- **Universes**: one row per universe that
+  - a fixture is patched to,
+  - a console is sending to now (packets, or silent for no longer than the
+    universe's Loss after), or
+  - has settings in the project.
+
+  A row shows the universe, the fixtures on it ("Layers 1–8, Master"), the
+  health pill, and its protocol, interface and Hold on loss. Without a fixture
+  it says:
+  - "heard, nothing patched" (yellow): a console sends to a universe no
+    fixture listens on; often the console's universe is one off. The row goes
+    away once that universe has been silent for its Loss after, unless it has
+    settings;
+  - "feeds A 0.0.0": the other protocol's universe that a patched universe
+    receives (its protocol is sACN or Art-Net + sACN, see
+    [Universe settings](#universe-settings));
+  - "not used": the universe has settings but no fixture and no console; the
+    settings stay.
+
+  A universe without fixtures never shows a red pill: when it goes silent the
+  pill says "silent" in yellow. Tap a row to open its settings (see
   [Universe settings](#universe-settings)); the DMX monitor switches to it.
 - **DMX monitor**: 512 cells for one universe, coloured per fixture, red where
   fixtures collide, with live values. Click a cell to pin it: you see the

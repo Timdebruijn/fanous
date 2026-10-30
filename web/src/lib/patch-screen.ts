@@ -156,8 +156,8 @@ function sortedUnique(ids: string[]): string[] {
 }
 
 /** Universe choices for a fixture: everything in the patch and the live list plus the standard ones. */
-export function universeOptions(patch: readonly PatchEntry[], live: readonly UniverseInfo[]): string[] {
-  return sortedUnique([...patch.map((e) => e.universe), ...live.map((u) => u.id), ...STANDARD_UNIVERSES]);
+export function universeOptions(patch: readonly PatchEntry[], live: readonly UniverseInfo[], stored: readonly UniverseSettingsDoc[] = []): string[] {
+  return sortedUnique([...patch.map((e) => e.universe), ...live.map((u) => u.id), ...stored.map((u) => u.id), ...STANDARD_UNIVERSES]);
 }
 
 export const PROTOCOL_LABELS: Record<UniverseSettingsDoc['protocol'], string> = { artnet: 'Art-Net', sacn: 'sACN', both: 'Art-Net + sACN' };
@@ -372,23 +372,47 @@ export interface UniverseRow {
   health: Health;
   /** "Art-Net · All interfaces · Hold last values" */
   line: string;
-  /** the fixtures on it, "heard, nothing patched" (a console sending to the wrong universe) or "not used" */
+  /** the fixtures on it, "feeds A 0.0.0" (its pair), "heard, nothing patched" (a console sending to the wrong universe) or "not used" */
   text: string;
   tone: 'ok' | 'warn' | 'faint';
 }
 
-/** One row per universe that a fixture is patched on, the engine hears, or the project stores settings for (DESIGN §6.6). */
+/** Packets now, or silent for at most the loss timeout: the console is sending to it. */
+function heardNow(info: UniverseInfo | undefined, lossTimeout: number): boolean {
+  return !!info && (info.active || (info.ageSeconds >= 0 && info.ageSeconds <= lossTimeout));
+}
+
+/**
+ * One row per universe that a fixture is patched on, the engine hears now, or the project stores settings for (DESIGN
+ * §6.6). A universe the engine heard earlier and nobody uses drops out after its loss timeout, so a fixed console clears
+ * its warning. Red is for a patched universe (look now): one without fixtures shows a loss as yellow "silent".
+ */
 export function universeRows(rows: readonly FixtureRow[], live: readonly UniverseInfo[], stored: readonly UniverseSettingsDoc[] | undefined): UniverseRow[] {
   const patched = rows.filter((r) => r.patched && r.universe);
-  const ids = sortedUnique([...patched.map((r) => r.universe!), ...live.map((u) => u.id), ...(stored ?? []).map((u) => u.id)]);
+  const used = new Set(patched.map((r) => r.universe!));
+  // a used universe fed by the other protocol also lists that wire universe (engine UniverseTable.targets): pair → used
+  const feeds = new Map<string, string>();
+  for (const id of used) {
+    const s = universeSettings(stored, id);
+    if (s.protocol !== (id.startsWith('sacn:') ? 'sacn' : 'artnet')) feeds.set(s.pair, id);
+  }
+  const heard = live.filter((u) => heardNow(u, universeSettings(stored, u.id).lossTimeout)).map((u) => u.id);
+  const ids = sortedUnique([...used, ...heard, ...(stored ?? []).map((u) => u.id)]);
   return ids.map((id) => {
     const info = live.find((u) => u.id === id);
     const settings = universeSettings(stored, id);
     const on = patched.filter((r) => r.universe === id);
-    const line = [PROTOCOL_LABELS[settings.protocol], settings.interface === 'any' ? 'All interfaces' : settings.interface, HOLD_LABELS[settings.holdOnLoss]].join(' · ');
+    const line = [
+      PROTOCOL_LABELS[settings.protocol] ?? settings.protocol,
+      settings.interface === 'any' ? 'All interfaces' : settings.interface,
+      HOLD_LABELS[settings.holdOnLoss] ?? settings.holdOnLoss,
+    ].join(' · ');
+    const fed = feeds.get(id);
     const what: Pick<UniverseRow, 'text' | 'tone'> = on.length > 0 ? { text: fixturesText(on), tone: 'ok' }
-      : info && info.ageSeconds >= 0 ? { text: 'heard, nothing patched', tone: 'warn' }
+      : fed ? { text: `feeds ${universeName(fed)}`, tone: 'ok' }
+      : heardNow(info, settings.lossTimeout) ? { text: 'heard, nothing patched', tone: 'warn' }
       : { text: 'not used', tone: 'faint' };
-    return { id, settings, health: universeHealth(info, settings.lossTimeout), line, ...what };
+    const health = universeHealth(info, settings.lossTimeout);
+    return { id, settings, health: on.length === 0 && health.tone === 'red' ? { tone: 'yellow', text: 'silent' } : health, line, ...what };
   });
 }

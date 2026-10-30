@@ -3,7 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
 import type { LayerStatus, ResolvedParameter } from './docs';
-import { GENERATORS, folderZeroItems, layerState, mediaLine, mediaOptions, mediaPath, playSteps, policyName, type LibrarySnapshot } from './layers';
+import { GENERATORS, POLICIES, folderZeroItems, layerState, mediaLine, mediaOptions, mediaPath, playSteps, policyName, type LibrarySnapshot } from './layers';
 
 const layer = (over: Partial<LayerStatus> = {}): LayerStatus => ({ index: 1, folder: 3, file: 12, name: 'loop.mov', kind: 'movie', codec: 'HapY', width: 1920, height: 1080, fps: 25, frames: 100, frame: 0, error: null, ...over });
 
@@ -38,6 +38,23 @@ describe('who controls (source policy) names', () => {
 
   it('has short labels for the Source badge', () => {
     expect(['dmx', 'internal', 'ltp', 'htp', 'other'].map((p) => policyName(p, true))).toEqual(['Console', 'Fanous', 'Both · latest', 'Both · highest', 'other']);
+  });
+
+  it('matches the DESIGN §6.6 table word for word', () => {
+    expect(POLICIES).toEqual({
+      dmx: {
+        label: 'Console only',
+        short: 'Console',
+        line: 'Fanous follows the console. A fixture without an address stays at its defaults; cues and OSC are recorded but do nothing.',
+      },
+      internal: { label: 'Fanous only (UI, cues, OSC, MIDI)', short: 'Fanous', line: 'The console is shown but ignored.' },
+      ltp: { label: 'Console and Fanous, latest change wins', short: 'Both · latest', line: 'Per parameter, the latest change wins.' },
+      htp: {
+        label: 'Console and Fanous, highest value wins',
+        short: 'Both · highest',
+        line: 'Intensity and other numbers take the highest value; folder, file and modes the latest change.',
+      },
+    });
   });
 });
 
