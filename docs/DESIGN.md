@@ -1715,8 +1715,8 @@ changes per build), see DEVELOPMENT.md.
 state and the self-restart are gone. `capture.authorize {kind: "screen"}`
 asks once and refreshes the permission cache; the System screen's Screen row
 while denied captions "allow Fanous Engine, then Engine › Restart Engine", and
-the user guide says the same. The step 3b paragraph below describes the
-`pending` row as it was.
+the user guide says the same. The step 3a paragraph above and the step 3b
+paragraph below describe the poll and `pending` as they were.
 
 **As built (2026-10-30, step 3b, PR #126):** the web UI and user guide for
 displays 21–28. *Media:* "Displays (21–28)" (shown when non-empty) like the
@@ -1821,9 +1821,8 @@ re-confirmation).
 
 **Live feed and UI.** `live.capture: {devices: [{file, name, running,
 gone?, inUse?}], screens: [{file, name, running, gone?}], permissions: {camera:
-"granted" | "denied" | "notDetermined", screen: "granted" | "denied" |
-"pending"}}` ("pending" since step 3a: `capture.authorize` waits for the
-grant and the engine restarts itself). The
+"granted" | "denied" | "notDetermined", screen: "granted" | "denied"}}`
+("pending" existed from step 3a until B125). The
 Media screen's folder 0 list gets the groups "Cameras and capture cards
 (1–20)" and "Displays (21–28)" with the green dot and Forget of the Syphon
 group; the layer panel's folder 0 picker lists them the same way; the
