@@ -459,7 +459,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   and the badge reads "Preset A → B", "Edited → Preset B" or "Preset A → edited". Channel 7 is in the channel map, GDTF
   and OSC (`/fanous/output/{n}/fade`); channel 8 stays reserved.
 - Changed: **Authorize screen** asks macOS once and opens System Settings; allow Fanous Engine there, then choose
-  Engine › **Restart Engine** (B125, PR #N). macOS applies the grant only to a new engine process, so the two-minute wait,
+  Engine › **Restart Engine** (B125, PR #132). macOS applies the grant only to a new engine process, so the two-minute wait,
   the "waiting" row and the engine's self-restart are gone; `live.capture.permissions.screen` reads `granted` or `denied`.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)

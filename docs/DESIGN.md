@@ -1711,7 +1711,7 @@ output leaving the list, a replug, the monthly re-ask, idle samples on a
 still display. Ad-hoc rebuilds reset the TCC grants (the code identity
 changes per build), see DEVELOPMENT.md.
 
-**As built (2026-10-30, B125, PR #N):** the two-minute poll, the `pending`
+**As built (2026-10-30, B125, PR #132):** the two-minute poll, the `pending`
 state and the self-restart are gone. `capture.authorize {kind: "screen"}`
 asks once and refreshes the permission cache; the System screen's Screen row
 while denied captions "allow Fanous Engine, then Engine › Restart Engine", and
