@@ -2840,7 +2840,7 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
   - The output pass gets one extra draw.
   - The label uses the test patterns' seven-segment digits.
 
-**As built (M2.6, PR #TBD):**
+**As built (M2.6, PR #136):**
 - **Lease** (`output.overlay {id, on, selected?}`, `ProjectDocument+Presets.swift` next to `output.show`). Programmer,
   refused under show lock (ending too: the lock ended it), not undoable and no project change; `on: true` is refused in
   show mode and for an output that does not exist, `on: false` never for either. The command hops to the main actor;

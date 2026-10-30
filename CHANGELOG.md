@@ -470,7 +470,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Changed: **Authorize screen** asks macOS once and opens System Settings; allow Fanous Engine there, then choose
   Engine › **Restart Engine** (B125, PR #132). macOS applies the grant only to a new engine process, so the two-minute wait,
   the "waiting" row and the engine's self-restart are gone; `live.capture.permissions.screen` reads `granted` or `denied`.
-- Added: the **on-output edit overlay** (M2.6, PR #TBD, DESIGN §9.10 item 4, F4). While Warp & Slices is open, the
+- Added: the **on-output edit overlay** (M2.6, PR #136, DESIGN §9.10 item 4, F4). While Warp & Slices is open, the
   output draws the mapping being edited on the projector: the corner pin's edges or the mesh's grid lines, every slice's
   outline and its mask's, through the warp and the keystone, 2 px white with a 1 px black edge, and the selected point
   as a yellow crosshair with a digits-only label ("3·5" for a mesh point). It follows Blackout and the Master, and is
