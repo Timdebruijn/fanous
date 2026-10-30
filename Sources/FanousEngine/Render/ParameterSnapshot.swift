@@ -163,6 +163,11 @@ public final class ParameterSnapshotSlot: @unchecked Sendable {
     public var keystones: [simd_float3x3] = Array(repeating: matrix_identity_float3x3, count: ParameterSnapshotSlot.maxOutputs)
     /// The console's keystone values were refused (not a strictly convex quad): `keystones` keeps the last valid matrix.
     public var keystoneInvalid: [Bool] = Array(repeating: false, count: ParameterSnapshotSlot.maxOutputs)
+    /// Per output, the mapping preset it shows (DESIGN.md §9.10 item 3): Compare's (`output.show`) while its lease runs,
+    /// else Output ch 6; 0 = the edited mapping. Its own array like `keystones`: the lease is not the Output fixture's.
+    public var presets: [UInt8] = Array(repeating: 0, count: ParameterSnapshotSlot.maxOutputs)
+    /// `presets` comes from Compare, not the console.
+    public var presetCompare: [Bool] = Array(repeating: false, count: ParameterSnapshotSlot.maxOutputs)
 
     public init(maxLayers: Int) { layers = Array(repeating: LayerParameters(), count: maxLayers) }
 
@@ -186,6 +191,7 @@ public final class ParameterSnapshotSlot: @unchecked Sendable {
         for i in layers.indices { layers[i] = other.layers[i] }
         for i in outputs.indices { outputs[i] = other.outputs[i] }
         for i in keystones.indices { (keystones[i], keystoneInvalid[i]) = (other.keystones[i], other.keystoneInvalid[i]) }
+        for i in presets.indices { (presets[i], presetCompare[i]) = (other.presets[i], other.presetCompare[i]) }
     }
 }
 

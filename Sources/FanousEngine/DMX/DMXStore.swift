@@ -70,6 +70,11 @@ public final class DMXStore: @unchecked Sendable {
     /// one, and whether the latest values were refused (DESIGN.md §9.10 item 2). Recomputed only when the values change.
     private var keystones = [(raw: [UInt16], matrix: simd_float3x3, invalid: Bool)](
         repeating: ([], matrix_identity_float3x3, false), count: ParameterSnapshotSlot.maxOutputs)
+    /// Per output, Compare's lease (`output.show`, DESIGN.md §9.10 items 3 and 4): the preset it shows over ch 6 and
+    /// the host time it ends; preset 0 = none. One per output, the latest call wins; the tick lets it expire.
+    private var shows = [(preset: UInt8, until: TimeInterval)](repeating: (0, 0), count: ParameterSnapshotSlot.maxOutputs)
+    /// A lease runs this long after its last renewal (the UI renews every 2 s); it ends at the first tick after.
+    static let showLease: TimeInterval = 5
 
     public init(patch: Patch, logger: Logger) {
         self.logger = logger
@@ -103,7 +108,9 @@ public final class DMXStore: @unchecked Sendable {
     /// expiry clock.
     func tick(at now: TimeInterval) {
         table.expire(at: now)
-        if applyLoss(at: now, settingsChanged: false) { publish(receivedAt: 0) }
+        var expired = false
+        for i in shows.indices where shows[i].preset != 0 && now >= shows[i].until { (shows[i], expired) = ((0, 0), true) }
+        if applyLoss(at: now, settingsChanged: false) || expired { publish(receivedAt: 0) }
         if table.settings.values.contains(where: { $0.interface != UniverseSettings.anyInterface }) { refreshInterfaces() }
         expireUI(at: now)
     }
@@ -295,8 +302,23 @@ public final class DMXStore: @unchecked Sendable {
                     }
                 }
                 (slot.keystones[i], slot.keystoneInvalid[i]) = (keystones[i].matrix, keystones[i].invalid)
+                // Compare wins over ch 6 while its lease runs
+                let console = resolvers[.output(i + 1)].map { UInt8(clamping: Int($0.physical(.output(.preset)))) } ?? 0
+                (slot.presets[i], slot.presetCompare[i]) = shows[i].preset != 0 ? (shows[i].preset, true) : (console, false)
             }
         }
+    }
+
+    /// `output.show`: outputs (ids 1–8) show `preset` until `now` + `showLease`; preset 0 ends their lease.
+    /// A renewal only moves the end: nothing to publish.
+    func show(_ ids: [Int], preset: Int, at now: TimeInterval) {
+        var changed = false
+        for id in ids where id >= 1 && id <= shows.count {
+            let next: (preset: UInt8, until: TimeInterval) = preset > 0 ? (UInt8(clamping: preset), now + Self.showLease) : (0, 0)
+            if next.preset != shows[id - 1].preset { changed = true }
+            shows[id - 1] = next
+        }
+        if changed { publish(receivedAt: 0) }
     }
 
     // MARK: Cross-thread
@@ -334,6 +356,11 @@ public final class DMXStore: @unchecked Sendable {
     /// The value a parameter shows now (MIDI pickup); nil when the fixture is not patched.
     public func resolvedRaw(_ fixture: FixtureRef, _ parameter: ParameterID) -> UInt16? {
         queue.sync { resolvers[fixture]?.resolved(parameter).raw }
+    }
+
+    /// Compare (`output.show`): `preset` on outputs `ids` for 5 s from now, or 0 to end it.
+    public func show(_ ids: [Int], preset: Int) {
+        queue.async { [self] in show(ids, preset: preset, at: Self.now) }
     }
 
     /// `fixture.keep`: restart the expiry clock of a fixture's UI values.
