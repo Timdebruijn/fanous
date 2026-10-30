@@ -410,7 +410,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   one block it goes right after the layer before it, else at its standard address, and it stays unpatched when that
   range is taken. Before, it took its standard address when that range was free. Layers above 32 get no address. The
   slot rule (`Patch.slot`, `Patch.blockStart`) has shared test vectors in `Tests/Fixtures/patch-slots.json`.
-- The web UI and user guide for displays as folder 0 files 21–28 (B73 step 3b, PR #NNN, DESIGN §8.2.1): the Media
+- The web UI and user guide for displays as folder 0 files 21–28 (B73 step 3b, PR #126, DESIGN §8.2.1): the Media
   screen's "Displays (21–28)" group says that displays used as outputs are not listed and that macOS asks again about
   monthly, shows a line while the Screen permission is not granted or waiting, and offers **Forget** for a display that
   is not running. The layer panel's folder 0 picker groups its items under the Media screen's headings. On the System

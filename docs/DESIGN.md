@@ -1549,7 +1549,7 @@ Not verified here (no camera in this environment): discovery of real
 devices, Continuity Camera, the permission prompt's name, and a replug
 on another port. They are the owner's live check.
 
-**As built (2026-10-30, step 3b, PR #NNN):** the web UI and user guide for
+**As built (2026-10-30, step 3b, PR #126):** the web UI and user guide for
 displays 21–28, against the feed of this section plus `screens[].gone` and
 `permissions.screen: "pending"` (after `capture.authorize {kind: "screen"}`
 while the engine polls; an unknown word reads as denied for the dot and the
