@@ -206,6 +206,8 @@ public final class OutputCoordinator {
         }
         let binding = OutputBinding.resolve(outputs: outputs, displays: displays)
         let newMaster = OutputBinding.master(outputs: outputs, binding: binding, clockMaster: clockMaster)
+        // B118: displays whose driver did not stop within 1 s (a tick still in flight may write the old set's holds)
+        var stale: Set<CGDirectDisplayID> = []
 
         // tear down displays that lost every output or went away
         for (id, b) in bound where binding.byDisplay[id] == nil || !displays.contains(where: { $0.id == id }) {
@@ -216,7 +218,10 @@ public final class OutputCoordinator {
             bound.removeValue(forKey: id)
         }
         // the master changes: stop its driver before another display's driver may take the compositor
-        if masterDisplay != newMaster { stopMaster() }
+        if masterDisplay != newMaster {
+            let old = masterDisplay
+            if !stopMaster(), let old { stale.insert(old) }
+        }
 
         var statuses: [OutputStatus] = []
         for (displayID, ids) in binding.byDisplay {
@@ -251,9 +256,12 @@ public final class OutputCoordinator {
                     logger.error("output compile failed", metadata: ["output": "\(id)", "error": "\(error)"])
                 }
             }
-            let set = OutputSet(plans: plans, previous: bound[displayID]?.set.holdSource)  // a frozen output keeps its hold (B111)
+            if displayID == newMaster, bound[displayID]?.secondary?.stop() == false { stale.insert(displayID) }
+            // a frozen output keeps its hold (B111), unless the thread that rendered the old set may still be writing it
+            // (B118): the new thread would read `held` under that write, so the output holds afresh instead
+            if stale.contains(displayID) { logger.warning("render thread still ticking during a display role change: output holds afresh", metadata: ["display": "\(display.name)"]) }
+            let set = OutputSet(plans: plans, previous: stale.contains(displayID) ? nil : bound[displayID]?.set.holdSource)
             if displayID == newMaster {
-                bound[displayID]?.secondary?.stop()
                 compositor.outputSet = set
                 if masterDriver == nil {
                     headless?.stop()
@@ -289,10 +297,12 @@ public final class OutputCoordinator {
         onStatus?(statuses.sorted { $0.id < $1.id })
     }
 
-    private func stopMaster() {
-        masterDriver?.stop()
+    /// false = the master's thread did not stop within 1 s, so a tick may still be in flight (B118).
+    @discardableResult private func stopMaster() -> Bool {
+        let joined = masterDriver?.stop() ?? true
         masterDriver = nil
         masterDisplay = nil
         compositor.outputSet = nil
+        return joined
     }
 }
