@@ -388,7 +388,8 @@ and the numbers are kept in the project like the Syphon numbers below. A
 device you unplug keeps its number and gets it back when you plug it in again;
 a USB card moved to another port is found again by its model and name when
 only one gone device matches. **Forget** frees a number (a device that is
-not running, or **Forget all not running**; programmer, undoable, not while
+not running, or **Forget all not running (cameras and displays)**, which frees
+displays too; programmer, undoable, not while
 the show is locked). A device another app has open (an iPhone in FaceTime)
 reads "in use by another app" with a yellow dot. A card follows its input signal: the picture takes the size and rate of what
 comes in, and a card without a signal for 2 seconds reads "no signal" on the
@@ -403,22 +404,24 @@ UltraStudio do not (they need their own SDK, see the backlog).
 
 **Displays (21–28).** Every display of this Mac gets the lowest free number
 from 21, up to 28, listed under **Displays (21–28)** on the Media screen the
-same way; a display that Fanous uses as an output is not listed. A display
-layer is named "Display: <name>" and shows the whole display, scaled down to
+same way; a display that Fanous uses as an output reads "not running". A
+display layer is named `Display: <name>` and shows the whole display, scaled down to
 the canvas when larger (more in [media-library.md](media-library.md)). It
 needs the Screen permission: **Authorize screen** under Capture permissions
 on the System screen, never in show mode; macOS applies the grant only to a
-new engine, so the engine restarts itself once you allow Fanous Engine in
-System Settings. Without it the layer reads "screen permission not granted"
-and stays black.
+new engine, so for about two minutes the engine waits for you to allow Fanous
+Engine in System Settings and then restarts itself. If the row goes back to
+denied, press **Authorize screen** again, or allow it and choose Engine ›
+**Restart Engine**. Without the grant the layer reads "screen permission not
+granted" and stays black.
 
 **Readiness.** The item **Capture permissions granted** (System screen) fails
 while a numbered camera exists without the camera permission, or a numbered
 display without the Screen permission; it blocks show mode until a programmer
-acknowledges it, so no permission dialog appears during the show. With a
-numbered display it also warns that macOS asks again about once a month
-whether Fanous Engine may record the screen, with a dialog on the main
-display. Check it before every show; for a show-critical slides feed, a
+acknowledges it, so no permission dialog appears during the show. Whenever a
+display has a number it also warns, even with the grant: macOS asks again
+about once a month whether Fanous Engine may record the screen, with a dialog
+on the main display. Check it before every show; for a show-critical slides feed, a
 capture card is the safer path.
 
 **Syphon servers (150–169).** Every Syphon server another app on this Mac

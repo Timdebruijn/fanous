@@ -184,7 +184,7 @@ describe('capture permissions (B73)', () => {
   it('screen: pending waits with Authorize disabled, denied offers it with the restart caption, granted is green', () => {
     expect(permissionRow('screen', 'pending')).toEqual({
       tone: 'yellow', word: 'waiting', authorize: true, waiting: true,
-      caption: 'waiting for the grant… the engine restarts itself when System Settings allows it',
+      caption: 'waiting for the grant (about two minutes); the engine restarts itself when System Settings allows it. If the row goes back to denied, press Authorize screen again or use Engine › Restart Engine after allowing it.',
     });
     expect(permissionRow('screen', 'denied')).toEqual({ tone: 'yellow', word: 'denied', authorize: true, waiting: false, caption: 'opens System Settings; a grant restarts the engine' });
     expect(permissionRow('screen', 'granted')).toEqual({ tone: 'green', word: 'granted', authorize: false, waiting: false, caption: null });

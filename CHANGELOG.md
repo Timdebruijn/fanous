@@ -411,13 +411,14 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   range is taken. Before, it took its standard address when that range was free. Layers above 32 get no address. The
   slot rule (`Patch.slot`, `Patch.blockStart`) has shared test vectors in `Tests/Fixtures/patch-slots.json`.
 - The web UI and user guide for displays as folder 0 files 21–28 (B73 step 3b, PR #126, DESIGN §8.2.1): the Media
-  screen's "Displays (21–28)" group says that displays used as outputs are not listed and that macOS asks again about
-  monthly, shows a line while the Screen permission is not granted or waiting, and offers **Forget** for a display that
-  is not running. The layer panel's folder 0 picker groups its items under the Media screen's headings. On the System
-  screen the Screen row reads "waiting" with **Authorize screen** disabled while the engine waits for the grant (it
-  restarts itself when System Settings allows it), and "opens System Settings; a grant restarts the engine" while
-  denied; the Authorize buttons now name their permission. The user guide covers displays, the grant and restart, the
-  monthly re-confirmation and the readiness item, and a troubleshooting entry for a black display layer.
+  screen's "Displays (21–28)" group says that a display used as an output reads not running and that macOS asks again
+  about once a month, shows a line while the Screen permission is not granted or waiting, and offers **Forget** for a
+  display that is not running; the cameras' **Forget all not running** is now "(cameras and displays)", since it frees
+  both. The layer panel's folder 0 picker groups its items under the Media screen's headings. On the System screen the
+  Screen row reads "waiting" with **Authorize screen** disabled for about two minutes while the engine waits for the
+  grant, and "opens System Settings; a grant restarts the engine" while denied; the Authorize buttons now name their
+  permission. The user guide covers displays, the grant and restart, the monthly re-confirmation and the readiness
+  item, and a troubleshooting entry for a black display layer.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

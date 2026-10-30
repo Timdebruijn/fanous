@@ -67,7 +67,7 @@ export function outputTone(state: string): DotTone {
  * for the dot and button but keeps its own word. */
 export function permissionRow(kind: 'camera' | 'screen', state: string): { tone: DotTone; word: string; authorize: boolean; waiting: boolean; caption: string | null } {
   if (state === 'granted') return { tone: 'green', word: 'granted', authorize: false, waiting: false, caption: null };
-  if (state === 'pending') return { tone: 'yellow', word: 'waiting', authorize: true, waiting: true, caption: 'waiting for the grant… the engine restarts itself when System Settings allows it' };
+  if (state === 'pending') return { tone: 'yellow', word: 'waiting', authorize: true, waiting: true, caption: 'waiting for the grant (about two minutes); the engine restarts itself when System Settings allows it. If the row goes back to denied, press Authorize screen again or use Engine › Restart Engine after allowing it.' };
   const word = state === 'notDetermined' ? 'not asked' : state;
   return { tone: 'yellow', word, authorize: true, waiting: false, caption: kind === 'screen' ? 'opens System Settings; a grant restarts the engine' : null };
 }

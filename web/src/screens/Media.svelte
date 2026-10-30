@@ -57,6 +57,8 @@
   const cameraPermission = $derived(capture?.permissions?.camera);
   const screenPermission = $derived(capture?.permissions?.screen);
   const NOUN = { syphon: 'server', capture: 'device', screen: 'display', generator: '' } as const;
+  // capture.forget without a file sweeps cameras and displays (1–28) at once, so one button above the cameras covers both
+  const captureNotRunning = $derived(zeroGroups.filter((g) => g.kind === 'capture' || g.kind === 'screen').reduce((n, g) => n + g.notRunning, 0));
   let pickedZero = $state<number | null>(null);
   const pickedZeroItem = $derived(zeroItems.find((i) => i.file === pickedZero));
   function forget(kind: FolderZeroItem['kind'], file?: number) {
@@ -282,9 +284,12 @@
       {#each zeroGroups as group (group.kind)}
         <div class="zero-head">
           <h2 class="zero-title">{group.title}</h2>
-          {#if (group.kind === 'syphon' || group.kind === 'capture') && group.notRunning > 1}
-            <button class="btn" disabled={playLock !== undefined} title={playLock ?? `Free the numbers of every ${group.kind === 'syphon' ? 'server' : 'device'} that is not running (undo brings them back)`}
+          {#if group.kind === 'syphon' && group.notRunning > 1}
+            <button class="btn" disabled={playLock !== undefined} title={playLock ?? 'Free the numbers of every server that is not running (undo brings them back)'}
               onclick={() => void forget(group.kind)}>Forget all not running</button>
+          {:else if group.kind === 'capture' && captureNotRunning > 1}
+            <button class="btn" disabled={playLock !== undefined} title={playLock ?? 'Free the numbers of every camera, capture card and display that is not running (undo brings them back)'}
+              onclick={() => void forget(group.kind)}>Forget all not running (cameras and displays)</button>
           {/if}
         </div>
         {#if group.kind === 'syphon' && unnumbered.length > 0}
@@ -295,9 +300,9 @@
         {/if}
         {#if group.kind === 'screen'}
           {#if screenPermission && screenPermission !== 'granted'}
-            <p class="caption" role="status">{screenPermission === 'pending' ? 'Waiting for the screen permission: the engine restarts itself when System Settings allows it.' : 'Screen permission not granted: authorize on the System screen; a grant restarts the engine.'}</p>
+            <p class="caption" role="status">{screenPermission === 'pending' ? 'Waiting for the screen permission (about two minutes): see Capture permissions on the System screen.' : 'Screen permission not granted: authorize on the System screen; a grant restarts the engine.'}</p>
           {/if}
-          <p class="caption">Displays used as Fanous outputs are not listed. macOS asks again about monthly whether Fanous Engine may record the screen: see Capture permissions on the <a href="#/system">System screen</a>.</p>
+          <p class="caption">A display used as a Fanous output reads not running (one that was an output from the start gets no number). macOS asks again about once a month whether Fanous Engine may record the screen: see Capture permissions on the <a href="#/system">System screen</a>.</p>
         {/if}
         {#if group.list.length === 0}
           <p class="caption">{group.kind === 'capture'

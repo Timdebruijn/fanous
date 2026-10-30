@@ -54,8 +54,9 @@ Select an item and use **Play on layer** to put it on a layer from here.
 
 A camera, capture card, display or Syphon server keeps its number, also across
 engine restarts, until you forget it: select one that is not running and press
-**Forget**, or press **Forget all not running** above its list (cameras and
-Syphon servers). Its number is then free for the next new one; **Undo**
+**Forget**, or press **Forget all not running** above the Syphon list, or
+**Forget all not running (cameras and displays)** above the cameras (it frees
+both). Its number is then free for the next new one; **Undo**
 brings it back. A green dot means it runs; a yellow dot with "in use by
 another app" means another app has the camera open (an iPhone in FaceTime). A
 **Layer N** badge says which layers show it.
@@ -68,16 +69,20 @@ Engine under System Settings › Privacy & Security › Camera.
 **Displays (21–28)** are whole displays of this Mac: what the display shows,
 without the mouse pointer and without sound, at most at the canvas rate. A
 display larger than the canvas is scaled down to fit it (aspect kept); colours
-are read as sRGB. Displays that Fanous uses as outputs are not listed: Fanous
-leaves its own windows out of a capture, so they would be black.
+come through as the display shows them. A display never reads "no signal", and
+the rate on the Layers screen is the rate of changed frames: macOS sends a
+frame only when the picture changes. A display that Fanous uses as an output
+reads "not running" (one that was an output from the start gets no number):
+Fanous leaves its own windows out of a capture, so it would be black.
 
 The first time, displays need the Screen permission: press **Authorize screen**
 under Capture permissions on the System screen (not in show mode). macOS opens
 System Settings; allow Fanous Engine under Privacy & Security › Screen & System
-Audio Recording. macOS applies the grant only to a new engine, so the engine
-restarts itself when it sees the grant (the row says "waiting" until then;
-outputs go black for a moment). If it still says denied after you allowed it,
-choose Engine › **Restart Engine**.
+Audio Recording. macOS applies the grant only to a new engine: for about two
+minutes the row says "waiting", and when the grant shows up the engine
+restarts itself (outputs go black for a moment). If the row goes back to
+denied, press **Authorize screen** again, or allow it and choose Engine ›
+**Restart Engine**.
 
 macOS asks again about once a month whether Fanous Engine may keep recording
 the screen, with a dialog on the main display that nobody answers during an
