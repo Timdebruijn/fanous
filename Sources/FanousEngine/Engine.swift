@@ -104,6 +104,8 @@ public final class Engine: @unchecked Sendable {
     private let oscLog = Mutex<[JSONValue]>([])
     private var lastPolicy: SourcePolicy?
     private var lastUniverseSettings: [UniverseID: UniverseSettings] = [:]
+    /// The fixtures that exist as the DMX store last got them (DESIGN.md §6.6).
+    private var lastFixtures: Set<FixtureRef> = []
     private var lastUniverseIssues: [String] = []
     /// Why the sACN port could not be bound at start (readiness); nil while sACN runs.
     private let sacnError = Mutex<String?>(nil)
@@ -201,7 +203,9 @@ public final class Engine: @unchecked Sendable {
         let layerCount = options.scene?.layerCount ?? loadedProject?["layerCount"]?.int ?? 8
         let patch = ProjectDocument.effectivePatch(from: loadedProject ?? .null) ?? Patch.standard(layers: layerCount, outputs: 0)
         let policy = options.scene?.policy ?? loadedProject?["policy"]?.string.flatMap(SourcePolicy.init(rawValue:)) ?? .dmx
-        let dmx = DMXStore(patch: patch, logger: logger)
+        let fixtures = ProjectDocument.fixtures(layerCount: layerCount, outputs: ProjectDocument.outputs(from: loadedProject ?? .null).map(\.id))
+        lastFixtures = fixtures
+        let dmx = DMXStore(patch: patch, fixtures: fixtures, logger: logger)
         if policy != .dmx { dmx.setPolicy(policy) }
         let universeSettings = checkedUniverseSettings(from: loadedProject ?? .null)
         lastUniverseSettings = universeSettings
@@ -1304,8 +1308,11 @@ public final class Engine: @unchecked Sendable {
         let universeSettings = checkedUniverseSettings(from: document)
         if let dmx {
             var changed = false
-            if let patch = ProjectDocument.effectivePatch(from: document), patch != dmx.currentPatch {
-                dmx.setPatch(patch)
+            // a layer or output added without an address changes the fixtures, not the patch
+            let fixtures = ProjectDocument.fixtures(from: document)
+            if let patch = ProjectDocument.effectivePatch(from: document), patch != dmx.currentPatch || fixtures != lastFixtures {
+                lastFixtures = fixtures
+                dmx.setPatch(patch, fixtures: fixtures)
                 changed = true
             }
             if universeSettings != lastUniverseSettings {
@@ -1315,7 +1322,7 @@ public final class Engine: @unchecked Sendable {
             }
             if changed { sacn?.update(groups: UniverseSettings.wire(dmx.currentPatch.universes, over: .sacn, settings: universeSettings)) }
         }
-        // the source policy applies to every patched fixture; the store gives it to the fixtures a later patch adds
+        // the source policy applies to every fixture; the store gives it to the fixtures a later `setPatch` adds
         if let dmx, let raw = document["policy"]?.string, let policy = SourcePolicy(rawValue: raw), policy != lastPolicy {
             lastPolicy = policy
             dmx.setPolicy(policy)

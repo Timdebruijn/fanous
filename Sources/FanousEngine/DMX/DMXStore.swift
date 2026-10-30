@@ -42,7 +42,7 @@ public struct LiveSnapshot: Encodable, Sendable {
     public var uiExpiresIn: [String: Double]
 }
 
-/// Owns the universe table and one resolver per patched fixture. Everything
+/// Owns the universe table and one resolver per fixture that exists, patched or not (DESIGN.md §6.6). Everything
 /// runs on `queue` (the DMX queue of ADR-0002); `snapshot()` is the only
 /// cross-thread read and copies.
 /// ponytail: per-packet array allocations in `resolve`; Phase 2 replaces them
@@ -53,28 +53,33 @@ public final class DMXStore: @unchecked Sendable {
     private var table = UniverseTable()
     private var patch: Patch
     private var resolvers: [FixtureRef: FixtureResolver] = [:]
-    /// The project's source policy: on every patched fixture, and on the fixtures a later patch adds.
+    /// The project's source policy: on every fixture, and on the fixtures a later `setPatch` adds.
     private var policy = SourcePolicy.dmx
+    /// The cue list's last output: a resolver made later (a layer added, an undo) takes it at once, as the cue engine
+    /// pushes values only while a fade runs.
+    private var cue: [CueOutput] = []
     private var announced: Set<String> = []
     private var lastAnnounced: (universe: UniverseID, source: String, priority: UInt8?)?
     private var timer: DispatchSourceTimer?
     /// Render-side parameters, one write per resolved DMX packet (ADR-0002 hand-off): the compositor reads them,
     /// every other thread takes the copy (`withLatest`, B71).
-    public let snapshots = TripleBuffer({ ParameterSnapshotSlot(maxLayers: 32) }, copy: { $0.copy(from: $1) })
+    public let snapshots = TripleBuffer({ ParameterSnapshotSlot(maxLayers: ParameterSnapshotSlot.maxLayers) }, copy: { $0.copy(from: $1) })
     private var sequence: UInt64 = 0
     /// Per fixture with UI values: seconds they have masked the console since the last UI change, and the tick that was counted to.
     private(set) var uiClock: [FixtureRef: (masked: TimeInterval, tick: TimeInterval)] = [:]
     /// DESIGN.md §7.2: UI values that mask a live console are released after masking it this long since the last UI change.
     static let uiExpiry: TimeInterval = 600
-    /// Per output: the Keystone fixture's resolved raw values (empty: unpatched), the matrix they gave or the last valid
-    /// one, and whether the latest values were refused (DESIGN.md §9.10 item 2). Recomputed only when the values change.
+    /// Per output: the Keystone fixture's resolved raw values (empty: the identity, nothing received or set), the matrix
+    /// they gave or the last valid one, and whether the latest values were refused (DESIGN.md §9.10 item 2). Recomputed
+    /// only when the values change.
     private var keystones = [(raw: [UInt16], matrix: simd_float3x3, invalid: Bool)](
         repeating: ([], matrix_identity_float3x3, false), count: ParameterSnapshotSlot.maxOutputs)
 
-    public init(patch: Patch, logger: Logger) {
+    /// `fixtures`: the fixtures that exist (`ProjectDocument.fixtures`); nil, the patched ones.
+    public init(patch: Patch, fixtures: Set<FixtureRef>? = nil, logger: Logger) {
         self.logger = logger
         self.patch = patch
-        for entry in patch.entries { resolvers[entry.fixture] = FixtureResolver(mode: entry.fixture.mode) }
+        for fixture in fixtures ?? Set(patch.entries.map(\.fixture)) { resolvers[fixture] = FixtureResolver(mode: fixture.mode) }
     }
 
     /// The IPv4 interfaces a universe's `interface` setting is matched against; injectable for tests.
@@ -267,14 +272,14 @@ public final class DMXStore: @unchecked Sendable {
     }
 
     /// ponytail: iterates the resolver dictionary per packet; a fixed layer array comes with projects (Phase 5).
-    private func publish(receivedAt: TimeInterval) {
+    func publish(receivedAt: TimeInterval) {
         sequence += 1
         let sequence = self.sequence
         snapshots.write { slot in
             slot.sequence = sequence
             slot.receivedAt = receivedAt
-            // an unpatched layer, Master or output (Unpatch, Remove last layer, Remove output, beyond the layer count) is no
-            // longer held at its last values: no source reaches a fixture without a resolver, so nothing could change them
+            // a fixture without a resolver (Remove last layer, Remove output, beyond the layer count) is not held at its
+            // last values: no source reaches it, so nothing could change them
             if let master = resolvers[.master] { ParameterSnapshotSlot.from(master, into: slot) } else { slot.resetMaster() }
             for i in slot.layers.indices where resolvers.index(forKey: .layer(i + 1)) == nil { slot.layers[i] = LayerParameters() }
             for i in slot.outputs.indices where resolvers.index(forKey: .output(i + 1)) == nil { slot.outputs[i] = OutputParameters() }
@@ -283,7 +288,12 @@ public final class DMXStore: @unchecked Sendable {
                 if case .output(let n) = fixture, n >= 1, n <= slot.outputs.count { slot.outputs[n - 1] = OutputParameters.from(resolver) }
             }
             for i in keystones.indices {
-                let raw = resolvers[.keystone(i + 1)]?.resolvedAll().map(\.raw) ?? []
+                // every output has a Keystone resolver; one with neither DMX nor an internal value is the identity, and
+                // skipping it keeps a typical project's publish free of the two arrays per output
+                var raw: [UInt16] = []
+                if let keystone = resolvers[.keystone(i + 1)], keystone.dmxReceived || keystone.internalCount > 0 {
+                    raw = keystone.resolvedAll().map(\.raw)
+                }
                 if raw != keystones[i].raw {
                     keystones[i].raw = raw
                     // a refused quad keeps the last valid matrix and says so
@@ -305,6 +315,7 @@ public final class DMXStore: @unchecked Sendable {
     public func setCue(_ outputs: [CueOutput]) {
         queue.async { [self] in
             let now = Self.now
+            cue = outputs
             // values the list no longer asserts (removed cue) are released
             for key in resolvers.keys { resolvers[key]?.clearInternal(source: .cue) }
             for output in outputs { resolvers[output.fixture]?.setInternal(output.parameter, raw: output.raw, source: .cue, at: now) }
@@ -331,7 +342,7 @@ public final class DMXStore: @unchecked Sendable {
         }
     }
 
-    /// The value a parameter shows now (MIDI pickup); nil when the fixture is not patched.
+    /// The value a parameter shows now (MIDI pickup); nil when the fixture does not exist.
     public func resolvedRaw(_ fixture: FixtureRef, _ parameter: ParameterID) -> UInt16? {
         queue.sync { resolvers[fixture]?.resolved(parameter).raw }
     }
@@ -353,12 +364,26 @@ public final class DMXStore: @unchecked Sendable {
         }
     }
 
-    /// Replaces the patch (Phase 5 `patch.set`, undo, project load); resolvers of fixtures that stay keep their state.
-    public func setPatch(_ patch: Patch) {
+    /// Replaces the patch and the fixtures that exist (`patch.set`, `layers.setCount`, `output.add`, undo, project load;
+    /// `fixtures` nil: the patched ones). Resolvers of fixtures that stay keep their state, but one that lost its patch
+    /// entry or moved to another universe drops the console's values; a new one takes the policy and the cue's values.
+    public func setPatch(_ patch: Patch, fixtures: Set<FixtureRef>? = nil) {
+        let fixtures = fixtures ?? Set(patch.entries.map(\.fixture))
         queue.async { [self] in
+            let previous = self.patch
             self.patch = patch
+            let now = Self.now
             var kept: [FixtureRef: FixtureResolver] = [:]
-            for entry in patch.entries { kept[entry.fixture] = resolvers[entry.fixture] ?? FixtureResolver(mode: entry.fixture.mode, policy: policy) }
+            for fixture in fixtures {
+                if var resolver = resolvers[fixture] {
+                    if let was = previous.entry(for: fixture), was.universe != patch.entry(for: fixture)?.universe { resolver.clearDMX() }
+                    kept[fixture] = resolver
+                } else {
+                    var resolver = FixtureResolver(mode: fixture.mode, policy: policy)
+                    for output in cue where output.fixture == fixture { resolver.setInternal(output.parameter, raw: output.raw, source: .cue, at: now) }
+                    kept[fixture] = resolver
+                }
+            }
             resolvers = kept
             applyLossModes()
             publish(receivedAt: 0)
@@ -383,7 +408,7 @@ public final class DMXStore: @unchecked Sendable {
         }
     }
 
-    /// Resolved raw values of every patched fixture, in channel-map order (OSC feedback, B36). Only copies on the DMX
+    /// Resolved raw values of every fixture, in channel-map order (OSC feedback, B36). Only copies on the DMX
     /// queue; the addresses are built by the caller on its own queue.
     public func resolvedRaw() -> [FixtureRef: [UInt16]] {
         queue.sync { resolvers.mapValues { $0.resolvedAll().map(\.raw) } }

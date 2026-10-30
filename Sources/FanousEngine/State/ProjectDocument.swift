@@ -349,6 +349,19 @@ public enum ProjectDocument {
         return patch
     }
 
+    /// The fixtures that exist (DESIGN.md §6.6), patched or not: Layer 1…min(`layerCount`, 32), the Master, and Output n
+    /// and Keystone n of every output n ≤ `ParameterSnapshotSlot.maxOutputs`. Each has a resolver.
+    public static func fixtures(layerCount: Int, outputs: [Int]) -> Set<FixtureRef> {
+        var fixtures: Set<FixtureRef> = [.master]
+        for n in 1...ParameterSnapshotSlot.maxLayers where n <= layerCount { fixtures.insert(.layer(n)) }
+        for n in outputs where (1...ParameterSnapshotSlot.maxOutputs).contains(n) { fixtures.formUnion([.output(n), .keystone(n)]) }
+        return fixtures
+    }
+
+    public static func fixtures(from project: JSONValue) -> Set<FixtureRef> {
+        fixtures(layerCount: project["layerCount"]?.int ?? 0, outputs: outputs(from: project).map(\.id))
+    }
+
     public static func patch(from project: JSONValue) -> Patch? {
         guard let entries = project["patch"]?.array else { return nil }
         var result: [PatchEntry] = []

@@ -216,6 +216,159 @@ final class Box { var value = 0 }
         #expect(store.snapshots.read().outputs[0] == OutputParameters())
     }
 
+    // MARK: A fixture exists without a patch (DESIGN.md §6.6 item 1)
+
+    static let a0 = UniverseID(.artnet, 0)
+
+    /// Layer 1 on A 0.0.0 at 1, the Master on A 0.0.1 at 1; nothing else patched.
+    static func store(fixtures: Set<FixtureRef>, policy: SourcePolicy) -> DMXStore {
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 0), fixtures: fixtures, logger: Logger(label: "test"))
+        store.setPolicy(policy)
+        return store
+    }
+
+    /// One console packet on Art-Net port-address `port`, with `bytes` from channel 1.
+    static func console(_ store: DMXStore, port: UInt16 = 0, _ bytes: [UInt8], at time: Double) {
+        var data = [UInt8](repeating: 0, count: 512)
+        data.replaceSubrange(0..<bytes.count, with: bytes)
+        store.queue.sync { store.receive(artnet: ArtDmx(portAddress: port, data: data), from: "desk", at: time) }
+    }
+
+    @Test func anUnpatchedLayerPlaysFromTheUIUnderInternalAndStaysAtDefaultsUnderDMX() {
+        let store = Self.store(fixtures: ProjectDocument.fixtures(layerCount: 2, outputs: []), policy: .internal)
+        store.setUI(.layer(2), .layer(.file), raw: 110)
+        store.setUI(.layer(2), .layer(.intensity), raw: 65535)
+        store.queue.sync {}
+        let playing = store.snapshots.withLatest { $0.layers[1] }
+        #expect(playing.file == 110 && playing.intensity == 1, "\(playing)")
+        store.setPolicy(.dmx)
+        store.queue.sync {}
+        #expect(store.snapshots.withLatest { $0.layers[1] } == LayerParameters())
+    }
+
+    /// Unpatched, or moved to another universe, while the console drives it: the console's look goes (PR #112's
+    /// "defaults, not hold"), the UI values stay.
+    @Test func unpatchingWhileAConsoleDrivesGoesToDefaultsAndKeepsUIValues() {
+        let fixtures = ProjectDocument.fixtures(layerCount: 1, outputs: [])
+        let store = Self.store(fixtures: fixtures, policy: .ltp)
+        let patched = store.currentPatch
+        var unpatched = patched
+        unpatched.entries.removeAll { $0.fixture == .layer(1) }
+        var moved = patched
+        moved.entries = moved.entries.map { $0.fixture == .layer(1) ? PatchEntry(fixture: .layer(1), universe: UniverseID(.artnet, 2), address: 1) : $0 }
+        for (time, change) in [(1000.0, unpatched), (2000, moved)] {
+            store.setPatch(patched, fixtures: fixtures)
+            Self.console(store, [0xFF, 0xFF, 0, 5], at: time)  // full, file 5
+            store.queue.sync { store.applyUI(.layer(1), .layer(.positionX), raw: 65535, at: time + 1) }
+            let driven = store.snapshots.withLatest { $0.layers[0] }
+            #expect(driven.intensity == 1 && driven.file == 5 && driven.positionX == 1, "\(driven)")
+            store.setPatch(change, fixtures: fixtures)
+            store.queue.sync {}
+            var expected = LayerParameters()
+            expected.positionX = 1
+            #expect(store.snapshots.withLatest { $0.layers[0] } == expected, "\(change.entry(for: .layer(1)).map { "\($0.universe)" } ?? "unpatched")")
+        }
+    }
+
+    /// No DMX ever received: the Master's default (full) does not compete, so a UI Master at 50 % wins under `htp`.
+    @Test func htpWithoutDMXLetsAUIMasterAt50Win() {
+        var patch = Patch.standard(layers: 1, outputs: 0)
+        patch.entries.removeAll { $0.fixture == .master }
+        let store = DMXStore(patch: patch, fixtures: ProjectDocument.fixtures(layerCount: 1, outputs: []), logger: Logger(label: "test"))
+        store.setPolicy(.htp)
+        store.setUI(.master, .master(.intensity), raw: 32768)
+        store.queue.sync {}
+        #expect(abs(store.snapshots.withLatest { $0.master } - 0.5) < 0.001)
+    }
+
+    /// A console held the Master at its default (full: its change time never moved) and went silent with hold on loss:
+    /// the held full still competes, so a UI value below it does not win under `htp`.
+    @Test func afterALossWithHoldAHeldDefaultBeatsALowerUIValue() {
+        let store = Self.store(fixtures: ProjectDocument.fixtures(layerCount: 1, outputs: []), policy: .htp)
+        Self.console(store, port: 1, [0xFF, 0xFF], at: 1000)
+        store.queue.sync { store.tick(at: 1010) }
+        #expect(store.snapshot(at: 1010).universes.first { $0.id == "artnet:0.0.1" }?.active == false)
+        store.queue.sync { store.applyUI(.master, .master(.intensity), raw: 32768, at: 1011) }
+        #expect(store.snapshots.withLatest { $0.master } == 1)
+    }
+
+    /// "Defaults from the resolver" (a fixture without DMX under `dmx`) and "defaults from the reset" (PR #112, a fixture
+    /// without a resolver) are the same values.
+    @Test func aFreshResolverGivesTheResetValues() {
+        #expect(LayerParameters.from(FixtureResolver(mode: .layer)) == LayerParameters())
+        #expect(OutputParameters.from(FixtureResolver(mode: .output)) == OutputParameters())
+        let fromResolver = ParameterSnapshotSlot(maxLayers: 0), reset = ParameterSnapshotSlot(maxLayers: 0)
+        fromResolver.master = 0
+        ParameterSnapshotSlot.from(FixtureResolver(mode: .master), into: fromResolver)
+        reset.resetMaster()
+        #expect(fromResolver.master == reset.master && fromResolver.masterControl == reset.masterControl)
+        #expect(fromResolver.masterSpeed == reset.masterSpeed && fromResolver.testPattern == reset.testPattern)
+        let store = DMXStore(patch: Patch(entries: []), fixtures: ProjectDocument.fixtures(layerCount: 1, outputs: [1]), logger: Logger(label: "test"))
+        store.queue.sync { store.publish(receivedAt: 0) }
+        #expect(store.snapshots.withLatest { $0.keystones[0] == matrix_identity_float3x3 && !$0.keystoneInvalid[0] })
+    }
+
+    /// Layer 1…min(layerCount, 32), the Master, and Output n and Keystone n for outputs 1–8: a layer above the count (or
+    /// above 32, even when patched) and output 9 have no resolver.
+    @Test func onlyTheFixturesThatExistHaveAResolver() {
+        let fixtures = ProjectDocument.fixtures(layerCount: 40, outputs: [1, 9])
+        #expect(fixtures == Set((1...32).map(FixtureRef.layer) + [.master, .output(1), .keystone(1)]))
+        #expect(ProjectDocument.fixtures(layerCount: 3, outputs: []) == [.layer(1), .layer(2), .layer(3), .master])
+        let patch = Patch(entries: [PatchEntry(fixture: .layer(33), universe: Self.a0, address: 1)])
+        let store = DMXStore(patch: patch, fixtures: ProjectDocument.fixtures(layerCount: 3, outputs: []), logger: Logger(label: "test"))
+        #expect(store.resolvedRaw(.layer(3), .layer(.intensity)) != nil)
+        #expect(store.resolvedRaw(.layer(4), .layer(.intensity)) == nil)
+        #expect(store.resolvedRaw(.layer(33), .layer(.intensity)) == nil)
+        #expect(store.resolvedRaw(.output(1), .output(.intensity)) == nil)
+    }
+
+    /// The cue engine pushes values only while a fade runs: a layer added while a cue holds its values takes them at once.
+    @Test func aLayerAddedWhileACueHoldsValuesTakesThem() {
+        let store = Self.store(fixtures: ProjectDocument.fixtures(layerCount: 1, outputs: []), policy: .internal)
+        let values = [CueValue(fixture: .layer(2), parameter: .layer(.intensity), raw: 65535), CueValue(fixture: .layer(2), parameter: .layer(.file), raw: 7)]
+        var cues = CueEngine(list: CueList(cues: [Cue(number: 1, values: values)]))
+        cues.go(at: 0)
+        store.setCue(cues.tick(at: 0))  // the fade is over: the runner pushes nothing more
+        store.queue.sync {}
+        #expect(store.snapshots.withLatest { $0.layers[1] } == LayerParameters())
+        store.setPatch(store.currentPatch, fixtures: ProjectDocument.fixtures(layerCount: 2, outputs: []))
+        store.queue.sync {}
+        let added = store.snapshots.withLatest { $0.layers[1] }
+        #expect(added.intensity == 1 && added.file == 7, "\(added)")
+    }
+
+    /// Every output has a Keystone resolver; one with no DMX and no internal value is skipped, so `publish` on the DMX
+    /// queue with eight outputs and no Keystone patched allocates nothing more than with no Keystone resolver at all.
+    /// Asserted in an optimised build (`scripts/check-mallocs.sh`); a debug build prints the counts.
+    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    func mallocCounterKeystoneRecomputeSkipsUnusedKeystones() throws {
+        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        let fixtures = ProjectDocument.fixtures(layerCount: 8, outputs: Array(1...8))
+        var counts: [Int] = []
+        for set in [fixtures, fixtures.filter { if case .keystone = $0 { false } else { true } }] {
+            let store = DMXStore(patch: .standard(layers: 8, outputs: 8), fixtures: set, logger: Logger(label: "test"))
+            var mallocs = 0
+            store.queue.sync {
+                // warm: every slot of the triple buffer written once
+                store.publish(receivedAt: 0)
+                store.publish(receivedAt: 0)
+                store.publish(receivedAt: 0)
+                mallocs = MallocCounter.count {
+                    var i = 0
+                    while i < 100 {
+                        store.publish(receivedAt: 0)
+                        i += 1
+                    }
+                }
+            }
+            counts.append(mallocs)
+        }
+        print("DMXStore.publish × 100, 8 outputs: \(counts[0]) allocations with unused Keystone resolvers, \(counts[1]) without")
+        #if !DEBUG
+            #expect(counts[0] == counts[1], "the Keystone recompute allocated: \(counts)")
+        #endif
+    }
+
     /// Writer at ~1 kHz, the render reader on its own thread and a copy reader at ~2 kHz: no torn slot on either
     /// side, and the render reader's slot never changes under it (also run under `-sanitize=thread`).
     @Test func concurrentWriterRenderReaderAndCopyReader() async throws {
