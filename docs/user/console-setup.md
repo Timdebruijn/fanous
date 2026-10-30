@@ -91,9 +91,18 @@ The pill for a universe is green while packets arrive. It is yellow when
 nothing has been received yet or for up to the universe's loss timeout (2.5 s
 by default) of silence, and red when a patched universe has been silent longer.
 What the fixtures do then is the universe's **Hold on loss** setting; by
-default they **hold their last values**. An unpatched layer or Master holds
-nothing: a layer goes black (no file) and the Master to full, as without a
-console.
+default they **hold their last values**. An unpatched fixture holds nothing
+from the console: unpatching a layer, Master or output (or moving it to another
+universe) drops the console's values.
+
+**Unpatched means no console address, not no control.** Every layer up to the
+layer count (at most 32), the Master and each output's Output and Keystone
+fixture exist whether they are patched or not, and follow the
+[source policy](#sources-and-merging): with **Console only** an unpatched
+fixture stays at its defaults (a layer black with no file, the Master at full,
+an output normal, a Keystone centred); with the other policies the UI, cues,
+OSC and MIDI control it. A show without a console therefore does not need a
+patch at all. The Status column's "no console control" means just that.
 
 ## Universe settings
 
@@ -226,6 +235,11 @@ intensity; folder, file and mode channels fall back to latest wins; HTP in
 console terms). The Layers screen shows the
 policy in the Source column, and the Show control screen warns while the policy
 is Console only. Pick Console + UI (latest wins) for a show that mixes console control with cues.
+With either Console + UI policy the console takes part only once its DMX has
+arrived for that fixture: on an unpatched fixture, or one whose console was
+never heard, the UI and cues are not beaten by a default (an unpatched Master
+can be dimmed from the UI with highest wins). A console that held a value and
+then went silent with **Hold last values** still competes with that held value.
 
 ## First light
 

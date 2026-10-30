@@ -355,6 +355,15 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   picture. Frames, drops, pool shortages (`outOfBuffers`) and unusable frames are counted per layer and logged every
   minute. The camera permission is asked only outside show mode. The app and the engine carry the camera entitlement
   and usage text. Numbered files 1–20 follow with the capture catalog.
+- A fixture exists without a patch (B120 step 1, PR #N, DESIGN §6.6 item 1): every layer up to the layer count (at most
+  32), the Master and each output's Output and Keystone fixture can be controlled whether it has a console address or
+  not; the patch is only the console address. An unpatched fixture follows the source policy: at its defaults under
+  Console only, controlled by the UI, cues, OSC and MIDI under the other policies, so a show without a console no
+  longer has to patch its layers. Before, the UI, cues, OSC and MIDI reached only patched fixtures. Unpatching a
+  fixture, or moving it to another universe, drops the console's values and keeps the UI, cue, OSC and MIDI values.
+  Under Console + UI the console takes part only once its DMX was received, so an unpatched Master can be dimmed from
+  the UI with highest wins (its default, full, used to win). A layer added while a cue holds values takes them at once.
+  `live.dmx.fixtures` and OSC feedback list unpatched fixtures too.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
