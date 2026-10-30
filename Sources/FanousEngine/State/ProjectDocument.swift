@@ -336,6 +336,58 @@ public enum ProjectDocument {
         try project.set(patchValue(patch), at: "/patch")
     }
 
+    /// `patch.set`'s checks, also run on each entry of `patch.setMany`: the fixture and its new entry, nil for address 0
+    /// (unpatch, accepted for any fixture so a stale entry can still go). An address needs a fixture that exists
+    /// (DESIGN.md §6.6).
+    static func checkedEntry(_ args: JSONValue, in project: JSONValue, fixtures: Set<FixtureRef>) throws -> (FixtureRef, PatchEntry?) {
+        guard let fixtureName = args["fixture"]?.string, let fixture = FixtureRef(parsing: fixtureName) else {
+            throw CommandError.invalidArgs("fixture must be \"Layer n\", \"Master\", \"Output n\" or \"Keystone n\"")
+        }
+        guard let universeName = args["universe"]?.string, let universe = UniverseID(parsing: universeName) else {
+            throw CommandError.invalidArgs("universe must be artnet:net.subnet.universe or sacn:n")
+        }
+        guard let address = args["address"]?.int, (0...512).contains(address) else { throw CommandError.invalidArgs("address must be 0 (unpatch) or 1–512") }
+        guard address > 0 else { return (fixture, nil) }
+        if !fixtures.contains(fixture) {
+            switch fixture {
+            case .layer(let n) where n > ParameterSnapshotSlot.maxLayers:
+                throw CommandError.invalidArgs("console control covers layers 1–\(ParameterSnapshotSlot.maxLayers)")
+            case .layer(let n):
+                throw CommandError.invalidArgs("there is no layer \(n): the project has \(project["layerCount"]?.int ?? defaultLayerCount) layers")
+            case .output(let n), .keystone(let n):
+                guard n <= ParameterSnapshotSlot.maxOutputs else { throw CommandError.invalidArgs("console control covers outputs 1–\(ParameterSnapshotSlot.maxOutputs)") }
+                throw CommandError.invalidArgs("there is no output \(n): add the output first")
+            case .master:
+                break
+            }
+        }
+        let entry = PatchEntry(fixture: fixture, universe: universe, address: address)
+        guard entry.fitsInUniverse else { throw CommandError.invalidArgs("\(fixture) does not fit at \(address)") }
+        return (fixture, entry)
+    }
+
+    /// Where `layers.setCount` puts a new Layer n (DESIGN.md §6.6 item 2): on its slot while the Layers group (the
+    /// patched layers up to `existing`) is a Block; else right after Layer n − 1 when that one is patched, else at its
+    /// standard address. Nil when that range is taken or past the last universe: Layer n stays unpatched.
+    static func newLayerEntry(_ n: Int, in patch: Patch, existing: Int) -> PatchEntry? {
+        let footprint = FixtureMode.layer.footprint
+        var placed: [Int: Patch.Slot] = [:]
+        for e in patch.entries {
+            if case .layer(let k) = e.fixture, k <= existing { placed[k] = Patch.Slot(e.universe, e.address) }
+        }
+        let slot =
+            if let start = Patch.blockStart(of: placed, footprint: footprint) {
+                Patch.slot(of: n, from: start, footprint: footprint)
+            } else if let before = placed[n - 1] {
+                Patch.slot(of: 2, from: before, footprint: footprint)
+            } else {
+                Patch.slot(of: n, from: Patch.Slot(UniverseID(.artnet, 0), 1), footprint: footprint)
+            }
+        guard let slot else { return nil }
+        let entry = PatchEntry(fixture: .layer(n), universe: slot.universe, address: slot.address)
+        return patch.entries.contains { $0.universe == entry.universe && $0.channels.overlaps(entry.channels) } ? nil : entry
+    }
+
     /// `[{"fixture":"Layer 3","universe":"artnet:0.0.1","address":17}, …]`, sorted by universe then address.
     public static func patchValue(_ patch: Patch) -> JSONValue {
         .array(
@@ -464,27 +516,37 @@ public enum ProjectDocument {
             })
         store.register(
             CommandSpec(
-                name: "patch.set", role: .programmer, summary: "Patch a fixture (layer, master, output, keystone) to a universe and address, or unpatch it with address 0; an Output or Keystone fixture only for an output that exists (1–8).",
+                name: "patch.set", role: .programmer,
+                summary: "Patch a fixture (layer, master, output, keystone) to a universe and address, or unpatch it with address 0 (any fixture); an address only for a fixture that exists: a layer up to the layer count (1–32), an Output or Keystone fixture of an output that exists (1–8).",
                 argsType: "{ fixture: string; universe: string; address: number }"
             ) { project, args in
-                guard let fixtureName = args["fixture"]?.string, let fixture = FixtureRef(parsing: fixtureName) else {
-                    throw CommandError.invalidArgs("fixture must be \"Layer n\", \"Master\", \"Output n\" or \"Keystone n\"")
-                }
-                guard let universeName = args["universe"]?.string, let universe = UniverseID(parsing: universeName) else {
-                    throw CommandError.invalidArgs("universe must be artnet:net.subnet.universe or sacn:n")
-                }
-                guard let address = args["address"]?.int, (0...512).contains(address) else { throw CommandError.invalidArgs("address must be 0 (unpatch) or 1–512") }
-                if let n = fixture.outputNumber, address > 0 {
-                    guard n <= ParameterSnapshotSlot.maxOutputs else { throw CommandError.invalidArgs("console control covers outputs 1–\(ParameterSnapshotSlot.maxOutputs)") }
-                    guard ProjectDocument.outputs(from: project).contains(where: { $0.id == n }) else {
-                        throw CommandError.invalidArgs("there is no output \(n): add the output first")
-                    }
-                }
+                let (fixture, entry) = try checkedEntry(args, in: project, fixtures: fixtures(from: project))
                 guard var patch = ProjectDocument.patch(from: project) else { throw CommandError.invalidArgs("project has no patch") }
                 patch.entries.removeAll { $0.fixture == fixture }
-                if address > 0 {
-                    guard address + fixture.mode.footprint - 1 <= 512 else { throw CommandError.invalidArgs("\(fixture) does not fit at \(address)") }
-                    patch.entries.append(PatchEntry(fixture: fixture, universe: universe, address: address))
+                if let entry { patch.entries.append(entry) }
+                try project.set(patchValue(patch), at: "/patch")
+                return nil
+            })
+        store.register(
+            CommandSpec(
+                name: "patch.setMany", role: .programmer,
+                summary: "Patch or unpatch several fixtures in one step (one undo): each entry is checked as patch.set checks it; one bad entry, or a fixture listed twice, refuses all.",
+                argsType: "{ entries: { fixture: string; universe: string; address: number }[] }"
+            ) { project, args in
+                guard let list = args["entries"]?.array else { throw CommandError.invalidArgs("args: { entries: [{ fixture, universe, address }] }") }
+                guard var patch = ProjectDocument.patch(from: project) else { throw CommandError.invalidArgs("project has no patch") }
+                let existing = fixtures(from: project)
+                var seen: Set<FixtureRef> = []
+                for (i, item) in list.enumerated() {
+                    let fixture: FixtureRef, entry: PatchEntry?
+                    do {
+                        (fixture, entry) = try checkedEntry(item, in: project, fixtures: existing)
+                    } catch let error as CommandError {
+                        throw CommandError(error.code, "entry \(i + 1): \(error.message); nothing was patched")
+                    }
+                    guard seen.insert(fixture).inserted else { throw CommandError.invalidArgs("\(fixture) is listed twice; nothing was patched") }
+                    patch.entries.removeAll { $0.fixture == fixture }
+                    if let entry { patch.entries.append(entry) }
                 }
                 try project.set(patchValue(patch), at: "/patch")
                 return nil
@@ -492,7 +554,7 @@ public enum ProjectDocument {
         store.register(
             CommandSpec(
                 name: "layers.setCount", role: .programmer,
-                summary: "Set the number of layers (1–64): new layers are patched at their standard address when that range is free, dropped layers are unpatched.",
+                summary: "Set the number of layers (1–64): a new layer goes on its slot of the Layers block, or right after the layer before it when the layers are no block (else at its standard address), and stays unpatched when that range is taken; layers above 32 get no address; dropped layers are unpatched.",
                 argsType: "{ count: number }"
             ) { project, args in
                 guard let count = args["count"]?.int, (1...64).contains(count) else { throw CommandError.invalidArgs("count must be 1–64") }
@@ -502,12 +564,11 @@ public enum ProjectDocument {
                     if case .layer(let n) = $0.fixture { return n > count }
                     return false
                 }
-                if count > previous {
-                    let standard = Patch.standard(layers: count, outputs: 4)
-                    for n in (previous + 1)...count where patch.entry(for: .layer(n)) == nil {
-                        guard let candidate = standard.entry(for: .layer(n)) else { continue }
-                        let free = !patch.entries.contains { $0.universe == candidate.universe && $0.channels.overlaps(candidate.channels) }
-                        if free { patch.entries.append(candidate) }
+                // only layers that exist get an address (layers above 32 never render)
+                let existing = min(count, ParameterSnapshotSlot.maxLayers)
+                if existing > previous {
+                    for n in (previous + 1)...existing where patch.entry(for: .layer(n)) == nil {
+                        if let entry = newLayerEntry(n, in: patch, existing: existing) { patch.entries.append(entry) }
                     }
                 }
                 try project.set(.number(Double(count)), at: "/layerCount")
@@ -787,28 +848,6 @@ extension FixtureRef {
         switch self {
         case .output(let n), .keystone(let n): n
         case .layer, .master: nil
-        }
-    }
-}
-
-extension UniverseID {
-    /// Parses the `description` form: "artnet:net.subnet.universe" or "sacn:n".
-    public init?(parsing text: String) {
-        guard let colon = text.firstIndex(of: ":") else { return nil }
-        let transport = text[..<colon].lowercased()
-        let rest = text[text.index(after: colon)...]
-        switch transport {
-        case "artnet":
-            let parts = rest.split(separator: ".").map { Int($0) }
-            guard parts.count == 3, let net = parts[0], let subnet = parts[1], let universe = parts[2],
-                (0...127).contains(net), (0...15).contains(subnet), (0...15).contains(universe)
-            else { return nil }
-            self = .artnet(net: net, subnet: subnet, universe: universe)
-        case "sacn":
-            guard let n = Int(rest), (1...63999).contains(n) else { return nil }
-            self = UniverseID(.sacn, n)
-        default:
-            return nil
         }
     }
 }

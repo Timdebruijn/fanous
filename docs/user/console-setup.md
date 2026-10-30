@@ -31,6 +31,16 @@ It also has **Add output**; select an output's fixture to **Remove output**.
 Each output has its own Output fixture, patched when the output is added and
 unpatched when it is removed.
 
+**Add layer** continues the layers' block. While every patched layer sits on
+its place counted from one start (Layer n at the start + (n − 1) × 64, moved to
+address 1 of the next universe where a universe is full), the new layer goes on
+its place: with Layers 1 to 8 at A 0.0.4 from address 1, Layer 9 goes to
+A 0.0.5 at 1. When the layers are patched by hand off such a block, it goes
+right after the layer before it, or at its standard address (below) when that
+one is unpatched. When those 64 channels are taken, as by the Master with the
+standard patch of 8 layers, the new layer stays unpatched until you give it an
+address. A layer above the layer count or above 32 cannot get an address.
+
 ## The standard patch
 
 A fresh project is patched like this:
