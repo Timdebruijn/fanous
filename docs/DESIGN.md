@@ -2099,7 +2099,10 @@ that never rendered drops out, so the chain is one set long), and the thread tha
 renders it takes each frozen plan's hold from the replaced plan with its id, once,
 if the copies cover the plan's canvases at their sizes (`OutputPass.adopt`; not on
 MainActor, which would read `held` while the render thread writes it), so the
-output keeps its frame (B111).
+output keeps its frame (B111). When a display changes role (master ↔ secondary)
+its set moves to another thread; if the old driver's thread did not stop within
+1 s, a tick may still be writing the old holds, so the new set gets no
+`previous` and the output holds afresh, with a warning (B118).
 
 The output preview (§11.3) of a frozen output holds with it (B107). For an
 output on the clock-master display its plan takes the master set's plan's
