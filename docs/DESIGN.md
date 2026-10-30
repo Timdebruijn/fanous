@@ -1462,9 +1462,14 @@ full-width aspect.
 *Session:* configured, started and stopped on the capture queue
 (`org.fanous.capture.<uid>`, `.userInteractive`), never on the loader
 thread; the input reads `.starting` meanwhile, and `.failed(reason)` when
-the session cannot start (the layer shows the reason). Among the device's
-formats of the active format's size, a frame-rate range that holds the
-canvas rate wins (1000/1001 apart is the same rate, as
+the session cannot start (the layer shows the reason). A camera
+(`.builtInWideAngleCamera`, `.continuityCamera`) runs at the largest size that
+fits canvas 1 and has a range holding the canvas rate, else the largest that
+fits with a range below the canvas rate (B126: the session preset leaves the
+iPhone at 640x480); nothing fitting keeps the active format's size. Any other
+device (`.external`: cards and UVC webcams) keeps its active format's size,
+which follows its input. Among the device's formats of that size, a frame-rate
+range that holds the canvas rate wins (1000/1001 apart is the same rate, as
 `DisplayModeMatching.sameRate`), the one whose top is closest above it
 first. Its min and max frame durations are both set to the canvas rate,
 clamped to the range, so a camera does not slow down in low light. Without
@@ -1803,7 +1808,7 @@ Screen permission). The owner's live check is in the PR.
 
 | Input | Framework | Pixel path | Kind |
 |---|---|---|---|
-| Capture device | `AVCaptureSession` with one `AVCaptureVideoDataOutput` on its own serial queue; the active format is the device's format whose size matches its current input and whose frame rate is the highest at or below the canvas rate (a card follows its source anyway) | the native format is `AVCaptureDevice.Format.formatDescription.mediaSubType`, not `availableVideoPixelFormatTypes` (that lists what the output can convert to). The output is asked for the native subtype when it is `2vuy` (Cb Y0 Cr Y1) or `yuvs` (YUY2: Y0 Cb Y1 Cr, what Cam Link-class UVC devices send), for `420v` when native is `420v` or `420f`, else for `BGRA` (MJPEG-only webcams: AVFoundation decodes, there is no 4:2:2 to keep) | `2vuy` → `.v216` (same byte order), as `rgba8Unorm` at half width; `yuvs` → new `.yuy2`, the same texture with the pairs swapped (one more shader case, no new matrix); `420v` → `.planarYCbCr`, planes 0 and 1 as `r8Unorm` + `rg8Unorm`; `BGRA` → `.rgba`. The layer shader's Rec.709 video-range matrix (§4.1) reads 8-bit textures unchanged |
+| Capture device | `AVCaptureSession` with one `AVCaptureVideoDataOutput` on its own serial queue; the active format is the device's format of the chosen size (a camera: the largest fitting canvas 1 that holds the canvas rate, B126; any other device: its active format's, which follows its input) with the range per the rule in the prose above | the native format is `AVCaptureDevice.Format.formatDescription.mediaSubType`, not `availableVideoPixelFormatTypes` (that lists what the output can convert to). The output is asked for the native subtype when it is `2vuy` (Cb Y0 Cr Y1) or `yuvs` (YUY2: Y0 Cb Y1 Cr, what Cam Link-class UVC devices send), for `420v` when native is `420v` or `420f`, else for `BGRA` (MJPEG-only webcams: AVFoundation decodes, there is no 4:2:2 to keep) | `2vuy` → `.v216` (same byte order), as `rgba8Unorm` at half width; `yuvs` → new `.yuy2`, the same texture with the pairs swapped (one more shader case, no new matrix); `420v` → `.planarYCbCr`, planes 0 and 1 as `r8Unorm` + `rg8Unorm`; `BGRA` → `.rgba`. The layer shader's Rec.709 video-range matrix (§4.1) reads 8-bit textures unchanged |
 | Display | `SCStream` with `SCContentFilter(display:excludingApplications:exceptingWindows:)`, the engine's `SCRunningApplication` excluded and `exceptingWindows` `[]` (an output on a captured display would feed back) | `BGRA`, ScreenCaptureKit's native output; `SCDisplay.width/height` are points, so the pixel size comes from the display mode's `pixelWidth/Height` (`CGDisplayPixelsWide/High` are points on Retina too), scaled down to fit the canvas when larger (aspect kept); `SCStreamConfiguration.colorSpaceName` set to sRGB explicitly (the default follows the display, P3 on most Macs); `minimumFrameInterval` = the canvas rate; cursor off; no audio; `queueDepth` 6 (built, see step 3a) | `.rgba` as `bgra8Unorm`; a sample whose status is not `.complete` (an idle display) keeps the last texture |
 
 Displays bound as Fanous outputs are left out of 21–28: they would show only

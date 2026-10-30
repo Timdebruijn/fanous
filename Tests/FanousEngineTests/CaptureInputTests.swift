@@ -131,6 +131,28 @@ struct CaptureInputTests {
         #expect(pick([O(subtype: vuy, minRate: 1, maxRate: 30), O(subtype: jpeg, minRate: 1, maxRate: 30)], 30).map { $0.0 == 0 } == true)
     }
 
+    /// B126: a camera takes the largest size that fits the canvas and holds the canvas rate; without a holding range the
+    /// largest that fits and runs below the rate; nothing fitting keeps the active size (nil).
+    @Test func cameraSizePickFitsTheCanvas() {
+        typealias S = CaptureInput.SizeOption
+        let iphone = [S(width: 640, height: 480, minRate: 1, maxRate: 60), S(width: 1280, height: 720, minRate: 1, maxRate: 60), S(width: 1920, height: 1080, minRate: 1, maxRate: 60)]
+        #expect(CaptureInput.pickSize(iphone, fps: 60, canvas: (1920, 1080)).map { $0 == (1920, 1080) } == true)
+        #expect(CaptureInput.pickSize(iphone, fps: 60, canvas: (1280, 720)).map { $0 == (1280, 720) } == true)
+        #expect(CaptureInput.pickSize(iphone, fps: 60, canvas: (1000, 1000)).map { $0 == (640, 480) } == true)
+        // FaceTime camera at a 60 fps canvas: no size holds 60, the largest fitting one (then `pick` runs it at 30)
+        let facetime = [S(width: 1280, height: 720, minRate: 1, maxRate: 30), S(width: 1920, height: 1080, minRate: 1, maxRate: 30)]
+        #expect(CaptureInput.pickSize(facetime, fps: 60, canvas: (1920, 1080)).map { $0 == (1920, 1080) } == true)
+        // a size holding the rate beats a larger one that does not
+        let mixed = [S(width: 1920, height: 1080, minRate: 1, maxRate: 30), S(width: 1280, height: 720, minRate: 1, maxRate: 60)]
+        #expect(CaptureInput.pickSize(mixed, fps: 60, canvas: (1920, 1080)).map { $0 == (1280, 720) } == true)
+        #expect(CaptureInput.pickSize(mixed, fps: 59.94, canvas: (1920, 1080)).map { $0 == (1280, 720) } == true)
+        #expect(CaptureInput.pickSize(mixed, fps: 60, canvas: (320, 240)) == nil)
+        // nothing holds 50: the largest size whose range runs below it, not a larger one only above it (120–240)
+        let fast = [S(width: 1920, height: 1080, minRate: 120, maxRate: 240), S(width: 1280, height: 720, minRate: 1, maxRate: 30)]
+        #expect(CaptureInput.pickSize(fast, fps: 50, canvas: (1920, 1080)).map { $0 == (1280, 720) } == true)
+        #expect(CaptureInput.pickSize([S(width: 1920, height: 1080, minRate: 120, maxRate: 240)], fps: 50, canvas: (1920, 1080)) == nil)
+    }
+
     /// A frame without an IOSurface cannot be shown: counted as unusable (the layer would otherwise read "no signal" with
     /// the device delivering); a frame after `stop()` is not counted.
     @Test func unusableFramesAreCounted() throws {
