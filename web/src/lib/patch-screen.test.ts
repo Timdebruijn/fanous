@@ -4,8 +4,8 @@
 import { describe, expect, it } from 'vitest';
 import type { PatchEntry, UniverseInfo } from './docs';
 import {
-  buildCells, buildFixtures, cellLabel, compareUniverse, defaultPair, frameValues, interfaceOptions, knownUniverses, paramAt, paramName, parseUniverseName,
-  parseChannelMap, rangeText, rowStatus, summarize, universeHealth, universeName, universeOptions, universeSettings,
+  buildCells, buildFixtures, cellLabel, compareUniverse, defaultPair, fixturesText, frameValues, interfaceOptions, paramAt, paramName, parseUniverseName,
+  parseChannelMap, rangeText, rowStatus, summarize, universeHealth, universeName, universeOptions, universeRows, universeSettings,
   type ChannelMap,
 } from './patch-screen';
 
@@ -40,10 +40,6 @@ describe('universe naming and lists', () => {
       'artnet:0.0.0', 'artnet:0.0.1', 'artnet:0.0.2', 'artnet:0.0.3', 'artnet:2.0.0',
       'sacn:1', 'sacn:2', 'sacn:3', 'sacn:4', 'sacn:7',
     ]);
-  });
-
-  it('knows patched plus live universes, ignoring unpatched entries', () => {
-    expect(knownUniverses([at('Layer 1', 'sacn:3', 1), at('Layer 2', 'artnet:0.0.9', 0)], [live('artnet:0.0.1'), live('sacn:3')])).toEqual(['artnet:0.0.1', 'sacn:3']);
   });
 
   it('reads per-universe settings, with the engine defaults for universes without an entry', () => {
@@ -210,5 +206,42 @@ describe('frames and channel map', () => {
     expect(parseChannelMap(null)).toBeNull();
     expect(parseChannelMap({ footprints: { layer: 64 }, modes: {} })).toBeNull();
     expect(parseChannelMap({ footprints: map.footprints, modes: { layer: [], master: [] } })).toBeNull();
+  });
+});
+
+describe('universes panel', () => {
+  const standard = [
+    ...Array.from({ length: 8 }, (_, i) => at(`Layer ${i + 1}`, 'artnet:0.0.0', 1 + 64 * i)),
+    at('Master', 'artnet:0.0.1', 1), at('Output 1', 'artnet:0.0.1', 9), at('Output 2', 'artnet:0.0.1', 17), at('Keystone 2', 'artnet:0.0.1', 89),
+  ];
+
+  it('compresses consecutive fixture numbers per type', () => {
+    const rows = buildFixtures(standard, 8, null, [1, 2]);
+    expect(fixturesText(rows.filter((r) => r.universe === 'artnet:0.0.0'))).toBe('Layers 1–8');
+    expect(fixturesText(rows.filter((r) => r.universe === 'artnet:0.0.1' && r.patched))).toBe('Master, Outputs 1–2, Keystone 2');
+    const some = buildFixtures([at('Layer 1', 'sacn:1', 1), at('Layer 2', 'sacn:1', 65), at('Layer 3', 'sacn:1', 129), at('Layer 5', 'sacn:1', 257), at('Layer 7', 'sacn:1', 385), at('Master', 'sacn:1', 449)], 8, null);
+    expect(fixturesText(some.filter((r) => r.patched))).toBe('Layers 1–3, 5, 7, Master');
+    expect(fixturesText([])).toBe('');
+  });
+
+  it('lists patched, heard and stored universes, sorted, with what is on each', () => {
+    const heard = { ...live('sacn:9'), ageSeconds: 0.4, packets: 12 };
+    const stored = [{ ...universeSettings(undefined, 'artnet:0.0.7'), holdOnLoss: 'zero' as const, interface: 'en0' }];
+    const out = universeRows(buildFixtures(standard, 8, null, [1, 2]), [live('artnet:0.0.0'), heard], stored);
+    expect(out.map((u) => [universeName(u.id), u.text, u.tone])).toEqual([
+      ['A 0.0.0', 'Layers 1–8', 'ok'],
+      ['A 0.0.1', 'Master, Outputs 1–2, Keystone 2', 'ok'],
+      ['A 0.0.7', 'not used', 'faint'],
+      ['S 9', 'heard, nothing patched', 'warn'],
+    ]);
+    expect(out[0]!.line).toBe('Art-Net · All interfaces · Hold last values');
+    expect(out[2]!.line).toBe('Art-Net · en0 · Go to zero');
+    expect(out[0]!.health).toEqual({ tone: 'yellow', text: 'never seen' });
+    expect(out[3]!.health.text).toBe('0.4 s');
+  });
+
+  it('leaves out unpatched fixtures and layers above the count; a listened but never heard universe is not used', () => {
+    const out = universeRows(buildFixtures([at('Layer 1', 'artnet:0.0.2', 0), at('Layer 9', 'artnet:0.0.3', 1)], 8, null), [live('artnet:0.0.3')], undefined);
+    expect(out.map((u) => [u.id, u.text])).toEqual([['artnet:0.0.3', 'not used']]);
   });
 });

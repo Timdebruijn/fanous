@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Pure logic of the Patch / DMX screen: fixture list with channel ranges and collisions, per-universe cell
-// ownership, parameter lookup by fixture-relative channel, universe naming and option lists.
+// ownership, parameter lookup by fixture-relative channel, universe naming and option lists, the Universes panel's rows.
 import type { PatchEntry, UniverseInfo, UniverseSettingsDoc } from './docs';
 
 export const UNIVERSE_SIZE = 512;
@@ -155,15 +155,13 @@ function sortedUnique(ids: string[]): string[] {
   return [...new Set(ids.filter(Boolean))].sort(compareUniverse);
 }
 
-/** Universes the monitor can show: patched (address >= 1) plus every one the engine listens on. */
-export function knownUniverses(patch: readonly PatchEntry[], live: readonly UniverseInfo[]): string[] {
-  return sortedUnique([...patch.filter((e) => e.address >= 1).map((e) => e.universe), ...live.map((u) => u.id)]);
-}
-
 /** Universe choices for a fixture: everything in the patch and the live list plus the standard ones. */
 export function universeOptions(patch: readonly PatchEntry[], live: readonly UniverseInfo[]): string[] {
   return sortedUnique([...patch.map((e) => e.universe), ...live.map((u) => u.id), ...STANDARD_UNIVERSES]);
 }
+
+export const PROTOCOL_LABELS: Record<UniverseSettingsDoc['protocol'], string> = { artnet: 'Art-Net', sacn: 'sACN', both: 'Art-Net + sACN' };
+export const HOLD_LABELS: Record<UniverseSettingsDoc['holdOnLoss'], string> = { hold: 'Hold last values', zero: 'Go to zero', internal: 'UI and cues take over' };
 
 export interface Health {
   tone: 'green' | 'yellow' | 'red';
@@ -342,4 +340,55 @@ export function frameValues(payload: Uint8Array): Uint8Array {
   const out = new Uint8Array(UNIVERSE_SIZE);
   out.set(payload.subarray(0, UNIVERSE_SIZE));
   return out;
+}
+
+// ---- universes panel -------------------------------------------------------------------------------------
+
+/** "Layers 1–8, Master", "Layers 1–3, 5", "Output 2, Keystone 2": per type in list order, consecutive numbers as a range. */
+export function fixturesText(rows: readonly FixtureRow[]): string {
+  const groups = new Map<string, number[]>();
+  for (const r of rows) {
+    const numbers = groups.get(r.typeLabel) ?? [];
+    const index = parseFixture(r.name)?.index ?? 0;
+    if (index > 0) numbers.push(index);
+    groups.set(r.typeLabel, numbers);
+  }
+  return [...groups].map(([label, numbers]) => {
+    if (numbers.length === 0) return label;
+    const n = numbers.sort((a, b) => a - b);
+    const runs: string[] = [];
+    for (let i = 0; i < n.length; i++) {
+      const from = n[i]!;
+      while (n[i + 1] === n[i]! + 1) i++;
+      runs.push(from === n[i] ? `${from}` : `${from}–${n[i]}`);
+    }
+    return `${label}${n.length > 1 ? 's' : ''} ${runs.join(', ')}`;
+  }).join(', ');
+}
+
+export interface UniverseRow {
+  id: string;
+  settings: UniverseSettingsDoc;
+  health: Health;
+  /** "Art-Net · All interfaces · Hold last values" */
+  line: string;
+  /** the fixtures on it, "heard, nothing patched" (a console sending to the wrong universe) or "not used" */
+  text: string;
+  tone: 'ok' | 'warn' | 'faint';
+}
+
+/** One row per universe that a fixture is patched on, the engine hears, or the project stores settings for (DESIGN §6.6). */
+export function universeRows(rows: readonly FixtureRow[], live: readonly UniverseInfo[], stored: readonly UniverseSettingsDoc[] | undefined): UniverseRow[] {
+  const patched = rows.filter((r) => r.patched && r.universe);
+  const ids = sortedUnique([...patched.map((r) => r.universe!), ...live.map((u) => u.id), ...(stored ?? []).map((u) => u.id)]);
+  return ids.map((id) => {
+    const info = live.find((u) => u.id === id);
+    const settings = universeSettings(stored, id);
+    const on = patched.filter((r) => r.universe === id);
+    const line = [PROTOCOL_LABELS[settings.protocol], settings.interface === 'any' ? 'All interfaces' : settings.interface, HOLD_LABELS[settings.holdOnLoss]].join(' · ');
+    const what: Pick<UniverseRow, 'text' | 'tone'> = on.length > 0 ? { text: fixturesText(on), tone: 'ok' }
+      : info && info.ageSeconds >= 0 ? { text: 'heard, nothing patched', tone: 'warn' }
+      : { text: 'not used', tone: 'faint' };
+    return { id, settings, health: universeHealth(info, settings.lossTimeout), line, ...what };
+  });
 }

@@ -27,13 +27,17 @@ describe('layer status word', () => {
   });
 });
 
-describe('source policy names', () => {
-  it('uses plain words for the stored values', () => {
+describe('who controls (source policy) names', () => {
+  it('uses the long labels of DESIGN §6.6 for the stored values', () => {
     expect(policyName('dmx')).toBe('Console only');
-    expect(policyName('internal')).toBe('UI and cues only');
-    expect(policyName('ltp')).toBe('Console + UI (latest wins)');
-    expect(policyName('htp')).toBe('Console + UI (highest wins)');
+    expect(policyName('internal')).toBe('Fanous only (UI, cues, OSC, MIDI)');
+    expect(policyName('ltp')).toBe('Console and Fanous, latest change wins');
+    expect(policyName('htp')).toBe('Console and Fanous, highest value wins');
     expect(policyName('other')).toBe('other');
+  });
+
+  it('has short labels for the Source badge', () => {
+    expect(['dmx', 'internal', 'ltp', 'htp', 'other'].map((p) => policyName(p, true))).toEqual(['Console', 'Fanous', 'Both · latest', 'Both · highest', 'other']);
   });
 });
 

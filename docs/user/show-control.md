@@ -9,10 +9,11 @@ MIDI. Fanous can also be seen and browsed from a console
 over CITP/MSEX.
 
 Before you build a show on cues or OSC or MIDI parameter values, set the project's
-source policy (Patch screen toolbar) to **Console + UI (latest wins)**,
-**Console + UI (highest wins)** or **UI and cues only**: with the default
-**Console only** those values are recorded but do not move a layer, and the
-Show control screen shows a yellow warning. See
+**Who controls** (Patch screen, the card above the fixture table) to **Console
+and Fanous, latest change wins**, **Console and Fanous, highest value wins** or
+**Fanous only (UI, cues, OSC, MIDI)**: with the default **Console only** those
+values are recorded but do not move a layer, and the Show control screen shows
+a yellow warning that points to Patch › Who controls. See
 [console-setup.md](console-setup.md#sources-and-merging).
 
 The **Timecode on/off** switch belongs to the operator and also works under
@@ -277,8 +278,8 @@ parameter shows now, then takes over. When something else changes the value
 (the console, a cue, the UI), it lets go again until it is reached once more.
 Use it for faders so a layer does not jump when you touch one.
 
-MIDI parameter values enter as their own source "MIDI", so the project's source
-policy decides whether they move a layer (not with **Console only**). A
+MIDI parameter values enter as their own source "MIDI", so the project's Who
+controls decides whether they move a layer (not with **Console only**). A
 controller can be left holding a value, so MIDI values are treated like UI
 values: the layer panel says "MIDI control", they are released after masking a
 received console for 10 minutes (**Keep** restarts the count) and **Release**
@@ -287,7 +288,7 @@ controller is unplugged. Mapping changes and Learn are programmer settings and
 are refused while the show is locked; a locked show still follows its MIDI
 controllers.
 
-**Example: APC mini.** Set the source policy to **Console + UI (latest wins)**.
+**Example: APC mini.** Set Who controls to **Console and Fanous, latest change wins**.
 In the MIDI panel:
 
 1. Target **GO**, **Learn**, press the bottom-right pad. That pad is now GO.
@@ -344,7 +345,7 @@ MSEX versions 1.0 to 1.2 are negotiated; the highest common one is used.
 
 ## Not done yet
 
-- **Source policy applies to the whole project**, not per layer: one setting
+- **Who controls applies to the whole project**, not per layer: one setting
   on the Patch screen for every fixture.
 - No MIDI output (controller lights, MSC replies) and no MIDI-triggered cue
   recording. MIDI ranges (low/high of a mapping) can only be set with the
@@ -407,10 +408,11 @@ of a 60 fps canvas, so moving content always looks jerky there.
 Without a console on site, open the Layers screen, select a layer and turn on
 **Control** in its panel. Every channel gets a control: a slider for continuous
 values (double-click: default), a list for modes, a number for folder and file.
-Values enter as the UI source, so the project's source policy must be
-**Console + UI (latest wins)**, **Console + UI (highest wins)** or **UI and cues
-only**; the panel offers **Use Console + UI (latest wins)** when it is Console
-only. With latest wins, whoever moved last wins between console and UI.
+Values enter as the UI source, so the project's Who controls must be
+**Console and Fanous, latest change wins**, **Console and Fanous, highest value
+wins** or **Fanous only (UI, cues, OSC, MIDI)**; the panel offers **Use Console
+and Fanous, latest change wins** when it is Console only. With latest change
+wins, whoever moved last wins between console and UI.
 **Release** hands the layer back to the console. UI control is refused while the
 show is locked.
 

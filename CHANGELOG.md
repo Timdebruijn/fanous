@@ -355,6 +355,14 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   picture. Frames, drops, pool shortages (`outOfBuffers`) and unusable frames are counted per layer and logged every
   minute. The camera permission is asked only outside show mode. The app and the engine carry the camera entitlement
   and usage text. Numbered files 1–20 follow with the capture catalog.
+- Changed: the Patch screen has a **Universes** panel and a **Who controls** card (DESIGN §6.6 item 4, step 4). The
+  panel lists every universe that is patched, heard or has settings, with its protocol, interface, Hold on loss, health
+  pill and the fixtures on it ("Layers 1–8, Master"), or "heard, nothing patched" / "not used". Tapping a row opens the
+  universe's settings, which moved there from Selected fixture, and shows it in the DMX monitor. The toolbar's Source
+  policy is now the Who controls card with a line explaining the choice; its options are named Console only, Fanous only
+  (UI, cues, OSC, MIDI), Console and Fanous (latest change wins / highest value wins), the Layers screen's Source badge
+  says Console, Fanous, Both · latest or Both · highest, and the Show screen's warning points to Patch › Who controls.
+  The stored values (`dmx`, `internal`, `ltp`, `htp`) are unchanged.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
