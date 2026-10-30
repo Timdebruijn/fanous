@@ -81,15 +81,16 @@ With 16 layers, layers 9 to 16 use A 0.0.1 and Master and Outputs move to A 0.0.
 Fanous writes Art-Net universes as `net.subnet.universe`, shortened to
 `A 0.0.1`, and sACN universes as `S 1`. `A 0.0.0` is Art-Net port-address 0.
 Some consoles count Art-Net universes from 0, others from 1: check which one
-yours does.
+yours does, and set the [Patch sheet](#patch-sheet) to match.
 
 ## The Patch / DMX screen (key 4)
 
 The toolbar shows "N fixtures · N universes" and, in red, the number of
-collisions. **Channel map** opens the channel list; **Export GDTF** downloads
-the fixture file. On a wide screen the left column has Who controls and the
-fixture groups, the right column Universes and the DMX monitor; on a narrow
-one (an iPad upright, a phone) they stack in that order.
+collisions. **Patch sheet** says what to patch on the console (see
+[Patch sheet](#patch-sheet)); **Channel map** opens the channel list; **Export
+GDTF** downloads the fixture file. On a wide screen the left column has Who
+controls and the fixture groups, the right column Universes and the DMX
+monitor; on a narrow one (an iPad upright, a phone) they stack in that order.
 
 - **Who controls** (programmer): the project's source policy, with a line
   that explains the current choice (see [Sources and merging](#sources-and-merging)).
@@ -222,6 +223,39 @@ is one step: a toast names it and how many hand-placed fixtures moved, and one
 Undo puts the patch back. A block that would run past the last universe
 (A 127.15.15, S 63999) is not laid at all: the block line says which fixtures
 would not fit, and nothing changes.
+
+### Patch sheet
+
+**Patch sheet** in the Patch toolbar says what to patch on the console, for
+every role. It names the fixture type and modes as the exported GDTF does, so
+you pick the same ones on the console. With 8 layers and two outputs:
+
+| Fixtures | Fixture type | Mode | Count | Universe | Addresses |
+|---|---|---|---|---|---|
+| Layers 1–8 | Fanous | Layer (64ch) | 8 | A 0.0.0 = universe 0 | 1, 65, 129, 193, 257, 321, 385, 449 |
+| Master | Fanous | Master (8ch) | 1 | A 0.0.1 = universe 1 | 1 |
+| Outputs 1–2 | Fanous | Output (8ch) | 2 | A 0.0.1 = universe 1 | 9, 17 |
+
+A block gets a line per universe it covers: with 16 layers from A 0.0.0,
+Layers 9–16 are a second line on A 0.0.1. In a Custom group each fixture has
+its own line. A fixture without an address is not on the sheet, so an unplaced
+one shows as a gap ("Layers 1–4, 6–8").
+
+An Art-Net universe shows as `net.subnet.universe` and as the single number
+most consoles ask for, its port-address: `A 0.0.1 = universe 1`. A console
+that counts Art-Net universes from 1 calls it universe 2: switch on **Count
+Art-Net universes from 1** and the sheet says `A 0.0.1 = universe 2`. The
+browser remembers the switch, and the sheet's header names the count in use,
+so a printout says it too. sACN universes keep their number. A universe that
+receives the other protocol ([Universe settings](#universe-settings),
+Protocol) shows the universe the console sends to: `S 1` for A 0.0.0 set to
+sACN, `A 0.0.0 = universe 0 or S 1` for Both.
+
+A fixture that collides or runs past channel 512 is on the sheet as patched,
+with a red line under the table: fix it on the Patch screen first.
+
+**Print** prints the sheet alone, black on white. **Copy** puts it on the
+clipboard as tab-separated text with a header row, to paste into a spreadsheet.
 
 ## Universe settings
 

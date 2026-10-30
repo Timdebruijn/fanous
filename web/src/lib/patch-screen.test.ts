@@ -7,7 +7,7 @@ import type { PatchEntry, UniverseInfo, UniverseSettingsDoc } from './docs';
 import {
   FALLBACK_FIXTURES, advanceUniverse, blockStart, buildCells, buildPatch, cellLabel, compareUniverse, defaultPair, fixturesText, frameValues,
   groupSlots, interfaceOptions, layEntries, moveAfterLayers, paramAt, paramName, parseUniverseName, parseChannelMap, patchTarget, rangeText, rowStatus, rowSummary,
-  slotOf, standardStart, summarize, universeHealth, universeName, universeOptions, universeRows, universeSettings,
+  sheetFaults, sheetRows, sheetTSV, sheetUniverse, slotOf, standardStart, summarize, universeHealth, universeName, universeOptions, universeRows, universeSettings,
   type ChannelMap, type FixtureRow, type Group, type UniverseRow,
 } from './patch-screen';
 
@@ -413,6 +413,76 @@ describe('blocks', () => {
         'Layer 1: faint no address · Fanous only', 'Master: faint no address · Fanous only', 'Output 1: faint no address · Fanous only', 'Keystone 1: faint not used',
       ]);
     }
+  });
+
+  describe('patch sheet', () => {
+    const sheet = (patch: PatchEntry[], layerCount: number, outputs: number[] = [], fromOne = false) => sheetRows(buildPatch(patch, layerCount, map, outputs).groups, fromOne);
+    const layer = ['Fanous', 'Layer (64ch)'];
+
+    it('gives a block on one universe one line, with the GDTF mode names, and leaves out fixtures without an address', () => {
+      expect(sheet([...standard, at('Keystone 2', 'artnet:0.0.1', 89)], 8, [1, 2])).toEqual([
+        ['Layers 1–8', ...layer, '8', 'A 0.0.0 = universe 0', '1, 65, 129, 193, 257, 321, 385, 449'],
+        ['Master', 'Fanous', 'Master (8ch)', '1', 'A 0.0.1 = universe 1', '1'],
+        ['Outputs 1–2', 'Fanous', 'Output (8ch)', '2', 'A 0.0.1 = universe 1', '9, 17'],
+        ['Keystone 2', 'Fanous', 'Keystone (16ch)', '1', 'A 0.0.1 = universe 1', '89'],
+      ]);
+      expect(sheet([], 8)).toEqual([]);
+    });
+
+    it('gives a block that carries past 512 a line per universe, an unplaced fixture left out', () => {
+      expect(sheet(layers(16, 'artnet:0.0.0', 1, [5]), 16)).toEqual([
+        ['Layers 1–4, 6–8', ...layer, '7', 'A 0.0.0 = universe 0', '1, 65, 129, 193, 321, 385, 449'],
+        ['Layers 9–16', ...layer, '8', 'A 0.0.1 = universe 1', '1, 65, 129, 193, 257, 321, 385, 449'],
+      ]);
+    });
+
+    it('gives each fixture of a Custom group its own line', () => {
+      const rows = sheet([...layers(8, 'artnet:0.0.0', 1, [3]), at('Layer 3', 'artnet:0.0.0', 300)], 8);
+      expect(rows.map((cells) => `${cells[0]} ${cells[3]}× ${cells[5]}`)).toEqual(['Layer 1 1× 1', 'Layer 2 1× 65', 'Layer 3 1× 300', 'Layer 4 1× 193', 'Layer 5 1× 257', 'Layer 6 1× 321', 'Layer 7 1× 385', 'Layer 8 1× 449']);
+    });
+
+    it('counts Art-Net universes from 1 when asked, and leaves sACN numbers alone', () => {
+      expect([false, true].map((fromOne) => sheetUniverse('artnet:0.0.1', fromOne))).toEqual(['A 0.0.1 = universe 1', 'A 0.0.1 = universe 2']);
+      expect(sheetUniverse('artnet:0.1.0', false)).toBe('A 0.1.0 = universe 16');
+      expect(sheetUniverse('artnet:1.0.0', true)).toBe('A 1.0.0 = universe 257');
+      for (const fromOne of [false, true]) {
+        expect(sheet(layers(9, 'sacn:1', 1), 9, [], fromOne)).toEqual([
+          ['Layers 1–8', ...layer, '8', 'S 1', '1, 65, 129, 193, 257, 321, 385, 449'],
+          ['Layer 9', ...layer, '1', 'S 2', '1'],
+        ]);
+      }
+      expect(sheet(standard, 8, [1, 2], true).map((cells) => cells[4])).toEqual(['A 0.0.0 = universe 1', 'A 0.0.1 = universe 2', 'A 0.0.1 = universe 2']);
+    });
+
+    it('names the universe the console sends to when a universe receives the other protocol, or both', () => {
+      const receives = (protocol: UniverseSettingsDoc['protocol']) => [{ ...universeSettings([], 'artnet:0.0.0'), protocol }];
+      expect(sheetUniverse('artnet:0.0.0', false, receives('sacn'))).toBe('S 1');
+      expect(sheetUniverse('artnet:0.0.0', true, receives('both'))).toBe('A 0.0.0 = universe 1 or S 1');
+      expect(sheetUniverse('sacn:2', true, [{ ...universeSettings([], 'sacn:2'), protocol: 'artnet' }])).toBe('A 0.0.1 = universe 2');
+      expect(sheetRows(buildPatch(standard, 8, map).groups, false, receives('sacn')).map((cells) => cells[4])).toEqual(['S 1', 'A 0.0.1 = universe 1']);
+    });
+
+    it('gives a Block one line per universe even when its optional fixtures are placed by hand', () => {
+      const patch = [...standard, at('Keystone 1', 'artnet:0.0.1', 200), at('Keystone 2', 'artnet:0.0.2', 1), at('Keystone 3', 'artnet:0.0.1', 300)];
+      expect(sheet(patch, 8, [1, 2, 3]).filter((cells) => cells[2] === 'Keystone (16ch)').map((cells) => `${cells[0]} ${cells[4]} ${cells[5]}`)).toEqual([
+        'Keystones 1, 3 A 0.0.1 = universe 1 200, 300',
+        'Keystone 2 A 0.0.2 = universe 2 1',
+      ]);
+    });
+
+    it('counts the fixtures on the sheet that collide or run past channel 512', () => {
+      expect(sheetFaults(buildPatch(standard, 8, map).groups)).toBe(0);
+      expect(sheetFaults(buildPatch([...layers(8, 'artnet:0.0.0', 1, [3]), at('Layer 3', 'artnet:0.0.0', 300)], 8, map).groups)).toBe(3);
+      expect(sheetFaults(buildPatch([at('Layer 1', 'artnet:0.0.0', 500)], 1, map).groups)).toBe(1);
+    });
+
+    it('copies as tab-separated text with a header row', () => {
+      expect(sheetTSV(sheet(standard.slice(0, 9), 8))).toBe(
+        'Fixtures\tFixture type\tMode\tCount\tUniverse\tAddresses\n'
+        + 'Layers 1–8\tFanous\tLayer (64ch)\t8\tA 0.0.0 = universe 0\t1, 65, 129, 193, 257, 321, 385, 449\n'
+        + 'Master\tFanous\tMaster (8ch)\t1\tA 0.0.1 = universe 1\t1\n',
+      );
+    });
   });
 });
 
