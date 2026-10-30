@@ -44,7 +44,7 @@
   const expiresIn = $derived(app.live.dmx.uiExpiresIn?.[fixture]);
   const lockTitle = $derived(!can('programmer') ? 'Locked: programmer only' : app.project.showLock ? 'Locked: show lock is on' : undefined);
   const options = $derived(mediaOptions(library));
-  const folderZero = $derived(folderZeroItems(app.live.syphon?.servers));
+  const folderZero = $derived(folderZeroItems(app.live.syphon?.servers, app.live.capture));
   const current = $derived(layer && layer.folder > 0 && layer.file > 0 ? `${layer.folder}/${layer.file}` : '');
   const currentName = $derived(layer && layer.folder > 0 ? mediaPath(library, layer.folder, layer.file) : null);
   // MIDI values are a controller like the UI (B36): same expiry, Keep and Release
@@ -102,7 +102,7 @@
       </select>
     </label>
     <label class="field builtin">
-      <span>Built-in content and Syphon (folder 0)</span>
+      <span>Built-in content and live inputs (folder 0)</span>
       <select class="select" disabled={lockTitle !== undefined} value="" onchange={(e) => {
         const file = Number(e.currentTarget.value);
         e.currentTarget.value = '';

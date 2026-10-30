@@ -70,7 +70,7 @@ test('layers: Control puts content on a layer, and the engine resolves folder, f
   const max = Number(await intensity.getAttribute('max'));
 
   // built-in content: folder 0, the generator's file, full intensity
-  await page.getByLabel('Built-in content and Syphon (folder 0)').selectOption({ label: '101 · Grid' });
+  await page.getByLabel('Built-in content and live inputs (folder 0)').selectOption({ label: '101 · Grid' });
   await expect.poll(resolved).toEqual({ folder: '0 ui', file: '101 ui', intensity: `${max} ui` });
   await expect(row).toContainText('Grid');
   await expect(row.locator('.c-int')).toContainText('100 %');
@@ -89,7 +89,7 @@ test('layers: a layer showing built-in content gets a live thumbnail, an empty l
   await row.click();
   await page.getByRole('switch', { name: 'Control' }).check({ force: true }); // the drawn track covers the input
   await page.getByRole('button', { name: /^Use / }).click();
-  await page.getByLabel('Built-in content and Syphon (folder 0)').selectOption({ label: '101 · Grid' });
+  await page.getByLabel('Built-in content and live inputs (folder 0)').selectOption({ label: '101 · Grid' });
   await expect(row).toContainText('Grid');
   // 4 atlas passes a second: the row's picture turns live (default timeout: CI's paravirtual Metal is slow)
   await expect(row.locator('img[data-live="true"]')).toBeVisible();
@@ -162,8 +162,8 @@ test('patch: Hold on loss is set on the universe in the Universes panel, kept ov
 
 test('media: folder 0 lists the generators and the Syphon servers, and puts one on a layer', async ({ page }) => {
   await openScreen(page, 'Media');
-  await page.getByRole('button', { name: /^0 Built-in and Syphon/ }).click();
-  await expect(page.getByRole('heading', { name: '0 · Built-in and Syphon' })).toBeVisible();
+  await page.getByRole('button', { name: /^0 Built-in and live inputs/ }).click();
+  await expect(page.getByRole('heading', { name: '0 · Built-in and live inputs' })).toBeVisible();
   // no other app publishes Syphon on CI; on a workstation other engines may (this engine's own canvas is never listed)
   const servers = page.getByRole('list', { name: 'Syphon servers (150–169)' });
   await expect(page.getByText(/^No Syphon servers running\./).or(servers)).toBeVisible();

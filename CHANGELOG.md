@@ -342,6 +342,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   A Keystone fixture follows the same rule (patched by hand, unpatched with its output). Console control covers outputs
   1–8, so output 9 and up gets no Output fixture. Fixed on the way: an output whose fixture was unpatched kept its last
   console values (a Blackout stayed black).
+- The Media screen lists cameras and capture cards as folder 0 files 1–20 (B73 step 2c, DESIGN §8.2.1): a group
+  "Cameras and capture cards (1–20)" before the Syphon servers with the same green dot, "not running", "not seen since
+  the engine started" and "in use by another app", **Forget** and **Forget all not running**, a line when the camera
+  permission is not granted, and "Displays (21–28)" once displays are numbered. The layer panel's folder 0 picker lists
+  them too ("Built-in content and live inputs"), and folder 0 is now "0 · Built-in and live inputs". The System screen
+  shows the camera and screen permissions with **Authorize**. An engine without capture shows none of it.
 - Fixed: a layer unpatched while it played (Unpatch, address 0, Remove last layer or a lower layer count) kept playing at
   its last values, and nothing could stop it: the UI, OSC, MIDI and cues reach only patched fixtures. An unpatched layer
   now goes to its defaults (intensity 0, no file: black), and an unpatched Master to 100 %, Normal, speed 100 % and no
@@ -355,6 +361,16 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   picture. Frames, drops, pool shortages (`outOfBuffers`) and unusable frames are counted per layer and logged every
   minute. The camera permission is asked only outside show mode. The app and the engine carry the camera entitlement
   and usage text. Numbered files 1–20 follow with the capture catalog.
+- Added: capture devices are folder 0 files 1–20 (B73 step 2b, PR #120, DESIGN §8.2.1). The engine numbers every
+  camera, capture card and Continuity Camera it sees (lowest free number), keeps the numbers in the project (`/capture`
+  `{"1": {uid, name, model}}`, added to older projects on open) and gives a device its number back after a restart or a
+  replug; a UVC device on another USB port keeps its number when its model and name match exactly one device that is
+  not running. A console or the UI selects File 1–20 in folder 0 like a generator. Two layers on one device share one
+  capture session. A device that goes reads "not running" and keeps its last picture, and its return reconnects the
+  layer; a device another app has open reads "in use by another app". `live.capture` lists the devices and the camera
+  permission. New commands: `capture.forget {file?}` (frees numbers of devices that are not running, undoable) and
+  `capture.authorize {kind: "camera"}` (asks for the camera permission, not in show mode; `screen` comes with displays).
+  New readiness item "Capture permissions granted": it fails while a device is numbered and the camera is not granted.
 - Changed: the Patch screen has a **Universes** panel and a **Who controls** card (DESIGN §6.6 item 4, step 4). The
   panel lists every universe that is patched, heard now or has settings, with its protocol, interface, Hold on loss,
   health pill and the fixtures on it ("Layers 1–8, Master"), or "heard, nothing patched", "feeds A 0.0.0" (the pair of
