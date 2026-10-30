@@ -83,9 +83,10 @@ export interface ChannelMap {
   modes: { layer: ChannelSpec[]; master: ChannelSpec[]; output: ChannelSpec[] };
 }
 
-/** The part of GET /api/library the Layers screen reads: thumbnails and the names for the media picker. */
+/** The part of GET /api/library the Layers screen reads: thumbnails and the names for the media picker (and Warp &
+ *  Slices: the stills for an image mask). */
 export interface LibrarySnapshot {
-  folders: { number: number | null; name?: string; items: { folder: number; file: number | null; name?: string; status?: string; thumbnail?: string | null }[] }[];
+  folders: { number: number | null; name?: string; items: { folder: number; file: number | null; name?: string; kind?: string; status?: string; thumbnail?: string | null }[] }[];
   scannedAt: number;
 }
 
@@ -143,13 +144,14 @@ export function mediaPath(library: LibrarySnapshot | null, folder: number, file:
   return `Folder ${folder}${f.name ? ` · ${plainName(f.name)}` : ''} / ${file} · ${item.name}`;
 }
 
-/** Every addressable, playable item in numeric order, labelled for a picker. */
-export function mediaOptions(library: LibrarySnapshot | null): { folder: number; file: number; label: string }[] {
+/** Every addressable, playable item in numeric order, labelled for a picker; only those of `kind` when given (an image
+ *  mask takes a still). */
+export function mediaOptions(library: LibrarySnapshot | null, kind?: string): { folder: number; file: number; label: string }[] {
   const out: { folder: number; file: number; label: string }[] = [];
   for (const f of library?.folders ?? []) {
     if (f.number === null) continue;
     for (const item of f.items) {
-      if (item.file === null || item.status === 'invalid' || item.status === 'unreadable') continue;
+      if (item.file === null || item.status === 'invalid' || item.status === 'unreadable' || (kind && item.kind !== kind)) continue;
       out.push({ folder: f.number, file: item.file, label: mediaPath(library, f.number, item.file) ?? `Folder ${f.number} / ${item.file}` });
     }
   }

@@ -417,8 +417,8 @@ itself, so at the wall you see which point is selected:
   see the point. Its number is next to it in yellow digits. On a mesh the
   number is row·column: **3·5** is row 3, column 5. On a corner pin or a slice,
   corners are 1 to 4, clockwise from the top left. A mask point has its own
-  number. With Remote's Row, Column or Edge selected, only one point of the
-  group is marked.
+  number; with one of its curve handles selected, the point is marked. With
+  Remote's Row, Column or Edge selected, only one point of the group is marked.
 - The lines are 2 pixels of white with a black edge, so they show on any
   picture. A Blackout, or the Master at 0, hides them. The output's own
   Intensity does not dim them, unlike test patterns.
@@ -451,16 +451,19 @@ projector shows the selected point (**Show on output** above):
 
 - The selection in large type: "corner top-left", "r3 c5" (row 3, column 5 of
   the mesh), "slice 2 · bottom-right", "slice 2 · mask point 5" ("slice 2 ·
-  mask 2 point 5" when the slice has several masks), or a group such as "row 3"
-  with how many points move together.
+  mask 2 point 5" when the slice has several masks, "slice 2 · mask point 5
+  in" or "… out" for one of the point's curve handles), or a group such as
+  "row 3" with how many points move together.
 - **Previous** and **Next** go through the points row by row (left to right,
-  then the next row) and wrap around. With a group selected they step the
+  then the next row) and wrap around; on a mask, point by point, each curved
+  point followed by its in and out handles. With a group selected they step the
   group: the next row, the next column, or the next edge clockwise.
 - **One point**, **Row**, **Column** (mesh only) and **All** choose what moves:
   the selected point, its row or column, or every point. **Top**, **Right**,
   **Bottom** and **Left** select every point on that edge; on a corner pin or a
   slice an edge is its two corners. A mask has no rows, columns or edges;
-  **All** moves the points of every mask of the slice.
+  **All** moves the points of every mask of the slice, their curve handles
+  with them.
   Tapping or dragging a handle on the picture selects just that point again
   (**One point**), and so does turning Remote off or picking another output.
 - The nudge pad moves the selection by 1 px, 10 px, or 0.25 px on a long press.
@@ -505,24 +508,53 @@ a handle stays on the spot you touch while a warp is active.
   slice gets the next strip of the canvas, as wide as the slice is on the
   output (full canvas height). Fine-tune a seam by changing the w of one slice
   and the x of the next by the same amount. The warp (corner pin, mesh) applies to the whole output on top.
+  Two shape buttons act on the selected slice, each one step for **Undo**:
+  **Triangle** moves its top-left and top-right corners to the middle of the
+  top edge, so the picture's top edge is squeezed into that point (drag one of
+  them away and it is four corners again); **Circle** adds an ellipse mask
+  that fills the box around the slice's corners (edit it in Mask mode). The
+  mask stays where it is on the output when you move a corner afterwards: the
+  picture stretches differently, the circle does not move.
 - **Mask**: a mask hides everything of a slice outside its shape (windows,
-  doors, the sky above a building). **Draw mask** and then tap the corners of
-  the area that stays visible on the picture, in order around it; **Done**
-  when you have at least three, **Undo last corner** and **Cancel** while
-  drawing. **Rectangle** starts with a rectangle 10 % inside instead. To add
-  points to an existing mask, turn on **Add points** and tap where the point
-  goes, or double-click anywhere: the point joins the nearest edge. Drag points
-  to move them, nudge with the arrow keys or the pad, **Backspace** (or
-  **Remove point**) deletes the selected one; a mask keeps at least three.
-  **Feather (px)** softens the edge (from 2 px; below that the edge stays
-  plain), **Redraw** starts the shape again, **Remove mask** deletes it.
-  A slice can have several masks (the tools to make more than one, and curved
-  and image masks, come in a later step; a project file can have them
-  already): every mask's points and outline show, and the buttons act on the
-  mask of the selected point, else on the first mask with points (an image
-  mask has none); **Remove mask** removes that one only. A project saved
-  before this version opens with its masks as they were. A browser tab opened
-  before the update cannot change masks or add a slice until you reload it.
+  doors, the sky above a building). A slice can have several. The slice shows
+  what is inside its **add** masks (all of it when it has none), minus what is
+  inside its **subtract** masks: a door or a window is a subtract mask, a hole.
+  The tools each add an add mask, as one step for **Undo**:
+  - **Polygon**: tap the corners of the area that stays visible on the picture,
+    in order around it; **Done** when you have at least three, **Undo last
+    corner** and **Cancel** while drawing.
+  - **Rectangle** and **Ellipse**: drag a box on the picture; the rectangle or
+    the ellipse fills it. **10 % inside** makes one 10 % inside the output
+    without a drag.
+  - **Freehand**: drag along the outline, with the mouse or, on an iPad, a
+    finger on the picture. Letting go closes the shape. It becomes a smooth
+    curve through the fewest points that stay within 2 output pixels of your
+    stroke; drag its points and handles to refine it.
+  - **Image mask**: a still from the library (Media screen), black hides and
+    white shows, stretched over the whole output; shades of grey are partly
+    visible. A file changed in the library is picked up by itself. A missing
+    one covers nothing: as an add mask it shows nothing (alone, the slice is
+    black), as a subtract mask it cuts no hole; System › Readiness warns.
+
+  The **mask list** under the tools shows every mask of the slice: its number
+  (click it to select its first point), **Add** or **Subtract**, its points
+  (or the image), **Invert** (makes an add mask a subtract mask and back),
+  **Feather px** (softens the edge, from 2 px; below that the edge stays plain;
+  an image carries its own softness and has none), **Redraw** (draw its shape
+  again with any tool; it keeps its mode and feather) and **Remove**. On the
+  picture a subtract mask has a dashed outline and hollow points.
+
+  Drag points to move them, nudge with the arrow keys or the pad; the
+  selected point shows its curve handles (small dots on a line), which you
+  drag too, also with the keys. **Double-tap** a point (or **Smooth point**)
+  to make a corner smooth, with handles along its neighbours, or a smooth
+  point a corner again. To add points, turn on **Add points** and tap where
+  the point goes, or double-click anywhere: the point joins the nearest edge;
+  on a curve it lands on the curve and the shape stays as it was. **Backspace**
+  (or **Remove point**) deletes the selected point; a mask keeps at least
+  three. Tab steps through the points and their handles. A project saved
+  before masks v2 opens with its masks as they were. A browser tab opened
+  before that update cannot change masks or add a slice until you reload it.
 - **Content template (PNG)**: downloads a picture at the size of the selected
   slice's canvas that shows, per slice on that canvas, which rectangle it uses
   and (filled) what its masks leave visible (an image mask is not drawn

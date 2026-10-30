@@ -3,7 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script module lang="ts">
   // handle: the selected point (JSON pointer); group: what moves with it in remote mode (lib/remote.ts)
-  const ui = $state({ selected: 0, canvas: 1, tab: 'outputs' as 'canvases' | 'outputs' | 'warp', mapper: 'cornerPin' as MapperMode, slice: 0, handle: null as string | null, group: 'point' as Group, maskAdd: false, draft: null as MapPoint[] | null, remote: storedRemote() });
+  const ui = $state({ selected: 0, canvas: 1, tab: 'outputs' as 'canvases' | 'outputs' | 'warp', mapper: 'cornerPin' as MapperMode, slice: 0, handle: null as string | null, group: 'point' as Group, maskAdd: false, draft: null as MapPoint[] | null, tool: null as MaskTool | null, remote: storedRemote() });
 
   // Remote mode on Warp & Slices, remembered per browser; by default on for touch screens narrower than 900 px
   const REMOTE_KEY = 'fanous.remote';
@@ -38,9 +38,10 @@
   import WallWizard from '../components/WallWizard.svelte';
   import Preview from '../components/Preview.svelte';
   import {
-    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, handles, keystoneBadges, maskHandle, maskTarget, meshIdentity, modeText, nextSliceId, outputSize, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, spreadSources, statusText,
-    type MapPoint, type MapperMode, type OutputConfig,
+    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, circleMask, finishMask, handles, keystoneBadges, maskHandle, maskTarget, meshIdentity, modeText, movedHandle, nextSliceId, outputSize, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, spreadSources, statusText, toggleSmooth, toolPath, triangleDest,
+    type MapPoint, type MapperMode, type MaskPoint, type MaskShape, type MaskTool, type OutputConfig,
   } from '../lib/outputs';
+  import { mediaOptions, mediaPath, type LibrarySnapshot } from '../lib/layers';
   import { app, can, client, cmd, toastUndo } from '../lib/state.svelte';
   import { lockTitle } from '../lib/show';
   import { go } from '../lib/router.svelte';
@@ -162,8 +163,10 @@
     if ((await cmd('output.remove', { id: output.id })) !== undefined) toastUndo(`${name} removed.`);
   }
   function point(path: string, p: MapPoint) {
-    // a mask point keeps its handles
-    set(path, { ...points.find((h) => h.path === path)?.point, x: p.x, y: p.y });
+    // a mask point keeps its Bézier handles; a Bézier handle is stored as the offset from its point
+    if (!output) return;
+    const moved = movedHandle(output, path, p);
+    set(moved.path, moved.value as unknown as JSONValue);
   }
   /** A new density keeps the current shape: the new points are placed on the current surface. */
   function setMesh(n: number) {
@@ -199,15 +202,62 @@
     set('/slices', spreadSources(output.slices, size) as unknown as JSONValue);
     toastUndo('Canvas spread over the slices, left to right.');
   }
-  /** the slice's masks, and the path mask the mask tools act on (−1: none, the tools add one; image masks stay) */
+  /** Slice shapes (DESIGN §9.10 item 5), each one edit: Triangle meets the top corners in the middle of the top edge,
+   *  Circle adds an ellipse mask filling the slice's corners' bounding box */
+  function triangle() {
+    const s = output?.slices[sliceIndex];
+    if (!s) return;
+    set(`/slices/${sliceIndex}/dest`, triangleDest(s.dest) as unknown as JSONValue);
+    toastUndo(`Slice ${s.id} is a triangle: drag a top corner away for a quad again.`);
+  }
+  function circle() {
+    const s = output?.slices[sliceIndex];
+    if (!s) return;
+    set(`/slices/${sliceIndex}/masks`, [...(s.masks ?? []), circleMask(s.dest)] as unknown as JSONValue);
+    toastUndo(`Slice ${s.id} has a circle mask: Mask mode edits it.`);
+  }
+  /** the slice's masks, and the path mask Add points acts on (−1: none) */
   const masks = $derived(output?.slices[sliceIndex]?.masks ?? []);
   const maskIndex = $derived(maskTarget(output?.slices[sliceIndex], sliceIndex, ui.handle));
-  function removeMask() {
-    if (maskIndex < 0) return;
-    const which = masks.length > 1 ? `Mask ${maskIndex + 1}` : 'Mask';
-    set(`/slices/${sliceIndex}/masks`, masks.filter((_, m) => m !== maskIndex) as unknown as JSONValue);
+  /** the selected mask point (also while one of its Bézier handles is selected) */
+  const maskPoint = $derived.by(() => {
+    const h = maskHandle(ui.handle);
+    return h?.slice === sliceIndex ? masks[h.mask]?.path?.[h.point] : undefined;
+  });
+  function removeMask(m: number) {
+    const which = masks.length > 1 ? `Mask ${m + 1}` : 'Mask';
+    set(`/slices/${sliceIndex}/masks`, masks.filter((_, k) => k !== m) as unknown as JSONValue);
     ui.handle = null;
     toastUndo(`${which} of slice ${output?.slices[sliceIndex]?.id} removed.`);
+  }
+  /** Invert: an add mask becomes a subtract mask (a hole) and back */
+  function invertMask(m: number) {
+    set(`/slices/${sliceIndex}/masks/${m}/mode`, masks[m]?.mode === 'subtract' ? 'add' : 'subtract');
+  }
+  /** a double-tap on a mask point (or the Smooth button): corner ↔ smooth; a handle that goes leaves its point selected */
+  function toggleSmoothAt(path: string | null) {
+    const h = maskHandle(path);
+    const list = h?.slice === sliceIndex ? masks[h.mask]?.path : undefined;
+    if (!h || !list || locked) return;
+    const at = `/slices/${sliceIndex}/masks/${h.mask}/path/${h.point}`;
+    set(at, toggleSmooth(list, h.point) as unknown as JSONValue);
+    ui.handle = at;
+  }
+  /** the library's stills, for an image mask (read while the mask tools show, again after each library scan) */
+  let library = $state.raw<LibrarySnapshot | null>(null);
+  $effect(() => {
+    void app.live.library.scannedAt;
+    if (ui.tab !== 'warp' || ui.mapper !== 'mask') return;
+    const abort = new AbortController();
+    fetch('/api/library', { signal: abort.signal })
+      .then((r) => (r.ok ? (r.json() as Promise<LibrarySnapshot>) : null))
+      .then((snapshot) => snapshot && (library = snapshot), () => {});
+    return () => abort.abort();
+  });
+  const stills = $derived(mediaOptions(library, 'still'));
+  function imageMask(value: string) {
+    const [folder, file] = value.split('/').map(Number);
+    if (folder && file) set(`/slices/${sliceIndex}/masks`, [...masks, { mode: 'add', feather: 0, image: { folder, file } }] as unknown as JSONValue);
   }
   /** the points of the mapper mode; the selected one is the anchor of the selection */
   const points = $derived(output ? handles(output, ui.mapper, sliceIndex) : []);
@@ -216,8 +266,9 @@
   const modeGroups = $derived(groups(ui.mapper));
   /** groups are a remote-mode tool: outside it the arrows and the nudge pad move the selected point only */
   const group = $derived(ui.remote && modeGroups.includes(ui.group) ? ui.group : 'point');
-  /** the indices that move together: the selected point, or its row, column, an edge or all */
-  const selection = $derived(members(cells, points.length, group, anchor));
+  /** the indices that move together: the selected point, or its row, column, an edge or all (a mask's Bézier handles
+   *  move with their points then, and do not count) */
+  const selection = $derived(members(cells, points.length, group, anchor).filter((i) => group === 'point' || !maskHandle(points[i]!.path)?.side));
   const selectedHandle = $derived(points[anchor]?.point ?? null);
   /** the selected point as it appears on screen (through the warp), in output pixels */
   const selectedScreen = $derived(selectedHandle && output ? toScreen(output, ui.mapper, selectedHandle) : null);
@@ -302,20 +353,29 @@
     set(`/slices/${sliceIndex}/masks/${maskIndex}/path`, path as unknown as JSONValue);
     ui.handle = `/slices/${sliceIndex}/masks/${maskIndex}/path/${index}`;
   }
-  /** the path mask Redraw replaces; −1: Draw mask adds one */
-  let redrawn = -1;
-  function startDrawing() {
-    redrawn = maskIndex;
-    ui.draft = [];
+  /** the mask Redraw was chosen on, as it was then (`finishMask` looks it up when the shape is done; a copy, as patches
+   *  change the project in place); null: a new mask */
+  let redraw = $state.raw<MaskShape | null>(null);
+  /** a mask tool: Polygon takes taps (`ui.draft`), the others one drag (`ui.tool`); a Redraw keeps its target */
+  function startTool(tool: 'polygon' | MaskTool, target: MaskShape | null = redraw) {
+    redraw = target && $state.snapshot(target);
+    ui.draft = tool === 'polygon' ? [] : null;
+    ui.tool = tool === 'polygon' ? null : tool;
     ui.handle = null;
+    ui.maskAdd = false;
+  }
+  function stopTool() {
+    ui.draft = null;
+    ui.tool = null;
+    redraw = null;
+  }
+  /** a tool's path, as one edit */
+  function addMask(path: MaskPoint[]) {
+    set(`/slices/${sliceIndex}/masks`, finishMask(masks, path, redraw) as unknown as JSONValue);
+    stopTool();
   }
   function finishDrawing() {
-    if (!ui.draft || ui.draft.length < 3) return;
-    const path = ui.draft;
-    const next = redrawn >= 0 ? masks.map((m, i) => (i === redrawn ? { ...m, path } : m)) : [...masks, { mode: 'add', feather: 0, path }];
-    set(`/slices/${sliceIndex}/masks`, next as unknown as JSONValue);
-    ui.draft = null;
-    ui.maskAdd = false;
+    if (ui.draft && ui.draft.length >= 3) addMask(ui.draft);
   }
   function removeMaskPointAt(path: string) {
     if (maskHandle(path)?.slice !== sliceIndex) return;
@@ -428,7 +488,8 @@
         <Preview target={previewTarget} aspect={previewAspect} />
         {#if output && ui.tab === 'warp'}
           <div class="overlay" style:aspect-ratio={previewAspect}>
-            <OutputMapper {output} mode={ui.mapper} {sliceIndex} {size} bind:selected={() => ui.handle, (path) => select({ group: 'point', anchor: points.findIndex((h) => h.path === path) })} marked={selection.length > 1 ? selection.map((i) => points[i]!.path) : []} onchange={point} onnudge={nudgeSelected} onstep={stepSelection} addMode={ui.maskAdd} draft={ui.mapper === 'mask' ? ui.draft : null} onadd={addMaskAt} onremove={removeMaskPointAt} />
+            <OutputMapper {output} mode={ui.mapper} {sliceIndex} {size} bind:selected={() => ui.handle, (path) => select({ group: 'point', anchor: points.findIndex((h) => h.path === path) })} marked={selection.length > 1 ? selection.map((i) => points[i]!.path) : []} onchange={point} onnudge={nudgeSelected} onstep={stepSelection} addMode={ui.maskAdd} draft={ui.mapper === 'mask' ? ui.draft : null} onadd={addMaskAt} onremove={removeMaskPointAt}
+              tool={ui.mapper === 'mask' && !locked ? ui.tool : null} ondraw={addMask} ontoggle={ui.mapper === 'mask' ? toggleSmoothAt : undefined} />
           </div>
         {/if}
         <!-- the preview and the handles show the mapping as edited; the projector shows a preset and the keystone (DESIGN §9.10 item 3) -->
@@ -652,6 +713,8 @@
             <button type="button" class="btn" disabled={locked} onclick={addSlice}>Add slice</button>
             <button type="button" class="btn" disabled={locked} title="Whole canvas on the whole output; the masks stay" onclick={resetSlice}>Reset slice</button>
             <button type="button" class="btn" disabled={locked || output.slices.length < 2} title="One picture across all slices: each slice gets the next strip of the canvas, left to right, as wide as the slice is on the output" onclick={spreadCanvas}>Spread canvas</button>
+            <button type="button" class="btn" disabled={locked || !output.slices[sliceIndex]} title={locked ? LOCKED : 'The top corners meet in the middle of the top edge; drag one away for a quad again'} onclick={triangle}>Triangle</button>
+            <button type="button" class="btn" disabled={locked || !output.slices[sliceIndex]} title={locked ? LOCKED : "Adds an ellipse mask filling the slice's corners; edit it in Mask mode"} onclick={circle}>Circle</button>
             <button type="button" class="btn btn-danger" disabled={locked || output.slices.length <= 1} title={output.slices.length <= 1 ? 'An output needs at least one slice: use Reset slice instead' : undefined} onclick={removeSlice}>Remove slice</button>
           </div>
         {:else}
@@ -662,24 +725,65 @@
                 {#each output.slices as sl, i (sl.id)}<option value={i}>Slice {sl.id}</option>{/each}
               </select>
             </label>
-            {#if ui.draft}
-              <p class="caption grow"><strong>Drawing a mask:</strong> tap the corners of the area that stays visible, in order around it ({ui.draft.length} so far, at least 3).</p>
-              <button type="button" class="btn btn-primary" disabled={ui.draft.length < 3} onclick={finishDrawing}>Done</button>
-              <button type="button" class="btn" disabled={ui.draft.length === 0} onclick={() => (ui.draft = ui.draft!.slice(0, -1))}>Undo last corner</button>
-              <button type="button" class="btn" onclick={() => (ui.draft = null)}>Cancel</button>
-            {:else if maskIndex >= 0}
-              <label class="field"><span>Feather px</span><input class="input mono" type="number" min="0" value={masks[maskIndex]?.feather ?? 0} disabled={locked} onchange={(e) => set(`/slices/${sliceIndex}/masks/${maskIndex}/feather`, Number(e.currentTarget.value))} /></label>
-              <button type="button" class="btn" aria-pressed={ui.maskAdd} disabled={locked} onclick={() => (ui.maskAdd = !ui.maskAdd)}>{ui.maskAdd ? 'Adding points: tap the picture' : 'Add points'}</button>
-              <button type="button" class="btn" disabled={locked || (masks[maskIndex]?.path?.length ?? 0) <= 3 || maskHandle(ui.handle)?.slice !== sliceIndex} onclick={removeMaskPoint}>Remove point</button>
-              <button type="button" class="btn" disabled={locked} onclick={startDrawing}>Redraw</button>
-              <button type="button" class="btn btn-danger" disabled={locked} onclick={removeMask}>Remove mask</button>
-              <p class="caption grow">Tap the picture to add a point where you tap (with Add points on), or double-click anywhere; it joins the nearest edge. Drag points to move them; Backspace removes the selected one.</p>
-            {:else}
-              <button type="button" class="btn btn-primary" disabled={locked || !s} onclick={startDrawing}>Draw mask</button>
-              <button type="button" class="btn" disabled={locked || !s} onclick={() => set(`/slices/${sliceIndex}/masks`, [...masks, defaultMask()] as unknown as JSONValue)}>Rectangle</button>
-              <p class="caption grow">A mask hides everything outside its shape. Draw mask: tap the corners of the visible area on the picture. Feather softens the edge.</p>
-            {/if}
+            <div class="segmented" role="group" aria-label="Mask tools">
+              <button type="button" class="btn" aria-pressed={!!ui.draft} disabled={locked || !s} title="Tap the corners of the area that stays visible" onclick={() => startTool('polygon')}>Polygon</button>
+              {#each [['rectangle', 'Rectangle'], ['ellipse', 'Ellipse'], ['freehand', 'Freehand']] as const as [tool, name] (tool)}
+                <button type="button" class="btn" aria-pressed={ui.tool === tool} disabled={locked || !s} title={tool === 'freehand' ? 'Drag along the outline of the area that stays visible' : 'Drag a box on the picture'} onclick={() => startTool(tool)}>{name}</button>
+              {/each}
+            </div>
+            <label class="field"><span>Image mask</span>
+              <select class="select" disabled={locked || !s || stills.length === 0} value="" onchange={(e) => { imageMask(e.currentTarget.value); e.currentTarget.value = ''; }}>
+                <option value="">{stills.length === 0 ? 'No stills in the library' : 'Add a still from the library…'}</option>
+                {#each stills as o (`${o.folder}/${o.file}`)}<option value={`${o.folder}/${o.file}`}>{o.label}</option>{/each}
+              </select>
+            </label>
           </div>
+          {#if ui.draft || ui.tool}
+            <div class="fields">
+              {#if ui.draft}
+                <p class="caption grow"><strong>{redraw ? 'Redrawing' : 'Drawing'} a mask:</strong> tap the corners of the area that stays visible, in order around it ({ui.draft.length} so far, at least 3).</p>
+                <button type="button" class="btn btn-primary" disabled={ui.draft.length < 3} onclick={finishDrawing}>Done</button>
+                <button type="button" class="btn" disabled={ui.draft.length === 0} onclick={() => (ui.draft = ui.draft!.slice(0, -1))}>Undo last corner</button>
+              {:else if ui.tool === 'freehand'}
+                <p class="caption grow"><strong>{redraw ? 'Redrawing' : 'Drawing'} a mask:</strong> drag along the outline of the area that stays visible, with a finger on an iPad; letting go closes it. It becomes a smooth path whose points you can drag.</p>
+              {:else}
+                {@const tool = ui.tool}
+                <p class="caption grow"><strong>{redraw ? 'Redrawing' : 'Drawing'} a mask:</strong> drag a box on the picture; the {tool} fills it.</p>
+                <button type="button" class="btn" onclick={() => { const path = toolPath(tool!, [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.9 }], size); if (path) addMask(path); }}>10 % inside</button>
+              {/if}
+              <button type="button" class="btn" onclick={stopTool}>Cancel</button>
+            </div>
+          {/if}
+          <ul class="masks" aria-label="Masks of slice {s?.id ?? ''}">
+            {#each masks as m, i (i)}
+              {@const name = `Mask ${i + 1}`}
+              <li class="mask">
+                {#if m.path}
+                  <button type="button" class="btn btn-ghost" aria-pressed={maskHandle(ui.handle)?.slice === sliceIndex && maskHandle(ui.handle)?.mask === i} title="Selects its first point" onclick={() => select({ group: 'point', anchor: points.findIndex((h) => h.path === `/slices/${sliceIndex}/masks/${i}/path/0`) })}>{name}</button>
+                {:else}
+                  <span class="mname">{name}</span>
+                {/if}
+                <span class="badge" class:badge-warn={m.mode === 'subtract'}>{m.mode === 'subtract' ? 'Subtract' : 'Add'}</span>
+                <span class="caption grow ellipsis">{m.image ? (mediaPath(library, m.image.folder, m.image.file) ?? `Image ${m.image.folder} / ${m.image.file}`) : `${m.path?.length ?? 0} points`}</span>
+                <button type="button" class="btn" aria-pressed={m.mode === 'subtract'} aria-label="Invert {name}" title="Add shows what is inside the shape, Subtract cuts it out (a hole)" disabled={locked} onclick={() => invertMask(i)}>Invert</button>
+                {#if m.path}
+                  <label class="field inline"><span>Feather px</span><input class="input mono" type="number" min="0" aria-label="{name} feather px" value={m.feather} disabled={locked} onchange={(e) => set(`/slices/${sliceIndex}/masks/${i}/feather`, Number(e.currentTarget.value))} /></label>
+                  <button type="button" class="btn" aria-label="Redraw {name}" disabled={locked} onclick={() => startTool('polygon', m)}>Redraw</button>
+                {/if}
+                <button type="button" class="btn btn-danger" aria-label="Remove {name}" disabled={locked} onclick={() => removeMask(i)}>Remove</button>
+              </li>
+            {:else}
+              <li class="caption">No masks: the whole slice shows. Add one with a tool above; new masks add, Invert makes a hole.</li>
+            {/each}
+          </ul>
+          {#if maskIndex >= 0 && !ui.draft && !ui.tool}
+            <div class="fields">
+              <button type="button" class="btn" aria-pressed={ui.maskAdd} disabled={locked} onclick={() => (ui.maskAdd = !ui.maskAdd)}>{ui.maskAdd ? 'Adding points: tap the picture' : 'Add points'}</button>
+              <button type="button" class="btn" aria-pressed={!!(maskPoint?.in || maskPoint?.out)} disabled={locked || !maskPoint} title="Smooth: Bézier handles from its neighbours; off: a corner. Double-tap a point does the same" onclick={() => toggleSmoothAt(ui.handle)}>Smooth point</button>
+              <button type="button" class="btn" disabled={locked || !maskPoint || (masks[maskHandle(ui.handle)!.mask]?.path?.length ?? 0) <= 3} onclick={removeMaskPoint}>Remove point</button>
+              <p class="caption grow">Tap the picture to add a point (with Add points on), or double-click anywhere; it joins the nearest edge, on a curve without changing it. Drag points and their handles; double-tap a point for corner or smooth; Backspace removes the selected point.</p>
+            </div>
+          {/if}
         {/if}
         <PresetStrip ids={[output.id]} />
       </section>
@@ -731,6 +835,12 @@
   .ehead .label { text-transform: capitalize; }
   .curve { width: 100px; height: 40px; background: var(--surface-2); border-radius: 4px; }
   .patterns { display: flex; flex-wrap: wrap; gap: 8px; }
+  .masks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .mask { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .mask .caption.grow { flex: 1 1 120px; min-width: 0; }
+  .mask .input { width: 80px; }
+  .mname { padding: 0 12px; font-weight: 600; }
+  .field.inline { flex-direction: row; align-items: center; gap: 8px; }
   @media (max-width: 900px) {
     .list { max-width: none; }
   }

@@ -5,7 +5,7 @@
 // in large type, the trackpad gain and the one `output.set` that moves them. A selection is a group plus an anchor, the
 // index of one point in `handles(output, mode, sliceIndex)`; the anchor is the point the mapper has selected.
 import type { JSONValue } from './protocol';
-import { handles, maskHandle, type MapPoint, type MapperMode, type OutputConfig } from './outputs';
+import { handles, maskHandle, movedHandle, type MapPoint, type MapperMode, type OutputConfig } from './outputs';
 import { nudgeStored, toScreen } from './warp';
 
 export const SIDES = ['top', 'right', 'bottom', 'left'] as const;
@@ -83,7 +83,8 @@ export function step(cells: number[][] | null, count: number, group: Group, anch
   return { group, anchor: order[i < 0 ? (dir > 0 ? 0 : order.length - 1) : wrap(i + dir, order.length)]! };
 }
 
-/** "corner top-left", "r3 c5", "slice 2 · bottom-right", "slice 2 · mask point 5" ("mask 2 point 5" with several), "row 3", "top edge", "all points". */
+/** "corner top-left", "r3 c5", "slice 2 · bottom-right", "slice 2 · mask point 5" ("mask 2 point 5" with several,
+ *  "mask point 5 in" for a Bézier handle), "row 3", "top edge", "all points". */
 export function label(output: OutputConfig, mode: MapperMode, sliceIndex: number, cells: number[][] | null, group: Group, anchor: number): string {
   const slice = mode === 'slices' || mode === 'mask' ? `slice ${output.slices[sliceIndex]?.id ?? sliceIndex + 1} · ` : '';
   const at = cell(cells, anchor);
@@ -100,7 +101,7 @@ export function label(output: OutputConfig, mode: MapperMode, sliceIndex: number
       // the mask's number only when the slice has more than one
       const h = maskHandle(handles(output, mode, sliceIndex)[anchor]?.path);
       const several = (output.slices[sliceIndex]?.masks?.length ?? 0) > 1;
-      return h ? `${slice}mask ${several ? `${h.mask + 1} ` : ''}point ${h.point + 1}` : 'no point selected';
+      return h ? `${slice}mask ${several ? `${h.mask + 1} ` : ''}point ${h.point + 1}${h.side ? ` ${h.side}` : ''}` : 'no point selected';
     }
   }
 }
@@ -108,13 +109,14 @@ export function label(output: OutputConfig, mode: MapperMode, sliceIndex: number
 /** The one `output.set` that moves `indices` by (dx, dy) output pixels as seen on screen, through the warp
  *  (`nudgeStored`). The points move as one: the step stops where the first of them would leave the output, and under a
  *  warp a point whose stored position would leave 0…1 holds the whole group, so a group is never squeezed or bent.
- *  A single point writes its own path (a mask point keeps its handles), several write their whole list (mask points:
- *  the slice's masks). Null when nothing moves. */
+ *  A single point writes its own path (a mask point keeps its handles; a Bézier handle writes its point, `movedHandle`),
+ *  several write their whole list (mask points: the slice's masks; Bézier handles among them move with their points
+ *  only). Null when nothing moves. */
 export function nudgeCommand(
   output: OutputConfig, mode: MapperMode, sliceIndex: number, indices: number[], dx: number, dy: number, size: { w: number; h: number },
 ): { path: string; value: JSONValue } | null {
   const all = handles(output, mode, sliceIndex);
-  const moving = indices.filter((i) => all[i]);
+  const moving = indices.filter((i) => all[i] && (indices.length === 1 || !maskHandle(all[i]!.path)?.side));
   if (moving.length === 0) return null;
   const on = moving.map((i) => toScreen(output, mode, all[i]!.point));
   const limit = (d: number, values: number[]) => Math.min(Math.max(d, Math.min(0, -Math.min(...values))), Math.max(0, 1 - Math.max(...values)));
@@ -128,8 +130,7 @@ export function nudgeCommand(
     return Math.abs((to.x - on[k]!.x - nx) * size.w) > 0.05 || Math.abs((to.y - on[k]!.y - ny) * size.h) > 0.05;
   });
   if (held || moved.every((m, k) => m.x === all[moving[k]!]!.point.x && m.y === all[moving[k]!]!.point.y)) return null;
-  // a mask point keeps its handles
-  if (moving.length === 1) return { path: all[moving[0]!]!.path, value: { ...all[moving[0]!]!.point, ...moved[0]! } };
+  if (moving.length === 1) return movedHandle(output, all[moving[0]!]!.path, moved[0]!) as unknown as { path: string; value: JSONValue };
   if (mode === 'mask') {
     // the points of several masks: their list as a whole
     const masks = (output.slices[sliceIndex]?.masks ?? []).map((m) => ({ ...m, path: m.path?.slice() }));

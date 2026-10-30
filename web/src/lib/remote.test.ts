@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { UNIT_QUAD, defaultMask, meshIdentity, type MapPoint, type MaskShape, type OutputConfig } from './outputs';
+import { UNIT_QUAD, ellipsePath, handles, meshIdentity, rectanglePath, type MapPoint, type MaskPoint, type MaskShape, type OutputConfig } from './outputs';
 import { choose, grid, groups, label, members, nudgeCommand, nudgeQueue, step, trackpad } from './remote';
 import { toScreen } from './warp';
 
@@ -11,7 +11,7 @@ function output(change: Partial<OutputConfig['warp']> = {}): OutputConfig {
     id: 1, name: 'Output 1', display: null, region: null, mode: null, intensity: 1, testPattern: 0,
     blend: {} as OutputConfig['blend'],
     warp: { cornerPin: UNIT_QUAD, mesh: null, ...change },
-    slices: [{ id: 2, canvas: 1, source: { x: 0, y: 0, w: 1, h: 1 }, dest: UNIT_QUAD, masks: [{ ...defaultMask(), path: [...defaultMask().path!, { x: 0.5, y: 0.95 }] }], opacity: 1 }],
+    slices: [{ id: 2, canvas: 1, source: { x: 0, y: 0, w: 1, h: 1 }, dest: UNIT_QUAD, masks: [{ mode: 'add', feather: 0, path: [...rectanglePath({ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.9 }), { x: 0.5, y: 0.95 }] }], opacity: 1 }],
   };
 }
 const size = { w: 1000, h: 500 };
@@ -105,12 +105,37 @@ describe('nudge', () => {
     expect(one.path).toBe('/slices/0/masks/0/path/0');
     expect(one.value).toMatchObject({ y: 0.5, in: { x: -0.1, y: 0 }, out: { x: 0.1, y: 0 } });
     expect((one.value as unknown as MapPoint).x).toBeCloseTo(0.51, 12);
-    expect(label(two, 'mask', 0, null, 'point', 4)).toBe('slice 2 · mask 2 point 2');
-    const all = nudgeCommand(two, 'mask', 0, members(null, 8, 'all', 0), 0, 5, size)!;
+    // the list: mask 1 point 1, its in and out handles, points 2 and 3, then mask 2
+    expect(label(two, 'mask', 0, null, 'point', 6)).toBe('slice 2 · mask 2 point 2');
+    const all = nudgeCommand(two, 'mask', 0, members(null, 10, 'all', 0), 0, 5, size)!;
     expect(all.path).toBe('/slices/0/masks');
     const masks = all.value as unknown as MaskShape[];
     expect(masks[0]!.path![0]).toMatchObject({ in: { x: -0.1, y: 0 }, out: { x: 0.1, y: 0 } });
     masks.forEach((m, i) => m.path!.forEach((p, j) => expect(p.y).toBeCloseTo(two.slices[0]!.masks![i]!.path![j]!.y + 0.01, 12)));
+  });
+
+  it('steps through a mask point and then its Bézier handles; a handle moves alone, as the offset from its point', () => {
+    const o = output();
+    const oval = { ...o, slices: [{ ...o.slices[0]!, masks: [{ mode: 'subtract' as const, feather: 0, path: ellipsePath({ x: 0.2, y: 0.2 }, { x: 0.6, y: 0.6 }) }] }] };
+    const count = handles(oval, 'mask', 0).length;
+    expect(count, 'four points with two handles each').toBe(12);
+    const names = [0, 1, 2, 3].map((i) => label(oval, 'mask', 0, null, 'point', step(null, count, 'point', i - 1, 1).anchor));
+    expect(names).toEqual(['slice 2 · mask point 1', 'slice 2 · mask point 1 in', 'slice 2 · mask point 1 out', 'slice 2 · mask point 2']);
+    expect(label(oval, 'mask', 0, null, 'point', step(null, count, 'point', 0, -1).anchor), 'Previous wraps to the last handle').toBe('slice 2 · mask point 4 out');
+    // the top point's out handle 10 px right: the point stays, its out handle grows by 0.01, its in handle stays
+    const top = oval.slices[0]!.masks[0]!.path[0]!;
+    const knob = nudgeCommand(oval, 'mask', 0, [2], 10, 0, size)!;
+    expect(knob.path).toBe('/slices/0/masks/0/path/0');
+    const moved = knob.value as unknown as MaskPoint;
+    expect([moved.x, moved.y, moved.in]).toEqual([top.x, top.y, top.in]);
+    expect(moved.out!.x).toBeCloseTo(top.out!.x + 0.01, 12);
+    // all points down 5 px: the handles go with them, unchanged, and are not points of their own
+    const all = nudgeCommand(oval, 'mask', 0, members(null, count, 'all', 0), 0, 5, size)!.value as unknown as MaskShape[];
+    expect(all[0]!.path).toHaveLength(4);
+    all[0]!.path!.forEach((p, i) => {
+      expect(p.y).toBeCloseTo(oval.slices[0]!.masks[0]!.path[i]!.y + 0.01, 12);
+      expect([p.in, p.out]).toEqual([oval.slices[0]!.masks[0]!.path[i]!.in, oval.slices[0]!.masks[0]!.path[i]!.out]);
+    });
   });
 
   it('a group moves as one: it stops at the edge of the output instead of being squeezed', () => {

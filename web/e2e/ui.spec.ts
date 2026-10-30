@@ -3,7 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Browser end-to-end tests against a real engine (fixtures.ts). Few and robust: each covers a flow whose bugs unit
 // tests cannot see (wrong JSON pointers, overlapping handles, subscription races).
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
@@ -382,32 +382,204 @@ test('outputs: with two slices on the same corners, a drag moves the selected sl
   await expect.poll(() => handleAt(page, '/slices/0/dest/0')).toEqual({ x: 0, y: 0 });
 });
 
-test('outputs: a Rectangle mask (masks v2) takes a point drag and a feather; Remove mask takes it away', async ({ page }) => {
+/** A pointer drag on the mapping editor from one place to another, given as fractions of the picture, through `via`. */
+async function dragOnEditor(page: Page, points: [number, number][]) {
+  const editor = page.getByRole('application', { name: /Mapping editor/ });
+  await editor.scrollIntoViewIfNeeded();
+  const box = (await editor.boundingBox())!;
+  const at = ([x, y]: [number, number]) => [box.x + x * box.width, box.y + y * box.height] as const;
+  await page.mouse.move(...at(points[0]!));
+  await page.mouse.down();
+  for (const p of points.slice(1)) await page.mouse.move(...at(p), { steps: 4 });
+  await page.mouse.up();
+}
+
+/** The points of a circle around (0.5, 0.5) of the picture, `n` of them, back to the start: a freehand stroke. */
+const loop = (n: number, r = 0.25): [number, number][] => Array.from({ length: n + 1 }, (_, i) => [0.5 + r * Math.cos((2 * Math.PI * i) / n), 0.5 + r * Math.sin((2 * Math.PI * i) / n)]);
+
+/** The number of points a mask row of the list names. */
+async function pointCount(row: Locator): Promise<number> {
+  return Number(/(\d+) points/.exec((await row.textContent()) ?? '')?.[1] ?? NaN);
+}
+
+test('outputs: each mask tool adds a mask on a real engine, and one Undo takes one tool back', async ({ page }) => {
   await addUnassignedOutput(page);
   await page.getByRole('button', { name: 'Warp & Slices' }).click();
   await page.getByRole('button', { name: 'Mask', exact: true }).click();
-  await page.getByRole('button', { name: 'Rectangle' }).click();
-  await expect.poll(async () => Math.round((await handleAt(page, '/slices/0/masks/0/path/2')).x)).toBe(900);
+  const masks = page.getByRole('list', { name: 'Masks of slice 1' }).getByRole('listitem');
+  await expect(masks).toHaveText([/^No masks/]);
+  const point = (m: number, i: number) => page.getByRole('button', { name: `/slices/0/masks/${m}/path/${i}`, exact: true });
+
+  // Rectangle: a box dragged from bottom right to top left gives its 4 corners clockwise from the top left
+  await page.getByRole('button', { name: 'Rectangle', exact: true }).click();
+  await dragOnEditor(page, [[0.75, 0.8], [0.5, 0.5], [0.25, 0.2]]);
+  await expect(masks).toHaveCount(1);
+  const x = async (path: string) => Math.round((await handleAt(page, path)).x);
+  expect(await x('/slices/0/masks/0/path/0')).toBe(250);
+  expect(await x('/slices/0/masks/0/path/2')).toBe(750);
+  await expect(page.getByRole('button', { name: 'Rectangle', exact: true }), 'one shape, then the tool is off').toHaveAttribute('aria-pressed', 'false');
+
+  // Ellipse: 4 points with Bézier handles, shown for the selected point
+  await page.getByRole('button', { name: 'Ellipse', exact: true }).click();
+  await dragOnEditor(page, [[0.1, 0.1], [0.4, 0.5]]);
+  await expect(masks).toHaveCount(2);
+  expect(await x('/slices/0/masks/1/path/0')).toBe(250);
+  await expect(page.getByRole('button', { name: '/slices/0/masks/1/path/0/out', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Mask 2', exact: true }).click();
+  expect(await x('/slices/0/masks/1/path/0/out')).toBe(Math.round(250 + 0.5523 * 150));
+
+  // Polygon: tap the corners, then Done
+  await page.getByRole('button', { name: 'Polygon', exact: true }).click();
+  for (const p of [[0.6, 0.1], [0.9, 0.1], [0.75, 0.4]] as [number, number][]) await dragOnEditor(page, [p]);
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(masks).toHaveCount(3);
+  await expect(point(2, 2)).toHaveCount(1);
+
+  // Freehand with a pointer drag around a circle: a smooth path of several points, each with handles. The engine keeps
+  // edits of the same path less than 1 s apart as one undo step, so this one waits that long
+  await page.waitForTimeout(1100);
+  await page.getByRole('button', { name: 'Freehand', exact: true }).click();
+  await dragOnEditor(page, loop(24));
+  await expect(masks).toHaveCount(4);
+  // the 24 corners of the stroke, and a few more where a screen pixel is more than the 2 output px RDP keeps; far fewer
+  // than the ~100 pointer moves
+  expect(await pointCount(masks.nth(3))).toBeGreaterThanOrEqual(12);
+  expect(await pointCount(masks.nth(3))).toBeLessThan(50);
+  await page.getByRole('button', { name: 'Mask 4', exact: true }).click();
+  await expect(page.getByRole('button', { name: '/slices/0/masks/3/path/0/in', exact: true })).toHaveCount(1);
+
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(masks).toHaveCount(3);
+  await expect(point(2, 2)).toHaveCount(1);
+});
+
+test('outputs: the mask list: an image mask from the library, Invert, feather, a point drag, a double-tap, Remove', async ({ page, engine }) => {
+  const sets: unknown[] = [];
+  page.on('websocket', (socket) =>
+    socket.on('framesent', ({ payload }) => typeof payload === 'string' && payload.includes('"output.set"') && sets.push(JSON.parse(payload))),
+  );
+  await page.goto(`${engine.url}/?token=${engine.token}`);
+  // a still as folder 1 file 1 of a new library
+  const library = join(engine.home, 'library');
+  mkdirSync(join(library, '001_Masks'), { recursive: true });
+  copyFileSync(join(repo, 'Tests/Fixtures/golden/baseline.png'), join(library, '001_Masks/001_door.png'));
+  await openScreen(page, 'System');
+  await page.getByLabel('Library root path').fill(library);
+  await page.getByRole('region', { name: 'Machine' }).getByRole('button', { name: 'Apply' }).click();
+  await addUnassignedOutput(page);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  await page.getByRole('button', { name: 'Mask', exact: true }).click();
+  const masks = page.getByRole('list', { name: 'Masks of slice 1' }).getByRole('listitem');
+
+  // an image mask: no points and no feather
+  await page.getByLabel('Image mask').selectOption('1/1');
+  await expect(masks).toHaveCount(1);
+  await expect(masks.first()).toContainText('door.png');
+  await expect(page.getByLabel('Mask 1 feather px')).toHaveCount(0);
+
+  // a rectangle 10 % inside, the way that needs no drag
+  await page.getByRole('button', { name: 'Rectangle', exact: true }).click();
+  await page.getByRole('button', { name: '10 % inside' }).click();
+  await expect(masks).toHaveCount(2);
+  await expect.poll(async () => Math.round((await handleAt(page, '/slices/0/masks/1/path/2')).x)).toBe(900);
+
+  // Invert: a subtract mask, its outline dashed; Undo makes it an add mask again
+  const invert = page.getByRole('button', { name: 'Invert Mask 2' });
+  await invert.click();
+  await expect(invert).toHaveAttribute('aria-pressed', 'true');
+  await expect(masks.nth(1)).toContainText('Subtract');
+  await expect(page.locator('.mapper polyline[stroke-dasharray="8 6"]')).toHaveCount(1);
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(invert).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('.mapper polyline[stroke-dasharray="8 6"]')).toHaveCount(0);
+  await invert.click();
+  await expect(invert).toHaveAttribute('aria-pressed', 'true');
+  await invert.click();
+  await expect(invert, 'and back').toHaveAttribute('aria-pressed', 'false');
 
   // the bottom-right point to the middle of the picture
-  const handle = (await page.getByRole('button', { name: '/slices/0/masks/0/path/2', exact: true }).boundingBox())!;
+  const handle = (await page.getByRole('button', { name: '/slices/0/masks/1/path/2', exact: true }).boundingBox())!;
   const editor = (await page.getByRole('application', { name: /Mapping editor/ }).boundingBox())!;
   await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
   await page.mouse.down();
   await page.mouse.move(editor.x + editor.width / 2, editor.y + editor.height / 2, { steps: 8 });
   await page.mouse.up();
-  await expect.poll(async () => Math.round((await handleAt(page, '/slices/0/masks/0/path/2')).x / 10)).toBe(50);
+  await expect.poll(async () => Math.round((await handleAt(page, '/slices/0/masks/1/path/2')).x / 10)).toBe(50);
 
-  await page.getByLabel('Feather px').fill('6');
-  await page.getByLabel('Feather px').press('Enter');
+  const feather = page.getByLabel('Mask 2 feather px');
+  await feather.fill('6');
+  await feather.press('Enter');
   // the field as the project has it: away to another mode and back
   await page.getByRole('button', { name: 'Slices', exact: true }).click();
   await page.getByRole('button', { name: 'Mask', exact: true }).click();
-  await expect(page.getByLabel('Feather px')).toHaveValue('6');
+  await expect(feather).toHaveValue('6');
 
-  await page.getByRole('button', { name: 'Remove mask' }).click();
-  await expect(page.getByRole('button', { name: 'Draw mask' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '/slices/0/masks/0/path/0', exact: true })).toHaveCount(0);
+  // a double-tap on a corner makes it smooth (handles from its neighbours), one Undo makes it a corner again
+  await page.waitForTimeout(1100); // the drag above wrote this point less than 1 s ago: the engine would join the steps
+  const corner = page.getByRole('button', { name: '/slices/0/masks/1/path/1', exact: true });
+  const smooth = page.getByRole('button', { name: 'Smooth point' });
+  const before = sets.length;
+  await corner.dblclick({ position: { x: (await corner.boundingBox())!.width / 2, y: (await corner.boundingBox())!.height / 2 } });
+  await expect(page.getByRole('button', { name: '/slices/0/masks/1/path/1/in', exact: true })).toHaveCount(1);
+  expect(sets.length - before, 'the toggle only: a tap without a move sends nothing').toBe(1);
+  await expect(smooth).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByRole('button', { name: '/slices/0/masks/1/path/1/in', exact: true })).toHaveCount(0);
+  await expect(smooth).toHaveAttribute('aria-pressed', 'false');
+  expect(Math.round((await handleAt(page, '/slices/0/masks/1/path/1')).x), 'the taps did not move it').toBe(900);
+
+  await page.getByRole('button', { name: 'Remove Mask 1' }).click();
+  await expect(masks).toHaveCount(1);
+  await expect(masks.first()).toContainText('4 points');
+  await expect(page.getByLabel('Mask 1 feather px')).toHaveValue('6');
+});
+
+test('outputs: the slice shapes Triangle and Circle, one Undo each', async ({ page }) => {
+  await addUnassignedOutput(page);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  await page.getByRole('button', { name: 'Slices', exact: true }).click();
+  await page.getByRole('button', { name: 'Triangle', exact: true }).click();
+  await expect.poll(() => handleAt(page, '/slices/0/dest/0')).toEqual({ x: 500, y: 0 });
+  expect(await handleAt(page, '/slices/0/dest/1')).toEqual({ x: 500, y: 0 });
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(() => handleAt(page, '/slices/0/dest/1')).toEqual({ x: 1000, y: 0 });
+  expect(await handleAt(page, '/slices/0/dest/0')).toEqual({ x: 0, y: 0 });
+
+  // Circle on a slice whose corners span 0…1: the ellipse touching the middle of each edge
+  await page.getByRole('button', { name: 'Circle', exact: true }).click();
+  await page.getByRole('button', { name: 'Mask', exact: true }).click();
+  await expect.poll(() => handleAt(page, '/slices/0/masks/0/path/0')).toEqual({ x: 500, y: 0 });
+  expect((await handleAt(page, '/slices/0/masks/0/path/1')).x).toBe(1000);
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByRole('list', { name: 'Masks of slice 1' }).getByRole('listitem')).toHaveText([/^No masks/]);
+});
+
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('outputs: Freehand by touch: a finger dragged around on the picture draws a smooth mask', async ({ page }) => {
+    await addUnassignedOutput(page);
+    await page.getByRole('button', { name: 'Warp & Slices' }).click();
+    await page.getByRole('button', { name: 'Mask', exact: true }).click();
+    await page.getByRole('button', { name: 'Freehand', exact: true }).click();
+    const editor = page.getByRole('application', { name: /Mapping editor/ });
+    await editor.scrollIntoViewIfNeeded();
+    const box = (await editor.boundingBox())!;
+    // Playwright's touchscreen only taps: a drag goes through the DevTools protocol, as touch events with their pointers
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (type: string, [x, y]: [number, number]) =>
+      cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x: box.x + x * box.width, y: box.y + y * box.height }] });
+    const stroke = loop(24, 0.3);
+    await touch('touchStart', stroke[0]!);
+    for (const p of stroke.slice(1)) await touch('touchMove', p);
+    await touch('touchEnd', stroke.at(-1)!);
+    const masks = page.getByRole('list', { name: 'Masks of slice 1' }).getByRole('listitem');
+    await expect(masks).toHaveText([/^Mask 1/]);
+    expect(await pointCount(masks.first())).toBeGreaterThanOrEqual(12);
+    expect(await pointCount(masks.first())).toBeLessThan(25);
+    const first = await handleAt(page, '/slices/0/masks/0/path/0');
+    expect(Math.round(first.x / 10)).toBe(80);
+  });
 });
 
 test('outputs: a change of mesh density keeps the shape; Reset mesh flattens it', async ({ page }) => {
