@@ -1575,7 +1575,7 @@ public final class Engine: @unchecked Sendable {
     }
 
     /// CoreAudio/CoreMIDI/getifaddrs lookups are slow and rarely change: refreshed every 5 s off the feed queue, the
-    /// CoreAudio list only after CoreAudio said a device came or went (B132: that lookup took 0.5–2.2 s now and
+    /// CoreAudio list only after CoreAudio said a device came or went (B133: that lookup took 0.5–2.2 s now and
     /// then). The first CoreAudio/CoreMIDI call of a process can take seconds (a CI virtual machine took over 5 s);
     /// the live document goes out with the last known facts (none at start) and carries the fresh ones on the next
     /// tick.

@@ -548,7 +548,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   the canvas rate, else the largest that fits, instead of its active format's size (the iPhone stayed at 640x480);
   capture cards and UVC devices keep following their input (B126, PR #149).
 - Changed: the live document's audio input list is read from CoreAudio when CoreAudio reports a device coming or
-  going, not every 5 s; the sporadic 0.5–2 s `host lookups slow` warnings came from that poll (B132, PR #153).
+  going, not every 5 s; the sporadic 0.5–2 s `host lookups slow` warnings came from that poll (B133, PR #153).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
