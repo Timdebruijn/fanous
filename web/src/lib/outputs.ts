@@ -250,15 +250,19 @@ export function compareLease(send: (preset: number) => void, every = 2000) {
 export type OverlaySelection = { slice: number; kind: 'corner' | 'mesh' | 'slice' | 'mask'; mask?: number; point: number };
 
 /** The point the edit overlay marks on the output (`output.overlay`'s `selected`): the anchor's index in the mode's
- *  handles, on slice `slice` (its index); null with nothing selected. A slice has one mask until masks v2. */
+ *  handles, on slice `slice` (its index; 0 for a corner pin or mesh point, which the engine reads without one, so
+ *  picking another slice sends nothing new); null with nothing selected. A slice has one mask until masks v2. */
 export function overlaySelection(mode: MapperMode, slice: number, point: number): OverlaySelection | null {
   if (point < 0) return null;
-  return { slice, kind: ({ cornerPin: 'corner', mesh: 'mesh', slices: 'slice', mask: 'mask' } as const)[mode], point };
+  const kind = ({ cornerPin: 'corner', mesh: 'mesh', slices: 'slice', mask: 'mask' } as const)[mode];
+  return { slice: kind === 'corner' || kind === 'mesh' ? 0 : slice, kind, point };
 }
 
 /** The edit overlay's lease from Warp & Slices (DESIGN §9.10 item 4): `start` sends at once when the output or the
- *  selection changed (or it was off) and renews every `every` ms; after `quiet` ms without `edited` it stops renewing
- *  and calls `idle` (the engine lets the lease run out); `stop` ends it with `on: false`. */
+ *  selection changed (or it was off) and renews every `every` ms; after `quiet` ms without `edited` (an edit, the tab
+ *  opened or the switch turned on) it ends the lease with `on: false` and calls `idle`, and a `start` after that long
+ *  does the same instead of sending (a lease off meanwhile: a hidden page, show lock or show mode); `stop` ends it with
+ *  `on: false`. */
 export function overlayLease(send: (id: number, on: boolean, selected: OverlaySelection | null) => void, idle: () => void, every = 2000, quiet = 600_000) {
   let timer: ReturnType<typeof setInterval> | null = null;
   let id = 0, selected: OverlaySelection | null = null, editedAt = 0;
@@ -272,7 +276,7 @@ export function overlayLease(send: (id: number, on: boolean, selected: OverlaySe
     start(output: number, next: OverlaySelection | null) {
       if (timer && output === id && JSON.stringify(next) === JSON.stringify(selected)) return;
       if (timer && output !== id) stop();
-      if (!timer) editedAt = Date.now();  // the quiet time counts from opening
+      if (!timer && Date.now() - editedAt >= quiet) return idle();
       [id, selected] = [output, next];
       send(id, true, selected);
       if (timer) clearInterval(timer);

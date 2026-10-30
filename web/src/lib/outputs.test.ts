@@ -143,6 +143,7 @@ describe('outputs helpers', () => {
       const a = overlaySelection('mesh', 0, 7), b = overlaySelection('slices', 1, 2);
       lease.stop();
       expect(sent, 'nothing to end').toEqual([]);
+      lease.edited();  // the tab opens
       lease.start(1, a);
       lease.start(1, overlaySelection('mesh', 0, 7));  // the same again (the screen re-runs its effect): nothing new
       vi.advanceTimersByTime(4100);
@@ -166,7 +167,10 @@ describe('outputs helpers', () => {
       vi.advanceTimersByTime(10_000);
       lease.stop();
       expect(sent.length, 'stopped: nothing more, not even an ending').toBe(count);
-      lease.start(2, null);  // the switch on again
+      lease.start(2, null);  // the screen's effect runs again (another selection, the page shown): still idle
+      expect([sent.length, idle]).toEqual([count, 2]);
+      lease.edited();  // the switch on again
+      lease.start(2, null);
       lease.stop();
       expect(sent.slice(count)).toEqual([[2, true, null], [2, false, null]]);
     } finally {
@@ -174,9 +178,34 @@ describe('outputs helpers', () => {
     }
   });
 
+  it('edit overlay lease: off while the page is hidden or the show locked, back afterwards within 10 minutes of the last edit', () => {
+    vi.useFakeTimers();
+    try {
+      const sent: [number, boolean][] = [];
+      let idle = 0;
+      const lease = overlayLease((id, on) => sent.push([id, on]), () => idle++);
+      lease.edited();
+      lease.start(1, null);
+      vi.advanceTimersByTime(60_000);
+      lease.stop();  // the page hidden, the show locked
+      expect(sent.at(-1)).toEqual([1, false]);
+      vi.advanceTimersByTime(300_000);
+      lease.start(1, null);  // shown again 6 minutes after the edit: on
+      expect(sent.at(-1)).toEqual([1, true]);
+      lease.stop();
+      vi.advanceTimersByTime(300_000);
+      const count = sent.length;
+      lease.start(1, null);  // 11 minutes: idle, nothing sent
+      expect([sent.length, idle]).toEqual([count, 1]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('edit overlay selection and badges', () => {
     const status = { id: 1, state: 'bound' as const, display: 'Epson', width: 1920, height: 1200, hz: 60, master: true };
-    expect(overlaySelection('cornerPin', 0, 3)).toEqual({ slice: 0, kind: 'corner', point: 3 });
+    expect(overlaySelection('cornerPin', 2, 3)).toEqual({ slice: 0, kind: 'corner', point: 3 });
+    expect(overlaySelection('mesh', 4, 7)).toEqual({ slice: 0, kind: 'mesh', point: 7 });
     expect(overlaySelection('mask', 2, 5)).toEqual({ slice: 2, kind: 'mask', point: 5 });
     expect([overlaySelection('mesh', 0, 7)?.kind, overlaySelection('slices', 1, 2)?.kind]).toEqual(['mesh', 'slice']);
     expect(overlaySelection('slices', 0, -1), 'nothing selected').toBeNull();

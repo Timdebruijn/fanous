@@ -157,6 +157,5 @@
   .fields .input { width: 110px; }
   .stepper input { width: 90px; }
   .switch { position: relative; }
-  .switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
   p { margin: 0; }
 </style>

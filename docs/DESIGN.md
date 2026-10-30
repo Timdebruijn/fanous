@@ -2805,7 +2805,11 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
     compiles (`OutputPlan.overlay`). **Deviation:** one object keyed by output id, each entry (lease end, selection,
     lines) that output's box, instead of a box per output: the coordinator, the render threads and `live.outputs` reach
     every output's entry behind one `Mutex`. An entry is replaced whole; writes come from the main actor only (the
-    lease, a rebuild at every rebind, `endAll`), so two builds never race.
+    lease, a rebuild at every rebind, `endAll`, each `@MainActor`), so two builds never race.
+  - **Rebuild after the swap** (review): a rebind rebuilds the running leases' lines after its new plans are swapped
+    in, so during a drag the lines follow the picture instead of leading it.
+  - A lease taken right after `output.add`, before the coordinator has applied the new output, finds no mapping and
+    draws nothing; the next renewal (2 s) brings it.
   - **Expiry without a tick:** the render threads draw an entry while the frame time is before its end (`now + 5 s` at
     the last call, host time), so a lease ends exactly 5 s after its last renewal on every display; the next lease or
     rebind drops it. A renewal with the same selection keeps the lines; the latest call's selection wins.
@@ -2827,12 +2831,22 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
     picture's corner, not the pin handle (a `ponytail:`).
   - **Cap:** 16,384 segments (640 KB); a 33 × 33 mesh is 4,224 and a slice 256. Past it the last lines (the last
     slices' outlines and masks) are not drawn; the selection always is.
+  - **Far-off points** (review): nothing bounds a point's coordinates (`validate` does not; `output.set`, a hand-edited
+    file), so appending stops at the cap instead of trimming afterwards, and a mask edge's piece count is clamped before
+    it becomes an `Int`: a point at 1e19 trapped it, one at 1e7 built some 640 million segments first.
 - **Render.** One draw per output after its slices or test pattern (`OutputPass.drawOverlay`), `overlayPipeline`
-  (opaque), one 256-byte slot of the tick's rotating uniform buffer (M2.5). `overlay_vertex` reads a segment per six
-  vertices, sends both ends through the edited warp field (`plan.warpField`) and the keystone, then extrudes in pixels
-  of the region; an end beyond the keystone's vanishing line draws nothing. Instanced twice: instance 0 draws every
-  segment 1 px wider on each side in black, instance 1 the cores over all of them, so a crossing never cuts a line.
-  Colour × the Master, 0 at the output's Blackout; no blend map, colour, lift or dither.
+  (opaque), in the tick's rotating uniform buffer (M2.5). `overlay_vertex` reads a segment per six vertices, sends both
+  ends through the edited warp field (`plan.warpField`) and the keystone, then extrudes in pixels of the region; an end
+  beyond the keystone's vanishing line draws nothing. Instanced twice: instance 0 draws every segment 1 px wider on each
+  side in black, instance 1 the cores over all of them, so a crossing never cuts a line. Colour × the Master, 0 at the
+  output's Blackout; no blend map, colour, lift or dither.
+  - **Uniform slots of its own** (review): the overlays take theirs from 8 kept at the end of the buffer
+    (`OutputPass.overlaySlots`; the buffer grew from 64 to 72 slots of 256 bytes), so an overlay never costs a later
+    output on the display its last slice. A ninth overlay on one display is not drawn.
+  - **Clipped like the slices** (review): `[[clip_distance]]` at the output's own edges before the keystone, as
+    `mapped_vertex`, with each vertex taking its segment end's position, not where it is extruded to, so a line on an
+    edge stays whole while outlines of points outside 0…1 do not show in the margin a shrinking keystone leaves. (A
+    warp field clamps points outside 0…1 onto the edge before that, as it does for the slices.)
   - **Not drawn:** in raw; while the preset shown, or a running morph's other side, is one the plan has (a number it
     lacks draws the edited mapping, and the overlay with it); on previews, whose plans the engine compiles without
     `EditOverlay`. The clock-master display and secondary displays draw it at their own frame time.
@@ -2843,21 +2857,36 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
   lease starts or ends or a preset or Raw does. An output on no display says "shown" too: it has nothing to draw on.
 - **UI** (Warp & Slices). A **Show on output** switch at the start of the badge row under the preview; on whenever the
   tab opens. `overlayLease` (`lib/outputs.ts`, the shape of `compareLease`) sends at once when the output or the
-  selection changes (`overlaySelection`: the selected handle, else null) and renews every 2 s; another output ends the
-  first one's lease; 10 minutes without an edit (an `output.set` or a nudge from this screen) stop the renewals and turn
-  the switch off; leaving the tab or the screen, or the switch, sends `on: false`. Nothing is sent without the role or
-  under show lock, and in show mode it is off; the switch says why. "Overlay hidden: a preset shows" or "Overlay
-  hidden: Raw" in yellow among the badges. The iPad remote mode's large label already names the kind ("corner
-  top-left", "r3 c5", "slice 2 · bottom-right", "slice 2 · mask point 5").
+  selection changes (`overlaySelection`: the selected handle, else null; slice 0 for a corner or mesh point, so picking
+  another slice sends nothing) and renews every 2 s; another output ends the first one's lease. 10 minutes without an
+  edit (an `output.set` or a nudge from this screen; opening the tab and switching on start the 10 minutes too) send
+  `on: false` and turn the switch off; leaving the tab or the screen, or the switch, sends `on: false`.
+  - **Quiet** (review): the lease goes out through `client.cmd(…).catch(() => {})`, not `cmd()`, which clears the last
+    refusal's banner on every success and raises one per failure: a renewal every 2 s would wipe other banners and
+    repeat "not connected" through an outage. The next renewal heals a lost one. Compare's lease (`PresetStrip`) is sent
+    the same way.
+  - **Off while it cannot be on** (review): without the role, under show lock and in show mode the lease is ended (not
+    sent under show lock: the engine ended it), and the switch shows off, disabled, with the reason as a caption beside
+    it (`aria-describedby`); the `.switch` focus ring and disabled look are in `app.css` for every switch now. Also off
+    while the engine does not render (the switch is not shown then) and while the page is hidden (`visibilitychange`: a
+    hidden tab's timers run once a minute, so the lease would lapse and blink back). Coming back from any of these, the
+    lease starts again unless 10 minutes have passed since the last edit, then the switch turns off instead.
+  - "Overlay hidden: a preset shows" or "Overlay hidden: Raw" in yellow among the badges. The iPad remote mode's large
+    label already names the kind ("corner top-left", "r3 c5", "slice 2 · bottom-right", "slice 2 · mask point 5").
+  - **Two clients** on Warp & Slices for the same output share its one lease: the latest call's selection is drawn, so
+    the projector alternates between their selections, and one client leaving (`on: false`) ends the other's overlay
+    until its next renewal, up to 2 s.
 - **Checks.** `EditOverlayTests` (lease start, renewal, expiry at 5 s, latest selection, off, `endAll`, the rebuild
-  after an edit, the lines and labels of a mapping, the cap, the command's refusals and that it is no edit, the status)
-  and `OutputPassTests` (white lines with the black edge where a slice outline and a corner-pin edge land, also under a
-  keystone that halves the picture, still 2 px; the yellow crosshair and label; none over a preset, a morph from or
-  into one, or in raw; Blackout, the Master's blackout and Master 50 %; a secondary display; the preview), each
-  mutation-checked; vitest for the lease's renewals and idle stop with fake timers; one Playwright run (open the tab,
-  select a corner, the switch, leaving the tab).
-- **Not built here:** a test of `Engine.endLeases`' wiring (as for Compare, it needs the whole engine); masks v2's
-  outlines (M2.7).
+  after an edit, the lines and labels of a mapping, the cap, points at 1e19 and 1e7, the command's refusals and that it
+  is no edit, the status) and `OutputPassTests` (white lines with the black edge where a slice outline and a corner-pin
+  edge land, also under a keystone that halves the picture, still 2 px; a crossing that only all-edges-first keeps
+  white; the yellow crosshair and label; none over a preset, a morph from or into one, or in raw; Blackout, the Master's
+  blackout and Master 50 %; the clip in a keystone's margin; a display whose slices take all 64 slots; a secondary
+  display; the preview), each mutation-checked; vitest for the lease's renewals, idle stop and a late start with fake
+  timers; Playwright: open the tab, select a corner, the switch, leaving the tab, show lock, a hidden page, leaving the
+  screen, and the idle stop under `page.clock`.
+- **Not built here:** a test of `Engine.endLeases`' wiring (as for Compare, it needs the whole engine) and of the
+  rebuild's place in `rebind` (it needs a display); masks v2's outlines (M2.7).
 
 **5. Masks v2 (fixes F5), with freehand (owner decision).**
 - **Model.**

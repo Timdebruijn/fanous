@@ -37,7 +37,7 @@ struct OverlaySegment: Equatable {
 /// selection and the lines built from them and the edited mapping. An output's entry is its box: the coordinator owns
 /// this, hands it to every plan it compiles and swaps one entry whole when a lease starts, renews or changes its
 /// selection or an edit recompiles, so a selection change never recompiles a plan. Written on the main actor only, so
-/// two builds never race; the render threads and `live.outputs` read it.
+/// two builds never race (`@MainActor`); the render threads and `live.outputs` read it.
 public final class EditOverlay: @unchecked Sendable {
     /// A lease runs this long after its last renewal (the UI renews every 2 s); the render threads stop drawing it then.
     static let lease: Double = 5
@@ -65,7 +65,7 @@ public final class EditOverlay: @unchecked Sendable {
     /// `output.overlay` for output `id` (`config`: its edited mapping, nil when it is gone): on starts or renews the
     /// lease until `now` + 5 s with this call's selection, the latest; a renewal that keeps the selection keeps the
     /// lines. Off ends it.
-    func lease(_ id: Int, on: Bool, selected: OverlaySelection?, config: OutputConfig?, at now: Double) {
+    @MainActor func lease(_ id: Int, on: Bool, selected: OverlaySelection?, config: OutputConfig?, at now: Double) {
         guard on, let config else { return entries.withLock { $0[id] = nil } }
         let kept = entries.withLock { $0[id] }.flatMap { $0.until > now && $0.selected == selected ? $0.lines : nil }
         let entry = Entry(until: now + Self.lease, selected: selected, lines: kept ?? build(config, selected))
@@ -74,7 +74,7 @@ public final class EditOverlay: @unchecked Sendable {
 
     /// An edit (every rebind): each running lease's lines from its output's mapping now. A lease that ran out or whose
     /// output went is dropped with its lines.
-    func rebuild(_ outputs: [OutputConfig], at now: Double) {
+    @MainActor func rebuild(_ outputs: [OutputConfig], at now: Double) {
         let running = entries.withLock { $0.filter { $0.value.until > now } }
         var next: [Int: Entry] = [:]
         for (id, entry) in running {
@@ -85,7 +85,7 @@ public final class EditOverlay: @unchecked Sendable {
     }
 
     /// Show mode and show lock end every lease at once.
-    func endAll() { entries.withLock { $0.removeAll() } }
+    @MainActor func endAll() { entries.withLock { $0.removeAll() } }
 
     /// What output `id` draws at `now` (host time): its lines while its lease runs. Allocates nothing (render threads).
     func lines(_ id: Int, at now: Double) -> Lines? {
@@ -108,10 +108,14 @@ public final class EditOverlay: @unchecked Sendable {
     /// output's own edges through the warp), each slice's outline and its mask's, then the selected point's crosshair and
     /// label on top. A selection the mapping does not have (an edit since) draws none.
     static func segments(_ config: OutputConfig, selected: OverlaySelection?) -> [OverlaySegment] {
+        let marks = selected.flatMap { mark(config, $0) } ?? []
         var lines: [OverlaySegment] = []
+        // appending stops at the cap, which keeps room for the selection: nothing bounds a point's coordinates
         func line(_ p: MapPoint, _ q: MapPoint, pieces n: Int) {
             func at(_ t: Double) -> SIMD2<Float> { SIMD2(Float(p.x + (q.x - p.x) * t), Float(p.y + (q.y - p.y) * t)) }
-            for k in 0..<n { lines.append(OverlaySegment(a: at(Double(k) / Double(n)), b: at(Double(k + 1) / Double(n)))) }
+            for k in 0..<max(0, min(n, maxSegments - marks.count - lines.count)) {
+                lines.append(OverlaySegment(a: at(Double(k) / Double(n)), b: at(Double(k + 1) / Double(n))))
+            }
         }
         func outline(_ points: [MapPoint], pieces: (MapPoint, MapPoint) -> Int) {
             for (i, p) in points.enumerated() { line(p, points[(i + 1) % points.count], pieces: pieces(p, points[(i + 1) % points.count])) }
@@ -124,13 +128,12 @@ public final class EditOverlay: @unchecked Sendable {
         }
         for slice in config.slices where slice.dest.count == 4 {
             outline(slice.dest) { _, _ in pieces }
-            // a mask is sampled per pixel before the warp: its edges in pieces of at most 1/64 of the output
+            // a mask is sampled per pixel before the warp: its edges in pieces of at most 1/64 of the output, clamped before
+            // the conversion (a point at 1e19 would trap it)
             if let mask = slice.mask, mask.path.count >= 3 {
-                outline(mask.path) { p, q in max(1, Int((max(abs(q.x - p.x), abs(q.y - p.y)) * Double(pieces)).rounded(.up))) }
+                outline(mask.path) { p, q in max(1, Int(min(Double(maxSegments), (max(abs(q.x - p.x), abs(q.y - p.y)) * Double(pieces)).rounded(.up)))) }
             }
         }
-        let marks = selected.flatMap { mark(config, $0) } ?? []
-        if lines.count + marks.count > maxSegments { lines.removeLast(lines.count + marks.count - maxSegments) }
         return lines + marks
     }
 

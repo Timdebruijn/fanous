@@ -291,6 +291,10 @@ public final class OutputCompiler: @unchecked Sendable {
 
 /// Draws output plans into a drawable-sized target (the output pass of DESIGN.md §9.5).
 enum OutputPass {
+    /// 256-byte uniform slots at the end of the mapped uniform buffer kept for edit overlays (§9.10 item 4), one per output
+    /// that draws one; a ninth overlay on one display is not drawn.
+    static let overlaySlots = 8
+
     /// `outputs` are the Output fixture values by index (1-based → index − 1); `master` the Master intensity.
     static func fixture(for plan: OutputPlan, in outputs: [OutputParameters]) -> OutputParameters {
         plan.index - 1 < outputs.count && plan.index >= 1 ? outputs[plan.index - 1] : OutputParameters()
@@ -364,7 +368,10 @@ enum OutputPass {
     ) {
         // bound to texture slots the shader does not sample in this draw (patterns, no blend map, no warp, no mask)
         guard let canvas = lookup(1) else { return }
-        var offset = 0
+        // slices and test patterns from the start of `uniforms`, edit overlays from the slots kept for them at its end, so
+        // an overlay never costs another output a slice
+        let drawsEnd = uniforms.length - 256 * overlaySlots
+        var offset = 0, overlayOffset = drawsEnd
         for plan in set.plans {
             let fixture = fixture(for: plan, in: outputs)
             // raw bypasses the keystone with the warp
@@ -394,7 +401,7 @@ enum OutputPass {
             if pattern != .off {
                 // through the warp (and blend map) like the content, so a grid can be aligned on the surface; Freeze holds
                 // the canvases, not the pattern: the pattern stays live and the held frame returns when it is switched off
-                guard offset + 256 <= uniforms.length else { return }
+                guard offset + 256 <= drawsEnd else { return }
                 let mesh = plan.patternMesh
                 var u = MappedUniforms()
                 u.size = SIMD2(Float(region.size.width), Float(region.size.height))
@@ -420,7 +427,7 @@ enum OutputPass {
                 encoder.setFragmentBuffer(uniforms, offset: offset, index: 1)
                 encoder.drawIndexedPrimitives(type: .triangle, indexCount: mesh.indexCount, indexType: .uint32, indexBuffer: mesh.indices, indexBufferOffset: 0)
                 offset += 256
-                if let overlay { drawOverlay(overlay, plan, keystone: keystone, intensity: fixture.control == .blackout ? 0 : master, canvas: canvas, encoder: encoder, context: context, uniforms: uniforms, offset: &offset) }
+                if let overlay { drawOverlay(overlay, plan, keystone: keystone, intensity: fixture.control == .blackout ? 0 : master, canvas: canvas, encoder: encoder, context: context, uniforms: uniforms, offset: &overlayOffset) }
                 continue
             }
             encoder.setRenderPipelineState(context.mappedPipeline)
@@ -430,7 +437,7 @@ enum OutputPass {
             encoder.setVertexTexture(geometry.warpField ?? canvas, index: 0)
             encoder.setVertexTexture(old.warpField ?? canvas, index: 1)
             for slice in geometry.slices {
-                guard offset + 256 <= uniforms.length else { return }
+                guard offset + 256 <= drawsEnd else { return }
                 let frozen = fixture.control == .freeze ? plan.held[slice.canvas] : nil
                 guard let source = frozen ?? lookup(slice.canvas) else { continue }  // removed canvas: black (the coordinator logs it)
                 // the same slice on the side the morph comes from: same id, same canvas. One on one side only, and every
@@ -455,7 +462,7 @@ enum OutputPass {
                 encoder.drawIndexedPrimitives(type: .triangle, indexCount: slice.indexCount, indexType: .uint32, indexBuffer: slice.indices, indexBufferOffset: 0)
                 offset += 256
             }
-            if let overlay { drawOverlay(overlay, plan, keystone: keystone, intensity: fixture.control == .blackout ? 0 : master, canvas: canvas, encoder: encoder, context: context, uniforms: uniforms, offset: &offset) }
+            if let overlay { drawOverlay(overlay, plan, keystone: keystone, intensity: fixture.control == .blackout ? 0 : master, canvas: canvas, encoder: encoder, context: context, uniforms: uniforms, offset: &overlayOffset) }
         }
     }
 

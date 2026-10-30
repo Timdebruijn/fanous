@@ -663,31 +663,40 @@ public enum ShaderSource {
         float3 colour [[flat]];
     };
 
+    // the vertex side of OverlayOut plus the clip distances, as MappedVertexOut
+    struct OverlayVertexOut {
+        float4 position [[position]];
+        float3 colour [[flat]];
+        float clip [[clip_distance]] [4];
+    };
+
     constant float2 overlayCorners[6] = { float2(0, 0), float2(0, 1), float2(1, 0), float2(1, 0), float2(0, 1), float2(1, 1) };  // (end, side)
 
-    // a point before the warp → pixels on the region, and w, which is ≤ 0 beyond the keystone's vanishing line
-    static float3 overlay_pixel(float2 pre, constant MappedUniforms& u, texture2d<float> warp, sampler s) {
-        float2 p = (u.flags & 1u) != 0u ? warped(warp, s, pre) : pre;
-        float3 k = u.keystone * float3(p, 1.0);
-        return float3(k.xy / k.z * u.size, k.z);
-    }
-
-    vertex OverlayOut overlay_vertex(uint vid [[vertex_id]], uint iid [[instance_id]],
-                                     const device OverlaySegment* segments [[buffer(0)]],
-                                     constant MappedUniforms& u [[buffer(1)]],
-                                     texture2d<float> warp [[texture(0)]],
-                                     sampler linearSampler [[sampler(0)]]) {
+    vertex OverlayVertexOut overlay_vertex(uint vid [[vertex_id]], uint iid [[instance_id]],
+                                           const device OverlaySegment* segments [[buffer(0)]],
+                                           constant MappedUniforms& u [[buffer(1)]],
+                                           texture2d<float> warp [[texture(0)]],
+                                           sampler linearSampler [[sampler(0)]]) {
         OverlaySegment s = segments[vid / 6u];
         float2 corner = overlayCorners[vid % 6u];
-        float3 a = overlay_pixel(s.a, u, warp, linearSampler), b = overlay_pixel(s.b, u, warp, linearSampler);
-        float2 A = a.xy + s.offA, B = b.xy + s.offB;
+        bool warps = (u.flags & 1u) != 0u;
+        float2 pa = warps ? warped(warp, linearSampler, s.a) : s.a, pb = warps ? warped(warp, linearSampler, s.b) : s.b;
+        float3 ka = u.keystone * float3(pa, 1.0), kb = u.keystone * float3(pb, 1.0);  // w ≤ 0 beyond the vanishing line
+        float2 A = ka.xy / ka.z * u.size + s.offA, B = kb.xy / kb.z * u.size + s.offB;
         float len = length(B - A);
         float2 dir = len > 1e-3 ? (B - A) / len : float2(1.0, 0.0);  // no length: a square
         float half_ = ((s.flags & 2u) != 0u ? 2.0 : 1.0) + (iid == 0u ? 1.0 : 0.0);  // the core's half width; its black edge 1 px more
         float2 q = mix(A, B, corner.x) + dir * (corner.x * 2.0 - 1.0) * half_ + float2(-dir.y, dir.x) * (corner.y * 2.0 - 1.0) * half_;
-        OverlayOut out;
-        out.position = a.z > 0.0 && b.z > 0.0 ? float4(q / u.size * float2(2.0, -2.0) + float2(-1.0, 1.0), 0.0, 1.0) : float4(0.0);  // else not drawn
+        OverlayVertexOut out;
+        out.position = ka.z > 0.0 && kb.z > 0.0 ? float4(q / u.size * float2(2.0, -2.0) + float2(-1.0, 1.0), 0.0, 1.0) : float4(0.0);  // else not drawn
         out.colour = iid == 0u ? float3(0.0) : ((s.flags & 1u) != 0u ? float3(1.0, 1.0, 0.0) : float3(1.0)) * u.intensity;
+        // clipped at the output's own edges before the keystone, like the slices (mapped_vertex), at this vertex's end of the
+        // segment rather than where it is extruded to, so a line on an edge stays whole
+        float2 p = corner.x < 0.5 ? pa : pb;
+        out.clip[0] = p.x;
+        out.clip[1] = 1.0 - p.x;
+        out.clip[2] = p.y;
+        out.clip[3] = 1.0 - p.y;
         return out;
     }
 

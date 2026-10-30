@@ -13,6 +13,7 @@ import Testing
 
 /// The edit overlay (DESIGN.md §9.10 item 4): its lease, the lines it builds and `output.overlay`. The drawing is in
 /// `OutputPassTests`.
+@MainActor
 struct EditOverlayTests {
     static func segments(_ lines: EditOverlay.Lines?) -> [OverlaySegment] {
         guard let lines else { return [] }
@@ -107,6 +108,22 @@ struct EditOverlayTests {
         o.slices[0].mask = MaskSettings(path: (0..<15000).map { MapPoint(0.5 + 0.4 * cos(Double($0) * 2 * .pi / 15000), 0.5 + 0.4 * sin(Double($0) * 2 * .pi / 15000)) }, feather: 0)
         let capped = EditOverlay.segments(o, selected: OverlaySelection(kind: .corner, point: 1))
         #expect(capped.count == EditOverlay.maxSegments && capped.suffix(9).allSatisfy { $0.flags & 1 != 0 } && capped[capped.count - 10].flags == 0)
+    }
+
+    /// Nothing bounds a point's coordinates (`output.set`, a hand-edited file): a mask point at 1e19 does not trap the piece
+    /// count, and a mask whose every other point is at 1e7 stops at the cap instead of building millions of segments
+    /// first. The selection is drawn in both.
+    @Test func farOffPointsStopAtTheCap() {
+        var o = OutputConfig(id: 1)
+        o.slices[0].mask = MaskSettings(path: [MapPoint(0, 0), MapPoint(1e19, 0), MapPoint(0, 1)], feather: 0)
+        let huge = EditOverlay.segments(o, selected: OverlaySelection(kind: .corner, point: 0))
+        #expect(huge.count == EditOverlay.maxSegments && huge.suffix(6).allSatisfy { $0.flags & 1 != 0 }, "four arms and a 1")
+        o.slices[0].mask = MaskSettings(path: (0..<1000).map { $0.isMultiple(of: 2) ? MapPoint(0, 0) : MapPoint(1e7, 1e7) }, feather: 0)
+        let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+        let far = EditOverlay.segments(o, selected: OverlaySelection(kind: .corner, point: 0))
+        let ms = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e6
+        #expect(far.count == EditOverlay.maxSegments && far.suffix(6).allSatisfy { $0.flags & 1 != 0 })
+        #expect(ms < 100, "\(ms) ms of CPU")
     }
 
     // MARK: output.overlay

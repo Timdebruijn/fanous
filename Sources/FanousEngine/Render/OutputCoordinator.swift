@@ -201,8 +201,6 @@ public final class OutputCoordinator {
             lastOrphans = orphans
             if !orphans.isEmpty { logger.warning("slices on a canvas that does not render stay black", metadata: ["slices": "\(orphans.joined(separator: ", "))"]) }
         }
-        // a running edit overlay follows the edit (§9.10 item 4)
-        editOverlay.rebuild(outputs, at: CACurrentMediaTime())
         let binding = OutputBinding.resolve(outputs: outputs, displays: displays)
         let newMaster = OutputBinding.master(outputs: outputs, binding: binding, clockMaster: clockMaster)
 
@@ -282,6 +280,9 @@ public final class OutputCoordinator {
             statuses.append(OutputStatus(id: id, state: .lost, display: config?.display?.name, width: 0, height: 0, hz: 0, isMaster: false))
         }
         for id in binding.unassigned { statuses.append(OutputStatus(id: id, state: .unassigned, display: nil, width: 0, height: 0, hz: 0, isMaster: false)) }
+        // a running edit overlay follows the edit (§9.10 item 4), after the plans it is drawn over are swapped in, so the
+        // lines never lead the picture during a drag
+        editOverlay.rebuild(outputs, at: CACurrentMediaTime())
         onStatus?(statuses.sorted { $0.id < $1.id })
     }
 

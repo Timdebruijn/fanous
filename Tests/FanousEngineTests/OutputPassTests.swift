@@ -1346,7 +1346,7 @@ struct OutputPassTests {
     }
 
     /// `rig` draws `overlayConfig` with an overlay lease taken at host time `at` (the rig ticks at 3601, 3602 …).
-    static func overlaid(_ rig: Rig, selected: OverlaySelection? = nil, at: Double = 3600) throws -> OutputSet {
+    @MainActor static func overlaid(_ rig: Rig, selected: OverlaySelection? = nil, at: Double = 3600) throws -> OutputSet {
         let overlay = EditOverlay(device: rig.context.device)
         overlay.lease(1, on: true, selected: selected, config: overlayConfig(), at: at)
         let set = OutputSet(plans: [try OutputCompiler(device: rig.context.device).compile(overlayConfig(), index: 1, drawable: (width, height), overlay: overlay)])
@@ -1359,7 +1359,7 @@ struct OutputPassTests {
 
     /// The warp (the corner pin's edges) and every slice's outline, through the warp: 2 px white with a 1 px black edge
     /// over the picture. The lease draws for 5 s after it was taken.
-    @Test func theOverlayDrawsTheWarpAndTheSliceOutlines() throws {
+    @MainActor @Test func theOverlayDrawsTheWarpAndTheSliceOutlines() throws {
         let rig = try Rig(nil, value: 200)
         _ = try Self.overlaid(rig)
         _ = rig.tick(.normal, master: 1, layer: 1)
@@ -1369,6 +1369,9 @@ struct OutputPassTests {
         #expect(Self.bgr(image, 160, 90) == [255, 255, 255], "white")
         #expect([43, 44, 45, 46, 48].map { g(120, $0) } == [0, 255, 255, 0, 200], "the corner pin's top edge at y = 45 (row 43 is off the picture)")
         #expect([82, 120, 238].map { g($0, 135) } == [255, 255, 255], "its bottom edge at y = 135")
+        // where slice 2's left edge meets its top edge, drawn before it: the left edge's black (col 161) does not cut the
+        // top edge's white (row 45), as all black edges are drawn before all cores; one segment after the other would
+        #expect(g(161, 45) == 255 && g(161, 50) == 0, "\(g(161, 45)) \(g(161, 50))")
         // `tick` reads the centre, (160, 90), on slice 2's edge; the ticks are 1 s apart
         for _ in 0..<2 { _ = rig.tick(.normal, master: 1, layer: 1) }
         #expect(rig.tick(.normal, master: 1, layer: 1) == 255, "4 s after the lease was taken")
@@ -1376,7 +1379,7 @@ struct OutputPassTests {
     }
 
     /// The keystone moves the lines with the mapping and they are extruded after it: still 2 px where it halves the picture.
-    @Test func theOverlayFollowsTheKeystoneAndKeepsItsWidth() throws {
+    @MainActor @Test func theOverlayFollowsTheKeystoneAndKeepsItsWidth() throws {
         let rig = try Rig(nil, value: 200)
         _ = try Self.overlaid(rig)
         rig.keystone = simd_float3x3(rowMajor: WarpMath.keystone(to: [MapPoint(0.25, 0.25), MapPoint(0.75, 0.25), MapPoint(0.75, 0.75), MapPoint(0.25, 0.75)])!)
@@ -1391,7 +1394,7 @@ struct OutputPassTests {
 
     /// The selected point is a yellow crosshair, wider than the lines and open in the middle, with its number beside it in
     /// yellow seven-segment digits.
-    @Test func theSelectedPointIsAYellowCrosshairWithItsNumber() throws {
+    @MainActor @Test func theSelectedPointIsAYellowCrosshairWithItsNumber() throws {
         let rig = try Rig(nil, value: 200)
         _ = try Self.overlaid(rig, selected: OverlaySelection(kind: .corner, point: 0))
         _ = rig.tick(.normal, master: 1, layer: 1)
@@ -1407,7 +1410,7 @@ struct OutputPassTests {
 
     /// The lines belong to the edited mapping: none while a preset shows or a morph from one runs, nor in raw; a number the
     /// output lacks shows the edited mapping, and the overlay with it.
-    @Test func theOverlayIsOnlyOverTheEditedMapping() throws {
+    @MainActor @Test func theOverlayIsOnlyOverTheEditedMapping() throws {
         let rig = try Rig(nil, value: 200)
         _ = try Self.overlaid(rig, at: 3620)
         func line() -> Int { rig.tick(.normal, master: 1, layer: 1) }  // the centre, on slice 2's edge
@@ -1427,7 +1430,7 @@ struct OutputPassTests {
     }
 
     /// The overlay follows the output's Blackout and the Master: black stays black, Master 50 % gives half-white lines.
-    @Test func theOverlayFollowsBlackoutAndTheMaster() throws {
+    @MainActor @Test func theOverlayFollowsBlackoutAndTheMaster() throws {
         let rig = try Rig(nil, value: 200)
         _ = try Self.overlaid(rig, selected: OverlaySelection(kind: .corner, point: 0))
         func black() -> Bool { rig.compositor.readbackOutput().bgra.enumerated().allSatisfy { $0.offset % 4 == 3 || $0.element <= 1 } }
@@ -1440,8 +1443,58 @@ struct OutputPassTests {
         #expect(Self.near(Self.bgr(image, 160, 90)[1], 128) && Self.near(Self.bgr(image, 95, 45)[2], 128) && Self.bgr(image, 95, 45)[0] == 0, "\(Self.bgr(image, 160, 90)) \(Self.bgr(image, 95, 45))")
     }
 
+    /// The lines are clipped at the output's own edges before the keystone, like the slices: a slice that bleeds past the
+    /// output's left edge shows no outline in the black margin a halving keystone leaves, while the output's own edge,
+    /// on the clip, stays whole (both its core columns).
+    @MainActor @Test func theOverlayIsClippedToTheOutputLikeTheSlices() throws {
+        let rig = try Rig(nil, value: 200)
+        var o = OutputConfig(id: 1)  // no warp field, which would clamp the bleed onto the edge before the clip
+        var bleed = SliceConfig(id: 2)
+        bleed.dest = [MapPoint(-0.25, 0.25), MapPoint(1.25, 0.25), MapPoint(1.25, 0.75), MapPoint(-0.25, 0.75)]
+        o.slices.append(bleed)
+        let overlay = EditOverlay(device: rig.context.device)
+        overlay.lease(1, on: true, selected: nil, config: o, at: 3600)
+        rig.compositor.outputSet = OutputSet(plans: [try OutputCompiler(device: rig.context.device).compile(o, index: 1, drawable: (Self.width, Self.height), overlay: overlay)])
+        rig.keystone = simd_float3x3(rowMajor: WarpMath.keystone(to: [MapPoint(0.25, 0.25), MapPoint(0.75, 0.25), MapPoint(0.75, 0.75), MapPoint(0.25, 0.75)])!)
+        _ = rig.tick(.normal, master: 1, layer: 1)
+        let image = rig.compositor.readbackOutput().bgra
+        func g(_ x: Int) -> Int { Int(image[(100 * Self.width + x) * 4 + 1]) }
+        // the output is at x 80…240 now; slice 2's left edge, at −0.25 before the keystone, would be at x = 40
+        #expect([39, 40].map(g) == [0, 0], "no outline in the margin: \([39, 40].map(g))")
+        #expect([79, 80, 81].map(g) == [255, 255, 0], "the output's left edge: \([79, 80, 81].map(g))")
+    }
+
+    /// The overlay has uniform slots of its own: on a display whose slices take all 64, an overlay on the first output
+    /// does not cost the second output its last slice.
+    @MainActor @Test func theOverlayCostsNoOtherOutputASlice() throws {
+        let rig = try Rig(nil, value: 200)
+        var one = OutputConfig(id: 1), two = OutputConfig(id: 2)
+        one.region = PixelRect(x: 0, y: 0, w: 160, h: 180)
+        two.region = PixelRect(x: 160, y: 0, w: 160, h: 180)
+        // 62 small slices in output 2's top-left corner, then its 63rd and last over its right half: 64 draws in all
+        two.slices = (1...62).map { id in
+            var s = SliceConfig(id: id)
+            s.dest = [MapPoint(0, 0), MapPoint(0.1, 0), MapPoint(0.1, 0.1), MapPoint(0, 0.1)]
+            return s
+        }
+        var last = SliceConfig(id: 63)
+        last.dest = [MapPoint(0.5, 0), MapPoint(1, 0), MapPoint(1, 1), MapPoint(0.5, 1)]
+        two.slices.append(last)
+        let overlay = EditOverlay(device: rig.context.device)
+        overlay.lease(1, on: true, selected: nil, config: one, at: 3600)
+        let compiler = OutputCompiler(device: rig.context.device)
+        rig.compositor.outputSet = OutputSet(plans: [
+            try compiler.compile(one, index: 1, drawable: (Self.width, Self.height), overlay: overlay),
+            try compiler.compile(two, index: 2, drawable: (Self.width, Self.height)),
+        ])
+        _ = rig.tick(.normal, master: 1, layer: 1)
+        let image = rig.compositor.readbackOutput().bgra
+        #expect(Self.bgr(image, 280, 90) == [200, 200, 200], "output 2's last slice: \(Self.bgr(image, 280, 90))")
+        #expect(Self.bgr(image, 80, 0) == [255, 255, 255], "output 1's overlay")
+    }
+
     /// A secondary display draws the overlay too, at its own frame time.
-    @Test func aSecondaryDisplayDrawsTheOverlay() throws {
+    @MainActor @Test func aSecondaryDisplayDrawsTheOverlay() throws {
         let rig = try Rig(nil, value: 200)
         let set = try Self.overlaid(rig)
         _ = rig.tick(.normal, master: 1, layer: 1)
@@ -1453,7 +1506,9 @@ struct OutputPassTests {
     /// projector does: the editor draws its own handles over it.
     @Test func thePreviewDrawsNoOverlay() async throws {
         let rig = try Rig(nil, value: 200)
-        _ = try Self.overlaid(rig)
+        let overlay = EditOverlay(device: rig.context.device)
+        await MainActor.run { overlay.lease(1, on: true, selected: nil, config: Self.overlayConfig(), at: 3600) }
+        rig.compositor.outputSet = OutputSet(plans: [try OutputCompiler(device: rig.context.device).compile(Self.overlayConfig(), index: 1, drawable: (Self.width, Self.height), overlay: overlay)])
         let streamer = try PreviewStreamer(context: rig.context, width: Self.width, height: Self.height, fps: 5, canvasFPS: 5, parameters: rig.parameters, logger: Logger(label: "output-test"))
         streamer.outputSet = OutputSet(plans: [try OutputCompiler(device: rig.context.device).compile(Self.overlayConfig(), index: 1, drawable: (Self.width, Self.height))])
         streamer.externalJPEGWanted = { true }
