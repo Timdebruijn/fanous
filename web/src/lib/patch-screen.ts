@@ -213,22 +213,17 @@ export function parseFixture(name: string): { type: FixtureType; index: number }
 }
 
 /**
- * Layer 1..layerCount (patched or not), Master, then every output named in the patch as its Output and Keystone
- * fixture (DESIGN §6.4a: the Keystone is patched per output, next to its Output). Collisions are
- * overlapping channel ranges within one universe; a range past channel 512 is flagged as exceeding.
- * Layer entries above layerCount are not fixtures any more and take no part.
+ * Layer 1..layerCount (patched or not), Master, then for every output (patched or not; the engine patches the Output
+ * fixture with its output) its Output and Keystone fixture (DESIGN §6.4a: the Keystone is optional, patched by hand
+ * next to its Output). Collisions are overlapping channel ranges within one universe; a range past channel 512 is
+ * flagged as exceeding. Layer entries above layerCount are not fixtures any more and take no part.
  */
-export function buildFixtures(patch: readonly PatchEntry[], layerCount: number, map: ChannelMap | null): FixtureRow[] {
+export function buildFixtures(patch: readonly PatchEntry[], layerCount: number, map: ChannelMap | null, outputIds: readonly number[] = []): FixtureRow[] {
   const entries = new Map(patch.map((e) => [e.fixture, e] as const));
-  const outputs = new Set<number>();
-  for (const e of patch) {
-    const f = parseFixture(e.fixture);
-    if (f?.type === 'output' || f?.type === 'keystone') outputs.add(f.index);
-  }
   const names = [
     ...Array.from({ length: Math.max(0, Math.floor(layerCount)) }, (_, i) => `Layer ${i + 1}`),
     'Master',
-    ...[...outputs].sort((a, b) => a - b).flatMap((i) => [`Output ${i}`, `Keystone ${i}`]),
+    ...[...outputIds].sort((a, b) => a - b).flatMap((i) => [`Output ${i}`, `Keystone ${i}`]),
   ];
   const rows: FixtureRow[] = names.map((name, i) => {
     const type = parseFixture(name)!.type;

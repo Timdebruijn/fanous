@@ -16,6 +16,11 @@
   function setLayerCount(count: number) {
     void cmd('layers.setCount', { count });
   }
+  function addOutput() {
+    void cmd('output.add', {}).then((id) => {
+      if (typeof id === 'number') onselect(`Output ${id}`);
+    });
+  }
   async function removeLast() {
     const n = layerCount;
     if ((await cmd('layers.setCount', { count: n - 1 })) !== undefined) toastUndo(`Layer ${n} removed.`);
@@ -47,6 +52,7 @@
   </div>
   <div class="foot">
     <button type="button" class="btn" disabled={locked || atLimit} title={locked ? LOCKED_TITLE : atLimit ? 'Layer limit of this Mac (performance tier)' : undefined} onclick={() => setLayerCount(layerCount + 1)}>Add layer</button>
+    <button type="button" class="btn" disabled={locked} title={locked ? LOCKED_TITLE : 'A new output without a display; pick its display on Outputs & Mapping'} onclick={addOutput}>Add output</button>
     <span class="caption">{layerCount} of {maxLayers ?? '?'} layers · <span title="The layer limit of this Mac's performance tier; Add layer stops there so the show does not drop frames.">tier limit</span> measured on this machine</span>
     <span class="spacer"></span>
     <button type="button" class="btn btn-danger" disabled={locked || layerCount <= 1} title={locked ? LOCKED_TITLE : undefined} onclick={removeLast}>Remove layer {layerCount}</button>

@@ -36,7 +36,7 @@ struct StateStoreTests {
 
     static func makeStore() -> (StateStore, RoleAuth) {
         let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: logger)
-        let project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
+        let project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 0), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
         let store = StateStore(project: project, logger: logger)
         ProjectDocument.registerCommands(on: store, auth: auth)
         return (store, auth)
@@ -150,11 +150,21 @@ struct StateStoreTests {
 
     @Test func projectDocumentRoundTripsThePatch() throws {
         let patch = Patch.standard(layers: 16, outputs: 4)
-        let document = ProjectDocument.initial(patch: patch, layerCount: 16, libraryRoot: "/x", policy: .ltp)
+        var document = ProjectDocument.initial(patch: patch, layerCount: 16, libraryRoot: "/x", policy: .ltp)
         #expect(ProjectDocument.patch(from: document) == patch)
+        try document.set(try JSONValue(encoding: (1...4).map { OutputConfig(id: $0) }), at: "/outputs")
         let url = FileManager.default.temporaryDirectory.appending(path: "project-\(UUID().uuidString).json")
         try ProjectDocument.save(document, to: url)
         #expect(ProjectDocument.load(from: url) == document)
+        // an Output fixture without its output is unpatched on load
+        try document.set(try JSONValue(encoding: [1, 2, 9].map { OutputConfig(id: $0) }), at: "/outputs")
+        var nine = patch
+        nine.entries.append(PatchEntry(fixture: .output(9), universe: UniverseID(.artnet, 2), address: 73))
+        nine.entries.append(PatchEntry(fixture: .keystone(3), universe: UniverseID(.artnet, 3), address: 1))
+        try document.set(ProjectDocument.patchValue(nine), at: "/patch")
+        try ProjectDocument.save(document, to: url)
+        let loaded = try #require(ProjectDocument.load(from: url))
+        #expect(ProjectDocument.patch(from: loaded)?.entries == patch.entries.filter { $0.fixture != .output(3) && $0.fixture != .output(4) }, "and 9: above the console's outputs; Keystone 3 has no output")
         try? FileManager.default.removeItem(at: url)
         #expect(FixtureRef(parsing: "layer 7") == .layer(7))
         #expect(FixtureRef(parsing: "Output 0") == nil)
@@ -224,6 +234,39 @@ extension StateStoreTests {
 }
 
 extension StateStoreTests {
+    @Test func outputFixtureFollowsItsOutput() throws {
+        let (store, _) = Self.makeStore()  // Master at artnet:0.0.1 1, no outputs and no Output fixtures yet
+        let sacn5 = UniverseID(.sacn, 5)
+        _ = try store.execute("output.add", role: .programmer).get()
+        #expect(ProjectDocument.patch(from: store.project)?.entry(for: .output(1)) == PatchEntry(fixture: .output(1), universe: UniverseID(.artnet, 1), address: 9))
+        #expect(store.execute("patch.set", args: ["fixture": "Output 2", "universe": "sacn:5", "address": 1], role: .programmer).failureCode == "invalidArgs", "no output 2")
+        #expect(store.execute("patch.set", args: ["fixture": "Keystone 2", "universe": "sacn:5", "address": 1], role: .programmer).failureCode == "invalidArgs", "no output 2")
+        // a new Output fixture goes next to the Master, wherever that is
+        _ = try store.execute("patch.set", args: ["fixture": "Master", "universe": "sacn:5", "address": 101], role: .programmer).get()
+        _ = try store.execute("output.add", role: .programmer).get()
+        var patch = try #require(ProjectDocument.patch(from: store.project))
+        #expect(patch.entry(for: .output(2)) == PatchEntry(fixture: .output(2), universe: sacn5, address: 117))
+        // a taken range leaves it unpatched
+        _ = try store.execute("patch.set", args: ["fixture": "Layer 1", "universe": "sacn:5", "address": 125], role: .programmer).get()
+        _ = try store.execute("output.add", role: .programmer).get()
+        #expect(ProjectDocument.patch(from: store.project)?.entry(for: .output(3)) == nil, "125–132 overlaps Layer 1")
+        // removing the output unpatches its Output and Keystone fixtures, in the same undo step
+        _ = try store.execute("patch.set", args: ["fixture": "Keystone 2", "universe": "sacn:5", "address": 201], role: .programmer).get()
+        _ = try store.execute("output.remove", args: ["id": 2], role: .programmer).get()
+        patch = try #require(ProjectDocument.patch(from: store.project))
+        #expect(patch.entry(for: .output(2)) == nil && patch.entry(for: .keystone(2)) == nil)
+        _ = try store.execute("undo", role: .programmer).get()
+        patch = try #require(ProjectDocument.patch(from: store.project))
+        #expect(patch.entry(for: .output(2))?.address == 117 && patch.entry(for: .keystone(2))?.address == 201)
+        #expect(ProjectDocument.outputs(from: store.project).map(\.id) == [1, 2, 3])
+        // console control covers outputs 1–8 (ParameterSnapshotSlot.maxOutputs)
+        _ = try store.execute("patch.set", args: ["fixture": "Layer 1", "universe": "artnet:0.0.0", "address": 1], role: .programmer).get()
+        for _ in 4...9 { _ = try store.execute("output.add", role: .programmer).get() }
+        patch = try #require(ProjectDocument.patch(from: store.project))
+        #expect(patch.entry(for: .output(8))?.address == 165 && patch.entry(for: .output(9)) == nil)
+        #expect(store.execute("patch.set", args: ["fixture": "Output 9", "universe": "sacn:5", "address": 300], role: .programmer).failureCode == "invalidArgs")
+    }
+
     @Test func outputCommandsAddSetValidateAndRemove() throws {
         let (store, _) = Self.makeStore()
         let id = try store.execute("output.add", args: ["display": ["uuid": "U1", "name": "Epson"]], role: .programmer).get().value?.int

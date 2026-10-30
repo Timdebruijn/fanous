@@ -105,13 +105,13 @@ export interface CommandArgs {
   'midi.map.set': { id?: string; source?: string | null; channel: number; kind: 'note' | 'cc' | 'cc14' | 'pc'; number?: number | null; target: string; cue?: number | null; curve?: 'linear' | 'toggle'; pickup?: boolean; low?: number; high?: number };
   /** MIDI input: source (a MIDI source name, null = all), mscDevice (0–111; 127 all-call is always answered), mscFormat (0–127, null = video 0x30–0x3F; 0x7F all-types is always answered). Role: programmer, refused under show lock, undoable. */
   'midi.set': { source?: string | null; mscDevice?: number; mscFormat?: number | null };
-  /** Add an output (one full-canvas slice, no blend, identity warp), optionally bound to a display. Role: programmer, refused under show lock, undoable. */
+  /** Add an output (one full-canvas slice, no blend, identity warp), optionally bound to a display; its Output fixture is patched next to the Master when that range is free. Role: programmer, refused under show lock, undoable. */
   'output.add': { display?: { uuid: string; name: string } };
-  /** Remove an output (not one in a projector wall). Role: programmer, refused under show lock, undoable. */
+  /** Remove an output (not one in a projector wall) and unpatch its Output and Keystone fixtures. Role: programmer, refused under show lock, undoable. */
   'output.remove': { id: number };
   /** Set one value inside an output by JSON pointer (name, display, region, mode, intensity, blend/*, warp/*, slices/*, testPattern, color/* with gain [r, g, b] 0–2 and black 0–0.2); the result is validated as a whole. On a projector-wall output a changed slice 1 source or inner overlap becomes manual (result { wall, manual }), and an inner edge's power, gamma or gammaRGB goes to its seam, so both sides follow. Role: programmer, refused under show lock, undoable. */
   'output.set': { id: number; path: string; value: JSONValue };
-  /** Patch a fixture (layer, master, output, keystone) to a universe and address, or unpatch it with address 0. Role: programmer, refused under show lock, undoable. */
+  /** Patch a fixture (layer, master, output, keystone) to a universe and address, or unpatch it with address 0; an Output or Keystone fixture only for an output that exists (1–8). Role: programmer, refused under show lock, undoable. */
   'patch.set': { fixture: string; universe: string; address: number };
   /** Delete a named project version (automatic ones expire by themselves). Role: programmer, refused under show lock. */
   'project.deleteVersion': { id: string };
