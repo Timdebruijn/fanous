@@ -125,13 +125,10 @@ struct RFCExample: Sendable, CustomTestStringConvertible {
         #expect(try ptr("/é/\u{1F39B}").description == "/é/\u{1F39B}")
     }
 
-    @Test func pointerParentLastAppending() throws {
+    @Test func pointerLastAppending() throws {
         let p = JSONPointer(tokens: []).appending("a").appending("b/c")
         #expect(p.description == "/a/b~1c")
         #expect(p.last == "b/c")
-        #expect(p.parent == "/a")
-        #expect(p.parent?.parent == "")
-        #expect(p.parent?.parent?.parent == nil)
         #expect(try ptr("").last == nil)
     }
 

@@ -47,7 +47,6 @@ public final class ThumbnailStreamer: @unchecked Sendable {
     nonisolated(unsafe) var alwaysEncode = false
     /// Atlas passes drawn (`/metrics` `preview.thumbnailPasses`): stays put while nobody watches.
     public let passes = Atomic<Int>(0)
-    public let skipped = Atomic<Int>(0)
     /// Microseconds the last set took to encode (all its JPEGs), `/metrics` `preview.thumbnailEncodeMs`.
     public let encodeMicros = Atomic<Int>(0)
     /// A set is on its way to (or being cut on) the queue: the next pass is skipped, so buffers never pile up.
@@ -126,10 +125,7 @@ public final class ThumbnailStreamer: @unchecked Sendable {
     /// `PreviewHub.tap`, after the canvas pass: on pass ticks while wanted, the atlas pass and its copy into a pixel buffer.
     func tap(commandBuffer: MTLCommandBuffer) {
         guard let compositor, wantsPass else { return }
-        guard !encoding.load(ordering: .relaxed) else {
-            skipped.wrappingAdd(1, ordering: .relaxed)
-            return
-        }
+        guard !encoding.load(ordering: .relaxed) else { return }
         let canvases = compositor.thumbnailCanvases()
         let shapes = canvases.map { (width: $0.width, height: $0.height) }
         guard let layout = ThumbnailAtlas.layout(canvases.map { $0.visible ? ($0.width, $0.height) : nil }) else {
@@ -143,20 +139,11 @@ public final class ThumbnailStreamer: @unchecked Sendable {
         }
         guard let (pixelBuffer, cvTexture) = pixelBuffer(width: layout.width, height: layout.height), let target = CVMetalTextureGetTexture(cvTexture),
             let atlas = atlas(width: poolSize.width, height: poolSize.height)
-        else {
-            skipped.wrappingAdd(1, ordering: .relaxed)
-            return
-        }
+        else { return }
         atlasPass.colorAttachments[0].texture = atlas
-        guard compositor.drawThumbnails(layout.cells, into: atlasPass, commandBuffer: commandBuffer) else {
-            skipped.wrappingAdd(1, ordering: .relaxed)
-            return
-        }
+        guard compositor.drawThumbnails(layout.cells, into: atlasPass, commandBuffer: commandBuffer) else { return }
         copyPass.colorAttachments[0].texture = target
-        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: copyPass) else {
-            skipped.wrappingAdd(1, ordering: .relaxed)
-            return
-        }
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: copyPass) else { return }
         encoder.label = "thumbnail copy"
         var uniforms = OutputUniforms()
         uniforms.size = SIMD2(Float(poolSize.width), Float(poolSize.height))
@@ -221,10 +208,7 @@ public final class ThumbnailStreamer: @unchecked Sendable {
         let start = CACurrentMediaTime()
         // one copy of the atlas into a CGImage (the GPU is done with it), then each cell cropped and encoded by ImageIO
         // (the caller clears `encoding` after this returns, also on this early return)
-        guard let atlas = Self.image(of: pixelBuffer) else {
-            skipped.wrappingAdd(1, ordering: .relaxed)
-            return
-        }
+        guard let atlas = Self.image(of: pixelBuffer) else { return }
         let thumbs = cells.map { cell -> Thumb? in
             guard let cell, let image = atlas.cropping(to: CGRect(x: cell.x, y: cell.y, width: cell.width, height: cell.height)) else { return nil }
             return Self.jpeg(image).map { Thumb(jpeg: $0, width: cell.width, height: cell.height) }

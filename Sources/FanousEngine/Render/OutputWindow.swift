@@ -11,10 +11,8 @@ import QuartzCore
 public final class OutputWindow {
     public let window: NSWindow
     public let metalLayer: CAMetalLayer
-    public let screen: NSScreen
 
     public init(screen: NSScreen, device: MTLDevice) {
-        self.screen = screen
         let frame = screen.frame
         window = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false, screen: screen)
         window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))

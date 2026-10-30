@@ -157,9 +157,10 @@ struct MappingMathTests {
         // move the centre control point: the surface passes through it and stays put at the corners
         var mesh = MeshWarp.identity(cols: 3, rows: 3)
         mesh.points[4] = MapPoint(0.6, 0.4)
-        let p = WarpMath.meshPoint(mesh, 0.5, 0.5)
-        #expect(abs(p.x - 0.6) < 1e-9 && abs(p.y - 0.4) < 1e-9)
-        #expect(WarpMath.meshPoint(mesh, 0, 0) == MapPoint(0, 0) && WarpMath.meshPoint(mesh, 1, 1) == MapPoint(1, 1))
+        warp.mesh = mesh
+        let moved = WarpMath.field(warp, cols: 3, rows: 3)
+        #expect(abs(moved[8] - 0.6) < 1e-6 && abs(moved[9] - 0.4) < 1e-6)
+        #expect(abs(moved[0]) < 1e-6 && abs(moved[1]) < 1e-6 && abs(moved[16] - 1) < 1e-6 && abs(moved[17] - 1) < 1e-6)
         #expect(!mesh.isIdentity)
     }
 
@@ -224,6 +225,54 @@ struct MappingMathTests {
         let back = try JSONDecoder().decode(OutputConfig.self, from: data)
         #expect(back == output)
         #expect(OutputConfig(id: 1).slices.count == 1 && OutputConfig(id: 1).name == "Output 1")
+    }
+
+    /// DESIGN.md §9.10 item 3: an output without presets encodes byte for byte as before M2.4 (the literal is the
+    /// synthesized encoding of that release); presets round-trip, and a project without the key loads with none.
+    @Test func presetsEncodeOnlyWhenThereAreAny() throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        var o = OutputConfig(id: 2, name: "Left")
+        o.display = DisplayIdentity(uuid: "U", name: "Epson")
+        o.warp.mesh = .identity(cols: 2, rows: 2)
+        o.slices[0].mask = MaskSettings(path: [MapPoint(0, 0), MapPoint(1, 0), MapPoint(0, 1)], feather: 2)
+        let before = #"{"blend":{"bottom":{"gamma":2.2,"overlap":0,"power":2},"left":{"gamma":2.2,"overlap":0,"power":2},"lift":0,"liftFeather":0,"right":{"gamma":2.2,"overlap":0,"power":2},"top":{"gamma":2.2,"overlap":0,"power":2}},"color":{"black":0,"gain":[1,1,1]},"display":{"name":"Epson","uuid":"U"},"id":2,"intensity":1,"name":"Left","slices":[{"canvas":1,"dest":[{"x":0,"y":0},{"x":1,"y":0},{"x":1,"y":1},{"x":0,"y":1}],"id":1,"mask":{"feather":2,"path":[{"x":0,"y":0},{"x":1,"y":0},{"x":0,"y":1}]},"opacity":1,"source":{"h":1,"w":1,"x":0,"y":0}}],"testPattern":0,"warp":{"cornerPin":[{"x":0,"y":0},{"x":1,"y":0},{"x":1,"y":1},{"x":0,"y":1}],"mesh":{"cols":2,"points":[{"x":0,"y":0},{"x":1,"y":0},{"x":0,"y":1},{"x":1,"y":1}],"rows":2}}}"#
+        #expect(String(decoding: try encoder.encode(o), as: UTF8.self) == before)
+        #expect(try JSONDecoder().decode(OutputConfig.self, from: Data(before.utf8)).presets.isEmpty)
+
+        o.storePreset(3, name: nil)
+        o.warp.cornerPin[0] = MapPoint(0.1, 0)
+        let replacedNew = o.storePreset(1, name: "Wide")
+        #expect(!replacedNew)
+        let back = try JSONDecoder().decode(OutputConfig.self, from: encoder.encode(o))
+        #expect(back == o && back.presets.map(\.number) == [1, 3], "kept in number order")
+        #expect(back.preset(3)?.name == "Preset 3" && back.preset(3)?.warp.cornerPin[0] == MapPoint(0, 0) && back.preset(3)?.slices[0].mask != nil)
+    }
+
+    /// Store replaces a number (keeping its name unless one is given), recall copies warp and slices back and nothing
+    /// else; numbers and names are validated.
+    @Test func storeReplaceAndRecallAPreset() {
+        var o = OutputConfig(id: 1)
+        o.warp.cornerPin[1] = MapPoint(0.9, 0.05)
+        let replacedNew = o.storePreset(7, name: "Stage")
+        #expect(!replacedNew)
+        o.warp.cornerPin[1] = MapPoint(1, 0)
+        o.slices[0].opacity = 0.5
+        o.blend.lift = 0.1
+        let recalled = o.recallPreset(7)
+        #expect(recalled && o.warp.cornerPin[1] == MapPoint(0.9, 0.05) && o.slices[0].opacity == 1)
+        #expect(o.blend.lift == 0.1, "the blend is not in a preset")
+        o.slices[0].opacity = 0.25
+        let replaced = o.storePreset(7, name: nil)
+        #expect(replaced)
+        #expect(o.presets.count == 1 && o.preset(7)?.name == "Stage" && o.preset(7)?.slices[0].opacity == 0.25)
+        let missing = o.recallPreset(8)
+        #expect(!missing)
+
+        #expect(MappingPreset.numberProblem(1) == nil && MappingPreset.numberProblem(255) == nil)
+        #expect(MappingPreset.numberProblem(0) != nil && MappingPreset.numberProblem(256) != nil && MappingPreset.numberProblem(nil) != nil)
+        #expect(MappingPreset.nameProblem("Stage left") == nil)
+        #expect(MappingPreset.nameProblem("") != nil && MappingPreset.nameProblem(String(repeating: "x", count: 65)) != nil)
     }
 
     /// Projects saved before per-output colour (M1.7) load unchanged, with gain 1 and black 0.

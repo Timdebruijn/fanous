@@ -94,8 +94,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, WKD
         return await panel.beginSheetModal(for: window) == .OK ? panel.url : nil
     }
 
-    func downloadDidFinish(_ download: WKDownload) {}
-
     func download(_ download: WKDownload, didFailWithError error: any Error, resumeData: Data?) {
         let alert = NSAlert()
         alert.messageText = "The download failed."

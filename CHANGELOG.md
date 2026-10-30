@@ -419,6 +419,18 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   grant, and "opens System Settings; a grant restarts the engine" while denied; the Authorize buttons now name their
   permission. The user guide covers displays, the grant and restart, the monthly re-confirmation and the readiness
   item, and a troubleshooting entry for a black display layer.
+- Added: **mapping presets** (M2.4, DESIGN §6.4, §9.10 item 3). An output stores its warp and slices, masks included,
+  under a number 1–255 (`output.preset.store`, `recall`, `rename`, `remove`; one undo step each, also for a whole wall);
+  blend, black floor, colour, intensity and region stay live. Output channel 6, **Mapping preset**, shows preset N while
+  it holds N and the edited mapping at 0, as a cut; a number the output lacks keeps the edited mapping. **Hold to
+  compare** shows a preset from the UI over channel 6 (a 5 s lease, `output.show`, renewed while held). The keystone
+  moves the preset too, Freeze holds across a preset change, and the preview and the editor keep the edited mapping. A
+  Presets strip on Warp & Slices and on the wall panel; "Preset N (console)", "Preset N (compare)" and "Preset N missing"
+  on the output row and under the preview. Output ch 6 is in the channel map, GDTF and OSC (`/fanous/output/{n}/preset`);
+  the footprint stays 8. Projects without presets save as before.
+- Changed: a universe's **Hold on loss** setting is now called **Hold on signal loss**, and **Loss after (s)** is
+  **Signal lost after (s)**, in the Universes panel and the user guide (PR #125). The stored fields (`holdOnLoss`, `lossTimeout`)
+  and their options are unchanged.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

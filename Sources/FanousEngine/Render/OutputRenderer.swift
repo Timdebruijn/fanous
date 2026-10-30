@@ -5,6 +5,7 @@
 import CoreGraphics
 import Foundation
 import FanousCore
+import Logging
 import Metal
 import simd
 import Synchronization
@@ -44,6 +45,12 @@ public final class SlicePlan: @unchecked Sendable {
     }
 }
 
+/// What a mapping preset changes on an output (DESIGN.md §9.10 item 3): its warp field and slices, masks included.
+struct PresetGeometry {
+    let warpField: MTLTexture?
+    let slices: [SlicePlan]
+}
+
 /// Everything the render thread needs for one output region (DESIGN.md §9.5): GPU resources compiled on
 /// Control by `OutputCompiler`, immutable afterwards, swapped in as a whole.
 public final class OutputPlan: @unchecked Sendable {
@@ -61,6 +68,11 @@ public final class OutputPlan: @unchecked Sendable {
     let slices: [SlicePlan]
     /// The whole output (unit quad) tessellated like a slice: test patterns are drawn through it, so they follow the warp.
     let patternMesh: SlicePlan
+    /// The output's mapping presets by number, each through the compile cache; the blend map, colour and region are the
+    /// output's own, shared by every preset.
+    let presets: [Int: PresetGeometry]
+    /// Every canvas the edited mapping or a preset samples: what Freeze holds, so a preset change while frozen keeps the frame.
+    let canvases: [Int]
     /// Canvas copies (by canvas id) taken when the Output fixture's Control engaged Freeze; the content pass samples them
     /// instead of the live canvases. Only touched by the one thread that renders this plan's set.
     nonisolated(unsafe) var held: [Int: MTLTexture] = [:]
@@ -69,9 +81,13 @@ public final class OutputPlan: @unchecked Sendable {
 
     init(
         id: Int, index: Int, region: MTLRegion, intensity: Float, testPattern: TestPattern, color: SIMD4<Float>, blendMap: MTLTexture?, warpField: MTLTexture?,
-        slices: [SlicePlan], patternMesh: SlicePlan
+        slices: [SlicePlan], patternMesh: SlicePlan, presets: [Int: PresetGeometry] = [:]
     ) {
         self.patternMesh = patternMesh
+        self.presets = presets
+        var canvases: [Int] = []
+        for slice in slices + presets.values.flatMap(\.slices) where !canvases.contains(slice.canvas) { canvases.append(slice.canvas) }
+        self.canvases = canvases
         self.color = color
         self.id = id
         self.index = index
@@ -82,6 +98,10 @@ public final class OutputPlan: @unchecked Sendable {
         self.warpField = warpField
         self.slices = slices
     }
+
+    /// What to draw for `preset` (the snapshot's `presets`): that preset's geometry, else (0, or a number this output
+    /// does not have) the edited mapping. No allocation: a dictionary lookup and a struct of references.
+    func geometry(_ preset: UInt8) -> PresetGeometry { presets[Int(preset)] ?? PresetGeometry(warpField: warpField, slices: slices) }
 }
 
 /// The plans of one display, swapped into the compositor as one reference.
@@ -101,48 +121,51 @@ public final class OutputSet: @unchecked Sendable {
 }
 
 /// Compiles `OutputConfig` into textures and meshes (edit-time cost only, DESIGN.md §9.2–9.4). Keep one per caller:
-/// its cache (§9.10 item 0) makes a recompile rebuild only the textures whose settings or size changed.
+/// its cache (§9.10 item 0) makes a recompile rebuild only the textures and slice meshes whose settings or size changed.
 public final class OutputCompiler: @unchecked Sendable {
     public static let sliceSubdivisions = 64
     public static let fieldDivisor = 4
     private let device: MTLDevice
-    private let uniforms: MTLBuffer
 
-    /// What a texture is made of; a changed region, display mode or drawable size gives new keys.
+    /// What a texture or slice plan is made of; a changed region, display mode or drawable size gives new keys.
     enum Key: Hashable {
         case blend(BlendSettings, width: Int, height: Int)
         case warp(WarpSettings, cols: Int, rows: Int)
         case mask(MaskSettings, width: Int, height: Int)
+        /// A slice's mesh buffers with its mask texture, which is also cached on its own: a moved slice keeps its raster.
+        case slice(SliceConfig, width: Int, height: Int)
     }
-    private struct Entry: @unchecked Sendable { weak var texture: MTLTexture? }  // textures are immutable once compiled
-    /// Held weakly: a texture lives exactly as long as a plan holds it (every display's set, the set a frozen output still
-    /// takes its hold from, B111, a preview's), so nothing in use is freed and one no plan uses goes when the set that held
-    /// it is swapped out; its dead entry is dropped at the next compile. Edit-time only, never touched by the render
-    /// thread; the lock is for the previews, which compile from the main actor, the network and a utility queue.
+    private struct Entry: @unchecked Sendable { weak var object: AnyObject? }  // textures and slice plans are immutable once compiled
+    /// Held weakly: a texture or slice plan lives exactly as long as a plan holds it (every display's set, the set a frozen
+    /// output still takes its hold from, B111, a preview's), so nothing in use is freed and one no plan uses goes when the
+    /// set that held it is swapped out; its dead entry is dropped at the next compile. Edit-time only, never touched by the
+    /// render thread; the lock is for the previews, which compile from the main actor, the network and a utility queue.
     private let cache = Mutex<[Key: Entry]>([:])
+    /// Says once per output and preset number that a preset was skipped (it does not validate or compile).
+    private let logger: Logger?
+    private let reported = Mutex<Set<[Int]>>([])
 
-    public init(device: MTLDevice) throws {
+    public init(device: MTLDevice, logger: Logger? = nil) {
         self.device = device
-        guard let uniforms = device.makeBuffer(length: 256, options: .storageModeShared) else { throw RenderError.pipeline("mapped uniforms") }
-        self.uniforms = uniforms
+        self.logger = logger
     }
 
     /// Cache entries, a dead one until the next compile drops it (tests).
     var entries: Int { cache.withLock { $0.count } }
 
-    /// The texture for `key`: the one a live plan already holds, else `make`'s.
-    private func cached(_ key: Key, _ make: () throws -> MTLTexture) rethrows -> MTLTexture {
-        if let hit = cache.withLock({ $0[key]?.texture }) { return hit }
+    /// The texture or slice plan for `key`: the one a live plan already holds, else `make`'s.
+    private func cached<T: AnyObject>(_ key: Key, _ make: () throws -> T) rethrows -> T {
+        if let hit = cache.withLock({ $0[key]?.object as? T }) { return hit }
         // ponytail: no lock over `make` (it would queue every preview compile behind the slowest): two threads missing one
         // key both build it, both correct, the later stays cached; track builds in flight per key if that waste shows
-        let texture = try make()
-        cache.withLock { $0[key] = Entry(texture: texture) }
-        return texture
+        let made = try make()
+        cache.withLock { $0[key] = Entry(object: made) }
+        return made
     }
 
     /// `drawable` is the size of the display's drawable in pixels; a nil region covers it entirely.
     public func compile(_ config: OutputConfig, index: Int, drawable: (width: Int, height: Int)) throws -> OutputPlan {
-        cache.withLock { entries in entries = entries.filter { $0.value.texture != nil } }
+        cache.withLock { entries in entries = entries.filter { $0.value.object != nil } }
         let r = config.region ?? PixelRect(x: 0, y: 0, w: drawable.width, h: drawable.height)
         let x = min(max(0, r.x), max(0, drawable.width - 1)), y = min(max(0, r.y), max(0, drawable.height - 1))
         let w = max(1, min(r.w, drawable.width - x)), h = max(1, min(r.h, drawable.height - y))
@@ -155,27 +178,53 @@ public final class OutputCompiler: @unchecked Sendable {
                 return try texture(.rgba16Float, width: w, height: h, bytesPerPixel: 8, label: "blend \(config.id)") { map.withUnsafeBytes { $0.baseAddress! } }
             }
         }
-        var warpField: MTLTexture? = nil
-        if !config.warp.isIdentity {
-            let cols = max(2, w / Self.fieldDivisor), rows = max(2, h / Self.fieldDivisor)
-            warpField = try cached(.warp(config.warp, cols: cols, rows: rows)) {
-                let field = WarpMath.field(config.warp, cols: cols, rows: rows)
-                return try texture(.rg32Float, width: cols, height: rows, bytesPerPixel: 8, label: "warp \(config.id)") { field.withUnsafeBytes { $0.baseAddress! } }
+        // the whole output as a slice without a mask: canvas 1, opacity 1
+        let patternMesh = try slicePlan(SliceConfig(id: 0), output: config.id, width: w, height: h)
+        let edited = try geometry(config.warp, config.slices, output: config.id, width: w, height: h)
+        // presets as a hand-edited or foreign file may have them (`ProjectDocument.load` cleans numbers and repeats): numbers
+        // 1…255, the first of each number, and only one that validates as an edited mapping would and compiles. One that
+        // does not is skipped and said once; it never fails the output
+        var presets: [Int: PresetGeometry] = [:], seen = Set<Int>()
+        for preset in config.presets where MappingPreset.numbers.contains(preset.number) && seen.insert(preset.number).inserted {
+            do {
+                let valid = try ProjectDocument.validated(preset)
+                presets[preset.number] = try geometry(valid.warp, valid.slices, output: config.id, width: w, height: h)
+            } catch {
+                if reported.withLock({ $0.insert([config.id, preset.number]).inserted }) {
+                    logger?.warning("mapping preset skipped", metadata: ["output": "\(config.id)", "preset": "\(preset.number)", "error": "\(error)"])
+                }
             }
         }
-        var slices: [SlicePlan] = []
-        let full = SliceMesh.build(SliceConfig(id: 0), subdivisions: Self.sliceSubdivisions)
-        guard let fullVertices = device.makeBuffer(bytes: full.vertices, length: full.vertices.count * MemoryLayout<SliceMesh.Vertex>.stride, options: .storageModeShared),
-            let fullIndices = device.makeBuffer(bytes: full.indices, length: full.indices.count * 4, options: .storageModeShared)
-        else { throw RenderError.pipeline("pattern mesh \(config.id)") }
-        let patternMesh = SlicePlan(vertices: fullVertices, indices: fullIndices, indexCount: full.indices.count, mask: nil, opacity: 1)
-        for slice in config.slices {
+        let gain = config.color.gain.count == 3 ? config.color.gain.map(Float.init) : [1, 1, 1]
+        return OutputPlan(
+            id: config.id, index: index, region: region, intensity: Float(config.intensity), testPattern: TestPattern(rawValue: config.testPattern) ?? .off,
+            color: SIMD4(gain[0], gain[1], gain[2], Float(config.color.black)), blendMap: blendMap, warpField: edited.warpField, slices: edited.slices,
+            patternMesh: patternMesh, presets: presets)
+    }
+
+    /// A mapping's warp field and slices on a w × h output: the edited one or a preset's, textures through the cache.
+    private func geometry(_ warp: WarpSettings, _ configs: [SliceConfig], output id: Int, width w: Int, height h: Int) throws -> PresetGeometry {
+        var warpField: MTLTexture? = nil
+        if !warp.isIdentity {
+            let cols = max(2, w / Self.fieldDivisor), rows = max(2, h / Self.fieldDivisor)
+            warpField = try cached(.warp(warp, cols: cols, rows: rows)) {
+                let field = WarpMath.field(warp, cols: cols, rows: rows)
+                return try texture(.rg32Float, width: cols, height: rows, bytesPerPixel: 8, label: "warp \(id)") { field.withUnsafeBytes { $0.baseAddress! } }
+            }
+        }
+        return PresetGeometry(warpField: warpField, slices: try configs.map { try slicePlan($0, output: id, width: w, height: h) })
+    }
+
+    /// A slice's tessellated mesh and mask texture on a w × h output, through the cache: a rebind (every drag step) builds
+    /// only the slices that changed, the edited mapping's and every preset's.
+    private func slicePlan(_ slice: SliceConfig, output id: Int, width w: Int, height h: Int) throws -> SlicePlan {
+        try cached(.slice(slice, width: w, height: h)) {
             let (vertices, indices) = SliceMesh.build(slice, subdivisions: Self.sliceSubdivisions)
             guard !vertices.isEmpty,
                 let vertexBuffer = device.makeBuffer(bytes: vertices, length: vertices.count * MemoryLayout<SliceMesh.Vertex>.stride, options: .storageModeShared),
                 let indexBuffer = device.makeBuffer(bytes: indices, length: indices.count * 4, options: .storageModeShared)
             else { throw RenderError.pipeline("slice mesh \(slice.id)") }
-            vertexBuffer.label = "slice \(config.id).\(slice.id)"
+            vertexBuffer.label = "slice \(id).\(slice.id)"
             var mask: MTLTexture? = nil
             // keyed by the mask alone: moving the slice keeps its raster
             if let m = slice.mask, m.path.count >= 3 {
@@ -183,19 +232,15 @@ public final class OutputCompiler: @unchecked Sendable {
                     if m.feather >= 2 {
                         // signed-distance feather on a coarser grid (the field is smooth); 1080p with an 8 px feather → 480×270
                         let raster = MaskMath.raster(m, width: w, height: h, step: min(4, Int(m.feather / 2)))
-                        return try texture(.r8Unorm, width: raster.width, height: raster.height, bytesPerPixel: 1, label: "mask \(config.id).\(slice.id)") { raster.bytes.withUnsafeBytes { $0.baseAddress! } }
+                        return try texture(.r8Unorm, width: raster.width, height: raster.height, bytesPerPixel: 1, label: "mask \(id).\(slice.id)") { raster.bytes.withUnsafeBytes { $0.baseAddress! } }
                     }
                     // hard edge: CoreGraphics fills the polygon pixel-exactly at full resolution
                     let raster = Self.fill(m.path, width: w, height: h)
-                    return try texture(.r8Unorm, width: w, height: h, bytesPerPixel: 1, label: "mask \(config.id).\(slice.id)") { raster.withUnsafeBytes { $0.baseAddress! } }
+                    return try texture(.r8Unorm, width: w, height: h, bytesPerPixel: 1, label: "mask \(id).\(slice.id)") { raster.withUnsafeBytes { $0.baseAddress! } }
                 }
             }
-            slices.append(SlicePlan(vertices: vertexBuffer, indices: indexBuffer, indexCount: indices.count, mask: mask, opacity: Float(slice.opacity), canvas: slice.canvas))
+            return SlicePlan(vertices: vertexBuffer, indices: indexBuffer, indexCount: indices.count, mask: mask, opacity: Float(slice.opacity), canvas: slice.canvas)
         }
-        let gain = config.color.gain.count == 3 ? config.color.gain.map(Float.init) : [1, 1, 1]
-        return OutputPlan(
-            id: config.id, index: index, region: region, intensity: Float(config.intensity), testPattern: TestPattern(rawValue: config.testPattern) ?? .off,
-            color: SIMD4(gain[0], gain[1], gain[2], Float(config.color.black)), blendMap: blendMap, warpField: warpField, slices: slices, patternMesh: patternMesh)
     }
 
     /// Anti-aliased polygon fill, 8-bit coverage, row-major from the top-left.
@@ -240,7 +285,7 @@ enum OutputPass {
         plan.index - 1 < outputs.count && plan.index >= 1 ? outputs[plan.index - 1] : OutputParameters()
     }
 
-    /// Output Control = Freeze: keeps a copy of the canvases its slices use from the moment Freeze engaged, released
+    /// Output Control = Freeze: keeps a copy of the canvases its slices and presets use from the moment Freeze engaged, released
     /// when it ends. `canvas` looks a canvas up by id (nil: it does not render); `master` is the Master intensity those
     /// canvases were drawn with. At Master 0 they are black and carry no picture: the plan stays live (black at 0) and
     /// holds the first canvas drawn above 0. Call before the output render encoder is created.
@@ -253,16 +298,16 @@ enum OutputPass {
             }
             guard plan.held.isEmpty, master > 0 else { continue }
             var held: [Int: MTLTexture] = [:]
-            for slice in plan.slices where held[slice.canvas] == nil {
-                guard let source = canvas(slice.canvas) else { continue }
+            for id in plan.canvases {
+                guard let source = canvas(id) else { continue }
                 let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: source.pixelFormat, width: source.width, height: source.height, mipmapped: false)
                 descriptor.usage = .shaderRead
                 descriptor.storageMode = .private
                 guard let copy = buffer.device.makeTexture(descriptor: descriptor), let blit = buffer.makeBlitCommandEncoder() else { continue }
-                copy.label = "frozen output \(plan.id) canvas \(slice.canvas)"
+                copy.label = "frozen output \(plan.id) canvas \(id)"
                 blit.copy(from: source, to: copy)
                 blit.endEncoding()
-                held[slice.canvas] = copy
+                held[id] = copy
             }
             plan.held = held
             plan.heldMaster = master
@@ -271,7 +316,7 @@ enum OutputPass {
 
     /// An edit recompiles the plans while Freeze is engaged (B111): once, on the thread that renders `set`, each frozen
     /// plan takes the hold of the plan with its id in the set it replaced, if those copies cover the canvases its slices
-    /// sample at their sizes (a canvas resize blanks the outputs anyway, B59; otherwise it holds afresh); then the
+    /// and presets sample at their sizes (a canvas resize blanks the outputs anyway, B59; otherwise it holds afresh); then the
     /// replaced set is released. Not on MainActor: `held` is written by the render thread while the edit runs.
     static func adopt(_ set: OutputSet, canvas: (Int) -> MTLTexture?, outputs: [OutputParameters]) {
         guard let previous = set.previous.withLock({ p -> OutputSet? in
@@ -281,9 +326,9 @@ enum OutputPass {
         adopt(previous, canvas: canvas, outputs: outputs)  // a replaced set that never rendered takes its own first
         for plan in set.plans where plan.held.isEmpty && fixture(for: plan, in: outputs).control == .freeze {
             guard let old = previous.plans.first(where: { $0.id == plan.id }),
-                plan.slices.allSatisfy({ slice in
-                    guard let live = canvas(slice.canvas) else { return true }  // not rendering: `holdFrozen` holds nothing of it either
-                    return old.held[slice.canvas].map { $0.width == live.width && $0.height == live.height } ?? false
+                plan.canvases.allSatisfy({ id in
+                    guard let live = canvas(id) else { return true }  // not rendering: `holdFrozen` holds nothing of it either
+                    return old.held[id].map { $0.width == live.width && $0.height == live.height } ?? false
                 })
             else { continue }
             (plan.held, plan.heldMaster) = (old.held, old.heldMaster)
@@ -299,10 +344,11 @@ enum OutputPass {
     }
 
     /// `canvas` looks a canvas up by id; canvas 1 always renders. A slice whose canvas does not render stays black.
-    /// `keystones` by output index like `outputs`; the previews pass none: they show the mapping as edited (§9.10 item 3).
+    /// `keystones` and `presets` (the mapping preset each output shows, 0 = as edited) by output index like `outputs`;
+    /// the previews pass none: they show the mapping as edited (§9.10 item 3).
     static func draw(
         _ set: OutputSet, canvas lookup: (Int) -> MTLTexture?, encoder: MTLRenderCommandEncoder, context: MetalContext, uniforms: MTLBuffer,
-        master: Float, masterPattern: TestPattern, outputs: [OutputParameters], keystones: [simd_float3x3]
+        master: Float, masterPattern: TestPattern, outputs: [OutputParameters], keystones: [simd_float3x3], presets: [UInt8]
     ) {
         // bound to texture slots the shader does not sample in this draw (patterns, no blend map, no warp, no mask)
         guard let canvas = lookup(1) else { return }
@@ -311,6 +357,8 @@ enum OutputPass {
             let fixture = fixture(for: plan, in: outputs)
             // raw bypasses the keystone with the warp
             let keystone = !fixture.raw && plan.index >= 1 && plan.index - 1 < keystones.count ? keystones[plan.index - 1] : matrix_identity_float3x3
+            // the preset's warp and slices; the blend map, colour and the keystone on top are the output's
+            let geometry = plan.geometry(plan.index >= 1 && plan.index - 1 < presets.count ? presets[plan.index - 1] : 0)
             let region = plan.region
             encoder.setViewport(MTLViewport(originX: Double(region.origin.x), originY: Double(region.origin.y), width: Double(region.size.width), height: Double(region.size.height), znear: 0, zfar: 1))
             encoder.setScissorRect(MTLScissorRect(x: region.origin.x, y: region.origin.y, width: region.size.width, height: region.size.height))
@@ -330,7 +378,7 @@ enum OutputPass {
                 var u = MappedUniforms()
                 u.size = SIMD2(Float(region.size.width), Float(region.size.height))
                 u.intensity = intensity
-                u.flags = (plan.warpField != nil ? 1 : 0) | (fixture.raw ? 4 : 0) | (plan.blendMap == nil ? 8 : 0)
+                u.flags = (geometry.warpField != nil ? 1 : 0) | (fixture.raw ? 4 : 0) | (plan.blendMap == nil ? 8 : 0)
                 u.pattern = UInt32(pattern.rawValue)
                 u.index = UInt32(plan.index)
                 u.color = plan.color
@@ -342,7 +390,7 @@ enum OutputPass {
                 encoder.setFragmentTexture(canvas, index: 0)
                 encoder.setFragmentTexture(canvas, index: 1)
                 encoder.setFragmentTexture(plan.blendMap ?? canvas, index: 2)
-                encoder.setVertexTexture(plan.warpField ?? canvas, index: 0)
+                encoder.setVertexTexture(geometry.warpField ?? canvas, index: 0)
                 encoder.setVertexBuffer(mesh.vertices, offset: 0, index: 0)
                 encoder.setVertexBuffer(uniforms, offset: offset, index: 1)
                 encoder.setFragmentBuffer(uniforms, offset: offset, index: 1)
@@ -354,8 +402,8 @@ enum OutputPass {
             encoder.setVertexSamplerState(context.linearSampler, index: 0)
             encoder.setFragmentSamplerState(context.linearSampler, index: 0)
             encoder.setFragmentTexture(plan.blendMap ?? canvas, index: 2)
-            encoder.setVertexTexture(plan.warpField ?? canvas, index: 0)
-            for slice in plan.slices {
+            encoder.setVertexTexture(geometry.warpField ?? canvas, index: 0)
+            for slice in geometry.slices {
                 guard offset + 256 <= uniforms.length else { return }
                 let frozen = fixture.control == .freeze ? plan.held[slice.canvas] : nil
                 guard let source = frozen ?? lookup(slice.canvas) else { continue }  // removed canvas: black (the coordinator logs it)
@@ -367,7 +415,7 @@ enum OutputPass {
                 u.opacity = slice.opacity
                 u.color = plan.color
                 u.keystone = keystone
-                u.flags = (plan.warpField != nil ? 1 : 0) | (slice.mask != nil ? 2 : 0) | (fixture.raw ? 4 : 0) | (plan.blendMap == nil ? 8 : 0)
+                u.flags = (geometry.warpField != nil ? 1 : 0) | (slice.mask != nil ? 2 : 0) | (fixture.raw ? 4 : 0) | (plan.blendMap == nil ? 8 : 0)
                 (uniforms.contents() + offset).assumingMemoryBound(to: MappedUniforms.self).pointee = u
                 encoder.setVertexBuffer(slice.vertices, offset: 0, index: 0)
                 encoder.setVertexBuffer(uniforms, offset: offset, index: 1)

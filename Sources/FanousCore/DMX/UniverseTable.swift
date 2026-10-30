@@ -121,7 +121,6 @@ public struct UniverseStatus: Equatable, Sendable {
 /// universe (unless that one listens only to the other transport) and every universe that has it as its `pair`.
 /// Used on the DMX queue; copies are cheap enough for the UI's 20 Hz snapshots.
 public struct UniverseTable: Sendable {
-    public static let lossTimeout = UniverseSettings.defaultLossTimeout
     private struct Entry: Sendable {
         var artnet = ArtNetUniverseState()
         var sacn = SACNUniverseMerger()

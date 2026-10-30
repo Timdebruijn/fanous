@@ -18,7 +18,7 @@ public struct MapPoint: Codable, Hashable, Sendable {
 }
 
 /// A rectangle in normalized coordinates (slice source on the canvas).
-public struct MapRect: Codable, Equatable, Sendable {
+public struct MapRect: Codable, Hashable, Sendable {
     public var x: Double
     public var y: Double
     public var w: Double
@@ -117,7 +117,7 @@ public struct MaskSettings: Codable, Hashable, Sendable {
     }
 }
 
-public struct SliceConfig: Codable, Equatable, Sendable {
+public struct SliceConfig: Codable, Hashable, Sendable {
     public var id: Int
     public var canvas: Int = 1
     /// Source rectangle on the canvas.
@@ -179,11 +179,32 @@ public struct OutputConfig: Codable, Equatable, Sendable, Identifiable {
     public var testPattern: Int = 0
     /// Projects saved before it existed read as the default (gain 1, black 0).
     public var color = OutputColor()
+    /// Stored mapping presets, by number (DESIGN.md §9.10 item 3); Output ch 6 or Compare shows one.
+    public var presets: [MappingPreset] = []
 
     public init(id: Int, name: String? = nil) {
         self.id = id
         self.name = name ?? "Output \(id)"
         slices = [SliceConfig(id: 1)]
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, name, display, region, mode, intensity, blend, warp, slices, testPattern, color, presets }
+
+    /// As synthesized, but `presets` only when there are any: a project without presets saves byte for byte as before.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encodeIfPresent(display, forKey: .display)
+        try c.encodeIfPresent(region, forKey: .region)
+        try c.encodeIfPresent(mode, forKey: .mode)
+        try c.encode(intensity, forKey: .intensity)
+        try c.encode(blend, forKey: .blend)
+        try c.encode(warp, forKey: .warp)
+        try c.encode(slices, forKey: .slices)
+        try c.encode(testPattern, forKey: .testPattern)
+        try c.encode(color, forKey: .color)
+        if !presets.isEmpty { try c.encode(presets, forKey: .presets) }
     }
 
     public init(from decoder: Decoder) throws {
@@ -199,6 +220,58 @@ public struct OutputConfig: Codable, Equatable, Sendable, Identifiable {
         slices = try c.decode([SliceConfig].self, forKey: .slices)
         testPattern = try c.decode(Int.self, forKey: .testPattern)
         color = try c.decodeIfPresent(OutputColor.self, forKey: .color) ?? OutputColor()
+        presets = try c.decodeIfPresent([MappingPreset].self, forKey: .presets) ?? []
+    }
+
+    public func preset(_ number: Int) -> MappingPreset? { presets.first { $0.number == number } }
+
+    /// Snapshots the edited mapping (warp and slices, masks included) as preset `number`, kept in number order. Replaces
+    /// one with that number, keeping its name unless `name` is given; returns whether it replaced one.
+    @discardableResult public mutating func storePreset(_ number: Int, name: String?) -> Bool {
+        let old = presets.firstIndex { $0.number == number }
+        let preset = MappingPreset(number: number, name: name ?? old.map { presets[$0].name } ?? "Preset \(number)", warp: warp, slices: slices)
+        if let old {
+            presets[old] = preset
+        } else {
+            presets.insert(preset, at: presets.firstIndex { $0.number > number } ?? presets.endIndex)
+        }
+        return old != nil
+    }
+
+    /// Copies preset `number` into the edited mapping; false when the output has none.
+    public mutating func recallPreset(_ number: Int) -> Bool {
+        guard let preset = preset(number) else { return false }
+        (warp, slices) = (preset.warp, preset.slices)
+        return true
+    }
+}
+
+/// What Warp & Slices edits, stored under a number (DESIGN.md §9.10 item 3). Blend, black floor, colour, intensity,
+/// region and display are the projector's tuning and stay live; a later wall change does not touch a stored preset.
+public struct MappingPreset: Codable, Equatable, Sendable {
+    public var number: Int
+    public var name: String
+    public var warp: WarpSettings
+    public var slices: [SliceConfig]
+    public init(number: Int, name: String, warp: WarpSettings, slices: [SliceConfig]) {
+        self.number = number
+        self.name = name
+        self.warp = warp
+        self.slices = slices
+    }
+
+    /// Output ch 6: 0 shows the edited mapping, so presets are 1…255.
+    public static let numbers = 1...255
+    public static let maxNameLength = 64
+
+    /// Why a preset number is refused; nil when it is fine.
+    public static func numberProblem(_ number: Int?) -> String? { number.map(numbers.contains) == true ? nil : "number must be 1–255" }
+
+    /// Why a (trimmed) name is refused; nil when it is fine.
+    public static func nameProblem(_ name: String) -> String? {
+        if name.isEmpty { return "name must not be empty" }
+        if name.count > maxNameLength { return "name must be at most \(maxNameLength) characters" }
+        return nil
     }
 }
 

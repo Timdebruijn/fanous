@@ -57,14 +57,4 @@ import Testing
         #expect(DXTCompressor.compressedSize(width: 1920, height: 1080, format: .ycocgDXT5) == 1920 * 1080)
         #expect(DXTCompressor.compressedSize(width: 1920, height: 1080, format: .bc1) == 1920 * 1080 / 2)
     }
-
-    @Test func patternCounterRoundTrips() {
-        let width = 1024, height = 64
-        var bgra = [UInt8](repeating: 0, count: width * height * 4)
-        for frame in [0, 1, 255, 4660, 65535] {
-            bgra.withUnsafeMutableBufferPointer { PatternFrames.fill(bgra: $0.baseAddress!, width: width, height: height, bytesPerRow: width * 4, frame: frame) }
-            let read = bgra.withUnsafeBufferPointer { PatternFrames.counter(bgra: $0.baseAddress!, bytesPerRow: width * 4) }
-            #expect(read == frame)
-        }
-    }
 }

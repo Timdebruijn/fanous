@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest';
 import type { OutputConfig, WarpSettings } from './outputs';
 import { nudgeStored, toScreen, applyHomography, homography, invert, meshPoint, resampleMesh, unwarp, warped } from './warp';
 
-// Reference values printed by WarpMath (MappingMath.swift) for exactly these inputs.
+// Reference values printed by WarpMath (MappingMath.swift, Double) for exactly these inputs; `meshPoint` and `warped`
+// were removed from the Swift side in PR #118, where `WarpMath.field` evaluates the same surface in Float.
 const quad = [{ x: 0.05, y: 0.1 }, { x: 0.95, y: 0 }, { x: 1, y: 0.9 }, { x: 0, y: 1 }];
 const mesh = {
   cols: 3,

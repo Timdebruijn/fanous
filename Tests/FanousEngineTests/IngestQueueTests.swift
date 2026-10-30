@@ -231,7 +231,7 @@ import UniformTypeIdentifiers
         }
     }
 
-    // MARK: (c) stills, originals, overwrite
+    // MARK: (c) stills, originals, name clash
 
     @Test func stillIsCopiedAndOriginalMoved() async throws {
         let directory = try tempDir("fanous-ingest-tests")
@@ -260,7 +260,7 @@ import UniformTypeIdentifiers
         #expect(FileManager.default.fileExists(atPath: library.appending(path: "_originals/title-2.png").path))
     }
 
-    @Test func existingDestinationFailsUnlessOverwriteAndSourceCanBeDeleted() async throws {
+    @Test func existingDestinationFailsAndSourceCanBeDeleted() async throws {
         let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let first = directory.appending(path: "first.png"), second = directory.appending(path: "second.png")
@@ -284,12 +284,9 @@ import UniformTypeIdentifiers
         #expect(try String(contentsOf: destination, encoding: .utf8) == "one")
         #expect(FileManager.default.fileExists(atPath: second.path))  // a failed job leaves its source alone
 
-        let replace = queue.enqueue(IngestJob(source: second, destination: destination, kind: .still, overwrite: true))
-        #expect(await Self.wait(for: replace.id, in: queue) == .done)
-        #expect(try String(contentsOf: destination, encoding: .utf8) == "two")
         queue.remove(id: one.id)
         queue.remove(id: clash.id)
-        #expect(queue.jobs.map(\.id) == [replace.id])
+        #expect(queue.jobs.isEmpty)
     }
 
     // MARK: (d) persistence

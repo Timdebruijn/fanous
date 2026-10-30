@@ -100,10 +100,6 @@ export class FanousClient {
     this.socket = null;
   }
 
-  get currentRev(): number {
-    return this.rev;
-  }
-
   /** Runs a command; rejects with the engine's {code, message} when it is refused. */
   cmd<N extends CommandName>(name: N, args?: CommandArgs[N]): Promise<JSONValue> {
     const id = `c${this.nextId++}`;

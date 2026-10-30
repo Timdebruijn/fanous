@@ -24,13 +24,11 @@ public final class CueRunner: @unchecked Sendable {
     private let queue = DispatchQueue(label: "org.fanous.cues", qos: .userInitiated)
     private let engine = Mutex(CueEngine(list: CueList()))
     private let dmx: DMXStore
-    private let logger: Logger
     private var timer: DispatchSourceTimer?
     public let status = Mutex(Status(current: nil, currentName: nil, next: nil, nextName: nil, fading: false, count: 0))
 
-    public init(dmx: DMXStore, logger: Logger) {
+    public init(dmx: DMXStore) {
         self.dmx = dmx
-        self.logger = logger
     }
 
     public func replace(list: CueList) {
