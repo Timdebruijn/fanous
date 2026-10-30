@@ -2037,7 +2037,7 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
   - Recall and Compare from the UI cut.
   - Keystone applies on top.
 
-**As built (M2.4, PR #TBD):**
+**As built (M2.4, PR #123):**
 - **Model.** `OutputConfig.presets: [MappingPreset]`, kept in number order. `encode(to:)` is written out (with its
   `CodingKeys`) and writes `presets` only when there are any: an output without presets encodes byte for byte as before,
   which a Core test checks against that release's literal. `storePreset` and `recallPreset` are pure, in Core.
