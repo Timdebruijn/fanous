@@ -96,6 +96,8 @@ final class Box { var value = 0 }
                 slot.outputs[0].raw = i % 2 == 1
                 slot.keystones[1] = matrix_identity_float3x3 * Float(i)
                 slot.keystoneInvalid[1] = i == 2
+                slot.presets[2] = UInt8(i)
+                slot.presetCompare[2] = i == 2
             }
         }
         let published = store.snapshots.read()
@@ -105,6 +107,7 @@ final class Box { var value = 0 }
                 && $0.masterControl == published.masterControl && $0.masterSpeed == published.masterSpeed
                 && $0.testPattern == published.testPattern && $0.layers == published.layers && $0.outputs == published.outputs
                 && $0.keystones == published.keystones && $0.keystoneInvalid == published.keystoneInvalid
+                && $0.presets == published.presets && $0.presetCompare == published.presetCompare
         }
         #expect(same)
     }
@@ -152,6 +155,36 @@ final class Box { var value = 0 }
             s = state()
             #expect(near(s.topLeft, .zero) && !s.invalid, "unpatched: the identity")
         }
+    }
+
+    /// DESIGN.md §9.10 item 3: Output ch 6 asks for a mapping preset; Compare's lease (`output.show`) wins over it while it
+    /// runs, the latest call wins, and the tick lets it expire 5 s after its last renewal. An output without an Output
+    /// fixture can still compare.
+    @Test func compareWinsOverChannel6AndExpires() {
+        let universe = UniverseID(.artnet, 0)
+        let store = DMXStore(patch: Patch(entries: [PatchEntry(fixture: .output(1), universe: universe, address: 1)]), logger: Logger(label: "test"))
+        let t = 1000.0
+        func send(ch6: UInt8, at time: Double) {
+            var data = [UInt8](repeating: 0, count: 512)
+            (data[0], data[1], data[5]) = (0xFF, 0xFF, ch6)
+            store.queue.sync { store.receive(artnet: ArtDmx(portAddress: 0, data: data), from: "desk", at: time) }
+        }
+        func shown(_ i: Int = 0) -> (preset: UInt8, compare: Bool) { store.snapshots.withLatest { ($0.presets[i], $0.presetCompare[i]) } }
+        send(ch6: 3, at: t)
+        #expect(shown() == (3, false), "the console's preset")
+        store.queue.sync { store.show([1, 2], preset: 5, at: t + 1) }
+        #expect(shown() == (5, true) && shown(1) == (5, true), "Compare wins, also on an output without an Output fixture")
+        send(ch6: 4, at: t + 2)
+        #expect(shown() == (5, true), "a ch 6 change under a running lease")
+        store.queue.sync { store.show([1], preset: 6, at: t + 3) }  // a renewal with another preset: the latest wins
+        #expect(shown() == (6, true))
+        store.queue.sync { store.tick(at: t + 7.9) }
+        #expect(shown() == (6, true) && shown(1) == (0, false), "output 2's lease (from t + 1) ran out, output 1's renewal runs to t + 8")
+        store.queue.sync { store.tick(at: t + 8) }
+        #expect(shown() == (4, false), "expired: back to ch 6")
+        store.queue.sync { store.show([1], preset: 7, at: t + 9) }
+        store.queue.sync { store.show([1], preset: 0, at: t + 9.5) }
+        #expect(shown() == (4, false), "preset 0 ends it at once")
     }
 
     /// DMX loss with hold "zero" centres a Keystone fixture instead of putting every corner at −50 %: zero for a geometry

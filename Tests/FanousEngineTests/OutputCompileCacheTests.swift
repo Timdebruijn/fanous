@@ -75,6 +75,50 @@ struct OutputCompileCacheTests {
         withExtendedLifetime(basePlan) {}
     }
 
+    /// Slice meshes go through the cache too (§9.10 item 3): a rebind reuses the edited mapping's and every preset's slice
+    /// plans and the pattern mesh; a moved slice is a new plan that keeps its mask raster.
+    @Test func aRecompileReusesSlicePlansOfTheMappingAndItsPresets() throws {
+        let compiler = try OutputCompiler(device: MetalContext().device)
+        var config = Self.output(1)
+        config.storePreset(1, name: nil)
+        config.slices[0].dest[0] = MapPoint(0.1, 0)
+        config.storePreset(2, name: nil)
+        let first = try compiler.compile(config, index: 1, drawable: (320, 180))
+        var dragged = config
+        dragged.warp.cornerPin[1] = MapPoint(0.9, 0.05)  // a drag step on the edited warp
+        let next = try compiler.compile(dragged, index: 1, drawable: (320, 180))
+        #expect(next.slices[0] === first.slices[0] && next.patternMesh === first.patternMesh)
+        #expect(next.presets[1]?.slices[0] === first.presets[1]?.slices[0] && next.presets[2]?.slices[0] === first.presets[2]?.slices[0])
+        #expect(first.slices[0] === first.presets[2]?.slices[0], "a preset equal to the mapping shares its plan")
+        #expect(first.presets[1]?.slices[0] !== first.presets[2]?.slices[0])
+        #expect(first.presets[1]?.slices[0].mask === first.presets[2]?.slices[0].mask, "a moved slice keeps its mask raster")
+        dragged.slices[0].opacity = 0.5
+        #expect(try compiler.compile(dragged, index: 1, drawable: (320, 180)).slices[0] !== first.slices[0], "anything the plan holds is in its key")
+    }
+
+    /// A slice plan's key carries everything the plan holds: with the base plan alive, each variant compiled through the
+    /// warm cache has the mesh (bytes), opacity, canvas and mask of a fresh compile, so a key that drops a field fails here.
+    @Test func aCachedSlicePlanHasTheBytesOfAFreshCompile() throws {
+        let device = try MetalContext().device
+        let warm = OutputCompiler(device: device)
+        let base = Self.output(1)
+        let held = try warm.compile(base, index: 1, drawable: (320, 180))
+        func bytes(_ buffer: MTLBuffer) -> [UInt8] { Array(UnsafeRawBufferPointer(start: buffer.contents(), count: buffer.length)) }
+        let edits: [(String, (inout SliceConfig) -> Void)] = [
+            ("dest", { $0.dest[2] = MapPoint(0.9, 0.95) }), ("source", { $0.source = MapRect(x: 0.25, y: 0, w: 0.5, h: 1) }),
+            ("opacity", { $0.opacity = 0.5 }), ("canvas", { $0.canvas = 2 }), ("mask", { $0.mask = nil }),
+        ]
+        for (name, edit) in edits {
+            var variant = base
+            edit(&variant.slices[0])
+            let cached = try warm.compile(variant, index: 1, drawable: (320, 180)).slices[0]
+            let fresh = try OutputCompiler(device: device).compile(variant, index: 1, drawable: (320, 180)).slices[0]
+            #expect(bytes(cached.vertices) == bytes(fresh.vertices) && bytes(cached.indices) == bytes(fresh.indices), "mesh, \(name)")
+            #expect(cached.opacity == fresh.opacity && cached.canvas == fresh.canvas && (cached.mask == nil) == (fresh.mask == nil), "\(name)")
+        }
+        withExtendedLifetime(held) {}
+    }
+
     /// The coordinator compiles every output of a display while the display's current set still holds its plans.
     @Test func anEditOnOneOutputLeavesTheOthersAlone() throws {
         let compiler = try OutputCompiler(device: MetalContext().device)
@@ -103,12 +147,12 @@ struct OutputCompileCacheTests {
         current = nil  // swapped: only `next.previous` holds it now
         #expect(oldBlend != nil, "held by the replacing set until it adopts")
         #expect(try compiler.compile(config, index: 1, drawable: (320, 180)).blendMap === oldBlend)
-        #expect(compiler.entries == 4)  // two blend maps, the shared warp field and mask
+        #expect(compiler.entries == 6)  // two blend maps, the shared warp field, mask, slice plan and pattern mesh
         OutputPass.adopt(next, canvas: { _ in nil }, outputs: [])  // the render thread releases `previous`
         #expect(oldBlend == nil, "no plan holds it: freed")
         #expect(warp === next.plans[0].warpField)
         _ = try compiler.compile(edited, index: 1, drawable: (320, 180))
-        #expect(compiler.entries == 3, "the dead entry is dropped at the next compile")
+        #expect(compiler.entries == 5, "the dead entry is dropped at the next compile")
     }
 
     /// The measurement of §9.10 "As built (M2.2)": a 2×2 wall of 1920×1080 outputs on one 3840×2160 drawable, blended on
