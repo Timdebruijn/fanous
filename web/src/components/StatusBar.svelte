@@ -35,6 +35,8 @@
     if (u.ageSeconds < 0) return `${name} · silent`;
     return `${name} · ${u.ageSeconds.toFixed(1)} s`;
   }
+  // switched on with a source (Show › Timecode); live `off` only means nothing has arrived yet
+  const timecodeOn = $derived(app.project.timecode.source !== 'off' && app.project.timecode.enabled !== false);
   const showMode = $derived(app.live.show.mode);
   const syncLost = $derived(app.live.layers.filter((l) => l.sync?.state === 'lost').map((l) => `Layer ${l.index}`));
   const resumed = $derived(resumedText(app.live.show.resumedAt));
@@ -95,10 +97,10 @@
     {/each}
   </div>
   <!-- timecode and ingest only while they have something to say (DESIGN §12), so the bar fits one row on a laptop -->
-  {#if app.live.timecode.state !== 'off'}
+  {#if timecodeOn || app.live.timecode.state !== 'off'}
     <div class="item col" class:red={app.live.timecode.state === 'lost' && app.project.showLock}>
-      <span class="mono value">{app.live.timecode.value}</span>
-      <span class="caption">timecode · {app.live.timecode.state}</span>
+      <span class="mono value" class:faint={app.live.timecode.state === 'off'}>{app.live.timecode.value}</span>
+      <span class="caption">timecode{app.live.timecode.state === 'off' ? '' : ` · ${app.live.timecode.state}`}</span>
     </div>
   {/if}
   <div class="item col" class:red={!outputsOk && app.project.showLock}>

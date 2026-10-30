@@ -547,7 +547,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Changed: a camera (built-in, iPhone over Continuity Camera) opens at the largest size that fits canvas 1 and holds
   the canvas rate, else the largest that fits, instead of its active format's size (the iPhone stayed at 640x480);
   capture cards and UVC devices keep following their input (B126, PR #149).
-- Changed: the status bar fits one row on a 1440 px laptop (it took two): timecode shows only while a source is set
+- Changed: the status bar fits one row on a 1440 px laptop (it took two): timecode shows only while it is switched on
   and ingest only while a job runs (DESIGN §12), and the items are a little narrower. Fixed: on a phone the
   "Show mode resumed" note spilled over the row below; an item that wraps now grows (PR #152).
 

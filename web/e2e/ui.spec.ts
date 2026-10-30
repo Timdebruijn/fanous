@@ -305,6 +305,13 @@ test('status bar: one row on a 1440 px laptop, timecode and ingest left out whil
   await expect(banner.getByText('timecode')).toHaveCount(0);
   await expect(banner.getByText('ingest')).toHaveCount(0);
   await expect.poll(() => banner.evaluate((el) => el.getBoundingClientRect().height)).toBeLessThanOrEqual(56);
+  // switched on, timecode is in the bar before anything arrives
+  const timecode = page.locator('section.tc');
+  await openScreen(page, 'Show');
+  await timecode.getByRole('combobox', { name: 'Source', exact: true }).selectOption('mtc');
+  await expect(banner.getByText('timecode')).toBeVisible();
+  await timecode.getByRole('combobox', { name: 'Source', exact: true }).selectOption('off');
+  await expect(banner.getByText('timecode')).toHaveCount(0);
 });
 
 test('keys: the global shortcuts do nothing while a modal dialog is open, and ? still closes the shortcut list', async ({ page }) => {
