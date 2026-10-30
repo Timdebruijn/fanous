@@ -549,7 +549,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   capture cards and UVC devices keep following their input (B126, PR #149).
 - Changed: the status bar fits one row on a 1440 px laptop (it took two): timecode shows only while a source is set
   and ingest only while a job runs (DESIGN §12), and the items are a little narrower. Fixed: on a phone the
-  "Show mode resumed" note spilled over the row below; an item that wraps now grows (PR #NNN).
+  "Show mode resumed" note spilled over the row below; an item that wraps now grows (PR #152).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
