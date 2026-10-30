@@ -173,6 +173,9 @@ public final class ParameterSnapshotSlot: @unchecked Sendable {
         slot.testPattern = TestPattern(rawValue: Int(resolver.physical(.master(.testPattern)))) ?? .off
     }
 
+    /// No Master fixture: the defaults above, as before any console.
+    func resetMaster() { (master, masterControl, masterSpeed, testPattern) = (1, .normal, 1, .off) }
+
     func copy(from other: ParameterSnapshotSlot) {
         sequence = other.sequence
         receivedAt = other.receivedAt

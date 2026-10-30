@@ -273,8 +273,10 @@ public final class DMXStore: @unchecked Sendable {
         snapshots.write { slot in
             slot.sequence = sequence
             slot.receivedAt = receivedAt
-            if let master = resolvers[.master] { ParameterSnapshotSlot.from(master, into: slot) }
-            // an output whose fixture was unpatched (or removed) is no longer held at its last console values
+            // an unpatched layer, Master or output (Unpatch, Remove last layer, Remove output, beyond the layer count) is no
+            // longer held at its last values: no source reaches a fixture without a resolver, so nothing could change them
+            if let master = resolvers[.master] { ParameterSnapshotSlot.from(master, into: slot) } else { slot.resetMaster() }
+            for i in slot.layers.indices where resolvers.index(forKey: .layer(i + 1)) == nil { slot.layers[i] = LayerParameters() }
             for i in slot.outputs.indices where resolvers.index(forKey: .output(i + 1)) == nil { slot.outputs[i] = OutputParameters() }
             for (fixture, resolver) in resolvers {
                 if case .layer(let n) = fixture, n >= 1, n <= slot.layers.count { slot.layers[n - 1] = LayerParameters.from(resolver) }

@@ -710,6 +710,12 @@ three existing modes and their footprints alone.
   fixtures resolve as policy `internal` until packets return
   (`FixtureResolver.internalWithoutDMX`; also while a universe has never
   been received).
+- An unpatch is not a loss (2026-10-30): a layer or Master without a patch
+  entry (Unpatch, a lower layer count, `effectivePatch` beyond `layerCount`)
+  has no resolver, so no source reaches it; `DMXStore.publish` writes its
+  defaults (layer: intensity 0, no file; Master: 100 %, Normal, speed
+  100 %, no test pattern) into every snapshot instead of leaving the last
+  values in the triple-buffer slots.
 - Not built: per-packet receive interface (a routed console on another subnet
   is rejected by the subnet filter), Art-Net output/ArtAddress, per-address
   sACN priority (`[OPEN-10]`). Multicast delivery is not covered by the
@@ -2043,6 +2049,9 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
 - The edit overlay is **on while Warp & Slices is open**, with a visible
   **Show on output** switch.
 - Masks v2 **includes freehand** drawing.
+- **Round and triangular slices are presets, not a slice type** (2026-10-30):
+  a slice stays four corners, and a circle is a quad with an ellipse mask
+  (item 5, Slice shapes).
 - Settled in the design, not asked:
   - the Keystone range (±50 % of the output);
   - presets hold the mapping (warp and slices). Blend, colour and black floor
@@ -2360,6 +2369,11 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
     the existing key backfills, and does the same on a version revert.
   - The UI reads the document, and one failed slice decode blanks every
     output, so this happens in the document and not only in Swift.
+  - Presets (3) are built first and store slices with the old `mask`, so the
+    same conversion runs on every `OutputConfig.presets[].slices[]`.
+    Otherwise `decodeIfPresent` skips the old key, and recalling a stored
+    preset silently drops its mask. A test loads a project with a masked
+    preset and recalls it.
 - **Visible area.** The union of the add masks (everything when there is none)
   minus the union of the subtract masks.
   - Feathered, that is `max(adds) × (1 − max(subtracts))`.
@@ -2404,6 +2418,25 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
   - The tools are in the mask mode of Warp & Slices.
   - They work on the iPad too: freehand with a finger on the preview.
   - Remote mode steps through mask points and their handles.
+- **Slice shapes (owner decision 2026-10-30).** A slice stays a quad of four
+  corners. Resolume's regular slices and Millumin's slices are rectangles,
+  quads or triangles, and both make round shapes with masks; only MadMapper
+  has a circle surface (`docs/mapping-ux.md` §2).
+  - Two buttons in the slice mode of Warp & Slices act on the selected slice.
+    Each is one edit, so one undo step:
+    - **Triangle:** the top-left and top-right corners move to the middle of
+      their edge. The bilinear slice mesh squeezes the source's top edge into
+      that point. `output.set` already accepts two equal corners; dragging
+      one away makes a quad again.
+    - **Circle:** adds an ellipse add mask (the Ellipse tool's path) that
+      fills the bounding box of the slice's corners. With other add masks on
+      the slice the visible area is their union, as for any mask.
+  - The mask stays in output coordinates, as every mask does: moving a slice
+    corner afterwards changes how the content stretches, not the circle. A
+    round object seen at an angle is an ellipse on the output anyway, and it
+    is drawn there.
+  - Not built: radial mapping (content wrapped around a ring), until a show
+    asks for it.
 
 **M2 build order** (one PR each, Opus coding agents, review before merge; the
 groundwork and small engine pieces first):
@@ -2414,7 +2447,7 @@ groundwork and small engine pieces first):
 5. Preset morph on Output ch 7
 6. Edit overlay with leases (Compare's lease arrives with 4)
 7. Masks v2: model, loading older projects, banded rasteriser
-8. Masks v2: UI and tools, freehand included
+8. Masks v2: UI and tools, freehand included, and the slice shape buttons
 
 ## 10. Audio
 
