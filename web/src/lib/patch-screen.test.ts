@@ -86,10 +86,10 @@ describe('universe naming and lists', () => {
 
 describe('buildFixtures', () => {
   it('lists layers (patched or not), Master, then outputs in numeric order, each with its Keystone', () => {
-    const rows = buildFixtures([at('Output 10', 'sacn:1', 100), at('Layer 2', 'artnet:0.0.0', 65), at('Output 2', 'sacn:1', 200)], 3, map);
+    const rows = buildFixtures([at('Output 10', 'sacn:1', 100), at('Layer 2', 'artnet:0.0.0', 65), at('Output 2', 'sacn:1', 200)], 3, map, [10, 2]);
     expect(rows.map((r) => r.name)).toEqual(['Layer 1', 'Layer 2', 'Layer 3', 'Master', 'Output 2', 'Keystone 2', 'Output 10', 'Keystone 10']);
     expect(rows[5]).toMatchObject({ type: 'keystone', typeLabel: 'Keystone', footprint: 16, patched: false });
-    const keystone = buildFixtures([at('Keystone 3', 'sacn:1', 9)], 0, null);
+    const keystone = buildFixtures([at('Keystone 3', 'sacn:1', 9)], 0, null, [3]);
     expect(keystone.map((r) => [r.name, r.footprint, r.end])).toEqual([['Master', 8, 0], ['Output 3', 8, 0], ['Keystone 3', 16, 24]]);
     expect(paramAt(map, 'keystone', 2)).toMatchObject({ spec: { key: 'topLeftX' }, fine: true });
     expect(rows[0]).toMatchObject({ patched: false, address: 0, end: 0 });
@@ -103,6 +103,11 @@ describe('buildFixtures', () => {
     expect(rows.map((r) => [r.name, r.footprint])).toEqual([['Layer 1', 64], ['Layer 2', 64], ['Master', 8]]);
     expect(rows.every((r) => r.collisions.length === 0)).toBe(true);
     expect(buildFixtures([], 0, null).map((r) => r.name)).toEqual(['Master']);
+  });
+
+  it('lists every output, patched or not, and no Output fixture without its output', () => {
+    const rows = buildFixtures([at('Output 1', 'artnet:0.0.1', 9), at('Output 4', 'artnet:0.0.1', 33)], 0, map, [1, 5]);
+    expect(rows.map((r) => [r.name, r.patched])).toEqual([['Master', false], ['Output 1', true], ['Keystone 1', false], ['Output 5', false], ['Keystone 5', false]]);
   });
 
   it('treats address 0 as unpatched', () => {

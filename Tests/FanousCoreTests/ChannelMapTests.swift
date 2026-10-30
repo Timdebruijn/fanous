@@ -149,6 +149,9 @@ import Testing
         #expect(patch.universes == [UniverseID(.artnet, 0), UniverseID(.artnet, 1), UniverseID(.artnet, 2)])
         let allFit = patch.entries.allSatisfy(\.fitsInUniverse)
         #expect(allFit)
+        // a project starts without Output fixtures: output.add patches each one next to the Master
+        let fresh = Patch.standard(layers: 8, outputs: 0)
+        #expect(fresh.entries.count == 9 && fresh.entry(for: .master)?.universe == UniverseID(.artnet, 1))
         let colliding = Patch(entries: [
             PatchEntry(fixture: .layer(1), universe: UniverseID(.artnet, 0), address: 1),
             PatchEntry(fixture: .layer(2), universe: UniverseID(.artnet, 0), address: 64),

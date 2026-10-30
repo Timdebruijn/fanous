@@ -330,6 +330,18 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   Warp & Slices show "Keystone active" or, in yellow, "Keystone invalid"; the preview shows the mapping as edited. In the
   channel map, GDTF (a fourth mode), OSC (`/fanous/keystone/{n}/{key}`) and on the Patch screen; the other three modes
   are unchanged.
+- Fixed: a fixture patched after the project's source policy was set (Console + UI or Internal) stayed on Console
+  only until the policy itself changed, so its UI, cue, OSC and MIDI values were ignored. A newly patched fixture now
+  takes the project's policy, and a policy change reaches the output at once instead of at the next DMX change.
+- An Output fixture follows its output: `output.add` patches it next to the Master (Master address + 8 per output, the
+  standard addresses 9, 17, 25, 33 …) when that range is free, `output.remove` unpatches it in the same undo step, and a
+  new project no longer starts with Output 1–4 patched. `patch.set` refuses an Output fixture without its output, and
+  opening a project unpatches such fixtures, so the Patch and Layers screens show exactly the outputs that exist. The
+  Patch screen lists every output's fixture (also unpatched ones, so Output 5 and up can be patched), has **Add
+  output**, and for a selected output says which display shows it, links to Outputs & Mapping and has **Remove output**.
+  A Keystone fixture follows the same rule (patched by hand, unpatched with its output). Console control covers outputs
+  1–8, so output 9 and up gets no Output fixture. Fixed on the way: an output whose fixture was unpatched kept its last
+  console values (a Blackout stayed black).
 - Fixed: a layer unpatched while it played (Unpatch, address 0, Remove last layer or a lower layer count) kept playing at
   its last values, and nothing could stop it: the UI, OSC, MIDI and cues reach only patched fixtures. An unpatched layer
   now goes to its defaults (intensity 0, no file: black), and an unpatched Master to 100 %, Normal, speed 100 % and no

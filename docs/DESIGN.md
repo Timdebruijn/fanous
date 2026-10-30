@@ -516,6 +516,14 @@ The patch (universe, address, mode) plus per-layer settings (canvas, source
 policy §7.2) is part of the project. Patching a fixture type is also how
 "extensible beyond 16 layers" works: the layer count is a project setting,
 bounded by the tier's measured maximum (hard engine cap 32, `[OPEN-8]`).
+An Output fixture follows its output (2026-10-30): `output.add` patches Output n
+on the Master's universe at the Master's address + 8 n when those channels are
+free, `output.remove` unpatches it in the same undo step, and a new project's
+standard patch holds the layers and the Master only. `patch.set` refuses an
+Output fixture without its output and loading a project unpatches one, so an
+Output fixture exists exactly when its output does. A Keystone fixture (§6.4a)
+is patched by hand but follows the same rule: `output.remove` unpatches it, and
+`patch.set` and loading refuse or drop one without its output.
 
 ### 6.2 Layer mode (64 channels)
 

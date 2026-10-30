@@ -27,6 +27,9 @@ same table.
 
 A new install has 8 layers. The Patch screen has **Add layer** and **Remove
 last layer** and shows "N of M layers" where M is the limit the engine reports.
+It also has **Add output**; select an output's fixture to **Remove output**.
+Each output has its own Output fixture, patched when the output is added and
+unpatched when it is removed.
 
 ## The standard patch
 
@@ -35,9 +38,14 @@ A fresh project is patched like this:
 - Layer n goes on Art-Net universe `(n-1) / 8` (whole number division) at
   address `(n-1) % 8 * 64 + 1`. Eight layers fill one universe exactly.
 - Master goes on the next universe after the layers, at address 1.
-- Outputs 1 to 4 follow the Master on that universe, at 9, 17, 25 and 33.
+- Output n follows the Master on the Master's universe, at `Master + 8 × n`
+  (9, 17, 25, 33 … with the Master at 1). It is patched when the output is
+  added (Patch or Outputs & Mapping screen) and only when those 8 channels are
+  free; otherwise it stays unpatched until you give it an address. A new
+  project has no Output fixtures until an output is added. Console control
+  covers outputs 1 to 8: output 9 and up has no Output fixture.
 
-With 8 layers:
+With 8 layers and four outputs:
 
 | Fixture | Universe | Address |
 |---|---|---|
@@ -60,10 +68,18 @@ the fixture file.
 
 - **Fixture table**: Fixture, Type (with footprint), Universe, Address,
   Footprint, Status. Status says "ok", "unpatched · no console control",
-  "collides with Layer 2 · 65-128" or "exceeds universe".
+  "collides with Layer 2 · 65-128" or "exceeds universe". There is one Output
+  row (and its Keystone row) per output on the Outputs & Mapping screen, no
+  more and no fewer; removing an output unpatches both.
+  Projects from before 30 October 2026 had Output 1 to 4 patched whether those
+  outputs existed or not; opening such a project unpatches the ones without an
+  output.
 - **Selected fixture** (programmer): choose the Universe (A 0.0.0 to 0.0.3 and
   S 1 to S 4, plus any universe that has been heard), set the Address with the
   stepper (Shift steps by 10; **0 means unpatched**), or press **Unpatch**.
+  For an output it also says which display shows it, links to Outputs &
+  Mapping, and has **Remove output** (the output with its mapping; Undo brings
+  it back).
   Below it: the universe's health pill and its settings (see
   [Universe settings](#universe-settings)).
 - **DMX monitor**: 512 cells for one universe, coloured per fixture, red where

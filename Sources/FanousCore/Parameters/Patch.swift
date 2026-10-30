@@ -91,7 +91,8 @@ public struct Patch: Codable, Sendable, Equatable {
         return result
     }
 
-    /// 8 layers per Art-Net universe starting at 0.0.0, master and outputs on the universe after the layers.
+    /// 8 layers per Art-Net universe starting at 0.0.0, master and outputs on the universe after the layers. A project
+    /// starts with `outputs: 0`: `output.add` patches each Output fixture next to the Master.
     public static func standard(layers: Int = 16, outputs: Int = 4, transport: UniverseID.Transport = .artnet) -> Patch {
         func universe(_ index: Int) -> UniverseID { UniverseID(transport, transport == .artnet ? index : index + 1) }
         var entries: [PatchEntry] = []
@@ -100,7 +101,7 @@ public struct Patch: Codable, Sendable, Equatable {
         }
         let control = universe((max(1, layers) + 7) / 8)
         entries.append(PatchEntry(fixture: .master, universe: control, address: 1))
-        for output in 1...max(1, outputs) {
+        for output in 1...max(1, outputs) where output <= outputs {
             entries.append(PatchEntry(fixture: .output(output), universe: control, address: 9 + (output - 1) * 8))
         }
         return Patch(entries: entries)
