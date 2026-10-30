@@ -531,7 +531,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   time with a library root missing at engine start) created two folders, `003_red` and `003_blue`, and after the
   rescan the files of one of them were invalid ("duplicate folder number 3"); an upload now looks on disk for the
   folder with that number first, and creating a folder (`POST /api/library/folder`) with that number answers 409
-  instead of making a second one (PR #TBD).
+  instead of making a second one (PR #144).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
