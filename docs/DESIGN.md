@@ -730,9 +730,9 @@ three existing modes and their footprints alone.
 ### 6.6 What a patch means, and the Patch screen (design 2026-10-30, B120)
 
 **Status:** designed 2026-10-30; the owner approved the four decisions below
-the same day. Steps 1–5 of the build order are built: step 1 PR #122, step 2
-PR #124, step 3 PR #119, step 4 PR #121, step 5 PR #135 (As built at the end of
-this section); step 6, the Patch sheet, is not. Builds on PR #109 (merged: an
+the same day. All six steps of the build order are built: step 1 PR #122,
+step 2 PR #124, step 3 PR #119, step 4 PR #121, step 5 PR #135, step 6 PR #TBD
+(As built at the end of this section). Builds on PR #109 (merged: an
 Output fixture exists exactly when its output does), PR #110 (merged: a fixture
 patched later takes the project policy) and PR #112 (merged: an unpatched layer
 or Master falls back to its defaults).
@@ -1117,6 +1117,25 @@ guide changes with the step that changes what it describes (4–6).
   the fixtures that do not fit, and nothing is sent.
 - The inline editor of a fixture without an address starts at its slot, with
   **Patch at A 0.0.1 1**; Unpatch shows only for a patched fixture.
+
+**As built (step 6, PR #TBD, 2026-10-30)**, where it differs from the above:
+- The sheet is a table with the columns Fixtures, Fixture type, Mode, Count,
+  Universe and Addresses, the same cells as Copy. Fixtures ("Layers 1–8",
+  "Layer 3") is added, so a line of a Custom group says which fixture it is.
+  Count is a plain number for a spreadsheet.
+- The mode is the GDTF's DMX mode name, "Layer (64ch)", not the channel map's
+  `name`; it carries the footprint, so there is no Footprint column. The
+  fixture type is "Fanous", as manufacturer and fixture type in the GDTF.
+- Per mode, a Block gives one line per universe it covers and a Custom group
+  one line per fixture. A fixture without an address is left out, so an
+  unplaced fixture shows as a gap ("Layers 1–4, 6–8").
+- An Art-Net line reads "A 0.0.1 = universe 1"; an sACN line just "S 1".
+  The column follows the universe's settings (B28): a universe that receives
+  the other protocol shows its pair, Both shows "A 0.0.0 = universe 0 or S 1".
+- Fixtures that collide or run past channel 512 stay on the sheet as
+  patched; a red line under the table counts them.
+- Copy says "Copied", or that copy is not available, in a status line next to
+  its button, as the System screen's Copy does: the toast is the Undo toast.
 
 ---
 

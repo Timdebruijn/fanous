@@ -489,6 +489,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   or an output, "no address · Fanous only" under the other policies, and "not used" for a Keystone; "unpatched" is
   gone from the screen, the Layers screen says "no address" and the DMX monitor calls an empty channel "free". The
   slot rule's shared vectors (`Tests/Fixtures/patch-slots.json`) now run in the web tests too.
+- Added: the **Patch sheet** on the Patch screen (B120 step 6, DESIGN §6.6 item 4), what to patch on the console,
+  for every role: a line per block and universe (per fixture in a Custom group) with the GDTF's fixture type and
+  mode ("Fanous", "Layer (64ch)", with its footprint), count, universe ("A 0.0.1 = universe 1", or 2 with **Count
+  Art-Net universes from 1**, remembered in the browser; the pair for a universe set to receive the other protocol)
+  and every address, and a red line when fixtures collide. **Print** prints the sheet alone; **Copy** gives
+  tab-separated text for a spreadsheet (PR #TBD).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

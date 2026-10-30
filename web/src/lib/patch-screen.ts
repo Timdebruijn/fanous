@@ -3,7 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Pure logic of the Patch / DMX screen: the fixtures by group with their blocks, channel ranges, collisions and status
 // words (DESIGN §6.6), per-universe cell ownership, parameter lookup by fixture-relative channel, universe naming and
-// option lists, the Universes panel's rows.
+// option lists, the Universes panel's rows and the Patch sheet.
 import type { PatchEntry, UniverseInfo, UniverseSettingsDoc } from './docs';
 
 export const UNIVERSE_SIZE = 512;
@@ -732,4 +732,65 @@ export function universeRows(
     const state = health.tone === 'green' ? 'receiving' : health.tone === 'red' ? 'lost' : health.text === 'never seen' ? 'never seen' : 'quiet';
     return { id, settings, health, line, ...what, state };
   });
+}
+
+// ---- patch sheet -----------------------------------------------------------------------------------------
+
+/** The exported GDTF's manufacturer and fixture type (Core `Attribution.projectName`). */
+const GDTF_FIXTURE_TYPE = 'Fanous';
+
+/** The mode's name carries its footprint ("Layer (64ch)"), so there is no Footprint column. */
+export const SHEET_HEADER = ['Fixtures', 'Fixture type', 'Mode', 'Count', 'Universe', 'Addresses'];
+
+/** "A 0.0.1 = universe 1": net.sub.uni and the flat port-address, + 1 for a console that counts Art-Net universes from 1 (`fromOne`); sACN numbers ("S 1") do not change. */
+function wireUniverse(id: string, fromOne: boolean): string {
+  return id.startsWith('artnet:') ? `${universeName(id)} = universe ${portAddress(id) + (fromOne ? 1 : 0)}` : universeName(id);
+}
+
+/** What the console sends to reach universe `id`: the universe itself, its pair when the universe receives the other protocol, or both ("… or S 1"), by its settings (B28). */
+export function sheetUniverse(id: string, fromOne: boolean, settings: readonly UniverseSettingsDoc[] = []): string {
+  const s = universeSettings(settings, id);
+  if (s.protocol === (id.startsWith('sacn:') ? 'sacn' : 'artnet')) return wireUniverse(id, fromOne);
+  if (s.protocol === 'both') return `${wireUniverse(id, fromOne)} or ${wireUniverse(s.pair, fromOne)}`;
+  return wireUniverse(s.pair, fromOne);
+}
+
+/**
+ * The Patch sheet (DESIGN §6.6 item 4), what to patch on the console, as cells in `SHEET_HEADER`'s order: per mode of a
+ * group that is a Block one line per universe it covers, in a Custom group one line per fixture. Fixtures without an
+ * address are left out. The mode is named as in the exported GDTF ("Layer (64ch)", Core `GDTFExporter`).
+ */
+export function sheetRows(groups: readonly Group[], fromOne: boolean, settings: readonly UniverseSettingsDoc[] = []): string[][] {
+  const runs: FixtureRow[][] = [];
+  for (const g of groups) {
+    for (const m of g.modes) {
+      const byUniverse = new Map<string | null, FixtureRow[]>();
+      for (const r of g.rows) {
+        if (r.type !== m.mode || !r.patched) continue;
+        let run = g.block.start ? byUniverse.get(r.universe) : undefined;
+        if (!run) {
+          runs.push((run = []));
+          byUniverse.set(r.universe, run);
+        }
+        run.push(r);
+      }
+    }
+  }
+  return runs.map((run) => {
+    const r = run[0]!;
+    return [
+      fixturesText(run), GDTF_FIXTURE_TYPE, `${r.typeLabel} (${r.footprint}ch)`, String(run.length),
+      sheetUniverse(r.universe!, fromOne, settings), run.map((f) => f.address).join(', '),
+    ];
+  });
+}
+
+/** Fixtures on the sheet that collide or run past channel 512: the Patch screen shows them in red. */
+export function sheetFaults(groups: readonly Group[]): number {
+  return groups.flatMap((g) => g.rows).filter((r) => r.patched && (r.collisions.length > 0 || r.exceeds)).length;
+}
+
+/** The sheet as tab-separated text with its header row, for a spreadsheet. */
+export function sheetTSV(rows: readonly string[][]): string {
+  return [SHEET_HEADER, ...rows].map((cells) => cells.join('\t')).join('\n') + '\n';
 }

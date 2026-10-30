@@ -5,6 +5,7 @@
   import { onMount } from 'svelte';
   import DMXMonitor from '../components/DMXMonitor.svelte';
   import PatchGroup from '../components/PatchGroup.svelte';
+  import PatchSheet from '../components/PatchSheet.svelte';
   import UniversesPanel from '../components/UniversesPanel.svelte';
   import { POLICIES } from '../lib/layers';
   import { app, can, cmd } from '../lib/state.svelte';
@@ -23,6 +24,7 @@
   let chosenUniverse = $state<string | null>(null);
   /** the universe whose settings are open in the Universes panel */
   let openUniverse = $state<string | null>(null);
+  let sheetOpen = $state(false);
 
   const screen = $derived(buildPatch(app.project.patch, app.project.layerCount, map, app.project.outputs.map((o) => o.id)));
   const rows = $derived(screen.rows);
@@ -59,6 +61,7 @@
     {summary.fixtures} fixtures · {summary.universes} universes{#if summary.collisions > 0}{' · '}<span class="alert">{summary.collisions} collisions</span>{/if}
   </span>
   <span class="spacer"></span>
+  <button type="button" class="btn" onclick={() => (sheetOpen = true)}>Patch sheet</button>
   <a class="link" href="/api/channel-map.md" target="_blank" rel="noopener">Channel map</a>
   <a class="btn" href="/api/gdtf" download>Export GDTF</a>
 </div>
@@ -85,6 +88,10 @@
     <DMXMonitor universes={known} universe={monitorUniverse} onuniverse={(id) => (chosenUniverse = id)} {rows} selected={selectedName ?? ''} {map} />
   </div>
 </div>
+
+{#if sheetOpen}
+  <PatchSheet groups={screen.groups} onclose={() => (sheetOpen = false)} />
+{/if}
 
 <style>
   .who { padding: 16px; display: flex; flex-direction: column; gap: 8px; }

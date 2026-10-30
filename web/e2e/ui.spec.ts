@@ -252,6 +252,34 @@ test('patch: a group with nothing patched says what it does, and Patch as block 
   await expect(master.getByLabel('Master block universe')).toHaveValue('artnet:0.0.1');
 });
 
+test('patch: the Patch sheet lists the layer block, prints alone, and counts Art-Net universes from 1 after a reload', async ({ page }) => {
+  const openSheet = async () => {
+    await openScreen(page, 'Patch');
+    await page.getByRole('button', { name: 'Patch sheet' }).click();
+  };
+  await openSheet();
+  const sheet = page.getByRole('dialog', { name: 'Patch sheet' });
+  const layers = sheet.getByRole('row', { name: /^Layers 1–8 Fanous Layer \(64ch\) 8/ });
+  await expect(layers).toContainText('A 0.0.0 = universe 0');
+  await expect(layers).toContainText('1, 65, 129, 193, 257, 321, 385, 449');
+  await page.emulateMedia({ media: 'print' });
+  await expect(page.getByRole('navigation', { name: 'Screens' })).toBeHidden();
+  await expect(sheet.getByRole('button', { name: 'Print' })).toBeHidden();
+  await expect(layers).toBeVisible();
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await page.emulateMedia({ media: 'screen' });
+  await sheet.getByRole('switch', { name: 'Count Art-Net universes from 1' }).check({ force: true }); // the drawn track covers the input
+  await expect(layers).toContainText('A 0.0.0 = universe 1');
+  await expect(sheet).toContainText('Art-Net universes counted from 1');
+  await page.reload();
+  await openSheet();
+  await expect(sheet.getByRole('switch', { name: 'Count Art-Net universes from 1' })).toBeChecked();
+  await expect(layers).toContainText('A 0.0.0 = universe 1');
+  await sheet.getByRole('button', { name: 'Close' }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Patch sheet' })).toBeFocused();
+});
+
 test('media: folder 0 lists the generators and the Syphon servers, and puts one on a layer', async ({ page }) => {
   await openScreen(page, 'Media');
   await page.getByRole('button', { name: /^0 Built-in and live inputs/ }).click();
