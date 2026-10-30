@@ -71,7 +71,7 @@ public final class ScreenInput: CaptureInput, SCStreamOutput, SCStreamDelegate, 
 
     /// Capture queue: the shareable content first (to find the display and the engine's own app), then the stream.
     private func request(_ displayID: CGDirectDisplayID, width: Int, height: Int, fps: Double) {
-        SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) { [self] content, error in
+        SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: false) { [self] content, error in
             nonisolated(unsafe) let content = content
             queue.async { [self] in start(content, error, displayID, width: width, height: height, fps: fps) }
         }
@@ -93,7 +93,9 @@ public final class ScreenInput: CaptureInput, SCStreamOutput, SCStreamDelegate, 
         configuration.minimumFrameInterval = CMTime(seconds: 1 / fps, preferredTimescale: 600_000)
         configuration.showsCursor = false
         configuration.capturesAudio = false
-        configuration.queueDepth = 4
+        // the ring may hold 3 taken frames plus the newest, all four of a depth-4 queue's surfaces; SCK wants a surface
+        // back within minimumFrameInterval × (queueDepth − 1), so two more keep the stream from waiting on the ring
+        configuration.queueDepth = 6
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         do { try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue) } catch {
             return fail("screen capture could not start: \(error.localizedDescription)")
@@ -102,8 +104,12 @@ public final class ScreenInput: CaptureInput, SCStreamOutput, SCStreamDelegate, 
         slot.withLock { $0.subtype = "BGRA" }
         let excluded = own.count
         stream.startCapture { [self] error in
-            if let error { return fail("screen capture could not start: \(error.localizedDescription)") }
-            logger.info("capture \(name): BGRA \(width)x\(height) @ \(fps)", metadata: ["display": "\(displayID)", "excludedApps": "\(excluded)"])
+            queue.async { [self] in
+                // stopped, halted or replaced while the start was pending: `endSession` found nothing running to stop
+                guard alive, self.stream === stream else { return stream.stopCapture { _ in } }
+                if let error { return fail("screen capture could not start: \(error.localizedDescription)") }
+                logger.info("capture \(name): BGRA \(width)x\(height) @ \(fps)", metadata: ["display": "\(displayID)", "excludedApps": "\(excluded)"])
+            }
         }
     }
 

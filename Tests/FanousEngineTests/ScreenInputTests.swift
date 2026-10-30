@@ -175,6 +175,9 @@ struct ScreenInputTests {
         let shared = input.share()
         #expect(input.status == .failed("not running") && input.latestFrame?.texture0 === shown)
         #expect(!shared && !input.alive)
+        // a frame the stream had queued before the halt does not replace the last one
+        input.deliver(try CaptureInputTests.buffer(kCVPixelFormatType_32BGRA, 16, 8) { _ in Array(repeating: 7, count: 64) })
+        #expect(input.latestFrame?.texture0 === shown && input.counters.frames == 1)
         input.stop()
         #expect(input.status == .stopped && input.latestFrame == nil)
     }
@@ -248,6 +251,15 @@ struct ScreenInputTests {
         }
         #expect(await waitUntil { refused.withLock { $0 } != nil })
         #expect(refused.withLock { $0 } == false && never.load(ordering: .relaxed) == 5)
+    }
+
+    /// Only the LaunchAgent (launchd's `XPC_SERVICE_NAME` = its label) restarts itself after the grant: `KeepAlive`
+    /// brings it back. A terminal, `nohup` or orphaned engine (also launchd's child) and another job only log.
+    @Test func onlyTheLaunchAgentRestartsItselfForTheGrant() {
+        #expect(Engine.restartsItself(environment: ["XPC_SERVICE_NAME": "org.fanous.engine"]))
+        #expect(!Engine.restartsItself(environment: [:]))
+        #expect(!Engine.restartsItself(environment: ["XPC_SERVICE_NAME": "0"]))  // a terminal session
+        #expect(!Engine.restartsItself(environment: ["XPC_SERVICE_NAME": "application.org.fanous.app.1234"]))
     }
 
     // MARK: Loader

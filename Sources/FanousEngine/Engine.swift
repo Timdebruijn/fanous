@@ -1724,23 +1724,28 @@ public final class Engine: @unchecked Sendable {
             self?.logger.info("screen capture asked: waiting up to two minutes for the grant in System Settings")
             ScreenInput.pollGrant(preflight: { CGPreflightScreenCaptureAccess() }) { [weak self] granted in
                 guard let self else { return }
-                self.render?.captureCatalog.refreshPermissions()
-                self.screenGrantPending.store(false, ordering: .relaxed)
+                // the flag goes once the cache holds the new grant, so the feed never reads "denied" in between
+                let cleared: @Sendable () -> Void = { [weak self] in self?.screenGrantPending.store(false, ordering: .relaxed) }
+                if let catalog = self.render?.captureCatalog { catalog.refreshPermissions(then: cleared) } else { cleared() }
                 if granted { self.restartForGrant() } else { self.logger.notice("screen capture not granted within two minutes") }
             }
         }
     }
 
-    /// The screen-recording grant reads true: a LaunchAgent engine (parent launchd) stops as Engine › Restart does (the
-    /// restart marker, then the SIGTERM path: `stop()`, exit 0) and `KeepAlive` starts it again. A foreground `fanousd`,
-    /// one the app started as its child, or one in show mode (entered during the poll) only logs.
+    /// The LaunchAgent sets `XPC_SERVICE_NAME` to its job label: only that engine is started again by `KeepAlive`. An
+    /// orphaned child of the app, a `nohup` or terminal engine also has launchd as parent, and would stay down.
+    static let agentLabel = "org.fanous.engine"
+    static func restartsItself(environment: [String: String]) -> Bool { environment["XPC_SERVICE_NAME"] == agentLabel }
+
+    /// The screen-recording grant reads true: the LaunchAgent engine stops as Engine › Restart does (the restart marker,
+    /// then the SIGTERM path: `stop()`, exit 0) and `KeepAlive` starts it again. Any other engine, or one in show mode
+    /// (checked again on the main queue just before the stop), only logs.
     private func restartForGrant() {
-        guard getppid() == 1, !showMode.isOn else {
-            logger.notice("screen capture granted: restart the engine to use it")
-            return
-        }
-        logger.notice("screen capture granted: restarting")
+        let later = "screen capture granted: restart the engine to use it"
+        guard Self.restartsItself(environment: ProcessInfo.processInfo.environment), !showMode.isOn else { return logger.notice("\(later)") }
         DispatchQueue.main.async { [self] in
+            guard !showMode.isOn else { return logger.notice("\(later)") }  // a show entered meanwhile is not interrupted
+            logger.notice("screen capture granted: restarting")
             try? Data().write(to: AppPaths.restartPendingFile, options: .atomic)
             stop()
             exit(0)

@@ -330,7 +330,7 @@ public class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoDataOutput
         let t = now()
         let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
         let (_, logCounters) = slot.withLock { s -> (Held?, Counters?) in
-            guard !s.stopped else { return (nil, nil) }
+            guard s.alive else { return (nil, nil) }  // stopped, failed or halted: a frame still queued is dropped
             if s.lastFrameNanos != 0 {
                 let dt = Double(t &- s.lastFrameNanos) / 1e9
                 s.interval = s.interval == 0 ? dt : s.interval * 0.9 + dt * 0.1

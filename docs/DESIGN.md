@@ -1562,20 +1562,32 @@ Restart"; nothing is asked, as macOS applies a grant to a new process
 only). It finds the display by CG UUID (`CGGetOnlineDisplayList`, any
 thread) with its mode's pixel size, fitted into canvas 1's size at open
 (aspect kept, never scaled up). On the queue `org.fanous.screen.<uuid>`
-(`.userInteractive`) it reads `SCShareableContent` (the completion hops
-back to the queue), excludes the engine's `SCRunningApplication`
-(`processID == getpid()`) with `exceptingWindows: []`, configures BGRA,
-sRGB, `minimumFrameInterval` = 1/canvas rate at service start, no cursor,
-no audio, `queueDepth` 4 and the fitted size, adds itself as the `.screen`
-output on that queue and calls `startCapture`. Its completion logs
-"capture <name>: BGRA <w>x<h> @ <fps>" (with `excludedApps`) or fails the
-input. The loader thread never waits. A sample whose
-`SCStreamFrameInfo.status` is not `.complete` is dropped (the last frame
-stays); `didStopWithError` reads `.failed(reason)`. A display has no "no
-signal" (`noSignalAfter` infinite): ScreenCaptureKit sends a frame only
-when the picture changes, so a still slide sends none, and the fps shown
-is the rate of changed frames. New on `CaptureInput`: `halt(reason)`
-stops the session, keeps the frames and reads `.failed(reason)`.
+(`.userInteractive`) it reads `SCShareableContent` (all windows, not only
+on-screen ones, so the engine is listed even without an output window at
+that moment; the completion hops back to the queue), excludes the engine's
+`SCRunningApplication` (`processID == getpid()`) with
+`exceptingWindows: []`, configures BGRA, sRGB, `minimumFrameInterval` =
+1/canvas rate at service start, no cursor, no audio, `queueDepth` 6 and
+the fitted size, adds itself as the `.screen` output on that queue and
+calls `startCapture`. The depth is 6, not 4: the ring may hold three taken
+frames plus the newest, which at depth 4 is every surface ScreenCaptureKit
+has, and Apple asks for a surface back within `minimumFrameInterval ×
+(queueDepth − 1)`. The start's completion hops back to the queue. If the
+input was stopped, halted or given another stream while the start was
+pending (`endSession` then found nothing running to stop), it stops that
+stream there. Else it logs "capture <name>: BGRA <w>x<h> @ <fps>" (with
+`excludedApps`) or fails the input. That path is not unit-tested: an
+`SCStream` needs an `SCDisplay`, which only `SCShareableContent` hands
+out, and that needs the grant. The loader thread never waits. A sample
+whose `SCStreamFrameInfo.status` is not `.complete` is dropped (the last
+frame stays); `didStopWithError` reads `.failed(reason)`. A display has no
+"no signal" (`noSignalAfter` infinite): ScreenCaptureKit sends a frame
+only when the picture changes, so a still slide sends none, and the fps
+shown is the rate of changed frames. New on `CaptureInput`:
+`halt(reason)` stops the session, keeps the frames and reads
+`.failed(reason)`. `deliver` now drops a frame once the input is not
+alive (stopped, failed or halted), so a frame queued before a halt does
+not replace the last one.
 *Catalog:* `LiveCatalog(.screens)` in `RenderService`, fed by the engine
 from `OutputCoordinator.onStatus`, which runs after every rebind: a
 display change from the one `DisplayManager` (`displaysChanged`) and
@@ -1590,12 +1602,16 @@ the load migration; the engine applies it, writes it back and adopts it as
 `/capture` (`liveInProject` per kind over `liveCatalogs`).
 `capture.forget {file}` takes 1–28 (the range picks the key) and refuses a
 running display; without a file it forgets every capture device and
-display not running. The forget commands' replay check gets the running
-files of the three catalogs.
+display not running. That includes a connected display bound to an
+output (it is not running); unbound, it comes back on the lowest free
+number, usually the same. The forget commands' replay check gets the
+running files of the three catalogs.
 *Loader:* a folder 0 file 21–28 without a scene entry resolves through the
 catalog: "Display: <name>", "not running" without a runtime id, else
 `screenFactory(uuid)`. A scene entry `{folder: 0, file, screen: uuid}`
-wins. One input per uuid (`captureShared` is per kind). `screensChanged()`
+wins; it does not follow the catalog, so a display hosting an output is
+captured that way and never halted (the scene's explicit choice). One
+input per uuid (`captureShared` is per kind). `screensChanged()`
 shares its body with `captureDevicesChanged()`. A display that goes or is
 bound as an output reads "not running" and keeps its last frame, and its
 stream is halted (else it would show the desktop under the engine's
@@ -1607,14 +1623,18 @@ show mode and under show lock, not undoable). Nothing is asked when
 `CGRequestScreenCaptureAccess()` runs on a utility queue, then
 `ScreenInput.pollGrant` reads the preflight once a second for two minutes,
 one poll at a time. Meanwhile `live.capture.permissions.screen` reads
-"pending" (unless the cache reads granted). When the preflight reads true,
-the engine logs "screen capture granted: restarting". If its parent is
-launchd (the LaunchAgent, `KeepAlive`), it then writes Engine › Restart's
-marker (`restartPendingFile`), runs `Engine.stop()` on the main queue and
-exits 0, as the SIGTERM path does. A foreground `fanousd`, an engine the
-app started as its child, or one in show mode (entered during the poll)
-only logs "screen capture granted: restart the engine to use it". Without
-the grant after two minutes it logs and stops polling.
+"pending" (unless the cache reads granted); the flag is cleared only after
+the cache has been read again, so the feed never reads "denied" in between.
+When the preflight reads true, the LaunchAgent engine restarts itself. It is
+recognised by `XPC_SERVICE_NAME` = `org.fanous.engine`, the job label launchd
+sets; a parent pid of 1 is not enough, since an orphaned child of the app or
+a `nohup` engine also has it and would stay down. On the main queue, with
+show mode checked again there, it logs "screen capture granted: restarting",
+writes Engine › Restart's marker (`restartPendingFile`), runs `Engine.stop()`
+and exits 0, as the SIGTERM path does, and `KeepAlive` starts it again. Any
+other engine, or one in show mode (entered during the poll), only logs
+"screen capture granted: restart the engine to use it". Without the grant
+after two minutes it logs and stops polling.
 *Readiness:* item `capture` fails while a display is numbered (running or
 not) and the cached grant is false: detail "screen: denied", fix "System
 Settings › Privacy & Security › Screen & System Audio Recording, then
@@ -1630,8 +1650,10 @@ uuid under a new name) and nine displays; the feed and "pending";
 item. A synthetic IOSurface-backed BGRA buffer through `ScreenInput` into
 the layer shader reads white 255, black 0, red 255,0,0 and grey 128
 exactly, and the pair 252/3 (linear). A still display keeps running for an
-hour and `halt` keeps the frame; only `.complete` samples are shown; the
-fitted size; the grant poll with an injected preflight; the loader (two
+hour, and `halt` keeps the frame (a frame delivered after it does not
+replace it); only `.complete` samples are shown; the fitted size; the grant
+poll with an injected preflight; the restart decision with an injected
+environment; the loader (two
 layers share one input, bound and unbound, a scene entry, a free number,
 the permission text). 100 frame reads allocate nothing in release.
 Not verified here (the test runner has no grant, and there is no second
@@ -1648,13 +1670,15 @@ display); the owner's live check:
 - whether `SCShareableContent` lists the engine (an accessory LaunchAgent)
   as an application while it has output windows (`excludedApps` in the
   start log line);
+- frames against the canvas rate on a moving display (the layer's fps and
+  `dropped` counter with `queueDepth` 6);
 - whether idle samples arrive while a display is still, and the monthly
   re-ask.
 
 | Input | Framework | Pixel path | Kind |
 |---|---|---|---|
 | Capture device | `AVCaptureSession` with one `AVCaptureVideoDataOutput` on its own serial queue; the active format is the device's format whose size matches its current input and whose frame rate is the highest at or below the canvas rate (a card follows its source anyway) | the native format is `AVCaptureDevice.Format.formatDescription.mediaSubType`, not `availableVideoPixelFormatTypes` (that lists what the output can convert to). The output is asked for the native subtype when it is `2vuy` (Cb Y0 Cr Y1) or `yuvs` (YUY2: Y0 Cb Y1 Cr, what Cam Link-class UVC devices send), for `420v` when native is `420v` or `420f`, else for `BGRA` (MJPEG-only webcams: AVFoundation decodes, there is no 4:2:2 to keep) | `2vuy` → `.v216` (same byte order), as `rgba8Unorm` at half width; `yuvs` → new `.yuy2`, the same texture with the pairs swapped (one more shader case, no new matrix); `420v` → `.planarYCbCr`, planes 0 and 1 as `r8Unorm` + `rg8Unorm`; `BGRA` → `.rgba`. The layer shader's Rec.709 video-range matrix (§4.1) reads 8-bit textures unchanged |
-| Display | `SCStream` with `SCContentFilter(display:excludingApplications:exceptingWindows:)`, the engine's `SCRunningApplication` excluded and `exceptingWindows` `[]` (an output on a captured display would feed back) | `BGRA`, ScreenCaptureKit's native output; `SCDisplay.width/height` are points, so the pixel size comes from `CGDisplayPixelsWide/High` (or the frame × scale), scaled down to fit the canvas when larger (aspect kept); `SCStreamConfiguration.colorSpaceName` set to sRGB explicitly (the default follows the display, P3 on most Macs); `minimumFrameInterval` = the canvas rate; cursor off; no audio; `queueDepth` 4 | `.rgba` as `bgra8Unorm`; a sample whose status is not `.complete` (an idle display) keeps the last texture |
+| Display | `SCStream` with `SCContentFilter(display:excludingApplications:exceptingWindows:)`, the engine's `SCRunningApplication` excluded and `exceptingWindows` `[]` (an output on a captured display would feed back) | `BGRA`, ScreenCaptureKit's native output; `SCDisplay.width/height` are points, so the pixel size comes from the display mode's `pixelWidth/Height` (`CGDisplayPixelsWide/High` are points on Retina too), scaled down to fit the canvas when larger (aspect kept); `SCStreamConfiguration.colorSpaceName` set to sRGB explicitly (the default follows the display, P3 on most Macs); `minimumFrameInterval` = the canvas rate; cursor off; no audio; `queueDepth` 6 (built, see step 3a) | `.rgba` as `bgra8Unorm`; a sample whose status is not `.complete` (an idle display) keeps the last texture |
 
 Displays bound as Fanous outputs are left out of 21–28: they would show only
 the excluded engine windows, black. `SCContentSharingPicker` is rejected: it
