@@ -493,6 +493,65 @@ layer content in folder 0, files 150–169 (see
 Editing on this screen needs the programmer role and is refused while the show
 is locked.
 
+## Mapping presets
+
+A **preset** stores what Warp & Slices edits under a number from 1 to 255, so
+an output can switch between alignments: scenery that flies in and out, a
+screen that moves between scenes.
+
+- **A preset holds** the corner pin, the mesh, and the slices with their part
+  of the canvas, their place on the output, their opacity and their masks.
+- **A preset does not hold** the blend edges, the black floor, the colour, the
+  intensity, the region or the display. Those are the projector's own tuning:
+  they stay as they are whichever preset the output shows.
+- A projector wall changed later does not change the presets stored before:
+  store them again after a wall change.
+
+### Store, recall, rename, remove
+
+The **Presets** strip is at the bottom of Warp & Slices, for the selected
+output, and at the bottom of each wall panel, for the whole wall.
+
+- **Store as N** stores the mapping as it is now. N starts at the lowest free
+  number; type another to choose. A number that exists is replaced (the
+  button says **Replace N**) and keeps its name.
+- **Recall** copies the chosen preset into the mapping you edit. It is an edit
+  like any other: **Undo** takes it back.
+- **Name** renames the chosen preset when you leave the field; **Remove**
+  deletes it (Undo brings it back).
+- In a wall panel each of these works on every output of the wall at once, as
+  one undo step, and the list shows the presets that all of them have.
+  Recalling a preset on a wall output whose slice 1 no longer matches the
+  wall's part of the canvas marks it **manual**, as moving it by hand does.
+
+### Compare
+
+**Hold to compare** shows the chosen preset on the output for as long as you
+hold the button (mouse, finger, or Space or Enter), and goes back when you let
+go. The preview and the handles keep showing the mapping you edit. While held,
+Compare wins over channel 6 from the console. If the browser goes away while
+you hold it, the output goes back by itself within about 5 seconds. Compare is
+off in show mode and while the show is locked, and works on outputs 1 to 8.
+
+### From the console
+
+Output fixture channel 6, **Mapping preset** (see
+[console-setup.md](console-setup.md)):
+
+- 0 shows the mapping as edited; N shows the output's preset N for as long as
+  the channel holds it. It cuts, without a fade. Nothing in the project
+  changes.
+- A number the output does not have keeps the edited mapping, and the output
+  row says **Preset N missing** in yellow.
+- For a wall, store the preset on the whole wall, then set channel 6 on each
+  of its Output fixtures.
+- OSC: `/fanous/output/{n}/preset`.
+
+While an output shows a preset, its row and the Warp & Slices tab say
+**Preset N (console)** or **Preset N (compare)**, and Warp & Slices says that
+your edits go to the mapping the output shows again when it leaves the preset.
+A Keystone fixture moves the preset like any mapping.
+
 ## Keystone from the console
 
 The **Keystone** fixture (16 channels, see
@@ -538,5 +597,7 @@ fix from FOH without touching the hand alignment.
 - Not available: per-output Syphon, Syphon for canvases other than Canvas 1,
   a frame rate per canvas, 10-bit output.
 - Projector walls: the outputs of one wall need the same pixel size.
+- Mapping presets cut from one to the next: the fade on Output channel 7 is
+  not built yet. Compare reaches outputs 1 to 8.
 - Colour, black lift and black offset assume a gamma-2.2 projector; there is no
   per-output gamma for them yet.

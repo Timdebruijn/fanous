@@ -11,12 +11,19 @@ mode as its own fixture on the console.
 |---|---|---|---|
 | Layer | 64 | layer | Everything about one layer: intensity, media, play mode, position, colour, effects, crop, audio |
 | Master | 8 | machine | Master intensity, freeze or blackout, a global test pattern, master speed |
-| Output | 8 | output | Output intensity, blackout or freeze, test pattern, blend on or raw |
+| Output | 8 | output | Output intensity, blackout or freeze, test pattern, blend on or raw, mapping preset |
 | Keystone | 16 | output, optional | Moves the output's four corners on top of its alignment ([outputs-and-mapping.md](outputs-and-mapping.md#keystone-from-the-console)) |
 
 Test patterns follow the Master and Output Intensity and Blackout like the
 picture, so a Grand Master or DBO takes them down too: keep the Dimmer up to
 focus.
+
+Output channel 6, **Mapping preset**, switches the output between the
+alignments stored on it: 0 is the mapping as edited, 1 to 255 the output's
+preset with that number. It cuts, without a fade; a number the output does
+not have keeps the edited mapping (see
+[outputs-and-mapping.md](outputs-and-mapping.md#mapping-presets)). Output
+channels 7 and 8 are reserved.
 
 16-bit values (intensity, speed, position, in and out points and others) are
 coarse/fine pairs on adjacent channels, coarse first. Layer channel 51 is Sync
@@ -190,9 +197,9 @@ adapter is joined again within 5 s.
 fixture type "Fanous" with the Layer, Master, Output and Keystone modes, channel
 functions with their physical ranges, a channel set for every band (play modes,
 blend modes, effects, test patterns), the 16-bit links and the default values.
-If you imported `Fanous.gdtf` before the Keystone mode existed, export and
-import it again: the fixture type keeps its ID, so a console may keep the older
-file with three modes until you replace it.
+If you imported `Fanous.gdtf` before the Keystone mode or the Mapping preset
+channel existed, export and import it again: the fixture type keeps its ID, so a
+console may keep the older file until you replace it.
 The file is generated from the same table as the channel map, so they cannot
 disagree. On the command line: `fanousd gdtf FILE`.
 

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
-import { describe, expect, it } from 'vitest';
-import { canvasSizeError, canvasTarget, colorOf, previewReady, layerCanvas, layerRuns, layersOn, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, handles, insertPoint, keystoneBadges, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
+import { describe, expect, it, vi } from 'vitest';
+import { canvasSizeError, canvasTarget, colorOf, compareLease, freePresetNumber, previewReady, layerCanvas, layerRuns, layersOn, presetBadges, presetNote, recalledText, sharedPresets, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, handles, insertPoint, keystoneBadges, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
 
 const output: OutputConfig = {
   id: 1,
@@ -73,6 +73,59 @@ describe('outputs helpers', () => {
     expect(keystoneBadges({ ...bound, keystone: false, keystoneInvalid: false })).toEqual([]);
     expect(keystoneBadges({ ...bound, keystone: true, keystoneInvalid: false })).toEqual([{ text: 'Keystone active', warn: false }]);
     expect(keystoneBadges({ ...bound, keystone: true, keystoneInvalid: true }).map((b) => [b.text, b.warn])).toEqual([['Keystone active', false], ['Keystone invalid', true]]);
+  });
+
+  it('badges the preset an output shows and one it lacks (DESIGN §9.10 item 3)', () => {
+    const bound = { id: 1, state: 'bound' as const, display: 'Epson', width: 1920, height: 1200, hz: 60, master: true };
+    expect(presetBadges(undefined)).toEqual([]);
+    expect(presetBadges({ ...bound, preset: null, presetSource: null, presetMissing: null })).toEqual([]);
+    expect(presetBadges({ ...bound, preset: 3, presetSource: 'console', presetMissing: null })).toEqual([{ text: 'Preset 3 (console)', warn: false }]);
+    expect(presetBadges({ ...bound, preset: 2, presetSource: 'compare' })).toEqual([{ text: 'Preset 2 (compare)', warn: false }]);
+    expect(presetBadges({ ...bound, preset: null, presetSource: 'console', presetMissing: 9 })).toEqual([{ text: 'Preset 9 missing', warn: true }]);
+    expect(presetNote({ ...bound, preset: null, presetMissing: 9 })).toBeNull();
+    expect(presetNote({ ...bound, preset: 3, presetSource: 'console' })).toContain('at channel 6 = 0');
+    expect(presetNote({ ...bound, preset: 3, presetSource: 'compare' })).toContain('when Compare is let go');
+  });
+
+  it('a wall recall says which outputs it made manual', () => {
+    const name = (id: number) => `Output ${id}`;
+    expect(recalledText(2, null, name)).toBe('Preset 2 recalled.');
+    const manual = { manual: [{ wall: 1, output: 1, field: 'source' }, { wall: 1, output: 3, field: 'source' }] };
+    expect(recalledText(2, manual, name)).toBe("Preset 2 recalled. Slice 1 is manual now on Output 1, Output 3: it differs from the wall's part of the canvas.");
+  });
+
+  it('a wall strip offers the presets all its outputs have; Store as takes the lowest free number', () => {
+    const preset = (number: number, name = `Preset ${number}`) => ({ number, name, warp: output.warp, slices: output.slices });
+    const a = { ...output, presets: [preset(1, 'Wide'), preset(2), preset(4)] };
+    const b = { ...output, id: 2, presets: [preset(2), preset(1, 'Other')] };
+    expect(sharedPresets([a])).toEqual([{ number: 1, name: 'Wide' }, { number: 2, name: 'Preset 2' }, { number: 4, name: 'Preset 4' }]);
+    expect(sharedPresets([a, b]).map((p) => p.number)).toEqual([1, 2]);
+    expect(sharedPresets([output])).toEqual([]);
+    expect(sharedPresets([])).toEqual([]);
+    expect(freePresetNumber([output])).toBe(1);
+    expect(freePresetNumber([a, b])).toBe(3);
+    expect(freePresetNumber([{ ...output, presets: Array.from({ length: 255 }, (_, i) => preset(i + 1)) }])).toBeNull();
+  });
+
+  it('holding Compare sends the lease at once, renews it every 2 s and ends it with 0', () => {
+    vi.useFakeTimers();
+    try {
+      const sent: number[] = [];
+      const lease = compareLease((p) => sent.push(p));
+      lease.stop();
+      expect(sent, 'nothing to end').toEqual([]);
+      lease.start(4);
+      vi.advanceTimersByTime(4100);
+      expect(sent).toEqual([4, 4, 4]);
+      lease.start(5);  // another preset while held: the latest wins, one renewal timer
+      vi.advanceTimersByTime(2000);
+      lease.stop();
+      lease.stop();
+      vi.advanceTimersByTime(6000);
+      expect(sent).toEqual([4, 4, 4, 5, 5, 0]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('blend curve, point insertion and nudging', () => {
