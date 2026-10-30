@@ -41,7 +41,7 @@ import Testing
             hub = try PreviewHub(make: PreviewHubTests.make(context, parameters)) { target in
                 shapes.withLock { $0[target] } ?? (target.hasPrefix("canvas:") ? nil : (160, 90))
             }
-            let compiler = try OutputCompiler(device: context.device)
+            let compiler = OutputCompiler(device: context.device)
             hub.configure = { target, streamer in
                 guard target == "output:1", let set = try? OutputSet(plans: [compiler.compile(OutputConfig(id: 1), index: 1, drawable: (streamer.width, streamer.height))]) else { return false }
                 streamer.outputSet = set

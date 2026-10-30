@@ -28,7 +28,7 @@ import Testing
     }
 
     /// DESIGN.md §6.4a: four corners × X/Y, 16-bit, centred = no change, ±50 %; the other modes keep their footprints and
-    /// reserved channels (Output ch 6–7, Mapping preset and fade, come with M2.4/M2.5).
+    /// reserved channels (Output ch 7, Mapping fade, comes with M2.5).
     @Test func keystoneModeHasSixteenCentredChannels() {
         let specs = ChannelMap.keystone
         #expect(specs.map(\.id) == KeystoneParameter.allCases.map { .keystone($0) })
@@ -38,7 +38,7 @@ import Testing
         #expect(specs.map(\.name).prefix(2) == ["Top-left X", "Top-left Y"])
         #expect(ChannelMap.reserved(for: .keystone) == nil)
         #expect(ChannelMap.defaults(for: .keystone) == Array(repeating: 32768, count: 8))
-        #expect(ChannelMap.output.count == 4 && ChannelMap.reservedOutputChannels == 6...8)
+        #expect(ChannelMap.output.count == 5 && ChannelMap.reservedOutputChannels == 7...8)
         #expect(FixtureRef.keystone(2).mode == .keystone && FixtureRef.keystone(2).description == "Keystone 2")
         #expect(PatchEntry(fixture: .keystone(1), universe: UniverseID(.artnet, 0), address: 497).fitsInUniverse)
         #expect(!PatchEntry(fixture: .keystone(1), universe: UniverseID(.artnet, 0), address: 498).fitsInUniverse)
@@ -48,7 +48,7 @@ import Testing
         #expect(ChannelMap.layer.count == LayerParameter.allCases.count)
         #expect(ChannelMap.layer.map(\.channels.upperBound).max() == 51)
         #expect(ChannelMap.master.map(\.channels.upperBound).max() == 6)
-        #expect(ChannelMap.output.map(\.channels.upperBound).max() == 5)
+        #expect(ChannelMap.output.map(\.channels.upperBound).max() == 6)
     }
 
     @Test func decodesRawValuesFromAUniverse() {
@@ -89,6 +89,9 @@ import Testing
         #expect(Int(physical(.fitMode, 255)) == FitMode.native.rawValue)
         #expect(Int(physical(.control, 9)) == LayerControl.retrigger.rawValue)
         #expect(Int(ChannelMap.spec(.output(.blend)).physical(fromRaw: 128)) == BlendSwitch.raw.rawValue)
+        // Output ch 6, Mapping preset (DESIGN.md §6.4): an index, so it snaps (no fade, LTP); 0 = the edited mapping
+        let preset = ChannelMap.spec(.output(.preset))
+        #expect(preset.channel == 6 && preset.bits == 8 && preset.defaultRaw == 0 && !preset.isContinuous && preset.physical(fromRaw: 17) == 17)
         #expect(Int(ChannelMap.spec(.master(.control)).physical(fromRaw: 128)) == MasterControl.blackout.rawValue)
     }
 

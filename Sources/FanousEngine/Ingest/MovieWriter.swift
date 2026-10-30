@@ -258,16 +258,6 @@ public enum PatternFrames {
             }
         }
     }
-
-    /// Reads the counter back from a BGRA frame (tests).
-    public static func counter(bgra: UnsafePointer<UInt8>, bytesPerRow: Int) -> Int {
-        var value = 0
-        for i in 0..<16 {
-            let p = bgra + 16 * bytesPerRow + (i * 32 + 16) * 4
-            if p[2] > 127 { value |= 1 << (15 - i) }
-        }
-        return value
-    }
 }
 
 /// Synthetic audio for benchmark and test media: 1 kHz on the left, 440 Hz on the

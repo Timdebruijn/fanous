@@ -111,7 +111,6 @@ public final class LayerPlayback: @unchecked Sendable {
     public let height: Int
     public let frameRate: Double
     public let frameCount: Int
-    public let movie: MovieSource?
     public let decoder: LayerDecoder?
     public let ring: FrameRing?
     public let still: DecodedFrame?
@@ -129,7 +128,6 @@ public final class LayerPlayback: @unchecked Sendable {
 
     public init(key: MediaKey, movie: MovieSource, decoder: LayerDecoder, ring: FrameRing) {
         self.key = key
-        self.movie = movie
         self.decoder = decoder
         self.ring = ring
         still = nil
@@ -143,7 +141,6 @@ public final class LayerPlayback: @unchecked Sendable {
     public init(key: MediaKey, still: DecodedFrame) {
         self.key = key
         self.still = still
-        movie = nil
         decoder = nil
         ring = nil
         live = nil
@@ -156,7 +153,6 @@ public final class LayerPlayback: @unchecked Sendable {
     public init(key: MediaKey, live: any LiveTextureSource) {
         self.key = key
         self.live = live
-        movie = nil
         decoder = nil
         ring = nil
         still = nil
@@ -292,7 +288,6 @@ public final class RenderLayer: @unchecked Sendable {
         retireLater.reserveCapacity(4)
     }
 
-    public var currentMedia: MediaKey? { current?.key }
     /// Frame index of the playing media for the UI's position display.
     /// ponytail: unsynchronised read of a compositor-owned value; a stale frame number for one 100 ms tick is harmless.
     public var currentFrame: Int { Int(current?.clock.position ?? 0) }
@@ -357,8 +352,6 @@ public final class MediaLoader: @unchecked Sendable {
     /// Library lookup for keys the scene's explicit list does not cover (DESIGN.md §7.4).
     public var resolver: (@Sendable (MediaKey) -> URL?)?
     private var parity: [Int]
-    public let opened = Atomic<Int>(0)
-    public let failures = Atomic<Int>(0)
 
     public init(layers: [RenderLayer], media: [MediaEntry], device: MTLDevice, ringCapacity: Int, logger: Logger) {
         self.layers = layers
@@ -574,17 +567,14 @@ public final class MediaLoader: @unchecked Sendable {
             }
             guard let live = liveFactory?(server.label, uuid) else {
                 logger.warning("Syphon server could not connect", metadata: ["layer": "\(layer + 1)", "syphon": "\(server.label)"])
-                failures.wrappingAdd(1, ordering: .relaxed)
                 status.error = "could not connect"
                 return nil
             }
-            opened.wrappingAdd(1, ordering: .relaxed)
             syphonOpen[layer] = uuid
             logger.info("layer \(layer + 1) media \(key)", metadata: ["syphon": "\(server.label)"])
             return LayerPlayback(key: key, live: live)
         }
         if Generators.isGenerator(key), let generator = generatorFactory?(key.file) {
-            opened.wrappingAdd(1, ordering: .relaxed)
             status.kind = "live"
             status.name = "Generator: \(Generators.names[key.file] ?? "\(key.file)")"
             if let texture = generator.latestFrame?.texture0 {
@@ -620,7 +610,6 @@ public final class MediaLoader: @unchecked Sendable {
         }
         guard let entry = numbered ?? media[key] ?? resolver?(key).map({ MediaEntry(folder: key.folder, file: key.file, path: $0.path) }) else {
             logger.warning("media not found", metadata: ["layer": "\(layer + 1)", "media": "\(key)"])
-            failures.wrappingAdd(1, ordering: .relaxed)
             status.kind = "missing"
             status.error = key.folder != 0 ? "no file \(key.file) in folder \(key.folder)"
                 : LiveCatalog.Kind.syphon.files.contains(key.file) ? "no Syphon server numbered \(key.file) (folder 0, 150–169)"
@@ -642,7 +631,6 @@ public final class MediaLoader: @unchecked Sendable {
                     input = try factory(uid)
                     captureShared[kind, default: [:]][uid] = WeakCapture(input: input)
                 }
-                opened.wrappingAdd(1, ordering: .relaxed)
                 if numbered == nil { status.name = Self.liveName(kind, input.name) }  // format, size and counters: polled once it runs
                 status.capture = CaptureInput.Counters()
                 captureOpen[layer] = (uid, input)
@@ -651,7 +639,6 @@ public final class MediaLoader: @unchecked Sendable {
             }
             if let syphon = entry.syphon {
                 guard let live = liveFactory?(syphon, nil) else { throw RenderError.pipeline("no live input for \(syphon)") }
-                opened.wrappingAdd(1, ordering: .relaxed)
                 status.kind = "live"
                 status.name = "Syphon: \(syphon)"
                 return LayerPlayback(key: key, live: live)
@@ -661,7 +648,6 @@ public final class MediaLoader: @unchecked Sendable {
             status.name = url.lastPathComponent
             if StillSource.extensions.contains(url.pathExtension.lowercased()) {
                 let playback = LayerPlayback(key: key, still: try StillSource.load(url: url, device: device))
-                opened.wrappingAdd(1, ordering: .relaxed)
                 status.kind = "still"
                 status.codec = url.pathExtension.lowercased()
                 status.width = playback.width
@@ -681,7 +667,6 @@ public final class MediaLoader: @unchecked Sendable {
             }
             decoder.start(name: "org.fanous.decode.\(layer + 1)")
             decoder.request(frame: 0, direction: 1)
-            opened.wrappingAdd(1, ordering: .relaxed)
             logger.info("layer \(layer + 1) media \(key)", metadata: ["file": "\(url.lastPathComponent)", "codec": "\(source.info.codecName)", "size": "\(source.info.width)x\(source.info.height)@\(source.info.frameRate)"])
             status.kind = "movie"
             status.codec = source.info.codecName
@@ -692,7 +677,6 @@ public final class MediaLoader: @unchecked Sendable {
             return LayerPlayback(key: key, movie: source, decoder: decoder, ring: ring)
         } catch {
             logger.error("media open failed", metadata: ["layer": "\(layer + 1)", "media": "\(key)", "error": "\(error)"])
-            failures.wrappingAdd(1, ordering: .relaxed)
             status.error = "\(error)"
             return nil
         }

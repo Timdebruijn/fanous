@@ -47,7 +47,6 @@ public enum AppPaths {
     public static var showStateFile: URL { applicationSupport.appending(path: "show-state.json") }
     /// Written by the shell right before Engine › Restart Engine: the stop keeps show mode for the next start.
     public static var restartPendingFile: URL { applicationSupport.appending(path: "restart-pending") }
-    public static var certificateFile: URL { tls.appending(path: "certificate.der") }
     public static var fingerprintFile: URL { tls.appending(path: "fingerprint.sha256") }
 
     public static func ensureDirectories() throws {

@@ -206,11 +206,14 @@ public enum ProjectDocument {
             try setWalls(walls, in: &project)
         }
         var outputs = ProjectDocument.outputs(from: project)
-        guard outputs.contains(where: { $0.slices.contains { !ids.contains($0.canvas) } }) else { return }
+        let before = outputs
+        func move(_ slices: inout [SliceConfig]) { for s in slices.indices where !ids.contains(slices[s].canvas) { slices[s].canvas = 1 } }
         for o in outputs.indices {
-            for s in outputs[o].slices.indices where !ids.contains(outputs[o].slices[s].canvas) { outputs[o].slices[s].canvas = 1 }
+            move(&outputs[o].slices)
+            // stored presets too: one shown or recalled later must not sample a canvas that is gone
+            for p in outputs[o].presets.indices { move(&outputs[o].presets[p].slices) }
         }
-        try setOutputs(outputs, in: &project)
+        if outputs != before { try setOutputs(outputs, in: &project) }
     }
 
     /// GPU memory cap over all canvases: their pixels together at most four UHD canvases (each canvas pixel costs
@@ -454,6 +457,23 @@ public enum ProjectDocument {
         if document["syphon"] == nil { try? document.set([:], at: "/syphon") }
         if document["capture"] == nil { try? document.set([:], at: "/capture") }
         if document["screens"] == nil { try? document.set([:], at: "/screens") }
+        // mapping presets of a hand-edited or foreign file: numbers 1–255 and the first of each number, the list the engine
+        // draws from (§9.10 item 3), so the UI offers the same; a preset that does not validate stays and is skipped there
+        if var list = document["outputs"]?.array {
+            var changed = false
+            for o in list.indices {
+                guard let presets = list[o]["presets"]?.array else { continue }
+                var seen = Set<Int>(), kept: [JSONValue] = []
+                for preset in presets {
+                    if let n = preset["number"]?.int, MappingPreset.numbers.contains(n), seen.insert(n).inserted { kept.append(preset) }
+                }
+                if kept.count != presets.count {
+                    try? list[o].set(.array(kept), at: "/presets")
+                    changed = true
+                }
+            }
+            if changed { try? document.set(.array(list), at: "/outputs") }
+        }
         // an Output or Keystone fixture without its output, or above the console's outputs, controls nothing (until
         // 2026-10-30 every project had Output 1–4 patched)
         if var patch = patch(from: document) {
@@ -483,6 +503,7 @@ public enum ProjectDocument {
     /// `liveRunning`: the numbers of the live inputs running now, of every catalog (B69: only the others can be
     /// forgotten). `authorizeCamera`, `authorizeScreen`: ask for the camera permission or screen recording (`capture.authorize`).
     /// `displayModes`: the current mode of each connected display by UUID (a wall output's pixel size, §9.9).
+    /// `showPreset`: the Compare lease of `output.show` (output ids, preset number; 0 ends it), kept on the DMX queue.
     public static func registerCommands(
         on store: StateStore, auth: RoleAuth, showModeOn: @escaping @Sendable () -> Bool = { false },
         checkLibraryRoot: @escaping @Sendable (String) throws -> Void = { _ in },
@@ -490,7 +511,8 @@ public enum ProjectDocument {
         liveRunning: @escaping @Sendable () -> Set<Int> = { [] },
         authorizeCamera: @escaping @Sendable () -> Void = {},
         authorizeScreen: @escaping @Sendable () -> Void = {},
-        displayModes: @escaping @Sendable () -> [String: DisplayModeConfig] = { [:] }
+        displayModes: @escaping @Sendable () -> [String: DisplayModeConfig] = { [:] },
+        showPreset: @escaping @Sendable ([Int], Int) -> Void = { _, _ in }
     ) {
         store.register(
             CommandSpec(
@@ -691,6 +713,7 @@ public enum ProjectDocument {
                     throw CommandError.invalidArgs("args: { id, path, value }")
                 }
                 guard !pointer.tokens.isEmpty, pointer.tokens.first != "id" else { throw CommandError.invalidArgs("path must name a field of the output") }
+                guard pointer.tokens.first != "presets" else { throw CommandError.invalidArgs("presets change through output.preset.store, rename and remove") }
                 var outputs = ProjectDocument.outputs(from: project)
                 guard let index = outputs.firstIndex(where: { $0.id == id }) else { throw CommandError.invalidArgs("no output \(id)") }
                 var document = try JSONValue(encoding: outputs[index])
@@ -836,12 +859,8 @@ public enum ProjectDocument {
             })
         registerUniverseCommands(on: store)
         registerWallCommands(on: store, showModeOn: showModeOn, displayModes: displayModes)
+        registerPresetCommands(on: store, showModeOn: showModeOn, showPreset: showPreset)
     }
-}
-
-extension JSONValue {
-    /// The project's outputs (empty when the document has none).
-    var outputsConfig: [OutputConfig] { ProjectDocument.outputs(from: self) }
 }
 
 extension FixtureRef {

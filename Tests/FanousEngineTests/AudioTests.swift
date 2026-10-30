@@ -500,7 +500,7 @@ extension LayerAudioChannel {
 
     // MARK: AudioMixer
 
-    @Test func mixerSumsChannelsAndAppliesMasterVolume() {
+    @Test func mixerSumsChannels() {
         let mixer = AudioMixer(channels: 3)
         #expect(mixer.channels.count == 3)
         let a = RampSource()
@@ -525,13 +525,8 @@ extension LayerAudioChannel {
         #expect(left[0] == 2 * 480 && left[479] == 2 * 959)
         #expect(right.allSatisfy { abs($0) < 1e-6 })
 
-        mixer.masterVolume = 0.5
-        render()  // ramps 1 -> 0.5 across this callback
-        render()
-        #expect(left[0] == 2 * 1440 * 0.5 && left[479] == 2 * 1919 * 0.5)
-
         let stats = mixer.statistics
-        #expect(stats.callbacks == 4)
+        #expect(stats.callbacks == 2)
         #expect(stats.underruns == 0)
         mixer.resetPeakDrift()
         #expect(mixer.statistics.maxDriftMillis == 0)

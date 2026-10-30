@@ -24,7 +24,6 @@ public final class LayerDecoder: @unchecked Sendable {
     private let logger: Logger
     private var thread: Thread?
     private var lastProduced = -1
-    public let errors = Atomic<Int>(0)
     public let decoded = Atomic<Int>(0)
     /// Audio track of the same movie, filled from this thread between video frames (ADR-0019).
     public var audio: (reader: AudioTrackReader, channel: LayerAudioChannel)?
@@ -89,7 +88,6 @@ public final class LayerDecoder: @unchecked Sendable {
                 lastProduced = next
                 decoded.wrappingAdd(1, ordering: .relaxed)
             } catch {
-                errors.wrappingAdd(1, ordering: .relaxed)
                 logger.error("decode failed", metadata: ["file": "\(source.url.lastPathComponent)", "frame": "\(next)", "error": "\(error)"])
                 Thread.sleep(forTimeInterval: 0.05)
             }

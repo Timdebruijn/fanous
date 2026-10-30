@@ -56,6 +56,14 @@ export interface OutputColor {
   black: number;
 }
 
+/** A stored mapping preset (DESIGN §9.10 item 3): the warp and slices only; blend, colour and the rest stay live. */
+export interface MappingPreset {
+  number: number;
+  name: string;
+  warp: WarpSettings;
+  slices: SliceConfig[];
+}
+
 export interface OutputConfig {
   id: number;
   name: string;
@@ -69,6 +77,8 @@ export interface OutputConfig {
   testPattern: number;
   /** absent in projects saved before M1.7: `colorOf` */
   color?: OutputColor;
+  /** absent when the output has none (the engine writes it only then) */
+  presets?: MappingPreset[];
 }
 
 export interface CanvasConfig {
@@ -161,6 +171,71 @@ export interface OutputStatusDoc {
   keystone?: boolean;
   /** the console's keystone values were refused (not a convex quad): the last valid keystone stays */
   keystoneInvalid?: boolean;
+  /** the mapping preset the output shows (DESIGN §9.10 item 3); null: the edited mapping */
+  preset?: number | null;
+  /** who asks for it: Output ch 6 or a held Compare */
+  presetSource?: 'console' | 'compare' | null;
+  /** a preset number asked for that the output does not have: it shows the edited mapping */
+  presetMissing?: number | null;
+}
+
+/** "Preset N (console)", "Preset N (compare)" and, in yellow, "Preset N missing": what the output shows instead of the
+ * mapping being edited. */
+export function presetBadges(status: OutputStatusDoc | undefined): { text: string; warn: boolean }[] {
+  const badges: { text: string; warn: boolean }[] = [];
+  if (status?.preset != null) badges.push({ text: `Preset ${status.preset} (${status.presetSource ?? 'console'})`, warn: false });
+  if (status?.presetMissing != null) badges.push({ text: `Preset ${status.presetMissing} missing`, warn: true });
+  return badges;
+}
+
+/** Said under the preview while the output shows a preset: the edits go to the mapping it does not show right now. */
+export function presetNote(status: OutputStatusDoc | undefined): string | null {
+  if (status?.preset == null) return null;
+  const back = status.presetSource === 'compare' ? 'when Compare is let go' : 'at channel 6 = 0';
+  return `The output shows Preset ${status.preset}. Edits go to its own mapping, shown here, and on the output again ${back}.`;
+}
+
+/** The toast after a recall: on a wall, the outputs whose slice 1 became manual (`{ manual: [{ wall, output, field }] }`). */
+export function recalledText(number: number, reply: unknown, name: (id: number) => string): string {
+  const manual = (reply as { manual?: { output: number }[] } | null)?.manual ?? [];
+  const outputs = [...new Set(manual.map((m) => m.output))].map(name);
+  if (outputs.length === 0) return `Preset ${number} recalled.`;
+  return `Preset ${number} recalled. Slice 1 is manual now on ${outputs.join(', ')}: it differs from the wall's part of the canvas.`;
+}
+
+/** Presets that every output in `outputs` has (a wall recalls them on all its outputs at once), by number; the name
+ * is the first output's. */
+export function sharedPresets(outputs: OutputConfig[]): { number: number; name: string }[] {
+  const [first, ...rest] = outputs;
+  return (first?.presets ?? [])
+    .filter((p) => rest.every((o) => o.presets?.some((q) => q.number === p.number)))
+    .map((p) => ({ number: p.number, name: p.name }));
+}
+
+/** The lowest preset number none of `outputs` uses, for "Store as"; null when 1–255 are all taken. */
+export function freePresetNumber(outputs: OutputConfig[]): number | null {
+  const used = new Set(outputs.flatMap((o) => o.presets?.map((p) => p.number) ?? []));
+  for (let n = 1; n <= 255; n++) if (!used.has(n)) return n;
+  return null;
+}
+
+/** Compare held from the UI (DESIGN §9.10 item 4): `start` sends the preset at once and again every `every` ms (the
+ * engine lets the lease run out 5 s after the last one); `stop` ends it with preset 0. The latest `start` wins. */
+export function compareLease(send: (preset: number) => void, every = 2000) {
+  let timer: ReturnType<typeof setInterval> | null = null;
+  return {
+    start(preset: number) {
+      if (timer) clearInterval(timer);
+      send(preset);
+      timer = setInterval(() => send(preset), every);
+    },
+    stop() {
+      if (!timer) return;
+      clearInterval(timer);
+      timer = null;
+      send(0);
+    },
+  };
 }
 
 /** Badges for what the output shows beyond its edited mapping; the preview and the editor show the mapping as edited. */
@@ -295,15 +370,6 @@ export function insertNearest(path: MapPoint[], p: MapPoint): { path: MapPoint[]
   return { path: next, index: best + 1 };
 }
 
-/** Inserts a point halfway between `index` and the next one (wrapping). */
-export function insertPoint(path: MapPoint[], index: number): MapPoint[] {
-  const a = path[index] ?? path[0]!;
-  const b = path[(index + 1) % path.length]!;
-  const next = [...path];
-  next.splice(index + 1, 0, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-  return next;
-}
-
 export function nextSliceId(output: OutputConfig): number {
   return Math.max(0, ...output.slices.map((s) => s.id)) + 1;
 }
@@ -342,9 +408,4 @@ export function spreadSources(slices: SliceConfig[], size: { w: number; h: numbe
     x += w;
   }
   return out;
-}
-
-/** Nudge in pixels of the output, as a normalized delta. */
-export function nudge(point: MapPoint, dx: number, dy: number, size: { w: number; h: number }): MapPoint {
-  return { x: clamp01(point.x + dx / size.w), y: clamp01(point.y + dy / size.h) };
 }

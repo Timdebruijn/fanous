@@ -24,6 +24,4 @@ public struct EffectSpec: Sendable, Equatable {
         EffectSpec(effect: .threshold, paramA: "level 0–100 %", paramB: "softness 0–100 %"),
         EffectSpec(effect: .tint, paramA: "amount 0–100 %", paramB: "hue 0–360°"),
     ]
-
-    public static func spec(_ effect: Effect) -> EffectSpec { all[effect.rawValue] }
 }
