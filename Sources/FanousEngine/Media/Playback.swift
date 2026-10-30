@@ -17,7 +17,8 @@ public struct LiveFrame {
     public var texture0: MTLTexture
     /// The second plane (`.planarYCbCr`: CbCr as `rg8Unorm` beside a Y `r8Unorm`), nil for one-texture kinds.
     public var texture1: MTLTexture?
-    /// `.rgba` (Syphon, generators, BGRA), `.v216` (8-bit `2vuy` as `rgba8Unorm` at half width) or `.planarYCbCr`.
+    /// `.rgba` (Syphon, generators, BGRA), `.v216` (8-bit `2vuy` as `rgba8Unorm` at half width), `.yuy2` (`yuvs`, the
+    /// same with the pairs swapped) or `.planarYCbCr`.
     public var kind: SourcePixelKind
     /// Row 0 is the bottom of the picture (OpenGL order, as Syphon surfaces are): the compositor samples it upside
     /// down so the layer is upright.
@@ -259,6 +260,8 @@ public struct LayerMediaStatus: Sendable, Equatable {
     public var fps = 0.0
     public var frames = 0
     public var error: String? = nil
+    /// A capture layer's counters (frames, dropped, outOfBuffers, unusable), nil for other media.
+    public var capture: CaptureInput.Counters? = nil
     public init() {}
 }
 
@@ -303,12 +306,15 @@ public struct MediaEntry: Codable, Sendable, Equatable {
     public var path: String?
     /// Syphon server as "App name/Server name" (folder 0, DESIGN.md §8.2).
     public var syphon: String?
+    /// Capture device by `AVCaptureDevice.uniqueID` (folder 0, DESIGN.md §8.2.1).
+    public var capture: String?
 
-    public init(folder: Int, file: Int, path: String? = nil, syphon: String? = nil) {
+    public init(folder: Int, file: Int, path: String? = nil, syphon: String? = nil, capture: String? = nil) {
         self.folder = folder
         self.file = file
         self.path = path
         self.syphon = syphon
+        self.capture = capture
     }
 
     public var key: MediaKey { MediaKey(folder: folder, file: file) }
@@ -334,6 +340,8 @@ public final class MediaLoader: @unchecked Sendable {
     public var syphonCatalog: LiveCatalog?
     /// Folder 0 generators (file 100+); nil in tests without a Metal context.
     public var generatorFactory: (@Sendable (Int) -> (any LiveTextureSource)?)?
+    /// Opens a capture device by uid (a scene entry's `capture:`); throws the layer's status text (permission, no device).
+    public var captureFactory: (@Sendable (_ uid: String) throws -> CaptureInput)?
     /// Two mixer channels per layer slot (the playing media and the one dissolving out); nil = no audio.
     public var mixer: AudioMixer?
     /// Library lookup for keys the scene's explicit list does not cover (DESIGN.md §7.4).
@@ -351,6 +359,7 @@ public final class MediaLoader: @unchecked Sendable {
         loaded = Array(repeating: 0, count: layers.count)
         parity = Array(repeating: 0, count: layers.count)
         syphonOpen = Array(repeating: nil, count: layers.count)
+        captureOpen = Array(repeating: nil, count: layers.count)
     }
 
     public func start() {
@@ -369,6 +378,9 @@ public final class MediaLoader: @unchecked Sendable {
     private let reresolveAll = Atomic<Bool>(false)
     private let reresolveMissing = Atomic<Bool>(false)
     private let syphonChanged = Atomic<Bool>(false)
+    private let captureChanged = Atomic<Bool>(false)
+    /// Loader thread: the capture input each layer shows, polled for its status ("no signal").
+    private var captureOpen: [CaptureInput?]
     /// Loader thread: the directory id of the numbered Syphon server each layer is connected to.
     private var syphonOpen: [String?]
 
@@ -376,6 +388,13 @@ public final class MediaLoader: @unchecked Sendable {
     /// its last picture; one whose server (re)appears connects without being selected again.
     public func syphonServersChanged() {
         syphonChanged.store(true, ordering: .relaxed)
+        wake.signal()
+    }
+
+    /// The camera permission was answered (or authorized from the System screen): layers on a capture entry that could
+    /// not open try again.
+    public func capturePermissionChanged() {
+        captureChanged.store(true, ordering: .relaxed)
         wake.signal()
     }
 
@@ -425,6 +444,30 @@ public final class MediaLoader: @unchecked Sendable {
                     }
                 }
             }
+            if captureChanged.exchange(false, ordering: .relaxed) {
+                for i in loaded.indices where captureOpen[i] == nil && media[MediaKey(packed: loaded[i])]?.capture != nil {
+                    loaded[i] = .max  // never a packed key: opened again below
+                }
+            }
+            for (i, input) in captureOpen.enumerated() {
+                guard let input else { continue }
+                let (error, fps): (String?, Double) =
+                    switch input.status {
+                    case .starting: (nil, 0)
+                    case .running(let fps): (nil, (fps * 100).rounded() / 100)
+                    case .noSignal: ("no signal", 0)  // the last frame stays on the layer
+                    case .stopped: ("not running", 0)
+                    case .failed(let reason): (reason, 0)
+                    }
+                let format = input.format, counters = input.counters
+                layers[i].mediaStatus.withLock { status in
+                    if status.error != error { status.error = error }
+                    if status.fps != fps { status.fps = fps }
+                    if status.codec != format.subtype { status.codec = format.subtype }
+                    (status.width, status.height) = (format.width, format.height)  // a card follows its input
+                    status.capture = counters
+                }
+            }
             for (i, layer) in layers.enumerated() {
                 let retired = layer.retired.withLock { list -> [LayerPlayback] in
                     let copy = list
@@ -458,6 +501,7 @@ public final class MediaLoader: @unchecked Sendable {
         status.file = key.file
         defer { layers[layer].mediaStatus.withLock { $0 = status } }
         syphonOpen[layer] = nil
+        captureOpen[layer] = nil
         guard !key.isNone else { return nil }
         if isNumbered(key, .syphon), let server = syphonCatalog?.entry(file: key.file) {
             status.kind = "live"
@@ -499,6 +543,18 @@ public final class MediaLoader: @unchecked Sendable {
             return nil
         }
         do {
+            if let uid = entry.capture {
+                status.kind = "live"
+                status.name = "Camera: \(uid)"
+                guard let captureFactory else { throw RenderError.pipeline("no capture input for \(uid)") }
+                let input = try captureFactory(uid)
+                opened.wrappingAdd(1, ordering: .relaxed)
+                status.name = "Camera: \(input.name)"  // format, size and counters: polled once it runs
+                status.capture = CaptureInput.Counters()
+                captureOpen[layer] = input
+                logger.info("layer \(layer + 1) media \(key)", metadata: ["capture": "\(input.name)"])
+                return LayerPlayback(key: key, live: input)
+            }
             if let syphon = entry.syphon {
                 guard let live = liveFactory?(syphon, nil) else { throw RenderError.pipeline("no live input for \(syphon)") }
                 opened.wrappingAdd(1, ordering: .relaxed)

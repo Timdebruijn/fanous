@@ -276,6 +276,7 @@ public final class Engine: @unchecked Sendable {
             }
             service.loader.resolver = { [weak self] key in self?.library?.resolve(key) }
             service.audioKeepRunning = { [weak self] in self?.showMode.isOn ?? false }
+            service.captureAllowed = { [weak self] in !(self?.showMode.isOn ?? false) }
             if startLayout.canvases.count > 1 {
                 // nothing ticks yet; on failure canvas 1 runs alone and takes the others' layers and slices meanwhile
                 do {
@@ -1559,6 +1560,12 @@ public final class Engine: @unchecked Sendable {
                         "width": .number(Double(s.width)), "height": .number(Double(s.height)), "fps": .number(s.fps),
                         "frames": .number(Double(s.frames)), "frame": .number(Double(layer.currentFrame)), "error": s.error.map { .string($0) } ?? .null,
                         "sync": syncLive(layer.syncStatus.withLock { $0 }),
+                        "capture": s.capture.map { c in
+                            [
+                                "frames": .number(Double(c.frames)), "dropped": .number(Double(c.dropped)), "outOfBuffers": .number(Double(c.outOfBuffers)),
+                                "unusable": .number(Double(c.unusable)),
+                            ]
+                        } ?? .null,
                     ]
                 }),
             "clients": ["count": .number(Double(store.clientCount)), "lagging": .number(Double(store.laggingClients))],
