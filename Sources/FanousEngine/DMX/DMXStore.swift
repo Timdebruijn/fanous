@@ -6,6 +6,7 @@ import Foundation
 import FanousCore
 import Logging
 import QuartzCore
+import simd
 
 public struct ResolvedParameterInfo: Encodable, Sendable {
     public var key: String
@@ -52,6 +53,8 @@ public final class DMXStore: @unchecked Sendable {
     private var table = UniverseTable()
     private var patch: Patch
     private var resolvers: [FixtureRef: FixtureResolver] = [:]
+    /// The project's source policy: on every patched fixture, and on the fixtures a later patch adds.
+    private var policy = SourcePolicy.dmx
     private var announced: Set<String> = []
     private var lastAnnounced: (universe: UniverseID, source: String, priority: UInt8?)?
     private var timer: DispatchSourceTimer?
@@ -63,6 +66,10 @@ public final class DMXStore: @unchecked Sendable {
     private(set) var uiClock: [FixtureRef: (masked: TimeInterval, tick: TimeInterval)] = [:]
     /// DESIGN.md §7.2: UI values that mask a live console are released after masking it this long since the last UI change.
     static let uiExpiry: TimeInterval = 600
+    /// Per output: the Keystone fixture's resolved raw values (empty: unpatched), the matrix they gave or the last valid
+    /// one, and whether the latest values were refused (DESIGN.md §9.10 item 2). Recomputed only when the values change.
+    private var keystones = [(raw: [UInt16], matrix: simd_float3x3, invalid: Bool)](
+        repeating: ([], matrix_identity_float3x3, false), count: ParameterSnapshotSlot.maxOutputs)
 
     public init(patch: Patch, logger: Logger) {
         self.logger = logger
@@ -137,7 +144,10 @@ public final class DMXStore: @unchecked Sendable {
             switch table.settings(for: entry.universe).holdOnLoss {
             case .hold: break
             case .zero:
-                let zeros = ChannelMap.rawValues(mode: entry.fixture.mode, slots: [UInt8](repeating: 0, count: 512), address: entry.address)
+                // zero for a geometry offset is no offset: a keystone universe that drops alone must not shift a lit picture
+                let zeros = entry.fixture.mode == .keystone
+                    ? ChannelMap.defaults(for: .keystone)
+                    : ChannelMap.rawValues(mode: entry.fixture.mode, slots: [UInt8](repeating: 0, count: 512), address: entry.address)
                 if let zeros, resolvers[entry.fixture]?.updateDMX(zeros, at: now) == true { changed = true }
             case .internal: changed = true
             }
@@ -264,9 +274,25 @@ public final class DMXStore: @unchecked Sendable {
             slot.sequence = sequence
             slot.receivedAt = receivedAt
             if let master = resolvers[.master] { ParameterSnapshotSlot.from(master, into: slot) }
+            // an output whose fixture was unpatched (or removed) is no longer held at its last console values
+            for i in slot.outputs.indices where resolvers.index(forKey: .output(i + 1)) == nil { slot.outputs[i] = OutputParameters() }
             for (fixture, resolver) in resolvers {
                 if case .layer(let n) = fixture, n >= 1, n <= slot.layers.count { slot.layers[n - 1] = LayerParameters.from(resolver) }
                 if case .output(let n) = fixture, n >= 1, n <= slot.outputs.count { slot.outputs[n - 1] = OutputParameters.from(resolver) }
+            }
+            for i in keystones.indices {
+                let raw = resolvers[.keystone(i + 1)]?.resolvedAll().map(\.raw) ?? []
+                if raw != keystones[i].raw {
+                    keystones[i].raw = raw
+                    // a refused quad keeps the last valid matrix and says so
+                    if let m = raw.isEmpty ? [1, 0, 0, 0, 1, 0, 0, 0, 1] : WarpMath.keystone(raw: raw) {
+                        keystones[i].matrix = simd_float3x3(rowMajor: m)
+                        keystones[i].invalid = false
+                    } else {
+                        keystones[i].invalid = true
+                    }
+                }
+                (slot.keystones[i], slot.keystoneInvalid[i]) = (keystones[i].matrix, keystones[i].invalid)
             }
         }
     }
@@ -330,7 +356,7 @@ public final class DMXStore: @unchecked Sendable {
         queue.async { [self] in
             self.patch = patch
             var kept: [FixtureRef: FixtureResolver] = [:]
-            for entry in patch.entries { kept[entry.fixture] = resolvers[entry.fixture] ?? FixtureResolver(mode: entry.fixture.mode) }
+            for entry in patch.entries { kept[entry.fixture] = resolvers[entry.fixture] ?? FixtureResolver(mode: entry.fixture.mode, policy: policy) }
             resolvers = kept
             applyLossModes()
             publish(receivedAt: 0)
@@ -366,6 +392,15 @@ public final class DMXStore: @unchecked Sendable {
 
     public func setPolicy(_ policy: SourcePolicy, for fixture: FixtureRef) {
         queue.async { [self] in resolvers[fixture]?.policy = policy }
+    }
+
+    /// The project's source policy for every fixture, also those a later `setPatch` adds.
+    public func setPolicy(_ policy: SourcePolicy) {
+        queue.async { [self] in
+            self.policy = policy
+            for key in resolvers.keys { resolvers[key]?.policy = policy }
+            publish(receivedAt: 0)  // the output follows at once, not at the next DMX change
+        }
     }
 
     public func snapshot() -> LiveSnapshot { snapshot(at: Self.now) }

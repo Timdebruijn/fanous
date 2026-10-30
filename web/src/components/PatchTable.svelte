@@ -16,6 +16,11 @@
   function setLayerCount(count: number) {
     void cmd('layers.setCount', { count });
   }
+  function addOutput() {
+    void cmd('output.add', {}).then((id) => {
+      if (typeof id === 'number') onselect(`Output ${id}`);
+    });
+  }
   async function removeLast() {
     const n = layerCount;
     if ((await cmd('layers.setCount', { count: n - 1 })) !== undefined) toastUndo(`Layer ${n} removed.`);
@@ -47,6 +52,7 @@
   </div>
   <div class="foot">
     <button type="button" class="btn" disabled={locked || atLimit} title={locked ? LOCKED_TITLE : atLimit ? 'Layer limit of this Mac (performance tier)' : undefined} onclick={() => setLayerCount(layerCount + 1)}>Add layer</button>
+    <button type="button" class="btn" disabled={locked} title={locked ? LOCKED_TITLE : 'A new output without a display; pick its display on Outputs & Mapping'} onclick={addOutput}>Add output</button>
     <span class="caption">{layerCount} of {maxLayers ?? '?'} layers · <span title="The layer limit of this Mac's performance tier; Add layer stops there so the show does not drop frames.">tier limit</span> measured on this machine</span>
     <span class="spacer"></span>
     <button type="button" class="btn btn-danger" disabled={locked || layerCount <= 1} title={locked ? LOCKED_TITLE : undefined} onclick={removeLast}>Remove layer {layerCount}</button>
@@ -56,7 +62,7 @@
 <style>
   .table { container-type: inline-size; overflow: hidden; }
   .rows { max-height: 480px; overflow-y: auto; }
-  .fx { display: grid; grid-template-columns: 12px 68px 70px 60px 48px 60px minmax(0, 1fr); column-gap: 8px; align-items: center; }
+  .fx { display: grid; grid-template-columns: 12px 88px 96px 60px 48px 60px minmax(0, 1fr); column-gap: 8px; align-items: center; }
   .fx-head { min-height: 32px; padding: 0 12px; border-bottom: 1px solid var(--line); }
   .fx-head .c-name { grid-column: 1 / span 2; }
   .fx .c-addr { text-align: right; }

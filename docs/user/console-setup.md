@@ -4,7 +4,7 @@
 
 # Console setup
 
-Fanous is one fixture type, "Fanous", with three DMX modes. You patch each
+Fanous is one fixture type, "Fanous", with four DMX modes. You patch each
 mode as its own fixture on the console.
 
 | Mode | Channels | Patch one per | Does |
@@ -12,6 +12,7 @@ mode as its own fixture on the console.
 | Layer | 64 | layer | Everything about one layer: intensity, media, play mode, position, colour, effects, crop, audio |
 | Master | 8 | machine | Master intensity, freeze or blackout, a global test pattern, master speed |
 | Output | 8 | output | Output intensity, blackout or freeze, test pattern, blend on or raw |
+| Keystone | 16 | output, optional | Moves the output's four corners on top of its alignment ([outputs-and-mapping.md](outputs-and-mapping.md#keystone-from-the-console)) |
 
 Test patterns follow the Master and Output Intensity and Blackout like the
 picture, so a Grand Master or DBO takes them down too: keep the Dimmer up to
@@ -26,6 +27,9 @@ same table.
 
 A new install has 8 layers. The Patch screen has **Add layer** and **Remove
 last layer** and shows "N of M layers" where M is the limit the engine reports.
+It also has **Add output**; select an output's fixture to **Remove output**.
+Each output has its own Output fixture, patched when the output is added and
+unpatched when it is removed.
 
 ## The standard patch
 
@@ -34,9 +38,14 @@ A fresh project is patched like this:
 - Layer n goes on Art-Net universe `(n-1) / 8` (whole number division) at
   address `(n-1) % 8 * 64 + 1`. Eight layers fill one universe exactly.
 - Master goes on the next universe after the layers, at address 1.
-- Outputs 1 to 4 follow the Master on that universe, at 9, 17, 25 and 33.
+- Output n follows the Master on the Master's universe, at `Master + 8 × n`
+  (9, 17, 25, 33 … with the Master at 1). It is patched when the output is
+  added (Patch or Outputs & Mapping screen) and only when those 8 channels are
+  free; otherwise it stays unpatched until you give it an address. A new
+  project has no Output fixtures until an output is added. Console control
+  covers outputs 1 to 8: output 9 and up has no Output fixture.
 
-With 8 layers:
+With 8 layers and four outputs:
 
 | Fixture | Universe | Address |
 |---|---|---|
@@ -59,10 +68,18 @@ the fixture file.
 
 - **Fixture table**: Fixture, Type (with footprint), Universe, Address,
   Footprint, Status. Status says "ok", "unpatched · no console control",
-  "collides with Layer 2 · 65-128" or "exceeds universe".
+  "collides with Layer 2 · 65-128" or "exceeds universe". There is one Output
+  row (and its Keystone row) per output on the Outputs & Mapping screen, no
+  more and no fewer; removing an output unpatches both.
+  Projects from before 30 October 2026 had Output 1 to 4 patched whether those
+  outputs existed or not; opening such a project unpatches the ones without an
+  output.
 - **Selected fixture** (programmer): choose the Universe (A 0.0.0 to 0.0.3 and
   S 1 to S 4, plus any universe that has been heard), set the Address with the
   stepper (Shift steps by 10; **0 means unpatched**), or press **Unpatch**.
+  For an output it also says which display shows it, links to Outputs &
+  Mapping, and has **Remove output** (the output with its mapping; Undo brings
+  it back).
   Below it: the universe's health pill and its settings (see
   [Universe settings](#universe-settings)).
 - **DMX monitor**: 512 cells for one universe, coloured per fixture, red where
@@ -102,7 +119,8 @@ says. With a Loss after above 2.5 s and no backup, the universe has no source
 between 2.5 s and Loss after; the fixtures keep their values until it is lost.
 
 **Go to zero** sets every channel of the universe's fixtures to 0 as a new DMX
-change. Under the source policies *Console + UI* (latest or highest wins) that
+change, except a Keystone fixture's: it goes to its default, 32768 on every
+channel, so a lost universe centres the keystone instead of moving the picture. Under the source policies *Console + UI* (latest or highest wins) that
 change is the latest, so the zeros also win over UI and cue values set before
 the loss; the UI or a cue has to set a value again after it.
 
@@ -120,9 +138,12 @@ adapter is joined again within 5 s.
 ## GDTF
 
 **Patch › Export GDTF** writes `Fanous.gdtf` (GDTF 1.2). It contains the
-fixture type "Fanous" with the Layer, Master and Output modes, channel
+fixture type "Fanous" with the Layer, Master, Output and Keystone modes, channel
 functions with their physical ranges, a channel set for every band (play modes,
 blend modes, effects, test patterns), the 16-bit links and the default values.
+If you imported `Fanous.gdtf` before the Keystone mode existed, export and
+import it again: the fixture type keeps its ID, so a console may keep the older
+file with three modes until you replace it.
 The file is generated from the same table as the channel map, so they cannot
 disagree. On the command line: `fanousd gdtf FILE`.
 

@@ -18,15 +18,30 @@ import Testing
         }
         let highest = used.max()!
         #expect(Set(1...highest) == used, "channels 1…\(highest) must be contiguous in \(mode)")
-        let reserved: ClosedRange<Int> =
-            switch mode {
-            case .layer: ChannelMap.reservedLayerChannels
-            case .master: ChannelMap.reservedMasterChannels
-            case .output: ChannelMap.reservedOutputChannels
-            }
-        #expect(reserved.lowerBound == highest + 1)
-        #expect(reserved.upperBound == mode.footprint)
-        #expect([FixtureMode.layer: 64, .master: 8, .output: 8][mode] == mode.footprint)
+        if let reserved = ChannelMap.reserved(for: mode) {
+            #expect(reserved.lowerBound == highest + 1)
+            #expect(reserved.upperBound == mode.footprint)
+        } else {
+            #expect(highest == mode.footprint)
+        }
+        #expect([FixtureMode.layer: 64, .master: 8, .output: 8, .keystone: 16][mode] == mode.footprint)
+    }
+
+    /// DESIGN.md §6.4a: four corners × X/Y, 16-bit, centred = no change, ±50 %; the other modes keep their footprints and
+    /// reserved channels (Output ch 6–7, Mapping preset and fade, come with M2.4/M2.5).
+    @Test func keystoneModeHasSixteenCentredChannels() {
+        let specs = ChannelMap.keystone
+        #expect(specs.map(\.id) == KeystoneParameter.allCases.map { .keystone($0) })
+        #expect(specs.map(\.channel) == Array(stride(from: 1, through: 15, by: 2)))
+        #expect(specs.allSatisfy { $0.bits == 16 && $0.defaultRaw == 32768 && $0.physical(fromRaw: 32768) == 0 })
+        #expect(specs.allSatisfy { $0.physical(fromRaw: 0) == -50 && $0.physical(fromRaw: 65535) == 50 })
+        #expect(specs.map(\.name).prefix(2) == ["Top-left X", "Top-left Y"])
+        #expect(ChannelMap.reserved(for: .keystone) == nil)
+        #expect(ChannelMap.defaults(for: .keystone) == Array(repeating: 32768, count: 8))
+        #expect(ChannelMap.output.count == 4 && ChannelMap.reservedOutputChannels == 6...8)
+        #expect(FixtureRef.keystone(2).mode == .keystone && FixtureRef.keystone(2).description == "Keystone 2")
+        #expect(PatchEntry(fixture: .keystone(1), universe: UniverseID(.artnet, 0), address: 497).fitsInUniverse)
+        #expect(!PatchEntry(fixture: .keystone(1), universe: UniverseID(.artnet, 0), address: 498).fitsInUniverse)
     }
 
     @Test func layerUsesFiftyOneChannels() {
@@ -134,6 +149,9 @@ import Testing
         #expect(patch.universes == [UniverseID(.artnet, 0), UniverseID(.artnet, 1), UniverseID(.artnet, 2)])
         let allFit = patch.entries.allSatisfy(\.fitsInUniverse)
         #expect(allFit)
+        // a project starts without Output fixtures: output.add patches each one next to the Master
+        let fresh = Patch.standard(layers: 8, outputs: 0)
+        #expect(fresh.entries.count == 9 && fresh.entry(for: .master)?.universe == UniverseID(.artnet, 1))
         let colliding = Patch(entries: [
             PatchEntry(fixture: .layer(1), universe: UniverseID(.artnet, 0), address: 1),
             PatchEntry(fixture: .layer(2), universe: UniverseID(.artnet, 0), address: 64),

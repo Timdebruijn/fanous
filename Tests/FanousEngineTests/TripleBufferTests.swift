@@ -7,6 +7,7 @@ import Foundation
 import Logging
 import Synchronization
 import Testing
+import simd
 
 @testable import FanousEngine
 
@@ -93,6 +94,8 @@ final class Box { var value = 0 }
                 slot.layers[1].intensity = Float(i) / 4
                 slot.layers[1].playMode = .bounce
                 slot.outputs[0].raw = i % 2 == 1
+                slot.keystones[1] = matrix_identity_float3x3 * Float(i)
+                slot.keystoneInvalid[1] = i == 2
             }
         }
         let published = store.snapshots.read()
@@ -101,8 +104,91 @@ final class Box { var value = 0 }
             $0.sequence == published.sequence && $0.receivedAt == published.receivedAt && $0.master == published.master
                 && $0.masterControl == published.masterControl && $0.masterSpeed == published.masterSpeed
                 && $0.testPattern == published.testPattern && $0.layers == published.layers && $0.outputs == published.outputs
+                && $0.keystones == published.keystones && $0.keystoneInvalid == published.keystoneInvalid
         }
         #expect(same)
+    }
+
+    /// DESIGN.md §9.10 item 2: a Keystone fixture patched next to its Output fixture. Both reach the snapshot whichever
+    /// changes, in either patch order: the Output fixture rebuilds `outputs` on every publish, so the keystone has its own
+    /// array. A refused quad keeps the last valid matrix and is flagged; unpatched is the identity again.
+    @Test func keystoneAndOutputFixturesBothApply() {
+        let universe = UniverseID(.artnet, 0)
+        let output = PatchEntry(fixture: .output(1), universe: universe, address: 1)
+        let keystone = PatchEntry(fixture: .keystone(1), universe: universe, address: 9)
+        for entries in [[output, keystone], [keystone, output]] {
+            let store = DMXStore(patch: Patch(entries: entries), logger: Logger(label: "test"))
+            var time = 1000.0
+            /// Output 1 intensity, Keystone 1 centred but for the top-left corner.
+            func send(intensity: UInt16, topLeft: (x: UInt16, y: UInt16)) {
+                var data = [UInt8](repeating: 0, count: 512)
+                (data[0], data[1]) = (UInt8(intensity >> 8), UInt8(intensity & 0xFF))
+                for (i, raw) in ([topLeft.x, topLeft.y] + Array(repeating: 32768, count: 6)).enumerated() {
+                    (data[8 + 2 * i], data[9 + 2 * i]) = (UInt8(raw >> 8), UInt8(raw & 0xFF))
+                }
+                time += 0.02
+                store.queue.sync { store.receive(artnet: ArtDmx(portAddress: 0, data: data), from: "desk", at: time) }
+            }
+            func state() -> (intensity: Float, topLeft: SIMD2<Float>, invalid: Bool) {
+                store.snapshots.withLatest { slot in
+                    let k = slot.keystones[0] * SIMD3<Float>(0, 0, 1)
+                    return (slot.outputs[0].intensity, SIMD2(k.x, k.y) / k.z, slot.keystoneInvalid[0])
+                }
+            }
+            func near(_ a: SIMD2<Float>, _ b: SIMD2<Float>) -> Bool { simd_distance(a, b) < 1e-3 }
+            let quarter = ChannelMap.spec(.keystone(.topLeftX)).raw(fromPhysical: 25)
+            send(intensity: 32768, topLeft: (quarter, 32768))
+            var s = state()
+            #expect(abs(s.intensity - 0.5) < 0.01 && near(s.topLeft, SIMD2(0.25, 0)) && !s.invalid, "\(entries.map(\.fixture)): \(s)")
+            send(intensity: 65535, topLeft: (quarter, 32768))
+            s = state()
+            #expect(s.intensity == 1 && near(s.topLeft, SIMD2(0.25, 0)), "an Output change keeps the keystone: \(s)")
+            // top-left onto the centre: on the TR–BL diagonal, refused; the output still follows its own fixture
+            send(intensity: 0, topLeft: (65535, 65535))
+            s = state()
+            #expect(s.intensity == 0 && near(s.topLeft, SIMD2(0.25, 0)) && s.invalid, "the last valid keystone stays: \(s)")
+            store.setPatch(Patch(entries: [output]))
+            store.queue.sync {}
+            s = state()
+            #expect(near(s.topLeft, .zero) && !s.invalid, "unpatched: the identity")
+        }
+    }
+
+    /// DMX loss with hold "zero" centres a Keystone fixture instead of putting every corner at −50 %: zero for a geometry
+    /// offset is no offset, so a keystone universe that drops alone does not shift a lit picture.
+    @Test func zeroOnLossCentresTheKeystone() {
+        let universe = UniverseID(.artnet, 0)
+        let store = DMXStore(patch: Patch(entries: [PatchEntry(fixture: .keystone(1), universe: universe, address: 1)]), logger: Logger(label: "test"))
+        var settings = UniverseSettings(for: universe)
+        settings.holdOnLoss = .zero
+        let time = 1000.0
+        store.queue.sync { store.configure([universe: settings], at: time) }
+        var data = [UInt8](repeating: 0, count: 512)
+        for i in 0..<8 { data[2 * i] = 0x80 }  // 32768: centred
+        data[0] = 0xA0  // top-left X +12.5 %
+        store.queue.sync { store.receive(artnet: ArtDmx(portAddress: 0, data: data), from: "desk", at: time + 0.02) }
+        func topLeft() -> SIMD2<Float> {
+            store.snapshots.withLatest { slot in
+                let k = slot.keystones[0] * SIMD3<Float>(0, 0, 1)
+                return SIMD2(k.x, k.y) / k.z
+            }
+        }
+        #expect(topLeft().x > 0.1, "the console's keystone applies: \(topLeft())")
+        store.queue.sync { store.tick(at: time + 10) }
+        #expect(simd_length(topLeft()) < 1e-6, "lost with zero: centred, not −50 %: \(topLeft())")
+    }
+
+    /// An unpatched (or removed) Output fixture no longer holds its output at the last values: a re-added output with
+    /// the same number and no fixture renders as with no console.
+    @Test func unpatchedOutputFallsBackToDefaults() {
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Logger(label: "test"))
+        store.setPolicy(.internal, for: .output(1))
+        // Blackout in every slot: a publish writes into a slot that holds an older publish
+        for raw in UInt16(64)...70 { store.queue.sync { store.applyUI(.output(1), .output(.control), raw: raw, at: 1000) } }
+        #expect(store.snapshots.read().outputs[0].control == .blackout)
+        store.setPatch(.standard(layers: 1, outputs: 0))
+        _ = store.currentPatch  // the DMX queue has run the patch change
+        #expect(store.snapshots.read().outputs[0] == OutputParameters())
     }
 
     /// Writer at ~1 kHz, the render reader on its own thread and a copy reader at ~2 kHz: no torn slot on either

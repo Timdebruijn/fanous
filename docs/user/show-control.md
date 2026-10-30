@@ -104,6 +104,7 @@ the parameter's range, an int is the raw value.
 | `/fanous/layer/{n}/retrigger` | | Restart the media |
 | `/fanous/master/{param}` | f | Master parameter |
 | `/fanous/output/{n}/{param}` | f | Output parameter |
+| `/fanous/keystone/{n}/{param}` | f | Keystone parameter (`topLeftX` … `bottomLeftY`, see the channel map) |
 | `/fanous/cue/go` | | Fire the next cue |
 | `/fanous/cue/back` | | Fire the previous cue |
 | `/fanous/cue/goto` | i | Fire the cue with this number |
@@ -163,6 +164,7 @@ same value), so a fader on a controller can follow a layer.
 | `/fanous/layer/{n}/media` | ii | Folder, file |
 | `/fanous/master/{param}` | f | Master parameter |
 | `/fanous/output/{n}/{param}` | f | Output parameter |
+| `/fanous/keystone/{n}/{param}` | f | Keystone parameter, when the Keystone fixture is patched |
 | `/fanous/output/{n}/state` | s | `bound`, `lost` or `unassigned` |
 | `/fanous/output/{n}/bound` | i | 1 when the output shows on its display |
 | `/fanous/cue/current` | f | Number of the current cue, -1 for none |

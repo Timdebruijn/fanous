@@ -21,6 +21,30 @@ struct UIExpiryTests {
         return store
     }
 
+    /// A fixture patched after the project's policy was set takes that policy, so its UI values apply (before, a new
+    /// patch entry kept the default `dmx` until the policy itself changed).
+    @Test func aFixturePatchedLaterTakesTheProjectPolicy() {
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
+        store.setPolicy(.ltp)
+        store.setPatch(Patch(entries: store.currentPatch.entries + [PatchEntry(fixture: .layer(2), universe: UniverseID(.artnet, 1), address: 1)]))
+        store.setUI(.layer(2), intensity, raw: 40000)
+        store.queue.sync {}
+        let value = store.snapshot().fixtures["Layer 2"]?.first { $0.key == "intensity" }
+        #expect(value?.raw == 40000 && value?.source == "ui", "\(String(describing: value))")
+    }
+
+    /// A policy change reaches the render snapshot at once, without waiting for a DMX change.
+    @Test func aPolicyChangeReachesTheOutputAtOnce() {
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
+        store.setUI(layer, intensity, raw: 65535)
+        store.queue.sync {}
+        let rendered = { store.snapshots.withLatest { $0.layers[0].intensity } }
+        #expect(rendered() == 0, "dmx: the UI value waits")
+        store.setPolicy(.ltp)
+        store.queue.sync {}
+        #expect(rendered() == 1, "ltp: the UI value renders")
+    }
+
     func hasUI(_ store: DMXStore) -> Bool { store.snapshot().internalValues["Layer 1"]?.contains { $0.source == "ui" } ?? false }
 
     /// Seconds left as published in the live document.

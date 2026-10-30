@@ -323,6 +323,25 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Changed: the Syphon numbering (folder 0, 150–169) is one `LiveCatalog` that the coming capture inputs share (B73 step
   1b, DESIGN §8.2.1): a kind per range (capture devices 1–20 in `capture`, displays 21–28 in `screens`, windows 29–32 in
   `windows`), and the undo/redo checks of `syphon` cover those keys too. Syphon behaves as before; nothing is captured yet.
+- Added: the **Keystone** DMX mode (M2.3, DESIGN §6.4a, §9.10 item 2), a fourth fixture mode of 16 channels patched per
+  output next to its Output fixture: the four corners' X and Y, 16-bit, ±50 % of the output, centred is no change. It
+  moves the whole mapping, slices, masks and test patterns, on top of the hand alignment; the blend map stays put and Raw
+  bypasses it. Corners that would fold the picture are refused and the last working keystone stays. The output row and
+  Warp & Slices show "Keystone active" or, in yellow, "Keystone invalid"; the preview shows the mapping as edited. In the
+  channel map, GDTF (a fourth mode), OSC (`/fanous/keystone/{n}/{key}`) and on the Patch screen; the other three modes
+  are unchanged.
+- Fixed: a fixture patched after the project's source policy was set (Console + UI or Internal) stayed on Console
+  only until the policy itself changed, so its UI, cue, OSC and MIDI values were ignored. A newly patched fixture now
+  takes the project's policy, and a policy change reaches the output at once instead of at the next DMX change.
+- An Output fixture follows its output: `output.add` patches it next to the Master (Master address + 8 per output, the
+  standard addresses 9, 17, 25, 33 …) when that range is free, `output.remove` unpatches it in the same undo step, and a
+  new project no longer starts with Output 1–4 patched. `patch.set` refuses an Output fixture without its output, and
+  opening a project unpatches such fixtures, so the Patch and Layers screens show exactly the outputs that exist. The
+  Patch screen lists every output's fixture (also unpatched ones, so Output 5 and up can be patched), has **Add
+  output**, and for a selected output says which display shows it, links to Outputs & Mapping and has **Remove output**.
+  A Keystone fixture follows the same rule (patched by hand, unpatched with its output). Console control covers outputs
+  1–8, so output 9 and up gets no Output fixture. Fixed on the way: an output whose fixture was unpatched kept its last
+  console values (a Blackout stayed black).
 - Added: cameras and capture cards as live layer sources (B73 step 2a, DESIGN §8.2.1). A scene `media` entry
   `{folder: 0, file, capture: "<device uid>"}` shows an AVFoundation capture device (a webcam, a UVC or driver-backed
   capture card, an iPhone over Continuity Camera) at its input's size and the highest frame rate up to the canvas

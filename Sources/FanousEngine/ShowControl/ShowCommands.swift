@@ -71,7 +71,7 @@ public enum ShowCommands {
     static func validateCue(_ value: JSONValue) throws {
         guard cue(from: value) != nil else { throw CommandError.invalidArgs("a cue needs number, name and valid values ({fixture, parameter, raw, fade?})") }
         if let values = value["values"]?.array, values.count != values.compactMap(cueValue(from:)).count {
-            throw CommandError.invalidArgs("every value needs fixture (\"Layer n\" / \"Master\" / \"Output n\"), a parameter key and raw")
+            throw CommandError.invalidArgs("every value needs fixture (\"Layer n\" / \"Master\" / \"Output n\" / \"Keystone n\"), a parameter key and raw")
         }
     }
 
