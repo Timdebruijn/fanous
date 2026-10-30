@@ -355,7 +355,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   picture. Frames, drops, pool shortages (`outOfBuffers`) and unusable frames are counted per layer and logged every
   minute. The camera permission is asked only outside show mode. The app and the engine carry the camera entitlement
   and usage text. Numbered files 1–20 follow with the capture catalog.
-- A fixture exists without a patch (B120 step 1, PR #N, DESIGN §6.6 item 1): every layer up to the layer count (at most
+- A fixture exists without a patch (B120 step 1, PR #122, DESIGN §6.6 item 1): every layer up to the layer count (at most
   32), the Master and each output's Output and Keystone fixture can be controlled whether it has a console address or
   not; the patch is only the console address. An unpatched fixture follows the source policy: at its defaults under
   Console only, controlled by the UI, cues, OSC and MIDI under the other policies, so a show without a console no
