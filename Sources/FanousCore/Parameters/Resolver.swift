@@ -20,8 +20,13 @@ public struct FixtureResolver: Sendable {
     public let mode: FixtureMode
     public var policy: SourcePolicy
     public private(set) var hasDMX = false
+    /// DMX arrived since the resolver was made or last cleared (DESIGN.md §6.6): only then does the DMX side compete in
+    /// `ltp` and `htp`. Unlike `hasDMX` it stays set after a loss, while the held values still apply.
+    public private(set) var dmxReceived = false
     /// Hold on loss `internal` (B28): without DMX the fixture resolves as policy `internal`.
     public var internalWithoutDMX = false
+    /// How many parameters an internal source holds: "no internal value" without building `internalValues()`.
+    public private(set) var internalCount = 0
 
     private let specs: [ParameterSpec]
     private var dmxRaw: [UInt16]
@@ -48,6 +53,7 @@ public struct FixtureResolver: Sendable {
         precondition(raw.count == specs.count)
         var changed = !hasDMX
         hasDMX = true
+        dmxReceived = true
         for i in raw.indices where raw[i] != dmxRaw[i] {
             dmxRaw[i] = raw[i]
             dmxChangedAt[i] = time
@@ -59,8 +65,16 @@ public struct FixtureResolver: Sendable {
     /// Signal loss: values are held (Catalyst behaviour); only the flag changes.
     public mutating func markDMXLost() { hasDMX = false }
 
+    /// Unpatched, or moved to another universe (DESIGN.md §6.6): the DMX side goes back to the defaults, so the fixture
+    /// never holds the console's last look; the internal values stay.
+    public mutating func clearDMX() {
+        for i in specs.indices { (dmxRaw[i], dmxChangedAt[i]) = (specs[i].defaultRaw, 0) }
+        (hasDMX, dmxReceived, internalWithoutDMX) = (false, false, false)
+    }
+
     public mutating func setInternal(_ id: ParameterID, raw: UInt16, source: ValueSource, at time: TimeInterval) {
         let i = ChannelMap.index(of: id)
+        if internalRaw[i] == nil { internalCount += 1 }
         internalRaw[i] = specs[i].clamped(raw)
         internalSource[i] = source
         internalChangedAt[i] = time
@@ -70,12 +84,14 @@ public struct FixtureResolver: Sendable {
     public mutating func clearInternal(_ id: ParameterID, source: ValueSource) {
         let i = ChannelMap.index(of: id)
         guard internalSource[i] == source else { return }
+        if internalRaw[i] != nil { internalCount -= 1 }
         internalRaw[i] = nil
         internalSource[i] = .none
     }
 
     public mutating func clearInternal(source: ValueSource) {
         for i in internalRaw.indices where internalSource[i] == source {
+            if internalRaw[i] != nil { internalCount -= 1 }
             internalRaw[i] = nil
             internalSource[i] = .none
         }
@@ -104,10 +120,11 @@ public struct FixtureResolver: Sendable {
         switch policy {
         case .dmx: return dmx
         case .internal: return internalResolved
-        case .ltp: return internalResolved.changedAt >= dmx.changedAt ? internalResolved : dmx
-        case .htp:
-            guard specs[i].isContinuous else { return internalResolved.changedAt >= dmx.changedAt ? internalResolved : dmx }
-            return internalResolved.raw >= dmx.raw ? internalResolved : dmx
+        case .ltp, .htp:
+            // no DMX received: a default (Master at full) must not beat a value on a fixture no console reaches
+            guard dmxReceived else { return internalResolved }
+            if policy == .htp, specs[i].isContinuous { return internalResolved.raw >= dmx.raw ? internalResolved : dmx }
+            return internalResolved.changedAt >= dmx.changedAt ? internalResolved : dmx
         }
     }
 }

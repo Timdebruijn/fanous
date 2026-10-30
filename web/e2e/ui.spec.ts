@@ -151,6 +151,25 @@ test('sync: a slave layer locks to a master layer of its group, and loses it whe
   await expect(slave).toHaveClass(/sync-(red|grey)/);
 });
 
+test('patch: Hold on loss is set on the universe in the Universes panel, kept over a reload, and undone', async ({ page }) => {
+  await openScreen(page, 'Patch');
+  const universes = page.getByRole('region', { name: 'Universes' });
+  const row = universes.getByRole('button', { name: /^A 0\.0\.0,/ });
+  await expect(row).toContainText('Layers 1–8');
+  await expect(row).toContainText('Hold last values');
+  await row.click();
+  await expect(row).toHaveAttribute('aria-expanded', 'true');
+  // the monitor shows the universe that was opened
+  await expect(page.getByRole('region', { name: 'DMX monitor' }).getByRole('button', { name: 'A 0.0.0' })).toHaveAttribute('aria-pressed', 'true');
+  await universes.getByLabel('Hold on loss').selectOption('zero');
+  await expect(row).toContainText('Go to zero');
+  await page.reload();
+  await openScreen(page, 'Patch');
+  await expect(row).toContainText('Go to zero');
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(row).toContainText('Hold last values');
+});
+
 test('media: folder 0 lists the generators and the Syphon servers, and puts one on a layer', async ({ page }) => {
   await openScreen(page, 'Media');
   await page.getByRole('button', { name: /^0 Built-in and live inputs/ }).click();
