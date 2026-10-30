@@ -37,6 +37,7 @@ export type CommandName =
   | 'midi.map.set'
   | 'midi.set'
   | 'output.add'
+  | 'output.overlay'
   | 'output.preset.recall'
   | 'output.preset.remove'
   | 'output.preset.rename'
@@ -113,6 +114,8 @@ export interface CommandArgs {
   'midi.set': { source?: string | null; mscDevice?: number; mscFormat?: number | null };
   /** Add an output (one full-canvas slice, no blend, identity warp), optionally bound to a display; its Output fixture is patched next to the Master when that range is free. Role: programmer, refused under show lock, undoable. */
   'output.add': { display?: { uuid: string; name: string } };
+  /** The edit overlay, a lease (DESIGN.md §9.10 item 4): while on, output id draws its edited mapping's warp, slice and mask outlines and the selected point for 5 s; the UI renews it every 2 s and the latest call's selection is drawn; on false ends it. Never saved or undone; refused in show mode except to end. Role: programmer, refused under show lock. */
+  'output.overlay': { id: number; on: boolean; selected?: { slice: number; kind: 'corner' | 'mesh' | 'slice' | 'mask'; mask?: number; point: number } | null };
   /** Copy mapping preset number into each output's warp and slices (an edit: Undo takes it back). Every output must have it. On a projector-wall output a slice 1 source that differs from the wall's becomes manual, as with output.set (result { manual: [{ wall, output, field }] }). Role: programmer, refused under show lock, undoable. */
   'output.preset.recall': { ids: number[]; number: number };
   /** Remove mapping preset number from each output; every output must have it. Role: programmer, refused under show lock, undoable. */

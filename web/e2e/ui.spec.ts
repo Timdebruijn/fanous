@@ -572,6 +572,36 @@ test('outputs: holding Compare with the mouse keeps the preset on the output unt
   await expect(page.getByText('Preset 1 (compare)')).toHaveCount(0);
 });
 
+test('outputs: opening Warp & Slices puts the edit overlay on the output with the selected point; Show on output takes it off', async ({ page, engine }) => {
+  // the output.overlay commands this page sends; any the engine refuses fails the test (fixtures)
+  const sent: unknown[] = [];
+  page.on('websocket', (socket) =>
+    socket.on('framesent', ({ payload }) => {
+      if (typeof payload !== 'string') return;
+      const message = JSON.parse(payload) as { name?: string; args?: unknown };
+      if (message.name === 'output.overlay') sent.push(message.args);
+    }),
+  );
+  await page.goto(`${engine.url}/?token=${engine.token}`);
+  await addUnassignedOutput(page);
+  expect(sent, 'not before the tab opens').toEqual([]);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  await expect.poll(() => sent).toEqual([{ id: 1, on: true, selected: null }]);
+  // the corner's hit circle reaches past the picture's corner: tap the part over the picture
+  const corner = page.getByRole('button', { name: '/warp/cornerPin/0', exact: true });
+  const box = (await corner.boundingBox())!;
+  await corner.click({ position: { x: box.width * 0.7, y: box.height * 0.7 } });
+  await expect.poll(() => sent.at(-1)).toEqual({ id: 1, on: true, selected: { slice: 0, kind: 'corner', point: 0 } });
+  const toggle = page.getByRole('switch', { name: 'Show on output' });
+  await expect(toggle).toBeChecked();
+  await toggle.uncheck({ force: true }); // the drawn track covers the input
+  await expect.poll(() => sent.at(-1)).toEqual({ id: 1, on: false, selected: null });
+  await toggle.check({ force: true });
+  await expect.poll(() => sent.at(-1)).toEqual({ id: 1, on: true, selected: { slice: 0, kind: 'corner', point: 0 } });
+  await page.getByRole('button', { name: 'Outputs', exact: true }).click();
+  await expect.poll(() => sent.at(-1)).toEqual({ id: 1, on: false, selected: null });
+});
+
 test('outputs: remove an output, then Undo brings it back', async ({ page }) => {
   await addUnassignedOutput(page);
   await page.getByRole('button', { name: 'Outputs', exact: true }).click();

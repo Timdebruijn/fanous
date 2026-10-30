@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it, vi } from 'vitest';
-import { canvasSizeError, canvasTarget, colorOf, compareLease, freePresetNumber, previewReady, layerCanvas, layerRuns, layersOn, presetBadges, presetNote, recalledText, sharedPresets, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, handles, keystoneBadges, meshIdentity, modeText, outlines, outputSize, statusText, type OutputConfig } from './outputs';
+import { canvasSizeError, canvasTarget, colorOf, compareLease, freePresetNumber, previewReady, layerCanvas, layerRuns, layersOn, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, recalledText, sharedPresets, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, handles, keystoneBadges, meshIdentity, modeText, outlines, outputSize, statusText, type OutputConfig } from './outputs';
 
 const output: OutputConfig = {
   id: 1,
@@ -132,6 +132,58 @@ describe('outputs helpers', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('edit overlay lease: sent at once, renewed every 2 s, again at once on a new selection, off after 10 minutes without an edit', () => {
+    vi.useFakeTimers();
+    try {
+      const sent: [number, boolean, unknown][] = [];
+      let idle = 0;
+      const lease = overlayLease((id, on, selected) => sent.push([id, on, selected]), () => idle++);
+      const a = overlaySelection('mesh', 0, 7), b = overlaySelection('slices', 1, 2);
+      lease.stop();
+      expect(sent, 'nothing to end').toEqual([]);
+      lease.start(1, a);
+      lease.start(1, overlaySelection('mesh', 0, 7));  // the same again (the screen re-runs its effect): nothing new
+      vi.advanceTimersByTime(4100);
+      expect(sent).toEqual([[1, true, a], [1, true, a], [1, true, a]]);
+      lease.start(1, b);  // sent at once, then every 2 s from there
+      vi.advanceTimersByTime(1900);
+      expect(sent.slice(3)).toEqual([[1, true, b]]);
+      lease.start(2, null);  // another output: the first one's ends
+      expect(sent.slice(4)).toEqual([[1, false, null], [2, true, null]]);
+      sent.length = 0;
+      // the 10 minutes run from opening, and an edit starts them again
+      vi.advanceTimersByTime(500_000);
+      lease.edited();
+      vi.advanceTimersByTime(500_000);
+      expect(idle).toBe(0);
+      expect(sent.every(([id, on]) => id === 2 && on)).toBe(true);
+      vi.advanceTimersByTime(100_000);
+      expect(idle).toBe(1);
+      expect(sent.at(-1)).toEqual([2, false, null]);
+      const count = sent.length;
+      vi.advanceTimersByTime(10_000);
+      lease.stop();
+      expect(sent.length, 'stopped: nothing more, not even an ending').toBe(count);
+      lease.start(2, null);  // the switch on again
+      lease.stop();
+      expect(sent.slice(count)).toEqual([[2, true, null], [2, false, null]]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('edit overlay selection and badges', () => {
+    const status = { id: 1, state: 'bound' as const, display: 'Epson', width: 1920, height: 1200, hz: 60, master: true };
+    expect(overlaySelection('cornerPin', 0, 3)).toEqual({ slice: 0, kind: 'corner', point: 3 });
+    expect(overlaySelection('mask', 2, 5)).toEqual({ slice: 2, kind: 'mask', point: 5 });
+    expect([overlaySelection('mesh', 0, 7)?.kind, overlaySelection('slices', 1, 2)?.kind]).toEqual(['mesh', 'slice']);
+    expect(overlaySelection('slices', 0, -1), 'nothing selected').toBeNull();
+    expect(overlayBadges({ ...status, overlay: 'shown' })).toEqual([]);
+    expect(overlayBadges({ ...status, overlay: 'preset' })).toEqual([{ text: 'Overlay hidden: a preset shows', warn: true }]);
+    expect(overlayBadges({ ...status, overlay: 'raw' })).toEqual([{ text: 'Overlay hidden: Raw', warn: true }]);
+    expect(overlayBadges(undefined)).toEqual([]);
   });
 
   it('blend curve', () => {

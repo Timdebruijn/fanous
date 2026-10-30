@@ -498,6 +498,8 @@ struct OutputPassTests {
         /// Output 1's mapping preset, Output ch 6 or Compare, and the morph into it (`write` puts them in the slot).
         var preset: UInt8 = 0
         var morph = PresetMorph()
+        /// Output 1's Raw (Output ch 5).
+        var raw = false
 
         init(_ config: OutputConfig?, value: UInt8) throws {
             context = try MetalContext()
@@ -532,6 +534,7 @@ struct OutputPassTests {
                 slot.layers[0].file = 1
                 slot.layers[0].fitMode = .stretch
                 slot.outputs[0].control = control
+                slot.outputs[0].raw = raw
                 slot.keystones[0] = keystone
                 slot.presets[0] = preset
                 slot.morphs[0] = morph
@@ -1326,5 +1329,148 @@ struct OutputPassTests {
         // the acceptance bound (100 ms) is a release-build number, see docs/benchmarks; debug builds run ~2–3× slower
         #expect(ms < 250, "compiled a 33×33 warp with a feathered mask at 1080p in \(ms) ms")
         print("33x33 warp + feathered mask compile at 1080p: \(String(format: "%.1f", ms)) ms CPU")
+    }
+
+    // MARK: Edit overlay (DESIGN.md §9.10 item 4)
+
+    /// The corner pin puts the picture at x 80…240, y 45…135 (an inset: the warp is linear, so lines land on pixel edges);
+    /// slice 1 covers all of it, slice 2 its right half from x 160. Preset 1 is the same mapping.
+    static func overlayConfig() -> OutputConfig {
+        var o = OutputConfig(id: 1)
+        o.warp.cornerPin = [MapPoint(0.25, 0.25), MapPoint(0.75, 0.25), MapPoint(0.75, 0.75), MapPoint(0.25, 0.75)]
+        var right = SliceConfig(id: 2)
+        right.dest = [MapPoint(0.5, 0), MapPoint(1, 0), MapPoint(1, 1), MapPoint(0.5, 1)]
+        o.slices.append(right)
+        o.storePreset(1, name: nil)
+        return o
+    }
+
+    /// `rig` draws `overlayConfig` with an overlay lease taken at host time `at` (the rig ticks at 3601, 3602 …).
+    static func overlaid(_ rig: Rig, selected: OverlaySelection? = nil, at: Double = 3600) throws -> OutputSet {
+        let overlay = EditOverlay(device: rig.context.device)
+        overlay.lease(1, on: true, selected: selected, config: overlayConfig(), at: at)
+        let set = OutputSet(plans: [try OutputCompiler(device: rig.context.device).compile(overlayConfig(), index: 1, drawable: (width, height), overlay: overlay)])
+        rig.compositor.outputSet = set
+        return set
+    }
+
+    /// Blue, green, red at (x, y) of a BGRA image.
+    static func bgr(_ image: [UInt8], _ x: Int, _ y: Int) -> [Int] { (0..<3).map { Int(image[(y * width + x) * 4 + $0]) } }
+
+    /// The warp (the corner pin's edges) and every slice's outline, through the warp: 2 px white with a 1 px black edge
+    /// over the picture. The lease draws for 5 s after it was taken.
+    @Test func theOverlayDrawsTheWarpAndTheSliceOutlines() throws {
+        let rig = try Rig(nil, value: 200)
+        _ = try Self.overlaid(rig)
+        _ = rig.tick(.normal, master: 1, layer: 1)
+        let image = rig.compositor.readbackOutput().bgra
+        func g(_ x: Int, _ y: Int) -> Int { Int(image[(y * Self.width + x) * 4 + 1]) }
+        #expect([158, 159, 160, 161, 163].map { g($0, 90) } == [0, 255, 255, 0, 200], "slice 2's left edge at x = 160")
+        #expect(Self.bgr(image, 160, 90) == [255, 255, 255], "white")
+        #expect([43, 44, 45, 46, 48].map { g(120, $0) } == [0, 255, 255, 0, 200], "the corner pin's top edge at y = 45 (row 43 is off the picture)")
+        #expect([82, 120, 238].map { g($0, 135) } == [255, 255, 255], "its bottom edge at y = 135")
+        // `tick` reads the centre, (160, 90), on slice 2's edge; the ticks are 1 s apart
+        for _ in 0..<2 { _ = rig.tick(.normal, master: 1, layer: 1) }
+        #expect(rig.tick(.normal, master: 1, layer: 1) == 255, "4 s after the lease was taken")
+        #expect(rig.tick(.normal, master: 1, layer: 1) == 200, "5 s after: it ran out")
+    }
+
+    /// The keystone moves the lines with the mapping and they are extruded after it: still 2 px where it halves the picture.
+    @Test func theOverlayFollowsTheKeystoneAndKeepsItsWidth() throws {
+        let rig = try Rig(nil, value: 200)
+        _ = try Self.overlaid(rig)
+        rig.keystone = simd_float3x3(rowMajor: WarpMath.keystone(to: [MapPoint(0.25, 0.25), MapPoint(0.75, 0.25), MapPoint(0.75, 0.75), MapPoint(0.25, 0.75)])!)
+        _ = rig.tick(.normal, master: 1, layer: 1)
+        let image = rig.compositor.readbackOutput().bgra
+        func g(_ x: Int) -> Int { Int(image[(90 * Self.width + x) * 4 + 1]) }
+        // the picture at x 120…200 now: the corner pin's edges there, slice 2's at 160
+        #expect([118, 119, 120, 121, 123].map(g) == [0, 255, 255, 0, 200], "\([118, 119, 120, 121, 123].map(g))")
+        #expect([158, 159, 160, 161, 163].map(g) == [0, 255, 255, 0, 200], "\([158, 159, 160, 161, 163].map(g))")
+        #expect([196, 198, 199, 200].map(g) == [200, 0, 255, 255], "\([196, 198, 199, 200].map(g))")
+    }
+
+    /// The selected point is a yellow crosshair, wider than the lines and open in the middle, with its number beside it in
+    /// yellow seven-segment digits.
+    @Test func theSelectedPointIsAYellowCrosshairWithItsNumber() throws {
+        let rig = try Rig(nil, value: 200)
+        _ = try Self.overlaid(rig, selected: OverlaySelection(kind: .corner, point: 0))
+        _ = rig.tick(.normal, master: 1, layer: 1)
+        let image = rig.compositor.readbackOutput().bgra
+        let yellow = [0, 255, 255]
+        // corner 1 lands at (80, 45); its right arm runs from 6 to 24 px to the right, rows 43–46, a black edge below
+        #expect([43, 44, 45, 46, 47].map { Self.bgr(image, 95, $0) } == [yellow, yellow, yellow, yellow, [0, 0, 0]])
+        #expect(Self.bgr(image, 80, 45) == [255, 255, 255], "the corner itself: the corner pin's edges, between the arms")
+        // the label "1", 30 px right of and below the point: one stroke at x = 116 from y = 75 to 97
+        #expect(Self.bgr(image, 116, 85) == yellow && Self.bgr(image, 115, 92) == yellow)
+        #expect(Self.bgr(image, 116, 101) == [200, 200, 200] && Self.bgr(image, 112, 85) == [200, 200, 200])
+    }
+
+    /// The lines belong to the edited mapping: none while a preset shows or a morph from one runs, nor in raw; a number the
+    /// output lacks shows the edited mapping, and the overlay with it.
+    @Test func theOverlayIsOnlyOverTheEditedMapping() throws {
+        let rig = try Rig(nil, value: 200)
+        _ = try Self.overlaid(rig, at: 3620)
+        func line() -> Int { rig.tick(.normal, master: 1, layer: 1) }  // the centre, on slice 2's edge
+        #expect(line() == 255, "the edited mapping")
+        rig.preset = 1
+        #expect(line() == 200, "preset 1, the same mapping: no lines")
+        rig.preset = 7
+        #expect(line() == 255, "a number the output lacks")
+        (rig.preset, rig.morph) = (0, PresetMorph(from: 1, start: 3600, fade: 100))
+        #expect(line() == 200, "a morph from preset 1 into the edited mapping")
+        (rig.preset, rig.morph) = (1, PresetMorph(from: 0, start: 3600, fade: 100))
+        #expect(line() == 200, "a morph from the edited mapping into preset 1")
+        (rig.preset, rig.morph, rig.raw) = (0, PresetMorph(), true)
+        #expect(line() == 200, "raw")
+        rig.raw = false
+        #expect(line() == 255, "the edited mapping again")
+    }
+
+    /// The overlay follows the output's Blackout and the Master: black stays black, Master 50 % gives half-white lines.
+    @Test func theOverlayFollowsBlackoutAndTheMaster() throws {
+        let rig = try Rig(nil, value: 200)
+        _ = try Self.overlaid(rig, selected: OverlaySelection(kind: .corner, point: 0))
+        func black() -> Bool { rig.compositor.readbackOutput().bgra.enumerated().allSatisfy { $0.offset % 4 == 3 || $0.element <= 1 } }
+        _ = rig.tick(.blackout, master: 1, layer: 1)
+        #expect(black(), "the output's Blackout")
+        _ = rig.tick(.normal, master: 1, layer: 1, blackout: true)
+        #expect(black(), "the Master's blackout")
+        _ = rig.tick(.normal, master: 0.5, layer: 1)
+        let image = rig.compositor.readbackOutput().bgra
+        #expect(Self.near(Self.bgr(image, 160, 90)[1], 128) && Self.near(Self.bgr(image, 95, 45)[2], 128) && Self.bgr(image, 95, 45)[0] == 0, "\(Self.bgr(image, 160, 90)) \(Self.bgr(image, 95, 45))")
+    }
+
+    /// A secondary display draws the overlay too, at its own frame time.
+    @Test func aSecondaryDisplayDrawsTheOverlay() throws {
+        let rig = try Rig(nil, value: 200)
+        let set = try Self.overlaid(rig)
+        _ = rig.tick(.normal, master: 1, layer: 1)
+        #expect(try rig.present(set, at: (160, 90), now: 3604.9) == 255)
+        #expect(try rig.present(set, at: (160, 90), now: 3605) == 200, "the lease ran out")
+    }
+
+    /// The output preview, compiled as the engine compiles it (its own compiler, no overlay), shows no lines while the
+    /// projector does: the editor draws its own handles over it.
+    @Test func thePreviewDrawsNoOverlay() async throws {
+        let rig = try Rig(nil, value: 200)
+        _ = try Self.overlaid(rig)
+        let streamer = try PreviewStreamer(context: rig.context, width: Self.width, height: Self.height, fps: 5, canvasFPS: 5, parameters: rig.parameters, logger: Logger(label: "output-test"))
+        streamer.outputSet = OutputSet(plans: [try OutputCompiler(device: rig.context.device).compile(Self.overlayConfig(), index: 1, drawable: (Self.width, Self.height))])
+        streamer.externalJPEGWanted = { true }
+        rig.compositor.previewTap = { canvas, buffer, target, live in streamer.tap(canvas: canvas, commandBuffer: buffer, target: target, live: live) }
+        #expect(rig.tick(.normal, master: 1, layer: 1) == 255, "the projector draws slice 2's edge at the centre")
+        #expect(await waitUntil { streamer.jpegOut.load(ordering: .relaxed) > 0 })
+        let (jpeg, width, height) = try #require(streamer.latestJPEG.withLock { $0 })
+        let image = try #require(CGImageSourceCreateWithData(Data(jpeg) as CFData, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) })
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        rgba.withUnsafeMutableBytes { raw in
+            CGContext(
+                data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)?
+                .draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        for (x, y) in [(160, 90), (120, 45)] {
+            #expect(abs(Int(rgba[(y * width + x) * 4 + 1]) - 200) <= 8, "the preview at (\(x), \(y)): \(rgba[(y * width + x) * 4 + 1])")
+        }
     }
 }

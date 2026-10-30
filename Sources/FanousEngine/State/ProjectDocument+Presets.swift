@@ -7,7 +7,8 @@ import Foundation
 
 /// Mapping presets (DESIGN.md §9.10 item 3): `output.preset.*` keep snapshots of an output's warp and slices in
 /// `OutputConfig.presets`, one undo step per call, also for a whole wall (`ids`). `output.show` is Compare's lease: no
-/// project change, held on the DMX queue (`DMXStore.show`).
+/// project change, held on the DMX queue (`DMXStore.show`). `output.overlay` is the edit overlay's lease (item 4), held
+/// by the output coordinator (`EditOverlay`).
 extension ProjectDocument {
     /// The indices in `outputs` of `args.ids`: existing outputs, none twice.
     static func targets(_ args: JSONValue, in outputs: [OutputConfig]) throws -> [Int] {
@@ -49,7 +50,21 @@ extension ProjectDocument {
         if let i = indices.first(where: { outputs[$0].preset(number) == nil }) { throw CommandError.invalidArgs("\(outputs[i].name) has no preset \(number)") }
     }
 
-    static func registerPresetCommands(on store: StateStore, showModeOn: @escaping @Sendable () -> Bool, showPreset: @escaping @Sendable ([Int], Int) -> Void) {
+    /// `output.overlay`'s `selected`: absent or null is none; a shape it does not have is refused. Whether the mapping has
+    /// that point is not checked here: the mapping changes under a running lease, so one it lacks draws no selection.
+    static func overlaySelection(_ value: JSONValue?) throws -> OverlaySelection? {
+        guard let value, value != .null else { return nil }
+        let mask = (value["mask"] ?? .null) == .null ? 0 : value["mask"]?.int
+        guard let kind = value["kind"]?.string.flatMap(OverlaySelection.Kind.init), let slice = value["slice"]?.int, let point = value["point"]?.int, let mask,
+            slice >= 0, point >= 0, mask >= 0
+        else { throw CommandError.invalidArgs("selected must be { slice, kind: corner | mesh | slice | mask, mask?, point } with whole numbers from 0") }
+        return OverlaySelection(slice: slice, kind: kind, mask: mask, point: point)
+    }
+
+    static func registerPresetCommands(
+        on store: StateStore, showModeOn: @escaping @Sendable () -> Bool, showPreset: @escaping @Sendable ([Int], Int) -> Void,
+        showOverlay: @escaping @Sendable (Int, Bool, OverlaySelection?) -> Void
+    ) {
         store.register(
             CommandSpec(
                 name: "output.preset.store", role: .programmer,
@@ -139,6 +154,21 @@ extension ProjectDocument {
                 // show mode ends a lease at once (Engine), so a renewal must not start it again
                 guard preset == 0 || !showModeOn() else { throw CommandError("showMode", "Compare is off in show mode") }
                 showPreset(ids, preset)
+                return nil
+            })
+        store.register(
+            CommandSpec(
+                name: "output.overlay", role: .programmer, undoable: false,
+                summary: "The edit overlay, a lease (DESIGN.md §9.10 item 4): while on, output id draws its edited mapping's warp, slice and mask outlines and the selected point for 5 s; the UI renews it every 2 s and the latest call's selection is drawn; on false ends it. Never saved or undone; refused in show mode except to end.",
+                argsType: "{ id: number; on: boolean; selected?: { slice: number; kind: 'corner' | 'mesh' | 'slice' | 'mask'; mask?: number; point: number } | null }"
+            ) { project, args in
+                guard let id = args["id"]?.int, let on = args["on"]?.bool else { throw CommandError.invalidArgs("args: { id, on, selected? }") }
+                let selected = try overlaySelection(args["selected"])
+                // ending one of an output that is gone ends nothing, and is fine
+                guard !on || ProjectDocument.outputs(from: project).contains(where: { $0.id == id }) else { throw CommandError.invalidArgs("no output \(id)") }
+                // show mode ends a lease at once (Engine), so a renewal must not start it again
+                guard !on || !showModeOn() else { throw CommandError("showMode", "the edit overlay is off in show mode") }
+                showOverlay(id, on, selected)
                 return nil
             })
     }

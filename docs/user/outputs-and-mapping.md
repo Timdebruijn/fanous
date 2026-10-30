@@ -407,6 +407,30 @@ key in the middle makes every press move ten, and holding an arrow for half a
 second moves 0.25 px. A selected point also shows
 numeric x and y fields in pixels. Changes go to the engine while you drag.
 
+**Show on output**, under the preview, draws what you edit on the projector
+itself, so at the wall you see which point is selected:
+
+- The warp (the edges of the corner pin, or the grid lines of the mesh), every
+  slice's outline and its mask's outline. They go through the warp and the
+  keystone, so they lie on the picture.
+- The selected point as a yellow crosshair, open in the middle so the point
+  itself stays visible, with its number in yellow digits beside it: **3·5** for
+  row 3, column 5 of the mesh, else the point's number (corners 1 to 4
+  clockwise from the top left, or the mask point's number).
+- The lines are 2 pixels of white with a black edge, so they show on any
+  picture. They follow Blackout and the Master: a blacked-out output stays black.
+- It is on whenever you open Warp & Slices and goes off when you leave the tab
+  or switch it off. After 10 minutes without an edit it switches itself off;
+  one click switches it on again. When the browser goes away (a closed laptop,
+  an iPad that sleeps) the engine takes it off within 5 seconds, and it comes
+  back with the page.
+- It is not drawn while the output shows a preset or glides from or into one
+  (the lines belong to the mapping you edit), nor in Raw: **Overlay hidden: a
+  preset shows** or **Overlay hidden: Raw** says why. The preview does not show
+  it; the handles are drawn over the preview instead.
+- It needs the programmer role. Show mode and the show lock take it off at
+  once, and it stays off in show mode.
+
 **Remote mode** is for aligning from an iPad while you look at the projection
 instead of the screen. Turn it on with **Remote** next to the mode buttons; it
 is on by default on touch screens narrower than 900 px, and each browser

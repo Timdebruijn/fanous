@@ -2371,7 +2371,7 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
 ### 9.10 M2: black lift by coverage, Keystone, mapping presets, edit overlay, masks v2 (design 2026-10-29)
 
 **Status:** designed 2026-10-29, owner decisions the same day (below), and
-reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2.1), the Keystone mode of item 2 (M2.3), the presets of item 3 (M2.4) and their morph (M2.5), below. Research and frictions F3–F6 are in
+reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2.1), the Keystone mode of item 2 (M2.3), the presets of item 3 (M2.4) and their morph (M2.5), and the edit overlay of item 4 (M2.6), below. Research and frictions F3–F6 are in
 `docs/mapping-ux.md` §1 and §4.2–§4.5.
 
 **Owner decisions (2026-10-29):**
@@ -2795,6 +2795,69 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
   - The box is swapped atomically, so a selection change rebuilds only it.
   - The output pass gets one extra draw.
   - The label uses the test patterns' seven-segment digits.
+
+**As built (M2.6, PR #TBD):**
+- **Lease** (`output.overlay {id, on, selected?}`, `ProjectDocument+Presets.swift` next to `output.show`). Programmer,
+  refused under show lock (ending too: the lock ended it), not undoable and no project change; `on: true` is refused in
+  show mode and for an output that does not exist, `on: false` never for either. The command hops to the main actor;
+  `OutputCoordinator.overlay` gives it the output's mapping as last applied.
+  - **Home: `EditOverlay`** (`Render/EditOverlay.swift`), owned by the coordinator, which hands it to every plan it
+    compiles (`OutputPlan.overlay`). **Deviation:** one object keyed by output id, each entry (lease end, selection,
+    lines) that output's box, instead of a box per output: the coordinator, the render threads and `live.outputs` reach
+    every output's entry behind one `Mutex`. An entry is replaced whole; writes come from the main actor only (the
+    lease, a rebuild at every rebind, `endAll`), so two builds never race.
+  - **Expiry without a tick:** the render threads draw an entry while the frame time is before its end (`now + 5 s` at
+    the last call, host time), so a lease ends exactly 5 s after its last renewal on every display; the next lease or
+    rebind drops it. A renewal with the same selection keeps the lines; the latest call's selection wins.
+  - **Show mode and show lock** end every overlay lease with the Compare leases (`Engine.endLeases`, was
+    `endCompare`), on the main actor after any renewal already queued there.
+  - `selected` (`OverlaySelection`): `slice` is the slice's index (the editor's handle paths are by index), `mask` 0
+    until masks v2, all whole numbers from 0; another shape is refused. A point the mapping lacks draws **no
+    selection** while the lines stay: the mapping changes under a running lease (Remove slice, a new mesh density)
+    between renewals, and a refusal would let the overlay run out.
+- **Lines** (`EditOverlay.segments`, built on the main actor into a buffer sized by content, 40 bytes a segment), all in
+  output coordinates before the warp: the mesh's grid lines (rows, then columns), else the unit square's edges (the
+  corner pin's), 64 pieces each; every slice's outline, 64 per edge, so it runs through the slice mesh's edge vertices
+  and lies on the picture's edge under any warp; its mask's outline in pieces of at most 1/64 of the output; then the
+  selection, last, so it is on top.
+  - **Selection:** four arms 6–24 px from the point (open in the middle), 4 px wide, and the label 30 px off towards
+    the output's middle (as the point lies before the warp), digits 12 × 22 px: "r·c" (1-based) for a mesh point, else
+    the point's number (1-based). `ShaderSource.sevenSegments` is the one digit table for the test patterns and the
+    label. A corner is the output's corner through the whole warp: under a mesh whose corner point moved it marks the
+    picture's corner, not the pin handle (a `ponytail:`).
+  - **Cap:** 16,384 segments (640 KB); a 33 × 33 mesh is 4,224 and a slice 256. Past it the last lines (the last
+    slices' outlines and masks) are not drawn; the selection always is.
+- **Render.** One draw per output after its slices or test pattern (`OutputPass.drawOverlay`), `overlayPipeline`
+  (opaque), one 256-byte slot of the tick's rotating uniform buffer (M2.5). `overlay_vertex` reads a segment per six
+  vertices, sends both ends through the edited warp field (`plan.warpField`) and the keystone, then extrudes in pixels
+  of the region; an end beyond the keystone's vanishing line draws nothing. Instanced twice: instance 0 draws every
+  segment 1 px wider on each side in black, instance 1 the cores over all of them, so a crossing never cuts a line.
+  Colour × the Master, 0 at the output's Blackout; no blend map, colour, lift or dither.
+  - **Not drawn:** in raw; while the preset shown, or a running morph's other side, is one the plan has (a number it
+    lacks draws the edited mapping, and the overlay with it); on previews, whose plans the engine compiles without
+    `EditOverlay`. The clock-master display and secondary displays draw it at their own frame time.
+  - Per frame: one locked dictionary lookup per output, nothing allocated. `scripts/check-mallocs.sh` does not run an
+    output pass (M2.4), so this is by construction.
+- **Status.** `live.outputs[].overlay`: null without a lease, else `"shown"`, `"preset"` (a preset or a morph shows,
+  from `presetLive`'s fields, so it agrees with the render) or `"raw"` (`Engine.overlayLive`); it changes only when the
+  lease starts or ends or a preset or Raw does. An output on no display says "shown" too: it has nothing to draw on.
+- **UI** (Warp & Slices). A **Show on output** switch at the start of the badge row under the preview; on whenever the
+  tab opens. `overlayLease` (`lib/outputs.ts`, the shape of `compareLease`) sends at once when the output or the
+  selection changes (`overlaySelection`: the selected handle, else null) and renews every 2 s; another output ends the
+  first one's lease; 10 minutes without an edit (an `output.set` or a nudge from this screen) stop the renewals and turn
+  the switch off; leaving the tab or the screen, or the switch, sends `on: false`. Nothing is sent without the role or
+  under show lock, and in show mode it is off; the switch says why. "Overlay hidden: a preset shows" or "Overlay
+  hidden: Raw" in yellow among the badges. The iPad remote mode's large label already names the kind ("corner
+  top-left", "r3 c5", "slice 2 · bottom-right", "slice 2 · mask point 5").
+- **Checks.** `EditOverlayTests` (lease start, renewal, expiry at 5 s, latest selection, off, `endAll`, the rebuild
+  after an edit, the lines and labels of a mapping, the cap, the command's refusals and that it is no edit, the status)
+  and `OutputPassTests` (white lines with the black edge where a slice outline and a corner-pin edge land, also under a
+  keystone that halves the picture, still 2 px; the yellow crosshair and label; none over a preset, a morph from or
+  into one, or in raw; Blackout, the Master's blackout and Master 50 %; a secondary display; the preview), each
+  mutation-checked; vitest for the lease's renewals and idle stop with fake timers; one Playwright run (open the tab,
+  select a corner, the switch, leaving the tab).
+- **Not built here:** a test of `Engine.endLeases`' wiring (as for Compare, it needs the whole engine); masks v2's
+  outlines (M2.7).
 
 **5. Masks v2 (fixes F5), with freehand (owner decision).**
 - **Model.**

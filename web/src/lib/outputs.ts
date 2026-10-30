@@ -179,6 +179,8 @@ export interface OutputStatusDoc {
   presetMissing?: number | null;
   /** a running morph into the preset (Output ch 7): from and to as drawn, 0 = the edited mapping, and its fade in seconds */
   morph?: { from: number; to: number; fade: number } | null;
+  /** the edit overlay (DESIGN §9.10 item 4) while its lease runs: drawn, or why not; null without a lease */
+  overlay?: 'shown' | 'preset' | 'raw' | null;
 }
 
 /** "Preset N (console)", "Preset N (compare)" and, in yellow, "Preset N missing": what the output shows instead of the
@@ -243,6 +245,55 @@ export function compareLease(send: (preset: number) => void, every = 2000) {
       send(0);
     },
   };
+}
+
+export type OverlaySelection = { slice: number; kind: 'corner' | 'mesh' | 'slice' | 'mask'; mask?: number; point: number };
+
+/** The point the edit overlay marks on the output (`output.overlay`'s `selected`): the anchor's index in the mode's
+ *  handles, on slice `slice` (its index); null with nothing selected. A slice has one mask until masks v2. */
+export function overlaySelection(mode: MapperMode, slice: number, point: number): OverlaySelection | null {
+  if (point < 0) return null;
+  return { slice, kind: ({ cornerPin: 'corner', mesh: 'mesh', slices: 'slice', mask: 'mask' } as const)[mode], point };
+}
+
+/** The edit overlay's lease from Warp & Slices (DESIGN §9.10 item 4): `start` sends at once when the output or the
+ *  selection changed (or it was off) and renews every `every` ms; after `quiet` ms without `edited` it stops renewing
+ *  and calls `idle` (the engine lets the lease run out); `stop` ends it with `on: false`. */
+export function overlayLease(send: (id: number, on: boolean, selected: OverlaySelection | null) => void, idle: () => void, every = 2000, quiet = 600_000) {
+  let timer: ReturnType<typeof setInterval> | null = null;
+  let id = 0, selected: OverlaySelection | null = null, editedAt = 0;
+  function stop() {
+    if (!timer) return;
+    clearInterval(timer);
+    timer = null;
+    send(id, false, null);
+  }
+  return {
+    start(output: number, next: OverlaySelection | null) {
+      if (timer && output === id && JSON.stringify(next) === JSON.stringify(selected)) return;
+      if (timer && output !== id) stop();
+      if (!timer) editedAt = Date.now();  // the quiet time counts from opening
+      [id, selected] = [output, next];
+      send(id, true, selected);
+      if (timer) clearInterval(timer);
+      timer = setInterval(() => {
+        if (Date.now() - editedAt < quiet) return send(id, true, selected);
+        stop();
+        idle();
+      }, every);
+    },
+    edited() {
+      editedAt = Date.now();
+    },
+    stop,
+  };
+}
+
+/** Why the output does not draw the edit overlay while it is asked for (it belongs to the edited mapping). */
+export function overlayBadges(status: OutputStatusDoc | undefined): { text: string; warn: boolean }[] {
+  if (status?.overlay === 'preset') return [{ text: 'Overlay hidden: a preset shows', warn: true }];
+  if (status?.overlay === 'raw') return [{ text: 'Overlay hidden: Raw', warn: true }];
+  return [];
 }
 
 /** Badges for what the output shows beyond its edited mapping; the preview and the editor show the mapping as edited. */

@@ -107,11 +107,14 @@ public final class OutputCoordinator {
     private var lastOrphans: [String] = []
     /// Called after every rebind with the new statuses (feeds `live.outputs`).
     public var onStatus: (@MainActor ([OutputStatus]) -> Void)?
+    /// The edit overlay of every output (DESIGN.md §9.10 item 4), handed to every plan compiled here; `live.outputs` reads it.
+    public nonisolated let editOverlay: EditOverlay
 
     public init(compositor: Compositor, context: MetalContext, fps: Double, displays: [DisplayInfo], logger: Logger) {
         self.compositor = compositor
         self.context = context
         self.compiler = OutputCompiler(device: context.device, logger: logger)
+        self.editOverlay = EditOverlay(device: context.device)
         self.fps = fps
         self.displays = displays
         self.logger = logger
@@ -124,6 +127,12 @@ public final class OutputCoordinator {
         self.outputs = outputs
         self.clockMaster = clockMaster
         rebind()
+    }
+
+    /// `output.overlay` (DESIGN.md §9.10 item 4): starts, renews or ends output `id`'s overlay lease at `now` (host time),
+    /// with this call's selection; its lines come from the mapping as last applied.
+    public func overlay(_ id: Int, on: Bool, selected: OverlaySelection?, at now: Double) {
+        editOverlay.lease(id, on: on, selected: selected, config: outputs.first { $0.id == id }, at: now)
     }
 
     /// Hot-plug or mode change.
@@ -192,6 +201,8 @@ public final class OutputCoordinator {
             lastOrphans = orphans
             if !orphans.isEmpty { logger.warning("slices on a canvas that does not render stay black", metadata: ["slices": "\(orphans.joined(separator: ", "))"]) }
         }
+        // a running edit overlay follows the edit (§9.10 item 4)
+        editOverlay.rebuild(outputs, at: CACurrentMediaTime())
         let binding = OutputBinding.resolve(outputs: outputs, displays: displays)
         let newMaster = OutputBinding.master(outputs: outputs, binding: binding, clockMaster: clockMaster)
 
@@ -233,7 +244,7 @@ public final class OutputCoordinator {
             for id in ids {
                 guard let config = outputs.first(where: { $0.id == id }) else { continue }
                 do {
-                    plans.append(try compiler.compile(config, index: id, drawable: (Int(size.width), Int(size.height))))
+                    plans.append(try compiler.compile(config, index: id, drawable: (Int(size.width), Int(size.height)), overlay: editOverlay))
                     statuses.append(OutputStatus(id: id, state: .bound, display: display.name, width: Int(size.width), height: Int(size.height), hz: display.hz, isMaster: displayID == newMaster))
                 } catch {
                     logger.error("output compile failed", metadata: ["output": "\(id)", "error": "\(error)"])

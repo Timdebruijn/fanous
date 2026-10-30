@@ -79,6 +79,9 @@ public final class OutputPlan: @unchecked Sendable {
     let presets: [Int: PresetGeometry]
     /// Every canvas the edited mapping or a preset samples: what Freeze holds, so a preset change while frozen keeps the frame.
     let canvases: [Int]
+    /// The edit overlay (§9.10 item 4), whose entry for this output the coordinator swaps without a recompile; nil on a
+    /// preview, which shows the editor's own handles.
+    let overlay: EditOverlay?
     /// Canvas copies (by canvas id) taken when the Output fixture's Control engaged Freeze; the content pass samples them
     /// instead of the live canvases. Only touched by the one thread that renders this plan's set.
     nonisolated(unsafe) var held: [Int: MTLTexture] = [:]
@@ -87,10 +90,11 @@ public final class OutputPlan: @unchecked Sendable {
 
     init(
         id: Int, index: Int, region: MTLRegion, intensity: Float, testPattern: TestPattern, color: SIMD4<Float>, blendMap: MTLTexture?, warpField: MTLTexture?,
-        slices: [SlicePlan], patternMesh: SlicePlan, presets: [Int: PresetGeometry] = [:]
+        slices: [SlicePlan], patternMesh: SlicePlan, presets: [Int: PresetGeometry] = [:], overlay: EditOverlay? = nil
     ) {
         self.patternMesh = patternMesh
         self.presets = presets
+        self.overlay = overlay
         var canvases: [Int] = []
         for slice in slices + presets.values.flatMap(\.slices) where !canvases.contains(slice.canvas) { canvases.append(slice.canvas) }
         self.canvases = canvases
@@ -169,8 +173,9 @@ public final class OutputCompiler: @unchecked Sendable {
         return made
     }
 
-    /// `drawable` is the size of the display's drawable in pixels; a nil region covers it entirely.
-    public func compile(_ config: OutputConfig, index: Int, drawable: (width: Int, height: Int)) throws -> OutputPlan {
+    /// `drawable` is the size of the display's drawable in pixels; a nil region covers it entirely. `overlay`: the
+    /// coordinator's edit overlay, which the plan draws (§9.10 item 4); a preview passes none.
+    public func compile(_ config: OutputConfig, index: Int, drawable: (width: Int, height: Int), overlay: EditOverlay? = nil) throws -> OutputPlan {
         cache.withLock { entries in entries = entries.filter { $0.value.object != nil } }
         let r = config.region ?? PixelRect(x: 0, y: 0, w: drawable.width, h: drawable.height)
         let x = min(max(0, r.x), max(0, drawable.width - 1)), y = min(max(0, r.y), max(0, drawable.height - 1))
@@ -205,7 +210,7 @@ public final class OutputCompiler: @unchecked Sendable {
         return OutputPlan(
             id: config.id, index: index, region: region, intensity: Float(config.intensity), testPattern: TestPattern(rawValue: config.testPattern) ?? .off,
             color: SIMD4(gain[0], gain[1], gain[2], Float(config.color.black)), blendMap: blendMap, warpField: edited.warpField, slices: edited.slices,
-            patternMesh: patternMesh, presets: presets)
+            patternMesh: patternMesh, presets: presets, overlay: overlay)
     }
 
     /// A mapping's warp field and slices on a w × h output: the edited one or a preset's, textures through the cache.
@@ -366,10 +371,15 @@ enum OutputPass {
             let keystone = !fixture.raw && plan.index >= 1 && plan.index - 1 < keystones.count ? keystones[plan.index - 1] : matrix_identity_float3x3
             // the preset's warp and slices; the blend map, colour and the keystone on top are the output's. While a morph
             // runs, the preset it comes from too: one pass mixes both sides' vertices by its progress (§9.10 item 3)
-            let geometry = plan.geometry(plan.index >= 1 && plan.index - 1 < presets.count ? presets[plan.index - 1] : 0)
+            let shown = plan.index >= 1 && plan.index - 1 < presets.count ? presets[plan.index - 1] : 0
+            let geometry = plan.geometry(shown)
             let morph = plan.index >= 1 && plan.index - 1 < morphs.count ? morphs[plan.index - 1].progress(at: now) : 1
-            let old = morph < 1 ? plan.geometry(morphs[plan.index - 1].from) : geometry
+            let from = morph < 1 ? morphs[plan.index - 1].from : shown
+            let old = plan.geometry(from)
             let warps: UInt32 = (geometry.warpField != nil ? 1 : 0) | (old.warpField != nil ? 16 : 0)
+            // the edit overlay's lines belong to the edited mapping: not while a preset shows or a morph from or into one runs,
+            // nor in raw (§9.10 item 4)
+            let overlay = !fixture.raw && plan.presets[Int(shown)] == nil && plan.presets[Int(from)] == nil ? plan.overlay?.lines(plan.id, at: now) : nil
             let region = plan.region
             encoder.setViewport(MTLViewport(originX: Double(region.origin.x), originY: Double(region.origin.y), width: Double(region.size.width), height: Double(region.size.height), znear: 0, zfar: 1))
             encoder.setScissorRect(MTLScissorRect(x: region.origin.x, y: region.origin.y, width: region.size.width, height: region.size.height))
@@ -410,6 +420,7 @@ enum OutputPass {
                 encoder.setFragmentBuffer(uniforms, offset: offset, index: 1)
                 encoder.drawIndexedPrimitives(type: .triangle, indexCount: mesh.indexCount, indexType: .uint32, indexBuffer: mesh.indices, indexBufferOffset: 0)
                 offset += 256
+                if let overlay { drawOverlay(overlay, plan, keystone: keystone, intensity: fixture.control == .blackout ? 0 : master, canvas: canvas, encoder: encoder, context: context, uniforms: uniforms, offset: &offset) }
                 continue
             }
             encoder.setRenderPipelineState(context.mappedPipeline)
@@ -444,6 +455,31 @@ enum OutputPass {
                 encoder.drawIndexedPrimitives(type: .triangle, indexCount: slice.indexCount, indexType: .uint32, indexBuffer: slice.indices, indexBufferOffset: 0)
                 offset += 256
             }
+            if let overlay { drawOverlay(overlay, plan, keystone: keystone, intensity: fixture.control == .blackout ? 0 : master, canvas: canvas, encoder: encoder, context: context, uniforms: uniforms, offset: &offset) }
         }
+    }
+
+    /// The edit overlay over everything of `plan` (§9.10 item 4): one draw of its lines through the edited warp and the
+    /// keystone, at `intensity` (the Master, 0 at a blackout: black stays black), opaque, without blend map, colour or lift.
+    /// `canvas` fills the warp slot when there is no warp field.
+    private static func drawOverlay(
+        _ lines: EditOverlay.Lines, _ plan: OutputPlan, keystone: simd_float3x3, intensity: Float, canvas: MTLTexture, encoder: MTLRenderCommandEncoder,
+        context: MetalContext, uniforms: MTLBuffer, offset: inout Int
+    ) {
+        guard offset + 256 <= uniforms.length else { return }
+        var u = MappedUniforms()
+        u.size = SIMD2(Float(plan.region.size.width), Float(plan.region.size.height))
+        u.intensity = intensity
+        u.flags = plan.warpField != nil ? 1 : 0
+        u.keystone = keystone
+        (uniforms.contents() + offset).assumingMemoryBound(to: MappedUniforms.self).pointee = u
+        encoder.setRenderPipelineState(context.overlayPipeline)
+        encoder.setVertexSamplerState(context.linearSampler, index: 0)
+        encoder.setVertexTexture(plan.warpField ?? canvas, index: 0)
+        encoder.setVertexBuffer(lines.buffer, offset: 0, index: 0)
+        encoder.setVertexBuffer(uniforms, offset: offset, index: 1)
+        // instance 0 the black edges of all lines, instance 1 their cores over them
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: lines.count * 6, instanceCount: 2)
+        offset += 256
     }
 }
