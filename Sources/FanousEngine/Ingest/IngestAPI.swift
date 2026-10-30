@@ -104,7 +104,11 @@ public final class IngestAPI: @unchecked Sendable {
         guard FileManager.default.fileExists(atPath: source.path) else { return .text(404, "source not found") }
         guard let folderURL = library.folderURL(number: folder, createAs: name.map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent } ?? "Folder")
         else { return .text(400, "cannot create folder \(folder)") }
-        guard let number = file ?? library.nextFileNumber(inFolder: folder), (1...255).contains(number) else { return .text(409, "folder \(folder) is full") }
+        // Jobs before the disk: a job writes its file before it is marked done, so every job that is writing or wrote a file
+        // shows in one of them. Needs the hold lock around all of enqueueNow: two enqueues must not both read before either appends.
+        let pending = queue.jobs.filter { !$0.state.isFinished && $0.destination.deletingLastPathComponent().path == folderURL.path }
+        guard let number = file ?? LibraryIndex.nextFileNumber(in: folderURL, pending: pending.map(\.destination.lastPathComponent)), (1...255).contains(number)
+        else { return .text(409, "folder \(folder) is full") }
         let originalName = name ?? source.lastPathComponent
         let ext = source.pathExtension.lowercased()
         let isDirectory = (try? source.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
