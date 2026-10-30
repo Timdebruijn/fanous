@@ -358,9 +358,14 @@ public enum ProjectDocument {
         return fixtures
     }
 
-    public static func fixtures(from project: JSONValue) -> Set<FixtureRef> {
-        fixtures(layerCount: project["layerCount"]?.int ?? 0, outputs: outputs(from: project).map(\.id))
+    /// `outputs`: the project's, when the caller has decoded them already. Without `layerCount`, the layers the engine
+    /// starts with.
+    public static func fixtures(from project: JSONValue, outputs: [OutputConfig]? = nil) -> Set<FixtureRef> {
+        fixtures(layerCount: project["layerCount"]?.int ?? defaultLayerCount, outputs: (outputs ?? self.outputs(from: project)).map(\.id))
     }
+
+    /// The layer count of a project that has none (a hand-written file), and of a fresh install.
+    public static let defaultLayerCount = 8
 
     public static func patch(from project: JSONValue) -> Patch? {
         guard let entries = project["patch"]?.array else { return nil }
