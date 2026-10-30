@@ -419,6 +419,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   Presets strip on Warp & Slices and on the wall panel; "Preset N (console)", "Preset N (compare)" and "Preset N missing"
   on the output row and under the preview. Output ch 6 is in the channel map, GDTF and OSC (`/fanous/output/{n}/preset`);
   the footprint stays 8. Projects without presets save as before.
+- Changed: a universe's **Hold on loss** setting is now called **Hold on signal loss**, and **Loss after (s)** is
+  **Signal lost after (s)**, in the Universes panel and the user guide (PR #125). The stored fields (`holdOnLoss`, `lossTimeout`)
+  and their options are unchanged.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
