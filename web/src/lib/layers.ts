@@ -3,18 +3,8 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Pure helpers for the Layers / Mixer screen: formatting and lookups over the live document, no DOM, no store.
 import type { CaptureLiveDoc, LayerStatus, PatchEntry, ProjectDoc, ResolvedParameter, SyphonServerDoc } from './docs';
-
-/** One entry of GET /api/channel-map.json `modes.*`; `channel` is the first (1-based) channel of the parameter. */
-export interface ChannelSpec {
-  name: string;
-  key: string;
-  channel: number;
-  bits: number;
-  default: number;
-  group: string;
-  unit: string;
-  bands?: { from: number; to: number; name: string }[];
-}
+import { codecLabel, displayName } from './media';
+import type { ParamSpec } from './patch-screen';
 
 /** Folder 0 generators (engine `Generators.names`, DESIGN §8.2): drawn on the GPU, no files. */
 export const GENERATORS: { file: number; name: string }[] = [
@@ -78,11 +68,6 @@ export function folderZeroItems(servers: SyphonServerDoc[] | undefined, capture?
   ];
 }
 
-export interface ChannelMap {
-  footprints: { layer: number; master: number; output: number };
-  modes: { layer: ChannelSpec[]; master: ChannelSpec[]; output: ChannelSpec[] };
-}
-
 /** The part of GET /api/library the Layers screen reads: thumbnails and the names for the media picker (and Warp &
  *  Slices: the stills for an image mask). */
 export interface LibrarySnapshot {
@@ -130,18 +115,12 @@ export function controlKeys(fixture: string): string[] | undefined {
   return undefined;
 }
 
-/** "012_Intro" → "Intro" (the number has its own place in the label). */
-function plainName(name: string): string {
-  const rest = name.replace(/^\d{1,3}[ _-]*/, '');
-  return rest === '' || rest.startsWith('.') ? name : rest;
-}
-
 /** "Folder 3 · Intro / 12 · loop.mov" from the library; null when the folder or file is not in it. */
 export function mediaPath(library: LibrarySnapshot | null, folder: number, file: number): string | null {
   const f = library?.folders.find((x) => x.number === folder);
   const item = f?.items.find((x) => x.file === file);
   if (!f || !item?.name) return null;
-  return `Folder ${folder}${f.name ? ` · ${plainName(f.name)}` : ''} / ${file} · ${item.name}`;
+  return `Folder ${folder}${f.name ? ` · ${displayName(f.name, true)}` : ''} / ${file} · ${item.name}`;
 }
 
 /** Every addressable, playable item in numeric order, labelled for a picker; only those of `kind` when given (an image
@@ -200,17 +179,6 @@ function fpsText(fps: number): string {
   return String(Number(fps.toFixed(3)));
 }
 
-const codecNames = new Map([
-  ['apch', 'ProRes 422 HQ'], ['apcn', 'ProRes 422'], ['apcs', 'ProRes 422 LT'], ['apco', 'ProRes 422 Proxy'], ['ap4h', 'ProRes 4444'], ['ap4x', 'ProRes 4444 XQ'],
-  ['Hap1', 'HAP'], ['Hap5', 'HAP Alpha'], ['HapY', 'HAP Q'], ['HapM', 'HAP Q Alpha'], ['HapA', 'HAP Alpha Only'], ['HapR', 'HAP R'],
-  ['avc1', 'H.264'], ['hvc1', 'HEVC'], ['hev1', 'HEVC'], ['generator', 'Built-in'],
-]);
-
-/** "apch" → "ProRes 422 HQ"; unknown codecs are shown as the engine names them. */
-export function codecName(codec: string): string {
-  return codecNames.get(codec) ?? codec;
-}
-
 /**
  * The media description in the layer list: `title` = "12 / 4 · intro_loop.mov", `detail` = "HAP Q · 1080p60";
  * `text` joins both. A decoder error or a missing file replaces the description.
@@ -230,7 +198,7 @@ export function mediaLine(layer: LayerStatus | undefined): { text: string; title
     case 'still':
       return line(`${layer.folder} / ${layer.file} · ${name}`, `Still · ${layer.width}×${layer.height}`, 'normal');
     default:
-      return line(`${layer.folder} / ${layer.file} · ${name}`, `${codecName(layer.codec)} · ${layer.height}p${fpsText(layer.fps)}`, 'normal');
+      return line(`${layer.folder} / ${layer.file} · ${name}`, `${codecLabel(layer.codec)} · ${layer.height}p${fpsText(layer.fps)}`, 'normal');
   }
 }
 
@@ -260,14 +228,14 @@ export function valueText(param: ResolvedParameter): string {
 }
 
 /** DMX channels of a parameter within its fixture: `3`, or `1–2` for a 16-bit coarse/fine pair. */
-export function channelRange(spec: ChannelSpec | undefined): string {
+export function channelRange(spec: ParamSpec | undefined): string {
   if (!spec) return '—';
   const last = spec.channel + Math.ceil(spec.bits / 8) - 1;
   return last > spec.channel ? `${spec.channel}–${last}` : String(spec.channel);
 }
 
 /** "Showing all 50 of 64 channels; 51–64 reserved" from the channel map. */
-export function reservedText(specs: ChannelSpec[], footprint: number): string {
+export function reservedText(specs: ParamSpec[], footprint: number): string {
   const used = specs.reduce((max, s) => Math.max(max, s.channel + Math.ceil(s.bits / 8) - 1), 0);
   const shown = `Showing all ${used} of ${footprint} channels`;
   return used < footprint ? `${shown}; ${used + 1}–${footprint} reserved` : shown;

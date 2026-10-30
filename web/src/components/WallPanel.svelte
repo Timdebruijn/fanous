@@ -316,7 +316,7 @@
   .armed { margin: 0; padding: 8px 12px; border-radius: 6px; background: var(--accent-dim); font-weight: 600; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .ctl { display: flex; flex-direction: column; gap: 10px; }
-  h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  h3 { margin: 0; font-size: 15px; letter-spacing: normal; text-transform: none; color: inherit; }
   .slider { display: flex; flex-direction: column; gap: 4px; border-radius: 8px; }
   .slider .line { display: flex; align-items: center; gap: 8px; }
   .slider input { flex: 1; min-width: 0; min-height: var(--touch); accent-color: var(--accent); }
