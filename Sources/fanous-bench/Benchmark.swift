@@ -82,33 +82,38 @@ enum Benchmark {
             dmxStore = store
             artnet = receiver
             parameters = store.snapshots
+            // the render service holds 32 layers (B121): a step's patch gives its first `count` layers a fixture
+            activate = { count in store.setPatch(Patch.standard(layers: count)) }
             print("DMX mode: send Art-Net to udp/6454 (standard patch: layer n at universe (n-1)/8, address ((n-1)%8)*64+1)")
         } else {
             parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 32) }
-            parameters.write { slot in
-                slot.sequence = 1
-                for i in slot.layers.indices {
-                    slot.layers[i].intensity = 1
-                    slot.layers[i].folder = 1
-                    slot.layers[i].file = 1
-                    slot.layers[i].effect1 = effects.count > 0 ? effects[0] : .none
-                    slot.layers[i].effect1A = 0.5
-                    slot.layers[i].effect2 = effects.count > 1 ? effects[1] : .none
-                    slot.layers[i].effect2A = 0.5
-                    slot.layers[i].dissolve = Float(dissolve)
+            nonisolated(unsafe) var playing = LayerParameters()
+            playing.intensity = 1
+            playing.folder = 1
+            playing.file = 1
+            playing.effect1 = effects.count > 0 ? effects[0] : .none
+            playing.effect1A = 0.5
+            playing.effect2 = effects.count > 1 ? effects[1] : .none
+            playing.effect2A = 0.5
+            playing.dissolve = Float(dissolve)
+            // the render service holds 32 layers (B121): a step plays its first `count` layers and leaves the rest empty.
+            // Every write fills the whole slot (the buffer hands back a slot with an older write in it), on the main queue.
+            nonisolated(unsafe) var active = 0, sequence: UInt64 = 0
+            activate = { count in
+                active = count
+                sequence += 1
+                parameters.write { slot in
+                    slot.sequence = sequence
+                    for i in slot.layers.indices { slot.layers[i] = i < active ? playing : LayerParameters() }
                 }
             }
             if dissolve > 0 {
                 // every 2×dissolve seconds every layer switches between two entries of the same file: a permanent crossfade load
-                let toggle = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
+                let toggle = DispatchSource.makeTimerSource(queue: .main)
                 toggle.schedule(deadline: .now() + 2 * dissolve, repeating: 2 * dissolve)
-                nonisolated(unsafe) var file: UInt8 = 1
                 toggle.setEventHandler {
-                    file = file == 1 ? 2 : 1
-                    parameters.write { slot in
-                        slot.sequence += 1
-                        for i in slot.layers.indices { slot.layers[i].file = file }
-                    }
+                    playing.file = playing.file == 1 ? 2 : 1
+                    activate(active)
                 }
                 toggle.resume()
                 dissolveTimer = toggle
@@ -153,6 +158,8 @@ enum Benchmark {
     }
 
     nonisolated(unsafe) static var useDisplayLinkFlag = false
+    /// Gives the first `count` layers their parameters and empties the rest; called at the start of every step.
+    nonisolated(unsafe) static var activate: (Int) -> Void = { _ in }
     nonisolated(unsafe) static var dissolveTimer: DispatchSourceTimer?
     nonisolated(unsafe) static var ingestSource: URL?
     nonisolated(unsafe) static var variant = ""
@@ -162,6 +169,7 @@ enum Benchmark {
         layers: Int, seconds: Double, file: URL, width: Int, height: Int, fps: Double, display: Int?, ringCapacity: Int,
         context: MetalContext, metrics: MetricsRing, parameters: TripleBuffer<ParameterSnapshotSlot>, logger: Logger
     ) async throws -> Step {
+        activate(layers)
         var scene = SceneConfig()
         scene.canvasWidth = width
         scene.canvasHeight = height
