@@ -420,14 +420,18 @@ denied, press **Authorize screen** again, or allow it and choose Engine ›
 **Restart Engine**. Without the grant the layer reads "screen permission not
 granted" and stays black.
 
-**Readiness.** The item **Capture permissions granted** (System screen) fails
-while a numbered camera exists without the camera permission, or a numbered
-display without the Screen permission; it blocks show mode until a programmer
-acknowledges it, so no permission dialog appears during the show. Whenever a
-display has a number it also warns, even with the grant: macOS asks again
-about once a month whether Fanous Engine may record the screen, with a dialog
-on the main display. Check it before every show; for a show-critical slides feed, a
-capture card is the safer path.
+**Readiness.** Two items on the System screen look only at inputs in use: a
+layer that shows a camera (1–20) or a display (21–28). **Camera permission
+granted** fails while a layer shows a camera without the camera permission;
+**Screen recording granted** fails while a layer shows a display without the
+Screen permission. A failed item blocks show mode until a programmer
+acknowledges it, so no permission dialog appears during the show; each is
+acknowledged on its own. While a layer shows a display, Screen recording
+granted also warns with the grant: macOS asks again about once a month whether
+Fanous Engine may record the screen, with a dialog on the main display. A
+numbered camera or display that no layer shows changes neither item. Check
+them before every show, with the show's media loaded; for a show-critical
+slides feed, a capture card is the safer path.
 
 **Syphon servers (150–169).** Every Syphon server another app on this Mac
 publishes gets the lowest free number from 150, up to 169, when the engine

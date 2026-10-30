@@ -79,7 +79,8 @@ is on. Each item shows a fix hint.
 | Sync groups have one master | one master per Sync group in use (warning only; [multi-server.md](multi-server.md)) |
 | Sync packets arriving | the master Mac and the network, with slaves in use (warning only) |
 | No decoder errors | no layer showing a media error |
-| Capture permissions granted | the camera permission when a camera is numbered, the Screen permission when a display is (Capture permissions on the System screen); warns whenever a display has a number, since macOS asks again about once a month |
+| Camera permission granted | the camera permission while a layer shows a camera (folder 0, 1–20; Capture permissions on the System screen) |
+| Screen recording granted | the Screen permission while a layer shows a display (folder 0, 21–28); warns while one does, since macOS asks again about once a month |
 | Library on a local volume | library on the internal disk |
 | Spotlight indexing off for the library volume | see above |
 | Automatic macOS updates off | see above |
@@ -97,9 +98,10 @@ spare display that is not connected. A setting Fanous cannot read is shown as
 **Warnings** (yellow, "warning" badge) never block show mode. Today that is
 the display mode item (it names the closest mode a display offers when the
 output's Mode is not available), the two Sync items, since a slave without a
-master still plays on its own, and Capture permissions whenever a display has a
-number in folder 0: macOS asks again about once a month, on the main display,
-whether Fanous Engine may record the screen. Answer it before doors.
+master still plays on its own, and Screen recording granted while a layer
+shows a display (folder 0, 21–28): macOS asks again about once a month, on the
+main display, whether Fanous Engine may record the screen. Answer it before
+doors.
 
 **Manual** items (Focus) have no button; the check is yours.
 

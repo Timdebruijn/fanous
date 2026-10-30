@@ -1091,9 +1091,10 @@ public final class Engine: @unchecked Sendable {
         context.modeIssues = modeChecks.withLock { $0 }.sorted { $0.key < $1.key }.compactMap { id, check in check.issue.map { "Output \(id): \($0)" } }
         context.layerErrors = projectLayers.compactMap { layer in layer.mediaStatus.withLock { $0.error.map { "Layer \(layer.index + 1): \($0)" } } }
         context.libraryRoot = library?.snapshot.root ?? ""
-        context.captureDevices = render?.captureCatalog.entries.count ?? 0
+        context.shownFolder0 = projectLayers.compactMap { layer in layer.mediaStatus.withLock { $0.folder == 0 ? $0.file : nil } }
+        context.sceneCapture = options.scene?.media.contains { $0.capture != nil } ?? false
+        context.sceneScreen = options.scene?.media.contains { $0.screen != nil } ?? false
         context.cameraPermission = Self.permissionWord(render?.captureCatalog.permissions.camera ?? .authorized)
-        context.screens = render?.screensCatalog.entries.count ?? 0
         context.screenPermission = render?.captureCatalog.permissions.screen ?? true ? "granted" : "denied"
         var masters: [Int: Int] = [:]
         for layer in projectLayers {

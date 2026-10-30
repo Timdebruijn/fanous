@@ -222,7 +222,7 @@
         <p class="caption empty">Camera denied: allow Fanous Engine under System Settings › Privacy & Security › Camera.</p>
       {/if}
       {#if (app.live.capture?.screens?.length ?? 0) > 0}
-        <p class="caption empty">Screen: macOS asks again about once a month; before a show, check the readiness item Capture permissions granted.</p>
+        <p class="caption empty">Screen: macOS asks again about once a month; before a show, check the readiness item Screen recording granted.</p>
       {/if}
     {/if}
   </section>
