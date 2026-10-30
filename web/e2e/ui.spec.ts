@@ -966,28 +966,44 @@ test('outputs: a colour gain drag is one undo step; the black offset steps by 0.
 // B114: the −/range/+ sliders (RangeStepper) against a slow network, where the engine's echo of a value comes a round
 // trip after it was sent
 
-/** Loads the page again with every frame from the engine 250 ms late, as over a busy Wi-Fi. */
-async function slowEchoes(page: Page, engine: Engine): Promise<void> {
+/** Loads the page again behind a slow network: every frame from the engine `net.ms` late (250 ms, as over a busy Wi-Fi;
+ * a test may change it), the names of the commands the page sends in `net.sent`; a command named `drop` never reaches
+ * the engine. */
+async function slowEchoes(page: Page, engine: Engine, { ms = 250, drop = '' } = {}): Promise<{ ms: number; sent: string[] }> {
+  const net = { ms, sent: [] as string[] };
   await page.routeWebSocket(/\/ws$/, (ws) => {
     const server = ws.connectToServer();
-    ws.onMessage((message) => server.send(message));
-    server.onMessage((message) => void setTimeout(() => ws.send(message), 250));
+    ws.onMessage((message) => {
+      const name = typeof message === 'string' ? (JSON.parse(message) as { name?: string }).name : undefined;
+      if (name) net.sent.push(name);
+      if (!drop || name !== drop) server.send(message);
+    });
+    server.onMessage((message) => void setTimeout(() => ws.send(message), net.ms));
   });
   await page.goto(`${engine.url}/?token=${engine.token}`);
+  return net;
 }
 
-/** Records every number a slider's value text shows from now on; the function returned reads them, repeats dropped. */
+type Watched = HTMLElement & { seen?: number[]; times?: number[] };
+/** Records every number a slider's value text shows from now on; the function returned reads them, repeats dropped.
+ * `timesOf` reads when each appeared (performance.now() in the page). */
 async function watchValue(value: Locator): Promise<() => Promise<number[]>> {
-  type Watched = HTMLElement & { seen?: number[] };
   await value.evaluate((el: Watched) => {
     const seen = (el.seen = [parseFloat(el.textContent ?? '')]);
+    const times = (el.times = [performance.now()]);
     new MutationObserver(() => {
       const n = parseFloat(el.textContent ?? '');
-      if (n !== seen.at(-1)) seen.push(n);
+      if (n === seen.at(-1)) return;
+      seen.push(n);
+      times.push(performance.now());
     }).observe(el, { subtree: true, characterData: true, childList: true });
   });
   return () => value.evaluate((el: Watched) => el.seen ?? []);
 }
+const timesOf = (value: Locator) => value.evaluate((el: Watched) => el.times ?? []);
+
+/** How often a sequence of values turns between rising and falling: a slider that jumps back turns more than the hand did. */
+const turns = (seen: number[]) => seen.filter((v, i) => i >= 2 && Math.sign(v - seen[i - 1]!) !== Math.sign(seen[i - 1]! - seen[i - 2]!)).length;
 
 /** The x of value `v` on a 0–`max` range input (its thumb is 16 px wide). */
 async function rangeX(slider: Locator, max: number): Promise<{ x: (v: number) => number; y: number }> {
@@ -1018,7 +1034,7 @@ test('outputs: a released colour slider stays where it was let go until the engi
   // past the late echoes and the grace: the slider only ever went down, and the engine has the value let go at
   await page.waitForTimeout(1500);
   const seen = await shown();
-  expect(seen).toEqual([...seen].sort((a, b) => b - a));
+  expect(turns(seen), seen.join(' ')).toBe(0);
   expect(seen.at(-1)).toBe(dragged);
   await expect(red).toHaveValue(String(dragged));
 });
@@ -1037,6 +1053,79 @@ test('outputs: quick taps on a colour + all land, as one undo step (B114 b)', as
   await expect(value).toHaveText('0.5 %');
   await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(value).toHaveText('0.0 %');
+});
+
+test('outputs: a colour slider dragged down and back up faster than a round trip shows none of the late echoes after the release (B114)', async ({ page, engine }) => {
+  await slowEchoes(page, engine);
+  await addUnassignedOutput(page);
+  const colour = colourOf(page);
+  const red = colour.getByRole('slider', { name: 'Gain R' });
+  await expect(red).toHaveValue('100');
+  const shown = await watchValue(colour.getByLabel('Gain R value'));
+  const { x, y } = await rangeX(red, 200);
+  await page.mouse.move(x(100), y);
+  await page.mouse.down();
+  // about 150 ms: a few sends at 50 ms intervals, all echoed after the release
+  for (const v of [97, 94, 91, 88, 91, 94, 97, 100]) {
+    await page.mouse.move(x(v), y);
+    await page.waitForTimeout(15);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(1500);
+  const seen = await shown();
+  expect(turns(seen), seen.join(' ')).toBe(1); // down, then up
+  expect(seen.at(-1)).toBe(100);
+});
+
+test('outputs: + and then − on a colour within a round trip, the late echo of the + does not show, nor after another gain echoes (B114)', async ({ page, engine }) => {
+  await slowEchoes(page, engine);
+  await addUnassignedOutput(page);
+  const colour = colourOf(page);
+  await colour.getByRole('button', { name: 'Black offset up' }).scrollIntoViewIfNeeded();
+  const shown = await watchValue(colour.getByLabel('Gain R value'));
+  // Gain G's echo arrives after the −, before Gain R's: it re-renders Gain R with its old value, the value sent
+  await colour.getByRole('button', { name: 'Gain G up' }).click();
+  await page.waitForTimeout(100);
+  await colour.getByRole('button', { name: 'Gain R up' }).click();
+  await page.waitForTimeout(60);
+  await colour.getByRole('button', { name: 'Gain R down' }).click();
+  await page.waitForTimeout(1500);
+  expect(await shown()).toEqual([100, 100.5, 100]);
+});
+
+test("outputs: a colour + the engine never gets shows the engine's value again after the grace (B114)", async ({ page, engine }) => {
+  const net = await slowEchoes(page, engine, { drop: 'output.set' });
+  await addUnassignedOutput(page);
+  const colour = colourOf(page);
+  const value = colour.getByLabel('Black offset value');
+  await colour.getByRole('button', { name: 'Black offset up' }).click();
+  await expect(value).toHaveText('0.1 %');
+  await expect(value).toHaveText('0.0 %', { timeout: 2_000 });
+  expect(net.sent).toContain('output.set');
+});
+
+test('outputs: Undo right after a tap on a colour + shows at once, not at the end of the grace (B114)', async ({ page, engine }) => {
+  // the engine's echo of the tap (the socket of the page as loaded again with the listener in place)
+  let echoed = () => {};
+  const echo = new Promise<void>((done) => (echoed = done));
+  page.on('websocket', (socket) =>
+    socket.on('framereceived', ({ payload }) => {
+      if (typeof payload === 'string' && payload.includes('/color/black')) echoed();
+    }),
+  );
+  await page.goto(`${engine.url}/?token=${engine.token}`);
+  await addUnassignedOutput(page);
+  const colour = colourOf(page);
+  const value = colour.getByLabel('Black offset value');
+  const shown = await watchValue(value);
+  await colour.getByRole('button', { name: 'Black offset up' }).click();
+  await echo;
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(value).toHaveText('0.0 %');
+  expect(await shown()).toEqual([0, 0.1, 0]);
+  // the grace alone would keep 0.1 until 1000 ms after the tap
+  const [, tapped, undone] = await timesOf(value);
+  expect(undone! - tapped!).toBeLessThan(900);
 });
 
 test.describe('with touch', () => {
@@ -1070,7 +1159,7 @@ test.describe('with touch', () => {
     await page.waitForTimeout(1500);
     for (const [i, name] of names.entries()) {
       const seen = await shown[i]!();
-      expect(seen, name).toEqual([...seen].sort((a, b) => b - a));
+      expect(turns(seen), `${name}: ${seen.join(' ')}`).toBe(0);
       expect(seen.at(-1), name).toBeLessThan(i === 0 ? 70 : 85);
       expect(seen.at(-1), name).toBe(Number(await sliders[i]!.inputValue()));
     }
@@ -1106,6 +1195,78 @@ test("outputs: a colour slider dragged away and back shows another client's chan
   } finally {
     await other.close();
   }
+});
+
+test('walls: under late echoes an overlap drag sends one wall.set and stays, and quick taps on two axes or two gamma channels all land (B114)', async ({ page, engine }) => {
+  const net = await slowEchoes(page, engine, { ms: 0 }); // the set-up at full speed
+  // a 2 × 2 wall of four outputs of 1920 × 1200
+  await addUnassignedOutput(page);
+  for (let i = 0; i < 3; i++) await page.getByLabel('Add output on').selectOption('none');
+  const row = (n: number) => page.locator('.row.out', { hasText: `Output ${n}` });
+  for (const n of [1, 2, 3, 4]) {
+    await row(n).click();
+    const h = page.getByLabel('Region h', { exact: true });
+    await h.fill('1200');
+    await h.press('Tab');
+  }
+  await page.getByRole('region', { name: 'Projector walls' }).getByRole('button', { name: 'New projector wall' }).click();
+  const wizard = page.getByRole('region', { name: 'New projector wall' });
+  for (const n of [1, 2, 3, 4]) await wizard.getByRole('button', { name: new RegExp(`^Output ${n}, `) }).click();
+  await wizard.getByRole('group', { name: 'Grid' }).getByRole('button', { name: '2 × 2' }).click();
+  await wizard.getByRole('button', { name: 'Next' }).click();
+  await wizard.getByRole('button', { name: 'Make wall' }).click();
+  const panel = page.getByRole('region', { name: 'Wall 1' });
+  await panel.getByRole('button', { name: 'Geometry' }).click();
+  const across = panel.getByRole('slider', { name: 'Overlap across' });
+  await expect(across).toHaveValue('15');
+  net.ms = 250;
+
+  // a drag on the overlap sends one wall.set, on release, and the thumb stays where it was let go
+  const acrossValue = panel.getByLabel('Overlap across value');
+  const shown = await watchValue(acrossValue);
+  const sets = () => net.sent.filter((name) => name === 'wall.set').length;
+  const before = sets();
+  const { x, y } = await rangeX(across, 50);
+  await page.mouse.move(x(15), y);
+  await page.mouse.down();
+  for (const v of [17, 19, 21, 23, 25]) {
+    await page.mouse.move(x(v), y);
+    await page.waitForTimeout(30);
+  }
+  const dragged = Number(await across.inputValue());
+  expect(dragged).toBeGreaterThan(20);
+  expect(sets()).toBe(before);
+  await page.mouse.up();
+  await page.waitForTimeout(1500);
+  expect(sets() - before).toBe(1);
+  const seen = await shown();
+  expect(turns(seen), seen.join(' ')).toBe(0);
+  expect(seen.at(-1)).toBe(dragged);
+
+  // across + and then down + within a round trip: one wall.set carries both axes, and each keeps its tap
+  await panel.getByRole('button', { name: 'Overlap across up' }).click();
+  await panel.getByRole('button', { name: 'Overlap down up' }).click();
+  await page.waitForTimeout(1500);
+  await expect(acrossValue).toHaveText(`${dragged + 1} %`);
+  await expect(panel.getByLabel('Overlap down value')).toHaveText('16 %');
+
+  // four taps on gamma R up, then one on G up after the first send went out: one wall.seam carries all three channels,
+  // and R keeps its taps
+  await panel.getByRole('button', { name: 'Seam between Output 1 and Output 2' }).click();
+  await panel.getByRole('switch', { name: 'Link R, G, B' }).uncheck({ force: true }); // the drawn track covers the input
+  const up = (channel: string) => panel.getByRole('button', { name: `Gamma ${channel} up` });
+  await up('G').scrollIntoViewIfNeeded();
+  await expect(panel.getByLabel('Gamma G value')).toHaveText('2.20');
+  const tap = async (channel: string, times: number) => {
+    const box = (await up(channel).boundingBox())!;
+    for (let i = 0; i < times; i++) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  };
+  await tap('R', 4);
+  await page.waitForTimeout(100); // past the 50 ms throttle, within the round trip
+  await tap('G', 1);
+  await page.waitForTimeout(1500);
+  await expect(panel.getByLabel('Gamma R value')).toHaveText('2.40');
+  await expect(panel.getByLabel('Gamma G value')).toHaveText('2.25');
 });
 
 test('outputs: store a mapping preset, move a corner, recall the preset; Undo takes the recall back', async ({ page }) => {
