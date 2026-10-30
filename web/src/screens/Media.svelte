@@ -296,13 +296,13 @@
           <p class="caption" role="status">Not numbered, all 20 numbers are taken: {unnumbered.join(', ')}. Forget a server that is not running to free one.</p>
         {/if}
         {#if group.kind === 'capture' && cameraPermission && cameraPermission !== 'granted'}
-          <p class="caption" role="status">{cameraPermission === 'denied' ? 'Camera permission denied: allow Fanous Engine under Privacy & Security › Camera.' : 'Camera permission not granted: authorize on the System screen.'}</p>
+          <p class="caption" role="status">{cameraPermission === 'denied' ? 'Camera permission denied: allow Fanous under Privacy & Security › Camera.' : 'Camera permission not granted: authorize on the System screen.'}</p>
         {/if}
         {#if group.kind === 'screen'}
           {#if screenPermission && screenPermission !== 'granted'}
             <p class="caption" role="status">Screen permission not granted: authorize on the System screen, then Engine › Restart Engine.</p>
           {/if}
-          <p class="caption">A display used as a Fanous output reads not running (one that was an output from the start gets no number). macOS asks again about once a month whether Fanous Engine may record the screen: see Capture permissions on the <a href="#/system">System screen</a>.</p>
+          <p class="caption">A display used as a Fanous output reads not running (one that was an output from the start gets no number). macOS asks again about once a month whether Fanous may record the screen: see Capture permissions on the <a href="#/system">System screen</a>.</p>
         {/if}
         {#if group.list.length === 0}
           <p class="caption">{group.kind === 'capture'

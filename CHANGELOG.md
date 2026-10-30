@@ -497,6 +497,18 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   output** switch, on when the tab opens; the UI renews the lease (`output.overlay {id, on, selected?}`, 5 s, never
   saved or undone) every 2 s and stops after 10 minutes without an edit; show mode and show lock end it. `live.outputs`
   gets `overlay` (`shown`, `preset`, `raw` or null).
+- Added: the **Patch sheet** on the Patch screen (B120 step 6, DESIGN §6.6 item 4), what to patch on the console,
+  for every role: a line per block and universe (per fixture in a Custom group) with the GDTF's fixture type and
+  mode ("Fanous", "Layer (64ch)", with its footprint), count, universe ("A 0.0.1 = universe 1", or 2 with **Count
+  Art-Net universes from 1**, remembered in the browser; the pair for a universe set to receive the other protocol)
+  and every address, and a red line when fixtures collide. **Print** prints the sheet alone; **Copy** gives
+  tab-separated text for a spreadsheet (PR #137).
+- Changed: the capture permission texts say "allow Fanous" (the System Settings entry; macOS books the engine's
+  grants on the Fanous app, the prompts still name "Fanous Engine"); DEVELOPMENT.md explains the stale entry after
+  an ad-hoc rebuild, the `tccutil reset` recipe and why to choose Later in the "until it is quit" dialog (B127,
+  PR #138).
+- Fixed: universe pills wider than the status bar (a phone from 3 universes, an iPad from about 6) widened the page
+  sideways (136 px with 3 at 375 px); the pills now wrap onto a second row (PR #140).
 - Changed: **masks v2, the engine step** (M2.7, PR #TBD, DESIGN §9.10 item 5, F5). A slice has `masks` instead of
   `mask`: any number of add and subtract masks, each a path whose points may carry Bézier handles (offsets from the
   point) or a greyscale image from the library (luminance is visibility, stretched over the output); the slice shows the
