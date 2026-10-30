@@ -717,6 +717,215 @@ three existing modes and their footprints alone.
   against the kernel, and the manual sACNView checklist in
   `docs/user/console-setup.md` covers delivery.
 
+### 6.6 What a patch means, and the Patch screen (design 2026-10-30, B120)
+
+**Status:** designed 2026-10-30; the owner approved the four decisions below
+the same day. Builds on PR #109 (an Output fixture exists exactly when its
+output does), PR #110 (a fixture patched later takes the project policy) and
+PR #112 (an unpatched layer or Master falls back to its defaults).
+
+**Why.** The owner found the Patch screen hard to understand, and more fixture
+modes are coming (Keystone now, Serial and others later). Checked against the
+code on 2026-10-30:
+- One screen does four jobs in one flat table: what exists (Add layer, Remove
+  layer), where it sits on DMX (universe and address per fixture), how a
+  universe is received (protocol, interface, hold on loss) and who controls
+  (the source policy in the toolbar).
+- "Unpatched" says "no console control" but means "no control at all".
+  `patch.set` with address 0 removes the entry, `DMXStore` makes resolvers for
+  patch entries only, and UI, OSC, MIDI and cues reach only fixtures with a
+  resolver. A show without a console still has to patch every layer.
+- A universe's settings show under the selected fixture, so changing Hold on
+  loss while Layer 3 is selected also changes Layers 1–8, without saying so.
+- Every fixture is a row. 32 layers and 8 outputs with their Keystones are 49
+  rows, and every new mode adds a row per instance and three edits in
+  `patch-screen.ts` (`TYPES`, the labels, the order in `buildFixtures`).
+- Fixtures are patched one at a time with a stepper; a console patches a block
+  ("8 fixtures from address 1").
+- An optional fixture (Keystone) looks like a forgotten one: both say
+  "unpatched".
+- What to patch on the console is in `docs/user/console-setup.md`, not on the
+  screen.
+
+**Owner decisions (2026-10-30):**
+1. A fixture exists without a patch; the patch is only its console address.
+2. The screen groups fixtures by what they are patched per, and patches a
+   group as a block.
+3. The groups come from the channel map, so a new mode needs no UI code.
+4. Universes and the source policy ("Who controls") get their own blocks, and
+   a Patch sheet says what to patch on the console.
+
+**1. A fixture exists without a patch (engine).**
+- The fixtures that exist are Layer 1…`layerCount`, the Master, and Output n
+  and Keystone n for every output n of the project (n ≤
+  `ParameterSnapshotSlot.maxOutputs`, PR #109).
+- `DMXStore` keeps a resolver for every fixture that exists, with the project
+  policy (PR #110). The patch only decides which universe slots feed it.
+  `Engine.projectChanged` hands the store the fixture set together with the
+  patch (`setPatch(_:fixtures:)`), so a change of the layer count or the
+  outputs re-runs it.
+- Unpatched then follows the source policy, with no new rule:
+  - under `dmx` the resolver never gets DMX and resolves to its defaults: a
+    layer black and empty, the Master at full, an output normal, a Keystone the
+    identity. That is PR #112's result, now from the resolver itself;
+  - under `internal`, `ltp` and `htp`, the UI, cues, OSC and MIDI control it.
+- A fixture that stops existing (a layer above the count, a removed output)
+  loses its resolver and falls back to its defaults, as in PR #112.
+- Hold on loss and its `internal` switch belong to a universe, so they do not
+  touch an unpatched fixture. The UI expiry counts only while UI values mask a
+  received console (§7.2), so on an unpatched fixture UI values stay until
+  released.
+- The Layers screen's Master and Output strips read the live fixture list, so
+  they follow the outputs that exist, patched or not, without a change.
+- Cost: one resolver per existing fixture, which is what a fully patched
+  project has today; `publish` already walks the resolver dictionary.
+
+**2. Groups and blocks.**
+- Groups, in channel-map order:
+  - **Layers** (patched per layer). The header holds the layer count with −
+    and + (the tier limit and the undo toast of today's Add layer and Remove
+    layer).
+  - **Master** (per server).
+  - **Outputs** (per output). One row per output holds its Output and its
+    Keystone fixture, names the display it is on and links to Outputs &
+    Mapping. The header keeps PR #109's **Add output**.
+- **Block.** A group's required fixtures (not the optional ones) patched one
+  after the other: the first at the block's universe and address, each next
+  one at the previous address + footprint, moving to address 1 of the next
+  universe when it would run past channel 512. The next universe is Art-Net
+  port-address + 1 (A 0.0.15 → A 0.1.0) or sACN n + 1. This is how the
+  standard patch lays out layers, 8 per universe.
+- The block is derived, not stored. A group whose fixtures follow the rule
+  shows "Block · A 0.0.0 from 1"; otherwise "Custom · 2 of 8 off the block"
+  with **Re-lay as block**. The project gets no new field.
+- Changing the block's universe or first address re-lays every required
+  fixture of the group in one command. A note says how many hand-placed
+  fixtures moved; undo puts them back. Collisions stay allowed and red, as
+  today.
+- One fixture: tapping its chip or row opens an inline editor in its group
+  (universe, address stepper, Unpatch), the controls of today's Selected
+  fixture panel, which goes.
+- Optional fixtures are outside the block. Keystone n's **Patch** puts it on
+  the first 16 free channels of its Output's universe; when none are free, the
+  inline editor opens.
+- **Engine:**
+  - `patch.setMany {entries: [{fixture, universe, address}]}`: one command and
+    one undo step. Each entry is checked as `patch.set` checks it (the fixture
+    exists and fits; address 0 unpatches), and one bad entry refuses all.
+    `patch.set` stays.
+  - `layers.setCount` puts a new Layer n right after Layer n − 1 when that one
+    is patched and the range is free; otherwise Layer n stays unpatched, and
+    item 1 keeps it usable from the UI. On a standard patch this is today's
+    standard address.
+  - `output.add` keeps PR #109's rule (the Master's address + 8 n), which is
+    the block rule for an Outputs block that starts after the Master.
+
+**3. Groups from the channel map.**
+- `/api/channel-map.json` gets `fixtures`, in display order, generated from
+  `FixtureMode`; `footprints` and `modes` do not change:
+  ```json
+  "fixtures": [
+    { "mode": "layer",    "name": "Layer",    "per": "layer",  "optional": false },
+    { "mode": "master",   "name": "Master",   "per": "server", "optional": false },
+    { "mode": "output",   "name": "Output",   "per": "output", "optional": false },
+    { "mode": "keystone", "name": "Keystone", "per": "output", "optional": true }
+  ]
+  ```
+  `name` is what the patch calls a fixture of that mode (`FixtureMode.displayName`;
+  "Name n", or just "Name" for a `server` mode).
+- `FixtureMode` gets `per` and `optional` next to `footprint`. The GDTF file
+  and `docs/channel-map.md` do not change.
+- The UI groups by `per` and takes the instances from the project: `layer` →
+  1…`layerCount`, `server` → one, `output` → the project's outputs.
+  - A new mode on an existing `per` (another per-output mode) appears without
+    UI code.
+  - A new `per` (Serial devices, §6.1) needs one entry in the UI's table of
+    `per` → instances.
+  - `parseFixture` reads the names from the list instead of a regex. Until the
+    map arrives, the four entries above are the fallback, as
+    `FALLBACK_FOOTPRINTS` is today.
+
+**4. Universes, Who controls, status words and the Patch sheet (UI).**
+- **Universes** panel (right column, above the DMX monitor): one row per
+  universe that the patch uses or the engine hears.
+  - Each row shows the name, protocol, interface, hold on loss, the health
+    pill of today, and the fixtures on it ("Layers 1–8, Master").
+  - A heard universe with nothing patched says "heard, nothing patched", which
+    shows a console sending to the wrong universe.
+  - Tapping a row opens its settings (today's fields, moved out of Selected
+    fixture) and shows it in the DMX monitor.
+- **Who controls**: the toolbar select becomes a card above the groups, with a
+  line explaining the current choice. The stored values do not change. The
+  Layers screen's Source column (`layers.ts`) and the Show screen's warning use
+  the same labels.
+
+  | Value | Label | Line under it |
+  |---|---|---|
+  | `dmx` | Console only | Fanous follows the console. A fixture without an address stays at its defaults; cues and OSC are recorded but do nothing. |
+  | `internal` | Fanous only (UI, cues, OSC, MIDI) | The console is shown but ignored. |
+  | `ltp` | Console and Fanous, latest change wins | Per parameter, the latest change wins. |
+  | `htp` | Console and Fanous, highest value wins | Intensity and other numbers take the highest value; folder, file and modes the latest change. |
+
+- **Status words** per fixture:
+  - "ok"; "collides with X · a–b" and "exceeds universe" in red, as today;
+  - without an address: "no address · stays at defaults" in yellow under
+    Console only, "no address · Fanous only" in grey under the other policies;
+  - a Keystone without an address: "not used", in grey, because it is
+    optional.
+  `layers.ts` `patchText` says "no address" instead of "unpatched", and the
+  DMX monitor calls a channel without a fixture "free".
+- **Patch sheet** (toolbar, next to Channel map and Export GDTF): what to patch
+  on the console.
+  - One line per block or fixture: mode, count, footprint, universe and
+    addresses ("Fanous · Layer · 64 ch · 8× · A 0.0.0 · 1, 65, 129, …, 449").
+  - Art-Net universes show as port-addresses, with a switch "Count Art-Net
+    universes from 1" (adds 1) for consoles that do, remembered in the browser.
+  - **Print** (a print stylesheet) and **Copy** (tab-separated, for a
+    spreadsheet). Read-only, for every role.
+
+**Layout.** Wide (Mac, iPad landscape): left column Who controls and the
+groups, right column Universes and the DMX monitor. Narrow: stacked in that
+order. 32 layers are one block line and 32 chips that wrap, not 32 rows.
+
+**Not in this design:**
+- Serial devices and other future `per` kinds: they get their `per` when §6.1's
+  Serial mode is designed.
+- A stored block: the block is derived.
+- Console-specific universe notations beyond the "+1" switch.
+- Patching from the Layers or Outputs screens: they link here.
+
+**Tests:**
+- Engine:
+  - an unpatched layer under `internal` plays from a UI value; under `dmx` it
+    resolves to its defaults;
+  - a layer above the count has no resolver;
+  - `patch.setMany` is one undo step, and one bad entry refuses all;
+  - `layers.setCount` continues the block and leaves a layer whose range is
+    taken unpatched.
+- Core: `ChannelMapDocument.json()` lists every `FixtureMode` once, with `per`
+  and `optional`.
+- Web (vitest):
+  - block detection and re-lay, including the Art-Net carry (A 0.0.15 →
+    A 0.1.0), sACN and the channel-512 boundary;
+  - grouping from a channel map with an extra made-up mode, which appears
+    without code;
+  - the status words per policy;
+  - the sheet lines and the "+1" switch.
+- e2e: patch Layers as a block from A 0.0.2, then undo restores the patch.
+
+**Build order** (one PR each, after PR #109 and PR #112):
+1. This design.
+2. Engine: a fixture exists without a patch (item 1).
+3. Engine: `patch.setMany`, and `layers.setCount` continuing the block (item 2).
+4. Core: `fixtures` in the channel map (item 3).
+5. Web: groups, blocks and the inline editor (items 2 and 3); needs 3 and 4.
+6. Web: Universes panel, Who controls and the status words (item 4); needs 2,
+   or the words are not true.
+7. Web: Patch sheet (item 4); after 5.
+
+Steps 2, 3 and 4 touch different files and can be built in parallel. The user
+guide (`docs/user/console-setup.md`) changes with steps 5–7.
+
 ---
 
 ## 7. Parameter model (ADR-0009)
@@ -746,7 +955,9 @@ asserts footprints (64/8/8) never change.
 ### 7.2 Sources and the resolver
 
 Per layer (and for master/outputs) the resolver combines values from sources
-into the `ParameterSnapshot` the compositor reads:
+into the `ParameterSnapshot` the compositor reads. Every fixture that exists
+has a resolver, patched or not; the patch only feeds it DMX (§6.6, designed
+2026-10-30):
 
 | Source | Produces | Cadence |
 |---|---|---|
@@ -2572,6 +2783,9 @@ failure while entering show mode.
    grid for the selected universe with patched ranges coloured per fixture
    and live values, hover shows "Layer 3 · ch 5 · Play mode · 17 → Loop rev";
    GDTF export button and a channel-map viewer (generated from the spec).
+   Redesigned in §6.6 (2026-10-30): fixtures grouped by what they are patched
+   per and patched as blocks, a Universes panel, a Who controls card and a
+   Patch sheet for the console.
 5. **Show control** — timecode (source select: LTC device / MTC port, frame
    rate, offset, lock state, big readout), cue list (add/edit/reorder cues,
    per-cue parameters + fade, TC trigger time, go/back/goto, current/next

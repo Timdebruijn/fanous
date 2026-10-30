@@ -342,6 +342,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   A Keystone fixture follows the same rule (patched by hand, unpatched with its output). Console control covers outputs
   1–8, so output 9 and up gets no Output fixture. Fixed on the way: an output whose fixture was unpatched kept its last
   console values (a Blackout stayed black).
+- Design: what a patch means, and a clearer Patch screen (DESIGN §6.6, B120). A fixture exists without a patch, and
+  the patch is only its console address. The screen groups fixtures by what they are patched per (layers, the Master,
+  outputs with their Keystone) and patches a group as a block, taking the groups from the channel map so new modes need
+  no UI code. Universes and the source policy get their own blocks, and a Patch sheet says what to patch on the console.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

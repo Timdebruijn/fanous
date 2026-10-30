@@ -24,3 +24,24 @@ precision, and one mode in v1.
 + One profile for consoles; footprints are stable forever.
 − Reserved channels cost address space (14 per layer); accepted.
 − Catalyst muscle memory does not transfer; documented in the user guide.
+
+## Amendment 2026-10-30 (B120, DESIGN §6.6): a fixture exists without a patch
+
+Designed, not built yet. The Keystone mode (16 ch, per output, M2.3) is the
+fourth mode; the three footprints above are unchanged.
+
+- Every fixture that exists has a resolver: Layer 1…`layerCount`, the Master,
+  and each output's Output and Keystone. The patch is only its console
+  address. An unpatched fixture follows the source policy: at its defaults
+  under Console only, controlled by the UI, cues, OSC and MIDI under the other
+  policies. Before this, an unpatched fixture had no resolver and nothing
+  could control it.
+- Each mode says what it is patched per (`layer`, `server`, `output`) and
+  whether it is optional (Keystone). The channel map serves that list
+  (`fixtures` in `/api/channel-map.json`) and the Patch screen groups by it,
+  so a new mode on an existing `per` needs no UI code.
+
++ A show without a console no longer has to patch its layers; "Unpatch" means
+  only "no console address".
+− The resolver set follows the layer count and the outputs as well as the
+  patch, so `DMXStore` takes both.
