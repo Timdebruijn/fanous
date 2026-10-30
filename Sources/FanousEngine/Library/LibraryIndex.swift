@@ -468,10 +468,11 @@ extension LibraryIndex {
         return url
     }
 
-    /// Smallest unused file number in a folder (1–255); nil when the folder is full or unknown.
-    public func nextFileNumber(inFolder number: Int) -> Int? {
-        guard let folder = snapshot.folders.first(where: { $0.number == number }) else { return 1 }
-        let used = Set(folder.items.compactMap(\.file) + folder.items.compactMap { Self.prefixNumber($0.name) })
+    /// Smallest file number (1–255) that no entry of `folder` on disk and no name in `pending` uses; nil when the folder is
+    /// full. Reads the disk, not the snapshot: a file an ingest job just wrote is there before the debounced rescan.
+    public static func nextFileNumber(in folder: URL, pending: [String] = []) -> Int? {
+        let names = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []) + pending
+        let used = Set(names.compactMap(prefixNumber))
         return (1...255).first { !used.contains($0) }
     }
 

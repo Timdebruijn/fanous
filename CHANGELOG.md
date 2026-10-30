@@ -530,6 +530,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: a display changing role (master ↔ secondary, or every display on a canvas change) while its old render thread had not stopped within 1 s handed
   the old Freeze holds to the new thread, which could read them under the old thread's write; the new set now holds
   afresh in that case, with a warning (B118, PR #147).
+- Fixed: two uploads into one folder in quick succession both got file number 001 and the second ingest job failed
+  ("destination already exists"); the number now skips jobs still in the queue and files on disk the index has not
+  seen yet (PR #143).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

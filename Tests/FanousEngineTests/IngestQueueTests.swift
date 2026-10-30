@@ -510,6 +510,33 @@ import UniformTypeIdentifiers
         #expect(api.enqueue(source: still, folder: 1, file: nil, name: nil, codec: nil, fps: nil, keepOriginal: true).status == 202)
         #expect(queue.jobs.count == 1)
     }
+
+    /// Uploads into one folder in quick succession get their own numbers, while the earlier job is still queued and once
+    /// it is written but not yet indexed (the index is never rescanned here, like in the 500 ms before the debounced rescan).
+    @Test func quickUploadsIntoOneFolderGetConsecutiveNumbers() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: Logger(label: "test"))
+        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: Logger(label: "test"))
+        let sources = (1...3).map { directory.appending(path: "red-\($0).png") }
+        for (index, source) in sources.enumerated() { try Self.writePNG(to: source, index: index) }
+        func upload(_ source: URL, file: Int? = nil) -> String? {
+            #expect(api.enqueue(source: source, folder: 3, file: file, name: "red.png", codec: nil, fps: nil, keepOriginal: false).status == 202)
+            return queue.jobs.last?.destination.lastPathComponent
+        }
+
+        #expect(upload(sources[0]) == "001_red.png")
+        #expect(upload(sources[1]) == "002_red.png")
+        #expect(upload(sources[2], file: 1) == "001_red.png", "an explicit file number is taken as given")
+        queue.cancel(id: queue.jobs.last!.id)
+
+        queue.start()
+        defer { queue.stop() }
+        for job in queue.jobs.prefix(2) { #expect(await Self.wait(for: job.id, in: queue) == .done) }
+        #expect(upload(sources[2]) == "003_red.png")
+        #expect(await Self.wait(for: queue.jobs.last!.id, in: queue) == .done)
+    }
 }
 
 private final class LockedCounter: @unchecked Sendable {
