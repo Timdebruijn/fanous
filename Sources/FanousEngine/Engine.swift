@@ -3,6 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
 import AppKit
+import AVFoundation
 import Foundation
 import FanousCore
 import Logging
@@ -109,8 +110,8 @@ public final class Engine: @unchecked Sendable {
     private let sacnError = Mutex<String?>(nil)
     /// The project's library root as last seen by `projectChanged` (B51).
     private let libraryRootInProject = Mutex<String?>(nil)
-    /// `/syphon` as the engine last applied it (B69): the catalog is written back when it differs.
-    private let syphonInProject = Mutex<JSONValue>([:])
+    /// `/syphon` and `/capture` as the engine last applied them (B69, B73): a catalog is written back when it differs.
+    private let liveInProject = Mutex<[LiveCatalog.Kind: JSONValue]>([:])
     /// Root switches run here one at a time (scan, probe-thread join): never on the feed or control queue.
     private let libraryQueue = DispatchQueue(label: "org.fanous.library.switch", qos: .utility)
     /// Root switches queued or running; show mode is refused meanwhile.
@@ -271,11 +272,15 @@ public final class Engine: @unchecked Sendable {
         do {
             let scene = sceneWithOutputs
             let syphonNumbers = ProjectDocument.liveNumbers(.syphon, from: loadedProject ?? .null)
+            let captureNumbers = ProjectDocument.liveNumbers(.capture, from: loadedProject ?? .null)
             let service = try MainActor.assumeIsolated {
-                try RenderService(scene: scene, context: context, parameters: dmx.snapshots, metrics: metrics, logger: logger, syphonNumbers: syphonNumbers)
+                try RenderService(
+                    scene: scene, context: context, parameters: dmx.snapshots, metrics: metrics, logger: logger, syphonNumbers: syphonNumbers,
+                    captureNumbers: captureNumbers)
             }
             service.loader.resolver = { [weak self] key in self?.library?.resolve(key) }
             service.audioKeepRunning = { [weak self] in self?.showMode.isOn ?? false }
+            service.captureAllowed = { [weak self] in !(self?.showMode.isOn ?? false) }
             if startLayout.canvases.count > 1 {
                 // nothing ticks yet; on failure canvas 1 runs alone and takes the others' layers and slices meanwhile
                 do {
@@ -299,9 +304,19 @@ public final class Engine: @unchecked Sendable {
             on: store, auth: auth, showModeOn: { [weak self] in self?.showMode.isOn ?? false },
             checkLibraryRoot: { [weak self] root in if let refusal = self?.libraryRootRefusal(root) { throw refusal } },
             applySync: { [weak self] in try self?.applySync($0) },
-            syphonRunning: { [weak self] in Set(self?.render?.syphonCatalog.entries.filter(\.running).map(\.file) ?? []) },
+            liveRunning: { [weak self] in
+                guard let render = self?.render else { return [] }
+                return Set((render.syphonCatalog.entries + render.captureCatalog.entries).filter(\.running).map(\.file))
+            },
+            authorizeCamera: { [weak self] in
+                let loader = self?.render?.loader, catalog = self?.render?.captureCatalog
+                CaptureInput.requestAccess(allowed: true) { _ in
+                    catalog?.refreshPermissions()
+                    loader?.capturePermissionChanged()
+                }
+            },
             displayModes: { [weak self] in Dictionary((self?.displays.withLock { $0 } ?? []).map { ($0.uuid, $0.mode) }, uniquingKeysWith: { a, _ in a }) })
-        syphonInProject.withLock { $0 = project["syphon"] ?? [:] }
+        liveInProject.withLock { $0 = [.syphon: project["syphon"] ?? [:], .capture: project["capture"] ?? [:]] }
         libraryRootInProject.withLock { $0 = URL(fileURLWithPath: project["library"]?["root"]?.string ?? libraryRoot.path).path }
         // B23: a version of the project as loaded, then one every 10 minutes when it changed, and one per show-mode enter
         let versions = ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger)
@@ -1048,6 +1063,8 @@ public final class Engine: @unchecked Sendable {
         context.modeIssues = modeChecks.withLock { $0 }.sorted { $0.key < $1.key }.compactMap { id, check in check.issue.map { "Output \(id): \($0)" } }
         context.layerErrors = (render?.layers ?? []).compactMap { layer in layer.mediaStatus.withLock { $0.error.map { "Layer \(layer.index + 1): \($0)" } } }
         context.libraryRoot = library?.snapshot.root ?? ""
+        context.captureDevices = render?.captureCatalog.entries.count ?? 0
+        context.cameraPermission = Self.permissionWord(render?.captureCatalog.permissions.camera ?? .authorized)
         var masters: [Int: Int] = [:]
         for layer in render?.layers ?? [] {
             let s = layer.syncStatus.withLock { $0 }
@@ -1349,13 +1366,15 @@ public final class Engine: @unchecked Sendable {
             // ponytail: replaces the whole map, so a map edit landing in between is lost; ids then come on the next change
             DispatchQueue.global(qos: .utility).async { store.correct(map, at: "/midi/map") }
         }
-        // the Syphon numbering (B69): syphon.forget, undo, a loaded project; the live feed writes the catalog back
-        let syphon = document["syphon"] ?? [:]
-        if syphonInProject.withLock({ old in
-            defer { old = syphon }
-            return old != syphon
-        }) {
-            render?.syphonCatalog.adopt(ProjectDocument.liveNumbers(.syphon, from: document))
+        // the Syphon and capture numbering (B69, B73): a forget, undo, a loaded project; the live feed writes the catalogs back
+        for catalog in [render?.syphonCatalog, render?.captureCatalog].compactMap({ $0 }) {
+            let numbers = document[catalog.kind.projectKey] ?? [:]
+            if liveInProject.withLock({ applied in
+                defer { applied[catalog.kind] = numbers }
+                return applied[catalog.kind] != numbers
+            }) {
+                catalog.adopt(ProjectDocument.liveNumbers(catalog.kind, from: document))
+            }
         }
         let midiSettings = MIDISettings.from(project: document)
         if midiSettings != lastMIDISettings {
@@ -1514,7 +1533,9 @@ public final class Engine: @unchecked Sendable {
     private func publishLive() {
         guard let dmx, let store, let auth, let ingest, let library else { return }
         // before the client check: a headless show driven by a console records its Syphon numbers too (B69)
-        if let catalog = render?.syphonCatalog { Self.recordLiveNumbers(catalog, into: store, applied: syphonInProject.withLock { $0 }) }
+        for catalog in [render?.syphonCatalog, render?.captureCatalog].compactMap({ $0 }) {
+            Self.recordLiveNumbers(catalog, into: store, applied: liveInProject.withLock { $0[catalog.kind] } ?? [:])
+        }
         // nobody to tell; a client that connects gets the full live document in its welcome and a fresh one within 100 ms
         guard store.clientCount > 0 else { return }
         let facts = currentHostFacts()
@@ -1559,6 +1580,12 @@ public final class Engine: @unchecked Sendable {
                         "width": .number(Double(s.width)), "height": .number(Double(s.height)), "fps": .number(s.fps),
                         "frames": .number(Double(s.frames)), "frame": .number(Double(layer.currentFrame)), "error": s.error.map { .string($0) } ?? .null,
                         "sync": syncLive(layer.syncStatus.withLock { $0 }),
+                        "capture": s.capture.map { c in
+                            [
+                                "frames": .number(Double(c.frames)), "dropped": .number(Double(c.dropped)), "outOfBuffers": .number(Double(c.outOfBuffers)),
+                                "unusable": .number(Double(c.unusable)),
+                            ]
+                        } ?? .null,
                     ]
                 }),
             "clients": ["count": .number(Double(store.clientCount)), "lagging": .number(Double(store.laggingClients))],
@@ -1591,6 +1618,7 @@ public final class Engine: @unchecked Sendable {
             "versions": versions?.live ?? .null,
             "sync": syncLive(),
             "syphon": syphonLive(),
+            "capture": captureLive(),
         ]
         store.updateLive(live)
     }
@@ -1615,6 +1643,37 @@ public final class Engine: @unchecked Sendable {
                     return entry
                 }),
             "unnumbered": .array(catalog.unnumbered.map { .string($0) }),
+        ]
+    }
+
+    /// The camera permission as `live.capture` and readiness name it; restricted reads as denied.
+    static func permissionWord(_ status: AVAuthorizationStatus) -> String {
+        switch status {
+        case .authorized: "granted"
+        case .notDetermined: "notDetermined"
+        default: "denied"
+        }
+    }
+
+    /// `live.capture` from the catalog and its cached permissions (a TCC read costs tens of ms: never on the feed).
+    private func captureLive() -> JSONValue {
+        guard let catalog = render?.captureCatalog else { return Self.captureLive([], camera: .notDetermined, screen: false) }
+        let permissions = catalog.permissions
+        return Self.captureLive(catalog.entries, camera: permissions.camera, screen: permissions.screen)
+    }
+
+    /// `live.capture` (B73): the numbered capture devices and the permissions; `screens` until step 3 numbers displays.
+    static func captureLive(_ devices: [LiveCatalog.Entry], camera: AVAuthorizationStatus, screen: Bool) -> JSONValue {
+        [
+            "devices": .array(
+                devices.map { d in
+                    var entry: JSONValue = ["file": .number(Double(d.file)), "name": .string(d.name), "running": .bool(d.running)]
+                    if d.gone { try? entry.set(true, at: "/gone") }
+                    if d.inUse { try? entry.set(true, at: "/inUse") }
+                    return entry
+                }),
+            "screens": [],
+            "permissions": ["camera": .string(permissionWord(camera)), "screen": .string(screen ? "granted" : "denied")],
         ]
     }
 

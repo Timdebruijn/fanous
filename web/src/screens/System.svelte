@@ -8,6 +8,7 @@
   import SystemSync from '../components/SystemSync.svelte';
   import SystemVersions from '../components/SystemVersions.svelte';
   import { modeText } from '../lib/outputs';
+  import { lockTitle } from '../lib/show';
   import { app, can, cmd } from '../lib/state.svelte';
   import { LOCKED_TITLE, OPERATOR_TITLE, ageText, headerCaption, memoryText, outputTone, readinessBadge, readinessSummary, resumedText, stampText, thermalTone } from '../lib/system';
 
@@ -26,6 +27,10 @@
       uptimeSeconds: app.live.engine.uptimeSeconds,
     }),
   );
+  // live.capture is absent from engines before B73 step 2: then no block
+  const permissions = $derived(app.live.capture?.permissions);
+  const authorizeLock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock) ?? (show.mode ? 'Leave show mode first' : undefined));
+  const PERMISSION_WORDS: Record<string, string> = { granted: 'granted', denied: 'denied', notDetermined: 'not asked' };
   const outputName = (id: number) => app.project.outputs.find((o) => o.id === id)?.name ?? `Output ${id}`;
 
   let readinessPanel: HTMLElement | undefined = $state();
@@ -196,6 +201,26 @@
         <li class="caption empty">No DMX universes seen. Nothing has arrived on Art-Net or sACN: check that the console sends to this Mac's address, the cable or Wi-Fi, and the universe numbers on the Patch screen.</li>
       {/each}
     </ul>
+
+    {#if permissions}
+      <h3>Capture permissions</h3>
+      <ul aria-label="Capture permissions">
+        {#each [{ kind: 'camera', label: 'Camera', state: permissions.camera }, { kind: 'screen', label: 'Screen', state: permissions.screen }] as const as row (row.kind)}
+          <li class="list-row item">
+            <span class="dot dot-{row.state === 'granted' ? 'green' : 'yellow'}" aria-hidden="true"></span>
+            <span class="grow">{row.label}</span>
+            <span class="muted">{PERMISSION_WORDS[row.state] ?? row.state}</span>
+            {#if row.state !== 'granted'}
+              <button type="button" class="btn" aria-label={`Authorize ${row.label.toLowerCase()}`} disabled={authorizeLock !== undefined} title={authorizeLock} onclick={() => void cmd('capture.authorize', { kind: row.kind })}>Authorize</button>
+              {#if row.kind === 'screen'}<span class="caption">a grant restarts the engine</span>{/if}
+            {/if}
+          </li>
+        {/each}
+      </ul>
+      {#if permissions.camera === 'denied'}
+        <p class="caption empty">Camera denied: allow Fanous Engine under System Settings › Privacy & Security › Camera.</p>
+      {/if}
+    {/if}
   </section>
 
   <section class="panel" aria-labelledby="network-title">
