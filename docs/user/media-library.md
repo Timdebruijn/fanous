@@ -64,7 +64,7 @@ another app" means another app has the camera open (an iPhone in FaceTime). A
 **Cameras and capture cards (1–20)** need the camera permission. Until it is
 granted the list says so: press **Authorize camera** under Capture permissions
 on the System screen (not in show mode). If you denied it once, allow Fanous
-Engine under System Settings › Privacy & Security › Camera.
+under System Settings › Privacy & Security › Camera.
 
 **Displays (21–28)** are whole displays of this Mac: what the display shows,
 without the mouse pointer and without sound, at most at the canvas rate. A

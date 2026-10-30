@@ -1737,9 +1737,10 @@ display); the owner's live check:
   re-ask.
 
 **Live check (2026-10-30, steps 2 and 3, dev Mac, ad-hoc build).** *Step 2:*
-the camera prompt names "Fanous Engine" (the System Settings entry is "Fanous", see below); after Allow, layer 1 opened the
-FaceTime HD Camera as `420v` 1920x1080 @ 30 (canvas 60, locked), ~2,100
-frames with 0 dropped/outOfBuffers/unusable; two layers on one camera share
+the camera prompt names "Fanous Engine" (the System Settings entry is
+"Fanous", see the B127 note below); after Allow, layer 1 opened the FaceTime
+HD Camera as `420v` 1920x1080 @ 30 (canvas 60, locked), ~2,100 frames with 0
+dropped/outOfBuffers/unusable; two layers on one camera share
 one session (one start line, identical counters); `isInUseByAnotherApplication`
 is not set by our own session, so the feed needs no `captureShared` filter;
 the iPhone (Continuity Camera) opened `420v` 640x480 @ 60 because `pick`
@@ -1846,7 +1847,8 @@ Camera in FaceTime) reads "in use".
 
 **Permissions (TCC).** The engine is the LaunchAgent helper bundle
 `org.fanous.engine` with its own Info.plist (§2.4), so prompts name "Fanous
-Engine" and carry its usage strings. `scripts/bundle.sh` adds
+Engine" and carry its usage strings (System Settings lists one entry,
+"Fanous": see the B127 as-built note above). `scripts/bundle.sh` adds
 `NSCameraUsageDescription` and `NSCameraUseContinuityCameraDeviceType` to
 both Info.plists, and the hardened runtime needs
 `com.apple.security.device.camera` in `scripts/entitlements.plist` (today it

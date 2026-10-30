@@ -399,10 +399,11 @@ the show is locked). A device another app has open (an iPhone in FaceTime)
 reads "in use by another app" with a yellow dot. A card follows its input signal: the picture takes the size and rate of what
 comes in, and a card without a signal for 2 seconds reads "no signal" on the
 Layers screen and keeps its last frame. macOS asks for the camera permission
-once, for "Fanous Engine" (listed as "Fanous" in System Settings): when a layer first selects a camera, or when you
-press **Authorize camera** under Capture permissions on the System screen; never in
-show mode, so authorize before the show. Denied: allow Fanous under
-System Settings › Privacy & Security › Camera. Verified so far: the built-in
+once, for "Fanous Engine" (listed as "Fanous" in System Settings): when a
+layer first selects a camera, or when you press **Authorize camera** under
+Capture permissions on the System screen; never in show mode, so authorize
+before the show. Denied: allow Fanous under System Settings › Privacy &
+Security › Camera. Verified so far: the built-in
 camera, an iPhone over Continuity Camera; UVC cards such as Elgato Cam Link
 4K and Magewell USB Capture appear as cameras; Blackmagic DeckLink and
 UltraStudio do not (they need their own SDK, see the backlog).
