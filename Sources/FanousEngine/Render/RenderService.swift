@@ -83,6 +83,8 @@ public final class RenderService {
     private let logger: Logger
     /// Keeps the audio device open while true (the engine passes show mode); read once by `start()`.
     nonisolated(unsafe) public var audioKeepRunning: (@Sendable () -> Bool)?
+    /// May the engine ask for the camera permission now (the engine passes "not in show mode"); read by `start()`.
+    nonisolated(unsafe) public var captureAllowed: @Sendable () -> Bool = { true }
     private var window: OutputWindow?
     private var displayDriver: DisplayLinkDriver?
     private var loopDriver: DrawableLoopDriver?
@@ -147,6 +149,14 @@ public final class RenderService {
             mixer.onError = { logger.warning("audio output unavailable; playing silent", metadata: ["error": "\($0)"]) }
             self.mixer = mixer
             loader.mixer = mixer
+        }
+        let device = context.device, fps = scene.fps, logger = logger, allowed = captureAllowed
+        // ponytail: the canvas rate at service start picks the capture frame rate; canvas.set does not reopen devices
+        loader.captureFactory = { [weak loader] uid in
+            guard let loader else { throw CaptureError.session("the engine is stopping") }
+            return try CaptureInput.open(uid: uid, metal: device, fps: fps, allowed: allowed(), logger: logger) { [weak loader] in
+                loader?.capturePermissionChanged()
+            }
         }
         loader.start()
         if scene.managedOutputs {

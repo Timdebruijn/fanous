@@ -20,6 +20,7 @@ public enum SourcePixelKind: UInt32, Sendable {
     case hapYCoCgAlpha = 5  // HAP Q Alpha: BC3 YCoCg + BC4 alpha
     case planarYCbCr = 6  // bi-planar (Y plane r16 or r8, CbCr rg16 or rg8; 4:2:2, 4:4:4 or 4:2:0 (`420v`)), incl. Apple's lossless-compressed variants
     case planarYCbCrA = 7  // as 6 plus an alpha plane (r16)
+    case yuy2 = 8  // 8-bit packed 4:2:2 `yuvs` (Y0 Cb Y1 Cr) as rgba8Unorm at half width: `.v216` with the pairs swapped
 }
 
 public enum MovieError: Error, CustomStringConvertible {

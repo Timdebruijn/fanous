@@ -91,11 +91,13 @@ public enum ShaderSource {
                         sampler linearSampler, sampler nearestSampler, float2 uv) {
         float4 rgba;
         switch (u.kind) {
-        case 1: {  // v216: texel = (Cb, Y0, Cr, Y1) for a pixel pair
+        case 1:    // v216: texel = (Cb, Y0, Cr, Y1) for a pixel pair
+        case 8: {  // yuy2 (`yuvs`): texel = (Y0, Cb, Y1, Cr), swapped to the v216 order
             float width = 1.0 / u.texel.x;
             float px = uv.x * width;
             float2 pairUV = float2((floor(px * 0.5) + 0.5) / (width * 0.5), uv.y);
             float4 p = tex0.sample(nearestSampler, pairUV);
+            if (u.kind == 8) p = p.grab;
             float y = fract(px * 0.5) < 0.5 ? p.g : p.a;
             rgba = float4(ycbcr_to_rgb(y, p.r, p.b), 1.0);
             break;

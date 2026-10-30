@@ -51,6 +51,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>Fanous</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.video</string>
   <key>NSMicrophoneUsageDescription</key><string>Fanous reads LTC timecode from an audio input when you select one under Show › Timecode.</string>
+  <key>NSCameraUsageDescription</key><string>Fanous shows a camera or capture card as layer content when you select one in folder 0.</string>
+  <key>NSCameraUseContinuityCameraDeviceType</key><true/>
   <key>NSLocalNetworkUsageDescription</key><string>Fanous receives Art-Net, sACN and OSC from your lighting console and announces itself to consoles over CITP and Bonjour.</string>
   <key>NSBonjourServices</key><array><string>_fanous._tcp</string><string>_https._tcp</string></array>
 </dict></plist>
@@ -70,6 +72,8 @@ cat > "$HELPER/Contents/Info.plist" <<PLIST
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>Fanous reads LTC timecode from an audio input when you select one under Show › Timecode.</string>
+  <key>NSCameraUsageDescription</key><string>Fanous shows a camera or capture card as layer content when you select one in folder 0.</string>
+  <key>NSCameraUseContinuityCameraDeviceType</key><true/>
   <key>NSLocalNetworkUsageDescription</key><string>Fanous receives Art-Net, sACN and OSC from your lighting console and announces itself to consoles over CITP and Bonjour.</string>
   <key>NSBonjourServices</key><array><string>_fanous._tcp</string><string>_https._tcp</string></array>
 </dict></plist>

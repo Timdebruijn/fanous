@@ -277,6 +277,7 @@ public final class Engine: @unchecked Sendable {
             }
             service.loader.resolver = { [weak self] key in self?.library?.resolve(key) }
             service.audioKeepRunning = { [weak self] in self?.showMode.isOn ?? false }
+            service.captureAllowed = { [weak self] in !(self?.showMode.isOn ?? false) }
             if startLayout.canvases.count > 1 {
                 // nothing ticks yet; on failure canvas 1 runs alone and takes the others' layers and slices meanwhile
                 do {

@@ -323,6 +323,13 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Changed: the Syphon numbering (folder 0, 150–169) is one `LiveCatalog` that the coming capture inputs share (B73 step
   1b, DESIGN §8.2.1): a kind per range (capture devices 1–20 in `capture`, displays 21–28 in `screens`, windows 29–32 in
   `windows`), and the undo/redo checks of `syphon` cover those keys too. Syphon behaves as before; nothing is captured yet.
+- Added: cameras and capture cards as live layer sources (B73 step 2a, DESIGN §8.2.1). A scene `media` entry
+  `{folder: 0, file, capture: "<device uid>"}` shows an AVFoundation capture device (a webcam, a UVC or driver-backed
+  capture card, an iPhone over Continuity Camera) at its input's size and the highest frame rate up to the canvas
+  rate. `2vuy`, `yuvs` (new pixel kind `.yuy2`) and `420v` stay 4:2:2 or 4:2:0 on the GPU, other formats come as
+  BGRA. The layer reads "no signal" after 2 s without frames and keeps the last picture. The camera permission is
+  asked only outside show mode. The app and the engine carry the camera entitlement and usage text. Numbered files
+  1–20 follow with the capture catalog.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
