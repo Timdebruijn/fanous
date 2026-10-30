@@ -24,3 +24,19 @@ precision, and one mode in v1.
 + One profile for consoles; footprints are stable forever.
 − Reserved channels cost address space (14 per layer); accepted.
 − Catalyst muscle memory does not transfer; documented in the user guide.
+
+## Amendment 2026-10-30 (B120, DESIGN §6.6): modes say what they are patched per
+
+Designed, not built yet. The Keystone mode (16 ch, per output, M2.3) is the
+fourth mode; the three footprints above are unchanged.
+
+- Each mode says what it is patched per (`layer`, `machine`, `output`) and
+  whether it is optional (Keystone). The channel map serves that list
+  (`fixtures` in `/api/channel-map.json`) and the Patch screen groups by it,
+  so a new mode of an existing kind needs no UI code.
+- What a patch means for control (a fixture exists without a patch) is an
+  amendment to ADR-0009.
+
++ The Patch screen grows by group, not by row, as modes are added.
+− A new kind (Serial devices) still needs one UI entry: where its instances
+  come from.
