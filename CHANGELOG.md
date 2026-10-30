@@ -553,7 +553,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   older value on release until the engine's echo arrived, lost quick −/+ taps, pulled each other back when two were
   dragged at once, and could stop following Undo and other clients after a drag that ended where it started; a wall's
   gamma R, G, B and its two overlap axes could undo each other when set within a round trip. One shared slider now
-  shows what it sent until the engine's value changes to it (at most 1 s) and steps −/+ from there (B114, PR #PRNUM).
+  shows what it sent until the engine's value changes to it (at most 1 s) and steps −/+ from there (B114, PR #156).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
