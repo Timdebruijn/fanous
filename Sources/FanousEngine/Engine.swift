@@ -675,7 +675,7 @@ public final class Engine: @unchecked Sendable {
                 }
                 if let receiver = self.syncReceiver, let sender = self.syncSender {
                     m["sync"] = [
-                        "packetsIn": .number(Double(receiver.packetsIn.load(ordering: .relaxed))), "packetsOut": .number(Double(sender.packetsOut.load(ordering: .relaxed))),
+                        "packetsIn": .number(Double(receiver.packetsIn.load(ordering: .relaxed))), "packetsOut": .number(Double(sender.packetsOut.load(ordering: .relaxed))), "packetsDropped": .number(Double(sender.packetsDropped.load(ordering: .relaxed))),
                         "decodeErrors": .number(Double(receiver.decodeErrors.load(ordering: .relaxed))),
                     ]
                 }
@@ -739,7 +739,7 @@ public final class Engine: @unchecked Sendable {
                     text += String(format: "\naudio: callbacks %llu  underruns %llu  corrections %llu  max drift %.1f ms", audio.callbacks, audio.underruns, audio.corrections, audio.maxDriftMillis)
                 }
                 if let receiver = self.syncReceiver, let sender = self.syncSender {
-                    text += "\nsync: packets in \(receiver.packetsIn.load(ordering: .relaxed))  out \(sender.packetsOut.load(ordering: .relaxed))  decode errors \(receiver.decodeErrors.load(ordering: .relaxed))"
+                    text += "\nsync: packets in \(receiver.packetsIn.load(ordering: .relaxed))  out \(sender.packetsOut.load(ordering: .relaxed))  dropped \(sender.packetsDropped.load(ordering: .relaxed))  decode errors \(receiver.decodeErrors.load(ordering: .relaxed))"
                 }
                 return .text(200, text)
             default:
@@ -872,7 +872,7 @@ public final class Engine: @unchecked Sendable {
         return [
             "machine": .string(receiver.machine.uuidString), "interface": .string(sender.settings.interface),
             "port": .number(Double(sender.settings.port)), "target": .string(sender.settings.target),
-            "packetsIn": .number(Double(receiver.packetsIn.load(ordering: .relaxed))), "packetsOut": .number(Double(sender.packetsOut.load(ordering: .relaxed))),
+            "packetsIn": .number(Double(receiver.packetsIn.load(ordering: .relaxed))), "packetsOut": .number(Double(sender.packetsOut.load(ordering: .relaxed))), "packetsDropped": .number(Double(sender.packetsDropped.load(ordering: .relaxed))),
             "decodeErrors": .number(Double(receiver.decodeErrors.load(ordering: .relaxed))), "masters": .object(masters),
             "conflicts": .array((1...LayerSync.groups).filter { table.conflict(group: $0, now: now) != nil }.map { .number(Double($0)) }),
         ]
@@ -985,7 +985,7 @@ public final class Engine: @unchecked Sendable {
 
     private func citpLive() -> JSONValue {
         guard let s = citp?.status.withLock({ $0 }) else { return [:] }
-        return ["port": .number(Double(s.port)), "clients": .array(s.clients.map { .string($0) }), "streams": .number(Double(s.streams)), "multicast": .array([.string(CITPMulticast.address), .string(CITPMulticast.addressSince2014)])]
+        return ["port": .number(Double(s.port)), "clients": .array(s.clients.map { .string($0) }), "streams": .number(Double(s.streams)), "beaconsDropped": .number(Double(s.beaconsDropped)), "multicast": .array([.string(CITPMulticast.address), .string(CITPMulticast.addressSince2014)])]
     }
 
     private func timecodeLive() -> JSONValue {

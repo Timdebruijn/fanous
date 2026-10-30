@@ -3710,7 +3710,10 @@ MSC and MIDI-triggered cues are additions, not rewrites.
 - Peer location: UDP multicast `224.0.0.180` (port 4809 per the spec PDF,
   re-checked when the fixtures are captured), `PLoc` sent every 5 s
   with the engine's name, type "MediaServer" and its TCP listening port
-  (ephemeral, advertised).
+  (ephemeral, advertised). The UDP socket is non-blocking (B123): a beacon
+  the kernel cannot take at once (`EAGAIN`, `ENOBUFS`) is dropped and counted
+  in `live.citp.beaconsDropped`, so `stop()`'s join on the CITP queue never
+  waits on the network.
 - MSEX over TCP, negotiating the highest version both sides support
   (1.0/1.1/1.2): `CInf`/`SInf` (server info, layer count), `LSta` (layer
   status: media, position, playing state at 4 Hz), `ELIn`/`MEIn` (element
@@ -4049,6 +4052,8 @@ FanousSync v1
   triple-buffered packet slot at the end of its CPU work (no allocation, no
   socket on the compositor thread); a sender thread wakes on a semaphore
   and sends the newest slot. Same pattern as the parameter triple buffer.
+  The socket is non-blocking (B123): a full send buffer drops the packet and
+  counts it (`packetsDropped` in `live.sync` and `/metrics`).
 - **Receiver:** one socket bound to `0.0.0.0:port` with `SO_REUSEPORT`
   (like the sACN receiver, so two engines on one Mac both receive), on its
   own queue. Packets from the machine's own id are dropped (local groups use
@@ -4216,7 +4221,7 @@ differs from the text above:
   do not apply). Freeze-all on the slave machine holds a slave like any other
   layer; the first tick after it relocks.
 - `live.sync` carries packet totals (`packetsIn`, `packetsOut`,
-  `decodeErrors`) and the machine id instead of `packetsPerSecond`; the UI
+  `packetsDropped` since B123, `decodeErrors`) and the machine id instead of `packetsPerSecond`; the UI
   shows the totals. A master's `name` is shown for masters on this machine only.
 - The two-engine check of §23.5 is manual (`docs/DEVELOPMENT.md`); the bench
   numbers are printed by `SyncCompositorTests`, which asserts no allocation.

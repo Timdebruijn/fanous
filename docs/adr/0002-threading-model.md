@@ -122,3 +122,13 @@ device its ring of three taken frames. A released buffer is let go after the
 lock. Neither allocates. The other side is one producer thread (Syphon's frame
 notification, the capture queue, `.userInteractive`), which holds the lock for
 the same few reference moves per frame.
+
+## Amendment 2026-10-30 (B123): a stop's join never waits on the network
+
+A `stop()` that joins a queue or thread with `queue.sync` (or a semaphore)
+must not find that queue blocked on the network. The raw BSD UDP senders (the
+CITP PLoc beacon, the sync sender) use `O_NONBLOCK` sockets: a datagram the
+kernel cannot take at once is dropped and counted, never waited for. A blocking
+`sendto` on the CITP queue kept `Engine.stop()` in `citp.stop()` for good, so
+SIGTERM did not exit. Network.framework sends are asynchronous already; their
+completion handlers must not block the queue they run on.
