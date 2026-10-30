@@ -355,7 +355,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   picture. Frames, drops, pool shortages (`outOfBuffers`) and unusable frames are counted per layer and logged every
   minute. The camera permission is asked only outside show mode. The app and the engine carry the camera entitlement
   and usage text. Numbered files 1–20 follow with the capture catalog.
-- Added: `/api/channel-map.json` lists the fixture modes under `fixtures`, in display order, each with its `name`,
+- Added: `/api/channel-map.json` lists the fixture modes under `fixtures`, in display order, each with its `mode`, `name`,
   what it is patched per (`per`: `layer`, `machine` for the Master, `output`) and whether it is `optional` (Keystone)
   (DESIGN §6.6 item 3, ADR-0008 amendment). `footprints`, `modes`, the GDTF file and `docs/channel-map.md` are
   unchanged; the Patch screen does not use it yet.
