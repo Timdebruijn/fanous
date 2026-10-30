@@ -963,6 +963,151 @@ test('outputs: a colour gain drag is one undo step; the black offset steps by 0.
   await expect(colour.getByRole('slider', { name: 'Black offset' })).toHaveValue('0.1');
 });
 
+// B114: the −/range/+ sliders (RangeStepper) against a slow network, where the engine's echo of a value comes a round
+// trip after it was sent
+
+/** Loads the page again with every frame from the engine 250 ms late, as over a busy Wi-Fi. */
+async function slowEchoes(page: Page, engine: Engine): Promise<void> {
+  await page.routeWebSocket(/\/ws$/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((message) => server.send(message));
+    server.onMessage((message) => void setTimeout(() => ws.send(message), 250));
+  });
+  await page.goto(`${engine.url}/?token=${engine.token}`);
+}
+
+/** Records every number a slider's value text shows from now on; the function returned reads them, repeats dropped. */
+async function watchValue(value: Locator): Promise<() => Promise<number[]>> {
+  type Watched = HTMLElement & { seen?: number[] };
+  await value.evaluate((el: Watched) => {
+    const seen = (el.seen = [parseFloat(el.textContent ?? '')]);
+    new MutationObserver(() => {
+      const n = parseFloat(el.textContent ?? '');
+      if (n !== seen.at(-1)) seen.push(n);
+    }).observe(el, { subtree: true, characterData: true, childList: true });
+  });
+  return () => value.evaluate((el: Watched) => el.seen ?? []);
+}
+
+/** The x of value `v` on a 0–`max` range input (its thumb is 16 px wide). */
+async function rangeX(slider: Locator, max: number): Promise<{ x: (v: number) => number; y: number }> {
+  await slider.scrollIntoViewIfNeeded();
+  const box = (await slider.boundingBox())!;
+  return { x: (v) => box.x + 8 + (v / max) * (box.width - 16), y: box.y + box.height / 2 };
+}
+
+const colourOf = (page: Page) => page.getByRole('region', { name: 'Output settings' }).getByRole('group', { name: 'Colour' });
+
+test('outputs: a released colour slider stays where it was let go until the engine catches up (B114 a)', async ({ page, engine }) => {
+  await slowEchoes(page, engine);
+  await addUnassignedOutput(page);
+  const colour = colourOf(page);
+  const red = colour.getByRole('slider', { name: 'Gain R' });
+  await expect(red).toHaveValue('100');
+  const shown = await watchValue(colour.getByLabel('Gain R value'));
+  const { x, y } = await rangeX(red, 200);
+  await page.mouse.move(x(100), y);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) {
+    await page.mouse.move(x(100 - i * 3), y);
+    await page.waitForTimeout(30);
+  }
+  const dragged = Number(await red.inputValue());
+  expect(dragged).toBeLessThan(80);
+  await page.mouse.up();
+  // past the late echoes and the grace: the slider only ever went down, and the engine has the value let go at
+  await page.waitForTimeout(1500);
+  const seen = await shown();
+  expect(seen).toEqual([...seen].sort((a, b) => b - a));
+  expect(seen.at(-1)).toBe(dragged);
+  await expect(red).toHaveValue(String(dragged));
+});
+
+test('outputs: quick taps on a colour + all land, as one undo step (B114 b)', async ({ page, engine }) => {
+  await slowEchoes(page, engine);
+  await addUnassignedOutput(page);
+  const colour = colourOf(page);
+  const up = colour.getByRole('button', { name: 'Black offset up' });
+  await up.scrollIntoViewIfNeeded();
+  const plus = (await up.boundingBox())!;
+  for (let i = 0; i < 5; i++) await page.mouse.click(plus.x + plus.width / 2, plus.y + plus.height / 2);
+  const value = colour.getByLabel('Black offset value');
+  await expect(value).toHaveText('0.5 %');
+  await page.waitForTimeout(1500); // the engine's value after the grace
+  await expect(value).toHaveText('0.5 %');
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(value).toHaveText('0.0 %');
+});
+
+test.describe('with touch', () => {
+  test.use({ hasTouch: true });
+
+  test('outputs: two fingers on two colour sliders, each slider follows its own finger only (B114 c)', async ({ page, engine }) => {
+    await slowEchoes(page, engine);
+    await addUnassignedOutput(page);
+    const colour = colourOf(page);
+    const names = ['Gain R', 'Gain G'];
+    const sliders = names.map((name) => colour.getByRole('slider', { name }));
+    const shown = await Promise.all(names.map((name) => watchValue(colour.getByLabel(`${name} value`))));
+    const ranges = [await rangeX(sliders[0]!, 200), await rangeX(sliders[1]!, 200)];
+    const at = (finger: number, v: number) => ({ x: ranges[finger]!.x(v), y: ranges[finger]!.y, id: finger });
+    // Playwright's touchscreen only taps: two fingers go through the DevTools protocol
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', touchPoints: { x: number; y: number; id: number }[]) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
+    await touch('touchStart', [at(0, 100)]);
+    await touch('touchStart', [at(0, 100), at(1, 100)]);
+    for (let i = 1; i <= 10; i++) {
+      await touch('touchMove', [at(0, 100 - i * 3), at(1, 100 - i * 2)]);
+      await page.waitForTimeout(30);
+    }
+    // the second finger lifts first, the first one goes on a little
+    await touch('touchEnd', [at(1, 80)]);
+    for (let i = 11; i <= 13; i++) {
+      await touch('touchMove', [at(0, 100 - i * 3)]);
+      await page.waitForTimeout(30);
+    }
+    await touch('touchEnd', []);
+    await page.waitForTimeout(1500);
+    for (const [i, name] of names.entries()) {
+      const seen = await shown[i]!();
+      expect(seen, name).toEqual([...seen].sort((a, b) => b - a));
+      expect(seen.at(-1), name).toBeLessThan(i === 0 ? 70 : 85);
+      expect(seen.at(-1), name).toBe(Number(await sliders[i]!.inputValue()));
+    }
+  });
+});
+
+test("outputs: a colour slider dragged away and back shows another client's change and Undo after the release (B114 d)", async ({ page, engine, browser }) => {
+  await addUnassignedOutput(page);
+  const colour = colourOf(page);
+  const red = colour.getByRole('slider', { name: 'Gain R' });
+  await expect(red).toHaveValue('100');
+  const { x, y } = await rangeX(red, 200);
+  await page.mouse.move(x(100), y);
+  await page.mouse.down();
+  for (const v of [97, 94, 91, 88, 91, 94, 97, 100]) {
+    await page.mouse.move(x(v), y);
+    await page.waitForTimeout(40);
+  }
+  await page.mouse.up(); // where it was pressed: Chromium fires no change
+  await expect(red).toHaveValue('100');
+
+  const other = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    const second = await other.newPage();
+    await second.goto(`${engine.url}/?token=${engine.token}`);
+    await openScreen(second, 'Outputs');
+    await second.getByRole('button', { name: /^Output 1\b/ }).click();
+    await colourOf(second).getByRole('button', { name: 'Gain R up' }).click();
+    await expect(colour.getByLabel('Gain R value')).toHaveText('100.5 %');
+    await expect(red).toHaveValue('100.5');
+    await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(colour.getByLabel('Gain R value')).toHaveText('100.0 %');
+  } finally {
+    await other.close();
+  }
+});
+
 test('outputs: store a mapping preset, move a corner, recall the preset; Undo takes the recall back', async ({ page }) => {
   await addUnassignedOutput(page);
   await page.getByRole('button', { name: 'Warp & Slices' }).click();
