@@ -251,17 +251,19 @@ struct MappingMathTests {
     /// included.
     @Test func theFeatherIsALinearRampWithinHalfItsWidth() {
         let (w, h) = (40, 9)
+        // the 8 px ramp at `d` px inside the edge (typed apart: inline in #expect it times out the type checker on CI)
+        func ramp(_ d: Int) -> UInt8 { UInt8((min(1, max(0, 0.5 + Double(d) / 8)) * 255).rounded()) }
         // only the edge at x = 20.5 is within 4 px of a pixel centre
         let right = MaskMath.feathered([(-10, -10), (20.5, -10), (20.5, 19), (-10, 19)], feather: 8, width: w, height: h)
         let row = Array(right[(4 * w)..<(5 * w)])
         #expect(row[20] == 128, "on the edge")
         #expect(row[16] == 255 && row[17] == 223 && row[23] == 32 && row[24] == 0, "±feather/2 and between")
-        #expect(row == (0..<w).map { UInt8((min(1, max(0, 0.5 + Double(20 - $0) / 8)) * 255).rounded()) })
+        #expect(row == (0..<w).map { ramp(20 - $0) })
         // every row the same, but for rounding on the edge itself (0.5 ± 1e-16 is 127 or 128)
         #expect((0..<h).allSatisfy { y in (0..<w).allSatisfy { abs(Int(right[y * w + $0]) - Int(row[$0])) <= ($0 == 20 ? 1 : 0) } })
         // the fill counts a centre on a left edge inside: still 0.5 there
         let left = MaskMath.feathered([(19.5, -10), (60, -10), (60, 19), (19.5, 19)], feather: 8, width: w, height: h)
-        #expect(Array(left[(4 * w)..<(5 * w)]) == (0..<w).map { UInt8((min(1, max(0, 0.5 + Double($0 - 19) / 8)) * 255).rounded()) })
+        #expect(Array(left[(4 * w)..<(5 * w)]) == (0..<w).map { ramp($0 - 19) })
 
         // a pentagon with slanted, nearly flat and nearly upright edges, and an arrow with two reflex corners, against the
         // brute force over every segment, in both directions
