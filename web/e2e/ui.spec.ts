@@ -173,7 +173,10 @@ test('outputs: with two slices on the same corners, a drag moves the selected sl
 
   // slice 2 lies on top of slice 1: select slice 1, grab the shared top-left corner and drop it in the middle
   await slice.selectOption('0');
-  const box = (await page.getByRole('application', { name: /Mapping editor/ }).boundingBox())!;
+  // the controls scrolled the page (the Presets strip makes it taller): the editor's corner back in view first
+  const editor = page.getByRole('application', { name: /Mapping editor/ });
+  await editor.scrollIntoViewIfNeeded();
+  const box = (await editor.boundingBox())!;
   await page.mouse.move(box.x + 4, box.y + 4);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 });
