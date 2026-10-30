@@ -124,15 +124,16 @@ public class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoDataOutput
         }
     }
 
-    /// Opens `device` at its current input size and the canvas rate `fps` (or the closest it offers): the session is
+    /// Opens `device` at the canvas rate `fps` (or the closest it offers) and, for a camera, the largest size that fits
+    /// `canvas` (a card keeps its input's size; nil: every device keeps its active format's size): the session is
     /// configured and started on the capture queue, so this returns at once and the input reads `.starting` meanwhile.
-    public convenience init(device: AVCaptureDevice, metal: MTLDevice, fps: Double, logger: Logger) {
+    public convenience init(device: AVCaptureDevice, metal: MTLDevice, fps: Double, canvas: (width: Int, height: Int)? = nil, logger: Logger) {
         self.init(name: device.localizedName, metal: metal, logger: logger, queueLabel: "org.fanous.capture.\(device.uniqueID)")
         nonisolated(unsafe) let device = device  // used on the capture queue only from here on
         queue.async { [self] in
             guard !slot.withLock({ $0.stopped }) else { return }
             do {
-                try start(device, fps: fps)
+                try start(device, fps: fps, canvas: canvas)
             } catch {
                 logger.warning("capture \(name) could not start", metadata: ["error": "\(error)"])
                 slot.withLock { $0.failure = "\(error)" }
@@ -159,7 +160,8 @@ public class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoDataOutput
     /// The loader's entry: checks the permission (asking once when `allowed`; `onAnswer` runs after the user answers),
     /// finds the device by `uid` and opens it.
     public static func open(
-        uid: String, metal: MTLDevice, fps: Double, allowed: Bool, logger: Logger, onAnswer: @escaping @Sendable () -> Void
+        uid: String, metal: MTLDevice, fps: Double, canvas: (width: Int, height: Int), allowed: Bool, logger: Logger,
+        onAnswer: @escaping @Sendable () -> Void
     ) throws -> CaptureInput {
         switch authorization {
         case .authorized: break
@@ -170,7 +172,7 @@ public class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoDataOutput
         default: throw CaptureError.permissionDenied
         }
         guard let device = AVCaptureDevice(uniqueID: uid) else { throw CaptureError.noDevice(uid) }
-        return CaptureInput(device: device, metal: metal, fps: fps, logger: logger)
+        return CaptureInput(device: device, metal: metal, fps: fps, canvas: canvas, logger: logger)
     }
 
     // MARK: Format
@@ -205,9 +207,7 @@ public class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoDataOutput
     /// to the range. Without one, the fastest range below the canvas rate at its top rate. Ties: a subtype the output
     /// keeps (`2vuy`, `yuvs`, `420v`) over one it decodes (MJPEG). Nil when every range is above the canvas rate.
     static func pick(_ options: [RateOption], fps: Double) -> (index: Int, rate: Double)? {
-        func holds(_ o: RateOption) -> Bool {
-            (o.minRate <= fps || DisplayModeMatching.sameRate(o.minRate, fps)) && (fps <= o.maxRate || DisplayModeMatching.sameRate(fps, o.maxRate))
-        }
+        func holds(_ o: RateOption) -> Bool { Self.holds(min: o.minRate, max: o.maxRate, fps) }
         func better(_ a: RateOption, _ b: RateOption) -> Bool {
             let (ha, hb) = (holds(a), holds(b))
             if ha != hb { return ha }
@@ -223,16 +223,47 @@ public class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoDataOutput
         return (best, holds(o) ? min(max(fps, o.minRate), o.maxRate) : o.maxRate)
     }
 
-    /// The device's format and range of the active format's size to run at `fps` (a card follows its input, so the
-    /// size is the input's), and the rate; nil when nothing fits (the active format is then left alone).
-    static func bestFormat(_ device: AVCaptureDevice, fps: Double) -> (format: AVCaptureDevice.Format, range: AVFrameRateRange, rate: Double)? {
-        let size = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
-        var candidates: [(AVCaptureDevice.Format, AVFrameRateRange)] = []
-        for format in device.formats {
+    /// A range holds `fps` when it is inside it, 1000/1001 apart counting as the same rate (as for display modes).
+    static func holds(min: Double, max: Double, _ fps: Double) -> Bool {
+        (min <= fps || DisplayModeMatching.sameRate(min, fps)) && (fps <= max || DisplayModeMatching.sameRate(fps, max))
+    }
+
+    /// One frame-rate range of one format, with the format's size.
+    struct SizeOption {
+        var width: Int
+        var height: Int
+        var minRate: Double
+        var maxRate: Double
+    }
+
+    /// Cameras: the size is chosen (B126). Everything else (`.external`: UVC cards and webcams) follows its input.
+    static let cameraTypes: Set<AVCaptureDevice.DeviceType> = [.builtInWideAngleCamera, .continuityCamera]
+
+    /// The size a camera runs at (B126): the largest that fits `canvas` and has a range holding `fps`, else the largest
+    /// that fits; nil when no size fits (the active format's size then stays, as for a card). A camera's session preset
+    /// leaves some devices small (the iPhone at 640x480) while the canvas asks for more.
+    static func pickSize(_ options: [SizeOption], fps: Double, canvas: (width: Int, height: Int)) -> (width: Int, height: Int)? {
+        let fitting = options.filter { $0.width <= canvas.width && $0.height <= canvas.height }
+        let holding = fitting.filter { holds(min: $0.minRate, max: $0.maxRate, fps) }
+        return (holding.isEmpty ? fitting : holding).max { $0.width * $0.height < $1.width * $1.height }.map { ($0.width, $0.height) }
+    }
+
+    /// The device's format and range to run at `fps`, and the rate: of the chosen size for a camera with a `canvas`
+    /// (`pickSize`), else of the active format's size (a card follows its input, so the size is the input's); nil when
+    /// nothing fits (the active format is then left alone).
+    static func bestFormat(_ device: AVCaptureDevice, fps: Double, canvas: (width: Int, height: Int)? = nil) -> (format: AVCaptureDevice.Format, range: AVFrameRateRange, rate: Double)? {
+        let all = device.formats.flatMap { format in
             let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-            guard dims.width == size.width, dims.height == size.height else { continue }
-            for range in format.videoSupportedFrameRateRanges { candidates.append((format, range)) }
+            return format.videoSupportedFrameRateRanges.map { (format, $0, Int(dims.width), Int(dims.height)) }
         }
+        let active = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+        var size = (width: Int(active.width), height: Int(active.height))
+        if let canvas, cameraTypes.contains(device.deviceType),
+            let chosen = pickSize(all.map { SizeOption(width: $0.2, height: $0.3, minRate: $0.1.minFrameRate, maxRate: $0.1.maxFrameRate) }, fps: fps, canvas: canvas)
+        {
+            size = chosen
+        }
+        let candidates = all.filter { $0.2 == size.width && $0.3 == size.height }
         let options = candidates.map { RateOption(subtype: $0.0.formatDescription.mediaSubType.rawValue, minRate: $0.1.minFrameRate, maxRate: $0.1.maxFrameRate) }
         return pick(options, fps: fps).map { (candidates[$0.index].0, candidates[$0.index].1, $0.rate) }
     }
@@ -248,7 +279,7 @@ public class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoDataOutput
 
     /// Capture queue. Holds the device's configuration lock across `startRunning`, so the session cannot put its preset's
     /// format back over the chosen one; logs what actually runs.
-    private func start(_ device: AVCaptureDevice, fps: Double) throws {
+    private func start(_ device: AVCaptureDevice, fps: Double, canvas: (width: Int, height: Int)?) throws {
         let session = AVCaptureSession()
         let input: AVCaptureDeviceInput
         do { input = try AVCaptureDeviceInput(device: device) } catch { throw CaptureError.session("\(error.localizedDescription)") }
@@ -261,7 +292,7 @@ public class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoDataOutput
         }
         session.addInput(input)
         session.addOutput(output)
-        let chosen = Self.bestFormat(device, fps: fps)
+        let chosen = Self.bestFormat(device, fps: fps, canvas: canvas)
         let locked = (try? device.lockForConfiguration()) != nil
         defer { if locked { device.unlockForConfiguration() } }
         if let chosen, locked {

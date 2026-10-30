@@ -530,6 +530,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: a display changing role (master ↔ secondary, or every display on a canvas change) while its old render thread had not stopped within 1 s handed
   the old Freeze holds to the new thread, which could read them under the old thread's write; the new set now holds
   afresh in that case, with a warning (B118, PR #147).
+- Changed: a camera (built-in, iPhone over Continuity Camera) opens at the largest size that fits canvas 1 and holds
+  the canvas rate, else the largest that fits, instead of its active format's size (the iPhone stayed at 640x480);
+  capture cards and UVC devices keep following their input (B126, PR #TBD).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
