@@ -6,7 +6,7 @@ import type { CueDoc, PatchEntry } from './docs';
 import { FALLBACK_FIXTURES, type ChannelMap, type ParamSpec } from './patch-screen';
 import {
   cueRowLabel, cueRowText, cueStatus, fixtureNames, fixtureType, formatClock, formatNumber, groupSpecs, isNumberTaken, lockTitle, newValue, nextCueNumber,
-  numberAfter, parseTrigger, retargetValue, sortedCues, specsFor, swapSteps, timecodeBadge, timecodeSource, valueControl, withFade,
+  numberAfter, parseTrigger, retargetValue, sortedCues, specsFor, swapSteps, timecodeBadge, timecodeOn, timecodeSource, valueControl, withFade,
   offsetText,
   rateFps,
   midiControlText,
@@ -224,6 +224,13 @@ describe('timecode and OSC wording', () => {
   it('maps the clock state to a badge', () => {
     expect(['locked', 'freewheel', 'lost', 'off'].map((s) => timecodeBadge(s as 'off').tone)).toEqual(['green', 'yellow', 'red', 'off']);
     expect(timecodeBadge('freewheel').label).toBe('Freewheel');
+  });
+
+  it('is on with a source unless the operator switched it off', () => {
+    expect(timecodeOn({ source: 'mtc', enabled: null })).toBe(true);
+    expect(timecodeOn({ source: 'ltc' })).toBe(true);
+    expect(timecodeOn({ source: 'ltc', enabled: false })).toBe(false);
+    expect(timecodeOn({ source: 'off', enabled: true })).toBe(false);
   });
 
   it('describes the source, device and rate', () => {

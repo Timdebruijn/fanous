@@ -3,6 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import Login from './Login.svelte';
+  import { timecodeOn } from '../lib/show';
   import { readinessSummary, resumedText } from '../lib/system';
   import { lastVersionText } from '../lib/versions';
   import { app, can, cmd, shell, toggleLock } from '../lib/state.svelte';
@@ -35,8 +36,6 @@
     if (u.ageSeconds < 0) return `${name} · silent`;
     return `${name} · ${u.ageSeconds.toFixed(1)} s`;
   }
-  // switched on with a source (Show › Timecode); live `off` only means nothing has arrived yet
-  const timecodeOn = $derived(app.project.timecode.source !== 'off' && app.project.timecode.enabled !== false);
   const showMode = $derived(app.live.show.mode);
   const syncLost = $derived(app.live.layers.filter((l) => l.sync?.state === 'lost').map((l) => `Layer ${l.index}`));
   const resumed = $derived(resumedText(app.live.show.resumedAt));
@@ -97,7 +96,7 @@
     {/each}
   </div>
   <!-- timecode and ingest only while they have something to say (DESIGN §12), so the bar fits one row on a laptop -->
-  {#if timecodeOn || app.live.timecode.state !== 'off'}
+  {#if timecodeOn(app.project.timecode) || app.live.timecode.state !== 'off'}
     <div class="item col" class:red={app.live.timecode.state === 'lost' && app.project.showLock}>
       <span class="mono value" class:faint={app.live.timecode.state === 'off'}>{app.live.timecode.value}</span>
       <span class="caption">timecode{app.live.timecode.state === 'off' ? '' : ` · ${app.live.timecode.state}`}</span>
@@ -143,8 +142,7 @@
 
 <style>
   .status { display: flex; flex-wrap: wrap; align-items: center; min-height: 56px; padding: 4px 8px; background: var(--surface-1); border-bottom: 1px solid var(--line); }
-  /* min-height: an item that wraps on a phone (the universe pills, the resumed note) grows instead of spilling over */
-  .item { display: flex; align-items: center; gap: 8px; min-height: var(--touch); padding: 0 8px; border-right: 1px solid var(--line); }
+  .item { display: flex; align-items: center; gap: 8px; height: var(--touch); padding: 0 8px; border-right: 1px solid var(--line); }
   .item.col { flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; }
   .item.right { border-right: 0; padding-right: 4px; }
   .item.red { background: var(--red-bg); border-radius: 6px; }
@@ -162,7 +160,7 @@
   .resumed { margin-left: 8px; color: var(--yellow); text-decoration: none; }
   .value { font-size: 15px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
   /* the pills wrap inside the item, so 3+ universes on a phone take a second row instead of widening the page */
-  .dmx { gap: 6px; flex-wrap: wrap; padding-block: 4px; }
+  .dmx { gap: 6px; flex-wrap: wrap; height: auto; min-height: var(--touch); padding-block: 4px; }
   .ingest { width: 150px; }
   .ingest .bar { width: 100%; height: 4px; margin-top: 4px; }
   .yellow { color: var(--yellow); }

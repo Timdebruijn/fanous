@@ -296,8 +296,8 @@ test('status bar: the universe pills wrap on a phone instead of widening the pag
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 });
 
-test('status bar: one row on a 1440 px laptop, timecode and ingest left out while off and idle', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
+test('status bar: one row on a 1470 px laptop, timecode and ingest left out while off and idle', async ({ page }) => {
+  await page.setViewportSize({ width: 1470, height: 900 }); // a MacBook Air; 1440 fits too, with less room for a wider fps or dropped count
   const banner = page.getByRole('banner');
   // a fresh engine shows two silent universes and the "web UI open" warning, the widest bar it has
   await expect(banner.getByText(/^A 0\.0\.1 · silent/)).toBeVisible();

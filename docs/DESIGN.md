@@ -3791,10 +3791,10 @@ switcher (left rail, icons + labels, collapses on iPad portrait).
 fps & frame time (per output, worst-case highlighted), dropped frames (last
 60 s, red when > 0 in show mode), DMX per universe (green pulse per packet,
 yellow > 1 s silence, red > 2.5 s), timecode (source, value, lock/freewheel;
-left out while timecode is switched off), outputs (count ok / red names of missing
-displays), audio device, ingest
-(progress when active), clients (count, lagging ones), thermal/power (yellow
-on battery or thermal pressure), backup (v2; hidden in v1). Red means "look
+left out while timecode is switched off), outputs (count ok / red names of
+missing displays), audio device, ingest (progress when active), clients
+(count, lagging ones), thermal/power (yellow on battery or thermal pressure),
+backup (v2; hidden in v1). Red means "look
 now" and is reserved for: dropped frames in show mode, lost DMX on a patched
 universe, lost output display, decoder error on a visible layer, readiness
 failure while entering show mode.
