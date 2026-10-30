@@ -13,6 +13,8 @@ public struct SceneConfig: Codable, Sendable {
     public var canvasWidth = 1920
     public var canvasHeight = 1080
     public var fps = 60.0
+    /// The project's layers at start (a `--scene` file's wins over the project's); the service itself always holds
+    /// `ParameterSnapshotSlot.maxLayers` render layers (B121).
     public var layerCount = 1
     public var media: [MediaEntry] = []
     public var display: Int?  // NSScreen index; nil = headless
@@ -105,7 +107,9 @@ public final class RenderService {
         self.parameters = parameters
         self.metrics = metrics
         self.logger = logger
-        let count = max(1, scene.layerCount)
+        // every layer the snapshot can address, whatever the project's count: a layer added at runtime renders at once
+        // (B121). An empty layer makes no draw item; it costs about 1 µs per tick and two atomic loads per audio callback.
+        let count = ParameterSnapshotSlot.maxLayers
         compositor = try Compositor(
             context: context, canvasWidth: scene.canvasWidth, canvasHeight: scene.canvasHeight, fps: scene.fps,
             maxLayers: count, metrics: metrics, parameters: parameters, logger: logger)

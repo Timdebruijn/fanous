@@ -516,6 +516,10 @@ The patch (universe, address, mode) plus per-layer settings (canvas, source
 policy §7.2) is part of the project. Patching a fixture type is also how
 "extensible beyond 16 layers" works: the layer count is a project setting,
 bounded by the tier's measured maximum (hard engine cap 32, `[OPEN-8]`).
+The render service holds all 32 layers from start, so a changed layer count
+applies at once (B121): an empty layer makes no draw item (about 1 µs per tick
+and two atomic loads per audio callback), and status, CITP and readiness list
+the project's layers only.
 An Output fixture follows its output (2026-10-30): `output.add` patches Output n
 on the Master's universe at the Master's address + 8 n when those channels are
 free, `output.remove` unpatches it in the same undo step, and a new project's
@@ -1597,7 +1601,7 @@ display is "not running with `gone` false": seen before it was bound, it
 keeps its number; bound from the start, it gets none until unbound. Every
 other display is numbered, the main one included, so a machine without the
 grant fails the readiness item until it is acknowledged (as the built-in
-camera does, B121). `/screens` `{"21": {uuid, name}}` is in `initial` and
+camera does, B122). `/screens` `{"21": {uuid, name}}` is in `initial` and
 the load migration; the engine applies it, writes it back and adopts it as
 `/capture` (`liveInProject` per kind over `liveCatalogs`).
 `capture.forget {file}` takes 1–28 (the range picks the key) and refuses a
@@ -2979,10 +2983,10 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   path (downscale into the pooled pixel buffer, H.264/JPEG). Extra cost per
   subscribed layer target: one 640×360 render pass with one or two quads
   every second tick at 60 fps, plus its own encoder. A layer with nothing on
-  the canvas (no media, intensity 0, index beyond the render layers after the
-  layer count shrank) is black; a canvas change (B31) rebuilds the streamer
-  at the new size through `configure`, and until then a streamer whose
-  aspect no longer matches the canvas sends no frames (the last one stays).
+  the canvas (no media, intensity 0, a layer removed by a lower layer count)
+  is black; a canvas change (B31) rebuilds the streamer at the new size
+  through `configure`, and until then a streamer whose aspect no longer
+  matches the canvas sends no frames (the last one stays).
   The draw items are always this tick's selection (`drawItems` on a
   canvas-reuse tick), so their ring frames are protected exactly as for the
   canvas pass. The browser stops a subscription that resolves after the

@@ -106,6 +106,58 @@ test('layers: a layer showing built-in content gets a live thumbnail, an empty l
   await expect(page.locator('.row.layer').nth(0).locator('img[data-live="true"]')).toHaveCount(0);
 });
 
+test('layers: a layer added at runtime plays at once, and goes dark when it is removed again (B121)', async ({ page }) => {
+  // the live document each welcome carries, and per layer number the width of the last live thumbnail (0: dark)
+  let welcome: { layers: unknown[] } | undefined;
+  let thumbsStream = -1;
+  const thumbs = new Map<number, number>();
+  page.on('websocket', (socket) =>
+    socket.on('framereceived', ({ payload }) => {
+      if (typeof payload === 'string') {
+        const message = JSON.parse(payload) as { t: string; id?: number; stream?: string; live?: typeof welcome };
+        if (message.t === 'welcome') welcome = message.live;
+        if (message.t === 'sub' && message.stream === 'thumbs') thumbsStream = message.id!;
+        return;
+      }
+      // [u8 kind 2 JPEG][u32 stream][u8 layer][u16 w][u16 h][JPEG] (client.ts, parseThumbFrame)
+      if (payload.length >= 10 && payload[0] === 2 && payload.readUInt32BE(1) === thumbsStream) thumbs.set(payload[5]!, payload.readUInt16BE(6));
+    }),
+  );
+  /** The layers the live document lists, from a fresh welcome. */
+  const liveLayers = async () => {
+    welcome = undefined;
+    await page.reload();
+    await expect.poll(() => welcome).toBeDefined();
+    return welcome!.layers.length;
+  };
+  expect(await liveLayers(), "the project's layers, not the engine's 32 render layers").toBe(8);
+
+  await openScreen(page, 'Patch');
+  await page.getByRole('button', { name: 'Add layer' }).click();
+  await expect(page.getByRole('button', { name: 'Remove layer 9' })).toBeVisible();
+  await openScreen(page, 'Layers');
+  const row = page.locator('.row.layer').nth(8);
+  await row.click();
+  await expect(page.getByRole('heading', { name: 'Layer 9' })).toBeVisible();
+  await page.getByRole('switch', { name: 'Control' }).check({ force: true }); // the drawn track covers the input
+  await page.getByRole('button', { name: /^Use / }).click();
+  await page.getByLabel('Built-in content and live inputs (folder 0)').selectOption({ label: '101 · Grid' });
+  // the engine opened it and draws it: without a restart, not after one
+  await expect(row).toContainText('Grid');
+  await expect(row.locator('img[data-live="true"]')).toBeVisible();
+  expect(await liveLayers()).toBe(9);
+
+  // removed: layer 9 has no fixture, so it lets its media go. A new thumbs subscription gets every render layer's
+  // frame, layer 9's empty
+  await openScreen(page, 'Patch');
+  await page.getByRole('button', { name: 'Remove layer 9' }).click();
+  await expect(page.getByRole('button', { name: 'Remove layer 8' })).toBeVisible();
+  thumbs.clear();
+  await openScreen(page, 'Layers');
+  await expect.poll(() => thumbs.get(9)).toBe(0);
+  expect(await liveLayers()).toBe(8);
+});
+
 test('sync: a slave layer locks to a master layer of its group, and loses it when the master goes off (B60)', async ({ page, engine }) => {
   // a 2 s movie as folder 1 file 1 of a new library (generators and stills have no clock to share), switched to on
   // the System screen
