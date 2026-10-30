@@ -119,7 +119,8 @@ extension ProjectDocument {
                 guard let preset = args["preset"]?.int, preset == 0 || MappingPreset.numbers.contains(preset) else {
                     throw CommandError.invalidArgs("preset must be 1–255, or 0 to end Compare")
                 }
-                // ponytail: the DMX snapshot has slots for Output fixtures 1–8 only, so Compare does too
+                // ponytail: the DMX snapshot has slots for outputs 1–8 only (as the Output fixture), so Compare does too; raise
+                // `ParameterSnapshotSlot.maxOutputs` when outputs 9+ need it
                 if let id = ids.first(where: { $0 > ParameterSnapshotSlot.maxOutputs }) { throw CommandError.invalidArgs("Compare reaches outputs 1–8, not \(id)") }
                 // show mode ends a lease at once (Engine), so a renewal must not start it again
                 guard preset == 0 || !showModeOn() else { throw CommandError("showMode", "Compare is off in show mode") }
