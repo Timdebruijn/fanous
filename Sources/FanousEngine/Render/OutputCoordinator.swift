@@ -65,9 +65,10 @@ final class SecondaryDriver: @unchecked Sendable {
         self.set = set
         layer.maximumDrawableCount = 3  // see DrawableLoopDriver: two drawables block periodically against the display's clock
         layer.displaySyncEnabled = true
+        let scratch = PresentParameters()  // this thread's only
         thread = PacedThread(name: "org.fanous.output.secondary", hz: max(1, hz)) { [self] _ in
             guard let drawable = layer.nextDrawable() else { return }
-            compositor.present(self.set, to: drawable, uniforms: uniforms)
+            compositor.present(self.set, to: drawable, uniforms: uniforms, scratch: scratch)
         }
     }
 

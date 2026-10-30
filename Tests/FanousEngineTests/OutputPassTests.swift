@@ -543,15 +543,18 @@ struct OutputPassTests {
             return Int(compositor.readbackOutput().bgra[(90 * width + 160) * 4 + 1])
         }
 
-        func present(_ set: OutputSet) throws -> Int {
+        /// The green at `at` (the centre by default).
+        func present(_ set: OutputSet, at: (x: Int, y: Int) = (160, 90)) throws -> Int {
             guard let commandBuffer = context.queue.makeCommandBuffer() else { throw RenderError.pipeline("present command buffer") }
-            #expect(compositor.encodePresent(set, into: target, uniforms: uniforms, commandBuffer: commandBuffer))
+            #expect(compositor.encodePresent(set, into: target, uniforms: uniforms, scratch: scratch, commandBuffer: commandBuffer))
             commandBuffer.commit()
             commandBuffer.waitUntilCompleted()
             var bgra = [UInt8](repeating: 0, count: width * height * 4)
             target.getBytes(&bgra, bytesPerRow: width * 4, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
-            return Int(bgra[(90 * width + 160) * 4 + 1])
+            return Int(bgra[(at.y * width + at.x) * 4 + 1])
         }
+        /// What a secondary driver keeps between frames.
+        let scratch = PresentParameters()
     }
 
     static func near(_ value: Int, _ expected: Int) -> Bool { abs(value - expected) <= 1 }
@@ -961,6 +964,39 @@ struct OutputPassTests {
         #expect(green(0.375, 0.5) == 200, "the preset's slice, keystoned")
         #expect(green(0.1, 0.5) <= 1, "not the preset alone")
         #expect(green(0.6, 0.5) <= 1, "not the keystone alone")
+    }
+
+    /// A secondary display (`present`, from the DMX side's copy) draws the preset ch 6 asks for, like the clock master.
+    @Test func aSecondaryDisplayDrawsThePreset() throws {
+        let rig = try Rig(Self.presetConfig(), value: 200)
+        let set = try #require(rig.compositor.outputSet)
+        _ = rig.tick(.normal, master: 1, layer: 1)
+        #expect(try rig.present(set, at: (2, 2)) == 200, "ch 6 = 0: the edited mapping")
+        rig.preset = 1
+        _ = rig.tick(.normal, master: 1, layer: 1)
+        #expect(try rig.present(set, at: (2, 2)) <= 1 && rig.present(set, at: (170, 2)) == 200, "ch 6 = 1: preset 1's corner at x = 160")
+    }
+
+    /// A secondary display's copy of the output values allocates nothing on its thread (the driver's `PresentParameters`
+    /// keep their size). Release only, like the other `mallocCounter` checks (`scripts/check-mallocs.sh`).
+    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    func mallocCounterSecondaryCopyAllocatesNothing() throws {
+        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        let rig = try Rig(nil, value: 200)
+        rig.preset = 3
+        rig.write(.normal, master: 1, layer: 1)
+        let scratch = PresentParameters()
+        var mallocs = 0
+        for _ in 0..<3 {
+            mallocs = MallocCounter.count {
+                for _ in 0..<100 { rig.compositor.copyLatest(into: scratch) }
+            }
+        }
+        #expect(scratch.presets[0] == 3)
+        #if !DEBUG
+            #expect(mallocs == 0, "100 copies: \(mallocs) allocations on the calling thread")
+        #endif
+        print("secondary display copy × 100: \(mallocs) allocations")
     }
 
     /// Presets from a hand-edited or foreign file never fail the output: number 0 and 256 are not presets (ch 6 = 0 is the

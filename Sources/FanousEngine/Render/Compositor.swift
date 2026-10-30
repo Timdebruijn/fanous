@@ -904,14 +904,25 @@ public final class Compositor: @unchecked Sendable {
 
     // MARK: Secondary displays
 
+    /// The DMX side's copy (B71: not the compositor thread, so never `read()`) into `scratch`, whose arrays have their
+    /// size already: the lock covers only the copy, and nothing is allocated on the display's thread.
+    func copyLatest(into scratch: PresentParameters) {
+        parameters.withLatest { slot in
+            (scratch.master, scratch.masterPattern) = (slot.masterControl == .blackout ? 0 : slot.master, slot.testPattern)
+            for i in scratch.outputs.indices {
+                (scratch.outputs[i], scratch.keystones[i], scratch.presets[i]) = (slot.outputs[i], slot.keystones[i], slot.presets[i])
+            }
+        }
+    }
+
     /// Draws the latest completed canvas through `set` into a drawable of another display (DESIGN.md §4.5):
-    /// its own command buffer on the caller's thread; `uniforms` belongs to that caller.
-    public func present(_ set: OutputSet, to drawable: CAMetalDrawable, uniforms: MTLBuffer) {
+    /// its own command buffer on the caller's thread; `uniforms` and `scratch` belong to that caller.
+    public func present(_ set: OutputSet, to drawable: CAMetalDrawable, uniforms: MTLBuffer, scratch: PresentParameters) {
         guard let commandBuffer = context.queue.makeCommandBuffer() else {
             outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
             return
         }
-        guard encodePresent(set, into: drawable.texture, uniforms: uniforms, commandBuffer: commandBuffer) else {
+        guard encodePresent(set, into: drawable.texture, uniforms: uniforms, scratch: scratch, commandBuffer: commandBuffer) else {
             commandBuffer.commit()  // a Freeze may have encoded its copies: they must run, or the held textures stay undefined
             return
         }
@@ -921,20 +932,9 @@ public final class Compositor: @unchecked Sendable {
 
     /// `present` up to the drawable (tests draw into a texture of their own): holds and draws into `texture` on
     /// `commandBuffer`; false (counted) when no encoder could be made.
-    func encodePresent(_ set: OutputSet, into texture: MTLTexture, uniforms: MTLBuffer, commandBuffer: MTLCommandBuffer) -> Bool {
-        // not the compositor thread: the DMX side's copy, never `read()`; reserved first, so the lock covers only the copy (B71)
-        var outputs: [OutputParameters] = []
-        var keystones: [simd_float3x3] = []
-        var presets: [UInt8] = []
-        outputs.reserveCapacity(ParameterSnapshotSlot.maxOutputs)
-        keystones.reserveCapacity(ParameterSnapshotSlot.maxOutputs)
-        presets.reserveCapacity(ParameterSnapshotSlot.maxOutputs)
-        let (master, masterPattern) = parameters.withLatest {
-            outputs.append(contentsOf: $0.outputs)
-            keystones.append(contentsOf: $0.keystones)
-            presets.append(contentsOf: $0.presets)
-            return ($0.masterControl == .blackout ? 0 : $0.master, $0.testPattern)
-        }
+    func encodePresent(_ set: OutputSet, into texture: MTLTexture, uniforms: MTLBuffer, scratch: PresentParameters, commandBuffer: MTLCommandBuffer) -> Bool {
+        copyLatest(into: scratch)
+        let outputs = scratch.outputs
         // one tick's canvases for the whole draw (the compositor may complete another meanwhile) and their Master
         let (frame, index, canvasMaster) = completedCanvases()
         let pass = MTLRenderPassDescriptor()
@@ -950,7 +950,7 @@ public final class Compositor: @unchecked Sendable {
         encoder.label = "secondary output"
         OutputPass.draw(
             set, canvas: { id in frame.first { $0.id == id }?.textures[index] }, encoder: encoder, context: context, uniforms: uniforms,
-            master: master, masterPattern: masterPattern, outputs: outputs, keystones: keystones, presets: presets)
+            master: scratch.master, masterPattern: scratch.masterPattern, outputs: outputs, keystones: scratch.keystones, presets: scratch.presets)
         encoder.endEncoding()
         return true
     }
@@ -993,4 +993,15 @@ public final class Compositor: @unchecked Sendable {
         for i in rgba.indices { rgba[i] = UInt8(max(0, min(255, (Float(halves[i]) * 255).rounded()))) }
         return (texture.width, texture.height, rgba)
     }
+}
+
+/// A secondary display's copy of the Master and output values (`Compositor.copyLatest`), owned by its driver and reused
+/// every frame: the arrays keep their size, so a copy allocates nothing.
+public final class PresentParameters: @unchecked Sendable {
+    var master: Float = 1
+    var masterPattern: TestPattern = .off
+    var outputs = [OutputParameters](repeating: OutputParameters(), count: ParameterSnapshotSlot.maxOutputs)
+    var keystones = [simd_float3x3](repeating: matrix_identity_float3x3, count: ParameterSnapshotSlot.maxOutputs)
+    var presets = [UInt8](repeating: 0, count: ParameterSnapshotSlot.maxOutputs)
+    public init() {}
 }
