@@ -1,0 +1,204 @@
+{
+  "slots": [
+    {
+      "name": "standard layers: 8 per Art-Net universe from A 0.0.0 1",
+      "start": { "universe": "artnet:0.0.0", "address": 1 }, "footprint": 64,
+      "numbers": [1, 2, 8, 9, 16, 17, 32],
+      "expected": [
+        { "universe": "artnet:0.0.0", "address": 1 }, { "universe": "artnet:0.0.0", "address": 65 },
+        { "universe": "artnet:0.0.0", "address": 449 }, { "universe": "artnet:0.0.1", "address": 1 },
+        { "universe": "artnet:0.0.1", "address": 449 }, { "universe": "artnet:0.0.2", "address": 1 },
+        { "universe": "artnet:0.0.3", "address": 449 }
+      ]
+    },
+    {
+      "name": "the 512 boundary: a block from A 0.0.4 129 carries Layer 7 to A 0.0.5 1",
+      "start": { "universe": "artnet:0.0.4", "address": 129 }, "footprint": 64,
+      "numbers": [1, 6, 7, 8, 9],
+      "expected": [
+        { "universe": "artnet:0.0.4", "address": 129 }, { "universe": "artnet:0.0.4", "address": 449 },
+        { "universe": "artnet:0.0.5", "address": 1 }, { "universe": "artnet:0.0.5", "address": 65 },
+        { "universe": "artnet:0.0.5", "address": 129 }
+      ]
+    },
+    {
+      "name": "a slot ending on channel 512 stays, the next one carries",
+      "start": { "universe": "artnet:0.0.0", "address": 505 }, "footprint": 8,
+      "numbers": [1, 2, 3],
+      "expected": [
+        { "universe": "artnet:0.0.0", "address": 505 }, { "universe": "artnet:0.0.1", "address": 1 },
+        { "universe": "artnet:0.0.1", "address": 9 }
+      ]
+    },
+    {
+      "name": "a start whose first slot runs past 512 moves to the next universe at once",
+      "start": { "universe": "artnet:0.0.0", "address": 500 }, "footprint": 64,
+      "numbers": [1, 2],
+      "expected": [{ "universe": "artnet:0.0.1", "address": 1 }, { "universe": "artnet:0.0.1", "address": 65 }]
+    },
+    {
+      "name": "Art-Net carry: port-address + 1, A 0.0.15 to A 0.1.0 and A 0.15.15 to A 1.0.0",
+      "start": { "universe": "artnet:0.0.15", "address": 1 }, "footprint": 64,
+      "numbers": [8, 9, 25],
+      "expected": [
+        { "universe": "artnet:0.0.15", "address": 449 }, { "universe": "artnet:0.1.0", "address": 1 },
+        { "universe": "artnet:0.1.2", "address": 1 }
+      ]
+    },
+    {
+      "name": "Art-Net net carry",
+      "start": { "universe": "artnet:0.15.15", "address": 449 }, "footprint": 64,
+      "numbers": [1, 2],
+      "expected": [{ "universe": "artnet:0.15.15", "address": 449 }, { "universe": "artnet:1.0.0", "address": 1 }]
+    },
+    {
+      "name": "past the last Art-Net universe: no slot",
+      "start": { "universe": "artnet:127.15.15", "address": 449 }, "footprint": 64,
+      "numbers": [1, 2],
+      "expected": [{ "universe": "artnet:127.15.15", "address": 449 }, null]
+    },
+    {
+      "name": "sACN: universe + 1",
+      "start": { "universe": "sacn:1", "address": 1 }, "footprint": 64,
+      "numbers": [8, 9, 17],
+      "expected": [
+        { "universe": "sacn:1", "address": 449 }, { "universe": "sacn:2", "address": 1 }, { "universe": "sacn:3", "address": 1 }
+      ]
+    },
+    {
+      "name": "past the last sACN universe: no slot",
+      "start": { "universe": "sacn:63999", "address": 449 }, "footprint": 64,
+      "numbers": [1, 2],
+      "expected": [{ "universe": "sacn:63999", "address": 449 }, null]
+    },
+    {
+      "name": "outputs right after the Master at A 0.0.1 1 (output.add, PR #109: Master + 8 n)",
+      "start": { "universe": "artnet:0.0.1", "address": 9 }, "footprint": 8,
+      "numbers": [1, 2, 3, 8],
+      "expected": [
+        { "universe": "artnet:0.0.1", "address": 9 }, { "universe": "artnet:0.0.1", "address": 17 },
+        { "universe": "artnet:0.0.1", "address": 25 }, { "universe": "artnet:0.0.1", "address": 65 }
+      ]
+    },
+    {
+      "name": "output gap: Output 3 keeps its slot after Output 2 was removed",
+      "start": { "universe": "artnet:0.0.1", "address": 9 }, "footprint": 8,
+      "numbers": [1, 3],
+      "expected": [{ "universe": "artnet:0.0.1", "address": 9 }, { "universe": "artnet:0.0.1", "address": 25 }]
+    },
+    {
+      "name": "Keystones after the eight output slots: 73, 89 … 185",
+      "start": { "universe": "artnet:0.0.1", "address": 73 }, "footprint": 16,
+      "numbers": [1, 2, 8],
+      "expected": [
+        { "universe": "artnet:0.0.1", "address": 73 }, { "universe": "artnet:0.0.1", "address": 89 },
+        { "universe": "artnet:0.0.1", "address": 185 }
+      ]
+    },
+    {
+      "name": "a footprint that does not divide 512 leaves the rest of the universe free",
+      "start": { "universe": "sacn:4", "address": 1 }, "footprint": 24,
+      "numbers": [21, 22, 43, 44],
+      "expected": [
+        { "universe": "sacn:4", "address": 481 }, { "universe": "sacn:5", "address": 1 },
+        { "universe": "sacn:6", "address": 1 }, { "universe": "sacn:6", "address": 25 }
+      ]
+    },
+    {
+      "name": "a start that is not an address: no slot",
+      "start": { "universe": "artnet:0.0.0", "address": 0 }, "footprint": 64,
+      "numbers": [1],
+      "expected": [null]
+    }
+  ],
+  "blocks": [
+    {
+      "name": "standard patch: Block from A 0.0.0 1",
+      "footprint": 64,
+      "placed": [
+        { "number": 1, "universe": "artnet:0.0.0", "address": 1 }, { "number": 2, "universe": "artnet:0.0.0", "address": 65 },
+        { "number": 3, "universe": "artnet:0.0.0", "address": 129 }, { "number": 4, "universe": "artnet:0.0.0", "address": 193 },
+        { "number": 5, "universe": "artnet:0.0.0", "address": 257 }, { "number": 6, "universe": "artnet:0.0.0", "address": 321 },
+        { "number": 7, "universe": "artnet:0.0.0", "address": 385 }, { "number": 8, "universe": "artnet:0.0.0", "address": 449 }
+      ],
+      "start": { "universe": "artnet:0.0.0", "address": 1 }
+    },
+    {
+      "name": "an unplaced fixture does not break the block",
+      "footprint": 64,
+      "placed": [
+        { "number": 1, "universe": "artnet:0.0.0", "address": 1 }, { "number": 2, "universe": "artnet:0.0.0", "address": 65 },
+        { "number": 4, "universe": "artnet:0.0.0", "address": 193 }
+      ],
+      "start": { "universe": "artnet:0.0.0", "address": 1 }
+    },
+    {
+      "name": "the anchor is the lowest patched number, not always 1",
+      "footprint": 64,
+      "placed": [
+        { "number": 2, "universe": "artnet:0.0.4", "address": 193 }, { "number": 3, "universe": "artnet:0.0.4", "address": 257 }
+      ],
+      "start": { "universe": "artnet:0.0.4", "address": 129 }
+    },
+    {
+      "name": "a block across the 512 boundary",
+      "footprint": 64,
+      "placed": [
+        { "number": 1, "universe": "artnet:0.0.4", "address": 129 }, { "number": 7, "universe": "artnet:0.0.5", "address": 1 },
+        { "number": 8, "universe": "artnet:0.0.5", "address": 65 }
+      ],
+      "start": { "universe": "artnet:0.0.4", "address": 129 }
+    },
+    {
+      "name": "an sACN block with a carry",
+      "footprint": 64,
+      "placed": [
+        { "number": 1, "universe": "sacn:1", "address": 1 }, { "number": 9, "universe": "sacn:2", "address": 1 }
+      ],
+      "start": { "universe": "sacn:1", "address": 1 }
+    },
+    {
+      "name": "outputs with a gap: Block",
+      "footprint": 8,
+      "placed": [
+        { "number": 1, "universe": "artnet:0.0.1", "address": 9 }, { "number": 3, "universe": "artnet:0.0.1", "address": 25 }
+      ],
+      "start": { "universe": "artnet:0.0.1", "address": 9 }
+    },
+    {
+      "name": "one fixture off its slot: Custom",
+      "footprint": 64,
+      "placed": [
+        { "number": 1, "universe": "artnet:0.0.0", "address": 1 }, { "number": 2, "universe": "artnet:0.0.0", "address": 65 },
+        { "number": 3, "universe": "artnet:0.0.0", "address": 300 }
+      ],
+      "start": null
+    },
+    {
+      "name": "one fixture on another universe: Custom",
+      "footprint": 64,
+      "placed": [
+        { "number": 1, "universe": "artnet:0.0.0", "address": 1 }, { "number": 2, "universe": "sacn:3", "address": 65 }
+      ],
+      "start": null
+    },
+    {
+      "name": "the start falls below 1 (never rolled back across a universe): Custom",
+      "footprint": 64,
+      "placed": [{ "number": 9, "universe": "artnet:0.0.1", "address": 1 }],
+      "start": null
+    },
+    {
+      "name": "the anchor runs past 512: Custom",
+      "footprint": 64,
+      "placed": [{ "number": 1, "universe": "artnet:0.0.0", "address": 500 }],
+      "start": null
+    },
+    {
+      "name": "nothing patched: no block",
+      "footprint": 64,
+      "placed": [],
+      "start": null
+    }
+  ]
+}

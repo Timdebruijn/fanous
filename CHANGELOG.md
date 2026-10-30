@@ -371,6 +371,15 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   permission. New commands: `capture.forget {file?}` (frees numbers of devices that are not running, undoable) and
   `capture.authorize {kind: "camera"}` (asks for the camera permission, not in show mode; `screen` comes with displays).
   New readiness item "Capture permissions granted": it fails while a device is numbered and the camera is not granted.
+- Added: `patch.setMany {entries: [{fixture, universe, address}]}` and block slots (B120 step 2, DESIGN §6.6 item 2).
+  `patch.setMany` patches or unpatches several fixtures in one command and one undo step; each entry is checked as
+  `patch.set` checks it, and one bad entry or a fixture listed twice refuses all. `patch.set` and `patch.setMany` refuse
+  an address for a layer that does not exist (above the layer count, or above 32); before, `patch.set` accepted it and
+  the entry did nothing. Address 0 still removes any entry. A new layer (Add layer, `layers.setCount`) goes on its slot
+  of the Layers block: with Layers 1–8 moved to A 0.0.4 from 1, Layer 9 lands on A 0.0.5 at 1. When the layers are not
+  one block it goes right after the layer before it, else at its standard address, and it stays unpatched when that
+  range is taken. Before, it always took its standard address. Layers above 32 get no address. The slot rule
+  (`Patch.slot`, `Patch.blockStart`) has shared test vectors in `Tests/Fixtures/patch-slots.json`.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
