@@ -462,6 +462,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   a blocking `sendto` (B123, PR #134). The CITP beacon and sync sender sockets are now non-blocking: a datagram the kernel
   cannot take at once is dropped and counted (`live.citp.beaconsDropped`, `packetsDropped` in `live.sync` and `/metrics`),
   logged at most once a minute. Packet contents and timing are unchanged.
+- Changed: the readiness item **Capture permissions granted** is split into **Camera permission granted** (`camera`) and
+  **Screen recording granted** (`screen`), each acknowledged on its own, and both look only at inputs in use: a layer
+  showing folder 0 file 1–20 or 21–28, or a scene entry with `capture:` or `screen:` (B122, PR #133). The built-in
+  camera and the main display no longer fail or warn on every machine just by having a number. Not granted still fails
+  until acknowledged; a display in use with the grant still warns (the monthly re-ask); the camera never warns.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

@@ -115,24 +115,6 @@ struct ScreenInputTests {
         #expect(files(.screens) == [21] && files(.capture) == [1] && files(.syphon) == [150])
     }
 
-    /// Readiness item `capture` with displays: fails (acknowledgeable) without the screen grant, with the pane to open;
-    /// granted, it warns (never blocks): macOS asks again about monthly.
-    @Test func captureReadinessItemCoversDisplays() throws {
-        func item(devices: Int = 0, camera: String = "granted", screens: Int, screen: String) throws -> ReadinessItem {
-            var context = ReadinessContext()
-            (context.captureDevices, context.cameraPermission, context.screens, context.screenPermission) = (devices, camera, screens, screen)
-            return try #require(Readiness.check(context, acknowledged: []).first { $0.id == "capture" })
-        }
-        #expect(try item(screens: 0, screen: "denied").state == .ok)
-        let denied = try item(screens: 1, screen: "denied")
-        #expect(denied.state == .fail && denied.blocks && denied.detail == "screen: denied")
-        #expect(denied.fix == "System Settings › Privacy & Security › Screen & System Audio Recording, then Engine › Restart")
-        let both = try item(devices: 1, camera: "denied", screens: 2, screen: "denied")
-        #expect(both.detail == "camera: denied, screen: denied" && both.fix == "System Settings › Privacy & Security › Camera / Screen & System Audio Recording, then Engine › Restart")
-        let granted = try item(devices: 1, screens: 1, screen: "granted")
-        #expect(granted.state == .warn && !granted.blocks && granted.detail == "camera: granted, screen: granted" && granted.fix.contains("monthly"))
-    }
-
     // MARK: Input
 
     /// A display's BGRA frame through `ScreenInput` (the capture BGRA path: `.rgba` as `bgra8Unorm`, one plane, top-down)

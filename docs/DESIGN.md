@@ -1536,7 +1536,9 @@ screens: [], permissions: {camera, screen}}`: camera from the cached
 `isInUseByAnotherApplication` counts our own session is not known. If it
 does, the feed would have to drop `inUse` for the uids the loader holds open
 (its `captureShared` keys). That is the owner's live check.
-*Readiness:* item `capture` "Capture permissions granted" fails while the
+*Readiness:* (replaced by B122: items `camera` and `screen`, only for
+inputs in use, see "Readiness (§14)" below) item `capture` "Capture
+permissions granted" fails while the
 catalog has an entry (running or not) and the camera is not `granted`. The
 built-in camera counts as an entry, so a laptop without the grant fails
 until the item is acknowledged. Detail "camera: <word>", fix "System
@@ -1642,7 +1644,8 @@ and exits 0, as the SIGTERM path does, and `KeepAlive` starts it again. Any
 other engine, or one in show mode (entered during the poll), only logs
 "screen capture granted: restart the engine to use it". Without the grant
 after two minutes it logs and stops polling.
-*Readiness:* item `capture` fails while a display is numbered (running or
+*Readiness:* (replaced by B122, see "Readiness (§14)" below) item
+`capture` fails while a display is numbered (running or
 not) and the cached grant is false: detail "screen: denied", fix "System
 Settings › Privacy & Security › Screen & System Audio Recording, then
 Engine › Restart" (both panes when the camera fails too). With a display
@@ -1654,7 +1657,7 @@ numbering 21–28 from fake display lists with the output-bound exclusion
 (bound from the start, bound later, unbound), a restart (gone, back by
 uuid under a new name) and nine displays; the feed and "pending";
 `/screens` in `initial` and the migration; the forget rules; the readiness
-item. A synthetic IOSurface-backed BGRA buffer through `ScreenInput` into
+item (moved to `LiveCatalogTests`, B122). A synthetic IOSurface-backed BGRA buffer through `ScreenInput` into
 the layer shader reads white 255, black 0, red 255,0,0 and grey 128
 exactly, and the pair 252/3 (linear). A still display keeps running for an
 hour, and `halt` keeps the frame (a frame delivered after it does not
@@ -1805,14 +1808,21 @@ permissions behave differently, and the design keeps them apart:
   the Developer ID build, B50, to be verified), and the user guide's advice
   to prefer a capture card for a show-critical slides feed.
 
-**Readiness (§14).** A new item "Capture permissions granted", reading the
-permission state: camera fails when the capture catalog has an entry and the
-permission is not granted; screen fails when the screens catalog has an entry
-and it is not granted. The fix line is "System Settings › Privacy & Security
-› Camera / Screen & System Audio Recording, then Engine › Restart". It blocks
-show mode until acknowledged, so no permission prompt appears during a show.
-The screen item also warns when the screens catalog has an entry (the monthly
-re-confirmation).
+**Readiness (§14).** Two items, each acknowledged by its own id (B122,
+2026-10-30; until then one item `capture` that looked at the catalogs, so the
+built-in camera and the main display failed or warned on every machine).
+`camera` "Camera permission granted" and `screen` "Screen recording granted"
+count only inputs **in use**: a project layer whose loaded media is folder 0
+file 1–20 (camera) or 21–28 (screen), read from the layers' media status, or
+an entry of the `--scene` file with `capture:` or `screen:`. Cues are not
+read: a cue stores raw channel values per fixture, and no cheap lookup turns
+them into media keys. In use and not granted fails (camera: not `granted`;
+screen: the cached grant false), with the fix "System Settings › Privacy &
+Security › Camera" or "… › Screen & System Audio Recording", then "Engine ›
+Restart"; it blocks show mode until acknowledged, so no permission prompt
+appears during a show. A display in use with the grant warns, never blocks
+(the monthly re-confirmation, §20 R18); the camera has no warning. Nothing in
+use is ok, whatever the catalogs list.
 
 **Live feed and UI.** `live.capture: {devices: [{file, name, running,
 gone?, inUse?}], screens: [{file, name, running, gone?}], permissions: {camera:
@@ -3512,10 +3522,10 @@ with public APIs:
 
 **Readiness check** (runs on entering show mode, re-checked every 30 s, each
 item with a one-line fix): on AC power; thermal state nominal; free disk > 10
-%; memory headroom; all patched universes receiving; capture permissions
-granted (`capture`: the camera when the capture catalog has an entry, built
-2026-10-30, B73 step 2b; the screen when the screens catalog has one, step 3;
-§8.2.1); all outputs bound and in the desired mode;
+%; memory headroom; all patched universes receiving; "Camera permission
+granted" and "Screen recording granted" (`camera` and `screen`, only for
+inputs a layer shows or a scene entry names, the screen warning while in use and granted; B73 steps 2b and 3,
+B122; §8.2.1); all outputs bound and in the desired mode;
 no decoder errors; library on a local volume; Spotlight indexing of the
 library volume (`mdutil -s` state read via `MDQuery`/`mdutil` output) off or
 acknowledged; automatic macOS updates state (read from

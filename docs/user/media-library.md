@@ -86,7 +86,7 @@ denied, press **Authorize screen** again, or allow it and choose Engine ›
 
 macOS asks again about once a month whether Fanous Engine may keep recording
 the screen, with a dialog on the main display that nobody answers during an
-unattended show. Before a show, check the readiness item **Capture permissions
+unattended show. Before a show, check the readiness item **Screen recording
 granted** on the System screen. For a show-critical slides feed, prefer a
 capture card: a second Mac's HDMI into a capture card needs no Screen
 permission and is not re-asked.
