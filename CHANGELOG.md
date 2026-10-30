@@ -489,6 +489,14 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   or an output, "no address · Fanous only" under the other policies, and "not used" for a Keystone; "unpatched" is
   gone from the screen, the Layers screen says "no address" and the DMX monitor calls an empty channel "free". The
   slot rule's shared vectors (`Tests/Fixtures/patch-slots.json`) now run in the web tests too.
+- Added: the **on-output edit overlay** (M2.6, PR #136, DESIGN §9.10 item 4, F4). While Warp & Slices is open, the
+  output draws the mapping being edited on the projector: the corner pin's edges or the mesh's grid lines, every slice's
+  outline and its mask's, through the warp and the keystone, 2 px white with a 1 px black edge, and the selected point
+  as a yellow crosshair with a digits-only label ("3·5" for a mesh point). It follows Blackout and the Master, and is
+  not drawn on previews, in Raw, or while a preset shows or a morph runs ("Overlay hidden: …" says why). A **Show on
+  output** switch, on when the tab opens; the UI renews the lease (`output.overlay {id, on, selected?}`, 5 s, never
+  saved or undone) every 2 s and stops after 10 minutes without an edit; show mode and show lock end it. `live.outputs`
+  gets `overlay` (`shown`, `preset`, `raw` or null).
 - Added: the **Patch sheet** on the Patch screen (B120 step 6, DESIGN §6.6 item 4), what to patch on the console,
   for every role: a line per block and universe (per fixture in a Custom group) with the GDTF's fixture type and
   mode ("Fanous", "Layer (64ch)", with its footprint), count, universe ("A 0.0.1 = universe 1", or 2 with **Count

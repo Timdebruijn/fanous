@@ -336,7 +336,12 @@ public final class Engine: @unchecked Sendable {
                 }
             },
             displayModes: { [weak self] in Dictionary((self?.displays.withLock { $0 } ?? []).map { ($0.uuid, $0.mode) }, uniquingKeysWith: { a, _ in a }) },
-            showPreset: { dmx.show($0, preset: $1) })
+            showPreset: { dmx.show($0, preset: $1) },
+            showOverlay: { [weak self] id, on, selected in
+                // on the main actor, in order with an ending by show mode or show lock (`endLeases`) and the rebinds
+                let now = DMXStore.now
+                DispatchQueue.main.async { MainActor.assumeIsolated { self?.coordinator?.overlay(id, on: on, selected: selected, at: now) } }
+            })
         liveInProject.withLock { $0 = [.syphon: project["syphon"] ?? [:], .capture: project["capture"] ?? [:], .screens: project["screens"] ?? [:]] }
         libraryRootInProject.withLock { $0 = URL(fileURLWithPath: project["library"]?["root"]?.string ?? libraryRoot.path).path }
         // B23: a version of the project as loaded, then one every 10 minutes when it changed, and one per show-mode enter
@@ -435,7 +440,7 @@ public final class Engine: @unchecked Sendable {
             self.ingest?.paused = on  // DESIGN.md §14: ingest paused in show mode
             if on { self.versionsQueue.async { versions.saveAutomatic(store.project, reason: .showMode) } }  // B23
             if on { self.startReadinessTimer() } else { self.stopReadinessTimer() }
-            if on { self.endCompare() }  // a lease never outlives show mode or show lock (§9.10 item 4)
+            if on { self.endLeases() }  // a lease never outlives show mode or show lock (§9.10 item 4)
             if !on {
                 self.showResumedAt.withLock { $0 = nil }
                 self.canvasSwitch?.run()  // a canvas change deferred during show mode (B31)
@@ -937,8 +942,12 @@ public final class Engine: @unchecked Sendable {
         }
     }
 
-    /// Ends every Compare lease at once (show lock, show mode).
-    private func endCompare() { dmx?.show(Array(1...ParameterSnapshotSlot.maxOutputs), preset: 0) }
+    /// Ends every Compare and edit overlay lease at once (show lock, show mode); the overlay's on the main actor, after any
+    /// renewal already on its way there.
+    private func endLeases() {
+        dmx?.show(Array(1...ParameterSnapshotSlot.maxOutputs), preset: 0)
+        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.coordinator?.editOverlay.endAll() } }
+    }
 
     private func oscFacts(from project: JSONValue) {
         let facts = (showLock: project["showLock"]?.bool ?? false, timecodeEnabled: ShowCommands.timecodeSettings(from: project).enabled != false)
@@ -1366,7 +1375,7 @@ public final class Engine: @unchecked Sendable {
 
     private func projectChanged(_ document: JSONValue) {
         oscFacts(from: document)
-        if document["showLock"]?.bool == true { endCompare() }
+        if document["showLock"]?.bool == true { endLeases() }
         // patch and per-universe settings (B28): applied on the DMX queue; sACN groups follow both
         let universeSettings = checkedUniverseSettings(from: document)
         let outputs = ProjectDocument.outputs(from: document)  // once per change: a mapping drag is a change per step
@@ -1592,8 +1601,8 @@ public final class Engine: @unchecked Sendable {
         func ms(_ v: Double) -> JSONValue { .number((v * 100).rounded() / 100) }
         let snapshot = library.snapshot
         let modeNotes = modeChecks.withLock { $0 }.compactMapValues(\.note)
-        // per output: keystone active (not the identity) and invalid (the console's quad was refused), from the DMX side's copy
-        var keystones: [(active: Bool, invalid: Bool)] = []
+        // per output: keystone active (not the identity) and invalid (the console's quad was refused), and Raw, from the DMX side's copy
+        var keystones: [(active: Bool, invalid: Bool, raw: Bool)] = []
         // and the mapping preset it is asked to show (§9.10 item 3): Compare's or Output ch 6's, 0 = as edited, with the morph into it
         var presets: [(number: Int, compare: Bool, morph: PresetMorph)] = []
         keystones.reserveCapacity(ParameterSnapshotSlot.maxOutputs)
@@ -1602,12 +1611,13 @@ public final class Engine: @unchecked Sendable {
             // Raw bypasses the keystone (OutputPass.draw), so it is not active there
             for i in slot.keystones.indices {
                 let raw = i < slot.outputs.count && slot.outputs[i].raw
-                keystones.append((slot.keystones[i] != matrix_identity_float3x3 && !raw, slot.keystoneInvalid[i]))
+                keystones.append((slot.keystones[i] != matrix_identity_float3x3 && !raw, slot.keystoneInvalid[i], raw))
                 presets.append((Int(slot.presets[i]), slot.presetCompare[i], slot.morphs[i]))
             }
         }
         let configs = canvasUse.withLock { $0.outputs }
         let now = DMXStore.now
+        let overlay = coordinator?.editOverlay
         let live: JSONValue = [
             "canvas": canvasSwitch?.live ?? .null,
             "engine": [
@@ -1654,13 +1664,16 @@ public final class Engine: @unchecked Sendable {
                 }),
             "outputs": .array(
                 outputStatus.withLock { $0 }.map { s in
-                    .object([
+                    let preset = Self.presetLive(presets.indices.contains(s.id - 1) ? presets[s.id - 1] : (0, false, PresetMorph()), config: configs.first { $0.id == s.id }, at: now)
+                    let raw = keystones.indices.contains(s.id - 1) && keystones[s.id - 1].raw
+                    return .object([
                         "id": .number(Double(s.id)), "state": .string(s.state.rawValue), "display": s.display.map { .string($0) } ?? .null,
                         "width": .number(Double(s.width)), "height": .number(Double(s.height)), "hz": .number(s.hz), "master": .bool(s.isMaster),
                         "modeNote": modeNotes[s.id].map { .string($0) } ?? .null,
                         "keystone": .bool(keystones.indices.contains(s.id - 1) && keystones[s.id - 1].active),
                         "keystoneInvalid": .bool(keystones.indices.contains(s.id - 1) && keystones[s.id - 1].invalid),
-                    ].merging(Self.presetLive(presets.indices.contains(s.id - 1) ? presets[s.id - 1] : (0, false, PresetMorph()), config: configs.first { $0.id == s.id }, at: now)) { a, _ in a })
+                        "overlay": Self.overlayLive(asked: overlay?.asked(s.id, at: now) ?? false, raw: raw, preset: preset),
+                    ].merging(preset) { a, _ in a })
                 }),
             "security": ["webUIOpen": .bool(auth.isOpen(.programmer))],
             "timecode": timecodeLive(),
@@ -1697,6 +1710,15 @@ public final class Engine: @unchecked Sendable {
             "preset": has ? number : .null, "presetSource": .string(asked.compare ? "compare" : "console"), "presetMissing": has ? .null : number,
             "morph": morph,
         ]
+    }
+
+    /// `live.outputs[].overlay` (§9.10 item 4): null while no edit overlay lease runs, else "shown", or why the output does
+    /// not draw it: "preset" (a preset, or a morph, shows: the lines belong to the edited mapping) or "raw". From `presetLive`'s
+    /// fields, so it says "shown" for a number the output lacks, which draws the edited mapping, as `OutputPass.draw` does.
+    static func overlayLive(asked: Bool, raw: Bool, preset: [String: JSONValue]) -> JSONValue {
+        guard asked else { return .null }
+        if (preset["preset"] ?? .null) != .null || (preset["morph"] ?? .null) != .null { return "preset" }
+        return raw ? "raw" : "shown"
     }
 
     /// The catalog's numbering written into the project when it differs from `applied` (`/syphon` or the kind's key as

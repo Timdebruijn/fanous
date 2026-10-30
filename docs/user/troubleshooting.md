@@ -122,6 +122,15 @@ them is at 0 or blacked out. After a change of the library root on the System
 screen the layers look their media up in the new library at once: a number that
 does not exist there shows "no file N in folder M" on the Layers screen.
 
+## Lines and a yellow cross on the projector
+
+Someone has Warp & Slices open: the projector shows what they edit (**Show on
+output**, see [outputs-and-mapping.md](outputs-and-mapping.md)). Leave the tab
+or switch off Show on output, and the lines go at once. If that browser is
+gone, they go by themselves within 5 seconds. Two browsers with Warp & Slices open on the same output take
+turns: the cross jumps between their selected points. When one of them leaves,
+the other's lines can be gone for up to 2 seconds.
+
 ## Dropped frames
 
 The status bar shows "dropped · 1 s"; System › Live metrics shows missed and late

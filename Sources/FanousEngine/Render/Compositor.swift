@@ -60,8 +60,9 @@ public final class Compositor: @unchecked Sendable {
     /// morph changes the uniforms on a tick that reuses the canvas, while the previous tick's pass may still read them.
     /// Three, as the clock-master display's three drawables bound the frames in flight (`DrawableLoopDriver`).
     private var mappedIndex = 0
-    /// 256 bytes per slice draw: enough for 64 slices across the outputs of one display.
-    static let mappedUniformsLength = 256 * 64
+    /// 256 bytes per draw: 64 slice or test-pattern draws across the outputs of one display, then the edit overlays' own
+    /// slots (`OutputPass.overlaySlots`).
+    static let mappedUniformsLength = 256 * (64 + OutputPass.overlaySlots)
 
     /// One canvas: its three textures (triple-buffered, one index for all canvases) and their render passes.
     final class CanvasTarget {

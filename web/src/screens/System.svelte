@@ -293,6 +293,4 @@
   .rootform, .copyrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
   .rootform .input { flex: 1 1 200px; min-width: 0; text-align: left; }
   h3 { margin: 0; padding: 4px 16px 8px; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
-  .switch:has(input:focus-visible) .track { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .switch:has(input:disabled) { cursor: default; opacity: 0.55; }
 </style>

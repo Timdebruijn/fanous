@@ -407,10 +407,47 @@ key in the middle makes every press move ten, and holding an arrow for half a
 second moves 0.25 px. A selected point also shows
 numeric x and y fields in pixels. Changes go to the engine while you drag.
 
+**Show on output**, under the preview, draws what you edit on the projector
+itself, so at the wall you see which point is selected:
+
+- The warp (the edges of the corner pin, or the grid lines of the mesh), every
+  slice's outline and its mask's outline. They go through the warp and the
+  keystone, so they lie on the picture.
+- The selected point is a yellow cross with a gap in the middle, so you still
+  see the point. Its number is next to it in yellow digits. On a mesh the
+  number is row·column: **3·5** is row 3, column 5. On a corner pin or a slice,
+  corners are 1 to 4, clockwise from the top left. A mask point has its own
+  number. With Remote's Row, Column or Edge selected, only one point of the
+  group is marked.
+- The lines are 2 pixels of white with a black edge, so they show on any
+  picture. A Blackout, or the Master at 0, hides them. The output's own
+  Intensity does not dim them, unlike test patterns.
+- It is on whenever you open Warp & Slices and goes off when you leave the tab
+  or switch it off. After 10 minutes without an edit it switches itself off;
+  one click switches it on again. Moving a point or changing a field counts as
+  an edit. Selecting a point does not.
+- When the browser goes away (a closed laptop, an iPad that sleeps), the engine
+  takes it off within 5 seconds. It comes back when the page wakes, unless 10
+  minutes have passed since your last edit. A browser tab in the background
+  takes it off too, and it comes back when you return to the tab, with the same
+  10 minutes.
+- It is not drawn while the output shows a preset or glides from or into one
+  (the lines belong to the mapping you edit), nor in Raw: **Overlay hidden: a
+  preset shows** or **Overlay hidden: Raw** says why. The preview does not show
+  it; the handles are drawn over the preview instead.
+- It needs the programmer role. Show mode and the show lock take it off at
+  once; the switch then shows off and says why. When they end, it comes back
+  by itself while Warp & Slices is open, unless 10 minutes have passed since
+  your last edit.
+- Two browsers with Warp & Slices open on the same output take turns: the
+  projector shows one selection, then the other. When one of them leaves, the
+  other's overlay can be off for up to 2 seconds.
+
 **Remote mode** is for aligning from an iPad while you look at the projection
 instead of the screen. Turn it on with **Remote** next to the mode buttons; it
 is on by default on touch screens narrower than 900 px, and each browser
-remembers your choice. The controls then come before the preview:
+remembers your choice. The controls then come before the preview, and the
+projector shows the selected point (**Show on output** above):
 
 - The selection in large type: "corner top-left", "r3 c5" (row 3, column 5 of
   the mesh), "slice 2 · bottom-right", "slice 2 · mask point 5", or a group such as

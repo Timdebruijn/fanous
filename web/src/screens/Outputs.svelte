@@ -38,10 +38,10 @@
   import WallWizard from '../components/WallWizard.svelte';
   import Preview from '../components/Preview.svelte';
   import {
-    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, handles, keystoneBadges, meshIdentity, modeText, nextSliceId, outputSize, presetBadges, presetNote, spreadSources, statusText,
+    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, handles, keystoneBadges, meshIdentity, modeText, nextSliceId, outputSize, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, spreadSources, statusText,
     type MapPoint, type MapperMode, type OutputConfig,
   } from '../lib/outputs';
-  import { app, can, cmd, toastUndo } from '../lib/state.svelte';
+  import { app, can, client, cmd, toastUndo } from '../lib/state.svelte';
   import { lockTitle } from '../lib/show';
   import { go } from '../lib/router.svelte';
   import { sourcePixels, sourceFromPixels } from '../lib/outputs';
@@ -133,6 +133,7 @@
 
   function set(path: string, value: JSONValue) {
     if (!output) return;
+    overlay.edited();
     void cmd('output.set', { id: output.id, path, value });
   }
   function number(event: Event, path: string, scale = 1) {
@@ -230,12 +231,36 @@
   function nudgeSelected(dx: number, dy: number) {
     if (!output || selection.length === 0) return;
     const id = output.id, mode = ui.mapper, slice = sliceIndex, indices = selection;
+    overlay.edited();
     nudge(`${id} ${mode} ${slice} ${group} ${anchor}`, dx, dy, async (dx, dy) => {
       const current = app.project.outputs.find((o) => o.id === id);
       const command = current && nudgeCommand(current, mode, slice, indices, dx, dy, outputSize(current, displays));
       if (command) await cmd('output.set', { id, ...command });
     });
   }
+  // the edit overlay (DESIGN §9.10 item 4): on whenever Warp & Slices opens, the selected point sent with it and the lease
+  // renewed while the tab stays open and the page visible (a hidden tab's timers are throttled to once a minute, so the
+  // lease would lapse and come back); it stops after 10 minutes without an edit, and the switch shows that. Sent quietly:
+  // a renewal must not clear another refusal's banner, and one lost in an outage heals at the next. Nothing is sent under
+  // show lock or without the role: the engine refuses it, and has ended the lease itself or never had one
+  let overlayOn = $state(true);
+  let visible = $state(document.visibilityState !== 'hidden');
+  const overlayLock = $derived(moveLock ?? (app.live.show.mode ? 'Off in show mode' : undefined));
+  const overlay = overlayLease((id, on, selected) => {
+    if (!app.project.showLock && can('programmer')) client.cmd('output.overlay', { id, on, selected }).catch(() => {});
+  }, () => (overlayOn = false));
+  const overlaySelected = $derived(overlaySelection(ui.mapper, sliceIndex, anchor));
+  $effect(() => {
+    if (ui.tab !== 'warp') overlayOn = true;  // on again the next time the tab opens
+  });
+  let warpOpen = false;  // not state: whether the tab was open when the effect below last ran
+  $effect(() => {
+    if (ui.tab === 'warp' && !warpOpen) overlay.edited();  // the 10 minutes count from opening the tab
+    warpOpen = ui.tab === 'warp';
+    if (output && warpOpen && overlayOn && !overlayLock && visible && app.live.engine.rendering) overlay.start(output.id, overlaySelected);
+    else overlay.stop();
+  });
+  onDestroy(() => overlay.stop());
   const remoteLabel = $derived(output ? label(output, ui.mapper, sliceIndex, cells, group, anchor) : '');
   /** "x 960.25 · y 0 px", "5 points move together" */
   const remoteDetail = $derived.by(() => {
@@ -293,6 +318,8 @@
     ui.group = 'point';
   }
 </script>
+
+<svelte:document onvisibilitychange={() => (visible = document.visibilityState !== 'hidden')} />
 
 <div class="toolbar">
   <h1>Outputs &amp; Mapping</h1>
@@ -394,7 +421,19 @@
         <!-- the preview and the handles show the mapping as edited; the projector shows a preset and the keystone (DESIGN §9.10 item 3) -->
         {#if output && ui.tab === 'warp'}
           <!-- always there, space reserved: a badge or the note appearing does not move the controls below -->
-          <div class="kbadges">{#each [...presetBadges(status), ...keystoneBadges(status)] as b (b.text)}<span class="badge" class:badge-warn={b.warn}>{b.text}</span>{/each}</div>
+          <div class="kbadges">
+            <!-- one way: off while it cannot be on, with the reason beside it -->
+            <label class="switch" title="Draws the warp, the slice and mask outlines and the selected point on the output itself while this tab is open; off after 10 minutes without an edit">
+              <input type="checkbox" role="switch" checked={overlayOn && !overlayLock} disabled={!!overlayLock} aria-describedby={overlayLock ? 'overlay-lock' : undefined}
+                onchange={(e) => {
+                  overlayOn = e.currentTarget.checked;
+                  if (overlayOn) overlay.edited();  // switched on: 10 minutes from now
+                }} />
+              <span class="track"></span><span>Show on output</span>
+            </label>
+            {#if overlayLock}<span class="caption" id="overlay-lock">{overlayLock}</span>{/if}
+            {#each [...presetBadges(status), ...keystoneBadges(status), ...overlayBadges(status)] as b (b.text)}<span class="badge" class:badge-warn={b.warn}>{b.text}</span>{/each}
+          </div>
           <p class="caption yellow pnote" role="status">{presetNote(status) ?? ''}</p>
         {/if}
       {:else}
@@ -655,7 +694,8 @@
   /* remote mode: the controls come first, the picture is on the projector */
   .main.remote > .form { order: -1; }
   .overlay { position: absolute; left: 0; top: 0; width: 100%; }
-  .kbadges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; min-height: 24px; }
+  .kbadges { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+  .kbadges .switch { margin-right: 8px; }
   .pnote { margin: 4px 0 0; min-height: 2.8em; }
   .nopreview { padding: 32px; }
   .form { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
