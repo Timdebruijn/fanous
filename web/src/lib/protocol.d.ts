@@ -40,6 +40,7 @@ export type CommandName =
   | 'output.remove'
   | 'output.set'
   | 'patch.set'
+  | 'patch.setMany'
   | 'project.deleteVersion'
   | 'project.revert'
   | 'project.set'
@@ -95,7 +96,7 @@ export interface CommandArgs {
   'fixture.set': { fixture: string; parameter: string; raw: number };
   /** Set a layer's project setting: the canvas it renders into (a project setting, not a DMX channel). Role: programmer, refused under show lock, undoable. */
   'layer.set': { layer: number; canvas: number };
-  /** Set the number of layers (1–64): new layers are patched at their standard address when that range is free, dropped layers are unpatched. Role: programmer, refused under show lock, undoable. */
+  /** Set the number of layers (1–64): a new layer goes on its slot of the Layers block, or right after the layer before it when the layers are no block (else at its standard address), and stays unpatched when that range is taken; layers above 32 get no address; dropped layers are unpatched. Role: programmer, refused under show lock, undoable. */
   'layers.setCount': { count: number };
   /** Learn: the next note, controller or program change received is mapped to target (live.midi.learning until then); no target cancels. Role: programmer, refused under show lock. */
   'midi.learn': { target?: string; cue?: number };
@@ -111,8 +112,10 @@ export interface CommandArgs {
   'output.remove': { id: number };
   /** Set one value inside an output by JSON pointer (name, display, region, mode, intensity, blend/*, warp/*, slices/*, testPattern, color/* with gain [r, g, b] 0–2 and black 0–0.2); the result is validated as a whole. On a projector-wall output a changed slice 1 source or inner overlap becomes manual (result { wall, manual }), and an inner edge's power, gamma or gammaRGB goes to its seam, so both sides follow. Role: programmer, refused under show lock, undoable. */
   'output.set': { id: number; path: string; value: JSONValue };
-  /** Patch a fixture (layer, master, output, keystone) to a universe and address, or unpatch it with address 0; an Output or Keystone fixture only for an output that exists (1–8). Role: programmer, refused under show lock, undoable. */
+  /** Patch a fixture (layer, master, output, keystone) to a universe and address, or unpatch it with address 0 (any fixture); an address only for a fixture that exists: a layer up to the layer count (1–32), an Output or Keystone fixture of an output that exists (1–8). Role: programmer, refused under show lock, undoable. */
   'patch.set': { fixture: string; universe: string; address: number };
+  /** Patch or unpatch several fixtures in one step (one undo): each entry is checked as patch.set checks it; one bad entry, or a fixture listed twice, refuses all. Role: programmer, refused under show lock, undoable. */
+  'patch.setMany': { entries: { fixture: string; universe: string; address: number }[] };
   /** Delete a named project version (automatic ones expire by themselves). Role: programmer, refused under show lock. */
   'project.deleteVersion': { id: string };
   /** Restore a project version (refused in show mode, also its undo and redo). The current project is saved as a version first; the show lock stays as it is. Role: programmer, refused under show lock, undoable. */
