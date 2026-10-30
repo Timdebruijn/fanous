@@ -1681,6 +1681,7 @@ display); the owner's live check:
   `dropped` counter with `queueDepth` 6);
 - whether idle samples arrive while a display is still, and the monthly
   re-ask.
+
 **Live check (2026-10-30, steps 2 and 3, dev Mac, ad-hoc build).** *Step 2:*
 the camera prompt names "Fanous Engine"; after Allow, layer 1 opened the
 FaceTime HD Camera as `420v` 1920x1080 @ 30 (canvas 60, locked), ~2,100
@@ -1689,7 +1690,7 @@ one session (one start line, identical counters); `isInUseByAnotherApplication`
 is not set by our own session, so the feed needs no `captureShared` filter;
 the iPhone (Continuity Camera) opened `420v` 640x480 @ 60 because `pick`
 keeps the active format's size, which the preset leaves at 640x480 for that
-device (B127); thumbnails of both layers arrive. *Step 3:* display 21
+device (B126); thumbnails of both layers arrive. *Step 3:* display 21
 "Built-in Retina Display" is numbered and listed; a layer on it without the
 grant reads the permission text; `capture.authorize {kind: "screen"}` opened
 System Settings and the feed read `pending`, but
