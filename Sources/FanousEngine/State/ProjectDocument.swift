@@ -378,6 +378,23 @@ public enum ProjectDocument {
         if document["ui"] == nil { try? document.set([:], at: "/ui") }
         if document["layerCanvas"] == nil { try? document.set([:], at: "/layerCanvas") }
         if document["syphon"] == nil { try? document.set([:], at: "/syphon") }
+        // mapping presets of a hand-edited or foreign file: numbers 1–255 and the first of each number, the list the engine
+        // draws from (§9.10 item 3), so the UI offers the same; a preset that does not validate stays and is skipped there
+        if var list = document["outputs"]?.array {
+            var changed = false
+            for o in list.indices {
+                guard let presets = list[o]["presets"]?.array else { continue }
+                var seen = Set<Int>(), kept: [JSONValue] = []
+                for preset in presets {
+                    if let n = preset["number"]?.int, MappingPreset.numbers.contains(n), seen.insert(n).inserted { kept.append(preset) }
+                }
+                if kept.count != presets.count {
+                    try? list[o].set(.array(kept), at: "/presets")
+                    changed = true
+                }
+            }
+            if changed { try? document.set(.array(list), at: "/outputs") }
+        }
         // an Output or Keystone fixture without its output, or above the console's outputs, controls nothing (until
         // 2026-10-30 every project had Output 1–4 patched)
         if var patch = patch(from: document) {

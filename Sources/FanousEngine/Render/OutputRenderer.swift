@@ -5,6 +5,7 @@
 import CoreGraphics
 import Foundation
 import FanousCore
+import Logging
 import Metal
 import simd
 import Synchronization
@@ -141,9 +142,13 @@ public final class OutputCompiler: @unchecked Sendable {
     /// set that held it is swapped out; its dead entry is dropped at the next compile. Edit-time only, never touched by the
     /// render thread; the lock is for the previews, which compile from the main actor, the network and a utility queue.
     private let cache = Mutex<[Key: Entry]>([:])
+    /// Says once per output and preset number that a preset was skipped (it does not validate or compile).
+    private let logger: Logger?
+    private let reported = Mutex<Set<[Int]>>([])
 
-    public init(device: MTLDevice) throws {
+    public init(device: MTLDevice, logger: Logger? = nil) throws {
         self.device = device
+        self.logger = logger
         guard let uniforms = device.makeBuffer(length: 256, options: .storageModeShared) else { throw RenderError.pipeline("mapped uniforms") }
         self.uniforms = uniforms
     }
@@ -179,8 +184,20 @@ public final class OutputCompiler: @unchecked Sendable {
         // the whole output as a slice without a mask: canvas 1, opacity 1
         let patternMesh = try slicePlan(SliceConfig(id: 0), output: config.id, width: w, height: h)
         let edited = try geometry(config.warp, config.slices, output: config.id, width: w, height: h)
-        var presets: [Int: PresetGeometry] = [:]
-        for preset in config.presets { presets[preset.number] = try geometry(preset.warp, preset.slices, output: config.id, width: w, height: h) }
+        // presets as a hand-edited or foreign file may have them (`ProjectDocument.load` cleans numbers and repeats): numbers
+        // 1…255, the first of each number, and only one that validates as an edited mapping would and compiles. One that
+        // does not is skipped and said once; it never fails the output
+        var presets: [Int: PresetGeometry] = [:], seen = Set<Int>()
+        for preset in config.presets where MappingPreset.numbers.contains(preset.number) && seen.insert(preset.number).inserted {
+            do {
+                let valid = try ProjectDocument.validated(preset)
+                presets[preset.number] = try geometry(valid.warp, valid.slices, output: config.id, width: w, height: h)
+            } catch {
+                if reported.withLock({ $0.insert([config.id, preset.number]).inserted }) {
+                    logger?.warning("mapping preset skipped", metadata: ["output": "\(config.id)", "preset": "\(preset.number)", "error": "\(error)"])
+                }
+            }
+        }
         let gain = config.color.gain.count == 3 ? config.color.gain.map(Float.init) : [1, 1, 1]
         return OutputPlan(
             id: config.id, index: index, region: region, intensity: Float(config.intensity), testPattern: TestPattern(rawValue: config.testPattern) ?? .off,

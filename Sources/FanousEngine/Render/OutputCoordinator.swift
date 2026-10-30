@@ -107,7 +107,7 @@ public final class OutputCoordinator {
     public init(compositor: Compositor, context: MetalContext, fps: Double, displays: [DisplayInfo], logger: Logger) throws {
         self.compositor = compositor
         self.context = context
-        self.compiler = try OutputCompiler(device: context.device)
+        self.compiler = try OutputCompiler(device: context.device, logger: logger)
         self.fps = fps
         self.displays = displays
         self.logger = logger

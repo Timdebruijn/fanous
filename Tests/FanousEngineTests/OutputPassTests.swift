@@ -963,6 +963,27 @@ struct OutputPassTests {
         #expect(green(0.6, 0.5) <= 1, "not the keystone alone")
     }
 
+    /// Presets from a hand-edited or foreign file never fail the output: number 0 and 256 are not presets (ch 6 = 0 is the
+    /// edited mapping), the first of a repeated number wins, and one that does not validate is skipped.
+    @Test func aStrayOrBrokenPresetNeverFailsTheOutput() throws {
+        var o = Self.presetConfig()
+        let moved = o.presets[0]
+        var broken = moved
+        broken.slices[0].dest.removeLast()  // 3 points
+        var flat = moved
+        flat.warp = WarpSettings()
+        o.presets = [
+            MappingPreset(number: 0, name: "zero", warp: moved.warp, slices: moved.slices), MappingPreset(number: 2, name: "first", warp: moved.warp, slices: moved.slices),
+            MappingPreset(number: 2, name: "second", warp: flat.warp, slices: flat.slices), MappingPreset(number: 5, name: "broken", warp: broken.warp, slices: broken.slices),
+            MappingPreset(number: 256, name: "high", warp: moved.warp, slices: moved.slices),
+        ]
+        let plan = try OutputCompiler(device: MetalContext().device).compile(o, index: 1, drawable: (Self.width, Self.height))
+        #expect(plan.presets.keys.sorted() == [2])
+        #expect(plan.geometry(0).warpField == nil, "ch 6 = 0 shows the edited mapping")
+        #expect(plan.geometry(2).warpField != nil, "the first preset 2, with the moved corner")
+        #expect(plan.geometry(5).warpField == nil, "the broken one is skipped: the edited mapping")
+    }
+
     /// The output preview draws the edited mapping while the projector shows a preset (DESIGN.md §9.10 item 3).
     @Test func thePreviewDrawsTheEditedMapping() async throws {
         let rig = try Rig(Self.presetConfig(), value: 200)

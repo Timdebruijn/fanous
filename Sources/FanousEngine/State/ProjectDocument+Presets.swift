@@ -34,6 +34,16 @@ extension ProjectDocument {
         return name
     }
 
+    /// A preset as the engine draws it: validated as an edited mapping would be (`validate`, values clamped). Throws for one
+    /// a hand-edited or foreign file left broken: the output pass skips it and `live.outputs` calls it missing.
+    static func validated(_ preset: MappingPreset) throws -> MappingPreset {
+        var probe = OutputConfig(id: 0), checked = preset
+        (probe.warp, probe.slices) = (preset.warp, preset.slices)
+        try validate(&probe)
+        (checked.warp, checked.slices) = (probe.warp, probe.slices)
+        return checked
+    }
+
     /// Every target must have preset `number`.
     static func requirePreset(_ number: Int, _ outputs: [OutputConfig], _ indices: [Int]) throws {
         if let i = indices.first(where: { outputs[$0].preset(number) == nil }) { throw CommandError.invalidArgs("\(outputs[i].name) has no preset \(number)") }
@@ -70,6 +80,10 @@ extension ProjectDocument {
                 for i in indices {
                     let old = outputs[i]
                     _ = outputs[i].recallPreset(number)
+                    // as output.set: a preset from a hand-edited or foreign file may not hold
+                    do { try validate(&outputs[i]) } catch let error as CommandError {
+                        throw CommandError.invalidArgs("preset \(number) of \(old.name) cannot be recalled: \(error.message)")
+                    }
                     guard let w = walls.firstIndex(where: { $0.outputs.contains(old.id) }) else { continue }
                     wallTouched = true
                     for field in WallLayout.follow(edit: outputs[i], was: old, wall: &walls[w], outputs: &outputs) {

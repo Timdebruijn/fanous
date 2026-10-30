@@ -1616,10 +1616,11 @@ public final class Engine: @unchecked Sendable {
     }
 
     /// `live.outputs` preset fields (§9.10 item 3): the preset shown (null: the edited mapping), where it is asked from
-    /// (console or compare), and a number the output does not have (it keeps the edited mapping).
+    /// (console or compare), and a number the output does not have, or has broken (it keeps the edited mapping).
     private func presetLive(_ asked: (number: Int, compare: Bool), config: OutputConfig?) -> [String: JSONValue] {
         guard asked.number > 0 else { return ["preset": .null, "presetSource": .null, "presetMissing": .null] }
-        let number = JSONValue.number(Double(asked.number)), has = config?.preset(asked.number) != nil
+        let number = JSONValue.number(Double(asked.number))
+        let has = config?.preset(asked.number).map { (try? ProjectDocument.validated($0)) != nil } ?? false
         return ["preset": has ? number : .null, "presetSource": .string(asked.compare ? "compare" : "console"), "presetMissing": has ? .null : number]
     }
 

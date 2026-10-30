@@ -152,4 +152,33 @@ struct PresetCommandsTests {
         _ = try Self.run(store, "canvas.remove", ["id": 2]).get()
         #expect(Self.output(store, 1).slices[0].canvas == 1 && Self.output(store, 1).preset(1)?.slices[0].canvas == 1)
     }
+
+    /// A preset that does not validate (a hand-edited or foreign file) is refused at recall instead of landing in the
+    /// edited mapping past `validate`.
+    @Test func recallRefusesAPresetThatDoesNotValidate() throws {
+        let (store, _) = try Self.makeStore(outputs: 1)
+        var output = Self.output(store, 1)
+        output.storePreset(4, name: nil)
+        output.presets[0].slices[0].dest.removeLast()  // 3 points
+        store.correct(try JSONValue(encoding: [output]), at: "/outputs")
+        let depth = store.historyDepth.undo
+        #expect(Self.run(store, "output.preset.recall", ["ids": [1], "number": 4]) == .failure(.invalidArgs("preset 4 of Output 1 cannot be recalled: slice dest needs 4 points")))
+        #expect(Self.output(store, 1).slices[0].dest.count == 4 && store.historyDepth.undo == depth)
+    }
+
+    /// Loading a hand-edited or foreign file keeps the presets the engine draws: numbers 1–255, the first of a repeated
+    /// number. The UI then offers the same list (`ProjectDocument.load`, also for a version revert).
+    @Test func loadKeepsPresetNumbersOneTo255AndTheFirstOfEach() throws {
+        var output = OutputConfig(id: 1)
+        let preset = { (number: Int, name: String) in MappingPreset(number: number, name: name, warp: output.warp, slices: output.slices) }
+        output.presets = [preset(3, "first"), preset(0, "zero"), preset(3, "second"), preset(300, "high"), preset(7, "seven")]
+        var project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
+        try project.set(try JSONValue(encoding: [output]), at: "/outputs")
+        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-presets-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try ProjectDocument.save(project, to: url)
+        let loaded = try #require(ProjectDocument.load(from: url))
+        let presets = try #require(ProjectDocument.outputs(from: loaded).first).presets
+        #expect(presets.map(\.number) == [3, 7] && presets[0].name == "first")
+    }
 }
