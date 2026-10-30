@@ -12,4 +12,11 @@ extension JSONValue {
         encoder.dateEncodingStrategy = .iso8601
         self = try JSONDecoder().decode(JSONValue.self, from: encoder.encode(value))
     }
+
+    /// The tree as a `Decodable` model: the inverse of `init(encoding:)`, dates included.
+    public func decoded<T: Decodable>(as type: T.Type) throws -> T {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(type, from: JSONEncoder().encode(self))
+    }
 }

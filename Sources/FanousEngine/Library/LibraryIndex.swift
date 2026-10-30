@@ -362,45 +362,36 @@ public final class LibraryIndex: @unchecked Sendable {
 
     /// AVAsset probe; the library thread is not a cooperative thread, so blocking on the async loads is fine.
     static func probeMovie(_ url: URL) throws -> MediaMetadata {
-        let done = DispatchSemaphore(value: 0)
-        let box = Mutex<Result<MediaMetadata, Error>?>(nil)
-        Task.detached(priority: .utility) {
-            do {
-                let asset = AVURLAsset(url: url)
-                let duration = try await asset.load(.duration).seconds
-                var metadata = MediaMetadata()
-                metadata.duration = duration
-                if let video = try await asset.loadTracks(withMediaType: .video).first {
-                    let (descriptions, frameRate, size, transform) = try await video.load(.formatDescriptions, .nominalFrameRate, .naturalSize, .preferredTransform)
-                    let upright = CGRect(origin: .zero, size: size).applying(transform).size  // rotated phone footage: report the displayed size
-                    metadata.rotated = transform.rotatesOrFlips
-                    metadata.width = Int(upright.width.rounded())
-                    metadata.height = Int(upright.height.rounded())
-                    metadata.frameRate = Double(frameRate)
-                    metadata.frameCount = Int((duration * Double(frameRate)).rounded())
-                    if let description = descriptions.first {
-                        let codec = CMFormatDescriptionGetMediaSubType(description)
-                        metadata.codec = fourCCString(codec)
-                        metadata.hasAlpha = ["ap4h", "ap4x", "Hap5", "HapM", "HapA"].contains(metadata.codec)
-                    }
-                } else {
-                    throw MovieError.noVideoTrack
+        try blockingAwait {
+            let asset = AVURLAsset(url: url)
+            let duration = try await asset.load(.duration).seconds
+            var metadata = MediaMetadata()
+            metadata.duration = duration
+            if let video = try await asset.loadTracks(withMediaType: .video).first {
+                let (descriptions, frameRate, size, transform) = try await video.load(.formatDescriptions, .nominalFrameRate, .naturalSize, .preferredTransform)
+                let upright = CGRect(origin: .zero, size: size).applying(transform).size  // rotated phone footage: report the displayed size
+                metadata.rotated = transform.rotatesOrFlips
+                metadata.width = Int(upright.width.rounded())
+                metadata.height = Int(upright.height.rounded())
+                metadata.frameRate = Double(frameRate)
+                metadata.frameCount = Int((duration * Double(frameRate)).rounded())
+                if let description = descriptions.first {
+                    let codec = CMFormatDescriptionGetMediaSubType(description)
+                    metadata.codec = fourCCString(codec)
+                    metadata.hasAlpha = ["ap4h", "ap4x", "Hap5", "HapM", "HapA"].contains(metadata.codec)
                 }
-                if let audio = try await asset.loadTracks(withMediaType: .audio).first,
-                    let description = try await audio.load(.formatDescriptions).first,
-                    let basic = CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee
-                {
-                    metadata.audioChannels = Int(basic.mChannelsPerFrame)
-                    metadata.audioSampleRate = basic.mSampleRate
-                }
-                box.withLock { $0 = .success(metadata) }
-            } catch {
-                box.withLock { $0 = .failure(error) }
+            } else {
+                throw MovieError.noVideoTrack
             }
-            done.signal()
+            if let audio = try await asset.loadTracks(withMediaType: .audio).first,
+                let description = try await audio.load(.formatDescriptions).first,
+                let basic = CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee
+            {
+                metadata.audioChannels = Int(basic.mChannelsPerFrame)
+                metadata.audioSampleRate = basic.mSampleRate
+            }
+            return metadata
         }
-        done.wait()
-        return try box.withLock { $0 }!.get()
     }
 
     // MARK: Cache
@@ -477,10 +468,11 @@ extension LibraryIndex {
         return url
     }
 
-    /// Smallest unused file number in a folder (1–255); nil when the folder is full or unknown.
-    public func nextFileNumber(inFolder number: Int) -> Int? {
-        guard let folder = snapshot.folders.first(where: { $0.number == number }) else { return 1 }
-        let used = Set(folder.items.compactMap(\.file) + folder.items.compactMap { Self.prefixNumber($0.name) })
+    /// Smallest file number (1–255) that no entry of `folder` on disk and no name in `pending` uses; nil when the folder is
+    /// full. Reads the disk, not the snapshot: a file an ingest job just wrote is there before the debounced rescan.
+    public static func nextFileNumber(in folder: URL, pending: [String] = []) -> Int? {
+        let names = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []) + pending
+        let used = Set(names.compactMap(prefixNumber))
         return (1...255).first { !used.contains($0) }
     }
 

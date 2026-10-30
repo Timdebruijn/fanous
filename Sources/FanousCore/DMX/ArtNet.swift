@@ -62,12 +62,6 @@ public enum ArtNet {
     }
 
     static func opCodeBytes(_ op: OpCode) -> [UInt8] { [UInt8(op.rawValue & 0xFF), UInt8(op.rawValue >> 8)] }
-
-    static func fixed(_ text: String, _ length: Int) -> [UInt8] {
-        var bytes = Array(text.utf8.prefix(length - 1))
-        bytes += [UInt8](repeating: 0, count: length - bytes.count)
-        return bytes
-    }
 }
 
 public struct ArtPoll: Equatable, Sendable {
@@ -196,9 +190,9 @@ public struct ArtPollReply: Equatable, Sendable {
         out += [0]  // UbeaVersion
         out += [0xD0]  // Status1: indicators normal, port-address set by network
         out += [UInt8(estaManufacturer & 0xFF), UInt8(estaManufacturer >> 8)]
-        out += ArtNet.fixed(shortName, 18)
-        out += ArtNet.fixed(longName, 64)
-        out += ArtNet.fixed(nodeReport, 64)
+        out += [UInt8].fixed(shortName, 18)
+        out += [UInt8].fixed(longName, 64)
+        out += [UInt8].fixed(nodeReport, 64)
         out += [0, UInt8(ports.count)]  // NumPorts
         var portTypes = [UInt8](repeating: 0, count: 4), goodInput = [UInt8](repeating: 0, count: 4)
         var goodOutput = [UInt8](repeating: 0, count: 4), swIn = [UInt8](repeating: 0, count: 4)

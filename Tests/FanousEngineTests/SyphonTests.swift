@@ -53,7 +53,7 @@ import Testing
     /// Simple Client then shows the canvas upright (checked by eye 2026-10-26). bgra8Unorm matches the surface
     /// format, rgba8Unorm takes the conversion path; both go through Syphon's flip draw.
     @Test(arguments: [MTLPixelFormat.bgra8Unorm, .rgba8Unorm])
-    func publishedTextureArrivesBottomUpInASurfaceAndTheInputSaysSo(format: MTLPixelFormat) throws {
+    func publishedTextureArrivesBottomUpInASurfaceAndTheInputSaysSo(format: MTLPixelFormat) async throws {
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else { return }  // no GPU: skip
         let name = "FanousTest-\(UUID().uuidString)"
         let output = try SyphonOutput(name: name, device: device)
@@ -96,8 +96,10 @@ import Testing
         #expect(bytes != pattern)
         #expect(input.latestFrame?.bottomUp == true && input.latestFrame?.kind == .rgba)
 
-        // The directory learns about servers through distributed notifications, which need the main run loop.
-        #expect(Self.wait(seconds: 2) { SyphonInput.directoryServers.contains { $0.serverName == name } })
+        // The directory learns about servers through distributed notifications, which need the main run loop. In a full
+        // parallel run other suites hold the main thread for seconds: AVFoundation parks it until the process's first
+        // capture-device lookup is done (2.6–6.7 s measured there, under 0.3 s alone), so this polls like any other wait.
+        #expect(await waitUntil { SyphonInput.directoryServers.contains { $0.serverName == name } })
 
         input.disconnect()
         #expect(input.latestFrame == nil)
@@ -177,7 +179,7 @@ import Testing
     }
 
     /// The directory's servers reach the catalog as entries: app → source, server name → name, directory id → runtimeID.
-    @Test func catalogReadsTheDirectoryAsEntries() throws {
+    @Test func catalogReadsTheDirectoryAsEntries() async throws {
         guard let device = MTLCreateSystemDefaultDevice() else { return }  // no GPU: skip
         let name = "FanousTest-\(UUID().uuidString)"
         let output = try SyphonOutput(name: name, device: device)
@@ -186,8 +188,8 @@ import Testing
             input.disconnect()
             output.stop()
         }
-        // The directory learns about servers through distributed notifications, which need the main run loop.
-        #expect(Self.wait(seconds: 2) { LiveCatalog.syphonDirectory.contains { $0.name == name } })
+        // The main run loop again, held for seconds in a parallel run (see publishedTextureArrivesBottomUp…).
+        #expect(await waitUntil { LiveCatalog.syphonDirectory.contains { $0.name == name } })
         let info = try #require(SyphonInput.directoryServers.first { $0.serverName == name })
         let entry = try #require(LiveCatalog.syphonDirectory.first { $0.name == name })
         #expect(entry.kind == .syphon && entry.source == info.appName && !entry.source.isEmpty)

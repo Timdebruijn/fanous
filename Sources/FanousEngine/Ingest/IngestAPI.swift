@@ -43,7 +43,7 @@ public final class IngestAPI: @unchecked Sendable {
     public func uploadTarget(for request: HTTPRequest) -> URL? {
         guard request.method == "PUT", let (_, name) = Self.uploadComponents(request.path) else { return nil }
         try? FileManager.default.createDirectory(at: library.incomingDirectory, withIntermediateDirectories: true)
-        return library.incomingDirectory.appending(path: Self.uniqueName(name, in: library.incomingDirectory))
+        return IngestQueue.uniqueURL(for: name, in: library.incomingDirectory)
     }
 
     public func handle(_ request: HTTPRequest, uploadedFile: URL?) -> HTTPResponse {
@@ -55,7 +55,7 @@ public final class IngestAPI: @unchecked Sendable {
                 file = uploadedFile
             } else {
                 try? FileManager.default.createDirectory(at: library.incomingDirectory, withIntermediateDirectories: true)
-                file = library.incomingDirectory.appending(path: Self.uniqueName(name, in: library.incomingDirectory))
+                file = IngestQueue.uniqueURL(for: name, in: library.incomingDirectory)
                 do { try Data(request.body).write(to: file) } catch { return .text(500, "cannot store upload: \(error)") }
             }
             return enqueue(source: file, folder: folder, file: nil, name: name, codec: nil, fps: nil, keepOriginal: false)
@@ -104,20 +104,24 @@ public final class IngestAPI: @unchecked Sendable {
         guard FileManager.default.fileExists(atPath: source.path) else { return .text(404, "source not found") }
         guard let folderURL = library.folderURL(number: folder, createAs: name.map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent } ?? "Folder")
         else { return .text(400, "cannot create folder \(folder)") }
-        guard let number = file ?? library.nextFileNumber(inFolder: folder), (1...255).contains(number) else { return .text(409, "folder \(folder) is full") }
+        // Jobs before the disk: a job writes its file before it is marked done, so every job that is writing or wrote a file
+        // shows in one of them. Needs the hold lock around all of enqueueNow: two enqueues must not both read before either appends.
+        let pending = queue.jobs.filter { !$0.state.isFinished && $0.destination.deletingLastPathComponent().path == folderURL.path }
+        guard let number = file ?? LibraryIndex.nextFileNumber(in: folderURL, pending: pending.map(\.destination.lastPathComponent)), (1...255).contains(number)
+        else { return .text(409, "folder \(folder) is full") }
         let originalName = name ?? source.lastPathComponent
         let ext = source.pathExtension.lowercased()
         let isDirectory = (try? source.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
         let kind: IngestJob.Kind
         let destinationExtension: String
         if isDirectory {
-            kind = .sequence(fps: fps ?? 25, codec: Self.codec(named: codec) ?? .proRes4444)
+            kind = .sequence(fps: fps ?? 25, codec: MovieWriter.Codec.named(codec) ?? .proRes4444)
             destinationExtension = "mov"
         } else if StillSource.extensions.contains(ext) {
             kind = .still
             destinationExtension = ext
         } else {
-            kind = .transcode(codec: Self.codec(named: codec) ?? Self.defaultCodec)
+            kind = .transcode(codec: MovieWriter.Codec.named(codec) ?? Self.defaultCodec)
             destinationExtension = "mov"
         }
         let destination = folderURL.appending(path: LibraryIndex.destinationName(number: number, originalName: originalName, pathExtension: destinationExtension))
@@ -128,19 +132,6 @@ public final class IngestAPI: @unchecked Sendable {
         return .json(202, Array((try? encoder.encode(job)) ?? Data()))
     }
 
-    static func codec(named name: String?) -> MovieWriter.Codec? {
-        switch name?.lowercased() {
-        case "prores422hq": .proRes422HQ
-        case "prores422": .proRes422
-        case "prores4444": .proRes4444
-        case "hap": .hap(.hap)
-        case "hapalpha": .hap(.hapAlpha)
-        case "hapq": .hap(.hapQ)
-        case "hapalphaonly": .hap(.hapAlphaOnly)
-        default: nil
-        }
-    }
-
     /// `/api/upload/<folder>/<name>` → (folder, percent-decoded file name without path components).
     static func uploadComponents(_ path: String) -> (Int, String)? {
         let parts = path.dropFirst("/api/upload/".count).split(separator: "/", maxSplits: 1).map(String.init)
@@ -148,17 +139,5 @@ public final class IngestAPI: @unchecked Sendable {
         let name = URL(fileURLWithPath: decoded).lastPathComponent
         guard !name.isEmpty, name != ".", name != "..", !name.hasPrefix(".") else { return nil }
         return (folder, name)
-    }
-
-    static func uniqueName(_ name: String, in directory: URL) -> String {
-        var candidate = name
-        var n = 1
-        let base = URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent
-        let ext = URL(fileURLWithPath: name).pathExtension
-        while FileManager.default.fileExists(atPath: directory.appending(path: candidate).path) {
-            n += 1
-            candidate = ext.isEmpty ? "\(base)-\(n)" : "\(base)-\(n).\(ext)"
-        }
-        return candidate
     }
 }

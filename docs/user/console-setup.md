@@ -18,6 +18,22 @@ Test patterns follow the Master and Output Intensity and Blackout like the
 picture, so a Grand Master or DBO takes them down too: keep the Dimmer up to
 focus.
 
+Master channels 5 and 6, **Master speed**, multiply the speed of every layer
+that plays a clip:
+
+- 32768 (the default) is 100 %, 0 stops every clip, and 65535 is 400 %.
+- Built-in content, effects and live inputs keep their own pace.
+- The Freeze, Scrub and Timecode play modes ignore it.
+- A Sync slave ignores it and runs with its Sync master. The master's speed
+  already includes Master speed on that machine (see
+  [multi-server.md](multi-server.md)).
+
+A layer's audio plays only forward at 100 %, where 100 % is layer speed ×
+Master speed. With every layer at 100 %, any other Master speed silences all
+layer audio. Layer speed 200 % with Master speed 50 % still plays with sound.
+Freeze, Scrub and Timecode are silent at any speed. A Sync slave has sound
+while its master runs at 100 %.
+
 Output channel 6, **Mapping preset**, switches the output between the
 alignments stored on it: 0 is the mapping as edited, 1 to 255 the output's
 preset with that number; a number the output does not have keeps the edited

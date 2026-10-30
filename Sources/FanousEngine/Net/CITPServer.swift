@@ -143,11 +143,7 @@ public final class CITPServer: @unchecked Sendable {
         let streaming = connections.values.contains { !$0.streams.isEmpty }
         func sync(_ timer: inout DispatchSourceTimer?, wanted: Bool, interval: Double, _ tick: @escaping @Sendable (CITPServer) -> Void) {
             if wanted, timer == nil {
-                let new = DispatchSource.makeTimerSource(queue: queue)
-                new.schedule(deadline: .now() + interval, repeating: interval)
-                new.setEventHandler { [weak self] in if let self { tick(self) } }
-                new.resume()
-                timer = new
+                timer = DispatchSource.repeating(every: interval, on: queue) { [weak self] in if let self { tick(self) } }
             } else if !wanted, let running = timer {
                 running.cancel()
                 timer = nil

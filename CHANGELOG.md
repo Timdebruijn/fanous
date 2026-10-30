@@ -530,6 +530,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: a display changing role (master ↔ secondary, or every display on a canvas change) while its old render thread had not stopped within 1 s handed
   the old Freeze holds to the new thread, which could read them under the old thread's write; the new set now holds
   afresh in that case, with a warning (B118, PR #147).
+- Fixed: two uploads into one folder in quick succession both got file number 001 and the second ingest job failed
+  ("destination already exists"); the number now skips jobs still in the queue and files on disk the index has not
+  seen yet (PR #143).
 - Added: **masks v2, the tools** (M2.8, PR #148, DESIGN §9.10 item 5, F5), the last step of M2. Mask mode of Warp &
   Slices has the tools **Polygon** (tap the corners), **Rectangle** and **Ellipse** (drag a box; **10 % inside**
   without a drag), **Freehand** (drag along the outline, with a finger on an iPad: simplified to 2 output px, sharp

@@ -67,7 +67,7 @@ struct PreviewStreamerTests {
         #expect(rig.attach("canvas", viewer, stream: 2))
         for _ in 0..<250 where !streamer.hasEncoder { try await Task.sleep(for: .milliseconds(20)) }
         #expect(streamer.hasEncoder, "the first H.264 subscriber makes the encoder")
-        rig.hub.unsubscribe(connection: viewer, stream: 2)
+        rig.hub.remove(connection: viewer, stream: 2)
         #expect(!streamer.hasEncoder, "released with the last H.264 subscriber")
         #expect(streamer.hasSubscribers, "the JPEG viewer stays")
         // never had a session: deinit has nothing to invalidate

@@ -141,6 +141,9 @@ test('layers: a layer added at runtime plays at once, and goes dark when it is r
   await expect(page.getByRole('heading', { name: 'Layer 9' })).toBeVisible();
   await page.getByRole('switch', { name: 'Control' }).check({ force: true }); // the drawn track covers the input
   await page.getByRole('button', { name: /^Use / }).click();
+  // the controls appear with the layer's first live document; before it the picker does not know the intensity is 0,
+  // leaves it there, and the layer draws nothing
+  await expect(page.getByRole('slider', { name: 'Intensity', exact: true })).toBeVisible();
   await page.getByLabel('Built-in content and live inputs (folder 0)').selectOption({ label: '101 · Grid' });
   // the engine opened it and draws it: without a restart, not after one
   await expect(row).toContainText('Grid');
@@ -155,7 +158,8 @@ test('layers: a layer added at runtime plays at once, and goes dark when it is r
   thumbs.clear();
   await openScreen(page, 'Layers');
   await expect.poll(() => thumbs.get(9)).toBe(0);
-  expect(await liveLayers()).toBe(8);
+  // a welcome carries the live document as last published (every 100 ms): it can still list layer 9 for a moment
+  await expect.poll(liveLayers).toBe(8);
 });
 
 test('sync: a slave layer locks to a master layer of its group, and loses it when the master goes off (B60)', async ({ page, engine }) => {

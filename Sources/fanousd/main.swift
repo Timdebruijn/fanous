@@ -14,7 +14,7 @@ func usage() -> String {
            fanousd channel-map            print docs/channel-map.md to stdout
            fanousd gdtf FILE              write the GDTF fixture file
            fanousd reset-tls              delete the TLS key and certificate (regenerated at next start)
-           fanousd ingest DIR OUT.mov [--fps N] [--codec prores4444|prores422hq|hapq|hap|hapalpha]
+           fanousd ingest DIR OUT.mov [--fps N] [--codec prores4444|prores422hq|prores422|hap|hapalpha|hapq|hapalphaonly]
                                             convert an image sequence to a movie (Phase 3 stub)
       --port N         HTTPS port (default 8443)
       --web-root PATH  directory with the built web UI (default: auto-detect)
@@ -49,22 +49,14 @@ case "reset-tls":
 case "ingest":
     let args = Array(CommandLine.arguments.dropFirst(2))
     guard args.count >= 2 else {
-        FileHandle.standardError.write(Data("usage: fanousd ingest DIR OUT.mov [--fps N] [--codec prores4444|prores422hq|hapq|hap|hapalpha]\n".utf8))
+        FileHandle.standardError.write(Data("usage: fanousd ingest DIR OUT.mov [--fps N] [--codec prores4444|prores422hq|prores422|hap|hapalpha|hapq|hapalphaonly]\n".utf8))
         exit(64)
     }
     func option(_ name: String) -> String? {
         guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
         return args[i + 1]
     }
-    let codec: MovieWriter.Codec =
-        switch option("--codec") ?? "prores4444" {
-        case "prores422hq": .proRes422HQ
-        case "prores422": .proRes422
-        case "hapq": .hap(.hapQ)
-        case "hap": .hap(.hap)
-        case "hapalpha": .hap(.hapAlpha)
-        default: .proRes4444
-        }
+    let codec = MovieWriter.Codec.named(option("--codec")) ?? .proRes4444
     do {
         let frames = try SequenceIngest.frames(in: URL(fileURLWithPath: args[0]))
         let count = try SequenceIngest.convert(frames: frames, to: URL(fileURLWithPath: args[1]), fps: Int32(option("--fps") ?? "25") ?? 25, codec: codec)

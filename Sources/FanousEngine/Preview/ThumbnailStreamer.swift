@@ -106,12 +106,9 @@ public final class ThumbnailStreamer: @unchecked Sendable {
         queue.async { [self] in stale.insert(subscriber.key) }
     }
 
-    func unsubscribe(connection: StateServer.Connection, stream: UInt32) {
-        subscribers.withLock { $0.removeAll { $0.connection === connection && $0.stream == stream } }
-    }
-
-    func remove(connection: StateServer.Connection) {
-        subscribers.withLock { $0.removeAll { $0.connection === connection } }
+    /// Drops `stream` of `connection`, or every stream of it when `stream` is nil.
+    func remove(connection: StateServer.Connection, stream: UInt32? = nil) {
+        subscribers.withLock { $0.removeAll { $0.connection === connection && (stream == nil || $0.stream == stream) } }
     }
 
     /// CITP streaming frame of layer `index` (0-based): its latest JPEG (black while it shows nothing), nil before the
