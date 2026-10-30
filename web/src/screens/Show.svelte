@@ -32,11 +32,12 @@
 
   onMount(() => {
     void loadChannelMap().then((map) => (channelMap = map));
-    // Space fires the next cue (DESIGN §12) unless it is typing or pressing a focused control.
+    // Space fires the next cue (DESIGN §12) unless it is typing or pressing a focused control, or a modal dialog is open.
     const onKey = (event: KeyboardEvent) => {
       if (event.code !== 'Space' || event.repeat || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
       const target = event.target as HTMLElement | null;
       if (target && (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(target.tagName) || target.isContentEditable)) return;
+      if (document.querySelector('dialog:modal')) return;
       if (!can('operator')) return;
       event.preventDefault();
       void cmd('cue.go');

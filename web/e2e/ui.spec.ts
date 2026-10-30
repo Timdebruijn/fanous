@@ -280,6 +280,28 @@ test('patch: the Patch sheet lists the layer block, prints alone, and counts Art
   await expect(page.getByRole('button', { name: 'Patch sheet' })).toBeFocused();
 });
 
+test('keys: the global shortcuts do nothing while a modal dialog is open, and ? still closes the shortcut list', async ({ page }) => {
+  await openScreen(page, 'Patch');
+  await page.getByRole('button', { name: 'Patch sheet' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Patch sheet' });
+  await sheet.getByRole('button', { name: 'Copy' }).focus();
+  for (const key of ['1', 'l', '?', 'ControlOrMeta+z']) await page.keyboard.press(key);
+  await expect(sheet).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
+  expect(new URL(page.url()).hash).toBe('#/patch');
+  await expect(page.getByRole('button', { name: 'UNLOCKED' })).toBeVisible();
+  const help = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+  await page.keyboard.press('?');
+  await expect(help).toBeVisible();
+  await page.keyboard.press('1');
+  expect(new URL(page.url()).hash).toBe('#/patch');
+  await page.keyboard.press('?');
+  await expect(help).toBeHidden();
+  await page.keyboard.press('1');
+  await expect.poll(() => new URL(page.url()).hash).toBe('#/layers');
+});
+
 test('media: folder 0 lists the generators and the Syphon servers, and puts one on a layer', async ({ page }) => {
   await openScreen(page, 'Media');
   await page.getByRole('button', { name: /^0 Built-in and live inputs/ }).click();

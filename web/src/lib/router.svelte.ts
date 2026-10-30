@@ -3,6 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Hash routing for six screens (DESIGN.md §11.4): no router library. Also the global keys of §12:
 // 1–6 screens, Cmd/Ctrl+Z undo, Shift+Cmd/Ctrl+Z redo, L show lock (programmer; asks only when unlocking during show mode), ? shortcut list.
+// None of them act while a modal dialog is open, except ? closing the shortcut list.
 import { can, cmd, shell, toggleLock } from './state.svelte';
 
 export const screens = [
@@ -34,6 +35,8 @@ export function startRouter(): () => void {
   const onKey = (event: KeyboardEvent) => {
     const target = event.target as HTMLElement | null;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+    // the page under a modal dialog (login, revert, Patch sheet) is inert, so its keys are too
+    if (document.querySelector('dialog:modal') && !(event.key === '?' && shell.help)) return;
     if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'z') {
       event.preventDefault();
       if (can('programmer')) void cmd(event.shiftKey ? 'redo' : 'undo');

@@ -503,6 +503,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   Art-Net universes from 1**, remembered in the browser; the pair for a universe set to receive the other protocol)
   and every address, and a red line when fixtures collide. **Print** prints the sheet alone; **Copy** gives
   tab-separated text for a spreadsheet (PR #137).
+- Fixed: the global keys (1–6, L, Cmd/Ctrl+Z, Space on the Show screen) acted on the page under an open dialog: after
+  Copy in the Patch sheet, 1 left the screen and L toggled the show lock. They now do nothing while a modal dialog is
+  open; ? still closes the shortcut list (PR #TBD).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
