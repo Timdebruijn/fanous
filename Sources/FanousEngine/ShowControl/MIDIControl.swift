@@ -166,7 +166,7 @@ public enum MIDITarget: Equatable, Sendable {
 }
 
 /// The map applied to incoming messages: pure, owned by one queue. `current` reads the value the resolver shows
-/// (pickup, toggle); nil when the fixture is not patched. `uid` is the source's CoreMIDI unique id.
+/// (pickup, toggle); nil when the fixture does not exist. `uid` is the source's CoreMIDI unique id.
 public struct MIDIMapper: Sendable {
     public enum Action: Equatable, Sendable {
         case set(FixtureRef, ParameterID, UInt16)

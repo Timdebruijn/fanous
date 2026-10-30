@@ -74,8 +74,12 @@ yours does.
 
 The toolbar shows "N fixtures · N universes" and, in red, the number of
 collisions. **Channel map** opens the channel list; **Export GDTF** downloads
-the fixture file.
+the fixture file. On a wide screen the left column has Who controls, the
+fixture table and Selected fixture, the right column Universes and the DMX
+monitor; on a narrow one (an iPad upright) they stack in that order.
 
+- **Who controls** (programmer): the project's source policy, with a line
+  that explains the current choice (see [Sources and merging](#sources-and-merging)).
 - **Fixture table**: Fixture, Type (with footprint), Universe, Address,
   Footprint, Status. Status says "ok", "unpatched · no console control",
   "collides with Layer 2 · 65-128" or "exceeds universe". There is one Output
@@ -85,13 +89,35 @@ the fixture file.
   outputs existed or not; opening such a project unpatches the ones without an
   output.
 - **Selected fixture** (programmer): choose the Universe (A 0.0.0 to 0.0.3 and
-  S 1 to S 4, plus any universe that has been heard), set the Address with the
+  S 1 to S 4, plus every universe that has been heard or has settings), set the Address with the
   stepper (Shift steps by 10; **0 means unpatched**), or press **Unpatch**.
   For an output it also says which display shows it, links to Outputs &
   Mapping, and has **Remove output** (the output with its mapping; Undo brings
   it back).
-  Below it: the universe's health pill and its settings (see
-  [Universe settings](#universe-settings)).
+- **Universes**: one row per universe that
+  - a fixture is patched to,
+  - a console is sending to now (packets, or quiet for no longer than the
+    universe's Loss after), or
+  - has settings in the project.
+
+  A row shows the universe, the fixtures on it ("Layers 1–8, Master"), the
+  health pill, and its protocol, interface and Hold on loss. Without a fixture
+  it says:
+  - "heard, nothing patched" (yellow): a console sends to a universe no
+    fixture listens on; often the console's universe is one off. The row goes
+    away once that universe has been quiet for its Loss after, unless it has
+    settings or is open in the panel or shown in the DMX monitor (then it
+    stays, with a yellow "quiet" pill, until you pick another one);
+  - "feeds A 0.0.0": the other protocol's universe that a patched universe
+    receives (its protocol is sACN or Art-Net + sACN, see
+    [Universe settings](#universe-settings));
+  - "not used": the universe has settings but no fixture and no console; the
+    settings stay.
+
+  A universe without fixtures never shows a red pill: once it is quiet for
+  longer than its Loss after, the pill says "quiet" in yellow (the status bar's
+  yellow "silent" means nothing was received yet). Tap a row to open its settings (see
+  [Universe settings](#universe-settings)); the DMX monitor switches to it.
 - **DMX monitor**: 512 cells for one universe, coloured per fixture, red where
   fixtures collide, with live values. Click a cell to pin it: you see the
   fixture, the channel inside it, the parameter, the raw value and what it means
@@ -101,15 +127,25 @@ The pill for a universe is green while packets arrive. It is yellow when
 nothing has been received yet or for up to the universe's loss timeout (2.5 s
 by default) of silence, and red when a patched universe has been silent longer.
 What the fixtures do then is the universe's **Hold on loss** setting; by
-default they **hold their last values**. An unpatched layer or Master holds
-nothing: a layer goes black (no file) and the Master to full, as without a
-console.
+default they **hold their last values**. An unpatched fixture holds nothing
+from the console: unpatching a layer, Master or output (or moving it to another
+universe) drops the console's values.
+
+**Unpatched means no console address, not no control.** Every layer up to the
+layer count (at most 32), the Master and each output's Output and Keystone
+fixture exist whether they are patched or not, and follow the
+[source policy](#sources-and-merging): with **Console only** an unpatched
+fixture stays at its defaults (a layer black with no file, the Master at full,
+an output normal, a Keystone centred); with the other policies the UI, cues,
+OSC and MIDI control it. A show without a console therefore does not need a
+patch at all. The Status column's "no console control" means just that.
 
 ## Universe settings
 
-Every universe a fixture is patched to has its own receive settings. Select a
-fixture on the Patch screen; the settings of its universe are below the
-Address (programmer; locked while the show lock is on). Changes apply at once,
+Every universe has its own receive settings. Tap the universe in the
+**Universes** panel of the Patch screen to open them (programmer; locked while
+the show lock is on). The settings belong to the universe, not to the fixtures
+on it: a change applies to every fixture on that universe. Changes apply at once,
 without dropping the other universes, and are part of the project and of
 undo. A universe you never changed runs the defaults, which are how Fanous
 received before these settings existed.
@@ -119,7 +155,7 @@ received before these settings existed.
 | Protocol | Art-Net, sACN, Art-Net + sACN | the universe's own (A = Art-Net, S = sACN) | Which protocol feeds the universe. The other protocol arrives on the paired universe. |
 | sACN universe / Art-Net universe | a universe of the other protocol, e.g. `S 1` or `A 0.0.0` | S n+1 for A port-address n (A 0.0.0 ↔ S 1) | Shown when the protocol is not the universe's own. Set it when your console numbers the other way. |
 | Interface | All interfaces, an interface (`en0`) or one of its addresses | All interfaces | All interfaces: every sender is accepted and sACN multicast is joined on every interface that can multicast. A named interface: only senders in its network are accepted and sACN multicast is joined on it alone. |
-| Hold on loss | Hold last values, Go to zero, UI and cues take over | Hold last values | What the fixtures do when the universe goes silent. "UI and cues take over" resolves them as source policy *UI and cues only* until packets return. Changing it while the universe is already lost applies at once. |
+| Hold on loss | Hold last values, Go to zero, UI and cues take over | Hold last values | What the fixtures do when the universe goes silent. "UI and cues take over" resolves them as Who controls *Fanous only* until packets return. Changing it while the universe is already lost applies at once. |
 | Loss after (s) | 1 to 60 | 2.5 | Silence after which the universe counts as lost (red pill, Hold on loss applies). At least 1 s: consoles that send only on change repeat every 0.8 to 1 s. |
 | sACN priority | Highest wins, Merge equal (HTP) | Highest wins | Sources at the same, highest priority: the latest packet wins, or they merge with the highest value per channel. |
 
@@ -132,7 +168,7 @@ between 2.5 s and Loss after; the fixtures keep their values until it is lost.
 
 **Go to zero** sets every channel of the universe's fixtures to 0 as a new DMX
 change, except a Keystone fixture's: it goes to its default, 32768 on every
-channel, so a lost universe centres the keystone instead of moving the picture. Under the source policies *Console + UI* (latest or highest wins) that
+channel, so a lost universe centres the keystone instead of moving the picture. Under Who controls *Console and Fanous* (latest change or highest value wins) that
 change is the latest, so the zeros also win over UI and cue values set before
 the loss; the UI or a cue has to set a value again after it.
 
@@ -226,16 +262,27 @@ port-address wins. Within sACN the highest priority wins, equal priorities go to
 the most recent packet (or merge per channel, if the universe says so), and
 per-address priority is not supported.
 
-The project's **Source policy** (Patch screen toolbar, programmer) decides how
-DMX combines with values from cues and OSC: **Console only** (stored as DMX only; the
-default: cues and OSC parameter values are recorded but do not move a layer),
-**UI and cues only** (cues, OSC and the UI; DMX is shown but ignored),
-**Console + UI (latest wins)** (latest change per parameter wins; LTP in console
-terms) or **Console + UI (highest wins)** (highest value wins for numbers such as
-intensity; folder, file and mode channels fall back to latest wins; HTP in
-console terms). The Layers screen shows the
-policy in the Source column, and the Show control screen warns while the policy
-is Console only. Pick Console + UI (latest wins) for a show that mixes console control with cues.
+**Who controls** (the project's source policy; a card on the Patch screen,
+programmer) decides how DMX combines with values from the UI, cues, OSC and
+MIDI:
+
+| Choice | Source badge | Does | Stored as |
+|---|---|---|---|
+| **Console only** (the default) | Console | Fanous follows the console. A fixture without an address stays at its defaults; cues and OSC are recorded but do nothing. | `dmx` |
+| **Fanous only (UI, cues, OSC, MIDI)** | Fanous | The console is shown but ignored. | `internal` |
+| **Console and Fanous, latest change wins** | Both · latest | Per parameter, the latest change wins (LTP in console terms). | `ltp` |
+| **Console and Fanous, highest value wins** | Both · highest | Intensity and other numbers take the highest value; folder, file and modes the latest change (HTP in console terms). | `htp` |
+
+The Layers screen shows the short name in each layer's Source badge, and the
+Show control screen warns while it is Console only. Pick Console and Fanous,
+latest change wins for a show that mixes console control with cues.
+
+With either Console and Fanous choice the console takes part only once its DMX
+has arrived for that fixture: on a fixture without an address, or one whose
+console was never heard, the UI and cues are not beaten by a default (a Master
+without an address can be dimmed from the UI with highest value wins). A console
+that held a value and then went silent with **Hold last values** still competes
+with that held value.
 
 ## First light
 
