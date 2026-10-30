@@ -390,6 +390,17 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   Fanous (latest change wins / highest value wins), the Layers screen's Source badge says Console, Fanous, Both · latest
   or Both · highest, and the Show screen's warning points to Patch › Who controls. The stored values (`dmx`,
   `internal`, `ltp`, `htp`) are unchanged.
+- A fixture exists without a patch (B120 step 1, PR #122, DESIGN §6.6 item 1): every layer up to the layer count (at most
+  32), the Master and each output's Output and Keystone fixture can be controlled whether it has a console address or
+  not; the patch is only the console address. An unpatched fixture follows the source policy: at its defaults under
+  Console only, controlled by the UI, cues, OSC and MIDI under the other policies, so a show without a console no
+  longer has to patch its layers. Before, the UI, cues, OSC and MIDI reached only patched fixtures. Unpatching a
+  fixture, or moving it to another universe, drops the console's values and keeps the UI, cue, OSC and MIDI values.
+  Under Console + UI the console takes part only once its DMX was received: a fixture whose console was never heard,
+  patched or not, can be set below its default from the UI or a cue with highest wins. Before, the default (Master
+  full) won; now a blackout cue before the desk is on blacks out. A new or moved patch entry on a universe that is
+  being received takes its values at once. A layer added while a cue holds values takes them at once.
+  `live.dmx.fixtures` and OSC feedback list unpatched fixtures too.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

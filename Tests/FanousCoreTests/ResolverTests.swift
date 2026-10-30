@@ -84,4 +84,54 @@ import Testing
         #expect(resolver.resolved(.layer(.intensity)).raw == 1000)  // held
         #expect(resolver.resolvedAll().count == ChannelMap.layer.count)
     }
+
+    /// DESIGN.md §6.6: with no DMX ever received, the default does not compete. A UI Master at 50 % wins under `htp`,
+    /// where the default (full) is higher.
+    @Test func htpWithoutDMXLetsAValueBelowTheDefaultWin() {
+        var resolver = FixtureResolver(mode: .master, policy: .htp)
+        resolver.setInternal(.master(.intensity), raw: 32768, source: .ui, at: 1)
+        #expect(resolver.resolved(.master(.intensity)) == ResolvedValue(raw: 32768, source: .ui, changedAt: 1))
+    }
+
+    /// A console that held the Master at its default (full, so `dmxChangedAt` never moved) and then went silent with hold
+    /// on loss: the held full still competes, so a lower UI value does not beat it under `htp`.
+    @Test func heldDefaultAfterALossStillCompetes() {
+        var resolver = FixtureResolver(mode: .master, policy: .htp)
+        resolver.updateDMX(ChannelMap.defaults(for: .master), at: 1)
+        resolver.markDMXLost()
+        resolver.setInternal(.master(.intensity), raw: 32768, source: .ui, at: 2)
+        #expect(resolver.resolved(.master(.intensity)).raw == 65535)
+        #expect(resolver.dmxReceived && !resolver.hasDMX)
+    }
+
+    /// Unpatch: the DMX side goes back to the defaults and stops competing; the internal values stay.
+    @Test func clearDMXResetsTheDMXSideAndKeepsInternalValues() {
+        var resolver = FixtureResolver(mode: .layer, policy: .htp)
+        resolver.updateDMX(dmxFrame(intensity: 60000, playMode: 17), at: 1)
+        resolver.internalWithoutDMX = true
+        resolver.setInternal(.layer(.file), raw: 3, source: .ui, at: 2)
+        resolver.setInternal(.layer(.intensity), raw: 1000, source: .ui, at: 2)
+        #expect(resolver.resolved(.layer(.intensity)).raw == 60000)
+        resolver.clearDMX()
+        #expect(!resolver.hasDMX && !resolver.dmxReceived && !resolver.internalWithoutDMX)
+        #expect(resolver.resolved(.layer(.intensity)) == ResolvedValue(raw: 1000, source: .ui, changedAt: 2))
+        #expect(resolver.resolved(.layer(.playMode)) == ResolvedValue(raw: 0, source: .none, changedAt: 0))
+        #expect(resolver.internalCount == 2)
+        resolver.policy = .dmx
+        #expect(resolver.resolvedAll().map(\.raw) == ChannelMap.defaults(for: .layer))
+    }
+
+    @Test func internalCountFollowsSetAndClear() {
+        var resolver = FixtureResolver(mode: .layer)
+        resolver.setInternal(.layer(.file), raw: 1, source: .ui, at: 1)
+        resolver.setInternal(.layer(.file), raw: 2, source: .cue, at: 2)  // overwritten, still one
+        resolver.setInternal(.layer(.intensity), raw: 1, source: .ui, at: 3)
+        #expect(resolver.internalCount == 2)
+        resolver.clearInternal(.layer(.file), source: .ui)  // not the ui's any more: stays
+        resolver.clearInternal(source: .ui)
+        #expect(resolver.internalCount == 1)
+        resolver.clearInternal(.layer(.file), source: .cue)
+        resolver.clearInternal(.layer(.file), source: .cue)
+        #expect(resolver.internalCount == 0 && resolver.internalValues().isEmpty)
+    }
 }

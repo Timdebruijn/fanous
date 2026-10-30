@@ -210,6 +210,36 @@ extension Result where Success == CommandResult, Failure == CommandError {
 }
 
 extension StateStoreTests {
+    /// DESIGN.md §6.6: `projectChanged` hands the DMX store the fixtures that exist as well as the patch. Layer 9 lands on
+    /// the Master's slot and stays unpatched, so the patch does not change, yet Layer 9 gets a resolver and plays from
+    /// the UI. An unparseable patch keeps the running one and still brings a new fixture set.
+    @Test func aFixtureSetChangeAloneReachesTheDMXStore() throws {
+        let (store, _) = Self.makeStore()
+        _ = try store.execute("layers.setCount", args: ["count": 8], role: .programmer).get()
+        let dmx = DMXStore(
+            patch: try #require(ProjectDocument.effectivePatch(from: store.project)), fixtures: ProjectDocument.fixtures(from: store.project),
+            logger: Logger(label: "test"))
+        dmx.setPolicy(.internal)
+        var last = ProjectDocument.fixtures(from: store.project)
+        func apply(_ document: JSONValue) -> Bool {
+            Engine.applyPatch(of: document, outputs: ProjectDocument.outputs(from: document), to: dmx, lastFixtures: &last)
+        }
+        #expect(!apply(store.project), "nothing changed")
+        let before = dmx.currentPatch
+        _ = try store.execute("layers.setCount", args: ["count": 9], role: .programmer).get()
+        #expect(ProjectDocument.effectivePatch(from: store.project) == before, "Layer 9's slot is the Master's: still unpatched")
+        #expect(apply(store.project))
+        dmx.setUI(.layer(9), .layer(.intensity), raw: 40000)
+        dmx.queue.sync {}
+        let value = dmx.snapshot().fixtures["Layer 9"]?.first { $0.key == "intensity" }
+        #expect(value?.raw == 40000 && value?.source == "ui", "\(String(describing: value))")
+        var broken = store.project
+        try broken.set(.array([.string("junk")]), at: "/patch")
+        try broken.set(.number(10), at: "/layerCount")
+        #expect(apply(broken))
+        #expect(dmx.currentPatch == before && dmx.resolvedRaw(.layer(10), .layer(.intensity)) != nil)
+    }
+
     @Test func layerCountPatchesNewLayersAndDropsRemovedOnes() throws {
         let (store, _) = Self.makeStore()  // 2 layers patched at 1 and 65 on artnet:0.0.0
         _ = try store.execute("layers.setCount", args: ["count": 4], role: .programmer).get()

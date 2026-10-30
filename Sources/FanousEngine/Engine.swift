@@ -105,6 +105,8 @@ public final class Engine: @unchecked Sendable {
     private let oscLog = Mutex<[JSONValue]>([])
     private var lastPolicy: SourcePolicy?
     private var lastUniverseSettings: [UniverseID: UniverseSettings] = [:]
+    /// The fixtures that exist as the DMX store last got them (DESIGN.md §6.6).
+    private var lastFixtures: Set<FixtureRef> = []
     private var lastUniverseIssues: [String] = []
     /// Why the sACN port could not be bound at start (readiness); nil while sACN runs.
     private let sacnError = Mutex<String?>(nil)
@@ -199,10 +201,12 @@ public final class Engine: @unchecked Sendable {
             revert: { [weak self] rendered, error in self?.canvasSwitchFailed(keeping: rendered, error: error) })
         canvasSwitch.applied = { [weak self] format in self?.canvasSwitched(to: format) }
         self.canvasSwitch = canvasSwitch
-        let layerCount = options.scene?.layerCount ?? loadedProject?["layerCount"]?.int ?? 8
+        let layerCount = options.scene?.layerCount ?? loadedProject?["layerCount"]?.int ?? ProjectDocument.defaultLayerCount
         let patch = ProjectDocument.effectivePatch(from: loadedProject ?? .null) ?? Patch.standard(layers: layerCount, outputs: 0)
         let policy = options.scene?.policy ?? loadedProject?["policy"]?.string.flatMap(SourcePolicy.init(rawValue:)) ?? .dmx
-        let dmx = DMXStore(patch: patch, logger: logger)
+        let fixtures = ProjectDocument.fixtures(layerCount: layerCount, outputs: ProjectDocument.outputs(from: loadedProject ?? .null).map(\.id))
+        lastFixtures = fixtures
+        let dmx = DMXStore(patch: patch, fixtures: fixtures, logger: logger)
         if policy != .dmx { dmx.setPolicy(policy) }
         let universeSettings = checkedUniverseSettings(from: loadedProject ?? .null)
         lastUniverseSettings = universeSettings
@@ -1314,16 +1318,26 @@ public final class Engine: @unchecked Sendable {
         return settings
     }
 
+    /// The patch and the fixtures that exist (DESIGN.md §6.6) go to the DMX store when either changed: a layer or output
+    /// added without an address changes the fixtures, not the patch, and an unparseable patch keeps the running one.
+    /// Returns whether they went.
+    static func applyPatch(of document: JSONValue, outputs: [OutputConfig], to dmx: DMXStore, lastFixtures: inout Set<FixtureRef>) -> Bool {
+        let fixtures = ProjectDocument.fixtures(from: document, outputs: outputs)
+        let running = dmx.currentPatch
+        let patch = ProjectDocument.effectivePatch(from: document) ?? running
+        guard patch != running || fixtures != lastFixtures else { return false }
+        lastFixtures = fixtures
+        dmx.setPatch(patch, fixtures: fixtures)
+        return true
+    }
+
     private func projectChanged(_ document: JSONValue) {
         oscFacts(from: document)
         // patch and per-universe settings (B28): applied on the DMX queue; sACN groups follow both
         let universeSettings = checkedUniverseSettings(from: document)
+        let outputs = ProjectDocument.outputs(from: document)  // once per change: a mapping drag is a change per step
         if let dmx {
-            var changed = false
-            if let patch = ProjectDocument.effectivePatch(from: document), patch != dmx.currentPatch {
-                dmx.setPatch(patch)
-                changed = true
-            }
+            var changed = Self.applyPatch(of: document, outputs: outputs, to: dmx, lastFixtures: &lastFixtures)
             if universeSettings != lastUniverseSettings {
                 lastUniverseSettings = universeSettings
                 dmx.setUniverseSettings(universeSettings)
@@ -1331,7 +1345,7 @@ public final class Engine: @unchecked Sendable {
             }
             if changed { sacn?.update(groups: UniverseSettings.wire(dmx.currentPatch.universes, over: .sacn, settings: universeSettings)) }
         }
-        // the source policy applies to every patched fixture; the store gives it to the fixtures a later patch adds
+        // the source policy applies to every fixture; the store gives it to the fixtures a later `setPatch` adds
         if let dmx, let raw = document["policy"]?.string, let policy = SourcePolicy(rawValue: raw), policy != lastPolicy {
             lastPolicy = policy
             dmx.setPolicy(policy)
@@ -1387,7 +1401,6 @@ public final class Engine: @unchecked Sendable {
         }
         // layer → canvas (layer.set) and slices: applied against the canvases that render (main actor)
         let layers = Self.layerCanvas(project: document, layers: render?.layers.count ?? 0)
-        let outputs = ProjectDocument.outputs(from: document)
         let clockMaster = ProjectDocument.canvases(from: document).first?.clockMaster
         let projectCanvases = Set(ProjectDocument.canvases(from: document).map(\.id))
         let use = CanvasUse(outputs: outputs, clockMaster: clockMaster, layers: layers, canvases: projectCanvases)
