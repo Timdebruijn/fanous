@@ -104,20 +104,25 @@ public enum ProjectDocument {
 
     /// A live input numbering (B69, B73): `/syphon` `{"151": {app, server}}` (folder 0 files 150–169) and the other
     /// kinds' keys (`LiveCatalog.Kind`), keyed by file like `/layerCanvas` so a forget and its undo touch one key;
-    /// written by the engine as it numbers sources (no command, also under show lock), freed by `syphon.forget`. Gone
-    /// until they are seen.
+    /// written by the engine as it numbers sources (no command, also under show lock), freed by `syphon.forget` and
+    /// `capture.forget`. Gone until they are seen. `/capture` also keeps each device's `model` (the uid fallback).
     public static func liveNumbers(_ kind: LiveCatalog.Kind, from project: JSONValue) -> [LiveCatalog.Entry] {
         guard case .object(let map)? = project[kind.projectKey] else { return [] }
         return map.compactMap { key, entry in
             guard let file = Int(key), let source = entry[kind.fields.source]?.string else { return nil }
-            return LiveCatalog.Entry(kind: kind, file: file, source: source, name: entry[kind.fields.name]?.string ?? "", gone: true)
+            let model = kind.fields.model.flatMap { entry[$0]?.string } ?? ""
+            return LiveCatalog.Entry(kind: kind, file: file, source: source, name: entry[kind.fields.name]?.string ?? "", gone: true, model: model)
         }.sorted { $0.file < $1.file }
     }
 
     public static func liveValue(_ entries: [LiveCatalog.Entry]) -> JSONValue {
         .object(
             Dictionary(
-                entries.map { (String($0.file), [$0.kind.fields.source: .string($0.source), $0.kind.fields.name: .string($0.name)]) },
+                entries.map { e in
+                    var value: [String: JSONValue] = [e.kind.fields.source: .string(e.source), e.kind.fields.name: .string(e.name)]
+                    if let model = e.kind.fields.model { value[model] = .string(e.model) }
+                    return (String(e.file), .object(value))
+                },
                 uniquingKeysWith: { a, _ in a }))
     }
 
@@ -265,6 +270,7 @@ public enum ProjectDocument {
             "outputs": [],
             "walls": [],
             "syphon": [:],
+            "capture": [:],
             "ui": [:],
         ]
     }
@@ -375,6 +381,7 @@ public enum ProjectDocument {
         if document["ui"] == nil { try? document.set([:], at: "/ui") }
         if document["layerCanvas"] == nil { try? document.set([:], at: "/layerCanvas") }
         if document["syphon"] == nil { try? document.set([:], at: "/syphon") }
+        if document["capture"] == nil { try? document.set([:], at: "/capture") }
         // an Output or Keystone fixture without its output, or above the console's outputs, controls nothing (until
         // 2026-10-30 every project had Output 1–4 patched)
         if var patch = patch(from: document) {
@@ -401,13 +408,15 @@ public enum ProjectDocument {
     /// `showModeOn`: canvas format changes are refused while show mode is on (they re-initialise the canvas).
     /// `checkLibraryRoot`: throws when the engine cannot switch to that root now (B51); gets the expanded absolute path.
     /// `applySync`: restarts the sync sender and receiver with saved settings; throws when the port cannot be bound.
-    /// `syphonRunning`: the numbers of the Syphon servers running now (B69: only the others can be forgotten).
+    /// `liveRunning`: the numbers of the live inputs running now, of every catalog (B69: only the others can be
+    /// forgotten). `authorizeCamera`: asks for the camera permission (`capture.authorize`).
     /// `displayModes`: the current mode of each connected display by UUID (a wall output's pixel size, §9.9).
     public static func registerCommands(
         on store: StateStore, auth: RoleAuth, showModeOn: @escaping @Sendable () -> Bool = { false },
         checkLibraryRoot: @escaping @Sendable (String) throws -> Void = { _ in },
         applySync: @escaping @Sendable (SyncSettings) throws -> Void = { _ in },
-        syphonRunning: @escaping @Sendable () -> Set<Int> = { [] },
+        liveRunning: @escaping @Sendable () -> Set<Int> = { [] },
+        authorizeCamera: @escaping @Sendable () -> Void = {},
         displayModes: @escaping @Sendable () -> [String: DisplayModeConfig] = { [:] }
     ) {
         store.register(
@@ -503,24 +512,44 @@ public enum ProjectDocument {
                 try setLayerCanvases(assigned, in: &project)
                 return nil
             })
+        let forgets: [(kind: LiveCatalog.Kind, noun: String, summary: String)] = [
+            (.syphon, "Syphon server", "Forget a numbered Syphon server that is not running (folder 0, 150–169), or without file every one not running: the number is free again."),
+            (.capture, "capture device", "Forget a numbered capture device that is not running (folder 0, 1–20), or without file every not-running device (1–20): the number is free again."),
+        ]
+        for (kind, noun, summary) in forgets {
+            store.register(
+                CommandSpec(
+                    name: "\(kind.projectKey).forget", role: .programmer, summary: summary, argsType: "{ file?: number }",
+                    // an undo puts the number back with `add /syphon/N`, which would overwrite a source numbered N meanwhile (B90)
+                    replayCheck: { patch, done, project in try checkLiveReplay(patch, undoing: done, on: project, running: liveRunning()) }
+                ) { project, args in
+                    let running = liveRunning()
+                    var numbers = liveNumbers(kind, from: project)
+                    if let raw = args["file"], raw != .null {
+                        guard let file = raw.int, numbers.contains(where: { $0.file == file }) else {
+                            throw CommandError.invalidArgs("no \(noun) numbered \(raw.int.map(String.init) ?? "\(raw)")")
+                        }
+                        guard !running.contains(file) else {
+                            throw CommandError.invalidArgs("\(noun.prefix(1).uppercased() + noun.dropFirst()) \(file) is running; only one that is not running can be forgotten")
+                        }
+                        numbers.removeAll { $0.file == file }
+                    } else {
+                        numbers.removeAll { !running.contains($0.file) }
+                    }
+                    try project.set(liveValue(numbers), at: JSONPointer(tokens: [kind.projectKey]))
+                    return nil
+                })
+        }
         store.register(
             CommandSpec(
-                name: "syphon.forget", role: .programmer,
-                summary: "Forget a numbered Syphon server that is not running (folder 0, 150–169), or without file every one not running: the number is free again.",
-                argsType: "{ file?: number }",
-                // an undo puts the number back with `add /syphon/N`, which would overwrite a server numbered N meanwhile (B90)
-                replayCheck: { patch, done, project in try checkLiveReplay(patch, undoing: done, on: project, running: syphonRunning()) }
-            ) { project, args in
-                let running = syphonRunning()
-                var numbers = liveNumbers(.syphon, from: project)
-                if let raw = args["file"], raw != .null {
-                    guard let file = raw.int, numbers.contains(where: { $0.file == file }) else { throw CommandError.invalidArgs("no Syphon server numbered \(raw)") }
-                    guard !running.contains(file) else { throw CommandError.invalidArgs("Syphon server \(file) is running; only one that is not running can be forgotten") }
-                    numbers.removeAll { $0.file == file }
-                } else {
-                    numbers.removeAll { !running.contains($0.file) }
-                }
-                try project.set(liveValue(numbers), at: "/syphon")
+                name: "capture.authorize", role: .programmer, undoable: false,
+                summary: "Ask macOS for the camera permission, or for screen recording (not available yet); refused in show mode.",
+                argsType: "{ kind: 'camera' | 'screen' }"
+            ) { _, args in
+                guard let kind = args["kind"]?.string, kind == "camera" || kind == "screen" else { throw CommandError.invalidArgs("kind must be camera or screen") }
+                guard !showModeOn() else { throw CommandError("showMode", "permissions are not asked in show mode; leave show mode first") }
+                guard kind == "camera" else { throw CommandError("unavailable", "screen capture is not available yet") }
+                authorizeCamera()
                 return nil
             })
         store.register(

@@ -710,6 +710,12 @@ three existing modes and their footprints alone.
   fixtures resolve as policy `internal` until packets return
   (`FixtureResolver.internalWithoutDMX`; also while a universe has never
   been received).
+- An unpatch is not a loss (2026-10-30): a layer or Master without a patch
+  entry (Unpatch, a lower layer count, `effectivePatch` beyond `layerCount`)
+  has no resolver, so no source reaches it; `DMXStore.publish` writes its
+  defaults (layer: intensity 0, no file; Master: 100 %, Normal, speed
+  100 %, no test pattern) into every snapshot instead of leaving the last
+  values in the triple-buffer slots.
 - Not built: per-packet receive interface (a routed console on another subnet
   is rejected by the subnet filter), Art-Net output/ArtAddress, per-address
   sACN priority (`[OPEN-10]`). Multicast delivery is not covered by the
@@ -830,7 +836,8 @@ Fanous Library/
 | File | Source |
 |---|---|
 | 0 | none |
-| 1–32 | cameras and capture cards (1–20), displays (21–28), windows (29–32): design, not built, see §8.2.1; NDI later |
+| 1–20 | cameras and capture cards, numbered as they appear and kept in the project (`/capture`); built 2026-10-30 (B73 step 2b), see §8.2.1 |
+| 21–32 | displays (21–28), windows (29–32): design, not built, see §8.2.1; NDI later |
 | 100 | solid colour (RGB channels define the colour) |
 | 101–120 | test patterns (same set as the Output test patterns), usable as layer content |
 
@@ -895,7 +902,8 @@ Since B73 step 1b: `Media/LiveCatalog.swift`, `LiveCatalog(.syphon, …)`; the B
 
 #### 8.2.1 Cameras, capture cards and screens: files 1–32 (design 2026-10-29, B73)
 
-**Status:** design, not built. The feature-gap survey (`docs/feature-gaps.md`
+**Status:** design; steps 1a–2b built (capture devices 1–20, as-built notes
+below), displays and windows not yet. The feature-gap survey (`docs/feature-gaps.md`
 G1, G3; P1) found that every compared product takes a camera or capture card
 and that Millumin, VDMX, Isadora and Mitti take slides and lyrics apps by
 screen capture. Both are system frameworks: AVFoundation capture and
@@ -941,7 +949,7 @@ by kind so a console operator can tell them apart:
 
 | Files | Source | Identity kept in the project |
 |---|---|---|
-| 1–20 | capture devices: UVC cameras and capture cards, Continuity Camera (an iPhone), CoreMediaIO camera extensions | `capture: {"3": {uid, name}}` |
+| 1–20 | capture devices: UVC cameras and capture cards, Continuity Camera (an iPhone), CoreMediaIO camera extensions | `capture: {"3": {uid, name, model}}` |
 | 21–28 | whole displays (the Mac's own, a second Mac's HDMI into a capture card is a capture device) | `screens: {"21": {uuid, name}}` |
 | 29–32 | windows of other apps (slides in a window, a lyrics app): later, see below | `windows: {"29": {app, title}}` |
 
@@ -1007,6 +1015,177 @@ the other kinds. Also not yet: one `applied` value and one running set per
 kind (`recordLiveNumbers` and `checkLiveReplay` take Syphon's). The keys
 `/capture`, `/screens` and `/windows` in `initial` and the load migration
 come with their first writer (step 2).
+
+**As built (2026-10-30, step 2a, PR #116):** `Capture/CaptureInput.swift`.
+*Spike:* `makeTexture(descriptor:iosurface:plane: 0)` accepts `.bgrg422` on
+an IOSurface-backed `2vuy` buffer and `.gbgr422` on a `yuvs` one, at full
+width. Sampled (nearest or linear) or read, both return (r, g, b) = (Cr, Y,
+Cb) with alpha 1: the luma of each full-width pixel, and chroma the hardware
+reconstructs as centre-sited (each pixel ¾ its own pair, ¼ the neighbouring
+pair on its side; only the two edge pixels read their pair exactly). The
+crossed pairing (`2vuy` as `.gbgr422`) mixes luma into the chroma channels.
+The hardware does not convert YCbCr to RGB, so these formats still need a
+shader case (a kind reading (Cr, Y, Cb)), and their chroma differs from the
+movie path's co-sited pick. Built instead: the step-1a path. Packed 4:2:2 is
+an `rgba8Unorm` view at half width; `2vuy` reads as `.v216` unchanged, and
+`yuvs` reads as the new `.yuy2` (8). That kind shares the v216 case in
+`Shaders.swift` after `p = p.grab`, and the compositor doubles the width for
+both. `420v` is planes 0/1 as `r8Unorm`/`rg8Unorm` (`.planarYCbCr`), `BGRA`
+`bgra8Unorm` (`.rgba`). Views are made once per IOSurface and cached (8
+entries, cleared when full, as after a format change). In the spike, a
+`CVPixelBufferPool` handed back the same buffer 20 times while a Metal view
+on its surface stayed alive, so the cache does not starve the pool.
+Readback through the compositor (`CaptureInputTests`, synthetic
+IOSurface-backed buffers): all four formats read white 255, black 0, red
+255,0,0, grey 128 (±1). The Y0/Y1 pair reads 255/0 for `2vuy` and `yuvs`
+(nearest) and 252/3 for `420v` and `BGRA` (linear). Packed frames keep their
+full-width aspect.
+*Session:* configured, started and stopped on the capture queue
+(`org.fanous.capture.<uid>`, `.userInteractive`), never on the loader
+thread; the input reads `.starting` meanwhile, and `.failed(reason)` when
+the session cannot start (the layer shows the reason). Among the device's
+formats of the active format's size, a frame-rate range that holds the
+canvas rate wins (1000/1001 apart is the same rate, as
+`DisplayModeMatching.sameRate`), the one whose top is closest above it
+first. Its min and max frame durations are both set to the canvas rate,
+clamped to the range, so a camera does not slow down in low light. Without
+such a range, the fastest range below the canvas rate runs at its top. Equal
+rates prefer `2vuy`/`yuvs`/`420v` over MJPEG. With no fitting range the
+active format is left alone. The canvas rate is the scene's at service
+start; `canvas.set` does not reopen a device. The output is asked for
+`2vuy`, `yuvs`, `420v` (from `420v`/`420f`) or `BGRA` by the native subtype,
+and for `BGRA` when the output does not list the wanted type (setting an
+unlisted one raises). The device's configuration lock is held across
+`startRunning`, so the session preset cannot put its own format back. After
+the start, the engine logs what runs: "capture <name>: <subtype> <w>x<h> @
+<fps>", plus the preset and the min rate. A warning follows if the running
+format differs from the chosen one. Not observed here (no camera can be
+opened in this environment): whether macOS resets the format without the
+lock. That is part of the owner's live check.
+*Retention:* one `Mutex` slot (ADR-0002, amendment 2026-10-30). The capture
+queue stores the newest frame, and an untaken frame it replaces is released.
+`latestFrame` returns the newest and moves it, once, into a ring of the last
+three taken. 100 reads through `LayerPlayback.frame` allocate nothing in
+release. Neither do 100 takes of 1080p `2vuy` pool buffers, each of which
+evicts a buffer whose last release returns it to the pool on the reading
+thread.
+*Counters:* `frames`, `dropped` (`didDrop`), `outOfBuffers` (`didDrop`
+with reason `OutOfBuffers`) and `unusable` (a delivered frame without an
+IOSurface or a texture view, with its reason logged once). They are logged
+at `info` every 60 s while frames arrive and on `stop()`, and published per
+layer as `layers[].capture` beside the size, which follows the newest frame.
+Whether 60 fps runs short is the owner's live check.
+*Status:* `.starting`, `.running(fps)`, `.noSignal` (no frame for 2 s, or a
+runtime error, interruption or disconnect until the next frame; the last
+frame stays), `.stopped` and `.failed`. The loader polls every open capture
+layer on its 100 ms loop and writes the status text, fps, subtype, size and
+counters to the layer status.
+*Scene entry:* `MediaEntry.capture` (a `uniqueID`) on any folder 0 number,
+"Camera: <localizedName>". `MediaLoader.captureFactory`
+throws its refusal as the layer's text and returns the `CaptureInput` itself
+(not `any LiveTextureSource`) so the loader can read its status.
+*Permission:* `CaptureInput.open` asks only when `allowed`.
+`RenderService.captureAllowed` is set by the engine to "not in show mode".
+While the dialog is open the layer reads "waiting for camera permission";
+the answer reopens the layer (`MediaLoader.capturePermissionChanged`). In
+show mode the layer reads the "not asked" text, and after a refusal the
+"denied" text above. `com.apple.security.device.camera` is in
+`scripts/entitlements.plist`; `NSCameraUsageDescription` and
+`NSCameraUseContinuityCameraDeviceType` are in both Info.plists.
+Not yet: files 1–20 by the catalog (step 2b). Two layers on one uid also
+open two sessions today; step 2b shares one input per uid. Also not yet:
+`v210` and the card list. The subtype shown is the one at start; the size
+follows the frames.
+
+**As built (2026-10-30, step 2b, PR #120):** files 1–20 by the catalog.
+*Catalog:* `LiveCatalog.startCapture()` (`RenderService`, beside Syphon's)
+reads `AVCaptureDevice.DiscoverySession` (`.external`, `.continuityCamera`,
+`.builtInWideAngleCamera`, video) on the main queue at start, on
+`wasConnected`/`wasDisconnected`, and every 2 s for
+`isInUseByAnotherApplication` (no notification says another app opened a
+device). Listing asks no permission. An entry is `source` = `uniqueID`,
+`name` = `localizedName`, `runtimeID` = `uniqueID` while connected, plus two
+`Entry` fields only capture fills: `model` (`modelID`) and `inUse`. `/capture`
+is `{"3": {uid, name, model}}` (`Kind.fields` gained the model name, nil for
+the other kinds). *Fallback:* `assign` first matches every running source by
+runtime id or identity. Then a device with a model takes the number of the
+entry not running with the same `model` and `name`, and that entry records the
+new uid. This needs exactly one candidate on both sides: two such entries, or
+two newcomers with that model and name, match nothing. The rest get numbers in
+order. Matching by uid first means a returning device never loses its number
+to a newcomer of its model. In use is still running (`live.capture` `running:
+true, inUse: true`).
+*Project:* `initial` and the load migration add `/capture` `{}`. The engine
+keeps the applied value per kind (`liveInProject`); the 10 Hz feed writes
+both catalogs back through `correct`, and a project change (`capture.forget`,
+undo, a revert, a loaded version) is adopted by the catalog of its key.
+`capture.forget {file?}` is `syphon.forget` on `/capture` (one registration
+loop). The forget commands' replay check gets the running files of both
+catalogs (the ranges do not overlap). `project.revert`'s replay check still
+passes none, as before. A known edge: an undo (or a loaded version) can put a
+uid back on its old number while that device runs under a new number after
+the fallback. The catalog keeps the running number, and the device moves back
+to the old one at its next replug.
+*Commands:* `capture.authorize {kind}` (programmer, refused under show lock
+and in show mode, not undoable): `camera` calls
+`CaptureInput.requestAccess(allowed: true)` and then
+`MediaLoader.capturePermissionChanged()`. `screen` is refused with
+`unavailable` until step 3.
+*Permissions cache:* `authorizationStatus` (about 25 ms, a TCC round trip
+that is not cached) and `CGPreflightScreenCaptureAccess()` (about 12 ms) are
+read by the capture catalog: once at `startCapture`, then on a utility queue
+with every 2 s poll and after each `requestAccess` answer (from
+`capture.authorize` or from the loader's own prompt). The feed and readiness
+read `LiveCatalog.permissions`, never TCC: the feed shares its serial queue
+with the 20 Hz DMX monitor stream.
+*Loader:* a folder 0 file 1–20 without a scene entry resolves through the
+catalog: "Camera: <name>", "not running" without a runtime id, else
+`captureFactory(uid)`. While the device is `inUse`, the layer reads "in use by
+another app" and is not opened, unless one of our layers already holds a live
+session on it: that session is shared first, because the flag may come from
+another app that opened the device after us. A scene entry still wins.
+`captureDevicesChanged` (the catalog's `onChange`) works like
+`syphonServersChanged`, and the loader remembers the uid each layer opened (as
+`syphonOpen` holds the runtime id):
+- A layer whose device went reads "not running" and keeps its input (the last
+  frame).
+- A layer is opened again when its device is running but not open, or open
+  under another uid. The second case is one update carrying an unplug and a
+  replug on another port (the 2 s poll, or merged changes).
+- A layer whose session failed or stopped is opened again too.
+
+One input per uid: the loader keeps uid → weak `CaptureInput`, and a second
+layer calls `share()` (a user count in the input's slot) instead of the
+factory. `share()` refuses a stopped or failed input. `stop()` stops the
+session when the last user lets go. A session that goes (device gone, uid
+changed, failed) is dropped from the table, so the next open makes a new one
+for every layer on the device. Two layers on one device mark the same frame
+taken once, so the ring of three still covers both.
+*Feed:* `live.capture` `{devices: [{file, name, running, gone?, inUse?}],
+screens: [], permissions: {camera, screen}}`: camera from the cached
+`authorizationStatus` (`restricted` reads `denied`), screen from the cached
+`CGPreflightScreenCaptureAccess()` until step 3 asks for it. Whether
+`isInUseByAnotherApplication` counts our own session is not known. If it
+does, the feed would have to drop `inUse` for the uids the loader holds open
+(its `captureShared` keys). That is the owner's live check.
+*Readiness:* item `capture` "Capture permissions granted" fails while the
+catalog has an entry (running or not) and the camera is not `granted`. The
+built-in camera counts as an entry, so a laptop without the grant fails
+until the item is acknowledged. Detail "camera: <word>", fix "System
+Settings › Privacy & Security › Camera, then Engine › Restart". It blocks
+show mode until acknowledged.
+*Tests* (fake device lists): numbering; the fallback (one twin, two twins, two
+newcomers, another model, uid first); `inUse`; `live.capture`; the forget and
+authorize rules; `/capture` through a revert and its undo; the migration; the
+readiness item. The loader tests cover:
+- two layers on file 3 with one factory call
+- unplug and replug in separate updates, and in one update under a new uid
+  (one new shared session, the old one stops)
+- in use: a new layer is refused, but our own session is shared first
+- a failed session: not shared, and opened again
+Not verified here (no camera in this environment): discovery of real
+devices, Continuity Camera, the permission prompt's name, and a replug
+on another port. They are the owner's live check.
 
 | Input | Framework | Pixel path | Kind |
 |---|---|---|---|
@@ -1690,6 +1869,9 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
 - The edit overlay is **on while Warp & Slices is open**, with a visible
   **Show on output** switch.
 - Masks v2 **includes freehand** drawing.
+- **Round and triangular slices are presets, not a slice type** (2026-10-30):
+  a slice stays four corners, and a circle is a quad with an ellipse mask
+  (item 5, Slice shapes).
 - Settled in the design, not asked:
   - the Keystone range (±50 % of the output);
   - presets hold the mapping (warp and slices). Blend, colour and black floor
@@ -2007,6 +2189,11 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
     the existing key backfills, and does the same on a version revert.
   - The UI reads the document, and one failed slice decode blanks every
     output, so this happens in the document and not only in Swift.
+  - Presets (3) are built first and store slices with the old `mask`, so the
+    same conversion runs on every `OutputConfig.presets[].slices[]`.
+    Otherwise `decodeIfPresent` skips the old key, and recalling a stored
+    preset silently drops its mask. A test loads a project with a masked
+    preset and recalls it.
 - **Visible area.** The union of the add masks (everything when there is none)
   minus the union of the subtract masks.
   - Feathered, that is `max(adds) × (1 − max(subtracts))`.
@@ -2051,6 +2238,25 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
   - The tools are in the mask mode of Warp & Slices.
   - They work on the iPad too: freehand with a finger on the preview.
   - Remote mode steps through mask points and their handles.
+- **Slice shapes (owner decision 2026-10-30).** A slice stays a quad of four
+  corners. Resolume's regular slices and Millumin's slices are rectangles,
+  quads or triangles, and both make round shapes with masks; only MadMapper
+  has a circle surface (`docs/mapping-ux.md` §2).
+  - Two buttons in the slice mode of Warp & Slices act on the selected slice.
+    Each is one edit, so one undo step:
+    - **Triangle:** the top-left and top-right corners move to the middle of
+      their edge. The bilinear slice mesh squeezes the source's top edge into
+      that point. `output.set` already accepts two equal corners; dragging
+      one away makes a quad again.
+    - **Circle:** adds an ellipse add mask (the Ellipse tool's path) that
+      fills the bounding box of the slice's corners. With other add masks on
+      the slice the visible area is their union, as for any mask.
+  - The mask stays in output coordinates, as every mask does: moving a slice
+    corner afterwards changes how the content stretches, not the circle. A
+    round object seen at an angle is an ellipse on the output anyway, and it
+    is drawn there.
+  - Not built: radial mapping (content wrapped around a ring), until a show
+    asks for it.
 
 **M2 build order** (one PR each, Opus coding agents, review before merge; the
 groundwork and small engine pieces first):
@@ -2061,7 +2267,7 @@ groundwork and small engine pieces first):
 5. Preset morph on Output ch 7
 6. Edit overlay with leases (Compare's lease arrives with 4)
 7. Masks v2: model, loading older projects, banded rasteriser
-8. Masks v2: UI and tools, freehand included
+8. Masks v2: UI and tools, freehand included, and the slice shape buttons
 
 ## 10. Audio
 
@@ -2648,8 +2854,9 @@ with public APIs:
 **Readiness check** (runs on entering show mode, re-checked every 30 s, each
 item with a one-line fix): on AC power; thermal state nominal; free disk > 10
 %; memory headroom; all patched universes receiving; capture permissions
-granted (camera when the capture catalog has an entry, screen when the screens
-catalog has one; design, §8.2.1); all outputs bound and in the desired mode;
+granted (`capture`: the camera when the capture catalog has an entry, built
+2026-10-30, B73 step 2b; the screen when the screens catalog has one, step 3;
+§8.2.1); all outputs bound and in the desired mode;
 no decoder errors; library on a local volume; Spotlight indexing of the
 library volume (`mdutil -s` state read via `MDQuery`/`mdutil` output) off or
 acknowledged; automatic macOS updates state (read from
