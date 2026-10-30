@@ -67,6 +67,8 @@ final class SyncSender: @unchecked Sendable {
     let slots: TripleBuffer<SyncSlot>
     let wake = DispatchSemaphore(value: 0)
     let packetsOut = Atomic<Int>(0)
+    /// Packets the non-blocking socket could not take at once (B123).
+    let packetsDropped = Atomic<Int>(0)
     private let network: Bool
     private let logger: Logger
     private let running = Atomic<Bool>(false)
@@ -86,7 +88,7 @@ final class SyncSender: @unchecked Sendable {
     /// Once; a second call does nothing (the slot has one reader).
     func start() {
         guard running.compareExchange(expected: false, desired: true, ordering: .relaxed).exchanged else { return }
-        let fd = socket(AF_INET, SOCK_DGRAM, 0)
+        let fd = UDPSend.socket()  // non-blocking (B123)
         guard fd >= 0 else { return logger.error("sync socket failed; not sending", metadata: ["errno": "\(errno)"]) }
         var on: Int32 = 1
         setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &on, socklen_t(MemoryLayout<Int32>.size))
@@ -117,6 +119,7 @@ final class SyncSender: @unchecked Sendable {
         var destination: sockaddr_in?
         var resolvedAt = -Double.infinity
         var lastError: Int32 = 0
+        var lastDropLog = -Double.infinity
         while running.load(ordering: .relaxed) {
             _ = wake.wait(timeout: .now() + .seconds(1))
             let now = CACurrentMediaTime()
@@ -134,18 +137,22 @@ final class SyncSender: @unchecked Sendable {
                 resolvedAt = now
                 destination = resolve()
             }
-            guard var address = destination else { continue }
-            let sent = withUnsafePointer(to: &address) { p in
-                p.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    sendto(fd, buffer, buffer.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-                }
-            }
-            if sent == buffer.count {
+            guard let address = destination else { continue }
+            switch UDPSend.send(fd, buffer, to: address) {
+            case .sent:
                 packetsOut.wrappingAdd(1, ordering: .relaxed)
                 lastError = 0
-            } else if errno != lastError {
-                lastError = errno
-                logger.warning("sync packet not sent", metadata: ["errno": "\(errno)", "target": "\(settings.target)"])
+            case .dropped:
+                let dropped = packetsDropped.wrappingAdd(1, ordering: .relaxed).newValue
+                if now - lastDropLog >= 60 {
+                    lastDropLog = now
+                    logger.warning("sync packets dropped (send buffer full)", metadata: ["dropped": "\(dropped)", "target": "\(settings.target)"])
+                }
+            case .failed(let error):
+                if error != lastError {
+                    lastError = error
+                    logger.warning("sync packet not sent", metadata: ["errno": "\(error)", "target": "\(settings.target)"])
+                }
             }
         }
     }
