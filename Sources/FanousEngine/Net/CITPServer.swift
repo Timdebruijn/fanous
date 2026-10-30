@@ -65,6 +65,8 @@ public final class CITPServer: @unchecked Sendable {
         public var port: UInt16
         public var clients: [String]
         public var streams: Int
+        /// PLoc datagrams dropped because the socket could not take them at once (B123).
+        public var beaconsDropped = 0
     }
 
     public static let productName = "Fanous"
@@ -81,6 +83,9 @@ public final class CITPServer: @unchecked Sendable {
     private var listener: NWListener?
     private var multicastSocket: Int32 = -1
     private var beaconReported = false
+    private var lastDropLog = -Double.infinity
+    /// `sendto` for the PLoc beacon; tests inject a full send buffer. Set before `start()`.
+    var sendDatagram: UDPSend.Function = Darwin.sendto
     private var locationTimer: DispatchSourceTimer?
     private var statusTimer: DispatchSourceTimer?
     private var frameTimer: DispatchSourceTimer?
@@ -172,8 +177,9 @@ public final class CITPServer: @unchecked Sendable {
 
     private func startMulticast() {
         // A plain BSD socket: Network.framework's NWConnection does not deliver to multicast groups (an
-        // NWConnectionGroup would, but PLoc is one datagram every 5 s). Default TTL 1 = this subnet.
-        multicastSocket = socket(AF_INET, SOCK_DGRAM, 0)
+        // NWConnectionGroup would, but PLoc is one datagram every 5 s). Default TTL 1 = this subnet. Non-blocking
+        // (B123): `stop()` joins this queue, so a send must never wait on the network.
+        multicastSocket = UDPSend.socket()
         guard multicastSocket >= 0 else {
             logger.warning("CITP multicast socket failed", metadata: ["errno": "\(errno)"])
             return
@@ -189,23 +195,33 @@ public final class CITPServer: @unchecked Sendable {
         let port = status.withLock { $0.port }
         guard port > 0 else { return }
         let packet = CITPPacket.peerLocation(PeerLocation(listeningTCPPort: port, type: "MediaServer", name: name, state: "Running")).encoded()
-        for address in [CITPMulticast.address, CITPMulticast.addressSince2014] {
+        for group in [CITPMulticast.address, CITPMulticast.addressSince2014] {
             var sin = sockaddr_in()
             sin.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
             sin.sin_family = sa_family_t(AF_INET)
             sin.sin_port = CITPMulticast.port.bigEndian
-            sin.sin_addr.s_addr = inet_addr(address)
-            let sent = withUnsafePointer(to: &sin) { pointer in
-                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { address in
-                    packet.withUnsafeBufferPointer { sendto(multicastSocket, $0.baseAddress, $0.count, 0, address, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+            sin.sin_addr.s_addr = inet_addr(group)
+            switch UDPSend.send(multicastSocket, packet, to: sin, using: sendDatagram) {
+            case .sent:
+                if !beaconReported {
+                    beaconReported = true
+                    logger.info("CITP PLoc beacon every 5 s", metadata: ["groups": "\(CITPMulticast.address), \(CITPMulticast.addressSince2014)", "tcp": "\(port)"])
                 }
-            }
-            if sent < 0, !beaconReported {
-                beaconReported = true
-                logger.warning("CITP PLoc beacon failed (firewall?)", metadata: ["to": "\(address):\(CITPMulticast.port)", "errno": "\(errno)", "error": "\(String(cString: strerror(errno)))"])
-            } else if sent >= 0, !beaconReported {
-                beaconReported = true
-                logger.info("CITP PLoc beacon every 5 s", metadata: ["groups": "\(CITPMulticast.address), \(CITPMulticast.addressSince2014)", "tcp": "\(port)"])
+            case .dropped:
+                let dropped = status.withLock {
+                    $0.beaconsDropped += 1
+                    return $0.beaconsDropped
+                }
+                let now = ProcessInfo.processInfo.systemUptime
+                if now - lastDropLog >= 60 {
+                    lastDropLog = now
+                    logger.warning("CITP PLoc beacon dropped (send buffer full)", metadata: ["to": "\(group):\(CITPMulticast.port)", "dropped": "\(dropped)"])
+                }
+            case .failed(let error):
+                if !beaconReported {
+                    beaconReported = true
+                    logger.warning("CITP PLoc beacon failed (firewall?)", metadata: ["to": "\(group):\(CITPMulticast.port)", "errno": "\(error)", "error": "\(String(cString: strerror(error)))"])
+                }
             }
         }
     }

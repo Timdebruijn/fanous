@@ -1536,7 +1536,9 @@ screens: [], permissions: {camera, screen}}`: camera from the cached
 `isInUseByAnotherApplication` counts our own session is not known. If it
 does, the feed would have to drop `inUse` for the uids the loader holds open
 (its `captureShared` keys). That is the owner's live check.
-*Readiness:* item `capture` "Capture permissions granted" fails while the
+*Readiness:* (replaced by B122: items `camera` and `screen`, only for
+inputs in use, see "Readiness (§14)" below) item `capture` "Capture
+permissions granted" fails while the
 catalog has an entry (running or not) and the camera is not `granted`. The
 built-in camera counts as an entry, so a laptop without the grant fails
 until the item is acknowledged. Detail "camera: <word>", fix "System
@@ -1642,7 +1644,8 @@ and exits 0, as the SIGTERM path does, and `KeepAlive` starts it again. Any
 other engine, or one in show mode (entered during the poll), only logs
 "screen capture granted: restart the engine to use it". Without the grant
 after two minutes it logs and stops polling.
-*Readiness:* item `capture` fails while a display is numbered (running or
+*Readiness:* (replaced by B122, see "Readiness (§14)" below) item
+`capture` fails while a display is numbered (running or
 not) and the cached grant is false: detail "screen: denied", fix "System
 Settings › Privacy & Security › Screen & System Audio Recording, then
 Engine › Restart" (both panes when the camera fails too). With a display
@@ -1654,7 +1657,7 @@ numbering 21–28 from fake display lists with the output-bound exclusion
 (bound from the start, bound later, unbound), a restart (gone, back by
 uuid under a new name) and nine displays; the feed and "pending";
 `/screens` in `initial` and the migration; the forget rules; the readiness
-item. A synthetic IOSurface-backed BGRA buffer through `ScreenInput` into
+item (moved to `LiveCatalogTests`, B122). A synthetic IOSurface-backed BGRA buffer through `ScreenInput` into
 the layer shader reads white 255, black 0, red 255,0,0 and grey 128
 exactly, and the pair 252/3 (linear). A still display keeps running for an
 hour, and `halt` keeps the frame (a frame delivered after it does not
@@ -1681,6 +1684,43 @@ display); the owner's live check:
   `dropped` counter with `queueDepth` 6);
 - whether idle samples arrive while a display is still, and the monthly
   re-ask.
+
+**Live check (2026-10-30, steps 2 and 3, dev Mac, ad-hoc build).** *Step 2:*
+the camera prompt names "Fanous Engine"; after Allow, layer 1 opened the
+FaceTime HD Camera as `420v` 1920x1080 @ 30 (canvas 60, locked), ~2,100
+frames with 0 dropped/outOfBuffers/unusable; two layers on one camera share
+one session (one start line, identical counters); `isInUseByAnotherApplication`
+is not set by our own session, so the feed needs no `captureShared` filter;
+the iPhone (Continuity Camera) opened `420v` 640x480 @ 60 because `pick`
+keeps the active format's size, which the preset leaves at 640x480 for that
+device (B126); thumbnails of both layers arrive. *Step 3:* display 21
+"Built-in Retina Display" is numbered and listed; a layer on it without the
+grant reads the permission text; `capture.authorize {kind: "screen"}` opened
+System Settings and the feed read `pending`, but
+`CGPreflightScreenCaptureAccess()` did not turn true in the running process
+after the user allowed it, so the poll ended "not granted within two minutes"
+and the feed went back to `denied` (B125); a SIGTERM restart (launchd,
+exit 0) brought the engine back with `granted`, and the layer opened as
+`BGRA 1663x1080 @ 60` (3024x1964 fitted into the canvas), ~55 fps with a
+changing picture, 0 dropped with `queueDepth` 6, thumbnails arriving, the
+Layers screen reading "Display: Built-in Retina Display · Live · 1663×1080",
+the Media and System screens as designed. The start line read
+`excludedApps=0`: the engine had no window, so it is not in
+`SCShareableContent.applications` (B124). An earlier engine (7.7 h uptime,
+two cameras used) did not exit on SIGTERM: `Engine.stop()` waited in
+`citp.stop()` on the CITP queue, which sat in a blocking `sendto` in
+`CITPServer.sendLocation()` (B123). Not verified: a display bound as an
+output leaving the list, a replug, the monthly re-ask, idle samples on a
+still display. Ad-hoc rebuilds reset the TCC grants (the code identity
+changes per build), see DEVELOPMENT.md.
+
+**As built (2026-10-30, B125, PR #132):** the two-minute poll, the `pending`
+state and the self-restart are gone. `capture.authorize {kind: "screen"}`
+asks once and refreshes the permission cache; the System screen's Screen row
+while denied captions "allow Fanous Engine, then Engine › Restart Engine", and
+the user guide says the same. The step 3a paragraph above and the step 3b
+paragraph below describe the poll and `pending` as they were.
+
 **As built (2026-10-30, step 3b, PR #126):** the web UI and user guide for
 displays 21–28. *Media:* "Displays (21–28)" (shown when non-empty) like the
 cameras: dot, "not running" / "not seen since the engine started", Layer N
@@ -1757,15 +1797,13 @@ permissions behave differently, and the design keeps them apart:
   Denied → "camera permission denied: allow Fanous Engine under Privacy &
   Security › Camera", as B37 does for the microphone. Granted stays granted.
 - *Screen* (`CGPreflightScreenCaptureAccess`, `CGRequestScreenCaptureAccess`):
-  macOS applies a grant only to a new process. `capture.authorize {kind:
-  "screen"}` calls `CGRequestScreenCaptureAccess()`, which returns at once
-  (the grant happens in System Settings); the engine then polls
-  `CGPreflightScreenCaptureAccess()` once a second for two minutes and exits
-  cleanly when it turns true, which `KeepAlive` restarts (a foreground
-  `fanousd` only logs "restart the engine"). Whether preflight flips in the
-  granting process is verified at step 3; the System screen shows Restart
-  engine either way. Refused in show mode and under show lock, like
-  `canvas.set`.
+  macOS applies a grant only to a new process (live check, B125).
+  `capture.authorize {kind: "screen"}` calls `CGRequestScreenCaptureAccess()`
+  once, which returns at once and opens System Settings on the first ask, and
+  refreshes the permission cache; nothing else. The user allows Fanous Engine
+  there, then chooses Engine › Restart Engine; `live.capture.permissions.screen`
+  reads `granted` or `denied` only. Refused in show mode and under show lock,
+  like `canvas.set`.
   Every supported macOS (ADR-0020) re-asks a screen-capturing app about
   monthly ("Allow For One Month"), a dialog on the main display that an
   unattended show machine cannot answer and that may sit on an output.
@@ -1775,20 +1813,26 @@ permissions behave differently, and the design keeps them apart:
   the Developer ID build, B50, to be verified), and the user guide's advice
   to prefer a capture card for a show-critical slides feed.
 
-**Readiness (§14).** A new item "Capture permissions granted", reading the
-permission state: camera fails when the capture catalog has an entry and the
-permission is not granted; screen fails when the screens catalog has an entry
-and it is not granted. The fix line is "System Settings › Privacy & Security
-› Camera / Screen & System Audio Recording, then Engine › Restart". It blocks
-show mode until acknowledged, so no permission prompt appears during a show.
-The screen item also warns when the screens catalog has an entry (the monthly
-re-confirmation).
+**Readiness (§14).** Two items, each acknowledged by its own id (B122,
+2026-10-30; until then one item `capture` that looked at the catalogs, so the
+built-in camera and the main display failed or warned on every machine).
+`camera` "Camera permission granted" and `screen` "Screen recording granted"
+count only inputs **in use**: a project layer whose loaded media is folder 0
+file 1–20 (camera) or 21–28 (screen), read from the layers' media status, or
+an entry of the `--scene` file with `capture:` or `screen:`. Cues are not
+read: a cue stores raw channel values per fixture, and no cheap lookup turns
+them into media keys. In use and not granted fails (camera: not `granted`;
+screen: the cached grant false), with the fix "System Settings › Privacy &
+Security › Camera" or "… › Screen & System Audio Recording", then "Engine ›
+Restart"; it blocks show mode until acknowledged, so no permission prompt
+appears during a show. A display in use with the grant warns, never blocks
+(the monthly re-confirmation, §20 R18); the camera has no warning. Nothing in
+use is ok, whatever the catalogs list.
 
 **Live feed and UI.** `live.capture: {devices: [{file, name, running,
 gone?, inUse?}], screens: [{file, name, running, gone?}], permissions: {camera:
-"granted" | "denied" | "notDetermined", screen: "granted" | "denied" |
-"pending"}}` ("pending" since step 3a: `capture.authorize` waits for the
-grant and the engine restarts itself). The
+"granted" | "denied" | "notDetermined", screen: "granted" | "denied"}}`
+("pending" existed from step 3a until B125). The
 Media screen's folder 0 list gets the groups "Cameras and capture cards
 (1–20)" and "Displays (21–28)" with the green dot and Forget of the Syphon
 group; the layer panel's folder 0 picker lists them the same way; the
@@ -3574,10 +3618,10 @@ with public APIs:
 
 **Readiness check** (runs on entering show mode, re-checked every 30 s, each
 item with a one-line fix): on AC power; thermal state nominal; free disk > 10
-%; memory headroom; all patched universes receiving; capture permissions
-granted (`capture`: the camera when the capture catalog has an entry, built
-2026-10-30, B73 step 2b; the screen when the screens catalog has one, step 3;
-§8.2.1); all outputs bound and in the desired mode;
+%; memory headroom; all patched universes receiving; "Camera permission
+granted" and "Screen recording granted" (`camera` and `screen`, only for
+inputs a layer shows or a scene entry names, the screen warning while in use and granted; B73 steps 2b and 3,
+B122; §8.2.1); all outputs bound and in the desired mode;
 no decoder errors; library on a local volume; Spotlight indexing of the
 library volume (`mdutil -s` state read via `MDQuery`/`mdutil` output) off or
 acknowledged; automatic macOS updates state (read from
@@ -3772,7 +3816,10 @@ MSC and MIDI-triggered cues are additions, not rewrites.
 - Peer location: UDP multicast `224.0.0.180` (port 4809 per the spec PDF,
   re-checked when the fixtures are captured), `PLoc` sent every 5 s
   with the engine's name, type "MediaServer" and its TCP listening port
-  (ephemeral, advertised).
+  (ephemeral, advertised). The UDP socket is non-blocking (B123): a beacon
+  the kernel cannot take at once (`EAGAIN`, `ENOBUFS`) is dropped and counted
+  in `live.citp.beaconsDropped`, so `stop()`'s join on the CITP queue never
+  waits on the network.
 - MSEX over TCP, negotiating the highest version both sides support
   (1.0/1.1/1.2): `CInf`/`SInf` (server info, layer count), `LSta` (layer
   status: media, position, playing state at 4 Hz), `ELIn`/`MEIn` (element
@@ -4111,6 +4158,8 @@ FanousSync v1
   triple-buffered packet slot at the end of its CPU work (no allocation, no
   socket on the compositor thread); a sender thread wakes on a semaphore
   and sends the newest slot. Same pattern as the parameter triple buffer.
+  The socket is non-blocking (B123): a full send buffer drops the packet and
+  counts it (`packetsDropped` in `live.sync` and `/metrics`).
 - **Receiver:** one socket bound to `0.0.0.0:port` with `SO_REUSEPORT`
   (like the sACN receiver, so two engines on one Mac both receive), on its
   own queue. Packets from the machine's own id are dropped (local groups use
@@ -4278,7 +4327,7 @@ differs from the text above:
   do not apply). Freeze-all on the slave machine holds a slave like any other
   layer; the first tick after it relocks.
 - `live.sync` carries packet totals (`packetsIn`, `packetsOut`,
-  `decodeErrors`) and the machine id instead of `packetsPerSecond`; the UI
+  `packetsDropped` since B123, `decodeErrors`) and the machine id instead of `packetsPerSecond`; the UI
   shows the totals. A master's `name` is shown for masters on this machine only.
 - The two-engine check of §23.5 is manual (`docs/DEVELOPMENT.md`); the bench
   numbers are printed by `SyncCompositorTests`, which asserts no allocation.

@@ -119,8 +119,6 @@ public final class Engine: @unchecked Sendable {
     private let libraryRootInProject = Mutex<String?>(nil)
     /// `/syphon`, `/capture` and `/screens` as the engine last applied them (B69, B73): a catalog is written back when it differs.
     private let liveInProject = Mutex<[LiveCatalog.Kind: JSONValue]>([:])
-    /// `capture.authorize {kind: "screen"}` waits for the grant (`live.capture.permissions.screen` "pending").
-    private let screenGrantPending = Atomic<Bool>(false)
     /// The catalogs of folder 0's numbered live inputs (B61, B73), nil before the render service.
     private var liveCatalogs: [LiveCatalog] { render.map { [$0.syphonCatalog, $0.captureCatalog, $0.screensCatalog] } ?? [] }
     /// Root switches run here one at a time (scan, probe-thread join): never on the feed or control queue.
@@ -329,7 +327,14 @@ public final class Engine: @unchecked Sendable {
                     loader?.capturePermissionChanged()
                 }
             },
-            authorizeScreen: { [weak self] in self?.authorizeScreen() },
+            authorizeScreen: { [weak self] in
+                let catalog = self?.render?.captureCatalog
+                // opens System Settings on the first ask; macOS applies the grant only to a new process (Engine › Restart)
+                DispatchQueue.global(qos: .utility).async {
+                    _ = CGRequestScreenCaptureAccess()
+                    catalog?.refreshPermissions()
+                }
+            },
             displayModes: { [weak self] in Dictionary((self?.displays.withLock { $0 } ?? []).map { ($0.uuid, $0.mode) }, uniquingKeysWith: { a, _ in a }) },
             showPreset: { dmx.show($0, preset: $1) },
             showOverlay: { [weak self] id, on, selected in
@@ -680,7 +685,7 @@ public final class Engine: @unchecked Sendable {
                 }
                 if let receiver = self.syncReceiver, let sender = self.syncSender {
                     m["sync"] = [
-                        "packetsIn": .number(Double(receiver.packetsIn.load(ordering: .relaxed))), "packetsOut": .number(Double(sender.packetsOut.load(ordering: .relaxed))),
+                        "packetsIn": .number(Double(receiver.packetsIn.load(ordering: .relaxed))), "packetsOut": .number(Double(sender.packetsOut.load(ordering: .relaxed))), "packetsDropped": .number(Double(sender.packetsDropped.load(ordering: .relaxed))),
                         "decodeErrors": .number(Double(receiver.decodeErrors.load(ordering: .relaxed))),
                     ]
                 }
@@ -744,7 +749,7 @@ public final class Engine: @unchecked Sendable {
                     text += String(format: "\naudio: callbacks %llu  underruns %llu  corrections %llu  max drift %.1f ms", audio.callbacks, audio.underruns, audio.corrections, audio.maxDriftMillis)
                 }
                 if let receiver = self.syncReceiver, let sender = self.syncSender {
-                    text += "\nsync: packets in \(receiver.packetsIn.load(ordering: .relaxed))  out \(sender.packetsOut.load(ordering: .relaxed))  decode errors \(receiver.decodeErrors.load(ordering: .relaxed))"
+                    text += "\nsync: packets in \(receiver.packetsIn.load(ordering: .relaxed))  out \(sender.packetsOut.load(ordering: .relaxed))  dropped \(sender.packetsDropped.load(ordering: .relaxed))  decode errors \(receiver.decodeErrors.load(ordering: .relaxed))"
                 }
                 return .text(200, text)
             default:
@@ -877,7 +882,7 @@ public final class Engine: @unchecked Sendable {
         return [
             "machine": .string(receiver.machine.uuidString), "interface": .string(sender.settings.interface),
             "port": .number(Double(sender.settings.port)), "target": .string(sender.settings.target),
-            "packetsIn": .number(Double(receiver.packetsIn.load(ordering: .relaxed))), "packetsOut": .number(Double(sender.packetsOut.load(ordering: .relaxed))),
+            "packetsIn": .number(Double(receiver.packetsIn.load(ordering: .relaxed))), "packetsOut": .number(Double(sender.packetsOut.load(ordering: .relaxed))), "packetsDropped": .number(Double(sender.packetsDropped.load(ordering: .relaxed))),
             "decodeErrors": .number(Double(receiver.decodeErrors.load(ordering: .relaxed))), "masters": .object(masters),
             "conflicts": .array((1...LayerSync.groups).filter { table.conflict(group: $0, now: now) != nil }.map { .number(Double($0)) }),
         ]
@@ -994,7 +999,7 @@ public final class Engine: @unchecked Sendable {
 
     private func citpLive() -> JSONValue {
         guard let s = citp?.status.withLock({ $0 }) else { return [:] }
-        return ["port": .number(Double(s.port)), "clients": .array(s.clients.map { .string($0) }), "streams": .number(Double(s.streams)), "multicast": .array([.string(CITPMulticast.address), .string(CITPMulticast.addressSince2014)])]
+        return ["port": .number(Double(s.port)), "clients": .array(s.clients.map { .string($0) }), "streams": .number(Double(s.streams)), "beaconsDropped": .number(Double(s.beaconsDropped)), "multicast": .array([.string(CITPMulticast.address), .string(CITPMulticast.addressSince2014)])]
     }
 
     private func timecodeLive() -> JSONValue {
@@ -1100,9 +1105,10 @@ public final class Engine: @unchecked Sendable {
         context.modeIssues = modeChecks.withLock { $0 }.sorted { $0.key < $1.key }.compactMap { id, check in check.issue.map { "Output \(id): \($0)" } }
         context.layerErrors = projectLayers.compactMap { layer in layer.mediaStatus.withLock { $0.error.map { "Layer \(layer.index + 1): \($0)" } } }
         context.libraryRoot = library?.snapshot.root ?? ""
-        context.captureDevices = render?.captureCatalog.entries.count ?? 0
+        context.shownFolder0 = projectLayers.compactMap { layer in layer.mediaStatus.withLock { $0.folder == 0 ? $0.file : nil } }
+        context.sceneCapture = options.scene?.media.contains { $0.capture != nil } ?? false
+        context.sceneScreen = options.scene?.media.contains { $0.screen != nil } ?? false
         context.cameraPermission = Self.permissionWord(render?.captureCatalog.permissions.camera ?? .authorized)
-        context.screens = render?.screensCatalog.entries.count ?? 0
         context.screenPermission = render?.captureCatalog.permissions.screen ?? true ? "granted" : "denied"
         var masters: [Int: Int] = [:]
         for layer in projectLayers {
@@ -1749,18 +1755,13 @@ public final class Engine: @unchecked Sendable {
 
     /// `live.capture` from the catalog and its cached permissions (a TCC read costs tens of ms: never on the feed).
     private func captureLive() -> JSONValue {
-        let pending = screenGrantPending.load(ordering: .relaxed)
-        guard let render else { return Self.captureLive([], camera: .notDetermined, screen: false, pending: pending) }
+        guard let render else { return Self.captureLive([], camera: .notDetermined, screen: false) }
         let permissions = render.captureCatalog.permissions
-        return Self.captureLive(
-            render.captureCatalog.entries, screens: render.screensCatalog.entries, camera: permissions.camera, screen: permissions.screen, pending: pending)
+        return Self.captureLive(render.captureCatalog.entries, screens: render.screensCatalog.entries, camera: permissions.camera, screen: permissions.screen)
     }
 
-    /// `live.capture` (B73): the numbered capture devices and displays, and the permissions. `screen` reads "pending"
-    /// while `capture.authorize {kind: "screen"}` waits for the grant (the engine then restarts itself).
-    static func captureLive(
-        _ devices: [LiveCatalog.Entry], screens: [LiveCatalog.Entry] = [], camera: AVAuthorizationStatus, screen: Bool, pending: Bool = false
-    ) -> JSONValue {
+    /// `live.capture` (B73): the numbered capture devices and displays, and the permissions (screen: granted | denied).
+    static func captureLive(_ devices: [LiveCatalog.Entry], screens: [LiveCatalog.Entry] = [], camera: AVAuthorizationStatus, screen: Bool) -> JSONValue {
         func entry(_ d: LiveCatalog.Entry) -> JSONValue {
             var entry: JSONValue = ["file": .number(Double(d.file)), "name": .string(d.name), "running": .bool(d.running)]
             if d.gone { try? entry.set(true, at: "/gone") }
@@ -1770,52 +1771,8 @@ public final class Engine: @unchecked Sendable {
         return [
             "devices": .array(devices.map(entry)),
             "screens": .array(screens.map(entry)),
-            "permissions": ["camera": .string(permissionWord(camera)), "screen": .string(screen ? "granted" : pending ? "pending" : "denied")],
+            "permissions": ["camera": .string(permissionWord(camera)), "screen": .string(screen ? "granted" : "denied")],
         ]
-    }
-
-    /// `capture.authorize {kind: "screen"}` (B73 step 3): asks macOS (`CGRequestScreenCaptureAccess` returns at once;
-    /// the grant is given in System Settings), then polls `CGPreflightScreenCaptureAccess` once a second for two minutes.
-    /// macOS applies a grant only to a new process, so once it reads true the engine restarts itself (`restartForGrant`).
-    /// One poll at a time; nothing is asked when it already reads true.
-    private func authorizeScreen() {
-        guard screenGrantPending.compareExchange(expected: false, desired: true, ordering: .relaxed).exchanged else { return }
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard !CGPreflightScreenCaptureAccess() else {
-                self?.logger.info("screen capture already granted")
-                self?.screenGrantPending.store(false, ordering: .relaxed)
-                return
-            }
-            _ = CGRequestScreenCaptureAccess()
-            self?.logger.info("screen capture asked: waiting up to two minutes for the grant in System Settings")
-            ScreenInput.pollGrant(preflight: { CGPreflightScreenCaptureAccess() }) { [weak self] granted in
-                guard let self else { return }
-                // the flag goes once the cache holds the new grant, so the feed never reads "denied" in between
-                let cleared: @Sendable () -> Void = { [weak self] in self?.screenGrantPending.store(false, ordering: .relaxed) }
-                if let catalog = self.render?.captureCatalog { catalog.refreshPermissions(then: cleared) } else { cleared() }
-                if granted { self.restartForGrant() } else { self.logger.notice("screen capture not granted within two minutes") }
-            }
-        }
-    }
-
-    /// The LaunchAgent sets `XPC_SERVICE_NAME` to its job label: only that engine is started again by `KeepAlive`. An
-    /// orphaned child of the app, a `nohup` or terminal engine also has launchd as parent, and would stay down.
-    static let agentLabel = "org.fanous.engine"
-    static func restartsItself(environment: [String: String]) -> Bool { environment["XPC_SERVICE_NAME"] == agentLabel }
-
-    /// The screen-recording grant reads true: the LaunchAgent engine stops as Engine › Restart does (the restart marker,
-    /// then the SIGTERM path: `stop()`, exit 0) and `KeepAlive` starts it again. Any other engine, or one in show mode
-    /// (checked again on the main queue just before the stop), only logs.
-    private func restartForGrant() {
-        let later = "screen capture granted: restart the engine to use it"
-        guard Self.restartsItself(environment: ProcessInfo.processInfo.environment), !showMode.isOn else { return logger.notice("\(later)") }
-        DispatchQueue.main.async { [self] in
-            guard !showMode.isOn else { return logger.notice("\(later)") }  // a show entered meanwhile is not interrupted
-            logger.notice("screen capture granted: restarting")
-            try? Data().write(to: AppPaths.restartPendingFile, options: .atomic)
-            stop()
-            exit(0)
-        }
     }
 
     private func streamDMX() {

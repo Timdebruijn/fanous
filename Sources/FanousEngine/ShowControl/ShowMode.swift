@@ -216,12 +216,13 @@ public struct ReadinessContext: Sendable {
     /// "Layer 2 (group 1)" for slaves playing a file whose master is lost.
     public var syncLost: [String] = []
     public var hardwareSupported = true
-    /// Numbered capture devices (folder 0, 1–20), running or not, and the camera permission ("granted", "denied",
-    /// "notDetermined").
-    public var captureDevices = 0
+    /// Folder 0 files the layers show now; a permission counts only for inputs in use (B122): capture devices 1–20,
+    /// displays 21–28, or a scene entry's `capture:` / `screen:`.
+    public var shownFolder0: [Int] = []
+    public var sceneCapture = false
+    public var sceneScreen = false
+    /// The camera permission ("granted", "denied", "notDetermined") and the screen-recording grant ("granted", "denied").
     public var cameraPermission = "granted"
-    /// Numbered displays (folder 0, 21–28), running or not, and the screen-recording grant ("granted", "denied").
-    public var screens = 0
     public var screenPermission = "granted"
     public init() {}
 }
@@ -274,22 +275,23 @@ public enum Readiness {
                 id: "syncpackets", title: "Sync packets arriving", state: context.syncLost.isEmpty ? .ok : .warn,
                 detail: context.syncLost.isEmpty ? "arriving, or no slave in use" : "lost (freewheeling): \(context.syncLost.joined(separator: "; "))",
                 fix: "Check the master machine and the network; sync uses UDP port 8002 by default (System › Sync)"))
-        // a permission prompt must never come up during a show (B73): it blocks until acknowledged. With a display numbered
-        // it warns even when granted: macOS asks a screen-capturing app again about monthly (DESIGN.md §20 R18).
-        let cameraOK = context.captureDevices == 0 || context.cameraPermission == "granted"
-        let screenOK = context.screens == 0 || context.screenPermission == "granted"
-        let captureDetail = [
-            context.captureDevices == 0 ? nil : "camera: \(context.cameraPermission)", context.screens == 0 ? nil : "screen: \(context.screenPermission)",
-        ].compactMap { $0 }
-        let panes = [cameraOK ? nil : "Camera", screenOK ? nil : "Screen & System Audio Recording"].compactMap { $0 }
+        // a permission prompt must never come up during a show (B73): it blocks until acknowledged, only for inputs in use
+        // (B122). A display in use warns even when granted: macOS asks a screen-capturing app again about monthly
+        // (DESIGN.md §20 R18).
+        let cameraInUse = context.sceneCapture || context.shownFolder0.contains { LiveCatalog.Kind.capture.files.contains($0) }
+        let screenInUse = context.sceneScreen || context.shownFolder0.contains { LiveCatalog.Kind.screens.files.contains($0) }
+        add(
+            "camera", "Camera permission granted", !cameraInUse || context.cameraPermission == "granted",
+            cameraInUse ? "camera: \(context.cameraPermission)" : "no capture device in use", "System Settings › Privacy & Security › Camera, then Engine › Restart")
+        let screenGranted = context.screenPermission == "granted"
         items.append(
             ReadinessItem(
-                id: "capture", title: "Capture permissions granted", state: !(cameraOK && screenOK) ? .fail : context.screens > 0 ? .warn : .ok,
-                detail: captureDetail.isEmpty ? "no capture device or display numbered" : captureDetail.joined(separator: ", "),
-                fix: !panes.isEmpty
-                    ? "System Settings › Privacy & Security › \(panes.joined(separator: " / ")), then Engine › Restart"
-                    : "macOS asks about monthly to keep recording the screen, on the main display; prefer a capture card for a show-critical feed",
-                acknowledged: acknowledged.contains("capture")))
+                id: "screen", title: "Screen recording granted", state: !screenInUse ? .ok : screenGranted ? .warn : .fail,
+                detail: screenInUse ? "screen: \(context.screenPermission)" : "no display in use",
+                fix: screenInUse && screenGranted
+                    ? "macOS asks about monthly to keep recording the screen, on the main display; prefer a capture card for a show-critical feed"
+                    : "System Settings › Privacy & Security › Screen & System Audio Recording, then Engine › Restart",
+                acknowledged: acknowledged.contains("screen")))
         add("decoders", "No decoder errors", context.layerErrors.isEmpty, context.layerErrors.isEmpty ? "none" : context.layerErrors.joined(separator: "; "), "Fix or replace the failing media")
         let local = volumeIsLocal(context.libraryRoot)
         add("library", "Library on a local volume", local, local ? "local" : "network or removable volume", "Copy the library to the internal disk")

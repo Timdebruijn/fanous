@@ -166,13 +166,9 @@ public final class LiveCatalog: @unchecked Sendable {
     public var permissions: (camera: AVAuthorizationStatus, screen: Bool) { permissionState.withLock { $0 } }
     private let permissionState = Mutex<(camera: AVAuthorizationStatus, screen: Bool)>((.notDetermined, false))
 
-    /// Reads the permissions again off the calling thread (after `requestAccess` answers, and every 2 s); `then` runs
-    /// once the cache holds the new values.
-    public func refreshPermissions(then: (@Sendable () -> Void)? = nil) {
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            self?.readPermissions()
-            then?()
-        }
+    /// Reads the permissions again off the calling thread (after a `capture.authorize` ask, and every 2 s).
+    public func refreshPermissions() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in self?.readPermissions() }
     }
 
     private func readPermissions() {

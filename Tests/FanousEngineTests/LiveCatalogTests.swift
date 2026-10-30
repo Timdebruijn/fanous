@@ -218,19 +218,32 @@ extension LiveCatalogTests {
         #expect(loaded["capture"] == [:])
     }
 
-    /// Readiness item `capture`: fails (acknowledgeable) with a numbered device and the camera not granted.
-    @Test func captureReadinessItem() throws {
-        func item(_ devices: Int, _ permission: String, acknowledged: Set<String> = []) throws -> ReadinessItem {
+    /// Readiness items `camera` and `screen` (B122): only inputs in use count (a layer on folder 0 1–20 / 21–28, or a
+    /// scene entry's `capture:` / `screen:`). Not granted fails (acknowledgeable, each by its own id); a display in use
+    /// with the grant warns (macOS asks again about monthly); nothing in use is ok whatever the permissions.
+    @Test func captureReadinessItems() throws {
+        func items(
+            shown: [Int] = [], sceneScreen: Bool = false, camera: String = "granted", screen: String = "granted", acknowledged: Set<String> = []
+        ) throws -> (camera: ReadinessItem, screen: ReadinessItem) {
             var context = ReadinessContext()
-            context.captureDevices = devices
-            context.cameraPermission = permission
-            return try #require(Readiness.check(context, acknowledged: acknowledged).first { $0.id == "capture" })
+            (context.shownFolder0, context.sceneScreen, context.cameraPermission, context.screenPermission) = (shown, sceneScreen, camera, screen)
+            let all = Readiness.check(context, acknowledged: acknowledged)
+            return (try #require(all.first { $0.id == "camera" }), try #require(all.first { $0.id == "screen" }))
         }
-        #expect(try item(0, "notDetermined").state == .ok)
-        #expect(try item(2, "granted").state == .ok)
-        let denied = try item(1, "denied")
-        #expect(denied.state == .fail && denied.blocks && denied.title == "Capture permissions granted" && denied.detail == "camera: denied")
-        #expect(denied.fix == "System Settings › Privacy & Security › Camera, then Engine › Restart")
-        #expect(try !item(1, "notDetermined", acknowledged: ["capture"]).blocks)
+        let idle = try items(shown: [0, 29, 100, 150], camera: "denied", screen: "denied")
+        #expect(idle.camera.state == .ok && idle.screen.state == .ok && idle.camera.detail == "no capture device in use" && idle.screen.detail == "no display in use")
+        let camera = try items(shown: [3], camera: "notDetermined", screen: "denied")
+        #expect(camera.camera.state == .fail && camera.camera.blocks && camera.camera.title == "Camera permission granted" && camera.camera.detail == "camera: notDetermined")
+        #expect(camera.camera.fix == "System Settings › Privacy & Security › Camera, then Engine › Restart" && camera.screen.state == .ok)
+        let scene = try items(sceneScreen: true, screen: "denied")
+        #expect(scene.screen.state == .fail && scene.screen.blocks && scene.screen.title == "Screen recording granted" && scene.screen.detail == "screen: denied")
+        #expect(scene.screen.fix == "System Settings › Privacy & Security › Screen & System Audio Recording, then Engine › Restart" && scene.camera.state == .ok)
+        let display = try items(shown: [21])
+        #expect(display.screen.state == .warn && !display.screen.blocks && display.screen.fix.contains("monthly") && display.camera.state == .ok)
+        let granted = try items(shown: [3])
+        #expect(granted.camera.state == .ok && granted.screen.state == .ok)
+        // acknowledging one never hides the other
+        let both = try items(shown: [3, 22], camera: "denied", screen: "denied", acknowledged: ["camera"])
+        #expect(!both.camera.blocks && both.screen.blocks)
     }
 }

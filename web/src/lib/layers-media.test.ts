@@ -120,7 +120,7 @@ describe('folder 0 (B61)', () => {
         { file: 21, name: 'Built-in Retina Display', running: true },
         { file: 22, name: 'DELL U2720Q', running: false },
       ],
-      permissions: { camera: 'granted' as const, screen: 'pending' as const },
+      permissions: { camera: 'granted' as const, screen: 'denied' as const },
     };
     const items = folderZeroItems(servers, capture);
     const screens = items.filter((i) => i.kind === 'screen');

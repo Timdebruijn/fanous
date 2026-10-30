@@ -78,7 +78,7 @@ export interface CommandArgs {
   'canvas.remove': { id: number };
   /** Set the canvas name or clock-master output, or its size and rate (even 320–8192 px; 23.976, 24, 25, 29.97, 30, 50, 59.94 or 60 fps, set on canvas 1 for every canvas; re-initialises the canvas so outputs blank briefly; refused in show mode). Role: programmer, refused under show lock, undoable. */
   'canvas.set': { id: number; path: '/name' | '/clockMaster'; value: JSONValue } | { id: number; width: number; height: number; fps: number };
-  /** Ask macOS for the camera permission, or for screen recording (the engine restarts itself once it is granted in System Settings); refused in show mode. Role: programmer, refused under show lock. */
+  /** Ask macOS for the camera permission, or for screen recording (allow Fanous Engine in System Settings, then restart the engine); refused in show mode. Role: programmer, refused under show lock. */
   'capture.authorize': { kind: 'camera' | 'screen' };
   /** Forget a numbered capture device (folder 0, 1–20) or display (21–28) that is not running, or without file every one not running (1–28): the number is free again. Role: programmer, refused under show lock, undoable. */
   'capture.forget': { file?: number };

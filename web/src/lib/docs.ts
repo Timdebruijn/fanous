@@ -156,6 +156,8 @@ export interface SyncLiveDoc {
   target: string;
   packetsIn: number;
   packetsOut: number;
+  /** Packets dropped on a full send buffer (B123); absent from engines before it. */
+  packetsDropped?: number;
   decodeErrors: number;
   masters: Record<string, SyncMasterDoc>;
   conflicts: number[];
@@ -186,8 +188,7 @@ export interface CaptureSourceDoc {
 export interface CaptureLiveDoc {
   devices: CaptureSourceDoc[];
   screens?: CaptureSourceDoc[];
-  /** screen `pending`: after Authorize screen, while the engine polls for the grant and then restarts itself (step 3) */
-  permissions?: { camera: 'granted' | 'denied' | 'notDetermined'; screen: 'granted' | 'denied' | 'pending' };
+  permissions?: { camera: 'granted' | 'denied' | 'notDetermined'; screen: 'granted' | 'denied' };
 }
 
 export interface IngestJobDoc {
@@ -260,7 +261,7 @@ export interface LiveDoc {
     error: string | null;
   };
   /** CITP/MSEX media-server side: TCP port advertised by PLoc, connected consoles, open streams. */
-  citp: { port: number; clients: string[]; streams: number; multicast: string[] };
+  citp: { port: number; clients: string[]; streams: number; multicast: string[]; /** PLoc datagrams dropped on a full send buffer (B123) */ beaconsDropped?: number };
   /** Project versions (B23): when the last automatic version was saved (epoch s, null = none) and a counter bumped on every save or delete. */
   versions?: { lastAutomatic: number | null; serial: number } | null;
   /** Other apps' Syphon servers, numbered in folder 0 (B61). Absent from engines before B61. */

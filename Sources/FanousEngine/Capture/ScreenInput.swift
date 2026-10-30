@@ -48,20 +48,6 @@ public final class ScreenInput: CaptureInput, SCStreamOutput, SCStreamDelegate, 
         return nil
     }
 
-    /// `capture.authorize {kind: "screen"}` after `CGRequestScreenCaptureAccess()` (which returns at once; the grant is
-    /// given in System Settings): `preflight` is read every `interval` seconds on `queue` until it is true (`done(true)`)
-    /// or has read false `attempts` times (`done(false)`). The engine passes `CGPreflightScreenCaptureAccess`.
-    static func pollGrant(
-        preflight: @escaping @Sendable () -> Bool, interval: Double = 1, attempts: Int = 120, queue: DispatchQueue = .global(qos: .utility),
-        done: @escaping @Sendable (Bool) -> Void
-    ) {
-        queue.asyncAfter(deadline: .now() + interval) {
-            if preflight() { return done(true) }
-            guard attempts > 1 else { return done(false) }
-            pollGrant(preflight: preflight, interval: interval, attempts: attempts - 1, queue: queue, done: done)
-        }
-    }
-
     /// The display's pixel size, scaled down (aspect kept) when it is larger than the canvas; ScreenCaptureKit scales.
     static func fit(width: Int, height: Int, into canvas: (width: Int, height: Int)) -> (width: Int, height: Int) {
         guard width > 0, height > 0, width > canvas.width || height > canvas.height else { return (width, height) }

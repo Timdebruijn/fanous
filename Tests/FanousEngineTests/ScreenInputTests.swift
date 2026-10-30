@@ -60,8 +60,8 @@ struct ScreenInputTests {
         next.update(running: LiveCatalog.screens((0..<9).map { Self.display(UInt32(10 + $0), "d\($0)", "Display \($0)") }, bound: []))
         #expect(next.entries.count == 8 && next.unnumbered == ["Display 5", "Display 6", "Display 7", "Display 8"])
 
-        // `live.capture.screens`, and the screen permission "pending" while `capture.authorize` waits for the grant
-        let feed = Engine.captureLive([], screens: catalog.entries, camera: .authorized, screen: false, pending: true)
+        // `live.capture.screens`, and the screen permission granted | denied
+        let feed = Engine.captureLive([], screens: catalog.entries, camera: .authorized, screen: false)
         #expect(
             feed == [
                 "devices": [],
@@ -69,9 +69,9 @@ struct ScreenInputTests {
                     ["file": 21, "name": "Built-in Retina Display", "running": true], ["file": 22, "name": "DELL U2720Q", "running": true],
                     ["file": 23, "name": "LG", "running": true],
                 ],
-                "permissions": ["camera": "granted", "screen": "pending"],
+                "permissions": ["camera": "granted", "screen": "denied"],
             ])
-        #expect(Engine.captureLive([], screens: next.entries, camera: .authorized, screen: true, pending: true)["permissions"]?["screen"] == "granted")
+        #expect(Engine.captureLive([], screens: next.entries, camera: .authorized, screen: true)["permissions"]?["screen"] == "granted")
         #expect(Engine.captureLive([], screens: next.entries, camera: .authorized, screen: false)["screens"]?[0] == ["file": 21, "name": "Built-in Retina Display", "running": false, "gone": true])
     }
 
@@ -113,24 +113,6 @@ struct ScreenInputTests {
         #expect(store.project["screens"]?["22"] == ["uuid": "uuid-22", "name": "Display 22"])
         _ = try store.execute("capture.forget", role: .programmer).get()
         #expect(files(.screens) == [21] && files(.capture) == [1] && files(.syphon) == [150])
-    }
-
-    /// Readiness item `capture` with displays: fails (acknowledgeable) without the screen grant, with the pane to open;
-    /// granted, it warns (never blocks): macOS asks again about monthly.
-    @Test func captureReadinessItemCoversDisplays() throws {
-        func item(devices: Int = 0, camera: String = "granted", screens: Int, screen: String) throws -> ReadinessItem {
-            var context = ReadinessContext()
-            (context.captureDevices, context.cameraPermission, context.screens, context.screenPermission) = (devices, camera, screens, screen)
-            return try #require(Readiness.check(context, acknowledged: []).first { $0.id == "capture" })
-        }
-        #expect(try item(screens: 0, screen: "denied").state == .ok)
-        let denied = try item(screens: 1, screen: "denied")
-        #expect(denied.state == .fail && denied.blocks && denied.detail == "screen: denied")
-        #expect(denied.fix == "System Settings › Privacy & Security › Screen & System Audio Recording, then Engine › Restart")
-        let both = try item(devices: 1, camera: "denied", screens: 2, screen: "denied")
-        #expect(both.detail == "camera: denied, screen: denied" && both.fix == "System Settings › Privacy & Security › Camera / Screen & System Audio Recording, then Engine › Restart")
-        let granted = try item(devices: 1, screens: 1, screen: "granted")
-        #expect(granted.state == .warn && !granted.blocks && granted.detail == "camera: granted, screen: granted" && granted.fix.contains("monthly"))
     }
 
     // MARK: Input
@@ -234,32 +216,6 @@ struct ScreenInputTests {
             #expect(mallocs == 0, "100 screen frame reads: \(mallocs) allocations on the calling thread")
         #endif
         print("screen frame read × 100: \(mallocs) allocations")
-    }
-
-    /// `capture.authorize {kind: "screen"}`'s poll: true as soon as the preflight reads true, false after the attempts.
-    @Test func grantPollStopsWhenGrantedOrAfterItsAttempts() async throws {
-        let reads = Atomic<Int>(0), result = Mutex<Bool?>(nil)
-        ScreenInput.pollGrant(preflight: { reads.add(1, ordering: .relaxed).newValue >= 3 }, interval: 0.01, attempts: 10) { granted in
-            result.withLock { $0 = granted }
-        }
-        #expect(await waitUntil { result.withLock { $0 } != nil })
-        #expect(result.withLock { $0 } == true && reads.load(ordering: .relaxed) == 3)
-
-        let never = Atomic<Int>(0), refused = Mutex<Bool?>(nil)
-        ScreenInput.pollGrant(preflight: { never.add(1, ordering: .relaxed); return false }, interval: 0.01, attempts: 5) { granted in
-            refused.withLock { $0 = granted }
-        }
-        #expect(await waitUntil { refused.withLock { $0 } != nil })
-        #expect(refused.withLock { $0 } == false && never.load(ordering: .relaxed) == 5)
-    }
-
-    /// Only the LaunchAgent (launchd's `XPC_SERVICE_NAME` = its label) restarts itself after the grant: `KeepAlive`
-    /// brings it back. A terminal, `nohup` or orphaned engine (also launchd's child) and another job only log.
-    @Test func onlyTheLaunchAgentRestartsItselfForTheGrant() {
-        #expect(Engine.restartsItself(environment: ["XPC_SERVICE_NAME": "org.fanous.engine"]))
-        #expect(!Engine.restartsItself(environment: [:]))
-        #expect(!Engine.restartsItself(environment: ["XPC_SERVICE_NAME": "0"]))  // a terminal session
-        #expect(!Engine.restartsItself(environment: ["XPC_SERVICE_NAME": "application.org.fanous.app.1234"]))
     }
 
     // MARK: Loader
