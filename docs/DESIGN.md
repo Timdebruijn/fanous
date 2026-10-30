@@ -1737,9 +1737,10 @@ display); the owner's live check:
   re-ask.
 
 **Live check (2026-10-30, steps 2 and 3, dev Mac, ad-hoc build).** *Step 2:*
-the camera prompt names "Fanous Engine"; after Allow, layer 1 opened the
-FaceTime HD Camera as `420v` 1920x1080 @ 30 (canvas 60, locked), ~2,100
-frames with 0 dropped/outOfBuffers/unusable; two layers on one camera share
+the camera prompt names "Fanous Engine" (the System Settings entry is
+"Fanous", see the B127 note below); after Allow, layer 1 opened the FaceTime
+HD Camera as `420v` 1920x1080 @ 30 (canvas 60, locked), ~2,100 frames with 0
+dropped/outOfBuffers/unusable; two layers on one camera share
 one session (one start line, identical counters); `isInUseByAnotherApplication`
 is not set by our own session, so the feed needs no `captureShared` filter;
 the iPhone (Continuity Camera) opened `420v` 640x480 @ 60 because `pick`
@@ -1768,9 +1769,22 @@ changes per build), see DEVELOPMENT.md.
 **As built (2026-10-30, B125, PR #132):** the two-minute poll, the `pending`
 state and the self-restart are gone. `capture.authorize {kind: "screen"}`
 asks once and refreshes the permission cache; the System screen's Screen row
-while denied captions "allow Fanous Engine, then Engine › Restart Engine", and
+while denied captions "allow Fanous, then Engine › Restart Engine", and
 the user guide says the same. The step 3a paragraph above and the step 3b
 paragraph below describe the poll and `pending` as they were.
+
+**As built (2026-10-30, B127, PR #138):** TCC books the engine's camera and
+screen grants on the shell, not on the engine: `launchctl print` shows the
+agent `managed_by com.apple.xpc.ServiceManagement` with `parent bundle
+identifier = org.fanous.app`, so the Camera and Screen & System Audio
+Recording lists show one entry "Fanous" (the prompts still name "Fanous
+Engine"). Every instruction says "allow Fanous". After an ad-hoc rebuild the
+entries keep their switch on but no longer match the new code identity, the
+engine reads `notDetermined` / `denied`, and macOS does not ask again because
+the entry exists: DEVELOPMENT.md has the `tccutil reset` recipe. The dialog
+"Fanous may not be able to record the contents of your screen until it is
+quit" offers Quit & Reopen, which quits the shell (and with it the engine) and
+does not reopen a dev build: choose Later, then Engine › Restart Engine.
 
 **As built (2026-10-30, step 3b, PR #126):** the web UI and user guide for
 displays 21–28. *Media:* "Displays (21–28)" (shown when non-empty) like the
@@ -1833,7 +1847,8 @@ Camera in FaceTime) reads "in use".
 
 **Permissions (TCC).** The engine is the LaunchAgent helper bundle
 `org.fanous.engine` with its own Info.plist (§2.4), so prompts name "Fanous
-Engine" and carry its usage strings. `scripts/bundle.sh` adds
+Engine" and carry its usage strings (System Settings lists one entry,
+"Fanous": see the B127 as-built note above). `scripts/bundle.sh` adds
 `NSCameraUsageDescription` and `NSCameraUseContinuityCameraDeviceType` to
 both Info.plists, and the hardened runtime needs
 `com.apple.security.device.camera` in `scripts/entitlements.plist` (today it
@@ -1845,13 +1860,13 @@ permissions behave differently, and the design keeps them apart:
   "camera"}` from the System screen, and only outside show mode. In show mode
   a layer on a capture file with permission `notDetermined` reads "camera
   permission not asked: authorize on the System screen" and stays black.
-  Denied → "camera permission denied: allow Fanous Engine under Privacy &
+  Denied → "camera permission denied: allow Fanous under Privacy &
   Security › Camera", as B37 does for the microphone. Granted stays granted.
 - *Screen* (`CGPreflightScreenCaptureAccess`, `CGRequestScreenCaptureAccess`):
   macOS applies a grant only to a new process (live check, B125).
   `capture.authorize {kind: "screen"}` calls `CGRequestScreenCaptureAccess()`
   once, which returns at once and opens System Settings on the first ask, and
-  refreshes the permission cache; nothing else. The user allows Fanous Engine
+  refreshes the permission cache; nothing else. The user allows Fanous
   there, then chooses Engine › Restart Engine; `live.capture.permissions.screen`
   reads `granted` or `denied` only. Refused in show mode and under show lock,
   like `canvas.set`.
