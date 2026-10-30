@@ -410,7 +410,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   one block it goes right after the layer before it, else at its standard address, and it stays unpatched when that
   range is taken. Before, it took its standard address when that range was free. Layers above 32 get no address. The
   slot rule (`Patch.slot`, `Patch.blockStart`) has shared test vectors in `Tests/Fixtures/patch-slots.json`.
-- Fixed: a layer added at runtime (Add layer, `layers.setCount`) stayed empty until the engine restarted (B121, PR #PRNUM).
+- Fixed: a layer added at runtime (Add layer, `layers.setCount`) stayed empty until the engine restarted (B121, PR #128).
   The renderer now holds all 32 layers the parameter snapshot addresses from start; an empty layer makes no draw item
   and costs about 1 µs per tick. `live.layers`, readiness and CITP list the project's layers, not the 32. A removed
   layer has no fixture, so its parameters fall back to no media and it lets its media go (as before).
