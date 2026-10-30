@@ -53,7 +53,7 @@ Switch screens with the left rail or the keys 1 to 6.
 | 1 | Layers | One row per layer: media, position, intensity, play mode, source; preview of the canvas or the selected layer |
 | 2 | Media | The library: folders, files, import, transcode, ingest queue |
 | 3 | Outputs (Outputs & Mapping) | Canvases, outputs, blend, warp, slices, masks |
-| 4 | Patch (Patch / DMX) | Fixture table, DMX monitor, GDTF export |
+| 4 | Patch (Patch / DMX) | Fixture groups and blocks, universes, DMX monitor, GDTF export |
 | 5 | Show (Show control) | Timecode, cues, OSC, MIDI sources |
 | 6 | System (System / Health) | Show mode and readiness, library root, metrics, network, project versions, roles, logs |
 

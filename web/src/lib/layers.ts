@@ -271,9 +271,9 @@ export function reservedText(specs: ChannelSpec[], footprint: number): string {
   return used < footprint ? `${shown}; ${used + 1}–${footprint} reserved` : shown;
 }
 
-/** `artnet:0.0.1 · ch 145–208 · 64 ch`; address 0 is how patch.set unpatches. */
+/** `artnet:0.0.1 · ch 145–208 · 64 ch`, or "no address" (address 0 is how patch.set unpatches; DESIGN §6.6). */
 export function patchText(entry: PatchEntry | undefined, footprint: number): string {
-  if (!entry || entry.address <= 0) return 'unpatched';
+  if (!entry || entry.address <= 0) return 'no address';
   return `${entry.universe} · ch ${entry.address}–${entry.address + footprint - 1} · ${footprint} ch`;
 }
 
