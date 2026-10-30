@@ -529,7 +529,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   the UI comes with M2.8.
 - Fixed: a display changing role (master ↔ secondary) while its old render thread had not stopped within 1 s handed
   the old Freeze holds to the new thread, which could read them under the old thread's write; the new set now holds
-  afresh in that case, with a warning (B118, PR #TBD).
+  afresh in that case, with a warning (B118, PR #147).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
