@@ -507,6 +507,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   grants on the Fanous app, the prompts still name "Fanous Engine"); DEVELOPMENT.md explains the stale entry after
   an ad-hoc rebuild, the `tccutil reset` recipe and why to choose Later in the "until it is quit" dialog (B127,
   PR #138).
+- Fixed: universe pills wider than the status bar (a phone from 3 universes, an iPad from about 6) widened the page
+  sideways (136 px with 3 at 375 px); the pills now wrap onto a second row (PR #140).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
