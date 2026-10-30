@@ -2554,7 +2554,7 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
   measures the compositor tick without an output pass (its render encoder allocates in Metal), so the per-frame preset
   choice is kept allocation-free by construction, not by that check.
 
-**As built (M2.5, PR #TBD):**
+**As built (M2.5, PR #129):**
 - **Output ch 7.** `OutputParameter.fade`, "Mapping fade", the Layer Dissolve curve (0 → 0 s, 255 → 25.5 s) in group
   Mapping; reserved is ch 8 alone (the channel map writes a single reserved channel as "8"). GDTF attribute `MappingFade`
   (unit Time); OSC `/fanous/output/{n}/fade`. A curve as Dissolve is, so it merges and fades as Dissolve does (HTP under
