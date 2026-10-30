@@ -410,6 +410,18 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   one block it goes right after the layer before it, else at its standard address, and it stays unpatched when that
   range is taken. Before, it took its standard address when that range was free. Layers above 32 get no address. The
   slot rule (`Patch.slot`, `Patch.blockStart`) has shared test vectors in `Tests/Fixtures/patch-slots.json`.
+- Added: whole displays are folder 0 files 21–28 (B73 step 3a, PR #127, DESIGN §8.2.1), engine side. The engine numbers
+  every connected display that no output is bound to, keeps the numbers in the project (`/screens` `{"21": {uuid,
+  name}}`, added to older projects on open) and captures a selected one with ScreenCaptureKit: BGRA in sRGB at the
+  display's pixel size fitted into the canvas, at the canvas rate, without the cursor and without the engine's own
+  windows. Two layers on one display share one stream. A display that goes, or that an output is bound to, reads "not
+  running" and keeps its last picture; a scene entry `{folder: 0, file, screen: uuid}` also works. `live.capture.screens`
+  lists the displays. `capture.authorize {kind: "screen"}` now asks for screen recording (before: refused with
+  `unavailable`): the engine waits up to two minutes for the grant (`permissions.screen` "pending") and then restarts
+  itself, since macOS applies the grant to a new process only. Without the grant a display layer reads "screen
+  permission not granted: authorize on the System screen, then Engine › Restart". `capture.forget {file}` also frees
+  21–28. The readiness item "Capture permissions granted" fails while a display is numbered without the grant, and
+  warns while one is numbered with it (macOS asks again about monthly).
 - Added: **mapping presets** (M2.4, DESIGN §6.4, §9.10 item 3). An output stores its warp and slices, masks included,
   under a number 1–255 (`output.preset.store`, `recall`, `rename`, `remove`; one undo step each, also for a whole wall);
   blend, black floor, colour, intensity and region stay live. Output channel 6, **Mapping preset**, shows preset N while

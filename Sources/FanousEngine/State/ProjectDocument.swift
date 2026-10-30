@@ -274,6 +274,7 @@ public enum ProjectDocument {
             "walls": [],
             "syphon": [:],
             "capture": [:],
+            "screens": [:],
             "ui": [:],
         ]
     }
@@ -455,6 +456,7 @@ public enum ProjectDocument {
         if document["layerCanvas"] == nil { try? document.set([:], at: "/layerCanvas") }
         if document["syphon"] == nil { try? document.set([:], at: "/syphon") }
         if document["capture"] == nil { try? document.set([:], at: "/capture") }
+        if document["screens"] == nil { try? document.set([:], at: "/screens") }
         // mapping presets of a hand-edited or foreign file: numbers 1–255 and the first of each number, the list the engine
         // draws from (§9.10 item 3), so the UI offers the same; a preset that does not validate stays and is skipped there
         if var list = document["outputs"]?.array {
@@ -499,7 +501,7 @@ public enum ProjectDocument {
     /// `checkLibraryRoot`: throws when the engine cannot switch to that root now (B51); gets the expanded absolute path.
     /// `applySync`: restarts the sync sender and receiver with saved settings; throws when the port cannot be bound.
     /// `liveRunning`: the numbers of the live inputs running now, of every catalog (B69: only the others can be
-    /// forgotten). `authorizeCamera`: asks for the camera permission (`capture.authorize`).
+    /// forgotten). `authorizeCamera`, `authorizeScreen`: ask for the camera permission or screen recording (`capture.authorize`).
     /// `displayModes`: the current mode of each connected display by UUID (a wall output's pixel size, §9.9).
     /// `showPreset`: the Compare lease of `output.show` (output ids, preset number; 0 ends it), kept on the DMX queue.
     public static func registerCommands(
@@ -508,6 +510,7 @@ public enum ProjectDocument {
         applySync: @escaping @Sendable (SyncSettings) throws -> Void = { _ in },
         liveRunning: @escaping @Sendable () -> Set<Int> = { [] },
         authorizeCamera: @escaping @Sendable () -> Void = {},
+        authorizeScreen: @escaping @Sendable () -> Void = {},
         displayModes: @escaping @Sendable () -> [String: DisplayModeConfig] = { [:] },
         showPreset: @escaping @Sendable ([Int], Int) -> Void = { _, _ in }
     ) {
@@ -613,20 +616,27 @@ public enum ProjectDocument {
                 try setLayerCanvases(assigned, in: &project)
                 return nil
             })
-        let forgets: [(kind: LiveCatalog.Kind, noun: String, summary: String)] = [
-            (.syphon, "Syphon server", "Forget a numbered Syphon server that is not running (folder 0, 150–169), or without file every one not running: the number is free again."),
-            (.capture, "capture device", "Forget a numbered capture device that is not running (folder 0, 1–20), or without file every not-running device (1–20): the number is free again."),
+        // `capture.forget` covers the capture devices (1–20) and the displays (21–28): a file picks its kind by range
+        let forgets: [(name: String, kinds: [LiveCatalog.Kind], summary: String)] = [
+            ("syphon.forget", [.syphon], "Forget a numbered Syphon server that is not running (folder 0, 150–169), or without file every one not running: the number is free again."),
+            (
+                "capture.forget", [.capture, .screens],
+                "Forget a numbered capture device (folder 0, 1–20) or display (21–28) that is not running, or without file every one not running (1–28): the number is free again."
+            ),
         ]
-        for (kind, noun, summary) in forgets {
+        let nouns: [LiveCatalog.Kind: String] = [.syphon: "Syphon server", .capture: "capture device", .screens: "display"]
+        for (name, kinds, summary) in forgets {
             store.register(
                 CommandSpec(
-                    name: "\(kind.projectKey).forget", role: .programmer, summary: summary, argsType: "{ file?: number }",
+                    name: name, role: .programmer, summary: summary, argsType: "{ file?: number }",
                     // an undo puts the number back with `add /syphon/N`, which would overwrite a source numbered N meanwhile (B90)
                     replayCheck: { patch, done, project in try checkLiveReplay(patch, undoing: done, on: project, running: liveRunning()) }
                 ) { project, args in
                     let running = liveRunning()
-                    var numbers = liveNumbers(kind, from: project)
                     if let raw = args["file"], raw != .null {
+                        let kind = kinds.first { kind in raw.int.map(kind.files.contains) ?? false } ?? kinds[0]
+                        let noun = nouns[kind] ?? kind.noun
+                        var numbers = liveNumbers(kind, from: project)
                         guard let file = raw.int, numbers.contains(where: { $0.file == file }) else {
                             throw CommandError.invalidArgs("no \(noun) numbered \(raw.int.map(String.init) ?? "\(raw)")")
                         }
@@ -634,23 +644,27 @@ public enum ProjectDocument {
                             throw CommandError.invalidArgs("\(noun.prefix(1).uppercased() + noun.dropFirst()) \(file) is running; only one that is not running can be forgotten")
                         }
                         numbers.removeAll { $0.file == file }
+                        try project.set(liveValue(numbers), at: JSONPointer(tokens: [kind.projectKey]))
                     } else {
-                        numbers.removeAll { !running.contains($0.file) }
+                        for kind in kinds {
+                            let numbers = liveNumbers(kind, from: project)
+                            let kept = numbers.filter { running.contains($0.file) }
+                            if kept.count != numbers.count { try project.set(liveValue(kept), at: JSONPointer(tokens: [kind.projectKey])) }
+                        }
                     }
-                    try project.set(liveValue(numbers), at: JSONPointer(tokens: [kind.projectKey]))
                     return nil
                 })
         }
         store.register(
             CommandSpec(
                 name: "capture.authorize", role: .programmer, undoable: false,
-                summary: "Ask macOS for the camera permission, or for screen recording (not available yet); refused in show mode.",
+                summary:
+                    "Ask macOS for the camera permission, or for screen recording (the engine restarts itself once it is granted in System Settings); refused in show mode.",
                 argsType: "{ kind: 'camera' | 'screen' }"
             ) { _, args in
                 guard let kind = args["kind"]?.string, kind == "camera" || kind == "screen" else { throw CommandError.invalidArgs("kind must be camera or screen") }
                 guard !showModeOn() else { throw CommandError("showMode", "permissions are not asked in show mode; leave show mode first") }
-                guard kind == "camera" else { throw CommandError("unavailable", "screen capture is not available yet") }
-                authorizeCamera()
+                if kind == "camera" { authorizeCamera() } else { authorizeScreen() }
                 return nil
             })
         store.register(

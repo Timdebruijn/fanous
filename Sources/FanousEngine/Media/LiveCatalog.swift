@@ -7,8 +7,8 @@ import Foundation
 import Metal
 import Synchronization
 
-/// Numbered live inputs of folder 0 (B61, B73): the Syphon servers of other apps (files 150–169) and, to come, capture
-/// devices (1–20), displays (21–28) and windows (29–32), numbered as they appear (the lowest free number), so a console
+/// Numbered live inputs of folder 0 (B61, B73): the Syphon servers of other apps (files 150–169), capture
+/// devices (1–20), displays (21–28) and, to come, windows (29–32), numbered as they appear (the lowest free number), so a console
 /// or the UI selects one like a generator. One that goes keeps its number (not running); one that comes back with the
 /// same identity takes its old number again. The numbering is kept in the project (`/syphon`, B69, or the kind's
 /// `projectKey`): the catalog starts from it, so numbers survive an engine restart. `syphon.forget` (`capture.forget`) frees a number;
@@ -166,9 +166,13 @@ public final class LiveCatalog: @unchecked Sendable {
     public var permissions: (camera: AVAuthorizationStatus, screen: Bool) { permissionState.withLock { $0 } }
     private let permissionState = Mutex<(camera: AVAuthorizationStatus, screen: Bool)>((.notDetermined, false))
 
-    /// Reads the permissions again off the calling thread (after `requestAccess` answers, and every 2 s).
-    public func refreshPermissions() {
-        DispatchQueue.global(qos: .utility).async { [weak self] in self?.readPermissions() }
+    /// Reads the permissions again off the calling thread (after `requestAccess` answers, and every 2 s); `then` runs
+    /// once the cache holds the new values.
+    public func refreshPermissions(then: (@Sendable () -> Void)? = nil) {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.readPermissions()
+            then?()
+        }
     }
 
     private func readPermissions() {
@@ -182,6 +186,13 @@ public final class LiveCatalog: @unchecked Sendable {
                 kind: .capture, file: 0, source: $0.uniqueID, name: $0.localizedName, runtimeID: $0.uniqueID, model: $0.modelID,
                 inUse: $0.isInUseByAnotherApplication)
         }
+    }
+
+    /// Screens: the displays `DisplayManager` lists (the engine applies them with `update` on every display change and
+    /// rebind), less those an output is bound to (they would show only the engine's excluded windows): such a display
+    /// keeps its number as not running, so the number stays stable while it serves as an output.
+    public static func screens(_ displays: [DisplayInfo], bound: Set<String>) -> [Entry] {
+        displays.filter { !bound.contains($0.uuid) }.map { Entry(kind: .screens, file: 0, source: $0.uuid, name: $0.name, runtimeID: $0.uuid) }
     }
 
     public func stop() {
