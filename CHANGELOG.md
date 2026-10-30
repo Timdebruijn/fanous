@@ -376,6 +376,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   Keystone) and patches a group as a block, with the groups taken from the channel map, so a new mode of an existing
   kind needs no UI code. Universes and the source policy get their own blocks, and a Patch sheet says what to patch on
   the console.
+- Added: `/api/channel-map.json` lists the fixture modes under `fixtures`, in display order, each with its `mode`, `name`,
+  what it is patched per (`per`: `layer`, `machine` for the Master, `output`) and whether it is `optional` (Keystone)
+  (DESIGN §6.6 item 3, ADR-0008 amendment). `footprints`, `modes`, the GDTF file and `docs/channel-map.md` are
+  unchanged; the Patch screen does not use it yet.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
