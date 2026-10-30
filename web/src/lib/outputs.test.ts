@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it, vi } from 'vitest';
-import { canvasSizeError, canvasTarget, colorOf, compareLease, freePresetNumber, previewReady, layerCanvas, layerRuns, layersOn, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, recalledText, sharedPresets, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, defaultMask, handles, keystoneBadges, maskHandle, maskTarget, meshIdentity, modeText, outlines, outputSize, statusText, type OutputConfig } from './outputs';
+import { canvasSizeError, canvasTarget, colorOf, compareLease, freePresetNumber, previewReady, layerCanvas, layerRuns, layersOn, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, recalledText, sharedPresets, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, KAPPA, UNIT_QUAD, circleMask, ellipsePath, finishMask, freehandPath, handles, insertNearest, keystoneBadges, maskHandle, maskOutline, maskRemoval, maskTarget, meshIdentity, modeText, movedHandle, outlines, outputSize, rectanglePath, simplify, smoothPoint, statusText, toggleSmooth, toolPath, triangleDest, type MapPoint, type MaskPoint, type MaskShape, type OutputConfig } from './outputs';
 
 const output: OutputConfig = {
   id: 1,
@@ -61,15 +61,19 @@ describe('outputs helpers', () => {
     const slice = { ...output.slices[0]!, masks: [...output.slices[0]!.masks!, { mode: 'subtract' as const, feather: 0, image: { folder: 1, file: 2 } }, { mode: 'subtract' as const, feather: 0, path: circle }] };
     const several = { ...output, slices: [slice] };
     const points = handles(several, 'mask', 0);
-    expect(points.map((h) => h.path)).toEqual([0, 1, 2].map((i) => `/slices/0/masks/0/path/${i}`).concat([0, 1, 2, 3].map((i) => `/slices/0/masks/2/path/${i}`)));
+    // each curved point is followed by its Bézier handles, where they lie
+    const circlePaths = [0, 1, 2, 3].flatMap((i) => ['', '/in', '/out'].map((side) => `/slices/0/masks/2/path/${i}${side}`));
+    expect(points.map((h) => h.path)).toEqual([0, 1, 2].map((i) => `/slices/0/masks/0/path/${i}`).concat(circlePaths));
     expect(points[3]!.point, 'the stored point, handles included').toEqual(circle[0]);
-    expect(maskHandle(points[4]!.path)).toEqual({ slice: 0, mask: 2, point: 1 });
+    expect(points[5]!.point, 'the out handle where it lies').toEqual({ x: 0.75, y: 0.5 + k });
+    expect(maskHandle(points[6]!.path)).toEqual({ slice: 0, mask: 2, point: 1 });
+    expect(maskHandle(points[7]!.path)).toEqual({ slice: 0, mask: 2, point: 1, side: 'in' });
     expect(maskHandle('/slices/0/dest/1')).toBeNull();
     const lines = outlines(several, 'mask', 0);
     expect(lines.map((l) => l.points.length), "the triangle's corners, the circle's four curves in 8 steps, nothing for the image").toEqual([3, 32]);
+    expect(lines.map((l) => l.subtract), 'a subtract mask (Invert) is drawn apart').toEqual([false, true]);
     lines[1]!.points.forEach((p) => expect(Math.hypot(p.x - 0.5, p.y - 0.5)).toBeCloseTo(0.25, 3));
     expect(lines[1]!.points[0]).toEqual({ x: 0.75, y: 0.5 });
-    expect(defaultMask()).toMatchObject({ mode: 'add', feather: 0 });
   });
 
   it("the mask tools act on the selected point's mask, else the first path mask, never an image mask", () => {
@@ -238,6 +242,7 @@ describe('outputs helpers', () => {
     expect(overlaySelection('cornerPin', 2, 3)).toEqual({ slice: 0, kind: 'corner', point: 3 });
     expect(overlaySelection('mesh', 4, 7)).toEqual({ slice: 0, kind: 'mesh', point: 7 });
     expect(overlaySelection('mask', 2, 5, '/slices/2/masks/1/path/3')).toEqual({ slice: 2, kind: 'mask', mask: 1, point: 3 });
+    expect(overlaySelection('mask', 2, 6, '/slices/2/masks/1/path/3/out'), 'a Bézier handle: the overlay marks its point').toEqual({ slice: 2, kind: 'mask', mask: 1, point: 3 });
     expect(overlaySelection('mask', 2, 5, '/slices/2/dest/1')).toBeNull();
     expect([overlaySelection('mesh', 0, 7)?.kind, overlaySelection('slices', 1, 2)?.kind]).toEqual(['mesh', 'slice']);
     expect(overlaySelection('slices', 0, -1), 'nothing selected').toBeNull();
@@ -303,5 +308,192 @@ describe('canvasSizeError', () => {
     expect(canvasSizeError(1921, 1080)).toBe('Width must be even.');
     expect(canvasSizeError(1920, 200)).toMatch(/^Height must be a whole number/);
     expect(canvasSizeError(Number.NaN, 1080)).toMatch(/^Width/);
+  });
+});
+
+/** A mask path's segment from `p` to `q` at `t`, by the Bernstein form (not the de Casteljau of outputs.ts). */
+function bezier(p: MaskPoint, q: MaskPoint, t: number): MapPoint {
+  const c1 = { x: p.x + (p.out?.x ?? 0), y: p.y + (p.out?.y ?? 0) }, c2 = { x: q.x + (q.in?.x ?? 0), y: q.y + (q.in?.y ?? 0) };
+  const s = 1 - t, [a, b, c, d] = [s * s * s, 3 * s * s * t, 3 * s * t * t, t * t * t];
+  return { x: a * p.x + b * c1.x + c * c2.x + d * q.x, y: a * p.y + b * c1.y + c * c2.y + d * q.y };
+}
+
+/** How far `p` is from the segment p0–p1 of a mask path, sampled at 20,000 steps (under 1e-4 apart here). */
+function offCurve(p0: MaskPoint, p1: MaskPoint, p: MapPoint): number {
+  return Math.min(...Array.from({ length: 20001 }, (_, k) => bezier(p0, p1, k / 20000)).map((q) => Math.hypot(q.x - p.x, q.y - p.y)));
+}
+
+/** Numbers rounded to 1e-9, so float noise does not decide a `toEqual`. */
+function round<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value, (_, v: unknown) => (typeof v === 'number' ? Math.round(v * 1e9) / 1e9 : v))) as T;
+}
+
+describe('mask tools (masks v2, M2.8)', () => {
+  const size = { w: 1000, h: 500 };
+
+  it('RDP keeps a point only when it lies farther than the tolerance from the simplified line', () => {
+    const line = (bump: number) => [{ x: 0, y: 0 }, { x: 2, y: 0.5 }, { x: 5, y: bump }, { x: 8, y: -0.5 }, { x: 10, y: 0 }];
+    expect(simplify(line(1.9), 2)).toEqual([{ x: 0, y: 0 }, { x: 10, y: 0 }]);
+    expect(simplify(line(2.1), 2)).toEqual([{ x: 0, y: 0 }, { x: 5, y: 2.1 }, { x: 10, y: 0 }]);
+    expect(simplify([{ x: 0, y: 0 }, { x: 1, y: 5 }], 2), 'two points stay two').toHaveLength(2);
+  });
+
+  it('freehand: RDP at 2 output px, the end back at the start dropped, a sharp turn kept as a corner', () => {
+    // a box traced in 50 px steps on the 1000 × 500 output, a bump up in the middle of the top edge, back to the start
+    const trace = (bump: number) => {
+      const px: MapPoint[] = [];
+      for (let x = 200; x < 800; x += 50) px.push({ x, y: x === 500 ? 100 - bump : 100 });
+      for (let y = 100; y < 400; y += 50) px.push({ x: 800, y });
+      for (let x = 800; x > 200; x -= 50) px.push({ x, y: 400 });
+      for (let y = 400; y >= 100; y -= 50) px.push({ x: 200, y });
+      return px.map((p) => ({ x: p.x / size.w, y: p.y / size.h }));
+    };
+    const inPixels = (path: MaskPoint[] | null) => round(path!.map((p) => [p.x * size.w, p.y * size.h]));
+    expect(inPixels(freehandPath(trace(1.9), size))).toEqual([[200, 100], [800, 100], [800, 400], [200, 400]]);
+    const path = freehandPath(trace(2.1), size)!;
+    expect(inPixels(path)).toEqual([[200, 100], [500, 97.9], [800, 100], [800, 400], [200, 400]]);
+    expect(path.map((p) => !!(p.in && p.out)), 'the four 90° corners stay corners, the bump is smooth').toEqual([false, true, false, false, false]);
+    expect(freehandPath(trace(0).slice(0, 2), size), 'a stroke of under 3 points: no mask').toBeNull();
+  });
+
+  it('freehand: a smooth stroke is the Catmull-Rom spline through its points; traced corners keep straight edges', () => {
+    const hd = { w: 1920, h: 1080 };
+    // a stroke through these corners (output px), a point every 4 px
+    const stroke = (corners: number[][]) => corners.slice(1).flatMap((b, i) => {
+      const a = corners[i]!, n = Math.max(1, Math.round(Math.hypot(b[0]! - a[0]!, b[1]! - a[1]!) / 4));
+      return Array.from({ length: n + 1 }, (_, k) => ({ x: (a[0]! + ((b[0]! - a[0]!) * k) / n) / hd.w, y: (a[1]! + ((b[1]! - a[1]!) * k) / n) / hd.h }));
+    });
+    // the farthest the mask's outline gets from the stroke, in output px
+    const px = (p: MapPoint) => ({ x: p.x * hd.w, y: p.y * hd.h });
+    const toSegment = (a: MapPoint, b: MapPoint, p: MapPoint) => {
+      const [dx, dy] = [b.x - a.x, b.y - a.y];
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+      return Math.hypot(a.x + t * dx - p.x, a.y + t * dy - p.y);
+    };
+    const apart = (path: MaskPoint[], line: MapPoint[]) => {
+      const [o, l] = [maskOutline(path, 32).map(px), line.map(px)];
+      return Math.max(...o.map((q) => Math.min(...l.slice(1).map((b, i) => toSegment(l[i]!, b, q)))));
+    };
+    const shapes = {
+      rectangle: [[400, 200], [1400, 200], [1400, 700], [400, 700], [400, 200]],
+      house: [[600, 700], [600, 400], [960, 200], [1320, 400], [1320, 700], [600, 700]],
+      window: [[800, 400], [1100, 400], [1100, 600], [800, 600], [800, 400]],
+    };
+    for (const [name, corners] of Object.entries(shapes)) {
+      const path = freehandPath(stroke(corners), hd)!;
+      expect(path.some((p) => p.in || p.out), `${name}: its corners are corners`).toBe(false);
+      expect(apart(path, stroke(corners)), name).toBeLessThanOrEqual(2);
+    }
+    // a 700 × 400 blob: smooth everywhere, within 2 px of the stroke, every segment the uniform Catmull-Rom spline
+    const blob = Array.from({ length: 200 }, (_, i) => [960 + 350 * Math.cos((i / 199) * 2 * Math.PI), 540 + 200 * Math.sin((i / 199) * 2 * Math.PI)]);
+    const path = freehandPath(stroke(blob), hd)!;
+    expect(path.every((p) => p.in && p.out)).toBe(true);
+    expect(apart(path, stroke(blob))).toBeLessThanOrEqual(2);
+    const cr = (a: number, b: number, c: number, d: number, t: number) =>
+      0.5 * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (3 * b - a - 3 * c + d) * t * t * t);
+    const n = path.length;
+    path.forEach((p, i) => {
+      const [a, q, d] = [path[(i + n - 1) % n]!, path[(i + 1) % n]!, path[(i + 2) % n]!];
+      for (const t of [0.25, 0.5, 0.8]) {
+        const b = bezier(p, q, t);
+        expect(b.x).toBeCloseTo(cr(a.x, p.x, q.x, d.x, t), 12);
+        expect(b.y).toBeCloseTo(cr(a.y, p.y, q.y, d.y, t), 12);
+      }
+    });
+  });
+
+  it('rectangle: the box from either corner, clockwise from the top left; a tap makes none', () => {
+    const box = [{ x: 0.2, y: 0.1 }, { x: 0.7, y: 0.1 }, { x: 0.7, y: 0.6 }, { x: 0.2, y: 0.6 }];
+    expect(rectanglePath({ x: 0.7, y: 0.6 }, { x: 0.2, y: 0.1 })).toEqual(box);
+    expect(toolPath('rectangle', [{ x: 0.7, y: 0.6 }, { x: 0.4, y: 0.4 }, { x: 0.2, y: 0.1 }], size), 'from where the drag started to where it ended').toEqual(box);
+    expect(toolPath('rectangle', [{ x: 0.5, y: 0.5 }, { x: 0.5015, y: 0.6 }], size), 'under 2 px wide').toBeNull();
+    expect(toolPath('ellipse', [{ x: 0.5, y: 0.5 }], size), 'a tap').toBeNull();
+  });
+
+  it('ellipse: 4 points on the sides of the box, handles κ × the radius along them, the outline on the ellipse', () => {
+    const e = ellipsePath({ x: 0.6, y: 0.5 }, { x: 0.2, y: 0.1 });
+    expect(round(e.map((p) => [p.x, p.y]))).toEqual([[0.4, 0.1], [0.6, 0.3], [0.4, 0.5], [0.2, 0.3]]);
+    const k = KAPPA * 0.2;
+    expect(round(e.map((p) => [p.in, p.out]))).toEqual(round([
+      [{ x: -k, y: 0 }, { x: k, y: 0 }], [{ x: 0, y: -k }, { x: 0, y: k }], [{ x: k, y: 0 }, { x: -k, y: 0 }], [{ x: 0, y: k }, { x: 0, y: -k }],
+    ]));
+    // κ's circle is within 0.03 % of its radius
+    maskOutline(e, 16).forEach((p) => expect(Math.hypot((p.x - 0.4) / 0.2, (p.y - 0.3) / 0.2)).toBeCloseTo(1, 3));
+  });
+
+  it('Add points on a curve splits it (de Casteljau): the new point lies on it, smooth, and the shape stays', () => {
+    const e = ellipsePath({ x: 0.2, y: 0.2 }, { x: 0.6, y: 0.6 });
+    const { path, index } = insertNearest(e, { x: 0.5, y: 0.2 }); // just outside the top-right quarter, near its start
+    expect(index).toBe(1);
+    expect(path).toHaveLength(5);
+    expect(path[1]!.in && path[1]!.out, 'smooth').toBeTruthy();
+    expect(path.slice(3), 'the other quarters as they were').toEqual(e.slice(2));
+    for (const [a, b] of [[0, 1], [1, 2]] as const) for (let k = 0; k <= 20; k++) expect(offCurve(e[0]!, e[1]!, bezier(path[a]!, path[b]!, k / 20))).toBeLessThan(1e-4);
+    // where the curve comes nearest to the tap: on the radius through it (κ's quarter is within 6e-5 of the circle;
+    // the nearest of the 63 samples alone is up to 0.0025 off, the chord's nearest point 0.015)
+    const towards = Math.hypot(0.1, -0.2);
+    expect(Math.hypot(path[1]!.x - 0.4 - (0.2 * 0.1) / towards, path[1]!.y - 0.4 + (0.2 * 0.2) / towards)).toBeLessThan(2e-4);
+    // a curve with a handle at one end only: the other end stays a corner, and the curve stays too
+    const half = [{ x: 0, y: 0 }, { x: 1, y: 0, in: { x: 0, y: -0.5 } }, { x: 0.5, y: 1 }];
+    const split = insertNearest(half, { x: 0.6, y: -0.2 }).path;
+    expect(split[0]).toEqual({ x: 0, y: 0 });
+    for (const [a, b] of [[0, 1], [1, 2]] as const) for (let k = 0; k <= 20; k++) expect(offCurve(half[0]!, half[1]!, bezier(split[a]!, split[b]!, k / 20))).toBeLessThan(1e-4);
+  });
+
+  it("a double-tap toggles corner ↔ smooth: handles a sixth of the neighbours' chord, or none", () => {
+    const box = rectanglePath({ x: 0, y: 0 }, { x: 0.6, y: 0.3 });
+    const smooth = toggleSmooth(box, 1);
+    expect(round(smooth)).toEqual({ x: 0.6, y: 0, in: { x: -0.1, y: -0.05 }, out: { x: 0.1, y: 0.05 } });
+    expect(smoothPoint(box, 1)).toEqual(smooth);
+    expect(toggleSmooth([box[0]!, smooth, ...box.slice(2)], 1)).toEqual({ x: 0.6, y: 0 });
+    expect(toggleSmooth([box[0]!, { ...box[1]!, out: { x: 0, y: 0.1 } }, ...box.slice(2)], 1), 'one handle is smooth too').toEqual({ x: 0.6, y: 0 });
+  });
+
+  it('Backspace on a Bézier handle removes the handle, on a point the point (a mask keeps 3)', () => {
+    const e = ellipsePath({ x: 0.2, y: 0.2 }, { x: 0.6, y: 0.6 });
+    const o = { ...output, slices: [{ ...output.slices[0]!, masks: [{ mode: 'add' as const, feather: 0, path: e }] }] };
+    const { in: _, ...cornerIn } = e[1]!;
+    expect(maskRemoval(o, '/slices/0/masks/0/path/1/in')).toEqual({ path: '/slices/0/masks/0/path/1', value: cornerIn });
+    expect(maskRemoval(o, '/slices/0/masks/0/path/1')).toEqual({ path: '/slices/0/masks/0/path', value: [e[0], e[2], e[3]] });
+    const three = { ...o, slices: [{ ...o.slices[0]!, masks: [{ mode: 'add' as const, feather: 0, path: e.slice(0, 3) }] }] };
+    expect(maskRemoval(three, '/slices/0/masks/0/path/1'), 'three points stay').toBeNull();
+    expect(maskRemoval(three, '/slices/0/masks/0/path/1/out'), 'a handle still goes').not.toBeNull();
+    expect(maskRemoval(o, '/slices/0/dest/1')).toBeNull();
+  });
+
+  it('a dragged Bézier handle is stored as the offset from its point; a dragged point keeps its handles', () => {
+    const e = ellipsePath({ x: 0.2, y: 0.2 }, { x: 0.6, y: 0.6 });
+    const o = { ...output, slices: [{ ...output.slices[0]!, masks: [{ mode: 'add' as const, feather: 0, path: e }] }] };
+    const handle = movedHandle(o, '/slices/0/masks/0/path/1/out', { x: 0.7, y: 0.5 });
+    expect(handle.path).toBe('/slices/0/masks/0/path/1');
+    expect(round(handle.value)).toEqual(round({ ...e[1]!, out: { x: 0.1, y: 0.1 } }));
+    expect(movedHandle(o, '/slices/0/masks/0/path/1', { x: 0.65, y: 0.4 })).toEqual({ path: '/slices/0/masks/0/path/1', value: { ...e[1]!, x: 0.65, y: 0.4 } });
+    expect(movedHandle(o, '/warp/cornerPin/2', { x: 0.9, y: 1 })).toEqual({ path: '/warp/cornerPin/2', value: { x: 0.9, y: 1 } });
+  });
+
+  it("slice shapes: Triangle meets the top corners mid-edge; Circle adds an ellipse filling the corners' bounding box", () => {
+    const skewed = [{ x: 0.1, y: 0.2 }, { x: 0.7, y: 0.1 }, { x: 0.9, y: 0.8 }, { x: 0.2, y: 0.9 }];
+    expect(round(triangleDest(skewed))).toEqual([{ x: 0.4, y: 0.15 }, { x: 0.4, y: 0.15 }, { x: 0.9, y: 0.8 }, { x: 0.2, y: 0.9 }]);
+    expect(triangleDest(UNIT_QUAD)).toEqual([{ x: 0.5, y: 0 }, { x: 0.5, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }]);
+    const circle = round(circleMask(skewed));
+    expect(circle).toMatchObject({ mode: 'add', feather: 0 });
+    expect(circle.path!.map((p) => [p.x, p.y]), 'touching each side of the box 0.1…0.9').toEqual([[0.5, 0.1], [0.9, 0.5], [0.5, 0.9], [0.1, 0.5]]);
+    expect(circle.path![0]!.out).toEqual({ x: round(KAPPA * 0.4), y: 0 });
+  });
+
+  it('Redraw replaces its mask wherever it is now; a mask changed or gone meanwhile is left, the path added', () => {
+    const a: MaskShape = { mode: 'add', feather: 0, path: rectanglePath({ x: 0.1, y: 0.1 }, { x: 0.5, y: 0.5 }) };
+    const b: MaskShape = { mode: 'subtract', feather: 4, path: rectanglePath({ x: 0.3, y: 0.3 }, { x: 0.4, y: 0.4 }) };
+    const image: MaskShape = { mode: 'add', feather: 0, image: { folder: 1, file: 2 } };
+    const path = ellipsePath({ x: 0.2, y: 0.2 }, { x: 0.6, y: 0.6 });
+    const added = { mode: 'add', feather: 0, path };
+    expect(finishMask([a, b], path, null), 'a tool appends an add mask').toEqual([a, b, added]);
+    expect(finishMask([a, b], path, b), 'mode and feather stay').toEqual([a, { ...b, path }]);
+    // another client changed the list while mask 2 was redrawn
+    expect(finishMask([b], path, b), 'mask 1 removed: b is at 0 now').toEqual([{ ...b, path }]);
+    expect(finishMask([image, a, b], path, b), 'one added in front: a, now at 1, stays').toEqual([image, a, { ...b, path }]);
+    const moved = { ...b, path: b.path!.map((p, i) => (i === 0 ? { ...p, x: 0.31 } : p)) };
+    expect(finishMask([a, moved], path, b), "b's point moved: not overwritten").toEqual([a, moved, added]);
+    expect(finishMask([a], path, b), 'b removed').toEqual([a, added]);
   });
 });

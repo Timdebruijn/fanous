@@ -274,14 +274,25 @@ export function overlaySelection(mode: MapperMode, slice: number, point: number,
   return { slice: kind === 'corner' || kind === 'mesh' ? 0 : slice, kind, point };
 }
 
-/** The slice, mask and point of a mask handle's pointer (`/slices/s/masks/m/path/i`); null for any other. */
-export function maskHandle(path: string | null | undefined): { slice: number; mask: number; point: number } | null {
-  const m = path?.match(/^\/slices\/(\d+)\/masks\/(\d+)\/path\/(\d+)$/);
-  return m ? { slice: Number(m[1]), mask: Number(m[2]), point: Number(m[3]) } : null;
+/** The slice, mask and point of a mask handle's pointer (`/slices/s/masks/m/path/i`), and `side` for one of the point's
+ *  Bézier handles (`…/i/in`, `…/i/out`); null for any other. */
+export function maskHandle(path: string | null | undefined): { slice: number; mask: number; point: number; side?: 'in' | 'out' } | null {
+  const m = path?.match(/^\/slices\/(\d+)\/masks\/(\d+)\/path\/(\d+)(?:\/(in|out))?$/);
+  return m ? { slice: Number(m[1]), mask: Number(m[2]), point: Number(m[3]), side: m[4] as 'in' | 'out' | undefined } : null;
 }
 
-/** The mask Warp & Slices' mask tools act on (the mask list comes with M2.8): the selected point's, else the slice's
- *  first path mask (an image mask has no points and no feather); −1 without a path mask. */
+/** The `output.set` that puts a handle at `to` (stored coordinates): a mask point keeps its Bézier handles, a Bézier
+ *  handle is stored as the offset from its point (both write the point); any other handle writes its own pointer. */
+export function movedHandle(output: OutputConfig, path: string, to: MapPoint): { path: string; value: MaskPoint } {
+  const h = maskHandle(path);
+  const point = h ? output.slices[h.slice]?.masks?.[h.mask]?.path?.[h.point] : undefined;
+  if (!h || !point) return { path, value: { x: to.x, y: to.y } };
+  const at = `/slices/${h.slice}/masks/${h.mask}/path/${h.point}`;
+  return { path: at, value: h.side ? { ...point, [h.side]: { x: to.x - point.x, y: to.y - point.y } } : { ...point, x: to.x, y: to.y } };
+}
+
+/** The mask Warp & Slices' Add points acts on: the selected point's, else the slice's first path mask (an image mask
+ *  has no points); −1 without a path mask. */
 export function maskTarget(slice: SliceConfig | undefined, sliceIndex: number, handle: string | null): number {
   const masks = slice?.masks ?? [];
   const h = maskHandle(handle);
@@ -407,11 +418,35 @@ export function handles(output: OutputConfig, mode: MapperMode, sliceIndex: numb
       return (slice?.dest ?? []).map((point, i) => ({ path: `/slices/${sliceIndex}/dest/${i}`, point, group: sliceIndex }));
     }
     case 'mask':
-      // every path mask's points, mask by mask; a point keeps its handles (`point` is the stored `MaskPoint`)
+      // every path mask's points, mask by mask; a point keeps its handles (`point` is the stored `MaskPoint`) and each
+      // Bézier handle follows its point (`point` where it lies), so Tab and the remote step through them too
       return (output.slices[sliceIndex]?.masks ?? []).flatMap((mask, m) =>
-        (mask.path ?? []).map((point, i) => ({ path: `/slices/${sliceIndex}/masks/${m}/path/${i}`, point, group: sliceIndex })),
+        (mask.path ?? []).flatMap((point, i) => {
+          const path = `/slices/${sliceIndex}/masks/${m}/path/${i}`;
+          const sides = (['in', 'out'] as const).filter((side) => point[side]);
+          return [{ path, point, group: sliceIndex }, ...sides.map((side) => ({ path: `${path}/${side}`, point: { x: point.x + point[side]!.x, y: point.y + point[side]!.y }, group: sliceIndex }))];
+        }),
       );
   }
+}
+
+const lerp = (a: MapPoint, b: MapPoint, t: number): MapPoint => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+const offset = (from: MapPoint, to: MapPoint): MapPoint => ({ x: to.x - from.x, y: to.y - from.y });
+
+/** The segment from `p` to `q` as a cubic's control points; a missing handle lies on its point. */
+function cubic(p: MaskPoint, q: MaskPoint): MapPoint[] {
+  return [p, { x: p.x + (p.out?.x ?? 0), y: p.y + (p.out?.y ?? 0) }, { x: q.x + (q.in?.x ?? 0), y: q.y + (q.in?.y ?? 0) }, q];
+}
+
+/** de Casteljau at `t`: the rows of the construction from the control points (`l[0]`) to the point on the curve
+ *  (`l[3][0]`); the left half is (l[0][0], l[1][0], l[2][0], l[3][0]), the right half (l[3][0], l[2][1], l[1][2], l[0][3]). */
+function casteljau(c: MapPoint[], t: number): MapPoint[][] {
+  const levels = [c];
+  while (levels.at(-1)!.length > 1) {
+    const row = levels.at(-1)!;
+    levels.push(row.slice(1).map((q, i) => lerp(row[i]!, q, t)));
+  }
+  return levels;
 }
 
 /** A mask path's closed outline: its points, and `pieces` steps along each curved segment (a handle at either end). */
@@ -421,18 +456,13 @@ export function maskOutline(path: MaskPoint[], pieces = 8): MapPoint[] {
     const q = path[(i + 1) % path.length]!;
     out.push({ x: p.x, y: p.y });
     if (!p.out && !q.in) return;
-    const c1 = { x: p.x + (p.out?.x ?? 0), y: p.y + (p.out?.y ?? 0) }, c2 = { x: q.x + (q.in?.x ?? 0), y: q.y + (q.in?.y ?? 0) };
-    for (let k = 1; k < pieces; k++) {
-      const t = k / pieces, s = 1 - t;
-      const [a, b, c, d] = [s * s * s, 3 * s * s * t, 3 * s * t * t, t * t * t];
-      out.push({ x: a * p.x + b * c1.x + c * c2.x + d * q.x, y: a * p.y + b * c1.y + c * c2.y + d * q.y });
-    }
+    for (let k = 1; k < pieces; k++) out.push(casteljau(cubic(p, q), k / pieces)[3]![0]!);
   });
   return out;
 }
 
-/** Closed outlines to draw under the handles. */
-export function outlines(output: OutputConfig, mode: MapperMode, sliceIndex: number): { points: MapPoint[]; group: number }[] {
+/** Closed outlines to draw under the handles; a subtract mask's says so, the editor draws it apart. */
+export function outlines(output: OutputConfig, mode: MapperMode, sliceIndex: number): { points: MapPoint[]; group: number; subtract?: boolean }[] {
   switch (mode) {
     case 'cornerPin':
       return [{ points: output.warp.cornerPin, group: 0 }];
@@ -447,35 +477,183 @@ export function outlines(output: OutputConfig, mode: MapperMode, sliceIndex: num
     case 'slices':
       return output.slices.map((slice, s) => ({ points: slice.dest, group: s }));
     case 'mask':
-      return (output.slices[sliceIndex]?.masks ?? []).flatMap((mask) => (mask.path && mask.path.length >= 3 ? [{ points: maskOutline(mask.path), group: sliceIndex }] : []));
+      return (output.slices[sliceIndex]?.masks ?? []).flatMap((mask) => (mask.path && mask.path.length >= 3 ? [{ points: maskOutline(mask.path), group: sliceIndex, subtract: mask.mode === 'subtract' }] : []));
   }
 }
 
-/** An add mask inset 10 % on every side, the starting point for a new mask. */
-export function defaultMask(): MaskShape {
-  return { mode: 'add', feather: 0, path: [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 }, { x: 0.9, y: 0.9 }, { x: 0.1, y: 0.9 }] };
+/** The parameter of the point on segment a–b nearest to `p` (0 on a segment of no length). */
+function nearestOn(a: MapPoint, b: MapPoint, p: MapPoint): number {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const length2 = dx * dx + dy * dy;
+  return length2 > 0 ? clamp01(((p.x - a.x) * dx + (p.y - a.y) * dy) / length2) : 0;
 }
 
-/** Inserts `p` into the closed path on the edge nearest to it, so a tapped point never tangles the shape. */
-export function insertNearest(path: MapPoint[], p: MapPoint): { path: MapPoint[]; index: number } {
+/** Inserts `p` into the closed path on the edge nearest to it, so a tapped point never tangles the shape. On a curved
+ *  edge the new point goes onto the curve where it comes nearest to `p` (the nearest of 63 points along it, refined
+ *  between its neighbours) and de Casteljau splits the curve there, so the shape stays as it was. */
+export function insertNearest(path: MaskPoint[], p: MapPoint): { path: MaskPoint[]; index: number } {
   if (path.length < 2) return { path: [...path, p], index: path.length };
-  let best = 0;
-  let bestDistance = Infinity;
+  let best = 0, bestT = 0, bestDistance = Infinity;
   for (let i = 0; i < path.length; i++) {
     const a = path[i]!, b = path[(i + 1) % path.length]!;
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const length2 = dx * dx + dy * dy;
-    const t = length2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length2)) : 0;
-    const qx = a.x + t * dx - p.x, qy = a.y + t * dy - p.y;
-    const distance = qx * qx + qy * qy;
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = i;
+    const curved = !!(a.out || b.in);
+    for (const t of curved ? Array.from({ length: 63 }, (_, k) => (k + 1) / 64) : [nearestOn(a, b, p)]) {
+      const q = curved ? casteljau(cubic(a, b), t)[3]![0]! : lerp(a, b, t);
+      const distance = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
+      if (distance < bestDistance) [best, bestT, bestDistance] = [i, t, distance];
     }
   }
   const next = [...path];
-  next.splice(best + 1, 0, p);
+  const a = path[best]!, j = (best + 1) % path.length, b = path[j]!;
+  if (!(a.out || b.in)) {
+    next.splice(best + 1, 0, p);
+    return { path: next, index: best + 1 };
+  }
+  // ternary search between the neighbouring samples (so close, the distance has one minimum), not onto an end point
+  const off = (t: number) => {
+    const q = casteljau(cubic(a, b), t)[3]![0]!;
+    return (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
+  };
+  let [lo, hi] = [Math.max(1 / 128, bestT - 1 / 64), Math.min(127 / 128, bestT + 1 / 64)];
+  for (let k = 0; k < 40; k++) {
+    const [t1, t2] = [lo + (hi - lo) / 3, hi - (hi - lo) / 3];
+    if (off(t1) < off(t2)) hi = t2;
+    else lo = t1;
+  }
+  const l = casteljau(cubic(a, b), (lo + hi) / 2), q = l[3]![0]!;
+  // a handle that was not there stays away: its half's handle lies on its point, as before
+  if (a.out) next[best] = { ...a, out: offset(a, l[1]![0]!) };
+  if (b.in) next[j] = { ...b, in: offset(b, l[1]![2]!) };
+  next.splice(best + 1, 0, { x: q.x, y: q.y, in: offset(q, l[2]![0]!), out: offset(q, l[2]![1]!) });
   return { path: next, index: best + 1 };
+}
+
+/** Ramer–Douglas–Peucker: the fewest of `points` (kept in order, both ends kept) that stay within `tolerance` of the
+ *  polyline. */
+export function simplify(points: MapPoint[], tolerance: number): MapPoint[] {
+  const keep = points.map((_, i) => i === 0 || i === points.length - 1);
+  const spans: [number, number][] = points.length > 2 ? [[0, points.length - 1]] : [];
+  for (let span = spans.pop(); span; span = spans.pop()) {
+    const [i, j] = span;
+    let far = -1, farthest = tolerance;
+    for (let k = i + 1; k < j; k++) {
+      const q = lerp(points[i]!, points[j]!, nearestOn(points[i]!, points[j]!, points[k]!));
+      const distance = Math.hypot(q.x - points[k]!.x, q.y - points[k]!.y);
+      if (distance > farthest) [far, farthest] = [k, distance];
+    }
+    if (far < 0) continue;
+    keep[far] = true;
+    spans.push([i, far], [far, j]);
+  }
+  return points.filter((_, i) => keep[i]);
+}
+
+/** Point `i` made smooth: Bézier handles along its neighbours' chord, a sixth of it each way, as Catmull-Rom through
+ *  the points gives (a third of its tangent (next − previous) / 2). */
+export function smoothPoint(path: MapPoint[], i: number): MaskPoint {
+  const n = path.length, p = path[i]!, d = offset(path[(i + n - 1) % n]!, path[(i + 1) % n]!);
+  return { x: p.x, y: p.y, in: { x: -d.x / 6, y: -d.y / 6 }, out: { x: d.x / 6, y: d.y / 6 } };
+}
+
+/** A double-tap on a mask point: a corner becomes smooth, a point with a handle a corner. */
+export function toggleSmooth(path: MaskPoint[], i: number): MaskPoint {
+  const p = path[i]!;
+  return p.in || p.out ? { x: p.x, y: p.y } : smoothPoint(path, i);
+}
+
+/** Bézier handles of a circle's quarter, as a fraction of its radius: 4 (√2 − 1) / 3. */
+export const KAPPA = 0.5522847498;
+
+/** The Rectangle tool: the box from corner `a` to corner `b`, its 4 corners clockwise from the top left. */
+export function rectanglePath(a: MapPoint, b: MapPoint): MaskPoint[] {
+  const [x0, x1, y0, y1] = [Math.min(a.x, b.x), Math.max(a.x, b.x), Math.min(a.y, b.y), Math.max(a.y, b.y)];
+  return [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+}
+
+/** The Ellipse tool: the ellipse filling the box from `a` to `b`, 4 points clockwise from the top, handles κ × the
+ *  radius along the box's sides. */
+export function ellipsePath(a: MapPoint, b: MapPoint): MaskPoint[] {
+  const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2, rx = Math.abs(b.x - a.x) / 2, ry = Math.abs(b.y - a.y) / 2;
+  const kx = KAPPA * rx, ky = KAPPA * ry;
+  return [
+    { x: cx, y: cy - ry, in: { x: -kx, y: 0 }, out: { x: kx, y: 0 } },
+    { x: cx + rx, y: cy, in: { x: 0, y: -ky }, out: { x: 0, y: ky } },
+    { x: cx, y: cy + ry, in: { x: kx, y: 0 }, out: { x: -kx, y: 0 } },
+    { x: cx - rx, y: cy, in: { x: 0, y: ky }, out: { x: 0, y: -ky } },
+  ];
+}
+
+/** A freehand point where the stroke turns by more than this stays a corner. Between RDP's points a curve of radius r
+ *  output px turns by at most 2 acos(1 − 2 / r), under 40° from r ≈ 35 px, so drawn curves stay smooth; the corners
+ *  people trace (a window's 90°, a 45° roof) turn more. */
+export const FREEHAND_CORNER = (40 * Math.PI) / 180;
+
+/** How far the closed path turns at point `i`, 0 to π (radians). */
+function turn(path: MapPoint[], i: number): number {
+  const n = path.length, a = offset(path[(i + n - 1) % n]!, path[i]!), b = offset(path[i]!, path[(i + 1) % n]!);
+  return Math.abs(Math.atan2(a.x * b.y - a.y * b.x, a.x * b.x + a.y * b.y));
+}
+
+/** The Freehand tool: the stroke (output coordinates) simplified by RDP at 2 output pixels and closed (an end back
+ *  within 2 px of the start is the start); a point where it turns sharply (`FREEHAND_CORNER`, measured in output
+ *  pixels) stays a corner, the others are smooth. Null when under 3 points remain. */
+export function freehandPath(stroke: MapPoint[], size: { w: number; h: number }): MaskPoint[] | null {
+  const px = simplify(stroke.map((p) => ({ x: p.x * size.w, y: p.y * size.h })), 2);
+  if (px.length > 1 && Math.hypot(px.at(-1)!.x - px[0]!.x, px.at(-1)!.y - px[0]!.y) <= 2) px.pop();
+  if (px.length < 3) return null;
+  const path = px.map((p) => ({ x: p.x / size.w, y: p.y / size.h }));
+  return path.map((p, i) => (turn(px, i) > FREEHAND_CORNER ? p : smoothPoint(path, i)));
+}
+
+/** The mask tools that take a drag on the picture (Polygon takes taps). */
+export type MaskTool = 'rectangle' | 'ellipse' | 'freehand';
+
+/** The path a drag tool makes of its stroke (output coordinates, from where the drag started); null when it is too
+ *  small for one: a box under 2 output px either way, a stroke that leaves under 3 points. */
+export function toolPath(tool: MaskTool, stroke: MapPoint[], size: { w: number; h: number }): MaskPoint[] | null {
+  const a = stroke[0], b = stroke.at(-1);
+  if (!a || !b) return null;
+  if (tool === 'freehand') return freehandPath(stroke, size);
+  if (Math.abs(b.x - a.x) * size.w < 2 || Math.abs(b.y - a.y) * size.h < 2) return null;
+  return tool === 'rectangle' ? rectanglePath(a, b) : ellipsePath(a, b);
+}
+
+/** The slice's masks with a new path from a tool: an add mask after the others, or in place of `redraw` (the mask
+ *  Redraw was chosen on, as it was then). Another client can change the list while a shape is drawn, so `redraw` is
+ *  looked up by content: a mask that changed or went makes the path a new mask rather than overwrite another one. */
+export function finishMask(masks: MaskShape[], path: MaskPoint[], redraw: MaskShape | null): MaskShape[] {
+  const i = redrawIndex(masks, redraw);
+  return i >= 0 ? masks.map((m, k) => (k === i ? { ...m, path } : m)) : [...masks, { mode: 'add', feather: 0, path }];
+}
+
+/** Where `redraw` is in the list now, by content; −1 when it changed or went (or there is none). */
+export function redrawIndex(masks: MaskShape[], redraw: MaskShape | null): number {
+  return redraw ? masks.findIndex((m) => JSON.stringify(m) === JSON.stringify(redraw)) : -1;
+}
+
+/** Backspace or Remove point on a mask handle: a Bézier handle goes (that side of its point becomes a corner), a
+ *  point goes from its path (a path keeps 3); null when nothing can go. */
+export function maskRemoval(output: OutputConfig, handle: string | null): { path: string; value: MaskPoint | MaskPoint[] } | null {
+  const h = maskHandle(handle);
+  const list = h ? output.slices[h.slice]?.masks?.[h.mask]?.path : undefined;
+  if (!h || !list?.[h.point]) return null;
+  const at = `/slices/${h.slice}/masks/${h.mask}/path`;
+  if (!h.side) return list.length > 3 ? { path: at, value: list.filter((_, i) => i !== h.point) } : null;
+  const point = { ...list[h.point]! };
+  delete point[h.side];
+  return { path: `${at}/${h.point}`, value: point };
+}
+
+/** Slice shape Triangle (DESIGN §9.10 item 5): the top-left and top-right corners meet in the middle of the top edge. */
+export function triangleDest(dest: MapPoint[]): MapPoint[] {
+  const top = lerp(dest[0]!, dest[1]!, 0.5);
+  return [top, top, ...dest.slice(2)];
+}
+
+/** Slice shape Circle: an add mask, the Ellipse tool's path filling the bounding box of the slice's corners. */
+export function circleMask(dest: MapPoint[]): MaskShape {
+  const xs = dest.map((p) => p.x), ys = dest.map((p) => p.y);
+  return { mode: 'add', feather: 0, path: ellipsePath({ x: Math.min(...xs), y: Math.min(...ys) }, { x: Math.max(...xs), y: Math.max(...ys) }) };
 }
 
 export function nextSliceId(output: OutputConfig): number {

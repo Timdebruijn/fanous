@@ -67,6 +67,10 @@ describe('media names', () => {
   it('lists playable numbered items in numeric order', () => {
     expect(mediaOptions(library).map((o) => `${o.folder}/${o.file}`)).toEqual(['1/2', '3/12']);
   });
+  it('lists only the stills for an image mask', () => {
+    const stills = { ...library, folders: [...library.folders, { number: 2, items: [{ folder: 2, file: 1, name: 'door.png', kind: 'still', status: 'playable' }] }] };
+    expect(mediaOptions(stills, 'still').map((o) => `${o.folder}/${o.file}`)).toEqual(['2/1']);
+  });
 });
 
 describe('folder 0 (B61)', () => {
