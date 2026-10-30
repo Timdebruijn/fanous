@@ -399,9 +399,9 @@ the show is locked). A device another app has open (an iPhone in FaceTime)
 reads "in use by another app" with a yellow dot. A card follows its input signal: the picture takes the size and rate of what
 comes in, and a card without a signal for 2 seconds reads "no signal" on the
 Layers screen and keeps its last frame. macOS asks for the camera permission
-once, for "Fanous Engine": when a layer first selects a camera, or when you
+once, for "Fanous Engine" (listed as "Fanous" in System Settings): when a layer first selects a camera, or when you
 press **Authorize camera** under Capture permissions on the System screen; never in
-show mode, so authorize before the show. Denied: allow Fanous Engine under
+show mode, so authorize before the show. Denied: allow Fanous under
 System Settings › Privacy & Security › Camera. Verified so far: the built-in
 camera, an iPhone over Continuity Camera; UVC cards such as Elgato Cam Link
 4K and Magewell USB Capture appear as cameras; Blackmagic DeckLink and
@@ -413,7 +413,7 @@ same way; a display that Fanous uses as an output reads "not running". A
 display layer is named `Display: <name>` and shows the whole display, scaled down to
 the canvas when larger (more in [media-library.md](media-library.md)). It
 needs the Screen permission: **Authorize screen** under Capture permissions
-on the System screen, never in show mode, allow Fanous Engine in System
+on the System screen, never in show mode, allow Fanous in System
 Settings, then choose Engine › **Restart Engine** (macOS applies the grant only
 to a new engine process). Without the grant the layer reads "screen permission
 not granted" and stays black.
@@ -427,7 +427,7 @@ Screen permission. A failed item blocks show mode until a programmer
 acknowledges it, so no permission dialog appears during the show; each is
 acknowledged on its own. While a layer shows a display, Screen recording
 granted also warns with the grant: macOS asks again about once a month whether
-Fanous Engine may record the screen, with a dialog on the main display. A
+Fanous may record the screen, with a dialog on the main display. A
 numbered camera or display that no layer shows changes neither item. Check
 them before every show, with the show's media loaded; for a show-critical
 slides feed, a capture card is the safer path.

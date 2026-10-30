@@ -100,7 +100,7 @@ the display mode item (it names the closest mode a display offers when the
 output's Mode is not available), the two Sync items, since a slave without a
 master still plays on its own, and Screen recording granted while a layer
 shows a display (folder 0, 21–28): macOS asks again about once a month, on the
-main display, whether Fanous Engine may record the screen. Answer it before
+main display, whether Fanous may record the screen. Answer it before
 doors.
 
 **Manual** items (Focus) have no button; the check is yours.
