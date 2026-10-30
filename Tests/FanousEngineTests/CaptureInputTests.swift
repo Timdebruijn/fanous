@@ -109,6 +109,44 @@ struct CaptureInputTests {
         #expect(CaptureInput.outputPixelFormat(native: kCVPixelFormatType_422YpCbCr10) == kCVPixelFormatType_32BGRA)  // v210 later
     }
 
+    /// The range that holds the canvas rate (1000/1001 counts as the same), the one whose top is closest above it, at
+    /// the canvas rate; else the fastest below; a kept subtype over MJPEG at equal rates.
+    @Test func frameRatePickHoldsTheCanvasRate() throws {
+        typealias O = CaptureInput.RateOption
+        let yuvs = kCVPixelFormatType_422YpCbCr8_yuvs, vuy = kCVPixelFormatType_422YpCbCr8, jpeg = kCMVideoCodecType_JPEG
+        func pick(_ o: [O], _ fps: Double) -> (Int, Double)? { CaptureInput.pick(o, fps: fps).map { ($0.index, $0.rate) } }
+        // 59.94 canvas: a 60.000-only range is the same rate (runs at its own 60), [1–60] runs at 59.94
+        #expect(pick([O(subtype: yuvs, minRate: 60, maxRate: 60)], 59.94).map { $0.0 == 0 && $0.1 == 60 } == true)
+        #expect(pick([O(subtype: yuvs, minRate: 1, maxRate: 60)], 59.94).map { $0.0 == 0 && $0.1 == 59.94 } == true)
+        // 60 canvas, a 59.94-only card: held
+        #expect(pick([O(subtype: vuy, minRate: 59.94, maxRate: 59.94)], 60).map { $0.0 == 0 && $0.1 == 59.94 } == true)
+        // 50 canvas: [1–60] holds 50, [1–30] does not; [25–50] is closer above than [1–60]
+        #expect(pick([O(subtype: yuvs, minRate: 1, maxRate: 60), O(subtype: yuvs, minRate: 1, maxRate: 30)], 50).map { $0.0 == 0 && $0.1 == 50 } == true)
+        #expect(pick([O(subtype: yuvs, minRate: 1, maxRate: 60), O(subtype: yuvs, minRate: 25, maxRate: 50)], 50).map { $0.0 == 1 && $0.1 == 50 } == true)
+        // nothing holds 60: the fastest below at its top; ranges only above the canvas rate are not taken
+        #expect(pick([O(subtype: yuvs, minRate: 1, maxRate: 15), O(subtype: yuvs, minRate: 1, maxRate: 30)], 60).map { $0.0 == 1 && $0.1 == 30 } == true)
+        #expect(pick([O(subtype: yuvs, minRate: 30, maxRate: 30)], 24) == nil)
+        // equal rates: the 4:2:2 format over MJPEG, whichever comes first
+        #expect(pick([O(subtype: jpeg, minRate: 1, maxRate: 30), O(subtype: vuy, minRate: 1, maxRate: 30)], 30).map { $0.0 == 1 } == true)
+        #expect(pick([O(subtype: vuy, minRate: 1, maxRate: 30), O(subtype: jpeg, minRate: 1, maxRate: 30)], 30).map { $0.0 == 0 } == true)
+    }
+
+    /// A frame without an IOSurface cannot be shown: counted as unusable (the layer would otherwise read "no signal" with
+    /// the device delivering); a frame after `stop()` is not counted.
+    @Test func unusableFramesAreCounted() throws {
+        let context = try MetalContext()
+        let input = Self.input(context.device)
+        var plain: CVPixelBuffer?
+        try #require(CVPixelBufferCreate(nil, 16, 8, kCVPixelFormatType_32BGRA, nil, &plain) == kCVReturnSuccess)
+        input.deliver(try #require(plain))
+        input.deliver(try #require(plain))
+        input.deliver(try Self.runsBuffer("BGRA"))
+        #expect(input.counters == CaptureInput.Counters(frames: 1, dropped: 0, outOfBuffers: 0, unusable: 2))
+        input.stop()
+        input.deliver(try Self.runsBuffer("BGRA"))
+        #expect(input.counters.frames == 1 && input.latestFrame == nil)
+    }
+
     /// Ten frames, three of them taken (plus one repeat read of a taken frame, which does not take a second ring slot):
     /// the three taken and the newest stay alive, the rest went back; a fourth take pushes the oldest out.
     @Test func keepsTheLastThreeTakenFramesAndTheLatest() throws {
@@ -197,13 +235,65 @@ struct CaptureInputTests {
             print("realDeviceDeliversAFrame skipped: camera permission is \(CaptureInput.authorization.rawValue), not authorized")
             return
         }
-        let context = try MetalContext(), metal = context.device
-        let input = try await offPool {
-            try CaptureInput(device: try #require(AVCaptureDevice.default(for: .video)), metal: metal, fps: 60, logger: Self.logger)
-        }
+        let context = try MetalContext()
+        let input = CaptureInput(device: device, metal: context.device, fps: 60, logger: Self.logger)  // starts on its queue
         defer { input.stop() }
-        #expect(await waitUntil(.seconds(3)) { input.latestFrame != nil }, "no frame from \(device.localizedName) in 3 s")
-        print("capture \(device.localizedName): \(input.subtype) \(input.width)x\(input.height), \(input.frames) frames, \(input.droppedFrames) dropped")
+        #expect(await waitUntil(.seconds(3)) { input.latestFrame != nil }, "no frame from \(device.localizedName) in 3 s: \(input.status)")
+        print("capture \(device.localizedName): \(input.format), \(input.counters)")
+    }
+
+    /// The reviewer's variant of the read test: 1080p `2vuy` buffers from a `CVPixelBufferPool`, delivered by another
+    /// thread, nothing kept by the test. Each of 100 takes evicts the oldest taken buffer, whose last release (back to
+    /// the pool) happens on the reading thread: still no allocation there.
+    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    func mallocCounterCaptureTakeEvictingPoolBuffersAllocatesNothing() throws {
+        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        let context = try MetalContext()
+        let input = Self.input(context.device)
+        let playback = LayerPlayback(key: MediaKey(folder: 0, file: 1), live: input)
+        var made: CVPixelBufferPool?
+        let attributes: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_422YpCbCr8, kCVPixelBufferWidthKey as String: 1920,
+            kCVPixelBufferHeightKey as String: 1080, kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any](),
+        ]
+        try #require(CVPixelBufferPoolCreate(nil, nil, attributes as CFDictionary, &made) == kCVReturnSuccess)
+        nonisolated(unsafe) let pool = try #require(made)
+        // the feeder thread plays the capture queue; semaphores hand over without allocating on the reading thread
+        let go = DispatchSemaphore(value: 0), done = DispatchSemaphore(value: 0)
+        let running = Atomic<Bool>(true)
+        Thread.detachNewThread {
+            while true {
+                go.wait()
+                guard running.load(ordering: .relaxed) else { break }
+                var buffer: CVPixelBuffer?
+                CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
+                if let buffer { input.deliver(buffer) }
+                done.signal()
+            }
+            done.signal()
+        }
+        defer {
+            running.store(false, ordering: .relaxed)
+            go.signal()
+            done.wait()
+        }
+        func deliverAndTake() {
+            go.signal()
+            done.wait()
+            _ = playback.frame(at: 0, direction: 1)
+        }
+        for _ in 0..<20 { deliverAndTake() }  // the pool and the view cache warm up, the ring is full
+        var mallocs = 0
+        for _ in 0..<3 {
+            mallocs = MallocCounter.count {
+                for _ in 0..<100 { deliverAndTake() }
+            }
+        }
+        #expect(input.counters.frames == 320)
+        #if !DEBUG
+            #expect(mallocs == 0, "100 takes evicting pool buffers: \(mallocs) allocations on the reading thread")
+        #endif
+        print("capture take evicting a pool buffer × 100: \(mallocs) allocations")
     }
 
     /// A scene entry `{folder: 0, file, capture: uid}` opens through `captureFactory`: the layer reads "Camera: <name>",
@@ -241,6 +331,9 @@ struct CaptureInputTests {
         #expect(playback(0) === input && input.latestFrame != nil)
         input.deliver(try Self.runsBuffer("BGRA"))
         #expect(eventually { status(0).error == nil })
+        // size and counters follow the input (a card changing format), polled by the loader
+        input.deliver(try Self.buffer(kCVPixelFormatType_32BGRA, 64, 32) { _ in Array(repeating: 9, count: 256) })
+        #expect(eventually { status(0).width == 64 && status(0).height == 32 && status(0).capture?.frames == 3 })
 
         granted.store(true, ordering: .relaxed)
         loader.capturePermissionChanged()

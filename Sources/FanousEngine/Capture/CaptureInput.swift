@@ -4,6 +4,7 @@
 
 import AVFoundation
 import CoreVideo
+import FanousCore
 import Foundation
 import IOSurface
 import Logging
@@ -30,15 +31,27 @@ public enum CaptureError: Error, CustomStringConvertible {
 }
 
 /// One AVFoundation capture device (camera, capture card, Continuity Camera) as a live layer source (DESIGN.md §8.2.1).
-/// Frames arrive on the device's own serial queue; the textures are views on each frame's IOSurface, made once per
-/// pool buffer. The compositor's `latestFrame` read marks the frame taken: the last three taken frames stay retained
-/// (command buffers in flight) beside the newest, everything else goes back to AVFoundation's pool.
+/// The session is configured, started and stopped on the device's own serial queue, where its frames also arrive; the
+/// textures are views on each frame's IOSurface, made once per pool buffer. The compositor's `latestFrame` read marks
+/// the frame taken: the last three taken frames stay retained (command buffers in flight) beside the newest,
+/// everything else goes back to AVFoundation's pool.
 public final class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     public enum Status: Equatable, Sendable {
         case starting
         case running(fps: Double)
         case noSignal
         case stopped
+        /// The session could not be configured or started (the device is in use, gone, or refused the input).
+        case failed(String)
+    }
+
+    /// Frames delivered; dropped by AVFoundation (any reason) and of those for want of a pool buffer; delivered but
+    /// unusable (no IOSurface, no texture view).
+    public struct Counters: Sendable, Equatable {
+        public var frames = 0
+        public var dropped = 0
+        public var outOfBuffers = 0
+        public var unusable = 0
     }
 
     /// A frame as delivered: the pixel buffer keeps the IOSurface (and AVFoundation's pool slot) while it is held.
@@ -54,33 +67,36 @@ public final class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoData
         var next = 0
         var startNanos: UInt64 = 0
         var lastFrameNanos: UInt64 = 0
+        var lastCountersLog: UInt64 = 0
         var interval = 0.0  // smoothed seconds between frames
         var interrupted = false
         var stopped = false
+        var failure: String?
+        var counters = Counters()
+        var unusableLogged = false
+        /// The running format's subtype, and the size of the newest frame (it follows a card's input).
+        var subtype = ""
+        var width = 0
+        var height = 0
     }
 
     public let name: String
-    /// The device's native subtype (`2vuy`, `yuvs`, `420v`, `jpeg`, …), empty for a synthetic input.
-    public private(set) var subtype = ""
-    public private(set) var width = 0
-    public private(set) var height = 0
     /// No frame for this long reads `.noSignal` (the last frame stays on the layer).
     let noSignalAfter: Double
+    static let countersLogEvery: UInt64 = 60_000_000_000
     private let now: @Sendable () -> UInt64
     private let views: TextureViews
     private let logger: Logger
     let slot = Mutex(Slot())
-    private let frameCount = Atomic<Int>(0)
-    private let lateCount = Atomic<Int>(0)
-    private let outOfBufferCount = Atomic<Int>(0)
+    private let queue: DispatchQueue
+    /// Capture queue only.
     private var session: AVCaptureSession?
     private var observers: [any NSObjectProtocol] = []
-    private let queue: DispatchQueue
 
-    /// Frames delivered, frames AVFoundation dropped (any reason), and of those the ones dropped for want of a pool buffer.
-    public var frames: Int { frameCount.load(ordering: .relaxed) }
-    public var droppedFrames: Int { lateCount.load(ordering: .relaxed) + outOfBuffers }
-    public var outOfBuffers: Int { outOfBufferCount.load(ordering: .relaxed) }
+    public var counters: Counters { slot.withLock { $0.counters } }
+    /// The running format's native subtype (`2vuy`, `yuvs`, `420v`, `jpeg`, …; empty until it runs or for a synthetic
+    /// input) and the newest frame's size.
+    public var format: (subtype: String, width: Int, height: Int) { slot.withLock { ($0.subtype, $0.width, $0.height) } }
 
     /// A source without a session, fed through `deliver` (tests).
     init(
@@ -92,16 +108,29 @@ public final class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoData
         self.now = now
         self.logger = logger
         views = TextureViews(device: metal)
-        queue = DispatchQueue(label: queueLabel)
+        queue = DispatchQueue(label: queueLabel, qos: .userInteractive)  // ADR-0002: frame producers feed the tick
         super.init()
         let start = now()
-        slot.withLock { $0.startNanos = start }
+        slot.withLock {
+            $0.startNanos = start
+            $0.lastCountersLog = start
+        }
     }
 
-    /// Opens `device` at its current input size, the highest frame rate at or below `fps`, and starts it.
-    public convenience init(device: AVCaptureDevice, metal: MTLDevice, fps: Double, logger: Logger) throws {
+    /// Opens `device` at its current input size and the canvas rate `fps` (or the closest it offers): the session is
+    /// configured and started on the capture queue, so this returns at once and the input reads `.starting` meanwhile.
+    public convenience init(device: AVCaptureDevice, metal: MTLDevice, fps: Double, logger: Logger) {
         self.init(name: device.localizedName, metal: metal, logger: logger, queueLabel: "org.fanous.capture.\(device.uniqueID)")
-        try open(device, fps: fps)
+        nonisolated(unsafe) let device = device  // used on the capture queue only from here on
+        queue.async { [self] in
+            guard !slot.withLock({ $0.stopped }) else { return }
+            do {
+                try start(device, fps: fps)
+            } catch {
+                logger.warning("capture \(name) could not start", metadata: ["error": "\(error)"])
+                slot.withLock { $0.failure = "\(error)" }
+            }
+        }
     }
 
     deinit {
@@ -134,10 +163,16 @@ public final class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoData
         default: throw CaptureError.permissionDenied
         }
         guard let device = AVCaptureDevice(uniqueID: uid) else { throw CaptureError.noDevice(uid) }
-        return try CaptureInput(device: device, metal: metal, fps: fps, logger: logger)
+        return CaptureInput(device: device, metal: metal, fps: fps, logger: logger)
     }
 
-    // MARK: Session
+    // MARK: Format
+
+    /// The 4:2:x subtypes the output keeps as they are.
+    static let keptSubtypes: Set<FourCharCode> = [
+        kCVPixelFormatType_422YpCbCr8, kCVPixelFormatType_422YpCbCr8_yuvs, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+        kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+    ]
 
     /// What the output is asked for, by the device's native subtype: the 8-bit layouts the shader reads stay as they
     /// are, anything else (MJPEG webcams, `v210` for now) is decoded to BGRA by AVFoundation.
@@ -151,22 +186,62 @@ public final class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoData
         }
     }
 
-    /// The format of the active format's size with the highest frame rate at or below `fps`, nil when none (a card
-    /// follows its input, so the size is the input's).
-    static func bestFormat(_ device: AVCaptureDevice, fps: Double) -> (format: AVCaptureDevice.Format, range: AVFrameRateRange)? {
+    /// One frame-rate range of one format of the active format's size.
+    struct RateOption {
+        var subtype: FourCharCode
+        var minRate: Double
+        var maxRate: Double
+    }
+
+    /// The option to run and the rate to run it at. A range that holds the canvas rate (1000/1001 apart counts as the
+    /// same rate, as for display modes) wins, the one whose top is closest above it first, at the canvas rate clamped
+    /// to the range. Without one, the fastest range below the canvas rate at its top rate. Ties: a subtype the output
+    /// keeps (`2vuy`, `yuvs`, `420v`) over one it decodes (MJPEG). Nil when every range is above the canvas rate.
+    static func pick(_ options: [RateOption], fps: Double) -> (index: Int, rate: Double)? {
+        func holds(_ o: RateOption) -> Bool {
+            (o.minRate <= fps || DisplayModeMatching.sameRate(o.minRate, fps)) && (fps <= o.maxRate || DisplayModeMatching.sameRate(fps, o.maxRate))
+        }
+        func better(_ a: RateOption, _ b: RateOption) -> Bool {
+            let (ha, hb) = (holds(a), holds(b))
+            if ha != hb { return ha }
+            if a.maxRate != b.maxRate { return ha ? a.maxRate < b.maxRate : a.maxRate > b.maxRate }
+            return keptSubtypes.contains(a.subtype) && !keptSubtypes.contains(b.subtype)
+        }
+        var best: Int?
+        for (i, o) in options.enumerated() where holds(o) || o.maxRate < fps {
+            if best.map({ better(o, options[$0]) }) ?? true { best = i }
+        }
+        guard let best else { return nil }
+        let o = options[best]
+        return (best, holds(o) ? min(max(fps, o.minRate), o.maxRate) : o.maxRate)
+    }
+
+    /// The device's format and range of the active format's size to run at `fps` (a card follows its input, so the
+    /// size is the input's), and the rate; nil when nothing fits (the active format is then left alone).
+    static func bestFormat(_ device: AVCaptureDevice, fps: Double) -> (format: AVCaptureDevice.Format, range: AVFrameRateRange, rate: Double)? {
         let size = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
-        var best: (format: AVCaptureDevice.Format, range: AVFrameRateRange)?
+        var candidates: [(AVCaptureDevice.Format, AVFrameRateRange)] = []
         for format in device.formats {
             let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
             guard dims.width == size.width, dims.height == size.height else { continue }
-            for range in format.videoSupportedFrameRateRanges where range.maxFrameRate <= fps + 0.01 {
-                if range.maxFrameRate > best?.range.maxFrameRate ?? 0 { best = (format, range) }
-            }
+            for range in format.videoSupportedFrameRateRanges { candidates.append((format, range)) }
         }
-        return best
+        let options = candidates.map { RateOption(subtype: $0.0.formatDescription.mediaSubType.rawValue, minRate: $0.1.minFrameRate, maxRate: $0.1.maxFrameRate) }
+        return pick(options, fps: fps).map { (candidates[$0.index].0, candidates[$0.index].1, $0.rate) }
     }
 
-    private func open(_ device: AVCaptureDevice, fps: Double) throws {
+    /// The frame duration for `rate` within `range`: the range's own end when the rate is (1000/1001-)outside it.
+    static func frameDuration(_ rate: Double, in range: AVFrameRateRange) -> CMTime {
+        if rate >= range.maxFrameRate { return range.minFrameDuration }
+        if rate <= range.minFrameRate { return range.maxFrameDuration }
+        return CMTime(seconds: 1 / rate, preferredTimescale: 600_000)  // 59.94 → 1001/60000
+    }
+
+    // MARK: Session
+
+    /// Capture queue. Holds the device's configuration lock across `startRunning`, so the session cannot put its preset's
+    /// format back over the chosen one; logs what actually runs.
+    private func start(_ device: AVCaptureDevice, fps: Double) throws {
         let session = AVCaptureSession()
         let input: AVCaptureDeviceInput
         do { input = try AVCaptureDeviceInput(device: device) } catch { throw CaptureError.session("\(error.localizedDescription)") }
@@ -179,14 +254,14 @@ public final class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoData
         }
         session.addInput(input)
         session.addOutput(output)
-        var rate = 0.0
-        if let (format, range) = Self.bestFormat(device, fps: fps), (try? device.lockForConfiguration()) != nil {
-            device.activeFormat = format
-            device.activeVideoMinFrameDuration = range.minFrameDuration
-            device.unlockForConfiguration()
-            rate = range.maxFrameRate
-        } else {
-            rate = device.activeFormat.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() ?? 0
+        let chosen = Self.bestFormat(device, fps: fps)
+        let locked = (try? device.lockForConfiguration()) != nil
+        defer { if locked { device.unlockForConfiguration() } }
+        if let chosen, locked {
+            device.activeFormat = chosen.format
+            let duration = Self.frameDuration(chosen.rate, in: chosen.range)
+            device.activeVideoMinFrameDuration = duration
+            device.activeVideoMaxFrameDuration = duration  // a fixed rate: no slowing down in low light
         }
         let native = device.activeFormat.formatDescription.mediaSubType.rawValue
         var pixelFormat = Self.outputPixelFormat(native: native)
@@ -195,11 +270,6 @@ public final class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoData
         output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: pixelFormat]
         output.setSampleBufferDelegate(self, queue: queue)
         session.commitConfiguration()
-        let dims = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
-        subtype = fourCCString(native)
-        width = Int(dims.width)
-        height = Int(dims.height)
-        logger.info("capture \(name): \(subtype) \(width)x\(height) @ \(rate)", metadata: ["output": "\(fourCCString(pixelFormat))"])
 
         let lost: @Sendable (Notification) -> Void = { [weak self] _ in self?.slot.withLock { $0.interrupted = true } }
         observers = [
@@ -208,7 +278,26 @@ public final class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoData
             NotificationCenter.default.addObserver(forName: AVCaptureDevice.wasDisconnectedNotification, object: device, queue: nil, using: lost),
         ]
         self.session = session
-        session.startRunning()  // blocks until running: the loader thread, never the compositor
+        session.startRunning()
+
+        // what runs, read after the start (the preset may have had its say)
+        let running = device.activeFormat
+        let subtype = fourCCString(running.formatDescription.mediaSubType.rawValue)
+        let dims = CMVideoFormatDescriptionGetDimensions(running.formatDescription)
+        let minDuration = device.activeVideoMinFrameDuration.seconds, maxDuration = device.activeVideoMaxFrameDuration.seconds
+        slot.withLock {
+            $0.subtype = subtype
+            if $0.width == 0 { ($0.width, $0.height) = (Int(dims.width), Int(dims.height)) }
+        }
+        logger.info(
+            "capture \(name): \(subtype) \(dims.width)x\(dims.height) @ \(minDuration > 0 ? 1 / minDuration : 0)",
+            metadata: [
+                "output": "\(fourCCString(pixelFormat))", "minRate": "\(maxDuration > 0 ? 1 / maxDuration : 0)", "preset": "\(session.sessionPreset.rawValue)",
+                "canvasRate": "\(fps)", "locked": "\(locked)",
+            ])
+        if let chosen, running != chosen.format {
+            logger.warning("capture \(name): the session changed the chosen format", metadata: ["wanted": "\(chosen.format)", "running": "\(running)"])
+        }
     }
 
     // MARK: Frames
@@ -220,32 +309,57 @@ public final class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoData
 
     public func captureOutput(_ output: AVCaptureOutput, didDrop sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         let reason = CMGetAttachment(sampleBuffer, key: kCMSampleBufferAttachmentKey_DroppedFrameReason, attachmentModeOut: nil) as? String
-        if reason == (kCMSampleBufferDroppedFrameReason_OutOfBuffers as String) {
-            outOfBufferCount.wrappingAdd(1, ordering: .relaxed)
-        } else {
-            lateCount.wrappingAdd(1, ordering: .relaxed)
+        let outOfBuffers = reason == (kCMSampleBufferDroppedFrameReason_OutOfBuffers as String)
+        slot.withLock {
+            $0.counters.dropped += 1
+            if outOfBuffers { $0.counters.outOfBuffers += 1 }
         }
     }
 
     /// Capture queue (or a test): makes or finds the buffer's texture views and makes it the newest frame. An untaken
-    /// previous frame is released here, outside the lock.
+    /// previous frame is released here, outside the lock. Every 60 s the counters are logged.
     func deliver(_ buffer: CVPixelBuffer) {
-        guard let frame = views.frame(for: buffer) else { return }
+        guard let frame = views.frame(for: buffer) else { return unusable(buffer) }
         let t = now()
-        _ = slot.withLock { s -> Held? in
-            guard !s.stopped else { return nil }
+        let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
+        let (_, logCounters) = slot.withLock { s -> (Held?, Counters?) in
+            guard !s.stopped else { return (nil, nil) }
             if s.lastFrameNanos != 0 {
                 let dt = Double(t &- s.lastFrameNanos) / 1e9
                 s.interval = s.interval == 0 ? dt : s.interval * 0.9 + dt * 0.1
             }
             s.lastFrameNanos = t
             s.interrupted = false
+            s.counters.frames += 1
+            (s.width, s.height) = (width, height)
             let old = s.latestTaken ? nil : s.latest
             s.latest = Held(buffer: buffer, frame: frame)
             s.latestTaken = false
-            return old
+            guard t &- s.lastCountersLog >= Self.countersLogEvery else { return (old, nil) }
+            s.lastCountersLog = t
+            return (old, s.counters)
         }
-        frameCount.wrappingAdd(1, ordering: .relaxed)
+        if let logCounters { log(logCounters, "running") }
+    }
+
+    /// A frame that cannot be shown: counted, the reason logged once.
+    private func unusable(_ buffer: CVPixelBuffer) {
+        let first = slot.withLock { s -> Bool in
+            s.counters.unusable += 1
+            defer { s.unusableLogged = true }
+            return !s.unusableLogged
+        }
+        guard first else { return }
+        let reason = CVPixelBufferGetIOSurface(buffer) == nil ? "not IOSurface-backed" : "no texture view for its format"
+        logger.warning(
+            "capture \(name): a frame could not be shown (\(reason)); counted as unusable",
+            metadata: ["format": "\(fourCCString(CVPixelBufferGetPixelFormatType(buffer)))", "size": "\(CVPixelBufferGetWidth(buffer))x\(CVPixelBufferGetHeight(buffer))"])
+    }
+
+    private func log(_ c: Counters, _ when: String) {
+        logger.info(
+            "capture \(name) \(when)",
+            metadata: ["frames": "\(c.frames)", "dropped": "\(c.dropped)", "outOfBuffers": "\(c.outOfBuffers)", "unusable": "\(c.unusable)"])
     }
 
     /// The newest frame, marked taken: it joins the ring of the last three taken frames (once), so its buffer stays
@@ -268,6 +382,7 @@ public final class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoData
         let t = now()
         return slot.withLock { s in
             if s.stopped { return .stopped }
+            if let failure = s.failure { return .failed(failure) }
             if s.interrupted { return .noSignal }
             if Double(t &- max(s.startNanos, s.lastFrameNanos)) / 1e9 >= noSignalAfter { return .noSignal }
             if s.latest == nil { return .starting }
@@ -275,14 +390,19 @@ public final class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoData
         }
     }
 
+    /// Releases the frames at once; the session stops on the capture queue (after a start still in progress).
     public func stop() {
-        session?.stopRunning()
-        _ = slot.withLock { s -> Slot in
+        let (_, counters) = slot.withLock { s -> (Slot, Counters) in
             let old = s
             s.latest = nil
             s.taken = [nil, nil, nil]
             s.stopped = true
-            return old
+            return (old, s.counters)
+        }
+        queue.async { [self] in
+            session?.stopRunning()
+            session = nil
+            log(counters, "stopped")
         }
     }
 }

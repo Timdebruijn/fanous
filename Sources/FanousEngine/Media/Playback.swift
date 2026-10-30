@@ -260,6 +260,8 @@ public struct LayerMediaStatus: Sendable, Equatable {
     public var fps = 0.0
     public var frames = 0
     public var error: String? = nil
+    /// A capture layer's counters (frames, dropped, outOfBuffers, unusable), nil for other media.
+    public var capture: CaptureInput.Counters? = nil
     public init() {}
 }
 
@@ -455,10 +457,15 @@ public final class MediaLoader: @unchecked Sendable {
                     case .running(let fps): (nil, (fps * 100).rounded() / 100)
                     case .noSignal: ("no signal", 0)  // the last frame stays on the layer
                     case .stopped: ("not running", 0)
+                    case .failed(let reason): (reason, 0)
                     }
+                let format = input.format, counters = input.counters
                 layers[i].mediaStatus.withLock { status in
                     if status.error != error { status.error = error }
                     if status.fps != fps { status.fps = fps }
+                    if status.codec != format.subtype { status.codec = format.subtype }
+                    (status.width, status.height) = (format.width, format.height)  // a card follows its input
+                    status.capture = counters
                 }
             }
             for (i, layer) in layers.enumerated() {
@@ -542,12 +549,10 @@ public final class MediaLoader: @unchecked Sendable {
                 guard let captureFactory else { throw RenderError.pipeline("no capture input for \(uid)") }
                 let input = try captureFactory(uid)
                 opened.wrappingAdd(1, ordering: .relaxed)
-                status.name = "Camera: \(input.name)"
-                status.codec = input.subtype
-                status.width = input.width
-                status.height = input.height
+                status.name = "Camera: \(input.name)"  // format, size and counters: polled once it runs
+                status.capture = CaptureInput.Counters()
                 captureOpen[layer] = input
-                logger.info("layer \(layer + 1) media \(key)", metadata: ["capture": "\(input.name)", "format": "\(input.subtype) \(input.width)x\(input.height)"])
+                logger.info("layer \(layer + 1) media \(key)", metadata: ["capture": "\(input.name)"])
                 return LayerPlayback(key: key, live: input)
             }
             if let syphon = entry.syphon {

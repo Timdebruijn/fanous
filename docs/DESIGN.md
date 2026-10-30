@@ -1038,26 +1038,48 @@ IOSurface-backed buffers): all four formats read white 255, black 0, red
 255,0,0, grey 128 (±1). The Y0/Y1 pair reads 255/0 for `2vuy` and `yuvs`
 (nearest) and 252/3 for `420v` and `BGRA` (linear). Packed frames keep their
 full-width aspect.
-*Session:* among the device's formats of the active format's size, the one
-with the highest frame rate at or below the canvas rate (the scene's rate
-at service start; `canvas.set` does not reopen a device). With none, the
-active format is left alone. The output is asked for `2vuy`, `yuvs`, `420v`
-(from `420v`/`420f`) or `BGRA` by the native subtype, and for `BGRA` when
-the output does not list the wanted type (setting an unlisted one raises).
-The engine logs "capture <name>: <subtype> <w>x<h> @ <fps>" once.
-*Retention:* one `Mutex` slot. The capture queue stores the newest frame,
-and an untaken frame it replaces is released. `latestFrame` returns the
-newest and moves it, once, into a ring of the last three taken. `frames`,
-`droppedFrames` and `outOfBuffers` (`didDrop` by reason) count; whether 60
-fps runs short is the owner's live check. 100 reads through
-`LayerPlayback.frame` allocate nothing in release.
+*Session:* configured, started and stopped on the capture queue
+(`org.fanous.capture.<uid>`, `.userInteractive`), never on the loader
+thread; the input reads `.starting` meanwhile, and `.failed(reason)` when
+the session cannot start (the layer shows the reason). Among the device's
+formats of the active format's size, a frame-rate range that holds the
+canvas rate wins (1000/1001 apart is the same rate, as
+`DisplayModeMatching.sameRate`), the one whose top is closest above it
+first. Its min and max frame durations are both set to the canvas rate,
+clamped to the range, so a camera does not slow down in low light. Without
+such a range, the fastest range below the canvas rate runs at its top. Equal
+rates prefer `2vuy`/`yuvs`/`420v` over MJPEG. With no fitting range the
+active format is left alone. The canvas rate is the scene's at service
+start; `canvas.set` does not reopen a device. The output is asked for
+`2vuy`, `yuvs`, `420v` (from `420v`/`420f`) or `BGRA` by the native subtype,
+and for `BGRA` when the output does not list the wanted type (setting an
+unlisted one raises). The device's configuration lock is held across
+`startRunning`, so the session preset cannot put its own format back. After
+the start, the engine logs what runs: "capture <name>: <subtype> <w>x<h> @
+<fps>", plus the preset and the min rate. A warning follows if the running
+format differs from the chosen one. Not observed here (no camera can be
+opened in this environment): whether macOS resets the format without the
+lock. That is part of the owner's live check.
+*Retention:* one `Mutex` slot (ADR-0002, amendment 2026-10-30). The capture
+queue stores the newest frame, and an untaken frame it replaces is released.
+`latestFrame` returns the newest and moves it, once, into a ring of the last
+three taken. 100 reads through `LayerPlayback.frame` allocate nothing in
+release. Neither do 100 takes of 1080p `2vuy` pool buffers, each of which
+evicts a buffer whose last release returns it to the pool on the reading
+thread.
+*Counters:* `frames`, `dropped` (`didDrop`), `outOfBuffers` (`didDrop`
+with reason `OutOfBuffers`) and `unusable` (a delivered frame without an
+IOSurface or a texture view, with its reason logged once). They are logged
+at `info` every 60 s while frames arrive and on `stop()`, and published per
+layer as `layers[].capture` beside the size, which follows the newest frame.
+Whether 60 fps runs short is the owner's live check.
 *Status:* `.starting`, `.running(fps)`, `.noSignal` (no frame for 2 s, or a
 runtime error, interruption or disconnect until the next frame; the last
-frame stays) and `.stopped`. The loader polls every open capture layer on
-its 100 ms loop and writes "no signal" / "not running" and the fps to the
-layer status.
+frame stays), `.stopped` and `.failed`. The loader polls every open capture
+layer on its 100 ms loop and writes the status text, fps, subtype, size and
+counters to the layer status.
 *Scene entry:* `MediaEntry.capture` (a `uniqueID`) on any folder 0 number,
-"Camera: <localizedName>", codec the native subtype. `MediaLoader.captureFactory`
+"Camera: <localizedName>". `MediaLoader.captureFactory`
 throws its refusal as the layer's text and returns the `CaptureInput` itself
 (not `any LiveTextureSource`) so the loader can read its status.
 *Permission:* `CaptureInput.open` asks only when `allowed`.
@@ -1068,7 +1090,10 @@ show mode the layer reads the "not asked" text, and after a refusal the
 "denied" text above. `com.apple.security.device.camera` is in
 `scripts/entitlements.plist`; `NSCameraUsageDescription` and
 `NSCameraUseContinuityCameraDeviceType` are in both Info.plists.
-Not yet: files 1–20 by the catalog (step 2b), `v210`, the card list.
+Not yet: files 1–20 by the catalog (step 2b). Two layers on one uid also
+open two sessions today; step 2b shares one input per uid. Also not yet:
+`v210` and the card list. The subtype shown is the one at start; the size
+follows the frames.
 
 | Input | Framework | Pixel path | Kind |
 |---|---|---|---|
