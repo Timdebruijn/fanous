@@ -673,6 +673,8 @@ public final class Engine: @unchecked Sendable {
                     "open": .array(Role.allCases.filter { auth.isOpen($0) }.map { .string($0.rawValue) }),
                 ]
                 return .json(200, Array(store.encode(session).utf8))
+            case "/api/patch":
+                return .json(200, Array((try? encoder.encode(dmx.currentPatch)) ?? Data()))
             case "/api/gdtf":
                 return HTTPResponse(
                     status: 200,

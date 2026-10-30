@@ -51,6 +51,16 @@ async function expectDecoders(page: Page): Promise<void> {
   await expect.poll(seen, { timeout: previewTimeout }).toMatch(/^(1 open: H\.264 · |0 open: JPEG 5 fps · )/);
 }
 
+test('patch API: /api/patch serves the live patch, an added output included', async ({ page, engine }) => {
+  const outputPatched = async () => {
+    const patch = (await (await engine.api.get('/api/patch')).json()) as { entries: { fixture: Record<string, unknown> }[] };
+    return patch.entries.some((e) => 'output' in e.fixture);
+  };
+  expect(await outputPatched()).toBe(false); // a new project starts without outputs
+  await addUnassignedOutput(page);
+  await expect.poll(outputPatched).toBe(true);
+});
+
 test('layers: Control puts content on a layer, and the engine resolves folder, file and intensity', async ({ page, engine }) => {
   const resolved = async () => {
     const live = (await (await engine.api.get('/api/live')).json()) as { fixtures: Record<string, Param[]> };
