@@ -2,7 +2,7 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
-  import { app, can, cmd } from '../lib/state.svelte';
+  import { app, can, cmd, toastUndo } from '../lib/state.svelte';
   import { LOCKED_TITLE, UNIVERSE_SIZE, interfaceOptions, parseUniverseName, universeHealth, universeName, universeSettings, type FixtureRow } from '../lib/patch-screen';
 
   let { row, options, defaultUniverse, onpatched }: {
@@ -53,6 +53,14 @@
     }
   }
 
+  /** The output behind an Output fixture; removing it also unpatches the fixture (one undo step). */
+  const output = $derived(row.type === 'output' ? app.project.outputs.find((o) => `Output ${o.id}` === row.name) : undefined);
+  async function removeOutput() {
+    if (!output) return;
+    const name = output.name;
+    if ((await cmd('output.remove', { id: output.id })) !== undefined) toastUndo(`${name} removed.`);
+  }
+
   function commitAddress(input: HTMLInputElement) {
     const typed = input.value.trim();
     const next = typed === '' || Number.isNaN(Number(typed)) ? address : clamp(Number(typed));
@@ -64,6 +72,12 @@
 <section class="panel inspector" aria-label="Selected fixture">
   <div class="label">Selected fixture</div>
   <h2>{row.name}</h2>
+  {#if output}
+    <p class="caption">
+      The console channels of {output.name === row.name ? 'this output' : output.name}, {output.display ? `shown on ${output.display.name}` : 'not on a display yet'}.
+      Display, picture and mapping are on <a href="#/outputs">Outputs &amp; Mapping</a>.
+    </p>
+  {/if}
   <div class="fields">
     <label class="field">
       <span class="label">Universe</span>
@@ -90,6 +104,9 @@
     </div>
     <span class="spacer"></span>
     <button type="button" class="btn btn-ghost" disabled={locked || !row.patched} title={locked ? LOCKED_TITLE : undefined} onclick={() => apply(universe, 0)}>Unpatch</button>
+    {#if output}
+      <button type="button" class="btn btn-danger" disabled={locked} title={locked ? LOCKED_TITLE : 'Removes the output with its mapping (undo brings it back)'} onclick={removeOutput}>Remove output</button>
+    {/if}
   </div>
 
   <hr />

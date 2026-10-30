@@ -317,6 +317,19 @@ public enum ProjectDocument {
         try project.set(try JSONValue(encoding: outputs), at: "/outputs")
     }
 
+    /// Patches Output n's fixture where the standard patch puts it, after the Master on the Master's universe (the
+    /// standard Master when it is unpatched), when that range fits and is free; otherwise the Patch screen shows it
+    /// unpatched. Outputs above `maxOutputs` have no console control.
+    static func patchOutputFixture(_ n: Int, in project: inout JSONValue) throws {
+        guard n <= ParameterSnapshotSlot.maxOutputs, var patch = ProjectDocument.patch(from: project), patch.entry(for: .output(n)) == nil,
+            let master = patch.entry(for: .master) ?? Patch.standard(layers: project["layerCount"]?.int ?? 1, outputs: 0).entry(for: .master)
+        else { return }
+        let entry = PatchEntry(fixture: .output(n), universe: master.universe, address: master.channels.upperBound + 1 + (n - 1) * FixtureMode.output.footprint)
+        guard entry.fitsInUniverse, !patch.entries.contains(where: { $0.universe == entry.universe && $0.channels.overlaps(entry.channels) }) else { return }
+        patch.entries.append(entry)
+        try project.set(patchValue(patch), at: "/patch")
+    }
+
     /// `[{"fixture":"Layer 3","universe":"artnet:0.0.1","address":17}, …]`, sorted by universe then address.
     public static func patchValue(_ patch: Patch) -> JSONValue {
         .array(
@@ -362,6 +375,17 @@ public enum ProjectDocument {
         if document["ui"] == nil { try? document.set([:], at: "/ui") }
         if document["layerCanvas"] == nil { try? document.set([:], at: "/layerCanvas") }
         if document["syphon"] == nil { try? document.set([:], at: "/syphon") }
+        // an Output or Keystone fixture without its output, or above the console's outputs, controls nothing (until
+        // 2026-10-30 every project had Output 1–4 patched)
+        if var patch = patch(from: document) {
+            let ids = Set(outputs(from: document).map(\.id))
+            let count = patch.entries.count
+            patch.entries.removeAll {
+                guard let n = $0.fixture.outputNumber else { return false }
+                return !ids.contains(n) || n > ParameterSnapshotSlot.maxOutputs
+            }
+            if patch.entries.count != count { try? document.set(patchValue(patch), at: "/patch") }
+        }
         return document
     }
 
@@ -413,7 +437,7 @@ public enum ProjectDocument {
             })
         store.register(
             CommandSpec(
-                name: "patch.set", role: .programmer, summary: "Patch a fixture (layer, master, output, keystone) to a universe and address, or unpatch it with address 0.",
+                name: "patch.set", role: .programmer, summary: "Patch a fixture (layer, master, output, keystone) to a universe and address, or unpatch it with address 0; an Output or Keystone fixture only for an output that exists (1–8).",
                 argsType: "{ fixture: string; universe: string; address: number }"
             ) { project, args in
                 guard let fixtureName = args["fixture"]?.string, let fixture = FixtureRef(parsing: fixtureName) else {
@@ -423,6 +447,12 @@ public enum ProjectDocument {
                     throw CommandError.invalidArgs("universe must be artnet:net.subnet.universe or sacn:n")
                 }
                 guard let address = args["address"]?.int, (0...512).contains(address) else { throw CommandError.invalidArgs("address must be 0 (unpatch) or 1–512") }
+                if let n = fixture.outputNumber, address > 0 {
+                    guard n <= ParameterSnapshotSlot.maxOutputs else { throw CommandError.invalidArgs("console control covers outputs 1–\(ParameterSnapshotSlot.maxOutputs)") }
+                    guard ProjectDocument.outputs(from: project).contains(where: { $0.id == n }) else {
+                        throw CommandError.invalidArgs("there is no output \(n): add the output first")
+                    }
+                }
                 guard var patch = ProjectDocument.patch(from: project) else { throw CommandError.invalidArgs("project has no patch") }
                 patch.entries.removeAll { $0.fixture == fixture }
                 if address > 0 {
@@ -495,7 +525,8 @@ public enum ProjectDocument {
             })
         store.register(
             CommandSpec(
-                name: "output.add", role: .programmer, summary: "Add an output (one full-canvas slice, no blend, identity warp), optionally bound to a display.",
+                name: "output.add", role: .programmer,
+                summary: "Add an output (one full-canvas slice, no blend, identity warp), optionally bound to a display; its Output fixture is patched next to the Master when that range is free.",
                 argsType: "{ display?: { uuid: string; name: string } }"
             ) { project, args in
                 var outputs = ProjectDocument.outputs(from: project)
@@ -504,10 +535,11 @@ public enum ProjectDocument {
                 if let uuid = args["display"]?["uuid"]?.string { output.display = DisplayIdentity(uuid: uuid, name: args["display"]?["name"]?.string ?? uuid) }
                 outputs.append(output)
                 try setOutputs(outputs, in: &project)
+                try patchOutputFixture(id, in: &project)
                 return .number(Double(id))
             })
         store.register(
-            CommandSpec(name: "output.remove", role: .programmer, summary: "Remove an output (not one in a projector wall).", argsType: "{ id: number }") { project, args in
+            CommandSpec(name: "output.remove", role: .programmer, summary: "Remove an output (not one in a projector wall) and unpatch its Output and Keystone fixtures.", argsType: "{ id: number }") { project, args in
                 guard let id = args["id"]?.int else { throw CommandError.invalidArgs("args: { id }") }
                 var outputs = ProjectDocument.outputs(from: project)
                 guard outputs.contains(where: { $0.id == id }) else { throw CommandError.invalidArgs("no output \(id)") }
@@ -516,6 +548,10 @@ public enum ProjectDocument {
                 }
                 outputs.removeAll { $0.id == id }
                 try setOutputs(outputs, in: &project)
+                if var patch = ProjectDocument.patch(from: project), patch.entries.contains(where: { $0.fixture.outputNumber == id }) {
+                    patch.entries.removeAll { $0.fixture.outputNumber == id }
+                    try project.set(patchValue(patch), at: "/patch")
+                }
                 var canvases = ProjectDocument.canvases(from: project)
                 if canvases.contains(where: { $0.clockMaster == id }) {
                     for i in canvases.indices where canvases[i].clockMaster == id { canvases[i].clockMaster = nil }
@@ -696,6 +732,14 @@ extension FixtureRef {
         case ("output", 2): guard let n = Int(parts[1]), n >= 1 else { return nil }; self = .output(n)
         case ("keystone", 2): guard let n = Int(parts[1]), n >= 1 else { return nil }; self = .keystone(n)
         default: return nil
+        }
+    }
+
+    /// The output an Output or Keystone fixture belongs to: it is patched only while that output exists.
+    var outputNumber: Int? {
+        switch self {
+        case .output(let n), .keystone(let n): n
+        case .layer, .master: nil
         }
     }
 }

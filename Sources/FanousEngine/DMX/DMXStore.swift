@@ -274,6 +274,8 @@ public final class DMXStore: @unchecked Sendable {
             slot.sequence = sequence
             slot.receivedAt = receivedAt
             if let master = resolvers[.master] { ParameterSnapshotSlot.from(master, into: slot) }
+            // an output whose fixture was unpatched (or removed) is no longer held at its last console values
+            for i in slot.outputs.indices where resolvers.index(forKey: .output(i + 1)) == nil { slot.outputs[i] = OutputParameters() }
             for (fixture, resolver) in resolvers {
                 if case .layer(let n) = fixture, n >= 1, n <= slot.layers.count { slot.layers[n - 1] = LayerParameters.from(resolver) }
                 if case .output(let n) = fixture, n >= 1, n <= slot.outputs.count { slot.outputs[n - 1] = OutputParameters.from(resolver) }
