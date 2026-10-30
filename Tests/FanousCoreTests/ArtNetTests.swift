@@ -13,7 +13,6 @@ import Testing
     @Test func parsesArtDmx() throws {
         guard case .dmx(let dmx) = try ArtNet.parse(Self.dmxFixture) else { return #expect(Bool(false)) }
         #expect(dmx.sequence == 7)
-        #expect(dmx.net == 1 && dmx.subnet == 2 && dmx.universe == 3)
         #expect(dmx.portAddress == 0x123)
         #expect(dmx.universeID == UniverseID.artnet(net: 1, subnet: 2, universe: 3))
         #expect(dmx.data == [10, 20, 30, 40])

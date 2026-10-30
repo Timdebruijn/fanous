@@ -210,7 +210,7 @@ struct CompositorIdleTests {
     @MainActor @Test func setCanvasRunsTheCompositorAtTheNewSizeAndRate() async throws {
         let rig = try Rig(idleWork: false, offscreen: false)
         let compositor = rig.compositor
-        let coordinator = try OutputCoordinator(compositor: compositor, context: rig.context, fps: 60, displays: [], logger: Logger(label: "canvas-test"))
+        let coordinator = OutputCoordinator(compositor: compositor, context: rig.context, fps: 60, displays: [], logger: Logger(label: "canvas-test"))
         coordinator.apply(outputs: [], clockMaster: nil)
         defer { coordinator.stop() }
         func ticksAdvance() async throws {
@@ -301,7 +301,7 @@ struct CompositorIdleTests {
         #expect((second.width, second.height) == (320, 240) && centre(second) > 150, "present on canvas 2")
         #expect(rig.compositor.readback(canvas: 3).rgba.isEmpty)
 
-        let compiler = try OutputCompiler(device: rig.context.device)
+        let compiler = OutputCompiler(device: rig.context.device)
         func show(canvas: Int) throws -> Int {
             var config = OutputConfig(id: 1)
             config.slices[0].canvas = canvas

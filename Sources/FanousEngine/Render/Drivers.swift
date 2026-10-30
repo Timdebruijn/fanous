@@ -13,7 +13,6 @@ public final class DisplayLinkDriver: NSObject, CAMetalDisplayLinkDelegate, @unc
     private let compositor: Compositor
     private let thread: Thread
     private var runLoop: CFRunLoop?
-    private let ready = DispatchSemaphore(value: 0)
     private let done = DispatchSemaphore(value: 0)
 
     public init(layer: CAMetalLayer, fps: Double, compositor: Compositor, frameLatency: Int = 1) {

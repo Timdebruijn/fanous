@@ -14,8 +14,6 @@ import Synchronization
 /// output pass (DESIGN.md §4.3–4.5). Allocation-free in steady state.
 public final class Compositor: @unchecked Sendable {
     public let context: MetalContext
-    public private(set) var canvasWidth: Int
-    public private(set) var canvasHeight: Int
     public private(set) var fps: Double
     public let metrics: MetricsRing
     public let parameters: TripleBuffer<ParameterSnapshotSlot>
@@ -158,8 +156,6 @@ public final class Compositor: @unchecked Sendable {
         parameters: TripleBuffer<ParameterSnapshotSlot>, logger: Logger
     ) throws {
         self.context = context
-        self.canvasWidth = canvasWidth
-        self.canvasHeight = canvasHeight
         self.fps = fps
         canvasSize = Atomic(Self.pack(canvasWidth, canvasHeight))
         self.maxLayers = maxLayers
@@ -240,10 +236,8 @@ public final class Compositor: @unchecked Sendable {
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
         targets = made
-        canvasWidth = made[0].width
-        canvasHeight = made[0].height
         self.fps = layout.fps
-        canvasSize.store(Self.pack(canvasWidth, canvasHeight), ordering: .releasing)
+        canvasSize.store(Self.pack(made[0].width, made[0].height), ordering: .releasing)
         completedCanvas.store(Self.packCompleted(index: 2, master: 0), ordering: .releasing)
         canvasIndex = 0
         tickIndex = 2
@@ -446,7 +440,6 @@ public final class Compositor: @unchecked Sendable {
             canvasValid = false
             idleTicks.wrappingAdd(1, ordering: .relaxed)
             record.idle = true
-            record.layersDrawn = 0
             record.textureMisses = frame.misses
             record.cpuMicros = UInt32((CACurrentMediaTime() - cpuStart) * 1e6)
             _ = metrics.write(record)
@@ -480,7 +473,6 @@ public final class Compositor: @unchecked Sendable {
                     return
                 }
                 encoder.label = canvas.label
-                encoder.setRenderPipelineState(context.layerPipeline)
                 encoder.setFragmentSamplerState(context.linearSampler, index: 0)
                 encoder.setFragmentSamplerState(context.nearestSampler, index: 1)
                 for item in drawItems where item.canvas == index {
@@ -537,7 +529,6 @@ public final class Compositor: @unchecked Sendable {
             if let drawable { commandBuffer.present(drawable) }
         }
 
-        record.layersDrawn = frame.drawn
         record.textureMisses = frame.misses
         record.cpuMicros = UInt32((CACurrentMediaTime() - cpuStart) * 1e6)
         let slot = metrics.write(record)
@@ -576,7 +567,6 @@ public final class Compositor: @unchecked Sendable {
         let time: Float
         /// Host time at the start of the tick: the age of sync entries is taken against it.
         let now: Double
-        var drawn: UInt16 = 0
         var misses: UInt16 = 0
         /// Something on the canvas changes without its frame or the parameters changing (live texture, strobe).
         var dynamic = false
@@ -738,7 +728,6 @@ public final class Compositor: @unchecked Sendable {
             return
         }
         if playback.live != nil || p.effect1 == .strobe || p.effect2 == .strobe { ctx.dynamic = true }
-        ctx.drawn += 1
         drawItems.append(DrawItem(playback: playback, frame: frame, frameIndex: frameIndex, p: p, intensity: intensity, master: ctx.masterIntensity, slot: slot, canvas: canvas))
     }
 

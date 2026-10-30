@@ -53,7 +53,6 @@ public final class DecodedFrame {
     public var pixelBuffer: CVPixelBuffer?
     /// Texture-cache wrappers must outlive the Metal textures they back.
     var metalTextures: (CVMetalTexture?, CVMetalTexture?, CVMetalTexture?) = (nil, nil, nil)
-    public var decodeNanos: UInt64 = 0
     /// Row 0 is the bottom of the picture (Syphon surfaces); sampled flipped, see `Compositor.uvRect`.
     public var bottomUp = false
 
@@ -76,7 +75,6 @@ public struct MovieInfo: Sendable {
     public let frameRate: Double
     public let frameCount: Int
     public let codec: FourCharCode
-    public var isHAP: Bool { MovieSource.hapCodecs[codec] != nil }
     public var codecName: String { fourCCString(codec) }
 }
 
@@ -101,7 +99,6 @@ public final class MovieSource: @unchecked Sendable {
     private let device: MTLDevice
     private let asset: AVAsset
     private let track: AVAssetTrack
-    private let formatDescription: CMFormatDescription
     private let generator: AVSampleBufferGenerator
     private var cursor: AVSampleCursor
     private var cursorIndex = 0
@@ -128,7 +125,6 @@ public final class MovieSource: @unchecked Sendable {
         self.device = device
         self.asset = asset
         self.track = track
-        formatDescription = description
         let codec = CMFormatDescriptionGetMediaSubType(description)
         let dimensions = CMVideoFormatDescriptionGetDimensions(description)
         info = MovieInfo(
@@ -183,7 +179,6 @@ public final class MovieSource: @unchecked Sendable {
 
     /// Decodes frame `index` (0-based) into `slot`. Synchronous; call from the layer's decode thread.
     public func decode(frame index: Int, into slot: DecodedFrame) throws {
-        let start = DispatchTime.now().uptimeNanoseconds
         let sample = try sampleBuffer(at: index)
         slot.clear()
         slot.frameIndex = index
@@ -193,7 +188,6 @@ public final class MovieSource: @unchecked Sendable {
             try decodeHAP(sample, into: slot)
         }
         slot.kind = kind
-        slot.decodeNanos = DispatchTime.now().uptimeNanoseconds - start
     }
 
     private func sampleBuffer(at index: Int) throws -> CMSampleBuffer {

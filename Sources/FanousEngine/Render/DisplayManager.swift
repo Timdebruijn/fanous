@@ -21,7 +21,6 @@ public struct DisplayInfo: Sendable, Equatable {
     public var isBuiltin: Bool
     public var modes: [DisplayModeConfig]
 
-    public var identity: DisplayIdentity { DisplayIdentity(uuid: uuid, name: name) }
     public var mode: DisplayModeConfig { DisplayModeConfig(width: pixelWidth, height: pixelHeight, hz: hz) }
 }
 

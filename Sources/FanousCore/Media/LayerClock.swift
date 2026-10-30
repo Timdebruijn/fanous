@@ -6,7 +6,6 @@ import Foundation
 
 extension PlayMode {
     public var isReverse: Bool { self == .loopReverse || self == .onceHoldReverse || self == .onceBlackReverse }
-    public var isOnce: Bool { self == .onceHold || self == .onceHoldReverse || self == .onceBlack || self == .onceBlackReverse }
     public var endsBlack: Bool { self == .onceBlack || self == .onceBlackReverse }
 }
 

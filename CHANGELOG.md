@@ -419,7 +419,16 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   Presets strip on Warp & Slices and on the wall panel; "Preset N (console)", "Preset N (compare)" and "Preset N missing"
   on the output row and under the preview. Output ch 6 is in the channel map, GDTF and OSC (`/fanous/output/{n}/preset`);
   the footprint stays 8. Projects without presets save as before.
-- Added: the **mapping preset morph** (M2.5, DESIGN §6.4, §9.10 item 3). Output channel 7, **Mapping fade** (0 = cut,
+- Changed: a universe's **Hold on loss** setting is now called **Hold on signal loss**, and **Loss after (s)** is
+  **Signal lost after (s)**, in the Universes panel and the user guide (PR #125). The stored fields (`holdOnLoss`, `lossTimeout`)
+  and their options are unchanged.
+- Fixed: a layer added at runtime (Add layer, `layers.setCount`) stayed empty until the engine restarted (B121, PR #128).
+  The renderer now holds all 32 layers the parameter snapshot addresses from start; an empty layer makes no draw item
+  and costs about 1 µs per tick. `live.layers`, readiness and CITP list the project's layers, not the 32. A removed
+  layer has no fixture, so its parameters fall back to no media and it lets its media go (as before).
+  `fanous-bench` gives each step's layers their parameters and empties the rest, and its `--dissolve` toggle writes every
+  layer's parameters: it wrote only the file number into a triple-buffer slot that holds an older write, not the last.
+- Added: the **mapping preset morph** (M2.5, PR #129, DESIGN §6.4, §9.10 item 3). Output channel 7, **Mapping fade** (0 = cut,
   1–255 = 0.1–25.5 s, as Layer Dissolve), glides an output from one preset to the next when channel 6 changes: warp,
   slice corners, source rectangles and opacity move in one pass, slices paired by id; a slice on one side only (or on
   another canvas) and the masks switch at the start. A change during a glide jumps to where that glide was going and

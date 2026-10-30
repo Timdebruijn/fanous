@@ -108,17 +108,17 @@ monitor; on a narrow one (an iPad upright) they stack in that order.
 - **Universes**: one row per universe that
   - a fixture is patched to,
   - a console is sending to now (packets, or quiet for no longer than the
-    universe's Loss after), or
+    universe's Signal lost after time), or
   - has settings in the project.
 
   A row shows the universe, the fixtures on it ("Layers 1–8, Master"), the
-  health pill, and its protocol, interface and Hold on loss. Without a fixture
-  it says:
+  health pill, and its protocol, interface and Hold on signal loss. Without a
+  fixture it says:
   - "heard, nothing patched" (yellow): a console sends to a universe no
     fixture listens on; often the console's universe is one off. The row goes
-    away once that universe has been quiet for its Loss after, unless it has
-    settings or is open in the panel or shown in the DMX monitor (then it
-    stays, with a yellow "quiet" pill, until you pick another one);
+    away once that universe has been quiet for its Signal lost after time,
+    unless it has settings or is open in the panel or shown in the DMX monitor
+    (then it stays, with a yellow "quiet" pill, until you pick another one);
   - "feeds A 0.0.0": the other protocol's universe that a patched universe
     receives (its protocol is sACN or Art-Net + sACN, see
     [Universe settings](#universe-settings));
@@ -126,8 +126,8 @@ monitor; on a narrow one (an iPad upright) they stack in that order.
     settings stay.
 
   A universe without fixtures never shows a red pill: once it is quiet for
-  longer than its Loss after, the pill says "quiet" in yellow (the status bar's
-  yellow "silent" means nothing was received yet). Tap a row to open its settings (see
+  longer than its Signal lost after time, the pill says "quiet" in yellow (the
+  status bar's yellow "silent" means nothing was received yet). Tap a row to open its settings (see
   [Universe settings](#universe-settings)); the DMX monitor switches to it.
 - **DMX monitor**: 512 cells for one universe, coloured per fixture, red where
   fixtures collide, with live values. Click a cell to pin it: you see the
@@ -135,9 +135,9 @@ monitor; on a narrow one (an iPad upright) they stack in that order.
   ("17 → Loop rev"). The buttons above the grid switch universe.
 
 The pill for a universe is green while packets arrive. It is yellow when
-nothing has been received yet or for up to the universe's loss timeout (2.5 s
-by default) of silence, and red when a patched universe has been silent longer.
-What the fixtures do then is the universe's **Hold on loss** setting; by
+nothing has been received yet or for up to the universe's Signal lost after time
+(2.5 s by default) of silence, and red when a patched universe has been silent longer.
+What the fixtures do then is the universe's **Hold on signal loss** setting; by
 default they **hold their last values**. An unpatched fixture holds nothing
 from the console: unpatching a layer, Master or output (or moving it to another
 universe) drops the console's values.
@@ -166,16 +166,17 @@ received before these settings existed.
 | Protocol | Art-Net, sACN, Art-Net + sACN | the universe's own (A = Art-Net, S = sACN) | Which protocol feeds the universe. The other protocol arrives on the paired universe. |
 | sACN universe / Art-Net universe | a universe of the other protocol, e.g. `S 1` or `A 0.0.0` | S n+1 for A port-address n (A 0.0.0 ↔ S 1) | Shown when the protocol is not the universe's own. Set it when your console numbers the other way. |
 | Interface | All interfaces, an interface (`en0`) or one of its addresses | All interfaces | All interfaces: every sender is accepted and sACN multicast is joined on every interface that can multicast. A named interface: only senders in its network are accepted and sACN multicast is joined on it alone. |
-| Hold on loss | Hold last values, Go to zero, UI and cues take over | Hold last values | What the fixtures do when the universe goes silent. "UI and cues take over" resolves them as Who controls *Fanous only* until packets return. Changing it while the universe is already lost applies at once. |
-| Loss after (s) | 1 to 60 | 2.5 | Silence after which the universe counts as lost (red pill, Hold on loss applies). At least 1 s: consoles that send only on change repeat every 0.8 to 1 s. |
+| Hold on signal loss | Hold last values, Go to zero, UI and cues take over | Hold last values | What the fixtures do when the universe goes silent. "UI and cues take over" resolves them as Who controls *Fanous only* until packets return. Changing it while the universe is already lost applies at once. |
+| Signal lost after (s) | 1 to 60 | 2.5 | Silence after which the universe counts as lost (red pill, Hold on signal loss applies). At least 1 s: consoles that send only on change repeat every 0.8 to 1 s. |
 | sACN priority | Highest wins, Merge equal (HTP) | Highest wins | Sources at the same, highest priority: the latest packet wins, or they merge with the highest value per channel. |
 
-There are two timeouts. **Loss after** is this universe's: when it counts as
-lost and Hold on loss applies. The **sACN source timeout** is fixed at 2.5 s
-(E1.31): a console silent that long drops out of the priority merge, so a
-backup console at a lower priority takes over after 2.5 s whatever Loss after
-says. With a Loss after above 2.5 s and no backup, the universe has no source
-between 2.5 s and Loss after; the fixtures keep their values until it is lost.
+There are two timeouts. **Signal lost after** is this universe's: when it
+counts as lost and Hold on signal loss applies. The **sACN source timeout** is
+fixed at 2.5 s (E1.31): a console silent that long drops out of the priority
+merge, so a backup console at a lower priority takes over after 2.5 s whatever
+Signal lost after says. With a Signal lost after time above 2.5 s and no backup,
+the universe has no source between 2.5 s and that time; the fixtures keep their
+values until it is lost.
 
 **Go to zero** sets every channel of the universe's fixtures to 0 as a new DMX
 change, except a Keystone fixture's: it goes to its default, 32768 on every
@@ -249,8 +250,8 @@ network, and the Show screen's readiness list open. Patch Layer 1 on `S 1`.
 - [ ] **Any with NIC.** Same NIC, no gateway on it, Interface back to "All
       interfaces": S 1 still arrives (joined on every multicast interface).
 - [ ] **Unplug and replug.** Unplug the USB NIC: readiness warns "Universe
-      interfaces usable" for a named Interface; the pill goes red after Loss
-      after. Replug: packets return within 5 s without touching anything.
+      interfaces usable" for a named Interface; the pill goes red once
+      Signal lost after has passed. Replug: packets return within 5 s without touching anything.
 - [ ] **Unicast.** sACNView unicast to the Mac's address on S 1: received, with
       the sender shown in the pill.
 - [ ] **sACNView receiving on the Mac.** Open a sACNView receive window for S 1 on
@@ -264,7 +265,7 @@ network, and the Show screen's readiness list open. Patch Layer 1 on `S 1`.
       DMX p99 in the status bar stays where it is with Art-Net.
 - [ ] **Priority takeover.** Two sources on S 1, priority 150 and 100, different
       levels: 150 wins; stop it: the 100 source takes over after 2.5 s, also
-      with Loss after set to 10 s.
+      with Signal lost after set to 10 s.
 
 ## Sources and merging
 

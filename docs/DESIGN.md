@@ -516,6 +516,10 @@ The patch (universe, address, mode) plus per-layer settings (canvas, source
 policy §7.2) is part of the project. Patching a fixture type is also how
 "extensible beyond 16 layers" works: the layer count is a project setting,
 bounded by the tier's measured maximum (hard engine cap 32, `[OPEN-8]`).
+The render service holds all 32 layers from start, so a changed layer count
+applies at once (B121): an empty layer makes no draw item (about 1 µs per tick
+and two atomic loads per audio callback), and status, CITP and readiness list
+the project's layers only.
 An Output fixture follows its output (2026-10-30): `output.add` patches Output n
 on the Master's universe at the Master's address + 8 n when those channels are
 free, `output.remove` unpatches it in the same undo step, and a new project's
@@ -677,7 +681,7 @@ three existing modes and their footprints alone.
 - Two timeouts. The **source timeout** is fixed at 2.5 s (E1.31): an sACN
   source (and, with `both`, Art-Net) silent that long leaves the merge, so a
   lower-priority backup takes over on time. `lossTimeout` only decides when
-  the universe counts as lost (status, readiness, hold on loss).
+  the universe counts as lost (status, readiness, hold on signal loss).
 - `interface` filters by sender: a packet is accepted when its source address
   is in a subnet of that interface (getifaddrs, re-read on the 0.5 s tick
   while a universe names one, so adapters may come and go). sACN is one BSD
@@ -703,7 +707,7 @@ three existing modes and their footprints alone.
   missing or whose sACN membership could not be joined, including `any`
   (no multicast interface at all, or a failed join on one of them, e.g.
   EADDRNOTAVAIL on an isolated LAN).
-- Hold on loss applies on the transition to lost, and at once when the
+- Hold on signal loss applies on the transition to lost, and at once when the
   setting changes while a universe that was received is lost: `hold` keeps
   the values (as before); `zero` feeds a frame of zeros stamped now, so under
   `ltp`/`htp` it wins over older UI and cue values; `internal` makes the
@@ -757,7 +761,7 @@ modes are coming (Keystone now, Serial and others later). Checked against the
 code on 2026-10-30:
 - One screen does four jobs in one flat table: what exists (Add layer, Remove
   layer, Add output), where it sits on DMX (universe and address per fixture),
-  how a universe is received (protocol, interface, hold on loss) and who
+  how a universe is received (protocol, interface, hold on signal loss) and who
   controls (the source policy in the toolbar).
 - "Unpatched" says "no console control" but means "no control at all".
   `patch.set` with address 0 removes the entry, `DMXStore` makes resolvers for
@@ -821,8 +825,8 @@ code on 2026-10-30:
   fade runs. `DMXStore` keeps the last cue outputs and applies them to a
   resolver it creates (a layer added, an undo), so a held cue covers it at
   once.
-- Hold on loss and its `internal` switch belong to a universe, so they do not
-  touch an unpatched fixture. The UI expiry counts only while UI values mask a
+- Hold on signal loss and its `internal` switch belong to a universe, so they
+  do not touch an unpatched fixture. The UI expiry counts only while UI values mask a
   received console (§7.2), so on an unpatched fixture UI values stay until
   released.
 - Other readers: OSC feedback and `live.dmx.fixtures` now list unpatched
@@ -965,8 +969,8 @@ code on 2026-10-30:
 - **Universes** panel (right column, above the DMX monitor): one row per
   universe that the patch uses, the engine hears, or the project stores
   settings for.
-  - Each row shows the name, protocol, interface, hold on loss, the health
-    pill of today, and the fixtures on it ("Layers 1–8, Master").
+  - Each row shows the name, protocol, interface, hold on signal loss, the
+    health pill of today, and the fixtures on it ("Layers 1–8, Master").
   - A heard universe with nothing patched says "heard, nothing patched", which
     shows a console sending to the wrong universe. A universe with stored
     settings and no fixture says "not used"; its settings stay until reset.
@@ -2905,10 +2909,10 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   path (downscale into the pooled pixel buffer, H.264/JPEG). Extra cost per
   subscribed layer target: one 640×360 render pass with one or two quads
   every second tick at 60 fps, plus its own encoder. A layer with nothing on
-  the canvas (no media, intensity 0, index beyond the render layers after the
-  layer count shrank) is black; a canvas change (B31) rebuilds the streamer
-  at the new size through `configure`, and until then a streamer whose
-  aspect no longer matches the canvas sends no frames (the last one stays).
+  the canvas (no media, intensity 0, a layer removed by a lower layer count)
+  is black; a canvas change (B31) rebuilds the streamer at the new size
+  through `configure`, and until then a streamer whose aspect no longer
+  matches the canvas sends no frames (the last one stays).
   The draw items are always this tick's selection (`drawItems` on a
   canvas-reuse tick), so their ring frames are protected exactly as for the
   canvas pass. The browser stops a subscription that resolves after the
@@ -3250,7 +3254,7 @@ failure while entering show mode.
 4. **Patch / DMX** — fixture list (type, universe, address, footprint,
    collisions in red), add/remove layers (bounded by the tier's measured
    limit, shown next to the count), per-universe source protocol and
-   interface, sACN priority, hold-on-loss setting; **DMX monitor**: a 512-cell
+   interface, sACN priority, hold on signal loss setting; **DMX monitor**: a 512-cell
    grid for the selected universe with patched ranges coloured per fixture
    and live values, hover shows "Layer 3 · ch 5 · Play mode · 17 → Loop rev";
    GDTF export button and a channel-map viewer (generated from the spec).

@@ -8,19 +8,16 @@ import Foundation
 import Synchronization
 
 /// The engine's one audio output (ADR-0019): an `AVAudioEngine` with a single `AVAudioSourceNode` whose
-/// real-time render callback mixes every layer's PCM ring (`LayerAudioChannel.pull`) and applies the master volume.
+/// real-time render callback mixes every layer's PCM ring (`LayerAudioChannel.pull`).
 ///
-/// `@unchecked Sendable`: `channels` and the atomics are immutable or thread-safe; `previousMaster` belongs to the
-/// render thread; `engine` / `sourceNode` are touched by `start` / `stop` on the control side only.
+/// `@unchecked Sendable`: `channels` and the atomics are immutable or thread-safe; `engine` is touched by
+/// `start` / `stop` on the control side only.
 public final class AudioMixer: @unchecked Sendable {
     /// One per layer, preallocated; `channels[i]` belongs to layer `i`.
     public let channels: [LayerAudioChannel]
 
-    private let masterBits = Atomic<UInt32>(Float(1).bitPattern)
     private let callbackCount = Atomic<Int>(0)
-    private var previousMaster: Float = 1  // render thread only
     private var engine: AVAudioEngine?
-    private var sourceNode: AVAudioSourceNode?
 
     /// `deviceUID` selects the output device. Device selection is a later phase: for now it is ignored and the
     /// system default output is used.
@@ -86,12 +83,6 @@ public final class AudioMixer: @unchecked Sendable {
         runningFlag.store(false, ordering: .relaxed)
     }
 
-    /// Master gain, 0 ... 1 (not clamped above). Ramped across each callback.
-    public var masterVolume: Float {
-        get { Float(bitPattern: masterBits.load(ordering: .relaxed)) }
-        set { masterBits.store(newValue.bitPattern, ordering: .relaxed) }
-    }
-
     /// Counters summed over all channels (`maxDriftMillis` is the worst channel); `callbacks` counts render callbacks.
     public var statistics: AudioStatistics {
         var total = AudioStatistics()
@@ -134,13 +125,9 @@ public final class AudioMixer: @unchecked Sendable {
             // ponytail: switch to connectNode when the minimum SDK for building is 27
             engine.connect(node, to: engine.mainMixerNode, format: format)
             self.engine = engine
-            sourceNode = node
         }
         try engine?.start()
     }
-
-    /// Starts now and blocks until the device is open (tests, tools); the engine paths use `ensureRunning`.
-    public func startNow() throws { try control.sync { try startLocked() } }
 
     public func stop() { control.sync { stopLocked() } }
 
@@ -158,16 +145,5 @@ public final class AudioMixer: @unchecked Sendable {
             let channel = channels[i]
             channel.pull(into: left, right: right, frames: frames, wantedPTS: channel.wantedPTS(atHostNanos: now))
         }
-        let target = masterVolume
-        if (target != 1 || previousMaster != 1) && frames > 0 {
-            let step = (target - previousMaster) / Float(frames)
-            var gain = previousMaster
-            for i in 0..<frames {
-                gain += step
-                left[i] *= gain
-                right[i] *= gain
-            }
-        }
-        previousMaster = target
     }
 }

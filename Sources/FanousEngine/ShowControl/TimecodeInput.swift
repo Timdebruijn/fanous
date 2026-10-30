@@ -260,7 +260,6 @@ public final class MTCInput: @unchecked Sendable {
 
     let queue = DispatchQueue(label: "org.fanous.mtc", qos: .userInteractive)
     private let clock: TimecodeClock
-    private let logger: Logger
     /// Owns the client, the port, the chosen source and the connected sources by unique id (two identical interfaces
     /// share a name).
     private var listener: MIDISourceListener!
@@ -269,7 +268,6 @@ public final class MTCInput: @unchecked Sendable {
 
     public init(clock: TimecodeClock, logger: Logger) {
         self.clock = clock
-        self.logger = logger
         listener = MIDISourceListener(
             label: "MTC", port: "MTC in", queue: queue, logger: logger,
             receive: { [weak self] words, uid in self?.receive(words, uid: uid) },

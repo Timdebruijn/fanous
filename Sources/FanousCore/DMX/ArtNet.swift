@@ -98,9 +98,6 @@ public struct ArtDmx: Equatable, Sendable {
         self.data = Array(data.prefix(512))
     }
 
-    public var net: UInt8 { UInt8(portAddress >> 8) }
-    public var subnet: UInt8 { UInt8(portAddress >> 4 & 0xF) }
-    public var universe: UInt8 { UInt8(portAddress & 0xF) }
     public var universeID: UniverseID { UniverseID(.artnet, Int(portAddress)) }
 
     public func encoded() -> [UInt8] {
