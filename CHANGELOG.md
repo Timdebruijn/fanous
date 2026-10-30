@@ -458,7 +458,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   and the preview keeps the edited mapping. `live.outputs` gets `morph: { from, to, fade }` as drawn while one runs,
   and the badge reads "Preset A → B", "Edited → Preset B" or "Preset A → edited". Channel 7 is in the channel map, GDTF
   and OSC (`/fanous/output/{n}/fade`); channel 8 stays reserved.
-- Changed: the Patch screen groups its fixtures and patches a group as a block (B120 step 5, PR #STEP5, DESIGN §6.6
+- Changed: the Patch screen groups its fixtures and patches a group as a block (B120 step 5, PR #135, DESIGN §6.6
   items 2–4). The fixture table and Selected fixture are gone. **Layers** (the count with − and +), **Master** and
   **Outputs** (one row per output with its Output and Keystone fixture, its display and a link to Outputs & Mapping,
   and Add output) come from the channel map's `fixtures`, so a new mode of an existing kind appears without UI code;

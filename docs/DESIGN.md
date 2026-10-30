@@ -731,7 +731,7 @@ three existing modes and their footprints alone.
 
 **Status:** designed 2026-10-30; the owner approved the four decisions below
 the same day. Steps 1–5 of the build order are built: step 1 PR #122, step 2
-PR #124, step 3 PR #119, step 4 PR #121, step 5 PR #STEP5 (As built at the end of
+PR #124, step 3 PR #119, step 4 PR #121, step 5 PR #135 (As built at the end of
 this section); step 6, the Patch sheet, is not. Builds on PR #109 (merged: an
 Output fixture exists exactly when its output does), PR #110 (merged: a fixture
 patched later takes the project policy) and PR #112 (merged: an unpatched layer
@@ -1088,7 +1088,7 @@ Steps 3 and 4 are independent of 1 and 2 and can be built alongside them; 1
 and 2 share the engine's state tests, so they go one after the other. The user
 guide changes with the step that changes what it describes (4–6).
 
-**As built (step 5, PR #STEP5, 2026-10-30)**, where it differs from the above:
+**As built (step 5, PR #135, 2026-10-30)**, where it differs from the above:
 - `parseFixture` is gone instead of reading the list: the rows are built from
   `fixtures` and carry their mode, kind and number, so no name is parsed. The
   UI's kind table (`KINDS` in `patch-screen.ts`) holds per kind its title, its
