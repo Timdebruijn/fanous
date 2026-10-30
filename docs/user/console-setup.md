@@ -39,7 +39,7 @@ A 0.0.5 at 1. When the layers are patched by hand off such a block, it goes
 right after the layer before it, or at its standard address (below) when that
 one is unpatched. When those 64 channels are taken, as by the Master with the
 standard patch of 8 layers, the new layer stays unpatched until you give it an
-address. A layer above the layer count cannot get an address.
+address. A layer above the layer count or above 32 cannot get an address.
 
 ## The standard patch
 

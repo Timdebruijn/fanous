@@ -66,6 +66,14 @@ import Testing
         }
     }
 
+    @Test func advancingStaysWithinTheUniverseRange() {
+        #expect(UniverseID.artnet(net: 0, subnet: 0, universe: 15).advanced(by: 1) == .artnet(net: 0, subnet: 1, universe: 0))
+        #expect(UniverseID(.artnet, 0).advanced(by: -1) == nil && UniverseID(.artnet, 32767).advanced(by: 1) == nil)
+        #expect(UniverseID(.artnet, 5).advanced(by: -5) == UniverseID(.artnet, 0))
+        #expect(UniverseID(.sacn, 1).advanced(by: -1) == nil && UniverseID(.sacn, 63999).advanced(by: 1) == nil)
+        #expect(UniverseID(.sacn, 3).advanced(by: -2) == UniverseID(.sacn, 1))
+    }
+
     /// The standard patch is the block from A 0.0.0 1, so a new layer's slot on a standard patch is today's address.
     @Test func theStandardPatchIsABlock() {
         let standard = Patch.standard(layers: 32, outputs: 0)

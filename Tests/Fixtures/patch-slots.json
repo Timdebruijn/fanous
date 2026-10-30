@@ -96,6 +96,24 @@
       ]
     },
     {
+      "name": "outputs from A 0.0.1 457: Output 8 carries to A 0.0.2 1, the Keystone block starts at slot 9, A 0.0.2 9",
+      "start": { "universe": "artnet:0.0.1", "address": 457 }, "footprint": 8,
+      "numbers": [7, 8, 9],
+      "expected": [
+        { "universe": "artnet:0.0.1", "address": 505 }, { "universe": "artnet:0.0.2", "address": 1 },
+        { "universe": "artnet:0.0.2", "address": 9 }
+      ]
+    },
+    {
+      "name": "Keystones from that Keystone block start, A 0.0.2 9",
+      "start": { "universe": "artnet:0.0.2", "address": 9 }, "footprint": 16,
+      "numbers": [1, 2, 8],
+      "expected": [
+        { "universe": "artnet:0.0.2", "address": 9 }, { "universe": "artnet:0.0.2", "address": 25 },
+        { "universe": "artnet:0.0.2", "address": 121 }
+      ]
+    },
+    {
       "name": "a footprint that does not divide 512 leaves the rest of the universe free",
       "start": { "universe": "sacn:4", "address": 1 }, "footprint": 24,
       "numbers": [21, 22, 43, 44],

@@ -378,8 +378,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   the entry did nothing. Address 0 still removes any entry. A new layer (Add layer, `layers.setCount`) goes on its slot
   of the Layers block: with Layers 1–8 moved to A 0.0.4 from 1, Layer 9 lands on A 0.0.5 at 1. When the layers are not
   one block it goes right after the layer before it, else at its standard address, and it stays unpatched when that
-  range is taken. Before, it always took its standard address. Layers above 32 get no address. The slot rule
-  (`Patch.slot`, `Patch.blockStart`) has shared test vectors in `Tests/Fixtures/patch-slots.json`.
+  range is taken. Before, it took its standard address when that range was free. Layers above 32 get no address. The
+  slot rule (`Patch.slot`, `Patch.blockStart`) has shared test vectors in `Tests/Fixtures/patch-slots.json`.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

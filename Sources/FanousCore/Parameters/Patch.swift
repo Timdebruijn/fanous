@@ -75,10 +75,10 @@ public struct UniverseID: Hashable, Codable, Sendable, CustomStringConvertible, 
     }
 
     /// `n` universes on, where a block's slots go once they run past channel 512 (DESIGN.md §6.6 item 2): Art-Net
-    /// port-address + n (A 0.0.15 + 1 = A 0.1.0), sACN universe + n; nil past the last one (32767, 63999).
+    /// port-address + n (A 0.0.15 + 1 = A 0.1.0), sACN universe + n; nil outside Art-Net 0–32767 or sACN 1–63999.
     public func advanced(by n: Int) -> UniverseID? {
         let next = number + n
-        return next <= (transport == .artnet ? 32767 : 63999) ? UniverseID(transport, next) : nil
+        return (transport == .artnet ? 0...32767 : 1...63999).contains(next) ? UniverseID(transport, next) : nil
     }
 }
 

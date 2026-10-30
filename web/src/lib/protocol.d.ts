@@ -96,7 +96,7 @@ export interface CommandArgs {
   'fixture.set': { fixture: string; parameter: string; raw: number };
   /** Set a layer's project setting: the canvas it renders into (a project setting, not a DMX channel). Role: programmer, refused under show lock, undoable. */
   'layer.set': { layer: number; canvas: number };
-  /** Set the number of layers (1–64): a new layer goes on its slot of the Layers block, or right after the layer before it when the layers are no block (else at its standard address), and stays unpatched when that range is taken; dropped layers are unpatched. Role: programmer, refused under show lock, undoable. */
+  /** Set the number of layers (1–64): a new layer goes on its slot of the Layers block, or right after the layer before it when the layers are no block (else at its standard address), and stays unpatched when that range is taken; layers above 32 get no address; dropped layers are unpatched. Role: programmer, refused under show lock, undoable. */
   'layers.setCount': { count: number };
   /** Learn: the next note, controller or program change received is mapped to target (live.midi.learning until then); no target cancels. Role: programmer, refused under show lock. */
   'midi.learn': { target?: string; cue?: number };

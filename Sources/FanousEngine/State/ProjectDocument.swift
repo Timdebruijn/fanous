@@ -554,7 +554,7 @@ public enum ProjectDocument {
         store.register(
             CommandSpec(
                 name: "layers.setCount", role: .programmer,
-                summary: "Set the number of layers (1–64): a new layer goes on its slot of the Layers block, or right after the layer before it when the layers are no block (else at its standard address), and stays unpatched when that range is taken; dropped layers are unpatched.",
+                summary: "Set the number of layers (1–64): a new layer goes on its slot of the Layers block, or right after the layer before it when the layers are no block (else at its standard address), and stays unpatched when that range is taken; layers above 32 get no address; dropped layers are unpatched.",
                 argsType: "{ count: number }"
             ) { project, args in
                 guard let count = args["count"]?.int, (1...64).contains(count) else { throw CommandError.invalidArgs("count must be 1–64") }
