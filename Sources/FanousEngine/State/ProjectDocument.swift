@@ -201,11 +201,14 @@ public enum ProjectDocument {
             try setWalls(walls, in: &project)
         }
         var outputs = ProjectDocument.outputs(from: project)
-        guard outputs.contains(where: { $0.slices.contains { !ids.contains($0.canvas) } }) else { return }
+        let before = outputs
+        func move(_ slices: inout [SliceConfig]) { for s in slices.indices where !ids.contains(slices[s].canvas) { slices[s].canvas = 1 } }
         for o in outputs.indices {
-            for s in outputs[o].slices.indices where !ids.contains(outputs[o].slices[s].canvas) { outputs[o].slices[s].canvas = 1 }
+            move(&outputs[o].slices)
+            // stored presets too: one shown or recalled later must not sample a canvas that is gone
+            for p in outputs[o].presets.indices { move(&outputs[o].presets[p].slices) }
         }
-        try setOutputs(outputs, in: &project)
+        if outputs != before { try setOutputs(outputs, in: &project) }
     }
 
     /// GPU memory cap over all canvases: their pixels together at most four UHD canvases (each canvas pixel costs
@@ -403,12 +406,14 @@ public enum ProjectDocument {
     /// `applySync`: restarts the sync sender and receiver with saved settings; throws when the port cannot be bound.
     /// `syphonRunning`: the numbers of the Syphon servers running now (B69: only the others can be forgotten).
     /// `displayModes`: the current mode of each connected display by UUID (a wall output's pixel size, §9.9).
+    /// `showPreset`: the Compare lease of `output.show` (output ids, preset number; 0 ends it), kept on the DMX queue.
     public static func registerCommands(
         on store: StateStore, auth: RoleAuth, showModeOn: @escaping @Sendable () -> Bool = { false },
         checkLibraryRoot: @escaping @Sendable (String) throws -> Void = { _ in },
         applySync: @escaping @Sendable (SyncSettings) throws -> Void = { _ in },
         syphonRunning: @escaping @Sendable () -> Set<Int> = { [] },
-        displayModes: @escaping @Sendable () -> [String: DisplayModeConfig] = { [:] }
+        displayModes: @escaping @Sendable () -> [String: DisplayModeConfig] = { [:] },
+        showPreset: @escaping @Sendable ([Int], Int) -> Void = { _, _ in }
     ) {
         store.register(
             CommandSpec(
@@ -569,6 +574,7 @@ public enum ProjectDocument {
                     throw CommandError.invalidArgs("args: { id, path, value }")
                 }
                 guard !pointer.tokens.isEmpty, pointer.tokens.first != "id" else { throw CommandError.invalidArgs("path must name a field of the output") }
+                guard pointer.tokens.first != "presets" else { throw CommandError.invalidArgs("presets change through output.preset.store, rename and remove") }
                 var outputs = ProjectDocument.outputs(from: project)
                 guard let index = outputs.firstIndex(where: { $0.id == id }) else { throw CommandError.invalidArgs("no output \(id)") }
                 var document = try JSONValue(encoding: outputs[index])
@@ -714,6 +720,7 @@ public enum ProjectDocument {
             })
         registerUniverseCommands(on: store)
         registerWallCommands(on: store, showModeOn: showModeOn, displayModes: displayModes)
+        registerPresetCommands(on: store, showModeOn: showModeOn, showPreset: showPreset)
     }
 }
 
