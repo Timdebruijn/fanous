@@ -1,14 +1,21 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
+<script module lang="ts">
+  /** how long what was sent shows at most after the last input or release: the longest an echo is waited for */
+  export const GRACE = 1000;
+</script>
+
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
 
   // One −/range/+ slider for a value the engine owns (B114; the colour of an output, a wall's seams, floor and overlap).
-  // What it sent shows instead of the engine's value while a finger holds the thumb, and after a release, a −/+ tap or
-  // a key until the engine's value shows the same, at most GRACE ms: the echoes of earlier sends do not pull it back,
-  // and Undo, other clients or a refused value show again after that. −/+ step from that value, so quick taps all land.
-  // Each slider keeps its own, so two fingers on two sliders do not disturb each other.
+  // From an input, a −/+ tap or a key it shows the value it sent instead of the engine's, until the engine's value
+  // changes to it (the echo) or GRACE ms after the last input or release. So neither the engine's value from before the
+  // sends nor the echoes of earlier sends pull it back, Undo, other clients and a refused value show again at the latest
+  // when the grace ends, and −/+ step from it, so quick taps all land. Each slider keeps its own: two fingers on two
+  // sliders do not disturb each other. Edges: an earlier echo equal to the value sent last (a drag 100 → 88 → 94 → 88)
+  // ends it early, and the later echo (94) shows for a moment; so does any echo that takes longer than the grace.
   let {
     label,
     key,
@@ -43,23 +50,27 @@
     flush?: () => void;
   } = $props();
 
-  const GRACE = 1000;
   let pending = $state<{ key: string; value: number } | null>(null);
   /** the pointer holding the thumb */
-  let finger = $state<number | null>(null);
+  let finger: number | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const v = $derived(pending?.key === key ? pending.value : value);
   const text = $derived(`${v.toFixed(digits)}${unit}`);
-  // the engine caught up with what was sent
+  // runs when the engine's value changes (a derived passes on changes only, not the parent re-rendering): changed to
+  // what was sent, it is the echo
+  const engine = $derived(value);
   $effect(() => {
-    if (pending && finger === null && pending.value.toFixed(digits) === value.toFixed(digits)) pending = null;
+    const now = engine;
+    untrack(() => {
+      if (pending?.value.toFixed(digits) === now.toFixed(digits)) pending = null;
+    });
   });
   onDestroy(() => clearTimeout(timer));
 
-  /** the grace runs while no finger holds the thumb */
+  /** (re)starts the grace; not while a pointer holds a send-on-release slider, which has sent nothing yet */
   function wait() {
     clearTimeout(timer);
-    if (finger === null) timer = setTimeout(() => (pending = null), GRACE);
+    if (!onRelease || finger === null) timer = setTimeout(() => (pending = null), GRACE);
   }
   function hold(n: number) {
     pending = { key, value: n };
