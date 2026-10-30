@@ -82,8 +82,14 @@ enum Benchmark {
             dmxStore = store
             artnet = receiver
             parameters = store.snapshots
-            // the render service holds 32 layers (B121): a step's patch gives its first `count` layers a fixture
-            activate = { count in store.setPatch(Patch.standard(layers: count)) }
+            // the render service holds 32 layers (B121): a step gives only its first `count` layers a fixture. The patch
+            // stays the standard one, so the Master and outputs keep their addresses after layer 16 whatever the step.
+            let standard = Patch.standard()
+            activate = { count in
+                store.setPatch(standard, fixtures: Set(standard.entries.map(\.fixture).filter {
+                    if case .layer(let n) = $0 { n <= count } else { true }
+                }))
+            }
             print("DMX mode: send Art-Net to udp/6454 (standard patch: layer n at universe (n-1)/8, address ((n-1)%8)*64+1)")
         } else {
             parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 32) }
