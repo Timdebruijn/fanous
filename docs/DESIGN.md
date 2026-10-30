@@ -1108,12 +1108,13 @@ device). Listing asks no permission. An entry is `source` = `uniqueID`,
 `Entry` fields only capture fills: `model` (`modelID`) and `inUse`. `/capture`
 is `{"3": {uid, name, model}}` (`Kind.fields` gained the model name, nil for
 the other kinds). *Fallback:* `assign` first matches every running source by
-runtime id or identity, then gives a device with a model the number of the
-one entry not running with the same `model` and `name` (the entry records the
-new uid; two such entries: none), then numbers the rest in order. Matching
-by uid first means a returning device never loses its number to a newcomer of
-its model. In use is still running (`live.capture` `running: true,
-inUse: true`).
+runtime id or identity. Then a device with a model takes the number of the
+entry not running with the same `model` and `name`, and that entry records the
+new uid. This needs exactly one candidate on both sides: two such entries, or
+two newcomers with that model and name, match nothing. The rest get numbers in
+order. Matching by uid first means a returning device never loses its number
+to a newcomer of its model. In use is still running (`live.capture` `running:
+true, inUse: true`).
 *Project:* `initial` and the load migration add `/capture` `{}`. The engine
 keeps the applied value per kind (`liveInProject`); the 10 Hz feed writes
 both catalogs back through `correct`, and a project change (`capture.forget`,
@@ -1121,37 +1122,67 @@ undo, a revert, a loaded version) is adopted by the catalog of its key.
 `capture.forget {file?}` is `syphon.forget` on `/capture` (one registration
 loop). The forget commands' replay check gets the running files of both
 catalogs (the ranges do not overlap). `project.revert`'s replay check still
-passes none, as before.
+passes none, as before. A known edge: an undo (or a loaded version) can put a
+uid back on its old number while that device runs under a new number after
+the fallback. The catalog keeps the running number, and the device moves back
+to the old one at its next replug.
 *Commands:* `capture.authorize {kind}` (programmer, refused under show lock
 and in show mode, not undoable): `camera` calls
 `CaptureInput.requestAccess(allowed: true)` and then
 `MediaLoader.capturePermissionChanged()`. `screen` is refused with
 `unavailable` until step 3.
+*Permissions cache:* `authorizationStatus` (about 25 ms, a TCC round trip
+that is not cached) and `CGPreflightScreenCaptureAccess()` (about 12 ms) are
+read by the capture catalog: once at `startCapture`, then on a utility queue
+with every 2 s poll and after each `requestAccess` answer (from
+`capture.authorize` or from the loader's own prompt). The feed and readiness
+read `LiveCatalog.permissions`, never TCC: the feed shares its serial queue
+with the 20 Hz DMX monitor stream.
 *Loader:* a folder 0 file 1–20 without a scene entry resolves through the
-catalog: "Camera: <name>", "not running" without a runtime id, "in use by
-another app" while `inUse` (not opened), else `captureFactory(uid)`. A scene
-entry still wins. `captureDevicesChanged` (the catalog's `onChange`) works as
-`syphonServersChanged`: a layer whose device went reads "not running" and
-keeps its input (the last frame), and a layer whose device is running but not
-open is opened again. One input per uid: the loader keeps uid → weak
-`CaptureInput`, and a second layer calls `share()` (a user count in the
-input's slot) instead of the factory. `stop()` stops the session when the
-last user lets go. A device that goes is dropped from the table, so its
-return opens a new session for every layer on it. Two layers on one device
-mark the same frame taken once, so the ring of three still covers both.
+catalog: "Camera: <name>", "not running" without a runtime id, else
+`captureFactory(uid)`. While the device is `inUse`, the layer reads "in use by
+another app" and is not opened, unless one of our layers already holds a live
+session on it: that session is shared first, because the flag may come from
+another app that opened the device after us. A scene entry still wins.
+`captureDevicesChanged` (the catalog's `onChange`) works like
+`syphonServersChanged`, and the loader remembers the uid each layer opened (as
+`syphonOpen` holds the runtime id):
+- A layer whose device went reads "not running" and keeps its input (the last
+  frame).
+- A layer is opened again when its device is running but not open, or open
+  under another uid. The second case is one update carrying an unplug and a
+  replug on another port (the 2 s poll, or merged changes).
+- A layer whose session failed or stopped is opened again too.
+
+One input per uid: the loader keeps uid → weak `CaptureInput`, and a second
+layer calls `share()` (a user count in the input's slot) instead of the
+factory. `share()` refuses a stopped or failed input. `stop()` stops the
+session when the last user lets go. A session that goes (device gone, uid
+changed, failed) is dropped from the table, so the next open makes a new one
+for every layer on the device. Two layers on one device mark the same frame
+taken once, so the ring of three still covers both.
 *Feed:* `live.capture` `{devices: [{file, name, running, gone?, inUse?}],
-screens: [], permissions: {camera, screen}}`: camera from
-`authorizationStatus` (`restricted` reads `denied`), screen from
-`CGPreflightScreenCaptureAccess()` until step 3 asks for it.
+screens: [], permissions: {camera, screen}}`: camera from the cached
+`authorizationStatus` (`restricted` reads `denied`), screen from the cached
+`CGPreflightScreenCaptureAccess()` until step 3 asks for it. Whether
+`isInUseByAnotherApplication` counts our own session is not known. If it
+does, the feed would have to drop `inUse` for the uids the loader holds open
+(its `captureShared` keys). That is the owner's live check.
 *Readiness:* item `capture` "Capture permissions granted" fails while the
-catalog has an entry (running or not) and the camera is not `granted`.
-Detail "camera: <word>", fix "System Settings › Privacy & Security ›
-Camera, then Engine › Restart". It blocks show mode until acknowledged.
-*Tests* (fake device lists): numbering, the fallback (one twin, two twins,
-uid first), `inUse`, `live.capture`, the forget and authorize rules,
-`/capture` through a revert and its undo, the migration, the readiness item,
-and the loader: two layers on file 3 with one factory call, unplug and
-replug (a new shared session; the old one stops), and in use.
+catalog has an entry (running or not) and the camera is not `granted`. The
+built-in camera counts as an entry, so a laptop without the grant fails
+until the item is acknowledged. Detail "camera: <word>", fix "System
+Settings › Privacy & Security › Camera, then Engine › Restart". It blocks
+show mode until acknowledged.
+*Tests* (fake device lists): numbering; the fallback (one twin, two twins, two
+newcomers, another model, uid first); `inUse`; `live.capture`; the forget and
+authorize rules; `/capture` through a revert and its undo; the migration; the
+readiness item. The loader tests cover:
+- two layers on file 3 with one factory call
+- unplug and replug in separate updates, and in one update under a new uid
+  (one new shared session, the old one stops)
+- in use: a new layer is refused, but our own session is shared first
+- a failed session: not shared, and opened again
 Not verified here (no camera in this environment): discovery of real
 devices, Continuity Camera, the permission prompt's name, and a replug
 on another port. They are the owner's live check.

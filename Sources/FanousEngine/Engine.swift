@@ -309,8 +309,11 @@ public final class Engine: @unchecked Sendable {
                 return Set((render.syphonCatalog.entries + render.captureCatalog.entries).filter(\.running).map(\.file))
             },
             authorizeCamera: { [weak self] in
-                let loader = self?.render?.loader
-                CaptureInput.requestAccess(allowed: true) { _ in loader?.capturePermissionChanged() }
+                let loader = self?.render?.loader, catalog = self?.render?.captureCatalog
+                CaptureInput.requestAccess(allowed: true) { _ in
+                    catalog?.refreshPermissions()
+                    loader?.capturePermissionChanged()
+                }
             },
             displayModes: { [weak self] in Dictionary((self?.displays.withLock { $0 } ?? []).map { ($0.uuid, $0.mode) }, uniquingKeysWith: { a, _ in a }) })
         liveInProject.withLock { $0 = [.syphon: project["syphon"] ?? [:], .capture: project["capture"] ?? [:]] }
@@ -1061,7 +1064,7 @@ public final class Engine: @unchecked Sendable {
         context.layerErrors = (render?.layers ?? []).compactMap { layer in layer.mediaStatus.withLock { $0.error.map { "Layer \(layer.index + 1): \($0)" } } }
         context.libraryRoot = library?.snapshot.root ?? ""
         context.captureDevices = render?.captureCatalog.entries.count ?? 0
-        context.cameraPermission = Self.permissionWord(CaptureInput.authorization)
+        context.cameraPermission = Self.permissionWord(render?.captureCatalog.permissions.camera ?? .authorized)
         var masters: [Int: Int] = [:]
         for layer in render?.layers ?? [] {
             let s = layer.syncStatus.withLock { $0 }
@@ -1615,7 +1618,7 @@ public final class Engine: @unchecked Sendable {
             "versions": versions?.live ?? .null,
             "sync": syncLive(),
             "syphon": syphonLive(),
-            "capture": Self.captureLive(render?.captureCatalog.entries ?? [], camera: CaptureInput.authorization, screen: CGPreflightScreenCaptureAccess()),
+            "capture": captureLive(),
         ]
         store.updateLive(live)
     }
@@ -1650,6 +1653,13 @@ public final class Engine: @unchecked Sendable {
         case .notDetermined: "notDetermined"
         default: "denied"
         }
+    }
+
+    /// `live.capture` from the catalog and its cached permissions (a TCC read costs tens of ms: never on the feed).
+    private func captureLive() -> JSONValue {
+        guard let catalog = render?.captureCatalog else { return Self.captureLive([], camera: .notDetermined, screen: false) }
+        let permissions = catalog.permissions
+        return Self.captureLive(catalog.entries, camera: permissions.camera, screen: permissions.screen)
     }
 
     /// `live.capture` (B73): the numbered capture devices and the permissions; `screens` until step 3 numbers displays.

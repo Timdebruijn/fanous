@@ -94,6 +94,14 @@ extension LiveCatalogTests {
         two.update(running: [Self.device("c", "Cam Link 4K", model: "m"), Self.device("d", "Cam Link 4K", model: "other")])
         #expect(two.entries.map(\.source) == ["a", "b", "c", "d"])
         #expect(two.entry(file: 1)?.running == false && two.entry(file: 2)?.running == false)
+        // the same name with another model is another device: a new number, the entry stays
+        let model = LiveCatalog(.capture, numbers: [Self.numbered(1, "a", "USB Camera", model: "m")])
+        model.update(running: [Self.device("b", "USB Camera", model: "n")])
+        #expect(model.entry(file: 1)?.source == "a" && model.entry(file: 1)?.running == false && model.entry(file: 2)?.source == "b")
+        // two newcomers with the model and name of one entry: ambiguous too, both get numbers of their own
+        let pair = LiveCatalog(.capture, numbers: [Self.numbered(1, "a", "Cam Link 4K", model: "m")])
+        pair.update(running: [Self.device("b", "Cam Link 4K", model: "m"), Self.device("c", "Cam Link 4K", model: "m")])
+        #expect(pair.entries.map(\.source) == ["a", "b", "c"] && pair.entry(file: 1)?.running == false)
         // Syphon has no model: never a fallback
         let syphon = LiveCatalog(.syphon, numbers: [LiveCatalog.Entry(kind: .syphon, file: 150, source: "App", name: "Out")])
         syphon.update(running: [LiveCatalog.Entry(kind: .syphon, file: 0, source: "Other", name: "Out", runtimeID: "x")])

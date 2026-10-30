@@ -384,7 +384,7 @@ public final class MediaLoader: @unchecked Sendable {
     private let captureChanged = Atomic<Bool>(false)
     private let devicesChanged = Atomic<Bool>(false)
     /// Loader thread: the capture input each layer shows, polled for its status ("no signal").
-    private var captureOpen: [CaptureInput?]
+    private var captureOpen: [(uid: String, input: CaptureInput)?]
     /// Loader thread: the open input of each device by uid, so a second layer on it shares the session.
     private var captureShared: [String: WeakCapture] = [:]
     private struct WeakCapture { weak var input: CaptureInput? }
@@ -461,14 +461,18 @@ public final class MediaLoader: @unchecked Sendable {
             if devicesChanged.exchange(false, ordering: .relaxed) {
                 for i in loaded.indices where isNumbered(MediaKey(packed: loaded[i]), .capture) {
                     let device = captureCatalog?.entry(file: MediaKey(packed: loaded[i]).file)
-                    if let device, device.running, captureOpen[i] != nil {
+                    let open = captureOpen[i]
+                    if let device, device.running, let open, open.uid == device.source, open.input.alive {
                         layers[i].mediaStatus.withLock { $0.name = "Camera: \(device.name)" }  // a rename; in use by another app too
-                    } else if device?.running != true {
-                        if captureOpen[i] != nil, let device { captureShared[device.source] = nil }  // it returns with a new session
-                        captureOpen[i] = nil
-                        layers[i].mediaStatus.withLock { $0.error = "not running" }
-                    } else {
+                        continue
+                    }
+                    // gone, back under another uid (unplug and replug in one update), or a failed session: never shared again
+                    if let open, captureShared[open.uid]?.input === open.input { captureShared[open.uid] = nil }
+                    if device?.running == true {
                         loaded[i] = .max  // came back, or no longer in use elsewhere: opened again below
+                    } else {
+                        captureOpen[i] = nil  // the input stays on the layer: the last frame
+                        layers[i].mediaStatus.withLock { $0.error = "not running" }
                     }
                 }
             }
@@ -478,8 +482,8 @@ public final class MediaLoader: @unchecked Sendable {
                     if media[key]?.capture != nil || isNumbered(key, .capture) { loaded[i] = .max }  // never a packed key: opened again below
                 }
             }
-            for (i, input) in captureOpen.enumerated() {
-                guard let input else { continue }
+            for (i, open) in captureOpen.enumerated() {
+                guard let input = open?.input else { continue }
                 let (error, fps): (String?, Double) =
                     switch input.status {
                     case .starting: (nil, 0)
@@ -570,7 +574,8 @@ public final class MediaLoader: @unchecked Sendable {
                 status.error = "not running"  // black until it connects; then the catalog change opens it
                 return nil
             }
-            guard !device.inUse else {
+            // a session of ours is shared first: in use may be another app that opened the device after us
+            guard !device.inUse || captureShared[device.source]?.input?.alive == true else {
                 status.error = "in use by another app"  // opened again when the other app lets go
                 return nil
             }
@@ -601,7 +606,7 @@ public final class MediaLoader: @unchecked Sendable {
                 opened.wrappingAdd(1, ordering: .relaxed)
                 if numbered == nil { status.name = "Camera: \(input.name)" }  // format, size and counters: polled once it runs
                 status.capture = CaptureInput.Counters()
-                captureOpen[layer] = input
+                captureOpen[layer] = (uid, input)
                 logger.info("layer \(layer + 1) media \(key)", metadata: ["capture": "\(input.name)"])
                 return LayerPlayback(key: key, live: input)
             }

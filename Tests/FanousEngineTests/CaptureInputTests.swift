@@ -399,5 +399,29 @@ struct CaptureInputTests {
         catalog.update(running: cams)
         #expect(eventually { playback(2) != nil && status(2).error == nil })
         #expect(opened.withLock { $0 } == ["cam-c", "cam-c", "cam-b"])
+
+        // our own session is shared before the in-use check: another app opening the device after us refuses nobody
+        catalog.update(running: [cams[0], LiveCatalogTests.device("cam-b", "Cam B", model: "m", inUse: true), cams[2]])
+        select(3, 2)
+        #expect(eventually { playback(3) != nil })
+        #expect(playback(3) === playback(2) && status(3).error != "in use by another app")
+        #expect(opened.withLock { $0 } == ["cam-c", "cam-c", "cam-b"])
+
+        // unplug and replug in one update, on another port (a new uid, the model and name fallback keeps number 3): both
+        // layers leave the old session for one new one, and the old one stops
+        let before = try #require(playback(0))
+        catalog.update(running: [cams[0], cams[1], LiveCatalogTests.device("cam-c2", "Cam C", model: "m")])
+        #expect(catalog.entry(file: 3)?.source == "cam-c2")
+        #expect(eventually { playback(0) != nil && playback(0) !== before && playback(1) === playback(0) })
+        #expect(opened.withLock { $0 } == ["cam-c", "cam-c", "cam-b", "cam-c2"])
+        #expect(before.status == .stopped)
+
+        // a failed session is not shared, and the next catalog change opens it again
+        let failed = try #require(playback(0))
+        failed.slot.withLock { $0.failure = "device in use" }
+        #expect(!failed.share())
+        catalog.update(running: [LiveCatalogTests.device("cam-a", "Cam A", model: "m", inUse: true), cams[1], LiveCatalogTests.device("cam-c2", "Cam C", model: "m")])
+        #expect(eventually { playback(0) != nil && playback(0) !== failed && playback(1) === playback(0) })
+        #expect(opened.withLock { $0 } == ["cam-c", "cam-c", "cam-b", "cam-c2", "cam-c2"])
     }
 }

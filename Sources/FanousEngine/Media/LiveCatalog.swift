@@ -151,10 +151,29 @@ public final class LiveCatalog: @unchecked Sendable {
         // ponytail: in use polled every 2 s; KVO on each device's isInUseByAnotherApplication if that is too slow
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + 2, repeating: 2)
-        timer.setEventHandler(handler: refresh)
+        timer.setEventHandler { [weak self] in
+            refresh()
+            self?.refreshPermissions()
+        }
         timer.resume()
         self.timer = timer
         DispatchQueue.main.async(execute: refresh)
+        readPermissions()  // once here, so the feed and readiness never start from a guess
+    }
+
+    /// Capture: the camera permission and the screen-recording grant as last read (the 2 s poll, after an answer). The
+    /// reads are TCC round trips of tens of milliseconds, so the 10 Hz feed and readiness read this instead.
+    public var permissions: (camera: AVAuthorizationStatus, screen: Bool) { permissionState.withLock { $0 } }
+    private let permissionState = Mutex<(camera: AVAuthorizationStatus, screen: Bool)>((.notDetermined, false))
+
+    /// Reads the permissions again off the calling thread (after `requestAccess` answers, and every 2 s).
+    public func refreshPermissions() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in self?.readPermissions() }
+    }
+
+    private func readPermissions() {
+        let read = (camera: AVCaptureDevice.authorizationStatus(for: .video), screen: CGPreflightScreenCaptureAccess())
+        permissionState.withLock { $0 = read }
     }
 
     static func captureDevices(_ devices: [AVCaptureDevice]) -> [Entry] {
@@ -245,8 +264,10 @@ public final class LiveCatalog: @unchecked Sendable {
             }
         }
         for info in waiting {
+            // exactly one candidate on both sides: one entry not running, one newcomer with this model and name
             let twins = info.model.isEmpty ? [] : entries.indices.filter { entries[$0].runtimeID == nil && entries[$0].model == info.model && entries[$0].name == info.name }
-            if twins.count == 1 {
+            let newcomers = waiting.filter { $0.model == info.model && $0.name == info.name }.count
+            if twins.count == 1 && newcomers == 1 {
                 let i = twins[0]
                 entries[i].source = info.source  // the device's new uid (another USB port)
                 entries[i].runtimeID = info.runtimeID

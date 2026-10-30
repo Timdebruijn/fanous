@@ -76,6 +76,7 @@ public final class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoData
         var unusableLogged = false
         /// Layers showing this input (`share()`); the last `stop()` stops it.
         var users = 1
+        var alive: Bool { !stopped && failure == nil }
         /// The running format's subtype, and the size of the newest frame (it follows a card's input).
         var subtype = ""
         var width = 0
@@ -392,14 +393,18 @@ public final class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoData
         }
     }
 
-    /// One more layer shows this input (two layers on one device share one session); false once it has stopped.
+    /// One more layer shows this input (two layers on one device share one session); false once it has stopped or
+    /// failed (the layer then opens a new session).
     public func share() -> Bool {
         slot.withLock { s in
-            guard !s.stopped else { return false }
+            guard s.alive else { return false }
             s.users += 1
             return true
         }
     }
+
+    /// Neither stopped nor failed: `share()` would take it.
+    public var alive: Bool { slot.withLock { $0.alive } }
 
     /// One layer lets go; the last one releases the frames at once, and the session stops on the capture queue (after a
     /// start still in progress).
