@@ -505,7 +505,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   tab-separated text for a spreadsheet (PR #137).
 - Fixed: the global keys (1–6, L, Cmd/Ctrl+Z, Space on the Show screen) acted on the page under an open dialog: after
   Copy in the Patch sheet, 1 left the screen and L toggled the show lock. They now do nothing while a modal dialog is
-  open; ? still closes the shortcut list (PR #TBD).
+  open; ? still closes the shortcut list (PR #139).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
