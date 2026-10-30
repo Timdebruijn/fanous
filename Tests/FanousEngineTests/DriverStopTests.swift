@@ -114,14 +114,13 @@ struct DriverStopTests {
 
 @Suite(.serialized) @MainActor
 struct RenderServiceStopTests {
-    static func service() throws -> RenderService {
+    static func service(parameters: TripleBuffer<ParameterSnapshotSlot> = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }) throws -> RenderService {
         var scene = SceneConfig()
         scene.canvasWidth = 16
         scene.canvasHeight = 9
         scene.fps = 240
         scene.audio = false
         scene.syphonOutput = true
-        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
         return try RenderService(
             scene: scene, context: try MetalContext(), parameters: parameters, metrics: MetricsRing(capacity: 64),
             logger: Logger(label: "render-stop-test"))
@@ -163,5 +162,31 @@ struct RenderServiceStopTests {
         held.release.signal()
         held.waitFinished()
         service.syphon?.stop()
+    }
+}
+
+/// B121: a layer added at runtime (`layers.setCount`) renders at once, and one removed again lets its media go.
+@Suite(.serialized) @MainActor
+struct RenderServiceLayerTests {
+    /// The service holds every layer the snapshot addresses, whatever the scene's count (1 here); a layer whose slot
+    /// empties (removed: no fixture, so the DMX store writes the defaults) stops showing its media.
+    @Test func aLayerAboveTheStartCountPlaysAndStopsWhenItsSlotEmpties() async throws {
+        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: ParameterSnapshotSlot.maxLayers) }
+        let service = try RenderServiceStopTests.service(parameters: parameters)
+        try #require(service.layers.count == ParameterSnapshotSlot.maxLayers)
+        try await service.start()
+        defer { service.stop() }
+        func show(file: UInt8, sequence: UInt64) {
+            // the buffer hands back a slot with an older write in it: every write sets what layer 5 shows
+            parameters.write { slot in
+                slot.sequence = sequence
+                (slot.layers[4].folder, slot.layers[4].file, slot.layers[4].intensity) = (0, file, file == 0 ? 0 : 1)
+            }
+        }
+        let layer5 = service.layers[4]
+        show(file: 101, sequence: 1)  // the Grid generator
+        #expect(await waitUntil { @Sendable in layer5.mediaStatus.withLock { $0.kind } == "live" })
+        show(file: 0, sequence: 2)
+        #expect(await waitUntil { @Sendable in layer5.mediaStatus.withLock { $0.kind } == "none" })
     }
 }

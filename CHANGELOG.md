@@ -422,6 +422,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Changed: a universe's **Hold on loss** setting is now called **Hold on signal loss**, and **Loss after (s)** is
   **Signal lost after (s)**, in the Universes panel and the user guide (PR #125). The stored fields (`holdOnLoss`, `lossTimeout`)
   and their options are unchanged.
+- Fixed: a layer added at runtime (Add layer, `layers.setCount`) stayed empty until the engine restarted (B121, PR #128).
+  The renderer now holds all 32 layers the parameter snapshot addresses from start; an empty layer makes no draw item
+  and costs about 1 µs per tick. `live.layers`, readiness and CITP list the project's layers, not the 32. A removed
+  layer has no fixture, so its parameters fall back to no media and it lets its media go (as before).
+  `fanous-bench` gives each step's layers their parameters and empties the rest, and its `--dissolve` toggle writes every
+  layer's parameters: it wrote only the file number into a triple-buffer slot that holds an older write, not the last.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

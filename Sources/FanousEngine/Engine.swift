@@ -51,6 +51,11 @@ public final class Engine: @unchecked Sendable {
     /// Frames and missed frames per second from the metric totals, sampled once a second (no percentile sort).
     private let oscFrameRate = Mutex((at: 0.0, frames: 0, missed: 0, fps: Float(0), missedLast: Int32(0)))
     private var render: RenderService?
+    /// The project's layer count, capped at `ParameterSnapshotSlot.maxLayers`: set at start and on every project change.
+    private let projectLayerCount = Atomic<Int>(0)
+    /// The render layers the project has (B121): the service holds `ParameterSnapshotSlot.maxLayers` whatever the count,
+    /// so a layer added at runtime renders at once; status, CITP and readiness list only these.
+    private var projectLayers: ArraySlice<RenderLayer> { render?.layers.prefix(projectLayerCount.load(ordering: .relaxed)) ?? [] }
     /// Multi-server sync (DESIGN.md §23); made with the render service.
     private var syncReceiver: SyncReceiver?
     private var syncSender: SyncSender?
@@ -202,6 +207,7 @@ public final class Engine: @unchecked Sendable {
         canvasSwitch.applied = { [weak self] format in self?.canvasSwitched(to: format) }
         self.canvasSwitch = canvasSwitch
         let layerCount = options.scene?.layerCount ?? loadedProject?["layerCount"]?.int ?? ProjectDocument.defaultLayerCount
+        projectLayerCount.store(min(max(0, layerCount), ParameterSnapshotSlot.maxLayers), ordering: .relaxed)
         let patch = ProjectDocument.effectivePatch(from: loadedProject ?? .null) ?? Patch.standard(layers: layerCount, outputs: 0)
         let policy = options.scene?.policy ?? loadedProject?["policy"]?.string.flatMap(SourcePolicy.init(rawValue:)) ?? .dmx
         let fixtures = ProjectDocument.fixtures(layerCount: layerCount, outputs: ProjectDocument.outputs(from: loadedProject ?? .null).map(\.id))
@@ -505,7 +511,7 @@ public final class Engine: @unchecked Sendable {
                         library: { [weak self] in self?.library?.snapshot ?? .empty },
                         thumbnail: { name in (try? Data(contentsOf: thumbnailer.directory.appending(path: name))).map(Array.init) },
                         frame: { [weak self] source in self?.citpFrame(source) }, sources: { [weak self] in self?.citpSources() ?? [] },
-                        layerCount: { [weak self] in self?.render?.layers.count ?? 0 }), logger: logger)
+                        layerCount: { [weak self] in self?.projectLayers.count ?? 0 }), logger: logger)
                 do {
                     logger.info("engine start", metadata: ["step": "citp"])
                     try citp.start()
@@ -561,7 +567,7 @@ public final class Engine: @unchecked Sendable {
             let clockMaster = ProjectDocument.canvases(from: store.project).first?.clockMaster
             lastOutputs = outputs
             lastClockMaster = clockMaster
-            lastLayerCanvas = Self.layerCanvas(project: store.project, layers: render.layers.count)
+            lastLayerCanvas = Self.layerCanvas(project: store.project, layers: projectLayers.count)
             let projectCanvases = Set(ProjectDocument.canvases(from: store.project).map(\.id))
             canvasUse.withLock { $0 = CanvasUse(outputs: outputs, clockMaster: clockMaster, layers: lastLayerCanvas, canvases: projectCanvases) }
             let log = logger
@@ -875,15 +881,15 @@ public final class Engine: @unchecked Sendable {
     /// A CITP stream frame: a layer's live thumbnail (B29) or the canvas preview JPEG.
     private func citpFrame(_ source: UInt16) -> ([UInt8], Int, Int)? {
         guard let preview = stateServer?.preview else { return nil }
-        if let index = CITPServer.layer(ofSource: source, layerCount: render?.layers.count ?? 0) { return preview.thumbnails?.jpeg(layer: index) }
+        if let index = CITPServer.layer(ofSource: source, layerCount: projectLayers.count) { return preview.thumbnails?.jpeg(layer: index) }
         return preview.canvas.latestJPEG.withLock { $0 }
     }
 
     /// `VSrc`: source 0 is the canvas at its preview size, source n is layer n at its thumbnail size.
     private func citpSources() -> [VideoSource] {
-        guard let render, let canvas = stateServer?.preview?.canvas else { return [] }
+        guard let canvas = stateServer?.preview?.canvas else { return [] }
         return [VideoSource(sourceIdentifier: 0, name: "Canvas", width: UInt16(clamping: canvas.width), height: UInt16(clamping: canvas.height))]
-            + render.layers.map { layer in
+            + projectLayers.map { layer in
                 let cell = ThumbnailAtlas.cellSize(canvas: previewShape("layer:\(layer.index + 1)") ?? (16, 9))
                 return VideoSource(
                     sourceIdentifier: UInt16(layer.index + 1), name: "Layer \(layer.index + 1)", layerNumber: UInt8(clamping: layer.index), width: UInt16(cell.width),
@@ -892,13 +898,14 @@ public final class Engine: @unchecked Sendable {
     }
 
     private func citpLayers() -> [CITPServer.LayerInfo] {
-        guard let render, let dmx else { return [] }
+        guard let dmx else { return [] }
+        let layers = projectLayers
         // the CITP queue is not the compositor: the DMX side's copy, never `read()`; reserved first, so the lock
         // covers only the copy (B71)
         var parameters: [LayerParameters] = []
-        parameters.reserveCapacity(render.layers.count)
-        dmx.snapshots.withLatest { parameters.append(contentsOf: $0.layers.prefix(render.layers.count)) }
-        return render.layers.map { layer in
+        parameters.reserveCapacity(layers.count)
+        dmx.snapshots.withLatest { parameters.append(contentsOf: $0.layers.prefix(layers.count)) }
+        return layers.map { layer in
             let s = layer.mediaStatus.withLock { $0 }
             let p = layer.index < parameters.count ? parameters[layer.index] : LayerParameters()
             let fps = max(1.0, s.fps)
@@ -1071,12 +1078,12 @@ public final class Engine: @unchecked Sendable {
         context.outputsUnassigned = statuses.filter { $0.state == .unassigned }.map(\.id)
         context.outputsBound = statuses.filter { $0.state == .bound }.count
         context.modeIssues = modeChecks.withLock { $0 }.sorted { $0.key < $1.key }.compactMap { id, check in check.issue.map { "Output \(id): \($0)" } }
-        context.layerErrors = (render?.layers ?? []).compactMap { layer in layer.mediaStatus.withLock { $0.error.map { "Layer \(layer.index + 1): \($0)" } } }
+        context.layerErrors = projectLayers.compactMap { layer in layer.mediaStatus.withLock { $0.error.map { "Layer \(layer.index + 1): \($0)" } } }
         context.libraryRoot = library?.snapshot.root ?? ""
         context.captureDevices = render?.captureCatalog.entries.count ?? 0
         context.cameraPermission = Self.permissionWord(render?.captureCatalog.permissions.camera ?? .authorized)
         var masters: [Int: Int] = [:]
-        for layer in render?.layers ?? [] {
+        for layer in projectLayers {
             let s = layer.syncStatus.withLock { $0 }
             // a master publishes only with a movie of more than one frame playing (as `Compositor.publishMaster`)
             if case .master(let group) = s.role, layer.mediaStatus.withLock({ $0.kind == "movie" && $0.frames > 1 }) {
@@ -1408,7 +1415,9 @@ public final class Engine: @unchecked Sendable {
             canvasSwitch?.request(ProjectDocument.layout(from: document))
         }
         // layer → canvas (layer.set) and slices: applied against the canvases that render (main actor)
-        let layers = Self.layerCanvas(project: document, layers: render?.layers.count ?? 0)
+        let layerCount = min(max(0, document["layerCount"]?.int ?? ProjectDocument.defaultLayerCount), ParameterSnapshotSlot.maxLayers)
+        projectLayerCount.store(layerCount, ordering: .relaxed)
+        let layers = Self.layerCanvas(project: document, layers: layerCount)
         let clockMaster = ProjectDocument.canvases(from: document).first?.clockMaster
         let projectCanvases = Set(ProjectDocument.canvases(from: document).map(\.id))
         let use = CanvasUse(outputs: outputs, clockMaster: clockMaster, layers: layers, canvases: projectCanvases)
@@ -1598,7 +1607,7 @@ public final class Engine: @unchecked Sendable {
                 "scannedAt": .number(snapshot.scannedAt),
             ],
             "layers": .array(
-                (render?.layers ?? []).map { layer in
+                projectLayers.map { layer in
                     let s = layer.mediaStatus.withLock { $0 }
                     return [
                         "index": .number(Double(layer.index + 1)), "folder": .number(Double(s.folder)), "file": .number(Double(s.file)),
