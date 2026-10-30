@@ -28,7 +28,7 @@ import Testing
     }
 
     /// DESIGN.md §6.4a: four corners × X/Y, 16-bit, centred = no change, ±50 %; the other modes keep their footprints and
-    /// reserved channels (Output ch 7, Mapping fade, comes with M2.5).
+    /// reserved channels (Output ch 8).
     @Test func keystoneModeHasSixteenCentredChannels() {
         let specs = ChannelMap.keystone
         #expect(specs.map(\.id) == KeystoneParameter.allCases.map { .keystone($0) })
@@ -38,7 +38,7 @@ import Testing
         #expect(specs.map(\.name).prefix(2) == ["Top-left X", "Top-left Y"])
         #expect(ChannelMap.reserved(for: .keystone) == nil)
         #expect(ChannelMap.defaults(for: .keystone) == Array(repeating: 32768, count: 8))
-        #expect(ChannelMap.output.count == 5 && ChannelMap.reservedOutputChannels == 7...8)
+        #expect(ChannelMap.output.count == 6 && ChannelMap.reservedOutputChannels == 8...8)
         #expect(FixtureRef.keystone(2).mode == .keystone && FixtureRef.keystone(2).description == "Keystone 2")
         #expect(PatchEntry(fixture: .keystone(1), universe: UniverseID(.artnet, 0), address: 497).fitsInUniverse)
         #expect(!PatchEntry(fixture: .keystone(1), universe: UniverseID(.artnet, 0), address: 498).fitsInUniverse)
@@ -48,7 +48,7 @@ import Testing
         #expect(ChannelMap.layer.count == LayerParameter.allCases.count)
         #expect(ChannelMap.layer.map(\.channels.upperBound).max() == 51)
         #expect(ChannelMap.master.map(\.channels.upperBound).max() == 6)
-        #expect(ChannelMap.output.map(\.channels.upperBound).max() == 6)
+        #expect(ChannelMap.output.map(\.channels.upperBound).max() == 7)
     }
 
     @Test func decodesRawValuesFromAUniverse() {
@@ -92,6 +92,10 @@ import Testing
         // Output ch 6, Mapping preset (DESIGN.md §6.4): an index, so it snaps (no fade, LTP); 0 = the edited mapping
         let preset = ChannelMap.spec(.output(.preset))
         #expect(preset.channel == 6 && preset.bits == 8 && preset.defaultRaw == 0 && !preset.isContinuous && preset.physical(fromRaw: 17) == 17)
+        // Output ch 7, Mapping fade (§9.10 item 3): the Layer Dissolve mapping, 0 = cut, 255 = 25.5 s
+        let fade = ChannelMap.spec(.output(.fade)), dissolve = ChannelMap.spec(.layer(.dissolve))
+        #expect(fade.channel == 7 && fade.bits == 8 && fade.defaultRaw == 0 && fade.kind == dissolve.kind && fade.unit == "s")
+        #expect(fade.physical(fromRaw: 0) == 0 && abs(fade.physical(fromRaw: 1) - 0.1) < 1e-9 && fade.physical(fromRaw: 255) == 25.5)
         #expect(Int(ChannelMap.spec(.master(.control)).physical(fromRaw: 128)) == MasterControl.blackout.rawValue)
     }
 

@@ -82,6 +82,12 @@ describe('outputs helpers', () => {
     expect(presetBadges({ ...bound, preset: 3, presetSource: 'console', presetMissing: null })).toEqual([{ text: 'Preset 3 (console)', warn: false }]);
     expect(presetBadges({ ...bound, preset: 2, presetSource: 'compare' })).toEqual([{ text: 'Preset 2 (compare)', warn: false }]);
     expect(presetBadges({ ...bound, preset: null, presetSource: 'console', presetMissing: 9 })).toEqual([{ text: 'Preset 9 missing', warn: true }]);
+    // a morph over Output ch 7: from and to as drawn, 0 = the edited mapping (also for a missing number)
+    expect(presetBadges({ ...bound, preset: 3, presetSource: 'console', morph: { from: 1, to: 3, fade: 2 } })).toEqual([{ text: 'Preset 1 → 3', warn: false }]);
+    expect(presetBadges({ ...bound, preset: 3, presetSource: 'console', morph: { from: 0, to: 3, fade: 2 } }).map((b) => b.text)).toEqual(['Edited → Preset 3']);
+    expect(presetBadges({ ...bound, preset: null, presetSource: null, morph: { from: 3, to: 0, fade: 2 } }).map((b) => b.text)).toEqual(['Preset 3 → edited']);
+    expect(presetBadges({ ...bound, preset: null, presetSource: 'console', presetMissing: 9, morph: { from: 3, to: 0, fade: 2 } }).map((b) => b.text)).toEqual(['Preset 3 → edited', 'Preset 9 missing']);
+    expect(presetBadges({ ...bound, preset: 3, presetSource: 'console', morph: null }).map((b) => b.text)).toEqual(['Preset 3 (console)']);
     expect(presetNote({ ...bound, preset: null, presetMissing: 9 })).toBeNull();
     expect(presetNote({ ...bound, preset: 3, presetSource: 'console' })).toContain('at channel 6 = 0');
     expect(presetNote({ ...bound, preset: 3, presetSource: 'compare' })).toContain('when Compare is let go');

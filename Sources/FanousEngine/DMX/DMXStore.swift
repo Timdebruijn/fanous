@@ -80,6 +80,10 @@ public final class DMXStore: @unchecked Sendable {
     private var shows = [(preset: UInt8, until: TimeInterval)](repeating: (0, 0), count: ParameterSnapshotSlot.maxOutputs)
     /// A lease runs this long after its last renewal (the UI renews every 2 s); it ends at the first tick after.
     static let showLease: TimeInterval = 5
+    /// Per output, the preset it shows and whether Compare asks for it (as last published), and the morph into it
+    /// (Output ch 7, DESIGN.md §9.10 item 3): `publish` records one when either changes.
+    private var shown = [(preset: UInt8, compare: Bool)](repeating: (0, false), count: ParameterSnapshotSlot.maxOutputs)
+    private var morphs = [PresetMorph](repeating: PresetMorph(), count: ParameterSnapshotSlot.maxOutputs)
 
     /// `fixtures`: the fixtures that exist (`ProjectDocument.fixtures`); nil, the patched ones.
     public init(patch: Patch, fixtures: Set<FixtureRef>? = nil, logger: Logger) {
@@ -116,7 +120,7 @@ public final class DMXStore: @unchecked Sendable {
         table.expire(at: now)
         var expired = false
         for i in shows.indices where shows[i].preset != 0 && now >= shows[i].until { (shows[i], expired) = ((0, 0), true) }
-        if applyLoss(at: now, settingsChanged: false) || expired { publish(receivedAt: 0) }
+        if applyLoss(at: now, settingsChanged: false) || expired { publish(receivedAt: 0, at: now) }
         if table.settings.values.contains(where: { $0.interface != UniverseSettings.anyInterface }) { refreshInterfaces() }
         expireUI(at: now)
     }
@@ -142,7 +146,7 @@ public final class DMXStore: @unchecked Sendable {
         refreshInterfaces()
         applyLossModes()
         _ = applyLoss(at: now, settingsChanged: true)
-        publish(receivedAt: 0)
+        publish(receivedAt: 0, at: now)
     }
 
     /// Hold on loss for the fixtures of silent universes: on the transition (tick), and at once when the settings
@@ -245,14 +249,14 @@ public final class DMXStore: @unchecked Sendable {
                 uiClock[fixture] = (masked, now)
             }
         }
-        if changed { publish(receivedAt: 0) }
+        if changed { publish(receivedAt: 0, at: now) }
     }
 
     func applyUI(_ fixture: FixtureRef, _ parameter: ParameterID, raw: UInt16, at now: TimeInterval, source: ValueSource = .ui) {
         guard resolvers[fixture] != nil else { return }
         resolvers[fixture]?.setInternal(parameter, raw: raw, source: source, at: now)
         uiClock[fixture] = (0, now)
-        publish(receivedAt: 0)
+        publish(receivedAt: 0, at: now)
     }
 
     func keepUI(_ fixture: FixtureRef, at now: TimeInterval) {
@@ -276,11 +280,12 @@ public final class DMXStore: @unchecked Sendable {
             if resolvers[entry.fixture]?.updateDMX(raw, at: time) == true { changed = true }
         }
         // an identical refresh (most packets in a steady show) rebuilds nothing; the render side keeps the last snapshot
-        if changed { publish(receivedAt: time) }
+        if changed { publish(receivedAt: time, at: time) }
     }
 
     /// ponytail: iterates the resolver dictionary per packet; a fixed layer array comes with projects (Phase 5).
-    func publish(receivedAt: TimeInterval) {
+    /// `now` starts a preset morph.
+    func publish(receivedAt: TimeInterval, at now: TimeInterval = DMXStore.now) {
         sequence += 1
         let sequence = self.sequence
         snapshots.write { slot in
@@ -314,8 +319,16 @@ public final class DMXStore: @unchecked Sendable {
                 }
                 (slot.keystones[i], slot.keystoneInvalid[i]) = (keystones[i].matrix, keystones[i].invalid)
                 // Compare wins over ch 6 while its lease runs
-                let console = resolvers[.output(i + 1)].map { UInt8(clamping: Int($0.physical(.output(.preset)))) } ?? 0
-                (slot.presets[i], slot.presetCompare[i]) = shows[i].preset != 0 ? (shows[i].preset, true) : (console, false)
+                let output = resolvers[.output(i + 1)]
+                let console = output.map { UInt8(clamping: Int($0.physical(.output(.preset)))) } ?? 0
+                let next: (preset: UInt8, compare: Bool) = shows[i].preset != 0 ? (shows[i].preset, true) : (console, false)
+                if next != shown[i] {
+                    // a console change morphs over ch 7 as it is now, from the target of a running morph (which ends at
+                    // once); Compare starting, ending or changing its preset cuts
+                    let fade = next.compare || shown[i].compare ? 0 : output.map { $0.physical(.output(.fade)) } ?? 0
+                    (morphs[i], shown[i]) = (PresetMorph(from: shown[i].preset, start: now, fade: fade), next)
+                }
+                (slot.presets[i], slot.presetCompare[i], slot.morphs[i]) = (next.preset, next.compare, morphs[i])
             }
         }
     }
@@ -329,7 +342,7 @@ public final class DMXStore: @unchecked Sendable {
             if next.preset != shows[id - 1].preset { changed = true }
             shows[id - 1] = next
         }
-        if changed { publish(receivedAt: 0) }
+        if changed { publish(receivedAt: 0, at: now) }
     }
 
     // MARK: Cross-thread
@@ -426,7 +439,7 @@ public final class DMXStore: @unchecked Sendable {
         }
         resolvers = kept
         applyLossModes()
-        publish(receivedAt: 0)
+        publish(receivedAt: 0, at: now)
     }
 
     public var currentPatch: Patch { queue.sync { patch } }

@@ -110,7 +110,7 @@
     <button type="button" class="btn" bind:this={storeButton} disabled={!!lock || !validNumber} title={lock ?? (validNumber ? undefined : 'A preset number is 1–255')} onclick={store}>{taken ? `Replace ${storeAs}` : `Store as ${storeAs}`}</button>
     <p class="caption grow">
       A preset holds the warp and the slices with their masks{ids.length > 1 ? `, of all ${ids.length} outputs` : ''}; blend, colour and black floor stay as they are.
-      The console shows one with Output channel 6 = its number{ids.length > 1 ? ' on each output' : ''}.
+      The console shows one with Output channel 6 = its number{ids.length > 1 ? ' on each output' : ''}; channel 7 sets the glide time.
     </p>
   </div>
 </section>

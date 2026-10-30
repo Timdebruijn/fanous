@@ -66,7 +66,8 @@ Generated from `Sources/FanousCore/Parameters/ChannelMap.swift` by `fanousd chan
 | 4 | Test pattern | 8 | 0 | 0–15 Off · 16–31 Grid · 32–47 Colour bars · 48–63 Blend check · 64–79 Output ID · 80–95 Crosshair · 96–111 Grey steps · 112–127 Checkerboard · 128–143 Grey 0 % · 144–159 Grey 25 % · 160–175 Grey 75 % · 176–191 White · rest = Off | `testPattern` |
 | 5 | Blend | 8 | 0 | 0–127 On · 128–255 Raw · rest = On | `blend` |
 | 6 | Mapping preset | 8 | 0 | 0 = as edited · 1–255 | `preset` |
-| 7–8 | Reserved | — | 0 | ignored | — |
+| 7 | Mapping fade | 8 | 0 | 0 → 0 s · 255 → 25.5 s | `fade` |
+| 8 | Reserved | — | 0 | ignored | — |
 
 ## Keystone mode (16 channels)
 

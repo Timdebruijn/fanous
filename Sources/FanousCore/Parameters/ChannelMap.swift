@@ -8,7 +8,7 @@
 public enum ChannelMap {
     public static let reservedLayerChannels = 52...64
     public static let reservedMasterChannels = 7...8
-    public static let reservedOutputChannels = 7...8
+    public static let reservedOutputChannels = 8...8
 
     /// The channels a mode keeps free after its last parameter; nil when it uses all of them (Keystone).
     public static func reserved(for mode: FixtureMode) -> ClosedRange<Int>? {
@@ -160,8 +160,10 @@ public enum ChannelMap {
         o(.control, "Control", 3, 8, 0, bands(width: 64, ["Normal", "Blackout", "Freeze"]), "Control"),
         o(.testPattern, "Test pattern", 4, 8, 0, testPatternBands, "Control"),
         o(.blend, "Blend", 5, 8, 0, .bands([Band(from: 0, to: 127, name: "On", value: 0), Band(from: 128, to: 255, name: "Raw", value: 1)], fallback: 0), "Mapping"),
-        // DESIGN.md §9.10 item 3: 0 = the edited mapping, N = the output's preset N; an index, so it cuts (ch 7 fades, M2.5)
+        // DESIGN.md §9.10 item 3: 0 = the edited mapping, N = the output's preset N; an index, so it snaps (ch 7 morphs it)
         o(.preset, "Mapping preset", 6, 8, 0, .index(max: 255), "Mapping"),
+        // the morph when ch 6 changes, read at that change: 0 = cut, as Layer Dissolve (M2.5)
+        o(.fade, "Mapping fade", 7, 8, 0, .curve([CurvePoint(0, 0), CurvePoint(255, 25.5)], unit: "s"), "Mapping"),
     ]
 
     // MARK: - Keystone (16 channels, DESIGN.md §6.4a)

@@ -1588,8 +1588,8 @@ public final class Engine: @unchecked Sendable {
         let modeNotes = modeChecks.withLock { $0 }.compactMapValues(\.note)
         // per output: keystone active (not the identity) and invalid (the console's quad was refused), from the DMX side's copy
         var keystones: [(active: Bool, invalid: Bool)] = []
-        // and the mapping preset it is asked to show (§9.10 item 3): Compare's or Output ch 6's, 0 = as edited
-        var presets: [(number: Int, compare: Bool)] = []
+        // and the mapping preset it is asked to show (§9.10 item 3): Compare's or Output ch 6's, 0 = as edited, with the morph into it
+        var presets: [(number: Int, compare: Bool, morph: PresetMorph)] = []
         keystones.reserveCapacity(ParameterSnapshotSlot.maxOutputs)
         presets.reserveCapacity(ParameterSnapshotSlot.maxOutputs)
         dmx.snapshots.withLatest { slot in
@@ -1597,10 +1597,11 @@ public final class Engine: @unchecked Sendable {
             for i in slot.keystones.indices {
                 let raw = i < slot.outputs.count && slot.outputs[i].raw
                 keystones.append((slot.keystones[i] != matrix_identity_float3x3 && !raw, slot.keystoneInvalid[i]))
-                presets.append((Int(slot.presets[i]), slot.presetCompare[i]))
+                presets.append((Int(slot.presets[i]), slot.presetCompare[i], slot.morphs[i]))
             }
         }
         let configs = canvasUse.withLock { $0.outputs }
+        let now = DMXStore.now
         let live: JSONValue = [
             "canvas": canvasSwitch?.live ?? .null,
             "engine": [
@@ -1653,7 +1654,7 @@ public final class Engine: @unchecked Sendable {
                         "modeNote": modeNotes[s.id].map { .string($0) } ?? .null,
                         "keystone": .bool(keystones.indices.contains(s.id - 1) && keystones[s.id - 1].active),
                         "keystoneInvalid": .bool(keystones.indices.contains(s.id - 1) && keystones[s.id - 1].invalid),
-                    ].merging(presetLive(presets.indices.contains(s.id - 1) ? presets[s.id - 1] : (0, false), config: configs.first { $0.id == s.id })) { a, _ in a })
+                    ].merging(Self.presetLive(presets.indices.contains(s.id - 1) ? presets[s.id - 1] : (0, false, PresetMorph()), config: configs.first { $0.id == s.id }, at: now)) { a, _ in a })
                 }),
             "security": ["webUIOpen": .bool(auth.isOpen(.programmer))],
             "timecode": timecodeLive(),
@@ -1672,12 +1673,24 @@ public final class Engine: @unchecked Sendable {
     }
 
     /// `live.outputs` preset fields (§9.10 item 3): the preset shown (null: the edited mapping), where it is asked from
-    /// (console or compare), and a number the output does not have, or has broken (it keeps the edited mapping).
-    private func presetLive(_ asked: (number: Int, compare: Bool), config: OutputConfig?) -> [String: JSONValue] {
-        guard asked.number > 0 else { return ["preset": .null, "presetSource": .null, "presetMissing": .null] }
+    /// (console or compare), a number the output does not have, or has broken (it keeps the edited mapping), and the morph
+    /// into it while it runs at `now` (Output ch 7): `{ from, to, fade }` as drawn, so 0 = the edited mapping on either
+    /// side for such a number too, and null when both sides draw the same. No progress: the live document is diffed every
+    /// 100 ms, so it changes when a morph starts and ends.
+    static func presetLive(_ asked: (number: Int, compare: Bool, morph: PresetMorph), config: OutputConfig?, at now: Double) -> [String: JSONValue] {
+        func drawn(_ number: Int) -> Int {
+            number > 0 && config?.preset(number).map { (try? ProjectDocument.validated($0)) != nil } == true ? number : 0
+        }
+        let (from, to) = (drawn(Int(asked.morph.from)), drawn(asked.number))
+        let morph: JSONValue = asked.morph.running(at: now) && from != to
+            ? ["from": .number(Double(from)), "to": .number(Double(to)), "fade": .number(asked.morph.fade)] : .null
+        guard asked.number > 0 else { return ["preset": .null, "presetSource": .null, "presetMissing": .null, "morph": morph] }
         let number = JSONValue.number(Double(asked.number))
-        let has = config?.preset(asked.number).map { (try? ProjectDocument.validated($0)) != nil } ?? false
-        return ["preset": has ? number : .null, "presetSource": .string(asked.compare ? "compare" : "console"), "presetMissing": has ? .null : number]
+        let has = to != 0
+        return [
+            "preset": has ? number : .null, "presetSource": .string(asked.compare ? "compare" : "console"), "presetMissing": has ? .null : number,
+            "morph": morph,
+        ]
     }
 
     /// The catalog's numbering written into the project when it differs from `applied` (`/syphon` or the kind's key as

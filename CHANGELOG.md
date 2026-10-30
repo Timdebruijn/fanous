@@ -434,7 +434,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Added: **mapping presets** (M2.4, DESIGN §6.4, §9.10 item 3). An output stores its warp and slices, masks included,
   under a number 1–255 (`output.preset.store`, `recall`, `rename`, `remove`; one undo step each, also for a whole wall);
   blend, black floor, colour, intensity and region stay live. Output channel 6, **Mapping preset**, shows preset N while
-  it holds N and the edited mapping at 0, as a cut; a number the output lacks keeps the edited mapping. **Hold to
+  it holds N and the edited mapping at 0, as a cut (M2.5 adds the fade); a number the output lacks keeps the edited mapping. **Hold to
   compare** shows a preset from the UI over channel 6 (a 5 s lease, `output.show`, renewed while held). The keystone
   moves the preset too, Freeze holds across a preset change, and the preview and the editor keep the edited mapping. A
   Presets strip on Warp & Slices and on the wall panel; "Preset N (console)", "Preset N (compare)" and "Preset N missing"
@@ -449,6 +449,15 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   layer has no fixture, so its parameters fall back to no media and it lets its media go (as before).
   `fanous-bench` gives each step's layers their parameters and empties the rest, and its `--dissolve` toggle writes every
   layer's parameters: it wrote only the file number into a triple-buffer slot that holds an older write, not the last.
+- Added: the **mapping preset morph** (M2.5, PR #129, DESIGN §6.4, §9.10 item 3). Output channel 7, **Mapping fade** (0 = cut,
+  1–255 = 0.1–25.5 s, as Layer Dissolve), glides an output from one preset to the next when channel 6 changes: warp,
+  slice corners, source rectangles and opacity move in one pass, slices paired by id; a slice on one side only (or on
+  another canvas) and the masks switch at the start. A change during a glide jumps to where that glide was going and
+  glides on from there; Compare, Recall and a fade of 0 cut; on DMX loss the morph follows channel 6. Channel 7 is read
+  when channel 6 changes, as Dissolve is when the media changes. The keystone applies on top, Freeze holds across it,
+  and the preview keeps the edited mapping. `live.outputs` gets `morph: { from, to, fade }` as drawn while one runs,
+  and the badge reads "Preset A → B", "Edited → Preset B" or "Preset A → edited". Channel 7 is in the channel map, GDTF
+  and OSC (`/fanous/output/{n}/fade`); channel 8 stays reserved.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

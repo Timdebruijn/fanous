@@ -187,6 +187,66 @@ final class Box { var value = 0 }
         #expect(shown() == (4, false), "preset 0 ends it at once")
     }
 
+    /// DESIGN.md §9.10 item 3: a ch 6 change morphs over Output ch 7 as it is at that change. The DMX queue records where
+    /// from, the start and the fade (the target is `presets`); a change during a morph goes on from its target; a fade of 0
+    /// and Compare starting or ending cut.
+    @Test func channel7MorphsAChannel6Change() {
+        let universe = UniverseID(.artnet, 0)
+        let store = DMXStore(patch: Patch(entries: [PatchEntry(fixture: .output(1), universe: universe, address: 1)]), logger: Logger(label: "test"))
+        let t = 1000.0
+        func send(ch6: UInt8, ch7: UInt8, at time: Double) {
+            var data = [UInt8](repeating: 0, count: 512)
+            (data[0], data[1], data[5], data[6]) = (0xFF, 0xFF, ch6, ch7)
+            store.queue.sync { store.receive(artnet: ArtDmx(portAddress: 0, data: data), from: "desk", at: time) }
+        }
+        func shown() -> (preset: UInt8, morph: PresetMorph) { store.snapshots.withLatest { ($0.presets[0], $0.morphs[0]) } }
+        send(ch6: 3, ch7: 0, at: t)
+        #expect(shown() == (3, PresetMorph(from: 0, start: t, fade: 0)), "ch 7 = 0 cuts")
+        send(ch6: 3, ch7: 20, at: t + 1)
+        #expect(shown() == (3, PresetMorph(from: 0, start: t, fade: 0)), "a fade alone starts nothing")
+        send(ch6: 5, ch7: 20, at: t + 2)
+        #expect(shown() == (5, PresetMorph(from: 3, start: t + 2, fade: 2)), "ch 7 = 20: 2 s from preset 3")
+        send(ch6: 6, ch7: 30, at: t + 3)
+        #expect(shown() == (6, PresetMorph(from: 5, start: t + 3, fade: 3)), "during the morph: on from its target, with the fade as it is now")
+        store.queue.sync { store.show([1], preset: 9, at: t + 4) }
+        #expect(shown() == (9, PresetMorph(from: 6, start: t + 4, fade: 0)), "Compare cuts")
+        send(ch6: 7, ch7: 30, at: t + 4.5)
+        #expect(shown() == (9, PresetMorph(from: 6, start: t + 4, fade: 0)), "ch 6 under the lease changes nothing on screen")
+        store.queue.sync { store.show([1], preset: 0, at: t + 5) }
+        #expect(shown() == (7, PresetMorph(from: 9, start: t + 5, fade: 0)), "the lease's end cuts to ch 6")
+    }
+
+    /// DMX loss: the morph follows ch 6 under each universe's hold. Hold keeps the values, so a running morph keeps its
+    /// clock through a later publish; zero sends ch 6 and ch 7 to 0, a cut to the edited mapping; internal goes to the UI's
+    /// preset with the UI's fade.
+    @Test(arguments: [UniverseSettings.Loss.hold, .zero, .internal]) func aMorphFollowsChannel6OnLoss(_ loss: UniverseSettings.Loss) {
+        let universe = UniverseID(.artnet, 0)
+        let store = DMXStore(patch: Patch(entries: [PatchEntry(fixture: .output(1), universe: universe, address: 1)]), logger: Logger(label: "test"))
+        var settings = UniverseSettings(for: universe)
+        settings.holdOnLoss = loss
+        let t = 1000.0
+        store.queue.sync {
+            store.configure([universe: settings], at: t)
+            store.applyUI(.output(1), .output(.preset), raw: 4, at: t)
+            store.applyUI(.output(1), .output(.fade), raw: 10, at: t)  // 1 s
+        }
+        var data = [UInt8](repeating: 0, count: 512)
+        (data[0], data[1], data[5], data[6]) = (0xFF, 0xFF, 2, 50)  // preset 2 over 5 s
+        store.queue.sync { store.receive(artnet: ArtDmx(portAddress: 0, data: data), from: "desk", at: t + 1) }
+        func shown() -> (preset: UInt8, morph: PresetMorph) { store.snapshots.withLatest { ($0.presets[0], $0.morphs[0]) } }
+        let running = shown()
+        #expect(running.preset == 2 && running.morph.start == t + 1 && running.morph.fade == 5, "\(loss): the console's morph runs")
+        store.queue.sync {
+            store.tick(at: t + 5)  // past the 2.5 s loss timeout
+            store.publish(receivedAt: 0, at: t + 6)  // anything else that publishes
+        }
+        switch loss {
+        case .hold: #expect(shown() == running, "hold: the same morph, its clock kept")
+        case .zero: #expect(shown() == (0, PresetMorph(from: 2, start: t + 5, fade: 0)), "zero: ch 6 and ch 7 at 0, a cut")
+        case .internal: #expect(shown() == (4, PresetMorph(from: 2, start: t + 5, fade: 1)), "internal: the UI's preset and fade")
+        }
+    }
+
     /// DMX loss with hold "zero" centres a Keystone fixture instead of putting every corner at −50 %: zero for a geometry
     /// offset is no offset, so a keystone universe that drops alone does not shift a lit picture.
     @Test func zeroOnLossCentresTheKeystone() {
