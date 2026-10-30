@@ -67,7 +67,7 @@ export function outputTone(state: string): DotTone {
 export function permissionRow(kind: 'camera' | 'screen', state: string): { tone: DotTone; word: string; authorize: boolean; caption: string | null } {
   if (state === 'granted') return { tone: 'green', word: 'granted', authorize: false, caption: null };
   const word = state === 'notDetermined' ? 'not asked' : state;
-  return { tone: 'yellow', word, authorize: true, caption: kind === 'screen' ? 'opens System Settings › Privacy & Security › Screen & System Audio Recording: allow Fanous Engine, then Engine › Restart Engine' : null };
+  return { tone: 'yellow', word, authorize: true, caption: kind === 'screen' ? 'opens System Settings › Privacy & Security › Screen & System Audio Recording: allow Fanous, then Engine › Restart Engine' : null };
 }
 
 /** Dot colour and word of one readiness row (the word is the accessible name of the dot). */
