@@ -2,9 +2,10 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy, tick, type ComponentProps } from 'svelte';
   import OutputColour from './OutputColour.svelte';
   import PresetStrip from './PresetStrip.svelte';
+  import RangeStepper from './RangeStepper.svelte';
   import { lockTitle } from '../lib/show';
   import { app, can, cmd, toastUndo } from '../lib/state.svelte';
   import { throttledSender } from '../lib/throttle';
@@ -119,41 +120,12 @@
     void cmd('wall.set', { id: wall.id, overlap: { ...wall.overlap, [axis]: Math.min(50, Math.max(0, Math.round(percent))) / 100 } });
   }
 
-  /** the value under a finger while a slider moves: patches of the values sent before it do not pull it back */
-  let drag = $state<{ key: string; value: number } | null>(null);
-  interface Slider {
-    label: string;
-    key: string;
-    value: number;
-    min: number;
-    max: number;
-    step: number;
-    digits: number;
-    set: (v: number) => void;
-    focus?: boolean;
-    /** send on release only (a geometry change re-computes the wall; one undo step each) */
-    onRelease?: boolean;
-    unit?: string;
-    /** why it cannot change, when not the role or the show lock */
-    off?: string | null;
-  }
-  const stepped = (s: Slider, v: number) => Math.min(s.max, Math.max(s.min, Number(v.toFixed(s.digits))));
+  /** off: why it cannot change, when not the role or the show lock */
+  type Slider = Omit<ComponentProps<typeof RangeStepper>, 'flush'>;
 </script>
 
 {#snippet slider(s: Slider)}
-  {@const v = drag?.key === s.key ? drag.value : s.value}
-  {@const off = lock ?? s.off ?? undefined}
-  <div class="slider" class:focus={s.focus}>
-    <span class="label">{s.label}</span>
-    <span class="line">
-      <button type="button" class="btn btn-icon" aria-label="{s.label} down" title={off} disabled={!!off || v <= s.min} onclick={() => s.set(stepped(s, v - s.step))}>−</button>
-      <input type="range" min={s.min} max={s.max} step={s.step} aria-label={s.label} title={off} disabled={!!off} value={v}
-        oninput={(e) => { const n = Number(e.currentTarget.value); drag = { key: s.key, value: n }; if (!s.onRelease) s.set(n); }}
-        onchange={(e) => { if (s.onRelease) s.set(Number(e.currentTarget.value)); else throttle.flush(); drag = null; }} />
-      <button type="button" class="btn btn-icon" aria-label="{s.label} up" title={off} disabled={!!off || v >= s.max} onclick={() => s.set(stepped(s, v + s.step))}>+</button>
-      <span class="mono val" aria-label="{s.label} value">{v.toFixed(s.digits)}{s.unit ?? ''}</span>
-    </span>
-  </div>
+  <RangeStepper {...s} off={lock ?? s.off} flush={throttle.flush} />
 {/snippet}
 
 <section class="panel wall" aria-label={wall.name}>
@@ -317,10 +289,6 @@
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .ctl { display: flex; flex-direction: column; gap: 10px; }
   h3 { margin: 0; font-size: 15px; font-weight: 600; }
-  .slider { display: flex; flex-direction: column; gap: 4px; border-radius: 8px; }
-  .slider .line { display: flex; align-items: center; gap: 8px; }
-  .slider input { flex: 1; min-width: 0; min-height: var(--touch); accent-color: var(--accent); }
-  .val { min-width: 64px; text-align: right; }
   .focus { outline: 2px solid var(--accent); outline-offset: 4px; }
   .manual { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
   @media (max-width: 600px) {
