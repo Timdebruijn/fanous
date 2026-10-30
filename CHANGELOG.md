@@ -355,6 +355,16 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   picture. Frames, drops, pool shortages (`outOfBuffers`) and unusable frames are counted per layer and logged every
   minute. The camera permission is asked only outside show mode. The app and the engine carry the camera entitlement
   and usage text. Numbered files 1–20 follow with the capture catalog.
+- Added: capture devices are folder 0 files 1–20 (B73 step 2b, PR #120, DESIGN §8.2.1). The engine numbers every
+  camera, capture card and Continuity Camera it sees (lowest free number), keeps the numbers in the project (`/capture`
+  `{"1": {uid, name, model}}`, added to older projects on open) and gives a device its number back after a restart or a
+  replug; a UVC device on another USB port keeps its number when its model and name match exactly one device that is
+  not running. A console or the UI selects File 1–20 in folder 0 like a generator. Two layers on one device share one
+  capture session. A device that goes reads "not running" and keeps its last picture, and its return reconnects the
+  layer; a device another app has open reads "in use by another app". `live.capture` lists the devices and the camera
+  permission. New commands: `capture.forget {file?}` (frees numbers of devices that are not running, undoable) and
+  `capture.authorize {kind: "camera"}` (asks for the camera permission, not in show mode; `screen` comes with displays).
+  New readiness item "Capture permissions granted": it fails while a device is numbered and the camera is not granted.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

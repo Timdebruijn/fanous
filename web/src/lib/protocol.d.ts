@@ -19,6 +19,8 @@ export type CommandName =
   | 'canvas.add'
   | 'canvas.remove'
   | 'canvas.set'
+  | 'capture.authorize'
+  | 'capture.forget'
   | 'cue.add'
   | 'cue.back'
   | 'cue.go'
@@ -69,6 +71,10 @@ export interface CommandArgs {
   'canvas.remove': { id: number };
   /** Set the canvas name or clock-master output, or its size and rate (even 320–8192 px; 23.976, 24, 25, 29.97, 30, 50, 59.94 or 60 fps, set on canvas 1 for every canvas; re-initialises the canvas so outputs blank briefly; refused in show mode). Role: programmer, refused under show lock, undoable. */
   'canvas.set': { id: number; path: '/name' | '/clockMaster'; value: JSONValue } | { id: number; width: number; height: number; fps: number };
+  /** Ask macOS for the camera permission, or for screen recording (not available yet); refused in show mode. Role: programmer, refused under show lock. */
+  'capture.authorize': { kind: 'camera' | 'screen' };
+  /** Forget a numbered capture device that is not running (folder 0, 1–20), or without file every not-running device (1–20): the number is free again. Role: programmer, refused under show lock, undoable. */
+  'capture.forget': { file?: number };
   /** Add a cue: { number, name, fade?, values?: [{fixture, parameter, raw, fade?}], trigger?: "hh:mm:ss:ff@rate", follow? }. Role: programmer, refused under show lock, undoable. */
   'cue.add': { number: number; name: string; fade?: number; values?: { fixture: string; parameter: string; raw: number; fade?: number }[]; trigger?: string | null; follow?: number | null };
   /** Fire the previous cue. Role: operator. */

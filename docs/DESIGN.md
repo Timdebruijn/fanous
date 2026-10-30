@@ -836,7 +836,8 @@ Fanous Library/
 | File | Source |
 |---|---|
 | 0 | none |
-| 1–32 | cameras and capture cards (1–20), displays (21–28), windows (29–32): design, not built, see §8.2.1; NDI later |
+| 1–20 | cameras and capture cards, numbered as they appear and kept in the project (`/capture`); built 2026-10-30 (B73 step 2b), see §8.2.1 |
+| 21–32 | displays (21–28), windows (29–32): design, not built, see §8.2.1; NDI later |
 | 100 | solid colour (RGB channels define the colour) |
 | 101–120 | test patterns (same set as the Output test patterns), usable as layer content |
 
@@ -901,7 +902,8 @@ Since B73 step 1b: `Media/LiveCatalog.swift`, `LiveCatalog(.syphon, …)`; the B
 
 #### 8.2.1 Cameras, capture cards and screens: files 1–32 (design 2026-10-29, B73)
 
-**Status:** design, not built. The feature-gap survey (`docs/feature-gaps.md`
+**Status:** design; steps 1a–2b built (capture devices 1–20, as-built notes
+below), displays and windows not yet. The feature-gap survey (`docs/feature-gaps.md`
 G1, G3; P1) found that every compared product takes a camera or capture card
 and that Millumin, VDMX, Isadora and Mitti take slides and lyrics apps by
 screen capture. Both are system frameworks: AVFoundation capture and
@@ -947,7 +949,7 @@ by kind so a console operator can tell them apart:
 
 | Files | Source | Identity kept in the project |
 |---|---|---|
-| 1–20 | capture devices: UVC cameras and capture cards, Continuity Camera (an iPhone), CoreMediaIO camera extensions | `capture: {"3": {uid, name}}` |
+| 1–20 | capture devices: UVC cameras and capture cards, Continuity Camera (an iPhone), CoreMediaIO camera extensions | `capture: {"3": {uid, name, model}}` |
 | 21–28 | whole displays (the Mac's own, a second Mac's HDMI into a capture card is a capture device) | `screens: {"21": {uuid, name}}` |
 | 29–32 | windows of other apps (slides in a window, a lyrics app): later, see below | `windows: {"29": {app, title}}` |
 
@@ -1094,6 +1096,96 @@ Not yet: files 1–20 by the catalog (step 2b). Two layers on one uid also
 open two sessions today; step 2b shares one input per uid. Also not yet:
 `v210` and the card list. The subtype shown is the one at start; the size
 follows the frames.
+
+**As built (2026-10-30, step 2b, PR #120):** files 1–20 by the catalog.
+*Catalog:* `LiveCatalog.startCapture()` (`RenderService`, beside Syphon's)
+reads `AVCaptureDevice.DiscoverySession` (`.external`, `.continuityCamera`,
+`.builtInWideAngleCamera`, video) on the main queue at start, on
+`wasConnected`/`wasDisconnected`, and every 2 s for
+`isInUseByAnotherApplication` (no notification says another app opened a
+device). Listing asks no permission. An entry is `source` = `uniqueID`,
+`name` = `localizedName`, `runtimeID` = `uniqueID` while connected, plus two
+`Entry` fields only capture fills: `model` (`modelID`) and `inUse`. `/capture`
+is `{"3": {uid, name, model}}` (`Kind.fields` gained the model name, nil for
+the other kinds). *Fallback:* `assign` first matches every running source by
+runtime id or identity. Then a device with a model takes the number of the
+entry not running with the same `model` and `name`, and that entry records the
+new uid. This needs exactly one candidate on both sides: two such entries, or
+two newcomers with that model and name, match nothing. The rest get numbers in
+order. Matching by uid first means a returning device never loses its number
+to a newcomer of its model. In use is still running (`live.capture` `running:
+true, inUse: true`).
+*Project:* `initial` and the load migration add `/capture` `{}`. The engine
+keeps the applied value per kind (`liveInProject`); the 10 Hz feed writes
+both catalogs back through `correct`, and a project change (`capture.forget`,
+undo, a revert, a loaded version) is adopted by the catalog of its key.
+`capture.forget {file?}` is `syphon.forget` on `/capture` (one registration
+loop). The forget commands' replay check gets the running files of both
+catalogs (the ranges do not overlap). `project.revert`'s replay check still
+passes none, as before. A known edge: an undo (or a loaded version) can put a
+uid back on its old number while that device runs under a new number after
+the fallback. The catalog keeps the running number, and the device moves back
+to the old one at its next replug.
+*Commands:* `capture.authorize {kind}` (programmer, refused under show lock
+and in show mode, not undoable): `camera` calls
+`CaptureInput.requestAccess(allowed: true)` and then
+`MediaLoader.capturePermissionChanged()`. `screen` is refused with
+`unavailable` until step 3.
+*Permissions cache:* `authorizationStatus` (about 25 ms, a TCC round trip
+that is not cached) and `CGPreflightScreenCaptureAccess()` (about 12 ms) are
+read by the capture catalog: once at `startCapture`, then on a utility queue
+with every 2 s poll and after each `requestAccess` answer (from
+`capture.authorize` or from the loader's own prompt). The feed and readiness
+read `LiveCatalog.permissions`, never TCC: the feed shares its serial queue
+with the 20 Hz DMX monitor stream.
+*Loader:* a folder 0 file 1–20 without a scene entry resolves through the
+catalog: "Camera: <name>", "not running" without a runtime id, else
+`captureFactory(uid)`. While the device is `inUse`, the layer reads "in use by
+another app" and is not opened, unless one of our layers already holds a live
+session on it: that session is shared first, because the flag may come from
+another app that opened the device after us. A scene entry still wins.
+`captureDevicesChanged` (the catalog's `onChange`) works like
+`syphonServersChanged`, and the loader remembers the uid each layer opened (as
+`syphonOpen` holds the runtime id):
+- A layer whose device went reads "not running" and keeps its input (the last
+  frame).
+- A layer is opened again when its device is running but not open, or open
+  under another uid. The second case is one update carrying an unplug and a
+  replug on another port (the 2 s poll, or merged changes).
+- A layer whose session failed or stopped is opened again too.
+
+One input per uid: the loader keeps uid → weak `CaptureInput`, and a second
+layer calls `share()` (a user count in the input's slot) instead of the
+factory. `share()` refuses a stopped or failed input. `stop()` stops the
+session when the last user lets go. A session that goes (device gone, uid
+changed, failed) is dropped from the table, so the next open makes a new one
+for every layer on the device. Two layers on one device mark the same frame
+taken once, so the ring of three still covers both.
+*Feed:* `live.capture` `{devices: [{file, name, running, gone?, inUse?}],
+screens: [], permissions: {camera, screen}}`: camera from the cached
+`authorizationStatus` (`restricted` reads `denied`), screen from the cached
+`CGPreflightScreenCaptureAccess()` until step 3 asks for it. Whether
+`isInUseByAnotherApplication` counts our own session is not known. If it
+does, the feed would have to drop `inUse` for the uids the loader holds open
+(its `captureShared` keys). That is the owner's live check.
+*Readiness:* item `capture` "Capture permissions granted" fails while the
+catalog has an entry (running or not) and the camera is not `granted`. The
+built-in camera counts as an entry, so a laptop without the grant fails
+until the item is acknowledged. Detail "camera: <word>", fix "System
+Settings › Privacy & Security › Camera, then Engine › Restart". It blocks
+show mode until acknowledged.
+*Tests* (fake device lists): numbering; the fallback (one twin, two twins, two
+newcomers, another model, uid first); `inUse`; `live.capture`; the forget and
+authorize rules; `/capture` through a revert and its undo; the migration; the
+readiness item. The loader tests cover:
+- two layers on file 3 with one factory call
+- unplug and replug in separate updates, and in one update under a new uid
+  (one new shared session, the old one stops)
+- in use: a new layer is refused, but our own session is shared first
+- a failed session: not shared, and opened again
+Not verified here (no camera in this environment): discovery of real
+devices, Continuity Camera, the permission prompt's name, and a replug
+on another port. They are the owner's live check.
 
 | Input | Framework | Pixel path | Kind |
 |---|---|---|---|
@@ -2762,8 +2854,9 @@ with public APIs:
 **Readiness check** (runs on entering show mode, re-checked every 30 s, each
 item with a one-line fix): on AC power; thermal state nominal; free disk > 10
 %; memory headroom; all patched universes receiving; capture permissions
-granted (camera when the capture catalog has an entry, screen when the screens
-catalog has one; design, §8.2.1); all outputs bound and in the desired mode;
+granted (`capture`: the camera when the capture catalog has an entry, built
+2026-10-30, B73 step 2b; the screen when the screens catalog has one, step 3;
+§8.2.1); all outputs bound and in the desired mode;
 no decoder errors; library on a local volume; Spotlight indexing of the
 library volume (`mdutil -s` state read via `MDQuery`/`mdutil` output) off or
 acknowledged; automatic macOS updates state (read from
