@@ -2,8 +2,8 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
-  import { onDestroy } from 'svelte';
-  import { compareLease, freePresetNumber, sharedPresets } from '../lib/outputs';
+  import { onDestroy, tick } from 'svelte';
+  import { compareLease, freePresetNumber, recalledText, sharedPresets } from '../lib/outputs';
   import { lockTitle } from '../lib/show';
   import { app, can, cmd, toastUndo } from '../lib/state.svelte';
 
@@ -36,20 +36,35 @@
   }
   async function recall() {
     if (!selected) return;
-    if ((await cmd('output.preset.recall', { ids, number: selected.number })) !== undefined) toastUndo(`Preset ${selected.number} recalled.`);
+    const number = selected.number;
+    const reply = await cmd('output.preset.recall', { ids, number });
+    if (reply !== undefined) toastUndo(recalledText(number, reply, (id) => app.project.outputs.find((o) => o.id === id)?.name ?? `Output ${id}`));
   }
+  let storeButton = $state<HTMLButtonElement>();
   async function remove() {
     if (!selected) return;
     const number = selected.number;
-    if ((await cmd('output.preset.remove', { ids, number })) !== undefined) toastUndo(`Preset ${number} removed.`);
+    if ((await cmd('output.preset.remove', { ids, number })) === undefined) return;
+    toastUndo(`Preset ${number} removed.`);
+    // the last one gone takes its line, the focused Remove with it: focus stays in the strip
+    await tick();
+    if (!document.activeElement || document.activeElement === document.body) storeButton?.focus();
   }
-  function rename(name: string) {
-    if (selected && name.trim() && name.trim() !== selected.name) void cmd('output.preset.rename', { ids, number: selected.number, name: name.trim() });
+  /** An empty name, or one the engine refused, puts the preset's name back in the field. */
+  async function rename(input: HTMLInputElement) {
+    const preset = selected, name = input.value.trim();
+    if (!preset) return;
+    if (name && name !== preset.name && (await cmd('output.preset.rename', { ids, number: preset.number, name })) !== undefined) return;
+    input.value = preset.name;
   }
 
-  // hold Compare: pointer down (or Space/Enter) starts and renews the lease, up, leave or blur ends it
+  // hold Compare: pointer down (captured, so the strip moving under it does not end the hold) or Space/Enter starts and
+  // renews the lease; pointer up, cancel, lost capture, key up or blur ends it. Under show lock nothing is sent: the
+  // engine refuses it and has ended the lease itself
   let comparing = $state(false);
-  const lease = compareLease((preset) => void cmd('output.show', { ids, preset }));
+  const lease = compareLease((preset) => {
+    if (!app.project.showLock) void cmd('output.show', { ids, preset });
+  });
   function startCompare() {
     if (!selected || compareOff) return;
     comparing = true;
@@ -60,6 +75,10 @@
     lease.stop();
   }
   onDestroy(stopCompare);
+  // the show locked or show mode began while held
+  $effect(() => {
+    if (compareOff && comparing) stopCompare();
+  });
 </script>
 
 <section class="presets" aria-label="Mapping presets">
@@ -72,11 +91,12 @@
         </select>
       </label>
       <label class="field"><span>Name</span>
-        <input class="input" type="text" maxlength="64" value={selected?.name ?? ''} disabled={!!lock} title={lock} onchange={(e) => rename(e.currentTarget.value)} />
+        <input class="input" type="text" maxlength="64" value={selected?.name ?? ''} disabled={!!lock} title={lock} onchange={(e) => rename(e.currentTarget)} />
       </label>
       <button type="button" class="btn" disabled={!!lock} title={lock ?? 'Copy this preset into the mapping being edited (Undo takes it back)'} onclick={recall}>Recall</button>
       <button type="button" class="btn hold" aria-pressed={comparing} disabled={!!compareOff} title={compareOff ?? 'Hold to show this preset on the output; let go to go back'}
-        onpointerdown={startCompare} onpointerup={stopCompare} onpointerleave={stopCompare} onpointercancel={stopCompare} onblur={stopCompare}
+        onpointerdown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); startCompare(); }}
+        onpointerup={stopCompare} onpointercancel={stopCompare} onlostpointercapture={stopCompare} onblur={stopCompare}
         onkeydown={(e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); startCompare(); } }}
         onkeyup={(e) => { if (e.key === ' ' || e.key === 'Enter') stopCompare(); }}
         oncontextmenu={(e) => e.preventDefault()}>Hold to compare</button>
@@ -87,7 +107,7 @@
     <label class="field"><span>Store as</span>
       <input class="input mono narrow" type="number" min="1" max="255" step="1" value={storeAs} disabled={!!lock} onchange={(e) => (typed = Number(e.currentTarget.value))} />
     </label>
-    <button type="button" class="btn" disabled={!!lock || !validNumber} title={lock ?? (validNumber ? undefined : 'A preset number is 1–255')} onclick={store}>{taken ? `Replace ${storeAs}` : `Store as ${storeAs}`}</button>
+    <button type="button" class="btn" bind:this={storeButton} disabled={!!lock || !validNumber} title={lock ?? (validNumber ? undefined : 'A preset number is 1–255')} onclick={store}>{taken ? `Replace ${storeAs}` : `Store as ${storeAs}`}</button>
     <p class="caption grow">
       A preset holds the warp and the slices with their masks{ids.length > 1 ? `, of all ${ids.length} outputs` : ''}; blend, colour and black floor stay as they are.
       The console shows one with Output channel 6 = its number{ids.length > 1 ? ' on each output' : ''}.

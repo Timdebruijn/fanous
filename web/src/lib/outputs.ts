@@ -188,11 +188,19 @@ export function presetBadges(status: OutputStatusDoc | undefined): { text: strin
   return badges;
 }
 
-/** Said over the editor while the output shows a preset: the edits go to the mapping it does not show right now. */
+/** Said under the preview while the output shows a preset: the edits go to the mapping it does not show right now. */
 export function presetNote(status: OutputStatusDoc | undefined): string | null {
   if (status?.preset == null) return null;
-  const back = status.presetSource === 'compare' ? 'Compare is let go' : 'the console sets channel 6 back to 0';
-  return `The output shows Preset ${status.preset}. You are editing its own mapping, which the preview shows and the output shows again when ${back}.`;
+  const back = status.presetSource === 'compare' ? 'when Compare is let go' : 'at channel 6 = 0';
+  return `The output shows Preset ${status.preset}. Edits go to its own mapping, shown here, and on the output again ${back}.`;
+}
+
+/** The toast after a recall: on a wall, the outputs whose slice 1 became manual (`{ manual: [{ wall, output, field }] }`). */
+export function recalledText(number: number, reply: unknown, name: (id: number) => string): string {
+  const manual = (reply as { manual?: { output: number }[] } | null)?.manual ?? [];
+  const outputs = [...new Set(manual.map((m) => m.output))].map(name);
+  if (outputs.length === 0) return `Preset ${number} recalled.`;
+  return `Preset ${number} recalled. Slice 1 is manual now on ${outputs.join(', ')}: it differs from the wall's part of the canvas.`;
 }
 
 /** Presets that every output in `outputs` has (a wall recalls them on all its outputs at once), by number; the name

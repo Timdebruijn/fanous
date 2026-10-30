@@ -393,8 +393,9 @@
         {/if}
         <!-- the preview and the handles show the mapping as edited; the projector shows a preset and the keystone (DESIGN §9.10 item 3) -->
         {#if output && ui.tab === 'warp'}
+          <!-- always there, space reserved: a badge or the note appearing does not move the controls below -->
           <div class="kbadges">{#each [...presetBadges(status), ...keystoneBadges(status)] as b (b.text)}<span class="badge" class:badge-warn={b.warn}>{b.text}</span>{/each}</div>
-          {#if presetNote(status)}<p class="caption yellow" role="status">{presetNote(status)}</p>{/if}
+          <p class="caption yellow pnote" role="status">{presetNote(status) ?? ''}</p>
         {/if}
       {:else}
         <div class="panel nopreview">
@@ -654,8 +655,8 @@
   /* remote mode: the controls come first, the picture is on the projector */
   .main.remote > .form { order: -1; }
   .overlay { position: absolute; left: 0; top: 0; width: 100%; }
-  .kbadges { display: flex; gap: 8px; margin-top: 8px; }
-  .kbadges:empty { display: none; }
+  .kbadges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; min-height: 24px; }
+  .pnote { margin: 4px 0 0; min-height: 2.8em; }
   .nopreview { padding: 32px; }
   .form { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
   .head2 { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }

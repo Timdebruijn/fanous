@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it, vi } from 'vitest';
-import { canvasSizeError, canvasTarget, colorOf, compareLease, freePresetNumber, previewReady, layerCanvas, layerRuns, layersOn, presetBadges, presetNote, sharedPresets, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, handles, insertPoint, keystoneBadges, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
+import { canvasSizeError, canvasTarget, colorOf, compareLease, freePresetNumber, previewReady, layerCanvas, layerRuns, layersOn, presetBadges, presetNote, recalledText, sharedPresets, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, handles, insertPoint, keystoneBadges, meshIdentity, modeText, nudge, outlines, outputSize, statusText, type OutputConfig } from './outputs';
 
 const output: OutputConfig = {
   id: 1,
@@ -83,8 +83,15 @@ describe('outputs helpers', () => {
     expect(presetBadges({ ...bound, preset: 2, presetSource: 'compare' })).toEqual([{ text: 'Preset 2 (compare)', warn: false }]);
     expect(presetBadges({ ...bound, preset: null, presetSource: 'console', presetMissing: 9 })).toEqual([{ text: 'Preset 9 missing', warn: true }]);
     expect(presetNote({ ...bound, preset: null, presetMissing: 9 })).toBeNull();
-    expect(presetNote({ ...bound, preset: 3, presetSource: 'console' })).toContain('channel 6 back to 0');
-    expect(presetNote({ ...bound, preset: 3, presetSource: 'compare' })).toContain('Compare is let go');
+    expect(presetNote({ ...bound, preset: 3, presetSource: 'console' })).toContain('at channel 6 = 0');
+    expect(presetNote({ ...bound, preset: 3, presetSource: 'compare' })).toContain('when Compare is let go');
+  });
+
+  it('a wall recall says which outputs it made manual', () => {
+    const name = (id: number) => `Output ${id}`;
+    expect(recalledText(2, null, name)).toBe('Preset 2 recalled.');
+    const manual = { manual: [{ wall: 1, output: 1, field: 'source' }, { wall: 1, output: 3, field: 'source' }] };
+    expect(recalledText(2, manual, name)).toBe("Preset 2 recalled. Slice 1 is manual now on Output 1, Output 3: it differs from the wall's part of the canvas.");
   });
 
   it('a wall strip offers the presets all its outputs have; Store as takes the lowest free number', () => {

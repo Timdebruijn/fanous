@@ -474,6 +474,23 @@ test('outputs: store a mapping preset, move a corner, recall the preset; Undo ta
   await expect.poll(() => handleAt(page, '/warp/cornerPin/0')).toEqual(moved);
 });
 
+test('outputs: holding Compare with the mouse keeps the preset on the output until the button is let go', async ({ page }) => {
+  await addUnassignedOutput(page);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  const presets = page.getByRole('region', { name: 'Mapping presets' });
+  await presets.getByRole('button', { name: 'Store as 1' }).click();
+  const hold = presets.getByRole('button', { name: 'Hold to compare' });
+  await hold.hover();
+  await page.mouse.down();
+  // the badges under the preview appear while held: the button must not lose the hold when the page reflows
+  await page.waitForTimeout(1000);
+  await expect(hold).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.kbadges').getByText('Preset 1 (compare)')).toBeVisible();
+  await page.mouse.up();
+  await expect(hold).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByText('Preset 1 (compare)')).toHaveCount(0);
+});
+
 test('outputs: remove an output, then Undo brings it back', async ({ page }) => {
   await addUnassignedOutput(page);
   await page.getByRole('button', { name: 'Outputs', exact: true }).click();
