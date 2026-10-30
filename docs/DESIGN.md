@@ -1681,6 +1681,35 @@ display); the owner's live check:
   `dropped` counter with `queueDepth` 6);
 - whether idle samples arrive while a display is still, and the monthly
   re-ask.
+**Live check (2026-10-30, steps 2 and 3, dev Mac, ad-hoc build).** *Step 2:*
+the camera prompt names "Fanous Engine"; after Allow, layer 1 opened the
+FaceTime HD Camera as `420v` 1920x1080 @ 30 (canvas 60, locked), ~2,100
+frames with 0 dropped/outOfBuffers/unusable; two layers on one camera share
+one session (one start line, identical counters); `isInUseByAnotherApplication`
+is not set by our own session, so the feed needs no `captureShared` filter;
+the iPhone (Continuity Camera) opened `420v` 640x480 @ 60 because `pick`
+keeps the active format's size, which the preset leaves at 640x480 for that
+device (B127); thumbnails of both layers arrive. *Step 3:* display 21
+"Built-in Retina Display" is numbered and listed; a layer on it without the
+grant reads the permission text; `capture.authorize {kind: "screen"}` opened
+System Settings and the feed read `pending`, but
+`CGPreflightScreenCaptureAccess()` did not turn true in the running process
+after the user allowed it, so the poll ended "not granted within two minutes"
+and the feed went back to `denied` (B125); a SIGTERM restart (launchd,
+exit 0) brought the engine back with `granted`, and the layer opened as
+`BGRA 1663x1080 @ 60` (3024x1964 fitted into the canvas), ~55 fps with a
+changing picture, 0 dropped with `queueDepth` 6, thumbnails arriving, the
+Layers screen reading "Display: Built-in Retina Display · Live · 1663×1080",
+the Media and System screens as designed. The start line read
+`excludedApps=0`: the engine had no window, so it is not in
+`SCShareableContent.applications` (B124). An earlier engine (7.7 h uptime,
+two cameras used) did not exit on SIGTERM: `Engine.stop()` waited in
+`citp.stop()` on the CITP queue, which sat in a blocking `sendto` in
+`CITPServer.sendLocation()` (B123). Not verified: a display bound as an
+output leaving the list, a replug, the monthly re-ask, idle samples on a
+still display. Ad-hoc rebuilds reset the TCC grants (the code identity
+changes per build), see DEVELOPMENT.md.
+
 **As built (2026-10-30, step 3b, PR #126):** the web UI and user guide for
 displays 21–28. *Media:* "Displays (21–28)" (shown when non-empty) like the
 cameras: dot, "not running" / "not seen since the engine started", Layer N
