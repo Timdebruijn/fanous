@@ -62,14 +62,12 @@ export function outputTone(state: string): DotTone {
   return state === 'bound' ? 'green' : state === 'lost' ? 'red' : 'off';
 }
 
-/** One row of Capture permissions (B73): dot, word, whether Authorize shows, whether it waits for a grant, and the
- * caption. `pending` (screen): the engine polls for the grant and restarts itself. An unknown state reads as denied
- * for the dot and button but keeps its own word. */
-export function permissionRow(kind: 'camera' | 'screen', state: string): { tone: DotTone; word: string; authorize: boolean; waiting: boolean; caption: string | null } {
-  if (state === 'granted') return { tone: 'green', word: 'granted', authorize: false, waiting: false, caption: null };
-  if (state === 'pending') return { tone: 'yellow', word: 'waiting', authorize: true, waiting: true, caption: 'waiting for the grant (about two minutes); the engine restarts itself when System Settings allows it. If the row goes back to denied, press Authorize screen again or use Engine › Restart Engine after allowing it.' };
+/** One row of Capture permissions (B73): dot, word, whether Authorize shows, and the caption. A screen grant applies
+ * to a new engine process (B125). An unknown state reads as denied for the dot and button but keeps its own word. */
+export function permissionRow(kind: 'camera' | 'screen', state: string): { tone: DotTone; word: string; authorize: boolean; caption: string | null } {
+  if (state === 'granted') return { tone: 'green', word: 'granted', authorize: false, caption: null };
   const word = state === 'notDetermined' ? 'not asked' : state;
-  return { tone: 'yellow', word, authorize: true, waiting: false, caption: kind === 'screen' ? 'opens System Settings; a grant restarts the engine' : null };
+  return { tone: 'yellow', word, authorize: true, caption: kind === 'screen' ? 'opens System Settings › Privacy & Security › Screen & System Audio Recording: allow Fanous Engine, then Engine › Restart Engine' : null };
 }
 
 /** Dot colour and word of one readiness row (the word is the accessible name of the dot). */

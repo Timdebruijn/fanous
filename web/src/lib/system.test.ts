@@ -181,16 +181,17 @@ describe('session', () => {
 });
 
 describe('capture permissions (B73)', () => {
-  it('screen: pending waits with Authorize disabled, denied offers it with the restart caption, granted is green', () => {
-    expect(permissionRow('screen', 'pending')).toEqual({
-      tone: 'yellow', word: 'waiting', authorize: true, waiting: true,
-      caption: 'waiting for the grant (about two minutes); the engine restarts itself when System Settings allows it. If the row goes back to denied, press Authorize screen again or use Engine › Restart Engine after allowing it.',
+  it('screen: denied offers Authorize with the Settings-then-restart caption, granted is green', () => {
+    expect(permissionRow('screen', 'denied')).toEqual({
+      tone: 'yellow', word: 'denied', authorize: true,
+      caption: 'opens System Settings › Privacy & Security › Screen & System Audio Recording: allow Fanous Engine, then Engine › Restart Engine',
     });
-    expect(permissionRow('screen', 'denied')).toEqual({ tone: 'yellow', word: 'denied', authorize: true, waiting: false, caption: 'opens System Settings; a grant restarts the engine' });
-    expect(permissionRow('screen', 'granted')).toEqual({ tone: 'green', word: 'granted', authorize: false, waiting: false, caption: null });
+    expect(permissionRow('screen', 'granted')).toEqual({ tone: 'green', word: 'granted', authorize: false, caption: null });
+    // an engine from before B125 may still send "pending": denied, with its own word
+    expect(permissionRow('screen', 'pending')).toMatchObject({ tone: 'yellow', word: 'pending', authorize: true });
   });
   it('camera: not asked and denied offer Authorize without a caption; an unknown state reads as denied but keeps its word', () => {
     expect(permissionRow('camera', 'notDetermined')).toMatchObject({ tone: 'yellow', word: 'not asked', authorize: true, caption: null });
-    expect(permissionRow('camera', 'restricted')).toMatchObject({ tone: 'yellow', word: 'restricted', authorize: true, waiting: false });
+    expect(permissionRow('camera', 'restricted')).toMatchObject({ tone: 'yellow', word: 'restricted', authorize: true, caption: null });
   });
 });

@@ -78,15 +78,13 @@ Fanous leaves its own windows out of a capture, so it would be black.
 The first time, displays need the Screen permission: press **Authorize screen**
 under Capture permissions on the System screen (not in show mode). macOS opens
 System Settings; allow Fanous Engine under Privacy & Security › Screen & System
-Audio Recording. macOS applies the grant only to a new engine: for about two
-minutes the row says "waiting", and when the grant shows up the engine
-restarts itself (outputs go black for a moment). If the row goes back to
-denied, press **Authorize screen** again, or allow it and choose Engine ›
-**Restart Engine**.
+Audio Recording, then choose Engine › **Restart Engine** (macOS applies the
+grant only to a new engine process; outputs go black for a moment). The row
+then says "granted".
 
 macOS asks again about once a month whether Fanous Engine may keep recording
 the screen, with a dialog on the main display that nobody answers during an
-unattended show. Before a show, check the readiness item **Capture permissions
+unattended show. Before a show, check the readiness item **Screen recording
 granted** on the System screen. For a show-critical slides feed, prefer a
 capture card: a second Mac's HDMI into a capture card needs no Screen
 permission and is not re-asked.

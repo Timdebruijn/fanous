@@ -189,6 +189,12 @@ allow the engine under Login Items. `scripts/soak.sh HOURS` runs the soak test
 (scripted Art-Net, 1 s metrics samples, `kill -9` restarts) and writes a
 PASS/FAIL report to `benchmarks/`. User documentation: `user/`.
 
+An ad-hoc signed `dist/Fanous.app` gets a new code identity with every
+`scripts/bundle.sh`, and TCC keys its grants on that identity: after a rebuild
+the camera reads `notDetermined` and screen recording `denied` again, and the
+prompts come back (Fanous Engine). A Developer ID build keeps its identity and
+its grants.
+
 `/api/metrics` reports frame timing, the DMX-to-photon estimate and audio
 drift; `fanous-bench run` ramps layers until a frame drops (`--effects
 blur,edge`, `--dissolve 2`, `--ingest FILE` for the Phase 3/4 variants) and

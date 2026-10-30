@@ -458,6 +458,18 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   and the preview keeps the edited mapping. `live.outputs` gets `morph: { from, to, fade }` as drawn while one runs,
   and the badge reads "Preset A → B", "Edited → Preset B" or "Preset A → edited". Channel 7 is in the channel map, GDTF
   and OSC (`/fanous/output/{n}/fade`); channel 8 stays reserved.
+- Fixed: the engine could hang on quit, Restart Engine or SIGTERM in `citp.stop()`, waiting on a CITP PLoc beacon stuck in
+  a blocking `sendto` (B123, PR #134). The CITP beacon and sync sender sockets are now non-blocking: a datagram the kernel
+  cannot take at once is dropped and counted (`live.citp.beaconsDropped`, `packetsDropped` in `live.sync` and `/metrics`),
+  logged at most once a minute. Packet contents and timing are unchanged.
+- Changed: the readiness item **Capture permissions granted** is split into **Camera permission granted** (`camera`) and
+  **Screen recording granted** (`screen`), each acknowledged on its own, and both look only at inputs in use: a layer
+  showing folder 0 file 1–20 or 21–28, or a scene entry with `capture:` or `screen:` (B122, PR #133). The built-in
+  camera and the main display no longer fail or warn on every machine just by having a number. Not granted still fails
+  until acknowledged; a display in use with the grant still warns (the monthly re-ask); the camera never warns.
+- Changed: **Authorize screen** asks macOS once and opens System Settings; allow Fanous Engine there, then choose
+  Engine › **Restart Engine** (B125, PR #132). macOS applies the grant only to a new engine process, so the two-minute wait,
+  the "waiting" row and the engine's self-restart are gone; `live.capture.permissions.screen` reads `granted` or `denied`.
 - Changed: the Patch screen groups its fixtures and patches a group as a block (B120 step 5, PR #135, DESIGN §6.6
   items 2–4). The fixture table and Selected fixture are gone. **Layers** (the count with − and +), **Master** and
   **Outputs** (one row per output with its Output and Keystone fixture, its display and a link to Outputs & Mapping,
