@@ -1999,6 +1999,11 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
     the existing key backfills, and does the same on a version revert.
   - The UI reads the document, and one failed slice decode blanks every
     output, so this happens in the document and not only in Swift.
+  - Presets (3) are built first and store slices with the old `mask`, so the
+    same conversion runs on every `OutputConfig.presets[].slices[]`.
+    Otherwise `decodeIfPresent` skips the old key, and recalling a stored
+    preset silently drops its mask. A test loads a project with a masked
+    preset and recalls it.
 - **Visible area.** The union of the add masks (everything when there is none)
   minus the union of the subtract masks.
   - Feathered, that is `max(adds) × (1 − max(subtracts))`.
