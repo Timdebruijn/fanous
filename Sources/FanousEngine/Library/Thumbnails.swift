@@ -9,7 +9,6 @@ import ImageIO
 import FanousCore
 import Logging
 import Metal
-import Synchronization
 import UniformTypeIdentifiers
 
 /// Thumbnails (DESIGN.md §8.4): one mid-file frame per movie, decoded by the
@@ -67,7 +66,7 @@ public final class Thumbnailer: @unchecked Sendable {
             let compositor = try Compositor(
                 context: context, canvasWidth: Self.width, canvasHeight: height, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 8),
                 parameters: parameters, logger: logger)
-            let source = try blocking { try await MovieSource.open(url: url, device: self.context.device, poolSize: 1) }
+            let source = try blockingAwait { try await MovieSource.open(url: url, device: self.context.device, poolSize: 1) }
             let frame = DecodedFrame(poolIndex: 0)
             try source.decode(frame: source.info.frameCount / 2, into: frame)
             frame.frameIndex = 0
@@ -104,18 +103,5 @@ public final class Thumbnailer: @unchecked Sendable {
         guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else { return false }
         CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
         return CGImageDestinationFinalize(destination)
-    }
-
-    private func blocking<T: Sendable>(_ body: @escaping @Sendable () async throws -> T) throws -> T {
-        let done = DispatchSemaphore(value: 0)
-        let box = Mutex<Result<T, Error>?>(nil)
-        Task.detached(priority: .utility) {
-            let result: Result<T, Error>
-            do { result = .success(try await body()) } catch { result = .failure(error) }
-            box.withLock { $0 = result }
-            done.signal()
-        }
-        done.wait()
-        return try box.withLock { $0 }!.get()
     }
 }

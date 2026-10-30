@@ -165,13 +165,9 @@ public final class PreviewStreamer: @unchecked Sendable {
         }
     }
 
-    public func unsubscribe(connection: StateServer.Connection, stream: UInt32) {
-        subscribers.withLock { $0.removeAll { $0.connection === connection && $0.stream == stream } }
-        queue.async { [self] in releaseSessionIfUnwanted() }
-    }
-
-    public func remove(connection: StateServer.Connection) {
-        subscribers.withLock { $0.removeAll { $0.connection === connection } }
+    /// Drops `stream` of `connection`, or every stream of it when `stream` is nil.
+    public func remove(connection: StateServer.Connection, stream: UInt32? = nil) {
+        subscribers.withLock { $0.removeAll { $0.connection === connection && (stream == nil || $0.stream == stream) } }
         queue.async { [self] in releaseSessionIfUnwanted() }
     }
 

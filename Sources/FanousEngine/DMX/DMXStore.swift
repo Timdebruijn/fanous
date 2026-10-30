@@ -101,11 +101,7 @@ public final class DMXStore: @unchecked Sendable {
     }
 
     public func start() {
-        let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 0.5, repeating: 0.5)
-        timer.setEventHandler { [self] in tick(at: Self.now) }
-        timer.resume()
-        self.timer = timer
+        timer = DispatchSource.repeating(every: 0.5, on: queue) { [self] in tick(at: Self.now) }
     }
 
     public func stop() { timer?.cancel() }

@@ -152,8 +152,8 @@ public final class PreviewHub: @unchecked Sendable {
                     guard orphan || !choice.fallback else { return false }
                     if !choice.jpeg, let streamer = choice.streamer ?? install(fresh, as: wanted.key, in: &all) {
                         if !choice.fallback { fallbacks.remove(at: index) }
-                        canvas.unsubscribe(connection: sub.connection, stream: sub.stream)
-                        for other in all.values { other.unsubscribe(connection: sub.connection, stream: sub.stream) }
+                        canvas.remove(connection: sub.connection, stream: sub.stream)
+                        for other in all.values { other.remove(connection: sub.connection, stream: sub.stream) }
                         var moved = sub
                         moved.fallback = choice.canvas  // told in the new streamer's `stream` description (B96)
                         streamer.subscribe(moved)
@@ -179,26 +179,14 @@ public final class PreviewHub: @unchecked Sendable {
         _ = s.connection.send(text: #"{"t":"error","code":"badTarget","message":"preview target \#(target) no longer exists","id":\#(s.stream)}"#, droppable: false)
     }
 
-    public func unsubscribe(connection: StateServer.Connection, stream: UInt32) {
+    /// Drops `stream` of `connection`, or every stream of it when `stream` is nil (the connection closed).
+    public func remove(connection: StateServer.Connection, stream: UInt32? = nil) {
         let freed = streamers.withLock { all in
             let before = encoderCount(all)
-            canvas.unsubscribe(connection: connection, stream: stream)
-            thumbnails?.unsubscribe(connection: connection, stream: stream)
-            for streamer in all.values { streamer.unsubscribe(connection: connection, stream: stream) }
-            fallbacks.removeAll { $0.subscriber.connection === connection && $0.subscriber.stream == stream }
-            release(&all)
-            return encoderCount(all) < before && !fallbacks.isEmpty
-        }
-        if freed { DispatchQueue.global(qos: .utility).async { [weak self] in self?.rebalance() } }
-    }
-
-    public func remove(connection: StateServer.Connection) {
-        let freed = streamers.withLock { all in
-            let before = encoderCount(all)
-            canvas.remove(connection: connection)
-            thumbnails?.remove(connection: connection)
-            for streamer in all.values { streamer.remove(connection: connection) }
-            fallbacks.removeAll { $0.subscriber.connection === connection }
+            canvas.remove(connection: connection, stream: stream)
+            thumbnails?.remove(connection: connection, stream: stream)
+            for streamer in all.values { streamer.remove(connection: connection, stream: stream) }
+            fallbacks.removeAll { $0.subscriber.connection === connection && (stream == nil || $0.subscriber.stream == stream) }
             release(&all)
             return encoderCount(all) < before && !fallbacks.isEmpty
         }

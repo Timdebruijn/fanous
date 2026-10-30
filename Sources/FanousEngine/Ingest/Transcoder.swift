@@ -97,7 +97,7 @@ public final class Transcoder: @unchecked Sendable {
     /// expected); the expectation is derived from the track duration and may be off by a frame.
     public func run(progress: ((_ framesDone: Int, _ framesTotal: Int) -> Void)? = nil) throws {
         try gate.throwIfCancelled()
-        let probe = try Self.blocking { [source] in try await Probe.load(source) }
+        let probe = try blockingAwait { [source] in try await Probe.load(source) }
         let requested = Self.effectiveCodec(codec, sourceHasAlpha: probe.hasAlpha)
 
         let reader = try AVAssetReader(asset: probe.asset)
@@ -239,18 +239,5 @@ public final class Transcoder: @unchecked Sendable {
                 upright: composition,
                 codec: formats.first.map(CMFormatDescriptionGetMediaSubType) ?? 0)
         }
-    }
-
-    private static func blocking<T: Sendable>(_ body: @escaping @Sendable () async throws -> T) throws -> T {
-        let done = DispatchSemaphore(value: 0)
-        let box = Mutex<Result<T, Error>?>(nil)
-        Task.detached(priority: .utility) {
-            let result: Result<T, Error>
-            do { result = .success(try await body()) } catch { result = .failure(error) }
-            box.withLock { $0 = result }
-            done.signal()
-        }
-        done.wait()
-        return try box.withLock { $0 }!.get()
     }
 }

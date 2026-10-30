@@ -220,10 +220,6 @@ struct CITPReader {
 }
 
 extension Array where Element == UInt8 {
-    mutating func put<T: FixedWidthInteger>(_ value: T) {
-        for i in 0..<T.bitWidth / 8 { append(UInt8(truncatingIfNeeded: value >> (8 * i))) }
-    }
-
     /// Exactly four bytes: characters map 1:1 (Latin-1); shorter input is padded with spaces.
     mutating func putCookie(_ text: String) {
         let bytes = text.unicodeScalars.prefix(4).map { UInt8(truncatingIfNeeded: $0.value) }

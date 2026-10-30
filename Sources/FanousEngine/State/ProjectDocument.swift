@@ -282,13 +282,11 @@ public enum ProjectDocument {
     // MARK: Outputs (DESIGN.md §9)
 
     public static func outputs(from project: JSONValue) -> [OutputConfig] {
-        guard let value = project["outputs"], let data = try? JSONEncoder().encode(value) else { return [] }
-        return (try? JSONDecoder().decode([OutputConfig].self, from: data)) ?? []
+        (try? project["outputs"]?.decoded(as: [OutputConfig].self)) ?? []
     }
 
     public static func canvases(from project: JSONValue) -> [CanvasConfig] {
-        guard let value = project["canvases"], let data = try? JSONEncoder().encode(value) else { return [] }
-        return (try? JSONDecoder().decode([CanvasConfig].self, from: data)) ?? []
+        (try? project["canvases"]?.decoded(as: [CanvasConfig].self)) ?? []
     }
 
     static func validate(_ output: inout OutputConfig) throws {
@@ -720,7 +718,7 @@ public enum ProjectDocument {
                 guard let index = outputs.firstIndex(where: { $0.id == id }) else { throw CommandError.invalidArgs("no output \(id)") }
                 var document = try JSONValue(encoding: outputs[index])
                 try document.set(value, at: pointer)
-                guard let data = try? JSONEncoder().encode(document), var updated = try? JSONDecoder().decode(OutputConfig.self, from: data) else {
+                guard var updated = try? document.decoded(as: OutputConfig.self) else {
                     throw CommandError.invalidArgs("\(path) does not fit the output model")
                 }
                 updated.id = id

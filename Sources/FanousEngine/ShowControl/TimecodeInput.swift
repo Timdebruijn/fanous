@@ -132,9 +132,7 @@ public final class LTCInput: @unchecked Sendable {
         let channel = min(self.channel, Int(format.channelCount) - 1)
         decoder = LTCDecoder(sampleRate: sampleRate, nominalFrameRate: 25)
         let clock = self.clock
-        var timebase = mach_timebase_info()
-        mach_timebase_info(&timebase)
-        let secondsPerTick = Double(timebase.numer) / Double(timebase.denom) / 1e9
+        let secondsPerTick = 1 / PacedThread.ticksPerSecond
         let sink = AVAudioSinkNode { [self] timestamp, frameCount, audioBufferList in
             let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: audioBufferList))
             guard channel < buffers.count, let data = buffers[channel].mData else { return noErr }

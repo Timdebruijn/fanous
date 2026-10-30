@@ -93,12 +93,15 @@ public struct NetworkInterface: Equatable, Sendable {
     public var multicast: Bool
     /// IFF_BROADCAST: has a subnet broadcast address (the sync sender, DESIGN.md §23.2).
     public var broadcast: Bool
-    public init(name: String, address: String, netmask: String, multicast: Bool = false, broadcast: Bool = false) {
+    /// IFF_LOOPBACK.
+    public var loopback: Bool
+    public init(name: String, address: String, netmask: String, multicast: Bool = false, broadcast: Bool = false, loopback: Bool = false) {
         self.name = name
         self.address = address
         self.netmask = netmask
         self.multicast = multicast
         self.broadcast = broadcast
+        self.loopback = loopback
     }
 }
 
