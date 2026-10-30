@@ -94,23 +94,23 @@
       <span class="caption" title="Nothing has arrived on Art-Net or sACN yet: check the console's output address, the network cable and the universe numbers (System shows details).">no DMX received</span>
     {/each}
   </div>
-  <div class="item col" class:red={app.live.timecode.state === 'lost' && app.project.showLock}>
-    <span class="mono value" class:faint={app.live.timecode.state === 'off'}>{app.live.timecode.value}</span>
-    <span class="caption">timecode{app.live.timecode.state === 'off' ? '' : ` · ${app.live.timecode.state}`}</span>
-  </div>
+  <!-- timecode and ingest only while they have something to say (DESIGN §12), so the bar fits one row on a laptop -->
+  {#if app.live.timecode.state !== 'off'}
+    <div class="item col" class:red={app.live.timecode.state === 'lost' && app.project.showLock}>
+      <span class="mono value">{app.live.timecode.value}</span>
+      <span class="caption">timecode · {app.live.timecode.state}</span>
+    </div>
+  {/if}
   <div class="item col" class:red={!outputsOk && app.project.showLock}>
     <span class="mono value"><span class="dot {outputsOk ? 'dot-green' : 'dot-off'}"></span> {outputsOk ? 'on' : 'off'}</span>
     <span class="caption">outputs</span>
   </div>
-  <div class="item col ingest">
-    {#if progress !== null}
+  {#if progress !== null}
+    <div class="item col ingest">
       <span class="caption">ingest · {running.length} running<span class="mono"> {progress} %</span></span>
       <span class="bar"><span style="width: {progress}%"></span></span>
-    {:else}
-      <span class="faint">idle</span>
-      <span class="caption">ingest</span>
-    {/if}
-  </div>
+    </div>
+  {/if}
   <a class="item col plain" href="#/system" title="Project versions (System): the engine saves one at start, on show mode and every 10 minutes after a change">
     <span class="mono value">{lastVersionText(app.live.versions?.lastAutomatic)}</span>
     <span class="caption">auto version</span>
@@ -141,7 +141,8 @@
 
 <style>
   .status { display: flex; flex-wrap: wrap; align-items: center; min-height: 56px; padding: 4px 8px; background: var(--surface-1); border-bottom: 1px solid var(--line); }
-  .item { display: flex; align-items: center; gap: 8px; height: var(--touch); padding: 0 12px; border-right: 1px solid var(--line); }
+  /* min-height: an item that wraps on a phone (the universe pills, the resumed note) grows instead of spilling over */
+  .item { display: flex; align-items: center; gap: 8px; min-height: var(--touch); padding: 0 8px; border-right: 1px solid var(--line); }
   .item.col { flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; }
   .item.right { border-right: 0; padding-right: 4px; }
   .item.red { background: var(--red-bg); border-radius: 6px; }
@@ -159,7 +160,7 @@
   .resumed { margin-left: 8px; color: var(--yellow); text-decoration: none; }
   .value { font-size: 15px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
   /* the pills wrap inside the item, so 3+ universes on a phone take a second row instead of widening the page */
-  .dmx { gap: 6px; flex-wrap: wrap; height: auto; min-height: var(--touch); padding-block: 4px; }
+  .dmx { gap: 6px; flex-wrap: wrap; padding-block: 4px; }
   .ingest { width: 150px; }
   .ingest .bar { width: 100%; height: 4px; margin-top: 4px; }
   .yellow { color: var(--yellow); }

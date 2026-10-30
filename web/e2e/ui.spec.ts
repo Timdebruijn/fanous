@@ -296,6 +296,17 @@ test('status bar: the universe pills wrap on a phone instead of widening the pag
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 });
 
+test('status bar: one row on a 1440 px laptop, timecode and ingest left out while off and idle', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const banner = page.getByRole('banner');
+  // a fresh engine shows two silent universes and the "web UI open" warning, the widest bar it has
+  await expect(banner.getByText(/^A 0\.0\.1 · silent/)).toBeVisible();
+  await expect(banner.getByText('web UI open')).toBeVisible();
+  await expect(banner.getByText('timecode')).toHaveCount(0);
+  await expect(banner.getByText('ingest')).toHaveCount(0);
+  await expect.poll(() => banner.evaluate((el) => el.getBoundingClientRect().height)).toBeLessThanOrEqual(56);
+});
+
 test('keys: the global shortcuts do nothing while a modal dialog is open, and ? still closes the shortcut list', async ({ page }) => {
   await openScreen(page, 'Patch');
   await page.getByRole('button', { name: 'Patch sheet' }).click();
