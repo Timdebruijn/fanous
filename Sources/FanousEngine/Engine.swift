@@ -112,8 +112,12 @@ public final class Engine: @unchecked Sendable {
     private let sacnError = Mutex<String?>(nil)
     /// The project's library root as last seen by `projectChanged` (B51).
     private let libraryRootInProject = Mutex<String?>(nil)
-    /// `/syphon` and `/capture` as the engine last applied them (B69, B73): a catalog is written back when it differs.
+    /// `/syphon`, `/capture` and `/screens` as the engine last applied them (B69, B73): a catalog is written back when it differs.
     private let liveInProject = Mutex<[LiveCatalog.Kind: JSONValue]>([:])
+    /// `capture.authorize {kind: "screen"}` waits for the grant (`live.capture.permissions.screen` "pending").
+    private let screenGrantPending = Atomic<Bool>(false)
+    /// The catalogs of folder 0's numbered live inputs (B61, B73), nil before the render service.
+    private var liveCatalogs: [LiveCatalog] { render.map { [$0.syphonCatalog, $0.captureCatalog, $0.screensCatalog] } ?? [] }
     /// Root switches run here one at a time (scan, probe-thread join): never on the feed or control queue.
     private let libraryQueue = DispatchQueue(label: "org.fanous.library.switch", qos: .utility)
     /// Root switches queued or running; show mode is refused meanwhile.
@@ -277,10 +281,11 @@ public final class Engine: @unchecked Sendable {
             let scene = sceneWithOutputs
             let syphonNumbers = ProjectDocument.liveNumbers(.syphon, from: loadedProject ?? .null)
             let captureNumbers = ProjectDocument.liveNumbers(.capture, from: loadedProject ?? .null)
+            let screenNumbers = ProjectDocument.liveNumbers(.screens, from: loadedProject ?? .null)
             let service = try MainActor.assumeIsolated {
                 try RenderService(
                     scene: scene, context: context, parameters: dmx.snapshots, metrics: metrics, logger: logger, syphonNumbers: syphonNumbers,
-                    captureNumbers: captureNumbers)
+                    captureNumbers: captureNumbers, screenNumbers: screenNumbers)
             }
             service.loader.resolver = { [weak self] key in self?.library?.resolve(key) }
             service.audioKeepRunning = { [weak self] in self?.showMode.isOn ?? false }
@@ -309,8 +314,7 @@ public final class Engine: @unchecked Sendable {
             checkLibraryRoot: { [weak self] root in if let refusal = self?.libraryRootRefusal(root) { throw refusal } },
             applySync: { [weak self] in try self?.applySync($0) },
             liveRunning: { [weak self] in
-                guard let render = self?.render else { return [] }
-                return Set((render.syphonCatalog.entries + render.captureCatalog.entries).filter(\.running).map(\.file))
+                Set((self?.liveCatalogs ?? []).flatMap(\.entries).filter(\.running).map(\.file))  // the ranges do not overlap
             },
             authorizeCamera: { [weak self] in
                 let loader = self?.render?.loader, catalog = self?.render?.captureCatalog
@@ -319,8 +323,9 @@ public final class Engine: @unchecked Sendable {
                     loader?.capturePermissionChanged()
                 }
             },
+            authorizeScreen: { [weak self] in self?.authorizeScreen() },
             displayModes: { [weak self] in Dictionary((self?.displays.withLock { $0 } ?? []).map { ($0.uuid, $0.mode) }, uniquingKeysWith: { a, _ in a }) })
-        liveInProject.withLock { $0 = [.syphon: project["syphon"] ?? [:], .capture: project["capture"] ?? [:]] }
+        liveInProject.withLock { $0 = [.syphon: project["syphon"] ?? [:], .capture: project["capture"] ?? [:], .screens: project["screens"] ?? [:]] }
         libraryRootInProject.withLock { $0 = URL(fileURLWithPath: project["library"]?["root"]?.string ?? libraryRoot.path).path }
         // B23: a version of the project as loaded, then one every 10 minutes when it changed, and one per show-mode enter
         let versions = ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger)
@@ -520,8 +525,14 @@ public final class Engine: @unchecked Sendable {
             let coordinator = try MainActor.assumeIsolated { () throws -> OutputCoordinator in
                 let coordinator = try OutputCoordinator(compositor: render.compositor, context: context, fps: fps, displays: DisplayManager.current(), logger: logger)
                 displays.withLock { $0 = coordinator.connectedDisplays }
-                coordinator.onStatus = { [weak self] statuses in
+                coordinator.onStatus = { [weak self, weak coordinator] statuses in
                     self?.outputStatus.withLock { $0 = statuses }
+                    // every rebind (a display change from the DisplayManager, outputs applied): displays 21–28 follow, less
+                    // the ones an output is bound to (B73 step 3)
+                    if let coordinator, let catalog = self?.render?.screensCatalog {
+                        let bound = Set(coordinator.outputs.compactMap(\.display?.uuid))
+                        catalog.update(running: LiveCatalog.screens(coordinator.connectedDisplays, bound: bound))
+                    }
                     // after the rebind returned: a mode switch reconfigures the displays and rebinds again
                     DispatchQueue.main.async { MainActor.assumeIsolated { self?.syncDisplayModes() } }
                 }
@@ -1069,6 +1080,8 @@ public final class Engine: @unchecked Sendable {
         context.libraryRoot = library?.snapshot.root ?? ""
         context.captureDevices = render?.captureCatalog.entries.count ?? 0
         context.cameraPermission = Self.permissionWord(render?.captureCatalog.permissions.camera ?? .authorized)
+        context.screens = render?.screensCatalog.entries.count ?? 0
+        context.screenPermission = render?.captureCatalog.permissions.screen ?? true ? "granted" : "denied"
         var masters: [Int: Int] = [:]
         for layer in render?.layers ?? [] {
             let s = layer.syncStatus.withLock { $0 }
@@ -1380,8 +1393,8 @@ public final class Engine: @unchecked Sendable {
             // ponytail: replaces the whole map, so a map edit landing in between is lost; ids then come on the next change
             DispatchQueue.global(qos: .utility).async { store.correct(map, at: "/midi/map") }
         }
-        // the Syphon and capture numbering (B69, B73): a forget, undo, a loaded project; the live feed writes the catalogs back
-        for catalog in [render?.syphonCatalog, render?.captureCatalog].compactMap({ $0 }) {
+        // the Syphon, capture and display numbering (B69, B73): a forget, undo, a loaded project; the live feed writes the catalogs back
+        for catalog in liveCatalogs {
             let numbers = document[catalog.kind.projectKey] ?? [:]
             if liveInProject.withLock({ applied in
                 defer { applied[catalog.kind] = numbers }
@@ -1546,7 +1559,7 @@ public final class Engine: @unchecked Sendable {
     private func publishLive() {
         guard let dmx, let store, let auth, let ingest, let library else { return }
         // before the client check: a headless show driven by a console records its Syphon numbers too (B69)
-        for catalog in [render?.syphonCatalog, render?.captureCatalog].compactMap({ $0 }) {
+        for catalog in liveCatalogs {
             Self.recordLiveNumbers(catalog, into: store, applied: liveInProject.withLock { $0[catalog.kind] } ?? [:])
         }
         // nobody to tell; a client that connects gets the full live document in its welcome and a fresh one within 100 ms
@@ -1670,24 +1683,68 @@ public final class Engine: @unchecked Sendable {
 
     /// `live.capture` from the catalog and its cached permissions (a TCC read costs tens of ms: never on the feed).
     private func captureLive() -> JSONValue {
-        guard let catalog = render?.captureCatalog else { return Self.captureLive([], camera: .notDetermined, screen: false) }
-        let permissions = catalog.permissions
-        return Self.captureLive(catalog.entries, camera: permissions.camera, screen: permissions.screen)
+        let pending = screenGrantPending.load(ordering: .relaxed)
+        guard let render else { return Self.captureLive([], camera: .notDetermined, screen: false, pending: pending) }
+        let permissions = render.captureCatalog.permissions
+        return Self.captureLive(
+            render.captureCatalog.entries, screens: render.screensCatalog.entries, camera: permissions.camera, screen: permissions.screen, pending: pending)
     }
 
-    /// `live.capture` (B73): the numbered capture devices and the permissions; `screens` until step 3 numbers displays.
-    static func captureLive(_ devices: [LiveCatalog.Entry], camera: AVAuthorizationStatus, screen: Bool) -> JSONValue {
-        [
-            "devices": .array(
-                devices.map { d in
-                    var entry: JSONValue = ["file": .number(Double(d.file)), "name": .string(d.name), "running": .bool(d.running)]
-                    if d.gone { try? entry.set(true, at: "/gone") }
-                    if d.inUse { try? entry.set(true, at: "/inUse") }
-                    return entry
-                }),
-            "screens": [],
-            "permissions": ["camera": .string(permissionWord(camera)), "screen": .string(screen ? "granted" : "denied")],
+    /// `live.capture` (B73): the numbered capture devices and displays, and the permissions. `screen` reads "pending"
+    /// while `capture.authorize {kind: "screen"}` waits for the grant (the engine then restarts itself).
+    static func captureLive(
+        _ devices: [LiveCatalog.Entry], screens: [LiveCatalog.Entry] = [], camera: AVAuthorizationStatus, screen: Bool, pending: Bool = false
+    ) -> JSONValue {
+        func entry(_ d: LiveCatalog.Entry) -> JSONValue {
+            var entry: JSONValue = ["file": .number(Double(d.file)), "name": .string(d.name), "running": .bool(d.running)]
+            if d.gone { try? entry.set(true, at: "/gone") }
+            if d.inUse { try? entry.set(true, at: "/inUse") }
+            return entry
+        }
+        return [
+            "devices": .array(devices.map(entry)),
+            "screens": .array(screens.map(entry)),
+            "permissions": ["camera": .string(permissionWord(camera)), "screen": .string(screen ? "granted" : pending ? "pending" : "denied")],
         ]
+    }
+
+    /// `capture.authorize {kind: "screen"}` (B73 step 3): asks macOS (`CGRequestScreenCaptureAccess` returns at once;
+    /// the grant is given in System Settings), then polls `CGPreflightScreenCaptureAccess` once a second for two minutes.
+    /// macOS applies a grant only to a new process, so once it reads true the engine restarts itself (`restartForGrant`).
+    /// One poll at a time; nothing is asked when it already reads true.
+    private func authorizeScreen() {
+        guard screenGrantPending.compareExchange(expected: false, desired: true, ordering: .relaxed).exchanged else { return }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard !CGPreflightScreenCaptureAccess() else {
+                self?.logger.info("screen capture already granted")
+                self?.screenGrantPending.store(false, ordering: .relaxed)
+                return
+            }
+            _ = CGRequestScreenCaptureAccess()
+            self?.logger.info("screen capture asked: waiting up to two minutes for the grant in System Settings")
+            ScreenInput.pollGrant(preflight: { CGPreflightScreenCaptureAccess() }) { [weak self] granted in
+                guard let self else { return }
+                self.render?.captureCatalog.refreshPermissions()
+                self.screenGrantPending.store(false, ordering: .relaxed)
+                if granted { self.restartForGrant() } else { self.logger.notice("screen capture not granted within two minutes") }
+            }
+        }
+    }
+
+    /// The screen-recording grant reads true: a LaunchAgent engine (parent launchd) stops as Engine › Restart does (the
+    /// restart marker, then the SIGTERM path: `stop()`, exit 0) and `KeepAlive` starts it again. A foreground `fanousd`,
+    /// one the app started as its child, or one in show mode (entered during the poll) only logs.
+    private func restartForGrant() {
+        guard getppid() == 1, !showMode.isOn else {
+            logger.notice("screen capture granted: restart the engine to use it")
+            return
+        }
+        logger.notice("screen capture granted: restarting")
+        DispatchQueue.main.async { [self] in
+            try? Data().write(to: AppPaths.restartPendingFile, options: .atomic)
+            stop()
+            exit(0)
+        }
     }
 
     private func streamDMX() {

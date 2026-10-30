@@ -81,6 +81,8 @@ public final class RenderService {
     public let syphonCatalog: LiveCatalog
     /// Capture devices as folder 0 files 1–20 (B73); lives as long as the engine.
     public let captureCatalog: LiveCatalog
+    /// Displays as folder 0 files 21–28 (B73 step 3), fed by the engine from `DisplayManager` less the output-bound ones.
+    public let screensCatalog: LiveCatalog
     nonisolated(unsafe) public private(set) var mixer: AudioMixer?  // assigned once at start, read by the metrics endpoint
     private let logger: Logger
     /// Keeps the audio device open while true (the engine passes show mode); read once by `start()`.
@@ -93,10 +95,10 @@ public final class RenderService {
     private var headlessDriver: HeadlessDriver?
 
     /// `syphonNumbers`: the project's Syphon numbering (B69), held for the servers before the first announce;
-    /// `captureNumbers` the capture devices' (B73).
+    /// `captureNumbers` the capture devices' (B73), `screenNumbers` the displays'.
     public init(
         scene: SceneConfig, context: MetalContext, parameters: TripleBuffer<ParameterSnapshotSlot>, metrics: MetricsRing, logger: Logger,
-        syphonNumbers: [LiveCatalog.Entry] = [], captureNumbers: [LiveCatalog.Entry] = []
+        syphonNumbers: [LiveCatalog.Entry] = [], captureNumbers: [LiveCatalog.Entry] = [], screenNumbers: [LiveCatalog.Entry] = []
     ) throws {
         self.scene = scene
         self.context = context
@@ -145,6 +147,9 @@ public final class RenderService {
         loader.captureCatalog = captureCatalog
         captureCatalog.onChange = { [weak loader] in loader?.captureDevicesChanged() }
         captureCatalog.startCapture()
+        screensCatalog = LiveCatalog(.screens, numbers: screenNumbers)
+        loader.screensCatalog = screensCatalog
+        screensCatalog.onChange = { [weak loader] in loader?.screensChanged() }
     }
 
     public func start() async throws {
@@ -165,6 +170,13 @@ public final class RenderService {
                 captureCatalog.refreshPermissions()
                 loader?.capturePermissionChanged()
             }
+        }
+        // the grant as cached by the capture catalog: macOS applies a new one only after a restart, so no prompt here
+        loader.screenFactory = { [compositor, captureCatalog, screensCatalog] uuid in
+            let name = screensCatalog.entries.first { $0.source == uuid }?.name ?? uuid
+            return try ScreenInput.open(
+                uuid: uuid, name: name, metal: device, fps: fps, canvas: compositor.canvasSizeSnapshot, granted: captureCatalog.permissions.screen,
+                logger: logger)
         }
         loader.start()
         if scene.managedOutputs {

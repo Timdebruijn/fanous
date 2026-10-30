@@ -18,6 +18,8 @@ public enum CaptureError: Error, CustomStringConvertible {
     case permissionDenied
     case noDevice(String)
     case session(String)
+    case screenPermission
+    case noDisplay(String)
 
     public var description: String {
         switch self {
@@ -26,6 +28,8 @@ public enum CaptureError: Error, CustomStringConvertible {
         case .permissionDenied: "camera permission denied: allow Fanous Engine under Privacy & Security › Camera"
         case .noDevice(let uid): "no capture device \(uid)"
         case .session(let reason): "capture could not start: \(reason)"
+        case .screenPermission: "screen permission not granted: authorize on the System screen, then Engine › Restart"
+        case .noDisplay(let uuid): "no display \(uuid)"
         }
     }
 }
@@ -34,8 +38,8 @@ public enum CaptureError: Error, CustomStringConvertible {
 /// The session is configured, started and stopped on the device's own serial queue, where its frames also arrive; the
 /// textures are views on each frame's IOSurface, made once per pool buffer. The compositor's `latestFrame` read marks
 /// the frame taken: the last three taken frames stay retained (command buffers in flight) beside the newest,
-/// everything else goes back to AVFoundation's pool.
-public final class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
+/// everything else goes back to AVFoundation's pool. `ScreenInput` (a display) is this class on an `SCStream`.
+public class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     public enum Status: Equatable, Sendable {
         case starting
         case running(fps: Double)
@@ -89,9 +93,9 @@ public final class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoData
     static let countersLogEvery: UInt64 = 60_000_000_000
     private let now: @Sendable () -> UInt64
     private let views: TextureViews
-    private let logger: Logger
+    let logger: Logger
     let slot = Mutex(Slot())
-    private let queue: DispatchQueue
+    let queue: DispatchQueue
     /// Capture queue only.
     private var session: AVCaptureSession?
     private var observers: [any NSObjectProtocol] = []
@@ -420,10 +424,27 @@ public final class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoData
         }
         guard let counters else { return }
         queue.async { [self] in
-            session?.stopRunning()
-            session = nil
+            endSession()
             log(counters, "stopped")
         }
+    }
+
+    /// Capture queue: stops what delivers the frames (`ScreenInput` stops its stream).
+    func endSession() {
+        session?.stopRunning()
+        session = nil
+    }
+
+    /// Stops the session but keeps the frames, for every layer on it: the last frame stays on the layers, and the input
+    /// reads `.failed(reason)`, so it is not shared again and the next open makes a new one. A display bound as an output
+    /// meanwhile (it would show only the engine's excluded windows) is halted so.
+    func halt(_ reason: String) {
+        let halted = slot.withLock { s -> Bool in
+            guard s.alive else { return false }
+            s.failure = reason
+            return true
+        }
+        if halted { queue.async { [self] in endSession() } }
     }
 }
 

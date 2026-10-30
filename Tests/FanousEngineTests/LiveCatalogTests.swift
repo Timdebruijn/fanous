@@ -146,10 +146,10 @@ extension LiveCatalogTests {
         try project.set(ProjectDocument.liveValue([1, 2, 3].map { Self.numbered($0, "uid-\($0)", "Cam \($0)", model: "m") }), at: "/capture")
         try project.set(ProjectDocument.liveValue([LiveCatalog.Entry(kind: .syphon, file: 150, source: "App", name: "")]), at: "/syphon")
         let store = StateStore(project: project, logger: StateStoreTests.logger)
-        let showMode = Atomic<Bool>(false), asked = Atomic<Int>(0)
+        let showMode = Atomic<Bool>(false), asked = Atomic<Int>(0), askedScreen = Atomic<Int>(0)
         ProjectDocument.registerCommands(
             on: store, auth: auth, showModeOn: { showMode.load(ordering: .relaxed) }, liveRunning: { [1] },
-            authorizeCamera: { asked.add(1, ordering: .relaxed) })
+            authorizeCamera: { asked.add(1, ordering: .relaxed) }, authorizeScreen: { askedScreen.add(1, ordering: .relaxed) })
         func files() -> [Int] { ProjectDocument.liveNumbers(.capture, from: store.project).map(\.file) }
 
         #expect(store.execute("capture.forget", args: ["file": 2], role: .operator).failureCode == "forbidden")
@@ -167,17 +167,20 @@ extension LiveCatalogTests {
         #expect(ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.file) == [150])  // the other kind stays
 
         #expect(store.execute("capture.authorize", args: ["kind": "microphone"], role: .programmer).failureCode == "invalidArgs")
-        #expect(store.execute("capture.authorize", args: ["kind": "screen"], role: .programmer).failureCode == "unavailable")
         let depth = store.historyDepth.undo
         _ = try store.execute("capture.authorize", args: ["kind": "camera"], role: .programmer).get()
         #expect(asked.load(ordering: .relaxed) == 1 && store.historyDepth.undo == depth)
+        _ = try store.execute("capture.authorize", args: ["kind": "screen"], role: .programmer).get()
+        #expect(askedScreen.load(ordering: .relaxed) == 1 && asked.load(ordering: .relaxed) == 1 && store.historyDepth.undo == depth)
         showMode.store(true, ordering: .relaxed)
         #expect(store.execute("capture.authorize", args: ["kind": "camera"], role: .programmer).failureCode == "showMode")
+        #expect(store.execute("capture.authorize", args: ["kind": "screen"], role: .programmer).failureCode == "showMode")
         showMode.store(false, ordering: .relaxed)
         _ = try store.execute("show.lock", role: .programmer).get()
         #expect(store.execute("capture.forget", role: .programmer) == .failure(.showLocked))
         #expect(store.execute("capture.authorize", args: ["kind": "camera"], role: .programmer) == .failure(.showLocked))
-        #expect(asked.load(ordering: .relaxed) == 1)
+        #expect(store.execute("capture.authorize", args: ["kind": "screen"], role: .programmer) == .failure(.showLocked))
+        #expect(asked.load(ordering: .relaxed) == 1 && askedScreen.load(ordering: .relaxed) == 1)
     }
 
     /// A revert diffs `/capture` too: one field below `/capture/N` folds into the whole entry, and its undo is refused when

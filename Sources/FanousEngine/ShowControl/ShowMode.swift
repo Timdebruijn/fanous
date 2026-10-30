@@ -220,6 +220,9 @@ public struct ReadinessContext: Sendable {
     /// "notDetermined").
     public var captureDevices = 0
     public var cameraPermission = "granted"
+    /// Numbered displays (folder 0, 21–28), running or not, and the screen-recording grant ("granted", "denied").
+    public var screens = 0
+    public var screenPermission = "granted"
     public init() {}
 }
 
@@ -271,11 +274,22 @@ public enum Readiness {
                 id: "syncpackets", title: "Sync packets arriving", state: context.syncLost.isEmpty ? .ok : .warn,
                 detail: context.syncLost.isEmpty ? "arriving, or no slave in use" : "lost (freewheeling): \(context.syncLost.joined(separator: "; "))",
                 fix: "Check the master machine and the network; sync uses UDP port 8002 by default (System › Sync)"))
-        // a permission prompt must never come up during a show (B73): it blocks until acknowledged
-        add(
-            "capture", "Capture permissions granted", context.captureDevices == 0 || context.cameraPermission == "granted",
-            context.captureDevices == 0 ? "no capture device numbered" : "camera: \(context.cameraPermission)",
-            "System Settings › Privacy & Security › Camera, then Engine › Restart")
+        // a permission prompt must never come up during a show (B73): it blocks until acknowledged. With a display numbered
+        // it warns even when granted: macOS asks a screen-capturing app again about monthly (DESIGN.md §20 R18).
+        let cameraOK = context.captureDevices == 0 || context.cameraPermission == "granted"
+        let screenOK = context.screens == 0 || context.screenPermission == "granted"
+        let captureDetail = [
+            context.captureDevices == 0 ? nil : "camera: \(context.cameraPermission)", context.screens == 0 ? nil : "screen: \(context.screenPermission)",
+        ].compactMap { $0 }
+        let panes = [cameraOK ? nil : "Camera", screenOK ? nil : "Screen & System Audio Recording"].compactMap { $0 }
+        items.append(
+            ReadinessItem(
+                id: "capture", title: "Capture permissions granted", state: !(cameraOK && screenOK) ? .fail : context.screens > 0 ? .warn : .ok,
+                detail: captureDetail.isEmpty ? "no capture device or display numbered" : captureDetail.joined(separator: ", "),
+                fix: !panes.isEmpty
+                    ? "System Settings › Privacy & Security › \(panes.joined(separator: " / ")), then Engine › Restart"
+                    : "macOS asks about monthly to keep recording the screen, on the main display; prefer a capture card for a show-critical feed",
+                acknowledged: acknowledged.contains("capture")))
         add("decoders", "No decoder errors", context.layerErrors.isEmpty, context.layerErrors.isEmpty ? "none" : context.layerErrors.joined(separator: "; "), "Fix or replace the failing media")
         let local = volumeIsLocal(context.libraryRoot)
         add("library", "Library on a local volume", local, local ? "local" : "network or removable volume", "Copy the library to the internal disk")

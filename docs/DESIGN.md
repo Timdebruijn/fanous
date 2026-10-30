@@ -1198,7 +1198,7 @@ Fanous Library/
 |---|---|
 | 0 | none |
 | 1–20 | cameras and capture cards, numbered as they appear and kept in the project (`/capture`); built 2026-10-30 (B73 step 2b), see §8.2.1 |
-| 21–32 | displays (21–28), windows (29–32): design, not built, see §8.2.1; NDI later |
+| 21–32 | displays (21–28), numbered like the capture devices and kept in the project (`/screens`), built 2026-10-30 (B73 step 3a); windows (29–32): design, not built; see §8.2.1; NDI later |
 | 100 | solid colour (RGB channels define the colour) |
 | 101–120 | test patterns (same set as the Output test patterns), usable as layer content |
 
@@ -1211,7 +1211,7 @@ before the canvas pass, so it costs one small full-screen pass per layer and no
 file I/O; it then goes through the layer pipeline like media.
 
 **As built (2026-10-27, B61):** files 150–169 are the Syphon servers of other
-apps. Files 1–32 are designed in §8.2.1 and not built;
+apps. Files 1–32 are designed in §8.2.1 (1–28 built since);
 the fixed path is a scene `media` entry (`{folder: 0, file, syphon:
 "App/Server"}`) on any folder 0 number, which also beats 150–169.
 `Syphon/SyphonCatalog.swift` follows Syphon's directory (an unconnected
@@ -1263,8 +1263,8 @@ Since B73 step 1b: `Media/LiveCatalog.swift`, `LiveCatalog(.syphon, …)`; the B
 
 #### 8.2.1 Cameras, capture cards and screens: files 1–32 (design 2026-10-29, B73)
 
-**Status:** design; steps 1a–2b built (capture devices 1–20, as-built notes
-below), displays and windows not yet. The feature-gap survey (`docs/feature-gaps.md`
+**Status:** design; steps 1a–2b built (capture devices 1–20) and step 3a
+(displays 21–28, engine side), as-built notes below; windows not yet. The feature-gap survey (`docs/feature-gaps.md`
 G1, G3; P1) found that every compared product takes a camera or capture card
 and that Millumin, VDMX, Isadora and Mitti take slides and lyrics apps by
 screen capture. Both are system frameworks: AVFoundation capture and
@@ -1548,6 +1548,109 @@ Not verified here (no camera in this environment): discovery of real
 devices, Continuity Camera, the permission prompt's name, and a replug
 on another port. They are the owner's live check.
 
+**As built (2026-10-30, step 3a, PR #N):** displays 21–28, engine side
+(the Media and System screens and the user guide are step 3b).
+*Input:* `Capture/ScreenInput.swift`, a subclass of `CaptureInput` on an
+`SCStream`. The frame slot, the ring of the last three taken frames plus
+the newest, the texture views per surface (BGRA as `bgra8Unorm`, `.rgba`,
+the capture path's), the counters, the status and `share()`/`stop()` are
+the capture device's, so `layers[].capture` serves both. The subclass
+overrides `endSession()` (capture queue) to stop its stream.
+`ScreenInput.open(uuid:)` refuses without the cached grant ("screen
+permission not granted: authorize on the System screen, then Engine ›
+Restart"; nothing is asked, as macOS applies a grant to a new process
+only). It finds the display by CG UUID (`CGGetOnlineDisplayList`, any
+thread) with its mode's pixel size, fitted into canvas 1's size at open
+(aspect kept, never scaled up). On the queue `org.fanous.screen.<uuid>`
+(`.userInteractive`) it reads `SCShareableContent` (the completion hops
+back to the queue), excludes the engine's `SCRunningApplication`
+(`processID == getpid()`) with `exceptingWindows: []`, configures BGRA,
+sRGB, `minimumFrameInterval` = 1/canvas rate at service start, no cursor,
+no audio, `queueDepth` 4 and the fitted size, adds itself as the `.screen`
+output on that queue and calls `startCapture`. Its completion logs
+"capture <name>: BGRA <w>x<h> @ <fps>" (with `excludedApps`) or fails the
+input. The loader thread never waits. A sample whose
+`SCStreamFrameInfo.status` is not `.complete` is dropped (the last frame
+stays); `didStopWithError` reads `.failed(reason)`. A display has no "no
+signal" (`noSignalAfter` infinite): ScreenCaptureKit sends a frame only
+when the picture changes, so a still slide sends none, and the fps shown
+is the rate of changed frames. New on `CaptureInput`: `halt(reason)`
+stops the session, keeps the frames and reads `.failed(reason)`.
+*Catalog:* `LiveCatalog(.screens)` in `RenderService`, fed by the engine
+from `OutputCoordinator.onStatus`, which runs after every rebind: a
+display change from the one `DisplayManager` (`displaysChanged`) and
+every outputs apply. `LiveCatalog.screens(displays, bound:)` lists the
+connected displays less those an output is bound to (by uuid). Such a
+display is "not running with `gone` false": seen before it was bound, it
+keeps its number; bound from the start, it gets none until unbound. Every
+other display is numbered, the main one included, so a machine without the
+grant fails the readiness item until it is acknowledged (as the built-in
+camera does, B121). `/screens` `{"21": {uuid, name}}` is in `initial` and
+the load migration; the engine applies it, writes it back and adopts it as
+`/capture` (`liveInProject` per kind over `liveCatalogs`).
+`capture.forget {file}` takes 1–28 (the range picks the key) and refuses a
+running display; without a file it forgets every capture device and
+display not running. The forget commands' replay check gets the running
+files of the three catalogs.
+*Loader:* a folder 0 file 21–28 without a scene entry resolves through the
+catalog: "Display: <name>", "not running" without a runtime id, else
+`screenFactory(uuid)`. A scene entry `{folder: 0, file, screen: uuid}`
+wins. One input per uuid (`captureShared` is per kind). `screensChanged()`
+shares its body with `captureDevicesChanged()`. A display that goes or is
+bound as an output reads "not running" and keeps its last frame, and its
+stream is halted (else it would show the desktop under the engine's
+excluded output window); its return opens one new session for its
+layers. A free number reads "no display numbered N (folder 0, 21–28)".
+*Permission:* `capture.authorize {kind: "screen"}` (programmer, refused in
+show mode and under show lock, not undoable). Nothing is asked when
+`CGPreflightScreenCaptureAccess()` already reads true. Else
+`CGRequestScreenCaptureAccess()` runs on a utility queue, then
+`ScreenInput.pollGrant` reads the preflight once a second for two minutes,
+one poll at a time. Meanwhile `live.capture.permissions.screen` reads
+"pending" (unless the cache reads granted). When the preflight reads true,
+the engine logs "screen capture granted: restarting". If its parent is
+launchd (the LaunchAgent, `KeepAlive`), it then writes Engine › Restart's
+marker (`restartPendingFile`), runs `Engine.stop()` on the main queue and
+exits 0, as the SIGTERM path does. A foreground `fanousd`, an engine the
+app started as its child, or one in show mode (entered during the poll)
+only logs "screen capture granted: restart the engine to use it". Without
+the grant after two minutes it logs and stops polling.
+*Readiness:* item `capture` fails while a display is numbered (running or
+not) and the cached grant is false: detail "screen: denied", fix "System
+Settings › Privacy & Security › Screen & System Audio Recording, then
+Engine › Restart" (both panes when the camera fails too). With a display
+numbered and every permission granted it warns, never blocks (the monthly
+re-ask, §20 R18).
+*Feed:* `live.capture.screens` `[{file, name, running, gone?}]`.
+*Tests* (`ScreenInputTests`; CI has neither a stream nor the grant):
+numbering 21–28 from fake display lists with the output-bound exclusion
+(bound from the start, bound later, unbound), a restart (gone, back by
+uuid under a new name) and nine displays; the feed and "pending";
+`/screens` in `initial` and the migration; the forget rules; the readiness
+item. A synthetic IOSurface-backed BGRA buffer through `ScreenInput` into
+the layer shader reads white 255, black 0, red 255,0,0 and grey 128
+exactly, and the pair 252/3 (linear). A still display keeps running for an
+hour and `halt` keeps the frame; only `.complete` samples are shown; the
+fitted size; the grant poll with an injected preflight; the loader (two
+layers share one input, bound and unbound, a scene entry, a free number,
+the permission text). 100 frame reads allocate nothing in release.
+Not verified here (the test runner has no grant, and there is no second
+display); the owner's live check:
+- the prompt of `capture.authorize {kind: "screen"}` and the name it shows;
+- whether `CGPreflightScreenCaptureAccess()` flips in the granting process
+  (if not, the poll gives up after two minutes and Engine › Restart
+  applies the grant);
+- the restart: launchd starts the engine again, and layers on 21–28 open;
+- a real display's picture: sRGB colours, size, rate, no cursor, no
+  engine window in it;
+- an output bound to a captured display: the display reads not running
+  and its layer keeps the last frame; unbound, it runs again;
+- whether `SCShareableContent` lists the engine (an accessory LaunchAgent)
+  as an application while it has output windows (`excludedApps` in the
+  start log line);
+- whether idle samples arrive while a display is still, and the monthly
+  re-ask.
+
 | Input | Framework | Pixel path | Kind |
 |---|---|---|---|
 | Capture device | `AVCaptureSession` with one `AVCaptureVideoDataOutput` on its own serial queue; the active format is the device's format whose size matches its current input and whose frame rate is the highest at or below the canvas rate (a card follows its source anyway) | the native format is `AVCaptureDevice.Format.formatDescription.mediaSubType`, not `availableVideoPixelFormatTypes` (that lists what the output can convert to). The output is asked for the native subtype when it is `2vuy` (Cb Y0 Cr Y1) or `yuvs` (YUY2: Y0 Cb Y1 Cr, what Cam Link-class UVC devices send), for `420v` when native is `420v` or `420f`, else for `BGRA` (MJPEG-only webcams: AVFoundation decodes, there is no 4:2:2 to keep) | `2vuy` → `.v216` (same byte order), as `rgba8Unorm` at half width; `yuvs` → new `.yuy2`, the same texture with the pairs swapped (one more shader case, no new matrix); `420v` → `.planarYCbCr`, planes 0 and 1 as `r8Unorm` + `rg8Unorm`; `BGRA` → `.rgba`. The layer shader's Rec.709 video-range matrix (§4.1) reads 8-bit textures unchanged |
@@ -1637,8 +1740,10 @@ The screen item also warns when the screens catalog has an entry (the monthly
 re-confirmation).
 
 **Live feed and UI.** `live.capture: {devices: [{file, name, running,
-gone?, inUse?}], screens: [{file, name, running}], permissions: {camera:
-"granted" | "denied" | "notDetermined", screen: "granted" | "denied"}}`. The
+gone?, inUse?}], screens: [{file, name, running, gone?}], permissions: {camera:
+"granted" | "denied" | "notDetermined", screen: "granted" | "denied" |
+"pending"}}` ("pending" since step 3a: `capture.authorize` waits for the
+grant and the engine restarts itself). The
 Media screen's folder 0 list gets the groups "Cameras and capture cards
 (1–20)" and "Displays (21–28)" with the green dot and Forget of the Syphon
 group; the layer panel's folder 0 picker lists them the same way; the
