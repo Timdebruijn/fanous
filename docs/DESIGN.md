@@ -3199,7 +3199,7 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
   while a shape is drawn. No test covers the library hook's wiring (it needs the whole engine), the preview's feather
   scaling, or a drag keeping a point's handles (no UI makes handles yet).
 
-**As built (M2.8, PR #TBD):** the web UI only; the engine and the protocol are unchanged.
+**As built (M2.8, PR #148):** the web UI only; the engine and the protocol are unchanged.
 - **Tools** (pure, `lib/outputs.ts`), each a path, each one `output.set` of the slice's `masks` (`finishMask`: an add
   mask after the others), so one undo step:
   - **Polygon:** M2.7's Draw mask (taps, Done, Undo last corner).
