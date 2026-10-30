@@ -45,10 +45,14 @@ public protocol LiveTextureSource: AnyObject, Sendable {
 public enum StillSource {
     public static let extensions: Set<String> = ["png", "jpg", "jpeg", "tif", "tiff", "heic", "heif", "gif", "bmp", "webp", "exr"]
 
+    /// The file's first image as ImageIO decodes it; nil when it does not (a layer's still, an image mask).
+    static func image(_ url: URL) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCache: false] as CFDictionary)
+    }
+
     public static func load(url: URL, device: MTLDevice) throws -> DecodedFrame {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-            let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCache: false] as CFDictionary)
-        else { throw MovieError.noSample }
+        guard let image = image(url) else { throw MovieError.noSample }
         let width = image.width, height = image.height
         guard width > 0, height > 0, let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { throw MovieError.noSample }
         var pixels = [UInt8](repeating: 0, count: width * height * 4)

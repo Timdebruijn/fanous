@@ -124,6 +124,16 @@ public final class LibraryIndex: @unchecked Sendable {
     /// Path for a DMX folder/file pair; nil = not present or not playable (DESIGN.md §7.4).
     public func resolve(_ key: MediaKey) -> URL? { state.withLock { $0.byKey[key] }.map { URL(fileURLWithPath: $0) } }
 
+    /// The valid item numbered `key` in the last scan, whatever its probe says.
+    public func item(_ key: MediaKey) -> LibraryItem? {
+        snapshot.folders.first { $0.number == key.folder }?.items.first { $0.file == key.file && $0.status != .invalid }
+    }
+
+    /// The still numbered `key` for an image mask (DESIGN.md §9.10 item 5), also while it is probed again after a save,
+    /// when `resolve` has none (the mask reads the file itself, and its stamp sees the change); nil when there is none or
+    /// it is not a still.
+    public func still(_ key: MediaKey) -> URL? { item(key).flatMap { $0.kind == .still ? URL(fileURLWithPath: $0.path) : nil } }
+
     public func start() {
         running.store(true, ordering: .relaxed)
         let thread = Thread { [self] in probeLoop() }

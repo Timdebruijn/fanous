@@ -106,14 +106,69 @@ public struct WarpSettings: Codable, Hashable, Sendable {
     public var isIdentity: Bool { cornerPin == WarpSettings().cornerPin && (mesh?.isIdentity ?? true) }
 }
 
-public struct MaskSettings: Codable, Hashable, Sendable {
-    /// Polygon in normalized output coordinates (≥ 3 points); the inside is visible.
-    public var path: [MapPoint]
-    /// Soft edge width in output pixels.
-    public var feather: Double = 0
-    public init(path: [MapPoint], feather: Double = 0) {
-        self.path = path
-        self.feather = feather
+/// A mask point (DESIGN.md §9.10 item 5) in normalized output coordinates. Its handles are offsets from it, so a nudge
+/// moves them along; a point without handles is a corner, and a handle makes the segment on its side a cubic Bézier.
+public struct MaskPoint: Codable, Hashable, Sendable {
+    public var x: Double
+    public var y: Double
+    /// Handle of the segment arriving at this point.
+    public var `in`: MapPoint?
+    /// Handle of the segment leaving this point.
+    public var out: MapPoint?
+    public init(_ x: Double, _ y: Double, in: MapPoint? = nil, out: MapPoint? = nil) {
+        (self.x, self.y, self.in, self.out) = (x, y, `in`, out)
+    }
+}
+
+/// A greyscale file of the media library: luminance is visibility, stretched over the output.
+public struct MaskImage: Codable, Hashable, Sendable {
+    public var folder: Int
+    public var file: Int
+    public init(folder: Int, file: Int) {
+        (self.folder, self.file) = (folder, file)
+    }
+}
+
+/// One mask of a slice (DESIGN.md §9.10 item 5): a path or an image. The slice shows the union of its add masks
+/// (everything without one) minus the union of its subtract masks.
+public struct MaskShape: Codable, Hashable, Sendable {
+    public enum Mode: String, Codable, Hashable, Sendable { case add, subtract }
+    public var mode: Mode
+    /// Soft edge width in output pixels, of a path (an image carries its own softness).
+    public var feather: Double
+    /// At least 3 points, filled with the nonzero rule; nil for an image.
+    public var path: [MaskPoint]?
+    public var image: MaskImage?
+    public init(mode: Mode = .add, feather: Double = 0, path: [MaskPoint]? = nil, image: MaskImage? = nil) {
+        (self.mode, self.feather, self.path, self.image) = (mode, feather, path, image)
+    }
+
+    private enum CodingKeys: String, CodingKey { case mode, feather, path, image }
+
+    /// A hand-edited mask without a mode or feather is an add mask with none, rather than an output list that does not
+    /// decode.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try c.decodeIfPresent(Mode.self, forKey: .mode) ?? .add
+        feather = try c.decodeIfPresent(Double.self, forKey: .feather) ?? 0
+        path = try c.decodeIfPresent([MaskPoint].self, forKey: .path)
+        image = try c.decodeIfPresent(MaskImage.self, forKey: .image)
+    }
+
+    /// Why the mask cannot be drawn (`output.set` refuses it, the compile skips it), nil when it can. A negative feather
+    /// is none (`ProjectDocument.validate` clamps it).
+    public var problem: String? {
+        guard feather.isFinite else { return "a mask's feather must be a number" }
+        switch (path, image) {
+        case (let path?, nil):
+            guard path.count >= 3 else { return "a mask path needs at least 3 points" }
+            let numbers: [Double] = path.flatMap { [$0.x, $0.y, $0.in?.x ?? 0, $0.in?.y ?? 0, $0.out?.x ?? 0, $0.out?.y ?? 0] }
+            return numbers.allSatisfy(\.isFinite) ? nil : "mask points must be finite numbers"
+        case (nil, let image?):
+            return (1...255).contains(image.folder) && (1...255).contains(image.file) ? nil : "a mask image needs a library folder and file, 1–255"
+        default:
+            return "a mask has either a path or an image"
+        }
     }
 }
 
@@ -124,9 +179,34 @@ public struct SliceConfig: Codable, Hashable, Sendable {
     public var source: MapRect = .full
     /// Destination quad on the output: top-left, top-right, bottom-right, bottom-left.
     public var dest: [MapPoint] = [MapPoint(0, 0), MapPoint(1, 0), MapPoint(1, 1), MapPoint(0, 1)]
-    public var mask: MaskSettings? = nil
+    /// In any order: union and subtraction commute.
+    public var masks: [MaskShape] = []
     public var opacity: Double = 1
     public init(id: Int) { self.id = id }
+
+    private enum CodingKeys: String, CodingKey { case id, canvas, source, dest, masks, opacity }
+
+    /// As synthesized, but `masks` only when there are any: a slice without masks saves byte for byte as before M2.7.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(canvas, forKey: .canvas)
+        try c.encode(source, forKey: .source)
+        try c.encode(dest, forKey: .dest)
+        if !masks.isEmpty { try c.encode(masks, forKey: .masks) }
+        try c.encode(opacity, forKey: .opacity)
+    }
+
+    /// An older slice's `mask` became `masks` in the document already (`ProjectDocument.load`).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        canvas = try c.decode(Int.self, forKey: .canvas)
+        source = try c.decode(MapRect.self, forKey: .source)
+        dest = try c.decode([MapPoint].self, forKey: .dest)
+        masks = try c.decodeIfPresent([MaskShape].self, forKey: .masks) ?? []
+        opacity = try c.decode(Double.self, forKey: .opacity)
+    }
 }
 
 public struct DisplayIdentity: Codable, Equatable, Sendable {

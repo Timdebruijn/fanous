@@ -316,7 +316,9 @@ public enum ProjectDocument {
         for i in output.slices.indices {
             guard output.slices[i].dest.count == 4 else { throw CommandError.invalidArgs("slice dest needs 4 points") }
             output.slices[i].opacity = min(1, max(0, output.slices[i].opacity))
-            if let mask = output.slices[i].mask, mask.path.count < 3 { output.slices[i].mask = nil }
+            // a negative feather (the number field before M2.7 kept one) is none; NaN stays and is refused below
+            for m in output.slices[i].masks.indices where output.slices[i].masks[m].feather < 0 { output.slices[i].masks[m].feather = 0 }
+            if let problem = output.slices[i].masks.lazy.compactMap(\.problem).first { throw CommandError.invalidArgs("slice \(output.slices[i].id): \(problem)") }
         }
         if let region = output.region, region.w <= 0 || region.h <= 0 { throw CommandError.invalidArgs("region needs a positive size") }
     }
@@ -456,16 +458,22 @@ public enum ProjectDocument {
         if document["capture"] == nil { try? document.set([:], at: "/capture") }
         if document["screens"] == nil { try? document.set([:], at: "/screens") }
         // mapping presets of a hand-edited or foreign file: numbers 1–255 and the first of each number, the list the engine
-        // draws from (§9.10 item 3), so the UI offers the same; a preset that does not validate stays and is skipped there
+        // draws from (§9.10 item 3), so the UI offers the same; a preset that does not validate stays and is skipped there.
+        // Masks v2 (§9.10 item 5): a slice's `mask` becomes `masks`, in the edited slices and in every stored preset's
         if var list = document["outputs"]?.array {
             var changed = false
             for o in list.indices {
+                if let slices = list[o]["slices"]?.array, let converted = convertMasks(slices) {
+                    try? list[o].set(.array(converted), at: "/slices")
+                    changed = true
+                }
                 guard let presets = list[o]["presets"]?.array else { continue }
                 var seen = Set<Int>(), kept: [JSONValue] = []
-                for preset in presets {
+                for var preset in presets {
+                    if let slices = preset["slices"]?.array, let converted = convertMasks(slices) { try? preset.set(.array(converted), at: "/slices") }
                     if let n = preset["number"]?.int, MappingPreset.numbers.contains(n), seen.insert(n).inserted { kept.append(preset) }
                 }
-                if kept.count != presets.count {
+                if kept != presets {
                     try? list[o].set(.array(kept), at: "/presets")
                     changed = true
                 }
@@ -484,6 +492,23 @@ public enum ProjectDocument {
             if patch.entries.count != count { try? document.set(patchValue(patch), at: "/patch") }
         }
         return document
+    }
+
+    /// Masks v2 (DESIGN.md §9.10 item 5): each slice's `mask` (a polygon with its feather, before M2.7) becomes `masks`, one
+    /// add mask with the same points and feather; none for a null or a path of fewer than 3 points, which never drew. Nil
+    /// when no slice had one.
+    static func convertMasks(_ slices: [JSONValue]) -> [JSONValue]? {
+        var changed = false
+        let converted = slices.map { slice -> JSONValue in
+            guard case .object(var fields) = slice, let old = fields.removeValue(forKey: "mask") else { return slice }
+            changed = true
+            if fields["masks"] == nil, let path = old["path"]?.array, path.count >= 3 {
+                // a negative feather (which the old raster drew as a hard edge) is none, as `validate` makes it
+                fields["masks"] = [["mode": .string("add"), "feather": .number(max(0, old["feather"]?.double ?? 0)), "path": .array(path)]]
+            }
+            return .object(fields)
+        }
+        return changed ? converted : nil
     }
 
     public static func save(_ document: JSONValue, to url: URL) throws {
@@ -718,6 +743,10 @@ public enum ProjectDocument {
                 guard let index = outputs.firstIndex(where: { $0.id == id }) else { throw CommandError.invalidArgs("no output \(id)") }
                 var document = try JSONValue(encoding: outputs[index])
                 try document.set(value, at: pointer)
+                // a page loaded before masks v2 (M2.7) still sends `mask`, which decoding would drop: refused, not converted
+                if document["slices"]?.array?.contains(where: { $0["mask"] != nil }) == true {
+                    throw CommandError.invalidArgs("a slice's mask is masks now (masks v2): reload the page")
+                }
                 guard var updated = try? document.decoded(as: OutputConfig.self) else {
                     throw CommandError.invalidArgs("\(path) does not fit the output model")
                 }

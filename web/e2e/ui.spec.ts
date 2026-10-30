@@ -292,6 +292,46 @@ test('status bar: the universe pills wrap on a phone instead of widening the pag
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 });
 
+test('keys: the global shortcuts do nothing while a modal dialog is open, and ? still closes the shortcut list', async ({ page }) => {
+  await openScreen(page, 'Patch');
+  await page.getByRole('button', { name: 'Patch sheet' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Patch sheet' });
+  await sheet.getByRole('button', { name: 'Copy' }).focus();
+  for (const key of ['1', 'l', '?', 'ControlOrMeta+z']) await page.keyboard.press(key);
+  await expect(sheet).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
+  const hash = () => page.evaluate(() => location.hash);
+  expect(await hash()).toBe('#/patch');
+  const help = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+  await page.keyboard.press('?');
+  await expect(help).toBeVisible();
+  await page.keyboard.press('1');
+  expect(await hash()).toBe('#/patch');
+  await page.keyboard.press('?');
+  await expect(help).toBeHidden();
+  await page.keyboard.press('1');
+  await expect.poll(hash).toBe('#/layers');
+  // L and undo had their round trips by now: the lock is still off and no "history is empty" alert came back
+  await expect(page.getByRole('button', { name: 'UNLOCKED' })).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+test('keys: Space on the Show screen fires no cue while the shortcut list is open', async ({ page }) => {
+  const sent: string[] = [];
+  page.on('websocket', (socket) => socket.on('framesent', ({ payload }) => typeof payload === 'string' && sent.push(payload)));
+  await page.reload();
+  await expect(page.getByRole('banner')).toContainText(/\b[1-9]\d* clients/);
+  await openScreen(page, 'Show');
+  await page.keyboard.press('?');
+  // a click on the list's text leaves the focus on the page's body, which Space does not skip
+  await page.getByRole('heading', { name: 'Keyboard shortcuts' }).click();
+  await page.keyboard.press('Space');
+  await page.keyboard.press('?');
+  await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeHidden();
+  expect(sent.filter((p) => p.includes('cue.go'))).toEqual([]);
+});
+
 test('media: folder 0 lists the generators and the Syphon servers, and puts one on a layer', async ({ page }) => {
   await openScreen(page, 'Media');
   await page.getByRole('button', { name: /^0 Built-in and live inputs/ }).click();
@@ -340,6 +380,34 @@ test('outputs: with two slices on the same corners, a drag moves the selected sl
   await slice.selectOption('0');
   await page.getByRole('button', { name: 'Reset slice' }).click();
   await expect.poll(() => handleAt(page, '/slices/0/dest/0')).toEqual({ x: 0, y: 0 });
+});
+
+test('outputs: a Rectangle mask (masks v2) takes a point drag and a feather; Remove mask takes it away', async ({ page }) => {
+  await addUnassignedOutput(page);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  await page.getByRole('button', { name: 'Mask', exact: true }).click();
+  await page.getByRole('button', { name: 'Rectangle' }).click();
+  await expect.poll(async () => Math.round((await handleAt(page, '/slices/0/masks/0/path/2')).x)).toBe(900);
+
+  // the bottom-right point to the middle of the picture
+  const handle = (await page.getByRole('button', { name: '/slices/0/masks/0/path/2', exact: true }).boundingBox())!;
+  const editor = (await page.getByRole('application', { name: /Mapping editor/ }).boundingBox())!;
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(editor.x + editor.width / 2, editor.y + editor.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.round((await handleAt(page, '/slices/0/masks/0/path/2')).x / 10)).toBe(50);
+
+  await page.getByLabel('Feather px').fill('6');
+  await page.getByLabel('Feather px').press('Enter');
+  // the field as the project has it: away to another mode and back
+  await page.getByRole('button', { name: 'Slices', exact: true }).click();
+  await page.getByRole('button', { name: 'Mask', exact: true }).click();
+  await expect(page.getByLabel('Feather px')).toHaveValue('6');
+
+  await page.getByRole('button', { name: 'Remove mask' }).click();
+  await expect(page.getByRole('button', { name: 'Draw mask' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '/slices/0/masks/0/path/0', exact: true })).toHaveCount(0);
 });
 
 test('outputs: a change of mesh density keeps the shape; Reset mesh flattens it', async ({ page }) => {
