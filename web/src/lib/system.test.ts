@@ -184,7 +184,7 @@ describe('capture permissions (B73)', () => {
   it('screen: denied offers Authorize with the Settings-then-restart caption, granted is green', () => {
     expect(permissionRow('screen', 'denied')).toEqual({
       tone: 'yellow', word: 'denied', authorize: true,
-      caption: 'opens System Settings › Privacy & Security › Screen & System Audio Recording: allow Fanous Engine, then Engine › Restart Engine',
+      caption: 'opens System Settings › Privacy & Security › Screen & System Audio Recording: allow Fanous, then Engine › Restart Engine',
     });
     expect(permissionRow('screen', 'granted')).toEqual({ tone: 'green', word: 'granted', authorize: false, caption: null });
     // an engine from before B125 may still send "pending": denied, with its own word

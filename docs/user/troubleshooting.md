@@ -95,9 +95,9 @@ A layer on folder 0, file 21–28 shows a whole display of this Mac.
 
 - "screen permission not granted": on the System screen, under Capture
   permissions, press **Authorize screen** (not in show mode) and allow Fanous
-  Engine in System Settings › Privacy & Security › Screen & System Audio
-  Recording, then choose Engine › **Restart Engine**: macOS applies the grant
-  only to a new engine process.
+  in System Settings › Privacy & Security › Screen & System Audio Recording,
+  then choose Engine › **Restart Engine**: macOS applies the grant only to a
+  new engine process.
 - It worked before and stopped: macOS asks about once a month whether Fanous
   Engine may keep recording the screen. Look for the dialog on the main
   display, allow it, then restart the engine if the layer stays black.
