@@ -271,11 +271,27 @@ describe('universes panel', () => {
     expect(universeRows(rows, [heard('sacn:9', 2.4)], undefined).map((u) => u.id)).toContain('sacn:9');
     expect(universeRows(rows, [heard('sacn:9', 30)], undefined).map((u) => u.id)).not.toContain('sacn:9');
     expect(universeRows(rows, [heard('sacn:9', 9)], [stored('sacn:9', { lossTimeout: 10 })]).find((u) => u.id === 'sacn:9')?.text).toBe('heard, nothing patched');
-    // stored and silent: stays, not used, yellow
-    const silent = universeRows(rows, [heard('sacn:9', 30)], [stored('sacn:9')]).find((u) => u.id === 'sacn:9')!;
-    expect([silent.text, silent.health]).toEqual(['not used', { tone: 'yellow', text: 'silent' }]);
+    // stored and quiet: stays, not used, yellow
+    const quiet = universeRows(rows, [heard('sacn:9', 30)], [stored('sacn:9')]).find((u) => u.id === 'sacn:9')!;
+    expect([quiet.text, quiet.health, quiet.state]).toEqual(['not used', { tone: 'yellow', text: 'quiet' }, 'quiet']);
     // a patched universe that is lost stays red
     expect(universeRows(rows, [heard('artnet:0.0.0', 30)], undefined)[0]!.health).toEqual({ tone: 'red', text: 'lost' });
+  });
+
+  it('keeps a heard universe the user has open or monitors after its loss timeout, quiet and yellow', () => {
+    const rows = buildFixtures(standard, 8, null);
+    const kept = universeRows(rows, [heard('sacn:9', 2.6)], undefined, ['sacn:9']).find((u) => u.id === 'sacn:9');
+    expect(kept && [kept.text, kept.tone, kept.health, kept.state]).toEqual(['heard, nothing patched', 'warn', { tone: 'yellow', text: 'quiet' }, 'quiet']);
+    expect(universeRows(rows, [heard('sacn:9', 2.6)], undefined, ['artnet:0.0.0']).map((u) => u.id)).not.toContain('sacn:9');
+    // keep never brings back a universe that was never heard
+    expect(universeRows(rows, [live('sacn:9')], undefined, ['sacn:9']).map((u) => u.id)).not.toContain('sacn:9');
+  });
+
+  it('names the pill state without the packet count', () => {
+    const rows = buildFixtures(standard, 8, null);
+    const out = universeRows(rows, [{ ...heard('artnet:0.0.0'), active: true }, heard('artnet:0.0.1', 1.2), heard('sacn:9', 30)], [stored('sacn:9')]);
+    expect(out.map((u) => [u.id, u.state])).toEqual([['artnet:0.0.0', 'receiving'], ['artnet:0.0.1', 'quiet'], ['sacn:9', 'quiet']]);
+    expect(universeRows(rows, [heard('artnet:0.0.0', 30)], undefined).map((u) => u.state)).toEqual(['lost', 'never seen']);
   });
 
   it('offers every universe of the panel in the fixture universe select', () => {

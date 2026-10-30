@@ -26,7 +26,8 @@
   const rows = $derived(buildFixtures(app.project.patch, app.project.layerCount, map, app.project.outputs.map((o) => o.id)));
   const selected = $derived(rows.find((r) => r.name === selectedName) ?? rows[0]!);
   const summary = $derived(summarize(rows));
-  const universes = $derived(universeRows(rows, app.live.dmx.universes, app.project.universes));
+  // the open and the monitored universe keep their row while their console pauses
+  const universes = $derived(universeRows(rows, app.live.dmx.universes, app.project.universes, [openUniverse, chosenUniverse].filter((id) => id !== null)));
   const known = $derived(universes.map((u) => u.id));
   // every universe the panel and the monitor know, so the select never goes blank on one of them
   const options = $derived(universeOptions(app.project.patch, app.live.dmx.universes, app.project.universes));

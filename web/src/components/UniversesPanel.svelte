@@ -29,12 +29,13 @@
   </div>
   {#each rows as u (u.id)}
     {@const expanded = u.id === open}
-    <!-- a stable name: the live packet count stays out of it -->
-    <button type="button" class="list-row uni" aria-label="{universeName(u.id)}, {u.text}" aria-expanded={expanded} aria-controls="universe-{u.id}" onclick={() => onopen(u.id)}>
+    <!-- a stable name without the live packet count ("A 0.0.0, Layers 1–8, receiving"); the pill and settings line describe it -->
+    <button type="button" class="list-row uni" aria-label="{universeName(u.id)}, {u.text}, {u.state}" aria-describedby="universe-meta-{u.id}"
+      aria-expanded={expanded} aria-controls="universe-{u.id}" onclick={() => onopen(u.id)}>
       <span class="name mono">{universeName(u.id)}</span>
       <span class="fx" class:warn={u.tone === 'warn'} class:faint={u.tone === 'faint'}>{u.text}</span>
-      <span class="meta">
-        <span class="pill pill-{u.health.tone}"><span class="dot"></span>{u.health.text}</span>
+      <span class="meta" id="universe-meta-{u.id}">
+        <span class="pill pill-{u.health.tone}" title={u.health.text}><span class="dot"></span><span class="ellipsis">{u.health.text}</span></span>
         <span class="caption">{u.line}</span>
       </span>
     </button>
@@ -112,7 +113,7 @@
   .name { grid-area: name; font-weight: 600; font-size: 14px; }
   .fx { grid-area: fx; font-size: 13px; }
   .meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
-  .pill { max-width: 100%; }
+  .pill { min-width: 0; max-width: 100%; }
   .warn { color: var(--yellow); }
   .settings { display: flex; flex-direction: column; gap: 12px; padding: 12px 16px 16px; border-bottom: 1px solid var(--line); box-shadow: inset 3px 0 0 var(--accent); }
   .fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }

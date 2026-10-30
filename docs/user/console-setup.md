@@ -86,7 +86,7 @@ monitor; on a narrow one (an iPad upright) they stack in that order.
   it back).
 - **Universes**: one row per universe that
   - a fixture is patched to,
-  - a console is sending to now (packets, or silent for no longer than the
+  - a console is sending to now (packets, or quiet for no longer than the
     universe's Loss after), or
   - has settings in the project.
 
@@ -95,16 +95,18 @@ monitor; on a narrow one (an iPad upright) they stack in that order.
   it says:
   - "heard, nothing patched" (yellow): a console sends to a universe no
     fixture listens on; often the console's universe is one off. The row goes
-    away once that universe has been silent for its Loss after, unless it has
-    settings;
+    away once that universe has been quiet for its Loss after, unless it has
+    settings or is open in the panel or shown in the DMX monitor (then it
+    stays, with a yellow "quiet" pill, until you pick another one);
   - "feeds A 0.0.0": the other protocol's universe that a patched universe
     receives (its protocol is sACN or Art-Net + sACN, see
     [Universe settings](#universe-settings));
   - "not used": the universe has settings but no fixture and no console; the
     settings stay.
 
-  A universe without fixtures never shows a red pill: when it goes silent the
-  pill says "silent" in yellow. Tap a row to open its settings (see
+  A universe without fixtures never shows a red pill: once it is quiet for
+  longer than its Loss after, the pill says "quiet" in yellow (the status bar's
+  yellow "silent" means nothing was received yet). Tap a row to open its settings (see
   [Universe settings](#universe-settings)); the DMX monitor switches to it.
 - **DMX monitor**: 512 cells for one universe, coloured per fixture, red where
   fixtures collide, with live values. Click a cell to pin it: you see the

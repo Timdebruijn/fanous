@@ -375,6 +375,8 @@ export interface UniverseRow {
   /** the fixtures on it, "feeds A 0.0.0" (its pair), "heard, nothing patched" (a console sending to the wrong universe) or "not used" */
   text: string;
   tone: 'ok' | 'warn' | 'faint';
+  /** the pill as a word, without the live packet count: receiving, quiet, lost or never seen */
+  state: string;
 }
 
 /** Packets now, or silent for at most the loss timeout: the console is sending to it. */
@@ -385,9 +387,12 @@ function heardNow(info: UniverseInfo | undefined, lossTimeout: number): boolean 
 /**
  * One row per universe that a fixture is patched on, the engine hears now, or the project stores settings for (DESIGN
  * §6.6). A universe the engine heard earlier and nobody uses drops out after its loss timeout, so a fixed console clears
- * its warning. Red is for a patched universe (look now): one without fixtures shows a loss as yellow "silent".
+ * its warning; one in `keep` (open in the panel or shown in the monitor) stays, so a row never vanishes under the user
+ * when a console pauses. Red is for a patched universe (look now): one without fixtures shows a loss as yellow "quiet".
  */
-export function universeRows(rows: readonly FixtureRow[], live: readonly UniverseInfo[], stored: readonly UniverseSettingsDoc[] | undefined): UniverseRow[] {
+export function universeRows(
+  rows: readonly FixtureRow[], live: readonly UniverseInfo[], stored: readonly UniverseSettingsDoc[] | undefined, keep: readonly string[] = [],
+): UniverseRow[] {
   const patched = rows.filter((r) => r.patched && r.universe);
   const used = new Set(patched.map((r) => r.universe!));
   // a used universe fed by the other protocol also lists that wire universe (engine UniverseTable.targets): pair → used
@@ -396,7 +401,9 @@ export function universeRows(rows: readonly FixtureRow[], live: readonly Univers
     const s = universeSettings(stored, id);
     if (s.protocol !== (id.startsWith('sacn:') ? 'sacn' : 'artnet')) feeds.set(s.pair, id);
   }
-  const heard = live.filter((u) => heardNow(u, universeSettings(stored, u.id).lossTimeout)).map((u) => u.id);
+  const listening = (info: UniverseInfo | undefined) =>
+    !!info && (heardNow(info, universeSettings(stored, info.id).lossTimeout) || (info.ageSeconds >= 0 && keep.includes(info.id)));
+  const heard = live.filter(listening).map((u) => u.id);
   const ids = sortedUnique([...used, ...heard, ...(stored ?? []).map((u) => u.id)]);
   return ids.map((id) => {
     const info = live.find((u) => u.id === id);
@@ -410,9 +417,11 @@ export function universeRows(rows: readonly FixtureRow[], live: readonly Univers
     const fed = feeds.get(id);
     const what: Pick<UniverseRow, 'text' | 'tone'> = on.length > 0 ? { text: fixturesText(on), tone: 'ok' }
       : fed ? { text: `feeds ${universeName(fed)}`, tone: 'ok' }
-      : heardNow(info, settings.lossTimeout) ? { text: 'heard, nothing patched', tone: 'warn' }
+      : listening(info) ? { text: 'heard, nothing patched', tone: 'warn' }
       : { text: 'not used', tone: 'faint' };
-    const health = universeHealth(info, settings.lossTimeout);
-    return { id, settings, health: on.length === 0 && health.tone === 'red' ? { tone: 'yellow', text: 'silent' } : health, line, ...what };
+    let health = universeHealth(info, settings.lossTimeout);
+    if (on.length === 0 && health.tone === 'red') health = { tone: 'yellow', text: 'quiet' };
+    const state = health.tone === 'green' ? 'receiving' : health.tone === 'red' ? 'lost' : health.text === 'never seen' ? 'never seen' : 'quiet';
+    return { id, settings, health, line, ...what, state };
   });
 }
