@@ -216,6 +216,10 @@ public struct ReadinessContext: Sendable {
     /// "Layer 2 (group 1)" for slaves playing a file whose master is lost.
     public var syncLost: [String] = []
     public var hardwareSupported = true
+    /// Numbered capture devices (folder 0, 1–20), running or not, and the camera permission ("granted", "denied",
+    /// "notDetermined").
+    public var captureDevices = 0
+    public var cameraPermission = "granted"
     public init() {}
 }
 
@@ -267,6 +271,11 @@ public enum Readiness {
                 id: "syncpackets", title: "Sync packets arriving", state: context.syncLost.isEmpty ? .ok : .warn,
                 detail: context.syncLost.isEmpty ? "arriving, or no slave in use" : "lost (freewheeling): \(context.syncLost.joined(separator: "; "))",
                 fix: "Check the master machine and the network; sync uses UDP port 8002 by default (System › Sync)"))
+        // a permission prompt must never come up during a show (B73): it blocks until acknowledged
+        add(
+            "capture", "Capture permissions granted", context.captureDevices == 0 || context.cameraPermission == "granted",
+            context.captureDevices == 0 ? "no capture device numbered" : "camera: \(context.cameraPermission)",
+            "System Settings › Privacy & Security › Camera, then Engine › Restart")
         add("decoders", "No decoder errors", context.layerErrors.isEmpty, context.layerErrors.isEmpty ? "none" : context.layerErrors.joined(separator: "; "), "Fix or replace the failing media")
         let local = volumeIsLocal(context.libraryRoot)
         add("library", "Library on a local volume", local, local ? "local" : "network or removable volume", "Copy the library to the internal disk")

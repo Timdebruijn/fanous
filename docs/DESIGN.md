@@ -501,7 +501,7 @@ in v1, and a fourth (Keystone) from M2; every mode is patched independently as i
 | Mode | Footprint | Patched per | Purpose |
 |---|---|---|---|
 | **Layer** | 64 ch | layer (16 in v1, extensible) | everything about one layer |
-| **Master** | 8 ch | server | master intensity, blackout, global test pattern, master speed |
+| **Master** | 8 ch | machine | master intensity, blackout, global test pattern, master speed |
 | **Output** | 8 ch | output | per-output intensity, blackout/freeze, test pattern, blend on/off, mapping preset and its fade |
 | **Keystone** (M2) | 16 ch | output | four corner offsets on top of the output's mapping (§6.4a, §9.10) |
 | Serial (later) | 8 ch | serial device | selects pre-configured RS-232/RS-422 strings (projector control) — `[OPEN-7]` v1.x |
@@ -710,12 +710,377 @@ three existing modes and their footprints alone.
   fixtures resolve as policy `internal` until packets return
   (`FixtureResolver.internalWithoutDMX`; also while a universe has never
   been received).
+- An unpatch is not a loss (2026-10-30): a layer or Master without a patch
+  entry (Unpatch, a lower layer count, `effectivePatch` beyond `layerCount`)
+  has no resolver, so no source reaches it; `DMXStore.publish` writes its
+  defaults (layer: intensity 0, no file; Master: 100 %, Normal, speed
+  100 %, no test pattern) into every snapshot instead of leaving the last
+  values in the triple-buffer slots.
 - Not built: per-packet receive interface (a routed console on another subnet
   is rejected by the subnet filter), Art-Net output/ArtAddress, per-address
   sACN priority (`[OPEN-10]`). Multicast delivery is not covered by the
   tests (it needs the Local Network permission); memberships are checked
   against the kernel, and the manual sACNView checklist in
   `docs/user/console-setup.md` covers delivery.
+
+### 6.6 What a patch means, and the Patch screen (design 2026-10-30, B120)
+
+**Status:** designed 2026-10-30; the owner approved the four decisions below
+the same day. Not built. Builds on PR #109 (merged: an Output fixture exists
+exactly when its output does), PR #110 (merged: a fixture patched later takes
+the project policy) and PR #112 (open: an unpatched layer or Master falls back
+to its defaults).
+
+**Terms used here:**
+- A **fixture** is one patchable thing of a mode: "Layer 3", "Master",
+  "Output 2", "Keystone 2".
+- The fixtures that **exist** are:
+  - Layer 1…min(`layerCount`, 32): the layers the parameter snapshot holds.
+    `layers.setCount` accepts up to 64, but layers above 32 never render;
+  - the Master;
+  - Output n and Keystone n for every output n of the project (n ≤
+    `ParameterSnapshotSlot.maxOutputs`, PR #109).
+
+  Every use below means this set: the resolvers, the existence check of
+  `patch.set`, and the UI's groups.
+- A mode's **kind** (`per` in the channel map) is what it is patched per:
+  `layer`, `machine` (one per Mac: the Master) or `output`.
+- A mode is **optional** when a show runs fine without patching it (Keystone);
+  the other modes are **required**.
+- A **block** is a group's fixtures on fixed slots counted from one start
+  address (item 2).
+- The **source policy** is the project's `/policy` (§7.2). The screen calls it
+  **Who controls**.
+
+**Why.** The owner found the Patch screen hard to understand, and more fixture
+modes are coming (Keystone now, Serial and others later). Checked against the
+code on 2026-10-30:
+- One screen does four jobs in one flat table: what exists (Add layer, Remove
+  layer, Add output), where it sits on DMX (universe and address per fixture),
+  how a universe is received (protocol, interface, hold on loss) and who
+  controls (the source policy in the toolbar).
+- "Unpatched" says "no console control" but means "no control at all".
+  `patch.set` with address 0 removes the entry, `DMXStore` makes resolvers for
+  patch entries only, and UI, OSC, MIDI and cues reach only fixtures with a
+  resolver. A show without a console still has to patch every layer.
+- A universe's settings show under the selected fixture, so changing Hold on
+  loss while Layer 3 is selected also changes Layers 1–8, without saying so.
+- Every fixture is a row. 32 layers and 8 outputs with their Keystones are 49
+  rows. A new mode adds a row per instance and edits in seven places of
+  `patch-screen.ts` (`FixtureType`, `FALLBACK_FOOTPRINTS`, `TYPES`,
+  `TYPE_LABEL`, the `FixtureRow.typeLabel` union, the `parseFixture` regex and
+  `buildFixtures`).
+- Fixtures are patched one at a time with a stepper; a console patches a block
+  ("8 fixtures from address 1").
+- An optional fixture (Keystone) looks like a forgotten one: both say
+  "unpatched".
+- What to patch on the console is in `docs/user/console-setup.md`, not on the
+  screen.
+
+**Owner decisions (2026-10-30):**
+1. A fixture exists without a patch; the patch is only its console address.
+2. The screen groups fixtures by kind and patches a group as a block.
+3. The groups come from the channel map, so a new fixture mode appears
+   without UI code. (Refined in the design review: this holds for a new mode
+   of an existing kind; a new kind needs one UI entry, item 3.)
+4. Universes and Who controls get their own blocks, and a Patch sheet says
+   what to patch on the console.
+
+**1. A fixture exists without a patch (engine).**
+- `DMXStore` keeps a resolver for every fixture that exists, with the project
+  policy (PR #110). The patch only decides which universe slots feed it.
+  - `DMXStore(patch:fixtures:)` and `setPatch(_:fixtures:)` take the fixture
+    set with the patch (tests keep a default: the patched fixtures).
+  - `Engine.projectChanged` calls it when the patch **or** the fixture set
+    changed. Today it compares the patch only, so a new layer that stays
+    unpatched, or Add output without a free range, would create no resolver.
+- **Unpatching resets the DMX side.** A resolver that loses its patch entry or
+  moves to another universe gets `FixtureResolver.clearDMX()`: DMX values back
+  to the spec defaults, change times 0, `hasDMX`, `dmxReceived` (below) and
+  `internalWithoutDMX` false; the internal (UI, cue, OSC, MIDI) values stay. Without this, a layer
+  unpatched while the console drives it would keep the console's last look,
+  which undoes PR #112 ("defaults, not hold").
+- **DMX competes only once received.** Under `htp`, the resolver compares the
+  internal value with the DMX value even when no DMX ever arrived, so the spec
+  default wins whenever it is higher: an unpatched Master (default 65535) could
+  not be dimmed from the UI, nor layer colour, scale or speed. The resolver
+  gets a stored `dmxReceived` flag, set by `updateDMX` and cleared only by
+  `clearDMX`; the DMX side takes part in `ltp` and `htp` only while it is set.
+  The value's source is not enough: it is `.none` again for a channel the
+  console holds at its default after a loss (`dmxChangedAt` moves only on a
+  change), and then a UI value would beat a held full Master.
+- Unpatched then follows the source policy, with no new rule:
+  - under `dmx` the resolver has no DMX and resolves to its defaults: a layer
+    black and empty, the Master at full, an output normal, a Keystone the
+    identity. That is PR #112's result, now from the resolver itself;
+  - under `internal`, `ltp` and `htp`, the UI, cues, OSC and MIDI control it.
+- A fixture that stops existing (a layer above the count, a removed output)
+  loses its resolver and falls back to its defaults, so PR #112's reset loops
+  in `publish` stay.
+- **Cue values reach new resolvers.** The cue engine pushes values only while a
+  fade runs. `DMXStore` keeps the last cue outputs and applies them to a
+  resolver it creates (a layer added, an undo), so a held cue covers it at
+  once.
+- Hold on loss and its `internal` switch belong to a universe, so they do not
+  touch an unpatched fixture. The UI expiry counts only while UI values mask a
+  received console (§7.2), so on an unpatched fixture UI values stay until
+  released.
+- Other readers: OSC feedback and `live.dmx.fixtures` now list unpatched
+  fixtures too, so the Layers screen's Master and Output strips follow the
+  outputs that exist, patched or not, without a change. CITP reads the
+  snapshot and does not change. OSC input to an unpatched fixture is recorded
+  and, under `dmx`, ignored like on a patched one. The comments "nil when the
+  fixture is not patched" in `DMXStore.swift` and `MIDIControl.swift` (MIDI
+  pickup) become "nil when the fixture does not exist".
+- **Cost.** `publish` already walks the resolver dictionary; it gets one entry
+  per existing fixture. The Keystone recompute in `publish` builds two arrays
+  per output with a Keystone resolver on every publish; with a resolver for
+  every output it skips a Keystone whose resolver has `dmxReceived` false and
+  holds no internal value (the identity), so a typical project allocates
+  nothing more on the DMX queue. Both are stored flags: `internalValues()`
+  builds an array, and `hasDMX` is false after a loss while held values still
+  apply.
+
+**2. Groups and blocks.**
+- **Groups**, in channel-map order:
+  - **Layers** (kind `layer`). The header holds the layer count with − and +
+    (the tier limit and the undo toast of today's Add layer and Remove layer).
+  - **Master** (kind `machine`).
+  - **Outputs** (kind `output`). One row per output holds its Output and its
+    Keystone fixture, names the display it is on and links to Outputs &
+    Mapping. The header keeps PR #109's **Add output**.
+- **Slots.** A block has a start (universe and address). Fixture number k of
+  the group (Layer k, Output k) sits on slot k − 1. Slot i is the start address
+  + i × footprint; when a slot would run past channel 512 it moves to address 1
+  of the next universe, and so does every slot after it. The next universe is
+  Art-Net port-address + 1 (A 0.0.15 → A 0.1.0) or sACN n + 1. Numbering by
+  fixture number keeps gaps: after Output 2 of 3 is removed, Output 3 keeps its
+  slot. This is how the standard patch lays out layers (8 per universe) and how
+  PR #109 places Output n (the Master's address + 8 n).
+- The block is **derived, not stored.** The project gets no new field.
+  - The **anchor** is the group's lowest-numbered patched required fixture,
+    number k. The start is the anchor's address − (k − 1) × footprint, in the
+    anchor's universe; the start is never rolled back across a universe.
+  - **Block** when every patched required fixture sits on its slot from that
+    start: "Block · A 0.0.0 from 1". An unpatched fixture does not break the
+    block; the group says "1 unplaced".
+  - **Custom** when a patched required fixture is off its slot, or the start
+    falls below address 1: "Custom · 2 of 8 off the block", with **Re-lay as
+    block** (from the anchor's start).
+  - A group with nothing patched shows **Patch as block**, which starts at the
+    standard patch's position (layers at A 0.0.0 address 1, the Master on the
+    next universe at 1, outputs after the Master).
+  - Known corner, accepted: an anchor that sits on a universe reached by a
+    carry (Layers 1–8 unplaced, Layer 9 at A 0.0.1 1) gives a start below 1, so
+    the group shows Custom, although a block from A 0.0.0 1 would fit. Rolling
+    the start back across a universe is ambiguous in general (Layer 3 at
+    A 0.0.1 1 fits 64 starts), and placement then follows "after n − 1".
+    Placing relative to the anchor would avoid it; that is a later refinement.
+- **Moving a block.** Changing the start universe or address (address 1 to
+  513 − footprint) re-lays every required fixture of the group in one command,
+  and the patched optional fixtures with it (Keystones keep their slot, below).
+  A note says how many hand-placed fixtures moved; undo puts them back.
+- **One fixture.** Tapping a chip or row opens an inline editor in its group
+  (universe, address stepper, Unpatch): the controls of today's Selected
+  fixture panel, which goes. The universe settings move to the Universes panel
+  (item 4) first.
+- **Keystone slots.** The Keystone block starts where a ninth output would
+  sit: `slot(9)` of the Outputs block (footprint 8), so the 512 carry applies
+  exactly as for outputs (outputs from A 0.0.1 457 put Output 8 at A 0.0.2 1 and
+  the Keystone block at A 0.0.2 9). Keystone n sits on slot n of that block
+  (footprint 16). With the Master at 1 and outputs
+  from 9, the Keystones sit at 73, 89 … 185. **Patch** on a Keystone puts it on
+  its slot when that range is free, else on the first 16 free channels after it
+  in that universe, else it opens the inline editor. With no Outputs block, it
+  opens the inline editor.
+- **Automatic placement never collides; a placement the user makes may.**
+  `layers.setCount`, `output.add` and a Keystone's Patch leave a fixture
+  unpatched rather than overlap another one. Patch as block, Re-lay as block,
+  moving a block and editing one fixture may overlap; the overlap shows in
+  red, as today.
+- **A new fixture that found no room** says why: "no address · A 0.0.1 1–64 is
+  taken by Master". In the common case (an 8-layer project adding Layer 9,
+  whose slot is the Master's) the Layers group offers **Move Master and
+  outputs after the layers**: one `patch.setMany` that moves the Master,
+  Outputs and Keystone blocks to the universe after the last layer slot and
+  puts the unplaced layers on their slots, as one undo step. It changes the
+  console patch too, so it is never done automatically.
+- **Engine:**
+  - `patch.setMany {entries: [{fixture, universe, address}]}`: one command and
+    one undo step. Each entry is checked as `patch.set` checks it, and one bad
+    entry, or the same fixture twice, refuses all. `patch.set` stays.
+  - `patch.set` and `patch.setMany` refuse an address > 0 for a fixture that
+    does not exist: a Layer above the layers that exist (new; today
+    `patch.set` accepts it and `effectivePatch` drops it) and, as since PR
+    #109, an Output or Keystone without its output. Address 0 is accepted for
+    any fixture, so a stale entry can still be removed.
+  - `layers.setCount` puts a new Layer n on its slot while the Layers group is
+    a Block; when it is Custom, right after Layer n − 1 when that one is
+    patched, else at its standard address. When that range is taken, Layer n
+    stays unpatched (item 1 keeps it usable from the UI). On a standard patch
+    this is today's standard address.
+  - `output.add` keeps PR #109's rule, which is its slot of an Outputs block
+    that starts right after the Master.
+- **Who computes slots.** The engine places automatically (`layers.setCount`,
+  `output.add`) with a Core helper on `Patch`. The UI detects blocks and builds
+  the entries for Patch as block, Re-lay, moving a block, a Keystone's Patch and
+  Move Master and outputs, and sends them as one `patch.setMany`. The slot rule
+  thus lives in Swift and in `patch-screen.ts`; one vector file
+  (`Tests/Fixtures/patch-slots.json`: start, footprint, numbers → expected
+  addresses, including the carry, the 512 boundary and gaps) is read by both
+  test suites, so the two cannot drift.
+
+**3. Groups from the channel map.**
+- `/api/channel-map.json` gets `fixtures`, in display order, generated from
+  `FixtureMode`; `footprints` and `modes` do not change:
+  ```json
+  "fixtures": [
+    { "mode": "layer",    "name": "Layer",    "per": "layer",   "optional": false },
+    { "mode": "master",   "name": "Master",   "per": "machine", "optional": false },
+    { "mode": "output",   "name": "Output",   "per": "output",  "optional": false },
+    { "mode": "keystone", "name": "Keystone", "per": "output",  "optional": true }
+  ]
+  ```
+  `name` is what the patch calls a fixture of that mode
+  (`FixtureMode.displayName`): "Name n", or just "Name" for a `machine` mode.
+  `machine` is the word the user guide's table already uses for the Master
+  ("one per machine"); it avoids "server", which also names Syphon servers.
+- `FixtureMode` gets `per` and `optional` next to `footprint`. The GDTF file
+  and `docs/channel-map.md` do not change.
+- The UI groups by `per` and takes the instances from the project: `layer` →
+  the layers that exist, `machine` → one, `output` → the project's outputs.
+  - A new mode of an existing kind (another per-output mode) appears without
+    UI code.
+  - A new kind (Serial devices, §6.1) needs one entry in the UI's table of kind
+    → instances.
+  - `patch-screen.ts` becomes string-keyed: `FixtureType` is the mode string,
+    `ChannelMap.footprints` and `modes` are `Record<string, …>`, and
+    `parseChannelMap` checks that `fixtures` lists every key of `footprints`
+    instead of a fixed `TYPES` list. `parseFixture` reads the names from the
+    list instead of a regex; the labels come from `name`.
+  - Until the map arrives, the four entries above are the fallback, as
+    `FALLBACK_FOOTPRINTS` is today.
+
+**4. Universes, Who controls, status words and the Patch sheet (UI).**
+- **Universes** panel (right column, above the DMX monitor): one row per
+  universe that the patch uses, the engine hears, or the project stores
+  settings for.
+  - Each row shows the name, protocol, interface, hold on loss, the health
+    pill of today, and the fixtures on it ("Layers 1–8, Master").
+  - A heard universe with nothing patched says "heard, nothing patched", which
+    shows a console sending to the wrong universe. A universe with stored
+    settings and no fixture says "not used"; its settings stay until reset.
+  - Settings belong to the universe, not to the fixtures: moving a block to
+    another universe does not take them along.
+  - Tapping a row opens its settings (today's fields, moved out of Selected
+    fixture) and shows it in the DMX monitor.
+- **Who controls**: the toolbar select becomes a card above the groups, with a
+  line explaining the current choice. The stored values do not change. Long
+  labels for the card, short ones for the Layers screen's per-layer Source
+  badge:
+
+  | Value | Label | Short | Line under it |
+  |---|---|---|---|
+  | `dmx` | Console only | Console | Fanous follows the console. A fixture without an address stays at its defaults; cues and OSC are recorded but do nothing. |
+  | `internal` | Fanous only (UI, cues, OSC, MIDI) | Fanous | The console is shown but ignored. |
+  | `ltp` | Console and Fanous, latest change wins | Both · latest | Per parameter, the latest change wins. |
+  | `htp` | Console and Fanous, highest value wins | Both · highest | Intensity and other numbers take the highest value; folder, file and modes the latest change. |
+
+  The labels live in `layers.ts` (and from there the Source badge), the Patch
+  toolbar, `PolicyHint.svelte` (its "Use Console + UI (latest wins)" button)
+  and the Show screen's warning, which also says where to change it
+  ("Patch › Who controls"). `web/e2e/ui.spec.ts`,
+  `docs/user/show-control.md` and `docs/user/console-setup.md` change with
+  them.
+- **Status words** per fixture. "Unpatch" stays the verb (console language);
+  the result is shown as "no address":
+  - "ok"; "collides with X · a–b" and "exceeds universe" in red, as today;
+  - a layer without an address: "no address · stays dark" in yellow under
+    Console only (nothing plays), "no address · Fanous only" in grey under the
+    other policies;
+  - the Master or an Output without an address: "no address · Fanous only" or,
+    under Console only, "no address · at defaults", in grey: full and normal
+    are the working state;
+  - a Keystone without an address: "not used", in grey, because it is
+    optional;
+  - a new fixture that found no room names the blocker (item 2).
+  `layers.ts` `patchText` says "no address" instead of "unpatched", and the
+  DMX monitor calls a channel without a fixture "free".
+- **Patch sheet** (toolbar, next to Channel map and Export GDTF): what to patch
+  on the console.
+  - One line per block or fixture: mode, count, footprint, universe and
+    addresses ("Fanous · Layer · 64 ch · 8× · A 0.0.0 · 1, 65, 129, …, 449").
+  - An Art-Net universe shows as net.sub.uni and as a flat port-address
+    ("A 0.0.1 = universe 1"). A switch "Count Art-Net universes from 1" adds 1
+    to the flat number for consoles that count that way, and is remembered in
+    the browser. The sheet's header states the convention in use, so a printed
+    sheet says it too. sACN numbers do not change.
+  - **Print** (a print stylesheet) and **Copy** (tab-separated, for a
+    spreadsheet). Read-only, for every role.
+
+**Layout.** Wide (Mac, iPad landscape): left column Who controls and the
+groups, right column Universes and the DMX monitor. Narrow: stacked in that
+order. 32 layers are one block line and 32 chips that wrap, not 32 rows.
+
+**Not in this design:**
+- Serial devices and other future kinds: they get their `per` when §6.1's
+  Serial mode is designed.
+- A stored block: the block is derived.
+- Console-specific universe notations beyond the "+1" switch.
+- Patching from the Layers or Outputs screens: they link here.
+
+**Tests:**
+- Engine:
+  - an unpatched layer under `internal` plays from a UI value; under `dmx` it
+    resolves to its defaults;
+  - a layer unpatched while a console drives it goes to its defaults
+    (`clearDMX`), and its UI values survive;
+  - under `htp` with no DMX ever received, a UI value below the default (the
+    Master at 50 %) wins (also in `ResolverTests`);
+  - a fresh resolver's snapshot equals PR #112's reset values
+    (`LayerParameters()`, `OutputParameters()`, `resetMaster()`), so "defaults
+    from the resolver" and "defaults from the reset" cannot drift;
+  - a layer above the count has no resolver, and `patch.set` and
+    `patch.setMany` refuse it;
+  - a layer added while a cue holds values takes them at once;
+  - `patch.setMany` is one undo step, and one bad entry or a duplicate fixture
+    refuses all;
+  - `layers.setCount` puts a new layer on its slot, and leaves it unpatched
+    with the Master on that slot;
+  - a `MallocCounter` test around `DMXStore.publish` (on the DMX queue) with
+    eight outputs and no Keystone patched counts no allocation from the
+    Keystone recompute;
+  - after a loss with hold on a channel held at its default, a UI value does
+    not beat the held value under `htp` (`dmxReceived`, not the source);
+  - the shared slot vectors pass in Swift.
+- Core: `ChannelMapDocument.json()` lists every `FixtureMode` once, with `per`
+  and `optional`.
+- Web (vitest):
+  - the shared slot vectors, block detection (anchor, unplaced, Custom when
+    the start falls below 1) and re-lay, including the Art-Net carry
+    (A 0.0.15 → A 0.1.0), sACN, the channel-512 boundary and an output gap;
+  - Keystone slots and their fallback;
+  - grouping from a channel map with an extra made-up mode, which appears
+    without code;
+  - the status words per policy and per kind;
+  - the sheet lines and the "+1" switch.
+- e2e: patch Layers as a block from A 0.0.2, then undo restores the patch.
+
+**Build order** (one PR each, after this design):
+1. Engine: a fixture exists without a patch (item 1); after PR #112.
+2. Engine: `patch.setMany`, the existence check, and slot placement in
+   `layers.setCount` (item 2); merged after 1, which makes an unplaced layer
+   usable.
+3. Core: `fixtures` in the channel map (item 3).
+4. Web: Universes panel and Who controls (item 4); the universe settings leave
+   Selected fixture here.
+5. Web: groups, blocks, the inline editor and the status words (items 2–4);
+   needs 1–4.
+6. Web: Patch sheet (item 4); after 5.
+
+Steps 3 and 4 are independent of 1 and 2 and can be built alongside them; 1
+and 2 share the engine's state tests, so they go one after the other. The user
+guide changes with the step that changes what it describes (4–6).
 
 ---
 
@@ -746,7 +1111,9 @@ asserts footprints (64/8/8) never change.
 ### 7.2 Sources and the resolver
 
 Per layer (and for master/outputs) the resolver combines values from sources
-into the `ParameterSnapshot` the compositor reads:
+into the `ParameterSnapshot` the compositor reads. Designed, not built
+(§6.6, 2026-10-30): every fixture that exists will have a resolver, patched or
+not, and the patch will only feed it DMX:
 
 | Source | Produces | Cadence |
 |---|---|---|
@@ -830,7 +1197,8 @@ Fanous Library/
 | File | Source |
 |---|---|
 | 0 | none |
-| 1–32 | cameras and capture cards (1–20), displays (21–28), windows (29–32): design, not built, see §8.2.1; NDI later |
+| 1–20 | cameras and capture cards, numbered as they appear and kept in the project (`/capture`); built 2026-10-30 (B73 step 2b), see §8.2.1 |
+| 21–32 | displays (21–28), windows (29–32): design, not built, see §8.2.1; NDI later |
 | 100 | solid colour (RGB channels define the colour) |
 | 101–120 | test patterns (same set as the Output test patterns), usable as layer content |
 
@@ -895,7 +1263,8 @@ Since B73 step 1b: `Media/LiveCatalog.swift`, `LiveCatalog(.syphon, …)`; the B
 
 #### 8.2.1 Cameras, capture cards and screens: files 1–32 (design 2026-10-29, B73)
 
-**Status:** design, not built. The feature-gap survey (`docs/feature-gaps.md`
+**Status:** design; steps 1a–2b built (capture devices 1–20, as-built notes
+below), displays and windows not yet. The feature-gap survey (`docs/feature-gaps.md`
 G1, G3; P1) found that every compared product takes a camera or capture card
 and that Millumin, VDMX, Isadora and Mitti take slides and lyrics apps by
 screen capture. Both are system frameworks: AVFoundation capture and
@@ -941,7 +1310,7 @@ by kind so a console operator can tell them apart:
 
 | Files | Source | Identity kept in the project |
 |---|---|---|
-| 1–20 | capture devices: UVC cameras and capture cards, Continuity Camera (an iPhone), CoreMediaIO camera extensions | `capture: {"3": {uid, name}}` |
+| 1–20 | capture devices: UVC cameras and capture cards, Continuity Camera (an iPhone), CoreMediaIO camera extensions | `capture: {"3": {uid, name, model}}` |
 | 21–28 | whole displays (the Mac's own, a second Mac's HDMI into a capture card is a capture device) | `screens: {"21": {uuid, name}}` |
 | 29–32 | windows of other apps (slides in a window, a lyrics app): later, see below | `windows: {"29": {app, title}}` |
 
@@ -1007,6 +1376,177 @@ the other kinds. Also not yet: one `applied` value and one running set per
 kind (`recordLiveNumbers` and `checkLiveReplay` take Syphon's). The keys
 `/capture`, `/screens` and `/windows` in `initial` and the load migration
 come with their first writer (step 2).
+
+**As built (2026-10-30, step 2a, PR #116):** `Capture/CaptureInput.swift`.
+*Spike:* `makeTexture(descriptor:iosurface:plane: 0)` accepts `.bgrg422` on
+an IOSurface-backed `2vuy` buffer and `.gbgr422` on a `yuvs` one, at full
+width. Sampled (nearest or linear) or read, both return (r, g, b) = (Cr, Y,
+Cb) with alpha 1: the luma of each full-width pixel, and chroma the hardware
+reconstructs as centre-sited (each pixel ¾ its own pair, ¼ the neighbouring
+pair on its side; only the two edge pixels read their pair exactly). The
+crossed pairing (`2vuy` as `.gbgr422`) mixes luma into the chroma channels.
+The hardware does not convert YCbCr to RGB, so these formats still need a
+shader case (a kind reading (Cr, Y, Cb)), and their chroma differs from the
+movie path's co-sited pick. Built instead: the step-1a path. Packed 4:2:2 is
+an `rgba8Unorm` view at half width; `2vuy` reads as `.v216` unchanged, and
+`yuvs` reads as the new `.yuy2` (8). That kind shares the v216 case in
+`Shaders.swift` after `p = p.grab`, and the compositor doubles the width for
+both. `420v` is planes 0/1 as `r8Unorm`/`rg8Unorm` (`.planarYCbCr`), `BGRA`
+`bgra8Unorm` (`.rgba`). Views are made once per IOSurface and cached (8
+entries, cleared when full, as after a format change). In the spike, a
+`CVPixelBufferPool` handed back the same buffer 20 times while a Metal view
+on its surface stayed alive, so the cache does not starve the pool.
+Readback through the compositor (`CaptureInputTests`, synthetic
+IOSurface-backed buffers): all four formats read white 255, black 0, red
+255,0,0, grey 128 (±1). The Y0/Y1 pair reads 255/0 for `2vuy` and `yuvs`
+(nearest) and 252/3 for `420v` and `BGRA` (linear). Packed frames keep their
+full-width aspect.
+*Session:* configured, started and stopped on the capture queue
+(`org.fanous.capture.<uid>`, `.userInteractive`), never on the loader
+thread; the input reads `.starting` meanwhile, and `.failed(reason)` when
+the session cannot start (the layer shows the reason). Among the device's
+formats of the active format's size, a frame-rate range that holds the
+canvas rate wins (1000/1001 apart is the same rate, as
+`DisplayModeMatching.sameRate`), the one whose top is closest above it
+first. Its min and max frame durations are both set to the canvas rate,
+clamped to the range, so a camera does not slow down in low light. Without
+such a range, the fastest range below the canvas rate runs at its top. Equal
+rates prefer `2vuy`/`yuvs`/`420v` over MJPEG. With no fitting range the
+active format is left alone. The canvas rate is the scene's at service
+start; `canvas.set` does not reopen a device. The output is asked for
+`2vuy`, `yuvs`, `420v` (from `420v`/`420f`) or `BGRA` by the native subtype,
+and for `BGRA` when the output does not list the wanted type (setting an
+unlisted one raises). The device's configuration lock is held across
+`startRunning`, so the session preset cannot put its own format back. After
+the start, the engine logs what runs: "capture <name>: <subtype> <w>x<h> @
+<fps>", plus the preset and the min rate. A warning follows if the running
+format differs from the chosen one. Not observed here (no camera can be
+opened in this environment): whether macOS resets the format without the
+lock. That is part of the owner's live check.
+*Retention:* one `Mutex` slot (ADR-0002, amendment 2026-10-30). The capture
+queue stores the newest frame, and an untaken frame it replaces is released.
+`latestFrame` returns the newest and moves it, once, into a ring of the last
+three taken. 100 reads through `LayerPlayback.frame` allocate nothing in
+release. Neither do 100 takes of 1080p `2vuy` pool buffers, each of which
+evicts a buffer whose last release returns it to the pool on the reading
+thread.
+*Counters:* `frames`, `dropped` (`didDrop`), `outOfBuffers` (`didDrop`
+with reason `OutOfBuffers`) and `unusable` (a delivered frame without an
+IOSurface or a texture view, with its reason logged once). They are logged
+at `info` every 60 s while frames arrive and on `stop()`, and published per
+layer as `layers[].capture` beside the size, which follows the newest frame.
+Whether 60 fps runs short is the owner's live check.
+*Status:* `.starting`, `.running(fps)`, `.noSignal` (no frame for 2 s, or a
+runtime error, interruption or disconnect until the next frame; the last
+frame stays), `.stopped` and `.failed`. The loader polls every open capture
+layer on its 100 ms loop and writes the status text, fps, subtype, size and
+counters to the layer status.
+*Scene entry:* `MediaEntry.capture` (a `uniqueID`) on any folder 0 number,
+"Camera: <localizedName>". `MediaLoader.captureFactory`
+throws its refusal as the layer's text and returns the `CaptureInput` itself
+(not `any LiveTextureSource`) so the loader can read its status.
+*Permission:* `CaptureInput.open` asks only when `allowed`.
+`RenderService.captureAllowed` is set by the engine to "not in show mode".
+While the dialog is open the layer reads "waiting for camera permission";
+the answer reopens the layer (`MediaLoader.capturePermissionChanged`). In
+show mode the layer reads the "not asked" text, and after a refusal the
+"denied" text above. `com.apple.security.device.camera` is in
+`scripts/entitlements.plist`; `NSCameraUsageDescription` and
+`NSCameraUseContinuityCameraDeviceType` are in both Info.plists.
+Not yet: files 1–20 by the catalog (step 2b). Two layers on one uid also
+open two sessions today; step 2b shares one input per uid. Also not yet:
+`v210` and the card list. The subtype shown is the one at start; the size
+follows the frames.
+
+**As built (2026-10-30, step 2b, PR #120):** files 1–20 by the catalog.
+*Catalog:* `LiveCatalog.startCapture()` (`RenderService`, beside Syphon's)
+reads `AVCaptureDevice.DiscoverySession` (`.external`, `.continuityCamera`,
+`.builtInWideAngleCamera`, video) on the main queue at start, on
+`wasConnected`/`wasDisconnected`, and every 2 s for
+`isInUseByAnotherApplication` (no notification says another app opened a
+device). Listing asks no permission. An entry is `source` = `uniqueID`,
+`name` = `localizedName`, `runtimeID` = `uniqueID` while connected, plus two
+`Entry` fields only capture fills: `model` (`modelID`) and `inUse`. `/capture`
+is `{"3": {uid, name, model}}` (`Kind.fields` gained the model name, nil for
+the other kinds). *Fallback:* `assign` first matches every running source by
+runtime id or identity. Then a device with a model takes the number of the
+entry not running with the same `model` and `name`, and that entry records the
+new uid. This needs exactly one candidate on both sides: two such entries, or
+two newcomers with that model and name, match nothing. The rest get numbers in
+order. Matching by uid first means a returning device never loses its number
+to a newcomer of its model. In use is still running (`live.capture` `running:
+true, inUse: true`).
+*Project:* `initial` and the load migration add `/capture` `{}`. The engine
+keeps the applied value per kind (`liveInProject`); the 10 Hz feed writes
+both catalogs back through `correct`, and a project change (`capture.forget`,
+undo, a revert, a loaded version) is adopted by the catalog of its key.
+`capture.forget {file?}` is `syphon.forget` on `/capture` (one registration
+loop). The forget commands' replay check gets the running files of both
+catalogs (the ranges do not overlap). `project.revert`'s replay check still
+passes none, as before. A known edge: an undo (or a loaded version) can put a
+uid back on its old number while that device runs under a new number after
+the fallback. The catalog keeps the running number, and the device moves back
+to the old one at its next replug.
+*Commands:* `capture.authorize {kind}` (programmer, refused under show lock
+and in show mode, not undoable): `camera` calls
+`CaptureInput.requestAccess(allowed: true)` and then
+`MediaLoader.capturePermissionChanged()`. `screen` is refused with
+`unavailable` until step 3.
+*Permissions cache:* `authorizationStatus` (about 25 ms, a TCC round trip
+that is not cached) and `CGPreflightScreenCaptureAccess()` (about 12 ms) are
+read by the capture catalog: once at `startCapture`, then on a utility queue
+with every 2 s poll and after each `requestAccess` answer (from
+`capture.authorize` or from the loader's own prompt). The feed and readiness
+read `LiveCatalog.permissions`, never TCC: the feed shares its serial queue
+with the 20 Hz DMX monitor stream.
+*Loader:* a folder 0 file 1–20 without a scene entry resolves through the
+catalog: "Camera: <name>", "not running" without a runtime id, else
+`captureFactory(uid)`. While the device is `inUse`, the layer reads "in use by
+another app" and is not opened, unless one of our layers already holds a live
+session on it: that session is shared first, because the flag may come from
+another app that opened the device after us. A scene entry still wins.
+`captureDevicesChanged` (the catalog's `onChange`) works like
+`syphonServersChanged`, and the loader remembers the uid each layer opened (as
+`syphonOpen` holds the runtime id):
+- A layer whose device went reads "not running" and keeps its input (the last
+  frame).
+- A layer is opened again when its device is running but not open, or open
+  under another uid. The second case is one update carrying an unplug and a
+  replug on another port (the 2 s poll, or merged changes).
+- A layer whose session failed or stopped is opened again too.
+
+One input per uid: the loader keeps uid → weak `CaptureInput`, and a second
+layer calls `share()` (a user count in the input's slot) instead of the
+factory. `share()` refuses a stopped or failed input. `stop()` stops the
+session when the last user lets go. A session that goes (device gone, uid
+changed, failed) is dropped from the table, so the next open makes a new one
+for every layer on the device. Two layers on one device mark the same frame
+taken once, so the ring of three still covers both.
+*Feed:* `live.capture` `{devices: [{file, name, running, gone?, inUse?}],
+screens: [], permissions: {camera, screen}}`: camera from the cached
+`authorizationStatus` (`restricted` reads `denied`), screen from the cached
+`CGPreflightScreenCaptureAccess()` until step 3 asks for it. Whether
+`isInUseByAnotherApplication` counts our own session is not known. If it
+does, the feed would have to drop `inUse` for the uids the loader holds open
+(its `captureShared` keys). That is the owner's live check.
+*Readiness:* item `capture` "Capture permissions granted" fails while the
+catalog has an entry (running or not) and the camera is not `granted`. The
+built-in camera counts as an entry, so a laptop without the grant fails
+until the item is acknowledged. Detail "camera: <word>", fix "System
+Settings › Privacy & Security › Camera, then Engine › Restart". It blocks
+show mode until acknowledged.
+*Tests* (fake device lists): numbering; the fallback (one twin, two twins, two
+newcomers, another model, uid first); `inUse`; `live.capture`; the forget and
+authorize rules; `/capture` through a revert and its undo; the migration; the
+readiness item. The loader tests cover:
+- two layers on file 3 with one factory call
+- unplug and replug in separate updates, and in one update under a new uid
+  (one new shared session, the old one stops)
+- in use: a new layer is refused, but our own session is shared first
+- a failed session: not shared, and opened again
+Not verified here (no camera in this environment): discovery of real
+devices, Continuity Camera, the permission prompt's name, and a replug
+on another port. They are the owner's live check.
 
 | Input | Framework | Pixel path | Kind |
 |---|---|---|---|
@@ -1690,6 +2230,9 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
 - The edit overlay is **on while Warp & Slices is open**, with a visible
   **Show on output** switch.
 - Masks v2 **includes freehand** drawing.
+- **Round and triangular slices are presets, not a slice type** (2026-10-30):
+  a slice stays four corners, and a circle is a quad with an ellipse mask
+  (item 5, Slice shapes).
 - Settled in the design, not asked:
   - the Keystone range (±50 % of the output);
   - presets hold the mapping (warp and slices). Blend, colour and black floor
@@ -2007,6 +2550,11 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
     the existing key backfills, and does the same on a version revert.
   - The UI reads the document, and one failed slice decode blanks every
     output, so this happens in the document and not only in Swift.
+  - Presets (3) are built first and store slices with the old `mask`, so the
+    same conversion runs on every `OutputConfig.presets[].slices[]`.
+    Otherwise `decodeIfPresent` skips the old key, and recalling a stored
+    preset silently drops its mask. A test loads a project with a masked
+    preset and recalls it.
 - **Visible area.** The union of the add masks (everything when there is none)
   minus the union of the subtract masks.
   - Feathered, that is `max(adds) × (1 − max(subtracts))`.
@@ -2051,6 +2599,25 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
   - The tools are in the mask mode of Warp & Slices.
   - They work on the iPad too: freehand with a finger on the preview.
   - Remote mode steps through mask points and their handles.
+- **Slice shapes (owner decision 2026-10-30).** A slice stays a quad of four
+  corners. Resolume's regular slices and Millumin's slices are rectangles,
+  quads or triangles, and both make round shapes with masks; only MadMapper
+  has a circle surface (`docs/mapping-ux.md` §2).
+  - Two buttons in the slice mode of Warp & Slices act on the selected slice.
+    Each is one edit, so one undo step:
+    - **Triangle:** the top-left and top-right corners move to the middle of
+      their edge. The bilinear slice mesh squeezes the source's top edge into
+      that point. `output.set` already accepts two equal corners; dragging
+      one away makes a quad again.
+    - **Circle:** adds an ellipse add mask (the Ellipse tool's path) that
+      fills the bounding box of the slice's corners. With other add masks on
+      the slice the visible area is their union, as for any mask.
+  - The mask stays in output coordinates, as every mask does: moving a slice
+    corner afterwards changes how the content stretches, not the circle. A
+    round object seen at an angle is an ellipse on the output anyway, and it
+    is drawn there.
+  - Not built: radial mapping (content wrapped around a ring), until a show
+    asks for it.
 
 **M2 build order** (one PR each, Opus coding agents, review before merge; the
 groundwork and small engine pieces first):
@@ -2061,7 +2628,7 @@ groundwork and small engine pieces first):
 5. Preset morph on Output ch 7
 6. Edit overlay with leases (Compare's lease arrives with 4)
 7. Masks v2: model, loading older projects, banded rasteriser
-8. Masks v2: UI and tools, freehand included
+8. Masks v2: UI and tools, freehand included, and the slice shape buttons
 
 ## 10. Audio
 
@@ -2572,6 +3139,9 @@ failure while entering show mode.
    grid for the selected universe with patched ranges coloured per fixture
    and live values, hover shows "Layer 3 · ch 5 · Play mode · 17 → Loop rev";
    GDTF export button and a channel-map viewer (generated from the spec).
+   Redesign designed in §6.6 (2026-10-30, not built): fixtures grouped by kind
+   and patched as blocks, a Universes panel, a Who controls card and a Patch
+   sheet for the console.
 5. **Show control** — timecode (source select: LTC device / MTC port, frame
    rate, offset, lock state, big readout), cue list (add/edit/reorder cues,
    per-cue parameters + fade, TC trigger time, go/back/goto, current/next
@@ -2648,8 +3218,9 @@ with public APIs:
 **Readiness check** (runs on entering show mode, re-checked every 30 s, each
 item with a one-line fix): on AC power; thermal state nominal; free disk > 10
 %; memory headroom; all patched universes receiving; capture permissions
-granted (camera when the capture catalog has an entry, screen when the screens
-catalog has one; design, §8.2.1); all outputs bound and in the desired mode;
+granted (`capture`: the camera when the capture catalog has an entry, built
+2026-10-30, B73 step 2b; the screen when the screens catalog has one, step 3;
+§8.2.1); all outputs bound and in the desired mode;
 no decoder errors; library on a local volume; Spotlight indexing of the
 library volume (`mdutil -s` state read via `MDQuery`/`mdutil` output) off or
 acknowledged; automatic macOS updates state (read from

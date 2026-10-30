@@ -342,6 +342,40 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   A Keystone fixture follows the same rule (patched by hand, unpatched with its output). Console control covers outputs
   1–8, so output 9 and up gets no Output fixture. Fixed on the way: an output whose fixture was unpatched kept its last
   console values (a Blackout stayed black).
+- The Media screen lists cameras and capture cards as folder 0 files 1–20 (B73 step 2c, DESIGN §8.2.1): a group
+  "Cameras and capture cards (1–20)" before the Syphon servers with the same green dot, "not running", "not seen since
+  the engine started" and "in use by another app", **Forget** and **Forget all not running**, a line when the camera
+  permission is not granted, and "Displays (21–28)" once displays are numbered. The layer panel's folder 0 picker lists
+  them too ("Built-in content and live inputs"), and folder 0 is now "0 · Built-in and live inputs". The System screen
+  shows the camera and screen permissions with **Authorize**. An engine without capture shows none of it.
+- Fixed: a layer unpatched while it played (Unpatch, address 0, Remove last layer or a lower layer count) kept playing at
+  its last values, and nothing could stop it: the UI, OSC, MIDI and cues reach only patched fixtures. An unpatched layer
+  now goes to its defaults (intensity 0, no file: black), and an unpatched Master to 100 %, Normal, speed 100 % and no
+  test pattern instead of holding the show at its last level. Hold on loss is unchanged: it is for a patched universe
+  that goes silent.
+- Added: cameras and capture cards as live layer sources (B73 step 2a, PR #116, DESIGN §8.2.1). A scene `media` entry
+  `{folder: 0, file, capture: "<device uid>"}` shows an AVFoundation capture device (a webcam, a UVC or driver-backed
+  capture card, an iPhone over Continuity Camera) at its input's size and the canvas rate (59.94 and 60 count as one;
+  the fastest rate below when it cannot reach it). `2vuy`, `yuvs` (new pixel kind `.yuy2`) and `420v` stay 4:2:2 or
+  4:2:0 on the GPU, other formats come as BGRA. The layer reads "no signal" after 2 s without frames and keeps the last
+  picture. Frames, drops, pool shortages (`outOfBuffers`) and unusable frames are counted per layer and logged every
+  minute. The camera permission is asked only outside show mode. The app and the engine carry the camera entitlement
+  and usage text. Numbered files 1–20 follow with the capture catalog.
+- Added: capture devices are folder 0 files 1–20 (B73 step 2b, PR #120, DESIGN §8.2.1). The engine numbers every
+  camera, capture card and Continuity Camera it sees (lowest free number), keeps the numbers in the project (`/capture`
+  `{"1": {uid, name, model}}`, added to older projects on open) and gives a device its number back after a restart or a
+  replug; a UVC device on another USB port keeps its number when its model and name match exactly one device that is
+  not running. A console or the UI selects File 1–20 in folder 0 like a generator. Two layers on one device share one
+  capture session. A device that goes reads "not running" and keeps its last picture, and its return reconnects the
+  layer; a device another app has open reads "in use by another app". `live.capture` lists the devices and the camera
+  permission. New commands: `capture.forget {file?}` (frees numbers of devices that are not running, undoable) and
+  `capture.authorize {kind: "camera"}` (asks for the camera permission, not in show mode; `screen` comes with displays).
+  New readiness item "Capture permissions granted": it fails while a device is numbered and the camera is not granted.
+- Design: what a patch means, and a clearer Patch screen (DESIGN §6.6, B120). A fixture exists without a patch, and
+  the patch is only its console address. The screen groups fixtures by kind (layers, the Master, outputs with their
+  Keystone) and patches a group as a block, with the groups taken from the channel map, so a new mode of an existing
+  kind needs no UI code. Universes and the source policy get their own blocks, and a Patch sheet says what to patch on
+  the console.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

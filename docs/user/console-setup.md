@@ -91,7 +91,9 @@ The pill for a universe is green while packets arrive. It is yellow when
 nothing has been received yet or for up to the universe's loss timeout (2.5 s
 by default) of silence, and red when a patched universe has been silent longer.
 What the fixtures do then is the universe's **Hold on loss** setting; by
-default they **hold their last values**.
+default they **hold their last values**. An unpatched layer or Master holds
+nothing: a layer goes black (no file) and the Master to full, as without a
+console.
 
 ## Universe settings
 

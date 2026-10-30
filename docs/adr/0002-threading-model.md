@@ -110,3 +110,15 @@ may be in flight, as before; only `fanous-bench` reaches this. With managed outp
 drivers: `coordinator.stop()` comes first and logs a driver that did not join.
 `Engine.stop()` calls only `coordinator.stop()` today; the canvas server goes
 with the process.
+
+## Amendment 2026-10-30 (B73 step 2a): live-source slots are blocking locks
+
+The B71 amendment calls its lock the only one a render thread waits on. Live
+sources are the exception, before and after this step. Syphon's `FrameSlot` and
+`CaptureInput`'s frame slot are each a `Mutex` taken with a blocking
+`withLock` by the compositor's one `latestFrame` read per layer per tick. Their
+critical sections only move references: the newest frame, and for a capture
+device its ring of three taken frames. A released buffer is let go after the
+lock. Neither allocates. The other side is one producer thread (Syphon's frame
+notification, the capture queue, `.userInteractive`), which holds the lock for
+the same few reference moves per frame.
