@@ -684,7 +684,7 @@ extension StateStoreTests {
         let numbers = [(150, "Resolume"), (151, "Simple Server"), (152, "MadMapper")].map { LiveCatalog.Entry(kind: .syphon, file: $0.0, source: $0.1, name: "") }
         try project.set(ProjectDocument.liveValue(numbers), at: "/syphon")
         let store = StateStore(project: project, logger: Self.logger)
-        ProjectDocument.registerCommands(on: store, auth: auth, syphonRunning: { [150] })
+        ProjectDocument.registerCommands(on: store, auth: auth, liveRunning: { [150] })
         func files() -> [Int] { ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.file) }
 
         #expect(store.execute("syphon.forget", args: ["file": 151], role: .operator).failureCode == "forbidden")
@@ -792,7 +792,7 @@ extension StateStoreTests {
         try project.set(ProjectDocument.liveValue([server(151, "N"), server(152, "M")]), at: "/syphon")
         let store = StateStore(project: project, logger: Self.logger)
         let running = Mutex<Set<Int>>([])
-        ProjectDocument.registerCommands(on: store, auth: auth, syphonRunning: { running.withLock { $0 } })
+        ProjectDocument.registerCommands(on: store, auth: auth, liveRunning: { running.withLock { $0 } })
         _ = try store.execute("syphon.forget", role: .programmer).get()
         running.withLock { $0 = [150] }
         store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "N")]) }
