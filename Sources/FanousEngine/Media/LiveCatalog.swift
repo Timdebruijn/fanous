@@ -125,14 +125,10 @@ public final class LiveCatalog: @unchecked Sendable {
     public func start(device: MTLDevice) {
         precondition(kind == .syphon, "only Syphon's directory is followed")
         watcher = SyphonInput(device: device) { [weak self] in self?.update() }
-        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
-        timer.schedule(deadline: .now() + Self.announceInterval, repeating: Self.announceInterval)
-        timer.setEventHandler { [weak self] in
+        timer = DispatchSource.repeating(every: Self.announceInterval, on: .global(qos: .utility)) { [weak self] in
             guard self?.entries.contains(where: { $0.running }) == true else { return }
             DistributedNotificationCenter.default().postNotificationName(Self.announceRequest, object: nil, userInfo: nil, deliverImmediately: true)
         }
-        timer.resume()
-        self.timer = timer
         update()
     }
 
@@ -149,14 +145,10 @@ public final class LiveCatalog: @unchecked Sendable {
             NotificationCenter.default.addObserver(forName: $0, object: nil, queue: .main) { _ in refresh() }
         }
         // ponytail: in use polled every 2 s; KVO on each device's isInUseByAnotherApplication if that is too slow
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + 2, repeating: 2)
-        timer.setEventHandler { [weak self] in
+        timer = DispatchSource.repeating(every: 2, on: .main) { [weak self] in
             refresh()
             self?.refreshPermissions()
         }
-        timer.resume()
-        self.timer = timer
         DispatchQueue.main.async(execute: refresh)
         readPermissions()  // once here, so the feed and readiness never start from a guess
     }

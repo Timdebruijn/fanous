@@ -219,7 +219,7 @@ public final class StateServer: @unchecked Sendable {
             case "unsub":
                 if let id = message["id"]?.int {
                     let removed = subscriptions.withLock { $0.removeValue(forKey: UInt32(id)) }
-                    if removed == .preview { server.preview?.unsubscribe(connection: self, stream: UInt32(id)) }
+                    if removed == .preview { server.preview?.remove(connection: self, stream: UInt32(id)) }
                     if case .dmx? = removed { server.dmxSubscriptionsChanged() }
                 }
             default:

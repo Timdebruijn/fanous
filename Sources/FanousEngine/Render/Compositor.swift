@@ -954,30 +954,28 @@ public final class Compositor: @unchecked Sendable {
 
     /// Reads the offscreen output (BGRA 8-bit) back; tests only.
     public func readbackOutput() -> (width: Int, height: Int, bgra: [UInt8]) {
-        guard let texture = offscreenOutput else { return (0, 0, []) }
-        let bytesPerRow = texture.width * 4
-        guard let buffer = context.device.makeBuffer(length: bytesPerRow * texture.height, options: .storageModeShared),
-            let commandBuffer = context.queue.makeCommandBuffer(), let blit = commandBuffer.makeBlitCommandEncoder()
-        else { return (0, 0, []) }
-        blit.copy(
-            from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
-            sourceSize: MTLSize(width: texture.width, height: texture.height, depth: 1), to: buffer, destinationOffset: 0,
-            destinationBytesPerRow: bytesPerRow, destinationBytesPerImage: bytesPerRow * texture.height)
-        blit.endEncoding()
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
-        return (texture.width, texture.height, Array(UnsafeBufferPointer(start: buffer.contents().assumingMemoryBound(to: UInt8.self), count: bytesPerRow * texture.height)))
+        guard let texture = offscreenOutput, let buffer = blitToShared(texture, bytesPerPixel: 4) else { return (0, 0, []) }
+        return (texture.width, texture.height, Array(UnsafeRawBufferPointer(start: buffer.contents(), count: buffer.length)))
     }
 
     // MARK: Diagnostics
 
     /// Reads the most recently completed canvas back as 8-bit RGBA (tests and thumbnails; allocates, blocks on the GPU).
     public func readback(canvas id: Int? = nil) -> (width: Int, height: Int, rgba: [UInt8]) {
-        guard let texture = id.map({ latestCanvas(id: $0) }) ?? Optional(latestCanvas) else { return (0, 0, []) }
-        let bytesPerRow = texture.width * 8
+        guard let texture = id.map({ latestCanvas(id: $0) }) ?? Optional(latestCanvas), let buffer = blitToShared(texture, bytesPerPixel: 8)
+        else { return (0, 0, []) }
+        let halves = buffer.contents().assumingMemoryBound(to: Float16.self)
+        var rgba = [UInt8](repeating: 0, count: texture.width * texture.height * 4)
+        for i in rgba.indices { rgba[i] = UInt8(max(0, min(255, (Float(halves[i]) * 255).rounded()))) }
+        return (texture.width, texture.height, rgba)
+    }
+
+    /// `texture` copied into a new shared buffer, rows packed; blocks until the GPU is done.
+    private func blitToShared(_ texture: MTLTexture, bytesPerPixel: Int) -> MTLBuffer? {
+        let bytesPerRow = texture.width * bytesPerPixel
         guard let buffer = context.device.makeBuffer(length: bytesPerRow * texture.height, options: .storageModeShared),
             let commandBuffer = context.queue.makeCommandBuffer(), let blit = commandBuffer.makeBlitCommandEncoder()
-        else { return (0, 0, []) }
+        else { return nil }
         blit.copy(
             from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
             sourceSize: MTLSize(width: texture.width, height: texture.height, depth: 1), to: buffer, destinationOffset: 0,
@@ -985,10 +983,7 @@ public final class Compositor: @unchecked Sendable {
         blit.endEncoding()
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
-        let halves = buffer.contents().assumingMemoryBound(to: Float16.self)
-        var rgba = [UInt8](repeating: 0, count: texture.width * texture.height * 4)
-        for i in rgba.indices { rgba[i] = UInt8(max(0, min(255, (Float(halves[i]) * 255).rounded()))) }
-        return (texture.width, texture.height, rgba)
+        return buffer
     }
 }
 

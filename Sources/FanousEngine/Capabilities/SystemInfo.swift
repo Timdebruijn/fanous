@@ -22,24 +22,7 @@ public enum SystemInfo {
     }
 
     /// Non-loopback IPv4 addresses of all interfaces, for the certificate's SAN.
-    public static var ipv4Addresses: [String] {
-        var list: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&list) == 0 else { return [] }
-        defer { freeifaddrs(list) }
-        var result: [String] = []
-        var cursor = list
-        while let entry = cursor {
-            defer { cursor = entry.pointee.ifa_next }
-            guard let address = entry.pointee.ifa_addr, address.pointee.sa_family == UInt8(AF_INET),
-                entry.pointee.ifa_flags & UInt32(IFF_LOOPBACK) == 0
-            else { continue }
-            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-            if getnameinfo(address, socklen_t(address.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
-                result.append(String(cString: host))
-            }
-        }
-        return result
-    }
+    public static var ipv4Addresses: [String] { ipv4Interfaces.filter { !$0.loopback }.map(\.address) }
 
     /// Every IPv4 address with its interface and netmask, loopback included (universe interfaces, B28).
     public static var ipv4Interfaces: [NetworkInterface] {
@@ -62,10 +45,13 @@ public enum SystemInfo {
                 let netmask = numeric(entry.pointee.ifa_netmask)
             else { continue }
             let flags = entry.pointee.ifa_flags
-            let multicast = flags & UInt32(IFF_MULTICAST) != 0 && flags & UInt32(IFF_LOOPBACK) == 0 && flags & UInt32(IFF_UP) != 0
+            let loopback = flags & UInt32(IFF_LOOPBACK) != 0
+            let multicast = flags & UInt32(IFF_MULTICAST) != 0 && !loopback && flags & UInt32(IFF_UP) != 0
             let broadcast = flags & UInt32(IFF_BROADCAST) != 0
             result.append(
-                NetworkInterface(name: String(cString: entry.pointee.ifa_name), address: address, netmask: netmask, multicast: multicast, broadcast: broadcast))
+                NetworkInterface(
+                    name: String(cString: entry.pointee.ifa_name), address: address, netmask: netmask, multicast: multicast, broadcast: broadcast,
+                    loopback: loopback))
         }
         return result
     }

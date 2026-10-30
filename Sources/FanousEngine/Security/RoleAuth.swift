@@ -146,7 +146,7 @@ public final class RoleAuth: @unchecked Sendable {
     public func setSync(_ members: [String: JSONValue]) throws -> SyncSettings {
         var sync = SyncSettings()
         try rewrite("sync", members) { settings, object in
-            sync = (try? JSONDecoder().decode(SyncSettings.self, from: JSONEncoder().encode(JSONValue.object(object)))) ?? SyncSettings()
+            sync = (try? JSONValue.object(object).decoded(as: SyncSettings.self)) ?? SyncSettings()
             settings.sync = sync
         }
         logger.info("sync settings set", metadata: ["interface": "\(sync.interface)", "port": "\(sync.port)", "target": "\(sync.target)"])
