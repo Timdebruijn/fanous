@@ -319,7 +319,8 @@ public final class Engine: @unchecked Sendable {
                     loader?.capturePermissionChanged()
                 }
             },
-            displayModes: { [weak self] in Dictionary((self?.displays.withLock { $0 } ?? []).map { ($0.uuid, $0.mode) }, uniquingKeysWith: { a, _ in a }) })
+            displayModes: { [weak self] in Dictionary((self?.displays.withLock { $0 } ?? []).map { ($0.uuid, $0.mode) }, uniquingKeysWith: { a, _ in a }) },
+            showPreset: { dmx.show($0, preset: $1) })
         liveInProject.withLock { $0 = [.syphon: project["syphon"] ?? [:], .capture: project["capture"] ?? [:]] }
         libraryRootInProject.withLock { $0 = URL(fileURLWithPath: project["library"]?["root"]?.string ?? libraryRoot.path).path }
         // B23: a version of the project as loaded, then one every 10 minutes when it changed, and one per show-mode enter
@@ -418,6 +419,7 @@ public final class Engine: @unchecked Sendable {
             self.ingest?.paused = on  // DESIGN.md §14: ingest paused in show mode
             if on { self.versionsQueue.async { versions.saveAutomatic(store.project, reason: .showMode) } }  // B23
             if on { self.startReadinessTimer() } else { self.stopReadinessTimer() }
+            if on { self.endCompare() }  // a lease never outlives show mode or show lock (§9.10 item 4)
             if !on {
                 self.showResumedAt.withLock { $0 = nil }
                 self.canvasSwitch?.run()  // a canvas change deferred during show mode (B31)
@@ -770,6 +772,7 @@ public final class Engine: @unchecked Sendable {
         let region = outputRegion(output)
         let factor = Double(preview.width) / Double(max(1, region.w))
         scaled.region = nil
+        scaled.presets = []  // the preview draws the edited mapping (§9.10 item 3): no preset geometry to compile
         let factorY = Double(preview.height) / Double(max(1, region.h))
         for edge in [\OutputConfig.blend.left, \.blend.right] { scaled[keyPath: edge].overlap *= factor }
         for edge in [\OutputConfig.blend.top, \.blend.bottom] { scaled[keyPath: edge].overlap *= factorY }
@@ -910,6 +913,9 @@ public final class Engine: @unchecked Sendable {
                 lengthMs: UInt32(clamping: Int(Double(s.frames) * 1000 / fps)), fps: UInt8(clamping: Int(s.fps.rounded())), flags: flags)
         }
     }
+
+    /// Ends every Compare lease at once (show lock, show mode).
+    private func endCompare() { dmx?.show(Array(1...ParameterSnapshotSlot.maxOutputs), preset: 0) }
 
     private func oscFacts(from project: JSONValue) {
         let facts = (showLock: project["showLock"]?.bool ?? false, timecodeEnabled: ShowCommands.timecodeSettings(from: project).enabled != false)
@@ -1225,11 +1231,12 @@ public final class Engine: @unchecked Sendable {
     static func effectiveCanvasUse(layers: [Int], outputs: [OutputConfig], rendering: Set<Int>, project: Set<Int>) -> (layers: [Int], outputs: [OutputConfig]) {
         let mappedLayers = layers.map { rendering.contains($0) ? $0 : 1 }
         var mappedOutputs = outputs
+        func map(_ slices: inout [SliceConfig]) {
+            for s in slices.indices where !rendering.contains(slices[s].canvas) && project.contains(slices[s].canvas) { slices[s].canvas = 1 }
+        }
         for o in mappedOutputs.indices {
-            for s in mappedOutputs[o].slices.indices {
-                let canvas = mappedOutputs[o].slices[s].canvas
-                if !rendering.contains(canvas), project.contains(canvas) { mappedOutputs[o].slices[s].canvas = 1 }
-            }
+            map(&mappedOutputs[o].slices)
+            for p in mappedOutputs[o].presets.indices { map(&mappedOutputs[o].presets[p].slices) }
         }
         return (mappedLayers, mappedOutputs)
     }
@@ -1333,6 +1340,7 @@ public final class Engine: @unchecked Sendable {
 
     private func projectChanged(_ document: JSONValue) {
         oscFacts(from: document)
+        if document["showLock"]?.bool == true { endCompare() }
         // patch and per-universe settings (B28): applied on the DMX queue; sACN groups follow both
         let universeSettings = checkedUniverseSettings(from: document)
         let outputs = ProjectDocument.outputs(from: document)  // once per change: a mapping drag is a change per step
@@ -1558,14 +1566,19 @@ public final class Engine: @unchecked Sendable {
         let modeNotes = modeChecks.withLock { $0 }.compactMapValues(\.note)
         // per output: keystone active (not the identity) and invalid (the console's quad was refused), from the DMX side's copy
         var keystones: [(active: Bool, invalid: Bool)] = []
+        // and the mapping preset it is asked to show (§9.10 item 3): Compare's or Output ch 6's, 0 = as edited
+        var presets: [(number: Int, compare: Bool)] = []
         keystones.reserveCapacity(ParameterSnapshotSlot.maxOutputs)
+        presets.reserveCapacity(ParameterSnapshotSlot.maxOutputs)
         dmx.snapshots.withLatest { slot in
             // Raw bypasses the keystone (OutputPass.draw), so it is not active there
             for i in slot.keystones.indices {
                 let raw = i < slot.outputs.count && slot.outputs[i].raw
                 keystones.append((slot.keystones[i] != matrix_identity_float3x3 && !raw, slot.keystoneInvalid[i]))
+                presets.append((Int(slot.presets[i]), slot.presetCompare[i]))
             }
         }
+        let configs = canvasUse.withLock { $0.outputs }
         let live: JSONValue = [
             "canvas": canvasSwitch?.live ?? .null,
             "engine": [
@@ -1612,13 +1625,13 @@ public final class Engine: @unchecked Sendable {
                 }),
             "outputs": .array(
                 outputStatus.withLock { $0 }.map { s in
-                    [
+                    .object([
                         "id": .number(Double(s.id)), "state": .string(s.state.rawValue), "display": s.display.map { .string($0) } ?? .null,
                         "width": .number(Double(s.width)), "height": .number(Double(s.height)), "hz": .number(s.hz), "master": .bool(s.isMaster),
                         "modeNote": modeNotes[s.id].map { .string($0) } ?? .null,
                         "keystone": .bool(keystones.indices.contains(s.id - 1) && keystones[s.id - 1].active),
                         "keystoneInvalid": .bool(keystones.indices.contains(s.id - 1) && keystones[s.id - 1].invalid),
-                    ]
+                    ].merging(presetLive(presets.indices.contains(s.id - 1) ? presets[s.id - 1] : (0, false), config: configs.first { $0.id == s.id })) { a, _ in a })
                 }),
             "security": ["webUIOpen": .bool(auth.isOpen(.programmer))],
             "timecode": timecodeLive(),
@@ -1634,6 +1647,15 @@ public final class Engine: @unchecked Sendable {
             "capture": captureLive(),
         ]
         store.updateLive(live)
+    }
+
+    /// `live.outputs` preset fields (§9.10 item 3): the preset shown (null: the edited mapping), where it is asked from
+    /// (console or compare), and a number the output does not have, or has broken (it keeps the edited mapping).
+    private func presetLive(_ asked: (number: Int, compare: Bool), config: OutputConfig?) -> [String: JSONValue] {
+        guard asked.number > 0 else { return ["preset": .null, "presetSource": .null, "presetMissing": .null] }
+        let number = JSONValue.number(Double(asked.number))
+        let has = config?.preset(asked.number).map { (try? ProjectDocument.validated($0)) != nil } ?? false
+        return ["preset": has ? number : .null, "presetSource": .string(asked.compare ? "compare" : "console"), "presetMissing": has ? .null : number]
     }
 
     /// The catalog's numbering written into the project when it differs from `applied` (`/syphon` or the kind's key as
