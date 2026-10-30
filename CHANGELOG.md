@@ -504,7 +504,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   and every address, and a red line when fixtures collide. **Print** prints the sheet alone; **Copy** gives
   tab-separated text for a spreadsheet (PR #137).
 - Fixed: universe pills wider than the status bar (a phone from 3 universes, an iPad from about 6) widened the page
-  sideways (136 px with 3 at 375 px); the pills now wrap onto a second row (PR #TBD).
+  sideways (136 px with 3 at 375 px); the pills now wrap onto a second row (PR #140).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
