@@ -100,7 +100,7 @@
           <span class="strong ellipsis">{pinCell.owner.name}</span>
           <span class="muted">ch {pinCell.rel}{paramName(pinCell) ? ` · ${paramName(pinCell)}` : ''}</span>
         {:else}
-          <span class="faint">unpatched</span>
+          <span class="faint">free</span>
         {/if}
         <span class="spacer"></span>
         <span class="mono">{values[pinCell.ch - 1]}{pinParam?.label ? ` → ${pinParam.label}` : ''}</span>
@@ -125,7 +125,7 @@
         <li><span class="sw" style:background={r.colour}></span>{r.name}</li>
       {/each}
       <li><span class="sw collision"></span>collision</li>
-      <li><span class="sw unpatched"></span>unpatched</li>
+      <li><span class="sw free"></span>free</li>
     </ul>
   {/if}
 </section>
@@ -140,7 +140,7 @@
   .alert { color: var(--red); }
   .sw { display: inline-block; width: 12px; height: 12px; flex: none; border-radius: 3px; border: 1px solid var(--line-strong); }
   .sw.collision { background: var(--red-bg); border-color: var(--red); }
-  .sw.unpatched { background: var(--surface-2); border-color: var(--line); }
+  .sw.free { background: var(--surface-2); border-color: var(--line); }
   .grid { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 2px; max-height: 560px; overflow: auto; padding: 2px; }
   .cell { height: 38px; min-width: 0; padding: 0; border: 1px solid transparent; border-radius: 3px; color: var(--text-1); font: 500 11px var(--font-mono); text-align: center; overflow: hidden; }
   .cell:hover { border-color: var(--line-strong); }

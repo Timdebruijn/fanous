@@ -109,8 +109,8 @@ describe('channels and patch', () => {
   });
   it('writes the patch line, treating a missing entry or address 0 as unpatched', () => {
     expect(patchText({ fixture: 'Layer 3', universe: 'artnet:0.0.1', address: 145 }, 64)).toBe('artnet:0.0.1 · ch 145–208 · 64 ch');
-    expect(patchText(undefined, 64)).toBe('unpatched');
-    expect(patchText({ fixture: 'Layer 3', universe: 'artnet:0.0.1', address: 0 }, 64)).toBe('unpatched');
+    expect(patchText(undefined, 64)).toBe('no address');
+    expect(patchText({ fixture: 'Layer 3', universe: 'artnet:0.0.1', address: 0 }, 64)).toBe('no address');
   });
   it('lists output fixtures in numeric order and ignores the rest', () => {
     expect(outputFixtures({ Master: [], 'Layer 1': [], 'Output 10': [], 'Output 2': [], 'Output 1': [] })).toEqual(['Output 1', 'Output 2', 'Output 10']);

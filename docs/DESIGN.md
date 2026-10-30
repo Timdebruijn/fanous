@@ -730,10 +730,12 @@ three existing modes and their footprints alone.
 ### 6.6 What a patch means, and the Patch screen (design 2026-10-30, B120)
 
 **Status:** designed 2026-10-30; the owner approved the four decisions below
-the same day. Not built. Builds on PR #109 (merged: an Output fixture exists
-exactly when its output does), PR #110 (merged: a fixture patched later takes
-the project policy) and PR #112 (open: an unpatched layer or Master falls back
-to its defaults).
+the same day. Steps 1–5 of the build order are built: step 1 PR #122, step 2
+PR #124, step 3 PR #119, step 4 PR #121, step 5 PR #135 (As built at the end of
+this section); step 6, the Patch sheet, is not. Builds on PR #109 (merged: an
+Output fixture exists exactly when its output does), PR #110 (merged: a fixture
+patched later takes the project policy) and PR #112 (merged: an unpatched layer
+or Master falls back to its defaults).
 
 **Terms used here:**
 - A **fixture** is one patchable thing of a mode: "Layer 3", "Master",
@@ -1085,6 +1087,36 @@ order. 32 layers are one block line and 32 chips that wrap, not 32 rows.
 Steps 3 and 4 are independent of 1 and 2 and can be built alongside them; 1
 and 2 share the engine's state tests, so they go one after the other. The user
 guide changes with the step that changes what it describes (4–6).
+
+**As built (step 5, PR #135, 2026-10-30)**, where it differs from the above:
+- `parseFixture` is gone instead of reading the list: the rows are built from
+  `fixtures` and carry their mode, kind and number, so no name is parsed. The
+  UI's kind table (`KINDS` in `patch-screen.ts`) holds per kind its title, its
+  highest number (8 outputs, 32 layers, 1), which numbers exist, and whether the
+  next group starts on a new universe (the layers).
+- Each mode after a group's first starts its block at slot max + 1 of the mode
+  before: the Keystones at slot 9 of the outputs, as designed, and a made-up
+  third per-output mode after the eighth Keystone.
+- The start universe and address are fields on the block line of a Block. A
+  Custom group has no start fields: Re-lay as block first, then move it. When
+  the anchor's start falls below 1, Re-lay lays from address 1 of the anchor's
+  universe.
+- The Master group has the same block line as the others (a block of one).
+- The blocker ("no address · A 0.0.1 1–64 is taken by Master", yellow) is
+  named only while the group is a Block, since only a block gives the fixture a
+  slot; in a Custom group a fixture without an address shows the policy words.
+  Move Master and outputs after the layers is offered when such a blocker
+  belongs to a later group; it lays only the later groups that have something
+  patched.
+- Status words show in a chip's tooltip and accessible name, next to each
+  Output and Keystone, and in the inline editor; a layer chip shows its number
+  and address (with its universe when that is not the block's), and OFF when
+  it is off the block. A blocker is also printed on the block line, above Move
+  Master and outputs. Layers above 32 and outputs above 8 get a caption.
+- A block that would run past the last universe (`slot` nil) is refused with
+  the fixtures that do not fit, and nothing is sent.
+- The inline editor of a fixture without an address starts at its slot, with
+  **Patch at A 0.0.1 1**; Unpatch shows only for a patched fixture.
 
 ---
 

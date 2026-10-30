@@ -143,8 +143,8 @@ and loaded at start; `fanousd protocol-dts` prints `web/src/lib/protocol.d.ts`
 Web UI (`web/`, Svelte 5 + Vite, served by the engine from `web/dist`):
 status bar, Layers / Mixer (rows with the resolved media, position, intensity
 and the DMX inspector of the selected layer), Media (library browser, upload,
-transcode, ingest queue) and Patch / DMX (fixture table with collisions,
-`patch.set`, a 512-cell monitor fed by the `dmx` stream). The canvas preview
+transcode, ingest queue) and Patch / DMX (fixture groups and blocks with collisions,
+`patch.set` and `patch.setMany`, a 512-cell monitor fed by the `dmx` stream). The canvas preview
 on the Layers screen uses WebCodecs (H.264 from VideoToolbox, `sub` stream
 `preview`) and falls back to JPEG at 5 fps. Keys 1–6 switch screens.
 `cd web && npm run dev` proxies `/api`, `/ws` and `/healthz` to a running

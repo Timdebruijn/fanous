@@ -3,7 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
 import type { CueDoc, PatchEntry } from './docs';
-import type { ChannelMap, ParamSpec } from './patch-screen';
+import { FALLBACK_FIXTURES, type ChannelMap, type ParamSpec } from './patch-screen';
 import {
   cueRowLabel, cueRowText, cueStatus, fixtureNames, fixtureType, formatClock, formatNumber, groupSpecs, isNumberTaken, lockTitle, newValue, nextCueNumber,
   numberAfter, parseTrigger, retargetValue, sortedCues, specsFor, swapSteps, timecodeBadge, timecodeSource, valueControl, withFade,
@@ -25,6 +25,7 @@ const control: ParamSpec = { name: 'Control', key: 'control', channel: 3, bits: 
 const map: ChannelMap = {
   footprints: { layer: 64, master: 8, output: 8, keystone: 16 },
   modes: { layer: [intensity, playMode], master: [{ ...intensity, name: 'Master intensity' }, control], output: [intensity, control], keystone: [] },
+  fixtures: [...FALLBACK_FIXTURES],
 };
 
 describe('lockTitle', () => {
@@ -249,7 +250,7 @@ describe('timecode offset text', () => {
 });
 
 describe('MIDI map wording', () => {
-  const map: ChannelMap = { footprints: { layer: 64, master: 8, output: 8, keystone: 16 }, modes: { layer: [intensity], master: [intensity], output: [], keystone: [] } };
+  const map: ChannelMap = { footprints: { layer: 64, master: 8, output: 8, keystone: 16 }, modes: { layer: [intensity], master: [intensity], output: [], keystone: [] }, fixtures: [...FALLBACK_FIXTURES] };
   it('names the control', () => {
     expect(midiControlText({ channel: 1, kind: 'note', number: 36 })).toBe('ch 1 · note 36');
     expect(midiControlText({ channel: 0, kind: 'cc14', number: 1 })).toBe('any ch · CC 1/33 (14-bit)');
