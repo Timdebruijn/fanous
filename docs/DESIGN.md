@@ -1264,7 +1264,8 @@ Since B73 step 1b: `Media/LiveCatalog.swift`, `LiveCatalog(.syphon, …)`; the B
 #### 8.2.1 Cameras, capture cards and screens: files 1–32 (design 2026-10-29, B73)
 
 **Status:** design; steps 1a–2b built (capture devices 1–20, as-built notes
-below), displays and windows not yet. The feature-gap survey (`docs/feature-gaps.md`
+below) and the display UI (step 3b); the display engine (step 3a) and windows
+not yet. The feature-gap survey (`docs/feature-gaps.md`
 G1, G3; P1) found that every compared product takes a camera or capture card
 and that Millumin, VDMX, Isadora and Mitti take slides and lyrics apps by
 screen capture. Both are system frameworks: AVFoundation capture and
@@ -1547,6 +1548,35 @@ readiness item. The loader tests cover:
 Not verified here (no camera in this environment): discovery of real
 devices, Continuity Camera, the permission prompt's name, and a replug
 on another port. They are the owner's live check.
+
+**As built (2026-10-30, step 3b, PR #NNN):** the web UI and user guide for
+displays 21–28, against the feed of this section plus `screens[].gone` and
+`permissions.screen: "pending"` (after `capture.authorize {kind: "screen"}`
+while the engine polls; an unknown word reads as denied for the dot and the
+button but is shown as sent). *Media:* "Displays (21–28)" (shown when
+non-empty) lists number, name, green dot or grey ring, "not running" / "not
+seen since the engine started", the Layer N badges, and **Forget** for one not
+running (`capture.forget {file}`, the engine's refusal shown as any refusal;
+no Forget all, whose scope is 1–20). Under it: a line while the Screen
+permission is not granted or pending, and "displays used as Fanous outputs are
+not listed", the monthly re-ask and a link to the System screen. The layer
+panel's folder 0 picker groups its options under the same headings
+(`ZERO_GROUPS` in `layers.ts`). *System:* `permissionRow` gives each row its
+dot, word and caption: screen `pending` reads "waiting", **Authorize screen**
+disabled, "the engine restarts itself when System Settings allows it";
+`denied` reads "opens System Settings; a grant restarts the engine"; the
+buttons are disabled like the camera's (programmer, show lock, show mode). One
+caption gives the monthly re-ask and points at the readiness item, which the
+UI renders from the engine's detail and fix (no UI text). A display layer
+needs nothing of its own: name, status chip and error are generic for `live`;
+the `layers[].capture` counters are not shown for a camera layer either.
+*Tests:* vitest for displays in `folderZeroItems` (order, gone, not running,
+no in-use, group order equals `ZERO_GROUPS`) and for `permissionRow`; the e2e
+engine has no Screen permission and no displays in its catalog, so no e2e.
+The owner's live check: the group on a Mac with a second display (and the
+output display left out), Authorize screen through the grant and the restart,
+the pending row, a display layer's picture and its errors, Forget, and the
+readiness item's screen half.
 
 | Input | Framework | Pixel path | Kind |
 |---|---|---|---|

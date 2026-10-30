@@ -178,7 +178,7 @@ export interface CaptureSourceDoc {
   running: boolean;
   /** from the project and not seen since the engine started */
   gone?: true;
-  /** connected but opened by another app (Continuity Camera in FaceTime), sent with running true; devices only */
+  /** connected but opened by another app (Continuity Camera in FaceTime), sent with running true; devices only (a display has none) */
   inUse?: true;
 }
 
@@ -186,7 +186,8 @@ export interface CaptureSourceDoc {
 export interface CaptureLiveDoc {
   devices: CaptureSourceDoc[];
   screens?: CaptureSourceDoc[];
-  permissions?: { camera: 'granted' | 'denied' | 'notDetermined'; screen: 'granted' | 'denied' };
+  /** screen `pending`: after Authorize screen, while the engine polls for the grant and then restarts itself (step 3) */
+  permissions?: { camera: 'granted' | 'denied' | 'notDetermined'; screen: 'granted' | 'denied' | 'pending' };
 }
 
 export interface IngestJobDoc {

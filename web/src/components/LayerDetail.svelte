@@ -3,7 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import type { LayerStatus, PatchEntry, ResolvedParameter } from '../lib/docs';
-  import { RELEASE_TEXT, channelRange, clockText, controlKeys, folderZeroItems, mediaOptions, mediaPath, patchText, reservedText, valueText, type ChannelSpec, type LibrarySnapshot } from '../lib/layers';
+  import { RELEASE_TEXT, ZERO_GROUPS, channelRange, clockText, controlKeys, folderZeroItems, mediaOptions, mediaPath, patchText, reservedText, valueText, type ChannelSpec, type LibrarySnapshot } from '../lib/layers';
   import { app, can, cmd, playOnLayer } from '../lib/state.svelte';
   import { syncStatus } from '../lib/sync';
   import { throttledSender } from '../lib/throttle';
@@ -112,7 +112,12 @@
         if ((params ?? []).find((p) => p.key === 'intensity')?.raw === 0) send('intensity', 65535);
       }}>
         <option value="">Put on this layer…</option>
-        {#each folderZero as item (item.file)}<option value={item.file}>{item.label}</option>{/each}
+        {#each ZERO_GROUPS as group (group.kind)}
+          {@const list = folderZero.filter((i) => i.kind === group.kind)}
+          {#if list.length > 0}
+            <optgroup label={group.title}>{#each list as item (item.file)}<option value={item.file}>{item.label}</option>{/each}</optgroup>
+          {/if}
+        {/each}
       </select>
     </label>
     {/if}

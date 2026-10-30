@@ -89,6 +89,27 @@ The Layers screen (key 1) shows the problem in the Media column of the row.
 - Video plays but is frozen: Master Control 64 to 127 is Freeze all; Output
   Control 128 to 191 is Freeze; Play mode 112 to 127 is Freeze.
 
+## A display layer is black (Screen permission)
+
+A layer on folder 0, file 21–28 shows a whole display of this Mac.
+
+- "screen permission not granted": on the System screen, under Capture
+  permissions, press **Authorize screen** (not in show mode) and allow Fanous
+  Engine in System Settings › Privacy & Security › Screen & System Audio
+  Recording. The engine restarts itself when it sees the grant; if the row
+  still says denied, choose Engine › **Restart Engine**.
+- It worked before and stopped: macOS asks about once a month whether Fanous
+  Engine may keep recording the screen. Look for the dialog on the main
+  display, allow it, then restart the engine if the layer stays black.
+- "not running": the display is unplugged or asleep, or it is now one of
+  Fanous's outputs (an output display is not captured: it would only show
+  black).
+- The picture is the display without Fanous's own windows and without the
+  mouse pointer; that is by design.
+
+For a show-critical slides feed, use a capture card instead (a second Mac's
+HDMI into the card): it needs no Screen permission and is never re-asked.
+
 ## Outputs stay black although the layers play
 
 The engine renders the project's canvas (System › Machine shows the library and

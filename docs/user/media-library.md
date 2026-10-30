@@ -46,23 +46,45 @@ A layer that points at a number that does not exist, or at a file that is not
 playable, shows the red message "no file N in folder M" on the Layers screen.
 
 The first row of the folder list, **0 · Built-in and live inputs**, is folder
-0: the content the engine draws itself, the cameras and capture cards on this
-Mac and the Syphon servers of other apps, each with the file number a console
-dials (see [show-control.md](show-control.md#built-in-content-folder-0)).
+0: the content the engine draws itself, the cameras, capture cards and
+displays of this Mac and the Syphon servers of other apps, each with the file
+number a console dials (see
+[show-control.md](show-control.md#built-in-content-folder-0)).
 Select an item and use **Play on layer** to put it on a layer from here.
 
-A camera, capture card or Syphon server keeps its number, also across engine
-restarts, until you forget it: select one that is not running and press
-**Forget**, or press **Forget all not running** above its list. Its number is
-then free for the next new one; **Undo** brings it back. A green dot means it
-runs; a yellow dot with "in use by another app" means another app has the
-camera open (an iPhone in FaceTime). Displays (21–28) and the Screen
-permission arrive in a later step; they are not available yet.
+A camera, capture card, display or Syphon server keeps its number, also across
+engine restarts, until you forget it: select one that is not running and press
+**Forget**, or press **Forget all not running** above its list (cameras and
+Syphon servers). Its number is then free for the next new one; **Undo**
+brings it back. A green dot means it runs; a yellow dot with "in use by
+another app" means another app has the camera open (an iPhone in FaceTime). A
+**Layer N** badge says which layers show it.
 
 **Cameras and capture cards (1–20)** need the camera permission. Until it is
-granted the list says so: press **Authorize** under Capture permissions on the
-System screen (not in show mode). If you denied it once, allow Fanous Engine
-under System Settings › Privacy & Security › Camera.
+granted the list says so: press **Authorize camera** under Capture permissions
+on the System screen (not in show mode). If you denied it once, allow Fanous
+Engine under System Settings › Privacy & Security › Camera.
+
+**Displays (21–28)** are whole displays of this Mac: what the display shows,
+without the mouse pointer and without sound, at most at the canvas rate. A
+display larger than the canvas is scaled down to fit it (aspect kept); colours
+are read as sRGB. Displays that Fanous uses as outputs are not listed: Fanous
+leaves its own windows out of a capture, so they would be black.
+
+The first time, displays need the Screen permission: press **Authorize screen**
+under Capture permissions on the System screen (not in show mode). macOS opens
+System Settings; allow Fanous Engine under Privacy & Security › Screen & System
+Audio Recording. macOS applies the grant only to a new engine, so the engine
+restarts itself when it sees the grant (the row says "waiting" until then;
+outputs go black for a moment). If it still says denied after you allowed it,
+choose Engine › **Restart Engine**.
+
+macOS asks again about once a month whether Fanous Engine may keep recording
+the screen, with a dialog on the main display that nobody answers during an
+unattended show. Before a show, check the readiness item **Capture permissions
+granted** on the System screen. For a show-critical slides feed, prefer a
+capture card: a second Mac's HDMI into a capture card needs no Screen
+permission and is not re-asked.
 
 ## Create a folder
 

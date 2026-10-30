@@ -62,6 +62,16 @@ export function outputTone(state: string): DotTone {
   return state === 'bound' ? 'green' : state === 'lost' ? 'red' : 'off';
 }
 
+/** One row of Capture permissions (B73): dot, word, whether Authorize shows, whether it waits for a grant, and the
+ * caption. `pending` (screen): the engine polls for the grant and restarts itself. An unknown state reads as denied
+ * for the dot and button but keeps its own word. */
+export function permissionRow(kind: 'camera' | 'screen', state: string): { tone: DotTone; word: string; authorize: boolean; waiting: boolean; caption: string | null } {
+  if (state === 'granted') return { tone: 'green', word: 'granted', authorize: false, waiting: false, caption: null };
+  if (state === 'pending') return { tone: 'yellow', word: 'waiting', authorize: true, waiting: true, caption: 'waiting for the grant… the engine restarts itself when System Settings allows it' };
+  const word = state === 'notDetermined' ? 'not asked' : state;
+  return { tone: 'yellow', word, authorize: true, waiting: false, caption: kind === 'screen' ? 'opens System Settings; a grant restarts the engine' : null };
+}
+
 /** Dot colour and word of one readiness row (the word is the accessible name of the dot). */
 export function readinessBadge(item: Pick<ReadinessItemDoc, 'state' | 'acknowledged'>): { tone: DotTone; label: string } {
   if (item.state === 'ok') return { tone: 'green', label: 'ok' };

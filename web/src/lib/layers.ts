@@ -48,7 +48,15 @@ export interface FolderZeroItem {
   label: string;
 }
 
-/** Why a live input shows no picture, for the Media list; null while it runs (or for a generator). In use = connected, opened by another app. */
+/** Folder 0 group headings, the same on the Media screen and in the layer panel's picker. */
+export const ZERO_GROUPS: { kind: FolderZeroItem['kind']; title: string }[] = [
+  { kind: 'generator', title: 'Built-in content' },
+  { kind: 'capture', title: 'Cameras and capture cards (1–20)' },
+  { kind: 'screen', title: 'Displays (21–28)' },
+  { kind: 'syphon', title: 'Syphon servers (150–169)' },
+];
+
+/** Why a live input (camera, display, Syphon server) shows no picture, for the Media list; null while it runs (or for a generator). In use = connected, opened by another app (cameras only). */
 export function zeroCaption(item: FolderZeroItem): string | null {
   if (item.inUse) return 'in use by another app';
   if (item.running) return null;
