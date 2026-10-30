@@ -69,7 +69,7 @@
             </select>
           </label>
           <label class="field">
-            <span class="label">Hold on loss</span>
+            <span class="label">Hold on signal loss</span>
             <select class="select" value={s.holdOnLoss} disabled={!!lockTitle} title={lockTitle} onchange={(e) => set(s.id, '/holdOnLoss', e.currentTarget.value, e.currentTarget, s.holdOnLoss)}>
               {#each Object.entries(HOLD_LABELS) as [value, label] (value)}
                 <option {value}>{label}</option>
@@ -77,7 +77,7 @@
             </select>
           </label>
           <label class="field">
-            <span class="label">Loss after (s)</span>
+            <span class="label">Signal lost after (s)</span>
             <input class="input mono timeout" type="number" min="1" max="60" step="0.5" value={s.lossTimeout} disabled={!!lockTitle} title={lockTitle}
               onchange={(e) => set(s.id, '/lossTimeout', Number(e.currentTarget.value), e.currentTarget, String(s.lossTimeout))} />
           </label>

@@ -419,6 +419,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   Presets strip on Warp & Slices and on the wall panel; "Preset N (console)", "Preset N (compare)" and "Preset N missing"
   on the output row and under the preview. Output ch 6 is in the channel map, GDTF and OSC (`/fanous/output/{n}/preset`);
   the footprint stays 8. Projects without presets save as before.
+- Changed: a universe's **Hold on loss** setting is now called **Hold on signal loss**, and **Loss after (s)** is
+  **Signal lost after (s)**, in the Universes panel and the user guide (PR #125). The stored fields (`holdOnLoss`, `lossTimeout`)
+  and their options are unchanged.
 - Fixed: a layer added at runtime (Add layer, `layers.setCount`) stayed empty until the engine restarted (B121, PR #128).
   The renderer now holds all 32 layers the parameter snapshot addresses from start; an empty layer makes no draw item
   and costs about 1 µs per tick. `live.layers`, readiness and CITP list the project's layers, not the 32. A removed
