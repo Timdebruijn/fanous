@@ -32,7 +32,6 @@ public enum AudioError: Error, CustomStringConvertible {
 public final class AudioTrackReader: @unchecked Sendable {
     public static let outputSampleRate = 48_000
 
-    public let url: URL
     /// False for movies without an audio track: `seek` is a no-op and `read` returns no frames.
     public let hasAudio: Bool
     /// Length of the audio track in seconds (0 without audio).
@@ -65,14 +64,13 @@ public final class AudioTrackReader: @unchecked Sendable {
     public static func open(url: URL) async throws -> AudioTrackReader {
         let asset = AVURLAsset(url: url)
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
-            return try AudioTrackReader(url: url, asset: asset, track: nil, description: nil, duration: 0)
+            return try AudioTrackReader(asset: asset, track: nil, description: nil, duration: 0)
         }
         let (descriptions, timeRange) = try await track.load(.formatDescriptions, .timeRange)
-        return try AudioTrackReader(url: url, asset: asset, track: track, description: descriptions.first, duration: timeRange.duration.seconds)
+        return try AudioTrackReader(asset: asset, track: track, description: descriptions.first, duration: timeRange.duration.seconds)
     }
 
-    private init(url: URL, asset: AVAsset, track: AVAssetTrack?, description: CMFormatDescription?, duration: Double) throws {
-        self.url = url
+    private init(asset: AVAsset, track: AVAssetTrack?, description: CMFormatDescription?, duration: Double) throws {
         self.track = track
         generator = AVSampleBufferGenerator(asset: asset, timebase: nil)
         guard track != nil, let description else {

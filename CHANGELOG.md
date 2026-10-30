@@ -410,6 +410,15 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   one block it goes right after the layer before it, else at its standard address, and it stays unpatched when that
   range is taken. Before, it took its standard address when that range was free. Layers above 32 get no address. The
   slot rule (`Patch.slot`, `Patch.blockStart`) has shared test vectors in `Tests/Fixtures/patch-slots.json`.
+- Added: **mapping presets** (M2.4, DESIGN §6.4, §9.10 item 3). An output stores its warp and slices, masks included,
+  under a number 1–255 (`output.preset.store`, `recall`, `rename`, `remove`; one undo step each, also for a whole wall);
+  blend, black floor, colour, intensity and region stay live. Output channel 6, **Mapping preset**, shows preset N while
+  it holds N and the edited mapping at 0, as a cut; a number the output lacks keeps the edited mapping. **Hold to
+  compare** shows a preset from the UI over channel 6 (a 5 s lease, `output.show`, renewed while held). The keystone
+  moves the preset too, Freeze holds across a preset change, and the preview and the editor keep the edited mapping. A
+  Presets strip on Warp & Slices and on the wall panel; "Preset N (console)", "Preset N (compare)" and "Preset N missing"
+  on the output row and under the preview. Output ch 6 is in the channel map, GDTF and OSC (`/fanous/output/{n}/preset`);
+  the footprint stays 8. Projects without presets save as before.
 - Fixed: a layer added at runtime (Add layer, `layers.setCount`) stayed empty until the engine restarted (B121, PR #128).
   The renderer now holds all 32 layers the parameter snapshot addresses from start; an empty layer makes no draw item
   and costs about 1 µs per tick. `live.layers`, readiness and CITP list the project's layers, not the 32. A removed

@@ -131,7 +131,6 @@ public struct SACNData: Equatable, Sendable {
 
     public var isPreview: Bool { options & 0x80 != 0 }
     public var isTerminated: Bool { options & 0x40 != 0 }
-    public var forcesSynchronization: Bool { options & 0x20 != 0 }
     public var universeID: UniverseID { UniverseID(.sacn, Int(universe)) }
 
     public func encoded() -> [UInt8] {

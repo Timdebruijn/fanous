@@ -67,27 +67,13 @@ final class IngestGate: @unchecked Sendable {
 }
 
 /// Converts one source movie (anything AVFoundation can read) to a `.mov` the engine plays (DESIGN.md §8.3): ProRes or
-/// HAP video from BGRA frames, audio as 48 kHz stereo 16-bit LPCM. Runs on the calling thread; `cancel()` may be called
-/// from any thread and a cancelled run removes its partial output.
+/// HAP video from BGRA frames, audio as 48 kHz stereo 16-bit LPCM. Runs on the calling thread; a run cancelled through
+/// its gate (from any thread) removes its partial output.
 public final class Transcoder: @unchecked Sendable {
-    public struct Summary: Sendable {
-        public let frames: Int
-        /// The codec written: the requested one, promoted when the source carries alpha (see `effectiveCodec`).
-        public let codec: MovieWriter.Codec
-        public let hasAudio: Bool
-    }
-
     public let source: URL
     public let destination: URL
     public let codec: MovieWriter.Codec
     let gate: IngestGate
-
-    public init(source: URL, destination: URL, codec: MovieWriter.Codec) {
-        self.source = source
-        self.destination = destination
-        self.codec = codec
-        gate = IngestGate()
-    }
 
     init(source: URL, destination: URL, codec: MovieWriter.Codec, gate: IngestGate) {
         self.source = source
@@ -95,20 +81,6 @@ public final class Transcoder: @unchecked Sendable {
         self.codec = codec
         self.gate = gate
     }
-
-    /// Checked between frames; when it returns true the next frame waits 20 ms (the engine sets this from compositor load).
-    public var shouldYield: (@Sendable () -> Bool)? {
-        get { gate.shouldYield }
-        set { gate.shouldYield = newValue }
-    }
-
-    /// While this returns true the job holds between frames (show lock); `cancel()` still ends it.
-    public var isPaused: (@Sendable () -> Bool)? {
-        get { gate.isPaused }
-        set { gate.isPaused = newValue }
-    }
-
-    public func cancel() { gate.cancel() }
 
     /// An alpha source must keep its alpha: ProRes 422 becomes 4444, HAP and HAP Q become HAP Alpha. HAP Q Alpha ('HapM')
     /// is not available in `HAPEncoder` (it has no two-texture frames), so HAP Q loses its quality tier here, not its alpha.
@@ -123,8 +95,7 @@ public final class Transcoder: @unchecked Sendable {
 
     /// Transcodes `source` to `destination` (replacing a file already there). `progress` gets (frames written, frames
     /// expected); the expectation is derived from the track duration and may be off by a frame.
-    @discardableResult
-    public func run(progress: ((_ framesDone: Int, _ framesTotal: Int) -> Void)? = nil) throws -> Summary {
+    public func run(progress: ((_ framesDone: Int, _ framesTotal: Int) -> Void)? = nil) throws {
         try gate.throwIfCancelled()
         let probe = try Self.blocking { [source] in try await Probe.load(source) }
         let requested = Self.effectiveCodec(codec, sourceHasAlpha: probe.hasAlpha)
@@ -203,7 +174,6 @@ public final class Transcoder: @unchecked Sendable {
             try pumpAudio(until: CMTime(value: .max, timescale: 1))  // the audio tail, if it outlasts the video
             try gate.throwIfCancelled()
             try writer.finish()
-            return Summary(frames: written, codec: requested, hasAudio: audioOutput != nil)
         } catch {
             reader.cancelReading()
             if let writer {

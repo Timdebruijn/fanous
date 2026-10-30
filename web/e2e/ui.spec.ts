@@ -51,6 +51,16 @@ async function expectDecoders(page: Page): Promise<void> {
   await expect.poll(seen, { timeout: previewTimeout }).toMatch(/^(1 open: H\.264 · |0 open: JPEG 5 fps · )/);
 }
 
+test('patch API: /api/patch serves the live patch, an added output included', async ({ page, engine }) => {
+  const outputPatched = async () => {
+    const patch = (await (await engine.api.get('/api/patch')).json()) as { entries: { fixture: Record<string, unknown> }[] };
+    return patch.entries.some((e) => 'output' in e.fixture);
+  };
+  expect(await outputPatched()).toBe(false); // a new project starts without outputs
+  await addUnassignedOutput(page);
+  await expect.poll(outputPatched).toBe(true);
+});
+
 test('layers: Control puts content on a layer, and the engine resolves folder, file and intensity', async ({ page, engine }) => {
   const resolved = async () => {
     const live = (await (await engine.api.get('/api/live')).json()) as { fixtures: Record<string, Param[]> };
@@ -244,7 +254,10 @@ test('outputs: with two slices on the same corners, a drag moves the selected sl
 
   // slice 2 lies on top of slice 1: select slice 1, grab the shared top-left corner and drop it in the middle
   await slice.selectOption('0');
-  const box = (await page.getByRole('application', { name: /Mapping editor/ }).boundingBox())!;
+  // the controls scrolled the page (the Presets strip makes it taller): the editor's corner back in view first
+  const editor = page.getByRole('application', { name: /Mapping editor/ });
+  await editor.scrollIntoViewIfNeeded();
+  const box = (await editor.boundingBox())!;
   await page.mouse.move(box.x + 4, box.y + 4);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 });
@@ -515,6 +528,48 @@ test('outputs: a colour gain drag is one undo step; the black offset steps by 0.
   await colour.getByRole('button', { name: 'Black offset up' }).click();
   await expect(colour.getByLabel('Black offset value')).toHaveText('0.1 %');
   await expect(colour.getByRole('slider', { name: 'Black offset' })).toHaveValue('0.1');
+});
+
+test('outputs: store a mapping preset, move a corner, recall the preset; Undo takes the recall back', async ({ page }) => {
+  await addUnassignedOutput(page);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  const presets = page.getByRole('region', { name: 'Mapping presets' });
+  await presets.getByRole('button', { name: 'Store as 1' }).click();
+  await expect(presets.getByRole('combobox', { name: 'Preset', exact: true })).toHaveValue('1');
+  await expect(presets.getByRole('button', { name: 'Store as 2' })).toBeVisible();
+
+  // the corner pin's top-left corner to the middle of the picture (the strip is below it: scroll back up first)
+  const editor = page.getByRole('application', { name: /Mapping editor/ });
+  await editor.scrollIntoViewIfNeeded();
+  const box = (await editor.boundingBox())!;
+  await page.mouse.move(box.x + 4, box.y + 4);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.round((await handleAt(page, '/warp/cornerPin/0')).x / 100)).toBe(5);
+  const moved = await handleAt(page, '/warp/cornerPin/0');
+
+  await presets.getByRole('button', { name: 'Recall' }).click();
+  await expect.poll(() => handleAt(page, '/warp/cornerPin/0')).toEqual({ x: 0, y: 0 });
+  await page.getByRole('status').filter({ hasText: 'Preset 1 recalled.' }).getByRole('button', { name: /Undo$/ }).click();
+  await expect.poll(() => handleAt(page, '/warp/cornerPin/0')).toEqual(moved);
+});
+
+test('outputs: holding Compare with the mouse keeps the preset on the output until the button is let go', async ({ page }) => {
+  await addUnassignedOutput(page);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  const presets = page.getByRole('region', { name: 'Mapping presets' });
+  await presets.getByRole('button', { name: 'Store as 1' }).click();
+  const hold = presets.getByRole('button', { name: 'Hold to compare' });
+  await hold.hover();
+  await page.mouse.down();
+  // the badges under the preview appear while held: the button must not lose the hold when the page reflows
+  await page.waitForTimeout(1000);
+  await expect(hold).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.kbadges').getByText('Preset 1 (compare)')).toBeVisible();
+  await page.mouse.up();
+  await expect(hold).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByText('Preset 1 (compare)')).toHaveCount(0);
 });
 
 test('outputs: remove an output, then Undo brings it back', async ({ page }) => {

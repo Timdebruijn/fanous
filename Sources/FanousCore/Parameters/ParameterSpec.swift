@@ -42,7 +42,7 @@ public enum LayerParameter: String, CaseIterable, Codable, Sendable {
 
 public enum MasterParameter: String, CaseIterable, Codable, Sendable { case intensity, control, testPattern, speed }
 
-public enum OutputParameter: String, CaseIterable, Codable, Sendable { case intensity, control, testPattern, blend }
+public enum OutputParameter: String, CaseIterable, Codable, Sendable { case intensity, control, testPattern, blend, preset }
 
 /// Corner offsets in channel order: TL, TR, BR, BL as `WarpSettings.cornerPin`, X then Y (DESIGN.md §6.4a).
 public enum KeystoneParameter: String, CaseIterable, Codable, Sendable {
@@ -149,11 +149,6 @@ public struct ParameterSpec: Equatable, Sendable {
     }
 
     public func clamped(_ raw: UInt16) -> UInt16 { min(raw, rawMax) }
-
-    public func band(forRaw raw: UInt16) -> Band? {
-        guard case .bands(let bands, _) = kind else { return nil }
-        return bands.first { $0.contains(raw) }
-    }
 
     /// Enum raw value for band parameters (fallback when no band matches), index value, or physical value.
     public func physical(fromRaw raw: UInt16) -> Double {

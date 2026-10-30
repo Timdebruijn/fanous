@@ -87,7 +87,6 @@ import Testing
         #expect(output.hasClients)
         let received = try #require(input.latestFrame?.texture0)
         #expect(received.width == Self.size && received.height == Self.size)
-        #expect(input.frames > 0)
 
         var bytes = [UInt8](repeating: 0, count: pattern.count)
         received.getBytes(&bytes, bytesPerRow: Self.size * 4, from: MTLRegionMake2D(0, 0, Self.size, Self.size), mipmapLevel: 0)
@@ -98,7 +97,7 @@ import Testing
         #expect(input.latestFrame?.bottomUp == true && input.latestFrame?.kind == .rgba)
 
         // The directory learns about servers through distributed notifications, which need the main run loop.
-        #expect(Self.wait(seconds: 2) { input.servers.contains { $0.serverName == name } })
+        #expect(Self.wait(seconds: 2) { SyphonInput.directoryServers.contains { $0.serverName == name } })
 
         input.disconnect()
         #expect(input.latestFrame == nil)

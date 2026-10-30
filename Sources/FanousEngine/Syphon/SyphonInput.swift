@@ -13,19 +13,14 @@ private final class FrameSlot: Sendable {
     // MTLTexture is not Sendable; the slot only hands the reference over, nothing mutates it here
     private struct Held: @unchecked Sendable { var texture: MTLTexture? }
     private let held = Mutex(Held(texture: nil))
-    private let count = Atomic<Int>(0)
 
-    var frames: Int { count.load(ordering: .relaxed) }
     func load() -> MTLTexture? { held.withLock { $0.texture } }
     func clear() { held.withLock { $0.texture = nil } }
-    func store(_ texture: MTLTexture?) {
-        held.withLock { $0.texture = texture }
-        count.wrappingAdd(1, ordering: .relaxed)
-    }
+    func store(_ texture: MTLTexture?) { held.withLock { $0.texture = texture } }
 }
 
 /// Watches the Syphon server directory and receives frames from one chosen server.
-/// `connect`/`disconnect` belong to one control thread; `latestFrame`, `servers` and `frames` are safe anywhere.
+/// `connect`/`disconnect` belong to one control thread; `latestFrame` and `directoryServers` are safe anywhere.
 public final class SyphonInput: @unchecked Sendable {
     public struct ServerInfo: Sendable, Hashable {
         public let appName: String
@@ -37,9 +32,6 @@ public final class SyphonInput: @unchecked Sendable {
     private let slot = FrameSlot()
     private var client: SyphonMetalClient?
     private var observers: [any NSObjectProtocol] = []
-
-    /// Number of new-frame notifications received since creation.
-    public var frames: Int { slot.frames }
 
     /// `onServersChanged` runs on whatever thread Syphon posts the announce / update / retire notification on.
     public init(device: MTLDevice, onServersChanged: (@Sendable () -> Void)? = nil) {
@@ -58,10 +50,7 @@ public final class SyphonInput: @unchecked Sendable {
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
     }
 
-    /// Servers the directory currently knows about (all processes, including this one).
-    public var servers: [ServerInfo] { Self.directoryServers }
-
-    /// The same without an instance (the directory is one per process).
+    /// Servers the directory currently knows about (all processes, including this one; one directory per process).
     public static var directoryServers: [ServerInfo] {
         SyphonServerDirectory.shared().servers.map { description in
             ServerInfo(
@@ -75,8 +64,6 @@ public final class SyphonInput: @unchecked Sendable {
     /// server's IOSurface and may update in place; take it again every frame rather than holding on to it.
     /// Syphon surfaces hold the picture in OpenGL order (row 0 at the bottom), whatever kind of server wrote them.
     public var latestFrame: LiveFrame? { slot.load().map { LiveFrame(texture0: $0, bottomUp: true) } }
-
-    public var isConnected: Bool { client?.isValid ?? false }
 
     public func connect(appName: String, serverName: String) throws {
         // Syphon treats an empty name as "any", so a match here is never ambiguous in the sense of a wrong server type

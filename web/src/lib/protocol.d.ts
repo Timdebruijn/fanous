@@ -37,8 +37,13 @@ export type CommandName =
   | 'midi.map.set'
   | 'midi.set'
   | 'output.add'
+  | 'output.preset.recall'
+  | 'output.preset.remove'
+  | 'output.preset.rename'
+  | 'output.preset.store'
   | 'output.remove'
   | 'output.set'
+  | 'output.show'
   | 'patch.set'
   | 'patch.setMany'
   | 'project.deleteVersion'
@@ -108,10 +113,20 @@ export interface CommandArgs {
   'midi.set': { source?: string | null; mscDevice?: number; mscFormat?: number | null };
   /** Add an output (one full-canvas slice, no blend, identity warp), optionally bound to a display; its Output fixture is patched next to the Master when that range is free. Role: programmer, refused under show lock, undoable. */
   'output.add': { display?: { uuid: string; name: string } };
+  /** Copy mapping preset number into each output's warp and slices (an edit: Undo takes it back). Every output must have it. On a projector-wall output a slice 1 source that differs from the wall's becomes manual, as with output.set (result { manual: [{ wall, output, field }] }). Role: programmer, refused under show lock, undoable. */
+  'output.preset.recall': { ids: number[]; number: number };
+  /** Remove mapping preset number from each output; every output must have it. Role: programmer, refused under show lock, undoable. */
+  'output.preset.remove': { ids: number[]; number: number };
+  /** Rename mapping preset number on each output (1–64 characters); every output must have it. Role: programmer, refused under show lock, undoable. */
+  'output.preset.rename': { ids: number[]; number: number; name: string };
+  /** Store each output's warp and slices (masks included) as mapping preset number 1–255; blend, colour, intensity, region and display stay live. An existing number is replaced (result { replaced: ids }) and keeps its name unless name is given; a new one is called "Preset N" by default. Role: programmer, refused under show lock, undoable. */
+  'output.preset.store': { ids: number[]; number: number; name?: string };
   /** Remove an output (not one in a projector wall) and unpatch its Output and Keystone fixtures. Role: programmer, refused under show lock, undoable. */
   'output.remove': { id: number };
   /** Set one value inside an output by JSON pointer (name, display, region, mode, intensity, blend/*, warp/*, slices/*, testPattern, color/* with gain [r, g, b] 0–2 and black 0–0.2); the result is validated as a whole. On a projector-wall output a changed slice 1 source or inner overlap becomes manual (result { wall, manual }), and an inner edge's power, gamma or gammaRGB goes to its seam, so both sides follow. Role: programmer, refused under show lock, undoable. */
   'output.set': { id: number; path: string; value: JSONValue };
+  /** Compare, a lease (DESIGN.md §9.10 items 3 and 4): outputs 1–8 show mapping preset 1–255 for 5 s, over Output ch 6; the UI renews it every 2 s while Compare is held and the latest call wins; preset 0 ends it. Never saved or undone; refused in show mode. Role: programmer, refused under show lock. */
+  'output.show': { ids: number[]; preset: number };
   /** Patch a fixture (layer, master, output, keystone) to a universe and address, or unpatch it with address 0 (any fixture); an address only for a fixture that exists: a layer up to the layer count (1–32), an Output or Keystone fixture of an output that exists (1–8). Role: programmer, refused under show lock, undoable. */
   'patch.set': { fixture: string; universe: string; address: number };
   /** Patch or unpatch several fixtures in one step (one undo): each entry is checked as patch.set checks it; one bad entry, or a fixture listed twice, refuses all. Role: programmer, refused under show lock, undoable. */

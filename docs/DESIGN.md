@@ -600,8 +600,8 @@ can never disagree). `[OPEN-9]` exact bands and the speed/scale upper limits.
 | 3 | Control | 8 | 0 | 0–63 normal · 64–127 Blackout · 128–191 Freeze (hold frame) · 192–255 reserved |
 | 4 | Test pattern | 8 | 0 | as Master ch 4, this output only |
 | 5 | Blend | 8 | 0 | 0–127 blend/warp on (default) · 128–255 raw (bypass blend, warp, mask and, from M2, keystone — for alignment) |
-| 6 | Mapping preset | 8 | 0 | 0 = as edited · 1–255 = the output's stored mapping preset with that number (M2, §9.10) |
-| 7 | Mapping fade | 8 | 0 | 0 = cut · 1–255 = 0.1–25.5 s morph when ch 6 changes, as Layer Dissolve (M2, §9.10) |
+| 6 | Mapping preset | 8 | 0 | 0 = as edited · 1–255 = the output's stored mapping preset with that number; an index, so it cuts (M2.4, §9.10) |
+| 7 | Mapping fade | 8 | 0 | 0 = cut · 1–255 = 0.1–25.5 s morph when ch 6 changes, as Layer Dissolve (M2, §9.10); not built yet (M2.5): reserved |
 | 8 | Reserved | — | 0 | |
 
 ### 6.4a Keystone mode (16 channels, M2)
@@ -2225,7 +2225,7 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
 ### 9.10 M2: black lift by coverage, Keystone, mapping presets, edit overlay, masks v2 (design 2026-10-29)
 
 **Status:** designed 2026-10-29, owner decisions the same day (below), and
-reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2.1) and the Keystone mode of item 2 (M2.3), below. Research and frictions F3–F6 are in
+reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2.1), the Keystone mode of item 2 (M2.3) and the presets of item 3 without the morph (M2.4), below. Research and frictions F3–F6 are in
 `docs/mapping-ux.md` §1 and §4.2–§4.5.
 
 **Owner decisions (2026-10-29):**
@@ -2384,7 +2384,7 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
   - OSC `/fanous/keystone/{n}/{key}`, feedback included. GDTF: a fourth DMX mode "Keystone (16ch)" with attributes
     `KeystoneTopLeftX` … `KeystoneBottomLeftY` (feature `Position.Keystone`).
   - The three existing modes and their footprints are unchanged. Output ch 6 and 7 (Mapping preset and fade) are not in
-    the specs yet; they stay reserved until M2.4 and M2.5.
+    the specs yet; they stay reserved until M2.4 and M2.5 (ch 6 since M2.4).
 - **DMX queue.** `DMXStore.publish` reads each output's Keystone resolver (outputs 1–8, like `outputs`). Only when its
   raw values change, `WarpMath.keystone(raw:)` gives the homography, stored as a `simd_float3x3` in the slot's
   `keystones`, with `keystoneInvalid` beside it; both copy with the slot. Unpatched is the identity, centred values give
@@ -2493,6 +2493,66 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
     mix would avoid it.
   - Recall and Compare from the UI cut.
   - Keystone applies on top.
+
+**As built (M2.4, PR #123):**
+- **Model.** `OutputConfig.presets: [MappingPreset]`, kept in number order. `encode(to:)` is written out (with its
+  `CodingKeys`) and writes `presets` only when there are any: an output without presets encodes byte for byte as before,
+  which a Core test checks against that release's literal. `storePreset` and `recallPreset` are pure, in Core.
+  - A replaced number keeps its name unless one is given; a new one is "Preset N". Names are trimmed, 1–64 characters.
+  - `canvas.remove` moves preset slices on the removed canvas to canvas 1 as well, and a canvas that does not render
+    maps them to canvas 1 like the edited slices (`Engine.effectiveCanvasUse`): a preset never samples a canvas that is gone.
+  - **A hand-edited or foreign file** (review): `ProjectDocument.load` (also for a version revert) keeps the presets
+    numbered 1–255 and the first of a repeated number, next to the other backfills, so the UI offers the list the engine
+    draws from. A preset that does not validate as an edited mapping would (`ProjectDocument.validated`, the rules of
+    `output.set`) stays in the file: the compile skips it (logged once per output and number) and never fails the
+    output, `live.outputs` calls it missing, and recall refuses it.
+- **Commands** (`ProjectDocument+Presets.swift`). `ids` lists existing outputs, none twice; recall, remove and rename are
+  all or nothing (every output must have the number). Replies: store `{ replaced: ids }`, recall
+  `{ manual: [{ wall, output, field }] }` from `WallLayout.follow`, the same code path as `output.set`; recall then runs
+  `validate` as `output.set` does. `output.set` refuses `/presets…`.
+- **Output ch 6.** `OutputParameter.preset`, `.index(max: 255)` in group Mapping, so it snaps (LTP, no fade). Reserved is
+  7–8; GDTF attribute `MappingPreset`; OSC `/fanous/output/{n}/preset`. The generated channel map says
+  "0 = as edited · 1–255": `ChannelMapDocument` gives this index its own zero wording (folder and file keep "0 = none").
+- **DMX queue.** The slot carries `presets: [UInt8]` and `presetCompare: [Bool]` beside `keystones`, written for outputs
+  1–8 on every publish (the Output fixture's resolver rebuilds `outputs` and would wipe a lease): the lease's preset while
+  it runs, else the Output fixture's ch 6 (0 while unpatched). Both copy with the slot.
+- **Compare lease.** `DMXStore.show(ids, preset, at:)`: one per output, the latest call wins, ending `showLease` (5 s)
+  after it. A renewal only moves the end (no publish); preset 0 ends it; the 0.5 s tick clears an expired lease and
+  publishes, so a lease ends 5–5.5 s after its last renewal and the output goes back to ch 6. Show mode
+  (`ShowModeController.onChange`) and show lock (`projectChanged`) end every lease at once; `output.show` is refused in
+  show mode except to end, and reaches outputs 1–8 only (the snapshot's slots, a `ponytail:`).
+- **Render.** `OutputPlan.presets: [Int: PresetGeometry]` (warp field and slices), compiled through the same cache keys
+  as the edited mapping, so a preset equal to it shares its textures and slice plans.
+  - **Slice plans are cached** now (review): `Key.slice(SliceConfig, w, h)` gives the mesh buffers with the mask texture
+    (the mask keeps its own key, so a moved slice keeps its raster), held weakly like the textures, and the pattern mesh
+    is one too. A rebind (each drag step) builds only the slices that changed, instead of every preset × slice mesh.
+  - Each frame `OutputPass.draw(presets:)` takes
+  `plan.geometry(n)`: a dictionary lookup and a struct of references, no allocation; 0 or a number the plan lacks gives
+  the edited mapping. The blend map, colour, region, intensity and pattern mesh are the plan's; test patterns follow the
+  preset's warp; the keystone applies after it. The clock-master display passes the tick's slot, a secondary display
+  copies `presets` in `withLatest` beside `outputs` and `keystones`, the output preview passes none, and the engine's
+  preview compile drops the presets (nothing to build for it).
+  - A secondary display copies into `PresentParameters` its driver owns, arrays of a fixed size (review): no
+    allocation per frame for the copy, checked by `mallocCounterSecondaryCopyAllocatesNothing` in
+    `scripts/check-mallocs.sh`. Before, each frame reserved new arrays.
+  - Raw bypasses the preset's warp and masks like the edited ones; its slices still draw, as edited slices do in Raw.
+- **Freeze.** `OutputPlan.canvases` is every canvas the edited mapping or a preset samples. `holdFrozen` holds those and
+  `adopt` (B111) checks those, and `held` stays on the plan, so a ch 6 change while frozen draws the held frame through
+  the new geometry, and a recompile keeps the hold.
+- **Status.** `publishLive` reads `presets` and `presetCompare` from the DMX side's copy and the output's preset numbers
+  from the project as last seen (`canvasUse`), and adds `preset` (the number shown, or null), `presetSource` (`console`
+  or `compare`) and `presetMissing` (a number the output lacks) to each `live.outputs` entry; the live document is diffed.
+- **UI.** `PresetStrip` on Warp & Slices (`ids` = the output) and on the wall panel (`ids` = the wall's outputs, the
+  presets they all have): Preset, Name (renames on change), Recall, Hold to compare, Remove, and Store as N (the lowest
+  free number, "Replace N" when taken). Compare: pointer down or Space/Enter starts the lease and renews it every 2 s
+  (`compareLease`). The button captures the pointer, so the page moving under it does not end the hold; pointer up,
+  pointer cancel, lost capture, key up or blur ends it with preset 0 (not sent under show lock, which ends the lease in
+  the engine). Badges "Preset N (console)" / "Preset N (compare)" and, in yellow, "Preset N missing" on the output row
+  and under the preview, and a note there while the output shows a preset; the space for both is kept, so the page does
+  not jump when they appear. A wall recall's toast names the outputs it made manual.
+- **Not built here:** the morph on ch 7 (M2.5) and the edit overlay with its lease (M2.6). `scripts/check-mallocs.sh`
+  measures the compositor tick without an output pass (its render encoder allocates in Metal), so the per-frame preset
+  choice is kept allocation-free by construction, not by that check.
 
 **4. On-output edit overlay (fixes F4).**
 - **What it draws.** While a programmer has Warp & Slices open on an output,

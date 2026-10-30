@@ -92,7 +92,7 @@ struct OutputPassTests {
     @Test func twoProjectorsBlendFlat() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 128)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         for gamma in [1.0, 2.2] {
             // A: canvas x 0…200 on a 200-wide projector; B: canvas x 120…320. Overlap 80 px.
             var a = OutputConfig(id: 1), b = OutputConfig(id: 2)
@@ -117,7 +117,7 @@ struct OutputPassTests {
     @Test func fourProjectorsBlendFlat() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 160)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         // 2×2 of 200×100 projectors on a 320×180 canvas: 80 px horizontal and 20 px vertical overlaps
         let gamma = 2.2
         var fields: [(bgra: [UInt8], width: Int, x: Int, y: Int)] = []
@@ -137,7 +137,7 @@ struct OutputPassTests {
     @Test func rawBypassesBlendAndOutputFixtureDimsAndBlacksOut() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         var o = OutputConfig(id: 1)
         o.blend.left = BlendEdge(overlap: 100, gamma: 1)
         let plan = try compiler.compile(o, index: 1, drawable: (Self.width, Self.height))
@@ -214,7 +214,7 @@ struct OutputPassTests {
     @Test(arguments: Swap.allCases) func freezeSurvivesARecompile(_ swap: Swap) throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
         let compositor = try Compositor(
             context: context, canvasWidth: Self.width, canvasHeight: Self.height, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 16),
@@ -280,7 +280,7 @@ struct OutputPassTests {
     /// B111: only a frozen plan of the same id adopts, and only copies that match the canvas size.
     @Test func adoptTakesOnlyAMatchingFrozenHold() throws {
         let context = try MetalContext()
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         func texture(_ width: Int) throws -> MTLTexture {
             try #require(context.device.makeTexture(descriptor: .texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width, height: 90, mipmapped: false)))
         }
@@ -308,7 +308,7 @@ struct OutputPassTests {
     @Test func testPatternFollowsTheWarp() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         var o = OutputConfig(id: 1)
         o.testPattern = TestPattern.colourBars.rawValue
         let flat = try Self.render(compiler.compile(o, index: 1, drawable: (Self.width, Self.height)), still: still, drawable: (Self.width, Self.height), context: context)
@@ -327,7 +327,7 @@ struct OutputPassTests {
     @Test func seamCheckFieldsReadBackTheirLevel() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         let size = (Self.width, Self.height)
         func image(_ config: OutputConfig, _ pattern: TestPattern, raw: Bool = false) throws -> [UInt8] {
             var fixture = OutputParameters()  // the Output fixture's channel 4, as from the console
@@ -373,7 +373,7 @@ struct OutputPassTests {
     @Test func testPatternsFollowTheDimmerAndBlackout() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         let size = (Self.width, Self.height)
         var lifted = OutputConfig(id: 1)
         lifted.blend.lift = 0.08
@@ -494,6 +494,8 @@ struct OutputPassTests {
         private var sequence: UInt64 = 0
         /// Output 1's Keystone (`write` puts it in the slot).
         var keystone = matrix_identity_float3x3
+        /// Output 1's mapping preset, Output ch 6 or Compare (`write` puts it in the slot).
+        var preset: UInt8 = 0
 
         init(_ config: OutputConfig?, value: UInt8) throws {
             context = try MetalContext()
@@ -529,6 +531,7 @@ struct OutputPassTests {
                 slot.layers[0].fitMode = .stretch
                 slot.outputs[0].control = control
                 slot.keystones[0] = keystone
+                slot.presets[0] = preset
                 slot.master = master
                 slot.masterControl = blackout ? .blackout : .normal
             }
@@ -540,15 +543,18 @@ struct OutputPassTests {
             return Int(compositor.readbackOutput().bgra[(90 * width + 160) * 4 + 1])
         }
 
-        func present(_ set: OutputSet) throws -> Int {
+        /// The green at `at` (the centre by default).
+        func present(_ set: OutputSet, at: (x: Int, y: Int) = (160, 90)) throws -> Int {
             guard let commandBuffer = context.queue.makeCommandBuffer() else { throw RenderError.pipeline("present command buffer") }
-            #expect(compositor.encodePresent(set, into: target, uniforms: uniforms, commandBuffer: commandBuffer))
+            #expect(compositor.encodePresent(set, into: target, uniforms: uniforms, scratch: scratch, commandBuffer: commandBuffer))
             commandBuffer.commit()
             commandBuffer.waitUntilCompleted()
             var bgra = [UInt8](repeating: 0, count: width * height * 4)
             target.getBytes(&bgra, bytesPerRow: width * 4, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
-            return Int(bgra[(90 * width + 160) * 4 + 1])
+            return Int(bgra[(at.y * width + at.x) * 4 + 1])
         }
+        /// What a secondary driver keeps between frames.
+        let scratch = PresentParameters()
     }
 
     static func near(_ value: Int, _ expected: Int) -> Bool { abs(value - expected) <= 1 }
@@ -666,7 +672,7 @@ struct OutputPassTests {
     @Test func colourGainActsOnContentPatternsAndRaw() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         let size = (Self.width, Self.height)
         func rgb(_ config: OutputConfig, _ edit: (inout OutputParameters) -> Void = { _ in }) throws -> [Int] {
             var fixture = OutputParameters()
@@ -744,7 +750,7 @@ struct OutputPassTests {
     @Test func liftAndBlackOffsetFadeWithTheSlice() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 0)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         let size = (Self.width, Self.height)
         func green(_ config: OutputConfig, _ x: Int, value: UInt8 = 0) throws -> Int {
             let image = try Self.render(compiler.compile(config, index: 1, drawable: size), still: value == 0 ? still : Self.flat(context.device, value: value), drawable: size, context: context)
@@ -907,10 +913,160 @@ struct OutputPassTests {
         #expect(abs(Int(rgba[(2 * width + 2) * 4 + 1]) - 200) <= 8, "the preview's corner stays: \(rgba[(2 * width + 2) * 4 + 1])")
     }
 
+    /// An output with preset 1: the corner pin's top-left at x = 0.5 (the edited mapping is the identity), the blend
+    /// map's ramp on the right edge.
+    static func presetConfig() -> OutputConfig {
+        var o = OutputConfig(id: 1)
+        o.blend.right = BlendEdge(overlap: 60, gamma: 1)
+        o.warp.cornerPin[0] = MapPoint(0.5, 0)
+        o.storePreset(1, name: nil)
+        o.warp = WarpSettings()
+        return o
+    }
+
+    /// DESIGN.md §9.10 item 3: the snapshot's preset picks the geometry (ch 6 = 1 draws preset 1, 0 the edited mapping, a
+    /// number the output lacks the edited one); the blend map stays the output's own, sampled where it always is.
+    @Test func thePresetPicksTheGeometryAndKeepsTheBlendMap() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 200)
+        let plan = try OutputCompiler(device: context.device).compile(Self.presetConfig(), index: 1, drawable: (Self.width, Self.height))
+        #expect(plan.presets.count == 1 && plan.blendMap != nil)
+        func image(_ preset: UInt8) throws -> [UInt8] {
+            try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [OutputParameters()]) { $0.presets[0] = preset }
+        }
+        func green(_ image: [UInt8], _ x: Int, _ y: Int) -> Int { Int(image[(y * Self.width + x) * 4 + 1]) }
+        let edited = try image(0), preset = try image(1), missing = try image(7)
+        #expect(green(edited, 2, 2) == 200 && green(missing, 2, 2) == 200, "0 and a missing number: the edited mapping")
+        #expect(green(preset, 2, 2) <= 1 && green(preset, 150, 2) <= 1 && green(preset, 170, 2) == 200, "preset 1: the corner is at x = 160")
+        // the right edge is where it was in both, so the content under the ramp is flat and the ramp reads the same
+        for x in stride(from: 265, to: 320, by: 6) {
+            #expect(abs(green(preset, x, 90) - green(edited, x, 90)) <= 2, "ramp at x \(x): \(green(preset, x, 90)) vs \(green(edited, x, 90))")
+        }
+        #expect(green(edited, 290, 90) < 150, "the ramp is there")
+    }
+
+    /// The keystone moves whatever mapping the output shows: a preset's left-half slice, shrunk by the keystone to the
+    /// middle, lands in the left half of the middle (neither the preset alone nor the keystone alone puts it there).
+    @Test func theKeystoneSitsOnTopOfThePreset() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 200)
+        var o = OutputConfig(id: 1)
+        o.slices[0].dest = [MapPoint(0, 0), MapPoint(0.5, 0), MapPoint(0.5, 1), MapPoint(0, 1)]
+        o.storePreset(2, name: nil)
+        o.slices = [SliceConfig(id: 1)]
+        let plan = try OutputCompiler(device: context.device).compile(o, index: 1, drawable: (Self.width, Self.height))
+        let half = simd_float3x3(rowMajor: WarpMath.keystone(to: [MapPoint(0.25, 0.25), MapPoint(0.75, 0.25), MapPoint(0.75, 0.75), MapPoint(0.25, 0.75)])!)
+        let image = try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [OutputParameters()]) {
+            $0.presets[0] = 2
+            $0.keystones[0] = half
+        }
+        func green(_ x: Double, _ y: Double) -> Int { Int(image[(Int(y * Double(Self.height)) * Self.width + Int(x * Double(Self.width))) * 4 + 1]) }
+        #expect(green(0.375, 0.5) == 200, "the preset's slice, keystoned")
+        #expect(green(0.1, 0.5) <= 1, "not the preset alone")
+        #expect(green(0.6, 0.5) <= 1, "not the keystone alone")
+    }
+
+    /// A secondary display (`present`, from the DMX side's copy) draws the preset ch 6 asks for, like the clock master.
+    @Test func aSecondaryDisplayDrawsThePreset() throws {
+        let rig = try Rig(Self.presetConfig(), value: 200)
+        let set = try #require(rig.compositor.outputSet)
+        _ = rig.tick(.normal, master: 1, layer: 1)
+        #expect(try rig.present(set, at: (2, 2)) == 200, "ch 6 = 0: the edited mapping")
+        rig.preset = 1
+        _ = rig.tick(.normal, master: 1, layer: 1)
+        #expect(try rig.present(set, at: (2, 2)) <= 1 && rig.present(set, at: (170, 2)) == 200, "ch 6 = 1: preset 1's corner at x = 160")
+    }
+
+    /// A secondary display's copy of the output values allocates nothing on its thread (the driver's `PresentParameters`
+    /// keep their size). Release only, like the other `mallocCounter` checks (`scripts/check-mallocs.sh`).
+    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    func mallocCounterSecondaryCopyAllocatesNothing() throws {
+        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        let rig = try Rig(nil, value: 200)
+        rig.preset = 3
+        rig.write(.normal, master: 1, layer: 1)
+        let scratch = PresentParameters()
+        var mallocs = 0
+        for _ in 0..<3 {
+            mallocs = MallocCounter.count {
+                for _ in 0..<100 { rig.compositor.copyLatest(into: scratch) }
+            }
+        }
+        #expect(scratch.presets[0] == 3)
+        #if !DEBUG
+            #expect(mallocs == 0, "100 copies: \(mallocs) allocations on the calling thread")
+        #endif
+        print("secondary display copy × 100: \(mallocs) allocations")
+    }
+
+    /// Presets from a hand-edited or foreign file never fail the output: number 0 and 256 are not presets (ch 6 = 0 is the
+    /// edited mapping), the first of a repeated number wins, and one that does not validate is skipped.
+    @Test func aStrayOrBrokenPresetNeverFailsTheOutput() throws {
+        var o = Self.presetConfig()
+        let moved = o.presets[0]
+        var broken = moved
+        broken.slices[0].dest.removeLast()  // 3 points
+        var flat = moved
+        flat.warp = WarpSettings()
+        o.presets = [
+            MappingPreset(number: 0, name: "zero", warp: moved.warp, slices: moved.slices), MappingPreset(number: 2, name: "first", warp: moved.warp, slices: moved.slices),
+            MappingPreset(number: 2, name: "second", warp: flat.warp, slices: flat.slices), MappingPreset(number: 5, name: "broken", warp: broken.warp, slices: broken.slices),
+            MappingPreset(number: 256, name: "high", warp: moved.warp, slices: moved.slices),
+        ]
+        let plan = try OutputCompiler(device: MetalContext().device).compile(o, index: 1, drawable: (Self.width, Self.height))
+        #expect(plan.presets.keys.sorted() == [2])
+        #expect(plan.geometry(0).warpField == nil, "ch 6 = 0 shows the edited mapping")
+        #expect(plan.geometry(2).warpField != nil, "the first preset 2, with the moved corner")
+        #expect(plan.geometry(5).warpField == nil, "the broken one is skipped: the edited mapping")
+    }
+
+    /// The output preview draws the edited mapping while the projector shows a preset (DESIGN.md §9.10 item 3).
+    @Test func thePreviewDrawsTheEditedMapping() async throws {
+        let rig = try Rig(Self.presetConfig(), value: 200)
+        rig.preset = 1
+        let streamer = try PreviewStreamer(context: rig.context, width: 160, height: 90, fps: 5, canvasFPS: 5, parameters: rig.parameters, logger: Logger(label: "output-test"))
+        streamer.outputSet = OutputSet(plans: [try OutputCompiler(device: rig.context.device).compile(Self.presetConfig(), index: 1, drawable: (160, 90))])
+        streamer.externalJPEGWanted = { true }
+        rig.compositor.previewTap = { canvas, buffer, target, live in streamer.tap(canvas: canvas, commandBuffer: buffer, target: target, live: live) }
+        _ = rig.tick(.normal, master: 1, layer: 1)
+        #expect(rig.compositor.readbackOutput().bgra[(2 * Self.width + 2) * 4 + 1] <= 1, "the projector shows preset 1")
+        #expect(await waitUntil { streamer.jpegOut.load(ordering: .relaxed) > 0 })
+        let (jpeg, width, height) = try #require(streamer.latestJPEG.withLock { $0 })
+        let image = try #require(CGImageSourceCreateWithData(Data(jpeg) as CFData, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) })
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        rgba.withUnsafeMutableBytes { raw in
+            CGContext(
+                data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)?
+                .draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        #expect(abs(Int(rgba[(2 * width + 2) * 4 + 1]) - 200) <= 8, "the preview's corner stays: \(rgba[(2 * width + 2) * 4 + 1])")
+    }
+
+    /// Freeze holds the frame across a ch 6 change (the held canvas through the preset's geometry) and across a recompile
+    /// (B111's adopt, with presets in the plan). A preset's canvases are held too.
+    @Test func freezeHoldsAcrossAPresetChangeAndARecompile() throws {
+        let rig = try Rig(Self.presetConfig(), value: 200)
+        func corner() -> Int { Int(rig.compositor.readbackOutput().bgra[(2 * Self.width + 2) * 4 + 1]) }
+        #expect(rig.tick(.freeze, master: 1, layer: 1) == 200)
+        #expect(rig.tick(.freeze, master: 1, layer: 0) == 200, "held")
+        rig.preset = 1
+        #expect(rig.tick(.freeze, master: 1, layer: 0) == 200 && corner() <= 1, "held, through preset 1's geometry")
+        let live = try #require(rig.compositor.outputSet)
+        rig.compositor.outputSet = OutputSet(plans: [try rig.compile(Self.presetConfig())], previous: live.holdSource)
+        #expect(rig.tick(.freeze, master: 1, layer: 0) == 200 && corner() <= 1, "held across the recompile")
+        rig.preset = 0
+        #expect(rig.tick(.freeze, master: 1, layer: 0) == 200 && corner() == 200, "back to the edited mapping, still held")
+        #expect(rig.tick(.normal, master: 1, layer: 0) <= 1, "released")
+        var two = Self.presetConfig()
+        two.presets[0].slices[0].canvas = 2
+        #expect(try rig.compile(two).canvases.sorted() == [1, 2], "Freeze holds what a preset samples too")
+    }
+
     @Test func warpMaskAndSliceGoldens() throws {
         let context = try MetalContext()
         let still = try GoldenTests.pattern(device: context.device, variant: 0)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         var cases: [(String, OutputConfig)] = []
         var pin = OutputConfig(id: 1)
         pin.warp.cornerPin = [MapPoint(0.1, 0.05), MapPoint(0.95, 0.12), MapPoint(0.9, 0.95), MapPoint(0.05, 0.85)]
@@ -960,7 +1116,7 @@ struct OutputPassTests {
 
     @Test func thirtyThreeByThirtyThreeWarpCompilesUnder100ms() async throws {
         let context = try MetalContext()
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         var o = OutputConfig(id: 1)
         o.warp.mesh = .identity(cols: 33, rows: 33)
         o.warp.mesh!.points[33 * 16 + 16] = MapPoint(0.51, 0.5)
@@ -971,7 +1127,7 @@ struct OutputPassTests {
         var ms = Double.infinity
         _ = await waitUntil(every: .zero) {
             // a fresh compiler each try: one compiler's cache would hand back the warm-up's textures (§9.10 item 0)
-            guard let fresh = try? OutputCompiler(device: context.device) else { return true }
+            let fresh = OutputCompiler(device: context.device)
             let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
             do {
                 _ = try fresh.compile(o, index: 1, drawable: (1920, 1080))
