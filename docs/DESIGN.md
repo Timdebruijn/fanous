@@ -731,7 +731,7 @@ three existing modes and their footprints alone.
 
 **Status:** designed 2026-10-30; the owner approved the four decisions below
 the same day. All six steps of the build order are built: step 1 PR #122,
-step 2 PR #124, step 3 PR #119, step 4 PR #121, step 5 PR #135, step 6 PR #TBD
+step 2 PR #124, step 3 PR #119, step 4 PR #121, step 5 PR #135, step 6 PR #137
 (As built at the end of this section). Builds on PR #109 (merged: an
 Output fixture exists exactly when its output does), PR #110 (merged: a fixture
 patched later takes the project policy) and PR #112 (merged: an unpatched layer
@@ -1118,7 +1118,7 @@ guide changes with the step that changes what it describes (4–6).
 - The inline editor of a fixture without an address starts at its slot, with
   **Patch at A 0.0.1 1**; Unpatch shows only for a patched fixture.
 
-**As built (step 6, PR #TBD, 2026-10-30)**, where it differs from the above:
+**As built (step 6, PR #137, 2026-10-30)**, where it differs from the above:
 - The sheet is a table with the columns Fixtures, Fixture type, Mode, Count,
   Universe and Addresses, the same cells as Copy. Fixtures ("Layers 1–8",
   "Layer 3") is added, so a line of a Custom group says which fixture it is.

@@ -494,7 +494,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   mode ("Fanous", "Layer (64ch)", with its footprint), count, universe ("A 0.0.1 = universe 1", or 2 with **Count
   Art-Net universes from 1**, remembered in the browser; the pair for a universe set to receive the other protocol)
   and every address, and a red line when fixtures collide. **Print** prints the sheet alone; **Copy** gives
-  tab-separated text for a spreadsheet (PR #TBD).
+  tab-separated text for a spreadsheet (PR #137).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
