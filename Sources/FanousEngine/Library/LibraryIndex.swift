@@ -468,9 +468,14 @@ extension LibraryIndex {
     /// Uploads land here before ingest (DESIGN.md §8.1); never indexed.
     public var incomingDirectory: URL { root.appending(path: "_incoming") }
 
-    /// The folder with this number, or a new `NNN_<name>` folder when `createAs` is given.
+    /// The folder with this number, or a new `NNN_<name>` folder when `createAs` is given. Reads the disk, not the snapshot:
+    /// a folder an upload just created is there before the debounced rescan. Sorted like `rescan()`, so a duplicate number
+    /// gives the folder the index keeps (hidden and `_` names have no prefix number).
     public func folderURL(number: Int, createAs name: String? = nil) -> URL? {
-        if let existing = snapshot.folders.first(where: { $0.number == number }) { return URL(fileURLWithPath: existing.path) }
+        for folder in ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).sorted() where Self.prefixNumber(folder) == number {
+            let url = root.appending(path: folder)
+            if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true { return url }
+        }
         guard let name, (1...255).contains(number) else { return nil }
         let url = root.appending(path: String(format: "%03d_%@", number, Self.safeName(name)))
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)

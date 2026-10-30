@@ -266,6 +266,12 @@ struct LibraryIndexTests {
         #expect(index.folderURL(number: 3)?.lastPathComponent == "003_Show")
         #expect(index.folderURL(number: 9) == nil)
         #expect(index.folderURL(number: 9, createAs: "New: Folder")?.lastPathComponent == "009_New_ Folder")
+        #expect(index.folderURL(number: 9, createAs: "Other")?.lastPathComponent == "009_New_ Folder", "on disk, not yet indexed")
+        try Self.touch(root.appending(path: "005_A"))  // a file, not a folder
+        for name in ["5_Dup", "005_Show"] { try FileManager.default.createDirectory(at: root.appending(path: name), withIntermediateDirectories: false) }
+        #expect(index.folderURL(number: 5)?.lastPathComponent == "005_Show")
+        index.rescan()
+        #expect(index.snapshot.folders.first { $0.number == 5 }?.name == "005_Show", "the folder the index keeps for a duplicate number")
         #expect(LibraryIndex.destinationName(number: 7, originalName: "12 intro loop.MOV", pathExtension: "mov") == "007_intro loop.mov")
         #expect(LibraryIndex.destinationName(number: 7, originalName: "../../evil.mp4", pathExtension: "mov") == "007_evil.mov")
         #expect(LibraryIndex.destinationName(number: 7, originalName: "123", pathExtension: "png") == "007_media.png")

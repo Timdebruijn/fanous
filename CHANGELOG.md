@@ -527,6 +527,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   overlay draws every mask's outline, curves included. Warp & Slices shows every mask's points and outlines and its
   tools act on the selected point's mask, else the first path mask; making several masks, curves and image masks in
   the UI comes with M2.8.
+- Fixed: two API uploads into a folder number the index had not seen yet (within the 500 ms before the rescan, or any
+  time with a library root missing at engine start) created two folders, `003_red` and `003_blue`, and after the
+  rescan the files of one of them were invalid ("duplicate folder number 3"); an upload now looks on disk for the
+  folder with that number first, and creating a folder (`POST /api/library/folder`) with that number answers 409
+  instead of making a second one (PR #TBD).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
