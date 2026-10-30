@@ -18,7 +18,7 @@ public struct MapPoint: Codable, Hashable, Sendable {
 }
 
 /// A rectangle in normalized coordinates (slice source on the canvas).
-public struct MapRect: Codable, Equatable, Sendable {
+public struct MapRect: Codable, Hashable, Sendable {
     public var x: Double
     public var y: Double
     public var w: Double
@@ -117,7 +117,7 @@ public struct MaskSettings: Codable, Hashable, Sendable {
     }
 }
 
-public struct SliceConfig: Codable, Equatable, Sendable {
+public struct SliceConfig: Codable, Hashable, Sendable {
     public var id: Int
     public var canvas: Int = 1
     /// Source rectangle on the canvas.

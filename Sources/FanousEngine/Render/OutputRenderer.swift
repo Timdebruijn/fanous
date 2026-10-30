@@ -120,24 +120,26 @@ public final class OutputSet: @unchecked Sendable {
 }
 
 /// Compiles `OutputConfig` into textures and meshes (edit-time cost only, DESIGN.md §9.2–9.4). Keep one per caller:
-/// its cache (§9.10 item 0) makes a recompile rebuild only the textures whose settings or size changed.
+/// its cache (§9.10 item 0) makes a recompile rebuild only the textures and slice meshes whose settings or size changed.
 public final class OutputCompiler: @unchecked Sendable {
     public static let sliceSubdivisions = 64
     public static let fieldDivisor = 4
     private let device: MTLDevice
     private let uniforms: MTLBuffer
 
-    /// What a texture is made of; a changed region, display mode or drawable size gives new keys.
+    /// What a texture or slice plan is made of; a changed region, display mode or drawable size gives new keys.
     enum Key: Hashable {
         case blend(BlendSettings, width: Int, height: Int)
         case warp(WarpSettings, cols: Int, rows: Int)
         case mask(MaskSettings, width: Int, height: Int)
+        /// A slice's mesh buffers with its mask texture, which is also cached on its own: a moved slice keeps its raster.
+        case slice(SliceConfig, width: Int, height: Int)
     }
-    private struct Entry: @unchecked Sendable { weak var texture: MTLTexture? }  // textures are immutable once compiled
-    /// Held weakly: a texture lives exactly as long as a plan holds it (every display's set, the set a frozen output still
-    /// takes its hold from, B111, a preview's), so nothing in use is freed and one no plan uses goes when the set that held
-    /// it is swapped out; its dead entry is dropped at the next compile. Edit-time only, never touched by the render
-    /// thread; the lock is for the previews, which compile from the main actor, the network and a utility queue.
+    private struct Entry: @unchecked Sendable { weak var object: AnyObject? }  // textures and slice plans are immutable once compiled
+    /// Held weakly: a texture or slice plan lives exactly as long as a plan holds it (every display's set, the set a frozen
+    /// output still takes its hold from, B111, a preview's), so nothing in use is freed and one no plan uses goes when the
+    /// set that held it is swapped out; its dead entry is dropped at the next compile. Edit-time only, never touched by the
+    /// render thread; the lock is for the previews, which compile from the main actor, the network and a utility queue.
     private let cache = Mutex<[Key: Entry]>([:])
 
     public init(device: MTLDevice) throws {
@@ -149,19 +151,19 @@ public final class OutputCompiler: @unchecked Sendable {
     /// Cache entries, a dead one until the next compile drops it (tests).
     var entries: Int { cache.withLock { $0.count } }
 
-    /// The texture for `key`: the one a live plan already holds, else `make`'s.
-    private func cached(_ key: Key, _ make: () throws -> MTLTexture) rethrows -> MTLTexture {
-        if let hit = cache.withLock({ $0[key]?.texture }) { return hit }
+    /// The texture or slice plan for `key`: the one a live plan already holds, else `make`'s.
+    private func cached<T: AnyObject>(_ key: Key, _ make: () throws -> T) rethrows -> T {
+        if let hit = cache.withLock({ $0[key]?.object as? T }) { return hit }
         // ponytail: no lock over `make` (it would queue every preview compile behind the slowest): two threads missing one
         // key both build it, both correct, the later stays cached; track builds in flight per key if that waste shows
-        let texture = try make()
-        cache.withLock { $0[key] = Entry(texture: texture) }
-        return texture
+        let made = try make()
+        cache.withLock { $0[key] = Entry(object: made) }
+        return made
     }
 
     /// `drawable` is the size of the display's drawable in pixels; a nil region covers it entirely.
     public func compile(_ config: OutputConfig, index: Int, drawable: (width: Int, height: Int)) throws -> OutputPlan {
-        cache.withLock { entries in entries = entries.filter { $0.value.texture != nil } }
+        cache.withLock { entries in entries = entries.filter { $0.value.object != nil } }
         let r = config.region ?? PixelRect(x: 0, y: 0, w: drawable.width, h: drawable.height)
         let x = min(max(0, r.x), max(0, drawable.width - 1)), y = min(max(0, r.y), max(0, drawable.height - 1))
         let w = max(1, min(r.w, drawable.width - x)), h = max(1, min(r.h, drawable.height - y))
@@ -174,11 +176,8 @@ public final class OutputCompiler: @unchecked Sendable {
                 return try texture(.rgba16Float, width: w, height: h, bytesPerPixel: 8, label: "blend \(config.id)") { map.withUnsafeBytes { $0.baseAddress! } }
             }
         }
-        let full = SliceMesh.build(SliceConfig(id: 0), subdivisions: Self.sliceSubdivisions)
-        guard let fullVertices = device.makeBuffer(bytes: full.vertices, length: full.vertices.count * MemoryLayout<SliceMesh.Vertex>.stride, options: .storageModeShared),
-            let fullIndices = device.makeBuffer(bytes: full.indices, length: full.indices.count * 4, options: .storageModeShared)
-        else { throw RenderError.pipeline("pattern mesh \(config.id)") }
-        let patternMesh = SlicePlan(vertices: fullVertices, indices: fullIndices, indexCount: full.indices.count, mask: nil, opacity: 1)
+        // the whole output as a slice without a mask: canvas 1, opacity 1
+        let patternMesh = try slicePlan(SliceConfig(id: 0), output: config.id, width: w, height: h)
         let edited = try geometry(config.warp, config.slices, output: config.id, width: w, height: h)
         var presets: [Int: PresetGeometry] = [:]
         for preset in config.presets { presets[preset.number] = try geometry(preset.warp, preset.slices, output: config.id, width: w, height: h) }
@@ -199,8 +198,13 @@ public final class OutputCompiler: @unchecked Sendable {
                 return try texture(.rg32Float, width: cols, height: rows, bytesPerPixel: 8, label: "warp \(id)") { field.withUnsafeBytes { $0.baseAddress! } }
             }
         }
-        var slices: [SlicePlan] = []
-        for slice in configs {
+        return PresetGeometry(warpField: warpField, slices: try configs.map { try slicePlan($0, output: id, width: w, height: h) })
+    }
+
+    /// A slice's tessellated mesh and mask texture on a w × h output, through the cache: a rebind (every drag step) builds
+    /// only the slices that changed, the edited mapping's and every preset's.
+    private func slicePlan(_ slice: SliceConfig, output id: Int, width w: Int, height h: Int) throws -> SlicePlan {
+        try cached(.slice(slice, width: w, height: h)) {
             let (vertices, indices) = SliceMesh.build(slice, subdivisions: Self.sliceSubdivisions)
             guard !vertices.isEmpty,
                 let vertexBuffer = device.makeBuffer(bytes: vertices, length: vertices.count * MemoryLayout<SliceMesh.Vertex>.stride, options: .storageModeShared),
@@ -221,9 +225,8 @@ public final class OutputCompiler: @unchecked Sendable {
                     return try texture(.r8Unorm, width: w, height: h, bytesPerPixel: 1, label: "mask \(id).\(slice.id)") { raster.withUnsafeBytes { $0.baseAddress! } }
                 }
             }
-            slices.append(SlicePlan(vertices: vertexBuffer, indices: indexBuffer, indexCount: indices.count, mask: mask, opacity: Float(slice.opacity), canvas: slice.canvas))
+            return SlicePlan(vertices: vertexBuffer, indices: indexBuffer, indexCount: indices.count, mask: mask, opacity: Float(slice.opacity), canvas: slice.canvas)
         }
-        return PresetGeometry(warpField: warpField, slices: slices)
     }
 
     /// Anti-aliased polygon fill, 8-bit coverage, row-major from the top-left.
