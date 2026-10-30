@@ -110,10 +110,13 @@ public final class OutputCoordinator {
     /// The edit overlay of every output (DESIGN.md §9.10 item 4), handed to every plan compiled here; `live.outputs` reads it.
     public nonisolated let editOverlay: EditOverlay
 
-    public init(compositor: Compositor, context: MetalContext, fps: Double, displays: [DisplayInfo], logger: Logger) {
+    /// `media`: an image mask's file in the library (`OutputCompiler`).
+    public init(
+        compositor: Compositor, context: MetalContext, fps: Double, displays: [DisplayInfo], logger: Logger, media: @escaping @Sendable (MaskImage) -> URL? = { _ in nil }
+    ) {
         self.compositor = compositor
         self.context = context
-        self.compiler = OutputCompiler(device: context.device, logger: logger)
+        self.compiler = OutputCompiler(device: context.device, logger: logger, media: media)
         self.editOverlay = EditOverlay(device: context.device)
         self.fps = fps
         self.displays = displays

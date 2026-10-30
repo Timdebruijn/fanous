@@ -302,6 +302,34 @@ test('outputs: with two slices on the same corners, a drag moves the selected sl
   await expect.poll(() => handleAt(page, '/slices/0/dest/0')).toEqual({ x: 0, y: 0 });
 });
 
+test('outputs: a Rectangle mask (masks v2) takes a point drag and a feather; Remove mask takes it away', async ({ page }) => {
+  await addUnassignedOutput(page);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  await page.getByRole('button', { name: 'Mask', exact: true }).click();
+  await page.getByRole('button', { name: 'Rectangle' }).click();
+  await expect.poll(async () => Math.round((await handleAt(page, '/slices/0/masks/0/path/2')).x)).toBe(900);
+
+  // the bottom-right point to the middle of the picture
+  const handle = (await page.getByRole('button', { name: '/slices/0/masks/0/path/2', exact: true }).boundingBox())!;
+  const editor = (await page.getByRole('application', { name: /Mapping editor/ }).boundingBox())!;
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(editor.x + editor.width / 2, editor.y + editor.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.round((await handleAt(page, '/slices/0/masks/0/path/2')).x / 10)).toBe(50);
+
+  await page.getByLabel('Feather px').fill('6');
+  await page.getByLabel('Feather px').press('Enter');
+  // the field as the project has it: away to another mode and back
+  await page.getByRole('button', { name: 'Slices', exact: true }).click();
+  await page.getByRole('button', { name: 'Mask', exact: true }).click();
+  await expect(page.getByLabel('Feather px')).toHaveValue('6');
+
+  await page.getByRole('button', { name: 'Remove mask' }).click();
+  await expect(page.getByRole('button', { name: 'Draw mask' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '/slices/0/masks/0/path/0', exact: true })).toHaveCount(0);
+});
+
 test('outputs: a change of mesh density keeps the shape; Reset mesh flattens it', async ({ page }) => {
   await addUnassignedOutput(page);
   await page.getByRole('button', { name: 'Warp & Slices' }).click();

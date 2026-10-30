@@ -83,7 +83,7 @@ struct EditOverlayTests {
         var o = OutputConfig(id: 1)
         #expect(EditOverlay.segments(o, selected: nil).count == 4 * 64 + 4 * 64, "corner pin edges and slice 1")
         o.warp.mesh = .identity(cols: 3, rows: 5)
-        o.slices[0].mask = MaskSettings(path: [MapPoint(0.125, 0.125), MapPoint(0.625, 0.125), MapPoint(0.125, 0.375)], feather: 0)
+        o.slices[0].masks = [MaskShape(feather: 0, path: [MaskPoint(0.125, 0.125), MaskPoint(0.625, 0.125), MaskPoint(0.125, 0.375)])]
         let lines = EditOverlay.segments(o, selected: nil)
         #expect(lines.count == 8 * 64 + 4 * 64 + (32 + 32 + 16), "5 rows and 3 columns of the mesh, slice 1, its mask")
         #expect(lines.first == OverlaySegment(a: SIMD2(0, 0), b: SIMD2(1.0 / 64, 0)) && lines[4 * 64].a == SIMD2(0, 1), "row by row from the top")
@@ -105,7 +105,7 @@ struct EditOverlayTests {
 
         // a mask of 15,000 points beside a 33 × 33 mesh: past the cap its last edges go; the selection (four arms and
         // a 2 of five segments) stays, last
-        o.slices[0].mask = MaskSettings(path: (0..<15000).map { MapPoint(0.5 + 0.4 * cos(Double($0) * 2 * .pi / 15000), 0.5 + 0.4 * sin(Double($0) * 2 * .pi / 15000)) }, feather: 0)
+        o.slices[0].masks = [MaskShape(feather: 0, path: (0..<15000).map { MaskPoint(0.5 + 0.4 * cos(Double($0) * 2 * .pi / 15000), 0.5 + 0.4 * sin(Double($0) * 2 * .pi / 15000)) })]
         let capped = EditOverlay.segments(o, selected: OverlaySelection(kind: .corner, point: 1))
         #expect(capped.count == EditOverlay.maxSegments && capped.suffix(9).allSatisfy { $0.flags & 1 != 0 } && capped[capped.count - 10].flags == 0)
     }
@@ -115,15 +115,32 @@ struct EditOverlayTests {
     /// first. The selection is drawn in both.
     @Test func farOffPointsStopAtTheCap() {
         var o = OutputConfig(id: 1)
-        o.slices[0].mask = MaskSettings(path: [MapPoint(0, 0), MapPoint(1e19, 0), MapPoint(0, 1)], feather: 0)
+        o.slices[0].masks = [MaskShape(feather: 0, path: [MaskPoint(0, 0), MaskPoint(1e19, 0), MaskPoint(0, 1)])]
         let huge = EditOverlay.segments(o, selected: OverlaySelection(kind: .corner, point: 0))
         #expect(huge.count == EditOverlay.maxSegments && huge.suffix(6).allSatisfy { $0.flags & 1 != 0 }, "four arms and a 1")
-        o.slices[0].mask = MaskSettings(path: (0..<1000).map { $0.isMultiple(of: 2) ? MapPoint(0, 0) : MapPoint(1e7, 1e7) }, feather: 0)
+        o.slices[0].masks = [MaskShape(feather: 0, path: (0..<1000).map { $0.isMultiple(of: 2) ? MaskPoint(0, 0) : MaskPoint(1e7, 1e7) })]
         let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
         let far = EditOverlay.segments(o, selected: OverlaySelection(kind: .corner, point: 0))
         let ms = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e6
         #expect(far.count == EditOverlay.maxSegments && far.suffix(6).allSatisfy { $0.flags & 1 != 0 })
         #expect(ms < 100, "\(ms) ms of CPU")
+    }
+
+    /// Masks v2 (§9.10 item 5): every path mask's outline, a curved edge sampled along its Bézier (four points with κ ≈
+    /// 0.5523 handles land on their circle), none for an image mask; `mask` picks the mask whose point is marked.
+    @Test func everyMaskOutlineFollowsItsCurves() {
+        var o = OutputConfig(id: 1)
+        let (c, r) = (0.5, 0.25), k = 4.0 / 3 * (2.0.squareRoot() - 1) * r
+        let circle = [
+            MaskPoint(c + r, c, in: MapPoint(0, -k), out: MapPoint(0, k)), MaskPoint(c, c + r, in: MapPoint(k, 0), out: MapPoint(-k, 0)),
+            MaskPoint(c - r, c, in: MapPoint(0, k), out: MapPoint(0, -k)), MaskPoint(c, c - r, in: MapPoint(-k, 0), out: MapPoint(k, 0)),
+        ]
+        o.slices[0].masks = [MaskShape(image: MaskImage(folder: 1, file: 1)), MaskShape(mode: .subtract, path: circle)]
+        let lines = EditOverlay.segments(o, selected: nil).dropFirst(4 * 64 + 4 * 64)  // the corner pin and slice 1
+        #expect(lines.count == 4 * 16, "four quarter circles, 16 pieces each (a quarter of the output wide); none for the image")
+        #expect(lines.allSatisfy { s in [s.a, s.b].allSatisfy { abs(hypot(Double($0.x) - c, Double($0.y) - c) - r) < 0.0005 * r } })
+        #expect(EditOverlay.mark(o, OverlaySelection(kind: .mask, mask: 1, point: 1))?.first?.a == SIMD2(0.5, 0.75))
+        #expect(EditOverlay.mark(o, OverlaySelection(kind: .mask, mask: 0, point: 0)) == nil, "an image has no points")
     }
 
     // MARK: output.overlay

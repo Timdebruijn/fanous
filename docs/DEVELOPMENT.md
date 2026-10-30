@@ -157,7 +157,7 @@ and TypeScript 7 is installed as `@typescript/native`, which `typecheck` runs.
 Outputs and mapping (Phase 6, DESIGN.md §9): the project holds `outputs[]`
 (display identity, region, mode, intensity, blend edges with power and gamma,
 black lift, corner pin and mesh warp, slices with source rectangle,
-destination quad, mask path and feather, test pattern) and `canvases[]`.
+destination quad, masks (paths or library images) with feather, test pattern) and `canvases[]`.
 Commands `output.add`, `output.remove`, `output.set` (a JSON pointer inside the
 output, validated as a whole) and `canvas.set`; `live.displays` lists the
 connected displays by UUID and `live.outputs` whether each output is bound,

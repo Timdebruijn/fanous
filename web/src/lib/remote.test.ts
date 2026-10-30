@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { UNIT_QUAD, defaultMask, meshIdentity, type MapPoint, type OutputConfig } from './outputs';
+import { UNIT_QUAD, defaultMask, meshIdentity, type MapPoint, type MaskShape, type OutputConfig } from './outputs';
 import { choose, grid, groups, label, members, nudgeCommand, nudgeQueue, step, trackpad } from './remote';
 import { toScreen } from './warp';
 
@@ -11,7 +11,7 @@ function output(change: Partial<OutputConfig['warp']> = {}): OutputConfig {
     id: 1, name: 'Output 1', display: null, region: null, mode: null, intensity: 1, testPattern: 0,
     blend: {} as OutputConfig['blend'],
     warp: { cornerPin: UNIT_QUAD, mesh: null, ...change },
-    slices: [{ id: 2, canvas: 1, source: { x: 0, y: 0, w: 1, h: 1 }, dest: UNIT_QUAD, mask: { ...defaultMask(), path: [...defaultMask().path, { x: 0.5, y: 0.95 }] }, opacity: 1 }],
+    slices: [{ id: 2, canvas: 1, source: { x: 0, y: 0, w: 1, h: 1 }, dest: UNIT_QUAD, masks: [{ ...defaultMask(), path: [...defaultMask().path!, { x: 0.5, y: 0.95 }] }], opacity: 1 }],
   };
 }
 const size = { w: 1000, h: 500 };
@@ -92,16 +92,32 @@ describe('nudge', () => {
     const points = row.value as unknown as MapPoint[];
     expect(points).toHaveLength(15);
     points.forEach((p, i) => expect(p.y).toBeCloseTo(mesh.warp.mesh!.points[i]!.y - (i >= 5 && i < 10 ? 0.01 : 0), 12));
-    expect(nudgeCommand(output(), 'mask', 0, [0, 1, 2, 3, 4], 0.25, 0, size)!.path).toBe('/slices/0/mask/path');
+    expect(nudgeCommand(output(), 'mask', 0, [0, 1, 2, 3, 4], 0.25, 0, size)!.path).toBe('/slices/0/masks');
     expect(nudgeCommand(output(), 'slices', 0, [0, 1], 0, 1, size)!.path).toBe('/slices/0/dest');
     expect(nudgeCommand(output(), 'slices', 0, [0, 1], 1, 0, size)).toBeNull(); // the top edge spans the output
+  });
+
+  it('a mask point keeps its handles; several masks move as their list, and the label names the mask', () => {
+    const o = output();
+    const curve = { mode: 'add' as const, feather: 0, path: [{ x: 0.5, y: 0.5, in: { x: -0.1, y: 0 }, out: { x: 0.1, y: 0 } }, { x: 0.8, y: 0.5 }, { x: 0.6, y: 0.8 }] };
+    const two = { ...o, slices: [{ ...o.slices[0]!, masks: [curve, o.slices[0]!.masks![0]!] }] };
+    const one = nudgeCommand(two, 'mask', 0, [0], 10, 0, size)!;
+    expect(one.path).toBe('/slices/0/masks/0/path/0');
+    expect(one.value).toMatchObject({ y: 0.5, in: { x: -0.1, y: 0 }, out: { x: 0.1, y: 0 } });
+    expect((one.value as unknown as MapPoint).x).toBeCloseTo(0.51, 12);
+    expect(label(two, 'mask', 0, null, 'point', 4)).toBe('slice 2 · mask 2 point 2');
+    const all = nudgeCommand(two, 'mask', 0, members(null, 8, 'all', 0), 0, 5, size)!;
+    expect(all.path).toBe('/slices/0/masks');
+    const masks = all.value as unknown as MaskShape[];
+    expect(masks[0]!.path![0]).toMatchObject({ in: { x: -0.1, y: 0 }, out: { x: 0.1, y: 0 } });
+    masks.forEach((m, i) => m.path!.forEach((p, j) => expect(p.y).toBeCloseTo(two.slices[0]!.masks![i]!.path![j]!.y + 0.01, 12)));
   });
 
   it('a group moves as one: it stops at the edge of the output instead of being squeezed', () => {
     const all = members(cells, 15, 'all', 0);
     expect(nudgeCommand(mesh, 'mesh', 0, all, 10, 0, size)).toBeNull();
     // the mask spans 0.1…0.9 across: 100 px to the left edge, so 300 px moves it 100 px
-    const mask = nudgeCommand(output(), 'mask', 0, [0, 1, 2, 3, 4], -300, 0, size)!.value as unknown as MapPoint[];
+    const mask = (nudgeCommand(output(), 'mask', 0, [0, 1, 2, 3, 4], -300, 0, size)!.value as unknown as MaskShape[])[0]!.path!;
     expect(mask.map((p) => Math.round(p.x * 1000) / 1000)).toEqual([0, 0.8, 0.8, 0, 0.4]);
   });
 

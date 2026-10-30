@@ -497,6 +497,17 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   output** switch, on when the tab opens; the UI renews the lease (`output.overlay {id, on, selected?}`, 5 s, never
   saved or undone) every 2 s and stops after 10 minutes without an edit; show mode and show lock end it. `live.outputs`
   gets `overlay` (`shown`, `preset`, `raw` or null).
+- Changed: **masks v2, the engine step** (M2.7, PR #TBD, DESIGN §9.10 item 5, F5). A slice has `masks` instead of
+  `mask`: any number of add and subtract masks, each a path whose points may carry Bézier handles (offsets from the
+  point) or a greyscale image from the library (luminance is visibility, stretched over the output); the slice shows the
+  union of its add masks (all of it without one) minus the union of its subtract masks, filled with the nonzero rule.
+  Projects and stored presets from before load with their mask as one add mask (also on a version revert); a page
+  opened before the update is refused when it sends `mask` ("reload the page"). A new banded rasteriser feathers only
+  near the edge: 2,000 segments with a 2 px feather at 3840 × 2160 take about 1 ms; existing masks render as before. A
+  missing image mask covers nothing and the new readiness warning "Image masks found" names it; a changed file is
+  rasterised again when the library notices. The edit overlay draws every mask's outline, curves included. Warp &
+  Slices shows every mask's points and outlines and its tools act on the selected point's mask; making several masks,
+  curves and image masks in the UI comes with M2.8.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

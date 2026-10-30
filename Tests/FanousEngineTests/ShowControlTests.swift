@@ -229,7 +229,7 @@ struct ShowControlTests {
         context.libraryRoot = NSHomeDirectory()
         let items = Readiness.check(context, acknowledged: ["dmx"])
         let ids = items.map(\.id)
-        #expect(ids == ["power", "thermal", "disk", "memory", "dmx", "interfaces", "sacnport", "outputs", "modes", "syncmaster", "syncpackets", "camera", "screen", "decoders", "library", "spotlight", "updates", "timemachine", "focus", "displaysleep", "hardware"])
+        #expect(ids == ["power", "thermal", "disk", "memory", "dmx", "interfaces", "sacnport", "outputs", "modes", "syncmaster", "syncpackets", "camera", "screen", "decoders", "maskimages", "library", "spotlight", "updates", "timemachine", "focus", "displaysleep", "hardware"])
         let dmx = items.first { $0.id == "dmx" }!
         #expect(dmx.state == .fail && dmx.acknowledged && !dmx.blocks)
         let outputs = items.first { $0.id == "outputs" }!

@@ -36,9 +36,19 @@ export interface WarpSettings {
   mesh: MeshWarp | null;
 }
 
-export interface MaskSettings {
-  path: MapPoint[];
+/** A mask point (DESIGN §9.10 item 5); its handles are offsets from it, and without them it is a corner. */
+export interface MaskPoint extends MapPoint {
+  in?: MapPoint;
+  out?: MapPoint;
+}
+
+/** One mask of a slice: a path (3 or more points, nonzero fill) or a library image. The slice shows the union of its
+ *  add masks (all of it without one) minus the union of its subtract masks. */
+export interface MaskShape {
+  mode: 'add' | 'subtract';
   feather: number;
+  path?: MaskPoint[];
+  image?: { folder: number; file: number };
 }
 
 export interface SliceConfig {
@@ -46,7 +56,8 @@ export interface SliceConfig {
   canvas: number;
   source: { x: number; y: number; w: number; h: number };
   dest: MapPoint[];
-  mask: MaskSettings | null;
+  /** absent when the slice has none (the engine writes it only then) */
+  masks?: MaskShape[];
   opacity: number;
 }
 
@@ -251,11 +262,22 @@ export type OverlaySelection = { slice: number; kind: 'corner' | 'mesh' | 'slice
 
 /** The point the edit overlay marks on the output (`output.overlay`'s `selected`): the anchor's index in the mode's
  *  handles, on slice `slice` (its index; 0 for a corner pin or mesh point, which the engine reads without one, so
- *  picking another slice sends nothing new); null with nothing selected. A slice has one mask until masks v2. */
-export function overlaySelection(mode: MapperMode, slice: number, point: number): OverlaySelection | null {
+ *  picking another slice sends nothing new); a mask point by its mask and its index there, from the handle's `path`;
+ *  null with nothing selected. */
+export function overlaySelection(mode: MapperMode, slice: number, point: number, path?: string | null): OverlaySelection | null {
   if (point < 0) return null;
   const kind = ({ cornerPin: 'corner', mesh: 'mesh', slices: 'slice', mask: 'mask' } as const)[mode];
+  if (kind === 'mask') {
+    const handle = maskHandle(path);
+    return handle ? { slice, kind, mask: handle.mask, point: handle.point } : null;
+  }
   return { slice: kind === 'corner' || kind === 'mesh' ? 0 : slice, kind, point };
+}
+
+/** The slice, mask and point of a mask handle's pointer (`/slices/s/masks/m/path/i`); null for any other. */
+export function maskHandle(path: string | null | undefined): { slice: number; mask: number; point: number } | null {
+  const m = path?.match(/^\/slices\/(\d+)\/masks\/(\d+)\/path\/(\d+)$/);
+  return m ? { slice: Number(m[1]), mask: Number(m[2]), point: Number(m[3]) } : null;
 }
 
 /** The edit overlay's lease from Warp & Slices (DESIGN §9.10 item 4): `start` sends at once when the output or the
@@ -376,11 +398,29 @@ export function handles(output: OutputConfig, mode: MapperMode, sliceIndex: numb
       const slice = output.slices[sliceIndex];
       return (slice?.dest ?? []).map((point, i) => ({ path: `/slices/${sliceIndex}/dest/${i}`, point, group: sliceIndex }));
     }
-    case 'mask': {
-      const slice = output.slices[sliceIndex];
-      return (slice?.mask?.path ?? []).map((point, i) => ({ path: `/slices/${sliceIndex}/mask/path/${i}`, point, group: sliceIndex }));
-    }
+    case 'mask':
+      // every path mask's points, mask by mask; a point keeps its handles (`point` is the stored `MaskPoint`)
+      return (output.slices[sliceIndex]?.masks ?? []).flatMap((mask, m) =>
+        (mask.path ?? []).map((point, i) => ({ path: `/slices/${sliceIndex}/masks/${m}/path/${i}`, point, group: sliceIndex })),
+      );
   }
+}
+
+/** A mask path's closed outline: its points, and `pieces` steps along each curved segment (a handle at either end). */
+export function maskOutline(path: MaskPoint[], pieces = 8): MapPoint[] {
+  const out: MapPoint[] = [];
+  path.forEach((p, i) => {
+    const q = path[(i + 1) % path.length]!;
+    out.push({ x: p.x, y: p.y });
+    if (!p.out && !q.in) return;
+    const c1 = { x: p.x + (p.out?.x ?? 0), y: p.y + (p.out?.y ?? 0) }, c2 = { x: q.x + (q.in?.x ?? 0), y: q.y + (q.in?.y ?? 0) };
+    for (let k = 1; k < pieces; k++) {
+      const t = k / pieces, s = 1 - t;
+      const [a, b, c, d] = [s * s * s, 3 * s * s * t, 3 * s * t * t, t * t * t];
+      out.push({ x: a * p.x + b * c1.x + c * c2.x + d * q.x, y: a * p.y + b * c1.y + c * c2.y + d * q.y });
+    }
+  });
+  return out;
 }
 
 /** Closed outlines to draw under the handles. */
@@ -398,16 +438,14 @@ export function outlines(output: OutputConfig, mode: MapperMode, sliceIndex: num
     }
     case 'slices':
       return output.slices.map((slice, s) => ({ points: slice.dest, group: s }));
-    case 'mask': {
-      const slice = output.slices[sliceIndex];
-      return slice?.mask ? [{ points: slice.mask.path, group: sliceIndex }] : [];
-    }
+    case 'mask':
+      return (output.slices[sliceIndex]?.masks ?? []).flatMap((mask) => (mask.path && mask.path.length >= 3 ? [{ points: maskOutline(mask.path), group: sliceIndex }] : []));
   }
 }
 
-/** A mask inset 10 % on every side, the starting point for a new mask. */
-export function defaultMask(): MaskSettings {
-  return { path: [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 }, { x: 0.9, y: 0.9 }, { x: 0.1, y: 0.9 }], feather: 0 };
+/** An add mask inset 10 % on every side, the starting point for a new mask. */
+export function defaultMask(): MaskShape {
+  return { mode: 'add', feather: 0, path: [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 }, { x: 0.9, y: 0.9 }, { x: 0.1, y: 0.9 }] };
 }
 
 /** Inserts `p` into the closed path on the edge nearest to it, so a tapped point never tangles the shape. */

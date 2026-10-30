@@ -38,7 +38,7 @@
   import WallWizard from '../components/WallWizard.svelte';
   import Preview from '../components/Preview.svelte';
   import {
-    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, handles, keystoneBadges, meshIdentity, modeText, nextSliceId, outputSize, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, spreadSources, statusText,
+    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, defaultMask, handles, keystoneBadges, maskHandle, meshIdentity, modeText, nextSliceId, outputSize, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, spreadSources, statusText,
     type MapPoint, type MapperMode, type OutputConfig,
   } from '../lib/outputs';
   import { app, can, client, cmd, toastUndo } from '../lib/state.svelte';
@@ -162,7 +162,8 @@
     if ((await cmd('output.remove', { id: output.id })) !== undefined) toastUndo(`${name} removed.`);
   }
   function point(path: string, p: MapPoint) {
-    set(path, { x: p.x, y: p.y });
+    // a mask point keeps its handles
+    set(path, { ...points.find((h) => h.path === path)?.point, x: p.x, y: p.y });
   }
   /** A new density keeps the current shape: the new points are placed on the current surface. */
   function setMesh(n: number) {
@@ -175,7 +176,7 @@
   function addSlice() {
     if (!output) return;
     // output.set only replaces existing pointers, so append by setting the whole list
-    const slice = { id: nextSliceId(output), canvas: output.slices[sliceIndex]?.canvas ?? 1, source: { x: 0, y: 0, w: 1, h: 1 }, dest: UNIT_QUAD, mask: null, opacity: 1 };
+    const slice = { id: nextSliceId(output), canvas: output.slices[sliceIndex]?.canvas ?? 1, source: { x: 0, y: 0, w: 1, h: 1 }, dest: UNIT_QUAD, opacity: 1 };
     set('/slices', [...output.slices, slice] as unknown as JSONValue);
     ui.slice = output.slices.length;
   }
@@ -198,8 +199,15 @@
     set('/slices', spreadSources(output.slices, size) as unknown as JSONValue);
     toastUndo('Canvas spread over the slices, left to right.');
   }
+  /** the slice's masks; the mask tools act on the selected point's, else the first (the mask list comes with M2.8) */
+  const masks = $derived(output?.slices[sliceIndex]?.masks ?? []);
+  const maskIndex = $derived.by(() => {
+    const h = maskHandle(ui.handle);
+    return h && h.slice === sliceIndex && h.mask < masks.length ? h.mask : 0;
+  });
   function removeMask() {
-    set(`/slices/${sliceIndex}/mask`, null);
+    set(`/slices/${sliceIndex}/masks`, masks.filter((_, m) => m !== maskIndex) as unknown as JSONValue);
+    ui.handle = null;
     toastUndo(`Mask of slice ${output?.slices[sliceIndex]?.id} removed.`);
   }
   /** the points of the mapper mode; the selected one is the anchor of the selection */
@@ -249,7 +257,7 @@
   const overlay = overlayLease((id, on, selected) => {
     if (!app.project.showLock && can('programmer')) client.cmd('output.overlay', { id, on, selected }).catch(() => {});
   }, () => (overlayOn = false));
-  const overlaySelected = $derived(overlaySelection(ui.mapper, sliceIndex, anchor));
+  const overlaySelected = $derived(overlaySelection(ui.mapper, sliceIndex, anchor, ui.handle));
   $effect(() => {
     if (ui.tab !== 'warp') overlayOn = true;  // on again the next time the tab opens
   });
@@ -289,31 +297,37 @@
       ui.draft = [...ui.draft, q];
       return;
     }
-    if (!slice.mask) return;
-    const { path, index } = insertNearest(slice.mask.path, q);
-    set(`/slices/${sliceIndex}/mask/path`, path as unknown as JSONValue);
-    ui.handle = `/slices/${sliceIndex}/mask/path/${index}`;
+    const target = masks[maskIndex]?.path;
+    if (!target) return;
+    const { path, index } = insertNearest(target, q);
+    set(`/slices/${sliceIndex}/masks/${maskIndex}/path`, path as unknown as JSONValue);
+    ui.handle = `/slices/${sliceIndex}/masks/${maskIndex}/path/${index}`;
   }
+  /** the mask Redraw replaces; Draw mask (on a slice without masks) adds one */
+  let redrawn = 0;
   function startDrawing() {
+    redrawn = maskIndex;
     ui.draft = [];
     ui.handle = null;
   }
   function finishDrawing() {
     if (!ui.draft || ui.draft.length < 3) return;
-    set(`/slices/${sliceIndex}/mask`, { path: ui.draft, feather: 0 } as unknown as JSONValue);
+    const path = ui.draft;
+    const next = masks.length ? masks.map((m, i) => (i === redrawn ? { mode: m.mode, feather: m.feather, path } : m)) : [{ mode: 'add', feather: 0, path }];
+    set(`/slices/${sliceIndex}/masks`, next as unknown as JSONValue);
     ui.draft = null;
     ui.maskAdd = false;
   }
   function removeMaskPointAt(path: string) {
-    if (!path.startsWith(`/slices/${sliceIndex}/mask/path/`)) return;
+    if (maskHandle(path)?.slice !== sliceIndex) return;
     ui.handle = path;
     removeMaskPoint();
   }
   function removeMaskPoint() {
-    const slice = output?.slices[sliceIndex];
-    if (!slice?.mask || slice.mask.path.length <= 3 || !ui.handle?.startsWith(`/slices/${sliceIndex}/mask/path/`)) return;
-    const index = Number(ui.handle.split('/').pop());
-    set(`/slices/${sliceIndex}/mask/path`, slice.mask.path.filter((_, i) => i !== index) as unknown as JSONValue);
+    const h = maskHandle(ui.handle);
+    const path = h?.slice === sliceIndex ? masks[h.mask]?.path : undefined;
+    if (!h || !path || path.length <= 3) return;
+    set(`/slices/${sliceIndex}/masks/${h.mask}/path`, path.filter((_, i) => i !== h.point) as unknown as JSONValue);
     ui.handle = null;
     ui.group = 'point';
   }
@@ -654,16 +668,16 @@
               <button type="button" class="btn btn-primary" disabled={ui.draft.length < 3} onclick={finishDrawing}>Done</button>
               <button type="button" class="btn" disabled={ui.draft.length === 0} onclick={() => (ui.draft = ui.draft!.slice(0, -1))}>Undo last corner</button>
               <button type="button" class="btn" onclick={() => (ui.draft = null)}>Cancel</button>
-            {:else if s?.mask}
-              <label class="field"><span>Feather px</span><input class="input mono" type="number" min="0" value={s.mask.feather} disabled={locked} onchange={(e) => set(`/slices/${sliceIndex}/mask/feather`, Number(e.currentTarget.value))} /></label>
+            {:else if masks.length}
+              <label class="field"><span>Feather px</span><input class="input mono" type="number" min="0" value={masks[maskIndex]?.feather ?? 0} disabled={locked} onchange={(e) => set(`/slices/${sliceIndex}/masks/${maskIndex}/feather`, Number(e.currentTarget.value))} /></label>
               <button type="button" class="btn" aria-pressed={ui.maskAdd} disabled={locked} onclick={() => (ui.maskAdd = !ui.maskAdd)}>{ui.maskAdd ? 'Adding points: tap the picture' : 'Add points'}</button>
-              <button type="button" class="btn" disabled={locked || s.mask.path.length <= 3 || !ui.handle?.includes('/mask/')} onclick={removeMaskPoint}>Remove point</button>
+              <button type="button" class="btn" disabled={locked || (masks[maskIndex]?.path?.length ?? 0) <= 3 || maskHandle(ui.handle)?.slice !== sliceIndex} onclick={removeMaskPoint}>Remove point</button>
               <button type="button" class="btn" disabled={locked} onclick={startDrawing}>Redraw</button>
               <button type="button" class="btn btn-danger" disabled={locked} onclick={removeMask}>Remove mask</button>
               <p class="caption grow">Tap the picture to add a point where you tap (with Add points on), or double-click anywhere; it joins the nearest edge. Drag points to move them; Backspace removes the selected one.</p>
             {:else}
               <button type="button" class="btn btn-primary" disabled={locked || !s} onclick={startDrawing}>Draw mask</button>
-              <button type="button" class="btn" disabled={locked || !s} onclick={() => set(`/slices/${sliceIndex}/mask`, defaultMask() as unknown as JSONValue)}>Rectangle</button>
+              <button type="button" class="btn" disabled={locked || !s} onclick={() => set(`/slices/${sliceIndex}/masks`, [defaultMask()] as unknown as JSONValue)}>Rectangle</button>
               <p class="caption grow">A mask hides everything outside its shape. Draw mask: tap the corners of the visible area on the picture. Feather softens the edge.</p>
             {/if}
           </div>

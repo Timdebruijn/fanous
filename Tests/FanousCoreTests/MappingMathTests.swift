@@ -183,22 +183,105 @@ struct MappingMathTests {
         #expect(ms < budget, "33×33 warp compiled in \(ms) ms")
     }
 
-    @Test func maskRasterCoversTheInsideAndFeathersTheEdge() {
-        let square = MaskSettings(path: [MapPoint(0.25, 0.25), MapPoint(0.75, 0.25), MapPoint(0.75, 0.75), MapPoint(0.25, 0.75)])
-        let hard = MaskMath.raster(square, width: 40, height: 40).bytes
-        #expect(hard[20 * 40 + 20] == 255 && hard[0] == 0 && hard[5 * 40 + 20] == 0)
-        #expect(hard.filter { $0 == 255 }.count == 400, "20×20 pixels inside")
-        var soft = square
-        soft.feather = 8
-        let s = MaskMath.raster(soft, width: 40, height: 40).bytes
-        let coarse = MaskMath.raster(soft, width: 40, height: 40, step: 4)
-        #expect(coarse.width == 10 && coarse.height == 10 && coarse.bytes[5 * 10 + 5] == 255 && coarse.bytes[0] == 0)
-        #expect(s[20 * 40 + 20] == 255)
-        // across the left edge (x = 10): values rise monotonically over the 8 px band
-        let row = (6..<14).map { s[20 * 40 + $0] }
-        #expect(row == row.sorted() && row.first! < 64 && row.last! > 191)
-        #expect(MaskMath.signedDistance(0.5, 0.5, polygon: [(0, 0), (1, 0), (1, 1), (0, 1)]) == 0.5)
-        #expect(MaskMath.signedDistance(2, 0.5, polygon: [(0, 0), (1, 0), (1, 1), (0, 1)]) == -1)
+    /// DESIGN.md §9.10 item 5: masks round-trip with handles and an image; a point without handles is a plain point.
+    @Test func masksRoundTripWithHandlesAndAnImage() throws {
+        var slice = SliceConfig(id: 1)
+        slice.masks = [
+            MaskShape(feather: 4, path: [MaskPoint(0.1, 0.1, out: MapPoint(0.25, 0)), MaskPoint(0.9, 0.1, in: MapPoint(-0.25, 0)), MaskPoint(0.5, 0.9)]),
+            MaskShape(mode: .subtract, image: MaskImage(folder: 3, file: 5)),
+        ]
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let json = String(decoding: try encoder.encode(slice), as: UTF8.self)
+        #expect(
+            json.contains(
+                #""masks":[{"feather":4,"mode":"add","path":[{"out":{"x":0.25,"y":0},"x":0.1,"y":0.1},{"in":{"x":-0.25,"y":0},"x":0.9,"y":0.1},{"x":0.5,"y":0.9}]},{"feather":0,"image":{"file":5,"folder":3},"mode":"subtract"}]"#
+            ), "\(json)")
+        #expect(try JSONDecoder().decode(SliceConfig.self, from: Data(json.utf8)) == slice)
+        #expect(slice.masks.allSatisfy { $0.problem == nil })
+        #expect(try !String(decoding: encoder.encode(SliceConfig(id: 1)), as: UTF8.self).contains("masks"), "none: no key")
+    }
+
+    /// What `output.set` refuses and the compile leaves out: a negative or non-finite feather, a path of fewer than 3
+    /// points or with a non-finite number (handles included), neither or both of path and image, an image outside 1–255.
+    @Test func aMaskThatCannotBeDrawnSaysWhy() {
+        let triangle = [MaskPoint(0, 0), MaskPoint(1, 0), MaskPoint(0, 1)]
+        let refused = [
+            MaskShape(feather: -1, path: triangle), MaskShape(feather: .infinity, path: triangle), MaskShape(path: Array(triangle.prefix(2))),
+            MaskShape(path: triangle + [MaskPoint(.nan, 0)]), MaskShape(path: triangle + [MaskPoint(0, 0, out: MapPoint(0, .infinity))]), MaskShape(),
+            MaskShape(path: triangle, image: MaskImage(folder: 1, file: 1)), MaskShape(image: MaskImage(folder: 0, file: 1)),
+            MaskShape(image: MaskImage(folder: 1, file: 256)),
+        ]
+        for mask in refused { #expect(mask.problem != nil, "\(mask)") }
+        #expect(MaskShape(feather: 0, path: triangle).problem == nil && MaskShape(image: MaskImage(folder: 255, file: 1)).problem == nil)
+    }
+
+    /// A point's handles make its segments cubic Béziers: four points with κ = 4/3 (√2 − 1) handles lie on a circle, and the
+    /// flattened outline stays within a quarter pixel of the curve (the approximation itself is off by 0.03 %); a path
+    /// without handles is its own points.
+    @Test func handlesMakeCurvesAndTheOutlineFollowsThem() {
+        let (c, r) = (0.5, 0.25), k = 4.0 / 3 * (2.0.squareRoot() - 1) * r
+        let circle = [
+            MaskPoint(c + r, c, in: MapPoint(0, -k), out: MapPoint(0, k)), MaskPoint(c, c + r, in: MapPoint(k, 0), out: MapPoint(-k, 0)),
+            MaskPoint(c - r, c, in: MapPoint(0, k), out: MapPoint(0, -k)), MaskPoint(c, c - r, in: MapPoint(-k, 0), out: MapPoint(k, 0)),
+        ]
+        let edges = MaskMath.edges(circle)
+        #expect(edges.count == 4 && edges.allSatisfy(\.curved))
+        let mid = edges[0].at(0.5)
+        #expect(abs(hypot(mid.x - c, mid.y - c) - r) < 0.0003 * r && mid.x > c && mid.y > c)
+        let outline = MaskMath.outline(circle, width: 1000, height: 1000)
+        #expect(outline.count > 40, "\(outline.count) points")
+        #expect(outline.allSatisfy { abs(hypot($0.x - 500, $0.y - 500) - 250) < 0.25 + 0.0003 * 250 })
+        // the chord between two outline points stays within a quarter pixel (and the approximation) of the circle
+        for (i, p) in outline.enumerated() {
+            let q = outline[(i + 1) % outline.count]
+            #expect(hypot((p.x + q.x) / 2 - 500, (p.y + q.y) / 2 - 500) > 250 - 0.25 - 0.0003 * 250)
+        }
+        let square = [MaskPoint(0.25, 0.25), MaskPoint(0.75, 0.25), MaskPoint(0.75, 0.75), MaskPoint(0.25, 0.75)]
+        #expect(MaskMath.outline(square, width: 40, height: 20).map { [$0.x, $0.y] } == [[10, 5], [30, 5], [30, 15], [10, 15]])
+    }
+
+    /// The feather (DESIGN.md §9.10 item 5): a linear ramp, 0.5 on the edge and 0 or 1 at ±feather/2 (here an edge through
+    /// the centres of column 20 with an 8 px feather), and the banded pass gives exactly what the distance to every segment
+    /// from every pixel gives, slanted edges included.
+    @Test func theFeatherIsALinearRampWithinHalfItsWidth() {
+        let (w, h) = (40, 9)
+        var coverage = [UInt8](repeating: 0, count: w * h)
+        for i in coverage.indices where i % w <= 20 { coverage[i] = 255 }  // centres up to x = 20.5, the edge
+        // only the edge at x = 20.5 is within 4 px of a pixel centre
+        MaskMath.feather(&coverage, outline: [(-10, -10), (20.5, -10), (20.5, 19), (-10, 19)], feather: 8, width: w, height: h)
+        let row = Array(coverage[(4 * w)..<(5 * w)])
+        #expect(row[20] == 128, "on the edge")
+        #expect(row[16] == 255 && row[17] == 223 && row[23] == 32 && row[24] == 0, "±feather/2 and between")
+        #expect(row == (0..<w).map { UInt8((min(1, max(0, 0.5 + Double(20 - $0) / 8)) * 255).rounded()) })
+        #expect((0..<h).allSatisfy { Array(coverage[($0 * w)..<(($0 + 1) * w)]) == row }, "every row the same")
+
+        // a pentagon with slanted, nearly flat and nearly upright edges against the brute force over every segment
+        let polygon: [(x: Double, y: Double)] = [(5.2, 3.1), (60.7, 9.4), (61.3, 44.8), (30.1, 58.6), (2.9, 40.2)]
+        let (pw, ph, feather) = (64, 64, 6.5)
+        func inside(_ x: Double, _ y: Double) -> Bool {
+            var odd = false
+            for i in polygon.indices {
+                let (a, b) = (polygon[i], polygon[(i + 1) % polygon.count])
+                if (a.y > y) != (b.y > y), x < a.x + (y - a.y) / (b.y - a.y) * (b.x - a.x) { odd.toggle() }
+            }
+            return odd
+        }
+        var banded = [UInt8](repeating: 0, count: pw * ph), brute = banded
+        for i in banded.indices where inside(Double(i % pw) + 0.5, Double(i / pw) + 0.5) { banded[i] = 255 }
+        #expect(MaskMath.fill(polygon, width: pw, height: ph) == banded, "the fill samples the pixel centres")
+        for i in brute.indices {
+            let (x, y) = (Double(i % pw) + 0.5, Double(i / pw) + 0.5)
+            var d = Double.infinity
+            for j in polygon.indices {
+                let (a, b) = (polygon[j], polygon[(j + 1) % polygon.count])
+                let t = min(1, max(0, ((x - a.x) * (b.x - a.x) + (y - a.y) * (b.y - a.y)) / (pow(b.x - a.x, 2) + pow(b.y - a.y, 2))))
+                d = min(d, hypot(a.x + t * (b.x - a.x) - x, a.y + t * (b.y - a.y) - y))
+            }
+            brute[i] = UInt8((min(1, max(0, 0.5 + (banded[i] == 255 ? d : -d) / feather)) * 255).rounded())
+        }
+        MaskMath.feather(&banded, outline: polygon, feather: feather, width: pw, height: ph)
+        #expect(banded == brute, "\(zip(banded, brute).filter { $0 != $1 }.count) pixels differ")
     }
 
     @Test func sliceMeshTessellatesTheDestinationQuad() {
@@ -219,7 +302,10 @@ struct MappingMathTests {
         output.region = PixelRect(x: 0, y: 0, w: 1920, h: 1200)
         output.blend.right = BlendEdge(overlap: 240)
         output.warp.mesh = .identity(cols: 3, rows: 3)
-        output.slices[0].mask = MaskSettings(path: [MapPoint(0, 0), MapPoint(1, 0), MapPoint(0.5, 1)], feather: 12)
+        output.slices[0].masks = [
+            MaskShape(feather: 12, path: [MaskPoint(0, 0), MaskPoint(1, 0, in: MapPoint(0, -0.1)), MaskPoint(0.5, 1)]),
+            MaskShape(mode: .subtract, image: MaskImage(folder: 2, file: 9)),
+        ]
         output.color = OutputColor(gain: [0.9, 1, 1.05], black: 0.02)
         let data = try JSONEncoder().encode(output)
         let back = try JSONDecoder().decode(OutputConfig.self, from: data)
@@ -228,25 +314,26 @@ struct MappingMathTests {
     }
 
     /// DESIGN.md §9.10 item 3: an output without presets encodes byte for byte as before M2.4 (the literal is the
-    /// synthesized encoding of that release); presets round-trip, and a project without the key loads with none.
+    /// synthesized encoding of that release, for a slice without a mask: masks v2 changed a masked one); presets
+    /// round-trip, and a project without the key loads with none.
     @Test func presetsEncodeOnlyWhenThereAreAny() throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         var o = OutputConfig(id: 2, name: "Left")
         o.display = DisplayIdentity(uuid: "U", name: "Epson")
         o.warp.mesh = .identity(cols: 2, rows: 2)
-        o.slices[0].mask = MaskSettings(path: [MapPoint(0, 0), MapPoint(1, 0), MapPoint(0, 1)], feather: 2)
-        let before = #"{"blend":{"bottom":{"gamma":2.2,"overlap":0,"power":2},"left":{"gamma":2.2,"overlap":0,"power":2},"lift":0,"liftFeather":0,"right":{"gamma":2.2,"overlap":0,"power":2},"top":{"gamma":2.2,"overlap":0,"power":2}},"color":{"black":0,"gain":[1,1,1]},"display":{"name":"Epson","uuid":"U"},"id":2,"intensity":1,"name":"Left","slices":[{"canvas":1,"dest":[{"x":0,"y":0},{"x":1,"y":0},{"x":1,"y":1},{"x":0,"y":1}],"id":1,"mask":{"feather":2,"path":[{"x":0,"y":0},{"x":1,"y":0},{"x":0,"y":1}]},"opacity":1,"source":{"h":1,"w":1,"x":0,"y":0}}],"testPattern":0,"warp":{"cornerPin":[{"x":0,"y":0},{"x":1,"y":0},{"x":1,"y":1},{"x":0,"y":1}],"mesh":{"cols":2,"points":[{"x":0,"y":0},{"x":1,"y":0},{"x":0,"y":1},{"x":1,"y":1}],"rows":2}}}"#
+        let before = #"{"blend":{"bottom":{"gamma":2.2,"overlap":0,"power":2},"left":{"gamma":2.2,"overlap":0,"power":2},"lift":0,"liftFeather":0,"right":{"gamma":2.2,"overlap":0,"power":2},"top":{"gamma":2.2,"overlap":0,"power":2}},"color":{"black":0,"gain":[1,1,1]},"display":{"name":"Epson","uuid":"U"},"id":2,"intensity":1,"name":"Left","slices":[{"canvas":1,"dest":[{"x":0,"y":0},{"x":1,"y":0},{"x":1,"y":1},{"x":0,"y":1}],"id":1,"opacity":1,"source":{"h":1,"w":1,"x":0,"y":0}}],"testPattern":0,"warp":{"cornerPin":[{"x":0,"y":0},{"x":1,"y":0},{"x":1,"y":1},{"x":0,"y":1}],"mesh":{"cols":2,"points":[{"x":0,"y":0},{"x":1,"y":0},{"x":0,"y":1},{"x":1,"y":1}],"rows":2}}}"#
         #expect(String(decoding: try encoder.encode(o), as: UTF8.self) == before)
         #expect(try JSONDecoder().decode(OutputConfig.self, from: Data(before.utf8)).presets.isEmpty)
 
+        o.slices[0].masks = [MaskShape(feather: 2, path: [MaskPoint(0, 0), MaskPoint(1, 0), MaskPoint(0, 1)])]
         o.storePreset(3, name: nil)
         o.warp.cornerPin[0] = MapPoint(0.1, 0)
         let replacedNew = o.storePreset(1, name: "Wide")
         #expect(!replacedNew)
         let back = try JSONDecoder().decode(OutputConfig.self, from: encoder.encode(o))
         #expect(back == o && back.presets.map(\.number) == [1, 3], "kept in number order")
-        #expect(back.preset(3)?.name == "Preset 3" && back.preset(3)?.warp.cornerPin[0] == MapPoint(0, 0) && back.preset(3)?.slices[0].mask != nil)
+        #expect(back.preset(3)?.name == "Preset 3" && back.preset(3)?.warp.cornerPin[0] == MapPoint(0, 0) && back.preset(3)?.slices[0].masks.count == 1)
     }
 
     /// Store replaces a number (keeping its name unless one is given), recall copies warp and slices back and nothing

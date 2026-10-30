@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Content template: what of the canvas ends up visible on an output, drawn at canvas resolution for a designer.
-import type { MapPoint, OutputConfig, SliceConfig } from './outputs';
+import { maskOutline, type MapPoint, type OutputConfig, type SliceConfig } from './outputs';
 
 /** Bilinear position in a slice's destination quad (TL, TR, BR, BL), as the engine's slice mesh interpolates it. */
 export function bilinear(dest: MapPoint[], u: number, v: number): MapPoint {
@@ -45,8 +45,8 @@ function escape(text: string): string {
 }
 
 /**
- * SVG at canvas size: a 10 % grid, per slice the canvas rectangle it takes (outline + label) and its mask shape mapped
- * back onto the canvas (filled: that part is visible on the output). A mask edge is cut into pieces so it follows the
+ * SVG at canvas size: a 10 % grid, per slice the canvas rectangle it takes (outline + label) and its path masks mapped
+ * back onto the canvas (filled: what they leave visible on the output). A mask edge is cut into pieces so it follows the
  * slice's bilinear mapping.
  */
 export function templateSVG(output: OutputConfig, canvas: { width: number; height: number }, name = output.name): string {
@@ -62,22 +62,31 @@ export function templateSVG(output: OutputConfig, canvas: { width: number; heigh
   output.slices.forEach((slice, i) => {
     const colour = COLOURS[i % COLOURS.length]!;
     const x = slice.source.x * W, y = slice.source.y * H, w = slice.source.w * W, h = slice.source.h * H;
-    if (slice.mask && slice.mask.path.length >= 3) {
-      const path = slice.mask.path;
-      const pts: MapPoint[] = [];
-      for (let k = 0; k < path.length; k++) {
-        const a = path[k]!, b = path[(k + 1) % path.length]!;
-        for (let s = 0; s < 16; s++) {
-          const q = maskPointOnCanvas(slice, { x: a.x + ((b.x - a.x) * s) / 16, y: a.y + ((b.y - a.y) * s) / 16 }, canvas);
-          if (q) pts.push(q);
+    // path masks only (an image mask's file is in the engine's library): the add masks filled, the subtract masks cut out
+    const paths = (slice.masks ?? []).filter((m) => m.path && m.path.length >= 3);
+    if (paths.length) {
+      const shapes = paths.map((m) => {
+        const outline = maskOutline(m.path!);
+        const pts: MapPoint[] = [];
+        for (let k = 0; k < outline.length; k++) {
+          const a = outline[k]!, b = outline[(k + 1) % outline.length]!;
+          for (let s = 0; s < 16; s++) {
+            const q = maskPointOnCanvas(slice, { x: a.x + ((b.x - a.x) * s) / 16, y: a.y + ((b.y - a.y) * s) / 16 }, canvas);
+            if (q) pts.push(q);
+          }
         }
-      }
-      parts.push(`<polygon points="${pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}" fill="${colour}" fill-opacity="0.28" stroke="${colour}" stroke-width="${line}"/>`);
+        return { mode: m.mode, points: pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ') };
+      });
+      const adds = shapes.some((s) => s.mode === 'add');
+      parts.push(`<mask id="mask${i}">${adds ? '' : `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="white"/>`}`);
+      for (const s of shapes) parts.push(`<polygon points="${s.points}" fill="${s.mode === 'add' ? 'white' : 'black'}"/>`);
+      parts.push(`</mask><rect width="${W}" height="${H}" fill="${colour}" fill-opacity="0.28" mask="url(#mask${i})"/>`);
+      for (const s of shapes) parts.push(`<polygon points="${s.points}" fill="none" stroke="${colour}" stroke-width="${line}"/>`);
     } else {
       parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${colour}" fill-opacity="0.18"/>`);
     }
     parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="${colour}" stroke-width="${line}" stroke-dasharray="${line * 4} ${line * 3}"/>`);
-    const label = `Slice ${slice.id} · ${Math.round(x)},${Math.round(y)} · ${Math.round(w)}×${Math.round(h)} px${slice.mask ? ' · masked' : ''}`;
+    const label = `Slice ${slice.id} · ${Math.round(x)},${Math.round(y)} · ${Math.round(w)}×${Math.round(h)} px${slice.masks?.length ? ' · masked' : ''}`;
     parts.push(`<text x="${x + font * 0.6}" y="${y + font * 1.4}" fill="${colour}" font-family="Helvetica, Arial, sans-serif" font-size="${font}" font-weight="700">${escape(label)}</text>`);
   });
   parts.push(

@@ -9,7 +9,7 @@ import Synchronization
 
 /// The point Warp & Slices has selected (`output.overlay`'s `selected`, DESIGN.md §9.10 item 4): corner `point` of the
 /// corner pin, mesh point `point` (row-major), corner `point` of slice `slice` (its index in `slices`), or point `point`
-/// of that slice's mask `mask` (0: a slice has one mask until masks v2).
+/// of that slice's mask `mask` (its index in `masks`; the point, not a handle).
 public struct OverlaySelection: Equatable, Sendable {
     public enum Kind: String, Sendable { case corner, mesh, slice, mask }
     public var slice: Int
@@ -111,27 +111,32 @@ public final class EditOverlay: @unchecked Sendable {
         let marks = selected.flatMap { mark(config, $0) } ?? []
         var lines: [OverlaySegment] = []
         // appending stops at the cap, which keeps room for the selection: nothing bounds a point's coordinates
-        func line(_ p: MapPoint, _ q: MapPoint, pieces n: Int) {
-            func at(_ t: Double) -> SIMD2<Float> { SIMD2(Float(p.x + (q.x - p.x) * t), Float(p.y + (q.y - p.y) * t)) }
+        func curve(_ at: (Double) -> MapPoint, pieces n: Int) {
+            func point(_ t: Double) -> SIMD2<Float> {
+                let p = at(t)
+                return SIMD2(Float(p.x), Float(p.y))
+            }
             for k in 0..<max(0, min(n, maxSegments - marks.count - lines.count)) {
-                lines.append(OverlaySegment(a: at(Double(k) / Double(n)), b: at(Double(k + 1) / Double(n))))
+                lines.append(OverlaySegment(a: point(Double(k) / Double(n)), b: point(Double(k + 1) / Double(n))))
             }
         }
-        func outline(_ points: [MapPoint], pieces: (MapPoint, MapPoint) -> Int) {
-            for (i, p) in points.enumerated() { line(p, points[(i + 1) % points.count], pieces: pieces(p, points[(i + 1) % points.count])) }
-        }
+        func line(_ p: MapPoint, _ q: MapPoint) { curve({ MapPoint(p.x + (q.x - p.x) * $0, p.y + (q.y - p.y) * $0) }, pieces: pieces) }
         if let mesh = config.warp.mesh, mesh.cols >= 2, mesh.rows >= 2, mesh.points.count == mesh.cols * mesh.rows {
-            for r in 0..<mesh.rows { line(MapPoint(0, Double(r) / Double(mesh.rows - 1)), MapPoint(1, Double(r) / Double(mesh.rows - 1)), pieces: pieces) }
-            for c in 0..<mesh.cols { line(MapPoint(Double(c) / Double(mesh.cols - 1), 0), MapPoint(Double(c) / Double(mesh.cols - 1), 1), pieces: pieces) }
+            for r in 0..<mesh.rows { line(MapPoint(0, Double(r) / Double(mesh.rows - 1)), MapPoint(1, Double(r) / Double(mesh.rows - 1))) }
+            for c in 0..<mesh.cols { line(MapPoint(Double(c) / Double(mesh.cols - 1), 0), MapPoint(Double(c) / Double(mesh.cols - 1), 1)) }
         } else {
-            outline(WarpSettings().cornerPin) { _, _ in pieces }
+            for (i, p) in WarpSettings().cornerPin.enumerated() { line(p, WarpSettings().cornerPin[(i + 1) % 4]) }
         }
         for slice in config.slices where slice.dest.count == 4 {
-            outline(slice.dest) { _, _ in pieces }
-            // a mask is sampled per pixel before the warp: its edges in pieces of at most 1/64 of the output, clamped before
-            // the conversion (a point at 1e19 would trap it)
-            if let mask = slice.mask, mask.path.count >= 3 {
-                outline(mask.path) { p, q in max(1, Int(min(Double(maxSegments), (max(abs(q.x - p.x), abs(q.y - p.y)) * Double(pieces)).rounded(.up)))) }
+            for (i, p) in slice.dest.enumerated() { line(p, slice.dest[(i + 1) % 4]) }
+            // masks are sampled per pixel before the warp: each path edge, curves included, in pieces of at most 1/64 of the
+            // output (by its points' extent), clamped before the conversion (a point at 1e19 would trap it); an image has none
+            for mask in slice.masks {
+                guard let path = mask.path, path.count >= 3 else { continue }
+                for e in MaskMath.edges(path) {
+                    let extent = max(max(e.a.x, e.c1.x, e.c2.x, e.b.x) - min(e.a.x, e.c1.x, e.c2.x, e.b.x), max(e.a.y, e.c1.y, e.c2.y, e.b.y) - min(e.a.y, e.c1.y, e.c2.y, e.b.y))
+                    curve(e.at, pieces: max(1, Int(min(Double(maxSegments), (extent * Double(pieces)).rounded(.up)))))
+                }
             }
         }
         return lines + marks
@@ -157,8 +162,10 @@ public final class EditOverlay: @unchecked Sendable {
             guard config.slices.indices.contains(s.slice), config.slices[s.slice].dest.indices.contains(s.point) else { return nil }
             (at, label) = (config.slices[s.slice].dest[s.point], digits(s.point + 1))
         case .mask:
-            guard s.mask == 0, config.slices.indices.contains(s.slice), let path = config.slices[s.slice].mask?.path, path.indices.contains(s.point) else { return nil }
-            (at, label) = (path[s.point], digits(s.point + 1))
+            guard config.slices.indices.contains(s.slice), config.slices[s.slice].masks.indices.contains(s.mask), let path = config.slices[s.slice].masks[s.mask].path,
+                path.indices.contains(s.point)
+            else { return nil }
+            (at, label) = (MapPoint(path[s.point].x, path[s.point].y), digits(s.point + 1))
         }
         let p = SIMD2(Float(at.x), Float(at.y))
         func mark(_ from: SIMD2<Float>, _ to: SIMD2<Float>, flags: UInt32 = 1) -> OverlaySegment { OverlaySegment(a: p, b: p, offsetA: from, offsetB: to, flags: flags) }

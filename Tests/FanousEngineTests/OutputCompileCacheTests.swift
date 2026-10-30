@@ -19,7 +19,7 @@ struct OutputCompileCacheTests {
         o.blend.right = BlendEdge(overlap: 40)
         o.blend.lift = 0.05
         o.warp.cornerPin[1] = MapPoint(0.95, 0.02)
-        o.slices[0].mask = MaskSettings(path: [MapPoint(0.1, 0.1), MapPoint(0.9, 0.1), MapPoint(0.5, 0.9)], feather: 8)
+        o.slices[0].masks = [MaskShape(feather: 8, path: [MaskPoint(0.1, 0.1), MaskPoint(0.9, 0.1), MaskPoint(0.5, 0.9)])]
         return o
     }
 
@@ -56,8 +56,11 @@ struct OutputCompileCacheTests {
             return out
         }
         let edits: [(String, (inout OutputConfig) -> Void)] = [
-            ("mask feather", { $0.slices[0].mask?.feather = 3 }),
-            ("mask path", { $0.slices[0].mask?.path[2] = MapPoint(0.5, 0.7) }),
+            ("mask feather", { $0.slices[0].masks[0].feather = 3 }),
+            ("mask path", { $0.slices[0].masks[0].path?[2] = MaskPoint(0.5, 0.7) }),
+            ("mask handle", { $0.slices[0].masks[0].path?[2].in = MapPoint(0.1, 0) }),
+            ("mask mode", { $0.slices[0].masks[0].mode = .subtract }),
+            ("second mask", { $0.slices[0].masks.append(MaskShape(mode: .subtract, path: [MaskPoint(0.4, 0.2), MaskPoint(0.6, 0.2), MaskPoint(0.5, 0.4)])) }),
             ("corner pin", { $0.warp.cornerPin[1] = MapPoint(0.9, 0.05) }),
             ("gammaRGB", { $0.blend.right.gammaRGB = [1.8, 2.2, 2.6] }),
             ("lift feather", { $0.blend.liftFeather = 12 }),
@@ -106,7 +109,7 @@ struct OutputCompileCacheTests {
         func bytes(_ buffer: MTLBuffer) -> [UInt8] { Array(UnsafeRawBufferPointer(start: buffer.contents(), count: buffer.length)) }
         let edits: [(String, (inout SliceConfig) -> Void)] = [
             ("dest", { $0.dest[2] = MapPoint(0.9, 0.95) }), ("source", { $0.source = MapRect(x: 0.25, y: 0, w: 0.5, h: 1) }),
-            ("opacity", { $0.opacity = 0.5 }), ("canvas", { $0.canvas = 2 }), ("mask", { $0.mask = nil }),
+            ("opacity", { $0.opacity = 0.5 }), ("canvas", { $0.canvas = 2 }), ("masks", { $0.masks = [] }),
         ]
         for (name, edit) in edits {
             var variant = base

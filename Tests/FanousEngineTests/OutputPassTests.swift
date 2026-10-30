@@ -765,7 +765,7 @@ struct OutputPassTests {
         var half = OutputConfig(id: 1)
         half.color.black = 0.1
         half.slices[0].opacity = 0.5
-        half.slices[0].mask = MaskSettings(path: [MapPoint(0, 0), MapPoint(0.5, 0), MapPoint(0.5, 1), MapPoint(0, 1)])  // the left half
+        half.slices[0].masks = [MaskShape(path: [MaskPoint(0, 0), MaskPoint(0.5, 0), MaskPoint(0.5, 1), MaskPoint(0, 1)])]  // the left half
         let inside = try green(half, 80), outside = try green(half, 240)
         #expect(abs(Double(inside) - 12.75) <= 1, "black 0.1 at opacity 0.5: \(inside)")
         #expect(outside <= 1, "black 0.1 where the mask is 0: \(outside)")
@@ -1081,7 +1081,7 @@ struct OutputPassTests {
         o.slices = [slice(1, 0, 1, 0, 0.45, source: 0), slice(2, 0, 0.5, 0.55, 1, source: 0.5)]
         o.storePreset(1, name: nil)
         var masked = slice(2, 0.5, 1, 0.55, 1, source: 0.5)
-        masked.mask = MaskSettings(path: [MapPoint(0.5, 0.55), MapPoint(0.75, 0.55), MapPoint(0.75, 1), MapPoint(0.5, 1)])
+        masked.masks = [MaskShape(path: [MaskPoint(0.5, 0.55), MaskPoint(0.75, 0.55), MaskPoint(0.75, 1), MaskPoint(0.5, 1)])]
         o.slices = [slice(1, 0, 1, 0, 0.45, source: 0.5), masked]
         o.storePreset(2, name: nil)
         o.slices = [SliceConfig(id: 1)]
@@ -1265,7 +1265,7 @@ struct OutputPassTests {
         mesh.warp.mesh = m
         cases.append(("output-mesh", mesh))
         var masked = OutputConfig(id: 1)
-        masked.slices[0].mask = MaskSettings(path: [MapPoint(0.5, 0.05), MapPoint(0.95, 0.5), MapPoint(0.5, 0.95), MapPoint(0.05, 0.5)], feather: 24)
+        masked.slices[0].masks = [MaskShape(feather: 24, path: [MaskPoint(0.5, 0.05), MaskPoint(0.95, 0.5), MaskPoint(0.5, 0.95), MaskPoint(0.05, 0.5)])]
         cases.append(("output-mask-feather", masked))
         var slices = OutputConfig(id: 1)
         slices.slices[0].source = MapRect(x: 0, y: 0, w: 0.5, h: 1)
@@ -1307,7 +1307,7 @@ struct OutputPassTests {
         var o = OutputConfig(id: 1)
         o.warp.mesh = .identity(cols: 33, rows: 33)
         o.warp.mesh!.points[33 * 16 + 16] = MapPoint(0.51, 0.5)
-        o.slices[0].mask = MaskSettings(path: [MapPoint(0.1, 0.1), MapPoint(0.9, 0.1), MapPoint(0.9, 0.9), MapPoint(0.1, 0.9)], feather: 8)
+        o.slices[0].masks = [MaskShape(feather: 8, path: [MaskPoint(0.1, 0.1), MaskPoint(0.9, 0.1), MaskPoint(0.9, 0.9), MaskPoint(0.1, 0.9)])]
         let plan = try compiler.compile(o, index: 1, drawable: (1920, 1080))  // also the warm-up
         // the compile's own CPU time (it runs on this thread), best of as many tries as 10 s allow: the other suites of
         // a parallel run and other builds share the cores, and wall time on a loaded Mac measures them too (B67)

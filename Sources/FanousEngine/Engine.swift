@@ -255,7 +255,12 @@ public final class Engine: @unchecked Sendable {
         let thumbnailer = Thumbnailer(context: context, directory: AppPaths.cache.appending(path: "thumbnails"), logger: logger)
         library.thumbnailer = { url, metadata, kind in thumbnailer.make(for: url, metadata: metadata, kind: kind) }
         // a file that becomes playable (a probe after a scan or a root change) reaches layers still showing "missing"
-        library.onChange = { [weak self] in self?.render?.loader.reresolveMissingLibrary() }
+        // and image masks (§9.10 item 5) are compiled again: a changed, added or removed file gives their cache entries new keys
+        library.onChange = { [weak self] in
+            guard let self else { return }
+            render?.loader.reresolveMissingLibrary()
+            if !Self.imageMasks(in: canvasUse.withLock({ $0.outputs })).isEmpty { Task { @MainActor in self.applyCanvasUse() } }
+        }
         library.start()
         libraryBox.withLock { $0 = library }
 
@@ -497,7 +502,7 @@ public final class Engine: @unchecked Sendable {
             render.compositor.previewWanted = { preview.wantsFrames }
             stateServer.preview = preview
             logger.info("engine start", metadata: ["step": "output shaders"])
-            let compiler = OutputCompiler(device: context.device)
+            let compiler = OutputCompiler(device: context.device, media: { [weak self] in self?.maskFile($0) })
             preview.configure = { [weak self, compositor = render.compositor] target, streamer in
                 guard let self else { return false }
                 // layer:<n> (1-based, within the project's layers): that layer alone, drawn after the canvas pass
@@ -541,7 +546,8 @@ public final class Engine: @unchecked Sendable {
         // Displays and output windows (DESIGN.md §9.6); the render service starts after the coordinator exists.
             logger.info("engine start", metadata: ["step": "outputs"])
             let coordinator = MainActor.assumeIsolated { () -> OutputCoordinator in
-                let coordinator = OutputCoordinator(compositor: render.compositor, context: context, fps: fps, displays: DisplayManager.current(), logger: logger)
+                let coordinator = OutputCoordinator(
+                    compositor: render.compositor, context: context, fps: fps, displays: DisplayManager.current(), logger: logger, media: { [weak self] in self?.maskFile($0) })
                 displays.withLock { $0 = coordinator.connectedDisplays }
                 coordinator.onStatus = { [weak self, weak coordinator] statuses in
                     self?.outputStatus.withLock { $0 = statuses }
@@ -792,6 +798,18 @@ public final class Engine: @unchecked Sendable {
         return (region.w, region.h)
     }
 
+    /// Every image mask of `outputs` (DESIGN.md §9.10 item 5), edited and in stored presets, with where it is.
+    static func imageMasks(in outputs: [OutputConfig]) -> [(place: String, image: MaskImage)] {
+        outputs.flatMap { o in
+            ([("Output \(o.id)", o.slices)] + o.presets.map { ("Output \(o.id) preset \($0.number)", $0.slices) }).flatMap { place, slices in
+                slices.flatMap { s in s.masks.compactMap { m in m.image.map { ("\(place) slice \(s.id)", $0) } } }
+            }
+        }
+    }
+
+    /// An image mask's file in the library now; nil when there is none, and the mask covers nothing.
+    private func maskFile(_ image: MaskImage) -> URL? { library?.resolve(MediaKey(folder: image.folder, file: image.file)) }
+
     /// Compiles one output for the preview size; overlaps and feathers scale with the preview.
     /// `outputs` is passed in: this runs on the control queue from `projectChanged`, where `store.project` would deadlock.
     private func previewOutput(_ output: OutputConfig, in outputs: [OutputConfig], compiler: OutputCompiler, preview: PreviewStreamer) -> Bool {
@@ -804,7 +822,9 @@ public final class Engine: @unchecked Sendable {
         for edge in [\OutputConfig.blend.left, \.blend.right] { scaled[keyPath: edge].overlap *= factor }
         for edge in [\OutputConfig.blend.top, \.blend.bottom] { scaled[keyPath: edge].overlap *= factorY }
         scaled.blend.liftFeather *= factor
-        for i in scaled.slices.indices { scaled.slices[i].mask?.feather *= factor }
+        for i in scaled.slices.indices {
+            for m in scaled.slices[i].masks.indices { scaled.slices[i].masks[m].feather *= factor }
+        }
         let index = output.id  // fixture number and ID pattern follow the output's id
         do {
             preview.outputSet = OutputSet(
@@ -1105,6 +1125,9 @@ public final class Engine: @unchecked Sendable {
         context.modeIssues = modeChecks.withLock { $0 }.sorted { $0.key < $1.key }.compactMap { id, check in check.issue.map { "Output \(id): \($0)" } }
         context.layerErrors = projectLayers.compactMap { layer in layer.mediaStatus.withLock { $0.error.map { "Layer \(layer.index + 1): \($0)" } } }
         context.libraryRoot = library?.snapshot.root ?? ""
+        context.maskImagesMissing = Self.imageMasks(in: canvasUse.withLock { $0.outputs }).filter { maskFile($0.image) == nil }.map {
+            "\($0.place): folder \($0.image.folder) file \($0.image.file)"
+        }
         context.shownFolder0 = projectLayers.compactMap { layer in layer.mediaStatus.withLock { $0.folder == 0 ? $0.file : nil } }
         context.sceneCapture = options.scene?.media.contains { $0.capture != nil } ?? false
         context.sceneScreen = options.scene?.media.contains { $0.screen != nil } ?? false

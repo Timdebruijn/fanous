@@ -207,52 +207,136 @@ public enum WarpMath {
 }
 
 public enum MaskMath {
-    /// Signed distance from a point to a polygon in the same units: positive inside, negative outside.
-    public static func signedDistance(_ x: Double, _ y: Double, polygon: [(x: Double, y: Double)]) -> Double {
-        let n = polygon.count
-        guard n >= 3 else { return -1 }
-        var inside = false
-        var best = Double.infinity
-        var j = n - 1
-        for i in 0..<n {
-            let (ax, ay) = polygon[i], (bx, by) = polygon[j]
-            // even-odd crossing test
-            if (ay > y) != (by > y) {
-                let xAtY = ax + (y - ay) / (by - ay) * (bx - ax)
-                if x < xAtY { inside.toggle() }
-            }
-            // distance to the segment a–b
-            let dx = bx - ax, dy = by - ay
-            let len2 = dx * dx + dy * dy
-            let t = len2 > 0 ? min(1, max(0, ((x - ax) * dx + (y - ay) * dy) / len2)) : 0
-            let px = ax + t * dx - x, py = ay + t * dy - y
-            best = min(best, px * px + py * py)
-            j = i
+    /// Segment i of a closed mask path, from point i to the next (the last back to the first): a line, or with a handle at
+    /// either end a cubic Bézier through the point's `out` handle and the next one's `in` (a missing one is its own point).
+    public struct Edge: Sendable {
+        public var a: MapPoint, c1: MapPoint, c2: MapPoint, b: MapPoint
+        public var curved: Bool
+        /// The point at t (0…1) along it.
+        public func at(_ t: Double) -> MapPoint {
+            guard curved else { return MapPoint(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t) }
+            let s = 1 - t
+            let (wa, w1, w2, wb) = (s * s * s, 3 * s * s * t, 3 * s * t * t, t * t * t)
+            return MapPoint(wa * a.x + w1 * c1.x + w2 * c2.x + wb * b.x, wa * a.y + w1 * c1.y + w2 * c2.y + wb * b.y)
         }
-        return (inside ? 1 : -1) * best.squareRoot()
     }
 
-    /// 8-bit coverage, row-major from the top-left: 255 inside, 0 outside, a linear ramp over `feather` pixels
-    /// centred on the edge (exact signed-distance feathering, DESIGN.md §9.4). `step` > 1 evaluates every
-    /// step-th pixel (the result is `ceil(width/step) × ceil(height/step)`, sampled linearly by the shader):
-    /// a smooth distance field loses nothing when the feather spans a few samples.
-    public static func raster(_ mask: MaskSettings, width: Int, height: Int, step: Int = 1) -> (width: Int, height: Int, bytes: [UInt8]) {
-        let step = max(1, step)
-        let cols = (width + step - 1) / step, rows = (height + step - 1) / step
-        var out = [UInt8](repeating: 0, count: max(0, cols * rows))
-        guard width > 0, height > 0, mask.path.count >= 3 else { return (cols, rows, out) }
-        let polygon = mask.path.map { (x: $0.x * Double(width), y: $0.y * Double(height)) }
-        let feather = max(0, mask.feather)
-        for r in 0..<rows {
-            let y = (Double(r) + 0.5) * Double(height) / Double(rows)
-            for c in 0..<cols {
-                let x = (Double(c) + 0.5) * Double(width) / Double(cols)
-                let d = signedDistance(x, y, polygon: polygon)
-                let v: Double = feather > 0 ? min(1, max(0, 0.5 + d / feather)) : (d >= 0 ? 1 : 0)
-                out[r * cols + c] = UInt8((v * 255).rounded())
+    public static func edges(_ path: [MaskPoint]) -> [Edge] {
+        path.indices.map { i in
+            let p = path[i], q = path[(i + 1) % path.count]
+            let out = p.out ?? MapPoint(0, 0), into = q.in ?? MapPoint(0, 0)
+            return Edge(
+                a: MapPoint(p.x, p.y), c1: MapPoint(p.x + out.x, p.y + out.y), c2: MapPoint(q.x + into.x, q.y + into.y), b: MapPoint(q.x, q.y),
+                curved: p.out != nil || q.in != nil)
+        }
+    }
+
+    /// The closed outline of `path` in pixels of a w × h output, a line per straight segment and curves flattened to
+    /// within a quarter pixel: what the fill and the feather both use.
+    public static func outline(_ path: [MaskPoint], width: Int, height: Int) -> [(x: Double, y: Double)] {
+        let (sx, sy) = (Double(width), Double(height))
+        var out: [(x: Double, y: Double)] = []
+        for e in edges(path) {
+            var n = 1
+            if e.curved {
+                // a cubic cut into n equal steps of t is off by at most ¾ · dd / n² (dd the larger second difference of its
+                // points): a quarter pixel needs n² ≥ 3 · dd. Clamped before the conversion (`min` keeps 1024 for NaN)
+                let dd = max(
+                    hypot((e.a.x - 2 * e.c1.x + e.c2.x) * sx, (e.a.y - 2 * e.c1.y + e.c2.y) * sy),
+                    hypot((e.c1.x - 2 * e.c2.x + e.b.x) * sx, (e.c1.y - 2 * e.c2.y + e.b.y) * sy))
+                n = max(1, Int(min(1024, (3 * dd).squareRoot().rounded(.up))))
+            }
+            for k in 0..<n {
+                let p = e.at(Double(k) / Double(n))
+                out.append((p.x * sx, p.y * sy))
             }
         }
-        return (cols, rows, out)
+        return out
+    }
+
+    /// A pixel coordinate as an index, clamped to −1…hi before the conversion (a point at 1e19 would trap it; `max` keeps −1
+    /// for NaN).
+    private static func index(_ v: Double, _ hi: Int) -> Int { Int(min(Double(hi), max(-1, v))) }
+
+    /// The nonzero fill of a closed outline (pixels) at the pixel centres of a w × h output: 255 inside, 0 outside,
+    /// row-major from the top-left. The sign under a feather: CoreGraphics' aliased fill sets every pixel the path touches,
+    /// up to a pixel outside the edge, so it would not agree with the distance.
+    public static func fill(_ outline: [(x: Double, y: Double)], width: Int, height: Int) -> [UInt8] {
+        var out = [UInt8](repeating: 0, count: max(0, width * height))
+        guard width > 0, height > 0 else { return out }
+        // per row, where a segment crosses the row's centre line and which way: half-open in y, so a point two segments
+        // share counts once
+        var crossings = [[(x: Double, winding: Int)]](repeating: [], count: height)
+        for i in outline.indices {
+            let a = outline[i], b = outline[(i + 1) % outline.count]
+            guard a.y != b.y else { continue }
+            let (lo, hi) = a.y < b.y ? (a, b) : (b, a)
+            let first = max(0, index((lo.y - 0.5).rounded(.up), height)), last = min(height - 1, index((hi.y - 0.5).rounded(.up), height) - 1)
+            guard first <= last else { continue }
+            for row in first...last {
+                let y = Double(row) + 0.5
+                crossings[row].append((lo.x + (y - lo.y) / (hi.y - lo.y) * (hi.x - lo.x), a.y < b.y ? 1 : -1))
+            }
+        }
+        out.withUnsafeMutableBufferPointer { out in
+            for row in 0..<height where crossings[row].count >= 2 {
+                let sorted = crossings[row].sorted { $0.x < $1.x }
+                var winding = 0
+                for k in 0..<(sorted.count - 1) {
+                    winding += sorted[k].winding
+                    guard winding != 0 else { continue }
+                    // the centres from this crossing up to the next
+                    let from = max(0, index((sorted[k].x - 0.5).rounded(.up), width)), to = min(width - 1, index((sorted[k + 1].x - 0.5).rounded(.up), width) - 1)
+                    if from <= to { UnsafeMutableBufferPointer(rebasing: out[(row * width + from)...(row * width + to)]).update(repeating: 255) }
+                }
+            }
+        }
+        return out
+    }
+
+    /// The feather over a filled outline (DESIGN.md §9.10 item 5): `coverage` is `fill`'s. Within feather/2 of the closed
+    /// `outline` (pixels) a pixel becomes 0.5 + d / feather, d its distance to the outline, positive inside: a linear ramp,
+    /// 0.5 on the edge. Banded: each segment visits only the pixels within feather/2 of it (per row, the part of the
+    /// segment within feather/2 of that row), keeping the nearest, instead of every segment for every pixel.
+    public static func feather(_ coverage: inout [UInt8], outline: [(x: Double, y: Double)], feather: Double, width: Int, height: Int) {
+        let r = feather / 2
+        guard r > 0, outline.count >= 2, coverage.count == width * height else { return }
+        coverage.withUnsafeMutableBufferPointer { out in
+            for i in outline.indices {
+                let a = outline[i], b = outline[(i + 1) % outline.count]
+                let (dx, dy) = (b.x - a.x, b.y - a.y)
+                let len2 = dx * dx + dy * dy
+                // rows whose centre (row + 0.5) lies within r of the segment's y range
+                let top = max(0, index((min(a.y, b.y) - r - 0.5).rounded(.up), height)), bottom = min(height - 1, index((max(a.y, b.y) + r - 0.5).rounded(.down), height))
+                guard top <= bottom else { continue }
+                for row in top...bottom {
+                    let yc = Double(row) + 0.5
+                    // the part of the segment within r of this row, widened by r: every pixel of the row within r of it
+                    var (t0, t1) = (0.0, 1.0)
+                    if dy != 0 {
+                        let (ta, tb) = ((yc - r - a.y) / dy, (yc + r - a.y) / dy)
+                        (t0, t1) = (max(0, min(ta, tb)), min(1, max(ta, tb)))
+                    }
+                    guard t0 <= t1 else { continue }
+                    let (xa, xb) = (a.x + t0 * dx, a.x + t1 * dx)
+                    let left = max(0, index((min(xa, xb) - r - 0.5).rounded(.up), width)), right = min(width - 1, index((max(xa, xb) + r - 0.5).rounded(.down), width))
+                    guard left <= right else { continue }
+                    for col in left...right {
+                        let (px, py) = (Double(col) + 0.5 - a.x, yc - a.y)
+                        let t = len2 > 0 ? min(1, max(0, (px * dx + py * dy) / len2)) : 0
+                        let (ex, ey) = (px - t * dx, py - t * dy)
+                        let d2 = ex * ex + ey * ey
+                        guard d2 < r * r else { continue }
+                        // a pixel keeps its side while segments write it: inside values stay ≥ 128 and outside ones ≤ 128
+                        // (both 128 on the edge itself), so the nearest segment wins with min inside and max outside
+                        let k = row * width + col
+                        let inside = out[k] >= 128
+                        let v = UInt8(((0.5 + (inside ? 1 : -1) * d2.squareRoot() / feather) * 255).rounded())
+                        out[k] = inside ? min(out[k], v) : max(out[k], v)
+                    }
+                }
+            }
+        }
     }
 }
 

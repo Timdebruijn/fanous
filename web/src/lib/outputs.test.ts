@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it, vi } from 'vitest';
-import { canvasSizeError, canvasTarget, colorOf, compareLease, freePresetNumber, previewReady, layerCanvas, layerRuns, layersOn, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, recalledText, sharedPresets, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, handles, keystoneBadges, meshIdentity, modeText, outlines, outputSize, statusText, type OutputConfig } from './outputs';
+import { canvasSizeError, canvasTarget, colorOf, compareLease, freePresetNumber, previewReady, layerCanvas, layerRuns, layersOn, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, recalledText, sharedPresets, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, defaultMask, handles, keystoneBadges, maskHandle, meshIdentity, modeText, outlines, outputSize, statusText, type OutputConfig } from './outputs';
 
 const output: OutputConfig = {
   id: 1,
@@ -13,7 +13,7 @@ const output: OutputConfig = {
   intensity: 1,
   blend: { left: { overlap: 0, power: 2, gamma: 2.2 }, right: { overlap: 0, power: 2, gamma: 2.2 }, top: { overlap: 0, power: 2, gamma: 2.2 }, bottom: { overlap: 0, power: 2, gamma: 2.2 }, lift: 0, liftFeather: 0 },
   warp: { cornerPin: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }], mesh: meshIdentity(3, 3) },
-  slices: [{ id: 1, canvas: 1, source: { x: 0, y: 0, w: 1, h: 1 }, dest: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }], mask: { path: [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 }, { x: 0.5, y: 0.9 }], feather: 4 }, opacity: 1 }],
+  slices: [{ id: 1, canvas: 1, source: { x: 0, y: 0, w: 1, h: 1 }, dest: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }], masks: [{ mode: 'add', feather: 4, path: [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 }, { x: 0.5, y: 0.9 }] }], opacity: 1 }],
   testPattern: 0,
 };
 
@@ -50,6 +50,26 @@ describe('outputs helpers', () => {
     expect(spread[0]!.source.w).toBeCloseTo(0.4);
     // degenerate slices are left alone
     expect(spreadSources([{ ...base, dest: [] }], { w: 1920, h: 1080 })[0]!.source).toEqual(base.source);
+  });
+
+  it('shows every path mask of a slice: its points with the pointer each edits, its outline with curves sampled', () => {
+    const k = (4 / 3) * (Math.SQRT2 - 1) * 0.25;
+    const circle = [
+      { x: 0.75, y: 0.5, in: { x: 0, y: -k }, out: { x: 0, y: k } }, { x: 0.5, y: 0.75, in: { x: k, y: 0 }, out: { x: -k, y: 0 } },
+      { x: 0.25, y: 0.5, in: { x: 0, y: k }, out: { x: 0, y: -k } }, { x: 0.5, y: 0.25, in: { x: -k, y: 0 }, out: { x: k, y: 0 } },
+    ];
+    const slice = { ...output.slices[0]!, masks: [...output.slices[0]!.masks!, { mode: 'subtract' as const, feather: 0, image: { folder: 1, file: 2 } }, { mode: 'subtract' as const, feather: 0, path: circle }] };
+    const several = { ...output, slices: [slice] };
+    const points = handles(several, 'mask', 0);
+    expect(points.map((h) => h.path)).toEqual([0, 1, 2].map((i) => `/slices/0/masks/0/path/${i}`).concat([0, 1, 2, 3].map((i) => `/slices/0/masks/2/path/${i}`)));
+    expect(points[3]!.point, 'the stored point, handles included').toEqual(circle[0]);
+    expect(maskHandle(points[4]!.path)).toEqual({ slice: 0, mask: 2, point: 1 });
+    expect(maskHandle('/slices/0/dest/1')).toBeNull();
+    const lines = outlines(several, 'mask', 0);
+    expect(lines.map((l) => l.points.length), "the triangle's corners, the circle's four curves in 8 steps, nothing for the image").toEqual([3, 32]);
+    lines[1]!.points.forEach((p) => expect(Math.hypot(p.x - 0.5, p.y - 0.5)).toBeCloseTo(0.25, 3));
+    expect(lines[1]!.points[0]).toEqual({ x: 0.75, y: 0.5 });
+    expect(defaultMask()).toMatchObject({ mode: 'add', feather: 0 });
   });
 
   it('draws mesh rows and columns as outlines', () => {
@@ -206,7 +226,8 @@ describe('outputs helpers', () => {
     const status = { id: 1, state: 'bound' as const, display: 'Epson', width: 1920, height: 1200, hz: 60, master: true };
     expect(overlaySelection('cornerPin', 2, 3)).toEqual({ slice: 0, kind: 'corner', point: 3 });
     expect(overlaySelection('mesh', 4, 7)).toEqual({ slice: 0, kind: 'mesh', point: 7 });
-    expect(overlaySelection('mask', 2, 5)).toEqual({ slice: 2, kind: 'mask', point: 5 });
+    expect(overlaySelection('mask', 2, 5, '/slices/2/masks/1/path/3')).toEqual({ slice: 2, kind: 'mask', mask: 1, point: 3 });
+    expect(overlaySelection('mask', 2, 5, '/slices/2/dest/1')).toBeNull();
     expect([overlaySelection('mesh', 0, 7)?.kind, overlaySelection('slices', 1, 2)?.kind]).toEqual(['mesh', 'slice']);
     expect(overlaySelection('slices', 0, -1), 'nothing selected').toBeNull();
     expect(overlayBadges({ ...status, overlay: 'shown' })).toEqual([]);

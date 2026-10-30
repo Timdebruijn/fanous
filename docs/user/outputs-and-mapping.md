@@ -411,7 +411,7 @@ numeric x and y fields in pixels. Changes go to the engine while you drag.
 itself, so at the wall you see which point is selected:
 
 - The warp (the edges of the corner pin, or the grid lines of the mesh), every
-  slice's outline and its mask's outline. They go through the warp and the
+  slice's outline and the outline of each of its masks. They go through the warp and the
   keystone, so they lie on the picture.
 - The selected point is a yellow cross with a gap in the middle, so you still
   see the point. Its number is next to it in yellow digits. On a mesh the
@@ -512,11 +512,17 @@ a handle stays on the spot you touch while a warp is active.
   goes, or double-click anywhere: the point joins the nearest edge. Drag points
   to move them, nudge with the arrow keys or the pad, **Backspace** (or
   **Remove point**) deletes the selected one; a mask keeps at least three.
-  **Feather (px)** softens the edge, **Redraw** starts the shape again,
-  **Remove mask** deletes it.
+  **Feather (px)** softens the edge (from 2 px; below that the edge stays
+  plain), **Redraw** starts the shape again, **Remove mask** deletes it.
+  A slice can have several masks (the tools to make more than one, and curved
+  and image masks, come in a later step; a project file can have them
+  already): every mask's points and outline show, and the buttons act on the
+  mask of the selected point, else the first. A project saved before this
+  version opens with its masks as they were. A browser tab opened before the
+  update cannot change masks until you reload it.
 - **Content template (PNG)**: downloads a picture at the size of the selected
-  slice's canvas that shows, per slice on that canvas, which rectangle it uses and (filled) what its mask
-  leaves visible. Give it to whoever makes the content, as a layer under their
+  slice's canvas that shows, per slice on that canvas, which rectangle it uses and (filled) what its masks
+  leave visible (an image mask is not drawn there). Give it to whoever makes the content, as a layer under their
   design, so windows and edges land where the mapping expects them.
 
 Canvas 1 is also published as the Syphon server "Fanous – Canvas" (in Syphon's

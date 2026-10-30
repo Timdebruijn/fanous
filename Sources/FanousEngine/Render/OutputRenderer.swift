@@ -136,14 +136,18 @@ public final class OutputCompiler: @unchecked Sendable {
     public static let sliceSubdivisions = 64
     public static let fieldDivisor = 4
     private let device: MTLDevice
+    /// An image mask's file in the media library, nil when it has none (§9.10 item 5).
+    private let media: @Sendable (MaskImage) -> URL?
 
     /// What a texture or slice plan is made of; a changed region, display mode or drawable size gives new keys.
     enum Key: Hashable {
         case blend(BlendSettings, width: Int, height: Int)
         case warp(WarpSettings, cols: Int, rows: Int)
-        case mask(MaskSettings, width: Int, height: Int)
+        /// A slice's masks as one raster, keyed by the masks alone (a moved slice keeps it) and the files of its image masks
+        /// as the library has them (`stamp`), so a changed file is a new key.
+        case masks([MaskShape], files: [String], width: Int, height: Int)
         /// A slice's mesh buffers with its mask texture, which is also cached on its own: a moved slice keeps its raster.
-        case slice(SliceConfig, width: Int, height: Int)
+        case slice(SliceConfig, files: [String], width: Int, height: Int)
     }
     private struct Entry: @unchecked Sendable { weak var object: AnyObject? }  // textures and slice plans are immutable once compiled
     /// Held weakly: a texture or slice plan lives exactly as long as a plan holds it (every display's set, the set a frozen
@@ -155,9 +159,10 @@ public final class OutputCompiler: @unchecked Sendable {
     private let logger: Logger?
     private let reported = Mutex<Set<[Int]>>([])
 
-    public init(device: MTLDevice, logger: Logger? = nil) {
+    public init(device: MTLDevice, logger: Logger? = nil, media: @escaping @Sendable (MaskImage) -> URL? = { _ in nil }) {
         self.device = device
         self.logger = logger
+        self.media = media
     }
 
     /// Cache entries, a dead one until the next compile drops it (tests).
@@ -229,7 +234,9 @@ public final class OutputCompiler: @unchecked Sendable {
     /// A slice's tessellated mesh and mask texture on a w × h output, through the cache: a rebind (every drag step) builds
     /// only the slices that changed, the edited mapping's and every preset's.
     private func slicePlan(_ slice: SliceConfig, output id: Int, width w: Int, height h: Int) throws -> SlicePlan {
-        try cached(.slice(slice, width: w, height: h)) {
+        // the image masks' files as they are now: a changed file gives new keys, so the library's change makes its raster again
+        let files = slice.masks.compactMap { $0.image.map { media($0).map(Self.stamp) ?? "" } }
+        return try cached(.slice(slice, files: files, width: w, height: h)) {
             let (vertices, indices) = SliceMesh.build(slice, subdivisions: Self.sliceSubdivisions)
             guard !vertices.isEmpty,
                 let vertexBuffer = device.makeBuffer(bytes: vertices, length: vertices.count * MemoryLayout<SliceMesh.Vertex>.stride, options: .storageModeShared),
@@ -237,16 +244,10 @@ public final class OutputCompiler: @unchecked Sendable {
             else { throw RenderError.pipeline("slice mesh \(slice.id)") }
             vertexBuffer.label = "slice \(id).\(slice.id)"
             var mask: MTLTexture? = nil
-            // keyed by the mask alone: moving the slice keeps its raster
-            if let m = slice.mask, m.path.count >= 3 {
-                mask = try cached(.mask(m, width: w, height: h)) {
-                    if m.feather >= 2 {
-                        // signed-distance feather on a coarser grid (the field is smooth); 1080p with an 8 px feather → 480×270
-                        let raster = MaskMath.raster(m, width: w, height: h, step: min(4, Int(m.feather / 2)))
-                        return try texture(.r8Unorm, width: raster.width, height: raster.height, bytesPerPixel: 1, label: "mask \(id).\(slice.id)") { raster.bytes.withUnsafeBytes { $0.baseAddress! } }
-                    }
-                    // hard edge: CoreGraphics fills the polygon pixel-exactly at full resolution
-                    let raster = Self.fill(m.path, width: w, height: h)
+            // keyed by the masks alone: moving the slice keeps its raster
+            if slice.masks.contains(where: { $0.problem == nil }) {
+                mask = try cached(.masks(slice.masks, files: files, width: w, height: h)) {
+                    let raster = Self.maskRaster(slice.masks, width: w, height: h) { media($0).flatMap(StillSource.image) }
                     return try texture(.r8Unorm, width: w, height: h, bytesPerPixel: 1, label: "mask \(id).\(slice.id)") { raster.withUnsafeBytes { $0.baseAddress! } }
                 }
             }
@@ -254,26 +255,79 @@ public final class OutputCompiler: @unchecked Sendable {
         }
     }
 
-    /// Anti-aliased polygon fill, 8-bit coverage, row-major from the top-left.
-    static func fill(_ path: [MapPoint], width: Int, height: Int) -> [UInt8] {
+    /// What a library file is now, as `LibraryIndex` keys its cache: path, modification time and size.
+    static func stamp(_ url: URL) -> String {
+        // not `resourceValues`: a URL caches those
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return "\(url.path)|\((attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0)|\(attributes?[.size] as? Int ?? 0)"
+    }
+
+    /// A slice's masks as one 8-bit raster on a w × h output (DESIGN.md §9.10 item 5), row-major from the top-left: the
+    /// union of the add masks (everything without one) minus the union of the subtract masks, max(adds) × (1 − max(subtracts)).
+    /// `image` gives an image mask's picture; without one (a missing or unreadable file) it covers nothing. A mask with a
+    /// `problem` is left out.
+    static func maskRaster(_ masks: [MaskShape], width: Int, height: Int, image: (MaskImage) -> CGImage?) -> [UInt8] {
+        var add: [UInt8]? = nil, subtract: [UInt8]? = nil
+        for mask in masks where mask.problem == nil {
+            var raster: [UInt8]
+            if let path = mask.path {
+                // under 2 px the edge is anti-aliased, as before M2.7 (anti-aliasing is about a 1 px ramp); from 2 px the
+                // fill at the pixel centres gives the ramp's sign
+                let outline = MaskMath.outline(path, width: width, height: height)
+                if mask.feather >= 2 {
+                    raster = MaskMath.fill(outline, width: width, height: height)
+                    MaskMath.feather(&raster, outline: outline, feather: mask.feather, width: width, height: height)
+                } else {
+                    raster = fill(outline, width: width, height: height)
+                }
+            } else {
+                raster = mask.image.flatMap(image).map { draw($0, width: width, height: height) } ?? [UInt8](repeating: 0, count: width * height)
+            }
+            switch mask.mode {
+            case .add: add = add.map { zip($0, raster).map(max) } ?? raster
+            case .subtract: subtract = subtract.map { zip($0, raster).map(max) } ?? raster
+            }
+        }
+        var visible = add ?? [UInt8](repeating: 255, count: width * height)
+        if let subtract {
+            for i in visible.indices { visible[i] = UInt8((Int(visible[i]) * (255 - Int(subtract[i])) + 127) / 255) }
+        }
+        return visible
+    }
+
+    /// CoreGraphics' anti-aliased nonzero fill of a closed outline in pixels, 8-bit coverage, row-major from the top-left.
+    static func fill(_ outline: [(x: Double, y: Double)], width: Int, height: Int) -> [UInt8] {
+        grey(width, height) { context in
+            context.setFillColor(gray: 1, alpha: 1)
+            // CoreGraphics' origin is bottom-left; flip so row 0 is the top
+            context.translateBy(x: 0, y: CGFloat(height))
+            context.scaleBy(x: 1, y: -1)
+            context.beginPath()
+            for (i, p) in outline.enumerated() {
+                if i == 0 { context.move(to: CGPoint(x: p.x, y: p.y)) } else { context.addLine(to: CGPoint(x: p.x, y: p.y)) }
+            }
+            context.closePath()
+            context.fillPath(using: .winding)
+        }
+    }
+
+    /// An image mask's picture stretched over a w × h output as 8-bit luminance, row-major from the top-left.
+    static func draw(_ image: CGImage, width: Int, height: Int) -> [UInt8] {
+        grey(width, height) { context in
+            context.interpolationQuality = .high
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+    }
+
+    /// What `body` draws into an 8-bit grey context of w × h, black at first: its bytes, row-major from the top-left.
+    private static func grey(_ width: Int, _ height: Int, _ body: (CGContext) -> Void) -> [UInt8] {
         var bytes = [UInt8](repeating: 0, count: width * height)
         bytes.withUnsafeMutableBytes { raw in
             guard let context = CGContext(
                 data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
                 bitmapInfo: CGImageAlphaInfo.none.rawValue)
             else { return }
-            context.setFillColor(gray: 1, alpha: 1)
-            context.setShouldAntialias(true)
-            // CoreGraphics' origin is bottom-left; flip so row 0 is the top
-            context.translateBy(x: 0, y: CGFloat(height))
-            context.scaleBy(x: 1, y: -1)
-            context.beginPath()
-            for (i, p) in path.enumerated() {
-                let point = CGPoint(x: p.x * Double(width), y: p.y * Double(height))
-                if i == 0 { context.move(to: point) } else { context.addLine(to: point) }
-            }
-            context.closePath()
-            context.fillPath(using: .evenOdd)
+            body(context)
         }
         return bytes
     }
