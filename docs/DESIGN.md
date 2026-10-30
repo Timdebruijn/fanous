@@ -3088,7 +3088,7 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
   - Not built: radial mapping (content wrapped around a ring), until a show
     asks for it.
 
-**As built (M2.7, PR #TBD):**
+**As built (M2.7, PR #141):**
 - **Model** (Core `OutputModel.swift`). `SliceConfig.masks: [MaskShape]`, read with `decodeIfPresent` and written only
   when there are any (a custom `encode(to:)`, as `presets`), so a slice without masks saves byte for byte as before;
   `mask` is gone from Swift. `MaskShape { mode: add | subtract, feather, path?, image? }`, `MaskPoint { x, y, in?, out? }`
