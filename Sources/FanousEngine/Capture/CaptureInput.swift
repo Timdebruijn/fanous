@@ -240,12 +240,14 @@ public class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoDataOutput
     static let cameraTypes: Set<AVCaptureDevice.DeviceType> = [.builtInWideAngleCamera, .continuityCamera]
 
     /// The size a camera runs at (B126): the largest that fits `canvas` and has a range holding `fps`, else the largest
-    /// that fits; nil when no size fits (the active format's size then stays, as for a card). A camera's session preset
-    /// leaves some devices small (the iPhone at 640x480) while the canvas asks for more.
+    /// that fits with a range below `fps` (what `pick` runs); nil when no size fits or can run (the active format's size
+    /// then stays, as for a card). A camera's session preset leaves some devices small (the iPhone at 640x480) while the
+    /// canvas asks for more.
     static func pickSize(_ options: [SizeOption], fps: Double, canvas: (width: Int, height: Int)) -> (width: Int, height: Int)? {
         let fitting = options.filter { $0.width <= canvas.width && $0.height <= canvas.height }
         let holding = fitting.filter { holds(min: $0.minRate, max: $0.maxRate, fps) }
-        return (holding.isEmpty ? fitting : holding).max { $0.width * $0.height < $1.width * $1.height }.map { ($0.width, $0.height) }
+        let runnable = holding.isEmpty ? fitting.filter { $0.maxRate < fps } : holding
+        return runnable.max { $0.width * $0.height < $1.width * $1.height }.map { ($0.width, $0.height) }
     }
 
     /// The device's format and range to run at `fps`, and the rate: of the chosen size for a camera with a `canvas`

@@ -131,10 +131,8 @@ struct CaptureInputTests {
         #expect(pick([O(subtype: vuy, minRate: 1, maxRate: 30), O(subtype: jpeg, minRate: 1, maxRate: 30)], 30).map { $0.0 == 0 } == true)
     }
 
-    /// A frame without an IOSurface cannot be shown: counted as unusable (the layer would otherwise read "no signal" with
-    /// the device delivering); a frame after `stop()` is not counted.
     /// B126: a camera takes the largest size that fits the canvas and holds the canvas rate; without a holding range the
-    /// largest that fits; nothing fitting keeps the active size (nil).
+    /// largest that fits and runs below the rate; nothing fitting keeps the active size (nil).
     @Test func cameraSizePickFitsTheCanvas() {
         typealias S = CaptureInput.SizeOption
         let iphone = [S(width: 640, height: 480, minRate: 1, maxRate: 60), S(width: 1280, height: 720, minRate: 1, maxRate: 60), S(width: 1920, height: 1080, minRate: 1, maxRate: 60)]
@@ -149,8 +147,14 @@ struct CaptureInputTests {
         #expect(CaptureInput.pickSize(mixed, fps: 60, canvas: (1920, 1080)).map { $0 == (1280, 720) } == true)
         #expect(CaptureInput.pickSize(mixed, fps: 59.94, canvas: (1920, 1080)).map { $0 == (1280, 720) } == true)
         #expect(CaptureInput.pickSize(mixed, fps: 60, canvas: (320, 240)) == nil)
+        // nothing holds 50: the largest size whose range runs below it, not a larger one only above it (120–240)
+        let fast = [S(width: 1920, height: 1080, minRate: 120, maxRate: 240), S(width: 1280, height: 720, minRate: 1, maxRate: 30)]
+        #expect(CaptureInput.pickSize(fast, fps: 50, canvas: (1920, 1080)).map { $0 == (1280, 720) } == true)
+        #expect(CaptureInput.pickSize([S(width: 1920, height: 1080, minRate: 120, maxRate: 240)], fps: 50, canvas: (1920, 1080)) == nil)
     }
 
+    /// A frame without an IOSurface cannot be shown: counted as unusable (the layer would otherwise read "no signal" with
+    /// the device delivering); a frame after `stop()` is not counted.
     @Test func unusableFramesAreCounted() throws {
         let context = try MetalContext()
         let input = Self.input(context.device)
