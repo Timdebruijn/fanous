@@ -48,7 +48,7 @@ export interface FolderZeroItem {
   label: string;
 }
 
-/** Why a live input shows no picture, for the Media list; null while it runs (or for a generator). */
+/** Why a live input shows no picture, for the Media list; null while it runs (or for a generator). In use = connected, opened by another app. */
 export function zeroCaption(item: FolderZeroItem): string | null {
   if (item.inUse) return 'in use by another app';
   if (item.running) return null;

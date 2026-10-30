@@ -387,9 +387,8 @@ device you unplug keeps its number and gets it back when you plug it in again;
 a USB card moved to another port is found again by its model and name when
 only one gone device matches. **Forget** frees a number (a device that is
 not running, or **Forget all not running**; programmer, undoable, not while
-the show is locked). A device
-another app has open (an iPhone in FaceTime) reads "in use by another app".
-A card follows its input signal: the picture takes the size and rate of what
+the show is locked). A device another app has open (an iPhone in FaceTime)
+reads "in use by another app" with a yellow dot. A card follows its input signal: the picture takes the size and rate of what
 comes in, and a card without a signal for 2 seconds reads "no signal" on the
 Layers screen and keeps its last frame. macOS asks for the camera permission
 once, for "Fanous Engine": when a layer first selects a camera, or when you
@@ -398,7 +397,9 @@ show mode, so authorize before the show. Denied: allow Fanous Engine under
 System Settings › Privacy & Security › Camera. Verified so far: the built-in
 camera, an iPhone over Continuity Camera; UVC cards such as Elgato Cam Link
 4K and Magewell USB Capture appear as cameras; Blackmagic DeckLink and
-UltraStudio do not (they need their own SDK, see the backlog).
+UltraStudio do not (they need their own SDK, see the backlog). Displays
+(21–28) and the Screen permission arrive in a later step; they are not
+available yet.
 
 **Syphon servers (150–169).** Every Syphon server another app on this Mac
 publishes gets the lowest free number from 150, up to 169, when the engine

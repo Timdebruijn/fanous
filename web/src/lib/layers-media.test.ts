@@ -66,7 +66,7 @@ describe('folder 0 (B61)', () => {
       devices: [
         { file: 3, name: 'Cam Link 4K', running: false, gone: true as const },
         { file: 1, name: 'FaceTime HD Camera', running: true },
-        { file: 2, name: 'iPhone Camera', running: false, inUse: true as const },
+        { file: 2, name: 'iPhone Camera', running: true, inUse: true as const },
       ],
       screens: [{ file: 21, name: 'Built-in Retina Display', running: true }],
       permissions: { camera: 'granted' as const, screen: 'granted' as const },
@@ -85,6 +85,11 @@ describe('folder 0 (B61)', () => {
     // an engine without live.capture, or one with no devices: only generators and Syphon
     expect(folderZeroItems(servers, undefined).map((i) => i.kind)).not.toContain('capture');
     expect(folderZeroItems(undefined, { ...capture, devices: [], screens: [] })).toHaveLength(GENERATORS.length);
+  });
+  it('takes a partial capture feed: devices without screens or permissions', () => {
+    const items = folderZeroItems(undefined, { devices: [{ file: 1, name: 'FaceTime HD Camera', running: false }] }).slice(GENERATORS.length);
+    expect(items.map((i) => `${i.kind} ${i.label}`)).toEqual(['capture 1 · FaceTime HD Camera (not running)']);
+    expect(items.map(zeroCaption)).toEqual(['not running']);
   });
   it('shows a gone server by name with "not running" on the layer', () => {
     const gone = layer({ folder: 0, file: 151, kind: 'live', name: 'Syphon: Simple Server', error: 'not running', width: 0, height: 0 });

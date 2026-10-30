@@ -55,8 +55,9 @@ A camera, capture card or Syphon server keeps its number, also across engine
 restarts, until you forget it: select one that is not running and press
 **Forget**, or press **Forget all not running** above its list. Its number is
 then free for the next new one; **Undo** brings it back. A green dot means it
-runs; "in use by another app" means another app has the camera open (an
-iPhone in FaceTime).
+runs; a yellow dot with "in use by another app" means another app has the
+camera open (an iPhone in FaceTime). Displays (21–28) and the Screen
+permission arrive in a later step; they are not available yet.
 
 **Cameras and capture cards (1–20)** need the camera permission. Until it is
 granted the list says so: press **Authorize** under Capture permissions on the

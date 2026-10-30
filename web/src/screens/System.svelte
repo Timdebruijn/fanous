@@ -8,6 +8,7 @@
   import SystemSync from '../components/SystemSync.svelte';
   import SystemVersions from '../components/SystemVersions.svelte';
   import { modeText } from '../lib/outputs';
+  import { lockTitle } from '../lib/show';
   import { app, can, cmd } from '../lib/state.svelte';
   import { LOCKED_TITLE, OPERATOR_TITLE, ageText, headerCaption, memoryText, outputTone, readinessBadge, readinessSummary, resumedText, stampText, thermalTone } from '../lib/system';
 
@@ -28,7 +29,7 @@
   );
   // live.capture is absent from engines before B73 step 2: then no block
   const permissions = $derived(app.live.capture?.permissions);
-  const authorizeLock = $derived(lockedProgrammer ? LOCKED_TITLE : show.mode ? 'Leave show mode first' : undefined);
+  const authorizeLock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock) ?? (show.mode ? 'Leave show mode first' : undefined));
   const PERMISSION_WORDS: Record<string, string> = { granted: 'granted', denied: 'denied', notDetermined: 'not asked' };
   const outputName = (id: number) => app.project.outputs.find((o) => o.id === id)?.name ?? `Output ${id}`;
 
@@ -210,7 +211,7 @@
             <span class="grow">{row.label}</span>
             <span class="muted">{PERMISSION_WORDS[row.state] ?? row.state}</span>
             {#if row.state !== 'granted'}
-              <button type="button" class="btn" disabled={authorizeLock !== undefined} title={authorizeLock} onclick={() => void cmd('capture.authorize', { kind: row.kind })}>Authorize</button>
+              <button type="button" class="btn" aria-label={`Authorize ${row.label.toLowerCase()}`} disabled={authorizeLock !== undefined} title={authorizeLock} onclick={() => void cmd('capture.authorize', { kind: row.kind })}>Authorize</button>
               {#if row.kind === 'screen'}<span class="caption">a grant restarts the engine</span>{/if}
             {/if}
           </li>

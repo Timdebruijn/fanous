@@ -51,14 +51,15 @@
     ([
       { kind: 'generator', title: 'Built-in content', shown: true },
       { kind: 'capture', title: 'Cameras and capture cards (1–20)', shown: capture !== undefined },
-      { kind: 'screen', title: 'Displays (21–28)', shown: (capture?.screens.length ?? 0) > 0 },
+      { kind: 'screen', title: 'Displays (21–28)', shown: (capture?.screens?.length ?? 0) > 0 },
       { kind: 'syphon', title: 'Syphon servers (150–169)', shown: true },
     ] as const).filter((g) => g.shown).map((g) => {
       const list = zeroItems.filter((i) => i.kind === g.kind);
-      // live inputs not running: their numbers can be forgotten (B69, B73)
-      return { ...g, list, notRunning: list.filter((i) => !i.running).length };
+      // live inputs not running (in use counts as running): their numbers can be forgotten (B69, B73)
+      return { ...g, list, notRunning: list.filter((i) => !i.running && !i.inUse).length };
     }),
   );
+  const cameraPermission = $derived(capture?.permissions?.camera);
   let pickedZero = $state<number | null>(null);
   const pickedZeroItem = $derived(zeroItems.find((i) => i.file === pickedZero));
   function forget(kind: FolderZeroItem['kind'], file?: number) {
@@ -273,7 +274,8 @@
             <option value="">Play on layer ▾</option>
             {#each layerNumbers as n (n)}<option value={n}>Layer {n}</option>{/each}
           </select>
-          {#if pickedZeroItem.kind !== 'generator' && !pickedZeroItem.running}
+          <!-- displays get their own forget command in step 3 -->
+          {#if (pickedZeroItem.kind === 'syphon' || pickedZeroItem.kind === 'capture') && !pickedZeroItem.running && !pickedZeroItem.inUse}
             <button class="btn" disabled={playLock !== undefined} title={playLock ?? `Free this number: a console cue on it then selects the next new ${pickedZeroItem.kind === 'syphon' ? 'server' : 'device'} (undo brings it back)`}
               onclick={() => void forget(pickedZeroItem.kind, pickedZeroItem.file)}>Forget</button>
           {/if}
@@ -292,8 +294,8 @@
         {#if group.kind === 'syphon' && unnumbered.length > 0}
           <p class="caption" role="status">Not numbered, all 20 numbers are taken: {unnumbered.join(', ')}. Forget a server that is not running to free one.</p>
         {/if}
-        {#if group.kind === 'capture' && capture && capture.permissions.camera !== 'granted'}
-          <p class="caption" role="status">{capture.permissions.camera === 'denied' ? 'Camera permission denied: allow Fanous Engine under Privacy & Security › Camera' : 'Camera permission not granted: authorize on the System screen'}</p>
+        {#if group.kind === 'capture' && cameraPermission && cameraPermission !== 'granted'}
+          <p class="caption" role="status">{cameraPermission === 'denied' ? 'Camera permission denied: allow Fanous Engine under Privacy & Security › Camera.' : 'Camera permission not granted: authorize on the System screen.'}</p>
         {/if}
         {#if group.list.length === 0}
           <p class="caption">{group.kind === 'capture'
@@ -306,7 +308,7 @@
               <li>
                 <button class="list-row" class:dim={item.gone} aria-pressed={pickedZero === item.file} onclick={() => (pickedZero = pickedZero === item.file ? null : item.file)}>
                   <span class="num mono">{item.file}</span>
-                  {#if item.kind !== 'generator'}<span class="dot {item.running ? 'dot-green' : 'dot-off'}" aria-hidden="true"></span>{/if}
+                  {#if item.kind !== 'generator'}<span class="dot {item.inUse ? 'dot-yellow' : item.running ? 'dot-green' : 'dot-off'}" aria-hidden="true"></span>{/if}
                   <span class="ellipsis grow" title={item.name}>{item.name}</span>
                   {#if zeroCaption(item)}<span class="caption">{zeroCaption(item)}</span>{/if}
                   {#each on as layer (layer)}<span class="badge badge-accent">{layer}</span>{/each}

@@ -73,7 +73,7 @@ export interface CommandArgs {
   'canvas.set': { id: number; path: '/name' | '/clockMaster'; value: JSONValue } | { id: number; width: number; height: number; fps: number };
   /** Ask macOS for the camera permission, or for screen recording (a grant restarts the engine). Role: programmer, refused in show mode. */
   'capture.authorize': { kind: 'camera' | 'screen' };
-  /** Forget a numbered capture device or display that is not running (folder 0, 1–28), or without file every one not running: the number is free again. Role: programmer, refused for a running device and under show lock, undoable. */
+  /** Forget a numbered capture device that is not running (folder 0, 1–20), or without file every not-running device (1–20): the number is free again. Role: programmer, refused for a running device and under show lock, undoable. */
   'capture.forget': { file?: number };
   /** Add a cue: { number, name, fade?, values?: [{fixture, parameter, raw, fade?}], trigger?: "hh:mm:ss:ff@rate", follow? }. Role: programmer, refused under show lock, undoable. */
   'cue.add': { number: number; name: string; fade?: number; values?: { fixture: string; parameter: string; raw: number; fade?: number }[]; trigger?: string | null; follow?: number | null };

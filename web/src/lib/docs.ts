@@ -178,15 +178,15 @@ export interface CaptureSourceDoc {
   running: boolean;
   /** from the project and not seen since the engine started */
   gone?: true;
-  /** opened by another app (Continuity Camera in FaceTime); devices only */
+  /** connected but opened by another app (Continuity Camera in FaceTime), sent with running true; devices only */
   inUse?: true;
 }
 
-/** `live.capture` (B73 step 2): absent from engines before it. */
+/** `live.capture` (B73 step 2): absent from engines before it; `screens` and `permissions` may be missing from a partial feed. */
 export interface CaptureLiveDoc {
   devices: CaptureSourceDoc[];
-  screens: CaptureSourceDoc[];
-  permissions: { camera: 'granted' | 'denied' | 'notDetermined'; screen: 'granted' | 'denied' };
+  screens?: CaptureSourceDoc[];
+  permissions?: { camera: 'granted' | 'denied' | 'notDetermined'; screen: 'granted' | 'denied' };
 }
 
 export interface IngestJobDoc {
