@@ -342,6 +342,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   A Keystone fixture follows the same rule (patched by hand, unpatched with its output). Console control covers outputs
   1–8, so output 9 and up gets no Output fixture. Fixed on the way: an output whose fixture was unpatched kept its last
   console values (a Blackout stayed black).
+- The Media screen lists cameras and capture cards as folder 0 files 1–20 (B73 step 2c, DESIGN §8.2.1): a group
+  "Cameras and capture cards (1–20)" before the Syphon servers with the same green dot, "not running", "not seen since
+  the engine started" and "in use by another app", **Forget** and **Forget all not running**, a line when the camera
+  permission is not granted, and "Displays (21–28)" once displays are numbered. The layer panel's folder 0 picker lists
+  them too ("Built-in content and live inputs"), and folder 0 is now "0 · Built-in and live inputs". The System screen
+  shows the camera and screen permissions with **Authorize**. An engine without capture shows none of it.
 - Fixed: a layer unpatched while it played (Unpatch, address 0, Remove last layer or a lower layer count) kept playing at
   its last values, and nothing could stop it: the UI, OSC, MIDI and cues reach only patched fixtures. An unpatched layer
   now goes to its defaults (intensity 0, no file: black), and an unpatched Master to 100 %, Normal, speed 100 % and no
@@ -355,6 +361,55 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   picture. Frames, drops, pool shortages (`outOfBuffers`) and unusable frames are counted per layer and logged every
   minute. The camera permission is asked only outside show mode. The app and the engine carry the camera entitlement
   and usage text. Numbered files 1–20 follow with the capture catalog.
+- Added: capture devices are folder 0 files 1–20 (B73 step 2b, PR #120, DESIGN §8.2.1). The engine numbers every
+  camera, capture card and Continuity Camera it sees (lowest free number), keeps the numbers in the project (`/capture`
+  `{"1": {uid, name, model}}`, added to older projects on open) and gives a device its number back after a restart or a
+  replug; a UVC device on another USB port keeps its number when its model and name match exactly one device that is
+  not running. A console or the UI selects File 1–20 in folder 0 like a generator. Two layers on one device share one
+  capture session. A device that goes reads "not running" and keeps its last picture, and its return reconnects the
+  layer; a device another app has open reads "in use by another app". `live.capture` lists the devices and the camera
+  permission. New commands: `capture.forget {file?}` (frees numbers of devices that are not running, undoable) and
+  `capture.authorize {kind: "camera"}` (asks for the camera permission, not in show mode; `screen` comes with displays).
+  New readiness item "Capture permissions granted": it fails while a device is numbered and the camera is not granted.
+- Design: what a patch means, and a clearer Patch screen (DESIGN §6.6, B120). A fixture exists without a patch, and
+  the patch is only its console address. The screen groups fixtures by kind (layers, the Master, outputs with their
+  Keystone) and patches a group as a block, with the groups taken from the channel map, so a new mode of an existing
+  kind needs no UI code. Universes and the source policy get their own blocks, and a Patch sheet says what to patch on
+  the console.
+- Added: `/api/channel-map.json` lists the fixture modes under `fixtures`, in display order, each with its `mode`, `name`,
+  what it is patched per (`per`: `layer`, `machine` for the Master, `output`) and whether it is `optional` (Keystone)
+  (DESIGN §6.6 item 3, ADR-0008 amendment). `footprints`, `modes`, the GDTF file and `docs/channel-map.md` are
+  unchanged; the Patch screen does not use it yet.
+- Changed: the Patch screen has a **Universes** panel and a **Who controls** card (DESIGN §6.6 item 4, step 4). The
+  panel lists every universe that is patched, heard now or has settings, with its protocol, interface, Hold on loss,
+  health pill and the fixtures on it ("Layers 1–8, Master"), or "heard, nothing patched", "feeds A 0.0.0" (the pair of
+  a patched universe) or "not used"; a universe without fixtures shows a loss as yellow "quiet", and the open or
+  monitored universe keeps its row while its console pauses. Tapping a row opens the universe's settings, which moved
+  there from Selected fixture, and shows it in the DMX monitor. The toolbar's Source policy is now the Who controls card
+  with a line explaining the choice; its options are named Console only, Fanous only (UI, cues, OSC, MIDI), Console and
+  Fanous (latest change wins / highest value wins), the Layers screen's Source badge says Console, Fanous, Both · latest
+  or Both · highest, and the Show screen's warning points to Patch › Who controls. The stored values (`dmx`,
+  `internal`, `ltp`, `htp`) are unchanged.
+- A fixture exists without a patch (B120 step 1, PR #122, DESIGN §6.6 item 1): every layer up to the layer count (at most
+  32), the Master and each output's Output and Keystone fixture can be controlled whether it has a console address or
+  not; the patch is only the console address. An unpatched fixture follows the source policy: at its defaults under
+  Console only, controlled by the UI, cues, OSC and MIDI under the other policies, so a show without a console no
+  longer has to patch its layers. Before, the UI, cues, OSC and MIDI reached only patched fixtures. Unpatching a
+  fixture, or moving it to another universe, drops the console's values and keeps the UI, cue, OSC and MIDI values.
+  Under Console + UI the console takes part only once its DMX was received: a fixture whose console was never heard,
+  patched or not, can be set below its default from the UI or a cue with highest wins. Before, the default (Master
+  full) won; now a blackout cue before the desk is on blacks out. A new or moved patch entry on a universe that is
+  being received takes its values at once. A layer added while a cue holds values takes them at once.
+  `live.dmx.fixtures` and OSC feedback list unpatched fixtures too.
+- Added: `patch.setMany {entries: [{fixture, universe, address}]}` and block slots (B120 step 2, PR #124, DESIGN §6.6 item 2).
+  `patch.setMany` patches or unpatches several fixtures in one command and one undo step; each entry is checked as
+  `patch.set` checks it, and one bad entry or a fixture listed twice refuses all. `patch.set` and `patch.setMany` refuse
+  an address for a layer that does not exist (above the layer count, or above 32); before, `patch.set` accepted it and
+  the entry did nothing. Address 0 still removes any entry. A new layer (Add layer, `layers.setCount`) goes on its slot
+  of the Layers block: with Layers 1–8 moved to A 0.0.4 from 1, Layer 9 lands on A 0.0.5 at 1. When the layers are not
+  one block it goes right after the layer before it, else at its standard address, and it stays unpatched when that
+  range is taken. Before, it took its standard address when that range was free. Layers above 32 get no address. The
+  slot rule (`Patch.slot`, `Patch.blockStart`) has shared test vectors in `Tests/Fixtures/patch-slots.json`.
 - Added: **mapping presets** (M2.4, DESIGN §6.4, §9.10 item 3). An output stores its warp and slices, masks included,
   under a number 1–255 (`output.preset.store`, `recall`, `rename`, `remove`; one undo step each, also for a whole wall);
   blend, black floor, colour, intensity and region stay live. Output channel 6, **Mapping preset**, shows preset N while

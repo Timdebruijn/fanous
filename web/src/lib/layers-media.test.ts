@@ -3,7 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
 import type { LayerStatus, ResolvedParameter } from './docs';
-import { GENERATORS, folderZeroItems, layerState, mediaLine, mediaOptions, mediaPath, playSteps, policyName, type LibrarySnapshot } from './layers';
+import { GENERATORS, POLICIES, folderZeroItems, zeroCaption, layerState, mediaLine, mediaOptions, mediaPath, playSteps, policyName, type LibrarySnapshot } from './layers';
 
 const layer = (over: Partial<LayerStatus> = {}): LayerStatus => ({ index: 1, folder: 3, file: 12, name: 'loop.mov', kind: 'movie', codec: 'HapY', width: 1920, height: 1080, fps: 25, frames: 100, frame: 0, error: null, ...over });
 
@@ -27,13 +27,34 @@ describe('layer status word', () => {
   });
 });
 
-describe('source policy names', () => {
-  it('uses plain words for the stored values', () => {
+describe('who controls (source policy) names', () => {
+  it('uses the long labels of DESIGN §6.6 for the stored values', () => {
     expect(policyName('dmx')).toBe('Console only');
-    expect(policyName('internal')).toBe('UI and cues only');
-    expect(policyName('ltp')).toBe('Console + UI (latest wins)');
-    expect(policyName('htp')).toBe('Console + UI (highest wins)');
+    expect(policyName('internal')).toBe('Fanous only (UI, cues, OSC, MIDI)');
+    expect(policyName('ltp')).toBe('Console and Fanous, latest change wins');
+    expect(policyName('htp')).toBe('Console and Fanous, highest value wins');
     expect(policyName('other')).toBe('other');
+  });
+
+  it('has short labels for the Source badge', () => {
+    expect(['dmx', 'internal', 'ltp', 'htp', 'other'].map((p) => policyName(p, true))).toEqual(['Console', 'Fanous', 'Both · latest', 'Both · highest', 'other']);
+  });
+
+  it('matches the DESIGN §6.6 table word for word', () => {
+    expect(POLICIES).toEqual({
+      dmx: {
+        label: 'Console only',
+        short: 'Console',
+        line: 'Fanous follows the console. A fixture without an address stays at its defaults; cues and OSC are recorded but do nothing.',
+      },
+      internal: { label: 'Fanous only (UI, cues, OSC, MIDI)', short: 'Fanous', line: 'The console is shown but ignored.' },
+      ltp: { label: 'Console and Fanous, latest change wins', short: 'Both · latest', line: 'Per parameter, the latest change wins.' },
+      htp: {
+        label: 'Console and Fanous, highest value wins',
+        short: 'Both · highest',
+        line: 'Intensity and other numbers take the highest value; folder, file and modes the latest change.',
+      },
+    });
   });
 });
 
@@ -57,9 +78,39 @@ describe('folder 0 (B61)', () => {
     const items = folderZeroItems(servers);
     expect(items.slice(0, GENERATORS.length).map((i) => i.file)).toEqual(GENERATORS.map((g) => g.file));
     expect(items.slice(GENERATORS.length).map((i) => i.label)).toEqual(['150 · Syphon: fanousd/Fanous – Canvas', '151 · Syphon: Simple Server (not running)']);
-    expect(items.at(-1)).toMatchObject({ syphon: true, running: false, gone: true, name: 'Syphon: Simple Server' });
+    expect(items.at(-1)).toMatchObject({ kind: 'syphon', running: false, gone: true, name: 'Syphon: Simple Server' });
     expect(items.at(-2)).toMatchObject({ running: true, gone: false });
     expect(folderZeroItems(undefined)).toHaveLength(GENERATORS.length);
+  });
+  it('lists the cameras and capture cards, then the displays, before the Syphon servers (B73)', () => {
+    const capture = {
+      devices: [
+        { file: 3, name: 'Cam Link 4K', running: false, gone: true as const },
+        { file: 1, name: 'FaceTime HD Camera', running: true },
+        { file: 2, name: 'iPhone Camera', running: true, inUse: true as const },
+      ],
+      screens: [{ file: 21, name: 'Built-in Retina Display', running: true }],
+      permissions: { camera: 'granted' as const, screen: 'granted' as const },
+    };
+    const items = folderZeroItems(servers, capture).slice(GENERATORS.length);
+    expect(items.map((i) => `${i.kind} ${i.label}`)).toEqual([
+      'capture 1 · FaceTime HD Camera',
+      'capture 2 · iPhone Camera (in use by another app)',
+      'capture 3 · Cam Link 4K (not running)',
+      'screen 21 · Built-in Retina Display',
+      'syphon 150 · Syphon: fanousd/Fanous – Canvas',
+      'syphon 151 · Syphon: Simple Server (not running)',
+    ]);
+    expect(items.map(zeroCaption)).toEqual([null, 'in use by another app', 'not seen since the engine started', null, null, 'not seen since the engine started']);
+    expect(zeroCaption({ ...items[2], gone: false })).toBe('not running');
+    // an engine without live.capture, or one with no devices: only generators and Syphon
+    expect(folderZeroItems(servers, undefined).map((i) => i.kind)).not.toContain('capture');
+    expect(folderZeroItems(undefined, { ...capture, devices: [], screens: [] })).toHaveLength(GENERATORS.length);
+  });
+  it('takes a partial capture feed: devices without screens or permissions', () => {
+    const items = folderZeroItems(undefined, { devices: [{ file: 1, name: 'FaceTime HD Camera', running: false }] }).slice(GENERATORS.length);
+    expect(items.map((i) => `${i.kind} ${i.label}`)).toEqual(['capture 1 · FaceTime HD Camera (not running)']);
+    expect(items.map(zeroCaption)).toEqual(['not running']);
   });
   it('shows a gone server by name with "not running" on the layer', () => {
     const gone = layer({ folder: 0, file: 151, kind: 'live', name: 'Syphon: Simple Server', error: 'not running', width: 0, height: 0 });

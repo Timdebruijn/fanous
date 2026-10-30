@@ -79,6 +79,8 @@ public final class RenderService {
     public private(set) var syphon: SyphonOutput?
     /// Other apps' Syphon servers as folder 0 files 150–169 (B61); lives as long as the engine.
     public let syphonCatalog: LiveCatalog
+    /// Capture devices as folder 0 files 1–20 (B73); lives as long as the engine.
+    public let captureCatalog: LiveCatalog
     nonisolated(unsafe) public private(set) var mixer: AudioMixer?  // assigned once at start, read by the metrics endpoint
     private let logger: Logger
     /// Keeps the audio device open while true (the engine passes show mode); read once by `start()`.
@@ -90,10 +92,11 @@ public final class RenderService {
     private var loopDriver: DrawableLoopDriver?
     private var headlessDriver: HeadlessDriver?
 
-    /// `syphonNumbers`: the project's Syphon numbering (B69), held for the servers before the first announce.
+    /// `syphonNumbers`: the project's Syphon numbering (B69), held for the servers before the first announce;
+    /// `captureNumbers` the capture devices' (B73).
     public init(
         scene: SceneConfig, context: MetalContext, parameters: TripleBuffer<ParameterSnapshotSlot>, metrics: MetricsRing, logger: Logger,
-        syphonNumbers: [LiveCatalog.Entry] = []
+        syphonNumbers: [LiveCatalog.Entry] = [], captureNumbers: [LiveCatalog.Entry] = []
     ) throws {
         self.scene = scene
         self.context = context
@@ -138,6 +141,10 @@ public final class RenderService {
         loader.syphonCatalog = syphonCatalog
         syphonCatalog.onChange = { [weak loader] in loader?.syphonServersChanged() }  // the loader holds the catalog
         syphonCatalog.start(device: device)
+        captureCatalog = LiveCatalog(.capture, numbers: captureNumbers)
+        loader.captureCatalog = captureCatalog
+        captureCatalog.onChange = { [weak loader] in loader?.captureDevicesChanged() }
+        captureCatalog.startCapture()
     }
 
     public func start() async throws {
@@ -152,9 +159,10 @@ public final class RenderService {
         }
         let device = context.device, fps = scene.fps, logger = logger, allowed = captureAllowed
         // ponytail: the canvas rate at service start picks the capture frame rate; canvas.set does not reopen devices
-        loader.captureFactory = { [weak loader] uid in
+        loader.captureFactory = { [weak loader, captureCatalog] uid in
             guard let loader else { throw CaptureError.session("the engine is stopping") }
             return try CaptureInput.open(uid: uid, metal: device, fps: fps, allowed: allowed(), logger: logger) { [weak loader] in
+                captureCatalog.refreshPermissions()
                 loader?.capturePermissionChanged()
             }
         }
@@ -211,6 +219,7 @@ public final class RenderService {
         window = nil
         compositor.setLayers([])
         syphonCatalog.stop()
+        captureCatalog.stop()
         // Clearing the hook races a tick's publish, and the server's stop() releases, unlocked, the renderer that publish
         // draws with and the connection manager and surface that each publish's completed handler uses on Metal's
         // completion thread. So both are done only after the join and the drain; otherwise the server goes with the process.

@@ -53,6 +53,33 @@ public struct UniverseID: Hashable, Codable, Sendable, CustomStringConvertible, 
     public static func < (a: UniverseID, b: UniverseID) -> Bool {
         a.transport.rawValue == b.transport.rawValue ? a.number < b.number : a.transport.rawValue < b.transport.rawValue
     }
+
+    /// Parses the `description` form: "artnet:net.subnet.universe" or "sacn:n".
+    public init?(parsing text: String) {
+        guard let colon = text.firstIndex(of: ":") else { return nil }
+        let transport = text[..<colon].lowercased()
+        let rest = text[text.index(after: colon)...]
+        switch transport {
+        case "artnet":
+            let parts = rest.split(separator: ".").map { Int($0) }
+            guard parts.count == 3, let net = parts[0], let subnet = parts[1], let universe = parts[2],
+                (0...127).contains(net), (0...15).contains(subnet), (0...15).contains(universe)
+            else { return nil }
+            self = .artnet(net: net, subnet: subnet, universe: universe)
+        case "sacn":
+            guard let n = Int(rest), (1...63999).contains(n) else { return nil }
+            self = UniverseID(.sacn, n)
+        default:
+            return nil
+        }
+    }
+
+    /// `n` universes on, where a block's slots go once they run past channel 512 (DESIGN.md §6.6 item 2): Art-Net
+    /// port-address + n (A 0.0.15 + 1 = A 0.1.0), sACN universe + n; nil outside Art-Net 0–32767 or sACN 1–63999.
+    public func advanced(by n: Int) -> UniverseID? {
+        let next = number + n
+        return (transport == .artnet ? 0...32767 : 1...63999).contains(next) ? UniverseID(transport, next) : nil
+    }
 }
 
 public struct PatchEntry: Hashable, Codable, Sendable {
@@ -105,5 +132,37 @@ public struct Patch: Codable, Sendable, Equatable {
             entries.append(PatchEntry(fixture: .output(output), universe: control, address: 9 + (output - 1) * 8))
         }
         return Patch(entries: entries)
+    }
+
+    /// A universe and an address: where a block starts, or where one of its fixtures sits.
+    public struct Slot: Hashable, Sendable {
+        public var universe: UniverseID
+        public var address: Int
+        public init(_ universe: UniverseID, _ address: Int) {
+            self.universe = universe
+            self.address = address
+        }
+    }
+
+    /// Where fixture number `number` of a block from `start` sits (DESIGN.md §6.6 item 2): on slot `number − 1`, at
+    /// `start + (number − 1) × footprint`. A slot that would run past channel 512 moves to address 1 of the next
+    /// universe, and so does every slot after it. Nil for a start outside 1…512 or a slot past the last universe.
+    public static func slot(of number: Int, from start: Slot, footprint: Int) -> Slot? {
+        guard number >= 1, (1...512).contains(start.address), (1...512).contains(footprint) else { return nil }
+        let index = number - 1
+        let first = (513 - start.address) / footprint  // the slots that fit in the start universe
+        if index < first { return Slot(start.universe, start.address + index * footprint) }
+        let rest = index - first, perUniverse = 512 / footprint
+        return start.universe.advanced(by: 1 + rest / perUniverse).map { Slot($0, 1 + rest % perUniverse * footprint) }
+    }
+
+    /// The start of a group's block (DESIGN.md §6.6 item 2), or nil when the group is Custom or nothing of it is
+    /// patched. `placed`: the group's patched required fixtures by number. The anchor, the lowest number k, gives the
+    /// start: its address − (k − 1) × footprint in its universe, never rolled back across a universe. Block when every
+    /// placed fixture sits on its slot from there; a number that is not placed does not break it.
+    public static func blockStart(of placed: [Int: Slot], footprint: Int) -> Slot? {
+        guard let anchor = placed.min(by: { $0.key < $1.key }) else { return nil }
+        let start = Slot(anchor.value.universe, anchor.value.address - (anchor.key - 1) * footprint)
+        return placed.allSatisfy { slot(of: $0.key, from: start, footprint: footprint) == $0.value } ? start : nil
     }
 }

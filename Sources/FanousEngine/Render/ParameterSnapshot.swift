@@ -156,10 +156,12 @@ public final class ParameterSnapshotSlot: @unchecked Sendable {
     public var testPattern: TestPattern = .off
     public var layers: [LayerParameters]
     public static let maxOutputs = 8
+    /// The layers the DMX store's snapshot holds: layers above it never render and have no fixture.
+    public static let maxLayers = 32
     public var outputs: [OutputParameters] = Array(repeating: OutputParameters(), count: ParameterSnapshotSlot.maxOutputs)
     /// Per output, the Keystone fixture's homography (DESIGN.md §9.10 item 2, `WarpMath.keystone`) in normalized output
-    /// coordinates: the identity while unpatched or centred. Its own array, written by the Keystone fixture: the Output
-    /// fixture rebuilds `outputs` on every publish.
+    /// coordinates: the identity while nothing sets it (no DMX, no internal value) or centred. Its own array, written by
+    /// the Keystone fixture: the Output fixture rebuilds `outputs` on every publish.
     public var keystones: [simd_float3x3] = Array(repeating: matrix_identity_float3x3, count: ParameterSnapshotSlot.maxOutputs)
     /// The console's keystone values were refused (not a strictly convex quad): `keystones` keeps the last valid matrix.
     public var keystoneInvalid: [Bool] = Array(repeating: false, count: ParameterSnapshotSlot.maxOutputs)

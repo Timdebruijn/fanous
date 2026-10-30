@@ -210,6 +210,36 @@ extension Result where Success == CommandResult, Failure == CommandError {
 }
 
 extension StateStoreTests {
+    /// DESIGN.md §6.6: `projectChanged` hands the DMX store the fixtures that exist as well as the patch. Layer 9 lands on
+    /// the Master's slot and stays unpatched, so the patch does not change, yet Layer 9 gets a resolver and plays from
+    /// the UI. An unparseable patch keeps the running one and still brings a new fixture set.
+    @Test func aFixtureSetChangeAloneReachesTheDMXStore() throws {
+        let (store, _) = Self.makeStore()
+        _ = try store.execute("layers.setCount", args: ["count": 8], role: .programmer).get()
+        let dmx = DMXStore(
+            patch: try #require(ProjectDocument.effectivePatch(from: store.project)), fixtures: ProjectDocument.fixtures(from: store.project),
+            logger: Logger(label: "test"))
+        dmx.setPolicy(.internal)
+        var last = ProjectDocument.fixtures(from: store.project)
+        func apply(_ document: JSONValue) -> Bool {
+            Engine.applyPatch(of: document, outputs: ProjectDocument.outputs(from: document), to: dmx, lastFixtures: &last)
+        }
+        #expect(!apply(store.project), "nothing changed")
+        let before = dmx.currentPatch
+        _ = try store.execute("layers.setCount", args: ["count": 9], role: .programmer).get()
+        #expect(ProjectDocument.effectivePatch(from: store.project) == before, "Layer 9's slot is the Master's: still unpatched")
+        #expect(apply(store.project))
+        dmx.setUI(.layer(9), .layer(.intensity), raw: 40000)
+        dmx.queue.sync {}
+        let value = dmx.snapshot().fixtures["Layer 9"]?.first { $0.key == "intensity" }
+        #expect(value?.raw == 40000 && value?.source == "ui", "\(String(describing: value))")
+        var broken = store.project
+        try broken.set(.array([.string("junk")]), at: "/patch")
+        try broken.set(.number(10), at: "/layerCount")
+        #expect(apply(broken))
+        #expect(dmx.currentPatch == before && dmx.resolvedRaw(.layer(10), .layer(.intensity)) != nil)
+    }
+
     @Test func layerCountPatchesNewLayersAndDropsRemovedOnes() throws {
         let (store, _) = Self.makeStore()  // 2 layers patched at 1 and 65 on artnet:0.0.0
         _ = try store.execute("layers.setCount", args: ["count": 4], role: .programmer).get()
@@ -217,11 +247,11 @@ extension StateStoreTests {
         #expect(store.project["layerCount"]?.int == 4)
         #expect(patch.entry(for: .layer(3))?.address == 129)
         #expect(patch.entry(for: .layer(4))?.address == 193)
-        // a layer whose standard range is taken stays unpatched
+        // Layer 4 off its slot makes the group Custom: a new layer follows the layer before it (DESIGN.md §6.6 item 2)
         _ = try store.execute("patch.set", args: ["fixture": "Layer 4", "universe": "artnet:0.0.0", "address": 300], role: .programmer).get()
         _ = try store.execute("layers.setCount", args: ["count": 5], role: .programmer).get()
         patch = try #require(ProjectDocument.patch(from: store.project))
-        #expect(patch.entry(for: .layer(5)) == nil, "257–320 overlaps Layer 4 at 300")
+        #expect(patch.entry(for: .layer(5))?.address == 364, "right after Layer 4 at 300")
         _ = try store.execute("layers.setCount", args: ["count": 2], role: .programmer).get()
         patch = try #require(ProjectDocument.patch(from: store.project))
         #expect(patch.entry(for: .layer(3)) == nil && patch.entry(for: .layer(4)) == nil)
@@ -264,6 +294,11 @@ extension StateStoreTests {
         for _ in 4...9 { _ = try store.execute("output.add", role: .programmer).get() }
         patch = try #require(ProjectDocument.patch(from: store.project))
         #expect(patch.entry(for: .output(8))?.address == 165 && patch.entry(for: .output(9)) == nil)
+        // PR #109's rule is the slot rule of an Outputs block right after the Master (DESIGN.md §6.6 item 2)
+        for n in [2, 4, 5, 6, 7, 8] {
+            let slot = patch.entry(for: .output(n)).map { Patch.Slot($0.universe, $0.address) }
+            #expect(slot == Patch.slot(of: n, from: Patch.Slot(sacn5, 101 + 8), footprint: 8), "Output \(n)")
+        }
         #expect(store.execute("patch.set", args: ["fixture": "Output 9", "universe": "sacn:5", "address": 300], role: .programmer).failureCode == "invalidArgs")
     }
 
@@ -654,7 +689,7 @@ extension StateStoreTests {
         let numbers = [(150, "Resolume"), (151, "Simple Server"), (152, "MadMapper")].map { LiveCatalog.Entry(kind: .syphon, file: $0.0, source: $0.1, name: "") }
         try project.set(ProjectDocument.liveValue(numbers), at: "/syphon")
         let store = StateStore(project: project, logger: Self.logger)
-        ProjectDocument.registerCommands(on: store, auth: auth, syphonRunning: { [150] })
+        ProjectDocument.registerCommands(on: store, auth: auth, liveRunning: { [150] })
         func files() -> [Int] { ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.file) }
 
         #expect(store.execute("syphon.forget", args: ["file": 151], role: .operator).failureCode == "forbidden")
@@ -762,7 +797,7 @@ extension StateStoreTests {
         try project.set(ProjectDocument.liveValue([server(151, "N"), server(152, "M")]), at: "/syphon")
         let store = StateStore(project: project, logger: Self.logger)
         let running = Mutex<Set<Int>>([])
-        ProjectDocument.registerCommands(on: store, auth: auth, syphonRunning: { running.withLock { $0 } })
+        ProjectDocument.registerCommands(on: store, auth: auth, liveRunning: { running.withLock { $0 } })
         _ = try store.execute("syphon.forget", role: .programmer).get()
         running.withLock { $0 = [150] }
         store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "N")]) }
@@ -802,5 +837,124 @@ struct LibraryRedactionTests {
         #expect(client.messages.withLock { $0.first?["t"]?.string } == "welcome")
         #expect(client.messages.withLock { $0.first?["project"]?["library"]?["root"]?.string } == "")
         #expect(store.clientCount == 1)
+    }
+}
+
+/// B120 step 2 (DESIGN.md §6.6 item 2): `patch.setMany`, the existence check and slot placement in `layers.setCount`.
+extension StateStoreTests {
+    static func entries(_ list: [(String, String, Int)]) -> JSONValue {
+        ["entries": .array(list.map { ["fixture": .string($0.0), "universe": .string($0.1), "address": .number(Double($0.2))] })]
+    }
+
+    static func layers(_ store: StateStore) -> [Int: Patch.Slot] {
+        var result: [Int: Patch.Slot] = [:]
+        for e in ProjectDocument.patch(from: store.project)?.entries ?? [] {
+            if case .layer(let n) = e.fixture { result[n] = Patch.Slot(e.universe, e.address) }
+        }
+        return result
+    }
+
+    @Test func patchSetManyIsOneUndoStepAndAllOrNothing() throws {
+        let (store, _) = Self.makeStore()  // Layers 1–2 at artnet:0.0.0 1 and 65, Master at artnet:0.0.1 1
+        let before = try #require(ProjectDocument.patch(from: store.project))
+        _ = try store.execute("patch.setMany", args: Self.entries([("Layer 1", "artnet:0.0.4", 1), ("Layer 2", "artnet:0.0.4", 65), ("Master", "sacn:9", 0)]), role: .programmer).get()
+        let patch = try #require(ProjectDocument.patch(from: store.project))
+        #expect(patch.entry(for: .layer(1)) == PatchEntry(fixture: .layer(1), universe: UniverseID(.artnet, 4), address: 1))
+        #expect(patch.entry(for: .layer(2))?.address == 65 && patch.entry(for: .master) == nil)
+        #expect(store.historyDepth == (1, 0))
+        _ = try store.execute("undo", role: .programmer).get()
+        #expect(ProjectDocument.patch(from: store.project) == before)
+        let bad: [(entries: [(String, String, Int)], message: String)] = [
+            ([("Layer 1", "artnet:0.0.4", 1), ("Layer 2", "artnet:0.0.4", 500)], "entry 2: Layer 2 does not fit at 500; nothing was patched"),
+            ([("Layer 1", "artnet:0.0.4", 1), ("Camera 1", "artnet:0.0.4", 65)], "entry 2: fixture must be"),
+            ([("Layer 1", "artnet:0.0.4", 1), ("Layer 2", "artnet:9", 65)], "entry 2: universe must be"),
+            ([("Output 1", "artnet:0.0.4", 129), ("Layer 1", "artnet:0.0.4", 1)], "entry 1: there is no output 1"),
+            ([("Layer 1", "artnet:0.0.4", 1), ("Layer 1", "artnet:0.0.4", 0)], "Layer 1 is listed twice; nothing was patched"),
+        ]
+        for c in bad {
+            let result = store.execute("patch.setMany", args: Self.entries(c.entries), role: .programmer)
+            guard case .failure(let error) = result else {
+                Issue.record("accepted \(c.entries)")
+                continue
+            }
+            #expect(error.code == "invalidArgs" && error.message.hasPrefix(c.message), "\(error.message)")
+        }
+        #expect(store.execute("patch.setMany", args: ["entries": "Layer 1"], role: .programmer).failureCode == "invalidArgs")
+        #expect(ProjectDocument.patch(from: store.project) == before && store.historyDepth == (0, 1), "refused batches change nothing")
+        let one = Self.entries([("Layer 1", "artnet:0.0.4", 1)])
+        #expect(store.execute("patch.setMany", args: one, role: .operator) == .failure(.forbidden))
+        _ = try store.execute("show.lock", role: .programmer).get()
+        #expect(store.execute("patch.setMany", args: one, role: .programmer) == .failure(.showLocked))
+    }
+
+    /// DESIGN.md §6.6: an address only for a fixture that exists; address 0 for any, so a stale entry can still go.
+    @Test func anAddressNeedsAFixtureThatExists() throws {
+        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
+        // a project from before the check: Layer 3 patched above a layer count of 2
+        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 3, outputs: 0), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx), logger: Self.logger)
+        ProjectDocument.registerCommands(on: store, auth: auth)
+        func run(_ command: String, _ fixture: String, _ address: Int) -> Result<CommandResult, CommandError> {
+            let args: JSONValue = ["fixture": .string(fixture), "universe": "sacn:7", "address": .number(Double(address))]
+            return store.execute(command, args: command == "patch.set" ? args : ["entries": [args]], role: .programmer)
+        }
+        for command in ["patch.set", "patch.setMany"] {
+            guard case .failure(let error) = run(command, "Layer 3", 1) else {
+                Issue.record("\(command) patched Layer 3 above the count")
+                continue
+            }
+            #expect(error.message.contains("there is no layer 3: the project has 2 layers"), "\(error.message)")
+            #expect(run(command, "Layer 40", 1).failureCode == "invalidArgs")
+            #expect(run(command, "Layer 2", 1).failureCode == nil)
+            // address 0 removes the stale entry; undo brings it back for the next round
+            _ = try run(command, "Layer 3", 0).get()
+            #expect(ProjectDocument.patch(from: store.project)?.entry(for: .layer(3)) == nil)
+            _ = try store.execute("undo", role: .programmer).get()
+            _ = try store.execute("undo", role: .programmer).get()
+            #expect(ProjectDocument.patch(from: store.project)?.entry(for: .layer(3)) != nil)
+        }
+        // layers above 32 never render: they get no address, also from layers.setCount
+        _ = try store.execute("layers.setCount", args: ["count": 40], role: .programmer).get()
+        #expect(Self.layers(store).keys.max() == 32)
+        guard case .failure(let error) = run("patch.set", "Layer 33", 1) else {
+            Issue.record("Layer 33 patched")
+            return
+        }
+        #expect(error.message == "console control covers layers 1–32")
+    }
+
+    @Test func aNewLayerGoesOnItsSlot() throws {
+        let (store, _) = Self.makeStore()  // Layers 1–2 at artnet:0.0.0 1 and 65, Master at artnet:0.0.1 1
+        _ = try store.execute("layers.setCount", args: ["count": 8], role: .programmer).get()
+        #expect(Self.layers(store)[8] == Patch.Slot(UniverseID(.artnet, 0), 449))
+        // the standard Layer 9 slot is the Master's: Layer 9 stays unpatched, rather than collide
+        _ = try store.execute("layers.setCount", args: ["count": 9], role: .programmer).get()
+        #expect(Self.layers(store)[9] == nil && store.project["layerCount"]?.int == 9)
+        _ = try store.execute("undo", role: .programmer).get()
+        // the block moved to A 0.0.4 from 129: Layers 7 and 8 carry to A 0.0.5, and so does Layer 9
+        let start = Patch.Slot(UniverseID(.artnet, 4), 129)
+        let moved = (1...8).map { n in Patch.slot(of: n, from: start, footprint: 64)! }
+        _ = try store.execute("patch.setMany", args: Self.entries(moved.enumerated().map { ("Layer \($0.offset + 1)", $0.element.universe.description, $0.element.address) }), role: .programmer).get()
+        #expect(Self.layers(store)[7] == Patch.Slot(UniverseID(.artnet, 5), 1))
+        _ = try store.execute("layers.setCount", args: ["count": 9], role: .programmer).get()
+        #expect(Self.layers(store)[9] == Patch.Slot(UniverseID(.artnet, 5), 129))
+        // an unplaced layer does not break the block: Layer 10 continues it too
+        _ = try store.execute("patch.set", args: ["fixture": "Layer 9", "universe": "artnet:0.0.5", "address": 0], role: .programmer).get()
+        _ = try store.execute("layers.setCount", args: ["count": 10], role: .programmer).get()
+        #expect(Self.layers(store)[10] == Patch.Slot(UniverseID(.artnet, 5), 193))
+    }
+
+    @Test func aNewLayerOfACustomGroupFollowsTheLayerBefore() throws {
+        let (store, _) = Self.makeStore()  // Layers 1–2 at artnet:0.0.0 1 and 65
+        _ = try store.execute("patch.set", args: ["fixture": "Layer 2", "universe": "sacn:3", "address": 300], role: .programmer).get()
+        _ = try store.execute("layers.setCount", args: ["count": 3], role: .programmer).get()
+        #expect(Self.layers(store)[3] == Patch.Slot(UniverseID(.sacn, 3), 364), "right after Layer 2")
+        // right after a layer at the end of a universe is address 1 of the next one
+        _ = try store.execute("patch.set", args: ["fixture": "Layer 3", "universe": "sacn:3", "address": 449], role: .programmer).get()
+        _ = try store.execute("layers.setCount", args: ["count": 4], role: .programmer).get()
+        #expect(Self.layers(store)[4] == Patch.Slot(UniverseID(.sacn, 4), 1))
+        // Layer 4 unpatched: Layer 5 goes to its standard address
+        _ = try store.execute("patch.set", args: ["fixture": "Layer 4", "universe": "sacn:4", "address": 0], role: .programmer).get()
+        _ = try store.execute("layers.setCount", args: ["count": 5], role: .programmer).get()
+        #expect(Self.layers(store)[5] == Patch.Slot(UniverseID(.artnet, 0), 257))
     }
 }

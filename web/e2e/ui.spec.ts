@@ -70,7 +70,7 @@ test('layers: Control puts content on a layer, and the engine resolves folder, f
   const max = Number(await intensity.getAttribute('max'));
 
   // built-in content: folder 0, the generator's file, full intensity
-  await page.getByLabel('Built-in content and Syphon (folder 0)').selectOption({ label: '101 · Grid' });
+  await page.getByLabel('Built-in content and live inputs (folder 0)').selectOption({ label: '101 · Grid' });
   await expect.poll(resolved).toEqual({ folder: '0 ui', file: '101 ui', intensity: `${max} ui` });
   await expect(row).toContainText('Grid');
   await expect(row.locator('.c-int')).toContainText('100 %');
@@ -89,7 +89,7 @@ test('layers: a layer showing built-in content gets a live thumbnail, an empty l
   await row.click();
   await page.getByRole('switch', { name: 'Control' }).check({ force: true }); // the drawn track covers the input
   await page.getByRole('button', { name: /^Use / }).click();
-  await page.getByLabel('Built-in content and Syphon (folder 0)').selectOption({ label: '101 · Grid' });
+  await page.getByLabel('Built-in content and live inputs (folder 0)').selectOption({ label: '101 · Grid' });
   await expect(row).toContainText('Grid');
   // 4 atlas passes a second: the row's picture turns live (default timeout: CI's paravirtual Metal is slow)
   await expect(row.locator('img[data-live="true"]')).toBeVisible();
@@ -141,10 +141,29 @@ test('sync: a slave layer locks to a master layer of its group, and loses it whe
   await expect(slave).toHaveClass(/sync-(red|grey)/);
 });
 
+test('patch: Hold on loss is set on the universe in the Universes panel, kept over a reload, and undone', async ({ page }) => {
+  await openScreen(page, 'Patch');
+  const universes = page.getByRole('region', { name: 'Universes' });
+  const row = universes.getByRole('button', { name: /^A 0\.0\.0,/ });
+  await expect(row).toContainText('Layers 1–8');
+  await expect(row).toContainText('Hold last values');
+  await row.click();
+  await expect(row).toHaveAttribute('aria-expanded', 'true');
+  // the monitor shows the universe that was opened
+  await expect(page.getByRole('region', { name: 'DMX monitor' }).getByRole('button', { name: 'A 0.0.0' })).toHaveAttribute('aria-pressed', 'true');
+  await universes.getByLabel('Hold on loss').selectOption('zero');
+  await expect(row).toContainText('Go to zero');
+  await page.reload();
+  await openScreen(page, 'Patch');
+  await expect(row).toContainText('Go to zero');
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(row).toContainText('Hold last values');
+});
+
 test('media: folder 0 lists the generators and the Syphon servers, and puts one on a layer', async ({ page }) => {
   await openScreen(page, 'Media');
-  await page.getByRole('button', { name: /^0 Built-in and Syphon/ }).click();
-  await expect(page.getByRole('heading', { name: '0 · Built-in and Syphon' })).toBeVisible();
+  await page.getByRole('button', { name: /^0 Built-in and live inputs/ }).click();
+  await expect(page.getByRole('heading', { name: '0 · Built-in and live inputs' })).toBeVisible();
   // no other app publishes Syphon on CI; on a workstation other engines may (this engine's own canvas is never listed)
   const servers = page.getByRole('list', { name: 'Syphon servers (150–169)' });
   await expect(page.getByText(/^No Syphon servers running\./).or(servers)).toBeVisible();

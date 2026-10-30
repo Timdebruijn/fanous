@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Pure helpers for the Layers / Mixer screen: formatting and lookups over the live document, no DOM, no store.
-import type { LayerStatus, PatchEntry, ResolvedParameter, SyphonServerDoc } from './docs';
+import type { CaptureLiveDoc, LayerStatus, PatchEntry, ProjectDoc, ResolvedParameter, SyphonServerDoc } from './docs';
 
 /** One entry of GET /api/channel-map.json `modes.*`; `channel` is the first (1-based) channel of the parameter. */
 export interface ChannelSpec {
@@ -37,15 +37,37 @@ export function syphonName(server: SyphonServerDoc): string {
   return server.server ? `${server.app}/${server.server}` : server.app;
 }
 
-/** Folder 0 as a list: the generators, then the Syphon servers of other apps by number (150–169, B61). */
-export function folderZeroItems(
-  servers: SyphonServerDoc[] | undefined,
-): { file: number; name: string; syphon: boolean; running: boolean; gone: boolean; label: string }[] {
-  const syphon = [...(servers ?? [])].sort((a, b) => a.file - b.file).map((s) => {
-    const name = `Syphon: ${syphonName(s)}`;
-    return { file: s.file, name, syphon: true, running: s.running, gone: s.gone === true, label: `${s.file} · ${name}${s.running ? '' : ' (not running)'}` };
-  });
-  return [...GENERATORS.map((g) => ({ ...g, syphon: false, running: true, gone: false, label: `${g.file} · ${g.name}` })), ...syphon];
+/** One entry of folder 0: a generator, a camera or capture card (1–20), a display (21–28) or a Syphon server (150–169). */
+export interface FolderZeroItem {
+  file: number;
+  name: string;
+  kind: 'generator' | 'capture' | 'screen' | 'syphon';
+  running: boolean;
+  gone: boolean;
+  inUse: boolean;
+  label: string;
+}
+
+/** Why a live input shows no picture, for the Media list; null while it runs (or for a generator). In use = connected, opened by another app. */
+export function zeroCaption(item: FolderZeroItem): string | null {
+  if (item.inUse) return 'in use by another app';
+  if (item.running) return null;
+  return item.gone ? 'not seen since the engine started' : 'not running';
+}
+
+/** Folder 0 as a list: the generators, the cameras and capture cards, the displays (B73), then the Syphon servers of other apps by number (B61). */
+export function folderZeroItems(servers: SyphonServerDoc[] | undefined, capture?: CaptureLiveDoc): FolderZeroItem[] {
+  const live = (kind: FolderZeroItem['kind'], list: { file: number; name: string; running: boolean; gone?: true; inUse?: true }[]) =>
+    [...list].sort((a, b) => a.file - b.file).map((s) => {
+      const suffix = s.inUse ? ' (in use by another app)' : s.running ? '' : ' (not running)';
+      return { file: s.file, name: s.name, kind, running: s.running, gone: s.gone === true, inUse: s.inUse === true, label: `${s.file} · ${s.name}${suffix}` };
+    });
+  return [
+    ...GENERATORS.map((g) => ({ ...g, kind: 'generator' as const, running: true, gone: false, inUse: false, label: `${g.file} · ${g.name}` })),
+    ...live('capture', capture?.devices ?? []),
+    ...live('screen', capture?.screens ?? []),
+    ...live('syphon', (servers ?? []).map((s) => ({ ...s, name: `Syphon: ${syphonName(s)}` }))),
+  ];
 }
 
 export interface ChannelMap {
@@ -59,16 +81,29 @@ export interface LibrarySnapshot {
   scannedAt: number;
 }
 
-/** What the source policy means to an operator; the stored values stay dmx / internal / ltp / htp. */
-export const POLICY_NAMES: Record<string, string> = {
-  dmx: 'Console only',
-  internal: 'UI and cues only',
-  ltp: 'Console + UI (latest wins)',
-  htp: 'Console + UI (highest wins)',
+/**
+ * Who controls (the source policy, DESIGN §6.6): the long label for the Patch card and messages, the short one for the
+ * per-layer Source badge, the line under the card. The stored values stay dmx / internal / ltp / htp.
+ */
+export const POLICIES: Record<ProjectDoc['policy'], { label: string; short: string; line: string }> = {
+  dmx: {
+    label: 'Console only',
+    short: 'Console',
+    line: 'Fanous follows the console. A fixture without an address stays at its defaults; cues and OSC are recorded but do nothing.',
+  },
+  internal: { label: 'Fanous only (UI, cues, OSC, MIDI)', short: 'Fanous', line: 'The console is shown but ignored.' },
+  ltp: { label: 'Console and Fanous, latest change wins', short: 'Both · latest', line: 'Per parameter, the latest change wins.' },
+  htp: {
+    label: 'Console and Fanous, highest value wins',
+    short: 'Both · highest',
+    line: 'Intensity and other numbers take the highest value; folder, file and modes the latest change.',
+  },
 };
 
-export function policyName(policy: string): string {
-  return POLICY_NAMES[policy] ?? policy;
+/** The long label, or the short one for the Source badge; an unknown value is shown as is. */
+export function policyName(policy: string, short = false): string {
+  const p = POLICIES[policy as ProjectDoc['policy']];
+  return p ? (short ? p.short : p.label) : policy;
 }
 
 export const RELEASE_TEXT = 'Console and this screen both control these values; whoever moved last wins. Release hands them back to the console.';

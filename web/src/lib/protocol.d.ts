@@ -19,6 +19,8 @@ export type CommandName =
   | 'canvas.add'
   | 'canvas.remove'
   | 'canvas.set'
+  | 'capture.authorize'
+  | 'capture.forget'
   | 'cue.add'
   | 'cue.back'
   | 'cue.go'
@@ -43,6 +45,7 @@ export type CommandName =
   | 'output.set'
   | 'output.show'
   | 'patch.set'
+  | 'patch.setMany'
   | 'project.deleteVersion'
   | 'project.revert'
   | 'project.set'
@@ -74,6 +77,10 @@ export interface CommandArgs {
   'canvas.remove': { id: number };
   /** Set the canvas name or clock-master output, or its size and rate (even 320–8192 px; 23.976, 24, 25, 29.97, 30, 50, 59.94 or 60 fps, set on canvas 1 for every canvas; re-initialises the canvas so outputs blank briefly; refused in show mode). Role: programmer, refused under show lock, undoable. */
   'canvas.set': { id: number; path: '/name' | '/clockMaster'; value: JSONValue } | { id: number; width: number; height: number; fps: number };
+  /** Ask macOS for the camera permission, or for screen recording (not available yet); refused in show mode. Role: programmer, refused under show lock. */
+  'capture.authorize': { kind: 'camera' | 'screen' };
+  /** Forget a numbered capture device that is not running (folder 0, 1–20), or without file every not-running device (1–20): the number is free again. Role: programmer, refused under show lock, undoable. */
+  'capture.forget': { file?: number };
   /** Add a cue: { number, name, fade?, values?: [{fixture, parameter, raw, fade?}], trigger?: "hh:mm:ss:ff@rate", follow? }. Role: programmer, refused under show lock, undoable. */
   'cue.add': { number: number; name: string; fade?: number; values?: { fixture: string; parameter: string; raw: number; fade?: number }[]; trigger?: string | null; follow?: number | null };
   /** Fire the previous cue. Role: operator. */
@@ -94,7 +101,7 @@ export interface CommandArgs {
   'fixture.set': { fixture: string; parameter: string; raw: number };
   /** Set a layer's project setting: the canvas it renders into (a project setting, not a DMX channel). Role: programmer, refused under show lock, undoable. */
   'layer.set': { layer: number; canvas: number };
-  /** Set the number of layers (1–64): new layers are patched at their standard address when that range is free, dropped layers are unpatched. Role: programmer, refused under show lock, undoable. */
+  /** Set the number of layers (1–64): a new layer goes on its slot of the Layers block, or right after the layer before it when the layers are no block (else at its standard address), and stays unpatched when that range is taken; layers above 32 get no address; dropped layers are unpatched. Role: programmer, refused under show lock, undoable. */
   'layers.setCount': { count: number };
   /** Learn: the next note, controller or program change received is mapped to target (live.midi.learning until then); no target cancels. Role: programmer, refused under show lock. */
   'midi.learn': { target?: string; cue?: number };
@@ -120,8 +127,10 @@ export interface CommandArgs {
   'output.set': { id: number; path: string; value: JSONValue };
   /** Compare, a lease (DESIGN.md §9.10 items 3 and 4): outputs 1–8 show mapping preset 1–255 for 5 s, over Output ch 6; the UI renews it every 2 s while Compare is held and the latest call wins; preset 0 ends it. Never saved or undone; refused in show mode. Role: programmer, refused under show lock. */
   'output.show': { ids: number[]; preset: number };
-  /** Patch a fixture (layer, master, output, keystone) to a universe and address, or unpatch it with address 0; an Output or Keystone fixture only for an output that exists (1–8). Role: programmer, refused under show lock, undoable. */
+  /** Patch a fixture (layer, master, output, keystone) to a universe and address, or unpatch it with address 0 (any fixture); an address only for a fixture that exists: a layer up to the layer count (1–32), an Output or Keystone fixture of an output that exists (1–8). Role: programmer, refused under show lock, undoable. */
   'patch.set': { fixture: string; universe: string; address: number };
+  /** Patch or unpatch several fixtures in one step (one undo): each entry is checked as patch.set checks it; one bad entry, or a fixture listed twice, refuses all. Role: programmer, refused under show lock, undoable. */
+  'patch.setMany': { entries: { fixture: string; universe: string; address: number }[] };
   /** Delete a named project version (automatic ones expire by themselves). Role: programmer, refused under show lock. */
   'project.deleteVersion': { id: string };
   /** Restore a project version (refused in show mode, also its undo and redo). The current project is saved as a version first; the show lock stays as it is. Role: programmer, refused under show lock, undoable. */

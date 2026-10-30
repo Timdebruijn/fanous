@@ -15,6 +15,20 @@ public enum FixtureMode: String, CaseIterable, Codable, Sendable {
         }
     }
 
+    /// What a fixture of this mode is patched per (DESIGN.md §6.6 item 3); the Patch screen groups by it.
+    public enum Per: String, Sendable { case layer, machine, output }
+
+    public var per: Per {
+        switch self {
+        case .layer: .layer
+        case .master: .machine
+        case .output, .keystone: .output
+        }
+    }
+
+    /// A show runs fine without patching it; the other modes are required.
+    public var optional: Bool { self == .keystone }
+
     public var displayName: String { rawValue.capitalized }
 }
 

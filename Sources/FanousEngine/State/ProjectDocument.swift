@@ -104,20 +104,25 @@ public enum ProjectDocument {
 
     /// A live input numbering (B69, B73): `/syphon` `{"151": {app, server}}` (folder 0 files 150–169) and the other
     /// kinds' keys (`LiveCatalog.Kind`), keyed by file like `/layerCanvas` so a forget and its undo touch one key;
-    /// written by the engine as it numbers sources (no command, also under show lock), freed by `syphon.forget`. Gone
-    /// until they are seen.
+    /// written by the engine as it numbers sources (no command, also under show lock), freed by `syphon.forget` and
+    /// `capture.forget`. Gone until they are seen. `/capture` also keeps each device's `model` (the uid fallback).
     public static func liveNumbers(_ kind: LiveCatalog.Kind, from project: JSONValue) -> [LiveCatalog.Entry] {
         guard case .object(let map)? = project[kind.projectKey] else { return [] }
         return map.compactMap { key, entry in
             guard let file = Int(key), let source = entry[kind.fields.source]?.string else { return nil }
-            return LiveCatalog.Entry(kind: kind, file: file, source: source, name: entry[kind.fields.name]?.string ?? "", gone: true)
+            let model = kind.fields.model.flatMap { entry[$0]?.string } ?? ""
+            return LiveCatalog.Entry(kind: kind, file: file, source: source, name: entry[kind.fields.name]?.string ?? "", gone: true, model: model)
         }.sorted { $0.file < $1.file }
     }
 
     public static func liveValue(_ entries: [LiveCatalog.Entry]) -> JSONValue {
         .object(
             Dictionary(
-                entries.map { (String($0.file), [$0.kind.fields.source: .string($0.source), $0.kind.fields.name: .string($0.name)]) },
+                entries.map { e in
+                    var value: [String: JSONValue] = [e.kind.fields.source: .string(e.source), e.kind.fields.name: .string(e.name)]
+                    if let model = e.kind.fields.model { value[model] = .string(e.model) }
+                    return (String(e.file), .object(value))
+                },
                 uniquingKeysWith: { a, _ in a }))
     }
 
@@ -268,6 +273,7 @@ public enum ProjectDocument {
             "outputs": [],
             "walls": [],
             "syphon": [:],
+            "capture": [:],
             "ui": [:],
         ]
     }
@@ -333,6 +339,58 @@ public enum ProjectDocument {
         try project.set(patchValue(patch), at: "/patch")
     }
 
+    /// `patch.set`'s checks, also run on each entry of `patch.setMany`: the fixture and its new entry, nil for address 0
+    /// (unpatch, accepted for any fixture so a stale entry can still go). An address needs a fixture that exists
+    /// (DESIGN.md §6.6).
+    static func checkedEntry(_ args: JSONValue, in project: JSONValue, fixtures: Set<FixtureRef>) throws -> (FixtureRef, PatchEntry?) {
+        guard let fixtureName = args["fixture"]?.string, let fixture = FixtureRef(parsing: fixtureName) else {
+            throw CommandError.invalidArgs("fixture must be \"Layer n\", \"Master\", \"Output n\" or \"Keystone n\"")
+        }
+        guard let universeName = args["universe"]?.string, let universe = UniverseID(parsing: universeName) else {
+            throw CommandError.invalidArgs("universe must be artnet:net.subnet.universe or sacn:n")
+        }
+        guard let address = args["address"]?.int, (0...512).contains(address) else { throw CommandError.invalidArgs("address must be 0 (unpatch) or 1–512") }
+        guard address > 0 else { return (fixture, nil) }
+        if !fixtures.contains(fixture) {
+            switch fixture {
+            case .layer(let n) where n > ParameterSnapshotSlot.maxLayers:
+                throw CommandError.invalidArgs("console control covers layers 1–\(ParameterSnapshotSlot.maxLayers)")
+            case .layer(let n):
+                throw CommandError.invalidArgs("there is no layer \(n): the project has \(project["layerCount"]?.int ?? defaultLayerCount) layers")
+            case .output(let n), .keystone(let n):
+                guard n <= ParameterSnapshotSlot.maxOutputs else { throw CommandError.invalidArgs("console control covers outputs 1–\(ParameterSnapshotSlot.maxOutputs)") }
+                throw CommandError.invalidArgs("there is no output \(n): add the output first")
+            case .master:
+                break
+            }
+        }
+        let entry = PatchEntry(fixture: fixture, universe: universe, address: address)
+        guard entry.fitsInUniverse else { throw CommandError.invalidArgs("\(fixture) does not fit at \(address)") }
+        return (fixture, entry)
+    }
+
+    /// Where `layers.setCount` puts a new Layer n (DESIGN.md §6.6 item 2): on its slot while the Layers group (the
+    /// patched layers up to `existing`) is a Block; else right after Layer n − 1 when that one is patched, else at its
+    /// standard address. Nil when that range is taken or past the last universe: Layer n stays unpatched.
+    static func newLayerEntry(_ n: Int, in patch: Patch, existing: Int) -> PatchEntry? {
+        let footprint = FixtureMode.layer.footprint
+        var placed: [Int: Patch.Slot] = [:]
+        for e in patch.entries {
+            if case .layer(let k) = e.fixture, k <= existing { placed[k] = Patch.Slot(e.universe, e.address) }
+        }
+        let slot =
+            if let start = Patch.blockStart(of: placed, footprint: footprint) {
+                Patch.slot(of: n, from: start, footprint: footprint)
+            } else if let before = placed[n - 1] {
+                Patch.slot(of: 2, from: before, footprint: footprint)
+            } else {
+                Patch.slot(of: n, from: Patch.Slot(UniverseID(.artnet, 0), 1), footprint: footprint)
+            }
+        guard let slot else { return nil }
+        let entry = PatchEntry(fixture: .layer(n), universe: slot.universe, address: slot.address)
+        return patch.entries.contains { $0.universe == entry.universe && $0.channels.overlaps(entry.channels) } ? nil : entry
+    }
+
     /// `[{"fixture":"Layer 3","universe":"artnet:0.0.1","address":17}, …]`, sorted by universe then address.
     public static func patchValue(_ patch: Patch) -> JSONValue {
         .array(
@@ -351,6 +409,24 @@ public enum ProjectDocument {
         }
         return patch
     }
+
+    /// The fixtures that exist (DESIGN.md §6.6), patched or not: Layer 1…min(`layerCount`, 32), the Master, and Output n
+    /// and Keystone n of every output n ≤ `ParameterSnapshotSlot.maxOutputs`. Each has a resolver.
+    public static func fixtures(layerCount: Int, outputs: [Int]) -> Set<FixtureRef> {
+        var fixtures: Set<FixtureRef> = [.master]
+        for n in 1...ParameterSnapshotSlot.maxLayers where n <= layerCount { fixtures.insert(.layer(n)) }
+        for n in outputs where (1...ParameterSnapshotSlot.maxOutputs).contains(n) { fixtures.formUnion([.output(n), .keystone(n)]) }
+        return fixtures
+    }
+
+    /// `outputs`: the project's, when the caller has decoded them already. Without `layerCount`, the layers the engine
+    /// starts with.
+    public static func fixtures(from project: JSONValue, outputs: [OutputConfig]? = nil) -> Set<FixtureRef> {
+        fixtures(layerCount: project["layerCount"]?.int ?? defaultLayerCount, outputs: (outputs ?? self.outputs(from: project)).map(\.id))
+    }
+
+    /// The layer count of a project that has none (a hand-written file), and of a fresh install.
+    public static let defaultLayerCount = 8
 
     public static func patch(from project: JSONValue) -> Patch? {
         guard let entries = project["patch"]?.array else { return nil }
@@ -378,6 +454,7 @@ public enum ProjectDocument {
         if document["ui"] == nil { try? document.set([:], at: "/ui") }
         if document["layerCanvas"] == nil { try? document.set([:], at: "/layerCanvas") }
         if document["syphon"] == nil { try? document.set([:], at: "/syphon") }
+        if document["capture"] == nil { try? document.set([:], at: "/capture") }
         // mapping presets of a hand-edited or foreign file: numbers 1–255 and the first of each number, the list the engine
         // draws from (§9.10 item 3), so the UI offers the same; a preset that does not validate stays and is skipped there
         if var list = document["outputs"]?.array {
@@ -421,14 +498,16 @@ public enum ProjectDocument {
     /// `showModeOn`: canvas format changes are refused while show mode is on (they re-initialise the canvas).
     /// `checkLibraryRoot`: throws when the engine cannot switch to that root now (B51); gets the expanded absolute path.
     /// `applySync`: restarts the sync sender and receiver with saved settings; throws when the port cannot be bound.
-    /// `syphonRunning`: the numbers of the Syphon servers running now (B69: only the others can be forgotten).
+    /// `liveRunning`: the numbers of the live inputs running now, of every catalog (B69: only the others can be
+    /// forgotten). `authorizeCamera`: asks for the camera permission (`capture.authorize`).
     /// `displayModes`: the current mode of each connected display by UUID (a wall output's pixel size, §9.9).
     /// `showPreset`: the Compare lease of `output.show` (output ids, preset number; 0 ends it), kept on the DMX queue.
     public static func registerCommands(
         on store: StateStore, auth: RoleAuth, showModeOn: @escaping @Sendable () -> Bool = { false },
         checkLibraryRoot: @escaping @Sendable (String) throws -> Void = { _ in },
         applySync: @escaping @Sendable (SyncSettings) throws -> Void = { _ in },
-        syphonRunning: @escaping @Sendable () -> Set<Int> = { [] },
+        liveRunning: @escaping @Sendable () -> Set<Int> = { [] },
+        authorizeCamera: @escaping @Sendable () -> Void = {},
         displayModes: @escaping @Sendable () -> [String: DisplayModeConfig] = { [:] },
         showPreset: @escaping @Sendable ([Int], Int) -> Void = { _, _ in }
     ) {
@@ -459,27 +538,37 @@ public enum ProjectDocument {
             })
         store.register(
             CommandSpec(
-                name: "patch.set", role: .programmer, summary: "Patch a fixture (layer, master, output, keystone) to a universe and address, or unpatch it with address 0; an Output or Keystone fixture only for an output that exists (1–8).",
+                name: "patch.set", role: .programmer,
+                summary: "Patch a fixture (layer, master, output, keystone) to a universe and address, or unpatch it with address 0 (any fixture); an address only for a fixture that exists: a layer up to the layer count (1–32), an Output or Keystone fixture of an output that exists (1–8).",
                 argsType: "{ fixture: string; universe: string; address: number }"
             ) { project, args in
-                guard let fixtureName = args["fixture"]?.string, let fixture = FixtureRef(parsing: fixtureName) else {
-                    throw CommandError.invalidArgs("fixture must be \"Layer n\", \"Master\", \"Output n\" or \"Keystone n\"")
-                }
-                guard let universeName = args["universe"]?.string, let universe = UniverseID(parsing: universeName) else {
-                    throw CommandError.invalidArgs("universe must be artnet:net.subnet.universe or sacn:n")
-                }
-                guard let address = args["address"]?.int, (0...512).contains(address) else { throw CommandError.invalidArgs("address must be 0 (unpatch) or 1–512") }
-                if let n = fixture.outputNumber, address > 0 {
-                    guard n <= ParameterSnapshotSlot.maxOutputs else { throw CommandError.invalidArgs("console control covers outputs 1–\(ParameterSnapshotSlot.maxOutputs)") }
-                    guard ProjectDocument.outputs(from: project).contains(where: { $0.id == n }) else {
-                        throw CommandError.invalidArgs("there is no output \(n): add the output first")
-                    }
-                }
+                let (fixture, entry) = try checkedEntry(args, in: project, fixtures: fixtures(from: project))
                 guard var patch = ProjectDocument.patch(from: project) else { throw CommandError.invalidArgs("project has no patch") }
                 patch.entries.removeAll { $0.fixture == fixture }
-                if address > 0 {
-                    guard address + fixture.mode.footprint - 1 <= 512 else { throw CommandError.invalidArgs("\(fixture) does not fit at \(address)") }
-                    patch.entries.append(PatchEntry(fixture: fixture, universe: universe, address: address))
+                if let entry { patch.entries.append(entry) }
+                try project.set(patchValue(patch), at: "/patch")
+                return nil
+            })
+        store.register(
+            CommandSpec(
+                name: "patch.setMany", role: .programmer,
+                summary: "Patch or unpatch several fixtures in one step (one undo): each entry is checked as patch.set checks it; one bad entry, or a fixture listed twice, refuses all.",
+                argsType: "{ entries: { fixture: string; universe: string; address: number }[] }"
+            ) { project, args in
+                guard let list = args["entries"]?.array else { throw CommandError.invalidArgs("args: { entries: [{ fixture, universe, address }] }") }
+                guard var patch = ProjectDocument.patch(from: project) else { throw CommandError.invalidArgs("project has no patch") }
+                let existing = fixtures(from: project)
+                var seen: Set<FixtureRef> = []
+                for (i, item) in list.enumerated() {
+                    let fixture: FixtureRef, entry: PatchEntry?
+                    do {
+                        (fixture, entry) = try checkedEntry(item, in: project, fixtures: existing)
+                    } catch let error as CommandError {
+                        throw CommandError(error.code, "entry \(i + 1): \(error.message); nothing was patched")
+                    }
+                    guard seen.insert(fixture).inserted else { throw CommandError.invalidArgs("\(fixture) is listed twice; nothing was patched") }
+                    patch.entries.removeAll { $0.fixture == fixture }
+                    if let entry { patch.entries.append(entry) }
                 }
                 try project.set(patchValue(patch), at: "/patch")
                 return nil
@@ -487,7 +576,7 @@ public enum ProjectDocument {
         store.register(
             CommandSpec(
                 name: "layers.setCount", role: .programmer,
-                summary: "Set the number of layers (1–64): new layers are patched at their standard address when that range is free, dropped layers are unpatched.",
+                summary: "Set the number of layers (1–64): a new layer goes on its slot of the Layers block, or right after the layer before it when the layers are no block (else at its standard address), and stays unpatched when that range is taken; layers above 32 get no address; dropped layers are unpatched.",
                 argsType: "{ count: number }"
             ) { project, args in
                 guard let count = args["count"]?.int, (1...64).contains(count) else { throw CommandError.invalidArgs("count must be 1–64") }
@@ -497,12 +586,11 @@ public enum ProjectDocument {
                     if case .layer(let n) = $0.fixture { return n > count }
                     return false
                 }
-                if count > previous {
-                    let standard = Patch.standard(layers: count, outputs: 4)
-                    for n in (previous + 1)...count where patch.entry(for: .layer(n)) == nil {
-                        guard let candidate = standard.entry(for: .layer(n)) else { continue }
-                        let free = !patch.entries.contains { $0.universe == candidate.universe && $0.channels.overlaps(candidate.channels) }
-                        if free { patch.entries.append(candidate) }
+                // only layers that exist get an address (layers above 32 never render)
+                let existing = min(count, ParameterSnapshotSlot.maxLayers)
+                if existing > previous {
+                    for n in (previous + 1)...existing where patch.entry(for: .layer(n)) == nil {
+                        if let entry = newLayerEntry(n, in: patch, existing: existing) { patch.entries.append(entry) }
                     }
                 }
                 try project.set(.number(Double(count)), at: "/layerCount")
@@ -525,24 +613,44 @@ public enum ProjectDocument {
                 try setLayerCanvases(assigned, in: &project)
                 return nil
             })
+        let forgets: [(kind: LiveCatalog.Kind, noun: String, summary: String)] = [
+            (.syphon, "Syphon server", "Forget a numbered Syphon server that is not running (folder 0, 150–169), or without file every one not running: the number is free again."),
+            (.capture, "capture device", "Forget a numbered capture device that is not running (folder 0, 1–20), or without file every not-running device (1–20): the number is free again."),
+        ]
+        for (kind, noun, summary) in forgets {
+            store.register(
+                CommandSpec(
+                    name: "\(kind.projectKey).forget", role: .programmer, summary: summary, argsType: "{ file?: number }",
+                    // an undo puts the number back with `add /syphon/N`, which would overwrite a source numbered N meanwhile (B90)
+                    replayCheck: { patch, done, project in try checkLiveReplay(patch, undoing: done, on: project, running: liveRunning()) }
+                ) { project, args in
+                    let running = liveRunning()
+                    var numbers = liveNumbers(kind, from: project)
+                    if let raw = args["file"], raw != .null {
+                        guard let file = raw.int, numbers.contains(where: { $0.file == file }) else {
+                            throw CommandError.invalidArgs("no \(noun) numbered \(raw.int.map(String.init) ?? "\(raw)")")
+                        }
+                        guard !running.contains(file) else {
+                            throw CommandError.invalidArgs("\(noun.prefix(1).uppercased() + noun.dropFirst()) \(file) is running; only one that is not running can be forgotten")
+                        }
+                        numbers.removeAll { $0.file == file }
+                    } else {
+                        numbers.removeAll { !running.contains($0.file) }
+                    }
+                    try project.set(liveValue(numbers), at: JSONPointer(tokens: [kind.projectKey]))
+                    return nil
+                })
+        }
         store.register(
             CommandSpec(
-                name: "syphon.forget", role: .programmer,
-                summary: "Forget a numbered Syphon server that is not running (folder 0, 150–169), or without file every one not running: the number is free again.",
-                argsType: "{ file?: number }",
-                // an undo puts the number back with `add /syphon/N`, which would overwrite a server numbered N meanwhile (B90)
-                replayCheck: { patch, done, project in try checkLiveReplay(patch, undoing: done, on: project, running: syphonRunning()) }
-            ) { project, args in
-                let running = syphonRunning()
-                var numbers = liveNumbers(.syphon, from: project)
-                if let raw = args["file"], raw != .null {
-                    guard let file = raw.int, numbers.contains(where: { $0.file == file }) else { throw CommandError.invalidArgs("no Syphon server numbered \(raw)") }
-                    guard !running.contains(file) else { throw CommandError.invalidArgs("Syphon server \(file) is running; only one that is not running can be forgotten") }
-                    numbers.removeAll { $0.file == file }
-                } else {
-                    numbers.removeAll { !running.contains($0.file) }
-                }
-                try project.set(liveValue(numbers), at: "/syphon")
+                name: "capture.authorize", role: .programmer, undoable: false,
+                summary: "Ask macOS for the camera permission, or for screen recording (not available yet); refused in show mode.",
+                argsType: "{ kind: 'camera' | 'screen' }"
+            ) { _, args in
+                guard let kind = args["kind"]?.string, kind == "camera" || kind == "screen" else { throw CommandError.invalidArgs("kind must be camera or screen") }
+                guard !showModeOn() else { throw CommandError("showMode", "permissions are not asked in show mode; leave show mode first") }
+                guard kind == "camera" else { throw CommandError("unavailable", "screen capture is not available yet") }
+                authorizeCamera()
                 return nil
             })
         store.register(
@@ -764,28 +872,6 @@ extension FixtureRef {
         switch self {
         case .output(let n), .keystone(let n): n
         case .layer, .master: nil
-        }
-    }
-}
-
-extension UniverseID {
-    /// Parses the `description` form: "artnet:net.subnet.universe" or "sacn:n".
-    public init?(parsing text: String) {
-        guard let colon = text.firstIndex(of: ":") else { return nil }
-        let transport = text[..<colon].lowercased()
-        let rest = text[text.index(after: colon)...]
-        switch transport {
-        case "artnet":
-            let parts = rest.split(separator: ".").map { Int($0) }
-            guard parts.count == 3, let net = parts[0], let subnet = parts[1], let universe = parts[2],
-                (0...127).contains(net), (0...15).contains(subnet), (0...15).contains(universe)
-            else { return nil }
-            self = .artnet(net: net, subnet: subnet, universe: universe)
-        case "sacn":
-            guard let n = Int(rest), (1...63999).contains(n) else { return nil }
-            self = UniverseID(.sacn, n)
-        default:
-            return nil
         }
     }
 }
