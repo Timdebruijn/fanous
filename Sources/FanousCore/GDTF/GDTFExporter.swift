@@ -80,6 +80,7 @@ public enum GDTFExporter {
             case .control: return a("Control1", "Control", "Control", "Control", "None")
             case .testPattern: return a("TestPattern", "Pattern", "Control", "Control", "None")
             case .blend: return a("BlendBypass", "Blend", "Control", "Control", "None")
+            case .preset: return a("MappingPreset", "Map", "Control", "Control", "None")
             }
         case .keystone(let p):
             switch p {
