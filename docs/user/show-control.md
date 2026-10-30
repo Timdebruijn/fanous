@@ -9,7 +9,7 @@ MIDI. Fanous can also be seen and browsed from a console
 over CITP/MSEX.
 
 Before you build a show on cues or OSC or MIDI parameter values, set the project's
-**Who controls** (Patch screen, the card above the fixture table) to **Console
+**Who controls** (Patch screen, the card above the fixture groups) to **Console
 and Fanous, latest change wins**, **Console and Fanous, highest value wins** or
 **Fanous only (UI, cues, OSC, MIDI)**: with the default **Console only** those
 values are recorded but do not move a layer, and the Show control screen shows

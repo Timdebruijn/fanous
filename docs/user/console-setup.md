@@ -36,11 +36,11 @@ default and value band is in
 [channel-map.md](../channel-map.md); the OSC key of each parameter is in the
 same table.
 
-A new install has 8 layers. The Patch screen has **Add layer** and **Remove
-last layer** and shows "N of M layers" where M is the limit the engine reports.
-It also has **Add output**; select an output's fixture to **Remove output**.
-Each output has its own Output fixture, patched when the output is added and
-unpatched when it is removed.
+A new install has 8 layers. The Patch screen's Layers group has **−** and
+**+** next to the layer count (Remove layer N, Add layer) and shows "of M" where
+M is the limit the engine reports. The Outputs group has **Add output**; open an
+output's Output fixture to **Remove output**. Each output has its own Output
+fixture, patched when the output is added and unpatched when it is removed.
 
 **Add layer** continues the layers' block. While every patched layer sits on
 its place counted from one start (Layer n at the start + (n − 1) × 64, moved to
@@ -48,9 +48,11 @@ address 1 of the next universe where a universe is full), the new layer goes on
 its place: with Layers 1 to 8 at A 0.0.4 from address 1, Layer 9 goes to
 A 0.0.5 at 1. When the layers are patched by hand off such a block, it goes
 right after the layer before it, or at its standard address (below) when that
-one is unpatched. When those 64 channels are taken, as by the Master with the
-standard patch of 8 layers, the new layer stays unpatched until you give it an
-address. A layer above the layer count or above 32 cannot get an address.
+one has no address. When those 64 channels are taken, as by the Master with the
+standard patch of 8 layers, the new layer gets no address: the Patch screen
+says what is in the way and offers **Move Master and outputs after the layers**
+(see [Blocks](#blocks)). A layer above the layer count or above 32 cannot get
+an address.
 
 ## The standard patch
 
@@ -85,26 +87,40 @@ yours does.
 
 The toolbar shows "N fixtures · N universes" and, in red, the number of
 collisions. **Channel map** opens the channel list; **Export GDTF** downloads
-the fixture file. On a wide screen the left column has Who controls, the
-fixture table and Selected fixture, the right column Universes and the DMX
-monitor; on a narrow one (an iPad upright) they stack in that order.
+the fixture file. On a wide screen the left column has Who controls and the
+fixture groups, the right column Universes and the DMX monitor; on a narrow
+one (an iPad upright, a phone) they stack in that order.
 
 - **Who controls** (programmer): the project's source policy, with a line
   that explains the current choice (see [Sources and merging](#sources-and-merging)).
-- **Fixture table**: Fixture, Type (with footprint), Universe, Address,
-  Footprint, Status. Status says "ok", "unpatched · no console control",
-  "collides with Layer 2 · 65-128" or "exceeds universe". There is one Output
-  row (and its Keystone row) per output on the Outputs & Mapping screen, no
-  more and no fewer; removing an output unpatches both.
-  Projects from before 30 October 2026 had Output 1 to 4 patched whether those
-  outputs existed or not; opening such a project unpatches the ones without an
-  output.
-- **Selected fixture** (programmer): choose the Universe (A 0.0.0 to 0.0.3 and
-  S 1 to S 4, plus every universe that has been heard or has settings), set the Address with the
-  stepper (Shift steps by 10; **0 means unpatched**), or press **Unpatch**.
-  For an output it also says which display shows it, links to Outputs &
-  Mapping, and has **Remove output** (the output with its mapping; Undo brings
-  it back).
+- **Layers**, **Master** and **Outputs**: one group per kind of fixture, in
+  the order of the channel map. Each group has a block line (see
+  [Blocks](#blocks)). The layers are chips that wrap, each with its number and
+  address; the Master is one chip. The Outputs group has one row per output on
+  the Outputs & Mapping screen, no more and no fewer: the display it is on, a
+  link to Outputs & Mapping, and its Output and Keystone fixture with their
+  status. Removing an output unpatches both. Outputs above 8 have no console
+  channels. Projects from before 30 October 2026 had Output 1 to 4 patched
+  whether those outputs existed or not; opening such a project unpatches the
+  ones without an output.
+- **A fixture's status** (on the chip's tooltip, next to an Output or Keystone,
+  and in its editor):
+  - "ok"; "collides with Layer 2 · 65–128" or "exceeds universe" in red;
+  - a layer without an address: "no address · stays dark" in yellow under
+    Console only (nothing plays), "no address · Fanous only" under the other
+    policies;
+  - the Master or an Output without an address: "no address · at defaults"
+    under Console only (full and normal are their working state), "no address ·
+    Fanous only" under the other policies;
+  - a Keystone without an address: "not used" (it is optional);
+  - a layer whose place in the block is taken: "no address · A 0.0.1 1–64 is
+    taken by Master".
+- **A fixture's editor** (programmer): tap a chip to open it under the group;
+  tap it again to close. Choose the Universe (A 0.0.0 to 0.0.3 and S 1 to S 4,
+  plus every universe that is patched, has been heard or has settings), set
+  the Address with the stepper (Shift steps by 10; **0 means no address**), or
+  press **Unpatch**. An Output fixture's editor has **Remove output** (the
+  output with its mapping; Undo brings it back).
 - **Universes**: one row per universe that
   - a fixture is patched to,
   - a console is sending to now (packets, or quiet for no longer than the
@@ -130,26 +146,71 @@ monitor; on a narrow one (an iPad upright) they stack in that order.
   status bar's yellow "silent" means nothing was received yet). Tap a row to open its settings (see
   [Universe settings](#universe-settings)); the DMX monitor switches to it.
 - **DMX monitor**: 512 cells for one universe, coloured per fixture, red where
-  fixtures collide, with live values. Click a cell to pin it: you see the
-  fixture, the channel inside it, the parameter, the raw value and what it means
-  ("17 → Loop rev"). The buttons above the grid switch universe.
+  fixtures collide, grey where a channel is free, with live values. Click a
+  cell to pin it: you see the fixture, the channel inside it, the parameter, the
+  raw value and what it means ("17 → Loop rev"). The buttons above the grid
+  switch universe.
 
 The pill for a universe is green while packets arrive. It is yellow when
 nothing has been received yet or for up to the universe's Signal lost after time
 (2.5 s by default) of silence, and red when a patched universe has been silent longer.
 What the fixtures do then is the universe's **Hold on signal loss** setting; by
-default they **hold their last values**. An unpatched fixture holds nothing
-from the console: unpatching a layer, Master or output (or moving it to another
-universe) drops the console's values.
+default they **hold their last values**. A fixture without an address holds
+nothing from the console: unpatching a layer, Master or output (or moving it to
+another universe) drops the console's values.
 
-**Unpatched means no console address, not no control.** Every layer up to the
+**No address means no console control, not no control.** Every layer up to the
 layer count (at most 32), the Master and each output's Output and Keystone
 fixture exist whether they are patched or not, and follow the
-[source policy](#sources-and-merging): with **Console only** an unpatched
-fixture stays at its defaults (a layer black with no file, the Master at full,
-an output normal, a Keystone centred); with the other policies the UI, cues,
-OSC and MIDI control it. A show without a console therefore does not need a
-patch at all. The Status column's "no console control" means just that.
+[source policy](#sources-and-merging): with **Console only** a fixture without
+an address stays at its defaults (a layer black with no file, the Master at
+full, an output normal, a Keystone centred); with the other policies the UI,
+cues, OSC and MIDI control it. A show without a console therefore does not
+need a patch at all. "Fanous only" in a status means just that.
+
+### Blocks
+
+A console patches a group of fixtures as a block: "8 fixtures from address 1".
+The Patch screen does the same. Fixture n of a group (Layer n, Output n) sits
+on place n − 1 counted from the block's start, one footprint apart; a place
+that would run past channel 512 moves to address 1 of the next universe, and so
+does every place after it. The next universe of A 0.0.15 is A 0.1.0; of S 4 it
+is S 5. Numbers keep their place: after Output 2 of 3 is removed, Output 3
+stays where it was. The Keystone block starts where a ninth output would sit
+(with the Master at 1 and outputs from 9: Keystone 1 at 73, Keystone 2 at 89 …
+Keystone 8 at 185).
+
+Fanous does not store the block; it reads it from where the fixtures are. The
+lowest-numbered patched fixture of the group (a Keystone does not count) gives
+the start. The block line says:
+
+- **Block · A 0.0.0 from 1**: every patched fixture is on its place. The
+  universe and the address are fields: change them to move the whole group,
+  Keystones with their outputs, in one step. "1 unplaced" counts the fixtures
+  of the group without an address; they do not break the block.
+- **Custom · 2 of 8 off the block**: some fixtures were placed by hand, or the
+  start would fall below address 1 (Layer 9 alone at A 0.0.1 1). **Re-lay as
+  block** puts every fixture on its place from the lowest-numbered one's start.
+- **No address**, with **Patch as block**: nothing of the group is patched.
+  The group goes where the standard patch puts it: the layers at A 0.0.0 1, the
+  Master on the universe after the layers, the outputs right after the Master.
+
+A Keystone without an address has **Patch**: it goes on its place when those 16
+channels are free, else on the first 16 free channels after it in that
+universe; when there are none, or the outputs are no block, its editor opens.
+
+Fanous never lets a fixture it places itself (Add layer, Add output, a
+Keystone's Patch) land on another one; it leaves it without an address
+instead. What you place may overlap, and then shows in red. When Add layer
+finds the new layer's place taken by the Master (8 layers, the standard patch),
+the Layers group offers **Move Master and outputs after the layers**: the
+Master, Output and Keystone blocks move to the universe after the last layer,
+and the layers without an address go on their places. This changes the console
+patch too, so Fanous never does it by itself.
+
+Each of these (Re-lay, Patch as block, moving a block, Move Master and outputs)
+is one step: a toast names it and how many hand-placed fixtures moved, and one
+Undo puts the patch back.
 
 ## Universe settings
 

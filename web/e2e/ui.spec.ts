@@ -222,6 +222,22 @@ test('patch: Hold on signal loss is set on the universe in the Universes panel, 
   await expect(row).toContainText('Hold last values');
 });
 
+test('patch: the Layers block is laid from A 0.0.2 in one step, and one Undo puts the patch back', async ({ page }) => {
+  await openScreen(page, 'Patch');
+  const layers = page.getByRole('region', { name: 'Layers' });
+  const universes = page.getByRole('region', { name: 'Universes' });
+  const start = layers.getByLabel('Layers block universe');
+  await expect(start).toHaveValue('artnet:0.0.0');
+  await start.selectOption('artnet:0.0.2');
+  await expect(universes.getByRole('button', { name: /^A 0\.0\.2, Layers 1–8,/ })).toBeVisible();
+  await expect(layers.getByRole('button', { name: 'Layer 8, A 0.0.2 449–512, ok' })).toBeVisible();
+  await expect(universes.getByRole('button', { name: /^A 0\.0\.0,/ })).toHaveCount(0);
+  await page.getByRole('status').getByRole('button', { name: /Undo$/ }).click();
+  await expect(universes.getByRole('button', { name: /^A 0\.0\.0, Layers 1–8,/ })).toBeVisible();
+  await expect(layers.getByRole('button', { name: 'Layer 1, A 0.0.0 1–64, ok' })).toBeVisible();
+  await expect(start).toHaveValue('artnet:0.0.0');
+});
+
 test('media: folder 0 lists the generators and the Syphon servers, and puts one on a layer', async ({ page }) => {
   await openScreen(page, 'Media');
   await page.getByRole('button', { name: /^0 Built-in and live inputs/ }).click();

@@ -4,42 +4,44 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import DMXMonitor from '../components/DMXMonitor.svelte';
-  import PatchInspector from '../components/PatchInspector.svelte';
-  import PatchTable from '../components/PatchTable.svelte';
+  import PatchGroup from '../components/PatchGroup.svelte';
   import UniversesPanel from '../components/UniversesPanel.svelte';
   import { POLICIES } from '../lib/layers';
   import { app, can, cmd } from '../lib/state.svelte';
-  import { LOCKED_TITLE, buildFixtures, loadChannelMap, summarize, universeOptions, universeRows, type ChannelMap } from '../lib/patch-screen';
+  import { LOCKED_TITLE, buildPatch, loadChannelMap, summarize, universeOptions, universeRows, type ChannelMap } from '../lib/patch-screen';
 
-  // Footprints come from the engine's channel map; until it arrives (or if it cannot be fetched) 64/8/8 apply.
+  // Modes and footprints come from the engine's channel map; until it arrives (or if it cannot be fetched) the four
+  // standard modes apply.
   let map = $state.raw<ChannelMap | null>(null);
   onMount(() => {
     void loadChannelMap().then((loaded) => (map = loaded));
   });
 
-  let selectedName = $state('Layer 1');
+  /** the fixture whose inline editor is open */
+  let selectedName = $state<string | null>(null);
   /** the universe the user picked or patched to last; falls back when it is no longer known */
   let chosenUniverse = $state<string | null>(null);
   /** the universe whose settings are open in the Universes panel */
   let openUniverse = $state<string | null>(null);
 
-  const rows = $derived(buildFixtures(app.project.patch, app.project.layerCount, map, app.project.outputs.map((o) => o.id)));
-  const selected = $derived(rows.find((r) => r.name === selectedName) ?? rows[0]!);
+  const screen = $derived(buildPatch(app.project.patch, app.project.layerCount, map, app.project.outputs.map((o) => o.id)));
+  const rows = $derived(screen.rows);
+  const selected = $derived(rows.find((r) => r.name === selectedName) ?? null);
   const summary = $derived(summarize(rows));
   // the open and the monitored universe keep their row while their console pauses
   const universes = $derived(universeRows(rows, app.live.dmx.universes, app.project.universes, [openUniverse, chosenUniverse].filter((id) => id !== null)));
   const known = $derived(universes.map((u) => u.id));
-  // every universe the panel and the monitor know, so the select never goes blank on one of them
+  // every universe the panel and the monitor know, so a select never goes blank on one of them
   const options = $derived(universeOptions(app.project.patch, app.live.dmx.universes, app.project.universes));
   const monitorUniverse = $derived.by(() => {
     if (chosenUniverse && known.includes(chosenUniverse)) return chosenUniverse;
-    if (selected.patched && selected.universe) return selected.universe;
+    if (selected?.patched && selected.universe) return selected.universe;
     return known[0] ?? null;
   });
 
   const policyLock = $derived(!can('programmer') ? LOCKED_TITLE : app.project.showLock ? 'Locked: show lock is on' : undefined);
 
-  function select(name: string) {
+  function select(name: string | null) {
     selectedName = name;
     const row = rows.find((r) => r.name === name);
     if (row?.patched && row.universe) chosenUniverse = row.universe;
@@ -74,12 +76,13 @@
       </label>
       <p class="caption" id="who-line">{POLICIES[app.project.policy]?.line}</p>
     </section>
-    <PatchTable {rows} selected={selected.name} onselect={select} />
-    <PatchInspector row={selected} {options} defaultUniverse={monitorUniverse ?? 'artnet:0.0.0'} onpatched={(universe) => (chosenUniverse = universe)} />
+    {#each screen.groups as group, index (group.kind)}
+      <PatchGroup {group} {index} groups={screen.groups} {rows} {options} selected={selectedName} onselect={select} onpatched={(universe) => (chosenUniverse = universe)} />
+    {/each}
   </div>
   <div class="right">
     <UniversesPanel rows={universes} open={openUniverse} onopen={openSettings} />
-    <DMXMonitor universes={known} universe={monitorUniverse} onuniverse={(id) => (chosenUniverse = id)} {rows} selected={selected.name} {map} />
+    <DMXMonitor universes={known} universe={monitorUniverse} onuniverse={(id) => (chosenUniverse = id)} {rows} selected={selectedName ?? ''} {map} />
   </div>
 </div>
 

@@ -458,6 +458,21 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   and the preview keeps the edited mapping. `live.outputs` gets `morph: { from, to, fade }` as drawn while one runs,
   and the badge reads "Preset A → B", "Edited → Preset B" or "Preset A → edited". Channel 7 is in the channel map, GDTF
   and OSC (`/fanous/output/{n}/fade`); channel 8 stays reserved.
+- Changed: the Patch screen groups its fixtures and patches a group as a block (B120 step 5, PR #STEP5, DESIGN §6.6
+  items 2–4). The fixture table and Selected fixture are gone. **Layers** (the count with − and +), **Master** and
+  **Outputs** (one row per output with its Output and Keystone fixture, its display and a link to Outputs & Mapping,
+  and Add output) come from the channel map's `fixtures`, so a new mode of an existing kind appears without UI code;
+  32 layers are one line of chips. Each group reads its block from where its fixtures are: "Block · A 0.0.0 from 1"
+  with the start universe and address as fields that move the whole group (Keystones with their outputs) in one step,
+  "1 unplaced", "Custom · 2 of 8 off the block" with Re-lay as block, or Patch as block at the standard position. A
+  Keystone's Patch puts it on its slot after the outputs, or on the first free 16 channels after it. A new layer whose
+  slot the Master holds says so ("no address · A 0.0.1 1–64 is taken by Master") and the Layers group offers Move
+  Master and outputs after the layers. Every multi-fixture change is one `patch.setMany`, one undo step, with a toast.
+  Tapping a chip opens its editor in the group (universe, address, Unpatch, Remove output). The status words follow
+  Who controls: "no address · stays dark" for a layer under Console only, "no address · at defaults" for the Master
+  or an output, "no address · Fanous only" under the other policies, and "not used" for a Keystone; "unpatched" is
+  gone from the screen, the Layers screen says "no address" and the DMX monitor calls an empty channel "free". The
+  slot rule's shared vectors (`Tests/Fixtures/patch-slots.json`) now run in the web tests too.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
