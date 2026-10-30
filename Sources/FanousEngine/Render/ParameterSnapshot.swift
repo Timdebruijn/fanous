@@ -121,6 +121,26 @@ public struct OutputParameters: Sendable, Equatable {
     }
 }
 
+/// A mapping preset morph on one output (DESIGN.md §9.10 item 3, Output ch 7): from preset `from` to the one the slot's
+/// `presets` holds, over `fade` seconds from `start` (host time, the clock of the render tick's target). Recorded by the
+/// DMX queue when the preset changes; a fade of 0 is a cut. Every drawer computes its progress per frame from these.
+public struct PresetMorph: Sendable, Equatable {
+    public var from: UInt8 = 0
+    public var start: Double = 0
+    public var fade: Double = 0
+    public init(from: UInt8 = 0, start: Double = 0, fade: Double = 0) { (self.from, self.start, self.fade) = (from, start, fade) }
+
+    /// Smoothstep of the time since `start` over `fade`: 0 shows `from`, 1 the target alone (a cut, or done).
+    public func progress(at now: Double) -> Float {
+        guard fade > 0 else { return 1 }
+        let t = Float(min(1, max(0, (now - start) / fade)))
+        return t * t * (3 - 2 * t)
+    }
+
+    /// Still under way at `now` (`live.outputs` says so).
+    public func running(at now: Double) -> Bool { fade > 0 && now < start + fade }
+}
+
 extension simd_float3x3 {
     /// From a row-major 3×3 (`WarpMath.homography`, `WarpMath.keystone`).
     init(rowMajor m: [Double]) {
@@ -170,6 +190,8 @@ public final class ParameterSnapshotSlot: @unchecked Sendable {
     public var presets: [UInt8] = Array(repeating: 0, count: ParameterSnapshotSlot.maxOutputs)
     /// `presets` comes from Compare, not the console.
     public var presetCompare: [Bool] = Array(repeating: false, count: ParameterSnapshotSlot.maxOutputs)
+    /// Per output, the morph into `presets` (Output ch 7): a cut unless the console changed the preset with a fade.
+    public var morphs: [PresetMorph] = Array(repeating: PresetMorph(), count: ParameterSnapshotSlot.maxOutputs)
 
     public init(maxLayers: Int) { layers = Array(repeating: LayerParameters(), count: maxLayers) }
 
@@ -193,7 +215,7 @@ public final class ParameterSnapshotSlot: @unchecked Sendable {
         for i in layers.indices { layers[i] = other.layers[i] }
         for i in outputs.indices { outputs[i] = other.outputs[i] }
         for i in keystones.indices { (keystones[i], keystoneInvalid[i]) = (other.keystones[i], other.keystoneInvalid[i]) }
-        for i in presets.indices { (presets[i], presetCompare[i]) = (other.presets[i], other.presetCompare[i]) }
+        for i in presets.indices { (presets[i], presetCompare[i], morphs[i]) = (other.presets[i], other.presetCompare[i], other.morphs[i]) }
     }
 }
 

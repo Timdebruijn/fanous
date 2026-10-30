@@ -419,6 +419,14 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   Presets strip on Warp & Slices and on the wall panel; "Preset N (console)", "Preset N (compare)" and "Preset N missing"
   on the output row and under the preview. Output ch 6 is in the channel map, GDTF and OSC (`/fanous/output/{n}/preset`);
   the footprint stays 8. Projects without presets save as before.
+- Added: the **mapping preset morph** (M2.5, DESIGN §6.4, §9.10 item 3). Output channel 7, **Mapping fade** (0 = cut,
+  1–255 = 0.1–25.5 s, as Layer Dissolve), glides an output from one preset to the next when channel 6 changes: warp,
+  slice corners, source rectangles and opacity move in one pass, slices paired by id; a slice on one side only (or on
+  another canvas) and the masks switch at the start. A change during a glide goes on from where it was going; Compare,
+  Recall and a fade of 0 cut; on DMX loss the morph follows channel 6. The keystone applies on top, Freeze holds across
+  it, and the preview keeps the edited mapping. `live.outputs` gets `morph: { from, to, fade }` while one runs, and the
+  badge reads "Preset A → B (console)". Channel 7 is in the channel map, GDTF and OSC (`/fanous/output/{n}/fade`);
+  channel 8 stays reserved.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

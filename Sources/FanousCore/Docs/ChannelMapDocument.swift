@@ -16,7 +16,8 @@ public enum ChannelMapDocument {
                 md += "| \(channels) | \(spec.name) | \(spec.bits) | \(spec.defaultRaw) | \(mapping(spec)) | `\(spec.oscKey)` |\n"
             }
             if let reserved = ChannelMap.reserved(for: mode) {
-                md += "| \(reserved.lowerBound)–\(reserved.upperBound) | Reserved | — | 0 | ignored | — |\n"
+                let channels = reserved.count == 1 ? "\(reserved.lowerBound)" : "\(reserved.lowerBound)–\(reserved.upperBound)"
+                md += "| \(channels) | Reserved | — | 0 | ignored | — |\n"
             }
             md += "\n"
         }

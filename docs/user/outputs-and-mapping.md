@@ -539,16 +539,27 @@ Output fixture channel 6, **Mapping preset** (see
 [console-setup.md](console-setup.md)):
 
 - 0 shows the mapping as edited; N shows the output's preset N for as long as
-  the channel holds it. It cuts, without a fade. Nothing in the project
-  changes.
+  the channel holds it. Nothing in the project changes.
+- Output channel 7, **Mapping fade**, glides from one to the next: the warp,
+  the slice corners, their part of the canvas and their opacity move together
+  over 0.1 to 25.5 s (1 to 255, as Layer Dissolve); 0 cuts. The fade counts
+  as it is when channel 6 changes, so set it first. A slice that is in only
+  one of the two presets, or samples another canvas in each, switches at the
+  start of the glide, and so do the masks. Changing channel 6 again during a
+  glide jumps to where that glide was going and glides on from there.
 - A number the output does not have keeps the edited mapping, and the output
   row says **Preset N missing** in yellow.
 - For a wall, store the preset on the whole wall, then set channel 6 on each
   of its Output fixtures.
-- OSC: `/fanous/output/{n}/preset`.
+- OSC: `/fanous/output/{n}/preset` and `/fanous/output/{n}/fade`.
+- Compare and Recall always cut. On DMX loss the output does what channel 6
+  does: with **Hold last values** it stays, and a glide that runs finishes;
+  with **Go to zero** it cuts to the edited mapping; with **UI and cues take
+  over** it glides to their preset over their fade.
 
 While an output shows a preset, its row and the Warp & Slices tab say
-**Preset N (console)** or **Preset N (compare)**, and Warp & Slices says that
+**Preset N (console)** or **Preset N (compare)**, and **Preset A → B
+(console)** while it glides; Warp & Slices says that
 your edits go to the mapping the output shows again when it leaves the preset.
 A Keystone fixture moves the preset like any mapping.
 
@@ -597,7 +608,6 @@ fix from FOH without touching the hand alignment.
 - Not available: per-output Syphon, Syphon for canvases other than Canvas 1,
   a frame rate per canvas, 10-bit output.
 - Projector walls: the outputs of one wall need the same pixel size.
-- Mapping presets cut from one to the next: the fade on Output channel 7 is
-  not built yet. Compare reaches outputs 1 to 8.
+- Compare reaches outputs 1 to 8.
 - Colour, black lift and black offset assume a gamma-2.2 projector; there is no
   per-output gamma for them yet.

@@ -525,12 +525,14 @@ public enum ShaderSource {
         float2 size;      // region size in pixels (dither, patterns)
         float intensity;  // output intensity × output fixture (0 at a blackout or Master 0); × master on a pattern (the canvas carries it)
         float opacity;    // slice opacity
-        uint flags;       // 1 = warp field present, 2 = mask present, 4 = raw (no blend/warp/mask), 8 = no blend map
+        uint flags;       // 1 = warp field present, 2 = mask present, 4 = raw (no blend/warp/mask), 8 = no blend map,
+                          // 16 = the morph's other side has a warp field
         uint pattern;     // TestPattern drawn instead of the canvas (through warp and blend, no mask), 0 = canvas
         uint index;       // output number for the "output ID" pattern
         float scale;      // canvas sample factor: a held (Freeze) canvas follows the Master on the sample, not after the lift (B100)
         float4 color;     // per-output colour: gain r, g, b; a = black offset (the code value it gives on black)
         float3x3 keystone;  // Keystone homography after the warp (§9.10 item 2); the identity in raw and on previews
+        float morph;      // a preset morph's progress (§9.10 item 3): below 1 the other side's vertex is mixed in; 1 = this side only
     };
 
     struct MappedVertex {
@@ -554,24 +556,37 @@ public enum ShaderSource {
         float clip [[clip_distance]] [4];  // the output's own edges, before the keystone (§6.4a: outside the quad is black)
     };
 
+    // a mesh point through a warp field: texel k holds f(k/(size-1)), so sample at texel centres, not at pos*size
+    static float2 warped(texture2d<float> warp, sampler s, float2 pos) {
+        float2 size = float2(warp.get_width(), warp.get_height());
+        return warp.sample(s, (pos * (size - 1.0) + 0.5) / size).xy;
+    }
+
     vertex MappedVertexOut mapped_vertex(uint vid [[vertex_id]],
                                    const device MappedVertex* vertices [[buffer(0)]],
                                    constant MappedUniforms& u [[buffer(1)]],
+                                   const device MappedVertex* others [[buffer(2)]],
                                    texture2d<float> warp [[texture(0)]],
+                                   texture2d<float> otherWarp [[texture(1)]],
                                    sampler linearSampler [[sampler(0)]]) {
         MappedVertex v = vertices[vid];
-        float2 p = v.pos;
-        if ((u.flags & 1u) != 0u && (u.flags & 4u) == 0u) {
-            // texel k holds f(k/(size-1)): sample at texel centres, not at pos*size
-            float2 size = float2(warp.get_width(), warp.get_height());
-            p = warp.sample(linearSampler, (v.pos * (size - 1.0) + 0.5) / size).xy;
+        bool raw = (u.flags & 4u) != 0u;
+        float2 p = (u.flags & 1u) != 0u && !raw ? warped(warp, linearSampler, v.pos) : v.pos;
+        float2 uv = v.uv;
+        if (u.morph < 1.0) {
+            // a preset morph (§9.10 item 3): vertex i is the same mesh point on the side it comes from (one tessellation,
+            // warp fields of the output's size), through that side's warp; the final positions and the UVs glide
+            MappedVertex o = others[vid];
+            float2 q = (u.flags & 16u) != 0u && !raw ? warped(otherWarp, linearSampler, o.pos) : o.pos;
+            p = mix(q, p, u.morph);
+            uv = mix(o.uv, uv, u.morph);
         }
         // homogeneous: the rasteriser divides by w, so uv and pre stay perspective-correct across a keystoned triangle
         float3 k = u.keystone * float3(p, 1.0);
         MappedVertexOut out;
         out.position = float4(k.x * 2.0 - k.z, k.z - k.y * 2.0, 0.0, k.z);
-        out.uv = v.uv;
-        out.pre = v.pos;
+        out.uv = uv;
+        out.pre = v.pos;  // this side's: its masks and patterns ride with the gliding slice
         out.post = k.xy / k.z;
         // what the mapping puts outside the output stays outside when the keystone shrinks it: clip at p in [0, 1], which
         // is linear in clip space (p = K⁻¹·k), so the clip is exact; inside the square the DMX guard keeps w > 0

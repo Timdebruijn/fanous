@@ -181,4 +181,17 @@ struct PresetCommandsTests {
         let presets = try #require(ProjectDocument.outputs(from: loaded).first).presets
         #expect(presets.map(\.number) == [3, 7] && presets[0].name == "first")
     }
+
+    /// `live.outputs` says a running morph (Output ch 7) as `{ from, to, fade }`, 0 = the edited mapping; null once it
+    /// ended and after a cut. The preset fields stay as they were.
+    @Test func liveSaysTheMorphWhileItRuns() {
+        var o = OutputConfig(id: 1)
+        o.storePreset(2, name: nil)
+        let morph = PresetMorph(from: 0, start: 10, fade: 2)
+        let live = Engine.presetLive((2, false, morph), config: o, at: 11)
+        #expect(live["morph"] == ["from": 0, "to": 2, "fade": 2] && live["preset"] == 2 && live["presetSource"] == "console")
+        #expect(Engine.presetLive((2, false, morph), config: o, at: 12)["morph"] == .null, "ended")
+        #expect(Engine.presetLive((0, false, PresetMorph(from: 2, start: 10, fade: 2)), config: o, at: 11)["morph"] == ["from": 2, "to": 0, "fade": 2], "into the edited mapping")
+        #expect(Engine.presetLive((2, true, PresetMorph(from: 0, start: 10, fade: 0)), config: o, at: 10)["morph"] == .null, "a cut")
+    }
 }

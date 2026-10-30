@@ -597,7 +597,7 @@ can never disagree). `[OPEN-9]` exact bands and the speed/scale upper limits.
 | 4 | Test pattern | 8 | 0 | as Master ch 4, this output only |
 | 5 | Blend | 8 | 0 | 0–127 blend/warp on (default) · 128–255 raw (bypass blend, warp, mask and, from M2, keystone — for alignment) |
 | 6 | Mapping preset | 8 | 0 | 0 = as edited · 1–255 = the output's stored mapping preset with that number; an index, so it cuts (M2.4, §9.10) |
-| 7 | Mapping fade | 8 | 0 | 0 = cut · 1–255 = 0.1–25.5 s morph when ch 6 changes, as Layer Dissolve (M2, §9.10); not built yet (M2.5): reserved |
+| 7 | Mapping fade | 8 | 0 | 0 = cut · 1–255 = 0.1–25.5 s morph when ch 6 changes, as Layer Dissolve (M2.5, §9.10) |
 | 8 | Reserved | — | 0 | |
 
 ### 6.4a Keystone mode (16 channels, M2)
@@ -2221,7 +2221,7 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
 ### 9.10 M2: black lift by coverage, Keystone, mapping presets, edit overlay, masks v2 (design 2026-10-29)
 
 **Status:** designed 2026-10-29, owner decisions the same day (below), and
-reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2.1), the Keystone mode of item 2 (M2.3) and the presets of item 3 without the morph (M2.4), below. Research and frictions F3–F6 are in
+reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2.1), the Keystone mode of item 2 (M2.3), the presets of item 3 (M2.4) and their morph (M2.5), below. Research and frictions F3–F6 are in
 `docs/mapping-ux.md` §1 and §4.2–§4.5.
 
 **Owner decisions (2026-10-29):**
@@ -2549,6 +2549,48 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
 - **Not built here:** the morph on ch 7 (M2.5) and the edit overlay with its lease (M2.6). `scripts/check-mallocs.sh`
   measures the compositor tick without an output pass (its render encoder allocates in Metal), so the per-frame preset
   choice is kept allocation-free by construction, not by that check.
+
+**As built (M2.5, PR #TBD):**
+- **Output ch 7.** `OutputParameter.fade`, "Mapping fade", the Layer Dissolve curve (0 → 0 s, 255 → 25.5 s) in group
+  Mapping; reserved is ch 8 alone (the channel map writes a single reserved channel as "8"). GDTF attribute `MappingFade`
+  (unit Time); OSC `/fanous/output/{n}/fade`. A curve as Dissolve is, so it merges and fades as Dissolve does (HTP under
+  `htp`, faded by a cue); it is read only when the preset changes, so neither touches a running morph.
+- **DMX queue.** `DMXStore.publish` keeps per output the preset it shows and whether Compare asks for it, and the morph
+  into it: `PresetMorph { from, start, fade }` (`ParameterSnapshot.swift`). When either changes it records `from` = the
+  preset shown so far (a running morph's target: a change mid-morph ends it at once and goes on from there, the
+  `ponytail:` above), `start` = the publish time and `fade` = ch 7 as it is then, or 0 when Compare starts, ends or
+  changes its preset, which cuts. `publish(receivedAt:at:)` takes the time of the packet, tick or command (host time,
+  `CACurrentMediaTime`, the clock of the render tick's target), so the tests set it.
+  - **Deviation:** the morph travels in the slot's `morphs: [PresetMorph]` beside `presets`, copied with the slot, not
+    in `OutputParameters` as item 0 says: the Output fixture's resolver rebuilds `outputs` every publish, which is why
+    M2.4 put the preset there too.
+  - **DMX loss** follows ch 6. Hold keeps the values, so nothing restarts and a running morph keeps its clock; zero
+    sends ch 6 and ch 7 to 0 in one frame, a cut to the edited mapping; internal goes to the internal values, ch 7's
+    among them. The first preset after a start morphs from the edited mapping like any change.
+- **Render.** `OutputPass.draw(…, presets:, morphs:, now:)` computes s = `PresetMorph.progress(at:)`, the smoothstep of
+  (now − start) / fade, per output and frame. The clock-master display passes the tick's target; a secondary display its
+  paced thread's target (`present(…, at:)`), with `morphs` copied into its `PresentParameters`; the output preview none.
+  While s < 1, `plan.geometry(from)` is the other side (a number the plan lacks is the edited mapping).
+  - Each target slice pairs with the first slice of the other side with its `SliceConfig.id` (`SlicePlan.id`) and its
+    canvas: a linear scan, no allocation. The pair's vertex buffer goes to vertex buffer 2 and the other side's warp
+    field to vertex texture 1 (flag 16 when it has one), with `MappedUniforms.morph` = s; the opacity mixes on the CPU.
+    A slice without a pair draws alone, and the other side's unpaired slices are not drawn: switched at the start. The
+    pattern mesh is the same on both sides, so a test pattern follows the morphing warp.
+  - `mapped_vertex` warps both sides (neither in raw) and mixes the positions and the UVs by s before the keystone;
+    `pre` is the target's vertex, so its masks ride with the gliding slice. The clip distances and the homogeneous
+    keystone are as M2.3 built them. At s = 1 the other side is not read.
+  - Freeze: `OutputPlan.canvases` already holds every preset's canvases and a pair shares one canvas, so a morph while
+    frozen glides the held frame.
+- **Status.** `live.outputs[].morph` is `{ from, to, fade }` (0 = the edited mapping) while a morph runs when
+  `publishLive` builds the document, else null (`Engine.presetLive`). No progress: the 100 ms diff sends it when a morph
+  starts and when it ends. The preset badge on the output row and under the preview reads "Preset A → B (console)"
+  ("Edited → Preset B", "Preset A → edited") while it is there.
+- **Checks.** The DMX queue (`TripleBufferTests`: record, restart from the target, cuts, each loss mode) and the render
+  (`OutputPassTests`: s = 0, 0.16, 0.5 and 1, fade 0, a secondary display, one-sided and changed-canvas slices,
+  opacity, source rectangle, riding masks, the warp into the edited mapping for content and a pattern), each
+  mutation-checked; `mallocCounterSecondaryCopyAllocatesNothing` copies `morphs` too.
+- **Not built here:** the edit overlay (M2.6). Slice ids repeated within one mapping (`validate` allows them) pair with
+  the first match.
 
 **4. On-output edit overlay (fixes F4).**
 - **What it draws.** While a programmer has Warp & Slices open on an output,

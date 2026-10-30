@@ -42,7 +42,7 @@ public enum LayerParameter: String, CaseIterable, Codable, Sendable {
 
 public enum MasterParameter: String, CaseIterable, Codable, Sendable { case intensity, control, testPattern, speed }
 
-public enum OutputParameter: String, CaseIterable, Codable, Sendable { case intensity, control, testPattern, blend, preset }
+public enum OutputParameter: String, CaseIterable, Codable, Sendable { case intensity, control, testPattern, blend, preset, fade }
 
 /// Corner offsets in channel order: TL, TR, BR, BL as `WarpSettings.cornerPin`, X then Y (DESIGN.md §6.4a).
 public enum KeystoneParameter: String, CaseIterable, Codable, Sendable {

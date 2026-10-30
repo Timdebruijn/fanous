@@ -111,6 +111,7 @@ final class XMLCollector: NSObject, XMLParserDelegate {
         #expect(markdown.components(separatedBy: "| Reserved |").count == 4)
         #expect(markdown.contains("| 6–7 | Speed | 16 | 32768 |"))
         #expect(markdown.contains("| 6 | Mapping preset | 8 | 0 | 0 = as edited · 1–255 |"), "Output ch 6 at 0 shows the mapping as edited")
+        #expect(markdown.contains("| 8 | Reserved | — | 0 | ignored | — |"), "Output ch 7 is the Mapping fade, ch 8 stays reserved")
         #expect(markdown.contains("| 3 | Folder | 8 | 0 | 0 = none · 1–255 |"))
     }
 

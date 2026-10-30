@@ -24,10 +24,15 @@ struct MappedUniforms {
     var color: SIMD4<Float> = SIMD4(1, 1, 1, 0)
     /// The Keystone homography after the warp (`ParameterSnapshotSlot.keystones`); the identity in raw.
     var keystone = matrix_identity_float3x3
+    /// A preset morph's progress (`PresetMorph.progress`): below 1 the vertex mixes in the other side's (vertex buffer 2
+    /// and vertex texture 1, flag 16 its warp field); 1 draws this side alone.
+    var morph: Float = 1
 }
 
 /// One slice ready to draw: tessellated mesh and an optional mask texture.
 public final class SlicePlan: @unchecked Sendable {
+    /// `SliceConfig.id`: a preset morph pairs slices by it (DESIGN.md §9.10 item 3).
+    let id: Int
     let vertices: MTLBuffer
     let indices: MTLBuffer
     let indexCount: Int
@@ -35,7 +40,8 @@ public final class SlicePlan: @unchecked Sendable {
     let opacity: Float
     /// Canvas id the slice samples (DESIGN.md §9.1).
     let canvas: Int
-    init(vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int, mask: MTLTexture?, opacity: Float, canvas: Int = 1) {
+    init(id: Int, vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int, mask: MTLTexture?, opacity: Float, canvas: Int = 1) {
+        self.id = id
         self.canvas = canvas
         self.vertices = vertices
         self.indices = indices
@@ -242,7 +248,7 @@ public final class OutputCompiler: @unchecked Sendable {
                     return try texture(.r8Unorm, width: w, height: h, bytesPerPixel: 1, label: "mask \(id).\(slice.id)") { raster.withUnsafeBytes { $0.baseAddress! } }
                 }
             }
-            return SlicePlan(vertices: vertexBuffer, indices: indexBuffer, indexCount: indices.count, mask: mask, opacity: Float(slice.opacity), canvas: slice.canvas)
+            return SlicePlan(id: slice.id, vertices: vertexBuffer, indices: indexBuffer, indexCount: indices.count, mask: mask, opacity: Float(slice.opacity), canvas: slice.canvas)
         }
     }
 
@@ -347,11 +353,12 @@ enum OutputPass {
     }
 
     /// `canvas` looks a canvas up by id; canvas 1 always renders. A slice whose canvas does not render stays black.
-    /// `keystones` and `presets` (the mapping preset each output shows, 0 = as edited) by output index like `outputs`;
-    /// the previews pass none: they show the mapping as edited (§9.10 item 3).
+    /// `keystones`, `presets` (the mapping preset each output shows, 0 = as edited) and `morphs` (the morph into it, at
+    /// `now`, host time) by output index like `outputs`; the previews pass none: they show the mapping as edited (§9.10 item 3).
     static func draw(
         _ set: OutputSet, canvas lookup: (Int) -> MTLTexture?, encoder: MTLRenderCommandEncoder, context: MetalContext, uniforms: MTLBuffer,
-        master: Float, masterPattern: TestPattern, outputs: [OutputParameters], keystones: [simd_float3x3], presets: [UInt8]
+        master: Float, masterPattern: TestPattern, outputs: [OutputParameters], keystones: [simd_float3x3], presets: [UInt8], morphs: [PresetMorph],
+        now: Double
     ) {
         // bound to texture slots the shader does not sample in this draw (patterns, no blend map, no warp, no mask)
         guard let canvas = lookup(1) else { return }
@@ -360,8 +367,12 @@ enum OutputPass {
             let fixture = fixture(for: plan, in: outputs)
             // raw bypasses the keystone with the warp
             let keystone = !fixture.raw && plan.index >= 1 && plan.index - 1 < keystones.count ? keystones[plan.index - 1] : matrix_identity_float3x3
-            // the preset's warp and slices; the blend map, colour and the keystone on top are the output's
+            // the preset's warp and slices; the blend map, colour and the keystone on top are the output's. While a morph
+            // runs, the preset it comes from too: one pass mixes both sides' vertices by its progress (§9.10 item 3)
             let geometry = plan.geometry(plan.index >= 1 && plan.index - 1 < presets.count ? presets[plan.index - 1] : 0)
+            let morph = plan.index >= 1 && plan.index - 1 < morphs.count ? morphs[plan.index - 1].progress(at: now) : 1
+            let old = morph < 1 ? plan.geometry(morphs[plan.index - 1].from) : geometry
+            let warps: UInt32 = (geometry.warpField != nil ? 1 : 0) | (old.warpField != nil ? 16 : 0)
             let region = plan.region
             encoder.setViewport(MTLViewport(originX: Double(region.origin.x), originY: Double(region.origin.y), width: Double(region.size.width), height: Double(region.size.height), znear: 0, zfar: 1))
             encoder.setScissorRect(MTLScissorRect(x: region.origin.x, y: region.origin.y, width: region.size.width, height: region.size.height))
@@ -381,11 +392,12 @@ enum OutputPass {
                 var u = MappedUniforms()
                 u.size = SIMD2(Float(region.size.width), Float(region.size.height))
                 u.intensity = intensity
-                u.flags = (geometry.warpField != nil ? 1 : 0) | (fixture.raw ? 4 : 0) | (plan.blendMap == nil ? 8 : 0)
+                u.flags = warps | (fixture.raw ? 4 : 0) | (plan.blendMap == nil ? 8 : 0)
                 u.pattern = UInt32(pattern.rawValue)
                 u.index = UInt32(plan.index)
                 u.color = plan.color
                 u.keystone = keystone
+                u.morph = morph  // the same mesh on both sides: the pattern follows the morphing warp
                 (uniforms.contents() + offset).assumingMemoryBound(to: MappedUniforms.self).pointee = u
                 encoder.setRenderPipelineState(context.mappedPipeline)
                 encoder.setVertexSamplerState(context.linearSampler, index: 0)
@@ -394,7 +406,9 @@ enum OutputPass {
                 encoder.setFragmentTexture(canvas, index: 1)
                 encoder.setFragmentTexture(plan.blendMap ?? canvas, index: 2)
                 encoder.setVertexTexture(geometry.warpField ?? canvas, index: 0)
+                encoder.setVertexTexture(old.warpField ?? canvas, index: 1)
                 encoder.setVertexBuffer(mesh.vertices, offset: 0, index: 0)
+                encoder.setVertexBuffer(mesh.vertices, offset: 0, index: 2)
                 encoder.setVertexBuffer(uniforms, offset: offset, index: 1)
                 encoder.setFragmentBuffer(uniforms, offset: offset, index: 1)
                 encoder.drawIndexedPrimitives(type: .triangle, indexCount: mesh.indexCount, indexType: .uint32, indexBuffer: mesh.indices, indexBufferOffset: 0)
@@ -406,21 +420,27 @@ enum OutputPass {
             encoder.setFragmentSamplerState(context.linearSampler, index: 0)
             encoder.setFragmentTexture(plan.blendMap ?? canvas, index: 2)
             encoder.setVertexTexture(geometry.warpField ?? canvas, index: 0)
+            encoder.setVertexTexture(old.warpField ?? canvas, index: 1)
             for slice in geometry.slices {
                 guard offset + 256 <= uniforms.length else { return }
                 let frozen = fixture.control == .freeze ? plan.held[slice.canvas] : nil
                 guard let source = frozen ?? lookup(slice.canvas) else { continue }  // removed canvas: black (the coordinator logs it)
+                // the same slice on the side the morph comes from: same id, same canvas. One on one side only, and every
+                // mask, is switched at the start; its counterpart is not drawn
+                let pair = morph < 1 ? old.slices.first(where: { $0.id == slice.id && $0.canvas == slice.canvas }) : nil
                 encoder.setFragmentTexture(source, index: 0)
                 var u = MappedUniforms()
                 u.size = SIMD2(Float(region.size.width), Float(region.size.height))
                 u.intensity = content
                 u.scale = contentScale(master: master, heldMaster: frozen == nil ? nil : plan.heldMaster)
-                u.opacity = slice.opacity
+                u.opacity = pair.map { $0.opacity + (slice.opacity - $0.opacity) * morph } ?? slice.opacity
                 u.color = plan.color
                 u.keystone = keystone
-                u.flags = (geometry.warpField != nil ? 1 : 0) | (slice.mask != nil ? 2 : 0) | (fixture.raw ? 4 : 0) | (plan.blendMap == nil ? 8 : 0)
+                u.morph = pair == nil ? 1 : morph
+                u.flags = warps | (slice.mask != nil ? 2 : 0) | (fixture.raw ? 4 : 0) | (plan.blendMap == nil ? 8 : 0)
                 (uniforms.contents() + offset).assumingMemoryBound(to: MappedUniforms.self).pointee = u
                 encoder.setVertexBuffer(slice.vertices, offset: 0, index: 0)
+                encoder.setVertexBuffer(pair?.vertices ?? slice.vertices, offset: 0, index: 2)
                 encoder.setVertexBuffer(uniforms, offset: offset, index: 1)
                 encoder.setFragmentBuffer(uniforms, offset: offset, index: 1)
                 encoder.setFragmentTexture(slice.mask ?? canvas, index: 1)

@@ -18,10 +18,11 @@ struct OutputPassTests {
     static let width = 320, height = 180
     static let golden = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appending(path: "Fixtures/golden")
 
-    /// A still frame of one flat colour covering the whole canvas.
-    static func flat(_ device: MTLDevice, value: UInt8) throws -> DecodedFrame {
+    /// A still frame of one flat colour covering the whole canvas; `right` paints its right half another.
+    static func flat(_ device: MTLDevice, value: UInt8, right: UInt8? = nil) throws -> DecodedFrame {
         let w = 64, h = 36
         var pixels = [UInt8](repeating: value, count: w * h * 4)
+        if let right { for i in pixels.indices where i % (w * 4) >= w * 2 { pixels[i] = right } }
         for i in stride(from: 3, to: pixels.count, by: 4) { pixels[i] = 255 }  // opaque
         let texture = try MovieSource.makeTexture(device, .rgba8Unorm, w, h)
         pixels.withUnsafeBytes { texture.replace(region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: w * 4) }
@@ -494,8 +495,9 @@ struct OutputPassTests {
         private var sequence: UInt64 = 0
         /// Output 1's Keystone (`write` puts it in the slot).
         var keystone = matrix_identity_float3x3
-        /// Output 1's mapping preset, Output ch 6 or Compare (`write` puts it in the slot).
+        /// Output 1's mapping preset, Output ch 6 or Compare, and the morph into it (`write` puts them in the slot).
         var preset: UInt8 = 0
+        var morph = PresetMorph()
 
         init(_ config: OutputConfig?, value: UInt8) throws {
             context = try MetalContext()
@@ -532,6 +534,7 @@ struct OutputPassTests {
                 slot.outputs[0].control = control
                 slot.keystones[0] = keystone
                 slot.presets[0] = preset
+                slot.morphs[0] = morph
                 slot.master = master
                 slot.masterControl = blackout ? .blackout : .normal
             }
@@ -543,10 +546,10 @@ struct OutputPassTests {
             return Int(compositor.readbackOutput().bgra[(90 * width + 160) * 4 + 1])
         }
 
-        /// The green at `at` (the centre by default).
-        func present(_ set: OutputSet, at: (x: Int, y: Int) = (160, 90)) throws -> Int {
+        /// The green at `at` (the centre by default), drawn for host time `now`.
+        func present(_ set: OutputSet, at: (x: Int, y: Int) = (160, 90), now: Double = 0) throws -> Int {
             guard let commandBuffer = context.queue.makeCommandBuffer() else { throw RenderError.pipeline("present command buffer") }
-            #expect(compositor.encodePresent(set, into: target, uniforms: uniforms, scratch: scratch, commandBuffer: commandBuffer))
+            #expect(compositor.encodePresent(set, into: target, uniforms: uniforms, scratch: scratch, at: now, commandBuffer: commandBuffer))
             commandBuffer.commit()
             commandBuffer.waitUntilCompleted()
             var bgra = [UInt8](repeating: 0, count: width * height * 4)
@@ -977,6 +980,145 @@ struct OutputPassTests {
         #expect(try rig.present(set, at: (2, 2)) <= 1 && rig.present(set, at: (170, 2)) == 200, "ch 6 = 1: preset 1's corner at x = 160")
     }
 
+    /// An output whose presets 1 and 2 put slice 1 in the left and the right half; the edited mapping covers all of it.
+    static func morphConfig() -> OutputConfig {
+        var o = OutputConfig(id: 1)
+        o.slices[0].dest = [MapPoint(0, 0), MapPoint(0.5, 0), MapPoint(0.5, 1), MapPoint(0, 1)]
+        o.storePreset(1, name: nil)
+        o.slices[0].dest = [MapPoint(0.5, 0), MapPoint(1, 0), MapPoint(1, 1), MapPoint(0.5, 1)]
+        o.storePreset(2, name: nil)
+        o.slices = [SliceConfig(id: 1)]
+        return o
+    }
+
+    /// Row `y` (a fraction of the height) of a BGRA image at `xs`: 1 lit (the still's 200), 0 black, −1 anything between.
+    static func lit(_ image: [UInt8], y: Double, _ xs: [Double]) -> [Int] {
+        xs.map { x in
+            let g = Int(image[(Int(y * Double(height)) * width + Int(x * Double(width))) * 4 + 1])
+            return g >= 199 ? 1 : g <= 1 ? 0 : -1
+        }
+    }
+
+    /// DESIGN.md §9.10 item 3: a morph from preset 1 to 2 draws both geometries in one pass, mixed by the smoothstep of
+    /// the time since its start: preset 1's left half at the start, the middle half halfway, preset 2's right half at the
+    /// end; a quarter in, smoothstep (s = 0.16), not linear (0.25). A fade of 0 is a cut. A secondary display draws the
+    /// same from its own frame time.
+    @Test func aMorphGlidesTheSliceBetweenPresets() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 200)
+        let plan = try OutputCompiler(device: context.device).compile(Self.morphConfig(), index: 1, drawable: (Self.width, Self.height))
+        let xs = [0.1, 0.3, 0.45, 0.55, 0.7, 0.9]
+        /// `elapsed` seconds into a 2 s morph from preset 1 to 2 (the tick draws at 3600).
+        func row(_ elapsed: Double, fade: Double = 2) throws -> [Int] {
+            let image = try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [OutputParameters()]) {
+                $0.presets[0] = 2
+                $0.morphs[0] = PresetMorph(from: 1, start: 3600 - elapsed, fade: fade)
+            }
+            return Self.lit(image, y: 0.5, xs)
+        }
+        #expect(try row(0) == [1, 1, 1, 0, 0, 0], "s = 0: preset 1")
+        #expect(try row(0.5) == [1, 1, 1, 1, 0, 0], "a quarter in: s = 0.16, 0.08 → 0.58 (linear would leave 0.1 dark)")
+        #expect(try row(1) == [0, 1, 1, 1, 1, 0], "halfway: 0.25 → 0.75")
+        #expect(try row(2) == [0, 0, 0, 1, 1, 1], "s = 1: preset 2")
+        #expect(try row(0, fade: 0) == [0, 0, 0, 1, 1, 1], "fade 0: a cut")
+
+        let rig = try Rig(Self.morphConfig(), value: 200)
+        let set = try #require(rig.compositor.outputSet)
+        (rig.preset, rig.morph) = (2, PresetMorph(from: 1, start: 100, fade: 2))
+        _ = rig.tick(.normal, master: 1, layer: 1)
+        let mid = try xs.map { try rig.present(set, at: (Int($0 * Double(Self.width)), 90), now: 101) }
+        #expect(mid.map { $0 >= 199 ? 1 : $0 <= 1 ? 0 : -1 } == [0, 1, 1, 1, 1, 0], "a secondary display halfway: \(mid)")
+    }
+
+    /// Paired by slice id and canvas: halfway, slice 1 has glided (and its opacity, 1 → 0.5, is at 0.75); slice 2, in
+    /// preset 1 only, is gone and slice 3, in preset 2 only, is there from the start; slice 4, on canvas 2 in preset 1
+    /// and canvas 1 in preset 2, is not paired either, so it stands at preset 2's place.
+    @Test func aOneSidedSliceSwitchesAtTheStart() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 200)
+        func slice(_ id: Int, _ x0: Double, _ y0: Double, canvas: Int = 1, opacity: Double = 1) -> SliceConfig {
+            var s = SliceConfig(id: id)
+            (s.dest, s.canvas, s.opacity) = ([MapPoint(x0, y0), MapPoint(x0 + 0.5, y0), MapPoint(x0 + 0.5, y0 + 0.3), MapPoint(x0, y0 + 0.3)], canvas, opacity)
+            return s
+        }
+        var o = OutputConfig(id: 1)
+        o.slices = [slice(1, 0, 0), slice(2, 0, 0.35), slice(4, 0, 0.7, canvas: 2)]
+        o.storePreset(1, name: nil)
+        o.slices = [slice(1, 0.5, 0, opacity: 0.5), slice(3, 0.5, 0.35), slice(4, 0.5, 0.7)]
+        o.storePreset(2, name: nil)
+        o.slices = [SliceConfig(id: 1)]
+        let plan = try OutputCompiler(device: context.device).compile(o, index: 1, drawable: (Self.width, Self.height))
+        func image(_ elapsed: Double) throws -> [UInt8] {
+            try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [OutputParameters()]) {
+                $0.presets[0] = 2
+                $0.morphs[0] = PresetMorph(from: 1, start: 3600 - elapsed, fade: 2)
+            }
+        }
+        let start = try image(0), half = try image(1)
+        func green(_ image: [UInt8], _ x: Double, _ y: Double) -> Int { Int(image[(Int(y * Double(Self.height)) * Self.width + Int(x * Double(Self.width))) * 4 + 1]) }
+        #expect(Self.lit(start, y: 0.5, [0.25, 0.75]) == [0, 1] && Self.lit(start, y: 0.85, [0.25, 0.75]) == [0, 1], "at s = 0 already")
+        #expect(Self.lit(half, y: 0.5, [0.1, 0.45, 0.9]) == [0, 0, 1], "slice 2 gone, slice 3 there")
+        #expect(Self.lit(half, y: 0.85, [0.1, 0.45, 0.9]) == [0, 0, 1], "slice 4 changed canvas: at preset 2's place")
+        #expect(green(half, 0.1, 0.15) <= 1 && green(half, 0.9, 0.15) <= 1, "slice 1 glides: 0.25 → 0.75")
+        #expect(Self.near(green(half, 0.5, 0.15), 150), "and its opacity is halfway: \(green(half, 0.5, 0.15))")
+    }
+
+    /// Halfway, the source rectangle has glided (top band: preset 1 samples the canvas's left half, 50, preset 2 its right
+    /// half, 200), and the new side's masks ride with the slice (bottom band: preset 2's mask covers its slice's left half,
+    /// so halfway it covers the left half of where the slice is, not the place it has on the output in preset 2).
+    @Test func theSourceAndTheMasksGlideWithTheSlice() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 50, right: 200)
+        func slice(_ id: Int, _ x0: Double, _ x1: Double, _ y0: Double, _ y1: Double, source: Double) -> SliceConfig {
+            var s = SliceConfig(id: id)
+            (s.dest, s.source) = ([MapPoint(x0, y0), MapPoint(x1, y0), MapPoint(x1, y1), MapPoint(x0, y1)], MapRect(x: source, y: 0, w: 0.5, h: 1))
+            return s
+        }
+        var o = OutputConfig(id: 1)
+        o.slices = [slice(1, 0, 1, 0, 0.45, source: 0), slice(2, 0, 0.5, 0.55, 1, source: 0.5)]
+        o.storePreset(1, name: nil)
+        var masked = slice(2, 0.5, 1, 0.55, 1, source: 0.5)
+        masked.mask = MaskSettings(path: [MapPoint(0.5, 0.55), MapPoint(0.75, 0.55), MapPoint(0.75, 1), MapPoint(0.5, 1)])
+        o.slices = [slice(1, 0, 1, 0, 0.45, source: 0.5), masked]
+        o.storePreset(2, name: nil)
+        o.slices = [SliceConfig(id: 1)]
+        let plan = try OutputCompiler(device: context.device).compile(o, index: 1, drawable: (Self.width, Self.height))
+        func image(_ elapsed: Double) throws -> [UInt8] {
+            try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [OutputParameters()]) {
+                $0.presets[0] = 2
+                $0.morphs[0] = PresetMorph(from: 1, start: 3600 - elapsed, fade: 2)
+            }
+        }
+        func green(_ image: [UInt8], _ x: Double, _ y: Double) -> Int { Int(image[(Int(y * Double(Self.height)) * Self.width + Int(x * Double(Self.width))) * 4 + 1]) }
+        let half = try image(1), end = try image(2)
+        #expect(Self.near(green(half, 0.1, 0.2), 50) && green(half, 0.9, 0.2) == 200, "the source halfway: 0.05 → 0.55 samples 0.3")
+        #expect(green(end, 0.1, 0.2) == 200, "at the end: preset 2's source")
+        #expect(green(half, 0.35, 0.8) == 200 && green(half, 0.65, 0.8) <= 1, "the mask rides with the slice")
+        #expect(green(end, 0.6, 0.8) == 200 && green(end, 0.9, 0.8) <= 1, "at the end: preset 2's mask where it is drawn")
+    }
+
+    /// The warp glides too, also from a preset into the edited mapping: preset 1's top-left corner at x = 0.5 is at 0.25
+    /// halfway to the edited identity, for the content and for a test pattern (its mesh is the same on both sides).
+    @Test(arguments: [TestPattern.off, .white]) func theWarpGlidesIntoTheEditedMapping(_ pattern: TestPattern) throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 200)
+        let plan = try OutputCompiler(device: context.device).compile(Self.presetConfig(), index: 1, drawable: (Self.width, Self.height))
+        var fixture = OutputParameters()
+        fixture.testPattern = pattern
+        func image(_ elapsed: Double) throws -> [UInt8] {
+            try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [fixture]) {
+                $0.presets[0] = 0
+                $0.morphs[0] = PresetMorph(from: 1, start: 3600 - elapsed, fade: 2)
+            }
+        }
+        func green(_ image: [UInt8], _ x: Int) -> Int { Int(image[(2 * Self.width + x) * 4 + 1]) }
+        let lit = pattern == .off ? 200 : 255
+        let start = try image(0), half = try image(1), end = try image(2)
+        #expect(green(start, 2) <= 1 && green(start, 100) <= 1 && green(start, 170) == lit, "s = 0: preset 1, the corner at x = 160")
+        #expect(green(half, 2) <= 1 && green(half, 100) == lit, "halfway: the corner at x = 80")
+        #expect(green(end, 2) == lit, "s = 1: the edited mapping")
+    }
+
     /// A secondary display's copy of the output values allocates nothing on its thread (the driver's `PresentParameters`
     /// keep their size). Release only, like the other `mallocCounter` checks (`scripts/check-mallocs.sh`).
     @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
@@ -984,6 +1126,7 @@ struct OutputPassTests {
         try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
         let rig = try Rig(nil, value: 200)
         rig.preset = 3
+        rig.morph = PresetMorph(from: 2, start: 10, fade: 1)
         rig.write(.normal, master: 1, layer: 1)
         let scratch = PresentParameters()
         var mallocs = 0
@@ -992,7 +1135,7 @@ struct OutputPassTests {
                 for _ in 0..<100 { rig.compositor.copyLatest(into: scratch) }
             }
         }
-        #expect(scratch.presets[0] == 3)
+        #expect(scratch.presets[0] == 3 && scratch.morphs[0] == rig.morph)
         #if !DEBUG
             #expect(mallocs == 0, "100 copies: \(mallocs) allocations on the calling thread")
         #endif

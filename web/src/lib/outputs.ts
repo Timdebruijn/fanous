@@ -177,13 +177,19 @@ export interface OutputStatusDoc {
   presetSource?: 'console' | 'compare' | null;
   /** a preset number asked for that the output does not have: it shows the edited mapping */
   presetMissing?: number | null;
+  /** a running morph into the preset (Output ch 7): from and to, 0 = the edited mapping, and its fade in seconds */
+  morph?: { from: number; to: number; fade: number } | null;
 }
 
 /** "Preset N (console)", "Preset N (compare)" and, in yellow, "Preset N missing": what the output shows instead of the
- * mapping being edited. */
+ * mapping being edited; "Preset A → B (console)" while a morph runs (only the console morphs). */
 export function presetBadges(status: OutputStatusDoc | undefined): { text: string; warn: boolean }[] {
   const badges: { text: string; warn: boolean }[] = [];
-  if (status?.preset != null) badges.push({ text: `Preset ${status.preset} (${status.presetSource ?? 'console'})`, warn: false });
+  const m = status?.morph;
+  if (m) {
+    const to = m.to === 0 ? 'edited' : m.from === 0 ? `Preset ${m.to}` : `${m.to}`;
+    badges.push({ text: `${m.from === 0 ? 'Edited' : `Preset ${m.from}`} → ${to} (console)`, warn: false });
+  } else if (status?.preset != null) badges.push({ text: `Preset ${status.preset} (${status.presetSource ?? 'console'})`, warn: false });
   if (status?.presetMissing != null) badges.push({ text: `Preset ${status.presetMissing} missing`, warn: true });
   return badges;
 }

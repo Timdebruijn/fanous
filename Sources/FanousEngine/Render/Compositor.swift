@@ -506,7 +506,7 @@ public final class Compositor: @unchecked Sendable {
                 OutputPass.draw(
                     set, canvas: { tickCanvas($0) }, encoder: output, context: context, uniforms: mappedUniformBuffers[canvasIndex],
                     master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs,
-                    keystones: snapshot.keystones, presets: snapshot.presets)
+                    keystones: snapshot.keystones, presets: snapshot.presets, morphs: snapshot.morphs, now: frame.target)
                 output.endEncoding()
             } else if let output = commandBuffer.makeRenderCommandEncoder(descriptor: outputPass) {
                 // the Master pattern at full level only here, without an output set (tests, fanous-bench); the engine's
@@ -910,19 +910,20 @@ public final class Compositor: @unchecked Sendable {
         parameters.withLatest { slot in
             (scratch.master, scratch.masterPattern) = (slot.masterControl == .blackout ? 0 : slot.master, slot.testPattern)
             for i in scratch.outputs.indices {
-                (scratch.outputs[i], scratch.keystones[i], scratch.presets[i]) = (slot.outputs[i], slot.keystones[i], slot.presets[i])
+                (scratch.outputs[i], scratch.keystones[i], scratch.presets[i], scratch.morphs[i]) = (slot.outputs[i], slot.keystones[i], slot.presets[i], slot.morphs[i])
             }
         }
     }
 
     /// Draws the latest completed canvas through `set` into a drawable of another display (DESIGN.md §4.5):
-    /// its own command buffer on the caller's thread; `uniforms` and `scratch` belong to that caller.
-    public func present(_ set: OutputSet, to drawable: CAMetalDrawable, uniforms: MTLBuffer, scratch: PresentParameters) {
+    /// its own command buffer on the caller's thread; `uniforms` and `scratch` belong to that caller. `now` (host time,
+    /// the frame's target) is where a preset morph stands.
+    public func present(_ set: OutputSet, to drawable: CAMetalDrawable, uniforms: MTLBuffer, scratch: PresentParameters, at now: Double) {
         guard let commandBuffer = context.queue.makeCommandBuffer() else {
             outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
             return
         }
-        guard encodePresent(set, into: drawable.texture, uniforms: uniforms, scratch: scratch, commandBuffer: commandBuffer) else {
+        guard encodePresent(set, into: drawable.texture, uniforms: uniforms, scratch: scratch, at: now, commandBuffer: commandBuffer) else {
             commandBuffer.commit()  // a Freeze may have encoded its copies: they must run, or the held textures stay undefined
             return
         }
@@ -932,7 +933,7 @@ public final class Compositor: @unchecked Sendable {
 
     /// `present` up to the drawable (tests draw into a texture of their own): holds and draws into `texture` on
     /// `commandBuffer`; false (counted) when no encoder could be made.
-    func encodePresent(_ set: OutputSet, into texture: MTLTexture, uniforms: MTLBuffer, scratch: PresentParameters, commandBuffer: MTLCommandBuffer) -> Bool {
+    func encodePresent(_ set: OutputSet, into texture: MTLTexture, uniforms: MTLBuffer, scratch: PresentParameters, at now: Double, commandBuffer: MTLCommandBuffer) -> Bool {
         copyLatest(into: scratch)
         let outputs = scratch.outputs
         // one tick's canvases for the whole draw (the compositor may complete another meanwhile) and their Master
@@ -950,7 +951,8 @@ public final class Compositor: @unchecked Sendable {
         encoder.label = "secondary output"
         OutputPass.draw(
             set, canvas: { id in frame.first { $0.id == id }?.textures[index] }, encoder: encoder, context: context, uniforms: uniforms,
-            master: scratch.master, masterPattern: scratch.masterPattern, outputs: outputs, keystones: scratch.keystones, presets: scratch.presets)
+            master: scratch.master, masterPattern: scratch.masterPattern, outputs: outputs, keystones: scratch.keystones, presets: scratch.presets,
+            morphs: scratch.morphs, now: now)
         encoder.endEncoding()
         return true
     }
@@ -1003,5 +1005,6 @@ public final class PresentParameters: @unchecked Sendable {
     var outputs = [OutputParameters](repeating: OutputParameters(), count: ParameterSnapshotSlot.maxOutputs)
     var keystones = [simd_float3x3](repeating: matrix_identity_float3x3, count: ParameterSnapshotSlot.maxOutputs)
     var presets = [UInt8](repeating: 0, count: ParameterSnapshotSlot.maxOutputs)
+    var morphs = [PresetMorph](repeating: PresetMorph(), count: ParameterSnapshotSlot.maxOutputs)
     public init() {}
 }
