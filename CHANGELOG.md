@@ -361,8 +361,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   Console only, controlled by the UI, cues, OSC and MIDI under the other policies, so a show without a console no
   longer has to patch its layers. Before, the UI, cues, OSC and MIDI reached only patched fixtures. Unpatching a
   fixture, or moving it to another universe, drops the console's values and keeps the UI, cue, OSC and MIDI values.
-  Under Console + UI the console takes part only once its DMX was received, so an unpatched Master can be dimmed from
-  the UI with highest wins (its default, full, used to win). A layer added while a cue holds values takes them at once.
+  Under Console + UI the console takes part only once its DMX was received: a fixture whose console was never heard,
+  patched or not, can be set below its default from the UI or a cue with highest wins. Before, the default (Master
+  full) won, so a blackout cue before the desk is on now really blacks out. A new or moved patch entry on a universe
+  that is being received takes its values at once. A layer added while a cue holds values takes them at once.
   `live.dmx.fixtures` and OSC feedback list unpatched fixtures too.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
