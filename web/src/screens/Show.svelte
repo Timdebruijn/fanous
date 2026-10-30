@@ -13,6 +13,7 @@
   import ShowMIDI from '../components/ShowMIDI.svelte';
   import ShowOSC from '../components/ShowOSC.svelte';
   import ShowTimecode from '../components/ShowTimecode.svelte';
+  import { policyName } from '../lib/layers';
   import { loadChannelMap, type ChannelMap } from '../lib/patch-screen';
   import { formatNumber, lockTitle } from '../lib/show';
   import { app, can, cmd } from '../lib/state.svelte';
@@ -81,7 +82,7 @@
 {#if app.project.policy === 'dmx'}
   <div class="banner banner-yellow" role="status">
     <span class="dot dot-yellow"></span>
-    <span><strong>Source policy is Console only:</strong> cues and OSC are recorded but do not control the layers. Change it under Patch › Source policy.</span>
+    <span><strong>Who controls: {policyName('dmx')}.</strong> Cues and OSC are recorded but do not control the layers. Change it under Patch › Who controls.</span>
   </div>
 {/if}
 

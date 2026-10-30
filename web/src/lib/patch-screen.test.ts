@@ -2,11 +2,11 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
-import type { PatchEntry, UniverseInfo } from './docs';
+import type { PatchEntry, UniverseInfo, UniverseSettingsDoc } from './docs';
 import {
-  buildCells, buildFixtures, cellLabel, compareUniverse, defaultPair, frameValues, interfaceOptions, knownUniverses, paramAt, paramName, parseUniverseName,
-  parseChannelMap, rangeText, rowStatus, summarize, universeHealth, universeName, universeOptions, universeSettings,
-  type ChannelMap,
+  buildCells, buildFixtures, cellLabel, compareUniverse, defaultPair, fixturesText, frameValues, interfaceOptions, paramAt, paramName, parseUniverseName,
+  parseChannelMap, rangeText, rowStatus, summarize, universeHealth, universeName, universeOptions, universeRows, universeSettings,
+  type ChannelMap, type UniverseRow,
 } from './patch-screen';
 
 const spec = (name: string, key: string, channel: number, bits: 8 | 16 = 8) => ({ name, key, channel, bits });
@@ -40,10 +40,6 @@ describe('universe naming and lists', () => {
       'artnet:0.0.0', 'artnet:0.0.1', 'artnet:0.0.2', 'artnet:0.0.3', 'artnet:2.0.0',
       'sacn:1', 'sacn:2', 'sacn:3', 'sacn:4', 'sacn:7',
     ]);
-  });
-
-  it('knows patched plus live universes, ignoring unpatched entries', () => {
-    expect(knownUniverses([at('Layer 1', 'sacn:3', 1), at('Layer 2', 'artnet:0.0.9', 0)], [live('artnet:0.0.1'), live('sacn:3')])).toEqual(['artnet:0.0.1', 'sacn:3']);
   });
 
   it('reads per-universe settings, with the engine defaults for universes without an entry', () => {
@@ -210,5 +206,101 @@ describe('frames and channel map', () => {
     expect(parseChannelMap(null)).toBeNull();
     expect(parseChannelMap({ footprints: { layer: 64 }, modes: {} })).toBeNull();
     expect(parseChannelMap({ footprints: map.footprints, modes: { layer: [], master: [] } })).toBeNull();
+  });
+});
+
+describe('universes panel', () => {
+  const standard = [
+    ...Array.from({ length: 8 }, (_, i) => at(`Layer ${i + 1}`, 'artnet:0.0.0', 1 + 64 * i)),
+    at('Master', 'artnet:0.0.1', 1), at('Output 1', 'artnet:0.0.1', 9), at('Output 2', 'artnet:0.0.1', 17), at('Keystone 2', 'artnet:0.0.1', 89),
+  ];
+  const heard = (id: string, ageSeconds = 0.4): UniverseInfo => ({ ...live(id), ageSeconds, packets: 12, source: '10.0.0.5' });
+  const stored = (id: string, change: Partial<UniverseSettingsDoc> = {}): UniverseSettingsDoc => ({ ...universeSettings(undefined, id), ...change });
+  const texts = (out: UniverseRow[]) => out.map((u) => [universeName(u.id), u.text, u.tone]);
+
+  it('compresses consecutive fixture numbers per type', () => {
+    const rows = buildFixtures(standard, 8, null, [1, 2]);
+    expect(fixturesText(rows.filter((r) => r.universe === 'artnet:0.0.0'))).toBe('Layers 1–8');
+    expect(fixturesText(rows.filter((r) => r.universe === 'artnet:0.0.1' && r.patched))).toBe('Master, Outputs 1–2, Keystone 2');
+    const some = buildFixtures([at('Layer 1', 'sacn:1', 1), at('Layer 2', 'sacn:1', 65), at('Layer 3', 'sacn:1', 129), at('Layer 5', 'sacn:1', 257), at('Layer 7', 'sacn:1', 385), at('Master', 'sacn:1', 449)], 8, null);
+    expect(fixturesText(some.filter((r) => r.patched))).toBe('Layers 1–3, 5, 7, Master');
+    expect(fixturesText([])).toBe('');
+  });
+
+  it('lists patched, heard and stored universes, sorted, with what is on each', () => {
+    const out = universeRows(buildFixtures(standard, 8, null, [1, 2]), [live('artnet:0.0.0'), heard('sacn:9')], [stored('artnet:0.0.7', { holdOnLoss: 'zero', interface: 'en0' })]);
+    expect(texts(out)).toEqual([
+      ['A 0.0.0', 'Layers 1–8', 'ok'],
+      ['A 0.0.1', 'Master, Outputs 1–2, Keystone 2', 'ok'],
+      ['A 0.0.7', 'not used', 'faint'],
+      ['S 9', 'heard, nothing patched', 'warn'],
+    ]);
+    expect(out[0]!.line).toBe('Art-Net · All interfaces · Hold last values');
+    expect(out[2]!.line).toBe('Art-Net · en0 · Go to zero');
+    expect(out[0]!.health).toEqual({ tone: 'yellow', text: 'never seen' });
+    expect(out[3]!.health.text).toBe('0.4 s');
+  });
+
+  it('shows a patched universe with stored settings once, with those settings', () => {
+    const out = universeRows(buildFixtures(standard, 8, null), [], [stored('artnet:0.0.0', { holdOnLoss: 'internal', lossTimeout: 5 })]);
+    expect(out.filter((u) => u.id === 'artnet:0.0.0').map((u) => [u.text, u.settings.holdOnLoss, u.settings.lossTimeout, u.line])).toEqual([
+      ['Layers 1–8', 'internal', 5, 'Art-Net · All interfaces · UI and cues take over'],
+    ]);
+  });
+
+  it('warns about a stored universe a console sends to with nothing patched', () => {
+    expect(texts(universeRows([], [heard('artnet:0.0.5')], [stored('artnet:0.0.5', { holdOnLoss: 'zero' })]))).toEqual([['A 0.0.5', 'heard, nothing patched', 'warn']]);
+  });
+
+  it('names the wire universe that feeds a patched one by its pair instead of warning', () => {
+    const rows = buildFixtures(standard, 8, null);
+    const out = universeRows(rows, [heard('artnet:0.0.0'), heard('sacn:7')], [stored('artnet:0.0.0', { protocol: 'sacn', pair: 'sacn:7' })]);
+    expect(texts(out)).toEqual([['A 0.0.0', 'Layers 1–8', 'ok'], ['A 0.0.1', 'Master', 'ok'], ['S 7', 'feeds A 0.0.0', 'ok']]);
+    // Art-Net + sACN on its default pair
+    const both = universeRows(rows, [heard('sacn:2')], [stored('artnet:0.0.1', { protocol: 'both' })]);
+    expect(both.find((u) => u.id === 'sacn:2')?.text).toBe('feeds A 0.0.1');
+  });
+
+  it('leaves out never heard universes, unpatched fixtures and layers above the count', () => {
+    const out = universeRows(buildFixtures([at('Layer 1', 'artnet:0.0.2', 0), at('Layer 9', 'artnet:0.0.3', 1)], 8, null), [live('artnet:0.0.3'), live('artnet:0.0.2')], undefined);
+    expect(out).toEqual([]);
+  });
+
+  it('drops a heard, unused universe after its loss timeout and never shows red without fixtures', () => {
+    const rows = buildFixtures(standard, 8, null);
+    expect(universeRows(rows, [heard('sacn:9', 2.4)], undefined).map((u) => u.id)).toContain('sacn:9');
+    expect(universeRows(rows, [heard('sacn:9', 30)], undefined).map((u) => u.id)).not.toContain('sacn:9');
+    expect(universeRows(rows, [heard('sacn:9', 9)], [stored('sacn:9', { lossTimeout: 10 })]).find((u) => u.id === 'sacn:9')?.text).toBe('heard, nothing patched');
+    // stored and quiet: stays, not used, yellow
+    const quiet = universeRows(rows, [heard('sacn:9', 30)], [stored('sacn:9')]).find((u) => u.id === 'sacn:9')!;
+    expect([quiet.text, quiet.health, quiet.state]).toEqual(['not used', { tone: 'yellow', text: 'quiet' }, 'quiet']);
+    // a patched universe that is lost stays red
+    expect(universeRows(rows, [heard('artnet:0.0.0', 30)], undefined)[0]!.health).toEqual({ tone: 'red', text: 'lost' });
+  });
+
+  it('keeps a heard universe the user has open or monitors after its loss timeout, quiet and yellow', () => {
+    const rows = buildFixtures(standard, 8, null);
+    const kept = universeRows(rows, [heard('sacn:9', 2.6)], undefined, ['sacn:9']).find((u) => u.id === 'sacn:9');
+    expect(kept && [kept.text, kept.tone, kept.health, kept.state]).toEqual(['heard, nothing patched', 'warn', { tone: 'yellow', text: 'quiet' }, 'quiet']);
+    expect(universeRows(rows, [heard('sacn:9', 2.6)], undefined, ['artnet:0.0.0']).map((u) => u.id)).not.toContain('sacn:9');
+    // keep never brings back a universe that was never heard
+    expect(universeRows(rows, [live('sacn:9')], undefined, ['sacn:9']).map((u) => u.id)).not.toContain('sacn:9');
+  });
+
+  it('names the pill state without the packet count', () => {
+    const rows = buildFixtures(standard, 8, null);
+    const out = universeRows(rows, [{ ...heard('artnet:0.0.0'), active: true }, heard('artnet:0.0.1', 1.2), heard('sacn:9', 30)], [stored('sacn:9')]);
+    expect(out.map((u) => [u.id, u.state])).toEqual([['artnet:0.0.0', 'receiving'], ['artnet:0.0.1', 'quiet'], ['sacn:9', 'quiet']]);
+    expect(universeRows(rows, [heard('artnet:0.0.0', 30)], undefined).map((u) => u.state)).toEqual(['lost', 'never seen']);
+  });
+
+  it('offers every universe of the panel in the fixture universe select', () => {
+    const patch = [...standard, at('Layer 3', 'sacn:40', 0)];
+    const lives = [heard('sacn:9'), live('artnet:3.0.0'), heard('sacn:7')];
+    const settings = [stored('artnet:0.0.9'), stored('artnet:0.0.0', { protocol: 'sacn', pair: 'sacn:7' })];
+    const known = universeRows(buildFixtures(patch, 8, null, [1, 2]), lives, settings).map((u) => u.id);
+    expect(known).toContain('artnet:0.0.9');
+    const options = universeOptions(patch, lives, settings);
+    expect(known.filter((id) => !options.includes(id))).toEqual([]);
   });
 });

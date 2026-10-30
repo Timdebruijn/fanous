@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Pure helpers for the Layers / Mixer screen: formatting and lookups over the live document, no DOM, no store.
-import type { CaptureLiveDoc, LayerStatus, PatchEntry, ResolvedParameter, SyphonServerDoc } from './docs';
+import type { CaptureLiveDoc, LayerStatus, PatchEntry, ProjectDoc, ResolvedParameter, SyphonServerDoc } from './docs';
 
 /** One entry of GET /api/channel-map.json `modes.*`; `channel` is the first (1-based) channel of the parameter. */
 export interface ChannelSpec {
@@ -81,16 +81,29 @@ export interface LibrarySnapshot {
   scannedAt: number;
 }
 
-/** What the source policy means to an operator; the stored values stay dmx / internal / ltp / htp. */
-export const POLICY_NAMES: Record<string, string> = {
-  dmx: 'Console only',
-  internal: 'UI and cues only',
-  ltp: 'Console + UI (latest wins)',
-  htp: 'Console + UI (highest wins)',
+/**
+ * Who controls (the source policy, DESIGN §6.6): the long label for the Patch card and messages, the short one for the
+ * per-layer Source badge, the line under the card. The stored values stay dmx / internal / ltp / htp.
+ */
+export const POLICIES: Record<ProjectDoc['policy'], { label: string; short: string; line: string }> = {
+  dmx: {
+    label: 'Console only',
+    short: 'Console',
+    line: 'Fanous follows the console. A fixture without an address stays at its defaults; cues and OSC are recorded but do nothing.',
+  },
+  internal: { label: 'Fanous only (UI, cues, OSC, MIDI)', short: 'Fanous', line: 'The console is shown but ignored.' },
+  ltp: { label: 'Console and Fanous, latest change wins', short: 'Both · latest', line: 'Per parameter, the latest change wins.' },
+  htp: {
+    label: 'Console and Fanous, highest value wins',
+    short: 'Both · highest',
+    line: 'Intensity and other numbers take the highest value; folder, file and modes the latest change.',
+  },
 };
 
-export function policyName(policy: string): string {
-  return POLICY_NAMES[policy] ?? policy;
+/** The long label, or the short one for the Source badge; an unknown value is shown as is. */
+export function policyName(policy: string, short = false): string {
+  const p = POLICIES[policy as ProjectDoc['policy']];
+  return p ? (short ? p.short : p.label) : policy;
 }
 
 export const RELEASE_TEXT = 'Console and this screen both control these values; whoever moved last wins. Release hands them back to the console.';

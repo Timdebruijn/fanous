@@ -42,7 +42,7 @@ already know.
 | **Layer fixture, 64 ch** | Intensity, folder/file, play mode, speed, in/out, dissolve, position, scale, rotation, colour, 8 blend modes, 11 effects; 16-bit where it matters ([channel map](docs/channel-map.md)) |
 | **Master and Output fixtures** | Master intensity and speed, per-output intensity, test patterns per projector |
 | **GDTF export** | Generated from the same parameter spec as the DMX map, so the two cannot drift apart |
-| **Art-Net and sACN** | Merge and source policy (LTP, HTP, or console and UI together) |
+| **Art-Net and sACN** | Merge and Who controls: console only, Fanous only, or console and Fanous together (latest change or highest value wins) |
 | **CITP/MSEX** | Layer status, media libraries, thumbnails and a preview stream for the desk |
 | **OSC and timecode** | The full OSC address map with timetags; LTC and MTC chase per layer |
 | **Built-in content** | Test card, motion test, clock and test patterns, selectable from the desk |

@@ -105,7 +105,7 @@
     </span>
     <span class="c-src">
       <span class="lbl">Source</span>
-      <span class="badge badge-outline pol">{policyName(policy)}</span>
+      <span class="badge badge-outline pol">{policyName(policy, true)}</span>
     </span>
   </span>
   <span class="c-dot">

@@ -56,9 +56,10 @@ last values** meanwhile.
 
 - Console: output enabled for that universe, right protocol, right universe
   number. Art-Net `A 0.0.0` is port-address 0; some consoles start counting at 1.
-- Compare with the DMX monitor on the Patch screen: its universe buttons list
-  every universe that was heard. If the console sends universe 1 and you patched
-  universe 0, you see the mismatch.
+- Look at the Universes panel on the Patch screen: a universe the console sends
+  to with no fixture on it says "heard, nothing patched" in yellow. If the
+  console sends universe 1 and you patched universe 0, A 0.0.1 says that while
+  A 0.0.0 stays silent. Tap the row to see its values in the DMX monitor.
 - System › Machine, section DMX universes, shows the sender's address, the packet
   count and the age of the last packet.
 - Network: Mac and console on the same subnet, one active interface (see the

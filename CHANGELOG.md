@@ -380,6 +380,16 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   what it is patched per (`per`: `layer`, `machine` for the Master, `output`) and whether it is `optional` (Keystone)
   (DESIGN §6.6 item 3, ADR-0008 amendment). `footprints`, `modes`, the GDTF file and `docs/channel-map.md` are
   unchanged; the Patch screen does not use it yet.
+- Changed: the Patch screen has a **Universes** panel and a **Who controls** card (DESIGN §6.6 item 4, step 4). The
+  panel lists every universe that is patched, heard now or has settings, with its protocol, interface, Hold on loss,
+  health pill and the fixtures on it ("Layers 1–8, Master"), or "heard, nothing patched", "feeds A 0.0.0" (the pair of
+  a patched universe) or "not used"; a universe without fixtures shows a loss as yellow "quiet", and the open or
+  monitored universe keeps its row while its console pauses. Tapping a row opens the universe's settings, which moved
+  there from Selected fixture, and shows it in the DMX monitor. The toolbar's Source policy is now the Who controls card
+  with a line explaining the choice; its options are named Console only, Fanous only (UI, cues, OSC, MIDI), Console and
+  Fanous (latest change wins / highest value wins), the Layers screen's Source badge says Console, Fanous, Both · latest
+  or Both · highest, and the Show screen's warning points to Patch › Who controls. The stored values (`dmx`,
+  `internal`, `ltp`, `htp`) are unchanged.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
