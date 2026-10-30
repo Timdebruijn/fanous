@@ -459,7 +459,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   and the badge reads "Preset A → B", "Edited → Preset B" or "Preset A → edited". Channel 7 is in the channel map, GDTF
   and OSC (`/fanous/output/{n}/fade`); channel 8 stays reserved.
 - Fixed: the engine could hang on quit, Restart Engine or SIGTERM in `citp.stop()`, waiting on a CITP PLoc beacon stuck in
-  a blocking `sendto` (B123, PR #PRNUM). The CITP beacon and sync sender sockets are now non-blocking: a datagram the kernel
+  a blocking `sendto` (B123, PR #134). The CITP beacon and sync sender sockets are now non-blocking: a datagram the kernel
   cannot take at once is dropped and counted (`live.citp.beaconsDropped`, `packetsDropped` in `live.sync` and `/metrics`),
   logged at most once a minute. Packet contents and timing are unchanged.
 
