@@ -35,7 +35,7 @@ export function startRouter(): () => void {
   const onKey = (event: KeyboardEvent) => {
     const target = event.target as HTMLElement | null;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
-    // the page under a modal dialog (login, revert, Patch sheet) is inert, so its keys are too
+    // the page under a modal dialog is inert, so its keys are too
     if (document.querySelector('dialog:modal') && !(event.key === '?' && shell.help)) return;
     if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'z') {
       event.preventDefault();

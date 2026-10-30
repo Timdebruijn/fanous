@@ -289,17 +289,35 @@ test('keys: the global shortcuts do nothing while a modal dialog is open, and ? 
   await expect(sheet).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(sheet).toHaveCount(0);
-  expect(new URL(page.url()).hash).toBe('#/patch');
-  await expect(page.getByRole('button', { name: 'UNLOCKED' })).toBeVisible();
+  const hash = () => page.evaluate(() => location.hash);
+  expect(await hash()).toBe('#/patch');
   const help = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
   await page.keyboard.press('?');
   await expect(help).toBeVisible();
   await page.keyboard.press('1');
-  expect(new URL(page.url()).hash).toBe('#/patch');
+  expect(await hash()).toBe('#/patch');
   await page.keyboard.press('?');
   await expect(help).toBeHidden();
   await page.keyboard.press('1');
-  await expect.poll(() => new URL(page.url()).hash).toBe('#/layers');
+  await expect.poll(hash).toBe('#/layers');
+  // L and undo had their round trips by now: the lock is still off and no "history is empty" alert came back
+  await expect(page.getByRole('button', { name: 'UNLOCKED' })).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+test('keys: Space on the Show screen fires no cue while the shortcut list is open', async ({ page }) => {
+  const sent: string[] = [];
+  page.on('websocket', (socket) => socket.on('framesent', ({ payload }) => typeof payload === 'string' && sent.push(payload)));
+  await page.reload();
+  await expect(page.getByRole('banner')).toContainText(/\b[1-9]\d* clients/);
+  await openScreen(page, 'Show');
+  await page.keyboard.press('?');
+  // a click on the list's text leaves the focus on the page's body, which Space does not skip
+  await page.getByRole('heading', { name: 'Keyboard shortcuts' }).click();
+  await page.keyboard.press('Space');
+  await page.keyboard.press('?');
+  await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeHidden();
+  expect(sent.filter((p) => p.includes('cue.go'))).toEqual([]);
 });
 
 test('media: folder 0 lists the generators and the Syphon servers, and puts one on a layer', async ({ page }) => {

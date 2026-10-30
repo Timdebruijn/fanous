@@ -30,7 +30,7 @@
       <dd>{text}</dd>
     {/each}
   </dl>
-  <p class="caption">Shortcuts are ignored while you type in a field or a dialog is open. On an iPad use the buttons on screen.</p>
+  <p class="caption">Shortcuts are ignored while you type in a field, or under any other dialog. On an iPad use the buttons on screen.</p>
   <div class="actions"><button type="button" class="btn btn-primary" onclick={() => (shell.help = false)}>Close</button></div>
 </dialog>
 
