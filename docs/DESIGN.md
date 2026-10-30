@@ -1657,7 +1657,7 @@ numbering 21–28 from fake display lists with the output-bound exclusion
 (bound from the start, bound later, unbound), a restart (gone, back by
 uuid under a new name) and nine displays; the feed and "pending";
 `/screens` in `initial` and the migration; the forget rules; the readiness
-item. A synthetic IOSurface-backed BGRA buffer through `ScreenInput` into
+item (moved to `LiveCatalogTests`, B122). A synthetic IOSurface-backed BGRA buffer through `ScreenInput` into
 the layer shader reads white 255, black 0, red 255,0,0 and grey 128
 exactly, and the pair 252/3 (linear). A still display keeps running for an
 hour, and `halt` keeps the frame (a frame delivered after it does not
@@ -3522,9 +3522,9 @@ with public APIs:
 
 **Readiness check** (runs on entering show mode, re-checked every 30 s, each
 item with a one-line fix): on AC power; thermal state nominal; free disk > 10
-%; memory headroom; all patched universes receiving; capture permissions
-granted (`camera` and `screen`, only for inputs a layer shows or a scene
-entry names, the screen warning while in use and granted; B73 steps 2b and 3,
+%; memory headroom; all patched universes receiving; "Camera permission
+granted" and "Screen recording granted" (`camera` and `screen`, only for
+inputs a layer shows or a scene entry names, the screen warning while in use and granted; B73 steps 2b and 3,
 B122; §8.2.1); all outputs bound and in the desired mode;
 no decoder errors; library on a local volume; Spotlight indexing of the
 library volume (`mdutil -s` state read via `MDQuery`/`mdutil` output) off or

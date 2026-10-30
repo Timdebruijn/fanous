@@ -421,7 +421,8 @@ denied, press **Authorize screen** again, or allow it and choose Engine ›
 granted" and stays black.
 
 **Readiness.** Two items on the System screen look only at inputs in use: a
-layer that shows a camera (1–20) or a display (21–28). **Camera permission
+layer that shows a camera (1–20) or a display (21–28), or an entry of a
+`--scene` file with `capture:` or `screen:`. **Camera permission
 granted** fails while a layer shows a camera without the camera permission;
 **Screen recording granted** fails while a layer shows a display without the
 Screen permission. A failed item blocks show mode until a programmer
