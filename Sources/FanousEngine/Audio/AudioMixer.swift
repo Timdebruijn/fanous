@@ -8,10 +8,10 @@ import Foundation
 import Synchronization
 
 /// The engine's one audio output (ADR-0019): an `AVAudioEngine` with a single `AVAudioSourceNode` whose
-/// real-time render callback mixes every layer's PCM ring (`LayerAudioChannel.pull`) and applies the master volume.
+/// real-time render callback mixes every layer's PCM ring (`LayerAudioChannel.pull`).
 ///
-/// `@unchecked Sendable`: `channels` and the atomics are immutable or thread-safe; `previousMaster` belongs to the
-/// render thread; `engine` / `sourceNode` are touched by `start` / `stop` on the control side only.
+/// `@unchecked Sendable`: `channels` and the atomics are immutable or thread-safe; `engine` is touched by
+/// `start` / `stop` on the control side only.
 public final class AudioMixer: @unchecked Sendable {
     /// One per layer, preallocated; `channels[i]` belongs to layer `i`.
     public let channels: [LayerAudioChannel]

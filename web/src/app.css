@@ -117,7 +117,7 @@ h2 { margin: 0; font-size: 17px; font-weight: 600; }
 .tag-mode { background: var(--accent-dim); color: var(--text-1); }
 .tag-open { border: 1px solid var(--line-strong); color: var(--text-2); }
 
-/* Panels, banners, meters */
+/* Panels, banners, bars */
 .panel { background: var(--surface-1); border: 1px solid var(--line); border-radius: var(--radius-panel); }
 .banner { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 8px; font-size: 13px; }
 .banner-red { background: var(--red-bg); border: 1px solid var(--red); }

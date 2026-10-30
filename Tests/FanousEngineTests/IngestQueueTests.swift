@@ -260,7 +260,7 @@ import UniformTypeIdentifiers
         #expect(FileManager.default.fileExists(atPath: library.appending(path: "_originals/title-2.png").path))
     }
 
-    @Test func existingDestinationFailsUnlessOverwriteAndSourceCanBeDeleted() async throws {
+    @Test func existingDestinationFailsAndSourceCanBeDeleted() async throws {
         let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let first = directory.appending(path: "first.png"), second = directory.appending(path: "second.png")

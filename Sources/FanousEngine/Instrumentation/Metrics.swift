@@ -70,7 +70,6 @@ public final class MetricsRing: @unchecked Sendable {
         if late { totalLate.wrappingAdd(1, ordering: .relaxed) }
     }
 
-
     /// Records written in the last `seconds` (by target time), oldest first.
     public func recent(seconds: Double, now: Double) -> [FrameRecord] {
         let written = writeIndex.load(ordering: .relaxed)

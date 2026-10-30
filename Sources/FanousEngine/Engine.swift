@@ -498,7 +498,7 @@ public final class Engine: @unchecked Sendable {
 
         // Displays and output windows (DESIGN.md §9.6); the render service starts after the coordinator exists.
             logger.info("engine start", metadata: ["step": "outputs"])
-            let coordinator = try MainActor.assumeIsolated { () throws -> OutputCoordinator in
+            let coordinator = MainActor.assumeIsolated { () -> OutputCoordinator in
                 let coordinator = OutputCoordinator(compositor: render.compositor, context: context, fps: fps, displays: DisplayManager.current(), logger: logger)
                 displays.withLock { $0 = coordinator.connectedDisplays }
                 coordinator.onStatus = { [weak self] statuses in

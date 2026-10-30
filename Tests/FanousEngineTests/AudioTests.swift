@@ -500,7 +500,7 @@ extension LayerAudioChannel {
 
     // MARK: AudioMixer
 
-    @Test func mixerSumsChannelsAndAppliesMasterVolume() {
+    @Test func mixerSumsChannels() {
         let mixer = AudioMixer(channels: 3)
         #expect(mixer.channels.count == 3)
         let a = RampSource()
