@@ -300,7 +300,7 @@
         {/if}
         {#if group.kind === 'screen'}
           {#if screenPermission && screenPermission !== 'granted'}
-            <p class="caption" role="status">{screenPermission === 'pending' ? 'Waiting for the screen permission (about two minutes): see Capture permissions on the System screen.' : 'Screen permission not granted: authorize on the System screen; a grant restarts the engine.'}</p>
+            <p class="caption" role="status">Screen permission not granted: authorize on the System screen, then Engine › Restart Engine.</p>
           {/if}
           <p class="caption">A display used as a Fanous output reads not running (one that was an output from the start gets no number). macOS asks again about once a month whether Fanous Engine may record the screen: see Capture permissions on the <a href="#/system">System screen</a>.</p>
         {/if}

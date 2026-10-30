@@ -1711,6 +1711,13 @@ output leaving the list, a replug, the monthly re-ask, idle samples on a
 still display. Ad-hoc rebuilds reset the TCC grants (the code identity
 changes per build), see DEVELOPMENT.md.
 
+**As built (2026-10-30, B125, PR #N):** the two-minute poll, the `pending`
+state and the self-restart are gone. `capture.authorize {kind: "screen"}`
+asks once and refreshes the permission cache; the System screen's Screen row
+while denied captions "allow Fanous Engine, then Engine › Restart Engine", and
+the user guide says the same. The step 3b paragraph below describes the
+`pending` row as it was.
+
 **As built (2026-10-30, step 3b, PR #126):** the web UI and user guide for
 displays 21–28. *Media:* "Displays (21–28)" (shown when non-empty) like the
 cameras: dot, "not running" / "not seen since the engine started", Layer N
@@ -1787,15 +1794,13 @@ permissions behave differently, and the design keeps them apart:
   Denied → "camera permission denied: allow Fanous Engine under Privacy &
   Security › Camera", as B37 does for the microphone. Granted stays granted.
 - *Screen* (`CGPreflightScreenCaptureAccess`, `CGRequestScreenCaptureAccess`):
-  macOS applies a grant only to a new process. `capture.authorize {kind:
-  "screen"}` calls `CGRequestScreenCaptureAccess()`, which returns at once
-  (the grant happens in System Settings); the engine then polls
-  `CGPreflightScreenCaptureAccess()` once a second for two minutes and exits
-  cleanly when it turns true, which `KeepAlive` restarts (a foreground
-  `fanousd` only logs "restart the engine"). Whether preflight flips in the
-  granting process is verified at step 3; the System screen shows Restart
-  engine either way. Refused in show mode and under show lock, like
-  `canvas.set`.
+  macOS applies a grant only to a new process (live check, B125).
+  `capture.authorize {kind: "screen"}` calls `CGRequestScreenCaptureAccess()`
+  once, which returns at once and opens System Settings on the first ask, and
+  refreshes the permission cache; nothing else. The user allows Fanous Engine
+  there, then chooses Engine › Restart Engine; `live.capture.permissions.screen`
+  reads `granted` or `denied` only. Refused in show mode and under show lock,
+  like `canvas.set`.
   Every supported macOS (ADR-0020) re-asks a screen-capturing app about
   monthly ("Allow For One Month"), a dialog on the main display that an
   unattended show machine cannot answer and that may sit on an output.

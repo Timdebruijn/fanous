@@ -659,7 +659,7 @@ public enum ProjectDocument {
             CommandSpec(
                 name: "capture.authorize", role: .programmer, undoable: false,
                 summary:
-                    "Ask macOS for the camera permission, or for screen recording (the engine restarts itself once it is granted in System Settings); refused in show mode.",
+                    "Ask macOS for the camera permission, or for screen recording (allow Fanous Engine in System Settings, then restart the engine); refused in show mode.",
                 argsType: "{ kind: 'camera' | 'screen' }"
             ) { _, args in
                 guard let kind = args["kind"]?.string, kind == "camera" || kind == "screen" else { throw CommandError.invalidArgs("kind must be camera or screen") }

@@ -186,8 +186,7 @@ export interface CaptureSourceDoc {
 export interface CaptureLiveDoc {
   devices: CaptureSourceDoc[];
   screens?: CaptureSourceDoc[];
-  /** screen `pending`: after Authorize screen, while the engine polls for the grant and then restarts itself (step 3) */
-  permissions?: { camera: 'granted' | 'denied' | 'notDetermined'; screen: 'granted' | 'denied' | 'pending' };
+  permissions?: { camera: 'granted' | 'denied' | 'notDetermined'; screen: 'granted' | 'denied' };
 }
 
 export interface IngestJobDoc {
