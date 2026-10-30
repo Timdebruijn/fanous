@@ -280,6 +280,14 @@ export function maskHandle(path: string | null | undefined): { slice: number; ma
   return m ? { slice: Number(m[1]), mask: Number(m[2]), point: Number(m[3]) } : null;
 }
 
+/** The mask Warp & Slices' mask tools act on (the mask list comes with M2.8): the selected point's, else the slice's
+ *  first path mask (an image mask has no points and no feather); −1 without a path mask. */
+export function maskTarget(slice: SliceConfig | undefined, sliceIndex: number, handle: string | null): number {
+  const masks = slice?.masks ?? [];
+  const h = maskHandle(handle);
+  return h && h.slice === sliceIndex && masks[h.mask]?.path ? h.mask : masks.findIndex((m) => !!m.path);
+}
+
 /** The edit overlay's lease from Warp & Slices (DESIGN §9.10 item 4): `start` sends at once when the output or the
  *  selection changed (or it was off) and renews every `every` ms; after `quiet` ms without `edited` (an edit, the tab
  *  opened or the switch turned on) it ends the lease with `on: false` and calls `idle`, and a `start` after that long

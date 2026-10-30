@@ -40,7 +40,10 @@ public final class SlicePlan: @unchecked Sendable {
     let opacity: Float
     /// Canvas id the slice samples (DESIGN.md §9.1).
     let canvas: Int
-    init(id: Int, vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int, mask: MTLTexture?, opacity: Float, canvas: Int = 1) {
+    /// The decoded image masks the mask texture was made from, kept while the plan lives so a recompile of the slice finds
+    /// them in the compile cache (§9.10 item 5).
+    let images: [ImageRaster]
+    init(id: Int, vertices: MTLBuffer, indices: MTLBuffer, indexCount: Int, mask: MTLTexture?, opacity: Float, canvas: Int = 1, images: [ImageRaster] = []) {
         self.id = id
         self.canvas = canvas
         self.vertices = vertices
@@ -48,7 +51,15 @@ public final class SlicePlan: @unchecked Sendable {
         self.indexCount = indexCount
         self.mask = mask
         self.opacity = opacity
+        self.images = images
     }
+}
+
+/// An image mask's file decoded as luminance on an output (DESIGN.md §9.10 item 5), row-major from the top-left; nil when
+/// it does not decode.
+final class ImageRaster: @unchecked Sendable {  // immutable
+    let bytes: [UInt8]?
+    init(_ bytes: [UInt8]?) { self.bytes = bytes }
 }
 
 /// What a mapping preset changes on an output (DESIGN.md §9.10 item 3): its warp field and slices, masks included.
@@ -148,6 +159,8 @@ public final class OutputCompiler: @unchecked Sendable {
         case masks([MaskShape], files: [String], width: Int, height: Int)
         /// A slice's mesh buffers with its mask texture, which is also cached on its own: a moved slice keeps its raster.
         case slice(SliceConfig, files: [String], width: Int, height: Int)
+        /// An image mask's file (its stamp) decoded as luminance on a w × h output (`ImageRaster`).
+        case image(String, width: Int, height: Int)
     }
     private struct Entry: @unchecked Sendable { weak var object: AnyObject? }  // textures and slice plans are immutable once compiled
     /// Held weakly: a texture or slice plan lives exactly as long as a plan holds it (every display's set, the set a frozen
@@ -235,7 +248,8 @@ public final class OutputCompiler: @unchecked Sendable {
     /// only the slices that changed, the edited mapping's and every preset's.
     private func slicePlan(_ slice: SliceConfig, output id: Int, width w: Int, height h: Int) throws -> SlicePlan {
         // the image masks' files as they are now: a changed file gives new keys, so the library's change makes its raster again
-        let files = slice.masks.compactMap { $0.image.map { media($0).map(Self.stamp) ?? "" } }
+        let urls = slice.masks.compactMap { $0.image.map { (image: $0, url: media($0)) } }
+        let files = urls.map { $0.url.map(Self.stamp) ?? "" }
         return try cached(.slice(slice, files: files, width: w, height: h)) {
             let (vertices, indices) = SliceMesh.build(slice, subdivisions: Self.sliceSubdivisions)
             guard !vertices.isEmpty,
@@ -243,15 +257,26 @@ public final class OutputCompiler: @unchecked Sendable {
                 let indexBuffer = device.makeBuffer(bytes: indices, length: indices.count * 4, options: .storageModeShared)
             else { throw RenderError.pipeline("slice mesh \(slice.id)") }
             vertexBuffer.label = "slice \(id).\(slice.id)"
+            // each image decoded once per file and size, and held by every slice plan made from it: an edit of the slice's
+            // other masks finds it in the cache instead of reading the file again
+            var images: [MaskImage: ImageRaster] = [:]
+            for (image, file) in zip(urls, files) where images[image.image] == nil {
+                guard let url = image.url else { continue }
+                images[image.image] = cached(.image(file, width: w, height: h)) { ImageRaster(StillSource.image(url).map { Self.draw($0, width: w, height: h) }) }
+            }
             var mask: MTLTexture? = nil
             // keyed by the masks alone: moving the slice keeps its raster
             if slice.masks.contains(where: { $0.problem == nil }) {
                 mask = try cached(.masks(slice.masks, files: files, width: w, height: h)) {
-                    let raster = Self.maskRaster(slice.masks, width: w, height: h) { media($0).flatMap(StillSource.image) }
-                    return try texture(.r8Unorm, width: w, height: h, bytesPerPixel: 1, label: "mask \(id).\(slice.id)") { raster.withUnsafeBytes { $0.baseAddress! } }
+                    let raster = Self.maskRaster(slice.masks, width: w, height: h) { images[$0]?.bytes }
+                    return try texture(.r8Unorm, width: raster.width, height: raster.height, bytesPerPixel: 1, label: "mask \(id).\(slice.id)") {
+                        raster.bytes.withUnsafeBytes { $0.baseAddress! }
+                    }
                 }
             }
-            return SlicePlan(id: slice.id, vertices: vertexBuffer, indices: indexBuffer, indexCount: indices.count, mask: mask, opacity: Float(slice.opacity), canvas: slice.canvas)
+            return SlicePlan(
+                id: slice.id, vertices: vertexBuffer, indices: indexBuffer, indexCount: indices.count, mask: mask, opacity: Float(slice.opacity), canvas: slice.canvas,
+                images: Array(images.values))
         }
     }
 
@@ -262,37 +287,54 @@ public final class OutputCompiler: @unchecked Sendable {
         return "\(url.path)|\((attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0)|\(attributes?[.size] as? Int ?? 0)"
     }
 
-    /// A slice's masks as one 8-bit raster on a w × h output (DESIGN.md §9.10 item 5), row-major from the top-left: the
-    /// union of the add masks (everything without one) minus the union of the subtract masks, max(adds) × (1 − max(subtracts)).
-    /// `image` gives an image mask's picture; without one (a missing or unreadable file) it covers nothing. A mask with a
-    /// `problem` is left out.
-    static func maskRaster(_ masks: [MaskShape], width: Int, height: Int, image: (MaskImage) -> CGImage?) -> [UInt8] {
+    /// A slice's masks as one 8-bit raster (DESIGN.md §9.10 item 5), row-major from the top-left: the union of the add
+    /// masks (everything without one) minus the union of the subtract masks, max(adds) × (1 − max(subtracts)), on the
+    /// finest grid one of them needs (`MaskMath.step`: an image or an edge under 2 px every pixel of the w × h output, a
+    /// feather a coarser one); a mask on a coarser grid than that is resampled into it. `image` gives an image mask's
+    /// luminance on the w × h output; without it (a missing or unreadable file) it covers nothing. A mask with a `problem`
+    /// is left out.
+    static func maskRaster(_ masks: [MaskShape], width: Int, height: Int, image: (MaskImage) -> [UInt8]?) -> (width: Int, height: Int, bytes: [UInt8]) {
+        let valid = masks.filter { $0.problem == nil }
+        func grid(_ step: Int) -> (width: Int, height: Int) { ((width + step - 1) / step, (height + step - 1) / step) }
+        func step(_ mask: MaskShape) -> Int { mask.path == nil ? 1 : MaskMath.step(feather: mask.feather) }
+        let (cols, rows) = grid(valid.map(step).min() ?? 1)
         var add: [UInt8]? = nil, subtract: [UInt8]? = nil
-        for mask in masks where mask.problem == nil {
+        for mask in valid {
             var raster: [UInt8]
             if let path = mask.path {
-                // under 2 px the edge is anti-aliased, as before M2.7 (anti-aliasing is about a 1 px ramp); from 2 px the
-                // fill at the pixel centres gives the ramp's sign
+                // under 2 px the edge is anti-aliased, as before M2.7 (anti-aliasing is about a 1 px ramp)
                 let outline = MaskMath.outline(path, width: width, height: height)
                 if mask.feather >= 2 {
-                    raster = MaskMath.fill(outline, width: width, height: height)
-                    MaskMath.feather(&raster, outline: outline, feather: mask.feather, width: width, height: height)
+                    let own = grid(step(mask))
+                    raster = MaskMath.feathered(
+                        outline, feather: mask.feather, width: own.width, height: own.height, cell: (Double(width) / Double(own.width), Double(height) / Double(own.height)))
+                    if own != (cols, rows) { raster = MaskMath.resample(raster, width: own.width, height: own.height, to: cols, rows) }
                 } else {
-                    raster = fill(outline, width: width, height: height)
+                    raster = fill(outline, width: width, height: height)  // the finest grid is every pixel then
                 }
             } else {
-                raster = mask.image.flatMap(image).map { draw($0, width: width, height: height) } ?? [UInt8](repeating: 0, count: width * height)
+                raster = mask.image.flatMap(image) ?? [UInt8](repeating: 0, count: cols * rows)
             }
-            switch mask.mode {
-            case .add: add = add.map { zip($0, raster).map(max) } ?? raster
-            case .subtract: subtract = subtract.map { zip($0, raster).map(max) } ?? raster
+            // in place: a copy per mask costs more than the raster at 4K
+            func merge(into target: inout [UInt8]?) {
+                guard target != nil else { return target = raster }
+                target!.withUnsafeMutableBufferPointer { t in raster.withUnsafeBufferPointer { r in for i in t.indices { t[i] = max(t[i], r[i]) } } }
             }
+            if mask.mode == .add { merge(into: &add) } else { merge(into: &subtract) }
         }
-        var visible = add ?? [UInt8](repeating: 255, count: width * height)
+        var visible = add ?? [UInt8](repeating: 255, count: cols * rows)
         if let subtract {
-            for i in visible.indices { visible[i] = UInt8((Int(visible[i]) * (255 - Int(subtract[i])) + 127) / 255) }
+            // v × (255 − s) / 255, rounded: (x + x / 256) / 256 with x = v × (255 − s) + 128 is exact for bytes
+            visible.withUnsafeMutableBufferPointer { v in
+                subtract.withUnsafeBufferPointer { s in
+                    for i in v.indices {
+                        let x = UInt32(v[i]) * UInt32(255 - s[i]) + 128
+                        v[i] = UInt8((x + x >> 8) >> 8)
+                    }
+                }
+            }
         }
-        return visible
+        return (cols, rows, visible)
     }
 
     /// CoreGraphics' anti-aliased nonzero fill of a closed outline in pixels, 8-bit coverage, row-major from the top-left.

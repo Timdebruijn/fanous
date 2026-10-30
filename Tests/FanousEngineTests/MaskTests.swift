@@ -6,6 +6,7 @@ import CoreGraphics
 import Foundation
 import FanousCore
 import ImageIO
+import Logging
 import Metal
 import Synchronization
 import Testing
@@ -24,12 +25,12 @@ struct MaskTests {
     }()
 
     /// Before M2.7, the oracle for "no visible change": under a 2 px feather the compile took CoreGraphics' anti-aliased
-    /// even-odd fill of the polygon, from 2 px the exact signed distance to it (`MaskMath.raster`) on a grid up to 4 px
-    /// coarse, which the shader sampled linearly; here at every pixel centre.
-    static func oldRaster(_ path: [MapPoint], feather: Double, width: Int, height: Int) -> [UInt8] {
+    /// even-odd fill of the polygon at every pixel, from 2 px the exact signed distance to it (`MaskMath.raster`) at the
+    /// centres of a grid of min(4, feather / 2) px cells, which the shader sampled linearly.
+    static func oldRaster(_ path: [MapPoint], feather: Double, width: Int, height: Int) -> (width: Int, height: Int, bytes: [UInt8]) {
         let polygon = path.map { (x: $0.x * Double(width), y: $0.y * Double(height)) }
-        var bytes = [UInt8](repeating: 0, count: width * height)
         guard feather >= 2 else {
+            var bytes = [UInt8](repeating: 0, count: width * height)
             bytes.withUnsafeMutableBytes { raw in
                 let context = CGContext(
                     data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
@@ -43,10 +44,13 @@ struct MaskTests {
                 context.closePath()
                 context.fillPath(using: .evenOdd)
             }
-            return bytes
+            return (width, height, bytes)
         }
+        let step = min(4, Int(feather / 2))
+        let (cols, rows) = ((width + step - 1) / step, (height + step - 1) / step)
+        var bytes = [UInt8](repeating: 0, count: cols * rows)
         for i in bytes.indices {
-            let (x, y) = (Double(i % width) + 0.5, Double(i / width) + 0.5)
+            let (x, y) = ((Double(i % cols) + 0.5) * Double(width) / Double(cols), (Double(i / cols) + 0.5) * Double(height) / Double(rows))
             var inside = false, best = Double.infinity
             for j in polygon.indices {
                 let (a, b) = (polygon[j], polygon[(j + polygon.count - 1) % polygon.count])
@@ -57,7 +61,7 @@ struct MaskTests {
             }
             bytes[i] = UInt8((min(1, max(0, 0.5 + (inside ? best : -best) / feather)) * 255).rounded())
         }
-        return bytes
+        return (cols, rows, bytes)
     }
 
     static func area(_ raster: [UInt8]) -> Double { raster.reduce(0) { $0 + Double($1) } / 255 }
@@ -166,7 +170,6 @@ struct MaskTests {
         #expect(set("/slices/0/mask", ["path": triangle, "feather": 0]) == .failure(.invalidArgs(old)))
         let slice: JSONValue = ["id": 2, "canvas": 1, "source": ["x": 0, "y": 0, "w": 1, "h": 1], "dest": [["x": 0, "y": 0], ["x": 1, "y": 0], ["x": 1, "y": 1], ["x": 0, "y": 1]], "mask": nil, "opacity": 1]
         #expect(set("/slices", [slice]) == .failure(.invalidArgs(old)), "a slice list from the old page")
-        #expect(set("/slices/0/masks/0/feather", -1) == .failure(.invalidArgs("slice 1: a mask's feather must be 0 or more")))
         #expect(set("/slices/0/masks/0/path", [["x": 0, "y": 0], ["x": 1, "y": 1]]) == .failure(.invalidArgs("slice 1: a mask path needs at least 3 points")))
         #expect(set("/slices/0/masks/1/path", triangle) == .failure(.invalidArgs("slice 1: a mask has either a path or an image")))
         #expect(set("/slices/0/masks/1/image/folder", 0) == .failure(.invalidArgs("slice 1: a mask image needs a library folder and file, 1–255")))
@@ -180,17 +183,20 @@ struct MaskTests {
     /// union of the subtract masks (a hole); everything without an add mask.
     @Test func addsUniteAndSubtractsCutHoles() {
         let w = 64  // edges on whole pixels (binary fractions): the anti-aliased fill is exact
-        func raster(_ masks: [MaskShape]) -> [UInt8] { OutputCompiler.maskRaster(masks, width: w, height: w) { _ in nil } }
+        func raster(_ masks: [MaskShape]) -> [UInt8] { OutputCompiler.maskRaster(masks, width: w, height: w) { _ in nil }.bytes }
         let a = MaskShape(path: Self.square(0.125, 0.125, 0.625, 0.625)), b = MaskShape(path: Self.square(0.375, 0.375, 0.875, 0.875))
         #expect(Self.area(raster([a])) == 1024 && Self.area(raster([a, b])) == 1024 + 1024 - 256, "the union")
         let hole = MaskShape(mode: .subtract, path: Self.square(0.25, 0.25, 0.375, 0.375))
         let holed = raster([a, b, hole])
         #expect(Self.area(holed) == 1792 - 64 && holed[20 * w + 20] == 0 && holed[10 * w + 10] == 255 && holed[50 * w + 50] == 255)
+        #expect(Self.area(raster([b, hole, a])) == 1792 - 64, "in any order")
         #expect(Self.area(raster([hole])) == 4096 - 64, "no add mask: everything, minus the hole")
         #expect(raster([]) == [UInt8](repeating: 255, count: w * w))
-        // a feathered subtract multiplies: max(adds) × (1 − max(subtracts)), its 8 px ramp centred on x = 16.5
+        // a feathered subtract multiplies: max(adds) × (1 − max(subtracts)), its 8 px ramp centred on x = 16.5, rasterised
+        // on its own 4 px grid and resampled to the hard mask's every pixel
         let soft = raster([a, MaskShape(mode: .subtract, feather: 8, path: Self.square(16.5 / 64, 0.125, 0.875, 0.625))])
-        #expect([12, 16, 18, 20].map { soft[20 * w + $0] } == [255, 127, 64, 0], "\([12, 16, 18, 20].map { soft[20 * w + $0] })")
+        let row = (8...24).map { soft[20 * w + $0] }
+        #expect(row.first == 255 && row.last == 0 && row == row.sorted(by: >) && abs(Int(soft[20 * w + 16]) - 128) <= 3, "\(row)")
     }
 
     /// The nonzero rule: a freehand loop that crosses itself (a five-pointed star in one stroke) keeps its middle; the
@@ -200,8 +206,8 @@ struct MaskTests {
             let a = -Double.pi / 2 + Double(i * 2) * 2 * .pi / 5
             return MaskPoint(0.5 + 0.45 * cos(a), 0.5 + 0.45 * sin(a))
         }
-        for feather in [0.0, 4] {
-            let raster = OutputCompiler.maskRaster([MaskShape(feather: feather, path: star)], width: 100, height: 100) { _ in nil }
+        for feather in [0.0, 3] {  // the anti-aliased fill and the feather's, both at every pixel
+            let raster = OutputCompiler.maskRaster([MaskShape(feather: feather, path: star)], width: 100, height: 100) { _ in nil }.bytes
             #expect(raster[50 * 100 + 50] == 255, "the middle, feather \(feather)")
             #expect(raster[2 * 100 + 50] == 0 && raster[50 * 100 + 2] == 0)
         }
@@ -215,46 +221,91 @@ struct MaskTests {
             MaskPoint(c + r, c, in: MapPoint(0, -k), out: MapPoint(0, k)), MaskPoint(c, c + r, in: MapPoint(k, 0), out: MapPoint(-k, 0)),
             MaskPoint(c - r, c, in: MapPoint(0, k), out: MapPoint(0, -k)), MaskPoint(c, c - r, in: MapPoint(-k, 0), out: MapPoint(k, 0)),
         ]
-        let area = Self.area(OutputCompiler.maskRaster([MaskShape(path: circle)], width: 400, height: 400) { _ in nil })
         let exact = Double.pi * 120 * 120
-        #expect(abs(area - exact) / exact < 0.005, "\(area) of \(exact)")
-        let feathered = Self.area(OutputCompiler.maskRaster([MaskShape(feather: 6, path: circle)], width: 400, height: 400) { _ in nil })
-        #expect(abs(feathered - exact) / exact < 0.005, "the ramp is centred on the edge: \(feathered)")
+        for feather in [0.0, 6] {
+            let raster = OutputCompiler.maskRaster([MaskShape(feather: feather, path: circle)], width: 400, height: 400) { _ in nil }
+            let area = Self.area(raster.bytes) * 400 * 400 / Double(raster.width * raster.height)  // a feather's grid is coarser
+            #expect(abs(area - exact) / exact < 0.005, "feather \(feather): \(area) of \(exact) (the ramp is centred on the edge)")
+        }
     }
 
-    /// No visible change for existing shows: an old single polygon gives today's raster, an edge under 2 px byte for byte
-    /// (anti-aliased) and a feathered one within one code value of the exact signed distance (which the old compile
-    /// sampled more coarsely).
+    /// No visible change for existing shows: an old single polygon gives the old raster on the old grid, an edge under 2 px
+    /// byte for byte (anti-aliased) and a feathered one within one code value.
     @Test func anOldPolygonGivesTheOldRaster() {
         let polygon = [MapPoint(0.1, 0.12), MapPoint(0.83, 0.07), MapPoint(0.91, 0.66), MapPoint(0.47, 0.93), MapPoint(0.06, 0.58)]
         let (w, h) = (320, 180)
-        for feather in [0.0, 1, 2, 6, 24] {
+        for feather in [0.0, 1, 2, 6, 24, 32] {
             let new = OutputCompiler.maskRaster([MaskShape(feather: feather, path: polygon.map { MaskPoint($0.x, $0.y) })], width: w, height: h) { _ in nil }
             let old = Self.oldRaster(polygon, feather: feather, width: w, height: h)
-            let worst = zip(new, old).map { abs(Int($0) - Int($1)) }.max() ?? 0
-            #expect(worst <= (feather < 2 ? 0 : 1), "feather \(feather): \(worst)")
+            let worst = zip(new.bytes, old.bytes).map { abs(Int($0) - Int($1)) }.max() ?? 0
+            #expect(new.width == old.width && new.height == old.height && worst <= (feather < 2 ? 0 : 1), "feather \(feather): \(new.width) × \(new.height), \(worst)")
         }
     }
 
-    /// The budget of §9.10 item 5: a freehand outline of 2,000 segments with a 2 px feather at 3840 × 2160 within 20 ms of
-    /// CPU, the whole raster (outline, fill and feather). A release-build number: `scripts/test.sh -c release --filter
+    /// The budget of §9.10 item 5: a freehand outline of 2,000 segments at 3840 × 2160 within 20 ms of CPU at any feather
+    /// (the whole raster: outline, fill and feather), also beside a hard mask, where the feather's own grid is resampled to
+    /// every pixel; four hard masks combine in place. A release-build number: `scripts/test.sh -c release --filter
     /// MaskTests`; skipped in debug.
-    @Test(.enabled(if: MaskTests.release)) func twoThousandSegmentsAt4KWithin20ms() {
-        let path = (0..<2000).map { i -> MaskPoint in
+    @Test(.enabled(if: MaskTests.release)) func twoThousandSegmentsAt4KWithin20msAtAnyFeather() {
+        let freehand = (0..<2000).map { i -> MaskPoint in
             let a = Double(i) / 2000 * 2 * .pi, wobble = 1 + 0.05 * sin(a * 37)
             return MaskPoint(0.5 + 0.4 * wobble * cos(a), 0.5 + 0.45 * wobble * sin(a))
         }
-        let masks = [MaskShape(feather: 2, path: path)]
-        var times: [Double] = []
-        for _ in 0..<7 {
-            let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
-            let raster = OutputCompiler.maskRaster(masks, width: 3840, height: 2160) { _ in nil }
-            times.append(Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e6)
-            #expect(raster[1080 * 3840 + 1920] == 255)
+        func median(_ masks: [MaskShape]) -> Double {
+            var times: [Double] = []
+            for _ in 0..<5 {
+                let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+                let raster = OutputCompiler.maskRaster(masks, width: 3840, height: 2160) { _ in nil }
+                times.append(Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e6)
+                #expect(raster.bytes.count == raster.width * raster.height)
+            }
+            return times.sorted()[times.count / 2]
         }
-        times.sort()
-        print(String(format: "mask raster, 2,000 segments, 2 px feather, 3840 × 2160: best %.1f ms, median %.1f ms CPU", times[0], times[times.count / 2]))
-        #expect(times[times.count / 2] <= 20)
+        var report: [String] = []
+        for feather in [2.0, 3, 8, 32, 33, 200, 1000, 4000] {
+            let ms = median([MaskShape(feather: feather, path: freehand)])
+            report.append(String(format: "feather %4.0f: %5.1f ms", feather, ms))
+            #expect(ms <= 20, "feather \(feather): \(ms) ms")
+        }
+        let hard = MaskShape(path: Self.square(0.05, 0.05, 0.95, 0.95))
+        for feather in [8.0, 200, 4000] {
+            let ms = median([hard, MaskShape(mode: .subtract, feather: feather, path: freehand)])
+            report.append(String(format: "beside a hard mask, feather %4.0f: %5.1f ms", feather, ms))
+            #expect(ms <= 20, "beside a hard mask, feather \(feather): \(ms) ms")
+        }
+        let (one, four) = (median([hard]), median(Array(repeating: hard, count: 4)))
+        report.append(String(format: "one hard mask %.1f ms, four %.1f ms", one, four))
+        #expect(four <= 20)
+        print("mask raster, 2,000 segments, 3840 × 2160, median CPU of 5:\n  " + report.joined(separator: "\n  "))
+    }
+
+    /// An image mask's file is decoded once per file and size (E7 of the M2.7 review): a 4K picture beside a path mask the
+    /// operator drags; each drag step rasterises the masks again but finds the picture in the cache. Release only, as above.
+    @Test(.enabled(if: MaskTests.release)) func aDragBesideA4KImageMaskDoesNotDecodeItAgain() throws {
+        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-mask-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let (w, h) = (3840, 2160)
+        try Self.writeGrey((0..<(w * h)).map { UInt8(($0 % w) * 255 / w) ^ UInt8(($0 / w) & 0x3f) }, width: w, height: h, to: url)
+        let device = try MetalContext().device
+        func cpu(_ body: () throws -> Void) rethrows -> Double {
+            let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+            try body()
+            return Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e6
+        }
+        var config = OutputConfig(id: 1)
+        config.slices[0].masks = [MaskShape(mode: .subtract, image: MaskImage(folder: 1, file: 1)), MaskShape(path: Self.square(0.1, 0.1, 0.9, 0.9))]
+        let compiler = OutputCompiler(device: device, media: { _ in url })
+        var plan = try compiler.compile(config, index: 1, drawable: (w, h))
+        let first = try cpu { plan = try OutputCompiler(device: device, media: { _ in url }).compile(config, index: 1, drawable: (w, h)) }
+        var steps: [Double] = []
+        for i in 1...5 {
+            config.slices[0].masks[1].path?[2] = MaskPoint(0.9 - Double(i) / 100, 0.9)
+            steps.append(try cpu { plan = try compiler.compile(config, index: 1, drawable: (w, h)) })
+        }
+        let step = steps.sorted()[2]
+        print(String(format: "4K image mask beside a path mask: first compile %.1f ms CPU, a drag step %.1f ms (median of 5)", first, step))
+        #expect(step < first)
+        withExtendedLifetime(plan) {}
     }
 
     // MARK: Image masks
@@ -269,7 +320,9 @@ struct MaskTests {
         try Self.writeGrey((0..<(16 * 8)).map { [0, 100, 200, 255][$0 % 16 / 4] }, width: 16, height: 8, to: url)
         let picture = try #require(StillSource.image(url))
         let image = MaskImage(folder: 1, file: 1)
-        func raster(_ masks: [MaskShape], file: CGImage?) -> [UInt8] { OutputCompiler.maskRaster(masks, width: 64, height: 16) { _ in file } }
+        func raster(_ masks: [MaskShape], file: CGImage?) -> [UInt8] {
+            OutputCompiler.maskRaster(masks, width: 64, height: 16) { _ in file.map { OutputCompiler.draw($0, width: 64, height: 16) } }.bytes
+        }
         let added = raster([MaskShape(feather: 30, image: image)], file: picture)
         for (x, value) in [(8, 0), (24, 100), (40, 200), (56, 255)] { #expect(abs(Int(added[8 * 64 + x]) - value) <= 2, "x \(x): \(added[8 * 64 + x])") }
         let cut = raster([MaskShape(mode: .subtract, image: image)], file: picture)
@@ -287,7 +340,8 @@ struct MaskTests {
     }
 
     /// The compile cache keys an image mask by its file as it is now: the same file hits, a changed one (the library's
-    /// change compiles again) gives a new raster with the new picture, also for the slice plan that holds it.
+    /// change compiles again) gives a new raster with the new picture, also for the slice plan that holds it. The picture
+    /// is decoded once per file: an edit of another mask of the slice finds it in the cache.
     @Test func aChangedFileIsRasterisedAgain() throws {
         let url = FileManager.default.temporaryDirectory.appending(path: "fanous-mask-\(UUID().uuidString).png")
         defer { try? FileManager.default.removeItem(at: url) }
@@ -296,25 +350,91 @@ struct MaskTests {
         let file = Mutex<URL?>(url)
         let compiler = OutputCompiler(device: device, media: { _ in file.withLock { $0 } })
         var config = OutputConfig(id: 1)
-        config.slices[0].masks = [MaskShape(image: MaskImage(folder: 4, file: 2))]
+        config.slices[0].masks = [MaskShape(image: MaskImage(folder: 4, file: 2)), MaskShape(mode: .subtract, path: Self.square(0, 0, 0.25, 0.25))]
         func bytes(_ texture: MTLTexture?) throws -> [UInt8] {
             let texture = try #require(texture)
             var out = [UInt8](repeating: 0, count: texture.width * texture.height)
             texture.getBytes(&out, bytesPerRow: texture.width, from: MTLRegionMake2D(0, 0, texture.width, texture.height), mipmapLevel: 0)
             return out
         }
-        let first = try compiler.compile(config, index: 1, drawable: (32, 18))
-        #expect(try bytes(first.slices[0].mask).allSatisfy { $0 == 255 })
-        #expect(try compiler.compile(config, index: 1, drawable: (32, 18)).slices[0] === first.slices[0], "the same file: a hit")
+        let first = try compiler.compile(config, index: 1, drawable: (32, 16))
+        #expect(try bytes(first.slices[0].mask)[8 * 32 + 16] == 255 && bytes(first.slices[0].mask)[0] == 0)
+        #expect(try compiler.compile(config, index: 1, drawable: (32, 16)).slices[0] === first.slices[0], "the same file: a hit")
+        var dragged = config
+        dragged.slices[0].masks[1].path?[2] = MaskPoint(0.3, 0.3)
+        let drag = try compiler.compile(dragged, index: 1, drawable: (32, 16))
+        #expect(drag.slices[0].mask !== first.slices[0].mask && drag.slices[0].images.first === first.slices[0].images.first, "not decoded again")
 
         try Self.writeGrey([UInt8](repeating: 0, count: 64), width: 8, height: 8, to: url)
         try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(10)], ofItemAtPath: url.path)
-        let changed = try compiler.compile(config, index: 1, drawable: (32, 18))
-        #expect(changed.slices[0] !== first.slices[0] && changed.slices[0].mask !== first.slices[0].mask)
+        let changed = try compiler.compile(config, index: 1, drawable: (32, 16))
+        #expect(changed.slices[0] !== first.slices[0] && changed.slices[0].mask !== first.slices[0].mask && changed.slices[0].images.first !== first.slices[0].images.first)
         #expect(try bytes(changed.slices[0].mask).allSatisfy { $0 == 0 })
         file.withLock { $0 = nil }  // removed from the library
-        #expect(try bytes(compiler.compile(config, index: 1, drawable: (32, 18)).slices[0].mask).allSatisfy { $0 == 0 }, "covers nothing")
-        withExtendedLifetime(first) {}
+        #expect(try bytes(compiler.compile(config, index: 1, drawable: (32, 16)).slices[0].mask).allSatisfy { $0 == 0 }, "covers nothing")
+        withExtendedLifetime((first, drag)) {}
+    }
+
+    /// A file saved over is probed again, and the library has no playable file at its number for that moment: an image
+    /// mask still reads it (`LibraryIndex.still`, by the scan), so a door cut out by a subtract mask does not close while
+    /// the probe runs. A movie at that number is no image mask.
+    @Test func anImageMaskKeepsItsFileWhileTheLibraryProbesIt() async throws {
+        let base = FileManager.default.temporaryDirectory.appending(path: "fanous-masklib-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: base) }
+        let (root, cache) = (base.appending(path: "root"), base.appending(path: "cache"))
+        try FileManager.default.createDirectory(at: root.appending(path: "003_Masks"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        let file = root.appending(path: "003_Masks/005_door.png")
+        try Self.writeGrey([UInt8](repeating: 255, count: 64), width: 8, height: 8, to: file)
+        try Data("not a movie".utf8).write(to: root.appending(path: "003_Masks/006_clip.mov"))
+        let library = LibraryIndex(root: root, cacheDirectory: cache, logger: Logger(label: "test"))
+        library.start()
+        defer { library.stop() }
+        let key = MediaKey(folder: 3, file: 5)
+        #expect(await waitUntil { library.resolve(key) != nil })
+        #expect(library.still(key)?.lastPathComponent == "005_door.png" && library.still(MediaKey(folder: 3, file: 6)) == nil, "a movie is no image mask")
+        #expect(library.item(MediaKey(folder: 3, file: 6))?.kind == .movie && library.item(MediaKey(folder: 3, file: 7)) == nil)
+
+        let compiler = OutputCompiler(device: try MetalContext().device, media: { library.still(MediaKey(folder: $0.folder, file: $0.file)) })
+        var config = OutputConfig(id: 1)
+        config.slices[0].masks = [MaskShape(mode: .subtract, image: MaskImage(folder: 3, file: 5))]
+        func centre(_ plan: OutputPlan) throws -> UInt8 {
+            let texture = try #require(plan.slices[0].mask)
+            var out = [UInt8](repeating: 0, count: texture.width * texture.height)
+            texture.getBytes(&out, bytesPerRow: texture.width, from: MTLRegionMake2D(0, 0, texture.width, texture.height), mipmapLevel: 0)
+            return out[8 * 16 + 8]
+        }
+        let before = try compiler.compile(config, index: 1, drawable: (16, 16))
+        #expect(try centre(before) == 0, "the door is cut out")
+        // saved again as a darker picture, and scanned as FSEvents makes the library do: probing again
+        try Self.writeGrey([UInt8](repeating: 200, count: 64), width: 8, height: 8, to: file)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(10)], ofItemAtPath: file.path)
+        library.rescan()
+        let probing = library.resolve(key) == nil
+        let during = try compiler.compile(config, index: 1, drawable: (16, 16))
+        #expect(try abs(Int(centre(during)) - 55) <= 2, "the new picture at once\(probing ? ", while probing" : "")")
+        withExtendedLifetime(before) {}
+    }
+
+    /// A project from before M2.7 whose mask has a negative feather (the old number field kept one, the old raster drew a
+    /// hard edge) keeps its mask with no feather, and the output takes other edits.
+    @Test func anOldNegativeFeatherIsNone() throws {
+        let old = Self.oldOutput.replacingOccurrences(of: #""feather":24"#, with: #""feather":-3"#)
+        var project = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx)
+        try project.set(.array([try JSONDecoder().decode(JSONValue.self, from: Data(old.utf8))]), at: "/outputs")
+        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-masks-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try ProjectDocument.save(project, to: url)
+        let loaded = try #require(ProjectDocument.load(from: url))
+        let config = try #require(ProjectDocument.outputs(from: loaded).first)
+        #expect(config.slices[0].masks.map(\.feather) == [0] && config.preset(2)?.slices[0].masks.map(\.feather) == [0])
+        #expect(try OutputCompiler(device: MetalContext().device).compile(config, index: 1, drawable: (32, 18)).slices[0].mask != nil)
+
+        let (store, _) = try PresetCommandsTests.makeStore(outputs: 1)
+        store.correct(try #require(loaded["outputs"]), at: "/outputs")
+        _ = try store.execute("output.set", args: ["id": 1, "path": "/intensity", "value": 0.5], role: .programmer).get()
+        _ = try store.execute("output.set", args: ["id": 1, "path": "/slices/0/masks/0/feather", "value": -2], role: .programmer).get()
+        #expect(PresetCommandsTests.output(store, 1).intensity == 0.5 && PresetCommandsTests.output(store, 1).slices[0].masks[0].feather == 0)
     }
 
     /// Readiness warns (never blocks) for every image mask whose file the library lacks, in the edited mapping and in

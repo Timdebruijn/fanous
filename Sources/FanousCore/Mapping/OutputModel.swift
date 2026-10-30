@@ -143,9 +143,22 @@ public struct MaskShape: Codable, Hashable, Sendable {
         (self.mode, self.feather, self.path, self.image) = (mode, feather, path, image)
     }
 
-    /// Why the mask cannot be drawn (`output.set` refuses it, the compile skips it), nil when it can.
+    private enum CodingKeys: String, CodingKey { case mode, feather, path, image }
+
+    /// A hand-edited mask without a mode or feather is an add mask with none, rather than an output list that does not
+    /// decode.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try c.decodeIfPresent(Mode.self, forKey: .mode) ?? .add
+        feather = try c.decodeIfPresent(Double.self, forKey: .feather) ?? 0
+        path = try c.decodeIfPresent([MaskPoint].self, forKey: .path)
+        image = try c.decodeIfPresent(MaskImage.self, forKey: .image)
+    }
+
+    /// Why the mask cannot be drawn (`output.set` refuses it, the compile skips it), nil when it can. A negative feather
+    /// is none (`ProjectDocument.validate` clamps it).
     public var problem: String? {
-        guard feather.isFinite, feather >= 0 else { return "a mask's feather must be 0 or more" }
+        guard feather.isFinite else { return "a mask's feather must be a number" }
         switch (path, image) {
         case (let path?, nil):
             guard path.count >= 3 else { return "a mask path needs at least 3 points" }

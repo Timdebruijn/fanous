@@ -202,12 +202,16 @@ struct MappingMathTests {
         #expect(try !String(decoding: encoder.encode(SliceConfig(id: 1)), as: UTF8.self).contains("masks"), "none: no key")
     }
 
-    /// What `output.set` refuses and the compile leaves out: a negative or non-finite feather, a path of fewer than 3
-    /// points or with a non-finite number (handles included), neither or both of path and image, an image outside 1–255.
-    @Test func aMaskThatCannotBeDrawnSaysWhy() {
+    /// What `output.set` refuses and the compile leaves out: a non-finite feather (a negative one is none), a path of fewer
+    /// than 3 points or with a non-finite number (handles included), neither or both of path and image, an image outside
+    /// 1–255. A mask without a mode or feather decodes as an add mask without one.
+    @Test func aMaskThatCannotBeDrawnSaysWhy() throws {
         let triangle = [MaskPoint(0, 0), MaskPoint(1, 0), MaskPoint(0, 1)]
+        #expect(MaskShape(feather: -3, path: triangle).problem == nil)
+        let bare = try JSONDecoder().decode(MaskShape.self, from: Data(#"{"path":[{"x":0,"y":0},{"x":1,"y":0},{"x":0,"y":1}]}"#.utf8))
+        #expect(bare == MaskShape(mode: .add, feather: 0, path: triangle))
         let refused = [
-            MaskShape(feather: -1, path: triangle), MaskShape(feather: .infinity, path: triangle), MaskShape(path: Array(triangle.prefix(2))),
+            MaskShape(feather: .infinity, path: triangle), MaskShape(feather: .nan, path: triangle), MaskShape(path: Array(triangle.prefix(2))),
             MaskShape(path: triangle + [MaskPoint(.nan, 0)]), MaskShape(path: triangle + [MaskPoint(0, 0, out: MapPoint(0, .infinity))]), MaskShape(),
             MaskShape(path: triangle, image: MaskImage(folder: 1, file: 1)), MaskShape(image: MaskImage(folder: 0, file: 1)),
             MaskShape(image: MaskImage(folder: 1, file: 256)),
@@ -241,47 +245,110 @@ struct MappingMathTests {
         #expect(MaskMath.outline(square, width: 40, height: 20).map { [$0.x, $0.y] } == [[10, 5], [30, 5], [30, 15], [10, 15]])
     }
 
-    /// The feather (DESIGN.md §9.10 item 5): a linear ramp, 0.5 on the edge and 0 or 1 at ±feather/2 (here an edge through
-    /// the centres of column 20 with an 8 px feather), and the banded pass gives exactly what the distance to every segment
-    /// from every pixel gives, slanted edges included.
+    /// The feather (DESIGN.md §9.10 item 5): a linear ramp, 0.5 on the edge and 0 or 1 at ±feather/2 (here a right edge
+    /// through the centres of column 20 and a left one through those of column 19, with an 8 px feather), and the banded
+    /// pass gives exactly what the distance to every segment from every pixel gives, slanted edges and both directions
+    /// included.
     @Test func theFeatherIsALinearRampWithinHalfItsWidth() {
         let (w, h) = (40, 9)
-        var coverage = [UInt8](repeating: 0, count: w * h)
-        for i in coverage.indices where i % w <= 20 { coverage[i] = 255 }  // centres up to x = 20.5, the edge
         // only the edge at x = 20.5 is within 4 px of a pixel centre
-        MaskMath.feather(&coverage, outline: [(-10, -10), (20.5, -10), (20.5, 19), (-10, 19)], feather: 8, width: w, height: h)
-        let row = Array(coverage[(4 * w)..<(5 * w)])
+        let right = MaskMath.feathered([(-10, -10), (20.5, -10), (20.5, 19), (-10, 19)], feather: 8, width: w, height: h)
+        let row = Array(right[(4 * w)..<(5 * w)])
         #expect(row[20] == 128, "on the edge")
         #expect(row[16] == 255 && row[17] == 223 && row[23] == 32 && row[24] == 0, "±feather/2 and between")
         #expect(row == (0..<w).map { UInt8((min(1, max(0, 0.5 + Double(20 - $0) / 8)) * 255).rounded()) })
-        #expect((0..<h).allSatisfy { Array(coverage[($0 * w)..<(($0 + 1) * w)]) == row }, "every row the same")
+        // every row the same, but for rounding on the edge itself (0.5 ± 1e-16 is 127 or 128)
+        #expect((0..<h).allSatisfy { y in (0..<w).allSatisfy { abs(Int(right[y * w + $0]) - Int(row[$0])) <= ($0 == 20 ? 1 : 0) } })
+        // the fill counts a centre on a left edge inside: still 0.5 there
+        let left = MaskMath.feathered([(19.5, -10), (60, -10), (60, 19), (19.5, 19)], feather: 8, width: w, height: h)
+        #expect(Array(left[(4 * w)..<(5 * w)]) == (0..<w).map { UInt8((min(1, max(0, 0.5 + Double($0 - 19) / 8)) * 255).rounded()) })
 
-        // a pentagon with slanted, nearly flat and nearly upright edges against the brute force over every segment
-        let polygon: [(x: Double, y: Double)] = [(5.2, 3.1), (60.7, 9.4), (61.3, 44.8), (30.1, 58.6), (2.9, 40.2)]
-        let (pw, ph, feather) = (64, 64, 6.5)
-        func inside(_ x: Double, _ y: Double) -> Bool {
-            var odd = false
-            for i in polygon.indices {
-                let (a, b) = (polygon[i], polygon[(i + 1) % polygon.count])
-                if (a.y > y) != (b.y > y), x < a.x + (y - a.y) / (b.y - a.y) * (b.x - a.x) { odd.toggle() }
+        // a pentagon with slanted, nearly flat and nearly upright edges, and an arrow with two reflex corners, against the
+        // brute force over every segment, in both directions
+        let pentagon: [(x: Double, y: Double)] = [(5.2, 3.1), (60.7, 9.4), (61.3, 44.8), (30.1, 58.6), (2.9, 40.2)]
+        let arrow: [(x: Double, y: Double)] = [(4.3, 20.2), (34.6, 20.7), (35.1, 4.4), (60.2, 31.9), (34.8, 59.3), (34.2, 42.1), (4.9, 41.6)]
+        let (n, feather) = (64, 6.5)
+        for polygon in [pentagon, arrow] {
+            func inside(_ x: Double, _ y: Double) -> Bool {
+                var odd = false
+                for i in polygon.indices {
+                    let (a, b) = (polygon[i], polygon[(i + 1) % polygon.count])
+                    if (a.y > y) != (b.y > y), x < a.x + (y - a.y) / (b.y - a.y) * (b.x - a.x) { odd.toggle() }
+                }
+                return odd
             }
-            return odd
-        }
-        var banded = [UInt8](repeating: 0, count: pw * ph), brute = banded
-        for i in banded.indices where inside(Double(i % pw) + 0.5, Double(i / pw) + 0.5) { banded[i] = 255 }
-        #expect(MaskMath.fill(polygon, width: pw, height: ph) == banded, "the fill samples the pixel centres")
-        for i in brute.indices {
-            let (x, y) = (Double(i % pw) + 0.5, Double(i / pw) + 0.5)
-            var d = Double.infinity
-            for j in polygon.indices {
-                let (a, b) = (polygon[j], polygon[(j + 1) % polygon.count])
-                let t = min(1, max(0, ((x - a.x) * (b.x - a.x) + (y - a.y) * (b.y - a.y)) / (pow(b.x - a.x, 2) + pow(b.y - a.y, 2))))
-                d = min(d, hypot(a.x + t * (b.x - a.x) - x, a.y + t * (b.y - a.y) - y))
+            var brute = [UInt8](repeating: 0, count: n * n)
+            for i in brute.indices {
+                let (x, y) = (Double(i % n) + 0.5, Double(i / n) + 0.5)
+                var d = Double.infinity
+                for j in polygon.indices {
+                    let (a, b) = (polygon[j], polygon[(j + 1) % polygon.count])
+                    let t = min(1, max(0, ((x - a.x) * (b.x - a.x) + (y - a.y) * (b.y - a.y)) / (pow(b.x - a.x, 2) + pow(b.y - a.y, 2))))
+                    d = min(d, hypot(a.x + t * (b.x - a.x) - x, a.y + t * (b.y - a.y) - y))
+                }
+                brute[i] = UInt8((min(1, max(0, 0.5 + (inside(x, y) ? d : -d) / feather)) * 255).rounded())
             }
-            brute[i] = UInt8((min(1, max(0, 0.5 + (banded[i] == 255 ? d : -d) / feather)) * 255).rounded())
+            for outline in [polygon, polygon.reversed()] {
+                #expect(MaskMath.fill(outline, width: n, height: n).map { $0 != 0 } == brute.indices.map { inside(Double($0 % n) + 0.5, Double($0 / n) + 0.5) })
+                let banded = MaskMath.feathered(outline, feather: feather, width: n, height: n)
+                #expect(banded == brute, "\(polygon.count) corners: \(zip(banded, brute).filter { $0 != $1 }.count) pixels differ")
+            }
         }
-        MaskMath.feather(&banded, outline: polygon, feather: feather, width: pw, height: ph)
-        #expect(banded == brute, "\(zip(banded, brute).filter { $0 != $1 }.count) pixels differ")
+    }
+
+    /// Where a path crosses or overlaps itself (the nonzero rule fills it) its segments inside the filled region make no
+    /// ramp: a pentagram drawn in one stroke, a freehand loop that ends inside itself and a bow-tie through one point darken
+    /// no sample farther than feather/2 from the filled region's edge (found on a grid 4 × finer), and inside the ramp
+    /// follows the distance to that edge, also at the corners where the path crosses itself.
+    @Test func aSelfCrossingPathFeathersOnlyAtTheFilledRegionsEdge() {
+        func samples(_ outline: [(x: Double, y: Double)], size n: Int, feather: Double) -> (seams: Int, ramp: Int, off: Int) {
+            let raster = MaskMath.feathered(outline, feather: feather, width: n, height: n)
+            let (k, fine) = (4, n * 4)
+            let finer = MaskMath.fill(outline, width: fine, height: fine, cell: (0.25, 0.25))
+            // per sample, the distance to the edge within feather/2 (and a fine cell): to the midpoints between a fine
+            // inside sample and its outside neighbour
+            let reach = feather / 2 + 1 / Double(k)
+            var distance = [Double](repeating: .infinity, count: n * n)
+            for fy in 0..<fine {
+                for fx in 0..<fine where finer[fy * fine + fx] != 0 {
+                    for (x, y) in [(fx - 1, fy), (fx + 1, fy), (fx, fy - 1), (fx, fy + 1)] where x < 0 || y < 0 || x >= fine || y >= fine || finer[y * fine + x] == 0 {
+                        let (cx, cy) = ((Double(fx + x) / 2 + 0.5) / Double(k), (Double(fy + y) / 2 + 0.5) / Double(k))
+                        for sy in max(0, Int(cy - reach))...min(n - 1, Int(cy + reach)) {
+                            for sx in max(0, Int(cx - reach))...min(n - 1, Int(cx + reach)) {
+                                distance[sy * n + sx] = min(distance[sy * n + sx], hypot(Double(sx) + 0.5 - cx, Double(sy) + 0.5 - cy))
+                            }
+                        }
+                    }
+                }
+            }
+            let winding = MaskMath.fill(outline, width: n, height: n)
+            var (seams, ramp, off) = (0, 0, 0)
+            for i in raster.indices where winding[i] != 0 {
+                if raster[i] < 255 { if distance[i] <= reach { ramp += 1 } else { seams += 1 } }
+                // within a fine cell of the true distance
+                if distance[i] < feather / 2 - 1, abs(Double(raster[i]) - (0.5 + distance[i] / feather) * 255) > 255 / (Double(k) * feather) + 1 { off += 1 }
+            }
+            return (seams, ramp, off)
+        }
+        let star = (0..<5).map { i -> (x: Double, y: Double) in
+            let a = -Double.pi / 2 + Double(i * 2) * 2 * .pi / 5
+            return (100 + 90 * cos(a), 100 + 90 * sin(a))
+        }
+        // one turn of a circle, then 30° more spiralling inward to 0.85 r: the finger lifts inside, and the path closes
+        let loop = (0..<240).map { i -> (x: Double, y: Double) in
+            let a = Double(i) / 240 * 2 * .pi
+            return (100 + 80 * cos(a), 100 + 80 * sin(a))
+        } + (0...20).map { i -> (x: Double, y: Double) in
+            let a = 2 * .pi + Double(i) / 20 * (.pi / 6), r = 80 * (1 - 0.15 * Double(i) / 20)
+            return (100 + r * cos(a), 100 + r * sin(a))
+        }
+        // two triangles drawn in one stroke that meet at one point: the path passes it twice and touches itself there
+        // without crossing
+        let bowtie: [(x: Double, y: Double)] = [(100, 100), (20, 40), (20, 160), (100, 100), (180, 170), (180, 30)]
+        for (name, outline, feather) in [("pentagram", star, 8.0), ("loop", loop, 12.0), ("bow-tie", bowtie, 8.0)] {
+            let (seams, ramp, off) = samples(outline, size: 200, feather: feather)
+            #expect(seams == 0 && ramp > 0 && off == 0, "\(name): \(seams) samples darkened away from the edge, \(ramp) on the ramp, \(off) off it")
+        }
     }
 
     @Test func sliceMeshTessellatesTheDestinationQuad() {

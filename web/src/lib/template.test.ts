@@ -62,5 +62,12 @@ describe('templateSVG', () => {
     expect(svg).toContain('<mask id="mask0"><rect x="0" y="0" width="100" height="100" fill="white"/><polygon points="20.0,20.0 ');
     expect(svg).toContain('fill="black"/></mask>');
     expect(svg.match(/<polygon/g)?.length).toBe(2);
+    // listed subtract first: the add still goes first, so the hole stays a hole, as the engine draws it in any order
+    const square = [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 }, { x: 0.9, y: 0.9 }, { x: 0.1, y: 0.9 }];
+    const both = [{ mode: 'subtract' as const, feather: 0, path: triangle }, { mode: 'add' as const, feather: 0, path: square }];
+    const holed = templateSVG({ id: 1, name: 'O', slices: [{ id: 1, canvas: 1, source: { x: 0, y: 0, w: 1, h: 1 }, dest: unit, masks: both, opacity: 1 }] } as unknown as OutputConfig, { width: 100, height: 100 });
+    const inMask = holed.slice(holed.indexOf('<mask'), holed.indexOf('</mask>'));
+    expect(inMask.indexOf('fill="white"')).toBeGreaterThan(-1);
+    expect(inMask.indexOf('fill="white"')).toBeLessThan(inMask.indexOf('fill="black"'));
   });
 });

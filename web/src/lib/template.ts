@@ -79,7 +79,10 @@ export function templateSVG(output: OutputConfig, canvas: { width: number; heigh
       });
       const adds = shapes.some((s) => s.mode === 'add');
       parts.push(`<mask id="mask${i}">${adds ? '' : `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="white"/>`}`);
-      for (const s of shapes) parts.push(`<polygon points="${s.points}" fill="${s.mode === 'add' ? 'white' : 'black'}"/>`);
+      // the adds first, then the subtracts over them: the engine's order-free union minus union
+      for (const s of [...shapes.filter((m) => m.mode === 'add'), ...shapes.filter((m) => m.mode !== 'add')]) {
+        parts.push(`<polygon points="${s.points}" fill="${s.mode === 'add' ? 'white' : 'black'}"/>`);
+      }
       parts.push(`</mask><rect width="${W}" height="${H}" fill="${colour}" fill-opacity="0.28" mask="url(#mask${i})"/>`);
       for (const s of shapes) parts.push(`<polygon points="${s.points}" fill="none" stroke="${colour}" stroke-width="${line}"/>`);
     } else {

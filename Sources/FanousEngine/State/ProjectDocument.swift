@@ -318,6 +318,8 @@ public enum ProjectDocument {
         for i in output.slices.indices {
             guard output.slices[i].dest.count == 4 else { throw CommandError.invalidArgs("slice dest needs 4 points") }
             output.slices[i].opacity = min(1, max(0, output.slices[i].opacity))
+            // a negative feather (the number field before M2.7 kept one) is none; NaN stays and is refused below
+            for m in output.slices[i].masks.indices where output.slices[i].masks[m].feather < 0 { output.slices[i].masks[m].feather = 0 }
             if let problem = output.slices[i].masks.lazy.compactMap(\.problem).first { throw CommandError.invalidArgs("slice \(output.slices[i].id): \(problem)") }
         }
         if let region = output.region, region.w <= 0 || region.h <= 0 { throw CommandError.invalidArgs("region needs a positive size") }
@@ -503,7 +505,8 @@ public enum ProjectDocument {
             guard case .object(var fields) = slice, let old = fields.removeValue(forKey: "mask") else { return slice }
             changed = true
             if fields["masks"] == nil, let path = old["path"]?.array, path.count >= 3 {
-                fields["masks"] = [["mode": .string("add"), "feather": old["feather"] ?? .number(0), "path": .array(path)]]
+                // a negative feather (which the old raster drew as a hard edge) is none, as `validate` makes it
+                fields["masks"] = [["mode": .string("add"), "feather": .number(max(0, old["feather"]?.double ?? 0)), "path": .array(path)]]
             }
             return .object(fields)
         }

@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it, vi } from 'vitest';
-import { canvasSizeError, canvasTarget, colorOf, compareLease, freePresetNumber, previewReady, layerCanvas, layerRuns, layersOn, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, recalledText, sharedPresets, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, defaultMask, handles, keystoneBadges, maskHandle, meshIdentity, modeText, outlines, outputSize, statusText, type OutputConfig } from './outputs';
+import { canvasSizeError, canvasTarget, colorOf, compareLease, freePresetNumber, previewReady, layerCanvas, layerRuns, layersOn, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, recalledText, sharedPresets, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, defaultMask, handles, keystoneBadges, maskHandle, maskTarget, meshIdentity, modeText, outlines, outputSize, statusText, type OutputConfig } from './outputs';
 
 const output: OutputConfig = {
   id: 1,
@@ -70,6 +70,17 @@ describe('outputs helpers', () => {
     lines[1]!.points.forEach((p) => expect(Math.hypot(p.x - 0.5, p.y - 0.5)).toBeCloseTo(0.25, 3));
     expect(lines[1]!.points[0]).toEqual({ x: 0.75, y: 0.5 });
     expect(defaultMask()).toMatchObject({ mode: 'add', feather: 0 });
+  });
+
+  it("the mask tools act on the selected point's mask, else the first path mask, never an image mask", () => {
+    const path = output.slices[0]!.masks![0]!;
+    const slice = { ...output.slices[0]!, masks: [{ mode: 'add' as const, feather: 0, image: { folder: 1, file: 1 } }, path, { ...path, feather: 9 }] };
+    // a point of mask 3 (index 2) selected: Feather writes /slices/0/masks/2/feather, no other mask
+    expect(maskTarget(slice, 0, handles({ ...output, slices: [slice] }, 'mask', 0)[3]!.path)).toBe(2);
+    expect(maskTarget(slice, 0, null), 'nothing selected: the first path mask, not the image').toBe(1);
+    expect(maskTarget(slice, 0, '/slices/1/masks/2/path/0'), "another slice's point").toBe(1);
+    expect(maskTarget({ ...slice, masks: [slice.masks[0]!] }, 0, null), 'only an image mask: none, the tools add one').toBe(-1);
+    expect(maskTarget(undefined, 0, null)).toBe(-1);
   });
 
   it('draws mesh rows and columns as outlines', () => {

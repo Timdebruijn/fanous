@@ -87,6 +87,8 @@ public final class Engine: @unchecked Sendable {
         var canvases: Set<Int> = [1]
     }
     private let canvasUse = Mutex(CanvasUse())
+    /// The files of the image masks in use as the last library change saw them (`imageMaskFilesChanged`).
+    private let maskFiles = Mutex<[String]>([])
     /// B31: keeps the rendered canvas in step with the project's.
     private var canvasSwitch: CanvasSwitch?
     // Phase 7: show control
@@ -254,12 +256,11 @@ public final class Engine: @unchecked Sendable {
         let library = LibraryIndex(root: libraryRoot, cacheDirectory: AppPaths.cache, logger: logger)
         let thumbnailer = Thumbnailer(context: context, directory: AppPaths.cache.appending(path: "thumbnails"), logger: logger)
         library.thumbnailer = { url, metadata, kind in thumbnailer.make(for: url, metadata: metadata, kind: kind) }
-        // a file that becomes playable (a probe after a scan or a root change) reaches layers still showing "missing"
-        // and image masks (§9.10 item 5) are compiled again: a changed, added or removed file gives their cache entries new keys
+        // a file that becomes playable (a probe after a scan or a root change) reaches layers still showing "missing", and a
+        // changed image mask file is compiled again
         library.onChange = { [weak self] in
-            guard let self else { return }
-            render?.loader.reresolveMissingLibrary()
-            if !Self.imageMasks(in: canvasUse.withLock({ $0.outputs })).isEmpty { Task { @MainActor in self.applyCanvasUse() } }
+            self?.render?.loader.reresolveMissingLibrary()
+            self?.imageMaskFilesChanged()
         }
         library.start()
         libraryBox.withLock { $0 = library }
@@ -807,8 +808,20 @@ public final class Engine: @unchecked Sendable {
         }
     }
 
-    /// An image mask's file in the library now; nil when there is none, and the mask covers nothing.
-    private func maskFile(_ image: MaskImage) -> URL? { library?.resolve(MediaKey(folder: image.folder, file: image.file)) }
+    /// An image mask's file: the library's still with that number, also while it is probed again after a save; nil when
+    /// there is none or it is not a still, and the mask covers nothing.
+    private func maskFile(_ image: MaskImage) -> URL? { library?.still(MediaKey(folder: image.folder, file: image.file)) }
+
+    /// The library changed (a scan, a probe, a new root): the outputs compile again when a file an image mask uses changed,
+    /// appeared or went, once per change, so the cache gives it a new raster.
+    private func imageMaskFilesChanged() {
+        let files = Self.imageMasks(in: canvasUse.withLock { $0.outputs }).map { maskFile($0.image).map(OutputCompiler.stamp) ?? "" }
+        guard maskFiles.withLock({ seen in
+            defer { seen = files }
+            return seen != files
+        }) else { return }
+        Task { @MainActor in self.applyCanvasUse() }
+    }
 
     /// Compiles one output for the preview size; overlaps and feathers scale with the preview.
     /// `outputs` is passed in: this runs on the control queue from `projectChanged`, where `store.project` would deadlock.
@@ -1125,8 +1138,10 @@ public final class Engine: @unchecked Sendable {
         context.modeIssues = modeChecks.withLock { $0 }.sorted { $0.key < $1.key }.compactMap { id, check in check.issue.map { "Output \(id): \($0)" } }
         context.layerErrors = projectLayers.compactMap { layer in layer.mediaStatus.withLock { $0.error.map { "Layer \(layer.index + 1): \($0)" } } }
         context.libraryRoot = library?.snapshot.root ?? ""
-        context.maskImagesMissing = Self.imageMasks(in: canvasUse.withLock { $0.outputs }).filter { maskFile($0.image) == nil }.map {
-            "\($0.place): folder \($0.image.folder) file \($0.image.file)"
+        context.maskImagesMissing = Self.imageMasks(in: canvasUse.withLock { $0.outputs }).compactMap { place, image in
+            let item = library?.item(MediaKey(folder: image.folder, file: image.file))
+            guard item?.kind != .still else { return nil }
+            return "\(place): folder \(image.folder) file \(image.file)\(item == nil ? "" : " (not a still image)")"
         }
         context.shownFolder0 = projectLayers.compactMap { layer in layer.mediaStatus.withLock { $0.folder == 0 ? $0.file : nil } }
         context.sceneCapture = options.scene?.media.contains { $0.capture != nil } ?? false
@@ -1534,6 +1549,7 @@ public final class Engine: @unchecked Sendable {
         }
         libraryBox.withLock { $0 = next }
         render?.loader.reresolveLibrary()
+        imageMaskFilesChanged()  // the new root's scan changed the library before it was the engine's
         old.stop()
         logger.info("library root changed", metadata: ["from": "\(old.root.path)", "to": "\(root)"])
     }
