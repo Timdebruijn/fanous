@@ -16,6 +16,9 @@ import FanousCore
 /// during a show. Blend modes read the destination with framebuffer fetch
 /// (`[[color(0)]]`), so no extra passes.
 public enum ShaderSource {
+    /// Seven-segment digits 0–9, bits gfedcba: the test patterns' and generators' digits, and the edit overlay's label.
+    static let sevenSegments: [UInt8] = [0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F]
+
     public static let metal = """
     #include <metal_stdlib>
     using namespace metal;
@@ -326,7 +329,7 @@ public enum ShaderSource {
         return out;
     }
 
-    constant uint segMasks[10] = { 0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F };  // gfedcba
+    constant uint segMasks[10] = { \(ShaderSource.sevenSegments.map(String.init).joined(separator: ", ")) };  // gfedcba
 
     // one seven-segment character in its cell (q in [0,1]², y down)
     static float seven_seg(float2 q, uint c) {
@@ -644,5 +647,59 @@ public enum ShaderSource {
         c += (ign(in.position.xy) - 0.5) / 255.0;
         return float4(c, a);
     }
+
+    // Edit overlay (DESIGN.md §9.10 item 4): six vertices per segment, both ends through the edited warp and the keystone
+    // like a slice vertex, then extruded in pixels (Metal has no wide lines). Instance 0 draws every segment 1 px wider on
+    // each side in black, instance 1 the cores in white or yellow over all of them, so a crossing line never cuts another
+    // with its black edge. At the output's level, the Master and 0 at a blackout (u.intensity); no blend, colour or lift.
+    struct OverlaySegment {
+        float2 a, b;        // ends, output coordinates before the warp
+        float2 offA, offB;  // pixels added after the keystone: the crosshair and its label sit around one point
+        uint flags;         // 1 = the selection (yellow), 2 = wide (its crosshair)
+    };
+
+    struct OverlayOut {
+        float4 position [[position]];
+        float3 colour [[flat]];
+    };
+
+    // the vertex side of OverlayOut plus the clip distances, as MappedVertexOut
+    struct OverlayVertexOut {
+        float4 position [[position]];
+        float3 colour [[flat]];
+        float clip [[clip_distance]] [4];
+    };
+
+    constant float2 overlayCorners[6] = { float2(0, 0), float2(0, 1), float2(1, 0), float2(1, 0), float2(0, 1), float2(1, 1) };  // (end, side)
+
+    vertex OverlayVertexOut overlay_vertex(uint vid [[vertex_id]], uint iid [[instance_id]],
+                                           const device OverlaySegment* segments [[buffer(0)]],
+                                           constant MappedUniforms& u [[buffer(1)]],
+                                           texture2d<float> warp [[texture(0)]],
+                                           sampler linearSampler [[sampler(0)]]) {
+        OverlaySegment s = segments[vid / 6u];
+        float2 corner = overlayCorners[vid % 6u];
+        bool warps = (u.flags & 1u) != 0u;
+        float2 pa = warps ? warped(warp, linearSampler, s.a) : s.a, pb = warps ? warped(warp, linearSampler, s.b) : s.b;
+        float3 ka = u.keystone * float3(pa, 1.0), kb = u.keystone * float3(pb, 1.0);  // w ≤ 0 beyond the vanishing line
+        float2 A = ka.xy / ka.z * u.size + s.offA, B = kb.xy / kb.z * u.size + s.offB;
+        float len = length(B - A);
+        float2 dir = len > 1e-3 ? (B - A) / len : float2(1.0, 0.0);  // no length: a square
+        float half_ = ((s.flags & 2u) != 0u ? 2.0 : 1.0) + (iid == 0u ? 1.0 : 0.0);  // the core's half width; its black edge 1 px more
+        float2 q = mix(A, B, corner.x) + dir * (corner.x * 2.0 - 1.0) * half_ + float2(-dir.y, dir.x) * (corner.y * 2.0 - 1.0) * half_;
+        OverlayVertexOut out;
+        out.position = ka.z > 0.0 && kb.z > 0.0 ? float4(q / u.size * float2(2.0, -2.0) + float2(-1.0, 1.0), 0.0, 1.0) : float4(0.0);  // else not drawn
+        out.colour = iid == 0u ? float3(0.0) : ((s.flags & 1u) != 0u ? float3(1.0, 1.0, 0.0) : float3(1.0)) * u.intensity;
+        // clipped at the output's own edges before the keystone, like the slices (mapped_vertex), at this vertex's end of the
+        // segment rather than where it is extruded to, so a line on an edge stays whole
+        float2 p = corner.x < 0.5 ? pa : pb;
+        out.clip[0] = p.x;
+        out.clip[1] = 1.0 - p.x;
+        out.clip[2] = p.y;
+        out.clip[3] = 1.0 - p.y;
+        return out;
+    }
+
+    fragment float4 overlay_fragment(OverlayOut in [[stage_in]]) { return float4(in.colour, 1.0); }
     """
 }

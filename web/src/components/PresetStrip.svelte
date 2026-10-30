@@ -5,7 +5,7 @@
   import { onDestroy, tick } from 'svelte';
   import { compareLease, freePresetNumber, recalledText, sharedPresets } from '../lib/outputs';
   import { lockTitle } from '../lib/show';
-  import { app, can, cmd, toastUndo } from '../lib/state.svelte';
+  import { app, can, client, cmd, toastUndo } from '../lib/state.svelte';
 
   // Mapping presets (DESIGN §9.10 item 3) of one output, or of a whole wall (`ids` = its outputs, one command each for
   // all of them): store the warp and slices as a number, recall, rename, remove, and hold Compare to see one on the
@@ -60,10 +60,11 @@
 
   // hold Compare: pointer down (captured, so the strip moving under it does not end the hold) or Space/Enter starts and
   // renews the lease; pointer up, cancel, lost capture, key up or blur ends it. Under show lock nothing is sent: the
-  // engine refuses it and has ended the lease itself
+  // engine refuses it and has ended the lease itself. Sent quietly: a renewal every 2 s must not clear another refusal's
+  // banner or raise one per renewal in an outage; the next renewal heals a lost one
   let comparing = $state(false);
   const lease = compareLease((preset) => {
-    if (!app.project.showLock) void cmd('output.show', { ids, preset });
+    if (!app.project.showLock) client.cmd('output.show', { ids, preset }).catch(() => {});
   });
   function startCompare() {
     if (!selected || compareOff) return;

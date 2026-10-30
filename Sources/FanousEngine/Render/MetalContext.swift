@@ -59,6 +59,8 @@ public final class MetalContext: @unchecked Sendable {
     let outputPipeline: MTLRenderPipelineState
     /// Slice mesh with warp, mask and blend map (DESIGN.md §9.5); slices alpha-blend over each other.
     let mappedPipeline: MTLRenderPipelineState
+    /// The edit overlay's lines (DESIGN.md §9.10 item 4), opaque over the slices.
+    let overlayPipeline: MTLRenderPipelineState
     let generatorPipeline: MTLRenderPipelineState
     let linearSampler: MTLSamplerState
     let nearestSampler: MTLSamplerState
@@ -116,10 +118,16 @@ public final class MetalContext: @unchecked Sendable {
         mapped.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
         mapped.colorAttachments[0].sourceAlphaBlendFactor = .one
         mapped.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        let overlay = MTLRenderPipelineDescriptor()
+        overlay.label = "edit overlay"
+        overlay.vertexFunction = library.makeFunction(name: "overlay_vertex")
+        overlay.fragmentFunction = library.makeFunction(name: "overlay_fragment")
+        overlay.colorAttachments[0].pixelFormat = Self.outputFormat
         do {
             layerPipelines = try layers.map { try device.makeRenderPipelineState(descriptor: $0) }
             outputPipeline = try device.makeRenderPipelineState(descriptor: output)
             mappedPipeline = try device.makeRenderPipelineState(descriptor: mapped)
+            overlayPipeline = try device.makeRenderPipelineState(descriptor: overlay)
             generatorPipeline = try device.makeRenderPipelineState(descriptor: generator)
         } catch {
             throw RenderError.pipeline("\(error)")

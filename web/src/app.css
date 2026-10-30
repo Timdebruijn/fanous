@@ -92,6 +92,8 @@ h2 { margin: 0; font-size: 17px; font-weight: 600; }
 .switch .track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--text-1); transition: transform 120ms; }
 .switch input:checked + .track { background: var(--accent); }
 .switch input:checked + .track::after { transform: translateX(20px); background: var(--ground); }
+.switch:has(input:focus-visible) .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.switch:has(input:disabled) { cursor: default; opacity: 0.55; }
 
 /* Badges, pills, dots */
 .badge { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 4px; background: var(--surface-3); color: var(--text-1); font: 600 11px var(--font-mono); letter-spacing: 0.04em; white-space: nowrap; }

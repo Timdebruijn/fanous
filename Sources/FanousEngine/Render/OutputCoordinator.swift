@@ -107,11 +107,14 @@ public final class OutputCoordinator {
     private var lastOrphans: [String] = []
     /// Called after every rebind with the new statuses (feeds `live.outputs`).
     public var onStatus: (@MainActor ([OutputStatus]) -> Void)?
+    /// The edit overlay of every output (DESIGN.md §9.10 item 4), handed to every plan compiled here; `live.outputs` reads it.
+    public nonisolated let editOverlay: EditOverlay
 
     public init(compositor: Compositor, context: MetalContext, fps: Double, displays: [DisplayInfo], logger: Logger) {
         self.compositor = compositor
         self.context = context
         self.compiler = OutputCompiler(device: context.device, logger: logger)
+        self.editOverlay = EditOverlay(device: context.device)
         self.fps = fps
         self.displays = displays
         self.logger = logger
@@ -124,6 +127,12 @@ public final class OutputCoordinator {
         self.outputs = outputs
         self.clockMaster = clockMaster
         rebind()
+    }
+
+    /// `output.overlay` (DESIGN.md §9.10 item 4): starts, renews or ends output `id`'s overlay lease at `now` (host time),
+    /// with this call's selection; its lines come from the mapping as last applied.
+    public func overlay(_ id: Int, on: Bool, selected: OverlaySelection?, at now: Double) {
+        editOverlay.lease(id, on: on, selected: selected, config: outputs.first { $0.id == id }, at: now)
     }
 
     /// Hot-plug or mode change.
@@ -233,7 +242,7 @@ public final class OutputCoordinator {
             for id in ids {
                 guard let config = outputs.first(where: { $0.id == id }) else { continue }
                 do {
-                    plans.append(try compiler.compile(config, index: id, drawable: (Int(size.width), Int(size.height))))
+                    plans.append(try compiler.compile(config, index: id, drawable: (Int(size.width), Int(size.height)), overlay: editOverlay))
                     statuses.append(OutputStatus(id: id, state: .bound, display: display.name, width: Int(size.width), height: Int(size.height), hz: display.hz, isMaster: displayID == newMaster))
                 } catch {
                     logger.error("output compile failed", metadata: ["output": "\(id)", "error": "\(error)"])
@@ -271,6 +280,9 @@ public final class OutputCoordinator {
             statuses.append(OutputStatus(id: id, state: .lost, display: config?.display?.name, width: 0, height: 0, hz: 0, isMaster: false))
         }
         for id in binding.unassigned { statuses.append(OutputStatus(id: id, state: .unassigned, display: nil, width: 0, height: 0, hz: 0, isMaster: false)) }
+        // a running edit overlay follows the edit (§9.10 item 4), after the plans it is drawn over are swapped in, so the
+        // lines never lead the picture during a drag
+        editOverlay.rebuild(outputs, at: CACurrentMediaTime())
         onStatus?(statuses.sorted { $0.id < $1.id })
     }
 
