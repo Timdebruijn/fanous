@@ -38,7 +38,8 @@ public enum ChannelMapDocument {
             let fallbackName = bands.first { $0.value == fallback }?.name ?? "?"
             return bands.map { "\($0.from)–\($0.to) \($0.name)" }.joined(separator: " · ") + " · rest = \(fallbackName)"
         case .index(let max):
-            return "0 = none · 1–\(max)"
+            // Output ch 6: 0 is the mapping as edited (DESIGN.md §6.4), not nothing
+            return "0 = \(spec.id == .output(.preset) ? "as edited" : "none") · 1–\(max)"
         }
     }
 
