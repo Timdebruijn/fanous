@@ -1772,7 +1772,7 @@ while denied captions "allow Fanous, then Engine › Restart Engine", and
 the user guide says the same. The step 3a paragraph above and the step 3b
 paragraph below describe the poll and `pending` as they were.
 
-**As built (2026-10-30, B127, PR #TBD):** TCC books the engine's camera and
+**As built (2026-10-30, B127, PR #138):** TCC books the engine's camera and
 screen grants on the shell, not on the engine: `launchctl print` shows the
 agent `managed_by com.apple.xpc.ServiceManagement` with `parent bundle
 identifier = org.fanous.app`, so the Camera and Screen & System Audio

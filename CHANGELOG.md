@@ -506,7 +506,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Changed: the capture permission texts say "allow Fanous" (the System Settings entry; macOS books the engine's
   grants on the Fanous app, the prompts still name "Fanous Engine"); DEVELOPMENT.md explains the stale entry after
   an ad-hoc rebuild, the `tccutil reset` recipe and why to choose Later in the "until it is quit" dialog (B127,
-  PR #TBD).
+  PR #138).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
