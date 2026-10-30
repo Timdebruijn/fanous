@@ -491,6 +491,23 @@ import UniformTypeIdentifiers
         #expect(FileManager.default.fileExists(atPath: notAMovie.path))
     }
 
+    /// Two uploads into a folder number the index has not seen yet land in one folder, also with different names: the
+    /// index is never rescanned here, like in the 500 ms before the debounced rescan or with a root missing at engine start.
+    @Test func uploadsIntoAnUnindexedFolderNumberShareOneFolder() throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: Logger(label: "test"))
+        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: Logger(label: "test"))
+        let still = directory.appending(path: "still.png")
+        try Self.writePNG(to: still, index: 0)
+        for name in ["red.png", "blue.png"] {
+            #expect(api.enqueue(source: still, folder: 3, file: nil, name: name, codec: nil, fps: nil, keepOriginal: true).status == 202)
+        }
+        #expect(queue.jobs.map { $0.destination.deletingLastPathComponent().lastPathComponent } == ["003_red", "003_red"])
+        #expect(try FileManager.default.contentsOfDirectory(atPath: library.root.path) == ["003_red"])
+    }
+
     /// B51: while a library root change holds enqueues, a new job is refused with 409 and nothing is queued.
     @Test func heldEnqueueIsRefused() throws {
         let directory = try tempDir("fanous-ingest-tests")
