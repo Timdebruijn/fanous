@@ -358,11 +358,9 @@ public final class Engine: @unchecked Sendable {
         versionsQueue.async {
             if let startProject { versions.saveAutomatic(startProject, reason: .start) } else { _ = versions.list() }
         }
-        let versionTimer = DispatchSource.makeTimerSource(queue: versionsQueue)
-        versionTimer.schedule(deadline: .now() + ProjectVersions.periodicInterval, repeating: ProjectVersions.periodicInterval)
-        versionTimer.setEventHandler { versions.saveAutomatic(store.project, reason: .periodic) }
-        versionTimer.resume()
-        self.versionTimer = versionTimer
+        versionTimer = DispatchSource.repeating(every: ProjectVersions.periodicInterval, on: versionsQueue) {
+            versions.saveAutomatic(store.project, reason: .periodic)
+        }
         // Phase 7: cues, timecode, show mode (DESIGN.md §14–15)
         let cues = CueRunner(dmx: dmx)
         cues.replace(list: ShowCommands.cueList(from: project))
@@ -1282,14 +1280,10 @@ public final class Engine: @unchecked Sendable {
 
     private func startReadinessTimer() {
         stopReadinessTimer()
-        let timer = DispatchSource.makeTimerSource(queue: feedQueue)
-        timer.schedule(deadline: .now() + 30, repeating: 30)
-        timer.setEventHandler { [weak self] in
+        readinessTimer = DispatchSource.repeating(every: 30, on: feedQueue) { [weak self] in
             self?.runReadiness()
             self?.showMode.touch()  // a long show still resumes after a power loss (ShowModeState.maxAgeAfterReboot)
         }
-        timer.resume()
-        readinessTimer = timer
     }
 
     private func stopReadinessTimer() {
@@ -1564,22 +1558,14 @@ public final class Engine: @unchecked Sendable {
     /// Live document at 10 Hz and the DMX monitor stream at 20 Hz, both off the render and DMX threads.
     private func startFeeds() {
         feedQueue.async { [self] in _ = currentHostFacts() }  // the slow first lookup runs now, not at the first join
-        let live = DispatchSource.makeTimerSource(queue: feedQueue)
-        live.schedule(deadline: .now() + 0.1, repeating: 0.1)
-        live.setEventHandler { [weak self] in self?.publishLive() }
-        live.resume()
-        liveTimer = live
+        liveTimer = DispatchSource.repeating(every: 0.1, on: feedQueue) { [weak self] in self?.publishLive() }
     }
 
     /// The DMX monitor stream (20 Hz) only runs while a client has a DMX subscription.
     private func setDMXStream(active: Bool) {
         feedQueue.async { [self] in
             if active, dmxTimer == nil {
-                let timer = DispatchSource.makeTimerSource(queue: feedQueue)
-                timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
-                timer.setEventHandler { [weak self] in self?.streamDMX() }
-                timer.resume()
-                dmxTimer = timer
+                dmxTimer = DispatchSource.repeating(every: 0.05, on: feedQueue) { [weak self] in self?.streamDMX() }
             } else if !active, let timer = dmxTimer {
                 timer.cancel()
                 dmxTimer = nil

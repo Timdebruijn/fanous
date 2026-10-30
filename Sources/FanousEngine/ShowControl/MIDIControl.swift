@@ -119,8 +119,7 @@ public struct MIDIMapping: Codable, Equatable, Sendable {
     }
 
     static func decode(_ value: JSONValue) -> MIDIMapping? {
-        guard let data = try? JSONEncoder().encode(value) else { return nil }
-        return try? JSONDecoder().decode(MIDIMapping.self, from: data)
+        try? value.decoded(as: MIDIMapping.self)
     }
 
     /// Same control and same target: learning it again replaces the entry instead of adding a second one.
@@ -474,9 +473,7 @@ final class MIDISourceListener: @unchecked Sendable {
     /// On the main thread.
     private func open() {
         guard !queue.sync(execute: { stopped }) else { return }
-        var timebase = mach_timebase_info()
-        mach_timebase_info(&timebase)
-        let secondsPerTick = Double(timebase.numer) / Double(timebase.denom) / 1e9
+        let secondsPerTick = 1 / PacedThread.ticksPerSecond
         var client = MIDIClientRef()
         var port = MIDIPortRef()
         let created = MIDIClientCreateWithBlock("Fanous \(label)" as CFString, &client) { [weak self] notification in

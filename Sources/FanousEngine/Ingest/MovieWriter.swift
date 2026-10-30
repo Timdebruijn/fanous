@@ -25,6 +25,11 @@ public final class MovieWriter {
             case .hap(let variant): variant.rawValue.lowercased()
             }
         }
+
+        /// The codec whose `name` is `name` (any case); nil for none.
+        public static func named(_ name: String?) -> Codec? {
+            ([.proRes422HQ, .proRes422, .proRes4444] + HAPEncoder.Variant.allCases.map(Codec.hap)).first { $0.name == name?.lowercased() }
+        }
     }
 
     public enum WriterError: Error { case notReady, failed(String) }
@@ -130,6 +135,18 @@ public final class MovieWriter {
 
     /// A BGRA pixel buffer from `pixelBufferPool` (ProRes) or any BGRA buffer (HAP).
     public var pixelBufferPool: CVPixelBufferPool? { adaptor?.pixelBufferPool }
+
+    /// A BGRA pixel buffer of the movie's size: from `pixelBufferPool` (ProRes) or a new one (HAP).
+    public func makePixelBuffer() throws -> CVPixelBuffer {
+        var buffer: CVPixelBuffer?
+        if let pool = pixelBufferPool {
+            CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
+        } else {
+            CVPixelBufferCreate(nil, width, height, kCVPixelFormatType_32BGRA, nil, &buffer)
+        }
+        guard let buffer else { throw WriterError.failed("pixel buffer") }
+        return buffer
+    }
 
     deinit {
         // An early exit (error, cancel) must not leave the writer open: it asserts or leaves a half-written file.
