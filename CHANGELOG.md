@@ -342,6 +342,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   A Keystone fixture follows the same rule (patched by hand, unpatched with its output). Console control covers outputs
   1–8, so output 9 and up gets no Output fixture. Fixed on the way: an output whose fixture was unpatched kept its last
   console values (a Blackout stayed black).
+- Fixed: a layer unpatched while it played (Unpatch, address 0, Remove last layer or a lower layer count) kept playing at
+  its last values, and nothing could stop it: the UI, OSC, MIDI and cues reach only patched fixtures. An unpatched layer
+  now goes to its defaults (intensity 0, no file: black), and an unpatched Master to 100 %, Normal, speed 100 % and no
+  test pattern instead of holding the show at its last level. Hold on loss is unchanged: it is for a patched universe
+  that goes silent.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
