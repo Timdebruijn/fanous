@@ -5,7 +5,7 @@
   import type { LayerStatus, PatchEntry, ResolvedParameter } from '../lib/docs';
   import { RELEASE_TEXT, ZERO_GROUPS, channelRange, clockText, controlKeys, folderZeroItems, mediaOptions, mediaPath, patchText, playSteps, reservedText, valueText, type LibrarySnapshot } from '../lib/layers';
   import type { ParamSpec } from '../lib/patch-screen';
-  import { lockTitle as lockFor, rawMax } from '../lib/show';
+  import { lockTitle as lockFor } from '../lib/show';
   import { app, can, cmd, playOnLayer } from '../lib/state.svelte';
   import { syncStatus } from '../lib/sync';
   import { throttledSender } from '../lib/throttle';
@@ -62,6 +62,7 @@
     void fixture;
     return throttle.flush;
   });
+  const rawMax = (spec: ParamSpec | undefined) => (spec?.bits === 16 ? 65535 : 255);
   const isNumber = (key: string) => key === 'folder' || key === 'file';
 </script>
 

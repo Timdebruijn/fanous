@@ -6,7 +6,7 @@
   import { lockTitle } from '../lib/show';
   import { app, can, cmd } from '../lib/state.svelte';
 
-  // Shown wherever the UI sets layer values: with Who controls "Console only" they are kept but have no effect.
+  // Shown wherever Fanous sets layer values (the UI, cues, OSC): with Who controls "Console only" they are kept but have no effect.
   let { what = 'values set here' }: { what?: string } = $props();
 
   const lock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
