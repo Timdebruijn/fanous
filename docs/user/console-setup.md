@@ -96,15 +96,18 @@ one (an iPad upright, a phone) they stack in that order.
 - **Layers**, **Master** and **Outputs**: one group per kind of fixture, in
   the order of the channel map. Each group has a block line (see
   [Blocks](#blocks)). The layers are chips that wrap, each with its number and
-  address; the Master is one chip. The Outputs group has one row per output on
-  the Outputs & Mapping screen, no more and no fewer: the display it is on, a
-  link to Outputs & Mapping, and its Output and Keystone fixture with their
-  status. Removing an output unpatches both. Outputs above 8 have no console
-  channels. Projects from before 30 October 2026 had Output 1 to 4 patched
-  whether those outputs existed or not; opening such a project unpatches the
-  ones without an output.
-- **A fixture's status** (on the chip's tooltip, next to an Output or Keystone,
-  and in its editor):
+  address; a chip on another universe than the block's start names it
+  ("A 0.0.1 · 1"), so Layer 1 and Layer 9 never both read "1". A chip marked
+  **OFF** sits off the block (placed by hand). The Master is one chip. The
+  Outputs group has one row per output on the Outputs & Mapping screen, no more
+  and no fewer: "Output 1 · on <display> · Outputs & Mapping", then its Output
+  and Keystone fixture with their address and status. Removing an output
+  unpatches both. Outputs above 8 have no console channels, and layers above 32
+  do not render and have none either; the group says so. Projects from before
+  30 October 2026 had Output 1 to 4 patched whether those outputs existed or
+  not; opening such a project unpatches the ones without an output.
+- **A fixture's status** (in the chip's tooltip and name for a screen reader,
+  next to an Output or Keystone, and in its editor):
   - "ok"; "collides with Layer 2 · 65–128" or "exceeds universe" in red;
   - a layer without an address: "no address · stays dark" in yellow under
     Console only (nothing plays), "no address · Fanous only" under the other
@@ -114,13 +117,17 @@ one (an iPad upright, a phone) they stack in that order.
     Fanous only" under the other policies;
   - a Keystone without an address: "not used" (it is optional);
   - a layer whose place in the block is taken: "no address · A 0.0.1 1–64 is
-    taken by Master".
-- **A fixture's editor** (programmer): tap a chip to open it under the group;
-  tap it again to close. Choose the Universe (A 0.0.0 to 0.0.3 and S 1 to S 4,
-  plus every universe that is patched, has been heard or has settings), set
-  the Address with the stepper (Shift steps by 10; **0 means no address**), or
-  press **Unpatch**. An Output fixture's editor has **Remove output** (the
-  output with its mapping; Undo brings it back).
+    taken by Master". This one also shows on the group's block line, without
+    tapping anything.
+- **A fixture's editor**: tap a chip to open it under the group (the focus
+  moves into it); tap it again to close. Anyone can read it; changing it needs
+  the programmer role and no show lock. Choose the Universe (A 0.0.0 to 0.0.3
+  and S 1 to S 4, plus every universe that is patched, has been heard or has
+  settings), set the Address with the stepper (Shift steps by 10; **0 means no
+  address**), or press **Unpatch**. A fixture without an address starts at its
+  place in the block when it has one: **Patch at A 0.0.1 1** puts it there. An
+  Output fixture's editor has **Remove output** (the output with its mapping;
+  Undo brings it back).
 - **Universes**: one row per universe that
   - a fixture is patched to,
   - a console is sending to now (packets, or quiet for no longer than the
@@ -188,9 +195,10 @@ the start. The block line says:
   universe and the address are fields: change them to move the whole group,
   Keystones with their outputs, in one step. "1 unplaced" counts the fixtures
   of the group without an address; they do not break the block.
-- **Custom · 2 of 8 off the block**: some fixtures were placed by hand, or the
-  start would fall below address 1 (Layer 9 alone at A 0.0.1 1). **Re-lay as
-  block** puts every fixture on its place from the lowest-numbered one's start.
+- **Custom · 2 of 8 off the block**: some fixtures were placed by hand (their
+  chips say OFF), or the start would fall below address 1 (Layer 9 alone at
+  A 0.0.1 1). **Re-lay as block** puts every fixture on its place from the
+  lowest-numbered one's start.
 - **No address**, with **Patch as block**: nothing of the group is patched.
   The group goes where the standard patch puts it: the layers at A 0.0.0 1, the
   Master on the universe after the layers, the outputs right after the Master.
@@ -203,14 +211,17 @@ Fanous never lets a fixture it places itself (Add layer, Add output, a
 Keystone's Patch) land on another one; it leaves it without an address
 instead. What you place may overlap, and then shows in red. When Add layer
 finds the new layer's place taken by the Master (8 layers, the standard patch),
-the Layers group offers **Move Master and outputs after the layers**: the
+the Layers group's block line says so ("Layer 9: no address · A 0.0.1 1–64 is
+taken by Master") and offers **Move Master and outputs after the layers**: the
 Master, Output and Keystone blocks move to the universe after the last layer,
 and the layers without an address go on their places. This changes the console
 patch too, so Fanous never does it by itself.
 
 Each of these (Re-lay, Patch as block, moving a block, Move Master and outputs)
 is one step: a toast names it and how many hand-placed fixtures moved, and one
-Undo puts the patch back.
+Undo puts the patch back. A block that would run past the last universe
+(A 127.15.15, S 63999) is not laid at all: the block line says which fixtures
+would not fit, and nothing changes.
 
 ## Universe settings
 

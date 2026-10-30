@@ -1110,8 +1110,13 @@ guide changes with the step that changes what it describes (4–6).
   patched.
 - Status words show in a chip's tooltip and accessible name, next to each
   Output and Keystone, and in the inline editor; a layer chip shows its number
-  and address only. Outputs above 8 get a caption in the Outputs group ("no
-  console channels").
+  and address (with its universe when that is not the block's), and OFF when
+  it is off the block. A blocker is also printed on the block line, above Move
+  Master and outputs. Layers above 32 and outputs above 8 get a caption.
+- A block that would run past the last universe (`slot` nil) is refused with
+  the fixtures that do not fit, and nothing is sent.
+- The inline editor of a fixture without an address starts at its slot, with
+  **Patch at A 0.0.1 1**; Unpatch shows only for a patched fixture.
 
 ---
 

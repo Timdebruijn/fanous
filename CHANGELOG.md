@@ -462,13 +462,17 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   items 2–4). The fixture table and Selected fixture are gone. **Layers** (the count with − and +), **Master** and
   **Outputs** (one row per output with its Output and Keystone fixture, its display and a link to Outputs & Mapping,
   and Add output) come from the channel map's `fixtures`, so a new mode of an existing kind appears without UI code;
-  32 layers are one line of chips. Each group reads its block from where its fixtures are: "Block · A 0.0.0 from 1"
+  32 layers are one line of chips; a chip on another universe than its block's start names it ("A 0.0.1 · 1"), and a
+  chip off the block says OFF. Each group reads its block from where its fixtures are: "Block · A 0.0.0 from 1"
   with the start universe and address as fields that move the whole group (Keystones with their outputs) in one step,
   "1 unplaced", "Custom · 2 of 8 off the block" with Re-lay as block, or Patch as block at the standard position. A
   Keystone's Patch puts it on its slot after the outputs, or on the first free 16 channels after it. A new layer whose
-  slot the Master holds says so ("no address · A 0.0.1 1–64 is taken by Master") and the Layers group offers Move
-  Master and outputs after the layers. Every multi-fixture change is one `patch.setMany`, one undo step, with a toast.
-  Tapping a chip opens its editor in the group (universe, address, Unpatch, Remove output). The status words follow
+  slot the Master holds says so on the block line ("Layer 9: no address · A 0.0.1 1–64 is taken by Master") and the
+  Layers group offers Move Master and outputs after the layers. Every multi-fixture change is one `patch.setMany`, one
+  undo step, with a toast; a block that would run past the last universe is refused with the reason and nothing sent.
+  Tapping a chip opens its editor in the group, with the focus (universe, address, Patch at its slot or Unpatch,
+  Remove output); its fields, the block fields and buttons and the layer count are locked for other roles and under
+  the show lock, the chips stay readable. Layers above 32 get a caption. The status words follow
   Who controls: "no address · stays dark" for a layer under Console only, "no address · at defaults" for the Master
   or an output, "no address · Fanous only" under the other policies, and "not used" for a Keystone; "unpatched" is
   gone from the screen, the Layers screen says "no address" and the DMX monitor calls an empty channel "free". The

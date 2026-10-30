@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 import vectors from '../../../Tests/Fixtures/patch-slots.json';
 import type { PatchEntry, UniverseInfo, UniverseSettingsDoc } from './docs';
 import {
-  FALLBACK_FIXTURES, advanceUniverse, blockStart, buildCells, buildFixtures, buildPatch, cellLabel, compareUniverse, defaultPair, fixturesText, frameValues,
-  groupSlots, interfaceOptions, layEntries, moveAfterLayers, paramAt, paramName, parseUniverseName, parseChannelMap, patchTarget, rangeText, rowStatus,
+  FALLBACK_FIXTURES, advanceUniverse, blockStart, buildCells, buildPatch, cellLabel, compareUniverse, defaultPair, fixturesText, frameValues,
+  groupSlots, interfaceOptions, layEntries, moveAfterLayers, paramAt, paramName, parseUniverseName, parseChannelMap, patchTarget, rangeText, rowStatus, rowSummary,
   slotOf, standardStart, summarize, universeHealth, universeName, universeOptions, universeRows, universeSettings,
   type ChannelMap, type FixtureRow, type Group, type UniverseRow,
 } from './patch-screen';
@@ -23,6 +23,8 @@ const map: ChannelMap = {
   fixtures: [...FALLBACK_FIXTURES],
 };
 const at = (fixture: string, universe: string, address: number): PatchEntry => ({ fixture, universe, address });
+/** The fixtures alone, through the production path. */
+const buildFixtures = (...args: Parameters<typeof buildPatch>) => buildPatch(...args).rows;
 const live = (id: string): UniverseInfo => ({ id, active: false, packets: 0, source: '', ageSeconds: -1 });
 
 describe('universe naming and lists', () => {
@@ -268,7 +270,7 @@ describe('blocks', () => {
     const patch = [...layers(8, 'artnet:0.0.0', 1, [3]), at('Layer 3', 'artnet:0.0.0', 300)];
     const g = group(buildPatch(patch, 8, map).groups, 'layer');
     expect(g.block).toMatchObject({ start: null, anchor: { universe: 'artnet:0.0.0', address: 1 }, required: 8, off: 1, handPlaced: 1 });
-    const entries = layEntries(g, g.block.anchor!);
+    const entries = layEntries(g, g.block.anchor!).entries;
     expect(entries).toHaveLength(8);
     expect(entries[2]).toEqual(at('Layer 3', 'artnet:0.0.0', 129));
     // a layer on another universe
@@ -278,16 +280,16 @@ describe('blocks', () => {
   it('calls a group Custom when its start falls below 1, never rolling back across a universe', () => {
     const g = group(buildPatch([at('Layer 9', 'artnet:0.0.1', 1)], 9, map).groups, 'layer');
     expect(g.block).toMatchObject({ start: null, anchor: { universe: 'artnet:0.0.1', address: 1 }, required: 9, unplaced: 8, off: 1 });
-    expect(layEntries(g, g.block.anchor!).at(-1)).toEqual(at('Layer 9', 'artnet:0.0.2', 1));
+    expect(layEntries(g, g.block.anchor!).entries.at(-1)).toEqual(at('Layer 9', 'artnet:0.0.2', 1));
   });
 
   it('lays a block across the Art-Net carry, sACN and the 512 boundary', () => {
     const carry = group(buildPatch(layers(16, 'artnet:0.0.15', 1), 16, map).groups, 'layer');
     expect(carry.block.start).toEqual({ universe: 'artnet:0.0.15', address: 1 });
-    expect(layEntries(carry, carry.block.start!)[8]).toEqual(at('Layer 9', 'artnet:0.1.0', 1));
+    expect(layEntries(carry, carry.block.start!).entries[8]).toEqual(at('Layer 9', 'artnet:0.1.0', 1));
     expect(group(buildPatch(layers(9, 'sacn:1', 1), 9, map).groups, 'layer').block.start).toEqual({ universe: 'sacn:1', address: 1 });
     const boundary = group(buildPatch([], 8, map).groups, 'layer');
-    expect(layEntries(boundary, { universe: 'artnet:0.0.4', address: 129 }).slice(5, 7)).toEqual([at('Layer 6', 'artnet:0.0.4', 449), at('Layer 7', 'artnet:0.0.5', 1)]);
+    expect(layEntries(boundary, { universe: 'artnet:0.0.4', address: 129 }).entries.slice(5, 7)).toEqual([at('Layer 6', 'artnet:0.0.4', 449), at('Layer 7', 'artnet:0.0.5', 1)]);
   });
 
   it('keeps an output gap: Output 3 stays on its slot after Output 2 is removed', () => {
@@ -316,7 +318,7 @@ describe('blocks', () => {
 
   it('moves the patched Keystones with their Outputs block and leaves the others unpatched', () => {
     const g = group(buildPatch([...standard, at('Keystone 2', 'artnet:0.0.1', 89)], 8, map, [1, 2]).groups, 'output');
-    expect(layEntries(g, { universe: 'artnet:0.0.2', address: 1 })).toEqual([
+    expect(layEntries(g, { universe: 'artnet:0.0.2', address: 1 }).entries).toEqual([
       at('Output 1', 'artnet:0.0.2', 1), at('Output 2', 'artnet:0.0.2', 9), at('Keystone 2', 'artnet:0.0.2', 81),
     ]);
   });
@@ -362,6 +364,42 @@ describe('blocks', () => {
     // its block follows the Keystones' (from where a ninth Keystone would sit: 73 + 8 × 16)
     expect(groupSlots(outputs, outputs.block.start!).get('Shutter 2')).toEqual({ universe: 'artnet:0.0.1', address: 205 });
     expect(rowStatus(rows.find((r) => r.name === 'Shutter 1')!, 'dmx')).toEqual({ tone: 'faint', text: 'not used' });
+  });
+
+  it('ignores a stale entry of a layer above the count: no collision, no effect on the block', () => {
+    const { rows, groups } = buildPatch([...standard, at('Layer 12', 'artnet:0.0.0', 1)], 8, map, [1, 2]);
+    expect(rows.some((r) => r.name === 'Layer 12')).toBe(false);
+    expect(rows.every((r) => r.collisions.length === 0)).toBe(true);
+    expect(group(groups, 'layer').block).toMatchObject({ start: { universe: 'artnet:0.0.0', address: 1 }, required: 8, unplaced: 0, off: 0 });
+  });
+
+  it('handles a project without outputs', () => {
+    const { groups } = buildPatch(standard.slice(0, 9), 8, map, []);
+    const outputs = group(groups, 'output');
+    expect(outputs.rows).toEqual([]);
+    expect(outputs.block).toMatchObject({ start: null, anchor: null, required: 0, unplaced: 0 });
+    expect(standardStart(groups, 2)).toEqual({ universe: 'artnet:0.0.1', address: 9 });
+    expect(layEntries(outputs, { universe: 'artnet:0.0.1', address: 9 })).toEqual({ entries: [], past: [] });
+    // Layer 9 blocked by the Master alone: the Master moves, the outputs group has nothing to move
+    expect(moveAfterLayers(buildPatch(standard.slice(0, 9), 9, map, []).groups)).toEqual([at('Layer 9', 'artnet:0.0.1', 1), at('Master', 'artnet:0.0.2', 1)]);
+  });
+
+  it('offers no Move Master and outputs while the layers are Custom, and marks the hand-placed fixtures', () => {
+    const patch = [...standard.filter((e) => e.fixture !== 'Layer 3'), at('Layer 3', 'artnet:0.0.0', 300)];
+    const { rows, groups } = buildPatch(patch, 9, map, [1, 2]);
+    expect(group(groups, 'layer').block.start).toBeNull();
+    expect(moveAfterLayers(groups)).toBeNull();
+    const layer3 = rows.find((r) => r.name === 'Layer 3')!;
+    expect([layer3.offBlock, rows.find((r) => r.name === 'Layer 2')!.offBlock]).toEqual([true, false]);
+    expect(rowSummary(layer3, 'dmx')).toMatch(/^Layer 3, A 0\.0\.0 300–363, collides with .+, off the block$/);
+  });
+
+  it('refuses a block that would run past the last universe instead of unpatching what does not fit', () => {
+    const g = group(buildPatch([], 32, map).groups, 'layer');
+    const laid = layEntries(g, { universe: 'artnet:127.15.15', address: 1 });
+    expect(laid.entries).toHaveLength(8);
+    expect(laid.past.map((r) => r.name)).toEqual(Array.from({ length: 24 }, (_, i) => `Layer ${i + 9}`));
+    expect(layEntries(g, { universe: 'sacn:63998', address: 1 }).past).toHaveLength(16);
   });
 
   it('says what a fixture without an address does, per Who controls and per kind', () => {

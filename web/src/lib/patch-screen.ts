@@ -253,6 +253,8 @@ export interface FixtureRow {
   exceeds: boolean;
   /** unpatched although its block has a slot for it: the slot and the fixture on it (a new layer that found no room) */
   blocked: { slot: Slot; by: string } | null;
+  /** patched, but not on its slot from the group's anchor: laying the group as a block moves it */
+  offBlock: boolean;
 }
 
 interface Kind {
@@ -342,7 +344,7 @@ export function buildPatch(patch: readonly PatchEntry[], layerCount: number, map
           name, type: m.mode, typeLabel: m.name, kind: g.kind, number, optional: m.optional, footprint: m.footprint,
           universe: entry?.universe ?? null, address, patched: address > 0, end,
           colour: FIXTURE_COLOURS[rows.length % FIXTURE_COLOURS.length]!,
-          collisions: [], exceeds: end > UNIVERSE_SIZE, blocked: null,
+          collisions: [], exceeds: end > UNIVERSE_SIZE, blocked: null, offBlock: false,
         };
         g.rows.push(row);
         rows.push(row);
@@ -364,11 +366,6 @@ export function buildPatch(patch: readonly PatchEntry[], layerCount: number, map
   }
   for (const g of groups) g.block = detectBlock(g, rows);
   return { rows, groups };
-}
-
-/** The fixtures that exist (`buildPatch`) without their groups. */
-export function buildFixtures(patch: readonly PatchEntry[], layerCount: number, map: ChannelMap | null, outputIds: readonly number[] = []): FixtureRow[] {
-  return buildPatch(patch, layerCount, map, outputIds).rows;
 }
 
 /** Counts for the toolbar; a collision is one overlapping pair of fixtures. */
@@ -416,10 +413,10 @@ export function rowStatus(r: FixtureRow, policy: string): Status {
   return parts.length ? { tone: 'bad', text: parts.join('; ') } : { tone: 'ok', text: 'ok' };
 }
 
-/** Accessible name of a chip: "Layer 3, A 0.0.0 129–192, ok". */
+/** Accessible name of a chip: "Layer 3, A 0.0.0 129–192, ok", with ", off the block" for a hand-placed fixture. */
 export function rowSummary(r: FixtureRow, policy: string): string {
   const where = r.patched && r.universe ? `${universeName(r.universe)} ${rangeText(r)}, ` : '';
-  return `${r.name}, ${where}${rowStatus(r, policy).text}`;
+  return `${r.name}, ${where}${rowStatus(r, policy).text}${r.offBlock ? ', off the block' : ''}`;
 }
 
 // ---- blocks ----------------------------------------------------------------------------------------------
@@ -498,8 +495,8 @@ function detectBlock(g: Group, rows: readonly FixtureRow[]): Block {
   let start = blockStart(placed, first.footprint);
   const anchor = start ?? { universe: at.universe, address: Math.max(1, at.address - (anchorNumber - 1) * first.footprint) };
   const slots = groupSlots(g, anchor);
-  const moves = (r: FixtureRow) => r.patched && !sameSlot(slots.get(r.name), r);
-  const off = required.filter(moves).length;
+  for (const r of g.rows) r.offBlock = r.patched && !sameSlot(slots.get(r.name), r);
+  const off = required.filter((r) => r.offBlock).length;
   if (off > 0) start = null; // a required fixture of a later mode off its slot
   if (start) {
     for (const r of required) {
@@ -508,16 +505,25 @@ function detectBlock(g: Group, rows: readonly FixtureRow[]): Block {
       if (slot && by) r.blocked = { slot, by: by.name };
     }
   }
-  return { ...counts, start, anchor, off, handPlaced: g.rows.filter(moves).length };
+  return { ...counts, start, anchor, off, handPlaced: g.rows.filter((r) => r.offBlock).length };
 }
 
-/** `patch.setMany` entries that lay the group as a block from `start`: every required fixture and every patched optional one on its slot; one without a slot (past the last universe) loses its address. */
-export function layEntries(g: Group, start: Slot): PatchEntry[] {
+/**
+ * `patch.setMany` entries that lay the group as a block from `start`: every required fixture and every patched optional
+ * one on its slot. `past`: the fixtures that would run past the last universe; the block does not fit then, and is not
+ * laid.
+ */
+export function layEntries(g: Group, start: Slot): { entries: PatchEntry[]; past: FixtureRow[] } {
   const slots = groupSlots(g, start);
-  return g.rows.filter((r) => !r.optional || r.patched).map((r) => {
+  const entries: PatchEntry[] = [];
+  const past: FixtureRow[] = [];
+  for (const r of g.rows) {
+    if (r.optional && !r.patched) continue;
     const slot = slots.get(r.name);
-    return { fixture: r.name, universe: slot?.universe ?? start.universe, address: slot?.address ?? 0 };
-  });
+    if (slot) entries.push({ fixture: r.name, ...slot });
+    else past.push(r);
+  }
+  return { entries, past };
 }
 
 /** Where the group after `g` starts when `g` is laid from `start`: on the universe after its last slot for the layers (the standard patch), else right after its last mode's block (the outputs after the Master). */
@@ -547,7 +553,7 @@ export function standardStart(groups: readonly Group[], index: number): Slot | n
  * "Move Master and outputs after the layers" (DESIGN §6.6 item 2), offered when a layer found no room because a later
  * group sits on its slot: lays each later group that has a block from the universe after the last layer slot, each
  * after the one before, and puts the unplaced layers on their slots, as one `patch.setMany`. Null when no layer is
- * blocked by a later group.
+ * blocked by a later group, or a later group would run past the last universe.
  */
 export function moveAfterLayers(groups: readonly Group[]): PatchEntry[] | null {
   const i = groups.findIndex((g) => g.ownUniverses);
@@ -566,7 +572,11 @@ export function moveAfterLayers(groups: readonly Group[]): PatchEntry[] | null {
   let from = after(layers, start);
   for (const g of later) {
     if (!from) return null;
-    if (g.block.anchor) entries.push(...layEntries(g, from));
+    if (g.block.anchor) {
+      const laid = layEntries(g, from);
+      if (laid.past.length > 0) return null;
+      entries.push(...laid.entries);
+    }
     from = after(g, from);
   }
   return entries;
