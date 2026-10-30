@@ -501,7 +501,7 @@ in v1, and a fourth (Keystone) from M2; every mode is patched independently as i
 | Mode | Footprint | Patched per | Purpose |
 |---|---|---|---|
 | **Layer** | 64 ch | layer (16 in v1, extensible) | everything about one layer |
-| **Master** | 8 ch | server | master intensity, blackout, global test pattern, master speed |
+| **Master** | 8 ch | machine | master intensity, blackout, global test pattern, master speed |
 | **Output** | 8 ch | output | per-output intensity, blackout/freeze, test pattern, blend on/off, mapping preset and its fade |
 | **Keystone** (M2) | 16 ch | output | four corner offsets on top of the output's mapping (§6.4a, §9.10) |
 | Serial (later) | 8 ch | serial device | selects pre-configured RS-232/RS-422 strings (projector control) — `[OPEN-7]` v1.x |
@@ -728,6 +728,15 @@ to its defaults).
 **Terms used here:**
 - A **fixture** is one patchable thing of a mode: "Layer 3", "Master",
   "Output 2", "Keystone 2".
+- The fixtures that **exist** are:
+  - Layer 1…min(`layerCount`, 32): the layers the parameter snapshot holds.
+    `layers.setCount` accepts up to 64, but layers above 32 never render;
+  - the Master;
+  - Output n and Keystone n for every output n of the project (n ≤
+    `ParameterSnapshotSlot.maxOutputs`, PR #109).
+
+  Every use below means this set: the resolvers, the existence check of
+  `patch.set`, and the UI's groups.
 - A mode's **kind** (`per` in the channel map) is what it is patched per:
   `layer`, `machine` (one per Mac: the Master) or `output`.
 - A mode is **optional** when a show runs fine without patching it (Keystone);
@@ -765,15 +774,13 @@ code on 2026-10-30:
 **Owner decisions (2026-10-30):**
 1. A fixture exists without a patch; the patch is only its console address.
 2. The screen groups fixtures by kind and patches a group as a block.
-3. The groups come from the channel map, so a new mode of an existing kind
-   needs no UI code.
+3. The groups come from the channel map, so a new fixture mode appears
+   without UI code. (Refined in the design review: this holds for a new mode
+   of an existing kind; a new kind needs one UI entry, item 3.)
 4. Universes and Who controls get their own blocks, and a Patch sheet says
    what to patch on the console.
 
 **1. A fixture exists without a patch (engine).**
-- The fixtures that exist are Layer 1…min(`layerCount`, 32) (the layers the
-  parameter snapshot holds), the Master, and Output n and Keystone n for every
-  output n of the project (n ≤ `ParameterSnapshotSlot.maxOutputs`, PR #109).
 - `DMXStore` keeps a resolver for every fixture that exists, with the project
   policy (PR #110). The patch only decides which universe slots feed it.
   - `DMXStore(patch:fixtures:)` and `setPatch(_:fixtures:)` take the fixture
@@ -783,15 +790,19 @@ code on 2026-10-30:
     unpatched, or Add output without a free range, would create no resolver.
 - **Unpatching resets the DMX side.** A resolver that loses its patch entry or
   moves to another universe gets `FixtureResolver.clearDMX()`: DMX values back
-  to the spec defaults, change times 0, `hasDMX` false, `internalWithoutDMX`
-  false; the internal (UI, cue, OSC, MIDI) values stay. Without this, a layer
+  to the spec defaults, change times 0, `hasDMX`, `dmxReceived` (below) and
+  `internalWithoutDMX` false; the internal (UI, cue, OSC, MIDI) values stay. Without this, a layer
   unpatched while the console drives it would keep the console's last look,
   which undoes PR #112 ("defaults, not hold").
 - **DMX competes only once received.** Under `htp`, the resolver compares the
   internal value with the DMX value even when no DMX ever arrived, so the spec
   default wins whenever it is higher: an unpatched Master (default 65535) could
-  not be dimmed from the UI, nor layer colour, scale or speed. The DMX side
-  takes part in `ltp` and `htp` only when its source is not `.none`.
+  not be dimmed from the UI, nor layer colour, scale or speed. The resolver
+  gets a stored `dmxReceived` flag, set by `updateDMX` and cleared only by
+  `clearDMX`; the DMX side takes part in `ltp` and `htp` only while it is set.
+  The value's source is not enough: it is `.none` again for a channel the
+  console holds at its default after a loss (`dmxChangedAt` moves only on a
+  change), and then a UI value would beat a held full Master.
 - Unpatched then follows the source policy, with no new rule:
   - under `dmx` the resolver has no DMX and resolves to its defaults: a layer
     black and empty, the Master at full, an output normal, a Keystone the
@@ -818,8 +829,11 @@ code on 2026-10-30:
 - **Cost.** `publish` already walks the resolver dictionary; it gets one entry
   per existing fixture. The Keystone recompute in `publish` builds two arrays
   per output with a Keystone resolver on every publish; with a resolver for
-  every output it skips a Keystone that has no DMX and no internal value
-  (identity), so a typical project allocates nothing more on the DMX queue.
+  every output it skips a Keystone whose resolver has `dmxReceived` false and
+  holds no internal value (the identity), so a typical project allocates
+  nothing more on the DMX queue. Both are stored flags: `internalValues()`
+  builds an array, and `hasDMX` is false after a loss while held values still
+  apply.
 
 **2. Groups and blocks.**
 - **Groups**, in channel-map order:
@@ -837,14 +851,19 @@ code on 2026-10-30:
   fixture number keeps gaps: after Output 2 of 3 is removed, Output 3 keeps its
   slot. This is how the standard patch lays out layers (8 per universe) and how
   PR #109 places Output n (the Master's address + 8 n).
-- The block is **derived, not stored.** Its start comes from the group's
-  lowest-numbered required fixture. A group whose required fixtures all sit on
-  their slots shows "Block · A 0.0.0 from 1"; one with a fixture off its slot,
-  or whose lowest-numbered fixture is unpatched, shows "Custom · 2 of 8 off the
-  block" with **Re-lay as block**. A group with nothing patched shows
-  **Patch as block**, which starts at the standard patch's position (layers at
-  A 0.0.0 address 1, the Master on the next universe at 1, outputs after the
-  Master). The project gets no new field.
+- The block is **derived, not stored.** The project gets no new field.
+  - The **anchor** is the group's lowest-numbered patched required fixture,
+    number k. The start is the anchor's address − (k − 1) × footprint, in the
+    anchor's universe; the start is never rolled back across a universe.
+  - **Block** when every patched required fixture sits on its slot from that
+    start: "Block · A 0.0.0 from 1". An unpatched fixture does not break the
+    block; the group says "1 unplaced".
+  - **Custom** when a patched required fixture is off its slot, or the start
+    falls below address 1: "Custom · 2 of 8 off the block", with **Re-lay as
+    block** (from the anchor's start).
+  - A group with nothing patched shows **Patch as block**, which starts at the
+    standard patch's position (layers at A 0.0.0 address 1, the Master on the
+    next universe at 1, outputs after the Master).
 - **Moving a block.** Changing the start universe or address (address 1 to
   513 − footprint) re-lays every required fixture of the group in one command,
   and the patched optional fixtures with it (Keystones keep their slot, below).
@@ -862,29 +881,40 @@ code on 2026-10-30:
   opens the inline editor.
 - **Automatic placement never collides; a placement the user makes may.**
   `layers.setCount`, `output.add` and a Keystone's Patch leave a fixture
-  unpatched rather than overlap another one. Moving a block or editing one
-  fixture is allowed to overlap; the overlap shows in red, as today.
+  unpatched rather than overlap another one. Patch as block, Re-lay as block,
+  moving a block and editing one fixture may overlap; the overlap shows in
+  red, as today.
 - **A new fixture that found no room** says why: "no address · A 0.0.1 1–64 is
   taken by Master". In the common case (an 8-layer project adding Layer 9,
   whose slot is the Master's) the Layers group offers **Move Master and
   outputs after the layers**: one `patch.setMany` that moves the Master,
-  Outputs and Keystone blocks to the universe after the last layer. It changes
-  the console patch too, so it is never done automatically.
+  Outputs and Keystone blocks to the universe after the last layer slot and
+  puts the unplaced layers on their slots, as one undo step. It changes the
+  console patch too, so it is never done automatically.
 - **Engine:**
   - `patch.setMany {entries: [{fixture, universe, address}]}`: one command and
     one undo step. Each entry is checked as `patch.set` checks it, and one bad
     entry, or the same fixture twice, refuses all. `patch.set` stays.
-  - `patch.set` and `patch.setMany` refuse a fixture that does not exist: a
-    Layer above `layerCount` (new; today `patch.set` accepts it and
-    `effectivePatch` drops it) and, as since PR #109, an Output or Keystone
-    without its output.
-  - `layers.setCount` puts a new Layer n on its slot of the Layers block; with
-    no block (Custom), right after Layer n − 1 when that one is patched, else at
-    its standard address. When that range is taken, Layer n stays unpatched
-    (item 1 keeps it usable from the UI). On a standard patch this is today's
-    standard address.
+  - `patch.set` and `patch.setMany` refuse an address > 0 for a fixture that
+    does not exist: a Layer above the layers that exist (new; today
+    `patch.set` accepts it and `effectivePatch` drops it) and, as since PR
+    #109, an Output or Keystone without its output. Address 0 is accepted for
+    any fixture, so a stale entry can still be removed.
+  - `layers.setCount` puts a new Layer n on its slot while the Layers group is
+    a Block; when it is Custom, right after Layer n − 1 when that one is
+    patched, else at its standard address. When that range is taken, Layer n
+    stays unpatched (item 1 keeps it usable from the UI). On a standard patch
+    this is today's standard address.
   - `output.add` keeps PR #109's rule, which is its slot of an Outputs block
     that starts right after the Master.
+- **Who computes slots.** The engine places automatically (`layers.setCount`,
+  `output.add`) with a Core helper on `Patch`. The UI detects blocks and builds
+  the entries for Patch as block, Re-lay, moving a block, a Keystone's Patch and
+  Move Master and outputs, and sends them as one `patch.setMany`. The slot rule
+  thus lives in Swift and in `patch-screen.ts`; one vector file
+  (`Tests/Fixtures/patch-slots.json`: start, footprint, numbers → expected
+  addresses, including the carry, the 512 boundary and gaps) is read by both
+  test suites, so the two cannot drift.
 
 **3. Groups from the channel map.**
 - `/api/channel-map.json` gets `fixtures`, in display order, generated from
@@ -904,7 +934,7 @@ code on 2026-10-30:
 - `FixtureMode` gets `per` and `optional` next to `footprint`. The GDTF file
   and `docs/channel-map.md` do not change.
 - The UI groups by `per` and takes the instances from the project: `layer` →
-  1…`layerCount`, `machine` → one, `output` → the project's outputs.
+  the layers that exist, `machine` → one, `output` → the project's outputs.
   - A new mode of an existing kind (another per-output mode) appears without
     UI code.
   - A new kind (Serial devices, §6.1) needs one entry in the UI's table of kind
@@ -1003,12 +1033,17 @@ order. 32 layers are one block line and 32 chips that wrap, not 32 rows.
     refuses all;
   - `layers.setCount` puts a new layer on its slot, and leaves it unpatched
     with the Master on that slot;
-  - the malloc check (`scripts/check-mallocs.sh`) shows no extra allocation per
-    publish with unpatched Keystones.
+  - a `MallocCounter` test around `DMXStore.publish` (on the DMX queue) with
+    eight outputs and no Keystone patched counts no allocation from the
+    Keystone recompute;
+  - after a loss with hold on a channel held at its default, a UI value does
+    not beat the held value under `htp` (`dmxReceived`, not the source);
+  - the shared slot vectors pass in Swift.
 - Core: `ChannelMapDocument.json()` lists every `FixtureMode` once, with `per`
   and `optional`.
 - Web (vitest):
-  - slots, block detection and re-lay, including the Art-Net carry
+  - the shared slot vectors, block detection (anchor, unplaced, Custom when
+    the start falls below 1) and re-lay, including the Art-Net carry
     (A 0.0.15 → A 0.1.0), sACN, the channel-512 boundary and an output gap;
   - Keystone slots and their fallback;
   - grouping from a channel map with an extra made-up mode, which appears

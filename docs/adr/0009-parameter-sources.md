@@ -27,8 +27,8 @@ an internal source.
 
 Designed, not built yet.
 
-- Every fixture that exists has a resolver: Layer 1…`layerCount`, the Master,
-  and each output's Output and Keystone. The patch is only its console
+- Every fixture that exists has a resolver: Layer 1…min(`layerCount`, 32),
+  the Master, and each output's Output and Keystone. The patch is only its console
   address. An unpatched fixture follows the source policy: at its defaults
   under `dmx`, controlled by the UI, cues, OSC and MIDI under the other
   policies. Before this, an unpatched fixture had no resolver and nothing
@@ -36,9 +36,9 @@ Designed, not built yet.
 - Unpatching resets the DMX side of the resolver to the defaults and keeps the
   internal values, so an unpatched fixture never holds the console's last
   look.
-- In `ltp` and `htp` the DMX side takes part only once DMX was received, so a
-  high default (Master intensity) does not beat a UI value on a fixture no
-  console reaches.
+- In `ltp` and `htp` the DMX side takes part only once DMX was received (a
+  stored flag, cleared on unpatch), so a high default (Master intensity) does
+  not beat a UI value on a fixture no console reaches.
 
 + A show without a console no longer has to patch its layers; "Unpatch" means
   only "no console address".
