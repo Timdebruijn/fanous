@@ -5,7 +5,7 @@
   import { onDestroy, tick, type ComponentProps } from 'svelte';
   import OutputColour from './OutputColour.svelte';
   import PresetStrip from './PresetStrip.svelte';
-  import RangeStepper from './RangeStepper.svelte';
+  import RangeStepper, { GRACE } from './RangeStepper.svelte';
   import { lockTitle } from '../lib/show';
   import { app, can, cmd, toastUndo } from '../lib/state.svelte';
   import { throttledSender } from '../lib/throttle';
@@ -80,16 +80,25 @@
 
   // Sliders go out through throttledSender (B80: to the seam or output they were set for, the last value always): its
   // "fixture" is "a-b" or "lift:<output>", and values are sent × SCALE because it rounds to whole numbers. Gamma per
-  // colour sends the three values, kept here between sends so two channels set within 50 ms do not undo each other.
+  // colour sends the three values in one wall.seam, the overlap both axes in one wall.set: each starts from what was sent
+  // last while its echo can still be on the way, so a channel or axis set right after another does not send the other
+  // one's old value back (B114).
   const SCALE = 10000;
-  const rgbDraft = new Map<string, [number, number, number]>();
+  const sent = new Map<string, { value: unknown; at: number }>(); // "a-b" (gamma R, G, B) or "overlap"
+  const recent = <T,>(key: string, engine: T) => {
+    const last = sent.get(key);
+    return last && Date.now() - last.at < GRACE ? (last.value as T) : engine;
+  };
+  const remember = <T,>(key: string, value: T) => {
+    sent.set(key, { value, at: Date.now() });
+    return value;
+  };
   const throttle = throttledSender((target, field, raw) => {
     const v = raw / SCALE;
     if (target.startsWith('lift:')) return void cmd('output.set', { id: Number(target.slice(5)), path: '/blend/lift', value: v });
     const [a = 0, b = 0] = target.split('-').map(Number);
     if (field === 'rgb') {
-      const gammaRGB = rgbDraft.get(target);
-      rgbDraft.delete(target);
+      const gammaRGB = sent.get(target)?.value as [number, number, number] | undefined;
       if (gammaRGB) void cmd('wall.seam', { id: wall.id, a, b, gammaRGB });
     } else if (field === 'gamma') void cmd('wall.seam', { id: wall.id, a, b, gamma: v });
     else void cmd('wall.seam', { id: wall.id, a, b, power: v });
@@ -100,12 +109,13 @@
   }
   function tuneRGB(l: SeamLine, channel: number, v: number) {
     const key = `${l.a}-${l.b}`;
-    rgbDraft.set(key, rgb(rgbDraft.get(key) ?? l.gammaRGB, channel, v));
+    remember(key, rgb(recent(key, l.gammaRGB), channel, v));
     throttle.send(key, 'rgb', 0);
   }
   /** Link R, G, B: on drops the per-colour values, off starts them at the seam's gamma. */
   function link(l: SeamLine, on: boolean) {
     throttle.flush();
+    sent.delete(`${l.a}-${l.b}`);
     void cmd('wall.seam', { id: wall.id, a: l.a, b: l.b, gammaRGB: on ? null : [l.gamma, l.gamma, l.gamma] });
   }
   async function applyToAll() {
@@ -117,10 +127,10 @@
   const gammaText = (l: SeamLine, digits: number) => (l.gammaRGB ? l.gammaRGB.map((g, i) => `${'RGB'[i]} ${g.toFixed(digits)}`).join(' · ') : l.gamma.toFixed(digits));
   const rgb = (values: number[] | null | undefined, i: number, v: number) => (values ?? [0, 0, 0]).map((x, j) => (j === i ? v : x)) as [number, number, number];
   function setOverlap(axis: 'x' | 'y', percent: number) {
-    void cmd('wall.set', { id: wall.id, overlap: { ...wall.overlap, [axis]: Math.min(50, Math.max(0, Math.round(percent))) / 100 } });
+    const overlap = remember('overlap', { ...recent('overlap', wall.overlap), [axis]: Math.min(50, Math.max(0, Math.round(percent))) / 100 });
+    void cmd('wall.set', { id: wall.id, overlap });
   }
 
-  /** off: why it cannot change, when not the role or the show lock */
   type Slider = Omit<ComponentProps<typeof RangeStepper>, 'flush'>;
 </script>
 
