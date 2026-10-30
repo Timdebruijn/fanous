@@ -85,7 +85,10 @@ The pages that follow repeat the ones that matter for their topic.
   display mirroring (B42).
 - Audio plays on the default output device; there is no device choice and no
   latency compensation (B4). A looping clip with audio has a short silent gap at
-  the loop point (B3).
+  the loop point (B3). Audio plays only forward at 100 % speed, where 100 % is
+  layer speed × Master speed (for a Sync slave, its master's speed). At any
+  other speed, and in Freeze, Scrub and Timecode, the layer is silent; there is
+  no varispeed.
 - No notarized build and no clean-account
   install test yet (B50). No app icon (B48).
 - The GDTF file has not been imported into grandMA3, Eos or MagicQ yet (B7).
