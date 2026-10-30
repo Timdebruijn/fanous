@@ -338,9 +338,12 @@ public final class MediaLoader: @unchecked Sendable {
     public var liveFactory: (@Sendable (_ spec: String, _ uuid: String?) -> (any LiveTextureSource)?)?
     /// Folder 0 files 150–169 (B61); nil = no numbered Syphon servers (tests, bench). Set before `start`.
     public var syphonCatalog: LiveCatalog?
+    /// Folder 0 files 1–20 (B73); nil = no numbered capture devices. Set before `start`.
+    public var captureCatalog: LiveCatalog?
     /// Folder 0 generators (file 100+); nil in tests without a Metal context.
     public var generatorFactory: (@Sendable (Int) -> (any LiveTextureSource)?)?
-    /// Opens a capture device by uid (a scene entry's `capture:`); throws the layer's status text (permission, no device).
+    /// Opens a capture device by uid (a numbered device or a scene entry's `capture:`); throws the layer's status text
+    /// (permission, no device). Called once per device while a layer shows it: the layers share the input.
     public var captureFactory: (@Sendable (_ uid: String) throws -> CaptureInput)?
     /// Two mixer channels per layer slot (the playing media and the one dissolving out); nil = no audio.
     public var mixer: AudioMixer?
@@ -379,8 +382,12 @@ public final class MediaLoader: @unchecked Sendable {
     private let reresolveMissing = Atomic<Bool>(false)
     private let syphonChanged = Atomic<Bool>(false)
     private let captureChanged = Atomic<Bool>(false)
+    private let devicesChanged = Atomic<Bool>(false)
     /// Loader thread: the capture input each layer shows, polled for its status ("no signal").
     private var captureOpen: [CaptureInput?]
+    /// Loader thread: the open input of each device by uid, so a second layer on it shares the session.
+    private var captureShared: [String: WeakCapture] = [:]
+    private struct WeakCapture { weak var input: CaptureInput? }
     /// Loader thread: the directory id of the numbered Syphon server each layer is connected to.
     private var syphonOpen: [String?]
 
@@ -395,6 +402,13 @@ public final class MediaLoader: @unchecked Sendable {
     /// not open try again.
     public func capturePermissionChanged() {
         captureChanged.store(true, ordering: .relaxed)
+        wake.signal()
+    }
+
+    /// B73: a numbered capture device came, went, came back or is in use by another app. As for Syphon, a layer on one
+    /// that went says "not running" and keeps its last picture; one that (re)appears opens without being selected again.
+    public func captureDevicesChanged() {
+        devicesChanged.store(true, ordering: .relaxed)
         wake.signal()
     }
 
@@ -444,9 +458,24 @@ public final class MediaLoader: @unchecked Sendable {
                     }
                 }
             }
+            if devicesChanged.exchange(false, ordering: .relaxed) {
+                for i in loaded.indices where isNumbered(MediaKey(packed: loaded[i]), .capture) {
+                    let device = captureCatalog?.entry(file: MediaKey(packed: loaded[i]).file)
+                    if let device, device.running, captureOpen[i] != nil {
+                        layers[i].mediaStatus.withLock { $0.name = "Camera: \(device.name)" }  // a rename; in use by another app too
+                    } else if device?.running != true {
+                        if captureOpen[i] != nil, let device { captureShared[device.source] = nil }  // it returns with a new session
+                        captureOpen[i] = nil
+                        layers[i].mediaStatus.withLock { $0.error = "not running" }
+                    } else {
+                        loaded[i] = .max  // came back, or no longer in use elsewhere: opened again below
+                    }
+                }
+            }
             if captureChanged.exchange(false, ordering: .relaxed) {
-                for i in loaded.indices where captureOpen[i] == nil && media[MediaKey(packed: loaded[i])]?.capture != nil {
-                    loaded[i] = .max  // never a packed key: opened again below
+                for i in loaded.indices where captureOpen[i] == nil {
+                    let key = MediaKey(packed: loaded[i])
+                    if media[key]?.capture != nil || isNumbered(key, .capture) { loaded[i] = .max }  // never a packed key: opened again below
                 }
             }
             for (i, input) in captureOpen.enumerated() {
@@ -533,23 +562,44 @@ public final class MediaLoader: @unchecked Sendable {
             status.codec = "generator"
             return LayerPlayback(key: key, live: generator)
         }
-        guard let entry = media[key] ?? resolver?(key).map({ MediaEntry(folder: key.folder, file: key.file, path: $0.path) }) else {
+        var numbered: MediaEntry?
+        if isNumbered(key, .capture), let device = captureCatalog?.entry(file: key.file) {
+            status.kind = "live"
+            status.name = "Camera: \(device.name)"
+            guard device.running else {
+                status.error = "not running"  // black until it connects; then the catalog change opens it
+                return nil
+            }
+            guard !device.inUse else {
+                status.error = "in use by another app"  // opened again when the other app lets go
+                return nil
+            }
+            numbered = MediaEntry(folder: 0, file: key.file, capture: device.source)
+        }
+        guard let entry = numbered ?? media[key] ?? resolver?(key).map({ MediaEntry(folder: key.folder, file: key.file, path: $0.path) }) else {
             logger.warning("media not found", metadata: ["layer": "\(layer + 1)", "media": "\(key)"])
             failures.wrappingAdd(1, ordering: .relaxed)
             status.kind = "missing"
             status.error = key.folder != 0 ? "no file \(key.file) in folder \(key.folder)"
                 : LiveCatalog.Kind.syphon.files.contains(key.file) ? "no Syphon server numbered \(key.file) (folder 0, 150–169)"
+                : LiveCatalog.Kind.capture.files.contains(key.file) ? "no capture device numbered \(key.file) (folder 0, 1–20)"
                 : "no built-in content \(key.file) in folder 0 (100–107, 110–113, Syphon 150–169)"
             return nil
         }
         do {
             if let uid = entry.capture {
                 status.kind = "live"
-                status.name = "Camera: \(uid)"
-                guard let captureFactory else { throw RenderError.pipeline("no capture input for \(uid)") }
-                let input = try captureFactory(uid)
+                if status.name == nil { status.name = "Camera: \(uid)" }
+                let input: CaptureInput
+                if let shared = captureShared[uid]?.input, shared.share() {
+                    input = shared  // a second layer on the device: one session
+                } else {
+                    guard let captureFactory else { throw RenderError.pipeline("no capture input for \(uid)") }
+                    input = try captureFactory(uid)
+                    captureShared[uid] = WeakCapture(input: input)
+                }
                 opened.wrappingAdd(1, ordering: .relaxed)
-                status.name = "Camera: \(input.name)"  // format, size and counters: polled once it runs
+                if numbered == nil { status.name = "Camera: \(input.name)" }  // format, size and counters: polled once it runs
                 status.capture = CaptureInput.Counters()
                 captureOpen[layer] = input
                 logger.info("layer \(layer + 1) media \(key)", metadata: ["capture": "\(input.name)"])

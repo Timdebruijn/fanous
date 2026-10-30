@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
+import AVFoundation
 import Foundation
 import Metal
 import Synchronization
@@ -10,7 +11,7 @@ import Synchronization
 /// devices (1–20), displays (21–28) and windows (29–32), numbered as they appear (the lowest free number), so a console
 /// or the UI selects one like a generator. One that goes keeps its number (not running); one that comes back with the
 /// same identity takes its old number again. The numbering is kept in the project (`/syphon`, B69, or the kind's
-/// `projectKey`): the catalog starts from it, so numbers survive an engine restart. `syphon.forget` frees a number;
+/// `projectKey`): the catalog starts from it, so numbers survive an engine restart. `syphon.forget` (`capture.forget`) frees a number;
 /// undo, redo and loading a version also drop the not-running numbers the restored project lacks.
 /// Safe on any thread, except `start`/`stop` (one control thread).
 public final class LiveCatalog: @unchecked Sendable {
@@ -25,16 +26,16 @@ public final class LiveCatalog: @unchecked Sendable {
             case .syphon: 150...169
             }
         }
-        /// The project's key: `/syphon` `{"151": {app, server}}`, `/capture` `{"3": {uid, name}}`, `/screens`
+        /// The project's key: `/syphon` `{"151": {app, server}}`, `/capture` `{"3": {uid, name, model}}`, `/screens`
         /// `{"21": {uuid, name}}`, `/windows` `{"29": {app, title}}`.
         public var projectKey: String { rawValue }
-        /// An entry's `source` and `name` as the project names them.
-        public var fields: (source: String, name: String) {
+        /// An entry's `source`, `name` and (capture only) `model` as the project names them.
+        public var fields: (source: String, name: String, model: String?) {
             switch self {
-            case .syphon: ("app", "server")
-            case .capture: ("uid", "name")
-            case .screens: ("uuid", "name")
-            case .windows: ("app", "title")
+            case .syphon: ("app", "server", nil)
+            case .capture: ("uid", "name", "model")
+            case .screens: ("uuid", "name", nil)
+            case .windows: ("app", "title", nil)
             }
         }
         /// Whether the name is part of the identity (a Syphon server's name, a window's title) or only what a device or
@@ -66,7 +67,7 @@ public final class LiveCatalog: @unchecked Sendable {
 
     public struct Entry: Sendable, Equatable {
         public let kind: Kind
-        public let file: Int
+        public var file: Int
         /// Syphon's app, a capture device's uid, a display's uuid, a window's app.
         public var source: String
         /// Syphon's server name, a device's or display's name, a window's title.
@@ -75,6 +76,11 @@ public final class LiveCatalog: @unchecked Sendable {
         public var runtimeID: String?
         /// From the project and not seen since the engine started (B69).
         public var gone = false
+        /// A capture device's `modelID` (empty for the other kinds): with the name, it finds a device whose uid changed
+        /// (a UVC device on another USB port) on its old number.
+        public var model = ""
+        /// A capture device opened by another app (`isInUseByAnotherApplication`); it is running all the same.
+        public var inUse = false
         public var running: Bool { runtimeID != nil }
         /// "App/Server" (a window: "App/Title"), or "App" without a name; a device's or display's name.
         public var label: String { name.isEmpty ? source : kind.nameIsIdentity ? "\(source)/\(name)" : name }
@@ -94,6 +100,7 @@ public final class LiveCatalog: @unchecked Sendable {
     // start/stop only: they hold the directory observation and the announce timer alive
     private var watcher: SyphonInput?
     private var timer: DispatchSourceTimer?
+    private var observers: [any NSObjectProtocol] = []
     /// Runs after every change of numbers, names or running state (any thread); set before `start`.
     public var onChange: (@Sendable () -> Void)?
 
@@ -129,10 +136,41 @@ public final class LiveCatalog: @unchecked Sendable {
         update()
     }
 
+    /// Capture: follows `AVCaptureDevice.DiscoverySession` on the main run loop, on the connected and disconnected
+    /// notifications and every 2 s for `isInUseByAnotherApplication` (no notification tells when another app opens a
+    /// device). Lists devices only: no permission is asked.
+    public func startCapture() {
+        precondition(kind == .capture, "only the capture catalog follows the capture devices")
+        let discovery = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.external, .continuityCamera, .builtInWideAngleCamera], mediaType: .video, position: .unspecified)
+        nonisolated(unsafe) let session = discovery  // read on the main queue only
+        let refresh: @Sendable () -> Void = { [weak self] in self?.update(running: Self.captureDevices(session.devices)) }
+        observers = [AVCaptureDevice.wasConnectedNotification, AVCaptureDevice.wasDisconnectedNotification].map {
+            NotificationCenter.default.addObserver(forName: $0, object: nil, queue: .main) { _ in refresh() }
+        }
+        // ponytail: in use polled every 2 s; KVO on each device's isInUseByAnotherApplication if that is too slow
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 2, repeating: 2)
+        timer.setEventHandler(handler: refresh)
+        timer.resume()
+        self.timer = timer
+        DispatchQueue.main.async(execute: refresh)
+    }
+
+    static func captureDevices(_ devices: [AVCaptureDevice]) -> [Entry] {
+        devices.map {
+            Entry(
+                kind: .capture, file: 0, source: $0.uniqueID, name: $0.localizedName, runtimeID: $0.uniqueID, model: $0.modelID,
+                inUse: $0.isInUseByAnotherApplication)
+        }
+    }
+
     public func stop() {
         timer?.cancel()
         timer = nil
         watcher = nil
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        observers = []
     }
 
     /// Applies `running` (in the order they appeared, `file` unused, another kind's ignored), or Syphon's current
@@ -172,29 +210,52 @@ public final class LiveCatalog: @unchecked Sendable {
             if let kept = entries.first(where: { $0.file == entry.file && !$0.running && $0.same(entry) }) {
                 next.append(kept)  // also a gone twin of a running server (two engines' canvases share a name)
             } else if !running.contains(where: { $0.same(entry) }) {
-                next.append(Entry(kind: entry.kind, file: entry.file, source: entry.source, name: entry.name, gone: true))
+                next.append(Entry(kind: entry.kind, file: entry.file, source: entry.source, name: entry.name, gone: true, model: entry.model))
             }
         }
         entries = next.sorted { $0.file < $1.file }
         return entries != before
     }
 
-    /// The numbering rules; true when anything changed.
+    /// The numbering rules; true when anything changed. Sources back by identity first, then (capture) a device whose
+    /// model and name match exactly one entry not running takes that number and the entry its new uid, then the others
+    /// get the lowest free number in the order they appeared.
     static func assign(_ entries: inout [Entry], running: [Entry]) -> Bool {
         let before = entries
         let alive = Set(running.compactMap(\.runtimeID))
-        for i in entries.indices where entries[i].runtimeID.map({ !alive.contains($0) }) ?? false { entries[i].runtimeID = nil }
+        for i in entries.indices where entries[i].runtimeID.map({ !alive.contains($0) }) ?? false {
+            entries[i].runtimeID = nil
+            entries[i].inUse = false
+        }
+        var waiting: [Entry] = []
         for info in running {
             guard let id = info.runtimeID, !id.isEmpty else { continue }
             if let i = entries.firstIndex(where: { $0.runtimeID == id }) {
                 entries[i].source = info.source  // a rename (SyphonServerUpdate) keeps the number
                 entries[i].name = info.name
+                entries[i].inUse = info.inUse
             } else if let i = entries.firstIndex(where: { $0.runtimeID == nil && $0.same(info) }) {
                 entries[i].runtimeID = id
                 entries[i].name = info.name  // a device renamed while gone (Syphon's name is its identity: unchanged)
                 entries[i].gone = false
+                entries[i].inUse = info.inUse
+                if !info.model.isEmpty { entries[i].model = info.model }
+            } else {
+                waiting.append(info)
+            }
+        }
+        for info in waiting {
+            let twins = info.model.isEmpty ? [] : entries.indices.filter { entries[$0].runtimeID == nil && entries[$0].model == info.model && entries[$0].name == info.name }
+            if twins.count == 1 {
+                let i = twins[0]
+                entries[i].source = info.source  // the device's new uid (another USB port)
+                entries[i].runtimeID = info.runtimeID
+                entries[i].gone = false
+                entries[i].inUse = info.inUse
             } else if let file = info.kind.files.first(where: { file in !entries.contains { $0.file == file } }) {
-                entries.append(Entry(kind: info.kind, file: file, source: info.source, name: info.name, runtimeID: id))
+                var entry = info
+                entry.file = file
+                entries.append(entry)
                 entries.sort { $0.file < $1.file }
             }
             // past the range a new source gets none (`unnumbered`) until a forget frees one
