@@ -296,6 +296,17 @@ test('status bar: the universe pills wrap on a phone instead of widening the pag
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 });
 
+test('status bar: the show-mode-resumed note wraps inside its item on a phone instead of spilling over the next row', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  // the note shows after an engine restart in show mode; its text, put in place, is what the layout has to hold
+  await page.locator('header .modewrap [role="status"]').evaluate((el) => {
+    el.innerHTML = '<a class="caption resumed" href="#/system">Show mode resumed after the engine restarted at 21:04</a>';
+  });
+  const spill = await page.locator('header .brand').evaluate((item) =>
+    Math.max(...[...item.querySelectorAll('*')].map((el) => el.getBoundingClientRect().bottom)) - item.getBoundingClientRect().bottom);
+  expect(spill).toBeLessThanOrEqual(0);
+});
+
 test('keys: the global shortcuts do nothing while a modal dialog is open, and ? still closes the shortcut list', async ({ page }) => {
   await openScreen(page, 'Patch');
   await page.getByRole('button', { name: 'Patch sheet' }).click();
