@@ -371,6 +371,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   permission. New commands: `capture.forget {file?}` (frees numbers of devices that are not running, undoable) and
   `capture.authorize {kind: "camera"}` (asks for the camera permission, not in show mode; `screen` comes with displays).
   New readiness item "Capture permissions granted": it fails while a device is numbered and the camera is not granted.
+- Design: what a patch means, and a clearer Patch screen (DESIGN §6.6, B120). A fixture exists without a patch, and
+  the patch is only its console address. The screen groups fixtures by kind (layers, the Master, outputs with their
+  Keystone) and patches a group as a block, with the groups taken from the channel map, so a new mode of an existing
+  kind needs no UI code. Universes and the source policy get their own blocks, and a Patch sheet says what to patch on
+  the console.
 - Added: `/api/channel-map.json` lists the fixture modes under `fixtures`, in display order, each with its `mode`, `name`,
   what it is patched per (`per`: `layer`, `machine` for the Master, `output`) and whether it is `optional` (Keystone)
   (DESIGN §6.6 item 3, ADR-0008 amendment). `footprints`, `modes`, the GDTF file and `docs/channel-map.md` are
