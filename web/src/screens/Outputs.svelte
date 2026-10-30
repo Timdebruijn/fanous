@@ -38,7 +38,7 @@
   import WallWizard from '../components/WallWizard.svelte';
   import Preview from '../components/Preview.svelte';
   import {
-    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, circleMask, finishMask, handles, keystoneBadges, maskHandle, maskTarget, meshIdentity, modeText, movedHandle, nextSliceId, outputSize, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, spreadSources, statusText, toggleSmooth, toolPath, triangleDest,
+    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, circleMask, finishMask, handles, keystoneBadges, maskHandle, maskRemoval, maskTarget, meshIdentity, modeText, movedHandle, nextSliceId, outputSize, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, redrawIndex, spreadSources, statusText, toggleSmooth, toolPath, triangleDest,
     type MapPoint, type MapperMode, type MaskPoint, type MaskShape, type MaskTool, type OutputConfig,
   } from '../lib/outputs';
   import { mediaOptions, mediaPath, type LibrarySnapshot } from '../lib/layers';
@@ -369,6 +369,12 @@
     ui.tool = null;
     redraw = null;
   }
+  /** what the drawing caption says: a Redraw whose mask another client changed or removed meanwhile adds a mask */
+  const drawingText = $derived.by(() => {
+    if (!redraw) return 'Drawing a mask:';
+    const i = redrawIndex(masks, redraw);
+    return i >= 0 ? `Redrawing mask ${i + 1}:` : 'Drawing a new mask (the mask to redraw has changed since):';
+  });
   /** a tool's path, as one edit */
   function addMask(path: MaskPoint[]) {
     set(`/slices/${sliceIndex}/masks`, finishMask(masks, path, redraw) as unknown as JSONValue);
@@ -382,12 +388,12 @@
     ui.handle = path;
     removeMaskPoint();
   }
+  /** the selected point goes (a mask keeps 3), or the selected Bézier handle (its point stays, selected) */
+  const removal = $derived(output && maskHandle(ui.handle)?.slice === sliceIndex ? maskRemoval(output, ui.handle) : null);
   function removeMaskPoint() {
-    const h = maskHandle(ui.handle);
-    const path = h?.slice === sliceIndex ? masks[h.mask]?.path : undefined;
-    if (!h || !path || path.length <= 3) return;
-    set(`/slices/${sliceIndex}/masks/${h.mask}/path`, path.filter((_, i) => i !== h.point) as unknown as JSONValue);
-    ui.handle = null;
+    if (!removal) return;
+    set(removal.path, removal.value as unknown as JSONValue);
+    ui.handle = maskHandle(ui.handle)?.side ? removal.path : null;
     ui.group = 'point';
   }
 </script>
@@ -645,7 +651,7 @@
       <section class="panel form" aria-label="Warp and slices">
         <div class="head2">
           <h2>{output.name}</h2>
-          <div class="segmented" role="group" aria-label="Edit">
+          <div class="segmented wrap" role="group" aria-label="Edit">
             <button type="button" class="btn" aria-pressed={ui.mapper === 'cornerPin'} onclick={() => (ui.mapper = 'cornerPin')}>Corner pin · 4 points</button>
             <button type="button" class="btn" aria-pressed={ui.mapper === 'mesh'} onclick={() => (ui.mapper = 'mesh')}>Mesh · up to 33 × 33</button>
             <button type="button" class="btn" aria-pressed={ui.mapper === 'slices'} onclick={() => (ui.mapper = 'slices')}>Slices</button>
@@ -725,10 +731,10 @@
                 {#each output.slices as sl, i (sl.id)}<option value={i}>Slice {sl.id}</option>{/each}
               </select>
             </label>
-            <div class="segmented" role="group" aria-label="Mask tools">
-              <button type="button" class="btn" aria-pressed={!!ui.draft} disabled={locked || !s} title="Tap the corners of the area that stays visible" onclick={() => startTool('polygon')}>Polygon</button>
+            <div class="segmented wrap" role="group" aria-label="Mask tools">
+              <button type="button" class="btn" aria-pressed={!!ui.draft} disabled={locked || !s} title="Tap the corners of the area that stays visible" onclick={() => ui.draft || startTool('polygon')}>Polygon</button>
               {#each [['rectangle', 'Rectangle'], ['ellipse', 'Ellipse'], ['freehand', 'Freehand']] as const as [tool, name] (tool)}
-                <button type="button" class="btn" aria-pressed={ui.tool === tool} disabled={locked || !s} title={tool === 'freehand' ? 'Drag along the outline of the area that stays visible' : 'Drag a box on the picture'} onclick={() => startTool(tool)}>{name}</button>
+                <button type="button" class="btn" aria-pressed={ui.tool === tool} disabled={locked || !s} title={tool === 'freehand' ? 'Drag along the outline of the area that stays visible' : 'Drag a box on the picture'} onclick={() => ui.tool === tool || startTool(tool)}>{name}</button>
               {/each}
             </div>
             <label class="field"><span>Image mask</span>
@@ -741,14 +747,14 @@
           {#if ui.draft || ui.tool}
             <div class="fields">
               {#if ui.draft}
-                <p class="caption grow"><strong>{redraw ? 'Redrawing' : 'Drawing'} a mask:</strong> tap the corners of the area that stays visible, in order around it ({ui.draft.length} so far, at least 3).</p>
+                <p class="caption grow"><strong>{drawingText}</strong> tap the corners of the area that stays visible, in order around it ({ui.draft.length} so far, at least 3).</p>
                 <button type="button" class="btn btn-primary" disabled={ui.draft.length < 3} onclick={finishDrawing}>Done</button>
                 <button type="button" class="btn" disabled={ui.draft.length === 0} onclick={() => (ui.draft = ui.draft!.slice(0, -1))}>Undo last corner</button>
               {:else if ui.tool === 'freehand'}
-                <p class="caption grow"><strong>{redraw ? 'Redrawing' : 'Drawing'} a mask:</strong> drag along the outline of the area that stays visible, with a finger on an iPad; letting go closes it. It becomes a smooth path whose points you can drag.</p>
+                <p class="caption grow"><strong>{drawingText}</strong> drag along the outline of the area that stays visible, with a finger on an iPad; letting go closes it. Where it turns sharply it keeps a corner, elsewhere it is smooth; drag its points and handles after.</p>
               {:else}
                 {@const tool = ui.tool}
-                <p class="caption grow"><strong>{redraw ? 'Redrawing' : 'Drawing'} a mask:</strong> drag a box on the picture; the {tool} fills it.</p>
+                <p class="caption grow"><strong>{drawingText}</strong> drag a box on the picture; the {tool} fills it.</p>
                 <button type="button" class="btn" onclick={() => { const path = toolPath(tool!, [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.9 }], size); if (path) addMask(path); }}>10 % inside</button>
               {/if}
               <button type="button" class="btn" onclick={stopTool}>Cancel</button>
@@ -780,7 +786,7 @@
             <div class="fields">
               <button type="button" class="btn" aria-pressed={ui.maskAdd} disabled={locked} onclick={() => (ui.maskAdd = !ui.maskAdd)}>{ui.maskAdd ? 'Adding points: tap the picture' : 'Add points'}</button>
               <button type="button" class="btn" aria-pressed={!!(maskPoint?.in || maskPoint?.out)} disabled={locked || !maskPoint} title="Smooth: Bézier handles from its neighbours; off: a corner. Double-tap a point does the same" onclick={() => toggleSmoothAt(ui.handle)}>Smooth point</button>
-              <button type="button" class="btn" disabled={locked || !maskPoint || (masks[maskHandle(ui.handle)!.mask]?.path?.length ?? 0) <= 3} onclick={removeMaskPoint}>Remove point</button>
+              <button type="button" class="btn" disabled={locked || !removal} onclick={removeMaskPoint}>{maskHandle(ui.handle)?.side ? 'Remove handle' : 'Remove point'}</button>
               <p class="caption grow">Tap the picture to add a point (with Add points on), or double-click anywhere; it joins the nearest edge, on a curve without changing it. Drag points and their handles; double-tap a point for corner or smooth; Backspace removes the selected point.</p>
             </div>
           {/if}
@@ -835,6 +841,8 @@
   .ehead .label { text-transform: capitalize; }
   .curve { width: 100px; height: 40px; background: var(--surface-2); border-radius: 4px; }
   .patterns { display: flex; flex-wrap: wrap; gap: 8px; }
+  /* the mode and tool groups wrap on a phone instead of cutting off their last buttons */
+  .segmented.wrap { flex-wrap: wrap; }
   .masks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
   .mask { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
   .mask .caption.grow { flex: 1 1 120px; min-width: 0; }

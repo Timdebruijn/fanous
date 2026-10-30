@@ -526,10 +526,15 @@ a handle stays on the spot you touch while a warp is active.
   - **Rectangle** and **Ellipse**: drag a box on the picture; the rectangle or
     the ellipse fills it. **10 % inside** makes one 10 % inside the output
     without a drag.
-  - **Freehand**: drag along the outline, with the mouse or, on an iPad, a
-    finger on the picture. Letting go closes the shape. It becomes a smooth
-    curve through the fewest points that stay within 2 output pixels of your
-    stroke; drag its points and handles to refine it.
+  - **Freehand**: drag along the outline, with the mouse or, on an iPad, one
+    finger on the picture (a second finger or the palm meanwhile is ignored).
+    Letting go closes the shape. It keeps the fewest points of your stroke
+    that leave none of it more than 2 output pixels off the straight lines
+    between them. Where the stroke turns by more than 40° (a corner of a
+    window, a wall meeting a roof) the point is a corner and the edges stay
+    straight; elsewhere the curve is smoothed through the points, which on a
+    rounded shape keeps it within about 2 px of your stroke. Drag its points
+    and handles to refine it.
   - **Image mask**: a still from the library (Media screen), black hides and
     white shows, stretched over the whole output; shades of grey are partly
     visible. A file changed in the library is picked up by itself. A missing
@@ -541,18 +546,26 @@ a handle stays on the spot you touch while a warp is active.
   (or the image), **Invert** (makes an add mask a subtract mask and back),
   **Feather px** (softens the edge, from 2 px; below that the edge stays plain;
   an image carries its own softness and has none), **Redraw** (draw its shape
-  again with any tool; it keeps its mode and feather) and **Remove**. On the
+  again with any tool; it keeps its mode and feather; when the mask changes
+  meanwhile, for example from another browser, the new shape becomes a mask of
+  its own and the caption says so) and **Remove**. On the
   picture a subtract mask has a dashed outline and hollow points.
 
   Drag points to move them, nudge with the arrow keys or the pad; the
   selected point shows its curve handles (small dots on a line), which you
-  drag too, also with the keys. **Double-tap** a point (or **Smooth point**)
-  to make a corner smooth, with handles along its neighbours, or a smooth
-  point a corner again. To add points, turn on **Add points** and tap where
-  the point goes, or double-click anywhere: the point joins the nearest edge;
-  on a curve it lands on the curve and the shape stays as it was. **Backspace**
-  (or **Remove point**) deletes the selected point; a mask keeps at least
-  three. Tab steps through the points and their handles. A project saved
+  drag too, also with the keys. A press takes the nearest of the point and its
+  handles, so a short handle close to its point can still be grabbed. A
+  handle may go past the edge of the output (a smoothed corner at the edge
+  has one there); a point stays on the output. **Double-tap** a point (or
+  **Smooth point**) to make a corner smooth, with handles along its
+  neighbours, or a smooth point a corner again. To add points, turn on **Add
+  points** and tap where the point goes, or double-click anywhere: the point
+  joins the nearest edge; on a curve it lands on the curve, where it comes
+  nearest to the tap, and the shape stays as it was. **Backspace** (or
+  **Remove point**) deletes the selected point; a mask keeps at least three.
+  With a handle selected it removes that handle instead (**Remove handle**):
+  that side of the point becomes a corner. Tab steps through the points and
+  their handles. A project saved
   before masks v2 opens with its masks as they were. A browser tab opened
   before that update cannot change masks or add a slice until you reload it.
 - **Content template (PNG)**: downloads a picture at the size of the selected

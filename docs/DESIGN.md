@@ -3204,12 +3204,25 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
     (`ellipsePath`: 4 points clockwise from the top, handles `KAPPA` = 0.5522847498 × the radius along the box's
     sides): one drag on the picture.
   - **Freehand** (`freehandPath`): the stroke in output pixels, `simplify` (Ramer–Douglas–Peucker, iterative,
-    distance to the segment) at 2 px, an end back within 2 px of the start dropped, then `smoothPoint` at every point.
+    distance to the segment) at 2 px, an end back within 2 px of the start dropped. **Refinement of the design's
+    "Catmull-Rom to Bézier handles"** (review): a point where the stroke turns by more than 40° (`FREEHAND_CORNER`, in
+    output pixels) stays a corner, the others get `smoothPoint`. Smoothing every point bulged straight runs past their
+    corners: measured curve-to-stroke at 1920 × 1080, a 1000 × 500 rectangle 125 px off, a house of 600 px edges 69 px,
+    a 300 × 200 window 37 px; with corners all 0 px, and a smooth 700 × 400 blob stays 0.5 px. Between RDP's points a
+    curve of radius r turns by at most 2 acos(1 − 2 / r), under 40° from r ≈ 35 output px, while traced corners (90°,
+    a 45° roof) turn more.
   - `toolPath` takes a drag tool's stroke from its first to its last point; a box under 2 output px either way, or a
     stroke that leaves under 3 points, makes nothing (a tap).
   - The editor (`OutputMapper`'s `tool`, `ondraw`) takes the drag anywhere on the picture, also starting on a handle,
-    with pointer capture, so a finger works on the iPad. The stroke is in stored coordinates (through the warp's
-    inverse); a dashed yellow outline through the warp previews it. After one shape the tool is off.
+    with pointer capture, so a finger works on the iPad. It follows the stroke's own pointer only: a second finger or
+    a palm meanwhile neither restarts nor ends it (review). The stroke is in stored coordinates (through the warp's
+    inverse), a plain array outside Svelte's state; the preview is a polyline's points string that each move extends
+    by one screen point (Freehand) or redraws at a fixed size (the box tools' closed outline through the warp). As
+    first built the stroke was deep state and each move warped all of it, 12 pieces a segment (review, measured per
+    pointer move with the reviewer's probe, 800 moves round a circle: under a 9 × 9 mesh 25 ms over the first 100
+    moves, 218 ms over the last; without a warp 33 ms at the end; now 16.7 ms throughout, the frame rate, as with no
+    tool). The tool going (Cancel, the lock) mid-drag ends the stroke, so no preview is left. After one shape the
+    tool is off; a press on the tool being used keeps it (Polygon's corners stay).
   - **Image:** a `<select>` of the library's stills, the Layers screen's picker (`mediaOptions(library, 'still')`;
     `/api/library` is read while Mask mode shows and after each scan); feather 0, the engine ignores it.
   - **Keyboard:** Rectangle and Ellipse have **10 % inside** (the box 0.1…0.9 of the output, M2.7's Rectangle);
@@ -3217,30 +3230,40 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
 - **Redraw** (the M2.7 gap): it keeps a copy of its mask as it was (`$state.snapshot`: patches change the project in
   place, so a reference would follow another client's edit). `finishMask` looks the copy up by content and replaces
   it wherever it is now (mode and feather kept); a mask changed or removed meanwhile is left alone and the path is
-  added instead. Any tool redraws: the tool buttons keep the target until the shape is done or cancelled.
+  added instead. Any tool redraws: the tool buttons keep the target until the shape is done or cancelled. The
+  caption names the mask being redrawn (`redrawIndex`), or says a new mask will be added once it changed.
 - **Mask list** per slice: the number (selects the mask's first point), Add or Subtract, the point count or the image's
   library name, **Invert** (`aria-pressed`; sets `mode`), Feather px and Redraw for a path mask, Remove. Each row
   acts on its own mask, so `maskTarget` serves only Add points now. Subtract masks show apart in the editor: dashed
   outline, red tint, hollow points (`outlines()` flags them).
 - **Handles.** `handles()` lists each mask point followed by its `…/in` and `…/out` handle where it lies, so Tab and
   the remote step through them ("slice 2 · mask point 5 in"); `maskHandle` gives `side`. The editor draws a point's
-  handles while the point or one of them is selected, under the points: a short handle never takes the point's drag,
-  and stays reachable with Tab or the remote. A handle's drag or nudge writes its point with the new offset
-  (`movedHandle`, also `nudgeCommand`'s single case); a group (All) moves the points only, their handles with them,
-  and counts points only.
-  - **Double-tap:** a second pointerdown on the same point within 350 ms (touch has no dblclick) runs
+  handles while the point or one of them is selected, under the points, and a press goes to the nearest of the
+  handle hit and the shown Bézier handles (review: a 24-point smooth loop in a 1027 px editor puts a handle 17 px
+  from its point, inside the 37 px hit circle of its point or a neighbour, so by draw order a pointer could never
+  take it). While a point is dragged its handles go with it. A handle's drag or nudge writes its point with the new
+  offset (`movedHandle`, also `nudgeCommand`'s single case) and is not held to the output (review: smoothing a
+  corner at its edge puts a handle outside, which no nudge could move); points keep their clamp. A group (All)
+  moves the points only, their handles with them, and counts points only. **Backspace** or **Remove handle** with a
+  handle selected removes the handle (`maskRemoval`: that side becomes a corner), a point otherwise (review: Tab
+  lands on handles, so Tab, Backspace removed a whole point).
+  - **Double-tap:** a second pointerdown on the same point (not a handle) within 350 ms (touch has no dblclick) runs
     `toggleSmooth`, one `output.set` of the point: smooth is `smoothPoint` (handles a sixth of the neighbours'
     chord, a third of the Catmull-Rom tangent), a point with either handle becomes a corner. **Smooth point** does the
     same from the keyboard.
   - **A tap on a handle without a move writes nothing now.** It wrote the pointer's position, so a tap moved a point
     by up to the hit radius and a double-tap would have been two undo steps.
   - **Add points on a curve** (the M2.7 gap): `insertNearest` takes the nearest of 63 points along each curved
-    segment, splits it there by de Casteljau (the new point smooth, the neighbours' handles shortened, a missing one
-    left missing), so the shape stays; on a straight edge it inserts the tapped point as before.
+    segment, refines it by a ternary search between its neighbours (review: the sample alone was up to 12 px off on a
+    4K quarter arc), splits there by de Casteljau (the new point smooth, the neighbours' handles shortened, a missing
+    one left missing), so the shape stays; on a straight edge it inserts the tapped point as before.
 - **Overlay selection:** a selected handle sends its point (**the point, not the handle**: no engine change).
 - **Slice shapes** in Slices mode, on the selected slice, each one `output.set` with an Undo toast: **Triangle**
   (`triangleDest`: the top corners at the middle of the top edge) and **Circle** (`circleMask`: `ellipsePath` on the
   bounding box of the corners, appended).
+- **Phones:** the mode (Corner pin … Mask) and tool groups wrap instead of cutting off their last buttons (review:
+  Freehand was cut at 390 px and hidden at 320 px); only this screen's two groups, `app.css`'s `.segmented` is
+  unchanged.
 - **Fixed on the way:** a tap on the picture (Add points, a polygon corner) went through the warp's inverse twice
   (`fromScreen(toPoint(…))`), so under a corner pin or a mesh the point landed away from the tap; once now. (The
   double-click path was right.)
@@ -3253,19 +3276,30 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
     1920 px output on a 900 px preview: a 24-corner stroke gives 25 to 28 points). The design's value is kept.
   - Invert has no vitest of its own: it is a one-line mode flip in `Outputs.svelte`; vitest checks what it changes
     (the outline flag, the template's hole), Playwright the flip, its way back and its undo.
-- **Checks.** vitest (12 new, 269 in all): RDP at its tolerance; freehand at 2 output px, the closing end, every
-  segment equal to the uniform Catmull-Rom spline; the rectangle from either corner and a tap; ellipse points, κ
-  handles and the outline on the ellipse; the de Casteljau split on the old curve (also with one handle) and at the
-  nearest point; corner ↔ smooth; a handle stored as an offset; Triangle and Circle; Redraw with the list changed
-  four ways; the remote stepping through handles, a handle nudged alone and All moving points; the stills filter; the
-  Circle in the content template. Playwright (4 new): every tool on a real engine (rectangle, ellipse with its
-  handles, polygon, freehand by a pointer drag, then one Undo removes the freehand only); the mask list (an image
-  from the library, Invert and Undo, a point drag, feather, a double-tap that sends exactly one `output.set` and one
-  Undo, Remove); Triangle and Circle with one Undo each; freehand by touch on a 390 × 844 viewport (touch events
-  through the DevTools protocol). Each mutation-checked (32 mutants, all red).
-- **Left open:** freehand with a real finger on an iPad (Chromium's touch emulation only); a handle shorter than a
-  point's hit radius is dragged only through Tab or the remote; the engine joins edits of the same path less than 1 s
-  apart into one undo step, so two masks drawn within a second undo together.
+- **Checks.** vitest (15 new, 272 in all): RDP at its tolerance; freehand at 2 output px, the closing end, the
+  corners of a traced box kept; the reviewer's rectangle, house and window with straight edges and a blob smooth,
+  each within 2 px of its stroke, the blob's segments the uniform Catmull-Rom spline; the rectangle from either
+  corner and a tap; ellipse points, κ handles and the outline on the ellipse; the de Casteljau split on the old
+  curve (also with one handle) and at the nearest point within 2e-4; corner ↔ smooth; a handle stored as an offset;
+  Backspace on a handle and on a point; Triangle and Circle; Redraw with the list changed four ways; the remote
+  stepping through handles, a handle nudged alone, one outside the output nudged every way, and All moving points;
+  the stills filter; the Circle in the content template. Playwright (5 new): every tool on a real engine
+  (rectangle with its closed preview, ellipse with its handles, polygon kept through a second press on its tool,
+  freehand by a pointer drag, then one Undo removes the freehand only; Cancel mid-drag leaves no preview); handles (a
+  press on a short handle takes it, it drags alone, a double-tap leaves it, they follow a dragged point, Tab and
+  Backspace remove one and one Undo brings it back); the mask list (an image from the library, Invert and Undo, the
+  Redraw caption, a point drag, feather, a double-tap that sends exactly one `output.set` and one Undo, Remove);
+  Triangle and Circle with one Undo each and a handle dragged past the output's edge; freehand by touch on a 390 ×
+  844 viewport with a second finger landing and lifting halfway (touch events through the DevTools protocol). Each
+  mutation-checked.
+- **Undo joins:** the engine (`StateStore`) joins consecutive `output.set` calls of one client with the same id and
+  path into one undo step while each comes less than 1 s after the previous (a sliding window). Besides a drag, that
+  joins: two masks of a slice made within a second of each other (any tools, `/slices/n/masks`), so also **10 %
+  inside** for a Rectangle and then an Ellipse, **Circle** twice, an image mask or a Remove right after a shape; a
+  point's or handle's drag and then **Smooth point**, a double-tap or **Remove handle** on that point (`…/path/i`);
+  two Add points taps or Remove point presses on one mask (`…/path`); Invert twice (`…/mode`). At an operator's pace
+  these are a second apart; the engine is unchanged.
+- **Left open:** freehand with a real finger on an iPad (Chromium's touch emulation only).
 
 **M2 build order** (one PR each, Opus coding agents, review before merge; the
 groundwork and small engine pieces first):

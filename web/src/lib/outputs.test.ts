@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it, vi } from 'vitest';
-import { canvasSizeError, canvasTarget, colorOf, compareLease, freePresetNumber, previewReady, layerCanvas, layerRuns, layersOn, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, recalledText, sharedPresets, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, KAPPA, UNIT_QUAD, circleMask, ellipsePath, finishMask, freehandPath, handles, insertNearest, keystoneBadges, maskHandle, maskOutline, maskTarget, meshIdentity, modeText, movedHandle, outlines, outputSize, rectanglePath, simplify, smoothPoint, statusText, toggleSmooth, toolPath, triangleDest, type MapPoint, type MaskPoint, type MaskShape, type OutputConfig } from './outputs';
+import { canvasSizeError, canvasTarget, colorOf, compareLease, freePresetNumber, previewReady, layerCanvas, layerRuns, layersOn, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, recalledText, sharedPresets, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, KAPPA, UNIT_QUAD, circleMask, ellipsePath, finishMask, freehandPath, handles, insertNearest, keystoneBadges, maskHandle, maskOutline, maskRemoval, maskTarget, meshIdentity, modeText, movedHandle, outlines, outputSize, rectanglePath, simplify, smoothPoint, statusText, toggleSmooth, toolPath, triangleDest, type MapPoint, type MaskPoint, type MaskShape, type OutputConfig } from './outputs';
 
 const output: OutputConfig = {
   id: 1,
@@ -338,7 +338,7 @@ describe('mask tools (masks v2, M2.8)', () => {
     expect(simplify([{ x: 0, y: 0 }, { x: 1, y: 5 }], 2), 'two points stay two').toHaveLength(2);
   });
 
-  it('freehand: RDP at 2 output px, the end back at the start dropped, Catmull-Rom handles at every point', () => {
+  it('freehand: RDP at 2 output px, the end back at the start dropped, a sharp turn kept as a corner', () => {
     // a box traced in 50 px steps on the 1000 × 500 output, a bump up in the middle of the top edge, back to the start
     const trace = (bump: number) => {
       const px: MapPoint[] = [];
@@ -352,18 +352,54 @@ describe('mask tools (masks v2, M2.8)', () => {
     expect(inPixels(freehandPath(trace(1.9), size))).toEqual([[200, 100], [800, 100], [800, 400], [200, 400]]);
     const path = freehandPath(trace(2.1), size)!;
     expect(inPixels(path)).toEqual([[200, 100], [500, 97.9], [800, 100], [800, 400], [200, 400]]);
-    // every segment is the uniform Catmull-Rom spline through the points
+    expect(path.map((p) => !!(p.in && p.out)), 'the four 90° corners stay corners, the bump is smooth').toEqual([false, true, false, false, false]);
+    expect(freehandPath(trace(0).slice(0, 2), size), 'a stroke of under 3 points: no mask').toBeNull();
+  });
+
+  it('freehand: a smooth stroke is the Catmull-Rom spline through its points; traced corners keep straight edges', () => {
+    const hd = { w: 1920, h: 1080 };
+    // a stroke through these corners (output px), a point every 4 px
+    const stroke = (corners: number[][]) => corners.slice(1).flatMap((b, i) => {
+      const a = corners[i]!, n = Math.max(1, Math.round(Math.hypot(b[0]! - a[0]!, b[1]! - a[1]!) / 4));
+      return Array.from({ length: n + 1 }, (_, k) => ({ x: (a[0]! + ((b[0]! - a[0]!) * k) / n) / hd.w, y: (a[1]! + ((b[1]! - a[1]!) * k) / n) / hd.h }));
+    });
+    // the farthest the mask's outline gets from the stroke, in output px
+    const px = (p: MapPoint) => ({ x: p.x * hd.w, y: p.y * hd.h });
+    const toSegment = (a: MapPoint, b: MapPoint, p: MapPoint) => {
+      const [dx, dy] = [b.x - a.x, b.y - a.y];
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+      return Math.hypot(a.x + t * dx - p.x, a.y + t * dy - p.y);
+    };
+    const apart = (path: MaskPoint[], line: MapPoint[]) => {
+      const [o, l] = [maskOutline(path, 32).map(px), line.map(px)];
+      return Math.max(...o.map((q) => Math.min(...l.slice(1).map((b, i) => toSegment(l[i]!, b, q)))));
+    };
+    const shapes = {
+      rectangle: [[400, 200], [1400, 200], [1400, 700], [400, 700], [400, 200]],
+      house: [[600, 700], [600, 400], [960, 200], [1320, 400], [1320, 700], [600, 700]],
+      window: [[800, 400], [1100, 400], [1100, 600], [800, 600], [800, 400]],
+    };
+    for (const [name, corners] of Object.entries(shapes)) {
+      const path = freehandPath(stroke(corners), hd)!;
+      expect(path.some((p) => p.in || p.out), `${name}: its corners are corners`).toBe(false);
+      expect(apart(path, stroke(corners)), name).toBeLessThanOrEqual(2);
+    }
+    // a 700 × 400 blob: smooth everywhere, within 2 px of the stroke, every segment the uniform Catmull-Rom spline
+    const blob = Array.from({ length: 200 }, (_, i) => [960 + 350 * Math.cos((i / 199) * 2 * Math.PI), 540 + 200 * Math.sin((i / 199) * 2 * Math.PI)]);
+    const path = freehandPath(stroke(blob), hd)!;
+    expect(path.every((p) => p.in && p.out)).toBe(true);
+    expect(apart(path, stroke(blob))).toBeLessThanOrEqual(2);
     const cr = (a: number, b: number, c: number, d: number, t: number) =>
       0.5 * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (3 * b - a - 3 * c + d) * t * t * t);
+    const n = path.length;
     path.forEach((p, i) => {
-      const [a, q, d] = [path[(i + 4) % 5]!, path[(i + 1) % 5]!, path[(i + 2) % 5]!];
+      const [a, q, d] = [path[(i + n - 1) % n]!, path[(i + 1) % n]!, path[(i + 2) % n]!];
       for (const t of [0.25, 0.5, 0.8]) {
         const b = bezier(p, q, t);
         expect(b.x).toBeCloseTo(cr(a.x, p.x, q.x, d.x, t), 12);
         expect(b.y).toBeCloseTo(cr(a.y, p.y, q.y, d.y, t), 12);
       }
     });
-    expect(freehandPath(trace(0).slice(0, 2), size), 'a stroke of under 3 points: no mask').toBeNull();
   });
 
   it('rectangle: the box from either corner, clockwise from the top left; a tap makes none', () => {
@@ -393,10 +429,10 @@ describe('mask tools (masks v2, M2.8)', () => {
     expect(path[1]!.in && path[1]!.out, 'smooth').toBeTruthy();
     expect(path.slice(3), 'the other quarters as they were').toEqual(e.slice(2));
     for (const [a, b] of [[0, 1], [1, 2]] as const) for (let k = 0; k <= 20; k++) expect(offCurve(e[0]!, e[1]!, bezier(path[a]!, path[b]!, k / 20))).toBeLessThan(1e-4);
-    // where the curve comes nearest to the tap: on the radius through it (within a 64th of the quarter)
-    // (the chord's nearest point would be 0.015 off)
+    // where the curve comes nearest to the tap: on the radius through it (κ's quarter is within 6e-5 of the circle;
+    // the nearest of the 63 samples alone is up to 0.0025 off, the chord's nearest point 0.015)
     const towards = Math.hypot(0.1, -0.2);
-    expect(Math.hypot(path[1]!.x - 0.4 - (0.2 * 0.1) / towards, path[1]!.y - 0.4 + (0.2 * 0.2) / towards)).toBeLessThan(0.005);
+    expect(Math.hypot(path[1]!.x - 0.4 - (0.2 * 0.1) / towards, path[1]!.y - 0.4 + (0.2 * 0.2) / towards)).toBeLessThan(2e-4);
     // a curve with a handle at one end only: the other end stays a corner, and the curve stays too
     const half = [{ x: 0, y: 0 }, { x: 1, y: 0, in: { x: 0, y: -0.5 } }, { x: 0.5, y: 1 }];
     const split = insertNearest(half, { x: 0.6, y: -0.2 }).path;
@@ -411,6 +447,18 @@ describe('mask tools (masks v2, M2.8)', () => {
     expect(smoothPoint(box, 1)).toEqual(smooth);
     expect(toggleSmooth([box[0]!, smooth, ...box.slice(2)], 1)).toEqual({ x: 0.6, y: 0 });
     expect(toggleSmooth([box[0]!, { ...box[1]!, out: { x: 0, y: 0.1 } }, ...box.slice(2)], 1), 'one handle is smooth too').toEqual({ x: 0.6, y: 0 });
+  });
+
+  it('Backspace on a Bézier handle removes the handle, on a point the point (a mask keeps 3)', () => {
+    const e = ellipsePath({ x: 0.2, y: 0.2 }, { x: 0.6, y: 0.6 });
+    const o = { ...output, slices: [{ ...output.slices[0]!, masks: [{ mode: 'add' as const, feather: 0, path: e }] }] };
+    const { in: _, ...cornerIn } = e[1]!;
+    expect(maskRemoval(o, '/slices/0/masks/0/path/1/in')).toEqual({ path: '/slices/0/masks/0/path/1', value: cornerIn });
+    expect(maskRemoval(o, '/slices/0/masks/0/path/1')).toEqual({ path: '/slices/0/masks/0/path', value: [e[0], e[2], e[3]] });
+    const three = { ...o, slices: [{ ...o.slices[0]!, masks: [{ mode: 'add' as const, feather: 0, path: e.slice(0, 3) }] }] };
+    expect(maskRemoval(three, '/slices/0/masks/0/path/1'), 'three points stay').toBeNull();
+    expect(maskRemoval(three, '/slices/0/masks/0/path/1/out'), 'a handle still goes').not.toBeNull();
+    expect(maskRemoval(o, '/slices/0/dest/1')).toBeNull();
   });
 
   it('a dragged Bézier handle is stored as the offset from its point; a dragged point keeps its handles', () => {

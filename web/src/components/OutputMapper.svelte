@@ -9,9 +9,10 @@
   // Pointer Events everywhere, 44 px hit targets, arrow keys nudge the selection by one output pixel (Shift: ten),
   // Tab / Shift+Tab step to the next / previous point, Escape lets go (so Tab leaves the editor again). Drags go out
   // as (JSON pointer, point) at most every 120 ms and on release; a tap without a move sends nothing.
-  // Mask mode: a subtract mask's outline is dashed and its points hollow; the selected point shows its Bézier handles
-  // (under the points, so a short handle never takes a point's drag); a double-tap on a point toggles corner ↔ smooth;
-  // a drag tool (Rectangle, Ellipse, Freehand) takes one drag on the picture and hands its path over on release.
+  // Mask mode: a subtract mask's outline is dashed and its points hollow; the selected point shows its Bézier handles,
+  // and a press takes the nearest of them or the point under it (a short handle lies inside its point's hit circle);
+  // a double-tap on a point toggles corner ↔ smooth; a drag tool (Rectangle, Ellipse, Freehand) takes one drag of one
+  // pointer on the picture and hands its path over on release.
   // Slice, mask and mesh points are stored before the warp but the preview shows the warped picture, so handles are
   // drawn through the warp (lib/warp.ts) and the pointer is mapped back through its inverse.
   let {
@@ -70,52 +71,81 @@
       points: mode === 'mesh' ? line.points.map((p) => toScreen(output, mode, p)) : warpedOutline(output, mode, line.points, true),
     })),
   );
+  /** an SVG polyline's points in viewBox units, back to the first for a closed one */
+  const svgPoints = (pts: MapPoint[], closed = false) => [...pts, ...(closed && pts[0] ? [pts[0]] : [])].map((p) => `${p.x * W},${p.y * H}`).join(' ');
   /** while dragging, the handle follows the pointer before the engine echoes the patch */
   let dragging = $state<{ path: string; point: MapPoint; moved: boolean } | null>(null);
   let svg: SVGSVGElement | undefined = $state();
   let lastSent = 0;
-  /** a drag tool's stroke, in stored coordinates, and the path it makes so far */
-  let stroke = $state<MapPoint[] | null>(null);
-  const drawn = $derived(stroke && tool ? (tool === 'freehand' ? stroke : maskOutline(toolPath(tool, stroke, size) ?? [])) : []);
+  /** a drag tool's stroke: its pointer and its points in stored coordinates (not state: it grows on every move); the
+   *  preview is the polyline's points, a move adds one, so a long stroke costs no more per move than a short one */
+  let stroke: { id: number; points: MapPoint[] } | null = null;
+  let drawn = $state('');
+  // the tool going (Cancel, the lock) mid-drag ends the stroke: no preview is left behind
+  $effect(() => {
+    void tool;
+    stroke = null;
+    drawn = '';
+  });
   let lastTap = { path: '', at: 0 };
   /** the point whose Bézier handles show: the selected point's, also while one of its handles is selected */
   const pointOf = (path: string) => path.replace(/\/(in|out)$/, '');
   const knobsOf = $derived(selected ? pointOf(selected) : null);
   const isKnob = (path: string) => !!maskHandle(path)?.side;
+  const knobs = $derived(points.filter((h) => isKnob(h.path) && pointOf(h.path) === knobsOf));
   const subtract = (path: string) => {
     const h = maskHandle(path);
     return !!h && output.slices[h.slice]?.masks?.[h.mask]?.mode === 'subtract';
   };
 
   function shown(h: { path: string; point: MapPoint }): MapPoint {
-    return toScreen(output, mode, dragging?.path === h.path ? dragging.point : h.point);
+    if (dragging?.path === h.path) return toScreen(output, mode, dragging.point);
+    // a Bézier handle goes with its point while that is dragged
+    const base = dragging && isKnob(h.path) && pointOf(h.path) === dragging.path ? points.find((q) => q.path === dragging!.path)?.point : undefined;
+    return toScreen(output, mode, base ? { x: h.point.x + dragging!.point.x - base.x, y: h.point.y + dragging!.point.y - base.y } : h.point);
   }
 
-  function toPoint(event: PointerEvent): MapPoint {
+  /** the pointer on the picture, 0…1; clamped to it unless `free` */
+  function onScreen(event: MouseEvent, free = false): MapPoint {
     const rect = svg!.getBoundingClientRect();
-    const onScreen = { x: clamp01((event.clientX - rect.left) / rect.width), y: clamp01((event.clientY - rect.top) / rect.height) };
-    const p = fromScreen(output, mode, onScreen);
-    return { x: clamp01(p.x), y: clamp01(p.y) };
+    const p = { x: (event.clientX - rect.left) / rect.width, y: (event.clientY - rect.top) / rect.height };
+    return free ? p : { x: clamp01(p.x), y: clamp01(p.y) };
   }
 
-  function down(event: PointerEvent, path: string) {
+  /** the pointer in stored coordinates, on the output; a Bézier handle (`free`) may go past its edge */
+  function toPoint(event: PointerEvent, free = false): MapPoint {
+    const p = fromScreen(output, mode, onScreen(event, free));
+    return free ? p : { x: clamp01(p.x), y: clamp01(p.y) };
+  }
+
+  function down(event: PointerEvent, hit: string) {
     if (tool) return;  // the drag draws a shape
+    // the nearest of the shown Bézier handles takes the press when it is nearer than the handle hit (drawn on top)
+    const at = onScreen(event);
+    const far = (h: { path: string; point: MapPoint }) => Math.hypot((shown(h).x - at.x) * W, (shown(h).y - at.y) * H);
+    const path = [...points.filter((h) => h.path === hit), ...knobs].sort((a, b) => far(a) - far(b))[0]?.path ?? hit;
     (event.currentTarget as Element).setPointerCapture(event.pointerId);
     selected = path;
-    // a second tap on the same point within 350 ms: a double-tap, which works by touch too (no dblclick there)
-    if (ontoggle && lastTap.path === path && event.timeStamp - lastTap.at < 350) {
+    // a second tap on the same point within 350 ms: a double-tap, which works by touch too (no dblclick there); not on
+    // a Bézier handle, whose point would lose the handle being moved
+    if (ontoggle && !isKnob(path) && lastTap.path === path && event.timeStamp - lastTap.at < 350) {
       lastTap = { path: '', at: 0 };
       ontoggle(path);
       return;
     }
     lastTap = { path, at: event.timeStamp };
-    dragging = { path, point: toPoint(event), moved: false };
+    dragging = { path, point: toPoint(event, isKnob(path)), moved: false };
   }
 
   function move(event: PointerEvent) {
-    if (stroke) stroke.push(toPoint(event));
+    if (stroke?.id === event.pointerId && tool) {
+      const p = toPoint(event);
+      stroke.points.push(p);
+      if (tool === 'freehand') drawn += ` ${svgPoints([onScreen(event)])}`;
+      else drawn = svgPoints(warpedOutline(output, mode, maskOutline(toolPath(tool, [stroke.points[0]!, p], size) ?? []), true), true);
+    }
     if (!dragging) return;
-    dragging = { path: dragging.path, point: toPoint(event), moved: true };
+    dragging = { path: dragging.path, point: toPoint(event, isKnob(dragging.path)), moved: true };
     const now = performance.now();
     if (now - lastSent > 120) {
       lastSent = now;
@@ -124,24 +154,27 @@
   }
 
   function up(event: PointerEvent) {
-    if (stroke && tool) {
-      const path = event.type === 'pointerup' ? toolPath(tool, [...stroke, toPoint(event)], size) : null;
+    if (stroke?.id === event.pointerId) {
+      const path = tool && event.type === 'pointerup' ? toolPath(tool, [...stroke.points, toPoint(event)], size) : null;
       stroke = null;
+      drawn = '';
       if (path) ondraw?.(path);
     }
     if (!dragging) return;
-    const final = { path: dragging.path, point: toPoint(event), moved: dragging.moved };
+    const final = { path: dragging.path, point: toPoint(event, isKnob(dragging.path)), moved: dragging.moved };
     dragging = null;
     if (final.moved) onchange(final.path, final.point);
   }
 
-  /** a tap on the picture itself (not on a handle), or the start of a drag tool's drag anywhere on it */
+  /** a tap on the picture itself (not on a handle), or the start of a drag tool's drag anywhere on it (one pointer: a
+   *  second finger or a palm meanwhile is ignored) */
   function background(event: PointerEvent) {
-    if (mode !== 'mask') return;
+    if (mode !== 'mask' || stroke) return;
     if (tool && ondraw) {
       event.preventDefault();
       svg!.setPointerCapture(event.pointerId);
-      stroke = [toPoint(event)];
+      stroke = { id: event.pointerId, points: [toPoint(event)] };
+      drawn = svgPoints([onScreen(event)]);
       return;
     }
     if ((event.target as Element).closest('.handle') || !onadd || !(addMode || draft)) return;
@@ -151,9 +184,7 @@
 
   function doubleClick(event: MouseEvent) {
     if ((event.target as Element).closest('.handle') || mode !== 'mask' || !onadd || draft || tool) return;
-    const rect = svg!.getBoundingClientRect();
-    const p = { x: clamp01((event.clientX - rect.left) / rect.width), y: clamp01((event.clientY - rect.top) / rect.height) };
-    onadd(fromScreen(output, mode, p));
+    onadd(fromScreen(output, mode, onScreen(event)));
   }
 
   function key(event: KeyboardEvent) {
@@ -185,12 +216,12 @@
 <svg bind:this={svg} class="mapper" viewBox="0 0 {W} {H}" role="application" aria-label="Mapping editor: drag the handles, arrow keys nudge the selected point, Tab steps to the next one, Escape lets go so Tab leaves" tabindex="0" class:adding={mode === 'mask' && (addMode || draft || tool)} onkeydown={key} onpointerdown={background} ondblclick={doubleClick} onpointermove={move} onpointerup={up} onpointercancel={up}>
   {#if draft && draft.length > 0}
     {@const pts = draft.map((p) => toScreen(output, mode, p))}
-    <polyline points={pts.map((p) => `${p.x * W},${p.y * H}`).join(' ')} fill="none" stroke="#FFC532" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" />
+    <polyline points={svgPoints(pts)} fill="none" stroke="#FFC532" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" />
     {#each pts as p, i (i)}<circle cx={p.x * W} cy={p.y * H} r="10" fill="#FFC532" stroke="#0B0C0E" stroke-width="3" vector-effect="non-scaling-stroke" />{/each}
   {/if}
   {#each lines as line, i (i)}
     <polyline
-      points={line.points.map((p) => `${p.x * W},${p.y * H}`).join(' ') + (line.closed ? ` ${line.points[0]!.x * W},${line.points[0]!.y * H}` : '')}
+      points={svgPoints(line.points, line.closed)}
       fill={mode !== 'mask' ? 'none' : line.subtract ? 'rgba(255,90,95,0.12)' : 'rgba(76,158,255,0.12)'}
       stroke={colours[line.group % colours.length]}
       stroke-width="2"
@@ -199,13 +230,12 @@
       opacity={mode === 'mesh' ? 0.5 : 0.9}
     />
   {/each}
-  {#if drawn.length > 0}
-    {@const pts = warpedOutline(output, mode, drawn, tool !== 'freehand')}
-    <polyline points={pts.map((p) => `${p.x * W},${p.y * H}`).join(' ')} fill="none" stroke="#FFC532" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" />
+  {#if drawn}
+    <polyline points={drawn} fill="none" stroke="#FFC532" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" />
   {/if}
-  {#each points.filter((h) => isKnob(h.path) && pointOf(h.path) === knobsOf) as h (h.path)}
+  {#each knobs as h (h.path)}
     {@const p = shown(h)}
-    {@const at = toScreen(output, mode, points.find((q) => q.path === knobsOf)?.point ?? h.point)}
+    {@const at = shown(points.find((q) => q.path === knobsOf) ?? h)}
     <line x1={at.x * W} y1={at.y * H} x2={p.x * W} y2={p.y * H} stroke="#ECEEF1" stroke-width="1.5" vector-effect="non-scaling-stroke" />
     <g class="handle" class:sel={selected === h.path} onpointerdown={(e) => down(e, h.path)} role="button" aria-label={h.path} tabindex="-1">
       <circle cx={p.x * W} cy={p.y * H} r="36" fill="transparent" />

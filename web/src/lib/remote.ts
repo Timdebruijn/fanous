@@ -6,7 +6,7 @@
 // index of one point in `handles(output, mode, sliceIndex)`; the anchor is the point the mapper has selected.
 import type { JSONValue } from './protocol';
 import { handles, maskHandle, movedHandle, type MapPoint, type MapperMode, type OutputConfig } from './outputs';
-import { nudgeStored, toScreen } from './warp';
+import { fromScreen, nudgeStored, toScreen } from './warp';
 
 export const SIDES = ['top', 'right', 'bottom', 'left'] as const;
 export type Side = (typeof SIDES)[number];
@@ -109,15 +109,20 @@ export function label(output: OutputConfig, mode: MapperMode, sliceIndex: number
 /** The one `output.set` that moves `indices` by (dx, dy) output pixels as seen on screen, through the warp
  *  (`nudgeStored`). The points move as one: the step stops where the first of them would leave the output, and under a
  *  warp a point whose stored position would leave 0…1 holds the whole group, so a group is never squeezed or bent.
- *  A single point writes its own path (a mask point keeps its handles; a Bézier handle writes its point, `movedHandle`),
- *  several write their whole list (mask points: the slice's masks; Bézier handles among them move with their points
- *  only). Null when nothing moves. */
+ *  A single point writes its own path (a mask point keeps its handles; a Bézier handle writes its point, `movedHandle`,
+ *  and moves freely: a smoothed corner at the output's edge has one outside), several write their whole list (mask
+ *  points: the slice's masks; Bézier handles among them move with their points only). Null when nothing moves. */
 export function nudgeCommand(
   output: OutputConfig, mode: MapperMode, sliceIndex: number, indices: number[], dx: number, dy: number, size: { w: number; h: number },
 ): { path: string; value: JSONValue } | null {
   const all = handles(output, mode, sliceIndex);
   const moving = indices.filter((i) => all[i] && (indices.length === 1 || !maskHandle(all[i]!.path)?.side));
   if (moving.length === 0) return null;
+  const knob = moving.length === 1 ? all[moving[0]!]! : undefined;
+  if (knob && maskHandle(knob.path)?.side) {
+    const s = toScreen(output, mode, knob.point);
+    return movedHandle(output, knob.path, fromScreen(output, mode, { x: s.x + dx / size.w, y: s.y + dy / size.h })) as unknown as { path: string; value: JSONValue };
+  }
   const on = moving.map((i) => toScreen(output, mode, all[i]!.point));
   const limit = (d: number, values: number[]) => Math.min(Math.max(d, Math.min(0, -Math.min(...values))), Math.max(0, 1 - Math.max(...values)));
   const nx = limit(dx / size.w, on.map((p) => p.x));

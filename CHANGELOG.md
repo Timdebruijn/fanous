@@ -529,14 +529,15 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   the UI comes with M2.8.
 - Added: **masks v2, the tools** (M2.8, PR #TBD, DESIGN §9.10 item 5, F5), the last step of M2. Mask mode of Warp &
   Slices has the tools **Polygon** (tap the corners), **Rectangle** and **Ellipse** (drag a box; **10 % inside**
-  without a drag), **Freehand** (drag along the outline, with a finger on an iPad: simplified to 2 output px and made
-  smooth) and **Image mask** (a still from the library); each adds an add mask as one undo step. A **mask list** per
-  slice: Add or Subtract, **Invert**, feather (path masks), **Redraw**, **Remove**. Subtract masks show dashed with
-  hollow points. The selected point shows its Bézier handles, which drag; a double-tap (or **Smooth point**) makes a
-  point smooth or a corner again; Add points on a curve splits it without changing the shape; Tab and the iPad remote
-  step through the handles too ("mask point 5 in"). Slices mode: **Triangle** (the top corners meet mid-edge) and
-  **Circle** (an ellipse mask filling the slice). A tap on a handle without moving it no longer writes the point;
-  Redraw no longer overwrites another mask when another client changed the list meanwhile.
+  without a drag), **Freehand** (drag along the outline, with a finger on an iPad: simplified to 2 output px, sharp
+  turns kept as corners, smooth elsewhere) and **Image mask** (a still from the library); each adds an add mask as one
+  undo step. A **mask list** per slice: Add or Subtract, **Invert**, feather (path masks), **Redraw**, **Remove**.
+  Subtract masks show dashed with hollow points. The selected point shows its Bézier handles, which drag (also past
+  the output's edge) and Backspace removes; a double-tap (or **Smooth point**) makes a point smooth or a corner again;
+  Add points on a curve splits it without changing the shape; Tab and the iPad remote step through the handles too
+  ("mask point 5 in"). Slices mode: **Triangle** (the top corners meet mid-edge) and **Circle** (an ellipse mask
+  filling the slice). A tap on a handle without moving it no longer writes the point; Redraw no longer overwrites
+  another mask when another client changed the list meanwhile.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

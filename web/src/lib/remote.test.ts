@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { UNIT_QUAD, ellipsePath, handles, meshIdentity, rectanglePath, type MapPoint, type MaskPoint, type MaskShape, type OutputConfig } from './outputs';
+import { UNIT_QUAD, ellipsePath, handles, meshIdentity, rectanglePath, smoothPoint, type MapPoint, type MaskPoint, type MaskShape, type OutputConfig } from './outputs';
 import { choose, grid, groups, label, members, nudgeCommand, nudgeQueue, step, trackpad } from './remote';
 import { toScreen } from './warp';
 
@@ -136,6 +136,19 @@ describe('nudge', () => {
       expect(p.y).toBeCloseTo(oval.slices[0]!.masks[0]!.path[i]!.y + 0.01, 12);
       expect([p.in, p.out]).toEqual([oval.slices[0]!.masks[0]!.path[i]!.in, oval.slices[0]!.masks[0]!.path[i]!.out]);
     });
+  });
+
+  it('a Bézier handle outside the output (a smoothed corner at its edge) still moves, either way', () => {
+    const o = output();
+    const box = rectanglePath({ x: 0, y: 0 }, { x: 1, y: 1 });
+    const smooth = { ...o, slices: [{ ...o.slices[0]!, masks: [{ mode: 'add' as const, feather: 0, path: box.map((_, i) => smoothPoint(box, i)) }] }] };
+    // the top-left point's in handle, at (−1/6, 1/6), is index 1 of the list
+    expect(handles(smooth, 'mask', 0)[1]!.point.x).toBeLessThan(0);
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const moved = nudgeCommand(smooth, 'mask', 0, [1], dx * 10, dy * 5, size)!.value as unknown as MaskPoint;
+      expect(moved.in!.x + 1 / 6).toBeCloseTo(dx / 100, 12);
+      expect(moved.in!.y - 1 / 6).toBeCloseTo(dy / 100, 12);
+    }
   });
 
   it('a group moves as one: it stops at the edge of the output instead of being squeezed', () => {
