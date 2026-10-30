@@ -37,6 +37,36 @@ function stopped(child: ChildProcess, ms: number): Promise<boolean> {
   });
 }
 
+async function stop(child: ChildProcess): Promise<void> {
+  child.kill('SIGTERM');
+  if (!(await stopped(child, 5_000))) child.kill('SIGKILL');
+}
+
+/**
+ * `fanousd` on a free port. A probe cannot know every port the engine's listener refuses with EADDRINUSE: an outgoing
+ * connection of another process on the LAN address (Signal, Firefox, Tailscale, ...) or a wildcard listener binds fine
+ * on 127.0.0.1 for Node (B130). So the engine's own bind decides, and it is started again on another port when it failed.
+ */
+async function startEngine(home: string, out: string): Promise<{ child: ChildProcess; url: string }> {
+  for (;;) {
+    const port = await freePort();
+    const fd = openSync(out, 'w');
+    const child = spawn(binary, ['--foreground', '--no-network', '--port', String(port), '--web-root', webRoot], {
+      env: { ...process.env, FANOUS_HOME: home },
+      stdio: ['ignore', fd, fd],
+    });
+    writeFileSync(join(home, 'fanousd.pid'), String(child.pid));
+    const deadline = Date.now() + 20_000;
+    let log = '';
+    while (!/HTTPS listen(ing|er failed)/.test(log) && child.exitCode === null && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50));
+      log = readFileSync(out, 'utf8');
+    }
+    if (!log.includes('HTTPS listener failed')) return { child, url: `https://127.0.0.1:${port}` };  // listening, gone or silent: the caller reports
+    await stop(child);
+  }
+}
+
 /** Engines left by an aborted run (their test runner gone, so launchd adopted them): killed, their homes removed. */
 function reapOrphans(): void {
   for (const name of readdirSync(tmpdir()).filter((n) => n.startsWith('fanous-e2e-'))) {
@@ -62,15 +92,8 @@ export const test = base.extend<{ engine: Engine }>({
     if (!existsSync(join(webRoot, 'index.html'))) throw new Error('web/dist is missing: run `npm run build` first');
     reapOrphans();
     const home = mkdtempSync(join(tmpdir(), 'fanous-e2e-'));
-    const port = await freePort();
-    const url = `https://127.0.0.1:${port}`;
     const out = join(home, 'fanousd.out');
-    const fd = openSync(out, 'w');
-    const child = spawn(binary, ['--foreground', '--no-network', '--port', String(port), '--web-root', webRoot], {
-      env: { ...process.env, FANOUS_HOME: home },
-      stdio: ['ignore', fd, fd],
-    });
-    writeFileSync(join(home, 'fanousd.pid'), String(child.pid));
+    const { child, url } = await startEngine(home, out);
     const api = await playwright.request.newContext({ baseURL: url, ignoreHTTPSErrors: true });
     try {
       const deadline = Date.now() + 20_000;
@@ -84,8 +107,7 @@ export const test = base.extend<{ engine: Engine }>({
       await use({ url, home, token, api });
     } finally {
       await api.dispose();
-      child.kill('SIGTERM');
-      if (!(await stopped(child, 5_000))) child.kill('SIGKILL');
+      await stop(child);
       if (testInfo.status !== testInfo.expectedStatus) {
         const log = join(home, 'Library/Logs/Fanous/fanousd.log');
         if (existsSync(log)) {
