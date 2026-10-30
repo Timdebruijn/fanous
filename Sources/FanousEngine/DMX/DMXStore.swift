@@ -365,29 +365,38 @@ public final class DMXStore: @unchecked Sendable {
     }
 
     /// Replaces the patch and the fixtures that exist (`patch.set`, `layers.setCount`, `output.add`, undo, project load;
-    /// `fixtures` nil: the patched ones). Resolvers of fixtures that stay keep their state, but one that lost its patch
-    /// entry or moved to another universe drops the console's values; a new one takes the policy and the cue's values.
+    /// `fixtures` nil: the patched ones).
     public func setPatch(_ patch: Patch, fixtures: Set<FixtureRef>? = nil) {
         let fixtures = fixtures ?? Set(patch.entries.map(\.fixture))
-        queue.async { [self] in
-            let previous = self.patch
-            self.patch = patch
-            let now = Self.now
-            var kept: [FixtureRef: FixtureResolver] = [:]
-            for fixture in fixtures {
-                if var resolver = resolvers[fixture] {
-                    if let was = previous.entry(for: fixture), was.universe != patch.entry(for: fixture)?.universe { resolver.clearDMX() }
-                    kept[fixture] = resolver
-                } else {
-                    var resolver = FixtureResolver(mode: fixture.mode, policy: policy)
-                    for output in cue where output.fixture == fixture { resolver.setInternal(output.parameter, raw: output.raw, source: .cue, at: now) }
-                    kept[fixture] = resolver
-                }
+        queue.async { [self] in applyPatch(patch, fixtures: fixtures, at: Self.now) }
+    }
+
+    /// Resolvers of fixtures that stay keep their state, but one that lost its patch entry or moved to another universe
+    /// drops the console's values; a new one takes the policy and the cue's values. A new or changed entry on a universe
+    /// that is being received takes that universe's values now, not at its next packet (a console that sends only
+    /// changes may wait a second).
+    func applyPatch(_ patch: Patch, fixtures: Set<FixtureRef>, at now: TimeInterval) {
+        let previous = self.patch
+        self.patch = patch
+        var kept: [FixtureRef: FixtureResolver] = [:]
+        for fixture in fixtures {
+            let was = previous.entry(for: fixture), entry = patch.entry(for: fixture), isNew = resolvers[fixture] == nil
+            var resolver = resolvers[fixture] ?? FixtureResolver(mode: fixture.mode, policy: policy)
+            if isNew {
+                for output in cue where output.fixture == fixture { resolver.setInternal(output.parameter, raw: output.raw, source: .cue, at: now) }
+            } else if let was, was.universe != entry?.universe {
+                resolver.clearDMX()
             }
-            resolvers = kept
-            applyLossModes()
-            publish(receivedAt: 0)
+            if let entry, entry != was || isNew, table.status(for: entry.universe, at: now).active,
+                let slots = table.slots(for: entry.universe), let raw = ChannelMap.rawValues(mode: fixture.mode, slots: slots, address: entry.address)
+            {
+                resolver.updateDMX(raw, at: now)
+            }
+            kept[fixture] = resolver
         }
+        resolvers = kept
+        applyLossModes()
+        publish(receivedAt: 0)
     }
 
     public var currentPatch: Patch { queue.sync { patch } }

@@ -335,6 +335,51 @@ final class Box { var value = 0 }
         store.queue.sync {}
         let added = store.snapshots.withLatest { $0.layers[1] }
         #expect(added.intensity == 1 && added.file == 7, "\(added)")
+        // released before the layer is added: nothing to take
+        store.setCue([CueOutput]())
+        store.setPatch(store.currentPatch, fixtures: ProjectDocument.fixtures(layerCount: 1, outputs: []))
+        store.setPatch(store.currentPatch, fixtures: ProjectDocument.fixtures(layerCount: 2, outputs: []))
+        store.queue.sync {}
+        #expect(store.snapshots.withLatest { $0.layers[1] } == LayerParameters())
+    }
+
+    /// A new or changed patch entry on a universe that is being received takes its values at once (a console that sends
+    /// only changes may not send for a second): moved to another live universe, patched again (Undo of Unpatch). On a
+    /// universe that is not received it is at its defaults.
+    @Test func aPatchOnALiveUniverseTakesItsValuesAtOnce() {
+        let fixtures = ProjectDocument.fixtures(layerCount: 1, outputs: [])
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 0), fixtures: fixtures, logger: Logger(label: "test"))
+        Self.console(store, port: 0, [0xFF, 0xFF, 0, 5], at: 1000)  // A 0.0.0: Layer 1 full, file 5
+        Self.console(store, port: 2, [0x80, 0x00, 0, 9], at: 1000)  // A 0.0.2: half, file 9
+        func layer1() -> LayerParameters { store.snapshots.withLatest { $0.layers[0] } }
+        #expect(layer1().intensity == 1 && layer1().file == 5)
+        /// Layer 1 on A 0.0.`universe` at 1 (nil: unpatched), the rest as it is.
+        func repatch(_ universe: Int?, at time: Double) {
+            var patch = store.currentPatch
+            patch.entries.removeAll { $0.fixture == .layer(1) }
+            if let universe { patch.entries.append(PatchEntry(fixture: .layer(1), universe: UniverseID(.artnet, universe), address: 1)) }
+            store.queue.sync { store.applyPatch(patch, fixtures: fixtures, at: time) }
+        }
+        repatch(2, at: 1000.5)
+        #expect(abs(layer1().intensity - 0.5) < 0.01 && layer1().file == 9, "moved to A 0.0.2: \(layer1())")
+        repatch(nil, at: 1000.6)
+        #expect(layer1() == LayerParameters(), "unpatched")
+        repatch(0, at: 1000.7)
+        #expect(layer1().intensity == 1 && layer1().file == 5, "patched again: \(layer1())")
+        repatch(3, at: 1000.8)
+        #expect(layer1() == LayerParameters(), "A 0.0.3 is not received")
+        repatch(0, at: 1010)
+        #expect(layer1() == LayerParameters(), "A 0.0.0 silent for 10 s: no longer received")
+    }
+
+    /// Without `layerCount` (a hand-written project) the layers the engine starts with; outputs above 8 have no fixture.
+    @Test func fixturesFromAProject() throws {
+        var project = ProjectDocument.initial(patch: .standard(layers: 3, outputs: 0), layerCount: 3, libraryRoot: "/tmp/lib", policy: .dmx)
+        try ProjectDocument.setOutputs([OutputConfig(id: 1), OutputConfig(id: 9)], in: &project)
+        #expect(ProjectDocument.fixtures(from: project) == [.layer(1), .layer(2), .layer(3), .master, .output(1), .keystone(1)])
+        try project.set(.null, at: "/layerCount")
+        let layers = ProjectDocument.fixtures(from: project).filter { if case .layer = $0 { true } else { false } }
+        #expect(layers == Set((1...ProjectDocument.defaultLayerCount).map(FixtureRef.layer)))
     }
 
     /// Every output has a Keystone resolver; one with no DMX and no internal value is skipped, so `publish` on the DMX
