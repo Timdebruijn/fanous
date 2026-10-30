@@ -1548,7 +1548,7 @@ Not verified here (no camera in this environment): discovery of real
 devices, Continuity Camera, the permission prompt's name, and a replug
 on another port. They are the owner's live check.
 
-**As built (2026-10-30, step 3a, PR #N):** displays 21–28, engine side
+**As built (2026-10-30, step 3a, PR #127):** displays 21–28, engine side
 (the Media and System screens and the user guide are step 3b).
 *Input:* `Capture/ScreenInput.swift`, a subclass of `CaptureInput` on an
 `SCStream`. The frame slot, the ring of the last three taken frames plus

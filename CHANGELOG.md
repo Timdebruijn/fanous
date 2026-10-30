@@ -410,7 +410,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   one block it goes right after the layer before it, else at its standard address, and it stays unpatched when that
   range is taken. Before, it took its standard address when that range was free. Layers above 32 get no address. The
   slot rule (`Patch.slot`, `Patch.blockStart`) has shared test vectors in `Tests/Fixtures/patch-slots.json`.
-- Added: whole displays are folder 0 files 21–28 (B73 step 3a, PR #N, DESIGN §8.2.1), engine side. The engine numbers
+- Added: whole displays are folder 0 files 21–28 (B73 step 3a, PR #127, DESIGN §8.2.1), engine side. The engine numbers
   every connected display that no output is bound to, keeps the numbers in the project (`/screens` `{"21": {uuid,
   name}}`, added to older projects on open) and captures a selected one with ScreenCaptureKit: BGRA in sRGB at the
   display's pixel size fitted into the canvas, at the canvas rate, without the cursor and without the engine's own
