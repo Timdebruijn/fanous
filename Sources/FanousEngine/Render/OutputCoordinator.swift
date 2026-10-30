@@ -101,14 +101,13 @@ public final class OutputCoordinator {
     private var headless: HeadlessDriver?
     private var masterDisplay: CGDirectDisplayID?
     private var lastOrphans: [String] = []
-    public private(set) var status: [OutputStatus] = []
     /// Called after every rebind with the new statuses (feeds `live.outputs`).
     public var onStatus: (@MainActor ([OutputStatus]) -> Void)?
 
-    public init(compositor: Compositor, context: MetalContext, fps: Double, displays: [DisplayInfo], logger: Logger) throws {
+    public init(compositor: Compositor, context: MetalContext, fps: Double, displays: [DisplayInfo], logger: Logger) {
         self.compositor = compositor
         self.context = context
-        self.compiler = try OutputCompiler(device: context.device, logger: logger)
+        self.compiler = OutputCompiler(device: context.device, logger: logger)
         self.fps = fps
         self.displays = displays
         self.logger = logger
@@ -228,7 +227,7 @@ public final class OutputCoordinator {
             let size = window.metalLayer.drawableSize
             var plans: [OutputPlan] = []
             for id in ids {
-                guard let config = outputs.first(where: { $0.id == id }), let index = outputs.firstIndex(where: { $0.id == id }) else { continue }
+                guard let config = outputs.first(where: { $0.id == id }) else { continue }
                 do {
                     plans.append(try compiler.compile(config, index: id, drawable: (Int(size.width), Int(size.height))))
                     statuses.append(OutputStatus(id: id, state: .bound, display: display.name, width: Int(size.width), height: Int(size.height), hz: display.hz, isMaster: displayID == newMaster))
@@ -267,8 +266,7 @@ public final class OutputCoordinator {
             statuses.append(OutputStatus(id: id, state: .lost, display: config?.display?.name, width: 0, height: 0, hz: 0, isMaster: false))
         }
         for id in binding.unassigned { statuses.append(OutputStatus(id: id, state: .unassigned, display: nil, width: 0, height: 0, hz: 0, isMaster: false)) }
-        status = statuses.sorted { $0.id < $1.id }
-        onStatus?(status)
+        onStatus?(statuses.sorted { $0.id < $1.id })
     }
 
     private func stopMaster() {

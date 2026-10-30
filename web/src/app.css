@@ -117,7 +117,7 @@ h2 { margin: 0; font-size: 17px; font-weight: 600; }
 .tag-mode { background: var(--accent-dim); color: var(--text-1); }
 .tag-open { border: 1px solid var(--line-strong); color: var(--text-2); }
 
-/* Panels, banners, meters */
+/* Panels, banners, bars */
 .panel { background: var(--surface-1); border: 1px solid var(--line); border-radius: var(--radius-panel); }
 .banner { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 8px; font-size: 13px; }
 .banner-red { background: var(--red-bg); border: 1px solid var(--red); }
@@ -125,8 +125,6 @@ h2 { margin: 0; font-size: 17px; font-weight: 600; }
 .bar { display: block; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
 .bar > span { display: block; height: 100%; background: var(--accent); }
 .bar-level > span { background: var(--text-1); }
-.meter { display: flex; gap: 3px; align-items: flex-end; height: 44px; }
-.meter span { width: 8px; border-radius: 2px; background: linear-gradient(to top, var(--green) 0 75%, var(--yellow) 75% 92%, var(--red) 92%); }
 .scrubber { position: relative; display: block; height: 28px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
 .scrubber .played { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-dim); }
 .scrubber .head { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--text-1); }

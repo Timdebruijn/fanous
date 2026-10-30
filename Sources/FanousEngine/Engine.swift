@@ -337,7 +337,7 @@ public final class Engine: @unchecked Sendable {
         versionTimer.resume()
         self.versionTimer = versionTimer
         // Phase 7: cues, timecode, show mode (DESIGN.md §14–15)
-        let cues = CueRunner(dmx: dmx, logger: logger)
+        let cues = CueRunner(dmx: dmx)
         cues.replace(list: ShowCommands.cueList(from: project))
         lastCues = ShowCommands.cueList(from: project)
         self.cues = cues
@@ -476,7 +476,7 @@ public final class Engine: @unchecked Sendable {
             render.compositor.previewWanted = { preview.wantsFrames }
             stateServer.preview = preview
             logger.info("engine start", metadata: ["step": "output shaders"])
-            let compiler = try OutputCompiler(device: context.device)
+            let compiler = OutputCompiler(device: context.device)
             preview.configure = { [weak self, compositor = render.compositor] target, streamer in
                 guard let self else { return false }
                 // layer:<n> (1-based, within the project's layers): that layer alone, drawn after the canvas pass
@@ -519,8 +519,8 @@ public final class Engine: @unchecked Sendable {
 
         // Displays and output windows (DESIGN.md §9.6); the render service starts after the coordinator exists.
             logger.info("engine start", metadata: ["step": "outputs"])
-            let coordinator = try MainActor.assumeIsolated { () throws -> OutputCoordinator in
-                let coordinator = try OutputCoordinator(compositor: render.compositor, context: context, fps: fps, displays: DisplayManager.current(), logger: logger)
+            let coordinator = MainActor.assumeIsolated { () -> OutputCoordinator in
+                let coordinator = OutputCoordinator(compositor: render.compositor, context: context, fps: fps, displays: DisplayManager.current(), logger: logger)
                 displays.withLock { $0 = coordinator.connectedDisplays }
                 coordinator.onStatus = { [weak self] statuses in
                     self?.outputStatus.withLock { $0 = statuses }
@@ -695,7 +695,7 @@ public final class Engine: @unchecked Sendable {
                 ]
                 return .json(200, Array(store.encode(session).utf8))
             case "/api/patch":
-                return .json(200, Array((try? encoder.encode(patch)) ?? Data()))
+                return .json(200, Array((try? encoder.encode(dmx.currentPatch)) ?? Data()))
             case "/api/gdtf":
                 return HTTPResponse(
                     status: 200,

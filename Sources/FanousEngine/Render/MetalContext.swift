@@ -56,7 +56,6 @@ public final class MetalContext: @unchecked Sendable {
     let library: MTLLibrary
     /// Index = (blur ? 1 : 0) | (edge ? 2 : 0): the neighbourhood effects are function-constant specialisations.
     let layerPipelines: [MTLRenderPipelineState]
-    var layerPipeline: MTLRenderPipelineState { layerPipelines[0] }
     let outputPipeline: MTLRenderPipelineState
     /// Slice mesh with warp, mask and blend map (DESIGN.md §9.5); slices alpha-blend over each other.
     let mappedPipeline: MTLRenderPipelineState

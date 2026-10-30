@@ -150,11 +150,6 @@ public struct ParameterSpec: Equatable, Sendable {
 
     public func clamped(_ raw: UInt16) -> UInt16 { min(raw, rawMax) }
 
-    public func band(forRaw raw: UInt16) -> Band? {
-        guard case .bands(let bands, _) = kind else { return nil }
-        return bands.first { $0.contains(raw) }
-    }
-
     /// Enum raw value for band parameters (fallback when no band matches), index value, or physical value.
     public func physical(fromRaw raw: UInt16) -> Double {
         let raw = clamped(raw)

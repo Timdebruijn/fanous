@@ -667,7 +667,6 @@
   .fields .caption.grow { flex: 1 1 240px; align-self: center; }
   .row4 { display: flex; flex-wrap: wrap; gap: 8px; }
   .row4 .input { width: 90px; }
-  .ro { display: inline-flex; align-items: center; min-height: var(--touch); color: var(--text-2); }
   .narrow { width: 90px; }
   .nudge { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
   .nudge .caption { flex: 1 1 200px; margin: 0; }

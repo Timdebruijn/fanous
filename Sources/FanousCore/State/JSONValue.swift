@@ -306,11 +306,6 @@ public struct JSONPointer: Hashable, Sendable, Codable, CustomStringConvertible,
         JSONPointer(tokens: tokens + [token])
     }
 
-    /// The pointer without its last token; nil for the root.
-    public var parent: JSONPointer? {
-        tokens.isEmpty ? nil : JSONPointer(tokens: Array(tokens.dropLast()))
-    }
-
     /// The last token; nil for the root.
     public var last: String? {
         tokens.last

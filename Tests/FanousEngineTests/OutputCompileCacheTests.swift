@@ -45,7 +45,7 @@ struct OutputCompileCacheTests {
     /// the warm cache has the bytes a fresh compiler gives it, so a key that drops a field fails here.
     @Test func aCacheHitHasTheBytesOfAFreshCompile() throws {
         let device = try MetalContext().device
-        let warm = try OutputCompiler(device: device)
+        let warm = OutputCompiler(device: device)
         let base = Self.output(1)
         let basePlan = try warm.compile(base, index: 1, drawable: (320, 180))
         func bytes(_ texture: MTLTexture?) -> [UInt8] {
@@ -100,7 +100,7 @@ struct OutputCompileCacheTests {
     /// warm cache has the mesh (bytes), opacity, canvas and mask of a fresh compile, so a key that drops a field fails here.
     @Test func aCachedSlicePlanHasTheBytesOfAFreshCompile() throws {
         let device = try MetalContext().device
-        let warm = try OutputCompiler(device: device)
+        let warm = OutputCompiler(device: device)
         let base = Self.output(1)
         let held = try warm.compile(base, index: 1, drawable: (320, 180))
         func bytes(_ buffer: MTLBuffer) -> [UInt8] { Array(UnsafeRawBufferPointer(start: buffer.contents(), count: buffer.length)) }
@@ -177,19 +177,19 @@ struct OutputCompileCacheTests {
         }
         func median(_ cached: Bool) throws -> Double {
             var outputs = wall
-            let shared = try OutputCompiler(device: device)
+            let shared = OutputCompiler(device: device)
             var set = OutputSet(plans: try outputs.map { try shared.compile($0, index: $0.id, drawable: (3840, 2160)) })
             var times: [Double] = []
             for edit in 1...20 {
                 outputs[0].blend.right.overlap = 240 + Double(edit)
-                let compiler = cached ? shared : try OutputCompiler(device: device)
+                let compiler = cached ? shared : OutputCompiler(device: device)
                 times.append(try cpuMs { set = OutputSet(plans: try outputs.map { try compiler.compile($0, index: $0.id, drawable: (3840, 2160)) }) })
             }
             #expect(set.plans.count == 4)
             return times.sorted()[times.count / 2]
         }
         let (before, after) = (try median(false), try median(true))
-        let compiler = try OutputCompiler(device: device)
+        let compiler = OutputCompiler(device: device)
         let unchanged = try withExtendedLifetime(try compiler.compile(wall[1], index: 2, drawable: (3840, 2160))) {
             try cpuMs { _ = try compiler.compile(wall[1], index: 2, drawable: (3840, 2160)) }
         }

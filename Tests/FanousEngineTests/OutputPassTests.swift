@@ -92,7 +92,7 @@ struct OutputPassTests {
     @Test func twoProjectorsBlendFlat() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 128)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         for gamma in [1.0, 2.2] {
             // A: canvas x 0…200 on a 200-wide projector; B: canvas x 120…320. Overlap 80 px.
             var a = OutputConfig(id: 1), b = OutputConfig(id: 2)
@@ -117,7 +117,7 @@ struct OutputPassTests {
     @Test func fourProjectorsBlendFlat() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 160)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         // 2×2 of 200×100 projectors on a 320×180 canvas: 80 px horizontal and 20 px vertical overlaps
         let gamma = 2.2
         var fields: [(bgra: [UInt8], width: Int, x: Int, y: Int)] = []
@@ -137,7 +137,7 @@ struct OutputPassTests {
     @Test func rawBypassesBlendAndOutputFixtureDimsAndBlacksOut() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         var o = OutputConfig(id: 1)
         o.blend.left = BlendEdge(overlap: 100, gamma: 1)
         let plan = try compiler.compile(o, index: 1, drawable: (Self.width, Self.height))
@@ -214,7 +214,7 @@ struct OutputPassTests {
     @Test(arguments: Swap.allCases) func freezeSurvivesARecompile(_ swap: Swap) throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
         let compositor = try Compositor(
             context: context, canvasWidth: Self.width, canvasHeight: Self.height, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 16),
@@ -280,7 +280,7 @@ struct OutputPassTests {
     /// B111: only a frozen plan of the same id adopts, and only copies that match the canvas size.
     @Test func adoptTakesOnlyAMatchingFrozenHold() throws {
         let context = try MetalContext()
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         func texture(_ width: Int) throws -> MTLTexture {
             try #require(context.device.makeTexture(descriptor: .texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width, height: 90, mipmapped: false)))
         }
@@ -308,7 +308,7 @@ struct OutputPassTests {
     @Test func testPatternFollowsTheWarp() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         var o = OutputConfig(id: 1)
         o.testPattern = TestPattern.colourBars.rawValue
         let flat = try Self.render(compiler.compile(o, index: 1, drawable: (Self.width, Self.height)), still: still, drawable: (Self.width, Self.height), context: context)
@@ -327,7 +327,7 @@ struct OutputPassTests {
     @Test func seamCheckFieldsReadBackTheirLevel() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         let size = (Self.width, Self.height)
         func image(_ config: OutputConfig, _ pattern: TestPattern, raw: Bool = false) throws -> [UInt8] {
             var fixture = OutputParameters()  // the Output fixture's channel 4, as from the console
@@ -373,7 +373,7 @@ struct OutputPassTests {
     @Test func testPatternsFollowTheDimmerAndBlackout() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         let size = (Self.width, Self.height)
         var lifted = OutputConfig(id: 1)
         lifted.blend.lift = 0.08
@@ -672,7 +672,7 @@ struct OutputPassTests {
     @Test func colourGainActsOnContentPatternsAndRaw() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         let size = (Self.width, Self.height)
         func rgb(_ config: OutputConfig, _ edit: (inout OutputParameters) -> Void = { _ in }) throws -> [Int] {
             var fixture = OutputParameters()
@@ -750,7 +750,7 @@ struct OutputPassTests {
     @Test func liftAndBlackOffsetFadeWithTheSlice() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 0)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         let size = (Self.width, Self.height)
         func green(_ config: OutputConfig, _ x: Int, value: UInt8 = 0) throws -> Int {
             let image = try Self.render(compiler.compile(config, index: 1, drawable: size), still: value == 0 ? still : Self.flat(context.device, value: value), drawable: size, context: context)
@@ -1066,7 +1066,7 @@ struct OutputPassTests {
     @Test func warpMaskAndSliceGoldens() throws {
         let context = try MetalContext()
         let still = try GoldenTests.pattern(device: context.device, variant: 0)
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         var cases: [(String, OutputConfig)] = []
         var pin = OutputConfig(id: 1)
         pin.warp.cornerPin = [MapPoint(0.1, 0.05), MapPoint(0.95, 0.12), MapPoint(0.9, 0.95), MapPoint(0.05, 0.85)]
@@ -1116,7 +1116,7 @@ struct OutputPassTests {
 
     @Test func thirtyThreeByThirtyThreeWarpCompilesUnder100ms() async throws {
         let context = try MetalContext()
-        let compiler = try OutputCompiler(device: context.device)
+        let compiler = OutputCompiler(device: context.device)
         var o = OutputConfig(id: 1)
         o.warp.mesh = .identity(cols: 33, rows: 33)
         o.warp.mesh!.points[33 * 16 + 16] = MapPoint(0.51, 0.5)
@@ -1127,7 +1127,7 @@ struct OutputPassTests {
         var ms = Double.infinity
         _ = await waitUntil(every: .zero) {
             // a fresh compiler each try: one compiler's cache would hand back the warm-up's textures (§9.10 item 0)
-            guard let fresh = try? OutputCompiler(device: context.device) else { return true }
+            let fresh = OutputCompiler(device: context.device)
             let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
             do {
                 _ = try fresh.compile(o, index: 1, drawable: (1920, 1080))

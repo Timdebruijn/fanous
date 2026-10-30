@@ -126,7 +126,6 @@ public final class OutputCompiler: @unchecked Sendable {
     public static let sliceSubdivisions = 64
     public static let fieldDivisor = 4
     private let device: MTLDevice
-    private let uniforms: MTLBuffer
 
     /// What a texture or slice plan is made of; a changed region, display mode or drawable size gives new keys.
     enum Key: Hashable {
@@ -146,11 +145,9 @@ public final class OutputCompiler: @unchecked Sendable {
     private let logger: Logger?
     private let reported = Mutex<Set<[Int]>>([])
 
-    public init(device: MTLDevice, logger: Logger? = nil) throws {
+    public init(device: MTLDevice, logger: Logger? = nil) {
         self.device = device
         self.logger = logger
-        guard let uniforms = device.makeBuffer(length: 256, options: .storageModeShared) else { throw RenderError.pipeline("mapped uniforms") }
-        self.uniforms = uniforms
     }
 
     /// Cache entries, a dead one until the next compile drops it (tests).
