@@ -821,8 +821,8 @@ code on 2026-10-30:
   fade runs. `DMXStore` keeps the last cue outputs and applies them to a
   resolver it creates (a layer added, an undo), so a held cue covers it at
   once.
-- Hold on signal loss and its `internal` switch belong to a universe, so they do not
-  touch an unpatched fixture. The UI expiry counts only while UI values mask a
+- Hold on signal loss and its `internal` switch belong to a universe, so they
+  do not touch an unpatched fixture. The UI expiry counts only while UI values mask a
   received console (§7.2), so on an unpatched fixture UI values stay until
   released.
 - Other readers: OSC feedback and `live.dmx.fixtures` now list unpatched
@@ -965,8 +965,8 @@ code on 2026-10-30:
 - **Universes** panel (right column, above the DMX monitor): one row per
   universe that the patch uses, the engine hears, or the project stores
   settings for.
-  - Each row shows the name, protocol, interface, hold on signal loss, the health
-    pill of today, and the fixtures on it ("Layers 1–8, Master").
+  - Each row shows the name, protocol, interface, hold on signal loss, the
+    health pill of today, and the fixtures on it ("Layers 1–8, Master").
   - A heard universe with nothing patched says "heard, nothing patched", which
     shows a console sending to the wrong universe. A universe with stored
     settings and no fixture says "not used"; its settings stay until reset.
@@ -3135,7 +3135,7 @@ failure while entering show mode.
 4. **Patch / DMX** — fixture list (type, universe, address, footprint,
    collisions in red), add/remove layers (bounded by the tier's measured
    limit, shown next to the count), per-universe source protocol and
-   interface, sACN priority, hold-on-loss setting; **DMX monitor**: a 512-cell
+   interface, sACN priority, hold on signal loss setting; **DMX monitor**: a 512-cell
    grid for the selected universe with patched ranges coloured per fixture
    and live values, hover shows "Layer 3 · ch 5 · Play mode · 17 → Loop rev";
    GDTF export button and a channel-map viewer (generated from the spec).

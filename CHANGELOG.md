@@ -411,7 +411,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   range is taken. Before, it took its standard address when that range was free. Layers above 32 get no address. The
   slot rule (`Patch.slot`, `Patch.blockStart`) has shared test vectors in `Tests/Fixtures/patch-slots.json`.
 - Changed: a universe's **Hold on loss** setting is now called **Hold on signal loss**, and **Loss after (s)** is
-  **Signal lost after (s)**, in the Universes panel and the user guide. The stored fields (`holdOnLoss`, `lossTimeout`)
+  **Signal lost after (s)**, in the Universes panel and the user guide (PR #125). The stored fields (`holdOnLoss`, `lossTimeout`)
   and their options are unchanged.
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
