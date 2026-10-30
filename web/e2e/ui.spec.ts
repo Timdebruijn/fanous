@@ -446,6 +446,31 @@ test('outputs: a colour gain drag is one undo step; the black offset steps by 0.
   await expect(colour.getByRole('slider', { name: 'Black offset' })).toHaveValue('0.1');
 });
 
+test('outputs: store a mapping preset, move a corner, recall the preset; Undo takes the recall back', async ({ page }) => {
+  await addUnassignedOutput(page);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  const presets = page.getByRole('region', { name: 'Mapping presets' });
+  await presets.getByRole('button', { name: 'Store as 1' }).click();
+  await expect(presets.getByRole('combobox', { name: 'Preset', exact: true })).toHaveValue('1');
+  await expect(presets.getByRole('button', { name: 'Store as 2' })).toBeVisible();
+
+  // the corner pin's top-left corner to the middle of the picture (the strip is below it: scroll back up first)
+  const editor = page.getByRole('application', { name: /Mapping editor/ });
+  await editor.scrollIntoViewIfNeeded();
+  const box = (await editor.boundingBox())!;
+  await page.mouse.move(box.x + 4, box.y + 4);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.round((await handleAt(page, '/warp/cornerPin/0')).x / 100)).toBe(5);
+  const moved = await handleAt(page, '/warp/cornerPin/0');
+
+  await presets.getByRole('button', { name: 'Recall' }).click();
+  await expect.poll(() => handleAt(page, '/warp/cornerPin/0')).toEqual({ x: 0, y: 0 });
+  await page.getByRole('status').filter({ hasText: 'Preset 1 recalled.' }).getByRole('button', { name: /Undo$/ }).click();
+  await expect.poll(() => handleAt(page, '/warp/cornerPin/0')).toEqual(moved);
+});
+
 test('outputs: remove an output, then Undo brings it back', async ({ page }) => {
   await addUnassignedOutput(page);
   await page.getByRole('button', { name: 'Outputs', exact: true }).click();

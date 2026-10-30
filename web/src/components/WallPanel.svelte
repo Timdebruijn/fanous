@@ -4,6 +4,7 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
   import OutputColour from './OutputColour.svelte';
+  import PresetStrip from './PresetStrip.svelte';
   import { lockTitle } from '../lib/show';
   import { app, can, cmd, toastUndo } from '../lib/state.svelte';
   import { throttledSender } from '../lib/throttle';
@@ -275,6 +276,7 @@
       {/if}
     </div>
   </div>
+  <PresetStrip ids={wall.outputs} />
 </section>
 
 <style>
