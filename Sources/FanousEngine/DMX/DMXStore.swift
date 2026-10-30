@@ -55,9 +55,10 @@ public final class DMXStore: @unchecked Sendable {
     private var resolvers: [FixtureRef: FixtureResolver] = [:]
     /// The project's source policy: on every fixture, and on the fixtures a later `setPatch` adds.
     private var policy = SourcePolicy.dmx
-    /// The cue list's last output: a resolver made later (a layer added, an undo) takes it at once, as the cue engine
-    /// pushes values only while a fade runs.
-    private var cue: [CueOutput] = []
+    /// The cue list's last output and when it came: a resolver made later (a layer added, an undo) takes it at once, as
+    /// the cue engine pushes values only while a fade runs. Stamped with that time, as the resolvers that existed got
+    /// it, so a console fed to the new resolver now wins under latest wins.
+    private var cue: (outputs: [CueOutput], at: TimeInterval) = ([], 0)
     private var announced: Set<String> = []
     private var lastAnnounced: (universe: UniverseID, source: String, priority: UInt8?)?
     private var timer: DispatchSourceTimer?
@@ -315,7 +316,7 @@ public final class DMXStore: @unchecked Sendable {
     public func setCue(_ outputs: [CueOutput]) {
         queue.async { [self] in
             let now = Self.now
-            cue = outputs
+            cue = (outputs, now)
             // values the list no longer asserts (removed cue) are released
             for key in resolvers.keys { resolvers[key]?.clearInternal(source: .cue) }
             for output in outputs { resolvers[output.fixture]?.setInternal(output.parameter, raw: output.raw, source: .cue, at: now) }
@@ -383,7 +384,9 @@ public final class DMXStore: @unchecked Sendable {
             let was = previous.entry(for: fixture), entry = patch.entry(for: fixture), isNew = resolvers[fixture] == nil
             var resolver = resolvers[fixture] ?? FixtureResolver(mode: fixture.mode, policy: policy)
             if isNew {
-                for output in cue where output.fixture == fixture { resolver.setInternal(output.parameter, raw: output.raw, source: .cue, at: now) }
+                for output in cue.outputs where output.fixture == fixture {
+                    resolver.setInternal(output.parameter, raw: output.raw, source: .cue, at: cue.at)
+                }
             } else if let was, was.universe != entry?.universe {
                 resolver.clearDMX()
             }

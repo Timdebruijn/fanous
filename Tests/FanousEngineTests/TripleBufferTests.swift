@@ -343,6 +343,25 @@ final class Box { var value = 0 }
         #expect(store.snapshots.withLatest { $0.layers[1] } == LayerParameters())
     }
 
+    /// A cue holds Layer 2 on file 7, then Layer 2 is added on a universe whose console sends file 3: under latest wins
+    /// the console's value (fed now) beats the cue's (from when the cue ran), as it would on a layer that existed.
+    @Test func aLayerAddedOnALiveUniverseGivesTheConsoleTheLatestChange() {
+        let store = DMXStore(
+            patch: .standard(layers: 2, outputs: 0), fixtures: ProjectDocument.fixtures(layerCount: 1, outputs: []), logger: Logger(label: "test"))
+        store.setPolicy(.ltp)
+        var cues = CueEngine(list: CueList(cues: [Cue(number: 5, values: [CueValue(fixture: .layer(2), parameter: .layer(.file), raw: 7)])]))
+        cues.go(at: 0)
+        store.setCue(cues.tick(at: 0))
+        store.queue.sync {}
+        let now = DMXStore.now
+        var bytes = [UInt8](repeating: 0, count: 68)
+        (bytes[64], bytes[65], bytes[67]) = (0xFF, 0xFF, 3)  // Layer 2 at 65: full, file 3
+        Self.console(store, port: 0, bytes, at: now)
+        store.queue.sync { store.applyPatch(.standard(layers: 2, outputs: 0), fixtures: ProjectDocument.fixtures(layerCount: 2, outputs: []), at: now + 1) }
+        let file = store.snapshot().fixtures["Layer 2"]?.first { $0.key == "file" }
+        #expect(file?.raw == 3 && file?.source == "dmx", "\(String(describing: file))")
+    }
+
     /// A new or changed patch entry on a universe that is being received takes its values at once (a console that sends
     /// only changes may not send for a second): moved to another live universe, patched again (Undo of Unpatch). On a
     /// universe that is not received it is at its defaults.
