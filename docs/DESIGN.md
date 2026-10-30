@@ -870,6 +870,12 @@ code on 2026-10-30:
   - A group with nothing patched shows **Patch as block**, which starts at the
     standard patch's position (layers at A 0.0.0 address 1, the Master on the
     next universe at 1, outputs after the Master).
+  - Known corner, accepted: an anchor that sits on a universe reached by a
+    carry (Layers 1–8 unplaced, Layer 9 at A 0.0.1 1) gives a start below 1, so
+    the group shows Custom, although a block from A 0.0.0 1 would fit. Rolling
+    the start back across a universe is ambiguous in general (Layer 3 at
+    A 0.0.1 1 fits 64 starts), and placement then follows "after n − 1".
+    Placing relative to the anchor would avoid it; that is a later refinement.
 - **Moving a block.** Changing the start universe or address (address 1 to
   513 − footprint) re-lays every required fixture of the group in one command,
   and the patched optional fixtures with it (Keystones keep their slot, below).
@@ -878,9 +884,11 @@ code on 2026-10-30:
   (universe, address stepper, Unpatch): the controls of today's Selected
   fixture panel, which goes. The universe settings move to the Universes panel
   (item 4) first.
-- **Keystone slots.** The Keystone block starts right after the eight output
-  slots (the Outputs block start + 64 channels, rolled over as above);
-  Keystone n sits on its slot n − 1 there. With the Master at 1 and outputs
+- **Keystone slots.** The Keystone block starts where a ninth output would
+  sit: `slot(9)` of the Outputs block (footprint 8), so the 512 carry applies
+  exactly as for outputs (outputs from A 0.0.1 457 put Output 8 at A 0.0.2 1 and
+  the Keystone block at A 0.0.2 9). Keystone n sits on slot n of that block
+  (footprint 16). With the Master at 1 and outputs
   from 9, the Keystones sit at 73, 89 … 185. **Patch** on a Keystone puts it on
   its slot when that range is free, else on the first 16 free channels after it
   in that universe, else it opens the inline editor. With no Outputs block, it
@@ -1058,21 +1066,21 @@ order. 32 layers are one block line and 32 chips that wrap, not 32 rows.
   - the sheet lines and the "+1" switch.
 - e2e: patch Layers as a block from A 0.0.2, then undo restores the patch.
 
-**Build order** (one PR each):
-1. This design.
-2. Engine: a fixture exists without a patch (item 1); after PR #112.
-3. Engine: `patch.setMany`, the existence check, and slot placement in
-   `layers.setCount` (item 2); after 2, which makes an unplaced layer usable.
-4. Core: `fixtures` in the channel map (item 3).
-5. Web: Universes panel and Who controls (item 4); the universe settings leave
+**Build order** (one PR each, after this design):
+1. Engine: a fixture exists without a patch (item 1); after PR #112.
+2. Engine: `patch.setMany`, the existence check, and slot placement in
+   `layers.setCount` (item 2); merged after 1, which makes an unplaced layer
+   usable.
+3. Core: `fixtures` in the channel map (item 3).
+4. Web: Universes panel and Who controls (item 4); the universe settings leave
    Selected fixture here.
-6. Web: groups, blocks, the inline editor and the status words (items 2–4);
-   needs 2–5.
-7. Web: Patch sheet (item 4); after 6.
+5. Web: groups, blocks, the inline editor and the status words (items 2–4);
+   needs 1–4.
+6. Web: Patch sheet (item 4); after 5.
 
-Steps 4 and 5 are independent of 2 and 3 and can be built alongside them; 2
-and 3 share the engine's state tests, so they go one after the other. The user
-guide changes with the step that changes what it describes (5–7).
+Steps 3 and 4 are independent of 1 and 2 and can be built alongside them; 1
+and 2 share the engine's state tests, so they go one after the other. The user
+guide changes with the step that changes what it describes (4–6).
 
 ---
 
