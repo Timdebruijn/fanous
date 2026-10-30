@@ -3,7 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
 import type { LayerStatus, ResolvedParameter } from './docs';
-import { GENERATORS, POLICIES, folderZeroItems, zeroCaption, layerState, mediaLine, mediaOptions, mediaPath, playSteps, policyName, type LibrarySnapshot } from './layers';
+import { GENERATORS, POLICIES, ZERO_GROUPS, folderZeroItems, zeroCaption, layerState, mediaLine, mediaOptions, mediaPath, playSteps, policyName, type LibrarySnapshot } from './layers';
 
 const layer = (over: Partial<LayerStatus> = {}): LayerStatus => ({ index: 1, folder: 3, file: 12, name: 'loop.mov', kind: 'movie', codec: 'HapY', width: 1920, height: 1080, fps: 25, frames: 100, frame: 0, error: null, ...over });
 
@@ -111,6 +111,26 @@ describe('folder 0 (B61)', () => {
     const items = folderZeroItems(undefined, { devices: [{ file: 1, name: 'FaceTime HD Camera', running: false }] }).slice(GENERATORS.length);
     expect(items.map((i) => `${i.kind} ${i.label}`)).toEqual(['capture 1 · FaceTime HD Camera (not running)']);
     expect(items.map(zeroCaption)).toEqual(['not running']);
+  });
+  it('lists displays 21–28 by number with their state, in the group order of the Media screen (B73 step 3b)', () => {
+    const capture = {
+      devices: [{ file: 1, name: 'FaceTime HD Camera', running: true, inUse: true as const }],
+      screens: [
+        { file: 23, name: 'LG UltraFine', running: false, gone: true as const },
+        { file: 21, name: 'Built-in Retina Display', running: true },
+        { file: 22, name: 'DELL U2720Q', running: false },
+      ],
+      permissions: { camera: 'granted' as const, screen: 'pending' as const },
+    };
+    const items = folderZeroItems(servers, capture);
+    const screens = items.filter((i) => i.kind === 'screen');
+    expect(screens.map((i) => i.label)).toEqual(['21 · Built-in Retina Display', '22 · DELL U2720Q (not running)', '23 · LG UltraFine (not running)']);
+    expect(screens.map(zeroCaption)).toEqual([null, 'not running', 'not seen since the engine started']);
+    expect(screens.every((i) => !i.inUse)).toBe(true);
+    // the groups follow ZERO_GROUPS, so the Media screen and the layer picker agree
+    const kinds = [...new Set(items.map((i) => i.kind))];
+    expect(kinds).toEqual(ZERO_GROUPS.map((g) => g.kind));
+    expect(ZERO_GROUPS.find((g) => g.kind === 'screen')?.title).toBe('Displays (21–28)');
   });
   it('shows a gone server by name with "not running" on the layer', () => {
     const gone = layer({ folder: 0, file: 151, kind: 'live', name: 'Syphon: Simple Server', error: 'not running', width: 0, height: 0 });

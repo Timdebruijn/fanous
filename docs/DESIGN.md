@@ -1269,6 +1269,9 @@ Since B73 step 1b: `Media/LiveCatalog.swift`, `LiveCatalog(.syphon, …)`; the B
 
 **Status:** design; steps 1a–2b built (capture devices 1–20) and step 3a
 (displays 21–28, engine side), as-built notes below; windows not yet. The feature-gap survey (`docs/feature-gaps.md`
+**Status:** design; steps 1a–2b built (capture devices 1–20, as-built notes
+below) and the display UI (step 3b); the display engine (step 3a) and windows
+not yet. The feature-gap survey (`docs/feature-gaps.md`
 G1, G3; P1) found that every compared product takes a camera or capture card
 and that Millumin, VDMX, Isadora and Mitti take slides and lyrics apps by
 screen capture. Both are system frameworks: AVFoundation capture and
@@ -1678,6 +1681,20 @@ display); the owner's live check:
   `dropped` counter with `queueDepth` 6);
 - whether idle samples arrive while a display is still, and the monthly
   re-ask.
+**As built (2026-10-30, step 3b, PR #126):** the web UI and user guide for
+displays 21–28. *Media:* "Displays (21–28)" (shown when non-empty) like the
+cameras: dot, "not running" / "not seen since the engine started", Layer N
+badges, **Forget** for one not running (`capture.forget {file}`). The cameras'
+Forget all reads "(cameras and displays)": `capture.forget {}` frees both.
+Captions: the Screen permission while not granted or `pending`, an output
+display reads not running, the monthly re-ask. The layer panel's picker groups
+under the same headings (`ZERO_GROUPS`). *System:* `permissionRow` gives each
+row its dot, word and caption; screen `pending` reads "waiting" (about two
+minutes, Authorize disabled), an unknown word reads as denied but is shown as
+sent; the monthly caption shows while a display is numbered. Readiness, layer
+name, chip and error stay the engine's text. *Tests:* vitest for displays in
+`folderZeroItems` and for `permissionRow`; no e2e (the e2e engine has no
+Screen permission). The owner's live check is in the PR.
 
 | Input | Framework | Pixel path | Kind |
 |---|---|---|---|

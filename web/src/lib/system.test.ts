@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ReadinessItemDoc } from './docs';
 import {
-  ageText, droppedTone, filterLines, formatClock, headerCaption, memoryText, metricTiles, outputTone, parseMetrics, parseOpenRoles,
+  ageText, droppedTone, filterLines, formatClock, headerCaption, memoryText, metricTiles, outputTone, parseMetrics, parseOpenRoles, permissionRow,
   pushHistory, readinessBadge, readinessSummary, resumedText, sparkline, stampText, thermalTone,
 } from './system';
 
@@ -177,5 +177,20 @@ describe('session', () => {
     expect(parseOpenRoles({ role: null, open: [] })).toEqual([]);
     expect(parseOpenRoles(null)).toEqual([]);
     expect(parseOpenRoles({ open: 'monitor' })).toEqual([]);
+  });
+});
+
+describe('capture permissions (B73)', () => {
+  it('screen: pending waits with Authorize disabled, denied offers it with the restart caption, granted is green', () => {
+    expect(permissionRow('screen', 'pending')).toEqual({
+      tone: 'yellow', word: 'waiting', authorize: true, waiting: true,
+      caption: 'waiting for the grant (about two minutes); the engine restarts itself when System Settings allows it. If the row goes back to denied, press Authorize screen again or use Engine › Restart Engine after allowing it.',
+    });
+    expect(permissionRow('screen', 'denied')).toEqual({ tone: 'yellow', word: 'denied', authorize: true, waiting: false, caption: 'opens System Settings; a grant restarts the engine' });
+    expect(permissionRow('screen', 'granted')).toEqual({ tone: 'green', word: 'granted', authorize: false, waiting: false, caption: null });
+  });
+  it('camera: not asked and denied offer Authorize without a caption; an unknown state reads as denied but keeps its word', () => {
+    expect(permissionRow('camera', 'notDetermined')).toMatchObject({ tone: 'yellow', word: 'not asked', authorize: true, caption: null });
+    expect(permissionRow('camera', 'restricted')).toMatchObject({ tone: 'yellow', word: 'restricted', authorize: true, waiting: false });
   });
 });

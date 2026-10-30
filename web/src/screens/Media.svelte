@@ -18,7 +18,7 @@
     type LibraryItem,
     type LibrarySnapshot,
   } from '../lib/media';
-  import { folderZeroItems, zeroCaption, type FolderZeroItem } from '../lib/layers';
+  import { ZERO_GROUPS, folderZeroItems, zeroCaption, type FolderZeroItem } from '../lib/layers';
 
   interface Upload {
     name: string;
@@ -48,18 +48,17 @@
   const capture = $derived(app.live.capture);
   const zeroItems = $derived(folderZeroItems(app.live.syphon?.servers, capture));
   const zeroGroups = $derived(
-    ([
-      { kind: 'generator', title: 'Built-in content', shown: true },
-      { kind: 'capture', title: 'Cameras and capture cards (1–20)', shown: capture !== undefined },
-      { kind: 'screen', title: 'Displays (21–28)', shown: (capture?.screens?.length ?? 0) > 0 },
-      { kind: 'syphon', title: 'Syphon servers (150–169)', shown: true },
-    ] as const).filter((g) => g.shown).map((g) => {
+    ZERO_GROUPS.map((g) => {
       const list = zeroItems.filter((i) => i.kind === g.kind);
       // live inputs not running (in use counts as running): their numbers can be forgotten (B69, B73)
       return { ...g, list, notRunning: list.filter((i) => !i.running && !i.inUse).length };
-    }),
+    }).filter((g) => (g.kind === 'capture' ? capture !== undefined : g.kind === 'screen' ? g.list.length > 0 : true)),
   );
   const cameraPermission = $derived(capture?.permissions?.camera);
+  const screenPermission = $derived(capture?.permissions?.screen);
+  const NOUN = { syphon: 'server', capture: 'device', screen: 'display', generator: '' } as const;
+  // capture.forget without a file sweeps cameras and displays (1–28) at once, so one button above the cameras covers both
+  const captureNotRunning = $derived(zeroGroups.filter((g) => g.kind === 'capture' || g.kind === 'screen').reduce((n, g) => n + g.notRunning, 0));
   let pickedZero = $state<number | null>(null);
   const pickedZeroItem = $derived(zeroItems.find((i) => i.file === pickedZero));
   function forget(kind: FolderZeroItem['kind'], file?: number) {
@@ -274,9 +273,8 @@
             <option value="">Play on layer ▾</option>
             {#each layerNumbers as n (n)}<option value={n}>Layer {n}</option>{/each}
           </select>
-          <!-- displays get their own forget command in step 3 -->
-          {#if (pickedZeroItem.kind === 'syphon' || pickedZeroItem.kind === 'capture') && !pickedZeroItem.running && !pickedZeroItem.inUse}
-            <button class="btn" disabled={playLock !== undefined} title={playLock ?? `Free this number: a console cue on it then selects the next new ${pickedZeroItem.kind === 'syphon' ? 'server' : 'device'} (undo brings it back)`}
+          {#if pickedZeroItem.kind !== 'generator' && !pickedZeroItem.running && !pickedZeroItem.inUse}
+            <button class="btn" disabled={playLock !== undefined} title={playLock ?? `Free this number: a console cue on it then selects the next new ${NOUN[pickedZeroItem.kind]} (undo brings it back)`}
               onclick={() => void forget(pickedZeroItem.kind, pickedZeroItem.file)}>Forget</button>
           {/if}
         </div>
@@ -286,9 +284,12 @@
       {#each zeroGroups as group (group.kind)}
         <div class="zero-head">
           <h2 class="zero-title">{group.title}</h2>
-          {#if (group.kind === 'syphon' || group.kind === 'capture') && group.notRunning > 1}
-            <button class="btn" disabled={playLock !== undefined} title={playLock ?? `Free the numbers of every ${group.kind === 'syphon' ? 'server' : 'device'} that is not running (undo brings them back)`}
+          {#if group.kind === 'syphon' && group.notRunning > 1}
+            <button class="btn" disabled={playLock !== undefined} title={playLock ?? 'Free the numbers of every server that is not running (undo brings them back)'}
               onclick={() => void forget(group.kind)}>Forget all not running</button>
+          {:else if group.kind === 'capture' && captureNotRunning > 1}
+            <button class="btn" disabled={playLock !== undefined} title={playLock ?? 'Free the numbers of every camera, capture card and display that is not running (undo brings them back)'}
+              onclick={() => void forget(group.kind)}>Forget all not running (cameras and displays)</button>
           {/if}
         </div>
         {#if group.kind === 'syphon' && unnumbered.length > 0}
@@ -296,6 +297,12 @@
         {/if}
         {#if group.kind === 'capture' && cameraPermission && cameraPermission !== 'granted'}
           <p class="caption" role="status">{cameraPermission === 'denied' ? 'Camera permission denied: allow Fanous Engine under Privacy & Security › Camera.' : 'Camera permission not granted: authorize on the System screen.'}</p>
+        {/if}
+        {#if group.kind === 'screen'}
+          {#if screenPermission && screenPermission !== 'granted'}
+            <p class="caption" role="status">{screenPermission === 'pending' ? 'Waiting for the screen permission (about two minutes): see Capture permissions on the System screen.' : 'Screen permission not granted: authorize on the System screen; a grant restarts the engine.'}</p>
+          {/if}
+          <p class="caption">A display used as a Fanous output reads not running (one that was an output from the start gets no number). macOS asks again about once a month whether Fanous Engine may record the screen: see Capture permissions on the <a href="#/system">System screen</a>.</p>
         {/if}
         {#if group.list.length === 0}
           <p class="caption">{group.kind === 'capture'

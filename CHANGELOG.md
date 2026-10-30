@@ -422,6 +422,15 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   permission not granted: authorize on the System screen, then Engine › Restart". `capture.forget {file}` also frees
   21–28. The readiness item "Capture permissions granted" fails while a display is numbered without the grant, and
   warns while one is numbered with it (macOS asks again about monthly).
+- The web UI and user guide for displays as folder 0 files 21–28 (B73 step 3b, PR #126, DESIGN §8.2.1): the Media
+  screen's "Displays (21–28)" group says that a display used as an output reads not running and that macOS asks again
+  about once a month, shows a line while the Screen permission is not granted or waiting, and offers **Forget** for a
+  display that is not running; the cameras' **Forget all not running** is now "(cameras and displays)", since it frees
+  both. The layer panel's folder 0 picker groups its items under the Media screen's headings. On the System screen the
+  Screen row reads "waiting" with **Authorize screen** disabled for about two minutes while the engine waits for the
+  grant, and "opens System Settings; a grant restarts the engine" while denied; the Authorize buttons now name their
+  permission. The user guide covers displays, the grant and restart, the monthly re-confirmation and the readiness
+  item, and a troubleshooting entry for a black display layer.
 - Added: **mapping presets** (M2.4, DESIGN §6.4, §9.10 item 3). An output stores its warp and slices, masks included,
   under a number 1–255 (`output.preset.store`, `recall`, `rename`, `remove`; one undo step each, also for a whole wall);
   blend, black floor, colour, intensity and region stay live. Output channel 6, **Mapping preset**, shows preset N while
