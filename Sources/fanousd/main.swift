@@ -30,6 +30,12 @@ func usage() -> String {
     """
 }
 
+/// Writes `message` to stderr and exits with `code` (64: usage).
+func die(_ message: String, _ code: Int32 = 64) -> Never {
+    FileHandle.standardError.write(Data("\(message)\n".utf8))
+    exit(code)
+}
+
 switch CommandLine.arguments.dropFirst().first {
 case "channel-map":
     print(ChannelMapDocument.markdown(), terminator: "")
@@ -39,19 +45,13 @@ case "protocol-dts":
     exit(0)
 case "reset-tls":
     // an ignored FANOUS_HOME would make this reset the real install's identity
-    if let problem = AppPaths.homeOverrideProblem {
-        FileHandle.standardError.write(Data("\(problem); nothing reset\n".utf8))
-        exit(64)
-    }
+    if let problem = AppPaths.homeOverrideProblem { die("\(problem); nothing reset") }
     TLSIdentity.reset(directory: AppPaths.tls)
     print("TLS identity removed; a new one is generated at the next start")
     exit(0)
 case "ingest":
     let args = Array(CommandLine.arguments.dropFirst(2))
-    guard args.count >= 2 else {
-        FileHandle.standardError.write(Data("usage: fanousd ingest DIR OUT.mov [--fps N] [--codec prores4444|prores422hq|prores422|hap|hapalpha|hapq|hapalphaonly]\n".utf8))
-        exit(64)
-    }
+    guard args.count >= 2 else { die("usage: fanousd ingest DIR OUT.mov [--fps N] [--codec prores4444|prores422hq|prores422|hap|hapalpha|hapq|hapalphaonly]") }
     func option(_ name: String) -> String? {
         guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
         return args[i + 1]
@@ -63,20 +63,15 @@ case "ingest":
         print("wrote \(count) frames to \(args[1])")
         exit(0)
     } catch {
-        FileHandle.standardError.write(Data("ingest failed: \(error)\n".utf8))
-        exit(1)
+        die("ingest failed: \(error)", 1)
     }
 case "gdtf":
-    guard CommandLine.arguments.count == 3 else {
-        FileHandle.standardError.write(Data("usage: fanousd gdtf FILE\n".utf8))
-        exit(64)
-    }
+    guard CommandLine.arguments.count == 3 else { die("usage: fanousd gdtf FILE") }
     do {
         try Data(GDTFExporter.gdtf()).write(to: URL(fileURLWithPath: CommandLine.arguments[2]))
         exit(0)
     } catch {
-        FileHandle.standardError.write(Data("cannot write GDTF: \(error)\n".utf8))
-        exit(1)
+        die("cannot write GDTF: \(error)", 1)
     }
 default:
     break
@@ -90,26 +85,17 @@ var arguments = CommandLine.arguments.dropFirst().makeIterator()
 while let argument = arguments.next() {
     switch argument {
     case "--port":
-        guard let value = arguments.next(), let parsed = UInt16(value) else {
-            FileHandle.standardError.write(Data("invalid --port\n".utf8))
-            exit(64)
-        }
+        guard let value = arguments.next(), let parsed = UInt16(value) else { die("invalid --port") }
         port = parsed
     case "--web-root":
-        guard let value = arguments.next() else {
-            FileHandle.standardError.write(Data("missing --web-root value\n".utf8))
-            exit(64)
-        }
+        guard let value = arguments.next() else { die("missing --web-root value") }
         webRootOverride = URL(fileURLWithPath: value)
     case "--foreground":
         break
     case "--no-network":
         network = false
     case "--scene":
-        guard let value = arguments.next() else {
-            FileHandle.standardError.write(Data("missing --scene value\n".utf8))
-            exit(64)
-        }
+        guard let value = arguments.next() else { die("missing --scene value") }
         sceneFile = URL(fileURLWithPath: value)
     case "--version":
         print("fanousd \(FanousVersion.string)")
@@ -118,16 +104,14 @@ while let argument = arguments.next() {
         print(usage())
         exit(0)
     default:
-        FileHandle.standardError.write(Data("unknown argument \(argument)\n\(usage())\n".utf8))
-        exit(64)
+        die("unknown argument \(argument)\n\(usage())")
     }
 }
 
 do {
     try AppPaths.ensureDirectories()
 } catch {
-    FileHandle.standardError.write(Data("cannot create directories: \(error)\n".utf8))
-    exit(1)
+    die("cannot create directories: \(error)", 1)
 }
 // One engine per user (DESIGN.md §2.1): an flock on engine.lock held for the whole run; a second start exits with
 // the owner's pid. launchd (KeepAlive) retries a refused start every 10 s, which is the intended outcome.
@@ -135,8 +119,7 @@ let lockFile = AppPaths.applicationSupport.appending(path: "engine.lock")
 let lockDescriptor = open(lockFile.path, O_RDWR | O_CREAT, 0o600)
 if lockDescriptor < 0 || flock(lockDescriptor, LOCK_EX | LOCK_NB) != 0 {
     let owner = (try? String(contentsOf: lockFile, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "?"
-    FileHandle.standardError.write(Data("fanousd is already running (pid \(owner.isEmpty ? "?" : owner)): one engine per user\n".utf8))
-    exit(75)
+    die("fanousd is already running (pid \(owner.isEmpty ? "?" : owner)): one engine per user", 75)
 }
 _ = ftruncate(lockDescriptor, 0)
 _ = "\(getpid())\n".withCString { pwrite(lockDescriptor, $0, strlen($0), 0) }
@@ -146,10 +129,7 @@ if let problem = AppPaths.homeOverrideProblem { logger.warning("\(problem)") }
 if let home = AppPaths.homeOverride { logger.notice("FANOUS_HOME: data, logs, TLS and the default library under \(home.path)") }
 var scene: SceneConfig?
 if let sceneFile {
-    do { scene = try SceneConfig.load(sceneFile) } catch {
-        FileHandle.standardError.write(Data("cannot load scene: \(error)\n".utf8))
-        exit(1)
-    }
+    do { scene = try SceneConfig.load(sceneFile) } catch { die("cannot load scene: \(error)", 1) }
 }
 let engine = Engine(options: EngineOptions(port: port, webRoot: webRootOverride ?? WebRoot.locate(), scene: scene, network: network), logger: logger)
 do {

@@ -302,11 +302,7 @@ public final class StateStore: @unchecked Sendable {
         var seen: Set<String> = []
         var coalesced: [JSONPatch.Operation] = []
         for operation in pendingLive.reversed() {
-            let path: String =
-                switch operation {
-                case .add(let p, _), .remove(let p), .replace(let p, _): p.description
-                }
-            if seen.insert(path).inserted { coalesced.append(operation) }
+            if seen.insert(operation.path.description).inserted { coalesced.append(operation) }
         }
         pendingLive.removeAll()
         revision += 1
