@@ -2,7 +2,7 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
-  import { app, client, connect } from '../lib/state.svelte';
+  import { app, client } from '../lib/state.svelte';
   import type { Role } from '../lib/protocol';
 
   // Role login (DESIGN.md §11.1): a password per role, a session cookie, then a fresh hello over the socket.
@@ -24,7 +24,7 @@
 
   function reconnect() {
     client.close();
-    connect();
+    client.connect();
   }
 
   async function submit(event: SubmitEvent) {
@@ -82,8 +82,7 @@
 </dialog>
 
 <style>
-  dialog { width: min(420px, calc(100vw - 32px)); padding: 24px; color: var(--text-1); border: 1px solid var(--line-strong); }
-  dialog::backdrop { background: rgba(11, 12, 14, 0.7); }
+  dialog { width: min(420px, calc(100vw - 32px)); }
   form { display: flex; flex-direction: column; gap: 14px; }
   form p { margin: 0; }
   .field .select, .field .input { width: 100%; }

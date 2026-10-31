@@ -73,10 +73,6 @@
 </section>
 
 <style>
-  .phead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 16px; }
-  .kv { display: grid; grid-template-columns: minmax(96px, 30%) minmax(0, 1fr); gap: 12px 16px; margin: 0; padding: 0 16px 16px; align-items: start; }
-  .kv dt { padding-top: 5px; color: var(--text-2); font-size: 13px; font-weight: 500; }
-  .kv dd { margin: 0; min-width: 0; padding-top: 3px; }
   .wrap { overflow-wrap: anywhere; }
   .red { color: var(--red); }
   .settings { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; padding: 0 16px; }

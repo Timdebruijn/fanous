@@ -8,12 +8,12 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import PolicyHint from '../components/PolicyHint.svelte';
   import ShowCueEditor from '../components/ShowCueEditor.svelte';
   import ShowCues from '../components/ShowCues.svelte';
   import ShowMIDI from '../components/ShowMIDI.svelte';
   import ShowOSC from '../components/ShowOSC.svelte';
   import ShowTimecode from '../components/ShowTimecode.svelte';
-  import { policyName } from '../lib/layers';
   import { loadChannelMap, type ChannelMap } from '../lib/patch-screen';
   import { formatNumber, lockTitle } from '../lib/show';
   import { app, can, cmd } from '../lib/state.svelte';
@@ -80,12 +80,7 @@
   <button type="button" class="btn back" disabled={transportLock !== undefined} title={transportLock ?? 'Fire the previous cue'} onclick={() => void cmd('cue.back')}>Back</button>
 </div>
 
-{#if app.project.policy === 'dmx'}
-  <div class="banner banner-yellow" role="status">
-    <span class="dot dot-yellow"></span>
-    <span><strong>Who controls: {policyName('dmx')}.</strong> Cues and OSC are recorded but do not control the layers. Change it under Patch › Who controls.</span>
-  </div>
-{/if}
+<PolicyHint what="cues and OSC commands" />
 
 <div class="screen">
   <div class="main">

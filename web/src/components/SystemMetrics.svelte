@@ -89,7 +89,6 @@
 </section>
 
 <style>
-  .phead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 16px; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 8px; padding: 0 16px 12px; }
   .tile { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
   .num { font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }

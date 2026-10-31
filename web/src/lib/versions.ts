@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Project versions (B23): the `project.versions` result, row texts and when a revert is allowed.
+import { LOCKED_TITLE } from './patch-screen';
 
 /** One entry of `project.versions`, newest first. `at` is epoch seconds. */
 export interface ProjectVersion {
@@ -55,7 +56,7 @@ export function lastVersionText(lastAutomatic: number | null | undefined, now: D
 
 /** Why a revert is not possible right now (the engine refuses the same cases); null when it is. */
 export function revertBlocked(state: { programmer: boolean; showLock: boolean; showMode: boolean }): string | null {
-  if (!state.programmer) return 'Locked: programmer only';
+  if (!state.programmer) return LOCKED_TITLE;
   if (state.showLock) return 'The show is locked; unlock it first';
   if (state.showMode) return 'Leave show mode first';
   return null;
