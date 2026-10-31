@@ -3,7 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Pure logic of the Show control screen: cue numbering and reordering, trigger text, fixture and parameter
 // choices for cue values, value controls from the channel map, timecode wording, MIDI map wording.
-import type { CueDoc, CueValueDoc, LiveDoc, MIDIMappingDoc, PatchEntry } from './docs';
+import type { CueDoc, CueValueDoc, LiveDoc, MIDIMappingDoc, PatchEntry, TimecodeSettingsDoc } from './docs';
 import { LOCKED_TITLE, type ChannelMap, type FixtureType, type ParamSpec } from './patch-screen';
 
 export const LOCKED_OPERATOR = 'Locked: operator only';
@@ -233,6 +233,11 @@ export function timecodeBadge(state: LiveDoc['timecode']['state']): { label: str
     default:
       return { label: 'Off', tone: 'off' };
   }
+}
+
+/** The operator's switch with a source chosen (Show › Timecode); a missing or null `enabled` is on. */
+export function timecodeOn(tc: Pick<TimecodeSettingsDoc, 'source' | 'enabled'>): boolean {
+  return tc.source !== 'off' && tc.enabled !== false;
 }
 
 /** "LTC · Scarlett 2i2 · 25 fps"; "29.97 DF" already names its rate. */

@@ -3,14 +3,14 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import type { JSONValue } from '../lib/protocol';
-  import { lockTitle, offsetText, timecodeBadge, timecodeSource } from '../lib/show';
+  import { lockTitle, offsetText, timecodeBadge, timecodeOn, timecodeSource } from '../lib/show';
   import { app, can, cmd } from '../lib/state.svelte';
 
   const tc = $derived(app.project.timecode);
   const live = $derived(app.live.timecode);
   const badge = $derived(timecodeBadge(live.state));
   // The switch is the operator's `timecode.enable` (also under show lock); the source and the rest are configuration.
-  const on = $derived(tc.source !== 'off' && tc.enabled !== false);
+  const on = $derived(timecodeOn(tc));
 
   // Settings are configuration (programmer, refused under show lock); the switch is the operator's.
   const editTitle = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
