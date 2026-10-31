@@ -3,6 +3,8 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import Login from './Login.svelte';
+  import { describeJobState } from '../lib/media';
+  import { universeName } from '../lib/patch-screen';
   import { readinessSummary, resumedText } from '../lib/system';
   import { lastVersionText } from '../lib/versions';
   import { app, can, cmd, shell, toggleLock } from '../lib/state.svelte';
@@ -15,13 +17,8 @@
   const universes = $derived(app.live.dmx.universes);
   const patchedUniverses = $derived(new Set(app.project.patch.map((p) => p.universe)));
   const outputsOk = $derived(app.live.engine.rendering);
-  const running = $derived(app.live.ingest.filter((j) => typeof j.state === 'object' && j.state !== null && 'running' in (j.state as object)));
-  const progress = $derived.by(() => {
-    const job = running[0];
-    if (!job) return null;
-    const state = job.state as { running?: { progress?: number } };
-    return Math.round((state.running?.progress ?? 0) * 100);
-  });
+  const running = $derived(app.live.ingest.map((j) => describeJobState(j.state)).filter((s) => s.label === 'transcoding'));
+  const progress = $derived(running[0] ? Math.round(running[0].progress * 100) : null);
 
   function universeClass(u: { active: boolean; ageSeconds: number; id: string }): string {
     if (u.active) return 'pill-green';
@@ -30,7 +27,7 @@
     return u.ageSeconds > 2.5 && patchedUniverses.has(u.id) ? 'pill-red' : 'pill-yellow';
   }
   function universeLabel(u: { id: string; active: boolean; ageSeconds: number }): string {
-    const name = u.id.replace('artnet:', 'A ').replace('sacn:', 'S ');
+    const name = universeName(u.id);
     if (u.active) return name;
     if (u.ageSeconds < 0) return `${name} · silent`;
     return `${name} · ${u.ageSeconds.toFixed(1)} s`;

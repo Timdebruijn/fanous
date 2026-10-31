@@ -2,9 +2,9 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { UNIT_QUAD, ellipsePath, handles, meshIdentity, rectanglePath, smoothPoint, type MapPoint, type MaskPoint, type MaskShape, type OutputConfig } from './outputs';
+import { UNIT_QUAD, ellipsePath, handles, rectanglePath, smoothPoint, type MapPoint, type MaskPoint, type MaskShape, type OutputConfig } from './outputs';
 import { choose, grid, groups, label, members, nudgeCommand, nudgeQueue, step, trackpad } from './remote';
-import { toScreen } from './warp';
+import { resampleMesh, toScreen } from './warp';
 
 function output(change: Partial<OutputConfig['warp']> = {}): OutputConfig {
   return {
@@ -16,7 +16,7 @@ function output(change: Partial<OutputConfig['warp']> = {}): OutputConfig {
 }
 const size = { w: 1000, h: 500 };
 const quad = grid(output(), 'cornerPin', 4);
-const mesh = output({ mesh: meshIdentity(5, 3) });
+const mesh = output({ mesh: resampleMesh(null, 5, 3) });
 const cells = grid(mesh, 'mesh', 15);
 
 describe('selection', () => {
@@ -163,8 +163,8 @@ describe('nudge', () => {
     const inset = [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 }, { x: 0.9, y: 0.9 }, { x: 0.1, y: 0.9 }];
     const bent = { cols: 3, rows: 3, points: [[0, 0], [0.5, 0.05], [1, 0], [0.02, 0.5], [0.55, 0.45], [0.98, 0.5], [0, 1], [0.5, 0.95], [1, 1]].map(([x, y]) => ({ x: x!, y: y! })) };
     const cases = [
-      { out: output({ cornerPin: inset, mesh: meshIdentity(3, 3) }), mode: 'mesh' as const, indices: [3, 4, 5] }, // middle row
-      { out: output({ cornerPin: inset, mesh: meshIdentity(3, 3) }), mode: 'mesh' as const, indices: [2, 5, 8] }, // right edge
+      { out: output({ cornerPin: inset, mesh: resampleMesh(null, 3, 3) }), mode: 'mesh' as const, indices: [3, 4, 5] }, // middle row
+      { out: output({ cornerPin: inset, mesh: resampleMesh(null, 3, 3) }), mode: 'mesh' as const, indices: [2, 5, 8] }, // right edge
       { out: output({ cornerPin: inset, mesh: bent }), mode: 'slices' as const, indices: [0, 1] }, // slice top edge
       { out: output({ cornerPin: inset, mesh: bent }), mode: 'slices' as const, indices: [1, 2] }, // slice right edge
     ];
@@ -192,7 +192,7 @@ describe('nudge', () => {
   });
 
   it('respects a warp in effect: each mesh point moves 4 px on screen through a corner pin', () => {
-    const pinned = output({ cornerPin: [{ x: 0.1, y: 0.05 }, { x: 0.95, y: 0 }, { x: 0.9, y: 1 }, { x: 0, y: 0.9 }], mesh: meshIdentity(3, 3) });
+    const pinned = output({ cornerPin: [{ x: 0.1, y: 0.05 }, { x: 0.95, y: 0 }, { x: 0.9, y: 1 }, { x: 0, y: 0.9 }], mesh: resampleMesh(null, 3, 3) });
     const column = [1, 4, 7];
     const value = nudgeCommand(pinned, 'mesh', 0, column, 4, 0, size)!.value as unknown as MapPoint[];
     for (const i of column) {

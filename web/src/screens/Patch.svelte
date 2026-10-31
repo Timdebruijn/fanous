@@ -8,8 +8,9 @@
   import PatchSheet from '../components/PatchSheet.svelte';
   import UniversesPanel from '../components/UniversesPanel.svelte';
   import { POLICIES } from '../lib/layers';
+  import { lockTitle } from '../lib/show';
   import { app, can, cmd } from '../lib/state.svelte';
-  import { LOCKED_TITLE, buildPatch, loadChannelMap, summarize, universeOptions, universeRows, type ChannelMap } from '../lib/patch-screen';
+  import { buildPatch, loadChannelMap, summarize, universeOptions, universeRows, type ChannelMap } from '../lib/patch-screen';
 
   // Modes and footprints come from the engine's channel map; until it arrives (or if it cannot be fetched) the four
   // standard modes apply.
@@ -41,7 +42,7 @@
     return known[0] ?? null;
   });
 
-  const policyLock = $derived(!can('programmer') ? LOCKED_TITLE : app.project.showLock ? 'Locked: show lock is on' : undefined);
+  const policyLock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
 
   function select(name: string | null) {
     selectedName = name;

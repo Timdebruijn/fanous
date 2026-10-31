@@ -2,7 +2,8 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it, vi } from 'vitest';
-import { canvasSizeError, canvasTarget, colorOf, compareLease, freePresetNumber, previewReady, layerCanvas, layerRuns, layersOn, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, recalledText, sharedPresets, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, KAPPA, UNIT_QUAD, circleMask, ellipsePath, finishMask, freehandPath, handles, insertNearest, keystoneBadges, maskHandle, maskOutline, maskRemoval, maskTarget, meshIdentity, modeText, movedHandle, outlines, outputSize, rectanglePath, simplify, smoothPoint, statusText, toggleSmooth, toolPath, triangleDest, type MapPoint, type MaskPoint, type MaskShape, type OutputConfig } from './outputs';
+import { canvasSizeError, canvasTarget, colorOf, compareLease, freePresetNumber, previewReady, layerCanvas, layerRuns, layersOn, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, recalledText, sharedPresets, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, KAPPA, UNIT_QUAD, circleMask, ellipsePath, finishMask, freehandPath, handles, insertNearest, keystoneBadges, maskHandle, maskOutline, maskRemoval, maskTarget, modeText, movedHandle, outlines, outputSize, rectanglePath, simplify, smoothPoint, statusText, toggleSmooth, toolPath, triangleDest, type MapPoint, type MaskPoint, type MaskShape, type OutputConfig } from './outputs';
+import { resampleMesh } from './warp';
 
 const output: OutputConfig = {
   id: 1,
@@ -12,7 +13,7 @@ const output: OutputConfig = {
   mode: null,
   intensity: 1,
   blend: { left: { overlap: 0, power: 2, gamma: 2.2 }, right: { overlap: 0, power: 2, gamma: 2.2 }, top: { overlap: 0, power: 2, gamma: 2.2 }, bottom: { overlap: 0, power: 2, gamma: 2.2 }, lift: 0, liftFeather: 0 },
-  warp: { cornerPin: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }], mesh: meshIdentity(3, 3) },
+  warp: { cornerPin: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }], mesh: resampleMesh(null, 3, 3) },
   slices: [{ id: 1, canvas: 1, source: { x: 0, y: 0, w: 1, h: 1 }, dest: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }], masks: [{ mode: 'add', feather: 4, path: [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 }, { x: 0.5, y: 0.9 }] }], opacity: 1 }],
   testPattern: 0,
 };
