@@ -4,6 +4,7 @@
 
 import AppKit
 import AVFoundation
+import CoreAudio
 import Foundation
 import FanousCore
 import Logging
@@ -1573,9 +1574,11 @@ public final class Engine: @unchecked Sendable {
         }
     }
 
-    /// CoreAudio/CoreMIDI/getifaddrs lookups are slow and rarely change: refreshed every 5 s off the feed queue. The
-    /// first CoreAudio/CoreMIDI call of a process can take seconds (a CI virtual machine took over 5 s); the live
-    /// document goes out with the last known facts (none at start) and carries the fresh ones on the next tick.
+    /// CoreAudio/CoreMIDI/getifaddrs lookups are slow and rarely change: refreshed every 5 s off the feed queue, the
+    /// CoreAudio list only after CoreAudio said a device came or went (B133: that lookup took 0.5–2.2 s now and
+    /// then). The first CoreAudio/CoreMIDI call of a process can take seconds (a CI virtual machine took over 5 s);
+    /// the live document goes out with the last known facts (none at start) and carries the fresh ones on the next
+    /// tick.
     private struct HostFacts {
         var at: CFTimeInterval = 0
         var midiSources: [String] = []
@@ -1586,6 +1589,20 @@ public final class Engine: @unchecked Sendable {
     private let hostFacts = Mutex<HostFacts>(HostFacts())
     private var hostFactsRefreshing = false  // feed queue only
     private var hostFactsLookups = 0  // feed queue only; the first lookup of a process is expected to be slow
+    /// True until the next refresh reads the CoreAudio device list: at start, and whenever the listener fires.
+    private let audioDevicesChanged = Atomic<Bool>(true)
+    /// False when CoreAudio refused the listener: the list is then read every refresh, as before.
+    private let audioListening = Atomic<Bool>(false)
+    /// With the first lookup, off the feed queue: the HAL's start (seconds on a CI virtual machine) stays off the start
+    /// path. ponytail: never removed; a deallocated engine's listener is a no-op (weak self), and the block's identity
+    /// across the Swift/ObjC bridge is nothing to hand `AudioObjectRemovePropertyListenerBlock`.
+    private func listenForAudioDevices() {
+        var devices = LTCInput.devicesAddress
+        let status = AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &devices, nil) { [weak self] _, _ in
+            self?.audioDevicesChanged.store(true, ordering: .relaxed)
+        }
+        audioListening.store(status == noErr, ordering: .relaxed)
+    }
     private func currentHostFacts() -> HostFacts {
         let facts = hostFacts.withLock { $0 }
         if CACurrentMediaTime() - facts.at >= 5, !hostFactsRefreshing {
@@ -1600,8 +1617,10 @@ public final class Engine: @unchecked Sendable {
                     seconds[what] = CACurrentMediaTime() - started
                     return value
                 }
+                if first { listenForAudioDevices() }
                 let midi = timed("midi", MTCInput.sources)
-                let audio = timed("audio", LTCInput.inputDevices)
+                let audio = audioDevicesChanged.exchange(false, ordering: .relaxed) || !audioListening.load(ordering: .relaxed) ? timed("audio", LTCInput.inputDevices) : facts.audioInputs
+                if audio.isEmpty { audioDevicesChanged.store(true, ordering: .relaxed) }  // an empty answer (a HAL error, or no device yet) is asked again
                 let addresses = timed("addresses") { SystemInfo.ipv4Addresses }
                 let interfaces = timed("interfaces") { SystemInfo.ipv4Interfaces }
                 let metadata: Logger.Metadata = seconds.mapValues { "\(String(format: "%.2f", $0)) s" }
