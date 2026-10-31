@@ -210,6 +210,25 @@ is quit" dialog choose Later: Quit & Reopen quits the shell and the engine and
 does not reopen a dev build (`open dist/Fanous.app`). A Developer ID build
 keeps its identity and its grants.
 
+The new identity also reaches a network filter that keys its rules on code
+identity (Little Snitch): the rebuilt engine's outbound flows are held until
+its alert is answered, and the engine shows nothing of it beyond the sync
+sender's `dropped` count. Measured 2026-10-30: the engine started at 19:01:50,
+its sync keepalives (broadcast to port 8002, one a second) filled the socket's
+send buffer after 18 packets and every later one was dropped, and the system
+log shows the application firewall's first flow from that pid at 23:22:26,
+4 h 20 min later, the moment prompts were being answered at the keyboard;
+from then on the firewall saw each new flow at once. After a rebuild, answer
+the filter's alert before judging sync output; whether a flow is still held
+shows in
+
+```
+log stream --predicate 'process == "socketfilterfw" AND eventMessage CONTAINS "org.fanous"'
+```
+
+which prints a "Handle flow" line for the engine's pid only once the filter
+in front of it has let the flow through.
+
 `/api/metrics` reports frame timing, the DMX-to-photon estimate and audio
 drift; `fanous-bench run` ramps layers until a frame drops (`--effects
 blur,edge`, `--dissolve 2`, `--ingest FILE` for the Phase 3/4 variants) and
