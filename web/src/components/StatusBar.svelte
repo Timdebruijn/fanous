@@ -139,7 +139,8 @@
 
 <style>
   .status { display: flex; flex-wrap: wrap; align-items: center; min-height: 56px; padding: 4px 8px; background: var(--surface-1); border-bottom: 1px solid var(--line); }
-  .item { display: flex; align-items: center; gap: 8px; height: var(--touch); padding: 0 8px; border-right: 1px solid var(--line); }
+  /* min-height: an item that wraps on a phone (the universe pills, the resumed note) grows instead of spilling over */
+  .item { display: flex; align-items: center; gap: 8px; min-height: var(--touch); padding: 0 8px; border-right: 1px solid var(--line); }
   .item.col { flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; }
   .item.right { border-right: 0; padding-right: 4px; }
   .item.red { background: var(--red-bg); border-radius: 6px; }
@@ -157,7 +158,7 @@
   .resumed { margin-left: 8px; color: var(--yellow); text-decoration: none; }
   .value { font-size: 15px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
   /* the pills wrap inside the item, so 3+ universes on a phone take a second row instead of widening the page */
-  .dmx { gap: 6px; flex-wrap: wrap; height: auto; min-height: var(--touch); padding-block: 4px; }
+  .dmx { gap: 6px; flex-wrap: wrap; padding-block: 4px; }
   .ingest { width: 150px; }
   .ingest .bar { width: 100%; height: 4px; margin-top: 4px; }
   .yellow { color: var(--yellow); }

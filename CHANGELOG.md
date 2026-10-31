@@ -558,6 +558,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   only while it is switched on and ingest only while a job runs (DESIGN §12), and the items are a little narrower.
   With timecode on it takes two rows below about 1550 px until DMX arrives, as silent universe pills are wider
   (PR #152).
+- Fixed: on a phone the "Show mode resumed after the engine restarted" note in the status bar spilled 19 px over
+  the row below (fps, dropped); a status bar item that wraps now grows (PR #154).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
