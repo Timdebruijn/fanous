@@ -528,6 +528,7 @@ public enum ProjectDocument {
     /// `displayModes`: the current mode of each connected display by UUID (a wall output's pixel size, §9.9).
     /// `showPreset`: the Compare lease of `output.show` (output ids, preset number; 0 ends it), kept on the DMX queue.
     /// `showOverlay`: the edit overlay lease of `output.overlay` (output id, on, selection), kept by the output coordinator.
+    /// `showPatterns`: the test pattern leases of `output.pattern` (output id and pattern, off ends it), kept there too.
     public static func registerCommands(
         on store: StateStore, auth: RoleAuth, showModeOn: @escaping @Sendable () -> Bool = { false },
         checkLibraryRoot: @escaping @Sendable (String) throws -> Void = { _ in },
@@ -537,7 +538,8 @@ public enum ProjectDocument {
         authorizeScreen: @escaping @Sendable () -> Void = {},
         displayModes: @escaping @Sendable () -> [String: DisplayModeConfig] = { [:] },
         showPreset: @escaping @Sendable ([Int], Int) -> Void = { _, _ in },
-        showOverlay: @escaping @Sendable (Int, Bool, OverlaySelection?) -> Void = { _, _, _ in }
+        showOverlay: @escaping @Sendable (Int, Bool, OverlaySelection?) -> Void = { _, _, _ in },
+        showPatterns: @escaping @Sendable ([(id: Int, pattern: TestPattern)]) -> Void = { _ in }
     ) {
         store.register(
             CommandSpec(
@@ -888,7 +890,7 @@ public enum ProjectDocument {
             })
         registerUniverseCommands(on: store)
         registerWallCommands(on: store, showModeOn: showModeOn, displayModes: displayModes)
-        registerPresetCommands(on: store, showModeOn: showModeOn, showPreset: showPreset, showOverlay: showOverlay)
+        registerPresetCommands(on: store, showModeOn: showModeOn, showPreset: showPreset, showOverlay: showOverlay, showPatterns: showPatterns)
     }
 }
 

@@ -197,56 +197,31 @@ export function wallArgs(draft: WizardDraft & { grid: Grid }): {
   return draft.overlap === draft.overlapWas ? { id: draft.edit, ...base } : { id: draft.edit, ...base, overlap };
 }
 
-/** Puts `pattern` on the outputs `ids`: the test patterns to set, and `saved` with each output's pattern from before
- * (an output already in `saved` keeps the pattern saved first). Every output is sent its pattern, also one that seems
- * to show it already: the project may still be on its way (an unchanged value is no undo step in the engine). */
-export function patternChange(outputs: OutputConfig[], ids: number[], pattern: number, saved: Record<number, number>): { set: { id: number; pattern: number }[]; saved: Record<number, number> } {
-  const next = { ...saved };
-  const set: { id: number; pattern: number }[] = [];
-  for (const id of ids) {
-    const o = outputs.find((x) => x.id === id);
-    if (!o) continue;
-    next[id] ??= o.testPattern;
-    set.push({ id, pattern });
-  }
-  return { set, saved: next };
-}
-
-/** Back to the saved test patterns, except for the outputs in `keep`: what to set, and what stays saved. */
-export function patternRestore(outputs: OutputConfig[], saved: Record<number, number>, keep: number[] = []): { set: { id: number; pattern: number }[]; saved: Record<number, number> } {
-  const set: { id: number; pattern: number }[] = [];
-  const left: Record<number, number> = {};
-  for (const [key, pattern] of Object.entries(saved)) {
-    const id = Number(key);
-    if (keep.includes(id)) {
-      left[id] = pattern;
-      continue;
-    }
-    if (outputs.some((x) => x.id === id)) set.push({ id, pattern });
-  }
-  return { set, saved: left };
-}
-
-/** What stays saved after a restore: `left`, and every pattern of `sent` the engine did not take (its id not in `ok`),
- * so a refused restore (show lock, role, connection) can be tried again instead of losing the output's own pattern. */
-export function unrestored(left: Record<number, number>, sent: { id: number; pattern: number }[], ok: number[]): Record<number, number> {
-  const next = { ...left };
-  for (const { id, pattern } of sent) if (!ok.includes(id)) next[id] = pattern;
-  return next;
-}
-
-/** Saved patterns as read back from sessionStorage (JSON keys are strings), or null when there are none or they are
- * not output id → pattern number. */
-export function savedFrom(json: string | null): { wall: number | null; saved: Record<number, number> } | null {
-  if (!json) return null;
-  try {
-    const value = JSON.parse(json) as { wall?: unknown; saved?: unknown };
-    const entries = Object.entries((value.saved ?? {}) as Record<string, unknown>);
-    if (entries.length === 0 || !entries.every(([k, v]) => Number.isInteger(Number(k)) && Number.isInteger(v))) return null;
-    return { wall: typeof value.wall === 'number' ? value.wall : null, saved: Object.fromEntries(entries.map(([k, v]) => [Number(k), v as number])) };
-  } catch {
-    return null;
-  }
+/** The test patterns of the wizard or the seam check, a lease (`output.pattern`, B102): `show` sends `pattern` for the
+ * outputs `ids` (one or more), with 0 for those of the last `show` that are not among them, and again every `every` ms
+ * (the engine drops a lease 5 s after the last); a `show` of what already shows sends nothing new. `stop` ends them all
+ * with 0. */
+export function patternLease(send: (patterns: { id: number; pattern: number }[]) => void, every = 2000) {
+  let timer: ReturnType<typeof setInterval> | null = null;
+  let shown: { id: number; pattern: number }[] = [];
+  const ends = (keep: number[]) => shown.filter((p) => !keep.includes(p.id)).map(({ id }) => ({ id, pattern: 0 }));
+  return {
+    show(ids: number[], pattern: number) {
+      const next = ids.map((id) => ({ id, pattern }));
+      if (timer && JSON.stringify(next) === JSON.stringify(shown)) return;
+      if (timer) clearInterval(timer);
+      send([...next, ...ends(ids)]);
+      shown = next;
+      timer = setInterval(() => send(shown), every);
+    },
+    stop() {
+      if (!timer) return;
+      clearInterval(timer);
+      timer = null;
+      send(ends([]));
+      shown = [];
+    },
+  };
 }
 
 export type Control = 'warp' | 'gamma' | 'curve' | 'floor' | 'colour' | 'rgb';

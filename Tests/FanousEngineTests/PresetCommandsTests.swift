@@ -10,21 +10,24 @@ import Testing
 
 @testable import FanousEngine
 
-/// `output.preset.*` and the Compare lease `output.show` (DESIGN.md §9.10 item 3).
+/// `output.preset.*`, the Compare lease `output.show` (DESIGN.md §9.10 item 3) and the test pattern lease `output.pattern`
+/// (§9.9, B102).
 struct PresetCommandsTests {
     final class Machine: Sendable {
         let showMode = Mutex(false)
         let shown = Mutex<[([Int], Int)]>([])
+        let patterns = PatternLeases()
     }
 
-    /// A store with `outputs` outputs of 1920 × 1080 (a region each); `output.show` calls land in `Machine.shown`.
+    /// A store with `outputs` outputs of 1920 × 1080 (a region each); `output.show` calls land in `Machine.shown`,
+    /// `output.pattern` calls in `Machine.patterns` at time 100.
     static func makeStore(outputs: Int) throws -> (StateStore, Machine) {
         let logger = Logger(label: "test")
         let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx), logger: logger)
         let machine = Machine()
         ProjectDocument.registerCommands(
             on: store, auth: RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: logger), showModeOn: { machine.showMode.withLock { $0 } },
-            showPreset: { ids, preset in machine.shown.withLock { $0.append((ids, preset)) } })
+            showPreset: { ids, preset in machine.shown.withLock { $0.append((ids, preset)) } }, showPatterns: { machine.patterns.lease($0, at: 100) })
         for id in 1...outputs {
             _ = try store.execute("output.add", role: .programmer).get()
             _ = try store.execute("output.set", args: ["id": .number(Double(id)), "path": "/region", "value": ["x": 0, "y": 0, "w": 1920, "h": 1080]], role: .programmer).get()
@@ -202,5 +205,58 @@ struct PresetCommandsTests {
         #expect(live(9, from: 2)["morph"] == ["from": 2, "to": 0, "fade": 2] && live(9, from: 2)["presetMissing"] == 9, "to a missing number: the edited mapping")
         #expect(live(2, from: 5)["morph"] == ["from": 0, "to": 2, "fade": 2], "from a broken one: the edited mapping")
         #expect(live(0, from: 9)["morph"] == .null && live(5, from: 0)["morph"] == .null, "both sides the edited mapping: nothing glides")
+    }
+
+    // MARK: output.pattern
+
+    /// A lease, not an edit (B102): no project change, the undo and redo stacks as they were; the patterns reach the leases.
+    @Test func thePatternCommandIsALease() throws {
+        let (store, machine) = try Self.makeStore(outputs: 2)
+        try Self.corner(store, 0.1)
+        _ = try store.execute("undo", role: .programmer).get()
+        let (rev, depth) = (store.rev, store.historyDepth)
+        _ = try Self.run(store, "output.pattern", ["patterns": [["id": 1, "pattern": 3], ["id": 2, "pattern": 11]]]).get()
+        #expect(machine.patterns.pattern(1, at: 101) == .blendCheck && machine.patterns.pattern(2, at: 101) == .white)
+        _ = try Self.run(store, "output.pattern", ["patterns": [["id": 2, "pattern": 0]]]).get()
+        #expect(machine.patterns.pattern(1, at: 101) == .blendCheck && machine.patterns.pattern(2, at: 101) == .off, "0 ends output 2's only")
+        #expect(store.rev == rev && store.historyDepth == depth, "not saved, not undone, the redo kept")
+    }
+
+    /// Programmer only; refused for an output that does not exist (ending one is fine), for a pattern it does not have,
+    /// in show mode except to end, and under show lock.
+    @Test func patternRefusals() throws {
+        let (store, machine) = try Self.makeStore(outputs: 1)
+        func run(_ id: Int, _ pattern: JSONValue, role: Role = .programmer) -> Result<CommandResult, CommandError> {
+            Self.run(store, "output.pattern", ["patterns": [["id": .number(Double(id)), "pattern": pattern]]], role: role)
+        }
+        #expect(run(1, 1, role: .operator) == .failure(.forbidden))
+        #expect(run(7, 1) == .failure(.invalidArgs("no output 7")))
+        #expect((try? run(7, 0).get()) != nil, "ending one of an output that is gone")
+        for bad in [12, -1, 1.5, "grid"] as [JSONValue] { #expect(run(1, bad).failureCode == "invalidArgs", "\(bad)") }
+        #expect(Self.run(store, "output.pattern", ["patterns": []]).failureCode == "invalidArgs")
+        machine.showMode.withLock { $0 = true }
+        #expect(run(1, 1) == .failure(CommandError("showMode", "test patterns are off in show mode")), "show mode ends them, so one cannot start")
+        #expect((try? run(1, 0).get()) != nil, "ending is fine")
+        machine.showMode.withLock { $0 = false }
+        _ = try store.execute("show.lock", role: .programmer).get()
+        #expect(run(1, 1) == .failure(.showLocked))
+        #expect(machine.patterns.pattern(1, at: 101) == .off, "none got through")
+    }
+
+    /// A lease runs 5 s from its last renewal, per output; off ends it, and show mode or lock end every one.
+    @Test func aPatternLeaseRunsFiveSecondsFromItsLastRenewal() {
+        let leases = PatternLeases()
+        leases.lease([(1, .grid), (9, .white)], at: 100)
+        #expect(leases.pattern(1, at: 104.9) == .grid && leases.pattern(1, at: 105) == .off, "5 s after it was taken")
+        #expect(leases.pattern(9, at: 101) == .white && leases.pattern(2, at: 101) == .off, "per output, any id")
+        leases.lease([(1, .grid)], at: 103)
+        #expect(leases.pattern(1, at: 107.9) == .grid && leases.pattern(1, at: 108) == .off, "renewed at 103: until 108")
+        leases.lease([(1, .grey25)], at: 104)
+        #expect(leases.pattern(1, at: 104) == .grey25, "the latest call's pattern")
+        leases.lease([(1, .off)], at: 104.5)
+        #expect(leases.pattern(1, at: 104.5) == .off, "off ends it")
+        leases.lease([(1, .grid), (2, .grid)], at: 110)
+        leases.endAll()
+        #expect(leases.pattern(1, at: 110) == .off && leases.pattern(2, at: 110) == .off, "show mode and show lock end every lease")
     }
 }

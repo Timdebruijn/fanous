@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { DisplayDoc, OutputConfig } from './outputs';
 import {
-  MAX_CANVAS_PIXELS, SEAM_STEPS, badge, editDraft, fitCanvas, freeOutputs, grids, isManual, newDraft, overlapHint, patternChange, patternRestore, pixelSize,
-  rc, savedFrom, seamLines, share, tap, unrestored, wallArgs, wallPixels, type WallConfig,
+  MAX_CANVAS_PIXELS, SEAM_STEPS, badge, editDraft, fitCanvas, freeOutputs, grids, isManual, newDraft, overlapHint, patternLease, pixelSize, rc,
+  seamLines, share, tap, wallArgs, wallPixels, type WallConfig,
 } from './walls';
 
 const edge = { overlap: 0, power: 2, gamma: 2.2 };
@@ -122,34 +122,29 @@ describe('the wall panel', () => {
     expect(isManual(undefined, 7, 'source')).toBe(false);
   });
 
-  it('puts a test pattern on outputs and gives each its own back afterwards', () => {
-    let outputs = [output(1, { testPattern: 2 }), output(2), output(3, { testPattern: 4 })];
-    const shown = patternChange(outputs, [1, 2, 3, 9], 4, {});
-    // every output is sent the pattern, also one that seems to show it already (the project may lag); a missing one not
-    expect(shown.set).toEqual([{ id: 1, pattern: 4 }, { id: 2, pattern: 4 }, { id: 3, pattern: 4 }]);
-    expect(shown.saved).toEqual({ 1: 2, 2: 0, 3: 4 });
-    outputs = outputs.map((o) => ({ ...o, testPattern: 4 }));
-    // the next pattern keeps the first saved one
-    const next = patternChange(outputs, [1, 2], 3, shown.saved);
-    expect(next.saved).toEqual({ 1: 2, 2: 0, 3: 4 });
-    // the wall keeps outputs 1 and 2 on its pattern; output 3 was not tapped and gets its own back
-    expect(patternRestore(outputs, next.saved, [1, 2])).toEqual({ set: [{ id: 3, pattern: 4 }], saved: { 1: 2, 2: 0 } });
-    expect(patternRestore(outputs, { 1: 2, 2: 0 })).toEqual({ set: [{ id: 1, pattern: 2 }, { id: 2, pattern: 0 }], saved: {} });
-    // a removed output is skipped
-    expect(patternRestore(outputs.slice(1), { 1: 2 }).set).toEqual([]);
-  });
-
-  it('keeps the saved pattern of every output whose restore was refused, so it can be tried again', () => {
-    const back = patternRestore([output(1, { testPattern: 3 }), output(2, { testPattern: 3 })], { 1: 2, 2: 0, 3: 7 }, [3]);
-    expect(unrestored(back.saved, back.set, [])).toEqual({ 1: 2, 2: 0, 3: 7 });
-    expect(unrestored(back.saved, back.set, [2])).toEqual({ 1: 2, 3: 7 });
-    expect(unrestored(back.saved, back.set, [1, 2])).toEqual({ 3: 7 });
-  });
-
-  it('reads saved patterns back after a reload, and nothing else', () => {
-    expect(savedFrom(JSON.stringify({ wall: 2, saved: { 1: 0, 4: 7 } }))).toEqual({ wall: 2, saved: { 1: 0, 4: 7 } });
-    expect(savedFrom(JSON.stringify({ saved: { 1: 0 } }))).toEqual({ wall: null, saved: { 1: 0 } });
-    for (const bad of [null, '', '{', '{"saved":{}}', '{"saved":{"x":1}}', '{"saved":{"1":"0"}}', '[]']) expect(savedFrom(bad)).toBeNull();
+  it('leases the test patterns: renewed every 2 s, the outputs that leave ended, stop ends them all', () => {
+    vi.useFakeTimers();
+    try {
+      const sent: { id: number; pattern: number }[][] = [];
+      const lease = patternLease((p) => sent.push(p));
+      lease.stop();
+      expect(sent, 'nothing to end').toEqual([]);
+      lease.show([1, 2, 3], 4);
+      lease.show([1, 2, 3], 4);
+      expect(sent, 'the same again sends nothing new').toEqual([[{ id: 1, pattern: 4 }, { id: 2, pattern: 4 }, { id: 3, pattern: 4 }]]);
+      vi.advanceTimersByTime(2000);
+      expect(sent.length).toBe(2);
+      lease.show([1, 2], 3);
+      expect(sent.at(-1), 'output 3 left: ended in the same call').toEqual([{ id: 1, pattern: 3 }, { id: 2, pattern: 3 }, { id: 3, pattern: 0 }]);
+      vi.advanceTimersByTime(2000);
+      expect(sent.at(-1)).toEqual([{ id: 1, pattern: 3 }, { id: 2, pattern: 3 }]);
+      lease.stop();
+      expect(sent.at(-1)).toEqual([{ id: 1, pattern: 0 }, { id: 2, pattern: 0 }]);
+      vi.advanceTimersByTime(10_000);
+      expect(sent.length, 'no renewal after stop').toBe(5);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('steps through Grid, Blend check, Grey 0, 25, 75 % and White', () => {

@@ -369,6 +369,28 @@ struct OutputPassTests {
         #expect(px(warped, 100)[1] >= 254 && px(warped, 250)[1] <= 1, "White follows the corner pin: \(px(warped, 100)) \(px(warped, 250))")
     }
 
+    /// `output.pattern`'s lease (B102) shows over the output's own pattern, under the Output fixture's, and only while it
+    /// runs at the frame's time (the render pass ticks at 3600).
+    @Test func aPatternLeaseShowsBetweenTheConsoleAndTheOwnPattern() throws {
+        let context = try MetalContext()
+        let still = try Self.flat(context.device, value: 200)
+        let compiler = OutputCompiler(device: context.device)
+        let size = (Self.width, Self.height), leases = PatternLeases()
+        var o = OutputConfig(id: 1)
+        o.testPattern = TestPattern.grey25.rawValue
+        func green(_ fixture: TestPattern = .off) throws -> Int {
+            var parameters = OutputParameters()
+            parameters.testPattern = fixture
+            let image = try Self.render(compiler.compile(o, index: 1, drawable: size, patterns: leases), still: still, drawable: size, context: context, outputs: [parameters])
+            return Int(image[(97 * Self.width + 167) * 4 + 1])
+        }
+        leases.lease([(1, .white)], at: 3599)
+        #expect(try green() == 255, "the lease over the own Grey 25 %")
+        #expect(try green(.grey0) == 0, "the console's pattern over the lease")
+        leases.lease([(1, .white)], at: 3595)
+        #expect(abs(try green() - 64) <= 1, "ran out at 3600: the own Grey 25 % again")
+    }
+
     /// A console's Grand Master or DBO takes a test pattern down like the content: the pattern follows Output intensity ×
     /// Master intensity, and Output Blackout, Master Blackout or either intensity at 0 is black, Raw and the black lift included.
     @Test func testPatternsFollowTheDimmerAndBlackout() throws {

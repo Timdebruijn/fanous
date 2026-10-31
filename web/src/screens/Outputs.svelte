@@ -51,8 +51,8 @@
   import { choose, grid, groups, label, members, nudgeCommand, nudgeQueue, step, type Group } from '../lib/remote';
   import { fromScreen, resampleMesh, toScreen } from '../lib/warp';
   import type { JSONValue } from '../lib/protocol';
-  import { badge, freeOutputs, isManual, SEAM_STEPS, wallOf, type ManualField } from '../lib/walls';
-  import { cancelWizard, endCheck, giveBack, keepLeftover, startWizard, stuckText, wallUI } from '../lib/wall-session.svelte';
+  import { badge, freeOutputs, isManual, patternLease, SEAM_STEPS, wallOf, type ManualField } from '../lib/walls';
+  import { cancelWizard, endCheck, startWizard, wallPatterns, wallUI } from '../lib/wall-session.svelte';
 
   const locked = $derived(!can('programmer'));
   /** why the remote cannot move points: the role, or the show lock (the engine would refuse) */
@@ -76,17 +76,15 @@
   const wallLock = $derived(lockTitle('programmer', !locked, app.project.showLock));
   const freeCount = $derived(freeOutputs(outputs, walls).length);
   const checking = $derived(wallUI.check ? walls.find((w) => w.id === wallUI.check?.wall) : undefined);
-  // a seam check whose wall went (Undo, another client) ends, and its outputs get their own test patterns back
+  // a seam check whose wall went (Undo, another client) ends
   $effect(() => {
-    if (wallUI.check && !checking) void endCheck();
+    if (wallUI.check && !checking) endCheck();
   });
   // leaving the screen ends the seam check and the wizard: nothing else would show that they still hold the projectors
   onDestroy(() => {
-    void endCheck();
-    if (wallUI.wizard) void cancelWizard();
+    endCheck();
+    cancelWizard();
   });
-  /** test patterns waiting to be given back with nothing open that would: a reloaded page's, or a check whose wall went */
-  const leftBehind = $derived(!!wallUI.leftover || (!wallUI.wizard && !checking && Object.keys(wallUI.saved).length > 0));
   const newWallReason = $derived(wallLock ?? (freeCount < 2 ? 'Add at least two outputs that are in no wall yet.' : null));
   /** a wall panel's "Open in Warp & Slices" and the Grid step of the seam check */
   function openWarp(id: number) {
@@ -319,6 +317,19 @@
     else overlay.stop();
   });
   onDestroy(() => overlay.stop());
+  // the wizard's and the seam check's test patterns (B102): a lease renewed while they show one and the page is visible,
+  // ended when they close, when the step moves to other outputs, or when the page is hidden (an unloading page is hidden
+  // first; else the lease runs out after 5 s). Sent quietly, as the overlay's; nothing under show lock or without the
+  // role, and in show mode only the end (the engine refuses a pattern there, and has ended the leases itself)
+  const patterns = patternLease((list) => {
+    if (!app.project.showLock && can('programmer')) client.cmd('output.pattern', { patterns: list }).catch(() => {});
+  });
+  $effect(() => {
+    const shown = visible && !app.project.showLock && can('programmer') && !app.live.show.mode ? wallPatterns() : null;
+    if (shown) patterns.show(shown.ids, shown.pattern);
+    else patterns.stop();
+  });
+  onDestroy(() => patterns.stop());
   const remoteLabel = $derived(output ? label(output, ui.mapper, sliceIndex, cells, group, anchor) : '');
   /** "x 960.25 · y 0 px", "5 points move together" */
   const remoteDetail = $derived.by(() => {
@@ -425,16 +436,6 @@
     <span class="spacer"></span>
     <button type="button" class="btn btn-primary" onclick={() => { pickOutput(justAdded!); ui.tab = 'warp'; justAdded = null; }}>Align this output</button>
     <button type="button" class="btn btn-ghost" onclick={() => (justAdded = null)}>Later</button>
-  </div>
-{/if}
-
-{#if leftBehind}
-  <div class="banner banner-yellow" role="status">
-    <span class="dot dot-yellow"></span>
-    <span><strong>Outputs still show a projector-wall test pattern</strong> · {stuckText() ?? (wallUI.leftover ? `left by ${wallUI.leftover.wall ? `the seam check of Wall ${wallUI.leftover.wall}` : 'the wall wizard'} before this page was reloaded` : 'the seam check ended when its wall went')}</span>
-    <span class="spacer"></span>
-    <button type="button" class="btn" onclick={giveBack}>Give the test patterns back</button>
-    {#if wallUI.leftover}<button type="button" class="btn btn-ghost" onclick={keepLeftover}>Keep them</button>{/if}
   </div>
 {/if}
 

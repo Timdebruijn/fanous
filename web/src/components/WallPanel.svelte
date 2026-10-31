@@ -9,7 +9,7 @@
   import { lockTitle } from '../lib/show';
   import { app, can, cmd, toastUndo } from '../lib/state.svelte';
   import { throttledSender } from '../lib/throttle';
-  import { endCheck, pick, removeWall, startCheck, startWizard, stepCheck, stuckText, wallUI } from '../lib/wall-session.svelte';
+  import { endCheck, pick, removeWall, startWizard, stepCheck, wallUI } from '../lib/wall-session.svelte';
   import { SEAM_STEPS, overlapHint, rc, seamLines, wallPixels, type Control, type ManualField, type SeamLine, type WallConfig } from '../lib/walls';
 
   // A projector wall (DESIGN §9.9) around a mini-map: one tile per projector, the seams as lines between them. Tap a
@@ -143,7 +143,7 @@
     <h2>{wall.name}</h2>
     <span class="caption">{wall.rows} × {wall.cols} · {canvas?.name ?? `Canvas ${wall.canvas}`} · overlap {[...new Set(overlaps)].join(' / ')} %</span>
     <span class="spacer"></span>
-    <button type="button" class="btn" aria-pressed={!!check} disabled={!!lock} title={lock ?? 'Test patterns on every projector of the wall, with what to look for and which control to turn'} onclick={() => (check ? endCheck() : startCheck(wall))}>Seam check</button>
+    <button type="button" class="btn" aria-pressed={!!check} disabled={!!lock} title={lock ?? 'Test patterns on every projector of the wall, with what to look for and which control to turn'} onclick={() => (check ? endCheck() : stepCheck(wall, 0))}>Seam check</button>
     <button type="button" class="btn" aria-pressed={sel?.kind === 'geometry'} onclick={() => pick(sel?.kind === 'geometry' ? null : { wall: wall.id, kind: 'geometry' })}>Geometry</button>
   </header>
   {#if lock}<p class="caption">{lock}</p>{/if}
@@ -190,7 +190,7 @@
             <span class="spacer"></span>
             <button type="button" class="btn btn-ghost" onclick={endCheck}>End seam check</button>
           </div>
-          {#if stuckText()}<p class="caption yellow">{stuckText()}</p>{/if}
+          {#if app.live.show.mode}<p class="caption yellow">The test patterns are off in show mode.</p>{/if}
         </section>
       {/if}
 
