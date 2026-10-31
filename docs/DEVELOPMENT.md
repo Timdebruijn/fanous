@@ -210,6 +210,28 @@ is quit" dialog choose Later: Quit & Reopen quits the shell and the engine and
 does not reopen a dev build (`open dist/Fanous.app`). A Developer ID build
 keeps its identity and its grants.
 
+A network filter that keys its rules on code identity (Little Snitch) is the
+likely reason sync output can stay dead after a rebuild: it would hold the
+new binary's flows until its alert is answered, and the engine shows nothing
+of it beyond `sync.packetsDropped` in the live document. No alert was
+confirmed seen, so this rests on timing. Measured 2026-10-30: the engine
+started at 19:01:50 and its sync keepalives (broadcast to port 8002, one a
+second) were dropped from the 19th packet on, the socket's send buffer
+holding 18. The system log shows the application firewall's first flow from
+that pid at 23:22:26, 4 h 20 min later, while the user was answering system
+prompts at the keyboard; from then on the firewall saw each new flow at
+once, and its own verdict was the known-app allow, so the firewall was not
+the blocker. When `packetsDropped` keeps rising after a rebuild, look for a
+pending filter alert, and check whether the engine's flows have reached the
+firewall at all:
+
+```
+log show --last 1h --predicate 'process == "socketfilterfw" AND eventMessage CONTAINS "org.fanous"'
+```
+
+A "Handle flow" line for the engine's pid means the flow reached the
+application firewall; in the run above that happened only after the delay.
+
 `/api/metrics` reports frame timing, the DMX-to-photon estimate and audio
 drift; `fanous-bench run` ramps layers until a frame drops (`--effects
 blur,edge`, `--dissolve 2`, `--ingest FILE` for the Phase 3/4 variants) and
