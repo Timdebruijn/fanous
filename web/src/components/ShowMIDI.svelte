@@ -4,8 +4,9 @@
 <script lang="ts">
   import type { MIDIMappingDoc } from '../lib/docs';
   import type { ChannelMap } from '../lib/patch-screen';
-  import { fixtureNames, formatClock, formatNumber, groupSpecs, lockTitle, midiControlText, midiParameterTarget, midiTargetText, specsFor } from '../lib/show';
+  import { fixtureNames, formatNumber, groupSpecs, lockTitle, midiControlText, midiParameterTarget, midiTargetText, specsFor } from '../lib/show';
   import { app, can, cmd } from '../lib/state.svelte';
+  import { stampText } from '../lib/system';
 
   /** null while the channel map is not there: parameter targets are then offered by key only once it arrives */
   let { map }: { map: ChannelMap | null } = $props();
@@ -55,7 +56,7 @@
   </header>
 
   <p class="last mono" aria-live="polite">
-    {#if live.last}<time class="faint">{formatClock(live.lastAt ?? 0)}</time> {live.last}{:else}<span class="caption">Nothing received yet. Press a key or move a control.</span>{/if}
+    {#if live.last}<time class="faint">{stampText(live.lastAt ?? 0)}</time> {live.last}{:else}<span class="caption">Nothing received yet. Press a key or move a control.</span>{/if}
   </p>
   {#if live.error}<p class="err" role="alert">{live.error}</p>{/if}
 
@@ -190,7 +191,6 @@
 <style>
   .midi { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
   header { display: flex; align-items: center; gap: 12px; }
-  h3 { margin: 8px 0 0; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
   p { margin: 0; }
   .last { font-size: 13px; min-height: 20px; overflow-wrap: anywhere; }
   .err { color: var(--red); font-size: 13px; }

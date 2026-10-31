@@ -38,11 +38,12 @@
   import WallWizard from '../components/WallWizard.svelte';
   import Preview from '../components/Preview.svelte';
   import {
-    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, circleMask, finishMask, handles, keystoneBadges, maskHandle, maskRemoval, maskTarget, meshIdentity, modeText, movedHandle, nextSliceId, outputSize, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, redrawIndex, spreadSources, statusText, toggleSmooth, toolPath, triangleDest,
+    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, circleMask, finishMask, handles, keystoneBadges, maskHandle, maskRemoval, maskTarget, modeText, movedHandle, nextSliceId, outputSize, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, redrawIndex, spreadSources, statusText, toggleSmooth, toolPath, triangleDest,
     type MapPoint, type MapperMode, type MaskPoint, type MaskShape, type MaskTool, type OutputConfig,
   } from '../lib/outputs';
   import { mediaOptions, mediaPath, type LibrarySnapshot } from '../lib/layers';
   import { app, can, client, cmd, toastUndo } from '../lib/state.svelte';
+  import { LOCKED_TITLE } from '../lib/patch-screen';
   import { lockTitle } from '../lib/show';
   import { go } from '../lib/router.svelte';
   import { sourcePixels, sourceFromPixels } from '../lib/outputs';
@@ -53,7 +54,6 @@
   import { badge, freeOutputs, isManual, SEAM_STEPS, wallOf, type ManualField } from '../lib/walls';
   import { cancelWizard, endCheck, giveBack, keepLeftover, startWizard, stuckText, wallUI } from '../lib/wall-session.svelte';
 
-  const LOCKED = 'Locked: programmer only';
   const locked = $derived(!can('programmer'));
   /** why the remote cannot move points: the role, or the show lock (the engine would refuse) */
   const moveLock = $derived(lockTitle('programmer', !locked, app.project.showLock));
@@ -174,7 +174,7 @@
   }
   function resetMesh() {
     const mesh = output?.warp.mesh;
-    if (mesh) set('/warp/mesh', meshIdentity(mesh.cols, mesh.rows) as unknown as JSONValue);
+    if (mesh) set('/warp/mesh', resampleMesh(null, mesh.cols, mesh.rows) as unknown as JSONValue);
   }
   function addSlice() {
     if (!output) return;
@@ -476,7 +476,7 @@
     {/each}
     <div class="add">
       <label class="field"><span>Add output on</span>
-        <select class="select" disabled={locked} title={locked ? LOCKED : undefined} onchange={(e) => { addOutput(e.currentTarget.value || null); e.currentTarget.value = ''; }}>
+        <select class="select" disabled={locked} title={locked ? LOCKED_TITLE : undefined} onchange={(e) => { addOutput(e.currentTarget.value || null); e.currentTarget.value = ''; }}>
           <option value="">Choose a display…</option>
           {#each displays as d (d.uuid)}<option value={d.uuid}>{d.name} · {d.width} × {d.height}{d.builtin ? ' (this Mac)' : ''}</option>{/each}
           <option value="none">Unassigned (assign later)</option>
@@ -530,9 +530,9 @@
           <div class="segmented" role="group" aria-label="Canvas">
             {#each canvases as c (c.id)}<button type="button" class="btn" aria-pressed={canvas?.id === c.id} onclick={() => (ui.canvas = c.id)}>{c.name}</button>{/each}
           </div>
-          <button type="button" class="btn" disabled={locked || canvases.length >= MAX_CANVASES || app.live.show.mode} title={locked ? LOCKED : canvases.length >= MAX_CANVASES ? `At most ${MAX_CANVASES} canvases` : app.live.show.mode ? 'Leave show mode to add a canvas' : 'Another canvas for other layers, e.g. an LED wall next to the projectors'} onclick={addCanvas}>Add canvas</button>
+          <button type="button" class="btn" disabled={locked || canvases.length >= MAX_CANVASES || app.live.show.mode} title={locked ? LOCKED_TITLE : canvases.length >= MAX_CANVASES ? `At most ${MAX_CANVASES} canvases` : app.live.show.mode ? 'Leave show mode to add a canvas' : 'Another canvas for other layers, e.g. an LED wall next to the projectors'} onclick={addCanvas}>Add canvas</button>
           <span class="spacer"></span>
-          {#if canvas && canvas.id !== 1}<button type="button" class="btn btn-danger" disabled={locked || app.live.show.mode} title={locked ? LOCKED : app.live.show.mode ? 'Leave show mode to remove a canvas' : undefined} onclick={removeCanvas}>Remove canvas</button>{/if}
+          {#if canvas && canvas.id !== 1}<button type="button" class="btn btn-danger" disabled={locked || app.live.show.mode} title={locked ? LOCKED_TITLE : app.live.show.mode ? 'Leave show mode to remove a canvas' : undefined} onclick={removeCanvas}>Remove canvas</button>{/if}
         </div>
         {#if canvas}
           <div class="fields">
@@ -554,7 +554,7 @@
             </label>
             <div class="field"><span>&nbsp;</span>
               <span class="row4">
-                <button type="button" class="btn" disabled={locked || !formatChanged || !!formatError || app.live.show.mode} title={locked ? LOCKED : app.live.show.mode ? 'Leave show mode to change the canvas' : undefined} onclick={applyFormat}>Apply</button>
+                <button type="button" class="btn" disabled={locked || !formatChanged || !!formatError || app.live.show.mode} title={locked ? LOCKED_TITLE : app.live.show.mode ? 'Leave show mode to change the canvas' : undefined} onclick={applyFormat}>Apply</button>
                 {#if formatChanged}<button type="button" class="btn btn-ghost" onclick={() => (formatDraft = null)}>Revert</button>{/if}
               </span>
             </div>
@@ -578,7 +578,7 @@
     {:else if ui.tab === 'outputs'}
       <section class="panel form" aria-label="Output settings">
         <div class="head2"><h2>{output.name}</h2><span class="caption tone-{statusText(status, output).tone}">{statusText(status, output).text}</span><span class="spacer"></span>
-          <button type="button" class="btn btn-danger" disabled={locked} title={locked ? LOCKED : undefined} onclick={removeOutput}>Remove output</button></div>
+          <button type="button" class="btn btn-danger" disabled={locked} title={locked ? LOCKED_TITLE : undefined} onclick={removeOutput}>Remove output</button></div>
         <div class="fields">
           <label class="field"><span>Name</span><input class="input" type="text" value={output.name} disabled={locked} onchange={(e) => set('/name', e.currentTarget.value)} /></label>
           <label class="field"><span>Display</span>
@@ -638,7 +638,7 @@
         <h3>Test pattern</h3>
         <div class="patterns">
           {#each TEST_PATTERNS as name, i (name)}
-            <button type="button" class="btn" aria-pressed={output.testPattern === i} disabled={locked} title={locked ? LOCKED : undefined} onclick={() => set('/testPattern', i)}>{name}</button>
+            <button type="button" class="btn" aria-pressed={output.testPattern === i} disabled={locked} title={locked ? LOCKED_TITLE : undefined} onclick={() => set('/testPattern', i)}>{name}</button>
           {/each}
         </div>
         <p class="caption">The Output fixture's Test pattern and Master channels override this; its Blend channel at 128+ shows the raw canvas (no blend, warp, mask or keystone) for alignment.</p>
@@ -701,7 +701,7 @@
             {#if output.slices[sliceIndex]}
               {@const s = output.slices[sliceIndex]!}
               <label class="field"><span>Canvas</span>
-                <select class="select" disabled={locked} title={locked ? LOCKED : 'The canvas this slice takes its picture from'} value={s.canvas} onchange={(e) => set(`/slices/${sliceIndex}/canvas`, Number(e.currentTarget.value))}>
+                <select class="select" disabled={locked} title={locked ? LOCKED_TITLE : 'The canvas this slice takes its picture from'} value={s.canvas} onchange={(e) => set(`/slices/${sliceIndex}/canvas`, Number(e.currentTarget.value))}>
                   {#if !sliceCanvas}<option value={s.canvas}>Canvas {s.canvas} · missing (black)</option>{/if}
                   {#each canvases as c (c.id)}<option value={c.id}>{c.name} · {c.width} × {c.height}</option>{/each}
                 </select>
@@ -719,8 +719,8 @@
             <button type="button" class="btn" disabled={locked} onclick={addSlice}>Add slice</button>
             <button type="button" class="btn" disabled={locked} title="Whole canvas on the whole output; the masks stay" onclick={resetSlice}>Reset slice</button>
             <button type="button" class="btn" disabled={locked || output.slices.length < 2} title="One picture across all slices: each slice gets the next strip of the canvas, left to right, as wide as the slice is on the output" onclick={spreadCanvas}>Spread canvas</button>
-            <button type="button" class="btn" disabled={locked || !output.slices[sliceIndex]} title={locked ? LOCKED : 'The top corners meet in the middle of the top edge; drag one away for a quad again'} onclick={triangle}>Triangle</button>
-            <button type="button" class="btn" disabled={locked || !output.slices[sliceIndex]} title={locked ? LOCKED : "Adds an ellipse mask filling the slice's corners; edit it in Mask mode"} onclick={circle}>Circle</button>
+            <button type="button" class="btn" disabled={locked || !output.slices[sliceIndex]} title={locked ? LOCKED_TITLE : 'The top corners meet in the middle of the top edge; drag one away for a quad again'} onclick={triangle}>Triangle</button>
+            <button type="button" class="btn" disabled={locked || !output.slices[sliceIndex]} title={locked ? LOCKED_TITLE : "Adds an ellipse mask filling the slice's corners; edit it in Mask mode"} onclick={circle}>Circle</button>
             <button type="button" class="btn btn-danger" disabled={locked || output.slices.length <= 1} title={output.slices.length <= 1 ? 'An output needs at least one slice: use Reset slice instead' : undefined} onclick={removeSlice}>Remove slice</button>
           </div>
         {:else}
@@ -823,7 +823,6 @@
   .nopreview { padding: 32px; }
   .form { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
   .head2 { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-  h3 { margin: 8px 0 0; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
   .fields { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; }
   .fields .input { width: 120px; }
   .fields .select { min-width: 200px; }

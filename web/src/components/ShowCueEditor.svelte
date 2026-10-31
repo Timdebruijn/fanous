@@ -194,7 +194,6 @@
   .editor { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
   header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
   header h2 { flex: 0 1 auto; max-width: 100%; }
-  h3 { margin: 8px 0 0; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
   p { margin: 0; }
   .problem { color: var(--red); font-size: 13px; }
   .fields { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; }

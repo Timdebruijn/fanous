@@ -3,6 +3,9 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import Login from './Login.svelte';
+  import { timecodeOn } from '../lib/show';
+  import { describeJobState } from '../lib/media';
+  import { universeName } from '../lib/patch-screen';
   import { readinessSummary, resumedText } from '../lib/system';
   import { lastVersionText } from '../lib/versions';
   import { app, can, cmd, shell, toggleLock } from '../lib/state.svelte';
@@ -15,13 +18,8 @@
   const universes = $derived(app.live.dmx.universes);
   const patchedUniverses = $derived(new Set(app.project.patch.map((p) => p.universe)));
   const outputsOk = $derived(app.live.engine.rendering);
-  const running = $derived(app.live.ingest.filter((j) => typeof j.state === 'object' && j.state !== null && 'running' in (j.state as object)));
-  const progress = $derived.by(() => {
-    const job = running[0];
-    if (!job) return null;
-    const state = job.state as { running?: { progress?: number } };
-    return Math.round((state.running?.progress ?? 0) * 100);
-  });
+  const running = $derived(app.live.ingest.map((j) => describeJobState(j.state)).filter((s) => s.label === 'transcoding'));
+  const progress = $derived(running[0] ? Math.round(running[0].progress * 100) : null);
 
   function universeClass(u: { active: boolean; ageSeconds: number; id: string }): string {
     if (u.active) return 'pill-green';
@@ -30,7 +28,7 @@
     return u.ageSeconds > 2.5 && patchedUniverses.has(u.id) ? 'pill-red' : 'pill-yellow';
   }
   function universeLabel(u: { id: string; active: boolean; ageSeconds: number }): string {
-    const name = u.id.replace('artnet:', 'A ').replace('sacn:', 'S ');
+    const name = universeName(u.id);
     if (u.active) return name;
     if (u.ageSeconds < 0) return `${name} · silent`;
     return `${name} · ${u.ageSeconds.toFixed(1)} s`;
@@ -94,23 +92,23 @@
       <span class="caption" title="Nothing has arrived on Art-Net or sACN yet: check the console's output address, the network cable and the universe numbers (System shows details).">no DMX received</span>
     {/each}
   </div>
-  <div class="item col" class:red={app.live.timecode.state === 'lost' && app.project.showLock}>
-    <span class="mono value" class:faint={app.live.timecode.state === 'off'}>{app.live.timecode.value}</span>
-    <span class="caption">timecode{app.live.timecode.state === 'off' ? '' : ` · ${app.live.timecode.state}`}</span>
-  </div>
+  <!-- timecode and ingest only while they have something to say (DESIGN §12), so the bar fits one row on a laptop -->
+  {#if timecodeOn(app.project.timecode) || app.live.timecode.state !== 'off'}
+    <div class="item col" class:red={app.live.timecode.state === 'lost' && app.project.showLock}>
+      <span class="mono value" class:faint={app.live.timecode.state === 'off'}>{app.live.timecode.value}</span>
+      <span class="caption">timecode{app.live.timecode.state === 'off' ? '' : ` · ${app.live.timecode.state}`}</span>
+    </div>
+  {/if}
   <div class="item col" class:red={!outputsOk && app.project.showLock}>
     <span class="mono value"><span class="dot {outputsOk ? 'dot-green' : 'dot-off'}"></span> {outputsOk ? 'on' : 'off'}</span>
     <span class="caption">outputs</span>
   </div>
-  <div class="item col ingest">
-    {#if progress !== null}
+  {#if progress !== null}
+    <div class="item col ingest">
       <span class="caption">ingest · {running.length} running<span class="mono"> {progress} %</span></span>
       <span class="bar"><span style="width: {progress}%"></span></span>
-    {:else}
-      <span class="faint">idle</span>
-      <span class="caption">ingest</span>
-    {/if}
-  </div>
+    </div>
+  {/if}
   <a class="item col plain" href="#/system" title="Project versions (System): the engine saves one at start, on show mode and every 10 minutes after a change">
     <span class="mono value">{lastVersionText(app.live.versions?.lastAutomatic)}</span>
     <span class="caption">auto version</span>
@@ -142,7 +140,7 @@
 <style>
   .status { display: flex; flex-wrap: wrap; align-items: center; min-height: 56px; padding: 4px 8px; background: var(--surface-1); border-bottom: 1px solid var(--line); }
   /* min-height: an item that wraps on a phone (the universe pills, the resumed note) grows instead of spilling over */
-  .item { display: flex; align-items: center; gap: 8px; min-height: var(--touch); padding: 0 12px; border-right: 1px solid var(--line); }
+  .item { display: flex; align-items: center; gap: 8px; min-height: var(--touch); padding: 0 8px; border-right: 1px solid var(--line); }
   .item.col { flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; }
   .item.right { border-right: 0; padding-right: 4px; }
   .item.red { background: var(--red-bg); border-radius: 6px; }

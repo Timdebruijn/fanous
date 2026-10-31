@@ -19,6 +19,7 @@
   const resumed = $derived(resumedText(show.resumedAt));
   const lockedOperator = $derived(!can('operator'));
   const lockedProgrammer = $derived(!can('programmer'));
+  const BADGE = { red: 'badge-err', yellow: 'badge-warn', green: '', off: 'badge-outline' } as const;
   const caption = $derived(
     headerCaption({
       chip: app.live.engine.chip || (typeof app.caps.chip === 'string' ? app.caps.chip : ''),
@@ -111,18 +112,10 @@
           {#if item.detail}<div class="mono muted wrap">{item.detail}</div>{/if}
           {#if item.fix && item.state !== 'ok'}<div class="caption">{item.fix}</div>{/if}
         </div>
-        {#if item.state === 'hard'}
-          <span class="badge badge-err">blocking</span>
-        {:else if item.state === 'warn'}
-          <span class="badge badge-warn">warning</span>
-        {:else if item.state === 'manual'}
-          <span class="badge badge-outline">manual</span>
-        {:else if item.state === 'fail'}
-          {#if item.acknowledged}
-            <span class="badge badge-warn">acknowledged</span>
-          {:else}
-            <button type="button" class="btn" disabled={lockedProgrammer} title={lockedProgrammer ? LOCKED_TITLE : undefined} onclick={() => void cmd('readiness.acknowledge', { id: item.id })}>Acknowledge</button>
-          {/if}
+        {#if item.state === 'fail' && !item.acknowledged}
+          <button type="button" class="btn" disabled={lockedProgrammer} title={lockedProgrammer ? LOCKED_TITLE : undefined} onclick={() => void cmd('readiness.acknowledge', { id: item.id })}>Acknowledge</button>
+        {:else if item.state !== 'ok'}
+          <span class="badge {BADGE[badge.tone]}">{badge.label}</span>
         {/if}
       </li>
     {:else}
@@ -275,7 +268,6 @@
 <SystemLogs />
 
 <style>
-  .phead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 16px; }
   .inset { margin: 0 16px 12px; }
   ul { list-style: none; margin: 0; padding: 0; }
   .item { flex-wrap: wrap; gap: 8px 12px; padding: 8px 16px; }
@@ -286,11 +278,8 @@
   .red { color: var(--red); }
   .yellow { color: var(--yellow); }
   .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 12px; align-items: start; }
-  .kv { display: grid; grid-template-columns: minmax(96px, 30%) minmax(0, 1fr); gap: 12px 16px; margin: 0; padding: 0 16px 16px; align-items: start; }
-  .kv dt { padding-top: 5px; color: var(--text-2); font-size: 13px; font-weight: 500; }
-  .kv dd { margin: 0; min-width: 0; padding-top: 3px; }
   .status { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
   .rootform, .copyrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
   .rootform .input { flex: 1 1 200px; min-width: 0; text-align: left; }
-  h3 { margin: 0; padding: 4px 16px 8px; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+  h3 { margin: 0; padding: 4px 16px 8px; }
 </style>

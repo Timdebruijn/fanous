@@ -19,6 +19,7 @@
     type LibrarySnapshot,
   } from '../lib/media';
   import { ZERO_GROUPS, folderZeroItems, zeroCaption, type FolderZeroItem } from '../lib/layers';
+  import { lockTitle } from '../lib/show';
 
   interface Upload {
     name: string;
@@ -77,19 +78,12 @@
   const picked = $derived(shown.find((i) => i.path === selectedItem));
   const playable = $derived(picked !== undefined && picked.file !== null && current?.number != null && picked.status === 'playable');
   const layerNumbers = $derived(Array.from({ length: Math.max(0, Math.floor(app.project.layerCount) || 0) }, (_, i) => i + 1));
-  const playLock = $derived(locked ? LOCKED_TITLE : app.project.showLock ? 'Locked: show lock is on' : undefined);
+  const playLock = $derived(lockTitle('programmer', !locked, app.project.showLock));
   let playNote = $state('');
 
-  async function playOn(n: number) {
-    if (!picked || picked.file === null || current?.number == null) return;
-    const ok = await playOnLayer(n, current.number, picked.file);
-    playNote = ok ? `Layer ${n} now plays ${current.number} / ${picked.file} · ${picked.name}.` : '';
-  }
-  async function playZero(n: number) {
-    const item = pickedZeroItem;
-    if (!item) return;
-    const ok = await playOnLayer(n, 0, item.file);
-    playNote = ok ? `Layer ${n} now shows 0 / ${item.file} · ${item.name}.` : '';
+  async function play(n: number, folder: number, file: number, name: string) {
+    const ok = await playOnLayer(n, folder, file);
+    playNote = ok ? `Layer ${n} now ${folder === 0 ? 'shows' : 'plays'} ${folder} / ${file} · ${name}.` : '';
   }
   const canImport = $derived(current?.number != null);
   /** "folder/file" → the layers playing it, for the tile badge */
@@ -185,6 +179,17 @@
   }
 </script>
 
+{#snippet playMenu(folder: number, file: number, name: string)}
+  <select class="select" aria-label="Play on layer" disabled={playLock !== undefined || layerNumbers.length === 0} title={playLock} value="" onchange={(e) => {
+    const n = Number(e.currentTarget.value);
+    e.currentTarget.value = '';
+    if (n) void play(n, folder, file, name);
+  }}>
+    <option value="">Play on layer ▾</option>
+    {#each layerNumbers as n (n)}<option value={n}>Layer {n}</option>{/each}
+  </select>
+{/snippet}
+
 <div class="media">
   {#if notice}
     <div class="banner banner-yellow" role="alert">
@@ -265,14 +270,7 @@
       {#if pickedZeroItem}
         <div class="panel playbar" role="group" aria-label="Selected item">
           <span class="ellipsis grow" title={pickedZeroItem.name}><strong>{pickedZeroItem.file}</strong> · {pickedZeroItem.name}</span>
-          <select class="select" aria-label="Play on layer" disabled={playLock !== undefined || layerNumbers.length === 0} title={playLock} value="" onchange={(e) => {
-            const n = Number(e.currentTarget.value);
-            e.currentTarget.value = '';
-            if (n) void playZero(n);
-          }}>
-            <option value="">Play on layer ▾</option>
-            {#each layerNumbers as n (n)}<option value={n}>Layer {n}</option>{/each}
-          </select>
+          {@render playMenu(0, pickedZeroItem.file, pickedZeroItem.name)}
           {#if pickedZeroItem.kind !== 'generator' && !pickedZeroItem.running && !pickedZeroItem.inUse}
             <button class="btn" disabled={playLock !== undefined} title={playLock ?? `Free this number: a console cue on it then selects the next new ${NOUN[pickedZeroItem.kind]} (undo brings it back)`}
               onclick={() => void forget(pickedZeroItem.kind, pickedZeroItem.file)}>Forget</button>
@@ -352,14 +350,7 @@
         <div class="panel playbar" role="group" aria-label="Selected file">
           <span class="ellipsis grow" title={picked.name}><strong>{picked.file ?? '—'}</strong> · {picked.name}</span>
           {#if playable}
-            <select class="select" aria-label="Play on layer" disabled={playLock !== undefined || layerNumbers.length === 0} title={playLock} value="" onchange={(e) => {
-              const n = Number(e.currentTarget.value);
-              e.currentTarget.value = '';
-              if (n) void playOn(n);
-            }}>
-              <option value="">Play on layer ▾</option>
-              {#each layerNumbers as n (n)}<option value={n}>Layer {n}</option>{/each}
-            </select>
+            {@render playMenu(current!.number!, picked.file!, picked.name)}
           {:else}
             <span class="caption">{picked.status === 'needsTranscode' ? 'Transcode this file first to play it.' : 'This file cannot be played on a layer.'}</span>
           {/if}
