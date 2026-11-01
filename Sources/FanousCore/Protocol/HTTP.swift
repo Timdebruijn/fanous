@@ -47,7 +47,7 @@ public struct HTTPRequest: Equatable, Sendable {
     /// Parses one request head from the start of `bytes`.
     /// Returns nil while the head (terminated by CRLF CRLF) is incomplete.
     public static func parse(_ bytes: [UInt8]) throws -> (request: HTTPRequest, headLength: Int)? {
-        guard let end = indexOfHeadTerminator(bytes) else {
+        guard let end = bytes.firstRange(of: [13, 10, 13, 10])?.lowerBound else {
             if bytes.count > maxHeadBytes { throw ParseError.headTooLarge }
             return nil
         }
@@ -75,15 +75,6 @@ public struct HTTPRequest: Equatable, Sendable {
         let request = HTTPRequest(
             method: String(parts[0]), target: String(parts[1]), version: String(parts[2]), headers: headers)
         return (request, end + 4)
-    }
-
-    static func indexOfHeadTerminator(_ bytes: [UInt8]) -> Int? {
-        guard bytes.count >= 4 else { return nil }
-        for i in 0...(bytes.count - 4)
-        where bytes[i] == 13 && bytes[i + 1] == 10 && bytes[i + 2] == 13 && bytes[i + 3] == 10 {
-            return i
-        }
-        return nil
     }
 }
 

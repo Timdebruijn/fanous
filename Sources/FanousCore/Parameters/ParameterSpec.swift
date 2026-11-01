@@ -135,7 +135,6 @@ public struct ParameterSpec: Equatable, Sendable {
 
     public var rawMax: UInt16 { bits == 16 ? 65535 : 255 }
     public var channels: ClosedRange<Int> { channel...(channel + bits / 8 - 1) }
-    public var oscKey: String { id.key }
 
     public var unit: String {
         if case .curve(_, let unit) = kind { return unit }

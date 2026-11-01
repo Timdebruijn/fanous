@@ -118,12 +118,8 @@ public struct ArtPollReply: Equatable, Sendable {
     }
 
     public var ipAddress: [UInt8]
-    public var firmwareVersion: UInt16
     public var net: UInt8
     public var subnet: UInt8
-    /// 0xFFFF until an OEM code is registered with Artistic Licence (DESIGN.md OPEN-25).
-    public var oem: UInt16
-    public var estaManufacturer: UInt16
     public var shortName: String
     public var longName: String
     public var nodeReport: String
@@ -132,20 +128,15 @@ public struct ArtPollReply: Equatable, Sendable {
     public var bindIndex: UInt8
 
     public static let styleMediaServer: UInt8 = 0x03
-    public static let estaPrototype: UInt16 = 0x7FF0
 
     public init(
-        ipAddress: [UInt8], firmwareVersion: UInt16 = 1, net: UInt8, subnet: UInt8, oem: UInt16 = 0xFFFF,
-        estaManufacturer: UInt16 = estaPrototype, shortName: String, longName: String, nodeReport: String,
+        ipAddress: [UInt8], net: UInt8, subnet: UInt8, shortName: String, longName: String, nodeReport: String,
         ports: [Port], mac: [UInt8] = [0, 0, 0, 0, 0, 0], bindIndex: UInt8 = 1
     ) {
         precondition(ipAddress.count == 4 && mac.count == 6 && ports.count <= 4)
         self.ipAddress = ipAddress
-        self.firmwareVersion = firmwareVersion
         self.net = net & 0x7F
         self.subnet = subnet & 0xF
-        self.oem = oem
-        self.estaManufacturer = estaManufacturer
         self.shortName = shortName
         self.longName = longName
         self.nodeReport = nodeReport
@@ -157,7 +148,7 @@ public struct ArtPollReply: Equatable, Sendable {
     /// One reply per group of four ports sharing Net and Sub-Net.
     public static func replies(
         universes: [UniverseID], ipAddress: [UInt8], shortName: String, longName: String, nodeReport: String,
-        mac: [UInt8] = [0, 0, 0, 0, 0, 0], oem: UInt16 = 0xFFFF
+        mac: [UInt8] = [0, 0, 0, 0, 0, 0]
     ) -> [ArtPollReply] {
         let addresses = universes.filter { $0.transport == .artnet }.map(\.number).sorted()
         var groups: [(net: UInt8, subnet: UInt8, universes: [UInt8])] = []
@@ -174,7 +165,7 @@ public struct ArtPollReply: Equatable, Sendable {
         if groups.isEmpty { groups = [(0, 0, [])] }
         return groups.enumerated().map { index, group in
             ArtPollReply(
-                ipAddress: ipAddress, net: group.net, subnet: group.subnet, oem: oem, shortName: shortName, longName: longName,
+                ipAddress: ipAddress, net: group.net, subnet: group.subnet, shortName: shortName, longName: longName,
                 nodeReport: nodeReport, ports: group.universes.map { Port(universe: $0, receiving: true) }, mac: mac,
                 bindIndex: UInt8(index + 1))
         }
@@ -184,12 +175,12 @@ public struct ArtPollReply: Equatable, Sendable {
         var out = ArtNet.header + ArtNet.opCodeBytes(.pollReply)
         out += ipAddress
         out += [0x36, 0x19]  // port 0x1936 little-endian
-        out += [UInt8(firmwareVersion >> 8), UInt8(firmwareVersion & 0xFF)]
+        out += [0, 1]  // firmware version 1
         out += [net, subnet]
-        out += [UInt8(oem >> 8), UInt8(oem & 0xFF)]
+        out += [0xFF, 0xFF]  // OEM: unknown until a code is registered with Artistic Licence (DESIGN.md OPEN-25)
         out += [0]  // UbeaVersion
         out += [0xD0]  // Status1: indicators normal, port-address set by network
-        out += [UInt8(estaManufacturer & 0xFF), UInt8(estaManufacturer >> 8)]
+        out += [0xF0, 0x7F]  // ESTA manufacturer 0x7FF0 (prototype), little-endian
         out += [UInt8].fixed(shortName, 18)
         out += [UInt8].fixed(longName, 64)
         out += [UInt8].fixed(nodeReport, 64)

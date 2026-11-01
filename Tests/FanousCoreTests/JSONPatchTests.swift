@@ -123,13 +123,14 @@ struct RFCExample: Sendable, CustomTestStringConvertible {
         #expect(try ptr("").tokens.isEmpty)
         #expect(try ptr("/").tokens == [""])
         #expect(try ptr("/é/\u{1F39B}").description == "/é/\u{1F39B}")
+        let combining = JSONPointer(tokens: ["a~\u{301}", "/\u{301}"])  // a combining mark after ~ and /
+        #expect(try ptr(combining.description) == combining)
     }
 
-    @Test func pointerLastAppending() throws {
+    @Test func pointerAppending() {
         let p = JSONPointer(tokens: []).appending("a").appending("b/c")
         #expect(p.description == "/a/b~1c")
-        #expect(p.last == "b/c")
-        #expect(try ptr("").last == nil)
+        #expect(p.tokens == ["a", "b/c"])
     }
 
     @Test func invalidPointersThrow() {

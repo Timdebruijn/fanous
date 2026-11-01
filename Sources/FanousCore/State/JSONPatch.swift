@@ -55,18 +55,12 @@ public struct JSONPatch: Equatable, Sendable, Codable {
         public func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: CodingKeys.self)
             switch self {
-            case .add(let path, let value):
-                try c.encode("add", forKey: .op)
-                try c.encode(path, forKey: .path)
-                try c.encode(value, forKey: .value)
-            case .remove(let path):
-                try c.encode("remove", forKey: .op)
-                try c.encode(path, forKey: .path)
-            case .replace(let path, let value):
-                try c.encode("replace", forKey: .op)
-                try c.encode(path, forKey: .path)
-                try c.encode(value, forKey: .value)
+            case .add: try c.encode("add", forKey: .op)
+            case .remove: try c.encode("remove", forKey: .op)
+            case .replace: try c.encode("replace", forKey: .op)
             }
+            try c.encode(path, forKey: .path)
+            try c.encodeIfPresent(value, forKey: .value)
         }
     }
 
