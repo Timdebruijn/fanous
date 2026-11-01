@@ -58,9 +58,9 @@ public enum ShaderSource {
     }
 
     // Rec.709 video range. 8-bit planes (2vuy, yuvs, 420v) use 8-bit levels (16/255, 255/219, 255/224); 16-bit planes
-    // (v216, y416, the r16 planar kinds, 10-bit x422 with its codes in the high bits) use the same levels at 16-bit
-    // scale (4096/65535, 65535/56064, 65535/57344): read with the 8-bit ratios they were about 1 code low at white
-    // and about 1 code off in neutral chroma (B119).
+    // (ProRes 422 as r16/rg16 planes, ProRes 4444 as y416, v216) use the same levels at 16-bit scale (4096/65535,
+    // 65535/56064, 65535/57344; also exact for 10-bit codes in the high bits): read with the 8-bit ratios they were
+    // about 1 code low at white and about 1 code off in neutral chroma (B119).
     static float3 ycbcr_to_rgb(float y, float cb, float cr, bool deep) {
         float black = deep ? 4096.0 / 65535.0 : 16.0 / 255.0;
         float mid = deep ? 32768.0 / 65535.0 : 128.0 / 255.0;

@@ -83,7 +83,9 @@ struct LiveSourceTests {
         Self.expect(at(run: 0), (255, 255, 255), "\(format) white", tolerance: 0)
         Self.expect(at(run: 1), (0, 0, 0), "\(format) black", tolerance: 0)
         Self.expect(at(run: 2), (255, 0, 0), "\(format) red")
-        Self.expect(at(run: 3), (128, 128, 128), "\(format) grey", tolerance: 0)
+        // grey sits 0.08 code above 128 before the output dither, so ±1; the neutral-chroma check is what catches B119
+        Self.expect(at(run: 3), (128, 128, 128), "\(format) grey", tolerance: 1)
+        #expect(at(run: 3).r == at(run: 3).g && at(run: 3).g == at(run: 3).b, "\(format) grey is neutral: \(at(run: 3))")
         // the pair's two lumas land on their own pixels. 2vuy picks them with the nearest sampler: exact. The 420v Y plane
         // is sampled linearly, and the canvas pixel centre is 1/96 source pixel right of the source pixel's centre:
         // Y0 = 235 − 219/96 → (232.72 − 16) × 255/219 = 252.3, Y1 = 16 + 219/96 → 2.65; asserted ±1 around the derived values
