@@ -64,6 +64,13 @@ public final class Compositor: @unchecked Sendable {
     /// slots (`OutputPass.overlaySlots`).
     static let mappedUniformsLength = 256 * (64 + OutputPass.overlaySlots)
 
+    /// Encoder labels made once (B117): a 13–15-byte Swift `String` bridges to a fresh `NSString` on every assignment
+    /// (1 allocation on the compositor thread each, measured), an `NSString` costs none. "canvas N" and "output" bridge
+    /// to tagged pointers and the 16-byte "secondary output" bridged free as well (0 measured), so they stay as they are.
+    let mappedOutputLabel: NSString = "mapped output"
+    let layerPreviewLabel: NSString = "layer preview"
+    let thumbnailAtlasLabel: NSString = "thumbnail atlas"
+
     /// One canvas: its three textures (triple-buffered, one index for all canvases) and their render passes.
     final class CanvasTarget {
         let id: Int
@@ -493,7 +500,7 @@ public final class Compositor: @unchecked Sendable {
         if let target = outputTarget {
             outputPass.colorAttachments[0].texture = target
             if let set, let output = commandBuffer.makeRenderCommandEncoder(descriptor: outputPass) {
-                output.label = "mapped output"
+                output.label = mappedOutputLabel as String
                 OutputPass.draw(
                     set, canvas: { tickCanvas($0) }, encoder: output, context: context, uniforms: mappedUniformBuffers[mappedIndex],
                     master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs,
@@ -838,7 +845,7 @@ public final class Compositor: @unchecked Sendable {
         guard abs(Double(target.width * canvasHeight) / Double(max(1, target.height * canvasWidth)) - 1) < 0.02,
             let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass)
         else { return false }
-        encoder.label = "layer preview"
+        encoder.label = layerPreviewLabel as String
         encodeAlone(index, uniforms: uniforms, slotBase: ring * 2, canvasWidth: canvasWidth, canvasHeight: canvasHeight, with: encoder)
         encoder.endEncoding()
         return true
@@ -877,7 +884,7 @@ public final class Compositor: @unchecked Sendable {
     func drawThumbnails(_ cells: [ThumbnailAtlas.Cell?], into pass: MTLRenderPassDescriptor, commandBuffer: MTLCommandBuffer) -> Bool {
         if thumbnailUniforms == nil { thumbnailUniforms = context.device.makeBuffer(length: Self.uniformStride * maxLayers * 2 * 3, options: .storageModeShared) }
         guard let uniforms = thumbnailUniforms, let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { return false }
-        encoder.label = "thumbnail atlas"
+        encoder.label = thumbnailAtlasLabel as String
         let items = reusedThisTick ? drawItems : drawnItems
         for (i, layer) in layers.enumerated() where i < cells.count {
             guard let cell = cells[i], let canvas = items.first(where: { $0.slot / 2 == layer.index && $0.canvas >= 0 })?.canvas else { continue }
