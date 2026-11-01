@@ -74,7 +74,7 @@ public struct X509SelfSignedCertificate: Sendable {
 
     public func tbsCertificate() -> [UInt8] {
         DER.sequence([
-            DER.explicit(0, DER.integer(2)),  // v3
+            DER.explicit(0, DER.integer(unsignedBytes: [2])),  // v3
             DER.integer(unsignedBytes: serialNumber),
             signatureAlgorithm,
             name,  // issuer == subject

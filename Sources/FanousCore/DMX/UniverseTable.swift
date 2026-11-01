@@ -175,25 +175,22 @@ public struct UniverseTable: Sendable {
     /// The universes the packet fed (empty: wrong interface, out of sequence, or nobody listens).
     @discardableResult
     public mutating func apply(artnet packet: ArtDmx, from source: String, at time: TimeInterval) -> [UniverseID] {
-        var fed: [UniverseID] = []
-        for id in targets(of: packet.universeID) where accepts(id, from: source) {
-            var entry = entries[id] ?? Entry()
-            let accepted = entry.artnet.apply(packet, from: source, at: time)
-            entries[id] = entry
-            if accepted { fed.append(id) }
-        }
-        for id in fed { count(id, at: time) }
-        return fed
+        feed(packet.universeID, from: source, at: time) { $0.artnet.apply(packet, from: source, at: time) }
     }
 
     @discardableResult
     public mutating func apply(sacn packet: SACNData, from sender: String = "", at time: TimeInterval) -> [UniverseID] {
+        feed(packet.universeID, from: sender, at: time) { $0.sacn.apply(packet, at: time) }
+    }
+
+    private mutating func feed(
+        _ wire: UniverseID, from sender: String, at time: TimeInterval, _ accept: (inout Entry) -> Bool
+    ) -> [UniverseID] {
         var fed: [UniverseID] = []
-        for id in targets(of: packet.universeID) where accepts(id, from: sender) {
+        for id in targets(of: wire) where accepts(id, from: sender) {
             var entry = entries[id] ?? Entry()
-            let accepted = entry.sacn.apply(packet, at: time)
+            if accept(&entry) { fed.append(id) }
             entries[id] = entry
-            if accepted { fed.append(id) }
         }
         for id in fed { count(id, at: time) }
         return fed

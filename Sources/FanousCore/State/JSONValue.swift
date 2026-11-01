@@ -163,7 +163,7 @@ extension JSONValue {
 
     // ponytail: rebuilds (copies) each container on the path; fine for small documents, in-place mutation if not.
     mutating func perform(_ edit: Edit, at path: JSONPointer) throws {
-        guard let last = path.last else {
+        guard let last = path.tokens.last else {
             switch edit {
             case .add(let v), .replace(let v), .set(let v): self = v
             case .remove: throw PatchError.unsupportedOperation("remove at the document root")
@@ -306,11 +306,6 @@ public struct JSONPointer: Hashable, Sendable, Codable, CustomStringConvertible,
         JSONPointer(tokens: tokens + [token])
     }
 
-    /// The last token; nil for the root.
-    public var last: String? {
-        tokens.last
-    }
-
     /// A decimal array index without leading zeros (RFC 6901 §4). `-` and anything else is nil.
     static func arrayIndex(_ token: String) -> Int? {
         guard !token.isEmpty, token.utf8.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }) else { return nil }
@@ -335,15 +330,9 @@ public struct JSONPointer: Hashable, Sendable, Codable, CustomStringConvertible,
         return String(out)
     }
 
+    /// `.literal`: without it, a `~` or `/` followed by a combining mark is not replaced.
     private static func escape(_ token: String) -> String {
-        var out = String.UnicodeScalarView()
-        for c in token.unicodeScalars {
-            switch c {
-            case "~": out.append(contentsOf: "~0".unicodeScalars)
-            case "/": out.append(contentsOf: "~1".unicodeScalars)
-            default: out.append(c)
-            }
-        }
-        return String(out)
+        token.replacingOccurrences(of: "~", with: "~0", options: .literal)
+            .replacingOccurrences(of: "/", with: "~1", options: .literal)
     }
 }

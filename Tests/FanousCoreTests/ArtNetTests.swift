@@ -56,8 +56,10 @@ import Testing
         #expect(Array(bytes[8..<10]) == [0x00, 0x21])
         #expect(Array(bytes[10..<14]) == [192, 168, 1, 10])
         #expect(Array(bytes[14..<16]) == [0x36, 0x19])
+        #expect(Array(bytes[16..<18]) == [0, 1])  // firmware version
         #expect(bytes[18] == 1 && bytes[19] == 2)
         #expect(bytes[20] == 0xFF && bytes[21] == 0xFF)  // OEM unknown until registered
+        #expect(Array(bytes[24..<26]) == [0xF0, 0x7F])  // ESTA prototype 0x7FF0, little-endian
         #expect(String(decoding: bytes[26..<32], as: UTF8.self) == "Fanous" && bytes[32] == 0)
         #expect(bytes[43] == 0)  // short name null-terminated within 18
         #expect(bytes[173] == 2)  // NumPortsLo

@@ -11,14 +11,9 @@ public enum Role: String, Codable, Sendable, CaseIterable, Comparable, CustomStr
     case `operator`
     case programmer
 
-    public var rank: Int {
-        switch self {
-        case .monitor: 0
-        case .operator: 1
-        case .programmer: 2
-        }
+    /// By declaration order.
+    public static func < (lhs: Role, rhs: Role) -> Bool {
+        allCases.firstIndex(of: lhs)! < allCases.firstIndex(of: rhs)!
     }
-
-    public static func < (lhs: Role, rhs: Role) -> Bool { lhs.rank < rhs.rank }
     public var description: String { rawValue }
 }

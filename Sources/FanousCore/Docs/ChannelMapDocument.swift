@@ -13,7 +13,7 @@ public enum ChannelMapDocument {
             md += "| Ch | Parameter | Bits | Default | Mapping | OSC key |\n|---|---|---|---|---|---|\n"
             for spec in ChannelMap.specs(for: mode) {
                 let channels = spec.bits == 16 ? "\(spec.channel)–\(spec.channel + 1)" : "\(spec.channel)"
-                md += "| \(channels) | \(spec.name) | \(spec.bits) | \(spec.defaultRaw) | \(mapping(spec)) | `\(spec.oscKey)` |\n"
+                md += "| \(channels) | \(spec.name) | \(spec.bits) | \(spec.defaultRaw) | \(mapping(spec)) | `\(spec.id.key)` |\n"
             }
             if let reserved = ChannelMap.reserved(for: mode) {
                 let channels = reserved.count == 1 ? "\(reserved.lowerBound)" : "\(reserved.lowerBound)–\(reserved.upperBound)"
