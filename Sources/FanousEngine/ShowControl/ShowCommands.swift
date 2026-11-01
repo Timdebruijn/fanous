@@ -89,17 +89,6 @@ public enum ShowCommands {
         public var showMode: @Sendable (Bool) -> [String]?
         public var acknowledge: @Sendable (String) -> Void
         public var runReadiness: @Sendable () -> Void
-        public init(
-            go: @escaping @Sendable () -> Void, back: @escaping @Sendable () -> Void, goto: @escaping @Sendable (Double) -> Void,
-            showMode: @escaping @Sendable (Bool) -> [String]?, acknowledge: @escaping @Sendable (String) -> Void, runReadiness: @escaping @Sendable () -> Void
-        ) {
-            self.go = go
-            self.back = back
-            self.goto = goto
-            self.showMode = showMode
-            self.acknowledge = acknowledge
-            self.runReadiness = runReadiness
-        }
     }
 
     public static func register(on store: StateStore, hooks: Hooks) {

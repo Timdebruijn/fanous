@@ -14,14 +14,6 @@ public enum ControlCommands {
         public var release: @Sendable (FixtureRef?) -> Void
         /// Restart the 10-minute expiry of a fixture's UI values (it only runs while a console is received).
         public var keep: @Sendable (FixtureRef) -> Void
-        public init(
-            set: @escaping @Sendable (FixtureRef, ParameterID, UInt16) -> Void, release: @escaping @Sendable (FixtureRef?) -> Void,
-            keep: @escaping @Sendable (FixtureRef) -> Void
-        ) {
-            self.set = set
-            self.release = release
-            self.keep = keep
-        }
     }
 
     public static func register(on store: StateStore, hooks: Hooks) {

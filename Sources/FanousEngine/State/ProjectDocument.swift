@@ -42,11 +42,6 @@ public enum ProjectDocument {
             public var id: Int
             public var width: Int
             public var height: Int
-            public init(id: Int, width: Int, height: Int) {
-                self.id = id
-                self.width = width
-                self.height = height
-            }
         }
         public var fps: Double
         public var canvases: [Size]
