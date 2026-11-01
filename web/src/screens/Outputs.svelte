@@ -51,8 +51,8 @@
   import { choose, grid, groups, label, members, nudgeCommand, nudgeQueue, step, type Group } from '../lib/remote';
   import { fromScreen, resampleMesh, toScreen } from '../lib/warp';
   import type { JSONValue } from '../lib/protocol';
-  import { badge, freeOutputs, isManual, patternLease, SEAM_STEPS, wallOf, type ManualField } from '../lib/walls';
-  import { cancelWizard, endCheck, startWizard, wallPatterns, wallUI } from '../lib/wall-session.svelte';
+  import { badge, freeOutputs, isManual, patternLease, SEAM_STEPS, wallOf, wallPatterns, type ManualField } from '../lib/walls';
+  import { cancelWizard, endCheck, startWizard, wallUI } from '../lib/wall-session.svelte';
 
   const locked = $derived(!can('programmer'));
   /** why the remote cannot move points: the role, or the show lock (the engine would refuse) */
@@ -318,14 +318,17 @@
   });
   onDestroy(() => overlay.stop());
   // the wizard's and the seam check's test patterns (B102): a lease renewed while they show one and the page is visible,
-  // ended when they close, when the step moves to other outputs, or when the page is hidden (an unloading page is hidden
-  // first; else the lease runs out after 5 s). Sent quietly, as the overlay's; nothing under show lock or without the
-  // role, and in show mode only the end (the engine refuses a pattern there, and has ended the leases itself)
+  // ended when they close, when the step moves to other outputs, when the wizard is out of sight on another tab, or when
+  // the page is hidden (an unloading page is hidden first; else the lease runs out after 5 s). Sent quietly, as the
+  // overlay's; nothing under show lock or without the role, and in show mode only the end (the engine refuses a pattern
+  // there, and has ended the leases itself). WallWizard says when its Output IDs are off
   const patterns = patternLease((list) => {
     if (!app.project.showLock && can('programmer')) client.cmd('output.pattern', { patterns: list }).catch(() => {});
   });
   $effect(() => {
-    const shown = visible && !app.project.showLock && can('programmer') && !app.live.show.mode ? wallPatterns() : null;
+    const shown = visible && !app.project.showLock && can('programmer') && !app.live.show.mode
+      ? wallPatterns(wallUI.check, wallUI.wizard, ui.tab === 'outputs', app.project.walls, app.project.outputs, app.live.outputs)
+      : null;
     if (shown) patterns.show(shown.ids, shown.pattern);
     else patterns.stop();
   });

@@ -4,9 +4,10 @@
 // What the projector-wall wizard and the wall panels have open, kept outside the components so it is shared by them
 // and survives a switch to Warp & Slices (the Grid step of the seam check sends the user there); leaving the Outputs
 // screen ends the wizard and the seam check. The test patterns they show are a lease (`output.pattern`, B102) that the
-// Outputs screen holds while `wallPatterns` names one: never an edit of the outputs' own patterns, so nothing to give back.
+// Outputs screen holds while `wallPatterns` (lib/walls) names one: never an edit of the outputs' own patterns, so nothing
+// to give back.
 import { app, cmd, toastUndo } from './state.svelte';
-import { PATTERN, SEAM_STEPS, editDraft, freeOutputs, newDraft, wallArgs, type Control, type WallConfig, type WizardDraft } from './walls';
+import { PATTERN, SEAM_STEPS, editDraft, newDraft, wallArgs, type Control, type WallConfig, type WizardDraft } from './walls';
 
 export type Pick = { wall: number } & ({ kind: 'seam'; a: number; b: number } | { kind: 'projector'; output: number } | { kind: 'geometry' });
 
@@ -22,17 +23,6 @@ export const wallUI = $state({
   hint: null as number | null,
   check: null as { wall: number; step: number } | null,
 });
-
-/** The test pattern the seam check or the wizard shows and on which outputs, or null: the check's step on every output
- * of its wall; the wizard's Output ID on every free output on a display (an output bound or unbound meanwhile too). */
-export function wallPatterns(): { ids: number[]; pattern: number } | null {
-  const check = wallUI.check, wall = check && app.project.walls?.find((w) => w.id === check.wall);
-  if (check && wall) return { ids: wall.outputs, pattern: SEAM_STEPS[check.step]!.pattern };
-  if (!wallUI.wizard) return null;
-  const bound = new Set(app.live.outputs.filter((s) => s.state === 'bound').map((s) => s.id));
-  const ids = freeOutputs(app.project.outputs, app.project.walls, wallUI.wizard.edit ?? undefined).map((o) => o.id).filter((id) => bound.has(id));
-  return ids.length ? { ids, pattern: PATTERN.outputID } : null;
-}
 
 /** New projector wall, or Edit layout… of `wall`. */
 export function startWizard(wall?: WallConfig): void {

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { DisplayDoc, OutputConfig } from './outputs';
 import {
   MAX_CANVAS_PIXELS, SEAM_STEPS, badge, editDraft, fitCanvas, freeOutputs, grids, isManual, newDraft, overlapHint, patternLease, pixelSize, rc,
-  seamLines, share, tap, wallArgs, wallPixels, type WallConfig,
+  seamLines, share, tap, wallArgs, wallPatterns, wallPixels, type WallConfig,
 } from './walls';
 
 const edge = { overlap: 0, power: 2, gamma: 2.2 };
@@ -122,13 +122,28 @@ describe('the wall panel', () => {
     expect(isManual(undefined, 7, 'source')).toBe(false);
   });
 
+  it('leases the check\'s step on its wall, the wizard\'s Output ID on the free outputs on a display while it is in sight', () => {
+    const w = wall(2, 1, [1, 2]);
+    const outputs = [1, 2, 3, 4].map((id) => output(id));
+    const status = (id: number, state: 'bound' | 'unassigned') => ({ id, state, display: null, width: 0, height: 0, hz: 0, master: false });
+    const live = [status(1, 'bound'), status(3, 'bound'), status(4, 'unassigned')];
+    expect(wallPatterns({ wall: 1, step: 3 }, null, false, [w], outputs, live), 'the check, on any tab').toEqual({ ids: [1, 2], pattern: 9 });
+    expect(wallPatterns({ wall: 2, step: 3 }, null, true, [w], outputs, live), 'its wall went').toBeNull();
+    expect(wallPatterns(null, newDraft(1), true, [w], outputs, live), 'a new wall: the free bound outputs').toEqual({ ids: [3], pattern: 4 });
+    expect(wallPatterns(null, editDraft(w), true, [w], outputs, live), "Edit layout: the wall's own outputs are free").toEqual({ ids: [1, 3], pattern: 4 });
+    expect(wallPatterns(null, newDraft(1), true, [w], outputs, [status(3, 'unassigned')]), 'none bound').toBeNull();
+    expect(wallPatterns(null, newDraft(1), false, [w], outputs, live), 'the wizard on another tab').toBeNull();
+    expect(wallPatterns(null, null, true, [w], outputs, live)).toBeNull();
+  });
+
   it('leases the test patterns: renewed every 2 s, the outputs that leave ended, stop ends them all', () => {
     vi.useFakeTimers();
     try {
       const sent: { id: number; pattern: number }[][] = [];
       const lease = patternLease((p) => sent.push(p));
       lease.stop();
-      expect(sent, 'nothing to end').toEqual([]);
+      lease.show([], 4);
+      expect(sent, 'nothing to end, no empty lease').toEqual([]);
       lease.show([1, 2, 3], 4);
       lease.show([1, 2, 3], 4);
       expect(sent, 'the same again sends nothing new').toEqual([[{ id: 1, pattern: 4 }, { id: 2, pattern: 4 }, { id: 3, pattern: 4 }]]);
@@ -138,10 +153,10 @@ describe('the wall panel', () => {
       expect(sent.at(-1), 'output 3 left: ended in the same call').toEqual([{ id: 1, pattern: 3 }, { id: 2, pattern: 3 }, { id: 3, pattern: 0 }]);
       vi.advanceTimersByTime(2000);
       expect(sent.at(-1)).toEqual([{ id: 1, pattern: 3 }, { id: 2, pattern: 3 }]);
-      lease.stop();
-      expect(sent.at(-1)).toEqual([{ id: 1, pattern: 0 }, { id: 2, pattern: 0 }]);
+      lease.show([], 3);
+      expect(sent.at(-1), 'no outputs: a stop').toEqual([{ id: 1, pattern: 0 }, { id: 2, pattern: 0 }]);
       vi.advanceTimersByTime(10_000);
-      expect(sent.length, 'no renewal after stop').toBe(5);
+      expect(sent.length, 'no renewal after it').toBe(5);
     } finally {
       vi.useRealTimers();
     }

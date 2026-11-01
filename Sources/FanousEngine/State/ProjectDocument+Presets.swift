@@ -180,10 +180,12 @@ extension ProjectDocument {
             ) { project, args in
                 guard let list = args["patterns"]?.array, !list.isEmpty else { throw CommandError.invalidArgs("patterns must list one or more { id, pattern }") }
                 let outputs = ProjectDocument.outputs(from: project)
+                var seen = Set<Int>()
                 let patterns = try list.map { entry -> (id: Int, pattern: TestPattern) in
                     guard let id = entry["id"]?.int, let pattern = entry["pattern"]?.int.flatMap(TestPattern.init(rawValue:)) else {
                         throw CommandError.invalidArgs("each entry is { id, pattern: 0–\(TestPattern.allCases.count - 1) }")
                     }
+                    guard seen.insert(id).inserted else { throw CommandError.invalidArgs("output \(id) twice") }
                     // ending one of an output that is gone ends nothing, and is fine
                     guard pattern == .off || outputs.contains(where: { $0.id == id }) else { throw CommandError.invalidArgs("no output \(id)") }
                     return (id, pattern)

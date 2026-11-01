@@ -2377,10 +2377,14 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
   its own pattern; pattern 0 ends that output's lease.
   - Programmer, refused under show lock, never saved or undone, no project
     change. A pattern is refused in show mode and for an output that does not
-    exist; an end never is. Show mode and show lock end every lease at once.
+    exist; an end is never refused in show mode or for an output that is gone
+    (show lock refuses everything, and has ended the leases itself). A call
+    that lists an output twice is refused. Show mode and show lock end every
+    lease at once.
   - Each lasts 5 s. The Outputs screen renews it every 2 s while the wizard
-    (Output ID on the bound free outputs) or the check (its step on every
-    output of the wall) shows a pattern, and ends it when they close, when
+    (Output ID on the bound free outputs, while it is in sight on the Outputs
+    tab) or the check (its step on every output of the wall, on any tab: it
+    has a banner) shows a pattern, and ends it when they close, when
     the step moves to other outputs (in the same call), or when the page is
     hidden; an unloading page is hidden first, else the lease runs out.
   - **Home: `PatternLeases`** (`OutputCoordinator.swift`), owned by the
@@ -2394,9 +2398,11 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
     `live.outputs[].pattern` is the leased pattern, null without one.
   - One lease per output, the latest call wins, no per-client leases. With two
     clients on the same outputs, the one that ends clears it, and the other's
-    next renewal brings its pattern back within 2 s (accepted). The outputs'
-    own patterns are never written, so a second check can no longer keep the
-    first one's pattern as their own (B103).
+    next renewal brings its pattern back within 2 s (accepted). Two clients on
+    different steps of the same outputs alternate the pattern about every
+    second: the latest renewal wins. The outputs' own patterns are never
+    written, so a second check can no longer keep the first one's pattern as
+    their own (B103).
 - Unlinked RGB kept the single gamma ("in effect"), with R, G, B below it,
   until M1.6 (below); linking again drops them.
 - The colour hints said colour gain was not built yet, and the projector tile

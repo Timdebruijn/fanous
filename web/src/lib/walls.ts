@@ -3,7 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Pure logic of projector walls on the Outputs screen (DESIGN §9.9): the wall as the engine stores it (WallModel.swift),
 // the wizard's grid choice and canvas preview, the mini-map's seams, badges, test patterns and the seam check steps.
-import { TEST_PATTERNS, type DisplayDoc, type OutputConfig } from './outputs';
+import { TEST_PATTERNS, type DisplayDoc, type OutputConfig, type OutputStatusDoc } from './outputs';
 
 export type ManualField = 'source' | 'overlap.left' | 'overlap.right' | 'overlap.top' | 'overlap.bottom';
 
@@ -197,16 +197,39 @@ export function wallArgs(draft: WizardDraft & { grid: Grid }): {
   return draft.overlap === draft.overlapWas ? { id: draft.edit, ...base } : { id: draft.edit, ...base, overlap };
 }
 
+/** The test pattern the seam check or the wizard shows and on which outputs (a lease, B102), or null: the check's step
+ * on every output of its wall; the wizard's Output ID on every free output on a display (one bound or unbound meanwhile
+ * too), only while the wizard is in sight on the Outputs tab (the check has a banner on the other tabs). */
+export function wallPatterns(
+  check: { wall: number; step: number } | null, wizard: WizardDraft | null, outputsTab: boolean, walls: WallConfig[] | undefined, outputs: OutputConfig[],
+  statuses: OutputStatusDoc[],
+): { ids: number[]; pattern: number } | null {
+  const wall = check && walls?.find((w) => w.id === check.wall);
+  if (check && wall) return { ids: wall.outputs, pattern: SEAM_STEPS[check.step]!.pattern };
+  if (!wizard || !outputsTab) return null;
+  const bound = new Set(statuses.filter((s) => s.state === 'bound').map((s) => s.id));
+  const ids = freeOutputs(outputs, walls, wizard.edit ?? undefined).map((o) => o.id).filter((id) => bound.has(id));
+  return ids.length ? { ids, pattern: PATTERN.outputID } : null;
+}
+
 /** The test patterns of the wizard or the seam check, a lease (`output.pattern`, B102): `show` sends `pattern` for the
- * outputs `ids` (one or more), with 0 for those of the last `show` that are not among them, and again every `every` ms
- * (the engine drops a lease 5 s after the last); a `show` of what already shows sends nothing new. `stop` ends them all
- * with 0. */
+ * outputs `ids`, with 0 for those of the last `show` that are not among them, and again every `every` ms (the engine
+ * drops a lease 5 s after the last); a `show` of what already shows sends nothing new, one of no outputs is a `stop`.
+ * `stop` ends them all with 0. */
 export function patternLease(send: (patterns: { id: number; pattern: number }[]) => void, every = 2000) {
   let timer: ReturnType<typeof setInterval> | null = null;
   let shown: { id: number; pattern: number }[] = [];
   const ends = (keep: number[]) => shown.filter((p) => !keep.includes(p.id)).map(({ id }) => ({ id, pattern: 0 }));
+  function stop() {
+    if (!timer) return;
+    clearInterval(timer);
+    timer = null;
+    send(ends([]));
+    shown = [];
+  }
   return {
     show(ids: number[], pattern: number) {
+      if (!ids.length) return stop();
       const next = ids.map((id) => ({ id, pattern }));
       if (timer && JSON.stringify(next) === JSON.stringify(shown)) return;
       if (timer) clearInterval(timer);
@@ -214,13 +237,7 @@ export function patternLease(send: (patterns: { id: number; pattern: number }[])
       shown = next;
       timer = setInterval(() => send(shown), every);
     },
-    stop() {
-      if (!timer) return;
-      clearInterval(timer);
-      timer = null;
-      send(ends([]));
-      shown = [];
-    },
+    stop,
   };
 }
 

@@ -62,7 +62,7 @@
   {#if gone}<p class="caption yellow">This wall was removed. Cancel, or start a new projector wall.</p>{/if}
 
   {#if draft.step === 1}
-    <p class="muted">{!showMode && free.some((o) => statuses.get(o.id)?.state === 'bound') ? 'Each projector on a display now shows its Output ID. ' : ''}Tap the tiles in the order the projectors hang: the top row from left to right, then the next row.</p>
+    <p class="muted">{!lock && free.some((o) => statuses.get(o.id)?.state === 'bound') ? (showMode ? 'The Output IDs are off in show mode. ' : 'Each projector on a display now shows its Output ID. ') : ''}Tap the tiles in the order the projectors hang: the top row from left to right, then the next row.</p>
     <div class="tiles">
       {#each free as o (o.id)}
         {@const n = draft.order.indexOf(o.id) + 1}

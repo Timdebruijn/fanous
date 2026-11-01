@@ -386,14 +386,17 @@ version before M2.1 needs its Grey 0 % step checked again.
 You can switch to Warp & Slices during the check, for example to fix the
 warp: a yellow line there says the check is still running and takes you back.
 **End seam check**, or leaving the Outputs screen, takes the test patterns off
-again (leaving the screen also cancels the wizard), and so does hiding the
-page until you come back to it. The wizard's and the check's patterns are
-never stored with the outputs and are no step for Undo: each output's own test
-pattern stays as it was. They are off in show mode and while the show is
-locked. When the page is closed or the connection drops, they go within
-5 seconds. If two people check the same wall at once, ending the check on one
-device takes the patterns off until the other device puts its own back, within
-2 seconds.
+again (leaving the screen also cancels the wizard). Hiding the page takes them
+off; they come back when the page is visible again. The wizard's Output IDs
+show only while the wizard is in sight on the Outputs tab. The wizard's and the
+check's patterns are never stored with the outputs and are no step for Undo:
+each output's own test pattern stays as it was. They show only for the
+programmer role, and are off in show mode and while the show is locked. When
+the page is closed or the connection drops, they go within 5 seconds. If two
+people check the same wall at once, ending the check on one device takes the
+patterns off until the other device puts its own back, within 2 seconds; on
+different steps of the same outputs the two devices' patterns alternate about
+every second, as the latest renewal wins.
 
 ## Warp & Slices tab
 

@@ -223,7 +223,7 @@ struct PresetCommandsTests {
     }
 
     /// Programmer only; refused for an output that does not exist (ending one is fine), for a pattern it does not have,
-    /// in show mode except to end, and under show lock.
+    /// for an output listed twice, in show mode except to end, and under show lock.
     @Test func patternRefusals() throws {
         let (store, machine) = try Self.makeStore(outputs: 1)
         func run(_ id: Int, _ pattern: JSONValue, role: Role = .programmer) -> Result<CommandResult, CommandError> {
@@ -234,6 +234,7 @@ struct PresetCommandsTests {
         #expect((try? run(7, 0).get()) != nil, "ending one of an output that is gone")
         for bad in [12, -1, 1.5, "grid"] as [JSONValue] { #expect(run(1, bad).failureCode == "invalidArgs", "\(bad)") }
         #expect(Self.run(store, "output.pattern", ["patterns": []]).failureCode == "invalidArgs")
+        #expect(Self.run(store, "output.pattern", ["patterns": [["id": 1, "pattern": 1], ["id": 1, "pattern": 0]]]) == .failure(.invalidArgs("output 1 twice")))
         machine.showMode.withLock { $0 = true }
         #expect(run(1, 1) == .failure(CommandError("showMode", "test patterns are off in show mode")), "show mode ends them, so one cannot start")
         #expect((try? run(1, 0).get()) != nil, "ending is fine")
