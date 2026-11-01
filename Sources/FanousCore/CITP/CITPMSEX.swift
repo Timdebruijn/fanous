@@ -51,18 +51,15 @@ public struct MSEXLibraryID: Equatable, Hashable, Sendable {
 
 /// MSEX/CInf: the client lists the MSEX versions it speaks (always sent with version 1.2).
 public struct ClientInformation: Equatable, Sendable {
-    public var version: MSEXVersion
     public var supportedVersions: [MSEXVersion]
 
-    public init(version: MSEXVersion = .v1_2, supportedVersions: [MSEXVersion]) {
-        self.version = version
+    public init(supportedVersions: [MSEXVersion]) {
         self.supportedVersions = supportedVersions
     }
 }
 
 /// MSEX/SInf. 1.0 and 1.1 share the short layout (name, product version, layers); 1.2 adds the fields marked below.
 public struct ServerInformation: Equatable, Sendable {
-    public var version: MSEXVersion
     /// 1.2: 36-character media server UUID, lets a console cache thumbnails per server.
     public var uuid: String
     public var productName: String
@@ -83,12 +80,11 @@ public struct ServerInformation: Equatable, Sendable {
     public var layerDMXSources: [String]
 
     public init(
-        version: MSEXVersion = .v1_2, uuid: String = "", productName: String, productVersionMajor: UInt8 = 0,
+        uuid: String = "", productName: String, productVersionMajor: UInt8 = 0,
         productVersionMinor: UInt8 = 0, productVersionBugfix: UInt8 = 0, supportedVersions: [MSEXVersion] = [],
         supportedLibraryTypes: UInt16 = 0, thumbnailFormats: [String] = [], streamFormats: [String] = [],
         layerDMXSources: [String] = []
     ) {
-        self.version = version
         self.uuid = uuid
         self.productName = productName
         self.productVersionMajor = productVersionMajor
@@ -121,12 +117,10 @@ public struct ServerInformation: Equatable, Sendable {
 /// MSEX/Nack (1.2+): "I do not support the message you sent". `InResponseTo` in the CITP header carries the
 /// request's index, so answer with `encoded(requestIndex:)` set to the request's `CITPHeader.requestIndex`.
 public struct Nack: Equatable, Sendable {
-    public var version: MSEXVersion
     /// Content type of the rejected message, e.g. "GELT".
     public var receivedContentType: String
 
-    public init(version: MSEXVersion = .v1_2, receivedContentType: String) {
-        self.version = version
+    public init(receivedContentType: String) {
         self.receivedContentType = receivedContentType
     }
 }
@@ -194,22 +188,20 @@ public struct LayerStatus: Equatable, Sendable {
 
 /// MSEX/GELI: ask for the libraries below `parentID` (1.1+; 1.0 has only the root).
 public struct GetElementLibraryInformation: Equatable, Sendable {
-    public var version: MSEXVersion
     /// 1 Media, 2 Effects, 3 Cues, 4 Crossfades, 5 Masks, 6 Blend presets, 7 Effect presets, 8 Image presets, 9 3D meshes.
     public var libraryType: UInt8
     public var parentID: MSEXLibraryID
     /// Empty asks for all libraries. One byte each in every version, as the spec has it.
     public var libraryNumbers: [UInt8]
 
-    public init(version: MSEXVersion = .v1_2, libraryType: UInt8 = 1, parentID: MSEXLibraryID = MSEXLibraryID(), libraryNumbers: [UInt8] = []) {
-        self.version = version
+    public init(libraryType: UInt8 = 1, parentID: MSEXLibraryID = MSEXLibraryID(), libraryNumbers: [UInt8] = []) {
         self.libraryType = libraryType
         self.parentID = parentID
         self.libraryNumbers = libraryNumbers
     }
 
     init(version v: MSEXVersion, from r: inout CITPReader) throws {
-        self.init(version: v, libraryType: try r.u8())
+        self.init(libraryType: try r.u8())
         if v >= .v1_1 { parentID = try r.libraryID(v) }
         libraryNumbers = try r.array(try r.count(v)) { try $0.u8() }
     }
@@ -243,12 +235,10 @@ public struct ElementLibrary: Equatable, Sendable {
 
 /// MSEX/ELIn: the libraries answering a GELI. Counts are u8 before 1.2, u16 from 1.2.
 public struct ElementLibraryInformation: Equatable, Sendable {
-    public var version: MSEXVersion
     public var libraryType: UInt8
     public var libraries: [ElementLibrary]
 
-    public init(version: MSEXVersion = .v1_2, libraryType: UInt8 = 1, libraries: [ElementLibrary]) {
-        self.version = version
+    public init(libraryType: UInt8 = 1, libraries: [ElementLibrary]) {
         self.libraryType = libraryType
         self.libraries = libraries
     }
@@ -270,13 +260,11 @@ public struct ElementLibraryInformation: Equatable, Sendable {
 
 /// MSEX/GEIn: ask for the element information of `libraryID` (all elements when `elementNumbers` is empty).
 public struct GetElementInformation: Equatable, Sendable {
-    public var version: MSEXVersion
     public var libraryType: UInt8
     public var libraryID: MSEXLibraryID
     public var elementNumbers: [UInt8]
 
-    public init(version: MSEXVersion = .v1_2, libraryType: UInt8 = 1, libraryID: MSEXLibraryID, elementNumbers: [UInt8] = []) {
-        self.version = version
+    public init(libraryType: UInt8 = 1, libraryID: MSEXLibraryID, elementNumbers: [UInt8] = []) {
         self.libraryType = libraryType
         self.libraryID = libraryID
         self.elementNumbers = elementNumbers
@@ -285,7 +273,7 @@ public struct GetElementInformation: Equatable, Sendable {
     init(version v: MSEXVersion, from r: inout CITPReader) throws {
         let type = try r.u8()
         let id = try r.libraryID(v)
-        self.init(version: v, libraryType: type, libraryID: id, elementNumbers: try r.array(try r.count(v)) { try $0.u8() })
+        self.init(libraryType: type, libraryID: id, elementNumbers: try r.array(try r.count(v)) { try $0.u8() })
     }
 }
 
@@ -323,12 +311,10 @@ public struct MediaElement: Equatable, Sendable {
 /// MSEX/MEIn: media elements (library type 1) of one library. Effects (EEIn) and generic elements (GLEI)
 /// are not modelled and arrive as `.unknown`.
 public struct MediaElementInformation: Equatable, Sendable {
-    public var version: MSEXVersion
     public var libraryID: MSEXLibraryID
     public var elements: [MediaElement]
 
-    public init(version: MSEXVersion = .v1_2, libraryID: MSEXLibraryID, elements: [MediaElement]) {
-        self.version = version
+    public init(libraryID: MSEXLibraryID, elements: [MediaElement]) {
         self.libraryID = libraryID
         self.elements = elements
     }
@@ -356,7 +342,6 @@ public struct GetElementThumbnail: Equatable, Sendable {
     /// `flags` bit 0: keep the aspect ratio, `width` x `height` are maximums.
     public static let preserveAspectRatio: UInt8 = 0x01
 
-    public var version: MSEXVersion
     /// "RGB8" (BGR in 1.0, RGB from 1.1), "JPEG" or (1.2) "PNG ".
     public var format: String
     public var width: UInt16
@@ -367,10 +352,9 @@ public struct GetElementThumbnail: Equatable, Sendable {
     public var elementNumbers: [UInt8]
 
     public init(
-        version: MSEXVersion = .v1_2, format: String = "JPEG", width: UInt16, height: UInt16, flags: UInt8 = 0,
+        format: String = "JPEG", width: UInt16, height: UInt16, flags: UInt8 = 0,
         libraryType: UInt8 = 1, libraryID: MSEXLibraryID, elementNumbers: [UInt8] = []
     ) {
-        self.version = version
         self.format = format
         self.width = width
         self.height = height
@@ -388,7 +372,7 @@ public struct GetElementThumbnail: Equatable, Sendable {
         let type = try r.u8()
         let id = try r.libraryID(v)
         self.init(
-            version: v, format: format, width: width, height: height, flags: flags, libraryType: type, libraryID: id,
+            format: format, width: width, height: height, flags: flags, libraryType: type, libraryID: id,
             elementNumbers: try r.array(try r.count(v)) { try $0.u8() })
     }
 }
@@ -396,7 +380,6 @@ public struct GetElementThumbnail: Equatable, Sendable {
 /// MSEX/EThn: one thumbnail. The spec has no separate 1.2 layout, so 1.2 uses the 1.1 one.
 /// The buffer size field is 16 bits: longer buffers are cut to 65535 bytes when encoding.
 public struct ElementThumbnail: Equatable, Sendable {
-    public var version: MSEXVersion
     public var libraryType: UInt8
     public var libraryID: MSEXLibraryID
     public var elementNumber: UInt8
@@ -406,10 +389,9 @@ public struct ElementThumbnail: Equatable, Sendable {
     public var buffer: [UInt8]
 
     public init(
-        version: MSEXVersion = .v1_2, libraryType: UInt8 = 1, libraryID: MSEXLibraryID, elementNumber: UInt8,
+        libraryType: UInt8 = 1, libraryID: MSEXLibraryID, elementNumber: UInt8,
         format: String = "JPEG", width: UInt16, height: UInt16, buffer: [UInt8]
     ) {
-        self.version = version
         self.libraryType = libraryType
         self.libraryID = libraryID
         self.elementNumber = elementNumber
@@ -475,7 +457,6 @@ public struct VideoSource: Equatable, Sendable {
 
 /// MSEX/RqSt: ask the server to start streaming frames of a source (same layout in every version).
 public struct RequestStream: Equatable, Sendable {
-    public var version: MSEXVersion
     public var sourceIdentifier: UInt16
     /// "RGB8", "JPEG"; from 1.2 also "PNG ", "fJPG", "fPNG".
     public var frameFormat: String
@@ -488,10 +469,9 @@ public struct RequestStream: Equatable, Sendable {
     public var timeout: UInt8
 
     public init(
-        version: MSEXVersion = .v1_2, sourceIdentifier: UInt16, frameFormat: String = "JPEG", frameWidth: UInt16, frameHeight: UInt16,
+        sourceIdentifier: UInt16, frameFormat: String = "JPEG", frameWidth: UInt16, frameHeight: UInt16,
         fps: UInt8, timeout: UInt8
     ) {
-        self.version = version
         self.sourceIdentifier = sourceIdentifier
         self.frameFormat = frameFormat
         self.frameWidth = frameWidth
@@ -502,7 +482,7 @@ public struct RequestStream: Equatable, Sendable {
 
     init(version v: MSEXVersion, from r: inout CITPReader) throws {
         self.init(
-            version: v, sourceIdentifier: try r.u16(), frameFormat: try r.cookie(), frameWidth: try r.u16(), frameHeight: try r.u16(),
+            sourceIdentifier: try r.u16(), frameFormat: try r.cookie(), frameWidth: try r.u16(), frameHeight: try r.u16(),
             fps: try r.u8(), timeout: try r.u8())
     }
 }
@@ -511,7 +491,6 @@ public struct RequestStream: Equatable, Sendable {
 /// For "fJPG"/"fPNG" the fragment preamble is part of `buffer`; the codec does not look inside.
 /// The buffer size field is 16 bits: longer buffers are cut to 65535 bytes when encoding.
 public struct StreamFrame: Equatable, Sendable {
-    public var version: MSEXVersion
     /// 1.2: 36-character UUID of the sending media server.
     public var mediaServerUUID: String
     public var sourceIdentifier: UInt16
@@ -521,10 +500,9 @@ public struct StreamFrame: Equatable, Sendable {
     public var buffer: [UInt8]
 
     public init(
-        version: MSEXVersion = .v1_2, mediaServerUUID: String = "", sourceIdentifier: UInt16, frameFormat: String = "JPEG",
+        mediaServerUUID: String = "", sourceIdentifier: UInt16, frameFormat: String = "JPEG",
         frameWidth: UInt16, frameHeight: UInt16, buffer: [UInt8]
     ) {
-        self.version = version
         self.mediaServerUUID = mediaServerUUID
         self.sourceIdentifier = sourceIdentifier
         self.frameFormat = frameFormat
@@ -557,7 +535,7 @@ extension CITPClientMessage {
         let version = MSEXVersion(major: try r.u8(), minor: try r.u8())
         guard version.major == 1 else { throw CITPError.unsupportedVersion }
         switch try r.cookie() {
-        case "CInf": return .clientInformation(ClientInformation(version: version, supportedVersions: try r.versions()))
+        case "CInf": return .clientInformation(ClientInformation(supportedVersions: try r.versions()))
         case "GELI": return .getElementLibraryInformation(try GetElementLibraryInformation(version: version, from: &r))
         case "GEIn": return .getElementInformation(try GetElementInformation(version: version, from: &r))
         case "GETh": return .getElementThumbnail(try GetElementThumbnail(version: version, from: &r))

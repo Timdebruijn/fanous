@@ -155,7 +155,7 @@ struct CITPServerTests {
 
         client.send(Self.msex("CInf", [4, 0, 1, 1, 1, 2, 1, 0, 2]))  // 1.0, 1.1, 1.2, 2.0
         let info = ServerInformation(
-            version: .v1_2, uuid: "550e8400-e29b-41d4-a716-446655440000", productName: "Fanous", productVersionMajor: CITPServer.productVersion.0,
+            uuid: "550e8400-e29b-41d4-a716-446655440000", productName: "Fanous", productVersionMajor: CITPServer.productVersion.0,
             productVersionMinor: CITPServer.productVersion.1, productVersionBugfix: CITPServer.productVersion.2, supportedVersions: [.v1_0, .v1_1, .v1_2],
             supportedLibraryTypes: 1, thumbnailFormats: ["JPEG", "RGB8"], streamFormats: ["JPEG"], layerDMXSources: ["Layer 1"])
         #expect(client.wait(for: Self.reply(.serverInformation(info))), "SInf in the highest common version, never above 1.2")

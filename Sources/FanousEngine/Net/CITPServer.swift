@@ -246,7 +246,7 @@ public final class CITPServer: @unchecked Sendable {
                 session.send(
                     .streamFrame(
                         StreamFrame(
-                            version: session.version ?? .v1_0, mediaServerUUID: uuid, sourceIdentifier: session.streams[i].source, frameFormat: "JPEG",
+                            mediaServerUUID: uuid, sourceIdentifier: session.streams[i].source, frameFormat: "JPEG",
                             frameWidth: UInt16(clamping: width), frameHeight: UInt16(clamping: height), buffer: jpeg)))
             }
         }
@@ -265,7 +265,7 @@ public final class CITPServer: @unchecked Sendable {
             session.send(
                 .serverInformation(
                     ServerInformation(
-                        version: version, uuid: uuid, productName: Self.productName, productVersionMajor: Self.productVersion.0, productVersionMinor: Self.productVersion.1,
+                        uuid: uuid, productName: Self.productName, productVersionMajor: Self.productVersion.0, productVersionMinor: Self.productVersion.1,
                         productVersionBugfix: Self.productVersion.2,
                         supportedVersions: [.v1_0, .v1_1, .v1_2], supportedLibraryTypes: 1 << 0, thumbnailFormats: ["JPEG", "RGB8"], streamFormats: ["JPEG"],
                         layerDMXSources: providers.layers().map { "Layer \($0.index)" })), requestIndex: requestIndex)
@@ -278,7 +278,7 @@ public final class CITPServer: @unchecked Sendable {
                     id: MSEXLibraryID(level: 1, level1: UInt8(clamping: folder.number ?? 0)), serialNumber: UInt32(folder.items.count), dmxRangeMin: UInt8(clamping: folder.number ?? 0),
                     dmxRangeMax: UInt8(clamping: folder.number ?? 0), name: folder.name, libraryCount: 0, elementCount: UInt16(folder.items.filter { $0.file != nil }.count))
             }
-            session.send(.elementLibraryInformation(ElementLibraryInformation(version: session.version ?? .v1_0, libraryType: 1, libraries: libraries)), requestIndex: requestIndex)
+            session.send(.elementLibraryInformation(ElementLibraryInformation(libraryType: 1, libraries: libraries)), requestIndex: requestIndex)
         case .getElementInformation(let request):
             let library = providers.library()
             let folder = library.folders.first { $0.number == Int(request.libraryID.level1) }
@@ -290,7 +290,7 @@ public final class CITPServer: @unchecked Sendable {
                     name: item.name, versionTimestamp: 0, width: UInt16(clamping: meta?.width ?? 0), height: UInt16(clamping: meta?.height ?? 0),
                     length: UInt32(clamping: meta?.frameCount ?? 0), fps: UInt8(clamping: Int((meta?.frameRate ?? 0).rounded())))
             }
-            session.send(.mediaElementInformation(MediaElementInformation(version: session.version ?? .v1_0, libraryID: request.libraryID, elements: elements)), requestIndex: requestIndex)
+            session.send(.mediaElementInformation(MediaElementInformation(libraryID: request.libraryID, elements: elements)), requestIndex: requestIndex)
         case .getElementThumbnail(let request):
             let library = providers.library()
             let folder = library.folders.first { $0.number == Int(request.libraryID.level1) }
@@ -299,7 +299,7 @@ public final class CITPServer: @unchecked Sendable {
                 session.send(
                     .elementThumbnail(
                         ElementThumbnail(
-                            version: session.version ?? .v1_0, libraryType: 1, libraryID: request.libraryID, elementNumber: UInt8(clamping: item.file!),
+                            libraryType: 1, libraryID: request.libraryID, elementNumber: UInt8(clamping: item.file!),
                             format: "JPEG", width: UInt16(clamping: Thumbnailer.width), height: UInt16(clamping: item.metadata.map { Thumbnailer.width * $0.height / max(1, $0.width) } ?? 180),
                             buffer: jpeg)), requestIndex: requestIndex)
             }
@@ -316,7 +316,7 @@ public final class CITPServer: @unchecked Sendable {
         case .unknown(let contentType, let body):
             // an MSEX message we do not model: the Nack names its MSEX content type (bytes 2..<6 after the version)
             let received = contentType == "MSEX" && body.count >= 6 ? String(decoding: body[2..<6], as: UTF8.self) : contentType
-            session.send(.nack(Nack(version: session.version ?? .v1_0, receivedContentType: received)), requestIndex: requestIndex)
+            session.send(.nack(Nack(receivedContentType: received)), requestIndex: requestIndex)
         }
     }
 
