@@ -1203,6 +1203,34 @@ test('outputs: a colour slider dragged down and back up faster than a round trip
   expect(seen.at(-1)).toBe(100);
 });
 
+test('outputs: a colour slider held where an echo of its own earlier value lands keeps following the finger (B114 e)', async ({ page, engine }) => {
+  // CI 2026-11-01 (twice): a drag 100 → 88 → 100 slower than a round trip met the echo of its first 97 with the thumb back
+  // on 97, which ended the hold, and the next echo (91) showed mid-drag. Here the thumb waits on 97 while the echoes of
+  // 97 and 88 land, so the timing is not left to the runner.
+  await slowEchoes(page, engine);
+  await addUnassignedOutput(page);
+  const colour = colourOf(page);
+  const red = colour.getByRole('slider', { name: 'Gain R' });
+  await expect(red).toHaveValue('100');
+  const shown = await watchValue(colour.getByLabel('Gain R value'));
+  const { x, y } = await rangeX(red, 200);
+  await page.mouse.move(x(100), y);
+  await page.mouse.down();
+  await page.mouse.move(x(97), y);
+  await page.waitForTimeout(80); // past the 50 ms send throttle: 97 goes out first, the lower values after it
+  for (const v of [94, 91, 88, 97]) {
+    await page.mouse.move(x(v), y);
+    await page.waitForTimeout(15);
+  }
+  await page.waitForTimeout(500); // the echoes of 97 and then 88 (250 ms after their sends) land while the thumb holds 97
+  await page.mouse.move(x(100), y);
+  await page.mouse.up();
+  await page.waitForTimeout(1500);
+  const seen = await shown();
+  expect(turns(seen), seen.join(' ')).toBe(1); // down, then up: no 88 after the 97
+  expect(seen.at(-1)).toBe(100);
+});
+
 test('outputs: + and then − on a colour within a round trip, the late echo of the + does not show, nor after another gain echoes (B114)', async ({ page, engine }) => {
   await slowEchoes(page, engine);
   await addUnassignedOutput(page);

@@ -14,8 +14,10 @@
   // changes to it (the echo) or GRACE ms after the last input or release. So neither the engine's value from before the
   // sends nor the echoes of earlier sends pull it back, Undo, other clients and a refused value show again at the latest
   // when the grace ends, and −/+ step from it, so quick taps all land. Each slider keeps its own: two fingers on two
-  // sliders do not disturb each other. Edges: an earlier echo equal to the value sent last (a drag 100 → 88 → 94 → 88)
-  // ends it early, and the later echo (94) shows for a moment; so does any echo that takes longer than the grace.
+  // sliders do not disturb each other. While a pointer holds the thumb no echo ends it (a drag 100 → 88 → 97 slower
+  // than a round trip meets the echo of its first 97 on the way back up, and the echo of 91 showed next: CI, 2026-11-01);
+  // after the release the next echo equal to it, or the grace, ends it. An echo that takes longer than the grace shows
+  // for a moment.
   let {
     label,
     key,
@@ -62,7 +64,7 @@
   $effect(() => {
     const now = engine;
     untrack(() => {
-      if (pending?.value.toFixed(digits) === now.toFixed(digits)) pending = null;
+      if (finger === null && pending?.value.toFixed(digits) === now.toFixed(digits)) pending = null;
     });
   });
   onDestroy(() => clearTimeout(timer));
