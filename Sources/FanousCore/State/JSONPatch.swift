@@ -23,6 +23,19 @@ public struct JSONPatch: Equatable, Sendable, Codable {
         case remove(JSONPointer)
         case replace(JSONPointer, JSONValue)
 
+        /// The pointer of any operation; `value` is what an add or replace writes, nil for a remove.
+        public var path: JSONPointer {
+            switch self {
+            case .add(let p, _), .remove(let p), .replace(let p, _): p
+            }
+        }
+        public var value: JSONValue? {
+            switch self {
+            case .add(_, let v), .replace(_, let v): v
+            case .remove: nil
+            }
+        }
+
         private enum CodingKeys: String, CodingKey {
             case op, path, value
         }

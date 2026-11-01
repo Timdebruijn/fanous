@@ -206,12 +206,6 @@ public final class Compositor: @unchecked Sendable {
         return (textures, passes)
     }
 
-    /// New size and rate of canvas 1 (B31); the other canvases stay.
-    public func reconfigure(width: Int, height: Int, fps: Double) throws {
-        let others = targets.dropFirst().map { ProjectDocument.CanvasLayout.Size(id: $0.id, width: $0.width, height: $0.height) }
-        try reconfigure(ProjectDocument.CanvasLayout(fps: fps, canvases: [.init(id: targets[0].id, width: width, height: height)] + others))
-    }
-
     /// New canvases, sizes and rate (B31, multiple canvases). Only while no driver ticks or presents
     /// (`OutputCoordinator.setCanvases` stops them); throws before changing anything when the textures cannot be made,
     /// so the old canvases keep running. A canvas whose size did not change keeps its textures.

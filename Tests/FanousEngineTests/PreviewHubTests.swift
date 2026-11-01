@@ -389,7 +389,7 @@ import Testing
         #expect(rig.attach("layer:2"))
         rig.tick(4)
         let old = try #require(rig.made.withLock { $0["layer:2"] })
-        try rig.compositor.reconfigure(width: 320, height: 240, fps: 60)
+        try rig.compositor.reconfigure(.init(fps: 60, canvases: [.init(id: 1, width: 320, height: 240)]))
         let framesBefore = rig.hub.framesIn
         rig.tick(4)
         #expect(rig.hub.framesIn == framesBefore, "4:3 canvas, 16:9 layer streamer: no frames until the rebuild")

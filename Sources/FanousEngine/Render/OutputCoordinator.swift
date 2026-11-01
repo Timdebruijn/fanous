@@ -147,16 +147,11 @@ public final class OutputCoordinator {
         }
     }
 
-    /// New canvas size and rate (B31): every driver stops (outputs hold their last frame), the compositor makes new
-    /// canvas textures, then the drivers start again at the new rate. Windows and bindings stay; slices are stored
-    /// as fractions of the canvas, so mappings stay valid. On failure the old canvas runs on and the error is thrown.
-    /// A driver that does not stop within its join timeout aborts the change: the textures are not swapped under a tick.
-    public func setCanvas(width: Int, height: Int, fps: Double) throws {
-        try reconfigure { try compositor.reconfigure(width: width, height: height, fps: fps) }
-        self.fps = fps
-    }
-
-    /// Canvases added, removed or resized (multiple canvases): the same stop–reconfigure–restart as `setCanvas`.
+    /// Canvases added, removed or resized, or a new rate (B31): every driver stops (outputs hold their last frame), the
+    /// compositor makes new canvas textures, then the drivers start again at the new rate. Windows and bindings stay;
+    /// slices are stored as fractions of the canvas, so mappings stay valid. On failure the old canvases run on and the
+    /// error is thrown. A driver that does not stop within its join timeout aborts the change: the textures are not
+    /// swapped under a tick.
     public func setCanvases(_ layout: ProjectDocument.CanvasLayout) throws {
         try reconfigure { try compositor.reconfigure(layout) }
         self.fps = layout.fps

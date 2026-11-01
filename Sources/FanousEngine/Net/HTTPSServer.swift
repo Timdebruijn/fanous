@@ -19,7 +19,7 @@ public final class HTTPSServer: @unchecked Sendable {
     /// Called once a streamed body is complete, with the request head and the file it was written to.
     public typealias UploadRoute = @Sendable (HTTPRequest, URL) -> HTTPResponse
     /// Decides whether a WebSocket upgrade request gets a session; nil refuses it (404).
-    public typealias UpgradeRoute = @Sendable (HTTPRequest) -> WebSocketHandler?
+    public typealias UpgradeRoute = @Sendable (HTTPRequest) -> StateServer.Connection?
     /// Bodies up to this size are buffered and handed to the route in `HTTPRequest.body`.
     public static let maxInlineBody = 1 << 20
     nonisolated(unsafe) public var uploadSink: UploadSink?

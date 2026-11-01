@@ -207,7 +207,7 @@ struct CompositorIdleTests {
 
     /// B31: the headless loop of an output coordinator without displays keeps running through a canvas change, at the
     /// new size and rate; a canvas that cannot be made leaves the old one running.
-    @MainActor @Test func setCanvasRunsTheCompositorAtTheNewSizeAndRate() async throws {
+    @MainActor @Test func setCanvasesRunsTheCompositorAtTheNewSizeAndRate() async throws {
         let rig = try Rig(idleWork: false, offscreen: false)
         let compositor = rig.compositor
         let coordinator = OutputCoordinator(compositor: compositor, context: rig.context, fps: 60, displays: [], logger: Logger(label: "canvas-test"))
@@ -220,14 +220,14 @@ struct CompositorIdleTests {
         }
         try await ticksAdvance()
 
-        try coordinator.setCanvas(width: 320, height: 180, fps: 50)
+        try coordinator.setCanvases(.init(fps: 50, canvases: [.init(id: 1, width: 320, height: 180)]))
         try await ticksAdvance()
         let canvas = compositor.readback()
         #expect((canvas.width, canvas.height, compositor.fps) == (320, 180, 50))
         #expect(canvas.rgba[(canvas.height / 2 * canvas.width + canvas.width / 2) * 4] > 150, "the layer is drawn on the new canvas")
 
         // a canvas that cannot be made: refused before anything changes, the loop runs on at the old size and rate
-        #expect(throws: RenderError.self) { try coordinator.setCanvas(width: 20_000, height: 180, fps: 60) }
+        #expect(throws: RenderError.self) { try coordinator.setCanvases(.init(fps: 60, canvases: [.init(id: 1, width: 20_000, height: 180)])) }
         try await ticksAdvance()
         #expect((compositor.latestCanvas.width, compositor.canvasSizeSnapshot.width, compositor.fps) == (320, 320, 50))
     }
@@ -238,7 +238,7 @@ struct CompositorIdleTests {
         let generator = try #require(GeneratorSource(context: context, file: 110, width: Self.width, height: Self.height))
         let rig = try Rig(playback: LayerPlayback(key: MediaKey(folder: 0, file: 110), live: generator), idleWork: false, offscreen: false)
         rig.tick(2)
-        try rig.compositor.reconfigure(width: 320, height: 240, fps: 25)
+        try rig.compositor.reconfigure(.init(fps: 25, canvases: [.init(id: 1, width: 320, height: 240)]))
         #expect(rig.compositor.canvasSizeSnapshot == (320, 240))
         let canvas = rig.compositor.readback()
         #expect(canvas.width == 320 && canvas.rgba.allSatisfy { $0 == 0 || $0 == 255 }, "new canvases are cleared before the first tick")
@@ -259,7 +259,7 @@ struct CompositorIdleTests {
         let generator = try #require(GeneratorSource(context: context, file: 102, width: Self.width, height: Self.height))
         let rig = try Rig(playback: LayerPlayback(key: MediaKey(folder: 0, file: 102), live: generator), idleWork: false, offscreen: false)
         rig.tick(2)
-        try rig.compositor.reconfigure(width: 320, height: 240, fps: 25)
+        try rig.compositor.reconfigure(.init(fps: 25, canvases: [.init(id: 1, width: 320, height: 240)]))
         rig.tick(1, from: 2)
         let fresh = try #require(GeneratorSource(context: context, file: 102, width: 320, height: 240))
         #expect(generator.encodeCount == 2, "the creation draw and the one at the new size")

@@ -38,7 +38,7 @@ public final class StateServer: @unchecked Sendable {
     }
 
     /// `HTTPSServer.upgradeRoute`: same-origin check, then a connection pre-authenticated from the session cookie.
-    public func upgrade(_ request: HTTPRequest) -> WebSocketHandler? {
+    public func upgrade(_ request: HTTPRequest) -> Connection? {
         guard request.path == Self.path else { return nil }
         if let origin = request.header("Origin"), let host = request.header("Host") {
             guard let url = URL(string: origin), let originHost = url.host(percentEncoded: false) else { return nil }
@@ -83,7 +83,7 @@ public final class StateServer: @unchecked Sendable {
         case preview
     }
 
-    public final class Connection: WebSocketHandler, StateClient, @unchecked Sendable {
+    public final class Connection: StateClient, @unchecked Sendable {
         private let server: StateServer
         private let cookieRole: Role?
         private let session = Mutex<WebSocketSession?>(nil)
@@ -115,13 +115,9 @@ public final class StateServer: @unchecked Sendable {
             session.withLock { $0?.close(code: 1008, reason: reason) }
         }
 
-        // MARK: WebSocketHandler
+        // MARK: WebSocketSession
 
         public func sessionDidOpen(_ session: WebSocketSession) { self.session.withLock { $0 = session } }
-
-        public func session(_ session: WebSocketSession, didReceiveBinary data: [UInt8]) {
-            // no client → server binary streams in v1
-        }
 
         public func sessionDidClose(_ session: WebSocketSession) {
             if isAuthenticated { server.store.detach(self) }

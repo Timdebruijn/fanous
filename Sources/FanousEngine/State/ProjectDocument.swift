@@ -132,10 +132,7 @@ public enum ProjectDocument {
     static func wholeLiveEntries(_ patch: JSONPatch, in document: JSONValue) -> JSONPatch {
         var folded: Set<[String]> = []
         return JSONPatch(operations: patch.operations.compactMap { operation in
-            let pointer: JSONPointer
-            switch operation {
-            case .add(let p, _), .replace(let p, _), .remove(let p): pointer = p
-            }
+            let pointer = operation.path
             guard pointer.tokens.count > 2, LiveCatalog.Kind(rawValue: pointer.tokens[0]) != nil else { return operation }
             let entry = JSONPointer(tokens: Array(pointer.tokens.prefix(2)))
             guard folded.insert(entry.tokens).inserted, let value = document[entry] else { return nil }
@@ -153,20 +150,11 @@ public enum ProjectDocument {
     public static func checkLiveReplay(_ patch: JSONPatch, undoing done: JSONPatch, on project: JSONValue, running: Set<Int> = []) throws {
         // diff(a, b) and diff(b, a) have the same paths, so the ops line up by pointer
         var left: [[String]: JSONValue?] = [:]
-        for operation in done.operations {
-            switch operation {
-            case .add(let p, let v), .replace(let p, let v): left[p.tokens] = v
-            case .remove(let p): left[p.tokens] = .some(nil)
-            }
-        }
+        for operation in done.operations { left[operation.path.tokens] = .some(operation.value) }
         var written: [LiveCatalog.Kind: Set<Int>] = [:]
         var liveOps: [JSONPatch.Operation] = []
         for operation in patch.operations {
-            let pointer: JSONPointer, value: JSONValue?
-            switch operation {
-            case .add(let p, let v), .replace(let p, let v): (pointer, value) = (p, v)
-            case .remove(let p): (pointer, value) = (p, nil)
-            }
+            let pointer = operation.path, value = operation.value
             guard let kind = pointer.tokens.first.flatMap(LiveCatalog.Kind.init(rawValue:)) else { continue }
             liveOps.append(operation)
             guard pointer.tokens.count == 2, let expected = left[pointer.tokens] else { continue }

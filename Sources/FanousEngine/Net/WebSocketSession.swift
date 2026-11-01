@@ -7,14 +7,6 @@ import FanousCore
 import Network
 import Synchronization
 
-/// Receives the messages of one WebSocket connection. Callbacks run on the connection's queue.
-public protocol WebSocketHandler: AnyObject, Sendable {
-    func sessionDidOpen(_ session: WebSocketSession)
-    func session(_ session: WebSocketSession, didReceiveText text: String)
-    func session(_ session: WebSocketSession, didReceiveBinary data: [UInt8])
-    func sessionDidClose(_ session: WebSocketSession)
-}
-
 /// One upgraded connection: RFC 6455 framing from FanousCore over the existing TLS connection, a bounded
 /// send queue (DESIGN.md §11.2: 256 KB; droppable messages are dropped first, a client that is hopelessly
 /// behind is disconnected by the caller), ping/pong and close handling, fragment reassembly.
@@ -26,13 +18,14 @@ public final class WebSocketSession: @unchecked Sendable {
 
     public let remoteAddress: String
     private let connection: NWConnection
-    private let handler: WebSocketHandler
+    /// Gets the session's open, text messages and close, on the connection's queue.
+    private let handler: StateServer.Connection
     private let queued = Atomic<Int>(0)
     private let closed = Atomic<Bool>(false)
     private let ended = Atomic<Bool>(false)
     private var fragment: (opcode: WebSocketFrame.Opcode, payload: [UInt8])?
 
-    init(connection: NWConnection, remoteAddress: String, handler: WebSocketHandler) {
+    init(connection: NWConnection, remoteAddress: String, handler: StateServer.Connection) {
         self.connection = connection
         self.remoteAddress = remoteAddress
         self.handler = handler
@@ -130,14 +123,11 @@ public final class WebSocketSession: @unchecked Sendable {
     }
 
     private func deliver(_ opcode: WebSocketFrame.Opcode, _ payload: [UInt8]) {
-        if opcode == .text {
-            guard let text = String(bytes: payload, encoding: .utf8) else {
-                close(code: 1007, reason: "invalid UTF-8")
-                return
-            }
-            handler.session(self, didReceiveText: text)
-        } else {
-            handler.session(self, didReceiveBinary: payload)
+        guard opcode == .text else { return }  // no client → server binary streams in v1
+        guard let text = String(bytes: payload, encoding: .utf8) else {
+            close(code: 1007, reason: "invalid UTF-8")
+            return
         }
+        handler.session(self, didReceiveText: text)
     }
 }
