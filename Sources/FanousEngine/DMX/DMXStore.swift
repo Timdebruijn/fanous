@@ -500,7 +500,7 @@ public final class DMXStore: @unchecked Sendable {
                 let specs = ChannelMap.specs(for: fixture.mode)
                 fixtures[fixture.description] = zip(specs, resolver.resolvedAll()).map { spec, value in
                     ResolvedParameterInfo(
-                        key: spec.oscKey, name: spec.name, raw: value.raw, physical: spec.physical(fromRaw: value.raw),
+                        key: spec.id.key, name: spec.name, raw: value.raw, physical: spec.physical(fromRaw: value.raw),
                         label: spec.label(forRaw: value.raw), unit: spec.unit, source: value.source.rawValue)
                 }
                 policies[fixture.description] = resolver.policy.rawValue
