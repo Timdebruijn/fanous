@@ -45,8 +45,8 @@ public struct LiveSnapshot: Encodable, Sendable {
 /// Owns the universe table and one resolver per fixture that exists, patched or not (DESIGN.md §6.6). Everything
 /// runs on `queue` (the DMX queue of ADR-0002); `snapshot()` is the only
 /// cross-thread read and copies.
-/// ponytail: per-packet array allocations in `resolve`; Phase 2 replaces them
-/// with preallocated buffers when the render snapshot exists.
+/// ponytail: `resolve` allocates one array per fixture patched on the universe, per packet
+/// (`ChannelMap.rawValues`); preallocated buffers per fixture if that shows in a profile.
 public final class DMXStore: @unchecked Sendable {
     public let queue = DispatchQueue(label: "org.fanous.dmx", qos: .userInteractive)
     private let logger: Logger
@@ -279,7 +279,8 @@ public final class DMXStore: @unchecked Sendable {
         if changed { publish(receivedAt: time, at: time) }
     }
 
-    /// ponytail: iterates the resolver dictionary per packet; a fixed layer array comes with projects (Phase 5).
+    /// ponytail: iterates the resolver dictionary on every publish (a DMX packet that changed a value, every internal
+    /// set or command even if unchanged); an array indexed by fixture if that shows in a profile.
     /// `now` starts a preset morph.
     func publish(receivedAt: TimeInterval, at now: TimeInterval = DMXStore.now) {
         sequence += 1

@@ -7,7 +7,7 @@ import Foundation
 /// CPU block compressors for the HAP family: BC1 (HAP), BC3 (HAP Alpha),
 /// scaled YCoCg-DXT5 (HAP Q) and BC4 (HAP Alpha-only). Range fit per block.
 /// ponytail: quality is "good enough for test media and first ingest"; a GPU
-/// compute encoder with better endpoint search is the Phase 4 upgrade path.
+/// compute encoder with better endpoint search if ingested HAP shows block artefacts on real media.
 enum DXTCompressor {
     enum Format {
         case bc1, bc3, ycocgDXT5, bc4
