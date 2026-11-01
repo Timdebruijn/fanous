@@ -17,7 +17,6 @@ import Testing
 struct MasterIntensityTests {
     /// Solid red underneath, solid `top` (green) above with `blend`, both at full intensity, on a 64×36 canvas.
     final class Rig {
-        static let canvasLabel = "canvas \(16)"
         let compositor: Compositor
         let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 2) }
         let blend: BlendMode
@@ -104,10 +103,11 @@ struct MasterIntensityTests {
         #expect(Self.near(got, [128, 128, 0]), "add at Master 50 %: \(got)")
     }
 
-    /// The compositor's encoder labels cost no allocation on the compositor thread (B117): "mapped output", "layer
-    /// preview" and "thumbnail atlas" are `NSString`s, because a 13–15-byte Swift `String` bridged on every assignment
-    /// (1 each, measured); "canvas N", "output" and "secondary output" bridge free as plain strings. Asserted in an
-    /// optimised build (`scripts/check-mallocs.sh`); a debug build prints the counts.
+    /// The compositor's stored label constants, and literals equal to the labels it assigns as plain strings, bridge
+    /// to `encoder.label` without an allocation (B117): "mapped output", "layer preview" and "thumbnail atlas" are
+    /// `NSString`s, because a 13–15-byte Swift `String` bridged on every assignment (1 each, measured); "canvas N",
+    /// "output" and "secondary output" bridge free as plain strings. Assigned here, not through the draw functions.
+    /// Asserted in an optimised build (`scripts/check-mallocs.sh`); a debug build prints the counts.
     @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
     func mallocCounterEncoderLabelsAllocateNothing() throws {
         try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
@@ -119,8 +119,9 @@ struct MasterIntensityTests {
         pass.colorAttachments[0].storeAction = .store
         let buffer = try #require(context.queue.makeCommandBuffer())
         let encoder = try #require(buffer.makeRenderCommandEncoder(descriptor: pass))
+        let canvasLabel = "canvas \(16)"  // a runtime small string, as `CanvasTarget.label` is
         let labels: [(String, () -> Void)] = [
-            ("canvas 16", { encoder.label = Rig.canvasLabel }),
+            ("canvas 16", { encoder.label = canvasLabel }),
             ("output", { encoder.label = "output" }),
             ("secondary output", { encoder.label = "secondary output" }),
             ("mapped output", { encoder.label = compositor.mappedOutputLabel as String }),

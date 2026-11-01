@@ -565,7 +565,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   planes now use the same levels at 16-bit scale (B119, PR #160).
 - Fixed: the output pass's "mapped output" encoder label, and the preview and thumbnail encoders' labels, allocated once per
   assignment on the compositor thread (a 13–15-byte Swift `String` bridged to a fresh `NSString`); they are made once
-  now. The canvas and headless output labels were free already, measured (B117, PR #167).
+  now. The canvas, "output" and "secondary output" labels were free already, measured (B117, PR #167).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
