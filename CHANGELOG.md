@@ -576,6 +576,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: a colour or wall slider dragged slower than the engine's round trip could jump to an earlier value for a moment
   mid-drag, when the echo of a value it had passed met the thumb on that value again; while a pointer holds the thumb no
   echo ends what it shows (B136, PR #172).
+- Engine: a master display's takeover from the headless compositor now warns when the headless render thread did not stop
+  within 1 s, so a tick that still reads the new set shows in the log; measured over six days of logs, no join on this
+  hardware ever failed (B128, PR #173).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
