@@ -579,6 +579,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Engine: a master display's takeover from the headless compositor now warns when the headless render thread did not stop
   within 1 s, so a tick that still reads the new set shows in the log; that join was not logged before, and in 5.5 days of
   logs no other join on this hardware was seen to fail (B128, PR #173).
+- Fixed: a display capture started before the first output was bound excluded nothing of the engine (`excludedApps=0`):
+  ScreenCaptureKit lists only processes that own a window-server window, and the engine had none yet. The output
+  coordinator now owns a 1×1 window that is never shown, so the engine is listed, and excluded, from its start (B124,
+  PR #174).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its

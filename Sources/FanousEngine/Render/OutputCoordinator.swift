@@ -137,6 +137,11 @@ public final class OutputCoordinator {
     public nonisolated let editOverlay: EditOverlay
     /// The test pattern leases of `output.pattern` (B102), handed to every plan compiled here and to the output preview's.
     public nonisolated let patterns = PatternLeases()
+    /// A window device that is never shown (B124). ScreenCaptureKit lists only the processes that own a window-server
+    /// window, so a display capture started before the first output was bound found nothing to exclude (`excludedApps=0`)
+    /// and an output window opened later on that display was not excluded from its picture. Measured: a `defer: false` window that
+    /// is never ordered in is in `CGWindowListCopyWindowInfo(.optionAll)` for its process (a `defer: true` one is not).
+    private let presence: NSWindow
 
     /// `media`: an image mask's file in the library (`OutputCompiler`).
     public init(
@@ -149,6 +154,7 @@ public final class OutputCoordinator {
         self.fps = fps
         self.displays = displays
         self.logger = logger
+        presence = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1, height: 1), styleMask: .borderless, backing: .buffered, defer: false)
     }
 
     public var connectedDisplays: [DisplayInfo] { displays }
