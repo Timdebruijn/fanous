@@ -141,7 +141,7 @@ public final class ThumbnailStreamer: @unchecked Sendable {
         guard compositor.drawThumbnails(layout.cells, into: atlasPass, commandBuffer: commandBuffer) else { return }
         copyPass.colorAttachments[0].texture = target
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: copyPass) else { return }
-        encoder.label = "thumbnail copy"
+        encoder.label = compositor.thumbnailCopyLabel as String  // B117: a plain 14-byte string allocated per frame
         var uniforms = OutputUniforms()
         uniforms.size = SIMD2(Float(poolSize.width), Float(poolSize.height))
         encoder.setRenderPipelineState(context.outputPipeline)
