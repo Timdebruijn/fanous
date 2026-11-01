@@ -29,13 +29,6 @@ public struct EngineOptions: Sendable {
     }
 }
 
-struct HealthStatus: Encodable {
-    var status = "ok"
-    var version = FanousVersion.string
-    var uptimeSeconds: Int
-    var chip: String
-}
-
 /// Phase 0 engine: logs the machine, owns the TLS identity and serves the UI.
 public final class Engine: @unchecked Sendable {
     private let options: EngineOptions
@@ -76,12 +69,9 @@ public final class Engine: @unchecked Sendable {
     private var unlockObservers: [NSObjectProtocol] = []
     /// Output id → what the status line and readiness say about its display mode; written on the main actor.
     private let modeChecks = Mutex<[Int: DisplayModeMatching.Check]>([:])
-    private var lastOutputs: [OutputConfig] = []
-    private var lastClockMaster: Int?
-    private var lastLayerCanvas: [Int] = []
     /// What the project assigns to canvases, as last seen by Control; applied (main actor) against the canvases that
     /// actually render, so a switch deferred in show mode or a failed one never leaves layers or slices on nothing.
-    private struct CanvasUse: Sendable {
+    private struct CanvasUse: Equatable, Sendable {
         var outputs: [OutputConfig] = []
         var clockMaster: Int?
         var layers: [Int] = []
@@ -153,7 +143,7 @@ public final class Engine: @unchecked Sendable {
         ProjectDocument.registerCommands(on: store, auth: RoleAuth(settingsURL: nil, shellTokenURL: nil, logger: logger))
         ShowCommands.register(on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in nil }, acknowledge: { _ in }, runReadiness: {}))
         ControlCommands.register(on: store, hooks: ControlCommands.Hooks(set: { _, _, _ in }, release: { _ in }, keep: { _ in }))
-        MIDICommands.register(on: store, hooks: MIDICommands.Hooks(learn: { _, _ in }))
+        MIDICommands.register(on: store, learn: { _, _ in })
         ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger).registerCommands(on: store)
         return store.commandSpecs
     }
@@ -388,20 +378,13 @@ public final class Engine: @unchecked Sendable {
                 runReadiness: { [weak self] in self?.runReadiness() }))
         // MIDI control (B36): cue actions run as commands like OSC's; parameter values go straight to the resolvers
         let midi = MIDIInput(dmx: dmx, logger: logger)
-        midi.onCue = { action in
-            switch action {
-            case .cueGo: _ = store.execute("cue.go", role: .operator)
-            case .cueBack: _ = store.execute("cue.back", role: .operator)
-            case .cueGoto(let number): _ = store.execute("cue.goto", args: ["number": .number(number)], role: .operator)
-            case .set: break
-            }
-        }
+        midi.onCue = { [weak self] in self?.runCommand($0, on: store) }
         midi.onLearn = { mapping in
             guard let args = try? JSONValue(encoding: mapping) else { return "cannot encode" }
             if case .failure(let error) = store.execute("midi.map.set", args: args, role: .programmer) { return error.message }
             return nil
         }
-        MIDICommands.register(on: store, hooks: MIDICommands.Hooks(learn: { midi.learn(target: $0, cue: $1) }))
+        MIDICommands.register(on: store, learn: { midi.learn(target: $0, cue: $1) })
         lastMIDISettings = MIDISettings.from(project: project)
         midi.apply(lastMIDISettings)
         midi.start()  // on main, the first CoreMIDI call of the process: hot-plug notifications need its run loop
@@ -414,32 +397,7 @@ public final class Engine: @unchecked Sendable {
                 log.append(["at": .number(Date().timeIntervalSince1970), "command": .string("\(command)")])
                 if log.count > 50 { log.removeFirst(log.count - 50) }
             }
-            switch command {
-            case .cueGo: _ = store.execute("cue.go", role: .operator)
-            case .cueBack: _ = store.execute("cue.back", role: .operator)
-            case .cueGoto(let number): _ = store.execute("cue.goto", args: ["number": .number(number)], role: .operator)
-            case .showLock(let on): _ = store.execute(on ? "show.lock" : "show.unlock", role: .programmer)
-            case .showMode(let on): _ = store.execute("show.mode", args: ["on": .bool(on)], role: .operator)
-            case .timecodeEnable(let on): _ = store.execute("timecode.enable", args: ["on": .bool(on)], role: .operator)
-            case .projectLoad(let key):
-                // B35: a named version (or a version id); off the DMX and feed queues, the lookup reads the versions directory
-                let logger = self.logger
-                self.versionsQueue.async { [weak self] in
-                    guard let self else { return }
-                    guard let id = self.versions?.resolve(key) else {
-                        logger.warning("OSC project load: no such version", metadata: ["version": "\(key)"])
-                        return
-                    }
-                    // a console repeating the message (or a bundle sent twice) loads once
-                    let now = ProcessInfo.processInfo.systemUptime
-                    if let last = self.lastOSCLoad, last.id == id, now - last.at < Self.oscLoadRepeatWindow { return }
-                    self.lastOSCLoad = (id, now)
-                    if case .failure(let error) = store.execute("project.revert", args: ["id": .string(id)], role: .programmer) {
-                        logger.warning("OSC project load refused", metadata: ["version": "\(key)", "code": "\(error.code)", "reason": "\(error.message)"])
-                    }
-                }
-            default: break
-            }
+            self.runCommand(command, on: store)
         }
         showMode.onChange = { [weak self] on in
             guard let self else { return }
@@ -591,13 +549,11 @@ public final class Engine: @unchecked Sendable {
                 return coordinator
             }
             self.coordinator = coordinator
-            let outputs = ProjectDocument.outputs(from: store.project)
-            let clockMaster = ProjectDocument.canvases(from: store.project).first?.clockMaster
-            lastOutputs = outputs
-            lastClockMaster = clockMaster
-            lastLayerCanvas = Self.layerCanvas(project: store.project, layers: projectLayers.count)
-            let projectCanvases = Set(ProjectDocument.canvases(from: store.project).map(\.id))
-            canvasUse.withLock { $0 = CanvasUse(outputs: outputs, clockMaster: clockMaster, layers: lastLayerCanvas, canvases: projectCanvases) }
+            let canvases = ProjectDocument.canvases(from: store.project)
+            let use = CanvasUse(
+                outputs: ProjectDocument.outputs(from: store.project), clockMaster: canvases.first?.clockMaster,
+                layers: Self.layerCanvas(project: store.project, layers: projectLayers.count), canvases: Set(canvases.map(\.id)))
+            canvasUse.withLock { $0 = use }
             let log = logger
             render.compositor.layerCanvas = effectiveCanvasUse().layers
             Task { @MainActor in
@@ -651,8 +607,10 @@ public final class Engine: @unchecked Sendable {
             }
             switch request.path {
             case "/healthz":
-                let health = HealthStatus(
-                    uptimeSeconds: Int(Date().timeIntervalSince(startedAt)), chip: SystemInfo.chipName)
+                let health: JSONValue = [
+                    "status": "ok", "version": .string(FanousVersion.string), "uptimeSeconds": .number(Double(Int(Date().timeIntervalSince(startedAt)))),
+                    "chip": .string(SystemInfo.chipName),
+                ]
                 return .json(200, Array((try? encoder.encode(health)) ?? Data()))
             case "/api/live":
                 return .json(200, Array((try? encoder.encode(dmx.snapshot())) ?? Data()))
@@ -923,6 +881,37 @@ public final class Engine: @unchecked Sendable {
     }
 
     // MARK: Show control
+
+    /// Cue, show and timecode commands from OSC (DESIGN.md §15.3) and the MIDI map (B36); parameter values never get
+    /// here, they go straight to the resolvers.
+    private func runCommand(_ command: OSCCommand, on store: StateStore) {
+        switch command {
+        case .cueGo: _ = store.execute("cue.go", role: .operator)
+        case .cueBack: _ = store.execute("cue.back", role: .operator)
+        case .cueGoto(let number): _ = store.execute("cue.goto", args: ["number": .number(number)], role: .operator)
+        case .showLock(let on): _ = store.execute(on ? "show.lock" : "show.unlock", role: .programmer)
+        case .showMode(let on): _ = store.execute("show.mode", args: ["on": .bool(on)], role: .operator)
+        case .timecodeEnable(let on): _ = store.execute("timecode.enable", args: ["on": .bool(on)], role: .operator)
+        case .projectLoad(let key):
+            // B35: a named version (or a version id); off the DMX and feed queues, the lookup reads the versions directory
+            let logger = logger
+            versionsQueue.async { [weak self] in
+                guard let self else { return }
+                guard let id = self.versions?.resolve(key) else {
+                    logger.warning("OSC project load: no such version", metadata: ["version": "\(key)"])
+                    return
+                }
+                // a console repeating the message (or a bundle sent twice) loads once
+                let now = ProcessInfo.processInfo.systemUptime
+                if let last = self.lastOSCLoad, last.id == id, now - last.at < Self.oscLoadRepeatWindow { return }
+                self.lastOSCLoad = (id, now)
+                if case .failure(let error) = store.execute("project.revert", args: ["id": .string(id)], role: .programmer) {
+                    logger.warning("OSC project load refused", metadata: ["version": "\(key)", "code": "\(error.code)", "reason": "\(error.message)"])
+                }
+            }
+        default: break
+        }
+    }
 
     /// A stable per-install UUID for CITP (MSEX 1.2 server UUID), kept next to the shell token.
     static func installUUID() -> String {
@@ -1489,11 +1478,8 @@ public final class Engine: @unchecked Sendable {
             defer { old = use }
             return old
         }
-        if layers != lastLayerCanvas || outputs != lastOutputs || clockMaster != lastClockMaster || projectCanvases != previous.canvases {
-            let layersChanged = layers != lastLayerCanvas
-            lastLayerCanvas = layers
-            lastOutputs = outputs
-            lastClockMaster = clockMaster
+        if use != previous {
+            let layersChanged = layers != previous.layers
             // never from here: rebuilding previews reads the project (this queue); the main actor may
             Task { @MainActor in self.applyCanvasUse(rebuildLayerPreviews: layersChanged) }
         }
