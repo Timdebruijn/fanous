@@ -8,7 +8,7 @@ The Show screen (key 5, "Show control") holds timecode, the cue list, OSC and
 MIDI. Fanous can also be seen and browsed from a console
 over CITP/MSEX.
 
-![The Show screen: GO with the next cue, the Timecode panel, the cue list with cue 2 current and cue 3 next, OSC and MIDI on the right](../images/show.png)
+![The Show screen: GO with the next cue, the Timecode panel, the cue list with cue 2 current and cue 3 next, OSC on the right](../images/show.png)
 
 Before you build a show on cues or OSC or MIDI parameter values, set the project's
 **Who controls** (Patch screen, the card above the fixture groups) to **Console

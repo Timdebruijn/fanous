@@ -13,10 +13,10 @@ pages of this guide go into each part.
 `Fanous.app` holds two programs.
 
 - **The engine** (`fanousd`) does all the work. It runs as a background
-  service, so it starts at login and macOS restarts it if it ever stops (in
-  about a quarter of a second, measured). It receives DMX, OSC, MIDI and
-  timecode, plays the media, renders the picture to the projectors and
-  displays, keeps the project, and serves the UI on port 8443.
+  service, so it starts at login and macOS restarts it after a crash, within
+  about a second. It receives DMX, OSC, MIDI and timecode, plays the media,
+  renders the picture to the projectors and displays, keeps the project, and
+  serves the UI on port 8443.
 - **The UI** is a web page served by the engine. The app window on the Mac
   shows it, and so does any browser on the network: an iPad next to the desk,
   a laptop at front of house. Every UI is a remote control. Close all of them
@@ -28,7 +28,7 @@ the others at once.
 ## From console to projector
 
 ```mermaid
-flowchart LR
+flowchart TB
   console["Lighting console"] -- "Art-Net / sACN" --> patch["Patch<br>Layer, Master, Output,<br>Keystone fixtures"]
   other["UI, cues, OSC, MIDI"] --> who{"Who controls"}
   patch --> who
@@ -38,7 +38,7 @@ flowchart LR
   layers --> canvas["Canvas<br>(up to four)"]
   canvas --> outputs["Outputs<br>slices, blend, warp,<br>masks, colour"]
   outputs --> screens["Projectors and displays"]
-  canvas -. "preview, Syphon, CITP" .-> back["UI preview, other apps,<br>thumbnails on the desk"]
+  canvas -. "preview; Syphon and CITP<br>from Canvas 1" .-> back["UI preview, other apps,<br>the desk over CITP"]
 ```
 
 1. **The console sends DMX.** Fanous listens for Art-Net and sACN on the
@@ -69,22 +69,23 @@ flowchart LR
    edges where projectors overlap, warped to the surface (corner pin, mesh),
    masked, colour-matched. A projector wall sets up several outputs in one go.
    See [outputs-and-mapping.md](outputs-and-mapping.md).
-6. **Fanous reports back.** The UI shows a live preview of the canvas, a layer
+6. **Fanous reports back.** The UI shows a live preview of a canvas, a layer
    or an output. A console that speaks CITP/MSEX gets the media list,
-   thumbnails and a preview stream; OSC can read values back; other apps on the
-   Mac can take the canvas over Syphon. See [show-control.md](show-control.md).
+   thumbnails and a preview stream of Canvas 1; OSC can read values back; other
+   apps on the Mac can take Canvas 1 over Syphon. See
+   [show-control.md](show-control.md).
 
 ## The project
 
 Everything you set up is one project per Mac: the patch and the number of
 layers, Who controls, canvases, outputs, walls and mapping presets, the cue
-list, timecode and MIDI settings. Fanous saves it two seconds after every
+list, timecode and MIDI settings. Fanous saves it two seconds after your last
 change, and a change to the setup can be undone (Cmd-Z) and redone.
 
-The engine also keeps **versions** of the project: one at every start, one on
-entering show mode, one every 10 minutes after a change, and named ones you
-save yourself before doors. Any of them can be brought back from System ›
-Project versions.
+The engine also keeps **versions** of the project: one at every start and on
+entering show mode (unless nothing changed since the last one), one every 10
+minutes after a change, and named ones you save yourself before doors. Any of
+them can be brought back from System › Project versions.
 
 The media is not in the project. The project and the console only know folder
 and file numbers, so the same show runs on a spare Mac whose library has the

@@ -250,13 +250,13 @@ you pick the same ones on the console.
 
 ![The Patch sheet dialog over the Patch screen, with 8 layers, the Master and three outputs](images/patch-sheet.png)
 
-With 8 layers and two outputs:
+With 8 layers and three outputs:
 
 | Fixtures | Fixture type | Mode | Count | Universe | Addresses |
 |---|---|---|---|---|---|
 | Layers 1–8 | Fanous | Layer (64ch) | 8 | A 0.0.0 = universe 0 | 1, 65, 129, 193, 257, 321, 385, 449 |
 | Master | Fanous | Master (8ch) | 1 | A 0.0.1 = universe 1 | 1 |
-| Outputs 1–2 | Fanous | Output (8ch) | 2 | A 0.0.1 = universe 1 | 9, 17 |
+| Outputs 1–3 | Fanous | Output (8ch) | 3 | A 0.0.1 = universe 1 | 9, 17, 25 |
 
 A block gets a line per universe it covers: with 16 layers from A 0.0.0,
 Layers 9–16 are a second line on A 0.0.1. In a Custom group each fixture has

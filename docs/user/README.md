@@ -81,8 +81,8 @@ The pages that follow repeat the ones that matter for their topic.
   each layer at 160 pixels wide) and thumbnails at their stored size, whatever
   size the console asks for (B41). No real console has talked to Fanous over
   CITP yet (B40).
-- There is no MIDI output (controller lights, MSC replies), and cues cannot be
-  recorded from MIDI (B36). MIDI input and OSC feedback work: see
+- There is no MIDI output (controller lights, MSC replies; not built, DESIGN
+  §15.4), and cues cannot be recorded from MIDI (B36). MIDI input and OSC feedback work: see
   [show-control.md](show-control.md).
 - Loss of OSC messages sent back to back was seen once and has not been
   reproduced since (B30). If a console's bursts seem partly lost, leave about

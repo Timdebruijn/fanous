@@ -68,7 +68,7 @@ Mac: ______________ Fanous version: ______________
 
 Show mode runs these checks when you switch it on and every 30 seconds while it
 is on; **Run checks** on the System screen runs them at any time. Each item
-shows what it found and a fix hint.
+shows what it found; items that are not OK also show a fix hint.
 
 ![System › Readiness after Run checks on a desk Mac: green items, red ones with Acknowledge, Focus as a manual item](images/readiness.png)
 

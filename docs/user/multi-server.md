@@ -132,13 +132,11 @@ Mac shows its own id under System › Sync › Machine).
 **Status bar.** "sync lost" appears in red while any slave on this Mac is lost;
 it links to the Layers screen.
 
-**System › Sync**:
-
 ![System › Sync: machine, packets, masters here, conflicts, then Interface, Port and Target with Apply](images/sync.png)
 
-While nothing renders on this Mac (outputs off in the status bar) the panel says
-"Sync runs with the outputs: nothing is rendering on this machine" and shows
-no settings.
+While nothing renders on this Mac (outputs off in the status bar) the System ›
+Sync panel says "Sync runs with the outputs: nothing is rendering on this
+machine" and shows no settings. Otherwise **System › Sync** shows:
 
 - **Machine**: this Mac's name and the first 8 characters of its machine id
   (hover for the whole id). The lower id wins a group with two masters.

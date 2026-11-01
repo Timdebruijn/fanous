@@ -537,10 +537,10 @@ a handle stays on the spot you touch while a warp is active.
   doors, the sky above a building). A slice can have several. The slice shows
   what is inside its **add** masks (all of it when it has none), minus what is
   inside its **subtract** masks: a door or a window is a subtract mask, a hole.
-  The tools each add an add mask, as one step for **Undo**:
 
   ![Mask mode on the LED wall output: an ellipse mask with its four points, the mask tools and the mask list below](images/masks.png)
 
+  The tools each add an add mask, as one step for **Undo**:
   - **Polygon**: tap the corners of the area that stays visible on the picture,
     in order around it; **Done** when you have at least three, **Undo last
     corner** and **Cancel** while drawing.

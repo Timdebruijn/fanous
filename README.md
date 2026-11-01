@@ -128,7 +128,7 @@ Building for development, protocols and endpoints: [`docs/DEVELOPMENT.md`](docs/
 - **One machine measured** (M1 Pro). Other Apple Silicon chips are expectations.
 - **Apple Silicon only:** no Intel, Windows or Linux.
 - **4K60 is about 6 ProRes layers;** heavy blur and edge effects fit on 2–3 layers.
-- **No NDI, DeckLink or AJA in the open build.** MIDI output and 3D mapping come
+- **No NDI, DeckLink or AJA in the open build.** No MIDI output; 3D mapping comes
   later. Everything open: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 
 ### Help test it on a real desk

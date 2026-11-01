@@ -140,8 +140,8 @@ The status bar shows "dropped · 1 s". System › Live metrics shows, over a
 1 s window: frames, dropped (missed + late), GPU and CPU time (p50, p99, max),
 DMX to photon, texture misses (a layer without a decoded frame in time),
 clients, preview frames and audio underruns, with a graph of the GPU p99
-against the frame budget. With the show locked any dropped frame is red in the
-status bar.
+against the frame budget. The dropped tile is red in show mode and yellow
+before it; in the status bar a dropped frame is red while the show is locked.
 
 ![System › Live metrics: tiles for fps, dropped, GPU and CPU time, DMX to photon, texture misses, clients, preview and audio, and the GPU graph](images/metrics.png)
 

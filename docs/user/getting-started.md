@@ -63,9 +63,9 @@ another computer opens. Every screen has the same frame:
    versions, clients, Undo and Redo, the shortcut list and your role (below).
 2. The **rail**: the six screens, also on the keys 1 to 6. Below 1100 px wide
    only the icons show; hover a screen for its name and key.
-3. On the Layers screen, one strip each for the **Master** and the **Output**
-   fixtures: intensity, control, test pattern and blend, with **Select** to edit
-   one.
+3. On the Layers screen, one strip for the **Master** (intensity, speed,
+   control, test pattern) and one per **Output** fixture (intensity, control,
+   test pattern, blend), each with **Select** to edit it.
 4. One **row per layer**: a live picture, what it plays, the position in the
    clip, intensity, play mode, audio, who controls it and its state.
 5. The **preview**: the whole canvas, or only the selected layer (**This
@@ -84,6 +84,7 @@ Menus of the app window:
   registration, so outputs go black until the next start. **Open Logs** opens
   `~/Library/Logs/Fanous` in Finder.
 - **Edit**: Undo and Redo, Cut, Copy, Paste, Select All.
+- **Window**: Minimize, Zoom.
 
 In the app window, **Export GDTF** and **Download** (logs) open a macOS save
 dialog; in a browser they download as usual.
@@ -113,7 +114,7 @@ The status bar is on every screen. From the left:
 | **SHOW MODE: ON/OFF** | Show mode (operator). When the readiness checks refuse, a popover under it lists what blocks, with **Open System**. After the engine restarted while show mode was on, "Show mode resumed after the engine restarted at HH:MM" appears next to it, as a link to System |
 | fps, ms | Frames per second, GPU p99 and CPU time; "no outputs rendering: add or assign one (Outputs)" while nothing renders |
 | dropped · 1 s | Missed and late frames over the last second |
-| One pill per universe | Green: receiving. Yellow: never received ("silent"), quiet for up to 2.5 s, or quiet but not in the patch. Red: a patched universe that received and then went quiet for more than 2.5 s. "no DMX received" while nothing has arrived at all |
+| One pill per universe | Green: receiving. Yellow: never received ("silent"), quiet for up to 2.5 s, or quiet but not in the patch. Red: a patched universe that received and then went quiet for more than 2.5 s. "no DMX received" instead of pills while no universe is patched and none has been heard |
 | timecode | The incoming time and its state; only while timecode is switched on or running |
 | outputs | On while the engine renders the picture |
 | ingest | Progress of the running transcode; only while one runs |
@@ -192,7 +193,7 @@ for that it is entitled to. To change role click the role name at the right of
 the status bar, pick the role, enter its password and press **Log in**; **Log
 out** drops the session. After five wrong attempts in a minute you must wait.
 
-![The Log in dialog opened from the role at the right of the status bar](images/login.png)
+<img src="images/login.png" width="420" alt="The Log in dialog opened from the role at the right of the status bar">
 
 The app window on the Mac itself is always programmer; it needs no password.
 
