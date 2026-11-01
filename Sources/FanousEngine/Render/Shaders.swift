@@ -35,7 +35,7 @@ public enum ShaderSource {
         uint kind;            // SourcePixelKind
         uint blend;           // BlendMode
         float master;         // Master intensity: scales the colour, not the alpha (B108)
-        uint pad1;
+        uint deep;            // 1 when the planes are 16-bit textures: video-range levels at 16-bit scale (B119)
     };
 
     constant bool hasBlur [[function_constant(0)]];
@@ -57,12 +57,18 @@ public enum ShaderSource {
         return out;
     }
 
-    // Rec.709 video range in 8-bit ratios (16/255, 255/219, 255/224): exact for 8-bit live frames; 16-/10-bit sources
-    // read about 1 code low at white and about 1 code off in neutral chroma (B119).
-    static float3 ycbcr_to_rgb(float y, float cb, float cr) {
-        float yy = (y - 16.0 / 255.0) * (255.0 / 219.0);
-        float u = (cb - 128.0 / 255.0) * (255.0 / 224.0);
-        float v = (cr - 128.0 / 255.0) * (255.0 / 224.0);
+    // Rec.709 video range. 8-bit planes (2vuy, yuvs, 420v) use 8-bit levels (16/255, 255/219, 255/224); 16-bit planes
+    // (v216, y416, the r16 planar kinds, 10-bit x422 with its codes in the high bits) use the same levels at 16-bit
+    // scale (4096/65535, 65535/56064, 65535/57344): read with the 8-bit ratios they were about 1 code low at white
+    // and about 1 code off in neutral chroma (B119).
+    static float3 ycbcr_to_rgb(float y, float cb, float cr, bool deep) {
+        float black = deep ? 4096.0 / 65535.0 : 16.0 / 255.0;
+        float mid = deep ? 32768.0 / 65535.0 : 128.0 / 255.0;
+        float yScale = deep ? 65535.0 / 56064.0 : 255.0 / 219.0;
+        float cScale = deep ? 65535.0 / 57344.0 : 255.0 / 224.0;
+        float yy = (y - black) * yScale;
+        float u = (cb - mid) * cScale;
+        float v = (cr - mid) * cScale;
         return saturate(float3(yy + 1.5748 * v, yy - 0.1873 * u - 0.4681 * v, yy + 1.8556 * u));
     }
 
@@ -102,12 +108,12 @@ public enum ShaderSource {
             float4 p = tex0.sample(nearestSampler, pairUV);
             if (u.kind == 8) p = p.grab;
             float y = fract(px * 0.5) < 0.5 ? p.g : p.a;
-            rgba = float4(ycbcr_to_rgb(y, p.r, p.b), 1.0);
+            rgba = float4(ycbcr_to_rgb(y, p.r, p.b, u.deep != 0u), 1.0);
             break;
         }
         case 2: {  // y416: (A, Y, Cb, Cr)
             float4 p = tex0.sample(linearSampler, uv);
-            rgba = float4(ycbcr_to_rgb(p.g, p.b, p.a), p.r);
+            rgba = float4(ycbcr_to_rgb(p.g, p.b, p.a, u.deep != 0u), p.r);
             break;
         }
         case 3:    // HAP Q: scaled YCoCg in BC3
@@ -130,7 +136,7 @@ public enum ShaderSource {
             float y = tex0.sample(linearSampler, uv).r;
             float2 cbcr = tex1.sample(linearSampler, uv).rg;
             float alpha = u.kind == 7 ? tex2.sample(linearSampler, uv).r : 1.0;
-            rgba = float4(ycbcr_to_rgb(y, cbcr.x, cbcr.y), alpha);
+            rgba = float4(ycbcr_to_rgb(y, cbcr.x, cbcr.y, u.deep != 0u), alpha);
             break;
         }
         default:   // straight RGBA (stills, HAP, HAP Alpha, HAP R, live inputs)
