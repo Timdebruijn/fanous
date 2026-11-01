@@ -14,7 +14,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: the status bar wrapped to two rows and back as its frame time grew or shrank by a digit (8.9 ms → 126.6 ms)
   on a screen near 1440 px wide, moving the page below it by a row, also under a handle being dragged; the frame time
   now has room for its widest value, so with a fresh engine the bar fits one row from 1470 px and takes two at 1440
-  (B134, PR #TBD).
+  (B134, PR #163).
 - App icon and mark (a fanous lantern, `assets/`); UI fonts Atkinson Hyperlegible Next and Mono
   (Braille Institute, OFL), bundled with the UI, chosen for unambiguous glyphs when reading fast in the dark.
 - Layer cap stays 32 for v1 (OPEN-8).
