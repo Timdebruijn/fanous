@@ -1633,10 +1633,15 @@ only). It finds the display by CG UUID (`CGGetOnlineDisplayList`, any
 thread) with its mode's pixel size, fitted into canvas 1's size at open
 (aspect kept, never scaled up). On the queue `org.fanous.screen.<uuid>`
 (`.userInteractive`) it reads `SCShareableContent` (all windows, not only
-on-screen ones, so the engine is listed even without an output window at
-that moment; the completion hops back to the queue), excludes the engine's
+on-screen ones; the completion hops back to the queue), excludes the engine's
 `SCRunningApplication` (`processID == getpid()`) with
-`exceptingWindows: []`, configures BGRA, sRGB, `minimumFrameInterval` =
+`exceptingWindows: []`. ScreenCaptureKit lists only the processes that own a
+window-server window, on screen or not, so until the first output was bound
+the engine was not listed and a capture started then excluded nothing
+(`excludedApps=0`, B124); `OutputCoordinator.presence`, a 1×1 borderless
+window made with `defer: false` and never ordered in, keeps the engine listed
+from its start (measured with `CGWindowListCopyWindowInfo(.optionAll)`; a
+`defer: true` window is not listed). It configures BGRA, sRGB, `minimumFrameInterval` =
 1/canvas rate at service start, no cursor, no audio, `queueDepth` 6 and
 the fitted size, adds itself as the `.screen` output on that queue and
 calls `startCapture`. The depth is 6, not 4: the ring may hold three taken
