@@ -19,7 +19,7 @@ public struct LayerUniforms {
     public var kind: UInt32 = 0
     public var blend: UInt32 = 0
     public var master: Float = 1
-    public var pad1: UInt32 = 0
+    public var deep: UInt32 = 0  // 1 when the planes are 16-bit textures: video-range levels at 16-bit scale (B119)
 
     public init() {}
 }

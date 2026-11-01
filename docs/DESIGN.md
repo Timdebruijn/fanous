@@ -1409,13 +1409,18 @@ movie path; `hasFrame` only tests presence. Syphon builds the frame from one
 `FrameSlot` `Mutex` read (`.rgba`, `bottomUp: true`), the generators return
 their one texture. A `.v216` live frame's width is `texture0.width × 2` for
 the geometry and for `u.texel`, from which the v216 shader case derives pair
-positions. The shader is unchanged; its matrix uses 8-bit ratios (16/255,
-255/219), exact for 8-bit live frames, while 16- and 10-bit sources read
-about one code low at white and about one code off in neutral chroma (B119).
-Readback through the compositor (`LiveSourceTests`), `2vuy` and `420v` alike:
-white 255, black 0, Rec.709 red 255,1,0, 50 % grey 128; the `420v` Y0/Y1
-pair reads 252/3 from linear sampling half a canvas pixel off centre (`2vuy`
-picks with the nearest sampler: 255/0). 100 frame reads allocate nothing in
+positions. The shader's matrix takes the plane depth from the uniforms (`deep`,
+set by the compositor from texture 0's pixel format): 8-bit levels (16/255,
+255/219, 255/224) for 8-bit live frames, the same levels at 16-bit scale
+(4096/65535, 65535/56064, 65535/57344) for the 16-bit movie planes (ProRes
+422 as r16/rg16, ProRes 4444 as `y416`), which the 8-bit ratios read about
+one code low at white and about one code off in neutral chroma (B119, PR
+#160). Readback through the compositor (`LiveSourceTests`), `2vuy`, `420v`
+and their 16-bit siblings `v216` and `sv22` alike:
+white 255, black 0, Rec.709 red 255,1,0, 50 % grey 128; the planar Y0/Y1
+pair (`420v`, `sv22`) reads 252/3 from linear sampling half a canvas pixel
+off centre (the packed pair, `2vuy` and `v216`, picks with the nearest
+sampler: 255/0). 100 frame reads allocate nothing in
 release. `LiveCatalog` is step 1b.
 
 **As built (2026-10-30, step 1b, PR #106):** `Media/LiveCatalog.swift`.

@@ -768,6 +768,7 @@ public final class Compositor: @unchecked Sendable {
         u.effect2 = SIMD4(Float(p.effect2.rawValue), p.effect2A, p.effect2B, 0)
         u.texel = SIMD4(1 / Float(max(1, mediaWidth)), 1 / Float(max(1, mediaHeight)), Float(mediaWidth) / Float(max(1, mediaHeight)), time)
         u.kind = frame.kind.rawValue
+        u.deep = texture0.pixelFormat == .rgba16Unorm || texture0.pixelFormat == .r16Unorm ? 1 : 0  // v216/y416, r16 planes (B119)
         u.blend = UInt32(p.blendMode.rawValue)
         u.master = item.master
         let offset = item.slot * Self.uniformStride
