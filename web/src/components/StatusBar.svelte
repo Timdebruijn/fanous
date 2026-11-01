@@ -77,7 +77,7 @@
       {/if}
     </span>
   </div>
-  <div class="item col">
+  <div class="item col metrics">
     <span class="mono value">{fps}<span class="faint"> fps </span>{metrics.gpuP99.toFixed(1)}<span class="faint"> ms</span></span>
     <span class="caption">{app.live.engine.rendering ? `gpu p99 · cpu ${metrics.cpuP99.toFixed(1)} ms` : 'no outputs rendering: add or assign one (Outputs)'}</span>
   </div>
@@ -138,7 +138,10 @@
 {#if showLogin}<Login onclose={() => (showLogin = false)} />{/if}
 
 <style>
-  .status { display: flex; flex-wrap: wrap; align-items: center; min-height: 56px; padding: 4px 8px; background: var(--surface-1); border-bottom: 1px solid var(--line); }
+  /* tabular digits, and room for the widest frame time: numbers that change every second never change the bar's width,
+     so it does not wrap or unwrap under a drag (a busy frame turns 8.9 ms into 126.6 ms) and move the page below (B134) */
+  .status { display: flex; flex-wrap: wrap; align-items: center; min-height: 56px; padding: 4px 8px; background: var(--surface-1); border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  .metrics .value { min-width: 16ch; }
   /* min-height: an item that wraps on a phone (the universe pills, the resumed note) grows instead of spilling over */
   .item { display: flex; align-items: center; gap: 8px; min-height: var(--touch); padding: 0 8px; border-right: 1px solid var(--line); }
   .item.col { flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; }
