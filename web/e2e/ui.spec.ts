@@ -1216,12 +1216,16 @@ test('outputs: a colour slider held where an echo of its own earlier value lands
   const { x, y } = await rangeX(red, 200);
   await page.mouse.move(x(100), y);
   await page.mouse.down();
+  // the 50 ms send throttle sends the latest value: a wait past it after the 97 and after the 88 makes both go out, in
+  // that order, before the 97 on the way up
   await page.mouse.move(x(97), y);
-  await page.waitForTimeout(80); // past the 50 ms send throttle: 97 goes out first, the lower values after it
-  for (const v of [94, 91, 88, 97]) {
+  await page.waitForTimeout(80);
+  for (const v of [94, 91, 88]) {
     await page.mouse.move(x(v), y);
     await page.waitForTimeout(15);
   }
+  await page.waitForTimeout(80);
+  await page.mouse.move(x(97), y);
   await page.waitForTimeout(500); // the echoes of 97 and then 88 (250 ms after their sends) land while the thumb holds 97
   await page.mouse.move(x(100), y);
   await page.mouse.up();

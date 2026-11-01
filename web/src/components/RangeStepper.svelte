@@ -16,8 +16,9 @@
   // when the grace ends, and −/+ step from it, so quick taps all land. Each slider keeps its own: two fingers on two
   // sliders do not disturb each other. While a pointer holds the thumb no echo ends it (a drag 100 → 88 → 97 slower
   // than a round trip meets the echo of its first 97 on the way back up, and the echo of 91 showed next: CI, 2026-11-01);
-  // after the release the next echo equal to it, or the grace, ends it. An echo that takes longer than the grace shows
-  // for a moment.
+  // after the release the next echo equal to it, or the grace, ends it. Edges: a release on a value the drag passed
+  // earlier (100 → 88 → 97) lets the echo of that earlier 97 end it, and the echo of 88 shows for a moment; so does any
+  // echo that takes longer than the grace.
   let {
     label,
     key,
@@ -95,7 +96,7 @@
   <span class="line">
     <button type="button" class="btn btn-icon" aria-label="{label} down" title={off} disabled={!!off || v <= min} onclick={() => nudge(-step)}>−</button>
     <input type="range" {min} {max} {step} aria-label={label} aria-valuetext={text} title={off} disabled={!!off} value={v}
-      onpointerdown={(e) => (finger = e.pointerId)} onpointerup={up} onpointercancel={up} onlostpointercapture={up} onblur={release}
+      onpointerdown={(e) => { if (e.button === 0) finger = e.pointerId; }} onpointerup={up} onpointercancel={up} onlostpointercapture={up} onblur={release}
       oninput={(e) => { const n = Number(e.currentTarget.value); hold(n); if (!onRelease) set(n); }}
       onchange={(e) => { if (onRelease) set(Number(e.currentTarget.value)); else flush?.(); release(); }} />
     <button type="button" class="btn btn-icon" aria-label="{label} up" title={off} disabled={!!off || v >= max} onclick={() => nudge(step)}>+</button>
