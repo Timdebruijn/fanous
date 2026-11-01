@@ -573,6 +573,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   streamer's "thumbnail copy" label (14 bytes) allocated the same way, once per thumbnail frame, and is made once too (PR #169).
 - CI: the e2e suite's global timeout is 20 min (was 10): a slow runner takes 7 to over 10 min for the same 52 tests that a fast one
   runs in 3 (B135, PR #171).
+- Fixed: a colour or wall slider dragged slower than the engine's round trip could jump to an earlier value for a moment
+  mid-drag, when the echo of a value it had passed met the thumb on that value again; while a pointer holds the thumb no
+  echo ends what it shows (B136, PR #172).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
