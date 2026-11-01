@@ -19,8 +19,7 @@ jobs:
       - run: scripts/test.sh --filter FanousCoreTests
       - run: scripts/license-headers.sh
       - run: scripts/core-purity.sh
-      - run: scripts/check-channel-map.sh
-      - run: scripts/check-protocol-dts.sh
+      - run: scripts/check-generated.sh
 
   web:
     runs-on: ubuntu-latest

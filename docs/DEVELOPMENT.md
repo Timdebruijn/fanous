@@ -87,7 +87,7 @@ skips.
 Protocol fixtures: `scripts/capture-dmx.py artnet|sacn|osc <name>` records
 real console packets into `Tests/Fixtures/captures/` (stop `fanousd` first;
 see the README there). `fanousd channel-map` prints the DMX channel map,
-`fanousd gdtf FILE` writes the GDTF fixture file; `scripts/check-channel-map.sh`
+`fanousd gdtf FILE` writes the GDTF fixture file; `scripts/check-generated.sh`
 keeps `channel-map.md` in sync.
 
 The first engine start generates an ECDSA key and self-signed certificate and
@@ -138,7 +138,7 @@ PBKDF2-HMAC-SHA256 in `~/Library/Application Support/Fanous/settings.json`);
 current role and which roles are open. The local shell authenticates with the
 token in `shell-token` (mode 0600). The project is autosaved to `project.json`
 and loaded at start; `fanousd protocol-dts` prints `web/src/lib/protocol.d.ts`
-(checked by `scripts/check-protocol-dts.sh`).
+(checked by `scripts/check-generated.sh`).
 
 Web UI (`web/`, Svelte 5 + Vite, served by the engine from `web/dist`):
 status bar, Layers / Mixer (rows with the resolved media, position, intensity
