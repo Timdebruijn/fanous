@@ -287,7 +287,10 @@ public final class OutputCoordinator {
             if stale.contains(displayID) { logger.warning("a render thread did not stop within 1 s while outputs were rebound: a frozen output on it holds afresh", metadata: ["display": "\(display.name)"]) }
             let set = OutputSet(plans: plans, previous: stale.contains(displayID) ? nil : bound[displayID]?.set.holdSource)
             if displayID == newMaster {
-                headless?.stop()  // before the set is published: a headless tick hands `compositor.outputSet` to the preview tap
+                // before the set is published: a headless tick hands `compositor.outputSet` to the preview tap. A failed join
+                // (a tick over 1 s, B128) is logged and not acted on: it was not logged before, and no other join on this
+                // hardware was ever seen to fail (5.5 days of fanousd.log); CI's e2e binds no display, so no master takes over there
+                if headless?.stop() == false { logger.warning("the headless render thread did not stop within 1 s while a master took over; its last tick may read the new set", metadata: ["display": "\(display.name)"]) }
                 headless = nil
                 compositor.outputSet = set
                 if masterDriver == nil {
