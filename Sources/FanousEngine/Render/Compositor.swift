@@ -182,8 +182,7 @@ public final class Compositor: @unchecked Sendable {
             guard let buffer = context.device.makeBuffer(length: Self.mappedUniformsLength, options: .storageModeShared) else { throw RenderError.pipeline("mapped uniforms") }
             return buffer
         }
-        outputPass.colorAttachments[0].loadAction = .clear
-        outputPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        outputPass.colorAttachments[0].loadAction = .clear  // to opaque black, the default clear colour
     }
 
     fileprivate static func makeCanvases(device: MTLDevice, width: Int, height: Int) throws -> ([MTLTexture], [MTLRenderPassDescriptor]) {
@@ -198,9 +197,8 @@ public final class Compositor: @unchecked Sendable {
         let passes = textures.map { texture in
             let pass = MTLRenderPassDescriptor()
             pass.colorAttachments[0].texture = texture
-            pass.colorAttachments[0].loadAction = .clear
+            pass.colorAttachments[0].loadAction = .clear  // to opaque black, the default clear colour
             pass.colorAttachments[0].storeAction = .store
-            pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
             return pass
         }
         return (textures, passes)
@@ -930,9 +928,8 @@ public final class Compositor: @unchecked Sendable {
         let (frame, index, canvasMaster) = completedCanvases()
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = texture
-        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].loadAction = .clear  // to opaque black, the default clear colour
         pass.colorAttachments[0].storeAction = .store
-        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         OutputPass.holdFrozen(set, canvas: { id in frame.first { $0.id == id }?.textures[index] }, outputs: outputs, master: canvasMaster, buffer: commandBuffer)
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else {
             outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
