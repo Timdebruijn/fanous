@@ -560,6 +560,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   (PR #152).
 - Fixed: on a phone the "Show mode resumed after the engine restarted" note in the status bar spilled 19 px over
   the row below (fps, dropped); a status bar item that wraps now grows (PR #154).
+- Fixed: ProRes frames (ProRes 422 as 16-bit planes, ProRes 4444 as `y416`) read about 1 code low at white and with
+  a slight green cast in neutral chroma: the layer shader used 8-bit video-range ratios for every depth. 16-bit
+  planes now use the same levels at 16-bit scale (B119, PR #160).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
