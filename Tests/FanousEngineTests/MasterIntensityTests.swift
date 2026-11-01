@@ -103,6 +103,50 @@ struct MasterIntensityTests {
         #expect(Self.near(got, [128, 128, 0]), "add at Master 50 %: \(got)")
     }
 
+    /// The compositor's stored label constants, and literals equal to the labels it assigns as plain strings, bridge
+    /// to `encoder.label` without an allocation (B117): "mapped output", "layer preview" and "thumbnail atlas" are
+    /// `NSString`s, because a 13–15-byte Swift `String` bridged on every assignment (1 each, measured); "canvas N",
+    /// "output" and "secondary output" bridge free as plain strings. Assigned here, not through the draw functions.
+    /// Asserted in an optimised build (`scripts/check-mallocs.sh`); a debug build prints the counts.
+    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    func mallocCounterEncoderLabelsAllocateNothing() throws {
+        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        let compositor = try Rig().compositor
+        let context = compositor.context
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = try MovieSource.makeTexture(context.device, .rgba8Unorm, 4, 4)
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].storeAction = .store
+        let buffer = try #require(context.queue.makeCommandBuffer())
+        let encoder = try #require(buffer.makeRenderCommandEncoder(descriptor: pass))
+        let canvasLabel = "canvas \(16)"  // a runtime small string, as `CanvasTarget.label` is
+        let labels: [(String, () -> Void)] = [
+            ("canvas 16", { encoder.label = canvasLabel }),
+            ("output", { encoder.label = "output" }),
+            ("secondary output", { encoder.label = "secondary output" }),
+            ("mapped output", { encoder.label = compositor.mappedOutputLabel as String }),
+            ("layer preview", { encoder.label = compositor.layerPreviewLabel as String }),
+            ("thumbnail atlas", { encoder.label = compositor.thumbnailAtlasLabel as String }),
+        ]
+        for (name, assign) in labels {
+            assign()
+            let mallocs = MallocCounter.count {
+                var i = 0
+                while i < 100 {
+                    assign()
+                    i += 1
+                }
+            }
+            print("encoder label \"\(name)\" × 100: \(mallocs) allocations on the calling thread")
+            #if !DEBUG
+                #expect(mallocs == 0, "encoder label \"\(name)\": \(mallocs) allocations in 100 assignments")
+            #endif
+        }
+        encoder.endEncoding()
+        buffer.commit()
+        buffer.waitUntilCompleted()
+    }
+
     /// Allocations on this (ticking) thread per tick with two layers, at 100 % and at 50 % (printed); in an optimised
     /// build the Master adds none (it is a uniform of the layer draw). Release only: `swift test -c release
     /// -Xswiftc -enable-testing --filter printDimmedTickMallocs` (through `scripts/test.sh`).
