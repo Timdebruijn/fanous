@@ -297,7 +297,7 @@ test('status bar: the universe pills wrap on a phone instead of widening the pag
 });
 
 test('status bar: one row on a 1470 px laptop, timecode and ingest left out while off and idle', async ({ page }) => {
-  await page.setViewportSize({ width: 1470, height: 900 }); // a MacBook Air; 1440 fits too, with less room for a wider fps or dropped count
+  await page.setViewportSize({ width: 1470, height: 900 }); // a MacBook Air; at 1440 the bar takes two rows, as the frame time keeps room for its widest value (B134)
   const banner = page.getByRole('banner');
   // a fresh engine shows two silent universes and the "web UI open" warning, the widest bar it has
   await expect(banner.getByText(/^A 0\.0\.1 · silent/)).toBeVisible();
@@ -312,6 +312,38 @@ test('status bar: one row on a 1470 px laptop, timecode and ingest left out whil
   await expect(banner.getByText('timecode')).toBeVisible();
   await timecode.getByRole('combobox', { name: 'Source', exact: true }).selectOption('off');
   await expect(banner.getByText('timecode')).toHaveCount(0);
+});
+
+test('status bar: a frame time that grows or shrinks leaves the bar as it was, so the page does not move under a drag (B134)', async ({ page, engine }) => {
+  // the engine's live patches with metrics carry these numbers instead: a busy CI runner's 126.6 ms wrapped the bar at
+  // 1440 px, and its 8.9 ms a moment later unwrapped it mid-drag, moving the mapping editor 41 px under the pointer
+  const shown = { frames: 61, gpu: 8.9, cpu: 1.2 };
+  await page.routeWebSocket(/\/ws$/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((message) => server.send(message));
+    server.onMessage((message) => {
+      const m = typeof message === 'string' ? (JSON.parse(message) as { t?: string; doc?: string; ops?: { op: string; path: string; value?: unknown }[] }) : null;
+      if (m?.t !== 'patch' || m.doc !== 'live' || !m.ops?.some((o) => o.path.startsWith('/metrics/'))) return ws.send(message);
+      const ours = { '/metrics/frames': shown.frames, '/metrics/gpuP99': shown.gpu, '/metrics/cpuP99': shown.cpu };
+      m.ops = [...m.ops.filter((o) => !(o.path in ours)), ...Object.entries(ours).map(([path, value]) => ({ op: 'replace', path, value }))];
+      ws.send(JSON.stringify(m));
+    });
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${engine.url}/?token=${engine.token}`);
+  const banner = page.getByRole('banner');
+  await expect(banner.getByText(/^A 0\.0\.1 · silent/)).toBeVisible();  // the widest bar a fresh engine has
+  const metrics = banner.locator('.metrics');
+  async function bar(frames: number, gpu: number, cpu: number) {
+    Object.assign(shown, { frames, gpu, cpu });
+    await expect(metrics).toContainText(new RegExp(`^${frames}\\s*fps\\s*${gpu.toFixed(1)}\\s*ms`));
+    await expect(metrics).toContainText(`cpu ${cpu.toFixed(1)} ms`);
+    return { width: await metrics.evaluate((el) => el.getBoundingClientRect().width), height: await banner.evaluate((el) => el.getBoundingClientRect().height) };
+  }
+  const calm = await bar(61, 8.9, 1.2);
+  expect(await bar(60, 126.6, 12.3)).toEqual(calm);
+  expect(await bar(120, 999.9, 999.9)).toEqual(calm);
+  expect(await bar(9, 0.4, 0.1)).toEqual(calm);
 });
 
 test('status bar: the show-mode-resumed note wraps inside its item on a phone instead of spilling over the next row', async ({ page }) => {

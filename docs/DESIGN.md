@@ -3834,7 +3834,11 @@ missing displays), audio device, ingest (progress when active), clients
 backup (v2; hidden in v1). Red means "look
 now" and is reserved for: dropped frames in show mode, lost DMX on a patched
 universe, lost output display, decoder error on a visible layer, readiness
-failure while entering show mode.
+failure while entering show mode. The frame time has room for its widest
+value ("120 fps 999.9 ms"), so it no longer changes the bar's width and wraps
+or unwraps it under a drag (B134): with a fresh engine the bar fits one row
+from 1470 px and takes two at 1440. Events still change its width: a universe
+going active or lost, a lagging client, no output rendering.
 
 1. **Layers / Mixer** — one row (or tile on narrow screens) per layer: live
    thumbnail, layer name + canvas, resolved media ("12 / 4 · intro_loop.mov ·
