@@ -23,16 +23,6 @@ public final class CITPServer: @unchecked Sendable {
         public var lengthMs: UInt32
         public var fps: UInt8
         public var flags: UInt32
-        public init(index: Int, folder: Int, file: Int, name: String, positionMs: UInt32, lengthMs: UInt32, fps: UInt8, flags: UInt32) {
-            self.index = index
-            self.folder = folder
-            self.file = file
-            self.name = name
-            self.positionMs = positionMs
-            self.lengthMs = lengthMs
-            self.fps = fps
-            self.flags = flags
-        }
     }
 
     public struct Providers: Sendable {
@@ -44,21 +34,9 @@ public final class CITPServer: @unchecked Sendable {
         /// when none was produced yet.
         public var frame: @Sendable (UInt16) -> ([UInt8], Int, Int)?
         /// What `VSrc` lists: the canvas (source 0) and one source per layer.
-        public var sources: @Sendable () -> [VideoSource]
+        public var sources: @Sendable () -> [VideoSource] = { [] }
         /// Render layers (layer stream sources 1…n), without reading the parameters (`layers` does).
-        public var layerCount: @Sendable () -> Int
-        public init(
-            layers: @escaping @Sendable () -> [LayerInfo], library: @escaping @Sendable () -> LibrarySnapshot,
-            thumbnail: @escaping @Sendable (String) -> [UInt8]?, frame: @escaping @Sendable (UInt16) -> ([UInt8], Int, Int)?,
-            sources: @escaping @Sendable () -> [VideoSource] = { [] }, layerCount: @escaping @Sendable () -> Int = { 0 }
-        ) {
-            self.layers = layers
-            self.library = library
-            self.thumbnail = thumbnail
-            self.frame = frame
-            self.sources = sources
-            self.layerCount = layerCount
-        }
+        public var layerCount: @Sendable () -> Int = { 0 }
     }
 
     public struct Status: Sendable, Equatable {
