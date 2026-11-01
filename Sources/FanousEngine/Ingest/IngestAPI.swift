@@ -12,7 +12,7 @@ import Synchronization
 ///   POST /api/ingest                 {"source": path, "folder": N, "file": N?, "name": "...", "codec": "hapq"?, "fps": 25?}
 ///   POST /api/ingest/<id>/cancel · POST /api/ingest/<id>/remove
 ///   PUT  /api/upload/<folder>/<name>  body = the file; it lands in _incoming/ and is queued for folder N
-/// ponytail: no role check yet (Phase 5 brings roles); the engine listens on the LAN like every other endpoint.
+/// The engine's router checks the role first: programmer for every change, operator to read the queue (file paths).
 public final class IngestAPI: @unchecked Sendable {
     public static let defaultCodec: MovieWriter.Codec = .proRes422HQ
     /// The current index: the library root can change while the engine runs (B51).
