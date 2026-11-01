@@ -68,8 +68,8 @@ public final class ScreenInput: CaptureInput, SCStreamOutput, SCStreamDelegate, 
         guard let content, let display = content.displays.first(where: { $0.displayID == displayID }) else {
             return fail(error.map { "screen capture unavailable: \($0.localizedDescription)" } ?? "the display is not offered for capture")
         }
-        // an output on a captured display would feed back: the engine's windows are never in the picture. The engine is
-        // listed only while it owns a window-server window; `OutputCoordinator.presence` keeps one from the start (B124)
+        // an output on a captured display would feed back: the engine is excluded by application. It is listed only while
+        // it owns a window-server window; `OutputCoordinator.presence` keeps one from the start (B124)
         let own = content.applications.filter { $0.processID == getpid() }
         let filter = SCContentFilter(display: display, excludingApplications: own, exceptingWindows: [])
         let configuration = SCStreamConfiguration()

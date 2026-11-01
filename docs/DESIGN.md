@@ -1641,7 +1641,10 @@ the engine was not listed and a capture started then excluded nothing
 (`excludedApps=0`, B124); `OutputCoordinator.presence`, a 1×1 borderless
 window made with `defer: false` and never ordered in, keeps the engine listed
 from its start (measured with `CGWindowListCopyWindowInfo(.optionAll)`; a
-`defer: true` window is not listed). It configures BGRA, sRGB, `minimumFrameInterval` =
+`defer: true` window is not listed). That a window the excluded engine
+opens later stays out of the picture rests on the filter's per-application
+semantics and is not verified: a numbered display is halted once an output
+binds to it. It configures BGRA, sRGB, `minimumFrameInterval` =
 1/canvas rate at service start, no cursor, no audio, `queueDepth` 6 and
 the fitted size, adds itself as the `.screen` output on that queue and
 calls `startCapture`. The depth is 6, not 4: the ring may hold three taken

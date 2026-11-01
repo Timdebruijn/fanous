@@ -139,7 +139,7 @@ public final class OutputCoordinator {
     public nonisolated let patterns = PatternLeases()
     /// A window device that is never shown (B124). ScreenCaptureKit lists only the processes that own a window-server
     /// window, so a display capture started before the first output was bound found nothing to exclude (`excludedApps=0`)
-    /// and an output window opened later on that display stayed in its own picture. Measured: a `defer: false` window that
+    /// and an output window opened later on that display was not excluded from its picture. Measured: a `defer: false` window that
     /// is never ordered in is in `CGWindowListCopyWindowInfo(.optionAll)` for its process (a `defer: true` one is not).
     private let presence: NSWindow
 
