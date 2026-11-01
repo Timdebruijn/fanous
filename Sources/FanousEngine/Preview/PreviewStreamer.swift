@@ -133,9 +133,8 @@ public final class PreviewStreamer: @unchecked Sendable {
         else { throw RenderError.pipeline("layer preview texture") }
         texture.label = "layer preview"
         layerPass.colorAttachments[0].texture = texture
-        layerPass.colorAttachments[0].loadAction = .clear
+        layerPass.colorAttachments[0].loadAction = .clear  // to opaque black, the default clear colour
         layerPass.colorAttachments[0].storeAction = .store
-        layerPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         layerUniforms = uniforms
         layerCompositor = compositor
         layer = index
@@ -403,28 +402,10 @@ public final class PreviewStreamer: @unchecked Sendable {
         }
     }
 
-    /// AVCDecoderConfigurationRecord from the H.264 parameter sets (one SPS, one PPS).
+    /// The AVCDecoderConfigurationRecord VideoToolbox attaches to the format description (empty when there is none).
     static func avcC(from format: CMFormatDescription) -> [UInt8] {
-        var count = 0
-        guard CMVideoFormatDescriptionGetH264ParameterSetAtIndex(format, parameterSetIndex: 0, parameterSetPointerOut: nil, parameterSetSizeOut: nil, parameterSetCountOut: &count, nalUnitHeaderLengthOut: nil) == noErr,
-            count >= 2
-        else { return [] }
-        var sets: [[UInt8]] = []
-        for i in 0..<count {
-            var pointer: UnsafePointer<UInt8>?
-            var size = 0
-            guard CMVideoFormatDescriptionGetH264ParameterSetAtIndex(format, parameterSetIndex: i, parameterSetPointerOut: &pointer, parameterSetSizeOut: &size, parameterSetCountOut: nil, nalUnitHeaderLengthOut: nil) == noErr,
-                let pointer
-            else { return [] }
-            sets.append(Array(UnsafeBufferPointer(start: pointer, count: size)))
-        }
-        let sps = sets[0], pps = sets[1]
-        guard sps.count >= 4 else { return [] }
-        var record: [UInt8] = [1, sps[1], sps[2], sps[3], 0xFF, 0xE1, UInt8(sps.count >> 8), UInt8(sps.count & 0xFF)]
-        record += sps
-        record += [1, UInt8(pps.count >> 8), UInt8(pps.count & 0xFF)]
-        record += pps
-        return record
+        let atoms = CMFormatDescriptionGetExtension(format, extensionKey: kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms) as? [String: Any]
+        return (atoms?["avcC"] as? Data).map(Array.init) ?? []
     }
 }
 
