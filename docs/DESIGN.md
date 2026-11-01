@@ -2371,7 +2371,7 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
 - Every pattern the wizard or the check set was an `output.set` (one undo step
   per output and step, each clearing redo), and the page kept each output's own
   pattern, also in sessionStorage, to give it back, until B102 and B103
-  (PR #TBD, owner decision 2026-10-31). The patterns are now a lease modelled on
+  (PR #159, owner decision 2026-10-31). The patterns are now a lease modelled on
   `output.overlay` (§9.10 item 4), `output.pattern {patterns: [{id, pattern}]}`
   (`ProjectDocument+Presets.swift`): one call for several outputs, each with
   its own pattern; pattern 0 ends that output's lease.

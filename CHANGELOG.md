@@ -563,7 +563,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
-  step moves to other outputs or the page is hidden, so "Give the test patterns back" is gone (B102, B103, PR #TBD).
+  step moves to other outputs or the page is hidden, so "Give the test patterns back" is gone (B102, B103, PR #159).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
