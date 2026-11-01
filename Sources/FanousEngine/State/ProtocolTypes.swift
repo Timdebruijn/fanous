@@ -6,7 +6,7 @@ import Foundation
 import FanousCore
 
 /// Emits `web/src/lib/protocol.d.ts` from the command registry (DESIGN.md §11.4) so client and server
-/// cannot drift; `scripts/check-protocol-dts.sh` compares it in CI like the channel map.
+/// cannot drift; `scripts/check-generated.sh` compares it in CI, with the channel map.
 public enum ProtocolTypes {
     public static func typescript(commands: [CommandSpec]) -> String {
         return """
