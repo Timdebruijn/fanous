@@ -232,7 +232,7 @@ public final class PreviewStreamer: @unchecked Sendable {
             OutputPass.draw(
                 set, canvas: { $0 == canvasID ? canvas : canvases?($0) }, encoder: encoder, context: context, uniforms: mappedUniforms,
                 master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs,
-                keystones: [], presets: [], morphs: [], now: 0)  // the edited mapping, without keystone, preset or morph, so the editor's handles stay where the drag lands (§9.10 item 3)
+                keystones: [], presets: [], morphs: [], now: target)  // the edited mapping, without keystone, preset or morph, so the editor's handles stay where the drag lands (§9.10 item 3); `target` for a pattern lease's end (B102)
         } else {
             encoder.setRenderPipelineState(context.outputPipeline)
             encoder.setFragmentBuffer(uniforms, offset: 0, index: 0)

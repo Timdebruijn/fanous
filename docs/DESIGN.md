@@ -2369,14 +2369,45 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
   "Blend check and Grid" in one pattern).
 - Only bound free outputs show their Output ID; unassigned ones are tiles
   without a pattern.
-- Make wall sets the patterns before `wall.add`, so one Undo takes the wall
-  back.
+- Make wall set the patterns before `wall.add`, so one Undo took the wall
+  back, until B102 (below): it is now one `wall.add`.
 - The wall panel sits on the Outputs tab, full width above the output list and
   preview. Leaving the Outputs screen ends the wizard and the seam check.
-- Every pattern the wizard or the check sets is an `output.set` (one undo step
-  per output, B102). Each output's own pattern is kept until the engine has
-  taken it back, also in sessionStorage, so a reloaded page offers to give it
-  back.
+- Every pattern the wizard or the check set was an `output.set` (one undo step
+  per output and step, each clearing redo), and the page kept each output's own
+  pattern, also in sessionStorage, to give it back, until B102 and B103
+  (PR #159, owner decision 2026-10-31). The patterns are now a lease modelled on
+  `output.overlay` (§9.10 item 4), `output.pattern {patterns: [{id, pattern}]}`
+  (`ProjectDocument+Presets.swift`): one call for several outputs, each with
+  its own pattern; pattern 0 ends that output's lease.
+  - Programmer, refused under show lock, never saved or undone, no project
+    change. A pattern is refused in show mode and for an output that does not
+    exist; an end is never refused in show mode or for an output that is gone
+    (show lock refuses everything, and has ended the leases itself). A call
+    that lists an output twice is refused. Show mode and show lock end every
+    lease at once.
+  - Each lasts 5 s. The Outputs screen renews it every 2 s while the wizard
+    (Output ID on the bound free outputs, while it is in sight on the Outputs
+    tab) or the check (its step on every output of the wall, on any tab: it
+    has a banner) shows a pattern, and ends it when they close, when
+    the step moves to other outputs (in the same call), or when the page is
+    hidden; an unloading page is hidden first, else the lease runs out.
+  - **Home: `PatternLeases`** (`OutputCoordinator.swift`), owned by the
+    coordinator, which hands it to every plan it compiles and to the output
+    preview's (`OutputPlan.patterns`). Keyed by output id behind one `Mutex`,
+    so any output id works (the DMX snapshot's slots stop at output 8). The
+    render threads compare the lease's end with the frame time, so no tick is
+    needed; the output preview now passes its frame time instead of 0 for that.
+  - An output draws the Master's pattern, else the Output fixture's
+    (channel 4), else the lease's, else its own `testPattern`.
+    `live.outputs[].pattern` is the leased pattern, null without one.
+  - One lease per output, the latest call wins, no per-client leases. With two
+    clients on the same outputs, the one that ends clears it, and the other's
+    next renewal brings its pattern back within 2 s (accepted). Two clients on
+    different steps of the same outputs alternate the pattern about every
+    second: the latest renewal wins. The outputs' own patterns are never
+    written, so a second check can no longer keep the first one's pattern as
+    their own (B103).
 - Unlinked RGB kept the single gamma ("in effect"), with R, G, B below it,
   until M1.6 (below); linking again drops them.
 - The colour hints said colour gain was not built yet, and the projector tile
@@ -2902,7 +2933,8 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
   - The overlay follows the output's Blackout and the Master, so black stays
     black. It takes no blend, colour or lift.
 - **Leases.** `output.overlay {id, on, selected?}` and
-  `output.show {ids, preset}` (3) are leases.
+  `output.show {ids, preset}` (3) are leases, as is the projector-wall test
+  patterns' `output.pattern {patterns}` since B102 (§9.9).
   - Programmer-only, refused under show lock, never saved or undone.
   - Each lasts 5 s. The UI renews it every 2 s while the tab is open or
     Compare is held, and the engine lets it expire, so no client tracking is

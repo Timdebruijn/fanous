@@ -778,7 +778,44 @@ test('outputs: Spread canvas gives each slice its strip of the canvas', async ({
   await expect(x).toHaveValue(await w.inputValue());
 });
 
+/** What `page` sends from its next load on: the `patterns` of each `output.pattern` (B102), and how many `output.set`
+ * of a test pattern. */
+function patternsSent(page: Page): { leases: { id: number; pattern: number }[][]; sets: number } {
+  const sent = { leases: [] as { id: number; pattern: number }[][], sets: 0 };
+  page.on('websocket', (socket) =>
+    socket.on('framesent', ({ payload }) => {
+      if (typeof payload !== 'string') return;
+      const message = JSON.parse(payload) as { name?: string; args?: { patterns?: { id: number; pattern: number }[]; path?: string } };
+      if (message.name === 'output.pattern') sent.leases.push(message.args!.patterns!);
+      if (message.name === 'output.set' && message.args?.path === '/testPattern') sent.sets++;
+    }),
+  );
+  return sent;
+}
+const both = (pattern: number) => [{ id: 1, pattern }, { id: 2, pattern }];
+/** `live.outputs[i].pattern` as the engine publishes it to `page` from its next load on (the welcome, then live patches):
+ * each output's leased test pattern by its index in `live.outputs`, null without one (B102). */
+function livePatterns(page: Page): (number | null)[] {
+  type Status = { pattern?: number | null };
+  const patterns: (number | null)[] = [];
+  const take = (outputs: Status[]) => outputs.forEach((o, i) => (patterns[i] = o.pattern ?? null));
+  page.on('websocket', (socket) =>
+    socket.on('framereceived', ({ payload }) => {
+      if (typeof payload !== 'string') return;
+      const message = JSON.parse(payload) as { doc?: string; live?: { outputs?: Status[] }; ops?: { path: string; value?: unknown }[] };
+      if (message.live?.outputs) take(message.live.outputs);
+      for (const op of message.doc === 'live' ? (message.ops ?? []) : []) {
+        if (op.path === '/outputs') take(op.value as Status[]);
+        const at = op.path.match(/^\/outputs\/(\d+)\/pattern$/);
+        if (at) patterns[Number(at[1])] = (op.value ?? null) as number | null;
+      }
+    }),
+  );
+  return patterns;
+}
+
 test("walls: the wizard makes a 1 × 2 wall at 15 %, a seam gamma drag is one undo step, the tint hint opens a projector's colour, Remove wall", async ({ page, engine }) => {
+  const sent = patternsSent(page);
   // the wall.seam commands this page sends (the socket of the page as loaded again with the listener in place)
   let seamCommands = 0;
   page.on('websocket', (socket) =>
@@ -812,15 +849,16 @@ test("walls: the wizard makes a 1 × 2 wall at 15 %, a seam gamma drag is one un
   await expect(wizard.getByRole('radio', { name: /^Use Canvas 1/ })).toBeChecked();
   await wizard.getByRole('button', { name: 'Make wall' }).click();
 
-  // the panel opens on the seam check, Blend check on both outputs
+  // the panel opens on the seam check, Blend check on both outputs: a lease (B102), their own pattern stays Off
   const panel = page.getByRole('region', { name: 'Wall 1' });
   await expect(panel.getByRole('group', { name: 'Seam check pattern' }).getByRole('button', { name: 'Blend check' })).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => sent.leases.at(-1)).toEqual(both(3));
   await expect(row(1)).toContainText('Wall 1 · r1 c1');
   await expect(row(2)).toContainText('Wall 1 · r1 c2');
   // the inner edges overlap 0.15 × 1920 = 288 px, the outer ones not at all
   const overlap = (edge: string) => page.getByRole('group', { name: `${edge} edge` }).getByLabel('Overlap (px)');
   await row(1).click();
-  await expect(page.getByRole('region', { name: 'Output settings' }).getByRole('button', { name: 'Blend check' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('region', { name: 'Output settings' }).getByRole('button', { name: 'Off', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(overlap('right')).toHaveValue('288');
   await expect(overlap('left')).toHaveValue('0');
   await row(2).click();
@@ -870,16 +908,18 @@ test("walls: the wizard makes a 1 × 2 wall at 15 %, a seam gamma drag is one un
   await expect(colour).toHaveClass(/focus/);
   await expect(colour.getByRole('slider', { name: 'Gain R' })).toHaveValue('100');
 
-  // Remove wall ends the seam check (each output gets its own pattern back) and keeps the outputs
+  // Remove wall ends the seam check and its lease, and keeps the outputs
   await panel.getByRole('button', { name: 'Geometry' }).click();
   await panel.getByRole('button', { name: 'Remove wall' }).click();
   await expect(panel).toHaveCount(0);
   await expect(row(2)).not.toContainText('Wall 1');
-  await expect(page.getByRole('button', { name: 'Off', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => sent.leases.at(-1)).toEqual(both(0));
+  expect(sent.sets).toBe(0);
   await expect(overlap('left')).toHaveValue('288');
 });
 
-test('walls: Cancel changes nothing; a reload, leaving the screen and End seam check give each output its own pattern back', async ({ page, engine }) => {
+test('walls: the seam check leases its patterns (B102): renewed, no output.set, no undo step; End, a hidden page, leaving the screen and a reload end the lease', async ({ page, engine }) => {
+  const sent = patternsSent(page), live = livePatterns(page);
   let wallAdds = 0;
   page.on('websocket', (socket) =>
     socket.on('framesent', ({ payload }) => {
@@ -917,37 +957,62 @@ test('walls: Cancel changes nothing; a reload, leaving the screen and End seam c
     await expect(wizard).toHaveCount(0);
   }
 
-  // Cancel at step 2: no wall, no wall.add, the patterns as they were
+  // Cancel at step 2: no wall, no wall.add; the outputs are on no display, so no Output ID was leased either
   await makeWall(true);
   await expect(page.getByRole('region', { name: 'Wall 1' })).toHaveCount(0);
   expect(wallAdds).toBe(0);
-  await own();
+  expect(sent.leases).toEqual([]);
 
-  // a page reloaded during the seam check offers the outputs' own patterns back
+  // each step of the check is one output.pattern on both outputs, never an output.set: their own patterns stay
   await makeWall(false);
   const panel = page.getByRole('region', { name: 'Wall 1' });
-  await expect(panel.getByRole('button', { name: 'Seam check', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await row(1).click();
-  await expect(settings.getByRole('button', { name: 'Blend check' })).toHaveAttribute('aria-pressed', 'true');
-  await page.goto(`${engine.url}/?token=${engine.token}`);
-  await openScreen(page, 'Outputs');
-  await page.getByRole('button', { name: 'Give the test patterns back' }).click();
-  await expect(page.getByRole('button', { name: 'Give the test patterns back' })).toHaveCount(0);
+  const check = panel.getByRole('button', { name: 'Seam check', exact: true });
+  await expect.poll(() => sent.leases.at(-1)).toEqual(both(3));
+  for (const [name, pattern] of [['Grid', 1], ['Grey 0 %', 8], ['Grey 25 %', 9], ['Grey 75 %', 10], ['White', 11]] as const) {
+    await panel.getByRole('group', { name: 'Seam check pattern' }).getByRole('button', { name }).click();
+    await expect.poll(() => sent.leases.at(-1)).toEqual(both(pattern));
+  }
+  // renewed while the step shows (every 2 s), and the engine has it
+  const count = sent.leases.length;
+  await expect.poll(() => sent.leases.slice(count), { timeout: 3000 }).toContainEqual(both(11));
+  await expect.poll(() => live.slice(0, 2)).toEqual([11, 11]);
+  expect(sent.sets, "only Output 1's Crosshair").toBe(1);
   await own();
 
-  // leaving the Outputs screen ends a running seam check
-  await panel.getByRole('button', { name: 'Seam check', exact: true }).click();
-  await expect(settings.getByRole('button', { name: 'Grid' })).toHaveAttribute('aria-pressed', 'true');
-  await openScreen(page, 'Layers');
-  await openScreen(page, 'Outputs');
-  await expect(panel.getByRole('button', { name: 'Seam check', exact: true })).toHaveAttribute('aria-pressed', 'false');
-  await own();
+  // a hidden page ends the lease (its timers would be throttled), shown again it is back
+  const visibility = (state: 'hidden' | 'visible') =>
+    page.evaluate((state) => {
+      Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }, state);
+  await visibility('hidden');
+  await expect.poll(() => sent.leases.at(-1)).toEqual(both(0));
+  await visibility('visible');
+  await expect.poll(() => sent.leases.at(-1)).toEqual(both(11));
 
-  // and so does End seam check
-  await panel.getByRole('button', { name: 'Seam check', exact: true }).click();
-  await panel.getByRole('group', { name: 'Seam check pattern' }).getByRole('button', { name: 'White' }).click();
-  await expect(settings.getByRole('button', { name: 'White' })).toHaveAttribute('aria-pressed', 'true');
+  // End seam check ends it; the steps left the undo history as it was: one Undo takes the wall away, Redo brings it
   await panel.getByRole('button', { name: 'End seam check' }).click();
+  await expect.poll(() => sent.leases.at(-1)).toEqual(both(0));
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(panel).toHaveCount(0);
+  await page.getByRole('banner').getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(panel).toHaveCount(1);
+
+  // leaving the Outputs screen ends a running seam check and its lease
+  await check.click();
+  await expect.poll(() => sent.leases.at(-1)).toEqual(both(1));
+  await openScreen(page, 'Layers');
+  await expect.poll(() => sent.leases.at(-1)).toEqual(both(0));
+  await openScreen(page, 'Outputs');
+  await expect(check).toHaveAttribute('aria-pressed', 'false');
+
+  // a page reloaded during the check: the lease ends on the engine (an end sent as the page hid, else it runs out after
+  // 5 s), and the outputs never lost their own patterns
+  await check.click();
+  await expect.poll(() => live.slice(0, 2)).toEqual([1, 1]);
+  await page.goto(`${engine.url}/?token=${engine.token}`);
+  await expect.poll(() => live.slice(0, 2), { timeout: 6000 }).toEqual([null, null]);
+  await openScreen(page, 'Outputs');
   await own();
 });
 

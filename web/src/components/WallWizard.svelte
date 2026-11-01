@@ -2,15 +2,14 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
-  import { untrack } from 'svelte';
   import { lockTitle } from '../lib/show';
   import { app, can } from '../lib/state.svelte';
-  import { applyWizard, cancelWizard, showIDs, stuckText, wallUI, wizardBack } from '../lib/wall-session.svelte';
+  import { applyWizard, cancelWizard, wallUI, wizardBack } from '../lib/wall-session.svelte';
   import { MAX_CANVAS_PIXELS, fitCanvas, freeOutputs, grids, overlapHint, rc, tap, wallPixels, wallSize, type Grid } from '../lib/walls';
 
   // New projector wall / Edit layout… (DESIGN §9.9): 1 tap the projectors in order and pick a grid, 2 overlap and
   // canvas; Make wall applies it and the wall panel opens on the seam check (§9.9's step 3). The draft lives in
-  // lib/wall-session; Cancel gives every output its own test pattern back and changes nothing else.
+  // lib/wall-session; Cancel ends its Output ID patterns (a lease, B102) and changes nothing else.
   const draft = $derived(wallUI.wizard!);
   const lock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
   const edited = $derived(draft.edit === null ? undefined : app.project.walls?.find((w) => w.id === draft.edit));
@@ -33,14 +32,6 @@
     const ids = new Set(free.map((o) => o.id));
     const kept = draft.order.filter((id) => ids.has(id));
     if (kept.length !== draft.order.length) setOrder(kept);
-  });
-  // step 1: an output bound (or unbound) meanwhile shows its Output ID too
-  const boundKey = $derived(app.live.outputs.filter((s) => s.state === 'bound').map((s) => s.id).join(','));
-  $effect(() => {
-    if (draft.step !== 1) return;
-    void boundKey;
-    const current = draft;
-    untrack(() => void showIDs(current));
   });
   /** Edit layout… of a wall that another client or an Undo removed meanwhile */
   const gone = $derived(draft.edit !== null && !edited);
@@ -68,11 +59,10 @@
     <span class="spacer"></span>
     <button type="button" class="btn btn-ghost" onclick={cancelWizard}>Cancel</button>
   </header>
-  {#if stuckText()}<p class="caption yellow">{stuckText()}</p>{/if}
   {#if gone}<p class="caption yellow">This wall was removed. Cancel, or start a new projector wall.</p>{/if}
 
   {#if draft.step === 1}
-    <p class="muted">{free.some((o) => statuses.get(o.id)?.state === 'bound') ? 'Each projector on a display now shows its Output ID. ' : ''}Tap the tiles in the order the projectors hang: the top row from left to right, then the next row.</p>
+    <p class="muted">{!lock && free.some((o) => statuses.get(o.id)?.state === 'bound') ? (showMode ? 'The Output IDs are off in show mode. ' : 'Each projector on a display now shows its Output ID. ') : ''}Tap the tiles in the order the projectors hang: the top row from left to right, then the next row.</p>
     <div class="tiles">
       {#each free as o (o.id)}
         {@const n = draft.order.indexOf(o.id) + 1}

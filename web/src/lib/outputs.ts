@@ -192,6 +192,8 @@ export interface OutputStatusDoc {
   morph?: { from: number; to: number; fade: number } | null;
   /** the edit overlay (DESIGN §9.10 item 4) while its lease runs: drawn, or why not; null without a lease */
   overlay?: 'shown' | 'preset' | 'raw' | null;
+  /** the test pattern a projector-wall wizard or seam check leases on this output (`output.pattern`, B102); null: none */
+  pattern?: number | null;
 }
 
 /** "Preset N (console)", "Preset N (compare)" and, in yellow, "Preset N missing": what the output shows instead of the

@@ -8,6 +8,7 @@ import FanousCore
 import Logging
 import Metal
 import QuartzCore
+import Synchronization
 
 /// Where an output stands right now, for `live.outputs`.
 public struct OutputStatus: Sendable, Equatable {
@@ -80,6 +81,31 @@ final class SecondaryDriver: @unchecked Sendable {
     @discardableResult func stop() -> Bool { thread?.stop() ?? true }
 }
 
+/// The test patterns of `output.pattern` (B102), by output id: a lease like the edit overlay's, for the projector-wall
+/// wizard and seam check, never saved or undone. One per output and the latest call wins, so of two clients on the same
+/// outputs the one that ends clears it until the other's next renewal. Written on Control; the render threads and
+/// `live.outputs` read it.
+public final class PatternLeases: Sendable {
+    /// A lease runs this long after its last renewal (the UI renews every 2 s); the render threads stop drawing it then.
+    static let lease: Double = 5
+    private let entries = Mutex<[Int: (pattern: TestPattern, until: Double)]>([:])
+
+    /// `output.pattern`: each output's lease starts or renews until `now` + 5 s with its pattern; off ends it.
+    func lease(_ patterns: [(id: Int, pattern: TestPattern)], at now: Double) {
+        entries.withLock { e in
+            for p in patterns { e[p.id] = p.pattern == .off ? nil : (p.pattern, now + Self.lease) }
+        }
+    }
+
+    /// Show mode and show lock end every lease at once.
+    func endAll() { entries.withLock { $0.removeAll() } }
+
+    /// Output `id`'s pattern at `now` (host time) while its lease runs, else off. Allocates nothing (render threads).
+    func pattern(_ id: Int, at now: Double) -> TestPattern {
+        entries.withLock { $0[id].flatMap { now < $0.until ? $0.pattern : nil } ?? .off }
+    }
+}
+
 /// Binds project outputs to displays, owns their windows and drivers, elects the clock master and survives
 /// hot-plug (DESIGN.md §9.6). Everything on the main actor; the compositor only ever sees swapped `OutputSet`s.
 @MainActor
@@ -109,6 +135,8 @@ public final class OutputCoordinator {
     public var onStatus: (@MainActor ([OutputStatus]) -> Void)?
     /// The edit overlay of every output (DESIGN.md §9.10 item 4), handed to every plan compiled here; `live.outputs` reads it.
     public nonisolated let editOverlay: EditOverlay
+    /// The test pattern leases of `output.pattern` (B102), handed to every plan compiled here and to the output preview's.
+    public nonisolated let patterns = PatternLeases()
 
     /// `media`: an image mask's file in the library (`OutputCompiler`).
     public init(
@@ -247,7 +275,7 @@ public final class OutputCoordinator {
             for id in ids {
                 guard let config = outputs.first(where: { $0.id == id }) else { continue }
                 do {
-                    plans.append(try compiler.compile(config, index: id, drawable: (Int(size.width), Int(size.height)), overlay: editOverlay))
+                    plans.append(try compiler.compile(config, index: id, drawable: (Int(size.width), Int(size.height)), overlay: editOverlay, patterns: patterns))
                     statuses.append(OutputStatus(id: id, state: .bound, display: display.name, width: Int(size.width), height: Int(size.height), hz: display.hz, isMaster: displayID == newMaster))
                 } catch {
                     logger.error("output compile failed", metadata: ["output": "\(id)", "error": "\(error)"])

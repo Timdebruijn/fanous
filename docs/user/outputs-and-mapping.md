@@ -316,8 +316,8 @@ region or display mode. The outputs of one wall need the same pixel size.
 3. **Make wall.** Blend check appears on every projector of the wall and the
    wall's panel opens on the seam check.
 
-**Cancel** at any step changes nothing: each output gets its own test pattern
-back. **Undo** right after Make wall takes the wall away again.
+**Cancel** at any step changes nothing; the Output IDs go away. **Undo** right
+after Make wall takes the wall away again.
 
 ### The wall panel
 
@@ -385,15 +385,18 @@ version before M2.1 needs its Grey 0 % step checked again.
 
 You can switch to Warp & Slices during the check, for example to fix the
 warp: a yellow line there says the check is still running and takes you back.
-**End seam check**, or leaving the Outputs screen, gives each output its own
-test pattern back (leaving the screen also cancels the wizard). Every pattern
-change is an ordinary output change, so it is also a step for Undo.
-
-An output keeps its own pattern on record until it really has it back. While
-the show is locked, or without the programmer role, the check stays open and
-says so: unlock the show and end it again. If the page is reloaded during the
-wizard or the check, the Outputs screen offers **Give the test patterns back**
-(or **Keep them**).
+**End seam check**, or leaving the Outputs screen, takes the test patterns off
+again (leaving the screen also cancels the wizard). Hiding the page takes them
+off; they come back when the page is visible again. The wizard's Output IDs
+show only while the wizard is in sight on the Outputs tab. The wizard's and the
+check's patterns are never stored with the outputs and are no step for Undo:
+each output's own test pattern stays as it was. They show only for the
+programmer role, and are off in show mode and while the show is locked. When
+the page is closed or the connection drops, they go within 5 seconds. If two
+people check the same wall at once, ending the check on one device takes the
+patterns off until the other device puts its own back, within 2 seconds; on
+different steps of the same outputs the two devices' patterns alternate about
+every second, as the latest renewal wins.
 
 ## Warp & Slices tab
 

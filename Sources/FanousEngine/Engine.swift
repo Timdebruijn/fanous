@@ -338,7 +338,8 @@ public final class Engine: @unchecked Sendable {
                 // on the main actor, in order with an ending by show mode or show lock (`endLeases`) and the rebinds
                 let now = DMXStore.now
                 DispatchQueue.main.async { MainActor.assumeIsolated { self?.coordinator?.overlay(id, on: on, selected: selected, at: now) } }
-            })
+            },
+            showPatterns: { [weak self] in self?.coordinator?.patterns.lease($0, at: DMXStore.now) })
         liveInProject.withLock { $0 = [.syphon: project["syphon"] ?? [:], .capture: project["capture"] ?? [:], .screens: project["screens"] ?? [:]] }
         libraryRootInProject.withLock { $0 = URL(fileURLWithPath: project["library"]?["root"]?.string ?? libraryRoot.path).path }
         // B23: a version of the project as loaded, then one every 10 minutes when it changed, and one per show-mode enter
@@ -798,7 +799,8 @@ public final class Engine: @unchecked Sendable {
         let index = output.id  // fixture number and ID pattern follow the output's id
         do {
             preview.outputSet = OutputSet(
-                plans: [try compiler.compile(scaled, index: index, drawable: (preview.width, preview.height))], previous: preview.outputSet?.holdSource)  // B111
+                plans: [try compiler.compile(scaled, index: index, drawable: (preview.width, preview.height), patterns: coordinator?.patterns)],
+                previous: preview.outputSet?.holdSource)  // B111
             return true
         } catch {
             logger.error("preview output compile failed", metadata: ["output": "\(output.id)", "error": "\(error)"])
@@ -963,10 +965,11 @@ public final class Engine: @unchecked Sendable {
         }
     }
 
-    /// Ends every Compare and edit overlay lease at once (show lock, show mode); the overlay's on the main actor, after any
-    /// renewal already on its way there.
+    /// Ends every Compare, edit overlay and test pattern lease at once (show lock, show mode); the overlay's on the main
+    /// actor, after any renewal already on its way there.
     private func endLeases() {
         dmx?.show(Array(1...ParameterSnapshotSlot.maxOutputs), preset: 0)
+        coordinator?.patterns.endAll()
         DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.coordinator?.editOverlay.endAll() } }
     }
 
@@ -1647,7 +1650,7 @@ public final class Engine: @unchecked Sendable {
         }
         let configs = canvasUse.withLock { $0.outputs }
         let now = DMXStore.now
-        let overlay = coordinator?.editOverlay
+        let overlay = coordinator?.editOverlay, patterns = coordinator?.patterns
         let live: JSONValue = [
             "canvas": canvasSwitch?.live ?? .null,
             "engine": [
@@ -1696,6 +1699,7 @@ public final class Engine: @unchecked Sendable {
                 outputStatus.withLock { $0 }.map { s in
                     let preset = Self.presetLive(presets.indices.contains(s.id - 1) ? presets[s.id - 1] : (0, false, PresetMorph()), config: configs.first { $0.id == s.id }, at: now)
                     let raw = keystones.indices.contains(s.id - 1) && keystones[s.id - 1].raw
+                    let leased = patterns?.pattern(s.id, at: now) ?? .off
                     return .object([
                         "id": .number(Double(s.id)), "state": .string(s.state.rawValue), "display": s.display.map { .string($0) } ?? .null,
                         "width": .number(Double(s.width)), "height": .number(Double(s.height)), "hz": .number(s.hz), "master": .bool(s.isMaster),
@@ -1703,6 +1707,7 @@ public final class Engine: @unchecked Sendable {
                         "keystone": .bool(keystones.indices.contains(s.id - 1) && keystones[s.id - 1].active),
                         "keystoneInvalid": .bool(keystones.indices.contains(s.id - 1) && keystones[s.id - 1].invalid),
                         "overlay": Self.overlayLive(asked: overlay?.asked(s.id, at: now) ?? false, raw: raw, preset: preset),
+                        "pattern": leased == .off ? .null : .number(Double(leased.rawValue)),  // `output.pattern`'s lease (B102)
                     ].merging(preset) { a, _ in a })
                 }),
             "security": ["webUIOpen": .bool(auth.isOpen(.programmer))],
