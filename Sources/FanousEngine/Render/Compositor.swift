@@ -65,8 +65,9 @@ public final class Compositor: @unchecked Sendable {
     static let mappedUniformsLength = 256 * (64 + OutputPass.overlaySlots)
 
     /// Encoder labels made once (B117): a 13–15-byte Swift `String` bridges to a fresh `NSString` on every assignment
-    /// (1 allocation on the compositor thread each, measured), an `NSString` costs none. "canvas N" and "output" bridge
-    /// to tagged pointers, "preview" too, and the 16-byte "secondary output" bridged free as well (0 measured), so they stay as they are.
+    /// (1 allocation on the compositor thread each, measured), an `NSString` costs none. "canvas N", "output" and
+    /// "preview" bridge to tagged pointers and the 16-byte "secondary output" bridged free as well (0 measured), so
+    /// they stay as they are.
     let mappedOutputLabel: NSString = "mapped output"
     let layerPreviewLabel: NSString = "layer preview"
     let thumbnailAtlasLabel: NSString = "thumbnail atlas"

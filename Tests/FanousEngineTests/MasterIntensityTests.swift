@@ -106,7 +106,8 @@ struct MasterIntensityTests {
     /// The compositor's stored label constants, and literals equal to the labels it assigns as plain strings, bridge
     /// to `encoder.label` without an allocation (B117): "mapped output", "layer preview", "thumbnail atlas" and
     /// "thumbnail copy" are `NSString`s, because a 13–15-byte Swift `String` bridged on every assignment (1 each,
-    /// measured); "canvas N", "output", "preview" and "secondary output" bridge free as plain strings. Assigned here, not through the draw functions.
+    /// measured); "canvas N", "output", "preview" and "secondary output" bridge free as plain strings. Assigned here,
+    /// not through the draw functions.
     /// Asserted in an optimised build (`scripts/check-mallocs.sh`); a debug build prints the counts.
     @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
     func mallocCounterEncoderLabelsAllocateNothing() throws {
