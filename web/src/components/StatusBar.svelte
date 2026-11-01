@@ -138,9 +138,10 @@
 {#if showLogin}<Login onclose={() => (showLogin = false)} />{/if}
 
 <style>
-  /* tabular digits, and room for the widest frame time: numbers that change every second never change the bar's width,
-     so it does not wrap or unwrap under a drag (a busy frame turns 8.9 ms into 126.6 ms) and move the page below (B134) */
-  .status { display: flex; flex-wrap: wrap; align-items: center; min-height: 56px; padding: 4px 8px; background: var(--surface-1); border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  .status { display: flex; flex-wrap: wrap; align-items: center; min-height: 56px; padding: 4px 8px; background: var(--surface-1); border-bottom: 1px solid var(--line); }
+  /* room for the widest frame time ("120 fps 999.9 ms": 13 mono cells and three 6 px gaps), so a busy frame turning
+     8.9 ms into 126.6 ms does not widen the item, wrap the bar and move the page below it under a drag (B134); the
+     digits are tabular app-wide */
   .metrics .value { min-width: 16ch; }
   /* min-height: an item that wraps on a phone (the universe pills, the resumed note) grows instead of spilling over */
   .item { display: flex; align-items: center; gap: 8px; min-height: var(--touch); padding: 0 8px; border-right: 1px solid var(--line); }

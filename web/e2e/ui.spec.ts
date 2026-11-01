@@ -342,7 +342,7 @@ test('status bar: a frame time that grows or shrinks leaves the bar as it was, s
   }
   const calm = await bar(61, 8.9, 1.2);
   expect(await bar(60, 126.6, 12.3)).toEqual(calm);
-  expect(await bar(120, 999.9, 99.9)).toEqual(calm);
+  expect(await bar(120, 999.9, 999.9)).toEqual(calm);
   expect(await bar(9, 0.4, 0.1)).toEqual(calm);
 });
 
