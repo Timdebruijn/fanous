@@ -633,7 +633,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Changed: on a phone the status bar took five rows, a third of the screen. It takes three now: the badges with the role,
   the numbers (fps, dropped, clients) with undo and redo, and the universe pills; the frame time, the auto-version item, the
   keyboard-shortcuts button, the app name and the outputs item while they render are left out there, System and the rail
-  carry the same. Desktop is unchanged (PR #NNN).
+  carry the same. Desktop is unchanged (PR #201).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
