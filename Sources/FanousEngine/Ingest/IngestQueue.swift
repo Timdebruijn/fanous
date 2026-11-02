@@ -106,8 +106,17 @@ public final class IngestQueue: @unchecked Sendable {
 
     // MARK: API
 
-    /// A snapshot, oldest first.
-    public var jobs: [IngestJob] { state.withLock { $0.jobs } }
+    /// Done and cancelled jobs leave the list this long after they finished (a failed one stays with its error until it
+    /// is removed): the Media screen showed a cancelled job for days otherwise. Filtered on read, dropped from the file at
+    /// the next change.
+    static let forgetAfter: TimeInterval = 60
+    static func expired(_ job: IngestJob, now: Date = Date()) -> Bool {
+        guard let finishedAt = job.finishedAt, job.state == .done || job.state == .cancelled else { return false }
+        return now.timeIntervalSince(finishedAt) > forgetAfter
+    }
+
+    /// A snapshot, oldest first, without the done and cancelled jobs older than `forgetAfter`.
+    public var jobs: [IngestJob] { state.withLock { $0.jobs }.filter { !Self.expired($0) } }
 
     /// Called after every state change (also progress, at most every 1 %), on whichever thread caused it.
     public var onChange: (@Sendable () -> Void)? {
@@ -302,6 +311,7 @@ public final class IngestQueue: @unchecked Sendable {
     private func mutate<T: Sendable>(persist: Bool = true, _ body: (inout State) -> T) -> T {
         let (result, callback) = state.withLock { state -> (T, (@Sendable () -> Void)?) in
             let result = body(&state)
+            state.jobs.removeAll { Self.expired($0) }
             // ponytail: saved under the lock, so a concurrent `jobs` read waits for a small atomic write; per-change
             // file writes are fine for hundreds of jobs, debounce or an append-only log beyond that.
             if persist { save(state.jobs) }
