@@ -63,6 +63,8 @@
     return throttle.flush;
   });
   const rawMax = (spec: ParamSpec | undefined) => (spec?.bits === 16 ? 65535 : 255);
+  /** the channel list (about 50 rows) starts closed on a phone, where it made the Layers page five screens long; open on a desktop */
+  let channelsOpen = $state(!window.matchMedia('(max-width: 599px)').matches);
   const isNumber = (key: string) => key === 'folder' || key === 'file';
 </script>
 
@@ -123,6 +125,8 @@
     {/if}
   {/if}
 
+  <details class="channels" bind:open={channelsOpen}>
+    <summary class="caption note">{specs && isLayer ? reservedText(specs, footprint) : `${shown.length} values`}</summary>
   <ul class="params">
     {#each shown as param (param.key)}
       <li class="param">
@@ -150,7 +154,7 @@
       <li class="param none"><span class="caption">No resolved values from the engine yet.</span></li>
     {/each}
   </ul>
-  {#if specs && isLayer}<p class="caption note">{reservedText(specs, footprint)}</p>{/if}
+  </details>
 </section>
 
 <style>
@@ -174,6 +178,9 @@
   .val { color: var(--text-2); font-size: 12px; }
   .val.red { color: var(--red); }
   .note { margin: 0; padding: 0 4px; }
+  summary { cursor: pointer; min-height: var(--touch); display: flex; align-items: center; gap: 6px; padding: 0 4px; list-style: none; }
+  summary::before { content: '▸'; width: 10px; color: var(--text-2); }
+  details[open] > summary::before { content: '▾'; }
   .syncline { grid-column: 1 / -1; padding: 0 0 8px 48px; }
   .sync-green { color: var(--green); }
   .sync-yellow { color: var(--yellow); }

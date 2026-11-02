@@ -79,6 +79,18 @@ test('patch API: /api/patch serves the live patch, an added output included', as
   await expect.poll(outputPatched).toBe(true);
 });
 
+test('layers: the channel list of the selected layer starts closed on a phone and open on a desktop', async ({ page }) => {
+  await openScreen(page, 'Layers');
+  const channels = page.locator('details.channels').first();
+  await expect(channels).toHaveAttribute('open', '');
+  await expect(channels.getByText('Intensity', { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.reload();
+  await expect(page.locator('details.channels').first()).not.toHaveAttribute('open', '');  // the Layers page was five screens long with it open
+  await page.locator('details.channels').first().locator('summary').click();
+  await expect(page.locator('details.channels').first().getByText('Intensity', { exact: true })).toBeVisible();
+});
+
 test('layers: Control puts content on a layer, and the engine resolves folder, file and intensity', async ({ page, engine }) => {
   const resolved = async () => {
     const live = (await (await engine.api.get('/api/live')).json()) as { fixtures: Record<string, Param[]> };
