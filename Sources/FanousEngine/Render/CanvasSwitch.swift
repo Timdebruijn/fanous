@@ -72,7 +72,7 @@ final class CanvasSwitch: @unchecked Sendable {
             } catch {
                 let rendered = state.withLock { s in
                     let sizes = layout.canvases.map { "\($0.width) × \($0.height)" }.joined(separator: ", ")
-                    s.error = "\(sizes) at \(String(format: "%g", layout.fps)) fps: \(error)"
+                    s.error = "\(sizes) at \(String(format: "%g", layout.fps)) fps: \(error.clientText)"
                     s.wanted = s.rendered
                     return s.rendered
                 }

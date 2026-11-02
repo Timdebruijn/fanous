@@ -16,8 +16,8 @@ struct ClientErrorTextTests {
             _ = try await AVURLAsset(url: url).loadTracks(withMediaType: .video)
             Issue.record("a missing file should not load")
         } catch {
-            #expect("\(error)".contains("missing_clip.mov"), "the interpolated error carries the path, the premise of clientText")
-            #expect(!error.clientText.contains("missing_clip") && !error.clientText.contains("file://"))
+            // the interpolated text carried `NSURL=file:///Users/…` on macOS 26 (the premise; not asserted, the OS may format it otherwise)
+            #expect(!error.clientText.contains("missing_clip") && !error.clientText.contains("file://") && !error.clientText.contains("/Users"))
             #expect(!error.clientText.isEmpty)
         }
         #expect(MovieError.decoder(-12910).clientText == "\(MovieError.decoder(-12910))")
