@@ -597,7 +597,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   queue is blocked from then on; the H.264 streamers keep up. Not reproduced on hardware (B99, PR #179).
 - Engine: a preview JPEG encode that has not returned 3 s after it started is counted (`jpegHung` in `/metrics` `preview.streamers`)
   and the first one logged, so a streamer whose queue is blocked that way says so on any hardware; seen on CI's slow runner class
-  only (B99, PR #NNN).
+  only (B99, PR #180).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
