@@ -96,5 +96,5 @@ The pages that follow repeat the ones that matter for their topic.
   layer speed × Master speed (for a Sync slave, its master's speed). At any
   other speed, and in Freeze, Scrub and Timecode, the layer is silent; there is
   no varispeed.
-- No notarized build and no clean-account install test yet (B50).
+- No clean-account install test yet (B50).
 - The GDTF file has not been imported into grandMA3, Eos or MagicQ yet (B7).

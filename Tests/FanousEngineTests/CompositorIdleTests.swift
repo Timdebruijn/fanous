@@ -206,6 +206,29 @@ struct CompositorIdleTests {
         #expect(clock >= 2 && clock <= 3, "clock: once per wall-clock second, got \(clock)")
     }
 
+    /// B56: a static generator and the clock between its seconds let the canvas be reused; a moving generator never does.
+    @Test func staticGeneratorsAndTheClockLetTheCanvasBeReused() throws {
+        let context = try MetalContext()
+        func reused(_ file: Int, ticks: Int) throws -> Int {
+            let generator = try #require(GeneratorSource(context: context, file: file, width: Self.width, height: Self.height))
+            let rig = try Rig(playback: LayerPlayback(key: MediaKey(folder: 0, file: file), live: generator), idleWork: true, offscreen: true)
+            rig.tick(ticks)
+            return rig.compositor.reusedCanvases.load(ordering: .relaxed)
+        }
+        #expect(try reused(101, ticks: 10) == 9, "grid: the first tick draws, the rest reuse")
+        #expect(try reused(110, ticks: 10) == 0, "test card: every tick draws")
+        let clock = try reused(112, ticks: 10)
+        #expect(clock >= 7, "clock: reused except when the second changes, got \(clock)")
+        // the second-change path itself: a clock whose drawn second is behind the wall clock draws on the next tick
+        let generator = try #require(GeneratorSource(context: context, file: 112, width: Self.width, height: Self.height))
+        let rig = try Rig(playback: LayerPlayback(key: MediaKey(folder: 0, file: 112), live: generator), idleWork: true, offscreen: true)
+        rig.tick(3)
+        let (reusedBefore, drawsBefore) = (rig.compositor.reusedCanvases.load(ordering: .relaxed), generator.encodeCount)
+        generator.drawnSecond -= 1
+        rig.tick(1)
+        #expect(rig.compositor.reusedCanvases.load(ordering: .relaxed) == reusedBefore && generator.encodeCount == drawsBefore + 1)
+    }
+
     @Test func aGeneratorOnAnInvisibleLayerIsNotRedrawnUntilItShows() throws {
         let context = try MetalContext()
         let generator = try #require(GeneratorSource(context: context, file: 110, width: Self.width, height: Self.height))
