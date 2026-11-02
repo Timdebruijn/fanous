@@ -1971,7 +1971,9 @@ source file(s) ──▶ _incoming/ (remote upload) or in-place (local path)
 ```
 
 - Progress, ETA, and errors are part of the live state (Media screen and a
-  global ingest indicator). Jobs survive an engine restart (queue persisted).
+  global ingest indicator). Jobs survive an engine restart (queue persisted);
+  done and cancelled jobs are forgotten a minute after they finish, failed ones
+  stay until removed.
 - Target codec defaults: ProRes 422 HQ; sources with alpha → ProRes 4444;
   per job: HAP, HAP Alpha, HAP Q, HAP Q Alpha, HAP Alpha-only, ProRes 422
   (Proxy/LT/422/HQ), ProRes 4444 (XQ).
@@ -3921,8 +3923,8 @@ closes the shortcut list.
 ### 12.1 Inputs screen and audio outputs (design 2026-11-02, B137)
 
 **Status:** designed 2026-11-02. The owner approved the four decisions below
-the same day; the build order is at the end. Step 1 is built (PR #202, As
-built at the end of this section); steps 2–6 are not.
+the same day; the build order is at the end. Steps 1 and 2 are built (PR #202
+and PR #207, As built at the end of this section); steps 3–6 are not.
 
 **Why.** The owner wants one place to select and set up inputs, and expects
 more settings to come: capture cards, the audio input that carries timecode,
@@ -3989,8 +3991,8 @@ and are refused under show lock, as on the other screens.
   an input of its kind exists (a numbered device or display, or timecode on
   LTC). It turns yellow, as the rows on System do today, only while an input
   in use lacks the permission. For the camera and the screen that is the
-  readiness rule of B122; for the microphone it is timecode on LTC with the
-  switch on (a new `microphone` readiness item, step 2).
+  readiness rule of B122; for the microphone it is timecode set to LTC, the
+  switch aside (a new `microphone` readiness item, step 2).
 - *List,* grouped by kind, each group with its range: Cameras and capture
   cards (1–20), Displays (21–28), Syphon servers (150–169), Audio inputs. A row
   has:
@@ -4087,12 +4089,14 @@ under another uid.
   input.
 - `live.capture.permissions.microphone` and `capture.authorize {kind:
   "microphone"}`, as for the camera. A readiness item `microphone`
-  "Microphone permission granted" fails while timecode is on LTC with the
-  switch on and the permission is missing; fix "System Settings › Privacy &
-  Security › Microphone".
+  "Microphone permission granted" fails while timecode is set to LTC and the
+  permission is missing, whatever the operator's switch (it may be turned on
+  in show mode, and LTC then asks); fix "Inputs › Authorize microphone, or
+  System Settings › Privacy & Security › Microphone".
 - `live.timecode.level`: the peak of the LTC channel over the last 100 ms in
-  dBFS, or `null` while LTC is not open. `LTCInput`'s sink callback writes it
-  as one atomic, with no allocation and no lock.
+  dBFS, or `null` while LTC is not open or no audio has arrived for half a
+  second. `LTCInput`'s sink callback writes it as atomics, with no allocation
+  and no lock.
 - One `LevelMeter` component shows it on Inputs and in Show's Timecode panel.
   Only the LTC device is metered: a meter on any other input device would need
   the microphone permission and an input graph of its own.
@@ -4176,6 +4180,54 @@ does not select the next new input. Differences from the design above:
   the UI does not see.
 - `signalText` and `layersShowing` (shared with Media's tiles) are in
   `lib/layers.ts`; the counters come from `layers[].capture`.
+
+**As built (2026-11-02, step 2, PR #207):**
+- *Devices:* `LTCInput.inputDevices()` returns `{name, channels, isDefault}`
+  (input channels summed over the device's input streams; the default from
+  `kAudioHardwarePropertyDefaultInputDevice`). The host facts listen to the
+  default input as well as the device list, so a new default shows without a
+  device coming or going. `live.audio.inputs` carries them;
+  `live.osc.audioInputs` is gone (Show's device list reads `live.audio`).
+- *Level:* `PeakWindow` in the sink callback keeps the LTC channel's peak per
+  tenth of a second (a loop over the buffer, no allocation, no lock) and stores
+  it as `Float` bits in one `Atomic<UInt32>`, with the buffer's host time in a
+  second atomic; `live.timecode.level` is that peak in dBFS with one decimal
+  (−96 for silence), null while no LTC input exists, before its first window
+  and once that window is older than half a second (`PeakWindow.level`: a
+  device that went stops the callbacks, and nothing else would clear it). The
+  sink still copies the samples into an `Array` for the decoder, as before. One
+  `LevelMeter` (−60…0 dBFS, yellow above −3) shows it on Inputs and in Show's
+  Timecode panel; without a level it reads "no audio", or "timecode switched
+  off".
+- *Device:* `live.timecode.device` is the device the input unit opened
+  (`kAudioOutputUnitProperty_CurrentDevice`), so a named device that is missing
+  shows as the default input it fell back to; the UI badges that device while
+  LTC is open, and the settings' device otherwise.
+- *Permission:* the capture catalog's 2 s permission read includes
+  `AVCaptureDevice.authorizationStatus(for: .audio)`; `live.capture.permissions.
+  microphone`. `capture.authorize {kind: "microphone"}` asks
+  (`requestAccess(for: .audio)`) outside show mode. The catalog calls
+  `onPermissionsChange` when a read differs from the last; when the microphone
+  turns authorized (through Authorize or System Settings) an LTC input that
+  failed is opened again on the control queue, where the timecode settings
+  apply. The readiness item `microphone` reads `ltcInUse`, an atomic the
+  control queue sets with the settings: source LTC, the switch aside.
+- *Fixes on the LTC path (review of PR #207):* `stop()` could come while
+  `start()` waited for the permission answer, and the input then opened anyway
+  and drove the clock with timecode off; the attach and engine start now run
+  under one lock with a stopped flag, and `stop()` detaches the sink (which also
+  breaks the input → engine → sink → input retain cycle). A negative channel
+  (`timecode.set /channel -1` decodes) indexed `buffers[-1]` on the audio
+  thread; it is clamped to 0. In the web UI, the undo of a new project's first
+  `timecode.set` removes `/timecode` and blanked Show and Inputs; a project
+  patch now puts back the top-level keys of the empty project
+  (`restoreKeys`).
+- *UI:* audio inputs are selected as `#/inputs/audio:<name>` (they have no
+  folder 0 number). "Use for timecode" picks the channel in a select beside the
+  button rather than one button per channel: a Dante or MADI device lists 64
+  channels; rows are keyed by place, as two identical USB devices share a name.
+  The Microphone (LTC) permission row shows, yellow when missing, while the
+  source is LTC.
 
 ---
 

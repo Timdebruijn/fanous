@@ -89,6 +89,41 @@ public final class TimecodeClock: @unchecked Sendable {
     }
 }
 
+/// The peak of an audio channel over windows of a tenth of a second (B137): fed by the real-time callback, read by
+/// the live document. No allocation and no lock: the last window's peak is one atomic.
+struct PeakWindow {
+    private let window: Int
+    private var peak: Float = 0
+    private var count = 0
+    init(sampleRate: Double) { window = max(1, Int(sampleRate / 10)) }
+
+    /// The peak (0…1, absolute sample value) of every window that completes in `samples`; the last one is returned.
+    mutating func feed(_ samples: UnsafeBufferPointer<Float>) -> Float? {
+        var done: Float?
+        for sample in samples {
+            peak = max(peak, abs(sample))
+            count += 1
+            if count == window {
+                done = peak
+                (peak, count) = (0, 0)
+            }
+        }
+        return done
+    }
+
+    /// dBFS of a peak, −96 for silence; one decimal.
+    static func dBFS(_ peak: Float) -> Double {
+        peak > 0 ? max(-96, (20 * log10(Double(peak)) * 10).rounded() / 10) : -96
+    }
+
+    /// The level to show: nil before the first window, and once the last window is older than half a second (the
+    /// device went or stopped delivering: no callback clears it). `bits` and the host times as the input stores them.
+    static func level(bits: UInt32, at: UInt64, now: UInt64, ticksPerSecond: Double) -> Double? {
+        guard bits != .max, now >= at, Double(now - at) / ticksPerSecond <= 0.5 else { return nil }
+        return dBFS(Float(bitPattern: bits))
+    }
+}
+
 /// LTC from a CoreAudio input device through an `AVAudioSinkNode` (real-time thread → biphase decoder).
 public final class LTCInput: @unchecked Sendable {
     private let engine = AVAudioEngine()
@@ -97,6 +132,20 @@ public final class LTCInput: @unchecked Sendable {
     private let channel: Int
     nonisolated(unsafe) private var decoder: LTCDecoder?
     nonisolated(unsafe) private var sampleBase: Int64 = 0
+    nonisolated(unsafe) private var peakWindow: PeakWindow?
+    /// The last tenth of a second's peak as `Float` bits, `UInt32.max` until the first window, and the host time of
+    /// the buffer that completed it (B137).
+    private let peakBits = Atomic<UInt32>(.max)
+    private let peakAt = Atomic<UInt64>(0)
+    /// The LTC channel's level over the last tenth of a second in dBFS; nil before the first window and when no audio
+    /// has arrived for half a second.
+    public var level: Double? {
+        PeakWindow.level(bits: peakBits.load(ordering: .relaxed), at: peakAt.load(ordering: .relaxed), now: mach_absolute_time(), ticksPerSecond: PacedThread.ticksPerSecond)
+    }
+    /// `stop()` may come while `start()` still waits for the permission answer: the flag, taken with the attach and
+    /// the engine start under one lock, keeps a stopped input from opening afterwards. The sink is kept to detach it,
+    /// which breaks the input → engine → sink → closure → input cycle.
+    private let lifecycle = Mutex<(stopped: Bool, sink: AVAudioSinkNode?)>((false, nil))
     public private(set) var deviceName = ""
     public private(set) var lastError: String?
 
@@ -127,16 +176,23 @@ public final class LTCInput: @unchecked Sendable {
             logger.warning("LTC input: \(lastError!)")
             return false
         }
-        deviceName = name ?? "default input"
+        // the device the input unit opened: a named one that is missing falls back to the default input (B137)
+        deviceName = Self.currentDevice(of: engine.inputNode.audioUnit).flatMap(Self.name(of:)) ?? name ?? "default input"
         let sampleRate = format.sampleRate
-        let channel = min(self.channel, Int(format.channelCount) - 1)
+        let channel = max(0, min(self.channel, Int(format.channelCount) - 1))
         decoder = LTCDecoder(sampleRate: sampleRate, nominalFrameRate: 25)
+        peakWindow = PeakWindow(sampleRate: sampleRate)
         let clock = self.clock
         let secondsPerTick = 1 / PacedThread.ticksPerSecond
         let sink = AVAudioSinkNode { [self] timestamp, frameCount, audioBufferList in
             let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: audioBufferList))
             guard channel < buffers.count, let data = buffers[channel].mData else { return noErr }
-            let samples = Array(UnsafeBufferPointer(start: data.assumingMemoryBound(to: Float.self), count: Int(frameCount)))
+            let input = UnsafeBufferPointer(start: data.assumingMemoryBound(to: Float.self), count: Int(frameCount))
+            if let peak = self.peakWindow?.feed(input) {
+                self.peakBits.store(peak.bitPattern, ordering: .relaxed)
+                self.peakAt.store(timestamp.pointee.mHostTime, ordering: .relaxed)
+            }
+            let samples = Array(input)
             let bufferStart = sampleBase
             sampleBase += Int64(frameCount)
             let bufferHostTime = Double(timestamp.pointee.mHostTime) * secondsPerTick
@@ -150,35 +206,75 @@ public final class LTCInput: @unchecked Sendable {
             }
             return noErr
         }
-        engine.attach(sink)
-        engine.connect(engine.inputNode, to: sink, format: format)
-        do {
-            try engine.start()
-        } catch {
+        let started: Result<Bool, any Error> = lifecycle.withLock { state in
+            guard !state.stopped else { return .success(false) }
+            engine.attach(sink)
+            engine.connect(engine.inputNode, to: sink, format: format)
+            state.sink = sink
+            return Result { try engine.start(); return true }
+        }
+        switch started {
+        case .success(false):
+            return false  // stopped while it waited for the permission
+        case .failure(let error):
             lastError = "audio engine: \(error)"
             logger.error("LTC input failed", metadata: ["error": "\(error)"])
             return false
+        case .success(true):
+            break
         }
         logger.info("LTC input running", metadata: ["device": "\(deviceName)", "rate": "\(sampleRate)", "channel": "\(channel)"])
         return true
     }
 
     public func stop() {
-        engine.stop()
+        lifecycle.withLock { state in
+            state.stopped = true
+            engine.stop()
+            if let sink = state.sink { engine.detach(sink) }
+            state.sink = nil
+        }
         clock.stop()
+    }
+
+    /// The device an input unit is set to (`kAudioOutputUnitProperty_CurrentDevice`).
+    static func currentDevice(of unit: AudioUnit?) -> AudioDeviceID? {
+        guard let unit else { return nil }
+        var id = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        return AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &id, &size) == noErr && id != 0 ? id : nil
     }
 
     /// CoreAudio's device list; a listener on it (Engine's host facts) hears devices come and go.
     static let devicesAddress = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
 
-    /// Input devices by name (CoreAudio), for the machine setting and the UI.
-    public static func inputDevices() -> [String] {
+    /// The system's default input device; a listener on it (Engine's host facts) hears the default change.
+    static let defaultInputAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultInputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+
+    /// One input device for the Inputs screen and the timecode device list (B137).
+    public struct Device: Equatable, Sendable {
+        public var name: String
+        public var channels: Int
+        public var isDefault: Bool
+    }
+
+    /// Input devices (CoreAudio): name, input channel count, and which one is the system default.
+    public static func inputDevices() -> [Device] {
         var address = Self.devicesAddress
         var size: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return [] }
         var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
         guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &ids) == noErr else { return [] }
-        return ids.compactMap { id in hasInput(id) ? name(of: id) : nil }
+        var defaultAddress = Self.defaultInputAddress
+        var defaultID = AudioDeviceID(0)
+        var idSize = UInt32(MemoryLayout<AudioDeviceID>.size)
+        if AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &defaultAddress, 0, nil, &idSize, &defaultID) != noErr { defaultID = 0 }
+        return ids.compactMap { id in
+            let channels = inputChannels(id)
+            guard channels > 0, let name = name(of: id) else { return nil }
+            return Device(name: name, channels: channels, isDefault: id == defaultID)
+        }
     }
 
     static func inputDevice(named name: String) -> AudioDeviceID? {
@@ -187,7 +283,7 @@ public final class LTCInput: @unchecked Sendable {
         guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return nil }
         var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
         guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &ids) == noErr else { return nil }
-        return ids.first { hasInput($0) && self.name(of: $0) == name }
+        return ids.first { inputChannels($0) > 0 && self.name(of: $0) == name }
     }
 
     static func name(of id: AudioDeviceID) -> String? {
@@ -198,15 +294,16 @@ public final class LTCInput: @unchecked Sendable {
         return status == noErr ? name as String? : nil
     }
 
-    static func hasInput(_ id: AudioDeviceID) -> Bool {
+    /// The device's input channels over all its input streams; 0 for an output-only device.
+    static func inputChannels(_ id: AudioDeviceID) -> Int {
         var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreamConfiguration, mScope: kAudioDevicePropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
         var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(id, &address, 0, nil, &size) == noErr, size > 0 else { return false }
+        guard AudioObjectGetPropertyDataSize(id, &address, 0, nil, &size) == noErr, size > 0 else { return 0 }
         let list = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: 8)
         defer { list.deallocate() }
-        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, list) == noErr else { return false }
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, list) == noErr else { return 0 }
         let buffers = UnsafeMutableAudioBufferListPointer(list.assumingMemoryBound(to: AudioBufferList.self))
-        return buffers.reduce(0) { $0 + Int($1.mNumberChannels) } > 0
+        return buffers.reduce(0) { $0 + Int($1.mNumberChannels) }
     }
 }
 

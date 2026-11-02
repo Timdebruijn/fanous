@@ -460,6 +460,9 @@ test('inputs: key 3 opens the Inputs screen with the live groups; Media folder 0
   // no other app publishes Syphon on CI; on a workstation other engines may (this engine's own canvas is never listed)
   await expect(page.getByText(/^No Syphon servers running\./).or(page.getByRole('list', { name: 'Syphon servers (150–169)' }))).toBeVisible();
   await expect(page.getByRole('complementary', { name: 'Selected input' })).toContainText('Select an input');
+  // audio inputs (B137 step 2): listed, or none on a runner without one; never put on LTC here, which would ask for
+  // the microphone on a workstation
+  await expect(page.getByText(/^No audio inputs found\./).or(page.getByRole('list', { name: 'Audio inputs' }))).toBeVisible();
   await openScreen(page, 'Media');
   await page.getByRole('button', { name: /^0 Built-in and live inputs/ }).click();
   await expect(page.getByRole('link', { name: 'Inputs screen' })).toBeVisible();

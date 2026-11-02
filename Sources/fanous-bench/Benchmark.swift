@@ -222,7 +222,7 @@ enum Benchmark {
         }
         if let ingestQueue {
             let job = ingestQueue.jobs.first
-            print("  ingest: \(job.map { "\($0.state)" } ?? "no job") after \(Int(seconds)) s")
+            print("  ingest: \(job.map { "\($0.state)" } ?? "done (left the queue)") after \(Int(seconds)) s")
             ingestQueue.stop()
         }
         service.stop()

@@ -639,6 +639,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   for Master and the outputs, it starts open as before (PR #203).
 - Fixed: on the Show screen the OSC address table cut off its Effect column in the 320 px side column (every row, at 1280
   and 1440 px wide); the addresses are a list now, address and arguments on one line and the effect under it (PR #205).
+- Changed: an ingest job that is done or cancelled leaves the Media screen's queue a minute after it finished (a
+  cancelled job from October was still listed on 2 November); a failed job stays with its error until it is removed
+  (PR #208).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
@@ -654,6 +657,16 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   and `003_blue`, and after the rescan the files of one of them were invalid ("duplicate folder number 3"); an upload
   now looks on disk for the folder with that number first, and creating a folder (`POST /api/library/folder`) with a
   number an upload already used answers 409 instead of making a second one (PR #144).
+- UI: the Inputs screen lists the audio inputs with their channels and the default one. **Use for timecode** sets
+  LTC on a device and channel in one undo step, and the selected input shows the timecode state and a level meter of the
+  LTC channel, as Show's Timecode panel now does (`live.timecode.level`: the peak of the last tenth of a second in dBFS).
+  The microphone permission LTC needs has a row with Authorize (`capture.authorize {kind: "microphone"}`), and a
+  readiness item **Microphone permission granted** blocks show mode while timecode is set to LTC without it (also with the
+  switch off). A grant in System Settings now reopens an LTC input that failed for it. `live.audio.inputs` replaces
+  `live.osc.audioInputs` (B137 step 2, DESIGN §12.1, PR #207).
+- Fixed: an LTC input stopped while macOS still asked for the microphone opened anyway once answered and drove the
+  timecode clock with timecode off; a negative LTC channel crashed the audio thread; undoing a new project's first
+  timecode change blanked the Show and Inputs screens (review of PR #207).
 - Fixed: a library root that did not exist at engine start and whose path runs through a symlink (`/tmp`, a `~/Movies`
   linked to another disk that is mounted at start) was never rescanned after it was made: FSEvents resolves a watched
   path's symlinks only when it exists, so its events never matched. Uploads, folders made by hand and finished ingest
