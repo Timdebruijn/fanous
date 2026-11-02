@@ -102,26 +102,14 @@ final class EngineManager {
         child = nil
     }
 
-    /// No team identifier = ad-hoc signed (local builds). launchd pins a registered agent to its cdhash, which every
-    /// rebuild changes; a Developer ID build is pinned to the team instead.
-    static var isAdHocSigned: Bool {
-        var code: SecCode?
-        var staticCode: SecStaticCode?
-        var info: CFDictionary?
-        guard SecCodeCopySelf([], &code) == errSecSuccess, let code, SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
-            SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
-            let dict = info as? [String: Any]
-        else { return true }
-        return dict[kSecCodeInfoTeamIdentifier as String] == nil
-    }
 
     private func startAgent() {
         let service = SMAppService.agent(plistName: Self.agentPlist)
-        // an ad-hoc rebuild leaves the agent pinned to the old binary (launchd: EX_CONFIG); register it afresh once the
-        // unregistration has finished (it completes asynchronously, a register right after it is a no-op)
-        // only when the engine does not answer: re-registering restarts it, which must never happen just because
-        // the UI was opened during a show
-        if Self.isAdHocSigned, service.status == .enabled {
+        // a rebuild leaves the agent pinned to the old binary's cdhash (launchd: "needs LWCR update", EX_CONFIG): register it
+        // afresh once the unregistration has finished (it completes asynchronously, a register right after it is a no-op).
+        // Only when the engine does not answer: re-registering restarts it, which must never happen just because the UI was
+        // opened during a show. Any signature: the first Developer ID build on a Mac with an ad-hoc registration hit it too (B50)
+        if service.status == .enabled {
             Self.engineAnswers(within: 3) { answers in
                 guard !answers else { return }
                 Self.markRestartPending()  // a hung engine stopped here comes back in show mode if it was in it
