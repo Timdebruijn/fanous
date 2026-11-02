@@ -1236,7 +1236,8 @@ Fanous Library/
   outside range are indexed as **invalid** and shown in red in the Media
   screen; they are never addressable from DMX.
 - The index is built at start and kept current with FSEvents (debounced
-  500 ms). Metadata (codec, size, fps, duration, alpha, audio channels,
+  500 ms), on the root's real path also while the root does not exist yet
+  (B140: FSEvents resolves symlinks only in a path that exists). Metadata (codec, size, fps, duration, alpha, audio channels,
   colour primaries, file hash) and thumbnails are cached in
   `~/Library/Application Support/Fanous/cache/` keyed by path + mtime + size.
 - **Playable** = ProRes/HAP in `.mov`, stills. Anything else (H.264/HEVC,

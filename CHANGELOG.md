@@ -650,10 +650,15 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   picker. A permission's dot is yellow only while a layer shows an input that lacks it. The engine's permission
   texts name the Inputs screen (B137 step 1, DESIGN §12.1, PR #202).
 - Fixed: two API uploads into a folder number the index had not seen yet (within about a second before the rescan, or
-  any time with a library root missing at engine start) created two folders, `003_red` and `003_blue`, and after the
-  rescan the files of one of them were invalid ("duplicate folder number 3"); an upload now looks on disk for the
-  folder with that number first, and creating a folder (`POST /api/library/folder`) with a number an upload already
-  used answers 409 instead of making a second one (PR #144).
+  any time with a library root that was missing at engine start behind a symlink, B140) created two folders, `003_red`
+  and `003_blue`, and after the rescan the files of one of them were invalid ("duplicate folder number 3"); an upload
+  now looks on disk for the folder with that number first, and creating a folder (`POST /api/library/folder`) with a
+  number an upload already used answers 409 instead of making a second one (PR #144).
+- Fixed: a library root that did not exist at engine start and whose path runs through a symlink (`/tmp`, a `~/Movies`
+  linked to another disk) was never rescanned after it was made: FSEvents resolves a watched path's symlinks only when
+  it exists, so its events never matched. Uploads, new folders and finished ingest jobs then stayed off the Media screen
+  until **Rescan** or a restart. The index now watches the real path of the part that exists plus the rest (B140, PR
+  #TBD).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

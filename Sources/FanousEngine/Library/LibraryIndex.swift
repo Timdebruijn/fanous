@@ -429,7 +429,7 @@ public final class LibraryIndex: @unchecked Sendable {
             Unmanaged<LibraryIndex>.fromOpaque(info).takeUnretainedValue().scheduleRescan()
         }
         guard let stream = FSEventStreamCreate(
-            nil, callback, &context, [root.path] as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.5,
+            nil, callback, &context, [Self.watchPath(root)] as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.5,
             FSEventStreamCreateFlags(kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagFileEvents))
         else {
             logger.warning("FSEvents unavailable for \(root.path); the library only rescans on request")
@@ -438,6 +438,21 @@ public final class LibraryIndex: @unchecked Sendable {
         FSEventStreamSetDispatchQueue(stream, eventQueue)
         FSEventStreamStart(stream)
         self.stream = stream
+    }
+
+    /// The path to give FSEvents for `url`. Events carry real paths, and a watched path's symlinks are resolved only when it
+    /// exists, so a root missing at start behind a symlink (`/tmp`, a `~/Movies` linked to another disk) never saw an event
+    /// once it was made (B140): resolve the part that exists with `realpath` and append the rest.
+    static func watchPath(_ url: URL) -> String {
+        var existing = url.standardizedFileURL
+        var rest: [String] = []
+        while !FileManager.default.fileExists(atPath: existing.path), existing.path != "/" {
+            rest.insert(existing.lastPathComponent, at: 0)
+            existing.deleteLastPathComponent()
+        }
+        guard let real = realpath(existing.path, nil) else { return url.path }
+        defer { free(real) }
+        return ([String(cString: real)] + rest).joined(separator: "/")
     }
 
     /// Debounced: one rescan 500 ms after the last event (DESIGN.md §8.1).
