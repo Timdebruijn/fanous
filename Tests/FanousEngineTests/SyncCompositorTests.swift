@@ -34,6 +34,9 @@ struct SyncCompositorTests {
         /// Written by `publish()`, which fills a whole slot (the triple buffer's slots are not copies of each other).
         var roles: [LayerSync]
         var freezeAll = false
+        /// Master speed and every layer's speed, 1 = 100 %.
+        var masterSpeed: Float = 1
+        var speed: Float = 1
         /// Layer 1's in and out point.
         var inOut: (Float, Float) = (0, 1)
 
@@ -75,11 +78,15 @@ struct SyncCompositorTests {
             let roles = roles
             let freezeAll = freezeAll
             let inOut = inOut
+            let masterSpeed = masterSpeed
+            let speed = speed
             parameters.write { slot in
                 slot.sequence = sequence
                 slot.masterControl = freezeAll ? .freezeAll : .normal
+                slot.masterSpeed = masterSpeed
                 for (i, role) in roles.enumerated() {
                     slot.layers[i].intensity = 1
+                    slot.layers[i].speed = speed
                     slot.layers[i].folder = 1
                     slot.layers[i].file = 1
                     slot.layers[i].sync = role
@@ -221,6 +228,30 @@ struct SyncCompositorTests {
         rig.inject(group: 1, position: 11)
         rig.tick()
         #expect(rig.position(0) >= 11 && rig.position(0) < 11.05, "relocked")
+    }
+
+    /// Master speed (DESIGN.md §6.3) multiplies every layer's speed: the clock and the rate a master sends.
+    @Test func masterSpeedMultipliesEveryLayersSpeed() async throws {
+        let rig = try await Rig([.master(group: 1), .off])
+        rig.masterSpeed = 0.5
+        rig.publish()
+        rig.tick()
+        #expect(abs(rig.position(1) - 0.5 * 10.0 / 60) < 1e-9, "half speed: \(rig.position(1))")
+        #expect(rig.position(0) == rig.position(1), "the master's own clock too")
+        #expect(rig.sender.slots.read().packet.layers.first?.rate == 5, "slaves get the scaled rate")
+
+        rig.speed = 2  // multiplied, not replaced: 2 × 0.5 plays at 100 %
+        rig.publish()
+        var before = rig.position(1)
+        rig.tick()
+        #expect(abs(rig.position(1) - before - 10.0 / 60) < 1e-9)
+        #expect(rig.sender.slots.read().packet.layers.first?.rate == 10)
+
+        rig.masterSpeed = 0
+        rig.publish()
+        before = rig.position(1)
+        rig.tick()
+        #expect(rig.position(1) == before, "0 stops every clip")
     }
 
     /// The compositor's CPU time per idle tick with 32 file layers, Sync off and all masters (printed), and no

@@ -34,20 +34,10 @@ enum MediaGenerator {
             let frames = Int(seconds * Double(spec.fps))
             let started = Date()
             let writer = try MovieWriter(url: url, width: spec.width, height: spec.height, fps: spec.fps, codec: spec.codec, audio: audio)
-            var buffer: CVPixelBuffer?
-            if let pool = writer.pixelBufferPool {
-                CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
-            } else {
-                CVPixelBufferCreate(nil, spec.width, spec.height, kCVPixelFormatType_32BGRA, nil, &buffer)
-            }
-            guard let buffer else { throw MovieWriter.WriterError.failed("pixel buffer") }
+            let buffer = try writer.makePixelBuffer()
             for frame in 0..<frames {
-                var scratch: CVPixelBuffer? = buffer
-                if writer.pixelBufferPool != nil {  // the adaptor keeps buffers in flight; take a fresh one each time
-                    scratch = nil
-                    CVPixelBufferPoolCreatePixelBuffer(nil, writer.pixelBufferPool!, &scratch)
-                }
-                guard let pixelBuffer = scratch else { throw MovieWriter.WriterError.failed("pixel buffer") }
+                // the adaptor keeps pool buffers in flight: a fresh one each time; HAP has no pool and reuses one
+                let pixelBuffer = try writer.pixelBufferPool == nil ? buffer : writer.makePixelBuffer()
                 CVPixelBufferLockBaseAddress(pixelBuffer, [])
                 PatternFrames.fill(
                     bgra: CVPixelBufferGetBaseAddress(pixelBuffer)!.assumingMemoryBound(to: UInt8.self), width: spec.width,

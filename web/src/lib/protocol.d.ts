@@ -38,6 +38,7 @@ export type CommandName =
   | 'midi.set'
   | 'output.add'
   | 'output.overlay'
+  | 'output.pattern'
   | 'output.preset.recall'
   | 'output.preset.remove'
   | 'output.preset.rename'
@@ -116,6 +117,8 @@ export interface CommandArgs {
   'output.add': { display?: { uuid: string; name: string } };
   /** The edit overlay, a lease (DESIGN.md §9.10 item 4): while on, output id draws its edited mapping's warp, slice and mask outlines and the selected point for 5 s; the UI renews it every 2 s and the latest call's selection is drawn; on false ends it. Never saved or undone; refused in show mode except to end. Role: programmer, refused under show lock. */
   'output.overlay': { id: number; on: boolean; selected?: { slice: number; kind: 'corner' | 'mesh' | 'slice' | 'mask'; mask?: number; point: number } | null };
+  /** Test patterns of the projector-wall wizard and seam check, a lease (DESIGN.md §9.9, B102): each output shows its pattern for 5 s, under the Master's and the Output fixture's and over its own testPattern; the UI renews it every 2 s and the latest call wins per output; pattern 0 ends it. Never saved or undone; refused in show mode except to end. Role: programmer, refused under show lock. */
+  'output.pattern': { patterns: { id: number; pattern: number }[] };
   /** Copy mapping preset number into each output's warp and slices (an edit: Undo takes it back). Every output must have it. On a projector-wall output a slice 1 source that differs from the wall's becomes manual, as with output.set (result { manual: [{ wall, output, field }] }). Role: programmer, refused under show lock, undoable. */
   'output.preset.recall': { ids: number[]; number: number };
   /** Remove mapping preset number from each output; every output must have it. Role: programmer, refused under show lock, undoable. */

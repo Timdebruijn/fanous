@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 import type { CueDoc, PatchEntry } from './docs';
 import { FALLBACK_FIXTURES, type ChannelMap, type ParamSpec } from './patch-screen';
 import {
-  cueRowLabel, cueRowText, cueStatus, fixtureNames, fixtureType, formatClock, formatNumber, groupSpecs, isNumberTaken, lockTitle, newValue, nextCueNumber,
-  numberAfter, parseTrigger, retargetValue, sortedCues, specsFor, swapSteps, timecodeBadge, timecodeSource, valueControl, withFade,
+  cueRowLabel, cueRowText, cueStatus, fixtureNames, fixtureType, formatNumber, groupSpecs, isNumberTaken, lockTitle, newValue, nextCueNumber,
+  numberAfter, parseTrigger, retargetValue, sortedCues, specsFor, swapSteps, timecodeBadge, timecodeOn, timecodeSource, valueControl, withFade,
   offsetText,
   rateFps,
   midiControlText,
@@ -226,16 +226,17 @@ describe('timecode and OSC wording', () => {
     expect(timecodeBadge('freewheel').label).toBe('Freewheel');
   });
 
+  it('is on with a source unless the operator switched it off', () => {
+    expect(timecodeOn({ source: 'mtc', enabled: null })).toBe(true);
+    expect(timecodeOn({ source: 'ltc' })).toBe(true);
+    expect(timecodeOn({ source: 'ltc', enabled: false })).toBe(false);
+    expect(timecodeOn({ source: 'off', enabled: true })).toBe(false);
+  });
+
   it('describes the source, device and rate', () => {
     expect(timecodeSource({ state: 'locked', source: 'ltc', device: 'Scarlett 2i2', rate: '25' })).toBe('LTC · Scarlett 2i2 · 25 fps');
     expect(timecodeSource({ state: 'freewheel', source: 'mtc', device: '', rate: '29.97 DF' })).toBe('MTC · 29.97 DF');
     expect(timecodeSource({ state: 'off', source: '', device: '', rate: '25' })).toBe('No source');
-  });
-
-  it('shows the time of an OSC message as local hh:mm:ss', () => {
-    expect(formatClock(new Date(2026, 9, 23, 14, 5, 9).getTime() / 1000)).toBe('14:05:09');
-    expect(formatClock(new Date(2026, 0, 1, 0, 0, 0, 900).getTime() / 1000)).toBe('00:00:00');
-    expect(formatClock(NaN)).toBe('--:--:--');
   });
 });
 

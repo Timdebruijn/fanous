@@ -6,7 +6,7 @@
 import type { ReadinessItemDoc } from './docs';
 import type { Role } from './protocol';
 
-export const LOCKED_TITLE = 'Locked: programmer only';
+export { LOCKED_TITLE } from './patch-screen';
 export const OPERATOR_TITLE = 'Locked: operator or programmer';
 export const ROLES: readonly Role[] = ['monitor', 'operator', 'programmer'];
 

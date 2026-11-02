@@ -10,6 +10,7 @@ import ImageIO
 import Metal
 import QuartzCore
 import Synchronization
+import VideoToolbox
 
 /// Live per-layer thumbnails (DESIGN.md §11.3, B29). Every 250 ms, only while a `thumbs` subscriber or a CITP layer
 /// stream wants them, `Compositor.drawThumbnails` draws each visible layer alone into its 160-px cell of one atlas on
@@ -74,9 +75,8 @@ public final class ThumbnailStreamer: @unchecked Sendable {
         var cache: CVMetalTextureCache?
         guard CVMetalTextureCacheCreate(nil, nil, context.device, nil, &cache) == kCVReturnSuccess, let cache else { throw RenderError.pipeline("thumbnail texture cache") }
         textureCache = cache
-        atlasPass.colorAttachments[0].loadAction = .clear
+        atlasPass.colorAttachments[0].loadAction = .clear  // to opaque black, the default clear colour
         atlasPass.colorAttachments[0].storeAction = .store
-        atlasPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         copyPass.colorAttachments[0].loadAction = .dontCare
         copyPass.colorAttachments[0].storeAction = .store
     }
@@ -106,12 +106,9 @@ public final class ThumbnailStreamer: @unchecked Sendable {
         queue.async { [self] in stale.insert(subscriber.key) }
     }
 
-    func unsubscribe(connection: StateServer.Connection, stream: UInt32) {
-        subscribers.withLock { $0.removeAll { $0.connection === connection && $0.stream == stream } }
-    }
-
-    func remove(connection: StateServer.Connection) {
-        subscribers.withLock { $0.removeAll { $0.connection === connection } }
+    /// Drops `stream` of `connection`, or every stream of it when `stream` is nil.
+    func remove(connection: StateServer.Connection, stream: UInt32? = nil) {
+        subscribers.withLock { $0.removeAll { $0.connection === connection && (stream == nil || $0.stream == stream) } }
     }
 
     /// CITP streaming frame of layer `index` (0-based): its latest JPEG (black while it shows nothing), nil before the
@@ -144,7 +141,7 @@ public final class ThumbnailStreamer: @unchecked Sendable {
         guard compositor.drawThumbnails(layout.cells, into: atlasPass, commandBuffer: commandBuffer) else { return }
         copyPass.colorAttachments[0].texture = target
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: copyPass) else { return }
-        encoder.label = "thumbnail copy"
+        encoder.label = compositor.thumbnailCopyLabel as String  // B117: a plain 14-byte string allocated per frame
         var uniforms = OutputUniforms()
         uniforms.size = SIMD2(Float(poolSize.width), Float(poolSize.height))
         encoder.setRenderPipelineState(context.outputPipeline)
@@ -206,7 +203,7 @@ public final class ThumbnailStreamer: @unchecked Sendable {
 
     private func encode(_ pixelBuffer: CVPixelBuffer, cells: [ThumbnailAtlas.Cell?], shapes: [(width: Int, height: Int)]) {
         let start = CACurrentMediaTime()
-        // one copy of the atlas into a CGImage (the GPU is done with it), then each cell cropped and encoded by ImageIO
+        // the atlas as a CGImage (the GPU is done with it), then each cell cropped and encoded by ImageIO
         // (the caller clears `encoding` after this returns, also on this early return)
         guard let atlas = Self.image(of: pixelBuffer) else { return }
         let thumbs = cells.map { cell -> Thumb? in
@@ -217,17 +214,11 @@ public final class ThumbnailStreamer: @unchecked Sendable {
         publish(thumbs, shapes: shapes)
     }
 
-    /// The BGRA pixel buffer as a CGImage (one copy of its bytes), rows top-down like the atlas.
+    /// The BGRA pixel buffer as a CGImage, rows top-down like the atlas. Without a colour attachment VideoToolbox
+    /// tags it sRGB; its alpha reads as premultiplied, which changes nothing because the copy pass writes alpha 1.
     static func image(of pixelBuffer: CVPixelBuffer) -> CGImage? {
-        guard CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly) == kCVReturnSuccess else { return nil }
-        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
-        guard let base = CVPixelBufferGetBaseAddress(pixelBuffer) else { return nil }
-        let width = CVPixelBufferGetWidth(pixelBuffer), height = CVPixelBufferGetHeight(pixelBuffer), rowBytes = CVPixelBufferGetBytesPerRow(pixelBuffer)
-        guard let provider = CGDataProvider(data: Data(bytes: base, count: rowBytes * height) as CFData) else { return nil }
-        return CGImage(
-            width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: rowBytes, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-            bitmapInfo: CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.noneSkipFirst.rawValue), provider: provider, decode: nil,
-            shouldInterpolate: false, intent: .defaultIntent)
+        var image: CGImage?
+        return VTCreateCGImageFromCVPixelBuffer(pixelBuffer, options: nil, imageOut: &image) == noErr ? image : nil
     }
 
     static func jpeg(_ image: CGImage) -> [UInt8]? {

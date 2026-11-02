@@ -68,15 +68,15 @@ public struct OSCMessage: Equatable, Sendable {
         out += OSCPacket.paddedString("," + String(arguments.map(\.typeTag)))
         for argument in arguments {
             switch argument {
-            case .int32(let v): out += OSCPacket.be32(UInt32(bitPattern: v))
-            case .float32(let v): out += OSCPacket.be32(v.bitPattern)
+            case .int32(let v): out += v.bigEndianBytes
+            case .float32(let v): out += v.bitPattern.bigEndianBytes
             case .string(let s): out += OSCPacket.paddedString(s)
             case .blob(let b):
-                out += OSCPacket.be32(UInt32(b.count)) + b
+                out += UInt32(b.count).bigEndianBytes + b
                 out += [UInt8](repeating: 0, count: (4 - b.count % 4) % 4)
-            case .int64(let v): out += OSCPacket.be64(UInt64(bitPattern: v))
-            case .double(let v): out += OSCPacket.be64(v.bitPattern)
-            case .timetag(let v): out += OSCPacket.be64(v)
+            case .int64(let v): out += v.bigEndianBytes
+            case .double(let v): out += v.bitPattern.bigEndianBytes
+            case .timetag(let v): out += v.bigEndianBytes
             case .bool, .null, .impulse: break
             }
         }
@@ -94,10 +94,10 @@ public struct OSCBundle: Equatable, Sendable {
     }
 
     public func encoded() -> [UInt8] {
-        var out = OSCPacket.paddedString("#bundle") + OSCPacket.be64(timetag)
+        var out = OSCPacket.paddedString("#bundle") + timetag.bigEndianBytes
         for element in elements {
             let bytes = element.encoded()
-            out += OSCPacket.be32(UInt32(bytes.count)) + bytes
+            out += UInt32(bytes.count).bigEndianBytes + bytes
         }
         return out
     }
@@ -196,9 +196,6 @@ public indirect enum OSCPacket: Equatable, Sendable {
         bytes += [UInt8](repeating: 0, count: (4 - bytes.count % 4) % 4)
         return bytes
     }
-
-    static func be32(_ v: UInt32) -> [UInt8] { [UInt8(v >> 24), UInt8(v >> 16 & 0xFF), UInt8(v >> 8 & 0xFF), UInt8(v & 0xFF)] }
-    static func be64(_ v: UInt64) -> [UInt8] { be32(UInt32(v >> 32)) + be32(UInt32(v & 0xFFFF_FFFF)) }
 }
 
 /// RFC 1055 SLIP framing as used by OSC 1.1 over TCP.

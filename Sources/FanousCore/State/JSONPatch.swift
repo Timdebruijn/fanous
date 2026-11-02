@@ -23,6 +23,19 @@ public struct JSONPatch: Equatable, Sendable, Codable {
         case remove(JSONPointer)
         case replace(JSONPointer, JSONValue)
 
+        /// The pointer of any operation; `value` is what an add or replace writes, nil for a remove.
+        public var path: JSONPointer {
+            switch self {
+            case .add(let p, _), .remove(let p), .replace(let p, _): p
+            }
+        }
+        public var value: JSONValue? {
+            switch self {
+            case .add(_, let v), .replace(_, let v): v
+            case .remove: nil
+            }
+        }
+
         private enum CodingKeys: String, CodingKey {
             case op, path, value
         }
@@ -42,18 +55,12 @@ public struct JSONPatch: Equatable, Sendable, Codable {
         public func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: CodingKeys.self)
             switch self {
-            case .add(let path, let value):
-                try c.encode("add", forKey: .op)
-                try c.encode(path, forKey: .path)
-                try c.encode(value, forKey: .value)
-            case .remove(let path):
-                try c.encode("remove", forKey: .op)
-                try c.encode(path, forKey: .path)
-            case .replace(let path, let value):
-                try c.encode("replace", forKey: .op)
-                try c.encode(path, forKey: .path)
-                try c.encode(value, forKey: .value)
+            case .add: try c.encode("add", forKey: .op)
+            case .remove: try c.encode("remove", forKey: .op)
+            case .replace: try c.encode("replace", forKey: .op)
             }
+            try c.encode(path, forKey: .path)
+            try c.encodeIfPresent(value, forKey: .value)
         }
     }
 

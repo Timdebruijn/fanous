@@ -2,13 +2,14 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy, tick, type ComponentProps } from 'svelte';
   import OutputColour from './OutputColour.svelte';
   import PresetStrip from './PresetStrip.svelte';
+  import RangeStepper, { GRACE } from './RangeStepper.svelte';
   import { lockTitle } from '../lib/show';
   import { app, can, cmd, toastUndo } from '../lib/state.svelte';
   import { throttledSender } from '../lib/throttle';
-  import { endCheck, pick, removeWall, startCheck, startWizard, stepCheck, stuckText, wallUI } from '../lib/wall-session.svelte';
+  import { endCheck, pick, removeWall, startWizard, stepCheck, wallUI } from '../lib/wall-session.svelte';
   import { SEAM_STEPS, overlapHint, rc, seamLines, wallPixels, type Control, type ManualField, type SeamLine, type WallConfig } from '../lib/walls';
 
   // A projector wall (DESIGN §9.9) around a mini-map: one tile per projector, the seams as lines between them. Tap a
@@ -79,16 +80,25 @@
 
   // Sliders go out through throttledSender (B80: to the seam or output they were set for, the last value always): its
   // "fixture" is "a-b" or "lift:<output>", and values are sent × SCALE because it rounds to whole numbers. Gamma per
-  // colour sends the three values, kept here between sends so two channels set within 50 ms do not undo each other.
+  // colour sends the three values in one wall.seam, the overlap both axes in one wall.set: each starts from what was sent
+  // last while its echo can still be on the way, so a channel or axis set right after another does not send the other
+  // one's old value back (B114).
   const SCALE = 10000;
-  const rgbDraft = new Map<string, [number, number, number]>();
+  const sent = new Map<string, { value: unknown; at: number }>(); // "a-b" (gamma R, G, B) or "overlap"
+  const recent = <T,>(key: string, engine: T) => {
+    const last = sent.get(key);
+    return last && Date.now() - last.at < GRACE ? (last.value as T) : engine;
+  };
+  const remember = <T,>(key: string, value: T) => {
+    sent.set(key, { value, at: Date.now() });
+    return value;
+  };
   const throttle = throttledSender((target, field, raw) => {
     const v = raw / SCALE;
     if (target.startsWith('lift:')) return void cmd('output.set', { id: Number(target.slice(5)), path: '/blend/lift', value: v });
     const [a = 0, b = 0] = target.split('-').map(Number);
     if (field === 'rgb') {
-      const gammaRGB = rgbDraft.get(target);
-      rgbDraft.delete(target);
+      const gammaRGB = sent.get(target)?.value as [number, number, number] | undefined;
       if (gammaRGB) void cmd('wall.seam', { id: wall.id, a, b, gammaRGB });
     } else if (field === 'gamma') void cmd('wall.seam', { id: wall.id, a, b, gamma: v });
     else void cmd('wall.seam', { id: wall.id, a, b, power: v });
@@ -99,12 +109,13 @@
   }
   function tuneRGB(l: SeamLine, channel: number, v: number) {
     const key = `${l.a}-${l.b}`;
-    rgbDraft.set(key, rgb(rgbDraft.get(key) ?? l.gammaRGB, channel, v));
+    remember(key, rgb(recent(key, l.gammaRGB), channel, v));
     throttle.send(key, 'rgb', 0);
   }
   /** Link R, G, B: on drops the per-colour values, off starts them at the seam's gamma. */
   function link(l: SeamLine, on: boolean) {
     throttle.flush();
+    sent.delete(`${l.a}-${l.b}`);
     void cmd('wall.seam', { id: wall.id, a: l.a, b: l.b, gammaRGB: on ? null : [l.gamma, l.gamma, l.gamma] });
   }
   async function applyToAll() {
@@ -116,44 +127,15 @@
   const gammaText = (l: SeamLine, digits: number) => (l.gammaRGB ? l.gammaRGB.map((g, i) => `${'RGB'[i]} ${g.toFixed(digits)}`).join(' · ') : l.gamma.toFixed(digits));
   const rgb = (values: number[] | null | undefined, i: number, v: number) => (values ?? [0, 0, 0]).map((x, j) => (j === i ? v : x)) as [number, number, number];
   function setOverlap(axis: 'x' | 'y', percent: number) {
-    void cmd('wall.set', { id: wall.id, overlap: { ...wall.overlap, [axis]: Math.min(50, Math.max(0, Math.round(percent))) / 100 } });
+    const overlap = remember('overlap', { ...recent('overlap', wall.overlap), [axis]: Math.min(50, Math.max(0, Math.round(percent))) / 100 });
+    void cmd('wall.set', { id: wall.id, overlap });
   }
 
-  /** the value under a finger while a slider moves: patches of the values sent before it do not pull it back */
-  let drag = $state<{ key: string; value: number } | null>(null);
-  interface Slider {
-    label: string;
-    key: string;
-    value: number;
-    min: number;
-    max: number;
-    step: number;
-    digits: number;
-    set: (v: number) => void;
-    focus?: boolean;
-    /** send on release only (a geometry change re-computes the wall; one undo step each) */
-    onRelease?: boolean;
-    unit?: string;
-    /** why it cannot change, when not the role or the show lock */
-    off?: string | null;
-  }
-  const stepped = (s: Slider, v: number) => Math.min(s.max, Math.max(s.min, Number(v.toFixed(s.digits))));
+  type Slider = Omit<ComponentProps<typeof RangeStepper>, 'flush'>;
 </script>
 
 {#snippet slider(s: Slider)}
-  {@const v = drag?.key === s.key ? drag.value : s.value}
-  {@const off = lock ?? s.off ?? undefined}
-  <div class="slider" class:focus={s.focus}>
-    <span class="label">{s.label}</span>
-    <span class="line">
-      <button type="button" class="btn btn-icon" aria-label="{s.label} down" title={off} disabled={!!off || v <= s.min} onclick={() => s.set(stepped(s, v - s.step))}>−</button>
-      <input type="range" min={s.min} max={s.max} step={s.step} aria-label={s.label} title={off} disabled={!!off} value={v}
-        oninput={(e) => { const n = Number(e.currentTarget.value); drag = { key: s.key, value: n }; if (!s.onRelease) s.set(n); }}
-        onchange={(e) => { if (s.onRelease) s.set(Number(e.currentTarget.value)); else throttle.flush(); drag = null; }} />
-      <button type="button" class="btn btn-icon" aria-label="{s.label} up" title={off} disabled={!!off || v >= s.max} onclick={() => s.set(stepped(s, v + s.step))}>+</button>
-      <span class="mono val" aria-label="{s.label} value">{v.toFixed(s.digits)}{s.unit ?? ''}</span>
-    </span>
-  </div>
+  <RangeStepper {...s} off={lock ?? s.off} flush={throttle.flush} />
 {/snippet}
 
 <section class="panel wall" aria-label={wall.name}>
@@ -161,7 +143,7 @@
     <h2>{wall.name}</h2>
     <span class="caption">{wall.rows} × {wall.cols} · {canvas?.name ?? `Canvas ${wall.canvas}`} · overlap {[...new Set(overlaps)].join(' / ')} %</span>
     <span class="spacer"></span>
-    <button type="button" class="btn" aria-pressed={!!check} disabled={!!lock} title={lock ?? 'Test patterns on every projector of the wall, with what to look for and which control to turn'} onclick={() => (check ? endCheck() : startCheck(wall))}>Seam check</button>
+    <button type="button" class="btn" aria-pressed={!!check} disabled={!!lock} title={lock ?? 'Test patterns on every projector of the wall, with what to look for and which control to turn'} onclick={() => (check ? endCheck() : stepCheck(wall, 0))}>Seam check</button>
     <button type="button" class="btn" aria-pressed={sel?.kind === 'geometry'} onclick={() => pick(sel?.kind === 'geometry' ? null : { wall: wall.id, kind: 'geometry' })}>Geometry</button>
   </header>
   {#if lock}<p class="caption">{lock}</p>{/if}
@@ -208,7 +190,7 @@
             <span class="spacer"></span>
             <button type="button" class="btn btn-ghost" onclick={endCheck}>End seam check</button>
           </div>
-          {#if stuckText()}<p class="caption yellow">{stuckText()}</p>{/if}
+          {#if app.live.show.mode}<p class="caption yellow">The test patterns are off in show mode.</p>{/if}
         </section>
       {/if}
 
@@ -316,11 +298,7 @@
   .armed { margin: 0; padding: 8px 12px; border-radius: 6px; background: var(--accent-dim); font-weight: 600; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .ctl { display: flex; flex-direction: column; gap: 10px; }
-  h3 { margin: 0; font-size: 15px; font-weight: 600; }
-  .slider { display: flex; flex-direction: column; gap: 4px; border-radius: 8px; }
-  .slider .line { display: flex; align-items: center; gap: 8px; }
-  .slider input { flex: 1; min-width: 0; min-height: var(--touch); accent-color: var(--accent); }
-  .val { min-width: 64px; text-align: right; }
+  h3 { margin: 0; font-size: 15px; letter-spacing: normal; text-transform: none; color: inherit; }
   .focus { outline: 2px solid var(--accent); outline-offset: 4px; }
   .manual { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
   @media (max-width: 600px) {

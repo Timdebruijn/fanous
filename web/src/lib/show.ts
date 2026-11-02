@@ -2,8 +2,8 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Pure logic of the Show control screen: cue numbering and reordering, trigger text, fixture and parameter
-// choices for cue values, value controls from the channel map, timecode wording, OSC log times, MIDI map wording.
-import type { CueDoc, CueValueDoc, LiveDoc, MIDIMappingDoc, PatchEntry } from './docs';
+// choices for cue values, value controls from the channel map, timecode wording, MIDI map wording.
+import type { CueDoc, CueValueDoc, LiveDoc, MIDIMappingDoc, PatchEntry, TimecodeSettingsDoc } from './docs';
 import { LOCKED_TITLE, type ChannelMap, type FixtureType, type ParamSpec } from './patch-screen';
 
 export const LOCKED_OPERATOR = 'Locked: operator only';
@@ -235,19 +235,16 @@ export function timecodeBadge(state: LiveDoc['timecode']['state']): { label: str
   }
 }
 
+/** The operator's switch with a source chosen (Show › Timecode); a missing or null `enabled` is on. */
+export function timecodeOn(tc: Pick<TimecodeSettingsDoc, 'source' | 'enabled'>): boolean {
+  return tc.source !== 'off' && tc.enabled !== false;
+}
+
 /** "LTC · Scarlett 2i2 · 25 fps"; "29.97 DF" already names its rate. */
 export function timecodeSource(tc: Pick<LiveDoc['timecode'], 'state' | 'source' | 'device' | 'rate'>): string {
   if (tc.state === 'off') return 'No source';
   const rate = /^\d+(\.\d+)?$/.test(tc.rate) ? `${tc.rate} fps` : tc.rate;
   return [tc.source.toUpperCase(), tc.device, rate].filter(Boolean).join(' · ');
-}
-
-/** `recent[].at` is a Unix time in seconds; shown as local hh:mm:ss. */
-export function formatClock(at: number): string {
-  const date = new Date(at * 1000);
-  if (Number.isNaN(date.getTime())) return '--:--:--';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 /** Frames per second of a timecode rate as the engine spells it ("25", "29.97 DF"); null when it names none. */

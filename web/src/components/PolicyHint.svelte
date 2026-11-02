@@ -3,12 +3,13 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { policyName } from '../lib/layers';
+  import { lockTitle } from '../lib/show';
   import { app, can, cmd } from '../lib/state.svelte';
 
-  // Shown wherever the UI sets layer values: with Who controls "Console only" they are kept but have no effect.
+  // Shown wherever Fanous sets layer values (the UI, cues, OSC): with Who controls "Console only" they are kept but have no effect.
   let { what = 'values set here' }: { what?: string } = $props();
 
-  const lock = $derived(!can('programmer') ? 'Locked: programmer only' : app.project.showLock ? 'Locked: show lock is on' : undefined);
+  const lock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
 </script>
 
 {#if app.project.policy === 'dmx'}

@@ -19,7 +19,7 @@ public struct LayerUniforms {
     public var kind: UInt32 = 0
     public var blend: UInt32 = 0
     public var master: Float = 1
-    public var pad1: UInt32 = 0
+    public var deep: UInt32 = 0  // 1 when the planes are 16-bit textures: video-range levels at 16-bit scale (B119)
 
     public init() {}
 }
@@ -111,12 +111,8 @@ public final class MetalContext: @unchecked Sendable {
         mapped.vertexFunction = library.makeFunction(name: "mapped_vertex")
         mapped.fragmentFunction = library.makeFunction(name: "mapped_fragment")
         mapped.colorAttachments[0].pixelFormat = Self.outputFormat
-        mapped.colorAttachments[0].isBlendingEnabled = true
-        mapped.colorAttachments[0].rgbBlendOperation = .add
-        mapped.colorAttachments[0].alphaBlendOperation = .add
-        mapped.colorAttachments[0].sourceRGBBlendFactor = .one
+        mapped.colorAttachments[0].isBlendingEnabled = true  // one, one-minus-source-alpha (add and one are the defaults)
         mapped.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
-        mapped.colorAttachments[0].sourceAlphaBlendFactor = .one
         mapped.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
         let overlay = MTLRenderPipelineDescriptor()
         overlay.label = "edit overlay"
@@ -132,16 +128,11 @@ public final class MetalContext: @unchecked Sendable {
         } catch {
             throw RenderError.pipeline("\(error)")
         }
+        // both clamp to edge; nearest filtering is the default
         let linear = MTLSamplerDescriptor()
         linear.minFilter = .linear
         linear.magFilter = .linear
-        linear.sAddressMode = .clampToEdge
-        linear.tAddressMode = .clampToEdge
         let nearest = MTLSamplerDescriptor()
-        nearest.minFilter = .nearest
-        nearest.magFilter = .nearest
-        nearest.sAddressMode = .clampToEdge
-        nearest.tAddressMode = .clampToEdge
         guard let linearSampler = device.makeSamplerState(descriptor: linear), let nearestSampler = device.makeSamplerState(descriptor: nearest) else {
             throw RenderError.pipeline("samplers")
         }

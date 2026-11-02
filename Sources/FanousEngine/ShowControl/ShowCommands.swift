@@ -76,8 +76,7 @@ public enum ShowCommands {
     }
 
     public static func timecodeSettings(from project: JSONValue) -> TimecodeSettings {
-        guard let value = project["timecode"], let data = try? JSONEncoder().encode(value) else { return TimecodeSettings() }
-        return (try? JSONDecoder().decode(TimecodeSettings.self, from: data)) ?? TimecodeSettings()
+        (try? project["timecode"]?.decoded(as: TimecodeSettings.self)) ?? TimecodeSettings()
     }
 
     // MARK: Commands
@@ -90,17 +89,6 @@ public enum ShowCommands {
         public var showMode: @Sendable (Bool) -> [String]?
         public var acknowledge: @Sendable (String) -> Void
         public var runReadiness: @Sendable () -> Void
-        public init(
-            go: @escaping @Sendable () -> Void, back: @escaping @Sendable () -> Void, goto: @escaping @Sendable (Double) -> Void,
-            showMode: @escaping @Sendable (Bool) -> [String]?, acknowledge: @escaping @Sendable (String) -> Void, runReadiness: @escaping @Sendable () -> Void
-        ) {
-            self.go = go
-            self.back = back
-            self.goto = goto
-            self.showMode = showMode
-            self.acknowledge = acknowledge
-            self.runReadiness = runReadiness
-        }
     }
 
     public static func register(on store: StateStore, hooks: Hooks) {
@@ -161,7 +149,7 @@ public enum ShowCommands {
                 guard let path = args["path"]?.string, let pointer = try? JSONPointer(path), let value = args["value"] else { throw CommandError.invalidArgs("args: { path, value }") }
                 var settings = try project["timecode"] ?? JSONValue(encoding: TimecodeSettings())
                 try settings.set(value, at: pointer)
-                guard let data = try? JSONEncoder().encode(settings), let decoded = try? JSONDecoder().decode(TimecodeSettings.self, from: data) else {
+                guard let decoded = try? settings.decoded(as: TimecodeSettings.self) else {
                     throw CommandError.invalidArgs("\(path) does not fit the timecode settings")
                 }
                 try project.set(try JSONValue(encoding: decoded), at: "/timecode")

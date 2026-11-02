@@ -658,11 +658,11 @@ public final class MediaLoader: @unchecked Sendable {
                 status.height = playback.height
                 return playback
             }
-            let source = try blocking { try await MovieSource.open(url: url, device: self.device, poolSize: self.ringCapacity) }
+            let source = try blockingAwait(priority: .userInitiated) { try await MovieSource.open(url: url, device: self.device, poolSize: self.ringCapacity) }
             let ring = FrameRing(capacity: ringCapacity)
             let decoder = LayerDecoder(source: source, ring: ring, logger: logger)
             if let mixer, layer * 2 + 1 < mixer.channels.count {
-                let reader = try blocking { try await AudioTrackReader.open(url: url) }
+                let reader = try blockingAwait(priority: .userInitiated) { try await AudioTrackReader.open(url: url) }
                 if reader.hasAudio {
                     parity[layer] ^= 1
                     decoder.audio = (reader, mixer.channels[layer * 2 + parity[layer]])
@@ -672,6 +672,7 @@ public final class MediaLoader: @unchecked Sendable {
             decoder.start(name: "org.fanous.decode.\(layer + 1)")
             decoder.request(frame: 0, direction: 1)
             logger.info("layer \(layer + 1) media \(key)", metadata: ["file": "\(url.lastPathComponent)", "codec": "\(source.info.codecName)", "size": "\(source.info.width)x\(source.info.height)@\(source.info.frameRate)"])
+            if source.softwareDecoder { logger.warning("software ProRes decoder: the hardware one refused this frame size (B5)", metadata: ["layer": "\(layer + 1)", "file": "\(url.lastPathComponent)", "size": "\(source.info.width)x\(source.info.height)"]) }
             status.kind = "movie"
             status.codec = source.info.codecName
             status.width = source.info.width
@@ -681,23 +682,8 @@ public final class MediaLoader: @unchecked Sendable {
             return LayerPlayback(key: key, movie: source, decoder: decoder, ring: ring)
         } catch {
             logger.error("media open failed", metadata: ["layer": "\(layer + 1)", "media": "\(key)", "error": "\(error)"])
-            status.error = "\(error)"
+            status.error = error.clientText  // no file path for the monitor role (B25)
             return nil
         }
-    }
-
-    /// `MovieSource.open` and `AudioTrackReader.open` are async (track loading); the loader thread is not a
-    /// cooperative thread, so blocking it is fine.
-    private func blocking<T: Sendable>(_ body: @escaping @Sendable () async throws -> T) throws -> T {
-        let done = DispatchSemaphore(value: 0)
-        let box = Mutex<Result<T, Error>?>(nil)
-        Task.detached(priority: .userInitiated) {
-            let result: Result<T, Error>
-            do { result = .success(try await body()) } catch { result = .failure(error) }
-            box.withLock { $0 = result }
-            done.signal()
-        }
-        done.wait()
-        return try box.withLock { $0 }!.get()
     }
 }

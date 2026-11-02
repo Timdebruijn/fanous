@@ -4,6 +4,7 @@
 
 import AppKit
 import AVFoundation
+import CoreAudio
 import Foundation
 import FanousCore
 import Logging
@@ -26,13 +27,6 @@ public struct EngineOptions: Sendable {
         self.scene = scene
         self.network = network
     }
-}
-
-struct HealthStatus: Encodable {
-    var status = "ok"
-    var version = FanousVersion.string
-    var uptimeSeconds: Int
-    var chip: String
 }
 
 /// Phase 0 engine: logs the machine, owns the TLS identity and serves the UI.
@@ -75,12 +69,9 @@ public final class Engine: @unchecked Sendable {
     private var unlockObservers: [NSObjectProtocol] = []
     /// Output id → what the status line and readiness say about its display mode; written on the main actor.
     private let modeChecks = Mutex<[Int: DisplayModeMatching.Check]>([:])
-    private var lastOutputs: [OutputConfig] = []
-    private var lastClockMaster: Int?
-    private var lastLayerCanvas: [Int] = []
     /// What the project assigns to canvases, as last seen by Control; applied (main actor) against the canvases that
     /// actually render, so a switch deferred in show mode or a failed one never leaves layers or slices on nothing.
-    private struct CanvasUse: Sendable {
+    private struct CanvasUse: Equatable, Sendable {
         var outputs: [OutputConfig] = []
         var clockMaster: Int?
         var layers: [Int] = []
@@ -152,7 +143,7 @@ public final class Engine: @unchecked Sendable {
         ProjectDocument.registerCommands(on: store, auth: RoleAuth(settingsURL: nil, shellTokenURL: nil, logger: logger))
         ShowCommands.register(on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in nil }, acknowledge: { _ in }, runReadiness: {}))
         ControlCommands.register(on: store, hooks: ControlCommands.Hooks(set: { _, _, _ in }, release: { _ in }, keep: { _ in }))
-        MIDICommands.register(on: store, hooks: MIDICommands.Hooks(learn: { _, _ in }))
+        MIDICommands.register(on: store, learn: { _, _ in })
         ProjectVersions(directory: AppPaths.versionsDirectory, logger: logger).registerCommands(on: store)
         return store.commandSpecs
     }
@@ -306,7 +297,7 @@ public final class Engine: @unchecked Sendable {
                     try service.compositor.reconfigure(startLayout)
                 } catch {
                     logger.error("canvases could not be made at start; canvas 1 runs alone", metadata: ["error": "\(error)"])
-                    canvasSwitch.startFailed(rendering: .init(fps: startLayout.fps, canvases: [startLayout.canvases[0]]), error: "at start: \(error)")
+                    canvasSwitch.startFailed(rendering: .init(fps: startLayout.fps, canvases: [startLayout.canvases[0]]), error: "at start: \(error.clientText)")
                 }
             }
             render = service
@@ -347,7 +338,8 @@ public final class Engine: @unchecked Sendable {
                 // on the main actor, in order with an ending by show mode or show lock (`endLeases`) and the rebinds
                 let now = DMXStore.now
                 DispatchQueue.main.async { MainActor.assumeIsolated { self?.coordinator?.overlay(id, on: on, selected: selected, at: now) } }
-            })
+            },
+            showPatterns: { [weak self] in self?.coordinator?.patterns.lease($0, at: DMXStore.now) })
         liveInProject.withLock { $0 = [.syphon: project["syphon"] ?? [:], .capture: project["capture"] ?? [:], .screens: project["screens"] ?? [:]] }
         libraryRootInProject.withLock { $0 = URL(fileURLWithPath: project["library"]?["root"]?.string ?? libraryRoot.path).path }
         // B23: a version of the project as loaded, then one every 10 minutes when it changed, and one per show-mode enter
@@ -358,11 +350,9 @@ public final class Engine: @unchecked Sendable {
         versionsQueue.async {
             if let startProject { versions.saveAutomatic(startProject, reason: .start) } else { _ = versions.list() }
         }
-        let versionTimer = DispatchSource.makeTimerSource(queue: versionsQueue)
-        versionTimer.schedule(deadline: .now() + ProjectVersions.periodicInterval, repeating: ProjectVersions.periodicInterval)
-        versionTimer.setEventHandler { versions.saveAutomatic(store.project, reason: .periodic) }
-        versionTimer.resume()
-        self.versionTimer = versionTimer
+        versionTimer = DispatchSource.repeating(every: ProjectVersions.periodicInterval, on: versionsQueue) {
+            versions.saveAutomatic(store.project, reason: .periodic)
+        }
         // Phase 7: cues, timecode, show mode (DESIGN.md §14–15)
         let cues = CueRunner(dmx: dmx)
         cues.replace(list: ShowCommands.cueList(from: project))
@@ -388,20 +378,13 @@ public final class Engine: @unchecked Sendable {
                 runReadiness: { [weak self] in self?.runReadiness() }))
         // MIDI control (B36): cue actions run as commands like OSC's; parameter values go straight to the resolvers
         let midi = MIDIInput(dmx: dmx, logger: logger)
-        midi.onCue = { action in
-            switch action {
-            case .cueGo: _ = store.execute("cue.go", role: .operator)
-            case .cueBack: _ = store.execute("cue.back", role: .operator)
-            case .cueGoto(let number): _ = store.execute("cue.goto", args: ["number": .number(number)], role: .operator)
-            case .set: break
-            }
-        }
+        midi.onCue = { [weak self] in self?.runCommand($0, on: store) }
         midi.onLearn = { mapping in
             guard let args = try? JSONValue(encoding: mapping) else { return "cannot encode" }
             if case .failure(let error) = store.execute("midi.map.set", args: args, role: .programmer) { return error.message }
             return nil
         }
-        MIDICommands.register(on: store, hooks: MIDICommands.Hooks(learn: { midi.learn(target: $0, cue: $1) }))
+        MIDICommands.register(on: store, learn: { midi.learn(target: $0, cue: $1) })
         lastMIDISettings = MIDISettings.from(project: project)
         midi.apply(lastMIDISettings)
         midi.start()  // on main, the first CoreMIDI call of the process: hot-plug notifications need its run loop
@@ -414,32 +397,7 @@ public final class Engine: @unchecked Sendable {
                 log.append(["at": .number(Date().timeIntervalSince1970), "command": .string("\(command)")])
                 if log.count > 50 { log.removeFirst(log.count - 50) }
             }
-            switch command {
-            case .cueGo: _ = store.execute("cue.go", role: .operator)
-            case .cueBack: _ = store.execute("cue.back", role: .operator)
-            case .cueGoto(let number): _ = store.execute("cue.goto", args: ["number": .number(number)], role: .operator)
-            case .showLock(let on): _ = store.execute(on ? "show.lock" : "show.unlock", role: .programmer)
-            case .showMode(let on): _ = store.execute("show.mode", args: ["on": .bool(on)], role: .operator)
-            case .timecodeEnable(let on): _ = store.execute("timecode.enable", args: ["on": .bool(on)], role: .operator)
-            case .projectLoad(let key):
-                // B35: a named version (or a version id); off the DMX and feed queues, the lookup reads the versions directory
-                let logger = self.logger
-                self.versionsQueue.async { [weak self] in
-                    guard let self else { return }
-                    guard let id = self.versions?.resolve(key) else {
-                        logger.warning("OSC project load: no such version", metadata: ["version": "\(key)"])
-                        return
-                    }
-                    // a console repeating the message (or a bundle sent twice) loads once
-                    let now = ProcessInfo.processInfo.systemUptime
-                    if let last = self.lastOSCLoad, last.id == id, now - last.at < Self.oscLoadRepeatWindow { return }
-                    self.lastOSCLoad = (id, now)
-                    if case .failure(let error) = store.execute("project.revert", args: ["id": .string(id)], role: .programmer) {
-                        logger.warning("OSC project load refused", metadata: ["version": "\(key)", "code": "\(error.code)", "reason": "\(error.message)"])
-                    }
-                }
-            default: break
-            }
+            self.runCommand(command, on: store)
         }
         showMode.onChange = { [weak self] on in
             guard let self else { return }
@@ -591,13 +549,11 @@ public final class Engine: @unchecked Sendable {
                 return coordinator
             }
             self.coordinator = coordinator
-            let outputs = ProjectDocument.outputs(from: store.project)
-            let clockMaster = ProjectDocument.canvases(from: store.project).first?.clockMaster
-            lastOutputs = outputs
-            lastClockMaster = clockMaster
-            lastLayerCanvas = Self.layerCanvas(project: store.project, layers: projectLayers.count)
-            let projectCanvases = Set(ProjectDocument.canvases(from: store.project).map(\.id))
-            canvasUse.withLock { $0 = CanvasUse(outputs: outputs, clockMaster: clockMaster, layers: lastLayerCanvas, canvases: projectCanvases) }
+            let canvases = ProjectDocument.canvases(from: store.project)
+            let use = CanvasUse(
+                outputs: ProjectDocument.outputs(from: store.project), clockMaster: canvases.first?.clockMaster,
+                layers: Self.layerCanvas(project: store.project, layers: projectLayers.count), canvases: Set(canvases.map(\.id)))
+            canvasUse.withLock { $0 = use }
             let log = logger
             render.compositor.layerCanvas = effectiveCanvasUse().layers
             Task { @MainActor in
@@ -651,8 +607,10 @@ public final class Engine: @unchecked Sendable {
             }
             switch request.path {
             case "/healthz":
-                let health = HealthStatus(
-                    uptimeSeconds: Int(Date().timeIntervalSince(startedAt)), chip: SystemInfo.chipName)
+                let health: JSONValue = [
+                    "status": "ok", "version": .string(FanousVersion.string), "uptimeSeconds": .number(Double(Int(Date().timeIntervalSince(startedAt)))),
+                    "chip": .string(SystemInfo.chipName),
+                ]
                 return .json(200, Array((try? encoder.encode(health)) ?? Data()))
             case "/api/live":
                 return .json(200, Array((try? encoder.encode(dmx.snapshot())) ?? Data()))
@@ -686,7 +644,10 @@ public final class Engine: @unchecked Sendable {
                     "totalLate": .number(Double(metrics.totalLate.load(ordering: .relaxed))), "pid": .number(Double(getpid())),
                 ]
                 // ticks that blocked on the GPU with the ring of 8 committed buffers full, since start (B105)
-                if let render = self.render { m["completionWaits"] = .number(Double(render.compositor.completionWaits.load(ordering: .relaxed))) }
+                if let render = self.render {
+                    m["completionWaits"] = .number(Double(render.compositor.completionWaits.load(ordering: .relaxed)))
+                    m["gpuErrors"] = .number(Double(render.compositor.gpuErrors.load(ordering: .relaxed)))  // the compositor's tick buffers that ended in error, booked a few ticks late (B99)
+                }
                 if let audio = self.render?.mixer?.statistics {
                     m["audio"] = ["callbacks": .number(Double(audio.callbacks)), "underruns": .number(Double(audio.underruns)), "corrections": .number(Double(audio.corrections)), "maxDriftMs": .number(audio.maxDriftMillis)]
                 }
@@ -701,6 +662,7 @@ public final class Engine: @unchecked Sendable {
                         "framesIn": .number(Double(preview.framesIn)), "framesOut": .number(Double(preview.framesOut)), "skipped": .number(Double(preview.skipped)),
                         "jpegOut": .number(Double(preview.jpegOut)), "jpegFailed": .number(Double(preview.jpegFailed)),
                         "jpegDropped": .number(Double(preview.jpegDropped)),
+                        "streamers": .array(preview.rows),
                         "encoders": .number(Double(preview.encoders)), "thumbnailPasses": .number(Double(preview.thumbnails?.passes.load(ordering: .relaxed) ?? 0)),
                         "thumbnailEncodeMs": .number(Double(preview.thumbnails?.encodeMicros.load(ordering: .relaxed) ?? 0) / 1000),
                     ]
@@ -835,13 +797,16 @@ public final class Engine: @unchecked Sendable {
         for edge in [\OutputConfig.blend.left, \.blend.right] { scaled[keyPath: edge].overlap *= factor }
         for edge in [\OutputConfig.blend.top, \.blend.bottom] { scaled[keyPath: edge].overlap *= factorY }
         scaled.blend.liftFeather *= factor
+        // the y axis has its own scale (B56); left nil when the scales match, so such a preview shares the output's blend texture
+        if factorY != factor { scaled.blend.liftFeatherY = output.blend.liftFeather * factorY }
         for i in scaled.slices.indices {
             for m in scaled.slices[i].masks.indices { scaled.slices[i].masks[m].feather *= factor }
         }
         let index = output.id  // fixture number and ID pattern follow the output's id
         do {
             preview.outputSet = OutputSet(
-                plans: [try compiler.compile(scaled, index: index, drawable: (preview.width, preview.height))], previous: preview.outputSet?.holdSource)  // B111
+                plans: [try compiler.compile(scaled, index: index, drawable: (preview.width, preview.height), patterns: coordinator?.patterns)],
+                previous: preview.outputSet?.holdSource)  // B111
             return true
         } catch {
             logger.error("preview output compile failed", metadata: ["output": "\(output.id)", "error": "\(error)"])
@@ -923,6 +888,37 @@ public final class Engine: @unchecked Sendable {
 
     // MARK: Show control
 
+    /// Cue, show and timecode commands from OSC (DESIGN.md §15.3) and the MIDI map (B36); parameter values never get
+    /// here, they go straight to the resolvers.
+    private func runCommand(_ command: OSCCommand, on store: StateStore) {
+        switch command {
+        case .cueGo: _ = store.execute("cue.go", role: .operator)
+        case .cueBack: _ = store.execute("cue.back", role: .operator)
+        case .cueGoto(let number): _ = store.execute("cue.goto", args: ["number": .number(number)], role: .operator)
+        case .showLock(let on): _ = store.execute(on ? "show.lock" : "show.unlock", role: .programmer)
+        case .showMode(let on): _ = store.execute("show.mode", args: ["on": .bool(on)], role: .operator)
+        case .timecodeEnable(let on): _ = store.execute("timecode.enable", args: ["on": .bool(on)], role: .operator)
+        case .projectLoad(let key):
+            // B35: a named version (or a version id); off the DMX and feed queues, the lookup reads the versions directory
+            let logger = logger
+            versionsQueue.async { [weak self] in
+                guard let self else { return }
+                guard let id = self.versions?.resolve(key) else {
+                    logger.warning("OSC project load: no such version", metadata: ["version": "\(key)"])
+                    return
+                }
+                // a console repeating the message (or a bundle sent twice) loads once
+                let now = ProcessInfo.processInfo.systemUptime
+                if let last = self.lastOSCLoad, last.id == id, now - last.at < Self.oscLoadRepeatWindow { return }
+                self.lastOSCLoad = (id, now)
+                if case .failure(let error) = store.execute("project.revert", args: ["id": .string(id)], role: .programmer) {
+                    logger.warning("OSC project load refused", metadata: ["version": "\(key)", "code": "\(error.code)", "reason": "\(error.message)"])
+                }
+            }
+        default: break
+        }
+    }
+
     /// A stable per-install UUID for CITP (MSEX 1.2 server UUID), kept next to the shell token.
     static func installUUID() -> String {
         let file = AppPaths.applicationSupport.appending(path: "install-uuid")
@@ -975,10 +971,11 @@ public final class Engine: @unchecked Sendable {
         }
     }
 
-    /// Ends every Compare and edit overlay lease at once (show lock, show mode); the overlay's on the main actor, after any
-    /// renewal already on its way there.
+    /// Ends every Compare, edit overlay and test pattern lease at once (show lock, show mode); the overlay's on the main
+    /// actor, after any renewal already on its way there.
     private func endLeases() {
         dmx?.show(Array(1...ParameterSnapshotSlot.maxOutputs), preset: 0)
+        coordinator?.patterns.endAll()
         DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.coordinator?.editOverlay.endAll() } }
     }
 
@@ -1282,14 +1279,10 @@ public final class Engine: @unchecked Sendable {
 
     private func startReadinessTimer() {
         stopReadinessTimer()
-        let timer = DispatchSource.makeTimerSource(queue: feedQueue)
-        timer.schedule(deadline: .now() + 30, repeating: 30)
-        timer.setEventHandler { [weak self] in
+        readinessTimer = DispatchSource.repeating(every: 30, on: feedQueue) { [weak self] in
             self?.runReadiness()
             self?.showMode.touch()  // a long show still resumes after a power loss (ShowModeState.maxAgeAfterReboot)
         }
-        timer.resume()
-        readinessTimer = timer
     }
 
     private func stopReadinessTimer() {
@@ -1491,11 +1484,8 @@ public final class Engine: @unchecked Sendable {
             defer { old = use }
             return old
         }
-        if layers != lastLayerCanvas || outputs != lastOutputs || clockMaster != lastClockMaster || projectCanvases != previous.canvases {
-            let layersChanged = layers != lastLayerCanvas
-            lastLayerCanvas = layers
-            lastOutputs = outputs
-            lastClockMaster = clockMaster
+        if use != previous {
+            let layersChanged = layers != previous.layers
             // never from here: rebuilding previews reads the project (this queue); the main actor may
             Task { @MainActor in self.applyCanvasUse(rebuildLayerPreviews: layersChanged) }
         }
@@ -1564,22 +1554,14 @@ public final class Engine: @unchecked Sendable {
     /// Live document at 10 Hz and the DMX monitor stream at 20 Hz, both off the render and DMX threads.
     private func startFeeds() {
         feedQueue.async { [self] in _ = currentHostFacts() }  // the slow first lookup runs now, not at the first join
-        let live = DispatchSource.makeTimerSource(queue: feedQueue)
-        live.schedule(deadline: .now() + 0.1, repeating: 0.1)
-        live.setEventHandler { [weak self] in self?.publishLive() }
-        live.resume()
-        liveTimer = live
+        liveTimer = DispatchSource.repeating(every: 0.1, on: feedQueue) { [weak self] in self?.publishLive() }
     }
 
     /// The DMX monitor stream (20 Hz) only runs while a client has a DMX subscription.
     private func setDMXStream(active: Bool) {
         feedQueue.async { [self] in
             if active, dmxTimer == nil {
-                let timer = DispatchSource.makeTimerSource(queue: feedQueue)
-                timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
-                timer.setEventHandler { [weak self] in self?.streamDMX() }
-                timer.resume()
-                dmxTimer = timer
+                dmxTimer = DispatchSource.repeating(every: 0.05, on: feedQueue) { [weak self] in self?.streamDMX() }
             } else if !active, let timer = dmxTimer {
                 timer.cancel()
                 dmxTimer = nil
@@ -1587,9 +1569,11 @@ public final class Engine: @unchecked Sendable {
         }
     }
 
-    /// CoreAudio/CoreMIDI/getifaddrs lookups are slow and rarely change: refreshed every 5 s off the feed queue. The
-    /// first CoreAudio/CoreMIDI call of a process can take seconds (a CI virtual machine took over 5 s); the live
-    /// document goes out with the last known facts (none at start) and carries the fresh ones on the next tick.
+    /// CoreAudio/CoreMIDI/getifaddrs lookups are slow and rarely change: refreshed every 5 s off the feed queue, the
+    /// CoreAudio list only after CoreAudio said a device came or went (B133: that lookup took 0.5–2.2 s now and
+    /// then). The first CoreAudio/CoreMIDI call of a process can take seconds (a CI virtual machine took over 5 s);
+    /// the live document goes out with the last known facts (none at start) and carries the fresh ones on the next
+    /// tick.
     private struct HostFacts {
         var at: CFTimeInterval = 0
         var midiSources: [String] = []
@@ -1600,6 +1584,20 @@ public final class Engine: @unchecked Sendable {
     private let hostFacts = Mutex<HostFacts>(HostFacts())
     private var hostFactsRefreshing = false  // feed queue only
     private var hostFactsLookups = 0  // feed queue only; the first lookup of a process is expected to be slow
+    /// True until the next refresh reads the CoreAudio device list: at start, and whenever the listener fires.
+    private let audioDevicesChanged = Atomic<Bool>(true)
+    /// False when CoreAudio refused the listener: the list is then read every refresh, as before.
+    private let audioListening = Atomic<Bool>(false)
+    /// With the first lookup, off the feed queue: the HAL's start (seconds on a CI virtual machine) stays off the start
+    /// path. ponytail: never removed; a deallocated engine's listener is a no-op (weak self), and the block's identity
+    /// across the Swift/ObjC bridge is nothing to hand `AudioObjectRemovePropertyListenerBlock`.
+    private func listenForAudioDevices() {
+        var devices = LTCInput.devicesAddress
+        let status = AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &devices, nil) { [weak self] _, _ in
+            self?.audioDevicesChanged.store(true, ordering: .relaxed)
+        }
+        audioListening.store(status == noErr, ordering: .relaxed)
+    }
     private func currentHostFacts() -> HostFacts {
         let facts = hostFacts.withLock { $0 }
         if CACurrentMediaTime() - facts.at >= 5, !hostFactsRefreshing {
@@ -1614,8 +1612,10 @@ public final class Engine: @unchecked Sendable {
                     seconds[what] = CACurrentMediaTime() - started
                     return value
                 }
+                if first { listenForAudioDevices() }
                 let midi = timed("midi", MTCInput.sources)
-                let audio = timed("audio", LTCInput.inputDevices)
+                let audio = audioDevicesChanged.exchange(false, ordering: .relaxed) || !audioListening.load(ordering: .relaxed) ? timed("audio", LTCInput.inputDevices) : facts.audioInputs
+                if audio.isEmpty { audioDevicesChanged.store(true, ordering: .relaxed) }  // an empty answer (a HAL error, or no device yet) is asked again
                 let addresses = timed("addresses") { SystemInfo.ipv4Addresses }
                 let interfaces = timed("interfaces") { SystemInfo.ipv4Interfaces }
                 let metadata: Logger.Metadata = seconds.mapValues { "\(String(format: "%.2f", $0)) s" }
@@ -1656,7 +1656,7 @@ public final class Engine: @unchecked Sendable {
         }
         let configs = canvasUse.withLock { $0.outputs }
         let now = DMXStore.now
-        let overlay = coordinator?.editOverlay
+        let overlay = coordinator?.editOverlay, patterns = coordinator?.patterns
         let live: JSONValue = [
             "canvas": canvasSwitch?.live ?? .null,
             "engine": [
@@ -1705,6 +1705,7 @@ public final class Engine: @unchecked Sendable {
                 outputStatus.withLock { $0 }.map { s in
                     let preset = Self.presetLive(presets.indices.contains(s.id - 1) ? presets[s.id - 1] : (0, false, PresetMorph()), config: configs.first { $0.id == s.id }, at: now)
                     let raw = keystones.indices.contains(s.id - 1) && keystones[s.id - 1].raw
+                    let leased = patterns?.pattern(s.id, at: now) ?? .off
                     return .object([
                         "id": .number(Double(s.id)), "state": .string(s.state.rawValue), "display": s.display.map { .string($0) } ?? .null,
                         "width": .number(Double(s.width)), "height": .number(Double(s.height)), "hz": .number(s.hz), "master": .bool(s.isMaster),
@@ -1712,6 +1713,7 @@ public final class Engine: @unchecked Sendable {
                         "keystone": .bool(keystones.indices.contains(s.id - 1) && keystones[s.id - 1].active),
                         "keystoneInvalid": .bool(keystones.indices.contains(s.id - 1) && keystones[s.id - 1].invalid),
                         "overlay": Self.overlayLive(asked: overlay?.asked(s.id, at: now) ?? false, raw: raw, preset: preset),
+                        "pattern": leased == .off ? .null : .number(Double(leased.rawValue)),  // `output.pattern`'s lease (B102)
                     ].merging(preset) { a, _ in a })
                 }),
             "security": ["webUIOpen": .bool(auth.isOpen(.programmer))],

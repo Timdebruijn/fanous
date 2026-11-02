@@ -118,7 +118,6 @@
 
 <style>
   .presets { display: flex; flex-direction: column; gap: 8px; }
-  h3 { margin: 8px 0 0; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
   .line { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; }
   .line .select { min-width: 180px; }
   .narrow { width: 90px; }

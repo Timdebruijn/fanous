@@ -100,8 +100,7 @@
 </dialog>
 
 <style>
-  dialog { width: min(1040px, calc(100vw - 32px)); padding: 24px; color: var(--text-1); border: 1px solid var(--line-strong); }
-  dialog::backdrop { background: rgba(11, 12, 14, 0.7); }
+  dialog { width: min(1040px, calc(100vw - 32px)); }
   .caption { margin: 8px 0 16px; }
   .scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; }

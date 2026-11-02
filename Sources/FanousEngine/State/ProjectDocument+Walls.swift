@@ -19,7 +19,7 @@ extension ProjectDocument {
         var issues: [String] = []
         for (i, entry) in (project["walls"]?.array ?? []).enumerated() {
             do {
-                walls.append(try JSONDecoder().decode(WallConfig.self, from: JSONEncoder().encode(entry)))
+                walls.append(try entry.decoded(as: WallConfig.self))
             } catch {
                 issues.append("walls[\(i)] cannot be read and is skipped: \(error)")
             }

@@ -103,6 +103,23 @@ struct MappingMathTests {
         }
     }
 
+    /// B56: the preview scales its axes differently, so the y axis takes `liftFeatherY` and the x axis keeps `liftFeather`.
+    @Test func liftFeatherYFeathersTheYAxisOnly() {
+        var s = BlendSettings()
+        s.top = BlendEdge(overlap: 2)
+        s.lift = 0.5
+        s.liftFeather = 4
+        let same = BlendMath.map(s, width: 1, height: 12)
+        s.liftFeatherY = 8
+        let wider = BlendMath.map(s, width: 1, height: 12)
+        // row 4 (centre 4.5): 2.5 px past the overlap: zone 1 - 2.5/4 with the x feather, 1 - 2.5/8 with its own
+        #expect(same[4 * 4 + 3] == Float(0.5 * (2.5 / 4)) && wider[4 * 4 + 3] == Float(0.5 * (2.5 / 8)))
+        s.left = BlendEdge(overlap: 2)
+        s.top = BlendEdge()
+        let x = BlendMath.map(s, width: 12, height: 1)
+        #expect(x[4 * 4 + 3] == Float(0.5 * (2.5 / 4)))  // the x axis is untouched by liftFeatherY
+    }
+
     @Test func homographyMapsTheCornersAndKeepsTheIdentity() {
         let identity = WarpMath.homography(to: WarpSettings().cornerPin)
         #expect(identity == [1, 0, 0, 0, 1, 0, 0, 0, 1])
@@ -169,12 +186,13 @@ struct MappingMathTests {
         warp.mesh = .identity(cols: 33, rows: 33)
         warp.mesh!.points[33 * 16 + 16] = MapPoint(0.52, 0.49)
         let field = WarpMath.field(warp, cols: 480, rows: 270)  // 1080p / 4
-        // best of five: in a parallel test run the other suites share the CPU with this measurement
+        // the thread's CPU time, best of five: wall time also counts the time other threads hold the cores, and on a busy
+        // Mac (parallel suites, other builds) that failed the budget while the work took 50 ms of CPU (B132)
         var ms = Double.infinity
         for _ in 0..<5 {
-            let start = Date()
+            let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
             _ = WarpMath.field(warp, cols: 480, rows: 270)
-            ms = min(ms, Date().timeIntervalSince(start) * 1000)
+            ms = min(ms, Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1e6)
         }
         #expect(field.count == 480 * 270 * 2)
         // the 100 ms budget is measured on the reference Mac; a hosted CI VM (CI=true) is about 2× slower in debug, so there

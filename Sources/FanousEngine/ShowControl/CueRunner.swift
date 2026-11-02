@@ -55,17 +55,13 @@ public final class CueRunner: @unchecked Sendable {
 
     private func ensureTimer() {
         guard timer == nil else { return }
-        let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 0.02, repeating: 0.02)
-        timer.setEventHandler { [self] in
+        timer = DispatchSource.repeating(every: 0.02, on: queue) { [self] in
             tick()
             if !engine.withLock({ $0.isFading || $0.hasPendingFollow }) {
-                self.timer?.cancel()
-                self.timer = nil
+                timer?.cancel()
+                timer = nil
             }
         }
-        timer.resume()
-        self.timer = timer
     }
 
     private func tick() {

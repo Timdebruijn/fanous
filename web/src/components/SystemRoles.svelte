@@ -60,7 +60,6 @@
 </section>
 
 <style>
-  .phead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 16px; }
   ul { list-style: none; margin: 0; padding: 0; }
   .item { flex-wrap: wrap; gap: 8px 16px; padding: 8px 16px; }
   .item:last-child { border-bottom: 0; }

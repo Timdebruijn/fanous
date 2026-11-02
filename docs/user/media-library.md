@@ -12,6 +12,16 @@ long as the numbers match.
 
 Use a folder on a local disk. Network volumes are not supported.
 
+![The Media screen: the folder list on the left, the files of folder 1 as tiles, the ingest queue below](images/media.png)
+
+The Media screen (key 2) lists the folders on the left, with folder 0 for
+built-in content and live inputs first and the number of files after each name.
+The selected folder's files are tiles: the file number, a thumbnail, the
+duration (or "still"), the codec and size, and a **Layer N** badge for every
+layer that plays it. **Search files** filters the tiles by name. Select a tile
+to get **Play on layer**, which puts that file on a layer from here (with the
+same Who controls rules as the layer panel). The ingest queue is at the bottom.
+
 ## Folder and file names
 
 ```
@@ -52,12 +62,14 @@ number a console dials (see
 [show-control.md](show-control.md#built-in-content-folder-0)).
 Select an item and use **Play on layer** to put it on a layer from here.
 
+![Folder 0 on the Media screen: built-in content with Layer badges, then cameras and capture cards](images/media-folder0.png)
+
 A camera, capture card, display or Syphon server keeps its number, also across
 engine restarts, until you forget it: select one that is not running and press
-**Forget**, or press **Forget all not running** above the Syphon list, or
-**Forget all not running (cameras and displays)** above the cameras (it frees
-both). Its number is then free for the next new one; **Undo**
-brings it back. A green dot means it runs; a yellow dot with "in use by
+**Forget**. With more than one that is not running, **Forget all not
+running** above the Syphon list, or **Forget all not running (cameras and
+displays)** above the cameras (it frees both), does them all at once. Its
+number is then free for the next new one; **Undo** brings it back. A green dot means it runs; a yellow dot with "in use by
 another app" means another app has the camera open (an iPhone in FaceTime). A
 **Layer N** badge says which layers show it.
 
@@ -132,8 +144,10 @@ a library that was used before needs no new probing.
 Everything else (H.264, HEVC, `.mp4`, `.avi`, `.mkv`, `.mxf` and other codecs)
 is listed with a **needs transcode** badge and cannot be played until it is
 transcoded. Long-GOP video is refused on purpose: it cannot scrub, run in
-reverse or chase timecode reliably. Very small movie frames can fail hardware
-ProRes decode; 320x176 works, 64x48 does not (B5).
+reverse or chase timecode reliably. The hardware decoder refuses some small
+ProRes frame sizes (64x48 and 256x64, for example; no rule by width, height or
+area); such a file opens on the software decoder instead, and the log says
+"software ProRes decoder" (B5).
 
 Audio in a movie is played on the Mac's default output device, with the Layer's
 Audio volume and Audio pan channels (48 and 49). There is no device choice yet
@@ -152,8 +166,8 @@ Alpha if the images have alpha.
 
 Select a numbered folder, press **Import…** and pick one or more files. The
 upload is streamed to `_incoming/` and queued; the list under the toolbar shows
-each file as waiting, uploading, queued or failed. Only the programmer role can
-import.
+each file as waiting, uploading, queued or failed; **Clear** empties the list
+when the uploads are done. Only the programmer role can import.
 
 - Every uploaded movie goes through the ingest queue and is re-encoded: ProRes
   422 HQ, or ProRes 4444 if the source has alpha. Stills are copied.
@@ -201,8 +215,10 @@ something has its live picture there instead. A file that changes is probed agai
   the safe default.
 - Measured on the M1 Pro reference machine (1080p60 canvas): 16 layers of
   ProRes 422 HQ or HAP Q ran without dropped frames; 16 was the limit of the
-  test. At 4K30: 16 layers likewise. At 4K60: 3 to 7 layers of ProRes 422 HQ
-  (occasional missed frame from decode jitter, B1) and at least 4 of HAP Q.
+  test. At 4K30: 16 layers likewise. At 4K60: 4 layers of ProRes 422 HQ ran
+  without missed frames, and at 7 some frames finished late on the GPU (B1;
+  measured while the Mac was busy with other work). HAP Q at 4K60: at least 4
+  layers.
 - Effects cost frame time: Blur and Edge take about 1.6 to 1.9 ms per 1080p
   layer each, so 2 to 3 layers with both at 1080p60 (B2). A dissolve (Dissolve
   channel) uses a second decoder, which counts as one more layer.

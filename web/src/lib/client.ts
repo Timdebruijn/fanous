@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
-import { applyPatch } from './patch';
 import type { ClientMessage, CommandArgs, CommandName, JSONValue, PatchOp, Role, ServerMessage } from './protocol';
 
 export type ConnectionState = 'connecting' | 'open' | 'closed';
@@ -103,47 +102,23 @@ export class FanousClient {
   /** Runs a command; rejects with the engine's {code, message} when it is refused. */
   cmd<N extends CommandName>(name: N, args?: CommandArgs[N]): Promise<JSONValue> {
     const id = `c${this.nextId++}`;
-    return new Promise((resolve, reject) => {
-      if (!this.send({ t: 'cmd', id, name, args: args as JSONValue })) {
-        reject({ code: 'offline', message: 'not connected' });
-        return;
-      }
-      this.pending.set(id, { resolve, reject });
-    });
+    return this.request({ t: 'cmd', id, name, args: args as JSONValue }, (resolve, reject) => this.pending.set(id, { resolve, reject }));
   }
 
   /** Subscribes to the DMX monitor stream of one universe; resolves to the stream id used in binary frames. */
   subscribeDMX(universe: string): Promise<number> {
-    return new Promise((resolve, reject) => {
-      if (!this.send({ t: 'sub', stream: 'dmx', universe })) {
-        reject({ code: 'offline', message: 'not connected' });
-        return;
-      }
-      this.subs.set(universe, { resolve });
-    });
+    return this.request({ t: 'sub', stream: 'dmx', universe }, (resolve) => this.subs.set(universe, { resolve }));
   }
 
   /** Subscribes to the canvas preview, about `w` pixels wide (B32); resolves with the stream id, the codec and the
    * size the engine chose. */
   subscribePreview(codec: 'avc' | 'jpeg', target = 'canvas', w?: number): Promise<PreviewInfo> {
-    return new Promise((resolve, reject) => {
-      if (!this.send({ t: 'sub', stream: 'preview', codec, target, w })) {
-        reject({ code: 'offline', message: 'not connected' });
-        return;
-      }
-      this.previewSubs.push({ resolve, reject });
-    });
+    return this.request({ t: 'sub', stream: 'preview', codec, target, w }, (resolve, reject) => this.previewSubs.push({ resolve, reject }));
   }
 
   /** Subscribes to the live layer thumbnails (B29); resolves with the stream id of their JPEG frames. */
   subscribeThumbs(): Promise<number> {
-    return new Promise((resolve, reject) => {
-      if (!this.send({ t: 'sub', stream: 'thumbs' })) {
-        reject({ code: 'offline', message: 'not connected' });
-        return;
-      }
-      this.thumbSubs.push({ resolve, reject });
-    });
+    return this.request({ t: 'sub', stream: 'thumbs' }, (resolve, reject) => this.thumbSubs.push({ resolve, reject }));
   }
 
   unsubscribe(id: number): void {
@@ -154,6 +129,14 @@ export class FanousClient {
   requestSnapshot(): void {
     this.resync = true;
     this.send({ t: 'snapshot' });
+  }
+
+  /** Sends `message` and hands the promise to `wait` until the engine answers; rejects at once when not connected. */
+  private request<T>(message: ClientMessage, wait: (resolve: (value: T) => void, reject: (error: AckError) => void) => void): Promise<T> {
+    return new Promise((resolve, reject) => {
+      if (this.send(message)) wait(resolve, reject);
+      else reject({ code: 'offline', message: 'not connected' });
+    });
   }
 
   private send(message: ClientMessage): boolean {
@@ -265,9 +248,4 @@ export class FanousClient {
     const stream = ((bytes[1]! << 24) | (bytes[2]! << 16) | (bytes[3]! << 8) | bytes[4]!) >>> 0;
     this.callbacks.onBinary?.(kind, stream, bytes.subarray(5));
   }
-}
-
-/** Applies a patch onto a document that may be a Svelte `$state` proxy: in place, fine-grained. */
-export function patchDoc(doc: Doc, ops: PatchOp[]): void {
-  applyPatch(doc, ops);
 }

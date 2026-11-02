@@ -3,7 +3,9 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import type { LayerStatus, PatchEntry, ResolvedParameter } from '../lib/docs';
-  import { RELEASE_TEXT, ZERO_GROUPS, channelRange, clockText, controlKeys, folderZeroItems, mediaOptions, mediaPath, patchText, reservedText, valueText, type ChannelSpec, type LibrarySnapshot } from '../lib/layers';
+  import { RELEASE_TEXT, ZERO_GROUPS, channelRange, clockText, controlKeys, folderZeroItems, mediaOptions, mediaPath, patchText, playSteps, reservedText, valueText, type LibrarySnapshot } from '../lib/layers';
+  import type { ParamSpec } from '../lib/patch-screen';
+  import { lockTitle as lockFor } from '../lib/show';
   import { app, can, cmd, playOnLayer } from '../lib/state.svelte';
   import { syncStatus } from '../lib/sync';
   import { throttledSender } from '../lib/throttle';
@@ -23,7 +25,7 @@
     layer: LayerStatus | undefined;
     params: ResolvedParameter[] | undefined;
     entry: PatchEntry | undefined;
-    specs: ChannelSpec[] | undefined;
+    specs: ParamSpec[] | undefined;
     footprint: number;
     library?: LibrarySnapshot | null;
     /** "Master" or "Output n" instead of Layer n: intensity/speed or intensity/test pattern only, no media (B27). */
@@ -42,7 +44,7 @@
   const shown = $derived(keys ? (params ?? []).filter((p) => keys.includes(p.key)) : (params ?? []));
   // the engine releases UI values 10 min after the last change, but only while a console is received for the fixture
   const expiresIn = $derived(app.live.dmx.uiExpiresIn?.[fixture]);
-  const lockTitle = $derived(!can('programmer') ? 'Locked: programmer only' : app.project.showLock ? 'Locked: show lock is on' : undefined);
+  const lockTitle = $derived(lockFor('programmer', can('programmer'), app.project.showLock));
   const options = $derived(mediaOptions(library));
   const folderZero = $derived(folderZeroItems(app.live.syphon?.servers, app.live.capture));
   const current = $derived(layer && layer.folder > 0 && layer.file > 0 ? `${layer.folder}/${layer.file}` : '');
@@ -60,7 +62,13 @@
     void fixture;
     return throttle.flush;
   });
-  const rawMax = (spec: ChannelSpec | undefined) => (spec?.bits === 16 ? 65535 : 255);
+  const rawMax = (spec: ParamSpec | undefined) => (spec?.bits === 16 ? 65535 : 255);
+  /** a layer's channel list (about 50 rows) starts closed on a phone, where it made the Layers page 4967 px long at 390 px;
+   * open on a desktop, and for Master and the outputs (two rows). Control opens it: its sliders live in the list */
+  let channelsOpen = $state(!isLayer || !window.matchMedia('(max-width: 599px)').matches);
+  $effect(() => {
+    if (control) channelsOpen = true;
+  });
   const isNumber = (key: string) => key === 'folder' || key === 'file';
 </script>
 
@@ -107,9 +115,7 @@
         const file = Number(e.currentTarget.value);
         e.currentTarget.value = '';
         if (!file) return;
-        send('folder', 0);
-        send('file', file);
-        if ((params ?? []).find((p) => p.key === 'intensity')?.raw === 0) send('intensity', 65535);
+        for (const step of playSteps(params, 0, file)) send(step.parameter, step.raw);
       }}>
         <option value="">Put on this layer…</option>
         {#each ZERO_GROUPS as group (group.kind)}
@@ -123,6 +129,8 @@
     {/if}
   {/if}
 
+  <details class="channels" bind:open={channelsOpen}>
+    <summary class="caption note">{specs && isLayer ? reservedText(specs, footprint) : `${shown.length} values`}</summary>
   <ul class="params">
     {#each shown as param (param.key)}
       <li class="param">
@@ -140,7 +148,7 @@
             {:else if isNumber(param.key)}
               <input class="input mono" type="number" min="0" max="255" aria-label={param.name} disabled={lockTitle !== undefined} value={param.raw} onchange={(e) => send(param.key, Math.max(0, Math.min(255, Number(e.currentTarget.value) || 0)))} />
             {:else}
-              <input type="range" min="0" max={rawMax(spec)} step="1" aria-label={param.name} disabled={lockTitle !== undefined} value={param.raw} oninput={(e) => send(param.key, Number(e.currentTarget.value))} ondblclick={() => spec && send(param.key, spec.default)} title="Double-click: default" />
+              <input type="range" min="0" max={rawMax(spec)} step="1" aria-label={param.name} disabled={lockTitle !== undefined} value={param.raw} oninput={(e) => send(param.key, Number(e.currentTarget.value))} ondblclick={() => spec && send(param.key, spec.default ?? 0)} title="Double-click: default" />
             {/if}
           </span>
         {/if}
@@ -150,7 +158,7 @@
       <li class="param none"><span class="caption">No resolved values from the engine yet.</span></li>
     {/each}
   </ul>
-  {#if specs && isLayer}<p class="caption note">{reservedText(specs, footprint)}</p>{/if}
+  </details>
 </section>
 
 <style>
@@ -174,6 +182,13 @@
   .val { color: var(--text-2); font-size: 12px; }
   .val.red { color: var(--red); }
   .note { margin: 0; padding: 0 4px; }
+  summary { cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 0 4px; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: '▸' / ''; width: 10px; color: var(--text-2); }  /* flex hides the native marker; the glyph is decorative */
+  details[open] > summary::before { content: '▾' / ''; }
+  @media (max-width: 599px) {
+    summary { min-height: var(--touch); }
+  }
   .syncline { grid-column: 1 / -1; padding: 0 0 8px 48px; }
   .sync-green { color: var(--green); }
   .sync-yellow { color: var(--yellow); }

@@ -26,22 +26,16 @@ public enum TranscodeError: Error, CustomStringConvertible {
 }
 
 /// What a running job checks between frames (DESIGN.md §8.3): cancel, yield to the compositor, and a hard pause (show lock).
-final class IngestGate: @unchecked Sendable {
-    private struct Hooks {
-        var shouldYield: (@Sendable () -> Bool)?
-        var isPaused: (@Sendable () -> Bool)?
-    }
+final class IngestGate: Sendable {
     private let cancelled = Atomic<Bool>(false)
-    private let hooks = Mutex(Hooks())
+    private let shouldYield: @Sendable () -> Bool
+    private let isPaused: @Sendable () -> Bool
 
-    var shouldYield: (@Sendable () -> Bool)? {
-        get { hooks.withLock { $0.shouldYield } }
-        set { hooks.withLock { $0.shouldYield = newValue } }
+    init(shouldYield: @escaping @Sendable () -> Bool, isPaused: @escaping @Sendable () -> Bool) {
+        self.shouldYield = shouldYield
+        self.isPaused = isPaused
     }
-    var isPaused: (@Sendable () -> Bool)? {
-        get { hooks.withLock { $0.isPaused } }
-        set { hooks.withLock { $0.isPaused = newValue } }
-    }
+
     var isCancelled: Bool { cancelled.load(ordering: .relaxed) }
 
     func cancel() { cancelled.store(true, ordering: .relaxed) }
@@ -54,12 +48,11 @@ final class IngestGate: @unchecked Sendable {
     /// costs one 20 ms sleep per frame, so a permanently busy compositor slows ingest to 50 fps but never starves it.
     func checkpoint() throws {
         try throwIfCancelled()
-        let (shouldYield, isPaused) = hooks.withLock { ($0.shouldYield, $0.isPaused) }
-        while isPaused?() == true {
+        while isPaused() {
             Thread.sleep(forTimeInterval: 0.02)
             try throwIfCancelled()
         }
-        if shouldYield?() == true {
+        if shouldYield() {
             Thread.sleep(forTimeInterval: 0.02)
             try throwIfCancelled()
         }
@@ -69,19 +62,7 @@ final class IngestGate: @unchecked Sendable {
 /// Converts one source movie (anything AVFoundation can read) to a `.mov` the engine plays (DESIGN.md §8.3): ProRes or
 /// HAP video from BGRA frames, audio as 48 kHz stereo 16-bit LPCM. Runs on the calling thread; a run cancelled through
 /// its gate (from any thread) removes its partial output.
-public final class Transcoder: @unchecked Sendable {
-    public let source: URL
-    public let destination: URL
-    public let codec: MovieWriter.Codec
-    let gate: IngestGate
-
-    init(source: URL, destination: URL, codec: MovieWriter.Codec, gate: IngestGate) {
-        self.source = source
-        self.destination = destination
-        self.codec = codec
-        self.gate = gate
-    }
-
+public enum Transcoder {
     /// An alpha source must keep its alpha: ProRes 422 becomes 4444, HAP and HAP Q become HAP Alpha. HAP Q Alpha ('HapM')
     /// is not available in `HAPEncoder` (it has no two-texture frames), so HAP Q loses its quality tier here, not its alpha.
     public static func effectiveCodec(_ requested: MovieWriter.Codec, sourceHasAlpha: Bool) -> MovieWriter.Codec {
@@ -95,9 +76,11 @@ public final class Transcoder: @unchecked Sendable {
 
     /// Transcodes `source` to `destination` (replacing a file already there). `progress` gets (frames written, frames
     /// expected); the expectation is derived from the track duration and may be off by a frame.
-    public func run(progress: ((_ framesDone: Int, _ framesTotal: Int) -> Void)? = nil) throws {
+    static func run(
+        source: URL, destination: URL, codec: MovieWriter.Codec, gate: IngestGate, progress: ((_ framesDone: Int, _ framesTotal: Int) -> Void)? = nil
+    ) throws {
         try gate.throwIfCancelled()
-        let probe = try Self.blocking { [source] in try await Probe.load(source) }
+        let probe = try blockingAwait { [source] in try await Probe.load(source) }
         let requested = Self.effectiveCodec(codec, sourceHasAlpha: probe.hasAlpha)
 
         let reader = try AVAssetReader(asset: probe.asset)
@@ -239,18 +222,5 @@ public final class Transcoder: @unchecked Sendable {
                 upright: composition,
                 codec: formats.first.map(CMFormatDescriptionGetMediaSubType) ?? 0)
         }
-    }
-
-    private static func blocking<T: Sendable>(_ body: @escaping @Sendable () async throws -> T) throws -> T {
-        let done = DispatchSemaphore(value: 0)
-        let box = Mutex<Result<T, Error>?>(nil)
-        Task.detached(priority: .utility) {
-            let result: Result<T, Error>
-            do { result = .success(try await body()) } catch { result = .failure(error) }
-            box.withLock { $0 = result }
-            done.signal()
-        }
-        done.wait()
-        return try box.withLock { $0 }!.get()
     }
 }

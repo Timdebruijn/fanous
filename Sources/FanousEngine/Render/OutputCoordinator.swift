@@ -8,6 +8,7 @@ import FanousCore
 import Logging
 import Metal
 import QuartzCore
+import Synchronization
 
 /// Where an output stands right now, for `live.outputs`.
 public struct OutputStatus: Sendable, Equatable {
@@ -80,6 +81,31 @@ final class SecondaryDriver: @unchecked Sendable {
     @discardableResult func stop() -> Bool { thread?.stop() ?? true }
 }
 
+/// The test patterns of `output.pattern` (B102), by output id: a lease like the edit overlay's, for the projector-wall
+/// wizard and seam check, never saved or undone. One per output and the latest call wins, so of two clients on the same
+/// outputs the one that ends clears it until the other's next renewal. Written on Control; the render threads and
+/// `live.outputs` read it.
+public final class PatternLeases: Sendable {
+    /// A lease runs this long after its last renewal (the UI renews every 2 s); the render threads stop drawing it then.
+    static let lease: Double = 5
+    private let entries = Mutex<[Int: (pattern: TestPattern, until: Double)]>([:])
+
+    /// `output.pattern`: each output's lease starts or renews until `now` + 5 s with its pattern; off ends it.
+    func lease(_ patterns: [(id: Int, pattern: TestPattern)], at now: Double) {
+        entries.withLock { e in
+            for p in patterns { e[p.id] = p.pattern == .off ? nil : (p.pattern, now + Self.lease) }
+        }
+    }
+
+    /// Show mode and show lock end every lease at once.
+    func endAll() { entries.withLock { $0.removeAll() } }
+
+    /// Output `id`'s pattern at `now` (host time) while its lease runs, else off. Allocates nothing (render threads).
+    func pattern(_ id: Int, at now: Double) -> TestPattern {
+        entries.withLock { $0[id].flatMap { now < $0.until ? $0.pattern : nil } ?? .off }
+    }
+}
+
 /// Binds project outputs to displays, owns their windows and drivers, elects the clock master and survives
 /// hot-plug (DESIGN.md §9.6). Everything on the main actor; the compositor only ever sees swapped `OutputSet`s.
 @MainActor
@@ -109,6 +135,13 @@ public final class OutputCoordinator {
     public var onStatus: (@MainActor ([OutputStatus]) -> Void)?
     /// The edit overlay of every output (DESIGN.md §9.10 item 4), handed to every plan compiled here; `live.outputs` reads it.
     public nonisolated let editOverlay: EditOverlay
+    /// The test pattern leases of `output.pattern` (B102), handed to every plan compiled here and to the output preview's.
+    public nonisolated let patterns = PatternLeases()
+    /// A window device that is never shown (B124). ScreenCaptureKit lists only the processes that own a window-server
+    /// window, so a display capture started before the first output was bound found nothing to exclude (`excludedApps=0`)
+    /// and an output window opened later on that display was not excluded from its picture. Measured: a `defer: false` window that
+    /// is never ordered in is in `CGWindowListCopyWindowInfo(.optionAll)` for its process (a `defer: true` one is not).
+    private let presence: NSWindow
 
     /// `media`: an image mask's file in the library (`OutputCompiler`).
     public init(
@@ -121,6 +154,7 @@ public final class OutputCoordinator {
         self.fps = fps
         self.displays = displays
         self.logger = logger
+        presence = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1, height: 1), styleMask: .borderless, backing: .buffered, defer: false)
     }
 
     public var connectedDisplays: [DisplayInfo] { displays }
@@ -147,31 +181,27 @@ public final class OutputCoordinator {
         }
     }
 
-    /// New canvas size and rate (B31): every driver stops (outputs hold their last frame), the compositor makes new
-    /// canvas textures, then the drivers start again at the new rate. Windows and bindings stay; slices are stored
-    /// as fractions of the canvas, so mappings stay valid. On failure the old canvas runs on and the error is thrown.
-    /// A driver that does not stop within its join timeout aborts the change: the textures are not swapped under a tick.
-    public func setCanvas(width: Int, height: Int, fps: Double) throws {
-        try reconfigure { try compositor.reconfigure(width: width, height: height, fps: fps) }
-        self.fps = fps
-    }
-
-    /// Canvases added, removed or resized (multiple canvases): the same stop–reconfigure–restart as `setCanvas`.
+    /// Canvases added, removed or resized, or a new rate (B31): every driver stops (outputs hold their last frame), the
+    /// compositor makes new canvas textures, then the drivers start again at the new rate. Windows and bindings stay;
+    /// slices are stored as fractions of the canvas, so mappings stay valid. On failure the old canvases run on and the
+    /// error is thrown. A driver that does not stop within its join timeout aborts the change: the textures are not
+    /// swapped under a tick.
     public func setCanvases(_ layout: ProjectDocument.CanvasLayout) throws {
         try reconfigure { try compositor.reconfigure(layout) }
         self.fps = layout.fps
     }
 
     private func reconfigure(_ change: () throws -> Void) throws {
-        var stopped = masterDriver?.stop() ?? true
-        stopMaster()
-        stopped = (headless?.stop() ?? true) && stopped
+        var stale: Set<CGDirectDisplayID> = []  // displays whose driver did not stop (B118)
+        let master = masterDisplay
+        if !stopMaster(), let master { stale.insert(master) }
+        var stopped = (headless?.stop() ?? true) && stale.isEmpty
         headless = nil
         for id in bound.keys {
-            stopped = (bound[id]?.secondary?.stop() ?? true) && stopped
+            if bound[id]?.secondary?.stop() == false { stale.insert(id); stopped = false }
             bound[id]?.secondary = nil
         }
-        defer { rebind() }
+        defer { rebind(stale: stale) }
         guard stopped else { throw RenderError.pipeline("a render thread did not stop within 1 s; canvas unchanged") }
         try change()
     }
@@ -196,7 +226,9 @@ public final class OutputCoordinator {
         compositor.outputSet = nil
     }
 
-    private func rebind() {
+    /// `stale`: displays whose driver did not stop (B118), on top of those found here.
+    private func rebind(stale: Set<CGDirectDisplayID> = []) {
+        var stale = stale
         // a slice on a canvas that does not render draws black (OutputPass); said once per change
         let canvasIDs = Set(compositor.canvasIDs)
         let orphans = outputs.flatMap { o in o.slices.filter { !canvasIDs.contains($0.canvas) }.map { "output \(o.id) slice \($0.id) → canvas \($0.canvas)" } }
@@ -206,6 +238,7 @@ public final class OutputCoordinator {
         }
         let binding = OutputBinding.resolve(outputs: outputs, displays: displays)
         let newMaster = OutputBinding.master(outputs: outputs, binding: binding, clockMaster: clockMaster)
+        // B118: a display whose driver did not stop within 1 s (a tick still in flight may write the old set's holds)
 
         // tear down displays that lost every output or went away
         for (id, b) in bound where binding.byDisplay[id] == nil || !displays.contains(where: { $0.id == id }) {
@@ -216,7 +249,10 @@ public final class OutputCoordinator {
             bound.removeValue(forKey: id)
         }
         // the master changes: stop its driver before another display's driver may take the compositor
-        if masterDisplay != newMaster { stopMaster() }
+        if masterDisplay != newMaster {
+            let old = masterDisplay
+            if !stopMaster(), let old { stale.insert(old) }
+        }
 
         var statuses: [OutputStatus] = []
         for (displayID, ids) in binding.byDisplay {
@@ -245,19 +281,25 @@ public final class OutputCoordinator {
             for id in ids {
                 guard let config = outputs.first(where: { $0.id == id }) else { continue }
                 do {
-                    plans.append(try compiler.compile(config, index: id, drawable: (Int(size.width), Int(size.height)), overlay: editOverlay))
+                    plans.append(try compiler.compile(config, index: id, drawable: (Int(size.width), Int(size.height)), overlay: editOverlay, patterns: patterns))
                     statuses.append(OutputStatus(id: id, state: .bound, display: display.name, width: Int(size.width), height: Int(size.height), hz: display.hz, isMaster: displayID == newMaster))
                 } catch {
                     logger.error("output compile failed", metadata: ["output": "\(id)", "error": "\(error)"])
                 }
             }
-            let set = OutputSet(plans: plans, previous: bound[displayID]?.set.holdSource)  // a frozen output keeps its hold (B111)
+            if displayID == newMaster, bound[displayID]?.secondary?.stop() == false { stale.insert(displayID) }
+            // a frozen output keeps its hold (B111), unless the thread that rendered the old set may still be writing it
+            // (B118): the new thread would read `held` under that write, so the output holds afresh instead
+            if stale.contains(displayID) { logger.warning("a render thread did not stop within 1 s while outputs were rebound: a frozen output on it holds afresh", metadata: ["display": "\(display.name)"]) }
+            let set = OutputSet(plans: plans, previous: stale.contains(displayID) ? nil : bound[displayID]?.set.holdSource)
             if displayID == newMaster {
-                bound[displayID]?.secondary?.stop()
+                // before the set is published: a headless tick hands `compositor.outputSet` to the preview tap. A failed join
+                // (a tick over 1 s, B128) is logged and not acted on: it was not logged before, and no other join on this
+                // hardware was ever seen to fail (5.5 days of fanousd.log); CI's e2e binds no display, so no master takes over there
+                if headless?.stop() == false { logger.warning("the headless render thread did not stop within 1 s while a master took over; its last tick may read the new set", metadata: ["display": "\(display.name)"]) }
+                headless = nil
                 compositor.outputSet = set
                 if masterDriver == nil {
-                    headless?.stop()
-                    headless = nil
                     masterDriver = DrawableLoopDriver(layer: window.metalLayer, fps: fps, compositor: compositor)
                     masterDisplay = displayID
                     logger.info("clock master", metadata: ["display": "\(display.name)"])
@@ -289,10 +331,12 @@ public final class OutputCoordinator {
         onStatus?(statuses.sorted { $0.id < $1.id })
     }
 
-    private func stopMaster() {
-        masterDriver?.stop()
+    /// false = the master's thread did not stop within 1 s, so a tick may still be in flight (B118).
+    @discardableResult private func stopMaster() -> Bool {
+        let joined = masterDriver?.stop() ?? true
         masterDriver = nil
         masterDisplay = nil
         compositor.outputSet = nil
+        return joined
     }
 }

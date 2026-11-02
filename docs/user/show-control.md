@@ -8,12 +8,16 @@ The Show screen (key 5, "Show control") holds timecode, the cue list, OSC and
 MIDI. Fanous can also be seen and browsed from a console
 over CITP/MSEX.
 
+![The Show screen: GO with the next cue, the Timecode panel, the cue list with cue 2 current and cue 3 next, OSC on the right](../images/show.png)
+
 Before you build a show on cues or OSC or MIDI parameter values, set the project's
 **Who controls** (Patch screen, the card above the fixture groups) to **Console
 and Fanous, latest change wins**, **Console and Fanous, highest value wins** or
 **Fanous only (UI, cues, OSC, MIDI)**: with the default **Console only** those
 values are recorded but do not move a layer, and the Show control screen shows
-a yellow warning that points to Patch › Who controls. See
+a yellow warning with a button **Use Console and Fanous, latest change wins**
+(programmer, not while the show is locked). The same warning appears in the
+layer panel and on the Media screen. See
 [console-setup.md](console-setup.md#sources-and-merging).
 
 The **Timecode on/off** switch belongs to the operator and also works under
@@ -57,9 +61,10 @@ To make a layer follow the timecode set its Play mode channel (channel 5) to
 `(timecode − project offset − layer offset)` at the file's own frame rate, looped
 between the In point and Out point channels.
 
-Changing timecode settings, including the on/off switch, is a configuration
-change: it needs the programmer role and is refused while the show is locked.
-Set it up and switch it on before you lock the show.
+Changing the timecode settings (source, device, channel, offsets, freewheel)
+is a configuration change: it needs the programmer role and is refused while
+the show is locked, so set them up before you lock the show. The **Timecode
+on/off** switch is not: the operator can use it, also under show lock.
 
 ## Cues
 
@@ -74,10 +79,11 @@ marked current (or fading) and next.
   decimals (2.5) and must be unique.
 - In the editor: **Number**, **Name**, **Fade (s)**, **Trigger**, **Follow (s)**,
   and **Go to this cue**.
-- **Values** are rows of Fixture (Layer n, Master, Output n), Parameter, Value
-  and an optional Fade (s) that overrides the cue fade. Value is a number in
-  the parameter's raw range or, for parameters with named bands such as Play
-  mode or Blend mode, a choice list. **Add value** adds a row.
+- **Values** are rows of Fixture (Layer n, Master, and the Output n and
+  Keystone n fixtures that are in the patch), Parameter, Value and an optional
+  Fade (s) that overrides the cue fade. Value is a number in the parameter's
+  raw range or, for parameters with named bands such as Play mode or Blend
+  mode, a choice list. **Add value** adds a row, **×** removes one.
 - Fades are linear for continuous parameters. Parameters that are choices
   (play mode, blend mode, effects, folder, file, mapping preset) switch when the
   fade starts.
@@ -90,6 +96,8 @@ marked current (or fading) and next.
   timecode passes that time, and arms again after a jump back.
 - **Follow** fires the next cue that many seconds after this one. Leave it empty
   for none.
+
+![The cue editor for cue 3: number, name, fade, trigger and follow, then its values per fixture and parameter](images/cue-editor.png)
 
 **Go** fires the next cue, **Back** the previous one, **Go to** a given number.
 Editing cues is a configuration change (programmer, refused while the show is
@@ -259,7 +267,10 @@ cues with MIDI Show Control. The MIDI panel on the Show screen has:
   cannot be read or cannot work (hand-written into a project) are listed in red
   under it; the other entries keep working.
 - The **map**: one row per control with Control (channel and note, CC or
-  program, and the source it came from), Target, Mode and **Remove**.
+  program, and the source it came from), Target and mode (for a parameter
+  target **Linear** or **Toggle** and **Pickup**), and **Remove**.
+
+<img src="images/midi.png" width="321" alt="The MIDI panel with three map rows: note 36 to GO, note 37 to Back, CC 7 to Layer 1 intensity">
 
 **Learn.** Choose a target: **GO**, **Back**, **Go to cue** (pick the cue) or
 **Parameter** (pick fixture and parameter). Press **Learn**, then press the key
@@ -362,14 +373,14 @@ MSEX versions 1.0 to 1.2 are negotiated; the highest common one is used.
   No real console has been tried (B40).
 - Timecode chase is tested with generated LTC and simulated MTC, not with real
   hardware, and not at 29.97 drop frame or over long runs (B44). The
-  microphone prompt has not been tested on a clean install (B37). Cue fades
-  have not been measured from cue to picture (B43).
+  microphone prompt was checked on the notarized build, not on a clean account
+  (B50). Cue fades have not been measured from cue to picture (B43).
 
 ## Built-in content (folder 0)
 
 Folder 0 holds content the engine draws itself: no files, any layer, selected
 like a clip (Folder 0, File n) from the console, from the layer panel
-(**Control** › **Built-in content and live inputs**) or from the Media screen
+(**Control** › **Built-in content and live inputs (folder 0)**) or from the Media screen
 (folder **0 · Built-in and live inputs**). It goes through the layer like media:
 position, scale, colour, effects and dissolves apply.
 
@@ -470,6 +481,8 @@ and Fanous, latest change wins** when it is Console only. With latest change
 wins, whoever moved last wins between console and UI.
 **Release** hands the layer back to the console. UI control is refused while the
 show is locked.
+
+<img src="images/layer-control.png" width="332" alt="The layer panel of Layer 3 with Control on: Release, the media lists and a slider or field per channel">
 
 **Preview of one layer.** Above the preview on the Layers screen, **Canvas**
 shows the whole canvas (with several canvases there is a button per canvas

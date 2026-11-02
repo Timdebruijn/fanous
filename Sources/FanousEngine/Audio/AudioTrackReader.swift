@@ -23,9 +23,10 @@ public enum AudioError: Error, CustomStringConvertible {
 /// conversion to 48 kHz interleaved stereo Float32 (AudioConverter). One instance per layer; used from that
 /// layer's decode thread only (one caller at a time).
 ///
-/// After `open`, `read` allocates nothing in Swift: source bytes are staged in, and converted through, buffers
-/// preallocated at init. The only per-chunk allocations are AVFoundation's own sample-buffer objects (one request
-/// and one `CMSampleBuffer` per 100 ms of source audio).
+/// After `open`, `read` allocates nothing in Swift: source bytes are staged in a buffer preallocated at init and
+/// converted straight into the caller's (the converter's channel map makes the stereo pair). The only per-chunk
+/// allocations are AVFoundation's own sample-buffer objects (one request and one `CMSampleBuffer` per 100 ms of
+/// source audio).
 /// ponytail: LPCM only (what ingest stores); AAC/VBR would need packet descriptions and priming discard. Edit
 /// lists are ignored (the track starts at 0). Sample-rate conversion latency (a few frames when the source is not
 /// 48 kHz) is not compensated in the reported PTS.
@@ -48,8 +49,6 @@ public final class AudioTrackReader: @unchecked Sendable {
     private let chunkFrames: Int  // source frames per sample-buffer request (100 ms)
     private let staging: UnsafeMutableRawPointer  // raw source bytes of the current chunk
     private let stagingCapacity: Int
-    private let scratch: UnsafeMutablePointer<Float>?  // converted frames when the source is not stereo
-    private static let scratchFrames = 4800
 
     // Reader-thread state.
     private var cursor: AVSampleCursor?
@@ -83,7 +82,6 @@ public final class AudioTrackReader: @unchecked Sendable {
             chunkFrames = 0
             stagingCapacity = 0
             staging = .allocate(byteCount: 1, alignment: 16)
-            scratch = nil
             return
         }
         guard var source = CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee,
@@ -93,14 +91,21 @@ public final class AudioTrackReader: @unchecked Sendable {
             throw AudioError.unsupportedFormat(CMFormatDescriptionGetMediaSubType(description))
         }
         let channels = Int(source.mChannelsPerFrame)
-        // Same channel count out as in: the converter only changes sample format and rate; the stereo mapping is ours.
         var output = AudioStreamBasicDescription(
             mSampleRate: Double(Self.outputSampleRate), mFormatID: kAudioFormatLinearPCM, mFormatFlags: kAudioFormatFlagsNativeFloatPacked,
-            mBytesPerPacket: UInt32(4 * channels), mFramesPerPacket: 1, mBytesPerFrame: UInt32(4 * channels),
-            mChannelsPerFrame: UInt32(channels), mBitsPerChannel: 32, mReserved: 0)
+            mBytesPerPacket: 8, mFramesPerPacket: 1, mBytesPerFrame: 8, mChannelsPerFrame: 2, mBitsPerChannel: 32, mReserved: 0)
         var converter: AudioConverterRef?
-        let status = AudioConverterNew(&source, &output, &converter)
+        var status = AudioConverterNew(&source, &output, &converter)
         guard status == noErr, let converter else { throw AudioError.converter(status) }
+        if channels != 2 {
+            // mono goes to both sides; more channels keep their first two
+            var map: [Int32] = channels == 1 ? [0, 0] : [0, 1]
+            status = AudioConverterSetProperty(converter, kAudioConverterChannelMap, UInt32(MemoryLayout<Int32>.size * 2), &map)
+            guard status == noErr else {
+                AudioConverterDispose(converter)
+                throw AudioError.converter(status)
+            }
+        }
         self.converter = converter
         hasAudio = true
         self.duration = duration
@@ -110,14 +115,12 @@ public final class AudioTrackReader: @unchecked Sendable {
         chunkFrames = max(1, Int(source.mSampleRate / 10))
         stagingCapacity = chunkFrames * bytesPerFrame
         staging = .allocate(byteCount: stagingCapacity, alignment: 16)
-        scratch = channels == 2 ? nil : .allocate(capacity: Self.scratchFrames * channels)
         seek(toSeconds: 0)
     }
 
     deinit {
         if let converter { AudioConverterDispose(converter) }
         staging.deallocate()
-        scratch?.deallocate()
     }
 
     /// Positions the reader so the next `read` starts at `seconds` (clamped to the track; at or past the end
@@ -142,30 +145,12 @@ public final class AudioTrackReader: @unchecked Sendable {
         guard let converter, frameCount > 0 else { return (0, firstFramePTS) }
         var produced = 0
         while produced < frameCount {
-            let wanted = scratch == nil ? frameCount - produced : min(frameCount - produced, Self.scratchFrames)
+            let wanted = frameCount - produced
             var frames = UInt32(wanted)
-            // Stereo converts straight into the caller's buffer; other layouts go through `scratch` first.
-            let destination = scratch ?? (output + 2 * produced)
             var list = AudioBufferList(
-                mNumberBuffers: 1,
-                mBuffers: AudioBuffer(mNumberChannels: UInt32(channelCount), mDataByteSize: UInt32(wanted * channelCount * 4), mData: destination))
+                mNumberBuffers: 1, mBuffers: AudioBuffer(mNumberChannels: 2, mDataByteSize: UInt32(wanted * 8), mData: output + 2 * produced))
             let status = AudioConverterFillComplexBuffer(converter, Self.inputProc, Unmanaged.passUnretained(self).toOpaque(), &frames, &list, nil)
             let got = Int(frames)
-            if let scratch {
-                let target = output + 2 * produced
-                switch channelCount {
-                case 1:
-                    for i in 0..<got {
-                        target[2 * i] = scratch[i]
-                        target[2 * i + 1] = scratch[i]
-                    }
-                default:  // more than two channels: first two
-                    for i in 0..<got {
-                        target[2 * i] = scratch[i * channelCount]
-                        target[2 * i + 1] = scratch[i * channelCount + 1]
-                    }
-                }
-            }
             produced += got
             if got == 0 || status != noErr && got < wanted { break }  // end of track (or a converter failure)
         }

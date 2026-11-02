@@ -51,8 +51,10 @@ H.264.
 
 The status bar has one pill per universe. Green: packets arrive. Yellow with
 "silent": nothing received yet. Yellow with seconds: silent for less than 2.5 s.
-Red: a patched universe silent for more than 2.5 s. The fixtures **hold their
-last values** meanwhile.
+Red: a patched universe silent for more than 2.5 s (the Patch screen's
+Universes panel uses the universe's own **Signal lost after** time instead).
+The fixtures **hold their last values** meanwhile, unless the universe's Hold on
+signal loss says otherwise.
 
 - Console: output enabled for that universe, right protocol, right universe
   number. Art-Net `A 0.0.0` is port-address 0; some consoles start counting at 1.
@@ -64,7 +66,6 @@ last values** meanwhile.
   count and the age of the last packet.
 - Network: Mac and console on the same subnet, one active interface (see the
   show-day checklist), firewall allows UDP 6454 (Art-Net) and 5568 (sACN).
-- sACN on a universe other than 1, 2 and 3 must be sent unicast to the Mac.
 - Two sources on one universe: Art-Net takes the latest packet, sACN the highest
   priority. Send each universe from one console.
 
@@ -114,8 +115,10 @@ HDMI into the card): it needs no Screen permission and is never re-asked.
 
 The engine renders the project's canvas (System › Machine shows the library and
 displays it found) and every output you assign on the Outputs & Mapping screen.
-Check that the output is bound to a connected display (its badge says "bound",
-not "lost" or "unassigned"), that its intensity is up and that the layer's
+Check that the output is bound to a connected display: its line in the
+output list shows the display and its mode in green, not "not assigned to a
+display" or a red "display missing" (System › Machine › Outputs says bound,
+lost or unassigned). Check that its intensity is up and that the layer's
 intensity and media are set. A test pattern follows the output's and the
 Master's Intensity and Blackout like the picture, so it stays black while one of
 them is at 0 or blacked out. After a change of the library root on the System
@@ -133,8 +136,14 @@ the other's lines can be gone for up to 2 seconds.
 
 ## Dropped frames
 
-The status bar shows "dropped · 1 s"; System › Live metrics shows missed and late
-frames, GPU and CPU time, texture misses. In show mode any dropped frame is red.
+The status bar shows "dropped · 1 s". System › Live metrics shows, over a
+1 s window: frames, dropped (missed + late), GPU and CPU time (p50, p99, max),
+DMX to photon, texture misses (a layer without a decoded frame in time),
+clients, preview frames and audio underruns, with a graph of the GPU p99
+against the frame budget. The dropped tile is red in show mode and yellow
+before it; in the status bar a dropped frame is red while the show is locked.
+
+![System › Live metrics: tiles for fps, dropped, GPU and CPU time, DMX to photon, texture misses, clients, preview and audio, and the GPU graph](images/metrics.png)
 
 - **Heat or power**: System › Machine › Thermal should be "nominal"; the Mac must
   be on AC power. Fix airflow first.
@@ -182,7 +191,12 @@ a network MIDI session, then choose it under Device (or "All sources").
 ## Logs
 
 - **System › Logs**: the last 64 KB of the engine log, with a filter field,
-  **Refresh** and **Download**.
+  **Refresh** and **Download**. The Service line under it shows the engine
+  version and how long it has been running: a short uptime you did not expect
+  means it restarted.
+
+  ![System › Logs with the filter field, Refresh, Download and the Service line](images/logs.png)
+
 - `~/Library/Logs/Fanous/fanousd.log` (Engine › **Open Logs** opens the
   folder).
 
@@ -206,6 +220,8 @@ much happened since). The project has versions: System › **Project versions**.
   the last one ("auto version").
 - **Save version…** saves a named one; named versions are kept until you
   delete them.
+
+![System › Project versions with a named version "Before doors" and its Revert and Delete buttons](images/versions.png)
 
 To go back: leave show mode and unlock the show (**L**), then press
 **Revert…** on the version and confirm. Everything in the project goes back:

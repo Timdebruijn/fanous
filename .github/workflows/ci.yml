@@ -19,8 +19,7 @@ jobs:
       - run: scripts/test.sh --filter FanousCoreTests
       - run: scripts/license-headers.sh
       - run: scripts/core-purity.sh
-      - run: scripts/check-channel-map.sh
-      - run: scripts/check-protocol-dts.sh
+      - run: scripts/check-generated.sh
 
   web:
     runs-on: ubuntu-latest
@@ -43,9 +42,10 @@ jobs:
   e2e:
     # Browser end-to-end tests (web/e2e) against the real engine: each test starts `fanousd --no-network` on a free
     # port with FANOUS_HOME in a temporary directory; headless, no display bound.
-    # independent of the swift job; the run itself stops after 10 min (globalTimeout in web/playwright.config.ts)
+    # independent of the swift job; the run itself stops after 20 min (globalTimeout in web/playwright.config.ts), the
+    # build and install take about 2 min with the cache and longer without it
     runs-on: macos-26
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

@@ -44,17 +44,6 @@ public enum DER {
         return tlv(0x02, magnitude)
     }
 
-    public static func integer(_ value: Int) -> [UInt8] {
-        precondition(value >= 0, "only non-negative integers are needed")
-        var bytes: [UInt8] = []
-        var remaining = value
-        repeat {
-            bytes.insert(UInt8(remaining & 0xFF), at: 0)
-            remaining >>= 8
-        } while remaining > 0
-        return integer(unsignedBytes: bytes)
-    }
-
     public static func objectIdentifier(_ dotted: String) -> [UInt8] {
         let arcs = dotted.split(separator: ".").map { UInt64($0)! }
         precondition(arcs.count >= 2)

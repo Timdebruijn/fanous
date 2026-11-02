@@ -3,7 +3,8 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { app, can, cmd } from '../lib/state.svelte';
-  import { HOLD_LABELS, LOCKED_TITLE, PROTOCOL_LABELS, interfaceOptions, parseUniverseName, universeName, type UniverseRow } from '../lib/patch-screen';
+  import { lockTitle as lockFor } from '../lib/show';
+  import { HOLD_LABELS, PROTOCOL_LABELS, interfaceOptions, parseUniverseName, universeName, type UniverseRow } from '../lib/patch-screen';
 
   // The universes and their receive settings (B28, DESIGN §6.6). Settings belong to the universe, not to the fixtures on it.
   let { rows, open, onopen }: {
@@ -13,7 +14,7 @@
     onopen: (id: string) => void;
   } = $props();
 
-  const lockTitle = $derived(!can('programmer') ? LOCKED_TITLE : app.project.showLock ? 'Locked: show lock is on' : undefined);
+  const lockTitle = $derived(lockFor('programmer', can('programmer'), app.project.showLock));
 
   /** One universe setting; a refused change (show lock, invalid value) puts the control back. */
   async function set(id: string, path: string, value: string | number | null, el: HTMLInputElement | HTMLSelectElement, previous: string) {

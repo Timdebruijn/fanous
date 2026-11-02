@@ -45,13 +45,7 @@ public enum SequenceIngest {
             try autoreleasepool {
                 guard let image = index == 0 ? probe : image(at: url) else { throw IngestError.unreadable(url) }
                 guard image.width == width, image.height == height else { throw IngestError.sizeMismatch(url, width, height) }
-                var buffer: CVPixelBuffer?
-                if let pool = writer.pixelBufferPool {
-                    CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
-                } else {
-                    CVPixelBufferCreate(nil, width, height, kCVPixelFormatType_32BGRA, nil, &buffer)
-                }
-                guard let buffer else { throw MovieWriter.WriterError.failed("pixel buffer") }
+                let buffer = try writer.makePixelBuffer()
                 CVPixelBufferLockBaseAddress(buffer, [])
                 defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
                 guard let context = CGContext(

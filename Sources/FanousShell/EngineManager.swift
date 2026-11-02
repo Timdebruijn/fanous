@@ -102,27 +102,15 @@ final class EngineManager {
         child = nil
     }
 
-    /// No team identifier = ad-hoc signed (local builds). launchd pins a registered agent to its cdhash, which every
-    /// rebuild changes; a Developer ID build is pinned to the team instead.
-    static var isAdHocSigned: Bool {
-        var code: SecCode?
-        var staticCode: SecStaticCode?
-        var info: CFDictionary?
-        guard SecCodeCopySelf([], &code) == errSecSuccess, let code, SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
-            SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
-            let dict = info as? [String: Any]
-        else { return true }
-        return dict[kSecCodeInfoTeamIdentifier as String] == nil
-    }
-
     private func startAgent() {
         let service = SMAppService.agent(plistName: Self.agentPlist)
-        // an ad-hoc rebuild leaves the agent pinned to the old binary (launchd: EX_CONFIG); register it afresh once the
-        // unregistration has finished (it completes asynchronously, a register right after it is a no-op)
-        // only when the engine does not answer: re-registering restarts it, which must never happen just because
-        // the UI was opened during a show
-        if Self.isAdHocSigned, service.status == .enabled {
-            Self.engineAnswers(within: 3) { answers in
+        // an ad-hoc rebuild, or the first Developer ID build over an ad-hoc registration, leaves the agent pinned to the old
+        // binary's cdhash (launchd: "needs LWCR update", EX_CONFIG; a team-identifier record does not pin, measured B50): register
+        // it afresh once the unregistration has finished (it completes asynchronously, a register right after it is a no-op).
+        // Only when the engine does not answer within 10 s: re-registering restarts it, which must never happen just because
+        // the UI was opened during a show, nor to an engine that is still starting (0.3–1.4 s to its listener here, more cold)
+        if service.status == .enabled {
+            Self.engineAnswers(within: 10) { answers in
                 guard !answers else { return }
                 Self.markRestartPending()  // a hung engine stopped here comes back in show mode if it was in it
                 service.unregister { _ in DispatchQueue.main.async { MainActor.assumeIsolated { self.registerAgent() } } }

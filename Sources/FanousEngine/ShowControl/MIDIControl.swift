@@ -119,8 +119,7 @@ public struct MIDIMapping: Codable, Equatable, Sendable {
     }
 
     static func decode(_ value: JSONValue) -> MIDIMapping? {
-        guard let data = try? JSONEncoder().encode(value) else { return nil }
-        return try? JSONDecoder().decode(MIDIMapping.self, from: data)
+        try? value.decoded(as: MIDIMapping.self)
     }
 
     /// Same control and same target: learning it again replaces the entry instead of adding a second one.
@@ -166,14 +165,9 @@ public enum MIDITarget: Equatable, Sendable {
 }
 
 /// The map applied to incoming messages: pure, owned by one queue. `current` reads the value the resolver shows
-/// (pickup, toggle); nil when the fixture does not exist. `uid` is the source's CoreMIDI unique id.
+/// (pickup, toggle); nil when the fixture does not exist. `uid` is the source's CoreMIDI unique id. It yields the
+/// cue commands and `setParameter` of `OSCCommand`.
 public struct MIDIMapper: Sendable {
-    public enum Action: Equatable, Sendable {
-        case set(FixtureRef, ParameterID, UInt16)
-        case cueGo, cueBack
-        case cueGoto(Double)
-    }
-
     private struct Pickup { var caught = false, lastIn: Int?, lastSent: Int? }
     private struct Controller: Hashable { var uid: Int32, channel: UInt8, number: UInt8 }
 
@@ -202,7 +196,7 @@ public struct MIDIMapper: Sendable {
         format == 0x7F || settings.mscFormat.map { Int(format) == $0 } ?? (0x30...0x3F).contains(format)
     }
 
-    public mutating func handle(_ message: MIDIMessage, from source: String, uid: Int32 = 0, current: (FixtureRef, ParameterID) -> UInt16?) -> [Action] {
+    public mutating func handle(_ message: MIDIMessage, from source: String, uid: Int32 = 0, current: (FixtureRef, ParameterID) -> UInt16?) -> [OSCCommand] {
         let channel: UInt8
         switch message {
         case .showControl(let msc):
@@ -224,7 +218,7 @@ public struct MIDIMapper: Sendable {
                 fourteen = (Int(cc) - 32, Int(msb[key] ?? 0) << 7 | Int(v))
             }
         }
-        var actions: [Action] = []
+        var actions: [OSCCommand] = []
         for (i, (m, target)) in zip(settings.map, targets).enumerated() {
             guard let target, m.source == nil || m.source == source, m.channel == 0 || m.channel == Int(channel) + 1 else { continue }
             let id = m.id.isEmpty ? "#\(i)" : m.id
@@ -270,7 +264,7 @@ public struct MIDIMapper: Sendable {
                 if m.pickup, m.curve == .linear, let now = current(fixture, parameter), !caught(id, raw: value, current: Int(now), step: Swift.max(1, max / 127)) {
                     continue
                 }
-                actions.append(.set(fixture, parameter, UInt16(value)))
+                actions.append(.setParameter(fixture, parameter, raw: UInt16(value)))
             }
         }
         return actions
@@ -325,12 +319,6 @@ public struct MIDILearner: Sendable {
 // MARK: Commands
 
 public enum MIDICommands {
-    public struct Hooks: Sendable {
-        /// Arm learn for a target (nil = cancel).
-        public var learn: @Sendable (_ target: String?, _ cue: Double?) -> Void
-        public init(learn: @escaping @Sendable (String?, Double?) -> Void) { self.learn = learn }
-    }
-
     static func stored(_ project: JSONValue) -> JSONValue { project["midi"] ?? ["mscDevice": 0, "map": []] }
 
     /// Writes the raw map back: entries this command did not read are kept exactly as they were.
@@ -340,7 +328,8 @@ public enum MIDICommands {
         try project.set(midi, at: "/midi")
     }
 
-    public static func register(on store: StateStore, hooks: Hooks) {
+    /// `learn` arms learn for a target (nil = cancel).
+    public static func register(on store: StateStore, learn: @escaping @Sendable (_ target: String?, _ cue: Double?) -> Void) {
         store.register(
             CommandSpec(
                 name: "midi.set", role: .programmer,
@@ -402,12 +391,12 @@ public enum MIDICommands {
                 argsType: "{ target?: string; cue?: number }"
             ) { _, args in
                 guard let target = args["target"]?.string else {
-                    hooks.learn(nil, nil)
+                    learn(nil, nil)
                     return nil
                 }
                 guard let parsed = MIDITarget(target, cue: args["cue"]?.double) else { throw CommandError.invalidArgs("unknown target \(target)") }
                 if case .cueGoto(nil) = parsed { throw CommandError.invalidArgs("cue.goto needs a cue number") }
-                hooks.learn(target, args["cue"]?.double)
+                learn(target, args["cue"]?.double)
                 return nil
             })
     }
@@ -474,9 +463,7 @@ final class MIDISourceListener: @unchecked Sendable {
     /// On the main thread.
     private func open() {
         guard !queue.sync(execute: { stopped }) else { return }
-        var timebase = mach_timebase_info()
-        mach_timebase_info(&timebase)
-        let secondsPerTick = Double(timebase.numer) / Double(timebase.denom) / 1e9
+        let secondsPerTick = 1 / PacedThread.ticksPerSecond
         var client = MIDIClientRef()
         var port = MIDIPortRef()
         let created = MIDIClientCreateWithBlock("Fanous \(label)" as CFString, &client) { [weak self] notification in
@@ -590,7 +577,7 @@ public final class MIDIInput: @unchecked Sendable {
     private var learner = MIDILearner()
     public let status = Mutex(Status())
     /// Cue actions of the map and MSC, on `queue`.
-    public var onCue: (@Sendable (MIDIMapper.Action) -> Void)?
+    public var onCue: (@Sendable (OSCCommand) -> Void)?
     /// Stores a learned entry (`midi.map.set`); returns the refusal, nil when stored.
     public var onLearn: (@Sendable (MIDIMapping) -> String?)?
 
@@ -680,7 +667,7 @@ public final class MIDIInput: @unchecked Sendable {
         let dmx = dmx
         let actions = mapper.handle(message, from: source, uid: uid) { dmx.resolvedRaw($0, $1) }
         for action in actions {
-            if case .set(let fixture, let parameter, let raw) = action {
+            if case .setParameter(let fixture, let parameter, let raw) = action {
                 dmx.setMIDI(fixture, parameter, raw: raw)
                 setBy[uid, default: []].insert(Target(fixture: fixture, parameter: parameter))
             } else {

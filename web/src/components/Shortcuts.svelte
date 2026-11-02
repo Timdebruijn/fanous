@@ -35,8 +35,7 @@
 </dialog>
 
 <style>
-  dialog { width: min(420px, calc(100vw - 32px)); padding: 24px; color: var(--text-1); border: 1px solid var(--line-strong); }
-  dialog::backdrop { background: rgba(11, 12, 14, 0.7); }
+  dialog { width: min(420px, calc(100vw - 32px)); }
   dl { display: grid; grid-template-columns: 72px 1fr; gap: 8px 12px; margin: 16px 0; align-items: center; }
   dt, dd { margin: 0; }
   kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; height: 30px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--line-strong); background: var(--surface-2); font: 600 13px var(--font-mono); }

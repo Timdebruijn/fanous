@@ -60,11 +60,7 @@ public final class AudioMixer: @unchecked Sendable {
         if let startHook { try startHook() } else { try start() }
         runningFlag.store(true, ordering: .relaxed)
         lastBusy = ProcessInfo.processInfo.systemUptime
-        let timer = DispatchSource.makeTimerSource(queue: control)
-        timer.schedule(deadline: .now() + 1, repeating: 1)
-        timer.setEventHandler { [weak self] in self?.checkIdle() }
-        timer.resume()
-        watchdog = timer
+        watchdog = DispatchSource.repeating(every: 1, on: control) { [weak self] in self?.checkIdle() }
     }
 
     private func checkIdle() {

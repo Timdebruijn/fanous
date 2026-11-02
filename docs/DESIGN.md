@@ -281,7 +281,7 @@ contract; the compositor does not care where a texture came from.
 
 | Source | Demux | Decode | Texture path | Notes |
 |---|---|---|---|---|
-| ProRes 422 (Proxy/LT/422/HQ) | `AVSampleCursor` + `AVSampleBufferGenerator` (random access, all-intra) | `VTDecompressionSession`, hardware required (`kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder`) | **Measured on macOS 27 / M1 Pro (Phase 2 spike):** the decoder's native output is Apple's lossless-compressed bi-planar 16-bit 4:2:2 (`&sv2`), IOSurface-backed; `CVMetalTextureCache` wraps the planes as `r16Unorm` + `rg16Unorm` without a copy | 0.8 ms per 1080p frame (p50). YCbCr→RGB (Rec.709 video range) in the layer shader. The `v216`/`y416` paths from WWDC20 are kept as fallbacks. |
+| ProRes 422 (Proxy/LT/422/HQ) | `AVSampleCursor` + `AVSampleBufferGenerator` (random access, all-intra) | `VTDecompressionSession`, hardware required (`kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder`); falls back to the software decoder when the hardware create returns −12910 for the frame size (B5) | **Measured on macOS 27 / M1 Pro (Phase 2 spike):** the decoder's native output is Apple's lossless-compressed bi-planar 16-bit 4:2:2 (`&sv2`), IOSurface-backed; `CVMetalTextureCache` wraps the planes as `r16Unorm` + `rg16Unorm` without a copy | 0.8 ms per 1080p frame (p50). YCbCr→RGB (Rec.709 video range) in the layer shader. The `v216`/`y416` paths from WWDC20 are kept as fallbacks. |
 | ProRes 4444 / 4444 XQ (with alpha) | same | same | native `&sv4` (bi-planar 4:4:4) **drops alpha**, so the session requests `y416` (packed A Y Cb Cr 16-bit); IOSurface → `rgba16Unorm` texture, swizzled in-shader | 1.8 ms per 1080p frame vs 0.95 ms native: the conversion costs ≈0.8 ms on the decode thread. Alpha-less 4444 files could use the native path later (`[OPEN-3]` resolved for v1: alpha wins). |
 | HAP / HAP Alpha / HAP Q / HAP Q Alpha / HAP Alpha-only | same (compressed samples only) | `hap.c` `HapDecode` with a chunk callback (`DispatchQueue.concurrentPerform` over the frame's chunks) → Snappy; DXT bytes land in a per-layer staging buffer | `MTLTexture.replace(region:)` into a per-ring-slot pooled texture (`bc1_rgba`, `bc3_rgba`, `bc4_rUnorm`; HAP Q = `bc3` read as scaled YCoCg in the shader; HAP Q Alpha = two textures) | **Measured:** HAP Q 0.8 ms, HAP 0.4 ms per 1080p frame (p50) incl. the copy. CPU-bound (Snappy). HAP R (`bc7`) is the same path later. |
 | Still (PNG/JPEG/TIFF/HEIF) | ImageIO | ImageIO → `MTLTexture` once (`rgba8`/`rgba16`) | resident | premultiplied alpha normalized on load |
@@ -431,10 +431,10 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
 
     | Feature | Extra allocations per tick |
     |---|---|
-    | Output pass | +3 (one more encoder) |
+    | Output pass | +3 (one more encoder; its "mapped output" label is an `NSString` made once, B117: a 13–15-byte Swift `String` bridged, and allocated, on every assignment; shorter ones bridge to tagged pointers and the 16-byte "secondary output" bridged free too) |
     | Each extra canvas | +3 |
     | Generators that draw this tick | +2 for the first, about +3 each further (derived): its encoder, the descriptor and label made once per generator (B112). The test card (110), colour sweep and motion test draw every tick, the clock (112) once a second, 100–107 only when made. Was +8 per tick for the test card and +9 for the clock's draw (measured `-c release`, M1 Pro, 2026-10-29) |
-    | Each preview or thumbnail streamer | about +6 (derived: an encoder and a capturing handler) |
+    | Each preview or thumbnail streamer | about +6 (derived: an encoder and a capturing handler; the encoder's label is an `NSString`, B117) |
     | `present` | not measured |
     | Syphon publish (while a client is attached) | +4: the flip draw's encoder (2) and Syphon's `addCompletedHandler` block (2); its render pass descriptor is made once (`VENDORED.md` local change 6), 8 when it was made per frame (B109; measured `-c release`, M1 Pro, 2026-10-29) |
 - Unified memory budget: engine warns at 60 % of physical memory, refuses to
@@ -1409,13 +1409,18 @@ movie path; `hasFrame` only tests presence. Syphon builds the frame from one
 `FrameSlot` `Mutex` read (`.rgba`, `bottomUp: true`), the generators return
 their one texture. A `.v216` live frame's width is `texture0.width × 2` for
 the geometry and for `u.texel`, from which the v216 shader case derives pair
-positions. The shader is unchanged; its matrix uses 8-bit ratios (16/255,
-255/219), exact for 8-bit live frames, while 16- and 10-bit sources read
-about one code low at white and about one code off in neutral chroma (B119).
-Readback through the compositor (`LiveSourceTests`), `2vuy` and `420v` alike:
-white 255, black 0, Rec.709 red 255,1,0, 50 % grey 128; the `420v` Y0/Y1
-pair reads 252/3 from linear sampling half a canvas pixel off centre (`2vuy`
-picks with the nearest sampler: 255/0). 100 frame reads allocate nothing in
+positions. The shader's matrix takes the plane depth from the uniforms (`deep`,
+set by the compositor from texture 0's pixel format): 8-bit levels (16/255,
+255/219, 255/224) for 8-bit live frames, the same levels at 16-bit scale
+(4096/65535, 65535/56064, 65535/57344) for the 16-bit movie planes (ProRes
+422 as r16/rg16, ProRes 4444 as `y416`), which the 8-bit ratios read about
+one code low at white and about one code off in neutral chroma (B119, PR
+#160). Readback through the compositor (`LiveSourceTests`), `2vuy`, `420v`
+and their 16-bit siblings `v216` and `sv22` alike:
+white 255, black 0, Rec.709 red 255,1,0, 50 % grey 128; the planar Y0/Y1
+pair (`420v`, `sv22`) reads 252/3 from linear sampling half a canvas pixel
+off centre (the packed pair, `2vuy` and `v216`, picks with the nearest
+sampler: 255/0). 100 frame reads allocate nothing in
 release. `LiveCatalog` is step 1b.
 
 **As built (2026-10-30, step 1b, PR #106):** `Media/LiveCatalog.swift`.
@@ -1462,9 +1467,14 @@ full-width aspect.
 *Session:* configured, started and stopped on the capture queue
 (`org.fanous.capture.<uid>`, `.userInteractive`), never on the loader
 thread; the input reads `.starting` meanwhile, and `.failed(reason)` when
-the session cannot start (the layer shows the reason). Among the device's
-formats of the active format's size, a frame-rate range that holds the
-canvas rate wins (1000/1001 apart is the same rate, as
+the session cannot start (the layer shows the reason). A camera
+(`.builtInWideAngleCamera`, `.continuityCamera`) runs at the largest size that
+fits canvas 1 and has a range holding the canvas rate, else the largest that
+fits with a range below the canvas rate (B126: the session preset leaves the
+iPhone at 640x480); nothing fitting keeps the active format's size. Any other
+device (`.external`: cards and UVC webcams) keeps its active format's size,
+which follows its input. Among the device's formats of that size, a frame-rate
+range that holds the canvas rate wins (1000/1001 apart is the same rate, as
 `DisplayModeMatching.sameRate`), the one whose top is closest above it
 first. Its min and max frame durations are both set to the canvas rate,
 clamped to the range, so a camera does not slow down in low light. Without
@@ -1623,10 +1633,18 @@ only). It finds the display by CG UUID (`CGGetOnlineDisplayList`, any
 thread) with its mode's pixel size, fitted into canvas 1's size at open
 (aspect kept, never scaled up). On the queue `org.fanous.screen.<uuid>`
 (`.userInteractive`) it reads `SCShareableContent` (all windows, not only
-on-screen ones, so the engine is listed even without an output window at
-that moment; the completion hops back to the queue), excludes the engine's
+on-screen ones; the completion hops back to the queue), excludes the engine's
 `SCRunningApplication` (`processID == getpid()`) with
-`exceptingWindows: []`, configures BGRA, sRGB, `minimumFrameInterval` =
+`exceptingWindows: []`. ScreenCaptureKit lists only the processes that own a
+window-server window, on screen or not, so until the first output was bound
+the engine was not listed and a capture started then excluded nothing
+(`excludedApps=0`, B124); `OutputCoordinator.presence`, a 1×1 borderless
+window made with `defer: false` and never ordered in, keeps the engine listed
+from its start (measured with `CGWindowListCopyWindowInfo(.optionAll)`; a
+`defer: true` window is not listed). That a window the excluded engine
+opens later stays out of the picture rests on the filter's per-application
+semantics and is not verified: a numbered display is halted once an output
+binds to it. It configures BGRA, sRGB, `minimumFrameInterval` =
 1/canvas rate at service start, no cursor, no audio, `queueDepth` 6 and
 the fitted size, adds itself as the `.screen` output on that queue and
 calls `startCapture`. The depth is 6, not 4: the ring may hold three taken
@@ -1803,7 +1821,7 @@ Screen permission). The owner's live check is in the PR.
 
 | Input | Framework | Pixel path | Kind |
 |---|---|---|---|
-| Capture device | `AVCaptureSession` with one `AVCaptureVideoDataOutput` on its own serial queue; the active format is the device's format whose size matches its current input and whose frame rate is the highest at or below the canvas rate (a card follows its source anyway) | the native format is `AVCaptureDevice.Format.formatDescription.mediaSubType`, not `availableVideoPixelFormatTypes` (that lists what the output can convert to). The output is asked for the native subtype when it is `2vuy` (Cb Y0 Cr Y1) or `yuvs` (YUY2: Y0 Cb Y1 Cr, what Cam Link-class UVC devices send), for `420v` when native is `420v` or `420f`, else for `BGRA` (MJPEG-only webcams: AVFoundation decodes, there is no 4:2:2 to keep) | `2vuy` → `.v216` (same byte order), as `rgba8Unorm` at half width; `yuvs` → new `.yuy2`, the same texture with the pairs swapped (one more shader case, no new matrix); `420v` → `.planarYCbCr`, planes 0 and 1 as `r8Unorm` + `rg8Unorm`; `BGRA` → `.rgba`. The layer shader's Rec.709 video-range matrix (§4.1) reads 8-bit textures unchanged |
+| Capture device | `AVCaptureSession` with one `AVCaptureVideoDataOutput` on its own serial queue; the active format is the device's format of the chosen size (a camera: the largest fitting canvas 1 that holds the canvas rate, B126; any other device: its active format's, which follows its input) with the range per the rule in the prose above | the native format is `AVCaptureDevice.Format.formatDescription.mediaSubType`, not `availableVideoPixelFormatTypes` (that lists what the output can convert to). The output is asked for the native subtype when it is `2vuy` (Cb Y0 Cr Y1) or `yuvs` (YUY2: Y0 Cb Y1 Cr, what Cam Link-class UVC devices send), for `420v` when native is `420v` or `420f`, else for `BGRA` (MJPEG-only webcams: AVFoundation decodes, there is no 4:2:2 to keep) | `2vuy` → `.v216` (same byte order), as `rgba8Unorm` at half width; `yuvs` → new `.yuy2`, the same texture with the pairs swapped (one more shader case, no new matrix); `420v` → `.planarYCbCr`, planes 0 and 1 as `r8Unorm` + `rg8Unorm`; `BGRA` → `.rgba`. The layer shader's Rec.709 video-range matrix (§4.1) reads 8-bit textures unchanged |
 | Display | `SCStream` with `SCContentFilter(display:excludingApplications:exceptingWindows:)`, the engine's `SCRunningApplication` excluded and `exceptingWindows` `[]` (an output on a captured display would feed back) | `BGRA`, ScreenCaptureKit's native output; `SCDisplay.width/height` are points, so the pixel size comes from the display mode's `pixelWidth/Height` (`CGDisplayPixelsWide/High` are points on Retina too), scaled down to fit the canvas when larger (aspect kept); `SCStreamConfiguration.colorSpaceName` set to sRGB explicitly (the default follows the display, P3 on most Macs); `minimumFrameInterval` = the canvas rate; cursor off; no audio; `queueDepth` 6 (built, see step 3a) | `.rgba` as `bgra8Unorm`; a sample whose status is not `.complete` (an idle display) keeps the last texture |
 
 Displays bound as Fanous outputs are left out of 21–28: they would show only
@@ -1903,7 +1921,10 @@ Media screen's folder 0 list gets the groups "Cameras and capture cards
 (1–20)" and "Displays (21–28)" with the green dot and Forget of the Syphon
 group; the layer panel's folder 0 picker lists them the same way; the
 System screen shows the two permissions with an Authorize button. The console
-side needs nothing: File 1–32 in folder 0 already dials them (§6).
+side needs nothing: File 1–32 in folder 0 already dials them (§6). Designed in
+§12.1 (2026-11-02, not built): Forget and the permissions move to an Inputs
+screen, which adds a number of your choice and a capture format per device;
+Media keeps folder 0 as the picker.
 
 **Windows (29–32), later.** A window is named by its app's bundle id and title
 (`capture.window {file, app, title}` from a list the engine publishes as
@@ -2099,7 +2120,10 @@ that never rendered drops out, so the chain is one set long), and the thread tha
 renders it takes each frozen plan's hold from the replaced plan with its id, once,
 if the copies cover the plan's canvases at their sizes (`OutputPass.adopt`; not on
 MainActor, which would read `held` while the render thread writes it), so the
-output keeps its frame (B111).
+output keeps its frame (B111). When a display changes role (master ↔ secondary)
+its set moves to another thread; if the old driver's thread did not stop within
+1 s, a tick may still be writing the old holds, so the new set gets no
+`previous` and the output holds afresh, with a warning (B118).
 
 The output preview (§11.3) of a frozen output holds with it (B107). For an
 output on the clock-master display its plan takes the master set's plan's
@@ -2356,14 +2380,45 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
   "Blend check and Grid" in one pattern).
 - Only bound free outputs show their Output ID; unassigned ones are tiles
   without a pattern.
-- Make wall sets the patterns before `wall.add`, so one Undo takes the wall
-  back.
+- Make wall set the patterns before `wall.add`, so one Undo took the wall
+  back, until B102 (below): it is now one `wall.add`.
 - The wall panel sits on the Outputs tab, full width above the output list and
   preview. Leaving the Outputs screen ends the wizard and the seam check.
-- Every pattern the wizard or the check sets is an `output.set` (one undo step
-  per output, B102). Each output's own pattern is kept until the engine has
-  taken it back, also in sessionStorage, so a reloaded page offers to give it
-  back.
+- Every pattern the wizard or the check set was an `output.set` (one undo step
+  per output and step, each clearing redo), and the page kept each output's own
+  pattern, also in sessionStorage, to give it back, until B102 and B103
+  (PR #159, owner decision 2026-10-31). The patterns are now a lease modelled on
+  `output.overlay` (§9.10 item 4), `output.pattern {patterns: [{id, pattern}]}`
+  (`ProjectDocument+Presets.swift`): one call for several outputs, each with
+  its own pattern; pattern 0 ends that output's lease.
+  - Programmer, refused under show lock, never saved or undone, no project
+    change. A pattern is refused in show mode and for an output that does not
+    exist; an end is never refused in show mode or for an output that is gone
+    (show lock refuses everything, and has ended the leases itself). A call
+    that lists an output twice is refused. Show mode and show lock end every
+    lease at once.
+  - Each lasts 5 s. The Outputs screen renews it every 2 s while the wizard
+    (Output ID on the bound free outputs, while it is in sight on the Outputs
+    tab) or the check (its step on every output of the wall, on any tab: it
+    has a banner) shows a pattern, and ends it when they close, when
+    the step moves to other outputs (in the same call), or when the page is
+    hidden; an unloading page is hidden first, else the lease runs out.
+  - **Home: `PatternLeases`** (`OutputCoordinator.swift`), owned by the
+    coordinator, which hands it to every plan it compiles and to the output
+    preview's (`OutputPlan.patterns`). Keyed by output id behind one `Mutex`,
+    so any output id works (the DMX snapshot's slots stop at output 8). The
+    render threads compare the lease's end with the frame time, so no tick is
+    needed; the output preview now passes its frame time instead of 0 for that.
+  - An output draws the Master's pattern, else the Output fixture's
+    (channel 4), else the lease's, else its own `testPattern`.
+    `live.outputs[].pattern` is the leased pattern, null without one.
+  - One lease per output, the latest call wins, no per-client leases. With two
+    clients on the same outputs, the one that ends clears it, and the other's
+    next renewal brings its pattern back within 2 s (accepted). Two clients on
+    different steps of the same outputs alternate the pattern about every
+    second: the latest renewal wins. The outputs' own patterns are never
+    written, so a second check can no longer keep the first one's pattern as
+    their own (B103).
 - Unlinked RGB kept the single gamma ("in effect"), with R, G, B below it,
   until M1.6 (below); linking again drops them.
 - The colour hints said colour gain was not built yet, and the projector tile
@@ -2483,7 +2538,7 @@ SeamConfig { a, b (output ids; b is right of or below a), power, gamma, gammaRGB
 ### 9.10 M2: black lift by coverage, Keystone, mapping presets, edit overlay, masks v2 (design 2026-10-29)
 
 **Status:** designed 2026-10-29, owner decisions the same day (below), and
-reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2.1), the Keystone mode of item 2 (M2.3), the presets of item 3 (M2.4) and their morph (M2.5), the edit overlay of item 4 (M2.6), and the engine step of masks v2 of item 5 (M2.7: model, older projects, rasteriser; its UI and tools are M2.8), below. Research and frictions F3–F6 are in
+reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2.1), the Keystone mode of item 2 (M2.3), the presets of item 3 (M2.4) and their morph (M2.5), the edit overlay of item 4 (M2.6), and masks v2 of item 5: its engine step (M2.7: model, older projects, rasteriser) and its UI and tools with the slice shapes (M2.8). M2 is complete, below. Research and frictions F3–F6 are in
 `docs/mapping-ux.md` §1 and §4.2–§4.5.
 
 **Owner decisions (2026-10-29):**
@@ -2889,7 +2944,8 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
   - The overlay follows the output's Blackout and the Master, so black stays
     black. It takes no blend, colour or lift.
 - **Leases.** `output.overlay {id, on, selected?}` and
-  `output.show {ids, preset}` (3) are leases.
+  `output.show {ids, preset}` (3) are leases, as is the projector-wall test
+  patterns' `output.pattern {patterns}` since B102 (§9.9).
   - Programmer-only, refused under show lock, never saved or undone.
   - Each lasts 5 s. The UI renews it every 2 s while the tab is open or
     Compare is held, and the engine lets it expire, so no client tracking is
@@ -3196,6 +3252,111 @@ reviewed against the code. Built: the compile cache of item 0 (M2.2), item 1 (M2
   while a shape is drawn. No test covers the library hook's wiring (it needs the whole engine), the preview's feather
   scaling, or a drag keeping a point's handles (no UI makes handles yet).
 
+**As built (M2.8, PR #148):** the web UI only; the engine and the protocol are unchanged.
+- **Tools** (pure, `lib/outputs.ts`), each a path, each one `output.set` of the slice's `masks` (`finishMask`: an add
+  mask after the others), so one undo step:
+  - **Polygon:** M2.7's Draw mask (taps, Done, Undo last corner).
+  - **Rectangle** (`rectanglePath`: the box's corners clockwise from the top left, from either corner) and **Ellipse**
+    (`ellipsePath`: 4 points clockwise from the top, handles `KAPPA` = 0.5522847498 × the radius along the box's
+    sides): one drag on the picture.
+  - **Freehand** (`freehandPath`): the stroke in output pixels, `simplify` (Ramer–Douglas–Peucker, iterative,
+    distance to the segment) at 2 px, an end back within 2 px of the start dropped. **Refinement of the design's
+    "Catmull-Rom to Bézier handles"** (review): a point where the stroke turns by more than 40° (`FREEHAND_CORNER`, in
+    output pixels) stays a corner, the others get `smoothPoint`. Smoothing every point bulged straight runs past their
+    corners: measured curve-to-stroke at 1920 × 1080, a 1000 × 500 rectangle 125 px off, a house of 600 px edges 69 px,
+    a 300 × 200 window 37 px; with corners all 0 px, and a smooth 700 × 400 blob stays 0.5 px. Between RDP's points a
+    curve of radius r turns by at most 2 acos(1 − 2 / r), under 40° from r ≈ 35 output px, while traced corners (90°,
+    a 45° roof) turn more.
+  - `toolPath` takes a drag tool's stroke from its first to its last point; a box under 2 output px either way, or a
+    stroke that leaves under 3 points, makes nothing (a tap).
+  - The editor (`OutputMapper`'s `tool`, `ondraw`) takes the drag anywhere on the picture, also starting on a handle,
+    with pointer capture, so a finger works on the iPad. It follows the stroke's own pointer only: a second finger or
+    a palm meanwhile neither restarts nor ends it (review). The stroke is in stored coordinates (through the warp's
+    inverse), a plain array outside Svelte's state; the preview is a polyline's points string that each move extends
+    by one screen point (Freehand) or redraws at a fixed size (the box tools' closed outline through the warp). As
+    first built the stroke was deep state and each move warped all of it, 12 pieces a segment (review, measured per
+    pointer move with the reviewer's probe, 800 moves round a circle: under a 9 × 9 mesh 25 ms over the first 100
+    moves, 218 ms over the last; without a warp 33 ms at the end; now 16.7 ms throughout, the frame rate, as with no
+    tool). The tool going (Cancel, the lock) mid-drag ends the stroke, so no preview is left. After one shape the
+    tool is off; a press on the tool being used keeps it (Polygon's corners stay).
+  - **Image:** a `<select>` of the library's stills, the Layers screen's picker (`mediaOptions(library, 'still')`;
+    `/api/library` is read while Mask mode shows and after each scan); feather 0, the engine ignores it.
+  - **Keyboard:** Rectangle and Ellipse have **10 % inside** (the box 0.1…0.9 of the output, M2.7's Rectangle);
+    Polygon and Freehand need a pointer, as Draw mask did.
+- **Redraw** (the M2.7 gap): it keeps a copy of its mask as it was (`$state.snapshot`: patches change the project in
+  place, so a reference would follow another client's edit). `finishMask` looks the copy up by content and replaces
+  it wherever it is now (mode and feather kept); a mask changed or removed meanwhile is left alone and the path is
+  added instead. Any tool redraws: the tool buttons keep the target until the shape is done or cancelled. The
+  caption names the mask being redrawn (`redrawIndex`), or says a new mask will be added once it changed.
+- **Mask list** per slice: the number (selects the mask's first point), Add or Subtract, the point count or the image's
+  library name, **Invert** (`aria-pressed`; sets `mode`), Feather px and Redraw for a path mask, Remove. Each row
+  acts on its own mask, so `maskTarget` serves only Add points now. Subtract masks show apart in the editor: dashed
+  outline, red tint, hollow points (`outlines()` flags them).
+- **Handles.** `handles()` lists each mask point followed by its `…/in` and `…/out` handle where it lies, so Tab and
+  the remote step through them ("slice 2 · mask point 5 in"); `maskHandle` gives `side`. The editor draws a point's
+  handles while the point or one of them is selected, under the points, and a press goes to the nearest of the
+  handle hit and the shown Bézier handles (review: a 24-point smooth loop in a 1027 px editor puts a handle 17 px
+  from its point, inside the 37 px hit circle of its point or a neighbour, so by draw order a pointer could never
+  take it). While a point is dragged its handles go with it. A handle's drag or nudge writes its point with the new
+  offset (`movedHandle`, also `nudgeCommand`'s single case) and is not held to the output (review: smoothing a
+  corner at its edge puts a handle outside, which no nudge could move); points keep their clamp. A group (All)
+  moves the points only, their handles with them, and counts points only. **Backspace** or **Remove handle** with a
+  handle selected removes the handle (`maskRemoval`: that side becomes a corner), a point otherwise (review: Tab
+  lands on handles, so Tab, Backspace removed a whole point).
+  - **Double-tap:** a second pointerdown on the same point (not a handle) within 350 ms (touch has no dblclick) runs
+    `toggleSmooth`, one `output.set` of the point: smooth is `smoothPoint` (handles a sixth of the neighbours'
+    chord, a third of the Catmull-Rom tangent), a point with either handle becomes a corner. **Smooth point** does the
+    same from the keyboard.
+  - **A tap on a handle without a move writes nothing now.** It wrote the pointer's position, so a tap moved a point
+    by up to the hit radius and a double-tap would have been two undo steps.
+  - **Add points on a curve** (the M2.7 gap): `insertNearest` takes the nearest of 63 points along each curved
+    segment, refines it by a ternary search between its neighbours (review: the sample alone was up to 12 px off on a
+    4K quarter arc), splits there by de Casteljau (the new point smooth, the neighbours' handles shortened, a missing
+    one left missing), so the shape stays; on a straight edge it inserts the tapped point as before.
+- **Overlay selection:** a selected handle sends its point (**the point, not the handle**: no engine change).
+- **Slice shapes** in Slices mode, on the selected slice, each one `output.set` with an Undo toast: **Triangle**
+  (`triangleDest`: the top corners at the middle of the top edge) and **Circle** (`circleMask`: `ellipsePath` on the
+  bounding box of the corners, appended).
+- **Phones:** the mode (Corner pin … Mask) and tool groups wrap instead of cutting off their last buttons (review:
+  Freehand was cut at 390 px and hidden at 320 px); only this screen's two groups, `app.css`'s `.segmented` is
+  unchanged.
+- **Fixed on the way:** a tap on the picture (Add points, a polygon corner) went through the warp's inverse twice
+  (`fromScreen(toPoint(…))`), so under a corner pin or a mesh the point landed away from the tap; once now. (The
+  double-click path was right.)
+- **Content template:** unchanged; `maskOutline` (now de Casteljau, shared with the split) draws every tool's curves,
+  checked on the Circle's mask. Image masks are still not drawn there.
+- **Deviations.**
+  - Handles show for the selected point only (the design does not say; a freehand path's handles all at once hide
+    its points).
+  - At 2 output px, RDP keeps the steps of the screen's pixel grid where a screen pixel is more than 2 output px (a
+    1920 px output on a 900 px preview: a 24-corner stroke gives 25 to 28 points). The design's value is kept.
+  - Invert has no vitest of its own: it is a one-line mode flip in `Outputs.svelte`; vitest checks what it changes
+    (the outline flag, the template's hole), Playwright the flip, its way back and its undo.
+- **Checks.** vitest (15 new, 272 in all): RDP at its tolerance; freehand at 2 output px, the closing end, the
+  corners of a traced box kept; the reviewer's rectangle, house and window with straight edges and a blob smooth,
+  each within 2 px of its stroke, the blob's segments the uniform Catmull-Rom spline; the rectangle from either
+  corner and a tap; ellipse points, κ handles and the outline on the ellipse; the de Casteljau split on the old
+  curve (also with one handle) and at the nearest point within 2e-4; corner ↔ smooth; a handle stored as an offset;
+  Backspace on a handle and on a point; Triangle and Circle; Redraw with the list changed four ways; the remote
+  stepping through handles, a handle nudged alone, one outside the output nudged every way, and All moving points;
+  the stills filter; the Circle in the content template. Playwright (5 new): every tool on a real engine
+  (rectangle with its closed preview, ellipse with its handles, polygon kept through a second press on its tool,
+  freehand by a pointer drag, then one Undo removes the freehand only; Cancel mid-drag leaves no preview); handles (a
+  press on a short handle takes it, it drags alone, a double-tap leaves it, they follow a dragged point, Tab and
+  Backspace remove one and one Undo brings it back); the mask list (an image from the library, Invert and Undo, the
+  Redraw caption, a point drag, feather, a double-tap that sends exactly one `output.set` and one Undo, Remove);
+  Triangle and Circle with one Undo each and a handle dragged past the output's edge; freehand by touch on a 390 ×
+  844 viewport with a second finger landing and lifting halfway (touch events through the DevTools protocol). Each
+  mutation-checked.
+- **Undo joins:** the engine (`StateStore`) joins consecutive `output.set` calls of one client with the same id and
+  path into one undo step while each comes less than 1 s after the previous (a sliding window). Besides a drag, that
+  joins: two masks of a slice made within a second of each other (any tools, `/slices/n/masks`), so also **10 %
+  inside** for a Rectangle and then an Ellipse, **Circle** twice, an image mask or a Remove right after a shape; a
+  point's or handle's drag and then **Smooth point**, a double-tap or **Remove handle** on that point (`…/path/i`);
+  two Add points taps or Remove point presses on one mask (`…/path`); Invert twice (`…/mode`). At an operator's pace
+  these are a second apart; the engine is unchanged.
+- **Left open:** freehand with a real finger on an iPad (Chromium's touch emulation only).
+
 **M2 build order** (one PR each, Opus coding agents, review before merge; the
 groundwork and small engine pieces first):
 1. Black lift by coverage (Core)
@@ -3213,7 +3374,8 @@ groundwork and small engine pieces first):
   supported), run by `AVAudioEngine` with a single `AVAudioSourceNode` whose
   real-time render callback mixes all layers' PCM rings: `out += ring.pull()
   × volume × pan`. Per-layer output pair selection (channels 1-2, 3-4, …) is
-  a project setting.
+  a project setting. Neither is built (B4, B76); their settings are designed
+  as the Outputs screen's Audio tab in §12.1 (2026-11-02).
 - Each layer's decoder fills its PCM ring (48 kHz float, 250 ms) from the
   movie's audio track, positioned by the layer clock. Audio plays only when
   `speed == 100 %` and direction is forward; otherwise the ring is muted
@@ -3539,9 +3701,9 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
 ### 11.4 Frontend (ADR-0012)
 
 Svelte 5 (runes) + Vite + TypeScript strict, Vitest for unit tests; no UI
-component library, no router library (six screens, hash routing in 30
-lines), no runtime CDN loads. Chosen over Preact because fine-grained compiled
-reactivity updates exactly the DOM nodes that changed when 1 000+ live values
+component library, no router library (six screens, seven with the Inputs
+screen of §12.1; hash routing in 30 lines), no runtime CDN loads. Chosen
+over Preact because fine-grained compiled reactivity updates exactly the DOM nodes that changed when 1 000+ live values
 tick at 20 Hz, with no virtual DOM diff and a smaller runtime; the UI must
 stay smooth on an iPad while the mapping editor renders an SVG overlay over a
 live preview.
@@ -3677,13 +3839,18 @@ switcher (left rail, icons + labels, collapses on iPad portrait).
 **Status bar**, left to right: engine state (show mode / show lock badge),
 fps & frame time (per output, worst-case highlighted), dropped frames (last
 60 s, red when > 0 in show mode), DMX per universe (green pulse per packet,
-yellow > 1 s silence, red > 2.5 s), timecode (source, value, lock/freewheel),
-outputs (count ok / red names of missing displays), audio device, ingest
-(progress when active), clients (count, lagging ones), thermal/power (yellow
-on battery or thermal pressure), backup (v2; hidden in v1). Red means "look
+yellow > 1 s silence, red > 2.5 s), timecode (source, value, lock/freewheel;
+left out while timecode is switched off), outputs (count ok / red names of
+missing displays), audio device, ingest (progress when active), clients
+(count, lagging ones), thermal/power (yellow on battery or thermal pressure),
+backup (v2; hidden in v1). Red means "look
 now" and is reserved for: dropped frames in show mode, lost DMX on a patched
 universe, lost output display, decoder error on a visible layer, readiness
-failure while entering show mode.
+failure while entering show mode. The frame time has room for its widest
+value ("120 fps 999.9 ms"), so it no longer changes the bar's width and wraps
+or unwraps it under a drag (B134): with a fresh engine the bar fits one row
+from 1470 px and takes two at 1440. Events still change its width: a universe
+going active or lost, a lagging client, no output rendering.
 
 1. **Layers / Mixer** — one row (or tile on narrow screens) per layer: live
    thumbnail, layer name + canvas, resolved media ("12 / 4 · intro_loop.mov ·
@@ -3699,6 +3866,9 @@ failure while entering show mode.
    (native file dialog in the shell; path browser or HTTP upload in
    browsers). Ingest queue panel with per-job codec choice, target number,
    progress, ETA, errors. Rename/renumber with conflict detection.
+   Designed in §12.1 (2026-11-02, not built): an **Inputs** screen comes
+   after Media (key `3`, the screens below move down one key) and takes over
+   the management of folder 0's live inputs.
 3. **Outputs & Mapping** — three tabs sharing a live preview that can show
    the canvas, the selected output (post-warp) or the physical display
    arrangement: *Canvases* (size, layers assigned, clock master), *Outputs*
@@ -3708,7 +3878,8 @@ failure while entering show mode.
    path editor with feather, numeric fields for every point, nudge keys,
    point density selector, "raw" bypass). Designed for iPad: large handles,
    two-finger pan/zoom, a "send test pattern to this output" toggle that
-   stays visible.
+   stays visible. Designed in §12.1 (2026-11-02, not built): a fourth tab,
+   *Audio* (output device, latency offset, an output pair per layer).
 4. **Patch / DMX** — fixture list (type, universe, address, footprint,
    collisions in red), add/remove layers (bounded by the tier's measured
    limit, shown next to the count), per-universe source protocol and
@@ -3723,7 +3894,8 @@ failure while entering show mode.
    rate, offset, lock state, big readout), cue list (add/edit/reorder cues,
    per-cue parameters + fade, TC trigger time, go/back/goto, current/next
    highlighting, follow-timecode toggle), OSC (ports, address map viewer,
-   last 50 received messages), MIDI (ports; MTC only in v1).
+   last 50 received messages), MIDI (ports; MTC only in v1). Designed in
+   §12.1 (2026-11-02, not built): a level meter on the LTC channel.
 6. **System / Health** — machine capabilities and tier (chip, memory
    engines, GPU, memory, displays supported, measured benchmark numbers or
    "not benchmarked"), live metrics (frame time histogram per output,
@@ -3732,12 +3904,258 @@ failure while entering show mode.
    fix hints, network (interfaces, listener state, TLS fingerprint, Bonjour
    name, clients), logs (filterable tail, download), service (engine
    version, uptime, restart, install/remove agent — shell only), roles and
-   passwords, library root, audio device, backup (v2).
+   passwords, library root, audio device, backup (v2). Designed in §12.1
+   (2026-11-02, not built): the audio device goes to the Outputs screen's
+   Audio tab and the capture permissions to the Inputs screen.
 
 Keyboard: `1–6` switch screens, `Space` cue go (operator+), `Esc` closes
 panels, `Cmd/Ctrl+Z / Shift+Z` undo/redo, `L` toggles show lock (programmer,
 with confirmation). None of them act while a modal dialog is open; `?` still
-closes the shortcut list.
+closes the shortcut list. Designed in §12.1 (2026-11-02, not built): an
+Inputs screen on key `3`, so `1–7`.
+
+### 12.1 Inputs screen and audio outputs (design 2026-11-02, B137)
+
+**Status:** designed 2026-11-02, not built. The owner approved the four
+decisions below the same day; the build order is at the end.
+
+**Why.** The owner wants one place to select and set up inputs, and expects
+more settings to come: capture cards, the audio input that carries timecode,
+and the audio output, which he wants to set up fully. Checked against the code
+on 2026-11-02, these are spread over three screens, and the audio output has
+no settings at all:
+- Cameras, capture cards, displays and Syphon servers are listed on the Media
+  screen as folder 0 (§8.2.1, "Live feed and UI"), with their numbers, a
+  running dot and Forget. Nothing about them can be set. The engine picks the
+  capture format (B126; B131 for UVC webcams). A number is always the lowest
+  free one and can only be freed. Size, fps and drops show only in the status
+  of a layer that shows the input (`layers[].capture`).
+- The camera and screen permissions are on the System screen (Machine ›
+  Capture permissions). The microphone permission that LTC needs has no row:
+  the engine asks once when LTC opens (§15.1).
+- The LTC device and channel are on the Show screen (Timecode). The device is
+  picked by name from `live.osc.audioInputs`, which has no channel count, and
+  nothing shows whether the channel carries a signal.
+- The audio output is the system default device in one stereo mix:
+  `AudioMixer.deviceUID` is ignored (B4) and the per-layer output pairs of §10
+  are not built (B76). §12 puts the audio device on the System screen, but no
+  UI has it.
+
+**Decisions (approved by the owner 2026-11-02):**
+1. **Two places that mirror each other.** A new **Inputs** screen holds
+   everything that comes in: cameras and capture cards, displays, Syphon
+   servers (later windows and NDI, B74) and audio inputs. Audio out becomes an
+   **Audio** tab on the Outputs screen, beside Canvases, Outputs and Warp &
+   Slices: that screen is where the show leaves the machine. Rejected: one
+   "Devices" screen for both directions, which would split the outputs over
+   two screens (and a Syphon server is no device). Also rejected: "I/O", which
+   reads as a twin of Outputs.
+2. **Inputs is screen 3, key `3`.** Outputs, Patch, Show and System move to
+   keys 4–7. The order follows the signal: what plays (Layers), what it plays
+   (Media, Inputs), where it goes (Outputs), who controls it (Patch, Show),
+   the machine (System). Rejected: key `7` at the end, which keeps today's
+   keys but puts Inputs after System. Before 1.0 the keys can still move.
+3. **Settings move to Inputs, the picker stays.**
+   - Media's folder 0 keeps listing every built-in and live input with its
+     number and play menu, because that is what a console selects. It loses
+     Forget, Forget all and the permission captions, and each live row links
+     to its input on Inputs (`#/inputs/<file>`: the router reads the first
+     segment, the screen the second).
+   - System's Capture permissions block moves to Inputs. The readiness items
+     stay as they are (their fixes name the macOS panes). The texts that say
+     "authorize on the System screen" say Inputs instead: two of
+     `CaptureInput`'s refusals, which a layer shows as its status, and Media's
+     captions.
+   - The timecode settings stay on Show (source, device, channel, offset,
+     freewheel). Inputs is a second way to the same `project.timecode` ("Use
+     for timecode" on an audio channel).
+4. **New settings, each its own step:**
+   - choose an input's number (move, or swap with a taken one);
+   - the capture format per device (B131);
+   - the microphone permission, and a level meter on the LTC channel;
+   - the audio output device with latency compensation (B4);
+   - an output pair per layer (B76).
+
+**Inputs screen.** A list and a detail panel, as on the Patch screen (on
+narrow screens the detail goes under the list). Edits need the programmer role
+and are refused under show lock, as on the other screens.
+- *Top:* the permissions this Mac's inputs need, one row each with its state
+  and Authorize: Camera, Screen recording, Microphone. A row shows only while
+  an input of its kind exists (a numbered device or display, or timecode on
+  LTC). It turns yellow, as the rows on System do today, only while an input
+  in use lacks the permission. For the camera and the screen that is the
+  readiness rule of B122; for the microphone it is timecode on LTC with the
+  switch on (a new `microphone` readiness item, step 2).
+- *List,* grouped by kind, each group with its range: Cameras and capture
+  cards (1–20), Displays (21–28), Syphon servers (150–169), Audio inputs. A row
+  has:
+  - the number;
+  - the dot, as on Media: green running, yellow in use by another app, grey
+    not running;
+  - the name, and the layers that show it (badges);
+  - for an open input, its signal in one caption ("1920×1080 · 59.94 fps ·
+    2vuy", "no signal").
+
+  Forget all not running sits in the group header and the unnumbered-servers
+  note under Syphon, as on Media today. Audio inputs have no folder 0 number
+  and no dot: a row is the device's name and channel count, and on the device
+  in use "Timecode (LTC, channel 1)". A timecode device of null (Default
+  input) is the input the feed marks as the system default. The channel shown
+  is the one LTC reads: the stored channel, clamped to the device's channel
+  count as `LTCInput` does.
+- *Detail of a video input:*
+  - its name (and model, for a capture device, read from `project.capture`:
+    the feed does not carry it);
+  - Number (a field, step 3) and Forget (only when not running);
+  - its status. While a layer has it open: size, fps, subtype and the counters
+    of `layers[].capture`. An input that no layer shows is not opened for this
+    screen and reads "not open: no layer shows it". Opening a camera just to
+    look can take it from another app and costs a session.
+  - Capture devices add Format (step 4). Displays and Syphon servers have no
+    format.
+- *Detail of an audio input:* its channels, and per channel "Use for
+  timecode". It sets the timecode source to `ltc` with this device and
+  channel, in one `timecode.set` with path "" and the whole settings, so it is
+  one undo step. It leaves the operator's switch (`enabled`) as it is: with
+  timecode switched off, LTC is not open and the meter reads "timecode
+  switched off". The channel in use shows LTC's state, rate and value and the
+  level meter (step 2).
+
+**Number.** Two commands, both programmer, refused under show lock and in
+show mode (layers on either number change picture), and undoable:
+- `capture.renumber {file, to}`: 1–20 for devices and 21–28 for displays, each
+  only within its own range;
+- `syphon.renumber {file, to}`: 150–169. It refuses a server whose app and
+  server name another numbered server shares (two engines' canvases): the
+  catalog cannot tell a swap of such twins from no change.
+
+A free `to` moves the entry. A taken one swaps the two. Like Forget, each is a
+project command that edits `/capture`, `/screens` or `/syphon`; the catalog
+adopts the change and writes it back. Its `replayCheck` is Forget's
+(`checkLiveReplay` with the running files, B90), so an undo cannot put an
+entry back on a number that a newcomer took meanwhile, plus a refusal in show
+mode: the history is gated by show lock only, so a command's own show-mode
+refusal does not cover its undo and redo.
+
+The catalog's adoption (`LiveCatalog.adopt`, §8.2, B69) has to change for this,
+in both of its halves. Today the running entries keep their numbers first, so
+a project entry on a running entry's number is dropped, and so is an entry
+that puts a running identity on another number. A move of a running device, a
+swap of two, and their undo would all be dropped. New rule: when the value
+holds each running identity exactly once, the running entries take the
+value's numbers; when a running identity appears in it zero times or more than
+once (an older loaded version, a hand-edited file), today's rule applies.
+
+Layers select by number, so after a swap a layer on file 1 shows the device
+that is now on 1. That is the point: a console cue keeps meaning "camera 1".
+
+**Format (capture devices, B131).** `/capture/N/format` takes one of:
+- `"auto"`, or absent: today's rule (§8.2.1 step 2a, B126), where built-in
+  and Continuity cameras fit the canvas and other devices follow the input;
+- `"input"`: follow the input (keep the active format's size);
+- `"canvas"`: the cameras' rule of B126 for any device: the largest size that
+  fits canvas 1 with a frame-rate range holding the canvas rate, else the
+  largest that fits;
+- `{w, h, fps}`: one fixed format.
+
+The feed lists a device's sizes as `live.capture.devices[].formats: [{w, h,
+fps}]`, one entry per size with its highest rate. It is read when the catalog
+first sees the device; a card that changes format with its input updates on
+the next poll. `capture.format {file, format}` is programmer, refused under
+show lock and in show mode (undo and redo too, through its `replayCheck`, as
+for Number), and undoable. The session reopens, so every layer on the device
+keeps its last frame for up to about a second. A `{w, h, fps}` that the device
+no longer lists falls back to `"auto"`, with a warning in the layer status.
+The pixel format stays the engine's choice (§8.2.1, step 2a).
+
+The format is part of the catalog entry: `LiveCatalog.Entry`, `liveNumbers`
+and `liveValue` carry it, or the engine's write-back (`recordLiveNumbers`,
+which writes `liveValue` whenever it differs from the project) would erase it
+within 100 ms. The loader remembers the format each session was opened with,
+and reopens a device whose format changed, as it reopens one that came back
+under another uid.
+
+**Audio inputs (step 2).**
+- `live.audio.inputs: [{name, channels, default?}]` replaces
+  `live.osc.audioInputs`. The host facts read (B133) already reads each
+  device's input stream configuration; `default` marks the system default
+  input.
+- `live.capture.permissions.microphone` and `capture.authorize {kind:
+  "microphone"}`, as for the camera. A readiness item `microphone`
+  "Microphone permission granted" fails while timecode is on LTC with the
+  switch on and the permission is missing; fix "System Settings › Privacy &
+  Security › Microphone".
+- `live.timecode.level`: the peak of the LTC channel over the last 100 ms in
+  dBFS, or `null` while LTC is not open. `LTCInput`'s sink callback writes it
+  as one atomic, with no allocation and no lock.
+- One `LevelMeter` component shows it on Inputs and in Show's Timecode panel.
+  Only the LTC device is metered: a meter on any other input device would need
+  the microphone permission and an input graph of its own.
+
+**Audio tab on Outputs (steps 5 and 6).**
+- *Device:* `live.audio.outputs: [{uid, name, channels}]`, from the same host
+  facts read. It is a machine setting (settings.json `audio {device,
+  offsetMs}`), set with `audio.set {device?, offsetMs?}` like `sync.set`:
+  programmer, refused under show lock and in show mode, applied live (the
+  mixer reopens on the new device). A null `device` means the system default.
+  `live.audio.output: {device, offsetMs, state, error?}` carries the setting
+  and its state, as `live.sync` does.
+  A chosen device that is not connected plays nowhere rather than on the Mac's
+  speakers. The status bar's audio item (§12) then reads it in yellow, and a
+  readiness item "Audio device connected" fails while a layer has audio. Like
+  the capture items, it blocks show mode until acknowledged.
+- *Latency (B4):* the mixer schedules by the device's reported latency
+  (device and stream latency, safety offset, buffer), so sound leaves with the
+  picture. Offset (ms, −200…+200) covers the room: positive sends the sound
+  later than the picture (a projector that processes the picture), negative
+  earlier (a PA with its own delay line). A negative offset reads ahead in the
+  layer's PCM ring (250 ms), so it cannot exceed what the ring holds ahead of
+  the clock. Measured with a loopback, as B4 says.
+- *Routing (B76):* `layerAudio: {"3": 5}` in the project, keyed by layer like
+  `layerCanvas`. The value is the first channel of the layer's output pair,
+  odd and from 1; absent means 1, so channels 1–2. Like `layerCanvas`, entries
+  above the layer count are pruned. It is set with `layer.set {layer, audio}`,
+  where `canvas` and `audio` then each become optional. The tab shows a matrix
+  with layers as rows and the device's pairs as columns, and a meter per pair:
+  the render callback keeps a peak per output channel (one atomic each),
+  published as `live.audio.peaks` (dBFS per output channel, 10 Hz). The layer
+  panel gets the same choice
+  as "Audio out". A pair the device does not have plays nowhere, and the
+  layer's row says so.
+
+**Build order** (each step a PR after this design, counted from 1; the stage
+is the owner's order of 2026-11-01):
+1. web: the Inputs screen with today's data (video groups, permissions,
+   Forget). Media's folder 0 loses its management and System its Capture
+   permissions. Keys 1–7, the user guide, `docs/DEVELOPMENT.md` ("Keys 1–6")
+   and the screenshots. In the engine only the two `CaptureInput` refusal
+   texts that name the System screen, and their test. UI stage.
+2. engine + web: audio inputs with channels and the default, the microphone
+   permission and its readiness item, and the LTC level; on the web side the
+   Audio inputs group, "Use for timecode", and the meter on Inputs and Show.
+   UI stage.
+3. engine + web: Number (both commands, the catalog's adoption rule, the
+   field). UI stage.
+4. engine + web: Format (B131), once the owner's live check with a UVC webcam
+   shows the need. Small row.
+5. engine + web: the audio output device and latency (B4, P1): the Audio tab
+   with Device and Offset, the status bar item and the readiness item. Big
+   feature stage, unless the owner pulls it forward.
+6. engine + web: routing (B76): `layerAudio`, the mixer's output format from
+   the device's channel count (today one stereo `AVAudioSourceNode`), the
+   peaks per output channel, the matrix and the pair meters. Big feature
+   stage.
+
+**Not in this design:**
+- audio from a live input as layer audio (§10: live inputs have no audio in
+  v1);
+- windows 29–32 and NDI (B74), beyond joining the list when they are built;
+- settings that only a vendor SDK reaches, such as the input connector or
+  SDI/HDMI choice on DeckLink or AJA cards (§8.2.1);
+- a test tone;
+- MIDI and DMX inputs, which stay on Show and Patch;
+- the devices' sample rate, which is set in Audio MIDI Setup (the audio
+  engine's graph converts).
 
 ---
 
@@ -3798,7 +4216,8 @@ item with a one-line fix): on AC power; thermal state nominal; free disk > 10
 %; memory headroom; all patched universes receiving; "Camera permission
 granted" and "Screen recording granted" (`camera` and `screen`, only for
 inputs a layer shows or a scene entry names, the screen warning while in use and granted; B73 steps 2b and 3,
-B122; §8.2.1); all outputs bound and in the desired mode;
+B122; §8.2.1; designed in §12.1, not built: `microphone` for LTC and "Audio
+device connected"); all outputs bound and in the desired mode;
 no decoder errors; library on a local volume; Spotlight indexing of the
 library volume (`mdutil -s` state read via `MDQuery`/`mdutil` output) off or
 acknowledged; automatic macOS updates state (read from
@@ -4000,7 +4419,9 @@ MSC and MIDI-triggered cues are additions, not rewrites.
 - MSEX over TCP, negotiating the highest version both sides support
   (1.0/1.1/1.2): `CInf`/`SInf` (server info, layer count), `LSta` (layer
   status: media, position, playing state at 4 Hz), `ELIn`/`MEIn` (element
-  libraries = folders, elements = files with names/dimensions/fps/length),
+  libraries = folders, elements = files with names/dimensions/fps/length;
+  numbered as 0-based contiguous indexes, the folder/file number in the DMX
+  range, B78),
   `EThn` (JPEG/RGB8 thumbnails from the library cache), `StFr` (streaming
   frames of a layer or canvas, JPEG, ≤ 320 px, rate as requested up to
   10 fps, from the live-thumbnail path).
@@ -4067,7 +4488,7 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   removed on leaving. `Engine.stop` leaves show mode, so SIGTERM (launchd stop,
   Stop Engine, Stop Engine and Quit, logout, bootout) clears it; once the stop
   has begun, entering is refused. Engine › Restart Engine (and the shell's
-  re-register of a hung ad-hoc agent) first writes `restart-pending`; a stop
+  re-register of a silent agent) first writes `restart-pending`; a stop
   that finds it fresh (< 60 s, always removed) keeps the file marked `restart`
   and skips the display-mode restore, leaving the ledger. An unclean end (crash,
   kill -9, power loss, launchd's SIGKILL after a hung stop) leaves the file too.
@@ -4099,7 +4520,13 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   multicast groups), per session the highest common version ≤ 1.2,
   `SInf` with one DMX source string per layer, `LSta` at 4 Hz from the layer
   status, libraries = numbered folders, elements = numbered files with their
-  probed metadata, thumbnails from the library cache, `GVSr` answered with
+  probed metadata, both numbered as 0-based contiguous indexes in number order
+  (MSEX 1.2 says so explicitly and calls it the intent before; every version
+  gets them) with `dmxRangeMin = dmxRangeMax` = the folder or file number, the
+  DMX value that selects it (B78); `GEIn`/`GETh` and their element filters,
+  `GELI`'s library filter and `LSta` use the same indexes (a live input or
+  missing media in `LSta`: library 255, element 255, indexes no folder or file can have; `GELI`'s parent id is ignored,
+  Fanous has one library level), thumbnails from the library cache, `GVSr` answered with
   `VSrc` (source 0 = canvas 1 at its preview size, source n = layer n with its
   0-based layer number and thumbnail size), streaming frames = the canvas JPEG
   from the preview path for source 0 (and any id that is no layer, for consoles

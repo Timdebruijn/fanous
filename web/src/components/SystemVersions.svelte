@@ -108,15 +108,13 @@
 </dialog>
 
 <style>
-  .phead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 16px; }
   ul { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto; }
   .item { flex-wrap: wrap; gap: 8px 12px; padding: 8px 16px; }
   .item:last-child { border-bottom: 0; }
   .time { flex: 0 0 110px; }
   .grow { flex: 1 1 160px; min-width: 0; }
   .empty { margin: 0; padding: 8px 16px 12px; }
-  dialog { width: min(440px, calc(100vw - 32px)); padding: 24px; color: var(--text-1); border: 1px solid var(--line-strong); }
-  dialog::backdrop { background: rgba(11, 12, 14, 0.7); }
+  dialog { width: min(440px, calc(100vw - 32px)); }
   form { display: flex; flex-direction: column; gap: 14px; }
   form p, form h2 { margin: 0; overflow-wrap: anywhere; }
   .field .input { width: 100%; text-align: left; }

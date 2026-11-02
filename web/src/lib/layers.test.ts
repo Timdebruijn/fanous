@@ -22,8 +22,8 @@ import {
   thumbnailFor,
   thumbnailIndex,
   valueText,
-  type ChannelSpec,
 } from './layers';
+import type { ParamSpec } from './patch-screen';
 
 function layer(over: Partial<LayerStatus> = {}): LayerStatus {
   return { index: 1, folder: 2, file: 5, name: 'intro.mov', kind: 'movie', codec: 'hevc', width: 1920, height: 1080, fps: 25, frames: 1500, frame: 75, error: null, ...over };
@@ -96,7 +96,7 @@ describe('parameters', () => {
 });
 
 describe('channels and patch', () => {
-  const spec = (key: string, channel: number, bits: number): ChannelSpec => ({ name: key, key, channel, bits, default: 0, group: '', unit: '' });
+  const spec = (key: string, channel: number, bits: 8 | 16): ParamSpec => ({ name: key, key, channel, bits });
   it('formats single and coarse/fine channel ranges', () => {
     expect(channelRange(spec('folder', 3, 8))).toBe('3');
     expect(channelRange(spec('intensity', 1, 16))).toBe('1–2');

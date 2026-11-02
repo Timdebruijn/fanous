@@ -47,13 +47,8 @@ public enum Redaction {
         let rules = applicable(doc, role)
         if rules.isEmpty { return patch }
         let operations = patch.operations.compactMap { operation -> JSONPatch.Operation? in
-            let path: JSONPointer
-            var value: JSONValue?
-            switch operation {
-            case .add(let p, let v): (path, value) = (p, v)
-            case .replace(let p, let v): (path, value) = (p, v)
-            case .remove(let p): (path, value) = (p, nil)
-            }
+            let path = operation.path
+            var value = operation.value
             for rule in rules {
                 let target = rule.pointer.tokens
                 if path.tokens.count > target.count, path.tokens.starts(with: target) { return nil }

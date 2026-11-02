@@ -42,11 +42,6 @@ public enum ProjectDocument {
             public var id: Int
             public var width: Int
             public var height: Int
-            public init(id: Int, width: Int, height: Int) {
-                self.id = id
-                self.width = width
-                self.height = height
-            }
         }
         public var fps: Double
         public var canvases: [Size]
@@ -132,10 +127,7 @@ public enum ProjectDocument {
     static func wholeLiveEntries(_ patch: JSONPatch, in document: JSONValue) -> JSONPatch {
         var folded: Set<[String]> = []
         return JSONPatch(operations: patch.operations.compactMap { operation in
-            let pointer: JSONPointer
-            switch operation {
-            case .add(let p, _), .replace(let p, _), .remove(let p): pointer = p
-            }
+            let pointer = operation.path
             guard pointer.tokens.count > 2, LiveCatalog.Kind(rawValue: pointer.tokens[0]) != nil else { return operation }
             let entry = JSONPointer(tokens: Array(pointer.tokens.prefix(2)))
             guard folded.insert(entry.tokens).inserted, let value = document[entry] else { return nil }
@@ -153,20 +145,11 @@ public enum ProjectDocument {
     public static func checkLiveReplay(_ patch: JSONPatch, undoing done: JSONPatch, on project: JSONValue, running: Set<Int> = []) throws {
         // diff(a, b) and diff(b, a) have the same paths, so the ops line up by pointer
         var left: [[String]: JSONValue?] = [:]
-        for operation in done.operations {
-            switch operation {
-            case .add(let p, let v), .replace(let p, let v): left[p.tokens] = v
-            case .remove(let p): left[p.tokens] = .some(nil)
-            }
-        }
+        for operation in done.operations { left[operation.path.tokens] = .some(operation.value) }
         var written: [LiveCatalog.Kind: Set<Int>] = [:]
         var liveOps: [JSONPatch.Operation] = []
         for operation in patch.operations {
-            let pointer: JSONPointer, value: JSONValue?
-            switch operation {
-            case .add(let p, let v), .replace(let p, let v): (pointer, value) = (p, v)
-            case .remove(let p): (pointer, value) = (p, nil)
-            }
+            let pointer = operation.path, value = operation.value
             guard let kind = pointer.tokens.first.flatMap(LiveCatalog.Kind.init(rawValue:)) else { continue }
             liveOps.append(operation)
             guard pointer.tokens.count == 2, let expected = left[pointer.tokens] else { continue }
@@ -282,13 +265,11 @@ public enum ProjectDocument {
     // MARK: Outputs (DESIGN.md §9)
 
     public static func outputs(from project: JSONValue) -> [OutputConfig] {
-        guard let value = project["outputs"], let data = try? JSONEncoder().encode(value) else { return [] }
-        return (try? JSONDecoder().decode([OutputConfig].self, from: data)) ?? []
+        (try? project["outputs"]?.decoded(as: [OutputConfig].self)) ?? []
     }
 
     public static func canvases(from project: JSONValue) -> [CanvasConfig] {
-        guard let value = project["canvases"], let data = try? JSONEncoder().encode(value) else { return [] }
-        return (try? JSONDecoder().decode([CanvasConfig].self, from: data)) ?? []
+        (try? project["canvases"]?.decoded(as: [CanvasConfig].self)) ?? []
     }
 
     static func validate(_ output: inout OutputConfig) throws {
@@ -305,6 +286,7 @@ public enum ProjectDocument {
         }
         output.blend.lift = min(0.5, max(0, output.blend.lift))
         output.blend.liftFeather = max(0, output.blend.liftFeather)
+        output.blend.liftFeatherY = nil  // the preview's alone (B56): `output.set blend/*` could write it, so a saved project never keeps it
         guard output.color.gain.count == 3 else { throw CommandError.invalidArgs("color.gain needs three values (r, g, b)") }
         output.color.gain = output.color.gain.map { min(2, max(0, $0)) }
         output.color.black = min(0.2, max(0, output.color.black))
@@ -530,6 +512,7 @@ public enum ProjectDocument {
     /// `displayModes`: the current mode of each connected display by UUID (a wall output's pixel size, §9.9).
     /// `showPreset`: the Compare lease of `output.show` (output ids, preset number; 0 ends it), kept on the DMX queue.
     /// `showOverlay`: the edit overlay lease of `output.overlay` (output id, on, selection), kept by the output coordinator.
+    /// `showPatterns`: the test pattern leases of `output.pattern` (output id and pattern, off ends it), kept there too.
     public static func registerCommands(
         on store: StateStore, auth: RoleAuth, showModeOn: @escaping @Sendable () -> Bool = { false },
         checkLibraryRoot: @escaping @Sendable (String) throws -> Void = { _ in },
@@ -539,7 +522,8 @@ public enum ProjectDocument {
         authorizeScreen: @escaping @Sendable () -> Void = {},
         displayModes: @escaping @Sendable () -> [String: DisplayModeConfig] = { [:] },
         showPreset: @escaping @Sendable ([Int], Int) -> Void = { _, _ in },
-        showOverlay: @escaping @Sendable (Int, Bool, OverlaySelection?) -> Void = { _, _, _ in }
+        showOverlay: @escaping @Sendable (Int, Bool, OverlaySelection?) -> Void = { _, _, _ in },
+        showPatterns: @escaping @Sendable ([(id: Int, pattern: TestPattern)]) -> Void = { _ in }
     ) {
         store.register(
             CommandSpec(
@@ -749,7 +733,7 @@ public enum ProjectDocument {
                 if document["slices"]?.array?.contains(where: { $0["mask"] != nil }) == true {
                     throw CommandError.invalidArgs("a slice's mask is masks now (masks v2): reload the page")
                 }
-                guard let data = try? JSONEncoder().encode(document), var updated = try? JSONDecoder().decode(OutputConfig.self, from: data) else {
+                guard var updated = try? document.decoded(as: OutputConfig.self) else {
                     throw CommandError.invalidArgs("\(path) does not fit the output model")
                 }
                 updated.id = id
@@ -890,7 +874,7 @@ public enum ProjectDocument {
             })
         registerUniverseCommands(on: store)
         registerWallCommands(on: store, showModeOn: showModeOn, displayModes: displayModes)
-        registerPresetCommands(on: store, showModeOn: showModeOn, showPreset: showPreset, showOverlay: showOverlay)
+        registerPresetCommands(on: store, showModeOn: showModeOn, showPreset: showPreset, showOverlay: showOverlay, showPatterns: showPatterns)
     }
 }
 

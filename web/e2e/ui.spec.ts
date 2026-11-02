@@ -3,7 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Browser end-to-end tests against a real engine (fixtures.ts). Few and robust: each covers a flow whose bugs unit
 // tests cannot see (wrong JSON pointers, overlapping handles, subscription races).
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
@@ -51,6 +51,24 @@ async function expectDecoders(page: Page): Promise<void> {
   await expect.poll(seen, { timeout: previewTimeout }).toMatch(/^(1 open: H\.264 · |0 open: JPEG 5 fps · )/);
 }
 
+/** B98/B99: no JPEG frame came for a viewer refused to JPEG on this CI runner. The Actions warning (and the test's
+ * annotation) carries the engine's whole `/metrics`: the preview counters (`framesIn` taps, `skipped`, `jpegOut`,
+ * `jpegFailed`, `jpegDropped`), the compositor's frames and GPU times, so the next occurrence narrows down which step of
+ * the JPEG path stopped, or shows that the engine did not answer; the engine log is attached. The test is skipped: the
+ * rest would only run into the test timeout. */
+async function noJPEGOnCI(engine: Engine, jpegFrames: number, ms: number): Promise<void> {
+  // 5 s: the test has spent most of its 60 s by now; a non-2xx answer shows its status; one line, as a workflow command is one
+  const metrics = await engine.api
+    .get('/metrics', { timeout: 5_000 })
+    .then(async (r) => (r.ok() ? r.text() : `HTTP ${r.status()}: ${await r.text()}`))
+    .catch((error: unknown) => `metrics unreadable: ${String(error)}`);
+  const note = `B98: ${jpegFrames} JPEG frames on the refused canvas:2 stream within ${ms} ms; ${metrics.replace(/\s+/g, ' ')} (B99)`;
+  console.log(`::warning::${note}`);
+  test.info().annotations.push({ type: 'B98', description: note });
+  await test.info().attach('fanousd.log (B98)', { path: join(engine.home, 'Library/Logs/Fanous/fanousd.log'), contentType: 'text/plain' });
+  test.skip(true, 'no JPEG frame for the refused viewer on this runner (B99)');
+}
+
 test('patch API: /api/patch serves the live patch, an added output included', async ({ page, engine }) => {
   const outputPatched = async () => {
     const patch = (await (await engine.api.get('/api/patch')).json()) as { entries: { fixture: Record<string, unknown> }[] };
@@ -59,6 +77,18 @@ test('patch API: /api/patch serves the live patch, an added output included', as
   expect(await outputPatched()).toBe(false); // a new project starts without outputs
   await addUnassignedOutput(page);
   await expect.poll(outputPatched).toBe(true);
+});
+
+test('layers: the channel list of the selected layer starts closed on a phone and open on a desktop', async ({ page }) => {
+  await openScreen(page, 'Layers');
+  const channels = page.locator('details.channels').first();
+  await expect(channels).toHaveAttribute('open', '');
+  await expect(channels.getByText('Intensity', { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.reload();
+  await expect(page.locator('details.channels').first()).not.toHaveAttribute('open', '');  // the Layers page was 4967 px long at 390 px with it open
+  await page.locator('details.channels').first().locator('summary').click();
+  await expect(page.locator('details.channels').first().getByText('Intensity', { exact: true })).toBeVisible();
 });
 
 test('layers: Control puts content on a layer, and the engine resolves folder, file and intensity', async ({ page, engine }) => {
@@ -141,6 +171,9 @@ test('layers: a layer added at runtime plays at once, and goes dark when it is r
   await expect(page.getByRole('heading', { name: 'Layer 9' })).toBeVisible();
   await page.getByRole('switch', { name: 'Control' }).check({ force: true }); // the drawn track covers the input
   await page.getByRole('button', { name: /^Use / }).click();
+  // the controls appear with the layer's first live document; before it the picker does not know the intensity is 0,
+  // leaves it there, and the layer draws nothing
+  await expect(page.getByRole('slider', { name: 'Intensity', exact: true })).toBeVisible();
   await page.getByLabel('Built-in content and live inputs (folder 0)').selectOption({ label: '101 · Grid' });
   // the engine opened it and draws it: without a restart, not after one
   await expect(row).toContainText('Grid');
@@ -155,7 +188,8 @@ test('layers: a layer added at runtime plays at once, and goes dark when it is r
   thumbs.clear();
   await openScreen(page, 'Layers');
   await expect.poll(() => thumbs.get(9)).toBe(0);
-  expect(await liveLayers()).toBe(8);
+  // a welcome carries the live document as last published (every 100 ms): it can still list layer 9 for a moment
+  await expect.poll(liveLayers).toBe(8);
 });
 
 test('sync: a slave layer locks to a master layer of its group, and loses it when the master goes off (B60)', async ({ page, engine }) => {
@@ -292,6 +326,81 @@ test('status bar: the universe pills wrap on a phone instead of widening the pag
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 });
 
+test('status bar: three rows on a phone, the role on the badge row, undo and redo on the numbers row', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const banner = page.getByRole('banner');
+  await expect(banner.getByText(/^A 0\.0\.1 · silent/)).toBeVisible();  // the widest bar a fresh engine has
+  // five rows (229 px) took a third of the screen; the badge and numbers rows keep their 44 px buttons, the pills row is lower
+  expect(await banner.evaluate((el) => el.getBoundingClientRect().height)).toBeLessThanOrEqual(140);
+  const row = async (name: string) => Math.round((await banner.getByRole('button', { name }).boundingBox())!.y);
+  expect(await row('PROGRAMMER')).toBe(await row('UNLOCKED'));  // the role on the badge row
+  expect(await row('Undo')).toBeGreaterThan(await row('UNLOCKED'));  // undo on a later row, with the numbers
+  await expect(banner.getByText('web UI open')).toBeAttached();  // for screen readers; shown as its dot
+  await expect(banner.getByRole('button', { name: 'Keyboard shortcuts' })).toBeHidden();  // no keyboard on a phone
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+});
+
+test('status bar: one row on a 1470 px laptop, timecode and ingest left out while off and idle', async ({ page }) => {
+  await page.setViewportSize({ width: 1470, height: 900 }); // a MacBook Air; at 1440 the bar takes two rows, as the frame time keeps room for its widest value (B134)
+  const banner = page.getByRole('banner');
+  // a fresh engine shows two silent universes and the "web UI open" warning, the widest bar it has
+  await expect(banner.getByText(/^A 0\.0\.1 · silent/)).toBeVisible();
+  await expect(banner.getByText('web UI open')).toBeVisible();
+  await expect(banner.getByText('timecode')).toHaveCount(0);
+  await expect(banner.getByText('ingest')).toHaveCount(0);
+  await expect.poll(() => banner.evaluate((el) => el.getBoundingClientRect().height)).toBeLessThanOrEqual(56);
+  // switched on, timecode is in the bar before anything arrives
+  const timecode = page.locator('section.tc');
+  await openScreen(page, 'Show');
+  await timecode.getByRole('combobox', { name: 'Source', exact: true }).selectOption('mtc');
+  await expect(banner.getByText('timecode')).toBeVisible();
+  await timecode.getByRole('combobox', { name: 'Source', exact: true }).selectOption('off');
+  await expect(banner.getByText('timecode')).toHaveCount(0);
+});
+
+test('status bar: a frame time that grows or shrinks leaves the bar as it was, so the page does not move under a drag (B134)', async ({ page, engine }) => {
+  // the engine's live patches with metrics carry these numbers instead: a busy CI runner's 126.6 ms wrapped the bar at
+  // 1440 px, and its 8.9 ms a moment later unwrapped it mid-drag, moving the mapping editor 41 px under the pointer
+  const shown = { frames: 61, gpu: 8.9, cpu: 1.2 };
+  await page.routeWebSocket(/\/ws$/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((message) => server.send(message));
+    server.onMessage((message) => {
+      const m = typeof message === 'string' ? (JSON.parse(message) as { t?: string; doc?: string; ops?: { op: string; path: string; value?: unknown }[] }) : null;
+      if (m?.t !== 'patch' || m.doc !== 'live' || !m.ops?.some((o) => o.path.startsWith('/metrics/'))) return ws.send(message);
+      const ours = { '/metrics/frames': shown.frames, '/metrics/gpuP99': shown.gpu, '/metrics/cpuP99': shown.cpu };
+      m.ops = [...m.ops.filter((o) => !(o.path in ours)), ...Object.entries(ours).map(([path, value]) => ({ op: 'replace', path, value }))];
+      ws.send(JSON.stringify(m));
+    });
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${engine.url}/?token=${engine.token}`);
+  const banner = page.getByRole('banner');
+  await expect(banner.getByText(/^A 0\.0\.1 · silent/)).toBeVisible();  // the widest bar a fresh engine has
+  const metrics = banner.locator('.metrics');
+  async function bar(frames: number, gpu: number, cpu: number) {
+    Object.assign(shown, { frames, gpu, cpu });
+    await expect(metrics).toContainText(new RegExp(`^${frames}\\s*fps\\s*${gpu.toFixed(1)}\\s*ms`));
+    await expect(metrics).toContainText(`cpu ${cpu.toFixed(1)} ms`);
+    return { width: await metrics.evaluate((el) => el.getBoundingClientRect().width), height: await banner.evaluate((el) => el.getBoundingClientRect().height) };
+  }
+  const calm = await bar(61, 8.9, 1.2);
+  expect(await bar(60, 126.6, 12.3)).toEqual(calm);
+  expect(await bar(120, 999.9, 999.9)).toEqual(calm);
+  expect(await bar(9, 0.4, 0.1)).toEqual(calm);
+});
+
+test('status bar: the show-mode-resumed note wraps inside its item on a phone instead of spilling over the next row', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  // the note shows after an engine restart in show mode; its text, put in place, is what the layout has to hold
+  await page.locator('header .modewrap [role="status"]').evaluate((el) => {
+    el.innerHTML = '<a class="caption resumed" href="#/system">Show mode resumed after the engine restarted at 21:04</a>';
+  });
+  const spill = await page.locator('header .brand').evaluate((item) =>
+    Math.max(...[...item.querySelectorAll('*')].map((el) => el.getBoundingClientRect().bottom)) - item.getBoundingClientRect().bottom);
+  expect(spill).toBeLessThanOrEqual(0);
+});
+
 test('keys: the global shortcuts do nothing while a modal dialog is open, and ? still closes the shortcut list', async ({ page }) => {
   await openScreen(page, 'Patch');
   await page.getByRole('button', { name: 'Patch sheet' }).click();
@@ -382,32 +491,323 @@ test('outputs: with two slices on the same corners, a drag moves the selected sl
   await expect.poll(() => handleAt(page, '/slices/0/dest/0')).toEqual({ x: 0, y: 0 });
 });
 
-test('outputs: a Rectangle mask (masks v2) takes a point drag and a feather; Remove mask takes it away', async ({ page }) => {
+/** A pointer drag on the mapping editor from one place to another, given as fractions of the picture, through `via`. */
+async function dragOnEditor(page: Page, points: [number, number][]) {
+  const editor = page.getByRole('application', { name: /Mapping editor/ });
+  await editor.scrollIntoViewIfNeeded();
+  const box = (await editor.boundingBox())!;
+  const at = ([x, y]: [number, number]) => [box.x + x * box.width, box.y + y * box.height] as const;
+  await page.mouse.move(...at(points[0]!));
+  await page.mouse.down();
+  for (const p of points.slice(1)) await page.mouse.move(...at(p), { steps: 4 });
+  await page.mouse.up();
+}
+
+/** The points of a circle around (0.5, 0.5) of the picture, `n` of them, back to the start: a freehand stroke. */
+const loop = (n: number, r = 0.25): [number, number][] => Array.from({ length: n + 1 }, (_, i) => [0.5 + r * Math.cos((2 * Math.PI * i) / n), 0.5 + r * Math.sin((2 * Math.PI * i) / n)]);
+
+/** Where a mapper handle is on the page (CSS px). */
+async function onPage(page: Page, path: string): Promise<{ x: number; y: number }> {
+  const editor = page.getByRole('application', { name: /Mapping editor/ });
+  const [box, at, view] = [(await editor.boundingBox())!, await handleAt(page, path), (await editor.getAttribute('viewBox'))!.split(' ').map(Number)];
+  return { x: box.x + (at.x / view[2]!) * box.width, y: box.y + (at.y / view[3]!) * box.height };
+}
+
+/** The dashed previews of a shape being drawn. */
+const previews = (page: Page) => page.locator('.mapper polyline[stroke="#FFC532"]');
+
+/** The number of points a mask row of the list names. */
+async function pointCount(row: Locator): Promise<number> {
+  return Number(/(\d+) points/.exec((await row.textContent()) ?? '')?.[1] ?? NaN);
+}
+
+test('outputs: each mask tool adds a mask on a real engine, and one Undo takes one tool back', async ({ page }) => {
   await addUnassignedOutput(page);
   await page.getByRole('button', { name: 'Warp & Slices' }).click();
   await page.getByRole('button', { name: 'Mask', exact: true }).click();
-  await page.getByRole('button', { name: 'Rectangle' }).click();
-  await expect.poll(async () => Math.round((await handleAt(page, '/slices/0/masks/0/path/2')).x)).toBe(900);
+  const masks = page.getByRole('list', { name: 'Masks of slice 1' }).getByRole('listitem');
+  await expect(masks).toHaveText([/^No masks/]);
+  const point = (m: number, i: number) => page.getByRole('button', { name: `/slices/0/masks/${m}/path/${i}`, exact: true });
+
+  // Rectangle: a box dragged from bottom right to top left gives its 4 corners clockwise from the top left; its preview
+  // is closed while the drag lasts
+  await page.getByRole('button', { name: 'Rectangle', exact: true }).click();
+  const editor = (await page.getByRole('application', { name: /Mapping editor/ }).boundingBox())!;
+  await page.mouse.move(editor.x + editor.width * 0.5, editor.y + editor.height * 0.5);
+  await page.mouse.down();
+  await page.mouse.move(editor.x + editor.width * 0.6, editor.y + editor.height * 0.6, { steps: 3 });
+  const outline = (await previews(page).getAttribute('points'))!.split(' ');
+  expect(outline.length).toBeGreaterThan(4);
+  expect(outline.at(-1), 'closed').toBe(outline[0]);
+  await page.mouse.up();
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(masks).toHaveText([/^No masks/]);
+  await page.getByRole('button', { name: 'Rectangle', exact: true }).click();
+  await dragOnEditor(page, [[0.75, 0.8], [0.5, 0.5], [0.25, 0.2]]);
+  await expect(masks).toHaveCount(1);
+  const x = async (path: string) => Math.round((await handleAt(page, path)).x);
+  expect(await x('/slices/0/masks/0/path/0')).toBe(250);
+  expect(await x('/slices/0/masks/0/path/2')).toBe(750);
+  await expect(page.getByRole('button', { name: 'Rectangle', exact: true }), 'one shape, then the tool is off').toHaveAttribute('aria-pressed', 'false');
+
+  // Ellipse: 4 points with Bézier handles, shown for the selected point
+  await page.getByRole('button', { name: 'Ellipse', exact: true }).click();
+  await dragOnEditor(page, [[0.1, 0.1], [0.4, 0.5]]);
+  await expect(masks).toHaveCount(2);
+  expect(await x('/slices/0/masks/1/path/0')).toBe(250);
+  await expect(page.getByRole('button', { name: '/slices/0/masks/1/path/0/out', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Mask 2', exact: true }).click();
+  expect(await x('/slices/0/masks/1/path/0/out')).toBe(Math.round(250 + 0.5523 * 150));
+
+  // Polygon: tap the corners, then Done; Polygon pressed again meanwhile keeps the corners tapped
+  await page.getByRole('button', { name: 'Polygon', exact: true }).click();
+  for (const p of [[0.6, 0.1], [0.9, 0.1]] as [number, number][]) await dragOnEditor(page, [p]);
+  await page.getByRole('button', { name: 'Polygon', exact: true }).click();
+  await dragOnEditor(page, [[0.75, 0.4]]);
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(masks).toHaveCount(3);
+  await expect(point(2, 2)).toHaveCount(1);
+
+  // Freehand with a pointer drag around a circle: a smooth path of several points, each with handles. The engine keeps
+  // edits of the same path less than 1 s apart as one undo step, so this one waits that long
+  await page.waitForTimeout(1100);
+  await page.getByRole('button', { name: 'Freehand', exact: true }).click();
+  await dragOnEditor(page, loop(24));
+  await expect(masks).toHaveCount(4);
+  // the 24 corners of the stroke, and a few more where a screen pixel is more than the 2 output px RDP keeps; far fewer
+  // than the ~100 pointer moves
+  expect(await pointCount(masks.nth(3))).toBeGreaterThanOrEqual(12);
+  expect(await pointCount(masks.nth(3))).toBeLessThan(50);
+  await page.getByRole('button', { name: 'Mask 4', exact: true }).click();
+  await expect(page.getByRole('button', { name: '/slices/0/masks/3/path/0/in', exact: true })).toHaveCount(1);
+
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(masks).toHaveCount(3);
+  await expect(point(2, 2)).toHaveCount(1);
+
+  // Cancel while the button is still down: no preview is left, also not when the tool is chosen again
+  await page.getByRole('button', { name: 'Freehand', exact: true }).click();
+  await page.mouse.move(editor.x + editor.width * 0.3, editor.y + editor.height * 0.3);
+  await page.mouse.down();
+  await page.mouse.move(editor.x + editor.width * 0.5, editor.y + editor.height * 0.4, { steps: 5 });
+  await page.getByRole('button', { name: 'Cancel', exact: true }).dispatchEvent('click');
+  await expect(previews(page), 'gone at once, the button still down').toHaveCount(0);
+  await page.mouse.up();
+  await expect(previews(page)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Freehand', exact: true }).click();
+  await page.mouse.move(editor.x + editor.width * 0.8, editor.y + editor.height * 0.8, { steps: 5 });
+  await expect(previews(page)).toHaveCount(0);
+  await expect(masks).toHaveCount(3);
+});
+
+test('outputs: Bézier handles: a press takes the nearest, a handle drags alone and goes with its point, Backspace removes it', async ({ page }) => {
+  await addUnassignedOutput(page);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  await page.getByRole('button', { name: 'Mask', exact: true }).click();
+  await page.getByRole('button', { name: 'Freehand', exact: true }).click();
+  await dragOnEditor(page, loop(24));
+  await page.getByRole('button', { name: 'Mask 1', exact: true }).click();
+  const [point, out, inn] = ['', '/out', '/in'].map((side) => `/slices/0/masks/0/path/0${side}`);
+  const selected = () => page.locator('.mapper g.handle.sel').getAttribute('aria-label');
+
+  // a smooth loop's handle is short: inside the hit circle of its point (37 px), drawn on top of it; a press on the
+  // handle takes the handle, and it drags alone
+  const [p, h] = [await onPage(page, point), await onPage(page, out)];
+  expect(Math.hypot(h.x - p.x, h.y - p.y)).toBeLessThan(30);
+  const before = await handleAt(page, point);
+  await page.mouse.move(h.x, h.y);
+  await page.mouse.down();
+  await expect.poll(selected).toBe(out);
+  await page.mouse.move(h.x, h.y + 20, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.round((await onPage(page, out)).y - h.y)).toBe(20);
+  expect(await handleAt(page, point)).toEqual(before);
+
+  // a double-tap on a handle leaves it, and its point smooth
+  await page.mouse.dblclick(h.x, h.y + 20);
+  await page.waitForTimeout(500);
+  await expect(page.getByRole('button', { name: out, exact: true })).toHaveCount(1);
+
+  // the point dragged: its handles go with it before the engine answers
+  await page.mouse.move(p.x, p.y);
+  await page.mouse.down();
+  await page.mouse.move(p.x + 30, p.y, { steps: 4 });
+  expect(Math.round((await onPage(page, out)).x - h.x)).toBe(30);
+  await page.mouse.up();
+
+  // Backspace with a handle selected removes that handle only (Remove point says Remove handle then); one Undo. The
+  // engine joins edits of the same path less than 1 s apart, and the drag above wrote this point
+  await page.waitForTimeout(1100);
+  await page.getByRole('application', { name: /Mapping editor/ }).focus();
+  await page.keyboard.press('Tab');
+  await expect.poll(selected).toBe(inn);
+  await expect(page.getByRole('button', { name: 'Remove handle' })).toBeVisible();
+  await page.keyboard.press('Backspace');
+  await expect(page.getByRole('button', { name: inn, exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: out, exact: true })).toHaveCount(1);
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByRole('button', { name: inn, exact: true })).toHaveCount(1);
+});
+
+test('outputs: the mask list: an image mask from the library, Invert, feather, a point drag, a double-tap, Remove', async ({ page, engine }) => {
+  const sets: unknown[] = [];
+  page.on('websocket', (socket) =>
+    socket.on('framesent', ({ payload }) => typeof payload === 'string' && payload.includes('"output.set"') && sets.push(JSON.parse(payload))),
+  );
+  await page.goto(`${engine.url}/?token=${engine.token}`);
+  // a still as folder 1 file 1 of a new library
+  const library = join(engine.home, 'library');
+  mkdirSync(join(library, '001_Masks'), { recursive: true });
+  copyFileSync(join(repo, 'Tests/Fixtures/golden/baseline.png'), join(library, '001_Masks/001_door.png'));
+  await openScreen(page, 'System');
+  await page.getByLabel('Library root path').fill(library);
+  await page.getByRole('region', { name: 'Machine' }).getByRole('button', { name: 'Apply' }).click();
+  await addUnassignedOutput(page);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  await page.getByRole('button', { name: 'Mask', exact: true }).click();
+  const masks = page.getByRole('list', { name: 'Masks of slice 1' }).getByRole('listitem');
+
+  // an image mask: no points and no feather
+  await page.getByLabel('Image mask').selectOption('1/1');
+  await expect(masks).toHaveCount(1);
+  await expect(masks.first()).toContainText('door.png');
+  await expect(page.getByLabel('Mask 1 feather px')).toHaveCount(0);
+
+  // a rectangle 10 % inside, the way that needs no drag
+  await page.getByRole('button', { name: 'Rectangle', exact: true }).click();
+  await page.getByRole('button', { name: '10 % inside' }).click();
+  await expect(masks).toHaveCount(2);
+  await expect.poll(async () => Math.round((await handleAt(page, '/slices/0/masks/1/path/2')).x)).toBe(900);
+
+  // Invert: a subtract mask, its outline dashed; Undo makes it an add mask again
+  const invert = page.getByRole('button', { name: 'Invert Mask 2' });
+  await invert.click();
+  await expect(invert).toHaveAttribute('aria-pressed', 'true');
+  await expect(masks.nth(1)).toContainText('Subtract');
+  await expect(page.locator('.mapper polyline[stroke-dasharray="8 6"]')).toHaveCount(1);
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(invert).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('.mapper polyline[stroke-dasharray="8 6"]')).toHaveCount(0);
+  await invert.click();
+  await expect(invert).toHaveAttribute('aria-pressed', 'true');
+  await invert.click();
+  await expect(invert, 'and back').toHaveAttribute('aria-pressed', 'false');
 
   // the bottom-right point to the middle of the picture
-  const handle = (await page.getByRole('button', { name: '/slices/0/masks/0/path/2', exact: true }).boundingBox())!;
+  const handle = (await page.getByRole('button', { name: '/slices/0/masks/1/path/2', exact: true }).boundingBox())!;
   const editor = (await page.getByRole('application', { name: /Mapping editor/ }).boundingBox())!;
   await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
   await page.mouse.down();
   await page.mouse.move(editor.x + editor.width / 2, editor.y + editor.height / 2, { steps: 8 });
   await page.mouse.up();
-  await expect.poll(async () => Math.round((await handleAt(page, '/slices/0/masks/0/path/2')).x / 10)).toBe(50);
+  await expect.poll(async () => Math.round((await handleAt(page, '/slices/0/masks/1/path/2')).x / 10)).toBe(50);
 
-  await page.getByLabel('Feather px').fill('6');
-  await page.getByLabel('Feather px').press('Enter');
+  // Redraw names its mask; once the mask changes meanwhile, Done would add a new one, and the caption says so
+  await page.getByRole('button', { name: 'Redraw Mask 2' }).click();
+  await expect(page.getByText('Redrawing mask 2:')).toBeVisible();
+  await page.getByRole('button', { name: 'Invert Mask 2' }).click();
+  await expect(page.getByText(/^Drawing a new mask \(the mask to redraw has changed since\):/)).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(invert).toHaveAttribute('aria-pressed', 'false');
+
+  const feather = page.getByLabel('Mask 2 feather px');
+  await feather.fill('6');
+  await feather.press('Enter');
   // the field as the project has it: away to another mode and back
   await page.getByRole('button', { name: 'Slices', exact: true }).click();
   await page.getByRole('button', { name: 'Mask', exact: true }).click();
-  await expect(page.getByLabel('Feather px')).toHaveValue('6');
+  await expect(feather).toHaveValue('6');
 
-  await page.getByRole('button', { name: 'Remove mask' }).click();
-  await expect(page.getByRole('button', { name: 'Draw mask' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '/slices/0/masks/0/path/0', exact: true })).toHaveCount(0);
+  // a double-tap on a corner makes it smooth (handles from its neighbours), one Undo makes it a corner again
+  await page.waitForTimeout(1100); // the drag above wrote this point less than 1 s ago: the engine would join the steps
+  const corner = page.getByRole('button', { name: '/slices/0/masks/1/path/1', exact: true });
+  const smooth = page.getByRole('button', { name: 'Smooth point' });
+  const before = sets.length;
+  await corner.dblclick({ position: { x: (await corner.boundingBox())!.width / 2, y: (await corner.boundingBox())!.height / 2 } });
+  await expect(page.getByRole('button', { name: '/slices/0/masks/1/path/1/in', exact: true })).toHaveCount(1);
+  expect(sets.length - before, 'the toggle only: a tap without a move sends nothing').toBe(1);
+  await expect(smooth).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByRole('button', { name: '/slices/0/masks/1/path/1/in', exact: true })).toHaveCount(0);
+  await expect(smooth).toHaveAttribute('aria-pressed', 'false');
+  expect(Math.round((await handleAt(page, '/slices/0/masks/1/path/1')).x), 'the taps did not move it').toBe(900);
+
+  await page.getByRole('button', { name: 'Remove Mask 1' }).click();
+  await expect(masks).toHaveCount(1);
+  await expect(masks.first()).toContainText('4 points');
+  await expect(page.getByLabel('Mask 1 feather px')).toHaveValue('6');
+});
+
+test('outputs: the slice shapes Triangle and Circle, one Undo each', async ({ page }) => {
+  await addUnassignedOutput(page);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  await page.getByRole('button', { name: 'Slices', exact: true }).click();
+  await page.getByRole('button', { name: 'Triangle', exact: true }).click();
+  await expect.poll(() => handleAt(page, '/slices/0/dest/0')).toEqual({ x: 500, y: 0 });
+  expect(await handleAt(page, '/slices/0/dest/1')).toEqual({ x: 500, y: 0 });
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(() => handleAt(page, '/slices/0/dest/1')).toEqual({ x: 1000, y: 0 });
+  expect(await handleAt(page, '/slices/0/dest/0')).toEqual({ x: 0, y: 0 });
+
+  // Circle on a slice whose corners span 0…1: the ellipse touching the middle of each edge
+  await page.getByRole('button', { name: 'Circle', exact: true }).click();
+  await page.getByRole('button', { name: 'Mask', exact: true }).click();
+  await expect.poll(() => handleAt(page, '/slices/0/masks/0/path/0')).toEqual({ x: 500, y: 0 });
+  expect((await handleAt(page, '/slices/0/masks/0/path/1')).x).toBe(1000);
+  // the top point's handle lies on the output's edge: dragged up, it goes past it (a point would stop there)
+  await page.getByRole('button', { name: 'Mask 1', exact: true }).click();
+  await page.evaluate(() => window.scrollTo(0, 0)); // the editor's top edge in the window, with room above it
+  const knob = await onPage(page, '/slices/0/masks/0/path/0/out');
+  await page.mouse.move(knob.x, knob.y + 2);
+  await page.mouse.down();
+  await page.mouse.move(knob.x, knob.y - 40, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(async () => (await handleAt(page, '/slices/0/masks/0/path/0/out')).y).toBeLessThan(-20);
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(async () => (await handleAt(page, '/slices/0/masks/0/path/0/out')).y).toBe(0);
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByRole('list', { name: 'Masks of slice 1' }).getByRole('listitem')).toHaveText([/^No masks/]);
+});
+
+test.describe('on a phone', () => {
+  // the narrowest phone: every mode and tool button still reachable (the groups wrap)
+  test.use({ viewport: { width: 320, height: 700 }, hasTouch: true });
+
+  test('outputs: Freehand by touch: a finger dragged around on the picture draws a smooth mask', async ({ page }) => {
+    await addUnassignedOutput(page);
+    await page.getByRole('button', { name: 'Warp & Slices' }).click();
+    await page.getByRole('button', { name: 'Mask', exact: true }).click();
+    // nothing cut off at 320 px (Playwright would scroll a clipped group to click in it; a finger cannot)
+    for (const name of ['Edit', 'Mask tools']) {
+      const cut = await page.getByRole('group', { name, exact: true }).evaluate((group) => group.scrollWidth - group.clientWidth);
+      expect(cut, name).toBe(0);
+    }
+    await page.getByRole('button', { name: 'Freehand', exact: true }).click();
+    const editor = page.getByRole('application', { name: /Mapping editor/ });
+    await editor.scrollIntoViewIfNeeded();
+    const box = (await editor.boundingBox())!;
+    // Playwright's touchscreen only taps: a drag goes through the DevTools protocol, as touch events with their pointers
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (type: string, [x, y]: [number, number]) =>
+      cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x: box.x + x * box.width, y: box.y + y * box.height, id: 0 }] });
+    const stroke = loop(24, 0.3);
+    await touch('touchStart', stroke[0]!);
+    for (const p of stroke.slice(1, 12)) await touch('touchMove', p);
+    // a second finger (or the palm) lands and lifts halfway: the stroke goes on (touchEnd names the finger that lifts)
+    const at = (p: [number, number], id: number) => ({ x: box.x + p[0] * box.width, y: box.y + p[1] * box.height, id });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at(stroke[11]!, 0), at([0.05, 0.05], 1)] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [at([0.05, 0.05], 1)] });
+    for (const p of stroke.slice(12)) await touch('touchMove', p);
+    await touch('touchEnd', stroke.at(-1)!);
+    const masks = page.getByRole('list', { name: 'Masks of slice 1' }).getByRole('listitem');
+    await expect(masks).toHaveText([/^Mask 1/]);
+    // the whole loop: its 24 corners (half of it would be 12 or 13)
+    expect(await pointCount(masks.first())).toBeGreaterThanOrEqual(22);
+    expect(await pointCount(masks.first())).toBeLessThan(30);
+    const first = await handleAt(page, '/slices/0/masks/0/path/0');
+    expect(Math.round(first.x / 10)).toBe(80);
+  });
 });
 
 test('outputs: a change of mesh density keeps the shape; Reset mesh flattens it', async ({ page }) => {
@@ -454,7 +854,44 @@ test('outputs: Spread canvas gives each slice its strip of the canvas', async ({
   await expect(x).toHaveValue(await w.inputValue());
 });
 
+/** What `page` sends from its next load on: the `patterns` of each `output.pattern` (B102), and how many `output.set`
+ * of a test pattern. */
+function patternsSent(page: Page): { leases: { id: number; pattern: number }[][]; sets: number } {
+  const sent = { leases: [] as { id: number; pattern: number }[][], sets: 0 };
+  page.on('websocket', (socket) =>
+    socket.on('framesent', ({ payload }) => {
+      if (typeof payload !== 'string') return;
+      const message = JSON.parse(payload) as { name?: string; args?: { patterns?: { id: number; pattern: number }[]; path?: string } };
+      if (message.name === 'output.pattern') sent.leases.push(message.args!.patterns!);
+      if (message.name === 'output.set' && message.args?.path === '/testPattern') sent.sets++;
+    }),
+  );
+  return sent;
+}
+const both = (pattern: number) => [{ id: 1, pattern }, { id: 2, pattern }];
+/** `live.outputs[i].pattern` as the engine publishes it to `page` from its next load on (the welcome, then live patches):
+ * each output's leased test pattern by its index in `live.outputs`, null without one (B102). */
+function livePatterns(page: Page): (number | null)[] {
+  type Status = { pattern?: number | null };
+  const patterns: (number | null)[] = [];
+  const take = (outputs: Status[]) => outputs.forEach((o, i) => (patterns[i] = o.pattern ?? null));
+  page.on('websocket', (socket) =>
+    socket.on('framereceived', ({ payload }) => {
+      if (typeof payload !== 'string') return;
+      const message = JSON.parse(payload) as { doc?: string; live?: { outputs?: Status[] }; ops?: { path: string; value?: unknown }[] };
+      if (message.live?.outputs) take(message.live.outputs);
+      for (const op of message.doc === 'live' ? (message.ops ?? []) : []) {
+        if (op.path === '/outputs') take(op.value as Status[]);
+        const at = op.path.match(/^\/outputs\/(\d+)\/pattern$/);
+        if (at) patterns[Number(at[1])] = (op.value ?? null) as number | null;
+      }
+    }),
+  );
+  return patterns;
+}
+
 test("walls: the wizard makes a 1 × 2 wall at 15 %, a seam gamma drag is one undo step, the tint hint opens a projector's colour, Remove wall", async ({ page, engine }) => {
+  const sent = patternsSent(page);
   // the wall.seam commands this page sends (the socket of the page as loaded again with the listener in place)
   let seamCommands = 0;
   page.on('websocket', (socket) =>
@@ -488,15 +925,16 @@ test("walls: the wizard makes a 1 × 2 wall at 15 %, a seam gamma drag is one un
   await expect(wizard.getByRole('radio', { name: /^Use Canvas 1/ })).toBeChecked();
   await wizard.getByRole('button', { name: 'Make wall' }).click();
 
-  // the panel opens on the seam check, Blend check on both outputs
+  // the panel opens on the seam check, Blend check on both outputs: a lease (B102), their own pattern stays Off
   const panel = page.getByRole('region', { name: 'Wall 1' });
   await expect(panel.getByRole('group', { name: 'Seam check pattern' }).getByRole('button', { name: 'Blend check' })).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => sent.leases.at(-1)).toEqual(both(3));
   await expect(row(1)).toContainText('Wall 1 · r1 c1');
   await expect(row(2)).toContainText('Wall 1 · r1 c2');
   // the inner edges overlap 0.15 × 1920 = 288 px, the outer ones not at all
   const overlap = (edge: string) => page.getByRole('group', { name: `${edge} edge` }).getByLabel('Overlap (px)');
   await row(1).click();
-  await expect(page.getByRole('region', { name: 'Output settings' }).getByRole('button', { name: 'Blend check' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('region', { name: 'Output settings' }).getByRole('button', { name: 'Off', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(overlap('right')).toHaveValue('288');
   await expect(overlap('left')).toHaveValue('0');
   await row(2).click();
@@ -546,16 +984,18 @@ test("walls: the wizard makes a 1 × 2 wall at 15 %, a seam gamma drag is one un
   await expect(colour).toHaveClass(/focus/);
   await expect(colour.getByRole('slider', { name: 'Gain R' })).toHaveValue('100');
 
-  // Remove wall ends the seam check (each output gets its own pattern back) and keeps the outputs
+  // Remove wall ends the seam check and its lease, and keeps the outputs
   await panel.getByRole('button', { name: 'Geometry' }).click();
   await panel.getByRole('button', { name: 'Remove wall' }).click();
   await expect(panel).toHaveCount(0);
   await expect(row(2)).not.toContainText('Wall 1');
-  await expect(page.getByRole('button', { name: 'Off', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => sent.leases.at(-1)).toEqual(both(0));
+  expect(sent.sets).toBe(0);
   await expect(overlap('left')).toHaveValue('288');
 });
 
-test('walls: Cancel changes nothing; a reload, leaving the screen and End seam check give each output its own pattern back', async ({ page, engine }) => {
+test('walls: the seam check leases its patterns (B102): renewed, no output.set, no undo step; End, a hidden page, leaving the screen and a reload end the lease', async ({ page, engine }) => {
+  const sent = patternsSent(page), live = livePatterns(page);
   let wallAdds = 0;
   page.on('websocket', (socket) =>
     socket.on('framesent', ({ payload }) => {
@@ -593,37 +1033,63 @@ test('walls: Cancel changes nothing; a reload, leaving the screen and End seam c
     await expect(wizard).toHaveCount(0);
   }
 
-  // Cancel at step 2: no wall, no wall.add, the patterns as they were
+  // Cancel at step 2: no wall, no wall.add; the outputs are on no display, so no Output ID was leased either
   await makeWall(true);
   await expect(page.getByRole('region', { name: 'Wall 1' })).toHaveCount(0);
   expect(wallAdds).toBe(0);
-  await own();
+  expect(sent.leases).toEqual([]);
 
-  // a page reloaded during the seam check offers the outputs' own patterns back
+  // each step of the check is one output.pattern on both outputs, never an output.set: their own patterns stay
   await makeWall(false);
   const panel = page.getByRole('region', { name: 'Wall 1' });
-  await expect(panel.getByRole('button', { name: 'Seam check', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await row(1).click();
-  await expect(settings.getByRole('button', { name: 'Blend check' })).toHaveAttribute('aria-pressed', 'true');
-  await page.goto(`${engine.url}/?token=${engine.token}`);
-  await openScreen(page, 'Outputs');
-  await page.getByRole('button', { name: 'Give the test patterns back' }).click();
-  await expect(page.getByRole('button', { name: 'Give the test patterns back' })).toHaveCount(0);
+  const check = panel.getByRole('button', { name: 'Seam check', exact: true });
+  await expect.poll(() => sent.leases.at(-1)).toEqual(both(3));
+  for (const [name, pattern] of [['Grid', 1], ['Grey 0 %', 8], ['Grey 25 %', 9], ['Grey 75 %', 10], ['White', 11]] as const) {
+    await panel.getByRole('group', { name: 'Seam check pattern' }).getByRole('button', { name }).click();
+    await expect.poll(() => sent.leases.at(-1)).toEqual(both(pattern));
+  }
+  // renewed while the step shows (every 2 s), and the engine has it; 6 s = three renewals: at 3 s no renewal arrived once
+  // in 88 CI jobs (main f0e3abb, 2026-11-02)
+  const count = sent.leases.length;
+  await expect.poll(() => sent.leases.slice(count), { timeout: 6_000 }).toContainEqual(both(11));
+  await expect.poll(() => live.slice(0, 2)).toEqual([11, 11]);
+  expect(sent.sets, "only Output 1's Crosshair").toBe(1);
   await own();
 
-  // leaving the Outputs screen ends a running seam check
-  await panel.getByRole('button', { name: 'Seam check', exact: true }).click();
-  await expect(settings.getByRole('button', { name: 'Grid' })).toHaveAttribute('aria-pressed', 'true');
-  await openScreen(page, 'Layers');
-  await openScreen(page, 'Outputs');
-  await expect(panel.getByRole('button', { name: 'Seam check', exact: true })).toHaveAttribute('aria-pressed', 'false');
-  await own();
+  // a hidden page ends the lease (its timers would be throttled), shown again it is back
+  const visibility = (state: 'hidden' | 'visible') =>
+    page.evaluate((state) => {
+      Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }, state);
+  await visibility('hidden');
+  await expect.poll(() => sent.leases.at(-1)).toEqual(both(0));
+  await visibility('visible');
+  await expect.poll(() => sent.leases.at(-1)).toEqual(both(11));
 
-  // and so does End seam check
-  await panel.getByRole('button', { name: 'Seam check', exact: true }).click();
-  await panel.getByRole('group', { name: 'Seam check pattern' }).getByRole('button', { name: 'White' }).click();
-  await expect(settings.getByRole('button', { name: 'White' })).toHaveAttribute('aria-pressed', 'true');
+  // End seam check ends it; the steps left the undo history as it was: one Undo takes the wall away, Redo brings it
   await panel.getByRole('button', { name: 'End seam check' }).click();
+  await expect.poll(() => sent.leases.at(-1)).toEqual(both(0));
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(panel).toHaveCount(0);
+  await page.getByRole('banner').getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(panel).toHaveCount(1);
+
+  // leaving the Outputs screen ends a running seam check and its lease
+  await check.click();
+  await expect.poll(() => sent.leases.at(-1)).toEqual(both(1));
+  await openScreen(page, 'Layers');
+  await expect.poll(() => sent.leases.at(-1)).toEqual(both(0));
+  await openScreen(page, 'Outputs');
+  await expect(check).toHaveAttribute('aria-pressed', 'false');
+
+  // a page reloaded during the check: the lease ends on the engine (an end sent as the page hid, else it runs out after
+  // 5 s), and the outputs never lost their own patterns
+  await check.click();
+  await expect.poll(() => live.slice(0, 2)).toEqual([1, 1]);
+  await page.goto(`${engine.url}/?token=${engine.token}`);
+  await expect.poll(() => live.slice(0, 2), { timeout: 6000 }).toEqual([null, null]);
+  await openScreen(page, 'Outputs');
   await own();
 });
 
@@ -666,6 +1132,344 @@ test('outputs: a colour gain drag is one undo step; the black offset steps by 0.
   await colour.getByRole('button', { name: 'Black offset up' }).click();
   await expect(colour.getByLabel('Black offset value')).toHaveText('0.1 %');
   await expect(colour.getByRole('slider', { name: 'Black offset' })).toHaveValue('0.1');
+});
+
+// B114: the −/range/+ sliders (RangeStepper) against a slow network, where the engine's echo of a value comes a round
+// trip after it was sent
+
+/** Loads the page again behind a slow network: every frame from the engine `net.ms` late (250 ms, as over a busy Wi-Fi;
+ * a test may change it), the names of the commands the page sends in `net.sent`; a command named `drop` never reaches
+ * the engine. */
+async function slowEchoes(page: Page, engine: Engine, { ms = 250, drop = '' } = {}): Promise<{ ms: number; sent: string[] }> {
+  const net = { ms, sent: [] as string[] };
+  await page.routeWebSocket(/\/ws$/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((message) => {
+      const name = typeof message === 'string' ? (JSON.parse(message) as { name?: string }).name : undefined;
+      if (name) net.sent.push(name);
+      if (!drop || name !== drop) server.send(message);
+    });
+    server.onMessage((message) => void setTimeout(() => ws.send(message), net.ms));
+  });
+  await page.goto(`${engine.url}/?token=${engine.token}`);
+  return net;
+}
+
+type Watched = HTMLElement & { seen?: number[]; times?: number[] };
+/** Records every number a slider's value text shows from now on; the function returned reads them, repeats dropped.
+ * `timesOf` reads when each appeared (performance.now() in the page). */
+async function watchValue(value: Locator): Promise<() => Promise<number[]>> {
+  await value.evaluate((el: Watched) => {
+    const seen = (el.seen = [parseFloat(el.textContent ?? '')]);
+    const times = (el.times = [performance.now()]);
+    new MutationObserver(() => {
+      const n = parseFloat(el.textContent ?? '');
+      if (n === seen.at(-1)) return;
+      seen.push(n);
+      times.push(performance.now());
+    }).observe(el, { subtree: true, characterData: true, childList: true });
+  });
+  return () => value.evaluate((el: Watched) => el.seen ?? []);
+}
+const timesOf = (value: Locator) => value.evaluate((el: Watched) => el.times ?? []);
+
+/** How often a sequence of values turns between rising and falling: a slider that jumps back turns more than the hand did. */
+const turns = (seen: number[]) => seen.filter((v, i) => i >= 2 && Math.sign(v - seen[i - 1]!) !== Math.sign(seen[i - 1]! - seen[i - 2]!)).length;
+
+/** The x of value `v` on a 0–`max` range input (its thumb is 16 px wide). */
+async function rangeX(slider: Locator, max: number): Promise<{ x: (v: number) => number; y: number }> {
+  await slider.scrollIntoViewIfNeeded();
+  const box = (await slider.boundingBox())!;
+  return { x: (v) => box.x + 8 + (v / max) * (box.width - 16), y: box.y + box.height / 2 };
+}
+
+const colourOf = (page: Page) => page.getByRole('region', { name: 'Output settings' }).getByRole('group', { name: 'Colour' });
+
+test('outputs: a released colour slider stays where it was let go until the engine catches up (B114 a)', async ({ page, engine }) => {
+  await slowEchoes(page, engine);
+  await addUnassignedOutput(page);
+  const colour = colourOf(page);
+  const red = colour.getByRole('slider', { name: 'Gain R' });
+  await expect(red).toHaveValue('100');
+  const shown = await watchValue(colour.getByLabel('Gain R value'));
+  const { x, y } = await rangeX(red, 200);
+  await page.mouse.move(x(100), y);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) {
+    await page.mouse.move(x(100 - i * 3), y);
+    await page.waitForTimeout(30);
+  }
+  const dragged = Number(await red.inputValue());
+  expect(dragged).toBeLessThan(80);
+  await page.mouse.up();
+  // past the late echoes and the grace: the slider only ever went down, and the engine has the value let go at
+  await page.waitForTimeout(1500);
+  const seen = await shown();
+  expect(turns(seen), seen.join(' ')).toBe(0);
+  expect(seen.at(-1)).toBe(dragged);
+  await expect(red).toHaveValue(String(dragged));
+});
+
+test('outputs: quick taps on a colour + all land, as one undo step (B114 b)', async ({ page, engine }) => {
+  await slowEchoes(page, engine);
+  await addUnassignedOutput(page);
+  const colour = colourOf(page);
+  const up = colour.getByRole('button', { name: 'Black offset up' });
+  await up.scrollIntoViewIfNeeded();
+  const plus = (await up.boundingBox())!;
+  for (let i = 0; i < 5; i++) await page.mouse.click(plus.x + plus.width / 2, plus.y + plus.height / 2);
+  const value = colour.getByLabel('Black offset value');
+  await expect(value).toHaveText('0.5 %');
+  await page.waitForTimeout(1500); // the engine's value after the grace
+  await expect(value).toHaveText('0.5 %');
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(value).toHaveText('0.0 %');
+});
+
+test('outputs: a colour slider dragged down and back up faster than a round trip shows none of the late echoes after the release (B114)', async ({ page, engine }) => {
+  await slowEchoes(page, engine);
+  await addUnassignedOutput(page);
+  const colour = colourOf(page);
+  const red = colour.getByRole('slider', { name: 'Gain R' });
+  await expect(red).toHaveValue('100');
+  const shown = await watchValue(colour.getByLabel('Gain R value'));
+  const { x, y } = await rangeX(red, 200);
+  await page.mouse.move(x(100), y);
+  await page.mouse.down();
+  // about 150 ms: a few sends at 50 ms intervals, all echoed after the release
+  for (const v of [97, 94, 91, 88, 91, 94, 97, 100]) {
+    await page.mouse.move(x(v), y);
+    await page.waitForTimeout(15);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(1500);
+  const seen = await shown();
+  expect(turns(seen), seen.join(' ')).toBe(1); // down, then up
+  expect(seen.at(-1)).toBe(100);
+});
+
+test('outputs: a colour slider held where an echo of its own earlier value lands keeps following the finger (B114 e)', async ({ page, engine }) => {
+  // CI 2026-11-01 (twice): a drag 100 → 88 → 100 slower than a round trip met the echo of its first 97 with the thumb back
+  // on 97, which ended the hold, and the next echo (91) showed mid-drag. Here the thumb waits on 97 while the echoes of
+  // 97 and 88 land, so the timing is not left to the runner.
+  await slowEchoes(page, engine);
+  await addUnassignedOutput(page);
+  const colour = colourOf(page);
+  const red = colour.getByRole('slider', { name: 'Gain R' });
+  await expect(red).toHaveValue('100');
+  const shown = await watchValue(colour.getByLabel('Gain R value'));
+  const { x, y } = await rangeX(red, 200);
+  await page.mouse.move(x(100), y);
+  await page.mouse.down();
+  // the 50 ms send throttle sends the latest value: a wait past it after the 97 and after the 88 makes both go out, in
+  // that order, before the 97 on the way up
+  await page.mouse.move(x(97), y);
+  await page.waitForTimeout(80);
+  for (const v of [94, 91, 88]) {
+    await page.mouse.move(x(v), y);
+    await page.waitForTimeout(15);
+  }
+  await page.waitForTimeout(80);
+  await page.mouse.move(x(97), y);
+  await page.waitForTimeout(500); // the echoes of 97 and then 88 (250 ms after their sends) land while the thumb holds 97
+  await page.mouse.move(x(100), y);
+  await page.mouse.up();
+  await page.waitForTimeout(1500);
+  const seen = await shown();
+  expect(turns(seen), seen.join(' ')).toBe(1); // down, then up: no 88 after the 97
+  expect(seen.at(-1)).toBe(100);
+});
+
+test('outputs: + and then − on a colour within a round trip, the late echo of the + does not show, nor after another gain echoes (B114)', async ({ page, engine }) => {
+  await slowEchoes(page, engine);
+  await addUnassignedOutput(page);
+  const colour = colourOf(page);
+  await colour.getByRole('button', { name: 'Black offset up' }).scrollIntoViewIfNeeded();
+  const shown = await watchValue(colour.getByLabel('Gain R value'));
+  // Gain G's echo arrives after the −, before Gain R's: it re-renders Gain R with its old value, the value sent
+  await colour.getByRole('button', { name: 'Gain G up' }).click();
+  await page.waitForTimeout(100);
+  await colour.getByRole('button', { name: 'Gain R up' }).click();
+  await page.waitForTimeout(60);
+  await colour.getByRole('button', { name: 'Gain R down' }).click();
+  await page.waitForTimeout(1500);
+  expect(await shown()).toEqual([100, 100.5, 100]);
+});
+
+test("outputs: a colour + the engine never gets shows the engine's value again after the grace (B114)", async ({ page, engine }) => {
+  const net = await slowEchoes(page, engine, { drop: 'output.set' });
+  await addUnassignedOutput(page);
+  const colour = colourOf(page);
+  const value = colour.getByLabel('Black offset value');
+  await colour.getByRole('button', { name: 'Black offset up' }).click();
+  await expect(value).toHaveText('0.1 %');
+  await expect(value).toHaveText('0.0 %', { timeout: 2_000 });
+  expect(net.sent).toContain('output.set');
+});
+
+test('outputs: Undo right after a tap on a colour + shows at once, not at the end of the grace (B114)', async ({ page, engine }) => {
+  // the engine's echo of the tap (the socket of the page as loaded again with the listener in place)
+  let echoed = () => {};
+  const echo = new Promise<void>((done) => (echoed = done));
+  page.on('websocket', (socket) =>
+    socket.on('framereceived', ({ payload }) => {
+      if (typeof payload === 'string' && payload.includes('/color/black')) echoed();
+    }),
+  );
+  await page.goto(`${engine.url}/?token=${engine.token}`);
+  await addUnassignedOutput(page);
+  const colour = colourOf(page);
+  const value = colour.getByLabel('Black offset value');
+  const shown = await watchValue(value);
+  await colour.getByRole('button', { name: 'Black offset up' }).click();
+  await echo;
+  await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(value).toHaveText('0.0 %');
+  expect(await shown()).toEqual([0, 0.1, 0]);
+  // the grace alone would keep 0.1 until 1000 ms after the tap
+  const [, tapped, undone] = await timesOf(value);
+  expect(undone! - tapped!).toBeLessThan(900);
+});
+
+test.describe('with touch', () => {
+  test.use({ hasTouch: true });
+
+  test('outputs: two fingers on two colour sliders, each slider follows its own finger only (B114 c)', async ({ page, engine }) => {
+    await slowEchoes(page, engine);
+    await addUnassignedOutput(page);
+    const colour = colourOf(page);
+    const names = ['Gain R', 'Gain G'];
+    const sliders = names.map((name) => colour.getByRole('slider', { name }));
+    const shown = await Promise.all(names.map((name) => watchValue(colour.getByLabel(`${name} value`))));
+    const ranges = [await rangeX(sliders[0]!, 200), await rangeX(sliders[1]!, 200)];
+    const at = (finger: number, v: number) => ({ x: ranges[finger]!.x(v), y: ranges[finger]!.y, id: finger });
+    // Playwright's touchscreen only taps: two fingers go through the DevTools protocol
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', touchPoints: { x: number; y: number; id: number }[]) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
+    await touch('touchStart', [at(0, 100)]);
+    await touch('touchStart', [at(0, 100), at(1, 100)]);
+    for (let i = 1; i <= 10; i++) {
+      await touch('touchMove', [at(0, 100 - i * 3), at(1, 100 - i * 2)]);
+      await page.waitForTimeout(30);
+    }
+    // the second finger lifts first, the first one goes on a little
+    await touch('touchEnd', [at(1, 80)]);
+    for (let i = 11; i <= 13; i++) {
+      await touch('touchMove', [at(0, 100 - i * 3)]);
+      await page.waitForTimeout(30);
+    }
+    await touch('touchEnd', []);
+    await page.waitForTimeout(1500);
+    for (const [i, name] of names.entries()) {
+      const seen = await shown[i]!();
+      expect(turns(seen), `${name}: ${seen.join(' ')}`).toBe(0);
+      expect(seen.at(-1), name).toBeLessThan(i === 0 ? 70 : 85);
+      expect(seen.at(-1), name).toBe(Number(await sliders[i]!.inputValue()));
+    }
+  });
+});
+
+test("outputs: a colour slider dragged away and back shows another client's change and Undo after the release (B114 d)", async ({ page, engine, browser }) => {
+  await addUnassignedOutput(page);
+  const colour = colourOf(page);
+  const red = colour.getByRole('slider', { name: 'Gain R' });
+  await expect(red).toHaveValue('100');
+  const { x, y } = await rangeX(red, 200);
+  await page.mouse.move(x(100), y);
+  await page.mouse.down();
+  for (const v of [97, 94, 91, 88, 91, 94, 97, 100]) {
+    await page.mouse.move(x(v), y);
+    await page.waitForTimeout(40);
+  }
+  await page.mouse.up(); // where it was pressed: Chromium fires no change
+  await expect(red).toHaveValue('100');
+
+  const other = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    const second = await other.newPage();
+    await second.goto(`${engine.url}/?token=${engine.token}`);
+    await openScreen(second, 'Outputs');
+    await second.getByRole('button', { name: /^Output 1\b/ }).click();
+    await colourOf(second).getByRole('button', { name: 'Gain R up' }).click();
+    await expect(colour.getByLabel('Gain R value')).toHaveText('100.5 %');
+    await expect(red).toHaveValue('100.5');
+    await page.getByRole('banner').getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(colour.getByLabel('Gain R value')).toHaveText('100.0 %');
+  } finally {
+    await other.close();
+  }
+});
+
+test('walls: under late echoes an overlap drag sends one wall.set and stays, and quick taps on two axes or two gamma channels all land (B114)', async ({ page, engine }) => {
+  const net = await slowEchoes(page, engine, { ms: 0 }); // the set-up at full speed
+  // a 2 × 2 wall of four outputs of 1920 × 1200
+  await addUnassignedOutput(page);
+  for (let i = 0; i < 3; i++) await page.getByLabel('Add output on').selectOption('none');
+  const row = (n: number) => page.locator('.row.out', { hasText: `Output ${n}` });
+  for (const n of [1, 2, 3, 4]) {
+    await row(n).click();
+    const h = page.getByLabel('Region h', { exact: true });
+    await h.fill('1200');
+    await h.press('Tab');
+  }
+  await page.getByRole('region', { name: 'Projector walls' }).getByRole('button', { name: 'New projector wall' }).click();
+  const wizard = page.getByRole('region', { name: 'New projector wall' });
+  for (const n of [1, 2, 3, 4]) await wizard.getByRole('button', { name: new RegExp(`^Output ${n}, `) }).click();
+  await wizard.getByRole('group', { name: 'Grid' }).getByRole('button', { name: '2 × 2' }).click();
+  await wizard.getByRole('button', { name: 'Next' }).click();
+  await wizard.getByRole('button', { name: 'Make wall' }).click();
+  const panel = page.getByRole('region', { name: 'Wall 1' });
+  await panel.getByRole('button', { name: 'Geometry' }).click();
+  const across = panel.getByRole('slider', { name: 'Overlap across' });
+  await expect(across).toHaveValue('15');
+  net.ms = 250;
+
+  // a drag on the overlap sends one wall.set, on release, and the thumb stays where it was let go
+  const acrossValue = panel.getByLabel('Overlap across value');
+  const shown = await watchValue(acrossValue);
+  const sets = () => net.sent.filter((name) => name === 'wall.set').length;
+  const before = sets();
+  const { x, y } = await rangeX(across, 50);
+  await page.mouse.move(x(15), y);
+  await page.mouse.down();
+  for (const v of [17, 19, 21, 23, 25]) {
+    await page.mouse.move(x(v), y);
+    await page.waitForTimeout(30);
+  }
+  const dragged = Number(await across.inputValue());
+  expect(dragged).toBeGreaterThan(20);
+  expect(sets()).toBe(before);
+  await page.mouse.up();
+  await page.waitForTimeout(1500);
+  expect(sets() - before).toBe(1);
+  const seen = await shown();
+  expect(turns(seen), seen.join(' ')).toBe(0);
+  expect(seen.at(-1)).toBe(dragged);
+
+  // across + and then down + within a round trip: one wall.set carries both axes, and each keeps its tap
+  await panel.getByRole('button', { name: 'Overlap across up' }).click();
+  await panel.getByRole('button', { name: 'Overlap down up' }).click();
+  await page.waitForTimeout(1500);
+  await expect(acrossValue).toHaveText(`${dragged + 1} %`);
+  await expect(panel.getByLabel('Overlap down value')).toHaveText('16 %');
+
+  // four taps on gamma R up, then one on G up after the first send went out: one wall.seam carries all three channels,
+  // and R keeps its taps
+  await panel.getByRole('button', { name: 'Seam between Output 1 and Output 2' }).click();
+  await panel.getByRole('switch', { name: 'Link R, G, B' }).uncheck({ force: true }); // the drawn track covers the input
+  const up = (channel: string) => panel.getByRole('button', { name: `Gamma ${channel} up` });
+  await up('G').scrollIntoViewIfNeeded();
+  await expect(panel.getByLabel('Gamma G value')).toHaveText('2.20');
+  const tap = async (channel: string, times: number) => {
+    const box = (await up(channel).boundingBox())!;
+    for (let i = 0; i < times; i++) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  };
+  await tap('R', 4);
+  await page.waitForTimeout(100); // past the 50 ms throttle, within the round trip
+  await tap('G', 1);
+  await page.waitForTimeout(1500);
+  await expect(panel.getByLabel('Gamma R value')).toHaveText('2.40');
+  await expect(panel.getByLabel('Gamma G value')).toHaveText('2.25');
 });
 
 test('outputs: store a mapping preset, move a corner, recall the preset; Undo takes the recall back', async ({ page }) => {
@@ -1004,33 +1808,14 @@ test('preview: a viewer refused H.264 at the encoder limit shows JPEG at once an
   await page.getByRole('group', { name: 'Canvas', exact: true }).getByRole('button', { name: 'Canvas 2' }).click();
   const figure = page.getByRole('figure');
   await expect.poll(() => subs, { timeout: previewTimeout }).toBe(1);
-  // the engine's JPEG counters (live streamers only) while this viewer is the only one on JPEG: JPEGs made, encodes
-  // that returned nil, sends a connection refused (B99); a failed read gives zeros, never a failed test
-  type JPEGCounters = { jpegOut: number; jpegFailed: number; jpegDropped: number };
-  const jpegCounters = async (): Promise<JPEGCounters> => {
-    try {
-      return ((await (await engine.api.get('/metrics')).json()) as { preview: JPEGCounters }).preview;
-    } catch {
-      return { jpegOut: 0, jpegFailed: 0, jpegDropped: 0 };
-    }
-  };
-  const before = await jpegCounters();
   // the refusal says `codec: "jpeg"`: JPEG at once (not after 5 s without a description), and its frames are drawn
   await expect(figure.locator('figcaption')).toContainText(/^JPEG 5 fps · .* · H\.264 encoders busy/, { timeout: 3_000 });
   const drawn = () => figure.locator('canvas').evaluate((c: HTMLCanvasElement) => c.getContext('2d')!.getImageData(c.width / 2, c.height / 2, 1, 1).data[3]);
   // B98: on CI's VM the engine has sent this refused stream no JPEG frame for 30 s (cause open): on a workstation one
-  // must come; drawing is checked once a frame came, and a CI run without one says so (Actions warning with the
-  // engine's JPEG counters, engine log attached) and is skipped (B99)
+  // must come; drawing is checked once a frame came, and a CI run without one records the engine's /metrics and is skipped (B99)
   await expect.poll(() => jpegFrames, { timeout: previewTimeout }).toBeGreaterThan(0).catch(async (error: unknown) => {
     if (!process.env.CI || !/Timeout \d+ms exceeded/.test((error as Error).message ?? '')) throw error;
-    const after = await jpegCounters();
-    const made = (['jpegOut', 'jpegFailed', 'jpegDropped'] as const).map((k) => `${k} +${after[k] - before[k]} (now ${after[k]})`).join(', ');
-    const note = `B98: ${jpegFrames} JPEG frames on the refused canvas:2 stream within ${previewTimeout} ms; ${made} (B99)`;
-    console.log(`::warning::${note}`);
-    test.info().annotations.push({ type: 'B98', description: note });
-    await test.info().attach('fanousd.log (B98)', { path: join(engine.home, 'Library/Logs/Fanous/fanousd.log'), contentType: 'text/plain' });
-    // the upgrade does not come on such a runner either: the rest would only run into the test timeout
-    test.skip(true, 'no JPEG frame for the refused viewer on this runner (B99)');
+    await noJPEGOnCI(engine, jpegFrames, previewTimeout);
   });
   if (jpegFrames > 0) await expect.poll(drawn, { timeout: previewTimeout }).toBe(255);
 
@@ -1214,14 +1999,10 @@ test('preview: a refused viewer the engine moves to a stream that never delivers
   const caption = figure.locator('figcaption');
   await expect(caption).toContainText(/^JPEG 5 fps · .* · H\.264 encoders busy/, { timeout: previewTimeout });
   // the moved case needs the refused stream's JPEG first: without a frame on it (the B99 symptom) the watchdog fires
-  // before any move. A CI run without one says so (Actions warning, engine log attached) and is skipped, as in B86
+  // before any move. A CI run without one records the engine's /metrics and is skipped, as in B86
   await expect.poll(() => jpegFrames, { timeout: 4_000 }).toBeGreaterThan(0).catch(async (error: unknown) => {
     if (!process.env.CI || !/Timeout \d+ms exceeded/.test((error as Error).message ?? '')) throw error;
-    const note = `B98: ${jpegFrames} JPEG frames on the refused canvas:2 stream within 4000 ms (B99)`;
-    console.log(`::warning::${note}`);
-    test.info().annotations.push({ type: 'B98', description: note });
-    await test.info().attach('fanousd.log (B98)', { path: join(engine.home, 'Library/Logs/Fanous/fanousd.log'), contentType: 'text/plain' });
-    test.skip(true, 'no JPEG frame for the refused viewer on this runner (B99)');
+    await noJPEGOnCI(engine, jpegFrames, 4_000);
   });
   const drawn = () => figure.locator('canvas').evaluate((c: HTMLCanvasElement) => c.getContext('2d')!.getImageData(c.width / 2, c.height / 2, 1, 1).data[3]);
   await expect.poll(drawn).toBe(255);

@@ -9,8 +9,8 @@ import Network
 import Synchronization
 
 /// CITP/MSEX media-server side (DESIGN.md §16.1): PLoc every 5 s on both multicast groups, one TCP listener
-/// (ephemeral port, advertised in PLoc), per connection the MSEX version negotiated from CInf, SInf, layer
-/// status at 4 Hz, element libraries (= numbered folders), media elements (= numbered files), JPEG thumbnails
+/// (ephemeral port, advertised in PLoc), per connection the MSEX version negotiated from CInf (1.0 when none comes within 2 s, B78), SInf, layer
+/// status at 4 Hz, element libraries (= numbered folders) and media elements (= numbered files) by 0-based index, JPEG thumbnails
 /// from the library cache, video sources (the canvas and each layer) and JPEG streaming frames of a source from the
 /// preview path (canvas) or the live thumbnails (layers, B29). Packets come from FanousCore.
 public final class CITPServer: @unchecked Sendable {
@@ -23,16 +23,6 @@ public final class CITPServer: @unchecked Sendable {
         public var lengthMs: UInt32
         public var fps: UInt8
         public var flags: UInt32
-        public init(index: Int, folder: Int, file: Int, name: String, positionMs: UInt32, lengthMs: UInt32, fps: UInt8, flags: UInt32) {
-            self.index = index
-            self.folder = folder
-            self.file = file
-            self.name = name
-            self.positionMs = positionMs
-            self.lengthMs = lengthMs
-            self.fps = fps
-            self.flags = flags
-        }
     }
 
     public struct Providers: Sendable {
@@ -44,21 +34,9 @@ public final class CITPServer: @unchecked Sendable {
         /// when none was produced yet.
         public var frame: @Sendable (UInt16) -> ([UInt8], Int, Int)?
         /// What `VSrc` lists: the canvas (source 0) and one source per layer.
-        public var sources: @Sendable () -> [VideoSource]
+        public var sources: @Sendable () -> [VideoSource] = { [] }
         /// Render layers (layer stream sources 1…n), without reading the parameters (`layers` does).
-        public var layerCount: @Sendable () -> Int
-        public init(
-            layers: @escaping @Sendable () -> [LayerInfo], library: @escaping @Sendable () -> LibrarySnapshot,
-            thumbnail: @escaping @Sendable (String) -> [UInt8]?, frame: @escaping @Sendable (UInt16) -> ([UInt8], Int, Int)?,
-            sources: @escaping @Sendable () -> [VideoSource] = { [] }, layerCount: @escaping @Sendable () -> Int = { 0 }
-        ) {
-            self.layers = layers
-            self.library = library
-            self.thumbnail = thumbnail
-            self.frame = frame
-            self.sources = sources
-            self.layerCount = layerCount
-        }
+        public var layerCount: @Sendable () -> Int = { 0 }
     }
 
     public struct Status: Sendable, Equatable {
@@ -136,18 +114,14 @@ public final class CITPServer: @unchecked Sendable {
         self.listener = listener
     }
 
-    /// Layer status (4 Hz) runs while a console has negotiated a version, stream frames (10 Hz) while one streams;
+    /// Layer status (4 Hz) runs while a session has a version (from CInf, or 1.0 after `Session.fallbackDelay`), stream frames (10 Hz) while one streams;
     /// a server nobody talks to has only the 5 s beacon. Server queue only.
     private func updateTimers() {
         let negotiated = connections.values.contains { $0.version != nil }
         let streaming = connections.values.contains { !$0.streams.isEmpty }
         func sync(_ timer: inout DispatchSourceTimer?, wanted: Bool, interval: Double, _ tick: @escaping @Sendable (CITPServer) -> Void) {
             if wanted, timer == nil {
-                let new = DispatchSource.makeTimerSource(queue: queue)
-                new.schedule(deadline: .now() + interval, repeating: interval)
-                new.setEventHandler { [weak self] in if let self { tick(self) } }
-                new.resume()
-                timer = new
+                timer = DispatchSource.repeating(every: interval, on: queue) { [weak self] in if let self { tick(self) } }
             } else if !wanted, let running = timer {
                 running.cancel()
                 timer = nil
@@ -250,10 +224,16 @@ public final class CITPServer: @unchecked Sendable {
     private func sendLayerStatus() {
         let ready = connections.values.filter { $0.version != nil }
         guard !ready.isEmpty else { return }
+        let libraries = providers.library().msexLibraries
         let layers = providers.layers().map { l in
-            LayerStatus(
+            // number → index; live inputs (folder 0) and missing media are no library: library 255, element 255, indexes no
+            // library or file can have (numbers run 1–255, so indexes 0–254); 1.0/1.1 carry only the library number, where the
+            // root id {0,0,0,0} would read as library 0 = the first folder
+            let library = libraries.firstIndex { $0.number == l.folder }
+            let element = library.flatMap { libraries[$0].elements.firstIndex { $0.file == l.file } }
+            return LayerStatus(
                 layerNumber: UInt8(clamping: l.index - 1), physicalOutput: 0, mediaLibraryType: 1,
-                mediaLibraryID: MSEXLibraryID(level: 1, level1: UInt8(clamping: l.folder)), mediaNumber: UInt8(clamping: l.file), mediaName: l.name,
+                mediaLibraryID: .topLevel(element == nil ? 255 : UInt8(library!)), mediaNumber: UInt8(element ?? 255), mediaName: l.name,
                 mediaPosition: l.positionMs, mediaLength: l.lengthMs, mediaFPS: l.fps, statusFlags: l.flags)
         }
         for session in ready { session.send(.layerStatus(layers)) }
@@ -272,7 +252,7 @@ public final class CITPServer: @unchecked Sendable {
                 session.send(
                     .streamFrame(
                         StreamFrame(
-                            version: session.version ?? .v1_0, mediaServerUUID: uuid, sourceIdentifier: session.streams[i].source, frameFormat: "JPEG",
+                            mediaServerUUID: uuid, sourceIdentifier: session.streams[i].source, frameFormat: "JPEG",
                             frameWidth: UInt16(clamping: width), frameHeight: UInt16(clamping: height), buffer: jpeg)))
             }
         }
@@ -281,6 +261,24 @@ public final class CITPServer: @unchecked Sendable {
 
     // MARK: Requests
 
+    private func serverInformation() -> ServerInformation {
+        ServerInformation(
+            uuid: uuid, productName: Self.productName, productVersionMajor: Self.productVersion.0, productVersionMinor: Self.productVersion.1,
+            productVersionBugfix: Self.productVersion.2,
+            supportedVersions: [.v1_0, .v1_1, .v1_2], supportedLibraryTypes: 1 << 0, thumbnailFormats: ["JPEG", "RGB8"], streamFormats: ["JPEG"],
+            layerDMXSources: providers.layers().map { "Layer \($0.index)" })
+    }
+
+    /// An MSEX 1.0/1.1 console sends no CInf (B78): a session still without a version `Session.fallbackDelay` after
+    /// connecting gets 1.0, an unsolicited SInf and layer status. A later CInf sets the version as usual.
+    fileprivate func assumeVersion1_0(_ session: Session) {
+        guard session.version == nil, connections[ObjectIdentifier(session)] != nil else { return }
+        session.version = .v1_0
+        updateTimers()
+        session.send(.serverInformation(serverInformation()))
+        logger.info("CITP client without CInf", metadata: ["peer": "\(session.connection.endpoint)", "msex": "1.0"])
+    }
+
     fileprivate func handle(_ packet: CITPClientMessage, requestIndex: UInt16, from session: Session) {
         switch packet {
         case .clientInformation(let info):
@@ -288,44 +286,37 @@ public final class CITPServer: @unchecked Sendable {
             session.version = version
             updateTimers()
             let library = providers.library()
-            session.send(
-                .serverInformation(
-                    ServerInformation(
-                        version: version, uuid: uuid, productName: Self.productName, productVersionMajor: Self.productVersion.0, productVersionMinor: Self.productVersion.1,
-                        productVersionBugfix: Self.productVersion.2,
-                        supportedVersions: [.v1_0, .v1_1, .v1_2], supportedLibraryTypes: 1 << 0, thumbnailFormats: ["JPEG", "RGB8"], streamFormats: ["JPEG"],
-                        layerDMXSources: providers.layers().map { "Layer \($0.index)" })), requestIndex: requestIndex)
+            session.send(.serverInformation(serverInformation()), requestIndex: requestIndex)
             logger.info("CITP client", metadata: ["peer": "\(session.connection.endpoint)", "msex": "\(version.major).\(version.minor)", "folders": "\(library.folders.count)"])
         case .getElementLibraryInformation(let request):
-            let library = providers.library()
-            let folders = library.folders.filter { $0.number != nil && (request.libraryNumbers.isEmpty || request.libraryNumbers.contains(UInt8(clamping: $0.number!))) }
-            let libraries = folders.map { folder in
+            let folders = providers.library().msexLibraries.enumerated().filter { request.libraryNumbers.isEmpty || request.libraryNumbers.contains(UInt8($0.offset)) }
+            let libraries = folders.map { index, folder in
+                // SerialNumber: the folder's file count, invalid names included. An added or removed file changes it, which a
+                // 1.2 console sees on its next GELI (no ELUp is sent; 1.0/1.1 have no serial). ponytail: a renamed or
+                // renumbered file, a file added and another removed, or a folder added, removed or renumbered (it shifts the
+                // library indexes after it) keeps the counts, so a console keeps stale cached elements; a serial from the
+                // folder's (number, name) list, kept across restarts, when that bites.
                 ElementLibrary(
-                    id: MSEXLibraryID(level: 1, level1: UInt8(clamping: folder.number ?? 0)), serialNumber: UInt32(folder.items.count), dmxRangeMin: UInt8(clamping: folder.number ?? 0),
-                    dmxRangeMax: UInt8(clamping: folder.number ?? 0), name: folder.name, libraryCount: 0, elementCount: UInt16(folder.items.filter { $0.file != nil }.count))
+                    id: .topLevel(UInt8(index)), serialNumber: UInt32(folder.folder.items.count), dmxRangeMin: folder.number, dmxRangeMax: folder.number,
+                    name: folder.folder.name, libraryCount: 0, elementCount: UInt16(folder.elements.count))
             }
-            session.send(.elementLibraryInformation(ElementLibraryInformation(version: session.version ?? .v1_0, libraryType: 1, libraries: libraries)), requestIndex: requestIndex)
+            session.send(.elementLibraryInformation(ElementLibraryInformation(libraryType: 1, libraries: libraries)), requestIndex: requestIndex)
         case .getElementInformation(let request):
-            let library = providers.library()
-            let folder = library.folders.first { $0.number == Int(request.libraryID.level1) }
-            let items = (folder?.items ?? []).filter { $0.file != nil && (request.elementNumbers.isEmpty || request.elementNumbers.contains(UInt8(clamping: $0.file!))) }
-            let elements = items.map { item in
+            let elements = providers.library().msexElements(request.libraryID, request.elementNumbers).map { index, item in
                 let meta = item.metadata
                 return MediaElement(
-                    number: UInt8(clamping: item.file ?? 0), serialNumber: 0, dmxRangeMin: UInt8(clamping: item.file ?? 0), dmxRangeMax: UInt8(clamping: item.file ?? 0),
+                    number: UInt8(index), serialNumber: 0, dmxRangeMin: UInt8(item.file!), dmxRangeMax: UInt8(item.file!),
                     name: item.name, versionTimestamp: 0, width: UInt16(clamping: meta?.width ?? 0), height: UInt16(clamping: meta?.height ?? 0),
                     length: UInt32(clamping: meta?.frameCount ?? 0), fps: UInt8(clamping: Int((meta?.frameRate ?? 0).rounded())))
             }
-            session.send(.mediaElementInformation(MediaElementInformation(version: session.version ?? .v1_0, libraryID: request.libraryID, elements: elements)), requestIndex: requestIndex)
+            session.send(.mediaElementInformation(MediaElementInformation(libraryID: request.libraryID, elements: elements)), requestIndex: requestIndex)
         case .getElementThumbnail(let request):
-            let library = providers.library()
-            let folder = library.folders.first { $0.number == Int(request.libraryID.level1) }
-            for item in folder?.items ?? [] where item.file != nil && (request.elementNumbers.isEmpty || request.elementNumbers.contains(UInt8(clamping: item.file!))) {
+            for (index, item) in providers.library().msexElements(request.libraryID, request.elementNumbers) {
                 guard let name = item.thumbnail, let jpeg = providers.thumbnail(name) else { continue }
                 session.send(
                     .elementThumbnail(
                         ElementThumbnail(
-                            version: session.version ?? .v1_0, libraryType: 1, libraryID: request.libraryID, elementNumber: UInt8(clamping: item.file!),
+                            libraryType: 1, libraryID: request.libraryID, elementNumber: UInt8(index),
                             format: "JPEG", width: UInt16(clamping: Thumbnailer.width), height: UInt16(clamping: item.metadata.map { Thumbnailer.width * $0.height / max(1, $0.width) } ?? 180),
                             buffer: jpeg)), requestIndex: requestIndex)
             }
@@ -342,7 +333,7 @@ public final class CITPServer: @unchecked Sendable {
         case .unknown(let contentType, let body):
             // an MSEX message we do not model: the Nack names its MSEX content type (bytes 2..<6 after the version)
             let received = contentType == "MSEX" && body.count >= 6 ? String(decoding: body[2..<6], as: UTF8.self) : contentType
-            session.send(.nack(Nack(version: session.version ?? .v1_0, receivedContentType: received)), requestIndex: requestIndex)
+            session.send(.nack(Nack(receivedContentType: received)), requestIndex: requestIndex)
         }
     }
 
@@ -361,6 +352,9 @@ public final class CITPServer: @unchecked Sendable {
         var version: MSEXVersion?
         var streams: [Stream] = []
         private var buffer: [UInt8] = []
+        /// How long a console has to send CInf before it is taken for MSEX 1.0 (B78).
+        static let fallbackDelay = 2.0
+        private var fallback: DispatchWorkItem?
 
         init(connection: NWConnection, server: CITPServer) {
             self.connection = connection
@@ -372,8 +366,14 @@ public final class CITPServer: @unchecked Sendable {
             connection.stateUpdateHandler = { [weak self] state in
                 guard let self else { return }
                 if case .failed = state { connection.cancel() }
-                if case .cancelled = state { server.forget(self) }
+                if case .cancelled = state {
+                    self.fallback?.cancel()
+                    server.forget(self)
+                }
             }
+            let item = DispatchWorkItem { [weak self] in if let self { server.assumeVersion1_0(self) } }
+            fallback = item
+            server.queue.asyncAfter(deadline: .now() + Self.fallbackDelay, execute: item)
             connection.start(queue: server.queue)
             receive()
         }
@@ -415,5 +415,23 @@ public final class CITPServer: @unchecked Sendable {
             let bytes = packet.encoded(version: version ?? .v1_0, requestIndex: requestIndex)
             connection.send(content: Data(bytes), completion: .contentProcessed { _ in })
         }
+    }
+}
+
+/// MSEX numbering (B78, spec 2020-11-27 §9.4): library and element numbers are 0-based contiguous indexes (explicit
+/// from MSEX 1.2, the intent before it, so every version gets them); the DMX range of each carries its folder or file
+/// number, the DMX value that selects it. Live inputs (folder 0) are no library.
+extension LibrarySnapshot {
+    /// The numbered folders in number order, each with its numbered files in number order: the array index is the
+    /// MSEX library number, the `elements` index the element number.
+    var msexLibraries: [(number: UInt8, folder: LibraryFolder, elements: [LibraryItem])] {
+        folders.compactMap { f in f.number.map { (UInt8($0), f, f.items.filter { $0.file != nil }) } }
+    }
+
+    /// The elements (index, item) of a library id, only those `numbers` names when it names any.
+    func msexElements(_ id: MSEXLibraryID, _ numbers: [UInt8]) -> [(offset: Int, element: LibraryItem)] {
+        let libraries = msexLibraries
+        guard id.level == 1, Int(id.level1) < libraries.count else { return [] }  // one library level: the root or a deeper id names nothing
+        return libraries[Int(id.level1)].elements.enumerated().filter { numbers.isEmpty || numbers.contains(UInt8($0.offset)) }
     }
 }

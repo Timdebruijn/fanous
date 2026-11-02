@@ -167,10 +167,11 @@ public final class RenderService {
             loader.mixer = mixer
         }
         let device = context.device, fps = scene.fps, logger = logger, allowed = captureAllowed
-        // ponytail: the canvas rate at service start picks the capture frame rate; canvas.set does not reopen devices
-        loader.captureFactory = { [weak loader, captureCatalog] uid in
+        // ponytail: the canvas rate at service start and canvas 1's size at open pick the capture format; canvas.set does
+        // not reopen devices
+        loader.captureFactory = { [weak loader, compositor, captureCatalog] uid in
             guard let loader else { throw CaptureError.session("the engine is stopping") }
-            return try CaptureInput.open(uid: uid, metal: device, fps: fps, allowed: allowed(), logger: logger) { [weak loader] in
+            return try CaptureInput.open(uid: uid, metal: device, fps: fps, canvas: compositor.canvasSizeSnapshot, allowed: allowed(), logger: logger) { [weak loader] in
                 captureCatalog.refreshPermissions()
                 loader?.capturePermissionChanged()
             }

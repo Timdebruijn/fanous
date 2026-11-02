@@ -75,6 +75,20 @@ public final class PreviewStreamer: @unchecked Sendable {
     public let jpegOut = Atomic<Int>(0)
     public let jpegFailed = Atomic<Int>(0)
     public let jpegDropped = Atomic<Int>(0)
+    /// The steps between a tap and its JPEG (B99): completion handlers that ran with `.completed` (`completions`)
+    /// or another status (`completionErrors`), `encode` entries on the preview queue (`encodes`) and JPEG encodes started
+    /// (`jpegStarted`); `jpegStarted` above `jpegOut` + `jpegFailed` is an encode still in `jpegRepresentation` or its sends
+    /// (by 1 transiently while one runs). Per streamer in `/metrics` `preview.streamers`: the sums hide one streamer among the others.
+    public let completions = Atomic<Int>(0)
+    public let completionErrors = Atomic<Int>(0)
+    public let encodes = Atomic<Int>(0)
+    public let jpegStarted = Atomic<Int>(0)
+    /// JPEG encodes that had not returned 3 s after they started (`jpegHung`), the first per streamer logged: on CI's
+    /// "Apple M1 (Virtual)" runners the refused viewer's streamer's first `jpegRepresentation` never returned and its serial
+    /// queue stayed blocked (B99, measured).
+    public let jpegHung = Atomic<Int>(0)
+    /// Subscribers, and those on JPEG (`/metrics`).
+    public var subscriberCounts: (all: Int, jpeg: Int) { subscribers.withLock { ($0.count, $0.filter(\.jpeg).count) } }
     /// The latest JPEG (bytes, width, height) for CITP streaming frames; produced at 5 fps while anyone wants it.
     public let latestJPEG = Mutex<([UInt8], Int, Int)?>(nil)
     /// Set by the CITP server while a console streams; nil = only WebSocket JPEG subscribers count.
@@ -133,9 +147,8 @@ public final class PreviewStreamer: @unchecked Sendable {
         else { throw RenderError.pipeline("layer preview texture") }
         texture.label = "layer preview"
         layerPass.colorAttachments[0].texture = texture
-        layerPass.colorAttachments[0].loadAction = .clear
+        layerPass.colorAttachments[0].loadAction = .clear  // to opaque black, the default clear colour
         layerPass.colorAttachments[0].storeAction = .store
-        layerPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         layerUniforms = uniforms
         layerCompositor = compositor
         layer = index
@@ -165,13 +178,9 @@ public final class PreviewStreamer: @unchecked Sendable {
         }
     }
 
-    public func unsubscribe(connection: StateServer.Connection, stream: UInt32) {
-        subscribers.withLock { $0.removeAll { $0.connection === connection && $0.stream == stream } }
-        queue.async { [self] in releaseSessionIfUnwanted() }
-    }
-
-    public func remove(connection: StateServer.Connection) {
-        subscribers.withLock { $0.removeAll { $0.connection === connection } }
+    /// Drops `stream` of `connection`, or every stream of it when `stream` is nil.
+    public func remove(connection: StateServer.Connection, stream: UInt32? = nil) {
+        subscribers.withLock { $0.removeAll { $0.connection === connection && (stream == nil || $0.stream == stream) } }
         queue.async { [self] in releaseSessionIfUnwanted() }
     }
 
@@ -236,7 +245,7 @@ public final class PreviewStreamer: @unchecked Sendable {
             OutputPass.draw(
                 set, canvas: { $0 == canvasID ? canvas : canvases?($0) }, encoder: encoder, context: context, uniforms: mappedUniforms,
                 master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs,
-                keystones: [], presets: [], morphs: [], now: 0)  // the edited mapping, without keystone, preset or morph, so the editor's handles stay where the drag lands (§9.10 item 3)
+                keystones: [], presets: [], morphs: [], now: target)  // the edited mapping, without keystone, preset or morph, so the editor's handles stay where the drag lands (§9.10 item 3); `target` for a pattern lease's end (B102)
         } else {
             encoder.setRenderPipelineState(context.outputPipeline)
             encoder.setFragmentBuffer(uniforms, offset: 0, index: 0)
@@ -249,7 +258,11 @@ public final class PreviewStreamer: @unchecked Sendable {
         let keep = cvTexture  // the CVMetalTexture must outlive the GPU work
         commandBuffer.addCompletedHandler { [self] buffer in
             _ = keep
-            guard buffer.status == .completed else { return }
+            guard buffer.status == .completed else {
+                completionErrors.wrappingAdd(1, ordering: .relaxed)
+                return
+            }
+            completions.wrappingAdd(1, ordering: .relaxed)
             queue.async { [self] in encode(pixelBuffer, target: target) }
         }
     }
@@ -342,9 +355,18 @@ public final class PreviewStreamer: @unchecked Sendable {
     }
 
     private func encode(_ pixelBuffer: CVPixelBuffer, target: Double) {
+        encodes.wrappingAdd(1, ordering: .relaxed)
         let (h264, jpeg) = subscribers.withLock { subs in (subs.filter { !$0.jpeg }, subs.filter { $0.jpeg }) }
         if !jpeg.isEmpty || externalJPEGWanted?() == true, target - lastJPEG >= 0.18 {  // taps come every 0.2 s when only JPEG listens
             lastJPEG = target
+            let started = jpegStarted.wrappingAdd(1, ordering: .relaxed).newValue
+            // off this queue, which the hang blocks; `started` is this encode's number, finished ones count in jpegOut + jpegFailed
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3) { [weak self] in
+                guard let self, jpegOut.load(ordering: .relaxed) + jpegFailed.load(ordering: .relaxed) < started else { return }
+                if jpegHung.wrappingAdd(1, ordering: .relaxed).oldValue == 0 {
+                    logger.warning("preview JPEG encode did not return within 3 s; this streamer's JPEG and H.264 frames wait until it does", metadata: ["size": "\(width)x\(height)", "target": "\(layer.map { "layer:\($0)" } ?? (outputSet != nil ? "output" : "canvas:\(canvasID)"))"])
+                }
+            }
             if let data = ciContext.jpegRepresentation(of: CIImage(cvPixelBuffer: pixelBuffer), colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.7]) {
                 let bytes = Array(data)
                 latestJPEG.withLock { $0 = (bytes, width, height) }
@@ -407,28 +429,10 @@ public final class PreviewStreamer: @unchecked Sendable {
         }
     }
 
-    /// AVCDecoderConfigurationRecord from the H.264 parameter sets (one SPS, one PPS).
+    /// The AVCDecoderConfigurationRecord VideoToolbox attaches to the format description (empty when there is none).
     static func avcC(from format: CMFormatDescription) -> [UInt8] {
-        var count = 0
-        guard CMVideoFormatDescriptionGetH264ParameterSetAtIndex(format, parameterSetIndex: 0, parameterSetPointerOut: nil, parameterSetSizeOut: nil, parameterSetCountOut: &count, nalUnitHeaderLengthOut: nil) == noErr,
-            count >= 2
-        else { return [] }
-        var sets: [[UInt8]] = []
-        for i in 0..<count {
-            var pointer: UnsafePointer<UInt8>?
-            var size = 0
-            guard CMVideoFormatDescriptionGetH264ParameterSetAtIndex(format, parameterSetIndex: i, parameterSetPointerOut: &pointer, parameterSetSizeOut: &size, parameterSetCountOut: nil, nalUnitHeaderLengthOut: nil) == noErr,
-                let pointer
-            else { return [] }
-            sets.append(Array(UnsafeBufferPointer(start: pointer, count: size)))
-        }
-        let sps = sets[0], pps = sets[1]
-        guard sps.count >= 4 else { return [] }
-        var record: [UInt8] = [1, sps[1], sps[2], sps[3], 0xFF, 0xE1, UInt8(sps.count >> 8), UInt8(sps.count & 0xFF)]
-        record += sps
-        record += [1, UInt8(pps.count >> 8), UInt8(pps.count & 0xFF)]
-        record += pps
-        return record
+        let atoms = CMFormatDescriptionGetExtension(format, extensionKey: kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms) as? [String: Any]
+        return (atoms?["avcC"] as? Data).map(Array.init) ?? []
     }
 }
 

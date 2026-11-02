@@ -93,6 +93,9 @@ public final class OutputPlan: @unchecked Sendable {
     /// The edit overlay (§9.10 item 4), whose entry for this output the coordinator swaps without a recompile; nil on a
     /// preview, which shows the editor's own handles.
     let overlay: EditOverlay?
+    /// The coordinator's test pattern leases (`output.pattern`, B102), drawn over the output's own pattern; the output
+    /// preview's too.
+    let patterns: PatternLeases?
     /// Canvas copies (by canvas id) taken when the Output fixture's Control engaged Freeze; the content pass samples them
     /// instead of the live canvases. Only touched by the one thread that renders this plan's set.
     nonisolated(unsafe) var held: [Int: MTLTexture] = [:]
@@ -101,11 +104,12 @@ public final class OutputPlan: @unchecked Sendable {
 
     init(
         id: Int, index: Int, region: MTLRegion, intensity: Float, testPattern: TestPattern, color: SIMD4<Float>, blendMap: MTLTexture?, warpField: MTLTexture?,
-        slices: [SlicePlan], patternMesh: SlicePlan, presets: [Int: PresetGeometry] = [:], overlay: EditOverlay? = nil
+        slices: [SlicePlan], patternMesh: SlicePlan, presets: [Int: PresetGeometry] = [:], overlay: EditOverlay? = nil, patterns: PatternLeases? = nil
     ) {
         self.patternMesh = patternMesh
         self.presets = presets
         self.overlay = overlay
+        self.patterns = patterns
         var canvases: [Int] = []
         for slice in slices + presets.values.flatMap(\.slices) where !canvases.contains(slice.canvas) { canvases.append(slice.canvas) }
         self.canvases = canvases
@@ -192,8 +196,11 @@ public final class OutputCompiler: @unchecked Sendable {
     }
 
     /// `drawable` is the size of the display's drawable in pixels; a nil region covers it entirely. `overlay`: the
-    /// coordinator's edit overlay, which the plan draws (§9.10 item 4); a preview passes none.
-    public func compile(_ config: OutputConfig, index: Int, drawable: (width: Int, height: Int), overlay: EditOverlay? = nil) throws -> OutputPlan {
+    /// coordinator's edit overlay, which the plan draws (§9.10 item 4); a preview passes none. `patterns`: the coordinator's
+    /// test pattern leases (B102).
+    public func compile(
+        _ config: OutputConfig, index: Int, drawable: (width: Int, height: Int), overlay: EditOverlay? = nil, patterns: PatternLeases? = nil
+    ) throws -> OutputPlan {
         cache.withLock { entries in entries = entries.filter { $0.value.object != nil } }
         let r = config.region ?? PixelRect(x: 0, y: 0, w: drawable.width, h: drawable.height)
         let x = min(max(0, r.x), max(0, drawable.width - 1)), y = min(max(0, r.y), max(0, drawable.height - 1))
@@ -228,7 +235,7 @@ public final class OutputCompiler: @unchecked Sendable {
         return OutputPlan(
             id: config.id, index: index, region: region, intensity: Float(config.intensity), testPattern: TestPattern(rawValue: config.testPattern) ?? .off,
             color: SIMD4(gain[0], gain[1], gain[2], Float(config.color.black)), blendMap: blendMap, warpField: edited.warpField, slices: edited.slices,
-            patternMesh: patternMesh, presets: presets, overlay: overlay)
+            patternMesh: patternMesh, presets: presets, overlay: overlay, patterns: patterns)
     }
 
     /// A mapping's warp field and slices on a w × h output: the edited one or a preset's, textures through the cache.
@@ -486,7 +493,10 @@ enum OutputPass {
             let region = plan.region
             encoder.setViewport(MTLViewport(originX: Double(region.origin.x), originY: Double(region.origin.y), width: Double(region.size.width), height: Double(region.size.height), znear: 0, zfar: 1))
             encoder.setScissorRect(MTLScissorRect(x: region.origin.x, y: region.origin.y, width: region.size.width, height: region.size.height))
-            let pattern = masterPattern != .off ? masterPattern : (fixture.testPattern != .off ? fixture.testPattern : plan.testPattern)
+            // the Master's pattern, else the console's (Output ch 4), else the wall wizard's or seam check's lease (B102), else
+            // the output's own
+            let leased = plan.patterns?.pattern(plan.id, at: now) ?? .off
+            let pattern = masterPattern != .off ? masterPattern : fixture.testPattern != .off ? fixture.testPattern : leased != .off ? leased : plan.testPattern
             let level = fixture.control == .blackout ? 0 : plan.intensity * fixture.intensity
             // the Master once (B100): a pattern takes it here; the canvas already carries it (each layer is drawn with it, as
             // the canvas preview, Syphon and CITP show), so content keeps the output's level and the black lift stays while

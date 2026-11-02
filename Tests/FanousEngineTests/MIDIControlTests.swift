@@ -32,22 +32,22 @@ struct MIDIControlTests {
         let fine = MIDIMapping(kind: .cc14, number: 1, target: "master/intensity")
         let program = MIDIMapping(source: "APC", channel: 1, kind: .pc, number: nil, target: "fixture:Layer 1/file")
         var mapper = MIDIMapper(settings: Self.settings([cc, fine, program]))
-        func run(_ m: MIDIMessage, from source: String = "APC") -> [MIDIMapper.Action] { mapper.handle(m, from: source) { _, _ in nil } }
+        func run(_ m: MIDIMessage, from source: String = "APC") -> [OSCCommand] { mapper.handle(m, from: source) { _, _ in nil } }
         // 7-bit: 0…127 across low…high of a 16-bit parameter; another channel does nothing
-        #expect(run(.controlChange(channel: 0, controller: 7, value: 127)) == [.set(.layer(2), .layer(.intensity), 65535)])
-        #expect(run(.controlChange(channel: 0, controller: 7, value: 0)) == [.set(.layer(2), .layer(.intensity), 32768)])
+        #expect(run(.controlChange(channel: 0, controller: 7, value: 127)) == [.setParameter(.layer(2), .layer(.intensity), raw: 65535)])
+        #expect(run(.controlChange(channel: 0, controller: 7, value: 0)) == [.setParameter(.layer(2), .layer(.intensity), raw: 32768)])
         #expect(run(.controlChange(channel: 1, controller: 7, value: 0)) == [])
         // 14-bit per MIDI 1.0: an MSB resets the LSB (msb << 7), also once the pair is known; the LSB refines it
-        #expect(run(.controlChange(channel: 3, controller: 1, value: 64)) == [.set(.master, .master(.intensity), 32770)])
-        #expect(run(.controlChange(channel: 3, controller: 33, value: 127)) == [.set(.master, .master(.intensity), 33278)])
-        #expect(run(.controlChange(channel: 3, controller: 1, value: 127)) == [.set(.master, .master(.intensity), 65027)])
-        #expect(run(.controlChange(channel: 3, controller: 33, value: 127)) == [.set(.master, .master(.intensity), 65535)])
+        #expect(run(.controlChange(channel: 3, controller: 1, value: 64)) == [.setParameter(.master, .master(.intensity), raw: 32770)])
+        #expect(run(.controlChange(channel: 3, controller: 33, value: 127)) == [.setParameter(.master, .master(.intensity), raw: 33278)])
+        #expect(run(.controlChange(channel: 3, controller: 1, value: 127)) == [.setParameter(.master, .master(.intensity), raw: 65027)])
+        #expect(run(.controlChange(channel: 3, controller: 33, value: 127)) == [.setParameter(.master, .master(.intensity), raw: 65535)])
         // the MSB is kept per source: another source's LSB does not complete this one's
-        #expect(mapper.handle(.controlChange(channel: 3, controller: 33, value: 127), from: "APC", uid: 2) { _, _ in nil } == [.set(.master, .master(.intensity), 508)])
+        #expect(mapper.handle(.controlChange(channel: 3, controller: 33, value: 127), from: "APC", uid: 2) { _, _ in nil } == [.setParameter(.master, .master(.intensity), raw: 508)])
         mapper.forget(uid: 0)
-        #expect(run(.controlChange(channel: 3, controller: 33, value: 0)) == [.set(.master, .master(.intensity), 0)], "forgotten with its source")
+        #expect(run(.controlChange(channel: 3, controller: 33, value: 0)) == [.setParameter(.master, .master(.intensity), raw: 0)], "forgotten with its source")
         // program change: only from the named source; 8-bit file parameter
-        #expect(run(.programChange(channel: 0, program: 127)) == [.set(.layer(1), .layer(.file), 255)])
+        #expect(run(.programChange(channel: 0, program: 127)) == [.setParameter(.layer(1), .layer(.file), raw: 255)])
         #expect(run(.programChange(channel: 0, program: 127), from: "Keyboard") == [])
     }
 
@@ -57,7 +57,7 @@ struct MIDIControlTests {
         let three = MIDIMapping(kind: .note, number: 40, target: "cue.goto", cue: 3)
         let programs = MIDIMapping(kind: .pc, number: nil, target: "cue.goto")
         var mapper = MIDIMapper(settings: Self.settings([go, back, three, programs], mscDevice: 5))
-        func run(_ m: MIDIMessage) -> [MIDIMapper.Action] { mapper.handle(m, from: "APC") { _, _ in nil } }
+        func run(_ m: MIDIMessage) -> [OSCCommand] { mapper.handle(m, from: "APC") { _, _ in nil } }
         #expect(run(.noteOn(channel: 9, note: 36, velocity: 1)) == [.cueGo])
         #expect(run(.noteOff(channel: 9, note: 36, velocity: 0)) == [])
         #expect(run(.noteOn(channel: 0, note: 40, velocity: 127)) == [.cueGoto(3)])
@@ -90,24 +90,24 @@ struct MIDIControlTests {
         let fader = MIDIMapping(kind: .cc, number: 1, target: "fixture:Layer 1/intensity", pickup: true)
         var mapper = MIDIMapper(settings: Self.settings([toggle, fader]))
         var shown: UInt16 = 40000  // the value the resolver shows (set by a console)
-        func run(_ m: MIDIMessage) -> [MIDIMapper.Action] {
+        func run(_ m: MIDIMessage) -> [OSCCommand] {
             let actions = mapper.handle(m, from: "x") { _, _ in shown }
-            for case .set(_, _, let raw) in actions { shown = raw }
+            for case .setParameter(_, _, let raw) in actions { shown = raw }
             return actions
         }
-        #expect(run(.noteOn(channel: 0, note: 50, velocity: 127)).first == .set(.output(1), .output(.intensity), 65535))
+        #expect(run(.noteOn(channel: 0, note: 50, velocity: 127)).first == .setParameter(.output(1), .output(.intensity), raw: 65535))
         #expect(run(.noteOff(channel: 0, note: 50, velocity: 0)) == [])
-        #expect(run(.noteOn(channel: 0, note: 50, velocity: 127)).first == .set(.output(1), .output(.intensity), 16384))
+        #expect(run(.noteOn(channel: 0, note: 50, velocity: 127)).first == .setParameter(.output(1), .output(.intensity), raw: 16384))
         shown = 40000
         // 40000 ≈ CC 77.7: the fader is ignored below it and takes over once it moves across
         #expect(run(.controlChange(channel: 0, controller: 1, value: 10)) == [])
         #expect(run(.controlChange(channel: 0, controller: 1, value: 70)) == [])
-        #expect(run(.controlChange(channel: 0, controller: 1, value: 80)) == [.set(.layer(1), .layer(.intensity), 41282)])
-        #expect(run(.controlChange(channel: 0, controller: 1, value: 20)) == [.set(.layer(1), .layer(.intensity), 10320)])
+        #expect(run(.controlChange(channel: 0, controller: 1, value: 80)) == [.setParameter(.layer(1), .layer(.intensity), raw: 41282)])
+        #expect(run(.controlChange(channel: 0, controller: 1, value: 20)) == [.setParameter(.layer(1), .layer(.intensity), raw: 10320)])
         // something else moved the value: let go until the fader reaches it again (within one step counts)
         shown = 60000
         #expect(run(.controlChange(channel: 0, controller: 1, value: 30)) == [])
-        #expect(run(.controlChange(channel: 0, controller: 1, value: 116)) == [.set(.layer(1), .layer(.intensity), 59859)])
+        #expect(run(.controlChange(channel: 0, controller: 1, value: 116)) == [.setParameter(.layer(1), .layer(.intensity), raw: 59859)])
     }
 
     @Test func learnFindsTheControl() {
@@ -126,7 +126,7 @@ struct MIDIControlTests {
     @Test func mapCommandsValidateReplaceAndLock() throws {
         let (store, _) = StateStoreTests.makeStore()
         let learned = Mutex<[String?]>([])
-        MIDICommands.register(on: store, hooks: MIDICommands.Hooks(learn: { target, _ in learned.withLock { $0.append(target) } }))
+        MIDICommands.register(on: store, learn: { target, _ in learned.withLock { $0.append(target) } })
         let id = try store.execute("midi.map.set", args: ["channel": 1, "kind": "note", "number": 36, "target": "cue.go"], role: .programmer).get().value?.string
         // same control and target again: replaced, not added; by id: changed in place
         let again = try store.execute("midi.map.set", args: ["channel": 1, "kind": "note", "number": 36, "target": "cue.go", "curve": "toggle"], role: .programmer).get().value?.string
@@ -166,7 +166,7 @@ struct MIDIControlTests {
         let dmx = DMXStore(patch: .standard(layers: 2, outputs: 1), logger: Self.logger)
         dmx.setPolicy(.ltp, for: .layer(1))
         let input = MIDIInput(dmx: dmx, logger: Self.logger)
-        let cues = Mutex<[MIDIMapper.Action]>([])
+        let cues = Mutex<[OSCCommand]>([])
         let stored = Mutex<[MIDIMapping]>([])
         input.onCue = { action in cues.withLock { $0.append(action) } }
         input.onLearn = { mapping in
@@ -248,8 +248,8 @@ struct MIDIControlTests {
     @Test func toggleStartsFromTheShownValue() {
         var mapper = MIDIMapper(settings: Self.settings([MIDIMapping(kind: .note, number: 1, target: "fixture:Output 1/intensity", curve: .toggle)]))
         // the output shows full (its default): the first press turns it off, not "on" again
-        #expect(mapper.handle(.noteOn(channel: 0, note: 1, velocity: 127), from: "x") { _, _ in 65535 } == [.set(.output(1), .output(.intensity), 0)])
-        #expect(mapper.handle(.noteOn(channel: 0, note: 1, velocity: 127), from: "x") { _, _ in 0 } == [.set(.output(1), .output(.intensity), 65535)])
+        #expect(mapper.handle(.noteOn(channel: 0, note: 1, velocity: 127), from: "x") { _, _ in 65535 } == [.setParameter(.output(1), .output(.intensity), raw: 0)])
+        #expect(mapper.handle(.noteOn(channel: 0, note: 1, velocity: 127), from: "x") { _, _ in 0 } == [.setParameter(.output(1), .output(.intensity), raw: 65535)])
     }
 
     /// Hand-written entries: one that cannot be read is reported and kept in the document; the rest work and get ids.
@@ -267,7 +267,7 @@ struct MIDIControlTests {
         #expect(MIDISettings.assigningIDs(fixed) == nil)
         // midi.map.set and remove leave the unreadable entry exactly as it was
         let store = StateStore(project: fixed, logger: Self.logger)
-        MIDICommands.register(on: store, hooks: MIDICommands.Hooks(learn: { _, _ in }))
+        MIDICommands.register(on: store, learn: { _, _ in })
         let id = try store.execute("midi.map.set", args: ["kind": "cc", "number": 1, "target": "cue.back"], role: .programmer).get().value?.string
         _ = try store.execute("midi.map.remove", args: ["id": .string(id!)], role: .programmer).get()
         #expect(store.project["midi"]?["map"]?.array?.first?["kind"] == "knob")

@@ -64,6 +64,15 @@ public final class Compositor: @unchecked Sendable {
     /// slots (`OutputPass.overlaySlots`).
     static let mappedUniformsLength = 256 * (64 + OutputPass.overlaySlots)
 
+    /// Encoder labels made once (B117): a 13–15-byte Swift `String` bridges to a fresh `NSString` on every assignment
+    /// (1 allocation on the compositor thread each, measured), an `NSString` costs none. "canvas N", "output" and
+    /// "preview" bridge to tagged pointers and the 16-byte "secondary output" bridged free as well (0 measured), so
+    /// they stay as they are.
+    let mappedOutputLabel: NSString = "mapped output"
+    let layerPreviewLabel: NSString = "layer preview"
+    let thumbnailAtlasLabel: NSString = "thumbnail atlas"
+    let thumbnailCopyLabel: NSString = "thumbnail copy"  // `ThumbnailStreamer`'s copy pass, per thumbnail frame
+
     /// One canvas: its three textures (triple-buffered, one index for all canvases) and their render passes.
     final class CanvasTarget {
         let id: Int
@@ -114,6 +123,12 @@ public final class Compositor: @unchecked Sendable {
     private var drawnItems: [DrawItem] = []
     private var drawnSequence: UInt64 = 0
     private var drawnTime: Float = 0
+    /// The shader's clock (`texel.w`, the strobe's `fract(time * rate)`) wraps here. 255 s, not an hour (B11): the strobe
+    /// rate is an 8-bit step, 1 + 29k/255 Hz, so 255 × rate = 255 + 29k is a whole number of cycles for every k and the wrap
+    /// moves the phase by Float rounding only (under 0.001 cycle, the rate reaches the shader through a percent in Float); at
+    /// 3600 s 240 of the 256 rates jumped, up to half a cycle. A smaller wrap also keeps the Float
+    /// clock fine: about 0.0005 cycle at 30 Hz. The 255 belongs to the 8-bit grid: a 16-bit rate would need its own wrap.
+    static let timeWrap: Double = 255
     /// This tick reused the last canvas: its own selection is still in `drawItems` (`drawLayer`).
     private var reusedThisTick = false
     private var canvasValid = false
@@ -182,8 +197,7 @@ public final class Compositor: @unchecked Sendable {
             guard let buffer = context.device.makeBuffer(length: Self.mappedUniformsLength, options: .storageModeShared) else { throw RenderError.pipeline("mapped uniforms") }
             return buffer
         }
-        outputPass.colorAttachments[0].loadAction = .clear
-        outputPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        outputPass.colorAttachments[0].loadAction = .clear  // to opaque black, the default clear colour
     }
 
     fileprivate static func makeCanvases(device: MTLDevice, width: Int, height: Int) throws -> ([MTLTexture], [MTLRenderPassDescriptor]) {
@@ -198,18 +212,11 @@ public final class Compositor: @unchecked Sendable {
         let passes = textures.map { texture in
             let pass = MTLRenderPassDescriptor()
             pass.colorAttachments[0].texture = texture
-            pass.colorAttachments[0].loadAction = .clear
+            pass.colorAttachments[0].loadAction = .clear  // to opaque black, the default clear colour
             pass.colorAttachments[0].storeAction = .store
-            pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
             return pass
         }
         return (textures, passes)
-    }
-
-    /// New size and rate of canvas 1 (B31); the other canvases stay.
-    public func reconfigure(width: Int, height: Int, fps: Double) throws {
-        let others = targets.dropFirst().map { ProjectDocument.CanvasLayout.Size(id: $0.id, width: $0.width, height: $0.height) }
-        try reconfigure(ProjectDocument.CanvasLayout(fps: fps, canvases: [.init(id: targets[0].id, width: width, height: height)] + others))
     }
 
     /// New canvases, sizes and rate (B31, multiple canvases). Only while no driver ticks or presents
@@ -371,7 +378,7 @@ public final class Compositor: @unchecked Sendable {
         let wantsPixels = needsPixels(drawable: drawable)
         var frame = TickContext(
             dt: snapshot.masterControl == .freezeAll ? 0 : dt, target: target, masterIntensity: snapshot.masterControl == .blackout ? 0 : snapshot.master,
-            masterSpeed: snapshot.masterSpeed, time: Float(target.truncatingRemainder(dividingBy: 3600)), now: cpuStart)  // ponytail: one strobe phase jump per hour; per-layer Double phase if it shows
+            masterSpeed: snapshot.masterSpeed, time: Float(target.truncatingRemainder(dividingBy: Self.timeWrap)), now: cpuStart)
         drawItems.removeAll(keepingCapacity: true)
 
         layerCanvasBox.withLockIfAvailable { tickLayerCanvas = $0 }  // busy: last tick's assignment once more
@@ -499,7 +506,7 @@ public final class Compositor: @unchecked Sendable {
         if let target = outputTarget {
             outputPass.colorAttachments[0].texture = target
             if let set, let output = commandBuffer.makeRenderCommandEncoder(descriptor: outputPass) {
-                output.label = "mapped output"
+                output.label = mappedOutputLabel as String
                 OutputPass.draw(
                     set, canvas: { tickCanvas($0) }, encoder: output, context: context, uniforms: mappedUniformBuffers[mappedIndex],
                     master: snapshot.masterControl == .blackout ? 0 : snapshot.master, masterPattern: snapshot.testPattern, outputs: snapshot.outputs,
@@ -728,7 +735,10 @@ public final class Compositor: @unchecked Sendable {
             ctx.misses += 1
             return
         }
-        if playback.live != nil || p.effect1 == .strobe || p.effect2 == .strobe { ctx.dynamic = true }
+        // a live source changes every tick, except a static generator (drawn once) and the clock between its seconds: those
+        // let the canvas be reused like a still (B56); `encodeGenerators` makes the same call when it draws
+        let changing = if let g = playback.live as? GeneratorSource { !g.isStatic && (g.kind != 112 || g.drawnSecond != Int(time(nil))) } else { playback.live != nil }
+        if changing || p.effect1 == .strobe || p.effect2 == .strobe { ctx.dynamic = true }
         drawItems.append(DrawItem(playback: playback, frame: frame, frameIndex: frameIndex, p: p, intensity: intensity, master: ctx.masterIntensity, slot: slot, canvas: canvas))
     }
 
@@ -774,6 +784,7 @@ public final class Compositor: @unchecked Sendable {
         u.effect2 = SIMD4(Float(p.effect2.rawValue), p.effect2A, p.effect2B, 0)
         u.texel = SIMD4(1 / Float(max(1, mediaWidth)), 1 / Float(max(1, mediaHeight)), Float(mediaWidth) / Float(max(1, mediaHeight)), time)
         u.kind = frame.kind.rawValue
+        u.deep = texture0.pixelFormat == .rgba16Unorm || texture0.pixelFormat == .r16Unorm ? 1 : 0  // v216/y416, r16 planes (B119)
         u.blend = UInt32(p.blendMode.rawValue)
         u.master = item.master
         let offset = item.slot * Self.uniformStride
@@ -843,7 +854,7 @@ public final class Compositor: @unchecked Sendable {
         guard abs(Double(target.width * canvasHeight) / Double(max(1, target.height * canvasWidth)) - 1) < 0.02,
             let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass)
         else { return false }
-        encoder.label = "layer preview"
+        encoder.label = layerPreviewLabel as String
         encodeAlone(index, uniforms: uniforms, slotBase: ring * 2, canvasWidth: canvasWidth, canvasHeight: canvasHeight, with: encoder)
         encoder.endEncoding()
         return true
@@ -882,7 +893,7 @@ public final class Compositor: @unchecked Sendable {
     func drawThumbnails(_ cells: [ThumbnailAtlas.Cell?], into pass: MTLRenderPassDescriptor, commandBuffer: MTLCommandBuffer) -> Bool {
         if thumbnailUniforms == nil { thumbnailUniforms = context.device.makeBuffer(length: Self.uniformStride * maxLayers * 2 * 3, options: .storageModeShared) }
         guard let uniforms = thumbnailUniforms, let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { return false }
-        encoder.label = "thumbnail atlas"
+        encoder.label = thumbnailAtlasLabel as String
         let items = reusedThisTick ? drawItems : drawnItems
         for (i, layer) in layers.enumerated() where i < cells.count {
             guard let cell = cells[i], let canvas = items.first(where: { $0.slot / 2 == layer.index && $0.canvas >= 0 })?.canvas else { continue }
@@ -935,9 +946,8 @@ public final class Compositor: @unchecked Sendable {
         let (frame, index, canvasMaster) = completedCanvases()
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = texture
-        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].loadAction = .clear  // to opaque black, the default clear colour
         pass.colorAttachments[0].storeAction = .store
-        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         OutputPass.holdFrozen(set, canvas: { id in frame.first { $0.id == id }?.textures[index] }, outputs: outputs, master: canvasMaster, buffer: commandBuffer)
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else {
             outputEncoderFailures.wrappingAdd(1, ordering: .relaxed)
@@ -954,30 +964,28 @@ public final class Compositor: @unchecked Sendable {
 
     /// Reads the offscreen output (BGRA 8-bit) back; tests only.
     public func readbackOutput() -> (width: Int, height: Int, bgra: [UInt8]) {
-        guard let texture = offscreenOutput else { return (0, 0, []) }
-        let bytesPerRow = texture.width * 4
-        guard let buffer = context.device.makeBuffer(length: bytesPerRow * texture.height, options: .storageModeShared),
-            let commandBuffer = context.queue.makeCommandBuffer(), let blit = commandBuffer.makeBlitCommandEncoder()
-        else { return (0, 0, []) }
-        blit.copy(
-            from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
-            sourceSize: MTLSize(width: texture.width, height: texture.height, depth: 1), to: buffer, destinationOffset: 0,
-            destinationBytesPerRow: bytesPerRow, destinationBytesPerImage: bytesPerRow * texture.height)
-        blit.endEncoding()
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
-        return (texture.width, texture.height, Array(UnsafeBufferPointer(start: buffer.contents().assumingMemoryBound(to: UInt8.self), count: bytesPerRow * texture.height)))
+        guard let texture = offscreenOutput, let buffer = blitToShared(texture, bytesPerPixel: 4) else { return (0, 0, []) }
+        return (texture.width, texture.height, Array(UnsafeRawBufferPointer(start: buffer.contents(), count: buffer.length)))
     }
 
     // MARK: Diagnostics
 
     /// Reads the most recently completed canvas back as 8-bit RGBA (tests and thumbnails; allocates, blocks on the GPU).
     public func readback(canvas id: Int? = nil) -> (width: Int, height: Int, rgba: [UInt8]) {
-        guard let texture = id.map({ latestCanvas(id: $0) }) ?? Optional(latestCanvas) else { return (0, 0, []) }
-        let bytesPerRow = texture.width * 8
+        guard let texture = id.map({ latestCanvas(id: $0) }) ?? Optional(latestCanvas), let buffer = blitToShared(texture, bytesPerPixel: 8)
+        else { return (0, 0, []) }
+        let halves = buffer.contents().assumingMemoryBound(to: Float16.self)
+        var rgba = [UInt8](repeating: 0, count: texture.width * texture.height * 4)
+        for i in rgba.indices { rgba[i] = UInt8(max(0, min(255, (Float(halves[i]) * 255).rounded()))) }
+        return (texture.width, texture.height, rgba)
+    }
+
+    /// `texture` copied into a new shared buffer, rows packed; blocks until the GPU is done.
+    private func blitToShared(_ texture: MTLTexture, bytesPerPixel: Int) -> MTLBuffer? {
+        let bytesPerRow = texture.width * bytesPerPixel
         guard let buffer = context.device.makeBuffer(length: bytesPerRow * texture.height, options: .storageModeShared),
             let commandBuffer = context.queue.makeCommandBuffer(), let blit = commandBuffer.makeBlitCommandEncoder()
-        else { return (0, 0, []) }
+        else { return nil }
         blit.copy(
             from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
             sourceSize: MTLSize(width: texture.width, height: texture.height, depth: 1), to: buffer, destinationOffset: 0,
@@ -985,10 +993,7 @@ public final class Compositor: @unchecked Sendable {
         blit.endEncoding()
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
-        let halves = buffer.contents().assumingMemoryBound(to: Float16.self)
-        var rgba = [UInt8](repeating: 0, count: texture.width * texture.height * 4)
-        for i in rgba.indices { rgba[i] = UInt8(max(0, min(255, (Float(halves[i]) * 255).rounded()))) }
-        return (texture.width, texture.height, rgba)
+        return buffer
     }
 }
 

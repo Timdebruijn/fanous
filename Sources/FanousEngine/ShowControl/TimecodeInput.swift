@@ -132,9 +132,7 @@ public final class LTCInput: @unchecked Sendable {
         let channel = min(self.channel, Int(format.channelCount) - 1)
         decoder = LTCDecoder(sampleRate: sampleRate, nominalFrameRate: 25)
         let clock = self.clock
-        var timebase = mach_timebase_info()
-        mach_timebase_info(&timebase)
-        let secondsPerTick = Double(timebase.numer) / Double(timebase.denom) / 1e9
+        let secondsPerTick = 1 / PacedThread.ticksPerSecond
         let sink = AVAudioSinkNode { [self] timestamp, frameCount, audioBufferList in
             let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: audioBufferList))
             guard channel < buffers.count, let data = buffers[channel].mData else { return noErr }
@@ -170,9 +168,12 @@ public final class LTCInput: @unchecked Sendable {
         clock.stop()
     }
 
+    /// CoreAudio's device list; a listener on it (Engine's host facts) hears devices come and go.
+    static let devicesAddress = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+
     /// Input devices by name (CoreAudio), for the machine setting and the UI.
     public static func inputDevices() -> [String] {
-        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var address = Self.devicesAddress
         var size: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return [] }
         var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
@@ -181,7 +182,7 @@ public final class LTCInput: @unchecked Sendable {
     }
 
     static func inputDevice(named name: String) -> AudioDeviceID? {
-        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var address = Self.devicesAddress
         var size: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return nil }
         var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)

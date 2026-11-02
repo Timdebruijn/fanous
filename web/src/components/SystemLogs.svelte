@@ -62,7 +62,6 @@
 </section>
 
 <style>
-  .phead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 16px; }
   .phead .input { flex: 0 1 240px; min-width: 0; }
   a.btn { text-decoration: none; }
   .err { margin: 0; padding: 0 16px 8px; color: var(--yellow); }

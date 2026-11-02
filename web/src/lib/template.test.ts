@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
-import { insertNearest, type OutputConfig, type SliceConfig } from './outputs';
+import { circleMask, insertNearest, type OutputConfig, type SliceConfig } from './outputs';
 import { bilinear, inverseBilinear, maskPointOnCanvas, templateSVG } from './template';
 
 const skewed = [{ x: 0.1, y: 0.05 }, { x: 0.95, y: 0.1 }, { x: 0.9, y: 0.9 }, { x: 0.05, y: 0.8 }];
@@ -69,5 +69,14 @@ describe('templateSVG', () => {
     const inMask = holed.slice(holed.indexOf('<mask'), holed.indexOf('</mask>'));
     expect(inMask.indexOf('fill="white"')).toBeGreaterThan(-1);
     expect(inMask.indexOf('fill="white"')).toBeLessThan(inMask.indexOf('fill="black"'));
+  });
+
+  it("draws a curved mask's curves: the Circle shape's mask is round on the canvas", () => {
+    const dest = [{ x: 0.2, y: 0 }, { x: 0.8, y: 0 }, { x: 0.8, y: 1 }, { x: 0.2, y: 1 }];
+    const svg = templateSVG({ id: 1, name: 'O', slices: [{ id: 1, canvas: 1, source: { x: 0, y: 0, w: 1, h: 1 }, dest, masks: [circleMask(dest)], opacity: 1 }] } as unknown as OutputConfig, { width: 100, height: 100 });
+    // the slice stretches 0.2…0.8 of the output over the canvas: the ellipse filling it is the canvas's inscribed circle
+    const points = /<polygon points="([^"]+)"/.exec(svg)![1]!.split(' ').map((p) => p.split(',').map(Number));
+    expect(points.length).toBeGreaterThan(400);
+    points.forEach(([x, y]) => expect(Math.hypot(x! - 50, y! - 50)).toBeCloseTo(50, 0));
   });
 });

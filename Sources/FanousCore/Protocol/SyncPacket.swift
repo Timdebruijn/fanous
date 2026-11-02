@@ -70,18 +70,18 @@ public struct SyncPacket: Equatable, Sendable {
         buffer.append(contentsOf: Self.magic)
         buffer.append(Self.version)
         withUnsafeBytes(of: machineID.uuid) { buffer.append(contentsOf: $0) }
-        Self.append(tick, to: &buffer)
-        Self.append(sendTime.bitPattern, to: &buffer)
+        buffer.put(tick)
+        buffer.put(sendTime.bitPattern)
         buffer.append(UInt8(layers.count))
         for layer in layers {
             buffer.append(layer.group)
             buffer.append(layer.layer)
-            Self.append(layer.mediaKey, to: &buffer)
-            Self.append(layer.fps.bitPattern, to: &buffer)
-            Self.append(layer.position.bitPattern, to: &buffer)
+            buffer.put(layer.mediaKey)
+            buffer.put(layer.fps.bitPattern)
+            buffer.put(layer.position.bitPattern)
             buffer.append(UInt8(bitPattern: layer.direction))
             buffer.append(layer.finished ? 1 : 0)
-            Self.append(layer.rate.bitPattern, to: &buffer)
+            buffer.put(layer.rate.bitPattern)
         }
     }
 
@@ -111,10 +111,6 @@ public struct SyncPacket: Equatable, Sendable {
         return SyncPacket(
             machineID: UUID(uuid: uuid), tick: read(bytes, 21), sendTime: Double(bitPattern: read(bytes, 25)),
             layers: layers)
-    }
-
-    static func append<T: FixedWidthInteger>(_ value: T, to buffer: inout [UInt8]) {
-        for i in 0..<MemoryLayout<T>.size { buffer.append(UInt8(truncatingIfNeeded: value >> (i * 8))) }
     }
 
     static func read<T: FixedWidthInteger>(_ bytes: [UInt8], _ offset: Int) -> T {

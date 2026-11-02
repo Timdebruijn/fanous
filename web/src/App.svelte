@@ -10,7 +10,7 @@
   import { BANNER_MS } from './lib/errors';
   import { attributionText, repositoryURL } from './lib/attribution';
   import { route, startRouter } from './lib/router.svelte';
-  import { app, connect } from './lib/state.svelte';
+  import { app, client } from './lib/state.svelte';
   import Layers from './screens/Layers.svelte';
   import Media from './screens/Media.svelte';
   import Outputs from './screens/Outputs.svelte';
@@ -34,7 +34,7 @@
   const time = (at: number) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   onMount(() => {
-    connect();
+    client.connect();
     return startRouter();
   });
 </script>

@@ -9,10 +9,10 @@ import Testing
 
 @Suite struct DERTests {
     @Test func integers() {
-        #expect(DER.integer(0) == [0x02, 0x01, 0x00])
-        #expect(DER.integer(127) == [0x02, 0x01, 0x7F])
-        #expect(DER.integer(128) == [0x02, 0x02, 0x00, 0x80])
-        #expect(DER.integer(256) == [0x02, 0x02, 0x01, 0x00])
+        #expect(DER.integer(unsignedBytes: [0]) == [0x02, 0x01, 0x00])
+        #expect(DER.integer(unsignedBytes: [127]) == [0x02, 0x01, 0x7F])
+        #expect(DER.integer(unsignedBytes: [128]) == [0x02, 0x02, 0x00, 0x80])
+        #expect(DER.integer(unsignedBytes: [1, 0]) == [0x02, 0x02, 0x01, 0x00])
         #expect(DER.integer(unsignedBytes: [0x00, 0x00, 0x05]) == [0x02, 0x01, 0x05])
         #expect(DER.integer(unsignedBytes: [0xFF]) == [0x02, 0x02, 0x00, 0xFF])
         #expect(DER.integer(unsignedBytes: []) == [0x02, 0x01, 0x00])
@@ -40,7 +40,7 @@ import Testing
     }
 
     @Test func tagsAndStrings() {
-        #expect(DER.explicit(0, DER.integer(2)) == [0xA0, 0x03, 0x02, 0x01, 0x02])
+        #expect(DER.explicit(0, DER.integer(unsignedBytes: [2])) == [0xA0, 0x03, 0x02, 0x01, 0x02])
         #expect(DER.bitString([0x80], unusedBits: 7) == [0x03, 0x02, 0x07, 0x80])
         #expect(DER.boolean(true) == [0x01, 0x01, 0xFF])
         #expect(DER.utf8String("ab") == [0x0C, 0x02, 0x61, 0x62])

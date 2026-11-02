@@ -25,6 +25,11 @@ public final class MovieWriter {
             case .hap(let variant): variant.rawValue.lowercased()
             }
         }
+
+        /// The codec whose `name` is `name` (any case); nil for none.
+        public static func named(_ name: String?) -> Codec? {
+            ([.proRes422HQ, .proRes422, .proRes4444] + HAPEncoder.Variant.allCases.map(Codec.hap)).first { $0.name == name?.lowercased() }
+        }
     }
 
     public enum WriterError: Error { case notReady, failed(String) }
@@ -79,9 +84,18 @@ public final class MovieWriter {
                 default: .proRes4444
                 }
             hapFormat = nil
+            // Rec.709 by name (B21): the transcoder's BGRA frames carry the source's YCbCr matrix as an attachment, and
+            // without these the writer coded and tagged the file with it, so a Rec.601 source became a 601 file that the
+            // layer shader (one 709 matrix) read 15–40 codes off on saturated colours. The frames are RGB, so the writer's
+            // own 709 matrix is the right one for every source; the 709 primaries and transfer are true for SDR sources only (an
+            // HDR/BT.2020 source's BGRA keeps its own primaries and transfer; not measured, no such source here)
+            let rec709: [String: Any] = [
+                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2, AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
+            ]
             input = AVAssetWriterInput(
                 mediaType: .video,
-                outputSettings: [AVVideoCodecKey: codecType, AVVideoWidthKey: width, AVVideoHeightKey: height])
+                outputSettings: [AVVideoCodecKey: codecType, AVVideoWidthKey: width, AVVideoHeightKey: height, AVVideoColorPropertiesKey: rec709])
             adaptor = AVAssetWriterInputPixelBufferAdaptor(
                 assetWriterInput: input,
                 sourcePixelBufferAttributes: [
@@ -130,6 +144,18 @@ public final class MovieWriter {
 
     /// A BGRA pixel buffer from `pixelBufferPool` (ProRes) or any BGRA buffer (HAP).
     public var pixelBufferPool: CVPixelBufferPool? { adaptor?.pixelBufferPool }
+
+    /// A BGRA pixel buffer of the movie's size: from `pixelBufferPool` (ProRes) or a new one (HAP).
+    public func makePixelBuffer() throws -> CVPixelBuffer {
+        var buffer: CVPixelBuffer?
+        if let pool = pixelBufferPool {
+            CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
+        } else {
+            CVPixelBufferCreate(nil, width, height, kCVPixelFormatType_32BGRA, nil, &buffer)
+        }
+        guard let buffer else { throw WriterError.failed("pixel buffer") }
+        return buffer
+    }
 
     deinit {
         // An early exit (error, cancel) must not leave the writer open: it asserts or leaves a half-written file.

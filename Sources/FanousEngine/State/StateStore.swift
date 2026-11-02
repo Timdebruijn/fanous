@@ -14,12 +14,12 @@ public struct CommandSpec: Sendable {
     /// Minimum role.
     public var role: Role
     /// Refused while the show is locked (except `show.unlock`).
-    public var mutatesConfig: Bool
-    public var undoable: Bool
+    public var mutatesConfig = true
+    public var undoable = true
     /// One line for `protocol.d.ts`.
     public var summary: String
     /// Arguments schema for `protocol.d.ts`, as a TypeScript type literal (`{ path: string; value: unknown }`).
-    public var argsType: String
+    public var argsType = "Record<string, never>"
     /// Checked before undo or redo replays this command's history entry, with the patch the step would apply, the patch
     /// that made the state it undoes, and the project as it is now; a thrown `CommandError` refuses the step (the entry
     /// stays, unless the code is `historyConflict`; a dropped `project.revert` entry takes its whole stack with it, B91).
@@ -27,22 +27,6 @@ public struct CommandSpec: Sendable {
     /// What makes two calls "the same edit" for undo coalescing (a slider drag), with the args' `id`; nil = their `path`.
     public var coalesceKey: (@Sendable (JSONValue) -> String?)?
     public var run: @Sendable (inout JSONValue, JSONValue) throws -> JSONValue?
-
-    public init(
-        name: String, role: Role, mutatesConfig: Bool = true, undoable: Bool = true, summary: String, argsType: String = "Record<string, never>",
-        replayCheck: (@Sendable (JSONPatch, JSONPatch, JSONValue) throws -> Void)? = nil, coalesceKey: (@Sendable (JSONValue) -> String?)? = nil,
-        run: @escaping @Sendable (inout JSONValue, JSONValue) throws -> JSONValue?
-    ) {
-        self.name = name
-        self.role = role
-        self.mutatesConfig = mutatesConfig
-        self.undoable = undoable
-        self.summary = summary
-        self.argsType = argsType
-        self.replayCheck = replayCheck
-        self.coalesceKey = coalesceKey
-        self.run = run
-    }
 }
 
 public struct CommandError: Error, Equatable, Sendable {
@@ -302,11 +286,7 @@ public final class StateStore: @unchecked Sendable {
         var seen: Set<String> = []
         var coalesced: [JSONPatch.Operation] = []
         for operation in pendingLive.reversed() {
-            let path: String =
-                switch operation {
-                case .add(let p, _), .remove(let p), .replace(let p, _): p.description
-                }
-            if seen.insert(path).inserted { coalesced.append(operation) }
+            if seen.insert(operation.path.description).inserted { coalesced.append(operation) }
         }
         pendingLive.removeAll()
         revision += 1

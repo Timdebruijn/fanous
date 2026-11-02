@@ -25,6 +25,8 @@ wide as the preview is on your screen in pixels: 320, 640, 960 or 1280 pixels,
 so a large or high-resolution screen gets a sharper picture. Resizing the window
 switches size after a moment.
 
+![The Outputs tab: three outputs in the list, the selected output's preview and its settings below](images/outputs.png)
+
 ## Canvas size and frame rate
 
 On the Canvases tab, **Size w × h** sets the canvas in pixels (or pick a preset:
@@ -32,6 +34,8 @@ On the Canvases tab, **Size w × h** sets the canvas in pixels (or pick a preset
 renders at: 23.976, 24, 25, 29.97, 30, 50, 59.94 or 60 fps. Width and height
 must be even and between 320 and 8192. Nothing changes until you press
 **Apply** and confirm; **Revert** drops your edits.
+
+![The Canvases tab: the canvas preview, Canvas 1 and Add canvas, then name, size, frame rate and clock master](images/canvases.png)
 
 Applying re-creates the canvas: every output blanks (or holds its last picture)
 for a moment, so do it before the show, not during it. It is refused while the
@@ -89,8 +93,9 @@ wins for that run and is shown (and saved, on the next edit) in the project.
 Keep the frame rate equal to the refresh rate of the displays (see "Not done
 yet": display modes are not set by Fanous).
 
-After you add an output, a yellow bar says **Next: align this output**; its
-button opens the Warp & Slices tab for that output.
+After you add an output, a yellow bar says **Next: align this output**:
+**Align this output** opens the Warp & Slices tab for that output, **Later**
+closes the bar.
 
 ## Displays and binding
 
@@ -124,6 +129,8 @@ window is hidden behind it. Use the web UI from another device then.
 | Mode | the wanted resolution and refresh rate, chosen from the modes the display offers. Applied when show mode turns on (see below); **Current** leaves the display as it is |
 | Region x · y · w · h (px) | the part of the display this output draws on; **Full display** resets it |
 | Intensity % | multiplied with the Output fixture's intensity and the Master intensity |
+
+<img src="images/output-settings.png" width="880" alt="The settings of one output: name, display, mode, region, intensity and the four blend edges">
 
 ### Display modes
 
@@ -316,14 +323,20 @@ region or display mode. The outputs of one wall need the same pixel size.
 3. **Make wall.** Blend check appears on every projector of the wall and the
    wall's panel opens on the seam check.
 
-**Cancel** at any step changes nothing: each output gets its own test pattern
-back. **Undo** right after Make wall takes the wall away again.
+![Step 1 of the wizard: Projector L and Projector R tapped in order, grid 1 × 2](images/wall-wizard.png)
+
+![Step 2 of the wizard: overlap 15 %, and the choice between using the canvas as it is or making it fit the wall](images/wall-wizard-2.png)
+
+**Cancel** at any step changes nothing; the Output IDs go away. **Undo** right
+after Make wall takes the wall away again.
 
 ### The wall panel
 
 Each wall has a panel above the output list, built around a **map** of the
 wall: one tile per projector (name, Output ID, row and column) and the seams as
 lines between them, each with its gamma (**RGB** when R, G and B are set apart).
+
+![The panel of Wall 1 on the seam check, Blend check on both projectors; the preview shows the grey blend check pattern](images/wall-panel.png)
 
 - **Tap a seam** for its controls. Both sides of the seam always follow.
   - **Gamma** (0.5 to 5, 2.2 to start): down for a bright band in the seam,
@@ -385,15 +398,18 @@ version before M2.1 needs its Grey 0 % step checked again.
 
 You can switch to Warp & Slices during the check, for example to fix the
 warp: a yellow line there says the check is still running and takes you back.
-**End seam check**, or leaving the Outputs screen, gives each output its own
-test pattern back (leaving the screen also cancels the wizard). Every pattern
-change is an ordinary output change, so it is also a step for Undo.
-
-An output keeps its own pattern on record until it really has it back. While
-the show is locked, or without the programmer role, the check stays open and
-says so: unlock the show and end it again. If the page is reloaded during the
-wizard or the check, the Outputs screen offers **Give the test patterns back**
-(or **Keep them**).
+**End seam check**, or leaving the Outputs screen, takes the test patterns off
+again (leaving the screen also cancels the wizard). Hiding the page takes them
+off; they come back when the page is visible again. The wizard's Output IDs
+show only while the wizard is in sight on the Outputs tab. The wizard's and the
+check's patterns are never stored with the outputs and are no step for Undo:
+each output's own test pattern stays as it was. They show only for the
+programmer role, and are off in show mode and while the show is locked. When
+the page is closed or the connection drops, they go within 5 seconds. If two
+people check the same wall at once, ending the check on one device takes the
+patterns off until the other device puts its own back, within 2 seconds; on
+different steps of the same outputs the two devices' patterns alternate about
+every second, as the latest renewal wins.
 
 ## Warp & Slices tab
 
@@ -417,8 +433,8 @@ itself, so at the wall you see which point is selected:
   see the point. Its number is next to it in yellow digits. On a mesh the
   number is row·column: **3·5** is row 3, column 5. On a corner pin or a slice,
   corners are 1 to 4, clockwise from the top left. A mask point has its own
-  number. With Remote's Row, Column or Edge selected, only one point of the
-  group is marked.
+  number; with one of its curve handles selected, the point is marked. With
+  Remote's Row, Column or Edge selected, only one point of the group is marked.
 - The lines are 2 pixels of white with a black edge, so they show on any
   picture. A Blackout, or the Master at 0, hides them. The output's own
   Intensity does not dim them, unlike test patterns.
@@ -451,16 +467,19 @@ projector shows the selected point (**Show on output** above):
 
 - The selection in large type: "corner top-left", "r3 c5" (row 3, column 5 of
   the mesh), "slice 2 · bottom-right", "slice 2 · mask point 5" ("slice 2 ·
-  mask 2 point 5" when the slice has several masks), or a group such as "row 3"
-  with how many points move together.
+  mask 2 point 5" when the slice has several masks, "slice 2 · mask point 5
+  in" or "… out" for one of the point's curve handles), or a group such as
+  "row 3" with how many points move together.
 - **Previous** and **Next** go through the points row by row (left to right,
-  then the next row) and wrap around. With a group selected they step the
+  then the next row) and wrap around; on a mask, point by point, each curved
+  point followed by its in and out handles. With a group selected they step the
   group: the next row, the next column, or the next edge clockwise.
 - **One point**, **Row**, **Column** (mesh only) and **All** choose what moves:
   the selected point, its row or column, or every point. **Top**, **Right**,
   **Bottom** and **Left** select every point on that edge; on a corner pin or a
   slice an edge is its two corners. A mask has no rows, columns or edges;
-  **All** moves the points of every mask of the slice.
+  **All** moves the points of every mask of the slice, their curve handles
+  with them.
   Tapping or dragging a handle on the picture selects just that point again
   (**One point**), and so does turning Remote off or picking another output.
 - The nudge pad moves the selection by 1 px, 10 px, or 0.25 px on a long press.
@@ -484,6 +503,8 @@ really is (through the corner pin and mesh) and moves them in that picture, so
 a handle stays on the spot you touch while a warp is active.
 
 - **Corner pin**: four corners. **Reset corners** puts them back.
+
+  ![Warp & Slices on the LED wall output: the four corner handles over the warped preview, the mode buttons and presets below](images/warp-corner-pin.png)
 - **Mesh**: **Density** is Off (corner pin only) or 2x2, 3x3, 5x5, 9x9, 17x17
   or 33x33 points. Changing the density keeps the shape: the new points are
   placed on the current surface, so you can start coarse and refine; going to
@@ -505,24 +526,69 @@ a handle stays on the spot you touch while a warp is active.
   slice gets the next strip of the canvas, as wide as the slice is on the
   output (full canvas height). Fine-tune a seam by changing the w of one slice
   and the x of the next by the same amount. The warp (corner pin, mesh) applies to the whole output on top.
+  Two shape buttons act on the selected slice, each one step for **Undo**:
+  **Triangle** moves its top-left and top-right corners to the middle of the
+  top edge, so the picture's top edge is squeezed into that point (drag one of
+  them away and it is four corners again); **Circle** adds an ellipse mask
+  that fills the box around the slice's corners (edit it in Mask mode). The
+  mask stays where it is on the output when you move a corner afterwards: the
+  picture stretches differently, the circle does not move.
 - **Mask**: a mask hides everything of a slice outside its shape (windows,
-  doors, the sky above a building). **Draw mask** and then tap the corners of
-  the area that stays visible on the picture, in order around it; **Done**
-  when you have at least three, **Undo last corner** and **Cancel** while
-  drawing. **Rectangle** starts with a rectangle 10 % inside instead. To add
-  points to an existing mask, turn on **Add points** and tap where the point
-  goes, or double-click anywhere: the point joins the nearest edge. Drag points
-  to move them, nudge with the arrow keys or the pad, **Backspace** (or
-  **Remove point**) deletes the selected one; a mask keeps at least three.
-  **Feather (px)** softens the edge (from 2 px; below that the edge stays
-  plain), **Redraw** starts the shape again, **Remove mask** deletes it.
-  A slice can have several masks (the tools to make more than one, and curved
-  and image masks, come in a later step; a project file can have them
-  already): every mask's points and outline show, and the buttons act on the
-  mask of the selected point, else on the first mask with points (an image
-  mask has none); **Remove mask** removes that one only. A project saved
-  before this version opens with its masks as they were. A browser tab opened
-  before the update cannot change masks or add a slice until you reload it.
+  doors, the sky above a building). A slice can have several. The slice shows
+  what is inside its **add** masks (all of it when it has none), minus what is
+  inside its **subtract** masks: a door or a window is a subtract mask, a hole.
+
+  ![Mask mode on the LED wall output: an ellipse mask with its four points, the mask tools and the mask list below](images/masks.png)
+
+  The tools each add an add mask, as one step for **Undo**:
+  - **Polygon**: tap the corners of the area that stays visible on the picture,
+    in order around it; **Done** when you have at least three, **Undo last
+    corner** and **Cancel** while drawing.
+  - **Rectangle** and **Ellipse**: drag a box on the picture; the rectangle or
+    the ellipse fills it. **10 % inside** makes one 10 % inside the output
+    without a drag.
+  - **Freehand**: drag along the outline, with the mouse or, on an iPad, one
+    finger on the picture (a second finger or the palm meanwhile is ignored).
+    Letting go closes the shape. It keeps the fewest points of your stroke
+    that leave none of it more than 2 output pixels off the straight lines
+    between them. Where the stroke turns by more than 40° (a corner of a
+    window, a wall meeting a roof) the point is a corner and the edges stay
+    straight; elsewhere the curve is smoothed through the points, which on a
+    rounded shape keeps it within about 2 px of your stroke. Drag its points
+    and handles to refine it.
+  - **Image mask**: a still from the library (Media screen), black hides and
+    white shows, stretched over the whole output; shades of grey are partly
+    visible. A file changed in the library is picked up by itself. A missing
+    one covers nothing: as an add mask it shows nothing (alone, the slice is
+    black), as a subtract mask it cuts no hole; System › Readiness warns.
+
+  The **mask list** under the tools shows every mask of the slice: its number
+  (click it to select its first point), **Add** or **Subtract**, its points
+  (or the image), **Invert** (makes an add mask a subtract mask and back),
+  **Feather px** (softens the edge, from 2 px; below that the edge stays plain;
+  an image carries its own softness and has none), **Redraw** (draw its shape
+  again with any tool; it keeps its mode and feather; when the mask changes
+  meanwhile, for example from another browser, the new shape becomes a mask of
+  its own and the caption says so) and **Remove**. On the
+  picture a subtract mask has a dashed outline and hollow points.
+
+  Drag points to move them, nudge with the arrow keys or the pad; the
+  selected point shows its curve handles (small dots on a line), which you
+  drag too, also with the keys. A press takes the nearest of the point and its
+  handles, so a short handle close to its point can still be grabbed. A
+  handle may go past the edge of the output (a smoothed corner at the edge
+  has one there); a point stays on the output. **Double-tap** a point (or
+  **Smooth point**) to make a corner smooth, with handles along its
+  neighbours, or a smooth point a corner again. To add points, turn on **Add
+  points** and tap where the point goes, or double-click anywhere: the point
+  joins the nearest edge; on a curve it lands on the curve, where it comes
+  nearest to the tap, and the shape stays as it was. **Backspace** (or
+  **Remove point**) deletes the selected point; a mask keeps at least three.
+  With a handle selected it removes that handle instead (**Remove handle**):
+  that side of the point becomes a corner. Tab steps through the points and
+  their handles. A project saved
+  before masks v2 opens with its masks as they were. A browser tab opened
+  before that update cannot change masks or add a slice until you reload it.
 - **Content template (PNG)**: downloads a picture at the size of the selected
   slice's canvas that shows, per slice on that canvas, which rectangle it uses
   and (filled) what its masks leave visible (an image mask is not drawn

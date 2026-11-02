@@ -8,7 +8,7 @@ import Foundation
 /// Mapping presets (DESIGN.md §9.10 item 3): `output.preset.*` keep snapshots of an output's warp and slices in
 /// `OutputConfig.presets`, one undo step per call, also for a whole wall (`ids`). `output.show` is Compare's lease: no
 /// project change, held on the DMX queue (`DMXStore.show`). `output.overlay` is the edit overlay's lease (item 4), held
-/// by the output coordinator (`EditOverlay`).
+/// by the output coordinator (`EditOverlay`), as is `output.pattern`, the projector-wall test patterns' (§9.9, B102).
 extension ProjectDocument {
     /// The indices in `outputs` of `args.ids`: existing outputs, none twice.
     static func targets(_ args: JSONValue, in outputs: [OutputConfig]) throws -> [Int] {
@@ -63,7 +63,8 @@ extension ProjectDocument {
 
     static func registerPresetCommands(
         on store: StateStore, showModeOn: @escaping @Sendable () -> Bool, showPreset: @escaping @Sendable ([Int], Int) -> Void,
-        showOverlay: @escaping @Sendable (Int, Bool, OverlaySelection?) -> Void
+        showOverlay: @escaping @Sendable (Int, Bool, OverlaySelection?) -> Void,
+        showPatterns: @escaping @Sendable ([(id: Int, pattern: TestPattern)]) -> Void
     ) {
         store.register(
             CommandSpec(
@@ -169,6 +170,29 @@ extension ProjectDocument {
                 // show mode ends a lease at once (Engine), so a renewal must not start it again
                 guard !on || !showModeOn() else { throw CommandError("showMode", "the edit overlay is off in show mode") }
                 showOverlay(id, on, selected)
+                return nil
+            })
+        store.register(
+            CommandSpec(
+                name: "output.pattern", role: .programmer, undoable: false,
+                summary: "Test patterns of the projector-wall wizard and seam check, a lease (DESIGN.md §9.9, B102): each output shows its pattern for 5 s, under the Master's and the Output fixture's and over its own testPattern; the UI renews it every 2 s and the latest call wins per output; pattern 0 ends it. Never saved or undone; refused in show mode except to end.",
+                argsType: "{ patterns: { id: number; pattern: number }[] }"
+            ) { project, args in
+                guard let list = args["patterns"]?.array, !list.isEmpty else { throw CommandError.invalidArgs("patterns must list one or more { id, pattern }") }
+                let outputs = ProjectDocument.outputs(from: project)
+                var seen = Set<Int>()
+                let patterns = try list.map { entry -> (id: Int, pattern: TestPattern) in
+                    guard let id = entry["id"]?.int, let pattern = entry["pattern"]?.int.flatMap(TestPattern.init(rawValue:)) else {
+                        throw CommandError.invalidArgs("each entry is { id, pattern: 0–\(TestPattern.allCases.count - 1) }")
+                    }
+                    guard seen.insert(id).inserted else { throw CommandError.invalidArgs("output \(id) twice") }
+                    // ending one of an output that is gone ends nothing, and is fine
+                    guard pattern == .off || outputs.contains(where: { $0.id == id }) else { throw CommandError.invalidArgs("no output \(id)") }
+                    return (id, pattern)
+                }
+                // show mode ends every lease at once (Engine), so a renewal must not start one again
+                guard patterns.allSatisfy({ $0.pattern == .off }) || !showModeOn() else { throw CommandError("showMode", "test patterns are off in show mode") }
+                showPatterns(patterns)
                 return nil
             })
     }

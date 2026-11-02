@@ -34,8 +34,9 @@
   import LayerRow from '../components/LayerRow.svelte';
   import LayerStrips from '../components/LayerStrips.svelte';
   import Preview from '../components/Preview.svelte';
-  import { layerPreview, parseThumbFrame, rowThumb, thumbnailFor, thumbnailIndex, type ChannelMap, type LibrarySnapshot } from '../lib/layers';
+  import { layerPreview, parseThumbFrame, rowThumb, thumbnailFor, thumbnailIndex, type LibrarySnapshot } from '../lib/layers';
   import { canvasTarget, layerCanvas } from '../lib/outputs';
+  import { loadChannelMap, type ChannelMap } from '../lib/patch-screen';
   import { latestOnly } from '../lib/preview';
   import { go } from '../lib/router.svelte';
   import { app, subscribeThumbs } from '../lib/state.svelte';
@@ -100,9 +101,7 @@
 
   // Failures leave the previous data in place: ranges show a dash, thumbnails stay empty boxes.
   onMount(() => {
-    const abort = new AbortController();
-    getJSON<ChannelMap>('/api/channel-map.json', abort.signal).then((map) => (channelMap = map), () => {});
-    return () => abort.abort();
+    void loadChannelMap().then((map) => (channelMap = map));
   });
 
   // Runs on mount and again when the engine reports a new library scan.

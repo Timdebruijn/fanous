@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
-import { FanousClient, patchDoc, type ConnectionState, type Doc, type PreviewInfo, type StreamDescription } from './client';
+import { FanousClient, type ConnectionState, type Doc, type PreviewInfo, type StreamDescription } from './client';
 import { makeMessage, pushMessage, TOAST_MS, type UIMessage } from './errors';
 import { playSteps } from './layers';
+import { applyPatch } from './patch';
 import { emptyLive, emptyProject, type LiveDoc, type ProjectDoc } from './docs';
 import type { CommandArgs, CommandName, JSONValue, Role } from './protocol';
 
@@ -101,7 +102,7 @@ export const client = new FanousClient(
     },
     onPatch(doc, ops, rev) {
       try {
-        patchDoc((doc === 'project' ? app.project : app.live) as unknown as Doc, ops);
+        applyPatch((doc === 'project' ? app.project : app.live) as unknown as JSONValue, ops);
         app.rev = rev;
       } catch {
         client.requestSnapshot();
@@ -194,8 +195,4 @@ export async function subscribeThumbs(onFrame: (payload: Uint8Array) => void): P
     binaryListeners.delete(id);
     client.unsubscribe(id);
   };
-}
-
-export function connect(): void {
-  client.connect();
 }

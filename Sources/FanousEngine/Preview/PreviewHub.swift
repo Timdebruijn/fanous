@@ -152,8 +152,8 @@ public final class PreviewHub: @unchecked Sendable {
                     guard orphan || !choice.fallback else { return false }
                     if !choice.jpeg, let streamer = choice.streamer ?? install(fresh, as: wanted.key, in: &all) {
                         if !choice.fallback { fallbacks.remove(at: index) }
-                        canvas.unsubscribe(connection: sub.connection, stream: sub.stream)
-                        for other in all.values { other.unsubscribe(connection: sub.connection, stream: sub.stream) }
+                        canvas.remove(connection: sub.connection, stream: sub.stream)
+                        for other in all.values { other.remove(connection: sub.connection, stream: sub.stream) }
                         var moved = sub
                         moved.fallback = choice.canvas  // told in the new streamer's `stream` description (B96)
                         streamer.subscribe(moved)
@@ -179,26 +179,14 @@ public final class PreviewHub: @unchecked Sendable {
         _ = s.connection.send(text: #"{"t":"error","code":"badTarget","message":"preview target \#(target) no longer exists","id":\#(s.stream)}"#, droppable: false)
     }
 
-    public func unsubscribe(connection: StateServer.Connection, stream: UInt32) {
+    /// Drops `stream` of `connection`, or every stream of it when `stream` is nil (the connection closed).
+    public func remove(connection: StateServer.Connection, stream: UInt32? = nil) {
         let freed = streamers.withLock { all in
             let before = encoderCount(all)
-            canvas.unsubscribe(connection: connection, stream: stream)
-            thumbnails?.unsubscribe(connection: connection, stream: stream)
-            for streamer in all.values { streamer.unsubscribe(connection: connection, stream: stream) }
-            fallbacks.removeAll { $0.subscriber.connection === connection && $0.subscriber.stream == stream }
-            release(&all)
-            return encoderCount(all) < before && !fallbacks.isEmpty
-        }
-        if freed { DispatchQueue.global(qos: .utility).async { [weak self] in self?.rebalance() } }
-    }
-
-    public func remove(connection: StateServer.Connection) {
-        let freed = streamers.withLock { all in
-            let before = encoderCount(all)
-            canvas.remove(connection: connection)
-            thumbnails?.remove(connection: connection)
-            for streamer in all.values { streamer.remove(connection: connection) }
-            fallbacks.removeAll { $0.subscriber.connection === connection }
+            canvas.remove(connection: connection, stream: stream)
+            thumbnails?.remove(connection: connection, stream: stream)
+            for streamer in all.values { streamer.remove(connection: connection, stream: stream) }
+            fallbacks.removeAll { $0.subscriber.connection === connection && (stream == nil || $0.subscriber.stream == stream) }
             release(&all)
             return encoderCount(all) < before && !fallbacks.isEmpty
         }
@@ -333,4 +321,24 @@ public final class PreviewHub: @unchecked Sendable {
     public var jpegOut: Int { active.withLock { $0 }.reduce(0) { $0 + $1.jpegOut.load(ordering: .relaxed) } }
     public var jpegFailed: Int { active.withLock { $0 }.reduce(0) { $0 + $1.jpegFailed.load(ordering: .relaxed) } }
     public var jpegDropped: Int { active.withLock { $0 }.reduce(0) { $0 + $1.jpegDropped.load(ordering: .relaxed) } }
+    /// `/metrics` `preview.streamers` (B99): one row per live streamer with its own counters, so a refused viewer's JPEG
+    /// streamer is told from the H.264 streamers that tap alongside it; the sums above hide it.
+    public var rows: [JSONValue] {
+        active.withLock { $0 }.map { s in
+            let (all, jpeg) = s.subscriberCounts
+            var row: [String: JSONValue] = [
+                "canvas": .number(Double(s.canvasID)), "size": .string("\(s.width)x\(s.height)"), "output": .bool(s.outputSet != nil),
+                "subscribers": .number(Double(all)), "jpegSubscribers": .number(Double(jpeg)),
+            ]
+            if let layer = s.layer { row["layer"] = .number(Double(layer)) }
+            let counts: [(String, Int)] = [
+                ("framesIn", s.framesIn.load(ordering: .relaxed)), ("framesOut", s.framesOut.load(ordering: .relaxed)), ("skipped", s.skipped.load(ordering: .relaxed)),
+                ("completions", s.completions.load(ordering: .relaxed)), ("completionErrors", s.completionErrors.load(ordering: .relaxed)),
+                ("encodes", s.encodes.load(ordering: .relaxed)), ("jpegStarted", s.jpegStarted.load(ordering: .relaxed)), ("jpegOut", s.jpegOut.load(ordering: .relaxed)),
+                ("jpegFailed", s.jpegFailed.load(ordering: .relaxed)), ("jpegDropped", s.jpegDropped.load(ordering: .relaxed)), ("jpegHung", s.jpegHung.load(ordering: .relaxed)),
+            ]
+            for (name, count) in counts { row[name] = .number(Double(count)) }
+            return .object(row)
+        }
+    }
 }

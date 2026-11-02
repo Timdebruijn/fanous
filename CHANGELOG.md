@@ -11,6 +11,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Renamed Lanthorn → **Fanous** (2026-10-25; name collisions, `docs/RELEASE.md` §7). Existing machine
   state moves once from `~/Library/Application Support/Lanthorn` and `~/Library/Logs/Lanthorn`.
+- Fixed: the status bar wrapped to two rows and back as its frame time grew or shrank by a digit (8.9 ms → 126.6 ms)
+  on a screen near 1440 px wide, moving the page below it by a row, also under a handle being dragged; the frame time
+  now has room for its widest value, so with a fresh engine the bar fits one row from 1470 px and takes two at 1440
+  (B134, PR #163).
 - App icon and mark (a fanous lantern, `assets/`); UI fonts Atkinson Hyperlegible Next and Mono
   (Braille Institute, OFL), bundled with the UI, chosen for unambiguous glyphs when reading fast in the dark.
 - Layer cap stays 32 for v1 (OPEN-8).
@@ -527,6 +531,116 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   overlay draws every mask's outline, curves included. Warp & Slices shows every mask's points and outlines and its
   tools act on the selected point's mask, else the first path mask; making several masks, curves and image masks in
   the UI comes with M2.8.
+- Fixed: a display changing role (master ↔ secondary, or every display on a canvas change) while its old render thread had not stopped within 1 s handed
+  the old Freeze holds to the new thread, which could read them under the old thread's write; the new set now holds
+  afresh in that case, with a warning (B118, PR #147).
+- Fixed: two uploads into one folder in quick succession both got file number 001 and the second ingest job failed
+  ("destination already exists"); the number now skips jobs still in the queue and files on disk the index has not
+  seen yet (PR #143).
+- Added: **masks v2, the tools** (M2.8, PR #148, DESIGN §9.10 item 5, F5), the last step of M2. Mask mode of Warp &
+  Slices has the tools **Polygon** (tap the corners), **Rectangle** and **Ellipse** (drag a box; **10 % inside**
+  without a drag), **Freehand** (drag along the outline, with a finger on an iPad: simplified to 2 output px, sharp
+  turns kept as corners, smooth elsewhere) and **Image mask** (a still from the library); each adds an add mask as one
+  undo step. A **mask list** per slice: Add or Subtract, **Invert**, feather (path masks), **Redraw**, **Remove**.
+  Subtract masks show dashed with hollow points. The selected point shows its Bézier handles, which drag (also past
+  the output's edge) and Backspace removes; a double-tap (or **Smooth point**) makes a point smooth or a corner again;
+  Add points on a curve splits it without changing the shape; Tab and the iPad remote step through the handles too
+  ("mask point 5 in"). Slices mode: **Triangle** (the top corners meet mid-edge) and **Circle** (an ellipse mask
+  filling the slice). A tap on a handle without moving it no longer writes the point; Redraw no longer overwrites
+  another mask when another client changed the list meanwhile.
+- Changed: a camera (built-in, iPhone over Continuity Camera) opens at the largest size that fits canvas 1 and holds
+  the canvas rate, else the largest that fits, instead of its active format's size (the iPhone stayed at 640x480);
+  capture cards and UVC devices keep following their input (B126, PR #149).
+- Changed: the live document's audio input list is read from CoreAudio when CoreAudio reports a device coming or
+  going, not every 5 s; the sporadic 0.5–2 s `host lookups slow` warnings came from that poll (B133, PR #153).
+- Fixed: the −/range/+ sliders of an output's colour and of a wall's seams, black floor and overlap jumped back to an
+  older value on release until the engine's echo arrived, lost quick −/+ taps, pulled each other back when two were
+  dragged at once, and could stop following Undo and other clients after a drag that ended where it started; a wall's
+  gamma R, G, B and its two overlap axes could undo each other when set within a round trip. One shared slider now
+  shows what it sent until the engine's value changes to it (at most 1 s) and steps −/+ from there (B114, PR #156).
+- Changed: the status bar fits one row from 1440 px wide (a fresh engine's took two up to 1775 px): timecode shows
+  only while it is switched on and ingest only while a job runs (DESIGN §12), and the items are a little narrower.
+  With timecode on it takes two rows below about 1550 px until DMX arrives, as silent universe pills are wider
+  (PR #152).
+- Fixed: on a phone the "Show mode resumed after the engine restarted" note in the status bar spilled 19 px over
+  the row below (fps, dropped); a status bar item that wraps now grows (PR #154).
+- Fixed: ProRes frames (ProRes 422 as 16-bit planes, ProRes 4444 as `y416`) read about 1 code low at white and with
+  a slight green cast in neutral chroma: the layer shader used 8-bit video-range ratios for every depth. 16-bit
+  planes now use the same levels at 16-bit scale (B119, PR #160).
+- Fixed: the output pass's "mapped output" encoder label, and the preview and thumbnail encoders' labels, allocated once per
+  assignment on the compositor thread (a 13–15-byte Swift `String` bridged to a fresh `NSString`); they are made once
+  now. The canvas, "output" and "secondary output" labels were free already, measured (B117, PR #167). The thumbnail
+  streamer's "thumbnail copy" label (14 bytes) allocated the same way, once per thumbnail frame, and is made once too (PR #169).
+- CI: the e2e suite's global timeout is 20 min (was 10): a slow runner takes 7 to over 10 min for the same 52 tests that a fast one
+  runs in 3 (B135, PR #171).
+- Fixed: a colour or wall slider dragged slower than the engine's round trip could jump to an earlier value for a moment
+  mid-drag, when the echo of a value it had passed met the thumb on that value again; while a pointer holds the thumb no
+  echo ends what it shows (B136, PR #172).
+- Engine: a master display's takeover from the headless compositor now warns when the headless render thread did not stop
+  within 1 s, so a tick that still reads the new set shows in the log; that join was not logged before, and in 5.5 days of
+  logs no other join on this hardware was seen to fail (B128, PR #173).
+- Fixed: a display capture started before the first output was bound excluded nothing of the engine (`excludedApps=0`):
+  ScreenCaptureKit lists only processes that own a window-server window, and the engine had none yet. The output
+  coordinator now owns a 1×1 window that is never shown, so the engine is listed, and excluded, from its start (B124,
+  PR #174).
+- Tests: a UDP port for a test is handed out once per process. The kernel assigns ports at random, so two tests that probed
+  before either bound could share one, and every unicast datagram then goes to the older listener (measured), which is consistent with the one
+  failure of `zeroDropsToZeroAndPacketsBringItBack` seen; its port was not recorded (B115, PR #176).
+- CI: the e2e's note for a refused viewer that got no JPEG frame on the runner (B98) now carries the engine's whole `/metrics`
+  or the error of reading it, instead of three JPEG counters that read 0 both when no JPEG was made and when the engine did not
+  answer; measured: the note comes on the slow runner class only, 27 of the last 59 e2e jobs (B99, PR #178).
+- Engine: `/metrics` `preview.streamers` lists every live preview streamer with its own counters, now also the steps between
+  a tap and its JPEG (`completions`, `completionErrors`, `encodes`, `jpegStarted`), and `gpuErrors` shows the compositor's tick
+  buffers that ended in error; the first full note from a slow CI runner showed 2830 taps encoded and no JPEG encode completed
+  or failed, summed over all streamers. With the rows, two slow-runner runs showed the refused viewer's streamer at
+  `completions` 126, `encodes` 1, `jpegStarted` 1, `jpegOut` 0: its first `jpegRepresentation` never returned and its preview
+  queue is blocked from then on; the H.264 streamers keep up. Not reproduced on hardware (B99, PR #179).
+- Engine: a preview JPEG encode that has not returned 3 s after it started is counted (`jpegHung` in `/metrics` `preview.streamers`)
+  and the first per streamer logged, so a streamer whose queue is blocked that way says so on any hardware; seen on CI's slow runner class
+  only (B99, PR #180).
+- Release: the first Developer ID build was notarized (1.0.0-rc.1, zip and dmg accepted, stapled, Gatekeeper: Notarized
+  Developer ID). `scripts/notarize.sh`'s own signature check failed before the upload: `grep -q` ended the pipe and `codesign` died
+  of SIGPIPE under `pipefail`; it reads the whole output now. RELEASE §5 notes the first run and what a developer Mac that ran
+  ad-hoc builds needs (agent re-register, screen grant anew) (B50, PR #182).
+- Fixed: the strobe effect's phase jumped once an hour (up to half a cycle, a visible hiccup at low rates) when the shader
+  clock wrapped at 3600 s; it wraps at 255 s now, a whole number of cycles for every one of the 256 rate steps, so the phase
+  is continuous across the wrap (B11, PR #183).
+- Fixed: a ProRes file with some very small frame sizes (64×48, 256×64 and 320×16 among them) failed to open with VideoToolbox
+  −12910, as the hardware decoder refuses those sizes at session creation; the engine now falls back to the software decoder
+  for such a file and logs that it did (B5, PR #185).
+- Fixed: a Rec.601-tagged source (SD material) ingested to ProRes came out with 15–40 codes of colour
+  error on saturated colours: the reader copied the 601 tag onto the RGB frames and the writer coded and tagged the file with it,
+  which the layer shader (Rec.709) then misread. Ingested ProRes is now coded and tagged Rec.709 by name. Files the engine plays
+  without ingest keep the 709 reading (B21, PR #184).
+- Fixed: a layer's error text, the readiness "decoders" detail and a library item's reason could carry the file's full path
+  to the monitor role when the error came from AVFoundation (its text prints the file URL); those texts, and the canvas and
+  ingest error texts, now use the error's `localizedDescription`, while the engine's own error texts are unchanged (B25, PR #186).
+- CI: the seam-check lease e2e waits 6 s (three renewals) instead of 3 s for a renewal to be sent; at 3 s none came once
+  in 88 CI jobs (PR #190).
+- Tests: a cue fade is measured end to end in the engine, go → `CueRunner` → `DMXStore` → the published Layer 1
+  intensity: a 1.0 s fade shows its first step about 1 ms after go and is full after about 1003 ms, in 51 steps 20 ms apart,
+  also in a parallel run and under load; nothing past the snapshot (no photon probe) is measured (B43, PR #195).
+- Fixed: a CITP console that sends no `CInf` (MSEX 1.0/1.1) got neither `SInf` nor layer status; a session still without
+  a version 2 s after connecting is now taken for MSEX 1.0, gets an unsolicited 1.0 `SInf` and `LSta` at 4 Hz, and a later
+  `CInf` still negotiates the version (B78, PR #194).
+- Changed: CITP/MSEX libraries and elements are numbered as 0-based contiguous indexes in folder/file-number order, as
+  MSEX 1.2 defines them, with the folder or file number (the DMX value that selects it) in the DMX range; `GEIn`, `GETh`,
+  the request filters and `LSta` use the same indexes (B78, PR #198).
+- Fixed: the browser preview of an output whose aspect differs from the preview's drew the black-lift feather on the y axis
+  with the x axis's scale; each axis now has its own (B56, PR #191).
+- Changed: a layer showing a static generator (grid, colour bars, …) or the clock no longer makes the compositor redraw the
+  canvas every tick; between changes the canvas is reused like a still, the clock redraws once a second (B56, PR #192).
+- Changed: on a phone the status bar took five rows, a third of the screen. With a fresh engine it takes three now: the
+  badges with the role, the numbers (fps, dropped, clients) with undo and redo, and the universe pills; the frame time and
+  the auto-version item are left out there (System carries both), as are the keyboard-shortcuts button (the ? key still
+  opens the list), the app name and the outputs item while they render. Desktop looks the same (PR #201).
+- Changed: the selected layer's channel list (about 50 rows in the layer panel) starts closed on a phone, behind its
+  "Showing all … channels" line, which is now the disclosure, and opens when Control is switched on; on a desktop, and
+  for Master and the outputs, it starts open as before (PR #203).
+- Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
+  and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
+  they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
+  step moves to other outputs or the page is hidden, so "Give the test patterns back" is gone (B102, B103, PR #159).
 - Fixed: two API uploads into a folder number the index had not seen yet (within the 500 ms before the rescan, or any
   time with a library root missing at engine start) created two folders, `003_red` and `003_blue`, and after the
   rescan the files of one of them were invalid ("duplicate folder number 3"); an upload now looks on disk for the

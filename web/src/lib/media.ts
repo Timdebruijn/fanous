@@ -5,7 +5,7 @@
 // synthesized Codable writes (IngestQueue.swift, MovieWriter.swift), formatting and filtering.
 import type { IngestJobDoc } from './docs';
 
-export const LOCKED_TITLE = 'Locked: programmer only';
+export { LOCKED_TITLE } from './patch-screen';
 
 export interface MediaMetadata {
   width: number;
@@ -74,9 +74,10 @@ const fourCCNames = new Map([
   ['avc1', 'H.264'],
   ['hvc1', 'HEVC'],
   ['hev1', 'HEVC'],
+  ['generator', 'Built-in'],
 ]);
 
-/** Display name of a probed codec; unknown ones stay as they are (the badge upper-cases them). */
+/** Display name of a probed codec or a layer's codec ("generator" for folder 0); unknown ones stay as they are (the badge upper-cases them). */
 export function codecLabel(codec: string): string {
   return fourCCNames.get(codec) ?? codec;
 }

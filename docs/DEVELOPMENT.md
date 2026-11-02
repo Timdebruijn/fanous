@@ -87,7 +87,7 @@ skips.
 Protocol fixtures: `scripts/capture-dmx.py artnet|sacn|osc <name>` records
 real console packets into `Tests/Fixtures/captures/` (stop `fanousd` first;
 see the README there). `fanousd channel-map` prints the DMX channel map,
-`fanousd gdtf FILE` writes the GDTF fixture file; `scripts/check-channel-map.sh`
+`fanousd gdtf FILE` writes the GDTF fixture file; `scripts/check-generated.sh`
 keeps `channel-map.md` in sync.
 
 The first engine start generates an ECDSA key and self-signed certificate and
@@ -138,7 +138,7 @@ PBKDF2-HMAC-SHA256 in `~/Library/Application Support/Fanous/settings.json`);
 current role and which roles are open. The local shell authenticates with the
 token in `shell-token` (mode 0600). The project is autosaved to `project.json`
 and loaded at start; `fanousd protocol-dts` prints `web/src/lib/protocol.d.ts`
-(checked by `scripts/check-protocol-dts.sh`).
+(checked by `scripts/check-generated.sh`).
 
 Web UI (`web/`, Svelte 5 + Vite, served by the engine from `web/dist`):
 status bar, Layers / Mixer (rows with the resolved media, position, intensity
@@ -209,6 +209,28 @@ In the "Fanous may not be able to record the contents of your screen until it
 is quit" dialog choose Later: Quit & Reopen quits the shell and the engine and
 does not reopen a dev build (`open dist/Fanous.app`). A Developer ID build
 keeps its identity and its grants.
+
+A network filter that keys its rules on code identity (Little Snitch) is the
+likely reason sync output can stay dead after a rebuild: it would hold the
+new binary's flows until its alert is answered, and the engine shows nothing
+of it beyond `sync.packetsDropped` in the live document. No alert was
+confirmed seen, so this rests on timing. Measured 2026-10-30: the engine
+started at 19:01:50 and its sync keepalives (broadcast to port 8002, one a
+second) were dropped from the 19th packet on, the socket's send buffer
+holding 18. The system log shows the application firewall's first flow from
+that pid at 23:22:26, 4 h 20 min later, while the user was answering system
+prompts at the keyboard; from then on the firewall saw each new flow at
+once, and its own verdict was the known-app allow, so the firewall was not
+the blocker. When `packetsDropped` keeps rising after a rebuild, look for a
+pending filter alert, and check whether the engine's flows have reached the
+firewall at all:
+
+```
+log show --last 1h --predicate 'process == "socketfilterfw" AND eventMessage CONTAINS "org.fanous"'
+```
+
+A "Handle flow" line for the engine's pid means the flow reached the
+application firewall; in the run above that happened only after the delay.
 
 `/api/metrics` reports frame timing, the DMX-to-photon estimate and audio
 drift; `fanous-bench run` ramps layers until a frame drops (`--effects

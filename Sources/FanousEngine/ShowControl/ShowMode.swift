@@ -234,8 +234,9 @@ public enum Readiness {
     /// so call it off the control queue.
     public static func check(_ context: ReadinessContext, acknowledged: Set<String>) -> [ReadinessItem] {
         var items: [ReadinessItem] = []
-        func add(_ id: String, _ title: String, _ ok: Bool?, _ detail: String, _ fix: String, hard: Bool = false) {
-            let state: ReadinessItem.State = ok == nil ? .manual : (ok! ? .ok : (hard ? .hard : .fail))
+        /// `failing`: the state when not ok (`warn` never blocks, `hard` cannot be acknowledged).
+        func add(_ id: String, _ title: String, _ ok: Bool?, _ detail: String, _ fix: String, failing: ReadinessItem.State = .fail) {
+            let state: ReadinessItem.State = ok == nil ? .manual : (ok! ? .ok : failing)
             items.append(ReadinessItem(id: id, title: title, state: state, detail: detail, fix: fix, acknowledged: acknowledged.contains(id)))
         }
         let power = powerState()
@@ -247,36 +248,30 @@ public enum Readiness {
         let memory = memoryHeadroom()
         add("memory", "Memory headroom", memory.fraction > 0.15, String(format: "%.0f %% free", memory.fraction * 100), "Quit other applications")
         add("dmx", "All patched universes receiving", context.universesSilent.isEmpty, context.universesSilent.isEmpty ? "all receiving" : "silent: \(context.universesSilent.joined(separator: ", "))", "Check the console's output and the network")
-        items.append(
-            ReadinessItem(
-                id: "interfaces", title: "Universe interfaces usable", state: context.interfacesMissing.isEmpty ? .ok : .warn,
-                detail: context.interfacesMissing.isEmpty ? "present, or any interface" : "not usable: \(context.interfacesMissing.joined(separator: "; "))",
-                fix: "Connect the network adapter, or pick another interface for the universe (Patch › Interface)"))
-        items.append(
-            ReadinessItem(
-                id: "sacnport", title: "sACN port 5568 available", state: context.sacnError == nil ? .ok : .warn,
-                detail: context.sacnError.map { "in use, running without sACN: \($0)" } ?? "listening",
-                fix: "Quit the program that holds UDP 5568 (sudo lsof -nP -iUDP:5568), then Engine › Restart Engine"))
+        add(
+            "interfaces", "Universe interfaces usable", context.interfacesMissing.isEmpty,
+            context.interfacesMissing.isEmpty ? "present, or any interface" : "not usable: \(context.interfacesMissing.joined(separator: "; "))",
+            "Connect the network adapter, or pick another interface for the universe (Patch › Interface)", failing: .warn)
+        add(
+            "sacnport", "sACN port 5568 available", context.sacnError == nil, context.sacnError.map { "in use, running without sACN: \($0)" } ?? "listening",
+            "Quit the program that holds UDP 5568 (sudo lsof -nP -iUDP:5568), then Engine › Restart Engine", failing: .warn)
         let outputsOK = context.outputsLost.isEmpty && context.outputsUnassigned.isEmpty && context.outputsBound > 0
         add(
             "outputs", "All outputs bound to their displays", outputsOK,
             context.outputsBound == 0 ? "no output bound" : (context.outputsLost.isEmpty && context.outputsUnassigned.isEmpty ? "\(context.outputsBound) bound" : "lost: \(context.outputsLost), unassigned: \(context.outputsUnassigned)"),
             "Connect the displays, assign every output")
-        items.append(
-            ReadinessItem(
-                id: "modes", title: "Outputs in their desired display mode", state: context.modeIssues.isEmpty ? .ok : .warn,
-                detail: context.modeIssues.isEmpty ? "applied in show mode, or none set" : context.modeIssues.joined(separator: "; "),
-                fix: "Pick an available mode for the output (Outputs › Mode), or set it in System Settings › Displays"))
-        items.append(
-            ReadinessItem(
-                id: "syncmaster", title: "Sync groups have one master", state: context.syncMasterIssues.isEmpty ? .ok : .warn,
-                detail: context.syncMasterIssues.isEmpty ? "every slave in use has one master, or none in use" : context.syncMasterIssues.joined(separator: "; "),
-                fix: "Set exactly one layer per group to master (Sync channel); a slave without a master plays on its own"))
-        items.append(
-            ReadinessItem(
-                id: "syncpackets", title: "Sync packets arriving", state: context.syncLost.isEmpty ? .ok : .warn,
-                detail: context.syncLost.isEmpty ? "arriving, or no slave in use" : "lost (freewheeling): \(context.syncLost.joined(separator: "; "))",
-                fix: "Check the master machine and the network; sync uses UDP port 8002 by default (System › Sync)"))
+        add(
+            "modes", "Outputs in their desired display mode", context.modeIssues.isEmpty,
+            context.modeIssues.isEmpty ? "applied in show mode, or none set" : context.modeIssues.joined(separator: "; "),
+            "Pick an available mode for the output (Outputs › Mode), or set it in System Settings › Displays", failing: .warn)
+        add(
+            "syncmaster", "Sync groups have one master", context.syncMasterIssues.isEmpty,
+            context.syncMasterIssues.isEmpty ? "every slave in use has one master, or none in use" : context.syncMasterIssues.joined(separator: "; "),
+            "Set exactly one layer per group to master (Sync channel); a slave without a master plays on its own", failing: .warn)
+        add(
+            "syncpackets", "Sync packets arriving", context.syncLost.isEmpty,
+            context.syncLost.isEmpty ? "arriving, or no slave in use" : "lost (freewheeling): \(context.syncLost.joined(separator: "; "))",
+            "Check the master machine and the network; sync uses UDP port 8002 by default (System › Sync)", failing: .warn)
         // a permission prompt must never come up during a show (B73): it blocks until acknowledged, only for inputs in use
         // (B122). A display in use warns even when granted: macOS asks a screen-capturing app again about monthly
         // (DESIGN.md §20 R18).
@@ -296,11 +291,10 @@ public enum Readiness {
                 acknowledged: acknowledged.contains("screen")))
         add("decoders", "No decoder errors", context.layerErrors.isEmpty, context.layerErrors.isEmpty ? "none" : context.layerErrors.joined(separator: "; "), "Fix or replace the failing media")
         // a missing image mask covers nothing: an add mask's slice may go black, a subtract mask cuts no hole
-        items.append(
-            ReadinessItem(
-                id: "maskimages", title: "Image masks found", state: context.maskImagesMissing.isEmpty ? .ok : .warn,
-                detail: context.maskImagesMissing.isEmpty ? "found, or none in use" : "missing, covering nothing: \(context.maskImagesMissing.joined(separator: "; "))",
-                fix: "Put the greyscale file in the library under that folder and file number, or change the mask (Outputs › Warp & Slices › Mask)"))
+        add(
+            "maskimages", "Image masks found", context.maskImagesMissing.isEmpty,
+            context.maskImagesMissing.isEmpty ? "found, or none in use" : "missing, covering nothing: \(context.maskImagesMissing.joined(separator: "; "))",
+            "Put the greyscale file in the library under that folder and file number, or change the mask (Outputs › Warp & Slices › Mask)", failing: .warn)
         let local = volumeIsLocal(context.libraryRoot)
         add("library", "Library on a local volume", local, local ? "local" : "network or removable volume", "Copy the library to the internal disk")
         let spotlight = spotlightIndexing(context.libraryRoot)
@@ -312,7 +306,7 @@ public enum Readiness {
         add("focus", "Focus / Do Not Disturb on", nil, "cannot be read; check the menu bar", "Turn on a Focus so notifications stay off the outputs")
         let sleep = displaySleepMinutes()
         add("displaysleep", "Display sleep disabled", sleep.map { $0 == 0 } ?? true, sleep.map { $0 == 0 ? "never" : "\($0) min (held off by the show-mode assertion)" } ?? "unknown", "System Settings › Lock Screen › Turn display off: never")
-        add("hardware", "Supported hardware", context.hardwareSupported, context.hardwareSupported ? "Apple Silicon with ProRes engine" : "unsupported machine", "Use an Apple Silicon Mac with a ProRes engine (M1 Pro or newer)", hard: true)
+        add("hardware", "Supported hardware", context.hardwareSupported, context.hardwareSupported ? "Apple Silicon with ProRes engine" : "unsupported machine", "Use an Apple Silicon Mac with a ProRes engine (M1 Pro or newer)", failing: .hard)
         return items
     }
 

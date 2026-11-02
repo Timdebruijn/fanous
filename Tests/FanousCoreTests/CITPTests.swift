@@ -107,7 +107,7 @@ import Testing
     // MARK: SInf
 
     static let serverInfo = ServerInformation(
-        version: .v1_2, uuid: uuid, productName: name, productVersionMajor: 0, productVersionMinor: 9, productVersionBugfix: 3,
+        uuid: uuid, productName: name, productVersionMajor: 0, productVersionMinor: 9, productVersionBugfix: 3,
         supportedVersions: [.v1_0, .v1_1, .v1_2], supportedLibraryTypes: 1, thumbnailFormats: ["RGB8", "JPEG", "PNG "],
         streamFormats: ["JPEG", "RGB8", "fJPG"], layerDMXSources: ["ArtNet/0/0/1", "sACN/0/1/1"])
 
@@ -128,7 +128,7 @@ import Testing
 
     @Test func serverInformation10ByteExact() throws {
         let packet = CITPPacket.serverInformation(
-            ServerInformation(version: .v1_0, productName: "A", productVersionMajor: 2, productVersionMinor: 3, layerDMXSources: ["x"]))
+            ServerInformation(productName: "A", productVersionMajor: 2, productVersionMinor: 3, layerDMXSources: ["x"]))
         let expected =
             Self.header(size: 26 + 4 + 2 + 1 + 2, "MSEX") + [0x01, 0x00] + Array("SInf".utf8)
             + [0x41, 0x00, 0x00, 0x00]  // ProductName "A" (ucs2, NUL terminated)
@@ -173,14 +173,14 @@ import Testing
         let parentID: MSEXLibraryID = version >= .v1_1 ? .topLevel(2) : MSEXLibraryID()
         #expect(
             try CITPClientMessage.parse(geli)
-                == .getElementLibraryInformation(GetElementLibraryInformation(version: version, libraryType: 1, parentID: parentID, libraryNumbers: [0, 1, 7])))
+                == .getElementLibraryInformation(GetElementLibraryInformation(libraryType: 1, parentID: parentID, libraryNumbers: [0, 1, 7])))
         let all = Self.msex("GELI", [1] + (version >= .v1_1 ? [0, 0, 0, 0] : []) + none, version: version)
-        #expect(try CITPClientMessage.parse(all) == .getElementLibraryInformation(GetElementLibraryInformation(version: version)))
+        #expect(try CITPClientMessage.parse(all) == .getElementLibraryInformation(GetElementLibraryInformation()))
 
         let gein = Self.msex("GEIn", [1] + id + count + [4, 5, 6], version: version)
         #expect(
             try CITPClientMessage.parse(gein)
-                == .getElementInformation(GetElementInformation(version: version, libraryType: 1, libraryID: .topLevel(2), elementNumbers: [4, 5, 6])))
+                == .getElementInformation(GetElementInformation(libraryType: 1, libraryID: .topLevel(2), elementNumbers: [4, 5, 6])))
     }
 
     @Test func elementLibraryInformationByteExact() throws {
@@ -194,7 +194,7 @@ import Testing
 
     @Test(arguments: allVersions) func elementLibraryInformationSize(version: MSEXVersion) throws {
         let library = ElementLibrary(id: .topLevel(3), serialNumber: 99, dmxRangeMin: 1, dmxRangeMax: 20, name: Self.name, libraryCount: 4, elementCount: 12)
-        let bytes = CITPPacket.elementLibraryInformation(ElementLibraryInformation(version: version, libraryType: 1, libraries: [library])).encoded(version: version)
+        let bytes = CITPPacket.elementLibraryInformation(ElementLibraryInformation(libraryType: 1, libraries: [library])).encoded(version: version)
         // Per entry: 4 / 8 / 14 fixed bytes plus the ucs2 name; header: type + u8/u8/u16 count.
         let index = Self.allVersions.firstIndex(of: version)!
         #expect(bytes.count == 26 + [2, 2, 3][index] + [4, 8, 14][index] + Self.ucs2(Self.name).count)
@@ -217,7 +217,7 @@ import Testing
             MediaElement(number: 1, serialNumber: 5, dmxRangeMax: 9, name: Self.name, versionTimestamp: 1_700_000_000, width: 1920, height: 1080, length: 250, fps: 25),
             MediaElement(number: 2, name: "plain.mov", width: 640, height: 360, length: 10, fps: 30),
         ]
-        let bytes = CITPPacket.mediaElementInformation(MediaElementInformation(version: version, libraryID: .topLevel(2), elements: elements)).encoded(version: version)
+        let bytes = CITPPacket.mediaElementInformation(MediaElementInformation(libraryID: .topLevel(2), elements: elements)).encoded(version: version)
         // Per element: 20 fixed bytes (24 with SerialNumber in 1.2) plus the name; header: library ref + count.
         let index = Self.allVersions.firstIndex(of: version)!
         let names = Self.ucs2(Self.name).count + Self.ucs2("plain.mov").count
@@ -230,7 +230,7 @@ import Testing
         let count: [UInt8] = version >= .v1_2 ? [3, 0] : [3]
         let request = Self.msex("GETh", Array(format.utf8) + Self.le16(160) + Self.le16(90) + [1, 1] + id + count + [1, 2, 3], version: version)
         let expected = GetElementThumbnail(
-            version: version, format: format, width: 160, height: 90, flags: GetElementThumbnail.preserveAspectRatio, libraryType: 1,
+            format: format, width: 160, height: 90, flags: GetElementThumbnail.preserveAspectRatio, libraryType: 1,
             libraryID: .topLevel(2), elementNumbers: [1, 2, 3])
         #expect(try CITPClientMessage.parse(request) == .getElementThumbnail(expected))
         // Fixed part: 12 / 15 / 16 bytes (spec totals) plus the 3 element numbers.
@@ -240,7 +240,7 @@ import Testing
         // EThn has 13 fixed bytes in 1.0, 16 in 1.1 and (no separate layout in the spec) 1.2.
         let jpeg: [UInt8] = [0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3, 4, 0xFF, 0xD9]
         let thumb = CITPPacket.elementThumbnail(
-            ElementThumbnail(version: version, libraryType: 1, libraryID: .topLevel(2), elementNumber: 7, width: 160, height: 90, buffer: jpeg))
+            ElementThumbnail(libraryType: 1, libraryID: .topLevel(2), elementNumber: 7, width: 160, height: 90, buffer: jpeg))
         let payload: [UInt8] = [1] + id + [7] + Array("JPEG".utf8) + Self.le16(160) + Self.le16(90) + Self.le16(UInt16(jpeg.count)) + jpeg
         #expect(thumb.encoded(version: version) == Self.msex("EThn", payload, version: version))
         #expect(payload.count == [13, 16, 16][index] + jpeg.count)
@@ -261,7 +261,7 @@ import Testing
     @Test func requestStreamDecodes() throws {
         for version in Self.allVersions {
             let bytes = Self.msex("RqSt", [3, 0] + Array("JPEG".utf8) + [0x40, 0x01, 0xB4, 0x00, 10, 5], version: version)
-            let expected = RequestStream(version: version, sourceIdentifier: 3, frameFormat: "JPEG", frameWidth: 320, frameHeight: 180, fps: 10, timeout: 5)
+            let expected = RequestStream(sourceIdentifier: 3, frameFormat: "JPEG", frameWidth: 320, frameHeight: 180, fps: 10, timeout: 5)
             #expect(try CITPClientMessage.parse(bytes) == .requestStream(expected))
         }
     }
@@ -271,7 +271,7 @@ import Testing
         for version in Self.allVersions {
             let packet = CITPPacket.streamFrame(
                 StreamFrame(
-                    version: version, mediaServerUUID: version >= .v1_2 ? Self.uuid : "", sourceIdentifier: 1, frameFormat: "JPEG",
+                    mediaServerUUID: version >= .v1_2 ? Self.uuid : "", sourceIdentifier: 1, frameFormat: "JPEG",
                     frameWidth: 320, frameHeight: 180, buffer: jpeg))
             // 12 fixed bytes, plus the 36-byte UUID in 1.2.
             let uuid = version >= .v1_2 ? Array(Self.uuid.utf8) : []

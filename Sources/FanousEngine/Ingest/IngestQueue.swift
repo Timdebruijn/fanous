@@ -206,15 +206,16 @@ public final class IngestQueue: @unchecked Sendable {
         mutate { state in
             guard !state.paused, !state.stopping, let index = state.jobs.firstIndex(where: { $0.state == .queued }) else { return nil }
             state.jobs[index].state = .running(progress: 0)
-            state.current = (state.jobs[index].id, IngestGate())
+            state.current = (
+                state.jobs[index].id,
+                IngestGate(shouldYield: { [weak self] in self?.shouldYield?() ?? false }, isPaused: { [weak self] in self?.paused ?? false })
+            )
             return state.jobs[index]
         }
     }
 
     private func run(_ job: IngestJob) {
         let gate = state.withLock { $0.current!.gate }
-        gate.shouldYield = { [weak self] in self?.shouldYield?() ?? false }
-        gate.isPaused = { [weak self] in self?.paused ?? false }
         var outcome: IngestJob.State
         let temporary = Self.temporaryURL(for: job)
         do {
@@ -226,7 +227,7 @@ public final class IngestQueue: @unchecked Sendable {
             outcome = .cancelled
         } catch {
             try? FileManager.default.removeItem(at: temporary)
-            let message = Self.message(error)
+            let message = error.clientText
             outcome = .failed(message)
             logger.warning("ingest job failed", metadata: ["source": "\(job.source.path)", "error": "\(message)"])
         }
@@ -263,7 +264,7 @@ public final class IngestQueue: @unchecked Sendable {
 
         switch job.kind {
         case .transcode(let codec):
-            try Transcoder(source: job.source, destination: temporary, codec: codec, gate: gate).run(progress: report)
+            try Transcoder.run(source: job.source, destination: temporary, codec: codec, gate: gate, progress: report)
         case .sequence(let fps, let codec):
             let frames = try SequenceIngest.frames(in: job.source)
             // The progress callback runs between frames: that is where cancel, yield and pause are honoured.
@@ -349,12 +350,6 @@ public final class IngestQueue: @unchecked Sendable {
             suffix += 1
         }
         return candidate
-    }
-
-    static func message(_ error: Error) -> String {
-        let domain = (error as NSError).domain
-        return domain == NSCocoaErrorDomain || domain == AVFoundationErrorDomain || domain == NSPOSIXErrorDomain
-            ? error.localizedDescription : "\(error)"
     }
 
     enum IngestError: Error, CustomStringConvertible {

@@ -87,7 +87,7 @@ import Testing
         #expect(Set(rig.hub.targets) == ["canvas", "output:1"])
         #expect(rig.hub.canvas.outputSet == nil, "the canvas preview still shows the canvas")
 
-        rig.hub.unsubscribe(connection: b, stream: 1)
+        rig.hub.remove(connection: b, stream: 1)
         #expect(rig.hub.targets.contains("output:1"), "c still watches the output")
         rig.hub.remove(connection: c)
         #expect(rig.hub.targets == ["canvas"], "released with its last subscriber")
@@ -389,7 +389,7 @@ import Testing
         #expect(rig.attach("layer:2"))
         rig.tick(4)
         let old = try #require(rig.made.withLock { $0["layer:2"] })
-        try rig.compositor.reconfigure(width: 320, height: 240, fps: 60)
+        try rig.compositor.reconfigure(.init(fps: 60, canvases: [.init(id: 1, width: 320, height: 240)]))
         let framesBefore = rig.hub.framesIn
         rig.tick(4)
         #expect(rig.hub.framesIn == framesBefore, "4:3 canvas, 16:9 layer streamer: no frames until the rebuild")
@@ -423,7 +423,7 @@ import Testing
         #expect(hub.canvas !== oldCanvas && hub.canvas.height == 414)
         #expect(hub.canvas.subscriberList.map(\.stream) == [1])
         #expect(hub.targets.sorted() == ["canvas", "output:1"])
-        hub.unsubscribe(connection: b, stream: 2)
+        hub.remove(connection: b, stream: 2)
         #expect(hub.targets == ["canvas"], "the moved output subscriber is the one that counts")
     }
 
@@ -452,7 +452,7 @@ import Testing
         #expect(rig.hub.encoders == 4)
 
         rig.hub.remove(connection: c)
-        rig.hub.unsubscribe(connection: a, stream: 2)
+        rig.hub.remove(connection: a, stream: 2)
         #expect(rig.hub.keys == [.init(target: "canvas", width: 1280), .init(target: "output:1", width: 960)], "320 and canvas:2 lost their last subscriber")
     }
 

@@ -2,7 +2,7 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
-  import { formatClock } from '../lib/show';
+  import { stampText } from '../lib/system';
   import { app } from '../lib/state.svelte';
 
   // DESIGN §15.3. Layer and output parameters take a float (0–1 of the raw range) or an int (raw value).
@@ -39,7 +39,7 @@
   {:else}
     <ol class="recent" aria-labelledby="osc-recent">
       {#each recent as r, i (i)}
-        <li><time class="mono faint">{formatClock(r.at)}</time><span class="mono ellipsis" title={r.command}>{r.command}</span></li>
+        <li><time class="mono faint">{stampText(r.at)}</time><span class="mono ellipsis" title={r.command}>{r.command}</span></li>
       {/each}
     </ol>
   {/if}
@@ -60,7 +60,6 @@
 <style>
   .osc { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
   header { display: flex; align-items: center; gap: 12px; }
-  h3 { margin: 8px 0 0; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
   p { margin: 0; }
   .recent { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
   .recent li { display: flex; gap: 12px; align-items: baseline; padding: 6px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
