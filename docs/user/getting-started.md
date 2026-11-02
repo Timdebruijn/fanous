@@ -8,10 +8,11 @@
 
 1. Copy `Fanous.app` to the Applications folder (drag it from the disk image
    `Fanous-<version>.dmg`).
-2. Open it. Gatekeeper accepts a notarized build (checked for 1.0.0-rc.1);
-   the first open on a clean account is not tested yet (backlog B50). A build
-   signed ad hoc (`scripts/bundle.sh` without a Developer ID certificate) may be
-   refused at first open; allow it in System Settings › Privacy & Security.
+2. Open it. A notarized build passes the Gatekeeper check (`spctl`, checked
+   for 1.0.0-rc.1); a real first open on a clean account is not tested yet
+   (backlog B50). A build signed ad hoc (`scripts/bundle.sh` without
+   `CODESIGN_IDENTITY`) may be refused at first open; allow it in System
+   Settings › Privacy & Security.
 
 `Fanous.app` holds two programs: the window you see (the shell) and
 `fanousd`, the engine. The engine does all the work: DMX, decoding, outputs,
