@@ -642,6 +642,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Changed: an ingest job that is done or cancelled leaves the Media screen's queue a minute after it finished (a
   cancelled job from October was still listed on 2 November); a failed job stays with its error until it is removed
   (PR #208).
+- Fixed: the status bar's outputs item said "on" whenever the compositor ran, also with no output in the project or an
+  output without a display; it now counts the bound outputs ("2/3", yellow and red under show lock when one is missing,
+  "0" with none) and a phone shows it only then (PR #NNN).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its

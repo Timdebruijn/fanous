@@ -2057,3 +2057,25 @@ test('show: the OSC address list fits the side column, no effect text clipped', 
   expect(clipped).toBe(0);
   expect(await aside.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
 });
+
+test('status bar: the outputs item counts the bound outputs instead of saying "on" while the project has none (0)', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const item = page.getByRole('banner').locator('.outputs');
+  // a fresh engine has no output; the compositor runs, which the bar used to call "on"
+  await expect(item).toHaveText(/^\s*0\s*outputs$/);
+  await expect(item.locator('.dot')).toHaveClass(/dot-off/);
+  await openScreen(page, 'Outputs');
+  await page.getByLabel('Add output on').selectOption('none');
+  await expect(item).toHaveText(/^\s*0\/1\s*outputs$/);  // one output without a display: not bound
+  await expect(item.locator('.dot')).toHaveClass(/dot-yellow/);
+  await page.getByRole('button', { name: 'Remove output' }).click();
+  await expect(item).toHaveText(/^\s*0\s*outputs$/);
+  // a phone leaves the item out until it has something to say: a locked show without outputs is one
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(item).toBeHidden();
+  await page.getByRole('button', { name: 'UNLOCKED' }).click();
+  await expect(item).toBeVisible();
+  await expect(item).toHaveClass(/red/);
+  await page.getByRole('button', { name: 'LOCKED' }).click();
+  await expect(item).toBeHidden();
+});
