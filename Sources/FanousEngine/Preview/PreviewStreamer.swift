@@ -83,8 +83,9 @@ public final class PreviewStreamer: @unchecked Sendable {
     public let completionErrors = Atomic<Int>(0)
     public let encodes = Atomic<Int>(0)
     public let jpegStarted = Atomic<Int>(0)
-    /// JPEG encodes that had not returned 3 s after they started (`jpegHung`), the first logged: on CI's "Apple M1 (Virtual)"
-    /// runners the first `jpegRepresentation` never returns and this streamer's serial queue stays blocked (B99, measured).
+    /// JPEG encodes that had not returned 3 s after they started (`jpegHung`), the first per streamer logged: on CI's
+    /// "Apple M1 (Virtual)" runners the refused viewer's streamer's first `jpegRepresentation` never returned and its serial
+    /// queue stayed blocked (B99, measured).
     public let jpegHung = Atomic<Int>(0)
     /// Subscribers, and those on JPEG (`/metrics`).
     public var subscriberCounts: (all: Int, jpeg: Int) { subscribers.withLock { ($0.count, $0.filter(\.jpeg).count) } }
@@ -363,7 +364,7 @@ public final class PreviewStreamer: @unchecked Sendable {
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3) { [weak self] in
                 guard let self, jpegOut.load(ordering: .relaxed) + jpegFailed.load(ordering: .relaxed) < started else { return }
                 if jpegHung.wrappingAdd(1, ordering: .relaxed).oldValue == 0 {
-                    logger.warning("preview JPEG encode did not return within 3 s; this streamer's JPEG and H.264 frames stop", metadata: ["size": "\(width)x\(height)", "canvas": "\(canvasID)"])
+                    logger.warning("preview JPEG encode did not return within 3 s; this streamer's JPEG and H.264 frames wait until it does", metadata: ["size": "\(width)x\(height)", "target": "\(layer.map { "layer:\($0)" } ?? (outputSet != nil ? "output" : "canvas:\(canvasID)"))"])
                 }
             }
             if let data = ciContext.jpegRepresentation(of: CIImage(cvPixelBuffer: pixelBuffer), colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.7]) {
