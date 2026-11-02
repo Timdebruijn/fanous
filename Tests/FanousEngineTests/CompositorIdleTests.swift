@@ -219,6 +219,14 @@ struct CompositorIdleTests {
         #expect(try reused(110, ticks: 10) == 0, "test card: every tick draws")
         let clock = try reused(112, ticks: 10)
         #expect(clock >= 7, "clock: reused except when the second changes, got \(clock)")
+        // the second-change path itself: a clock whose drawn second is behind the wall clock draws on the next tick
+        let generator = try #require(GeneratorSource(context: context, file: 112, width: Self.width, height: Self.height))
+        let rig = try Rig(playback: LayerPlayback(key: MediaKey(folder: 0, file: 112), live: generator), idleWork: true, offscreen: true)
+        rig.tick(3)
+        let (reusedBefore, drawsBefore) = (rig.compositor.reusedCanvases.load(ordering: .relaxed), generator.encodeCount)
+        generator.drawnSecond -= 1
+        rig.tick(1)
+        #expect(rig.compositor.reusedCanvases.load(ordering: .relaxed) == reusedBefore && generator.encodeCount == drawsBefore + 1)
     }
 
     @Test func aGeneratorOnAnInvisibleLayerIsNotRedrawnUntilItShows() throws {
