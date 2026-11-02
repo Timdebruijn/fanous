@@ -3923,7 +3923,7 @@ closes the shortcut list.
 
 **Status:** designed 2026-11-02. The owner approved the four decisions below
 the same day; the build order is at the end. Steps 1–3 are built (PR #202,
-PR #207 and PR #TBD, As built at the end of this section); steps 4–6 are not.
+PR #207 and PR #211, As built at the end of this section); steps 4–6 are not.
 
 **Why.** The owner wants one place to select and set up inputs, and expects
 more settings to come: capture cards, the audio input that carries timecode,
@@ -4228,7 +4228,7 @@ does not select the next new input. Differences from the design above:
   The Microphone (LTC) permission row shows, yellow when missing, while the
   source is LTC.
 
-**As built (2026-11-02, step 3, PR #TBD):**
+**As built (2026-11-02, step 3, PR #211):**
 - *Adoption:* `LiveCatalog.adopt` takes the value's numbers for the running
   entries only when it names each of them exactly once and on numbers of their
   own; any running source missing or named twice keeps today's rule for all of
