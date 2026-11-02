@@ -10,7 +10,8 @@ cd "$(dirname "$0")/.."
 APP=dist/Fanous.app
 PROFILE=${NOTARY_PROFILE:?set NOTARY_PROFILE to the notarytool keychain profile name}
 [[ -d "$APP" ]] || { echo "build first: CODESIGN_IDENTITY='Developer ID Application: …' scripts/bundle.sh"; exit 1; }
-codesign --display --verbose=2 "$APP" 2>&1 | grep -q "Authority=Developer ID Application" || { echo "$APP is not signed with a Developer ID (ad-hoc builds cannot be notarized)"; exit 1; }
+# no `grep -q`: it exits on the first match, codesign then dies of SIGPIPE (141) and pipefail fails the check (B50, measured)
+codesign --display --verbose=2 "$APP" 2>&1 | grep "Authority=Developer ID Application" >/dev/null || { echo "$APP is not signed with a Developer ID (ad-hoc builds cannot be notarized)"; exit 1; }
 VERSION=$(defaults read "$PWD/$APP/Contents/Info.plist" CFBundleShortVersionString)
 DMG="dist/Fanous-$VERSION.dmg"
 rm -f "$DMG" dist/Fanous.zip

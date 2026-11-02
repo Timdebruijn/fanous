@@ -598,6 +598,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Engine: a preview JPEG encode that has not returned 3 s after it started is counted (`jpegHung` in `/metrics` `preview.streamers`)
   and the first per streamer logged, so a streamer whose queue is blocked that way says so on any hardware; seen on CI's slow runner class
   only (B99, PR #180).
+- Release: the first Developer ID build was notarized (1.0.0-rc.1, zip and dmg accepted, stapled, Gatekeeper: Notarized
+  Developer ID). `scripts/notarize.sh`'s own signature check failed before the upload: `grep -q` ended the pipe and `codesign` died
+  of SIGPIPE under `pipefail`; it reads the whole output now. RELEASE §5 notes the first run and what a developer Mac that ran
+  ad-hoc builds needs (agent re-register, screen grant anew) (B50, PR #182).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
