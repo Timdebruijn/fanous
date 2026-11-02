@@ -144,6 +144,24 @@ struct LibraryIndexTests {
         #expect(seen, "the watcher did not pick up the new file within 5 s")
     }
 
+    /// A root missing at start behind a symlink is watched once it is made (B140): FSEvents never matched it before.
+    @Test func aMissingRootBehindASymlinkIsWatchedOnceMade() async throws {
+        let base = try tempDir("fanous-library-link")
+        defer { try? FileManager.default.removeItem(at: base) }
+        try FileManager.default.createDirectory(at: base.appending(path: "real"), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: base.appending(path: "link"), withDestinationURL: base.appending(path: "real"))
+        let root = base.appending(path: "link/Fanous Library")
+        let index = LibraryIndex(root: root, cacheDirectory: base.appending(path: "cache"), logger: Logger(label: "test"))
+        index.start()
+        defer { index.stop() }
+        #expect(!index.snapshot.rootExists)
+        try Self.touch(root.appending(path: "001_Show/001_a.mov"))
+        #expect(await waitUntil(every: .milliseconds(50)) { index.snapshot.folders.first?.number == 1 })
+        // a missing top-level folder: "//x" would get no events
+        let topLevel = "/fanous-no-such-\(UUID().uuidString)/Fanous Library"
+        #expect(LibraryIndex.watchPath(URL(fileURLWithPath: topLevel)) == topLevel)
+    }
+
     /// A 2×2 PNG: enough for the still probe to call it playable.
     static func png(_ url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
