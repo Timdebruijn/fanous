@@ -102,15 +102,15 @@ final class EngineManager {
         child = nil
     }
 
-
     private func startAgent() {
         let service = SMAppService.agent(plistName: Self.agentPlist)
-        // a rebuild leaves the agent pinned to the old binary's cdhash (launchd: "needs LWCR update", EX_CONFIG): register it
-        // afresh once the unregistration has finished (it completes asynchronously, a register right after it is a no-op).
-        // Only when the engine does not answer: re-registering restarts it, which must never happen just because the UI was
-        // opened during a show. Any signature: the first Developer ID build on a Mac with an ad-hoc registration hit it too (B50)
+        // an ad-hoc rebuild, or the first Developer ID build over an ad-hoc registration, leaves the agent pinned to the old
+        // binary's cdhash (launchd: "needs LWCR update", EX_CONFIG; a team-identifier record does not pin, measured B50): register
+        // it afresh once the unregistration has finished (it completes asynchronously, a register right after it is a no-op).
+        // Only when the engine does not answer within 10 s: re-registering restarts it, which must never happen just because
+        // the UI was opened during a show, nor to an engine that is still starting (0.3–1.4 s to its listener here, more cold)
         if service.status == .enabled {
-            Self.engineAnswers(within: 3) { answers in
+            Self.engineAnswers(within: 10) { answers in
                 guard !answers else { return }
                 Self.markRestartPending()  // a hung engine stopped here comes back in show mode if it was in it
                 service.unregister { _ in DispatchQueue.main.async { MainActor.assumeIsolated { self.registerAgent() } } }
