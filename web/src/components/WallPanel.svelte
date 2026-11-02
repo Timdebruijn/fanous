@@ -298,7 +298,6 @@
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .ctl { display: flex; flex-direction: column; gap: 10px; }
   h3 { margin: 0; font-size: 15px; letter-spacing: normal; text-transform: none; color: inherit; }
-  .focus { outline: 2px solid var(--accent); outline-offset: 4px; }
   .manual { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
   @media (max-width: 600px) {
     .hint { grid-template-columns: 1fr; }

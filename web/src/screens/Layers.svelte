@@ -24,7 +24,7 @@
   import LayerRow from '../components/LayerRow.svelte';
   import LayerStrips from '../components/LayerStrips.svelte';
   import Preview from '../components/Preview.svelte';
-  import { layerPreview, parseThumbFrame, rowThumb, thumbnailFor, thumbnailIndex, type LibrarySnapshot } from '../lib/layers';
+  import { layerNumbers, layerPreview, parseThumbFrame, rowThumb, thumbnailFor, thumbnailIndex, type LibrarySnapshot } from '../lib/layers';
   import { loadLibrary } from '../lib/media';
   import { canvasTarget, layerCanvas } from '../lib/outputs';
   import { loadChannelMap, type ChannelMap } from '../lib/patch-screen';
@@ -97,8 +97,8 @@
     return () => abort.abort();
   });
 
-  const layerCount = $derived(Math.max(0, Math.floor(app.project.layerCount) || 0));
-  const numbers = $derived(Array.from({ length: layerCount }, (_, i) => i + 1));
+  const numbers = $derived(layerNumbers(app.project.layerCount));
+  const layerCount = $derived(numbers.length);
   const selected = $derived(Math.min(Math.max(ui.selected, 1), Math.max(layerCount, 1)));
   const liveByIndex = $derived(new Map(app.live.layers.map((layer) => [layer.index, layer])));
   const patchByFixture = $derived(new Map(app.project.patch.map((entry) => [entry.fixture, entry])));

@@ -9,7 +9,7 @@
   import SystemVersions from '../components/SystemVersions.svelte';
   import { modeText } from '../lib/outputs';
   import { app, can, cmd } from '../lib/state.svelte';
-  import { LOCKED_TITLE, OPERATOR_TITLE, ageText, headerCaption, memoryText, outputTone, readinessBadge, readinessSummary, resumedText, stampText, thermalTone } from '../lib/system';
+  import { LOCKED_TITLE, OPERATOR_TITLE, ageText, copied, headerCaption, memoryText, outputTone, readinessBadge, readinessSummary, resumedText, stampText, thermalTone } from '../lib/system';
 
   const show = $derived(app.live.show);
   const sys = $derived(app.live.system);
@@ -51,12 +51,7 @@
 
   let copy = $state<'idle' | 'ok' | 'failed'>('idle');
   async function copyFingerprint() {
-    try {
-      await navigator.clipboard.writeText(sys.tlsFingerprint);
-      copy = 'ok';
-    } catch {
-      copy = 'failed';
-    }
+    copy = await copied(sys.tlsFingerprint);
   }
   $effect(() => {
     if (copy === 'idle') return;

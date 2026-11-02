@@ -4,6 +4,7 @@
 // Pure helpers of the Media screen: library shapes (LibraryIndex.swift), codec and job-state names for what Swift's
 // synthesized Codable writes (IngestQueue.swift, MovieWriter.swift), formatting and filtering.
 import type { IngestJobDoc } from './docs';
+import { clamp01 } from './outputs';
 
 export { LOCKED_TITLE } from './patch-screen';
 
@@ -215,7 +216,7 @@ export function describeJobState(state: unknown): JobState {
   switch (s?.[0]) {
     case 'running': {
       const progress = Number(s[1].progress);
-      return { label: 'transcoding', progress: Number.isFinite(progress) ? Math.min(1, Math.max(0, progress)) : 0 };
+      return { label: 'transcoding', progress: Number.isFinite(progress) ? clamp01(progress) : 0 };
     }
     case 'done':
       return { label: 'done', progress: 1 };
