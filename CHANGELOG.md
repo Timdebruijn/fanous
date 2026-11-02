@@ -676,6 +676,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   path's symlinks only when it exists, so its events never matched. Uploads, folders made by hand and finished ingest
   jobs then stayed off the Media screen until **Rescan** or a restart. The index now watches the real path of the part
   that exists plus the rest (B140, PR #209).
+- CI: a push or pull request that changes only `docs/` or Markdown files runs no jobs; no job reads them, except
+  `docs/channel-map.md`, which `scripts/check-generated.sh` compares and which still runs CI (PR #212).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
