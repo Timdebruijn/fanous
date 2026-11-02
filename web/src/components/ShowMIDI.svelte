@@ -4,8 +4,8 @@
 <script lang="ts">
   import type { MIDIMappingDoc } from '../lib/docs';
   import type { ChannelMap } from '../lib/patch-screen';
-  import { fixtureNames, formatNumber, groupSpecs, lockTitle, midiControlText, midiParameterTarget, midiTargetText, specsFor } from '../lib/show';
-  import { app, can, cmd } from '../lib/state.svelte';
+  import { fixtureNames, formatNumber, groupSpecs, midiControlText, midiParameterTarget, midiTargetText, specsFor } from '../lib/show';
+  import { app, cmd, programmerLock } from '../lib/state.svelte';
   import { stampText } from '../lib/system';
 
   /** null while the channel map is not there: parameter targets are then offered by key only once it arrives */
@@ -25,7 +25,7 @@
   const sources = $derived(app.live.osc.midiSources);
   const sourceMissing = $derived(!!midi.source && !sources.includes(midi.source));
   const mtcDevice = $derived(app.project.timecode.source === 'mtc' ? (app.project.timecode.device ?? '') : null);
-  const editTitle = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
+  const editTitle = $derived(programmerLock());
   const editable = $derived(editTitle === undefined);
 
   // the target the next Learn maps to

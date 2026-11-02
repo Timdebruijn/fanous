@@ -8,8 +8,8 @@
   import type { AudioInputDoc } from '../lib/docs';
   import { ZERO_GROUPS, folderZeroItems, layersShowing, signalText, zeroCaption, type FolderZeroItem } from '../lib/layers';
   import { go, route } from '../lib/router.svelte';
-  import { lockTitle, ltcInput, timecodeBadge, timecodeOn } from '../lib/show';
-  import { app, can, cmd } from '../lib/state.svelte';
+  import { ltcInput, timecodeBadge, timecodeOn } from '../lib/show';
+  import { app, cmd, programmerLock } from '../lib/state.svelte';
   import { permissionRow } from '../lib/system';
 
   const capture = $derived(app.live.capture);
@@ -43,7 +43,7 @@
   function useForTimecode(input: AudioInputDoc, channel: number) {
     void cmd('timecode.set', { path: '', value: { ...tc, source: 'ltc', device: input.name, channel } });
   }
-  const editLock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
+  const editLock = $derived(programmerLock());
   const authorizeLock = $derived(editLock ?? (app.live.show.mode ? 'Leave show mode first' : undefined));
 
   const KIND = { capture: 'Camera or capture card', screen: 'Display', syphon: 'Syphon server', generator: '' } as const;

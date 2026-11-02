@@ -6,7 +6,7 @@
   import MediaIngestQueue from '../components/MediaIngestQueue.svelte';
   import MediaTile from '../components/MediaTile.svelte';
   import PolicyHint from '../components/PolicyHint.svelte';
-  import { app, authHeaders, can, playOnLayer } from '../lib/state.svelte';
+  import { app, authHeaders, can, playOnLayer, programmerLock } from '../lib/state.svelte';
   import {
     LOCKED_TITLE,
     activeSources,
@@ -19,7 +19,6 @@
     type LibrarySnapshot,
   } from '../lib/media';
   import { ZERO_GROUPS, folderZeroItems, layersShowing, zeroCaption } from '../lib/layers';
-  import { lockTitle } from '../lib/show';
 
   interface Upload {
     name: string;
@@ -67,7 +66,7 @@
   const picked = $derived(shown.find((i) => i.path === selectedItem));
   const playable = $derived(picked !== undefined && picked.file !== null && current?.number != null && picked.status === 'playable');
   const layerNumbers = $derived(Array.from({ length: Math.max(0, Math.floor(app.project.layerCount) || 0) }, (_, i) => i + 1));
-  const playLock = $derived(lockTitle('programmer', !locked, app.project.showLock));
+  const playLock = $derived(programmerLock());
   let playNote = $state('');
 
   async function play(n: number, folder: number, file: number, name: string) {

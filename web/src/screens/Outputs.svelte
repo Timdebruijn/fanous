@@ -8,22 +8,13 @@
   // Remote mode on Warp & Slices, remembered per browser; by default on for touch screens narrower than 900 px
   const REMOTE_KEY = 'fanous.remote';
   function storedRemote(): boolean {
-    try {
-      const stored = localStorage.getItem(REMOTE_KEY);
-      if (stored !== null) return stored === '1';
-    } catch {
-      // blocked storage: the default
-    }
-    return matchMedia('(pointer: coarse) and (max-width: 899.98px)').matches;
+    const stored = prefs.get(REMOTE_KEY);
+    return stored === undefined ? matchMedia('(pointer: coarse) and (max-width: 899.98px)').matches : stored === '1';
   }
   function setRemote(on: boolean) {
     ui.remote = on;
     ui.group = 'point';
-    try {
-      localStorage.setItem(REMOTE_KEY, on ? '1' : '0');
-    } catch {
-      // private mode or blocked storage: the choice lasts for this page only
-    }
+    prefs.set(REMOTE_KEY, on ? '1' : '0');
   }
 </script>
 
@@ -42,9 +33,8 @@
     type MapPoint, type MapperMode, type MaskPoint, type MaskShape, type MaskTool, type OutputConfig,
   } from '../lib/outputs';
   import { mediaOptions, mediaPath, type LibrarySnapshot } from '../lib/layers';
-  import { app, can, client, cmd, toastUndo } from '../lib/state.svelte';
+  import { app, can, client, cmd, prefs, programmerLock, toastUndo } from '../lib/state.svelte';
   import { LOCKED_TITLE } from '../lib/patch-screen';
-  import { lockTitle } from '../lib/show';
   import { go } from '../lib/router.svelte';
   import { sourcePixels, sourceFromPixels } from '../lib/outputs';
   import { downloadTemplatePNG, templateSVG } from '../lib/template';
@@ -56,7 +46,7 @@
 
   const locked = $derived(!can('programmer'));
   /** why the remote cannot move points: the role, or the show lock (the engine would refuse) */
-  const moveLock = $derived(lockTitle('programmer', !locked, app.project.showLock));
+  const moveLock = $derived(programmerLock());
   const outputs = $derived(app.project.outputs);
   const displays = $derived(app.live.displays);
   const statuses = $derived(new Map(app.live.outputs.map((s) => [s.id, s])));
@@ -73,7 +63,7 @@
   /** the wall the selected output is in */
   const wall = $derived(output ? wallOf(walls, output.id) : undefined);
   /** why a wall cannot be made or changed: the role, the show lock */
-  const wallLock = $derived(lockTitle('programmer', !locked, app.project.showLock));
+  const wallLock = $derived(programmerLock());
   const freeCount = $derived(freeOutputs(outputs, walls).length);
   const checking = $derived(wallUI.check ? walls.find((w) => w.id === wallUI.check?.wall) : undefined);
   // a seam check whose wall went (Undo, another client) ends

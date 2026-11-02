@@ -9,22 +9,11 @@
 
   // Module scope: the router unmounts this screen on navigation, the selected layer should survive that.
   // previewCanvas: the canvas shown while the preview shows a canvas (multiple canvases)
-  const ui = $state({ selected: 1, fixture: null as string | null, preview: storedPreview(), previewCanvas: 1 });
+  const ui = $state({ selected: 1, fixture: null as string | null, preview: (prefs.get(PREVIEW_KEY) === 'layer' ? 'layer' : 'canvas') as PreviewSource, previewCanvas: 1 });
 
-  function storedPreview(): PreviewSource {
-    try {
-      return localStorage.getItem(PREVIEW_KEY) === 'layer' ? 'layer' : 'canvas';
-    } catch {
-      return 'canvas';
-    }
-  }
   function setPreview(source: PreviewSource) {
     ui.preview = source;
-    try {
-      localStorage.setItem(PREVIEW_KEY, source);
-    } catch {
-      // private mode or blocked storage: the choice lasts for this page only
-    }
+    prefs.set(PREVIEW_KEY, source);
   }
 </script>
 
@@ -39,7 +28,7 @@
   import { loadChannelMap, type ChannelMap } from '../lib/patch-screen';
   import { latestOnly } from '../lib/preview';
   import { go } from '../lib/router.svelte';
-  import { app, subscribeThumbs } from '../lib/state.svelte';
+  import { app, prefs, subscribeThumbs } from '../lib/state.svelte';
 
   // Live layer thumbnails (B29): layer number → object URL of its latest JPEG. Subscribed while this screen is shown,
   // the tab is visible and the engine renders; a layer the engine reports empty, or no stream, shows the library thumbnail.
