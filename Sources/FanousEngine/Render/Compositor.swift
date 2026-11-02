@@ -735,7 +735,10 @@ public final class Compositor: @unchecked Sendable {
             ctx.misses += 1
             return
         }
-        if playback.live != nil || p.effect1 == .strobe || p.effect2 == .strobe { ctx.dynamic = true }
+        // a live source changes every tick, except a static generator (drawn once) and the clock between its seconds: those
+        // let the canvas be reused like a still (B56); `encodeGenerators` makes the same call when it draws
+        let changing = if let g = playback.live as? GeneratorSource { !g.isStatic && (g.kind != 112 || g.drawnSecond != Int(time(nil))) } else { playback.live != nil }
+        if changing || p.effect1 == .strobe || p.effect2 == .strobe { ctx.dynamic = true }
         drawItems.append(DrawItem(playback: playback, frame: frame, frameIndex: frameIndex, p: p, intensity: intensity, master: ctx.masterIntensity, slot: slot, canvas: canvas))
     }
 
