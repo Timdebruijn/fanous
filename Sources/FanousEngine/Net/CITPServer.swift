@@ -9,7 +9,7 @@ import Network
 import Synchronization
 
 /// CITP/MSEX media-server side (DESIGN.md §16.1): PLoc every 5 s on both multicast groups, one TCP listener
-/// (ephemeral port, advertised in PLoc), per connection the MSEX version negotiated from CInf (1.0 when none comes, B78), SInf, layer
+/// (ephemeral port, advertised in PLoc), per connection the MSEX version negotiated from CInf (1.0 when none comes within 2 s, B78), SInf, layer
 /// status at 4 Hz, element libraries (= numbered folders), media elements (= numbered files), JPEG thumbnails
 /// from the library cache, video sources (the canvas and each layer) and JPEG streaming frames of a source from the
 /// preview path (canvas) or the live thumbnails (layers, B29). Packets come from FanousCore.
@@ -114,7 +114,7 @@ public final class CITPServer: @unchecked Sendable {
         self.listener = listener
     }
 
-    /// Layer status (4 Hz) runs while a console has negotiated a version, stream frames (10 Hz) while one streams;
+    /// Layer status (4 Hz) runs while a session has a version (from CInf, or 1.0 after `Session.fallbackDelay`), stream frames (10 Hz) while one streams;
     /// a server nobody talks to has only the 5 s beacon. Server queue only.
     private func updateTimers() {
         let negotiated = connections.values.contains { $0.version != nil }
