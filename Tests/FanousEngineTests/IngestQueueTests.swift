@@ -518,7 +518,7 @@ import UniformTypeIdentifiers
     }
 
     /// Two uploads into a folder number the index has not seen yet land in one folder, also with different names: the
-    /// index is never rescanned here, like in the second before the debounced rescan or with a root missing at engine start.
+    /// index is never rescanned here, like in the second before the debounced rescan or with a root missing at start behind a symlink (B140).
     @Test func uploadsIntoAnUnindexedFolderNumberShareOneFolder() throws {
         let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
