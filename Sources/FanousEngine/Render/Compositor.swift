@@ -123,6 +123,12 @@ public final class Compositor: @unchecked Sendable {
     private var drawnItems: [DrawItem] = []
     private var drawnSequence: UInt64 = 0
     private var drawnTime: Float = 0
+    /// The shader's clock (`texel.w`, the strobe's `fract(time * rate)`) wraps here. 255 s, not an hour (B11): the strobe
+    /// rate is an 8-bit step, 1 + 29k/255 Hz, so 255 × rate = 255 + 29k is a whole number of cycles for every k and the wrap
+    /// moves the phase by Float rounding only (under 0.001 cycle, the rate reaches the shader through a percent in Float); at
+    /// 3600 s 240 of the 256 rates jumped, up to half a cycle. A smaller wrap also keeps the Float
+    /// clock fine: about 0.0005 cycle at 30 Hz. The 255 belongs to the 8-bit grid: a 16-bit rate would need its own wrap.
+    static let timeWrap: Double = 255
     /// This tick reused the last canvas: its own selection is still in `drawItems` (`drawLayer`).
     private var reusedThisTick = false
     private var canvasValid = false
@@ -372,7 +378,7 @@ public final class Compositor: @unchecked Sendable {
         let wantsPixels = needsPixels(drawable: drawable)
         var frame = TickContext(
             dt: snapshot.masterControl == .freezeAll ? 0 : dt, target: target, masterIntensity: snapshot.masterControl == .blackout ? 0 : snapshot.master,
-            masterSpeed: snapshot.masterSpeed, time: Float(target.truncatingRemainder(dividingBy: 3600)), now: cpuStart)  // ponytail: one strobe phase jump per hour; per-layer Double phase if it shows
+            masterSpeed: snapshot.masterSpeed, time: Float(target.truncatingRemainder(dividingBy: Self.timeWrap)), now: cpuStart)
         drawItems.removeAll(keepingCapacity: true)
 
         layerCanvasBox.withLockIfAvailable { tickLayerCanvas = $0 }  // busy: last tick's assignment once more
