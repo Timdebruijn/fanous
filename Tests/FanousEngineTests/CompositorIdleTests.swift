@@ -14,6 +14,18 @@ import Testing
 /// Work that nobody sees is not done: unwatched ticks, unchanged pictures, generators that cannot change.
 @Suite(.serialized)
 struct CompositorIdleTests {
+    /// B11: the shader clock's wrap is a whole number of strobe cycles for every 8-bit rate step (1 + 29k/255 Hz), in the
+    /// shader's Float arithmetic; an hour (the old wrap) is not: k = 6 (1.68 Hz) jumped 8/17 of a cycle there.
+    @Test func strobePhaseIsContinuousAcrossTheClockWrap() {
+        func jump(_ wrap: Double, _ k: Int) -> Float {
+            let rate = 1 + 29 * Float(k) / 255
+            let phase = (Float(wrap) * rate).truncatingRemainder(dividingBy: 1)
+            return min(phase, 1 - phase)
+        }
+        for k in 0...255 { #expect(jump(Compositor.timeWrap, k) < 0.002, "rate step \(k)") }
+        #expect(jump(3600, 6) > 0.4)
+    }
+
     static let width = 160, height = 90
 
     /// A compositor with one layer showing a solid still, parameters at intensity 1.
