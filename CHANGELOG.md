@@ -668,7 +668,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   timecode clock with timecode off; a negative LTC channel crashed the audio thread; undoing a new project's first
   timecode change blanked the Show and Inputs screens (review of PR #207).
 - CI: a push or pull request that changes only `docs/` or Markdown files runs no jobs; no job reads them, except
-  `docs/channel-map.md`, which `scripts/check-generated.sh` compares and which still runs CI (PR #TBD).
+  `docs/channel-map.md`, which `scripts/check-generated.sh` compares and which still runs CI (PR #212).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
