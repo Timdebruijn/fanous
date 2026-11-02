@@ -31,6 +31,45 @@ struct ShowControlTests {
         #expect(ContinuousClock.now - started >= .milliseconds(600), "not before its follow time")
     }
 
+    /// B43: a cue's fade measured end to end in the engine, go() → CueRunner (50 Hz) → DMXStore → the published Layer 1
+    /// intensity the compositor reads. Loose bounds (B67): a loaded Mac makes it slower, not red. Stops at the snapshot;
+    /// nothing here measures light (no photon probe exists).
+    @Test func cueFadeReachesTheLayerAt50Hz() async throws {
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
+        store.setPolicy(.internal)  // no console: the cue source decides
+        let runner = CueRunner(dmx: store)
+        defer { runner.stop() }
+        let full = CueValue(fixture: .layer(1), parameter: .layer(.intensity), raw: 65535)
+        runner.replace(list: CueList(cues: [Cue(number: 1, fadeTime: 1.0, values: [full])]))
+        #expect(await waitUntil { runner.status.withLock { $0.count } == 1 })
+        let intensity = { @Sendable in store.snapshots.withLatest { $0.layers[0].intensity } }
+        #expect(intensity() == 0)
+        // sampled on a thread of its own: on the cooperative pool a parallel run starved the sampler (13 of 51 steps seen)
+        let steps = try await offPool {
+            var steps: [(at: Duration, value: Float)] = []
+            let t0 = ContinuousClock.now
+            runner.go()
+            while ContinuousClock.now - t0 < .seconds(5) {
+                let value = intensity()
+                if value != (steps.last?.value ?? 0) { steps.append((ContinuousClock.now - t0, value)) }
+                if value == 1 { break }
+                usleep(1000)
+            }
+            return steps
+        }
+        let ms = { (d: Duration) in Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15 }
+        let gaps = zip(steps.dropFirst(), steps).map { ms($0.at - $1.at) }.sorted()
+        let first = steps.first.map { ms($0.at) } ?? .infinity
+        let last = steps.last.map { ms($0.at) } ?? .infinity
+        let (p50, low, high) = (gaps.isEmpty ? 0 : gaps[gaps.count / 2], gaps.first ?? 0, gaps.last ?? 0)
+        let format = "TIMING cue fade 1 s: first step %.1f ms, full %.1f ms after go, %d steps, p50 %.1f (%.1f…%.1f) ms"
+        print(String(format: format, first, last, steps.count, p50, low, high))
+        #expect(steps.last?.value == 1, "reached full")
+        #expect(first < 200, "first step within 200 ms of go: \(first) ms")
+        #expect(last < 1300, "full within the fade + 300 ms: \(last) ms")
+        #expect(steps.count >= 20, "about 50 steps at 50 Hz: \(steps.count)")
+    }
+
     @Test func timecodeClockExtrapolatesFreewheelsAndLoses() {
         let clock = TimecodeClock()
         clock.freewheelSeconds = 2

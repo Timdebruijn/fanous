@@ -617,6 +617,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   ingest error texts, now use the error's `localizedDescription`, while the engine's own error texts are unchanged (B25, PR #186).
 - CI: the seam-check lease e2e waits 6 s (three renewals) instead of 3 s for a renewal to be sent; at 3 s none came once
   in 88 CI jobs (PR #190).
+- Tests: a cue fade is measured end to end in the engine, go → `CueRunner` → `DMXStore` → the published Layer 1
+  intensity: a 1.0 s fade shows its first step about 1 ms after go and is full after about 1003 ms, in 51 steps 20 ms apart,
+  also in a parallel run and under load; nothing past the snapshot (no photon probe) is measured (B43, PR #NNN).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
