@@ -72,6 +72,9 @@ public struct BlendSettings: Codable, Hashable, Sendable {
     public var lift: Double = 0
     /// Feather of the lift transition at the zone boundary, output pixels.
     public var liftFeather: Double = 0
+    /// The feather on the y axis when it differs from `liftFeather`: only the browser preview sets it, whose axes scale
+    /// differently when the output is not the preview's aspect (B56); nil = `liftFeather`. Never saved: no UI sets it.
+    public var liftFeatherY: Double? = nil
     public init() {}
     public var isIdentity: Bool { left.overlap <= 0 && right.overlap <= 0 && top.overlap <= 0 && bottom.overlap <= 0 && lift <= 0 }
 }

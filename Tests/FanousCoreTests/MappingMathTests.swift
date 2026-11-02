@@ -103,6 +103,23 @@ struct MappingMathTests {
         }
     }
 
+    /// B56: the preview scales its axes differently, so the y axis takes `liftFeatherY` and the x axis keeps `liftFeather`.
+    @Test func liftFeatherYFeathersTheYAxisOnly() {
+        var s = BlendSettings()
+        s.top = BlendEdge(overlap: 2)
+        s.lift = 0.5
+        s.liftFeather = 4
+        let same = BlendMath.map(s, width: 1, height: 12)
+        s.liftFeatherY = 8
+        let wider = BlendMath.map(s, width: 1, height: 12)
+        // row 4 (centre 4.5): 2.5 px past the overlap: zone 1 - 2.5/4 with the x feather, 1 - 2.5/8 with its own
+        #expect(same[4 * 4 + 3] == Float(0.5 * (2.5 / 4)) && wider[4 * 4 + 3] == Float(0.5 * (2.5 / 8)))
+        s.left = BlendEdge(overlap: 2)
+        s.top = BlendEdge()
+        let x = BlendMath.map(s, width: 12, height: 1)
+        #expect(x[4 * 4 + 3] == Float(0.5 * (2.5 / 4)))  // the x axis is untouched by liftFeatherY
+    }
+
     @Test func homographyMapsTheCornersAndKeepsTheIdentity() {
         let identity = WarpMath.homography(to: WarpSettings().cornerPin)
         #expect(identity == [1, 0, 0, 0, 1, 0, 0, 0, 1])
