@@ -1022,9 +1022,10 @@ test('walls: the seam check leases its patterns (B102): renewed, no output.set, 
     await panel.getByRole('group', { name: 'Seam check pattern' }).getByRole('button', { name }).click();
     await expect.poll(() => sent.leases.at(-1)).toEqual(both(pattern));
   }
-  // renewed while the step shows (every 2 s), and the engine has it
+  // renewed while the step shows (every 2 s), and the engine has it; 6 s = three renewals: at 3 s no renewal arrived once
+  // in 88 CI jobs (main f0e3abb, 2026-11-02)
   const count = sent.leases.length;
-  await expect.poll(() => sent.leases.slice(count), { timeout: 3000 }).toContainEqual(both(11));
+  await expect.poll(() => sent.leases.slice(count), { timeout: 6_000 }).toContainEqual(both(11));
   await expect.poll(() => live.slice(0, 2)).toEqual([11, 11]);
   expect(sent.sets, "only Output 1's Crosshair").toBe(1);
   await own();
