@@ -641,11 +641,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
   step moves to other outputs or the page is hidden, so "Give the test patterns back" is gone (B102, B103, PR #159).
-- Fixed: two API uploads into a folder number the index had not seen yet (within the 500 ms before the rescan, or any
-  time with a library root missing at engine start) created two folders, `003_red` and `003_blue`, and after the
+- Fixed: two API uploads into a folder number the index had not seen yet (within about a second before the rescan, or
+  any time with a library root missing at engine start) created two folders, `003_red` and `003_blue`, and after the
   rescan the files of one of them were invalid ("duplicate folder number 3"); an upload now looks on disk for the
-  folder with that number first, and creating a folder (`POST /api/library/folder`) with that number answers 409
-  instead of making a second one (PR #144).
+  folder with that number first, and creating a folder (`POST /api/library/folder`) with a number an upload already
+  used answers 409 instead of making a second one (PR #144).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
