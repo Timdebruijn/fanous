@@ -34,6 +34,7 @@
     type MapPoint, type MapperMode, type MaskPoint, type MaskShape, type MaskTool, type OutputConfig,
   } from '../lib/outputs';
   import { mediaOptions, mediaPath, type LibrarySnapshot } from '../lib/layers';
+  import { loadLibrary } from '../lib/media';
   import { app, can, client, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
   import { LOCKED_TITLE } from '../lib/patch-screen';
   import { go } from '../lib/router.svelte';
@@ -238,9 +239,7 @@
     void app.live.library.scannedAt;
     if (ui.tab !== 'warp' || ui.mapper !== 'mask') return;
     const abort = new AbortController();
-    fetch('/api/library', { signal: abort.signal })
-      .then((r) => (r.ok ? (r.json() as Promise<LibrarySnapshot>) : null))
-      .then((snapshot) => snapshot && (library = snapshot), () => {});
+    loadLibrary(abort.signal).then((snapshot) => (library = snapshot), () => {});
     return () => abort.abort();
   });
   const stills = $derived(mediaOptions(library, 'still'));

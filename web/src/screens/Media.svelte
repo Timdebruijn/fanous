@@ -14,6 +14,7 @@
     displayName,
     filterItems,
     invalidCount,
+    loadLibrary,
     send,
     type LibraryItem,
     type LibrarySnapshot,
@@ -85,9 +86,7 @@
   async function load() {
     const mine = ++latest;
     try {
-      const response = await fetch('/api/library');
-      if (!response.ok) throw new Error(`${response.status} ${(await response.text()).trim()}`.trim());
-      const snapshot = (await response.json()) as LibrarySnapshot;
+      const snapshot = await loadLibrary();
       if (mine === latest) library = snapshot;
     } catch (error) {
       if (mine === latest) notice = `Cannot load the library: ${error instanceof Error ? error.message : String(error)}`;
