@@ -187,7 +187,7 @@ export const test = base.extend<{ engine: Engine }>({
 
 export { expect };
 
-export async function openScreen(page: Page, name: 'Layers' | 'Media' | 'Outputs' | 'Patch' | 'Show' | 'System'): Promise<void> {
+export async function openScreen(page: Page, name: 'Layers' | 'Media' | 'Inputs' | 'Outputs' | 'Patch' | 'Show' | 'System'): Promise<void> {
   await page.getByRole('navigation', { name: 'Screens' }).getByRole('link', { name }).click();
 }
 

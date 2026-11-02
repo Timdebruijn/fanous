@@ -8,9 +8,8 @@
   import SystemSync from '../components/SystemSync.svelte';
   import SystemVersions from '../components/SystemVersions.svelte';
   import { modeText } from '../lib/outputs';
-  import { lockTitle } from '../lib/show';
   import { app, can, cmd } from '../lib/state.svelte';
-  import { LOCKED_TITLE, OPERATOR_TITLE, ageText, headerCaption, memoryText, outputTone, permissionRow, readinessBadge, readinessSummary, resumedText, stampText, thermalTone } from '../lib/system';
+  import { LOCKED_TITLE, OPERATOR_TITLE, ageText, headerCaption, memoryText, outputTone, readinessBadge, readinessSummary, resumedText, stampText, thermalTone } from '../lib/system';
 
   const show = $derived(app.live.show);
   const sys = $derived(app.live.system);
@@ -28,9 +27,6 @@
       uptimeSeconds: app.live.engine.uptimeSeconds,
     }),
   );
-  // live.capture is absent from engines before B73 step 2: then no block
-  const permissions = $derived(app.live.capture?.permissions);
-  const authorizeLock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock) ?? (show.mode ? 'Leave show mode first' : undefined));
   const outputName = (id: number) => app.project.outputs.find((o) => o.id === id)?.name ?? `Output ${id}`;
 
   let readinessPanel: HTMLElement | undefined = $state();
@@ -193,31 +189,6 @@
         <li class="caption empty">No DMX universes seen. Nothing has arrived on Art-Net or sACN: check that the console sends to this Mac's address, the cable or Wi-Fi, and the universe numbers on the Patch screen.</li>
       {/each}
     </ul>
-
-    {#if permissions}
-      <h3>Capture permissions</h3>
-      <ul aria-label="Capture permissions">
-        {#each [{ kind: 'camera', label: 'Camera', state: permissions.camera }, { kind: 'screen', label: 'Screen', state: permissions.screen }] as const as row (row.kind)}
-          {@const p = permissionRow(row.kind, row.state)}
-          <li class="list-row item">
-            <span class="dot dot-{p.tone}" aria-hidden="true"></span>
-            <span class="grow">{row.label}</span>
-            <span class="muted">{p.word}</span>
-            {#if p.authorize}
-              <button type="button" class="btn" disabled={authorizeLock !== undefined} title={authorizeLock} onclick={() => void cmd('capture.authorize', { kind: row.kind })}>Authorize {row.label.toLowerCase()}</button>
-            {/if}
-            <!-- always rendered, so the live region announces the caption when it appears -->
-            <span class="caption" role="status">{p.caption ?? ''}</span>
-          </li>
-        {/each}
-      </ul>
-      {#if permissions.camera === 'denied'}
-        <p class="caption empty">Camera denied: allow Fanous under System Settings › Privacy & Security › Camera.</p>
-      {/if}
-      {#if (app.live.capture?.screens?.length ?? 0) > 0}
-        <p class="caption empty">Screen: macOS asks again about once a month; before a show, check the readiness item Screen recording granted.</p>
-      {/if}
-    {/if}
   </section>
 
   <section class="panel" aria-labelledby="network-title">
