@@ -156,7 +156,10 @@ struct LibraryIndexTests {
         defer { index.stop() }
         #expect(!index.snapshot.rootExists)
         try Self.touch(root.appending(path: "001_Show/001_a.mov"))
-        #expect(await waitUntil(.seconds(5), every: .milliseconds(50)) { index.snapshot.folders.first?.number == 1 })
+        #expect(await waitUntil(every: .milliseconds(50)) { index.snapshot.folders.first?.number == 1 })
+        // a missing top-level folder: "//x" would get no events
+        let topLevel = "/fanous-no-such-\(UUID().uuidString)/Fanous Library"
+        #expect(LibraryIndex.watchPath(URL(fileURLWithPath: topLevel)) == topLevel)
     }
 
     /// A 2×2 PNG: enough for the still probe to call it playable.

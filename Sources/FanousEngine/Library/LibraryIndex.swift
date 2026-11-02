@@ -452,7 +452,7 @@ public final class LibraryIndex: @unchecked Sendable {
         }
         guard let real = realpath(existing.path, nil) else { return url.path }
         defer { free(real) }
-        return ([String(cString: real)] + rest).joined(separator: "/")
+        return rest.reduce(URL(fileURLWithPath: String(cString: real))) { $0.appending(path: $1) }.path  // no "//" under "/"
     }
 
     /// Debounced: one rescan 500 ms after the last event (DESIGN.md §8.1).

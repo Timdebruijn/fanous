@@ -655,10 +655,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   now looks on disk for the folder with that number first, and creating a folder (`POST /api/library/folder`) with a
   number an upload already used answers 409 instead of making a second one (PR #144).
 - Fixed: a library root that did not exist at engine start and whose path runs through a symlink (`/tmp`, a `~/Movies`
-  linked to another disk) was never rescanned after it was made: FSEvents resolves a watched path's symlinks only when
-  it exists, so its events never matched. Uploads, new folders and finished ingest jobs then stayed off the Media screen
-  until **Rescan** or a restart. The index now watches the real path of the part that exists plus the rest (B140, PR
-  #TBD).
+  linked to another disk that is mounted at start) was never rescanned after it was made: FSEvents resolves a watched
+  path's symlinks only when it exists, so its events never matched. Uploads, folders made by hand and finished ingest
+  jobs then stayed off the Media screen until **Rescan** or a restart. The index now watches the real path of the part
+  that exists plus the rest (B140, PR #209).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
