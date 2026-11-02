@@ -217,7 +217,9 @@ job shows source, destination, codec, state (queued, transcoding with a
 percentage, done, failed with the reason, cancelled) and a progress bar, plus
 **Cancel** or **Remove**. Jobs run one at a time at low priority and wait while
 frames are tight. They are paused while show mode is on (resume by leaving show
-mode) and survive an engine restart. The status bar shows the progress too.
+mode) and survive an engine restart. A done or cancelled job leaves the list a
+minute after it finished; a failed one stays until you remove it. The status
+bar shows the progress too.
 
 ## Thumbnails
 

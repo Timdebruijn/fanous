@@ -110,9 +110,9 @@ public final class IngestQueue: @unchecked Sendable {
     /// is removed): the Media screen showed a cancelled job for days otherwise. Filtered on read, dropped from the file at
     /// the next change.
     static let forgetAfter: TimeInterval = 60
-    static func expired(_ job: IngestJob, now: Date = Date()) -> Bool {
+    static func expired(_ job: IngestJob) -> Bool {
         guard let finishedAt = job.finishedAt, job.state == .done || job.state == .cancelled else { return false }
-        return now.timeIntervalSince(finishedAt) > forgetAfter
+        return Date().timeIntervalSince(finishedAt) > forgetAfter
     }
 
     /// A snapshot, oldest first, without the done and cancelled jobs older than `forgetAfter`.

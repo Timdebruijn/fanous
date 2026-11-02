@@ -430,7 +430,7 @@ with that held value.
 
 1. **Media.** On the Media screen press **New folder**, enter number 1 and a
    name, **Create**. Press **Import…** and pick a clip; wait until the ingest
-   queue says done. Or put a ProRes or HAP `.mov` in
+   queue says done (the job leaves the queue a minute later). Or put a ProRes or HAP `.mov` in
    `~/Movies/Fanous Library/001_Test/001_clip.mov` with Finder.
 2. **Output.** On the Outputs screen choose a display under **Add output on**.
    A new output shows the whole canvas.

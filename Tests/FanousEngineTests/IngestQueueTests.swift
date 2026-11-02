@@ -21,32 +21,6 @@ import UniformTypeIdentifiers
     /// 320×176 ProRes 422 HQ with the `TestTone` track, 10 fps (20 frames: HAP Q encoding is slow in a debug build).
     static let sourceFPS: Int32 = 10
 
-    /// Done and cancelled jobs older than a minute leave the list (and the file at the next change); a failed one stays.
-    @Test func finishedJobsAreForgottenAfterAMinuteFailedOnesStay() throws {
-        let directory = try tempDir("fanous-ingest-forget")
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let source = directory.appending(path: "in.mov"), destination = directory.appending(path: "out.mov")
-        func job(_ state: IngestJob.State, finished seconds: TimeInterval) -> IngestJob {
-            var job = IngestJob(source: source, destination: destination, kind: .transcode(codec: .proRes422))
-            job.state = state
-            job.finishedAt = Date(timeIntervalSinceNow: -seconds)
-            return job
-        }
-        let old = job(.done, finished: 120), cancelled = job(.cancelled, finished: 120)
-        let fresh = job(.done, finished: 5), failed = job(.failed("boom"), finished: 120)
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        let file = directory.appending(path: "queue.json")
-        try encoder.encode([old, cancelled, fresh, failed]).write(to: file)
-        let queue = IngestQueue(persistenceURL: file)
-        #expect(queue.jobs.map(\.id) == [fresh.id, failed.id])
-        queue.remove(id: failed.id)  // any change rewrites the file without the expired jobs
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let saved = try decoder.decode([IngestJob].self, from: Data(contentsOf: file))
-        #expect(saved.map(\.id) == [fresh.id])
-    }
-
     static func writeSource(to url: URL, seconds: Int = 2, audio: Bool = true) async throws {
         try await offPool { try writeSourceBlocking(to: url, seconds: seconds, audio: audio) }
     }
@@ -349,6 +323,32 @@ import UniformTypeIdentifiers
         // Garbage does not stop the queue from starting.
         try Data("not json".utf8).write(to: file)
         #expect(IngestQueue(persistenceURL: file).jobs.isEmpty)
+    }
+
+    /// Done and cancelled jobs older than a minute leave the list (and the file at the next change); a failed one stays.
+    @Test func finishedJobsAreForgottenAfterAMinuteFailedOnesStay() throws {
+        let directory = try tempDir("fanous-ingest-forget")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appending(path: "in.mov"), destination = directory.appending(path: "out.mov")
+        func job(_ state: IngestJob.State, finished seconds: TimeInterval) -> IngestJob {
+            var job = IngestJob(source: source, destination: destination, kind: .transcode(codec: .proRes422))
+            job.state = state
+            job.finishedAt = Date(timeIntervalSinceNow: -seconds)
+            return job
+        }
+        let old = job(.done, finished: 120), cancelled = job(.cancelled, finished: 120)
+        let fresh = job(.done, finished: 5), failed = job(.failed("boom"), finished: 120)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let file = directory.appending(path: "queue.json")
+        try encoder.encode([old, cancelled, fresh, failed]).write(to: file)
+        let queue = IngestQueue(persistenceURL: file)
+        #expect(queue.jobs.map(\.id) == [fresh.id, failed.id])
+        queue.remove(id: failed.id)  // any change rewrites the file without the expired jobs
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let saved = try decoder.decode([IngestJob].self, from: Data(contentsOf: file))
+        #expect(saved.map(\.id) == [fresh.id])
     }
 
     // MARK: (e) pause and cancel

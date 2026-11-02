@@ -1970,7 +1970,9 @@ source file(s) ──▶ _incoming/ (remote upload) or in-place (local path)
 ```
 
 - Progress, ETA, and errors are part of the live state (Media screen and a
-  global ingest indicator). Jobs survive an engine restart (queue persisted).
+  global ingest indicator). Jobs survive an engine restart (queue persisted);
+  done and cancelled jobs are forgotten a minute after they finish, failed ones
+  stay until removed.
 - Target codec defaults: ProRes 422 HQ; sources with alpha → ProRes 4444;
   per job: HAP, HAP Alpha, HAP Q, HAP Q Alpha, HAP Alpha-only, ProRes 422
   (Proxy/LT/422/HQ), ProRes 4444 (XQ).
