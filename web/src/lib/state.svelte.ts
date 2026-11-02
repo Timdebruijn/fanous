@@ -52,6 +52,7 @@ export const roleRank: Record<Role, number> = { monitor: 0, operator: 1, program
 export function can(role: Role): boolean {
   return roleRank[app.role] >= roleRank[role];
 }
+
 /** The title of a disabled programmer control: the role is lower or the show is locked; undefined when it may be used. */
 export function programmerLock(): string | undefined {
   return lockTitle('programmer', can('programmer'), app.project.showLock);
