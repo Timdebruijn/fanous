@@ -584,8 +584,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   coordinator now owns a 1×1 window that is never shown, so the engine is listed, and excluded, from its start (B124,
   PR #174).
 - Tests: a UDP port for a test is handed out once per process. The kernel assigns ports at random, so two tests that probed
-  before either bound could share one, and every unicast datagram then goes to the older listener (measured): the one failure of
-  `zeroDropsToZeroAndPacketsBringItBack` seen (B115, PR #176).
+  before either bound could share one, and every unicast datagram then goes to the older listener (measured), which is consistent with the one
+  failure of `zeroDropsToZeroAndPacketsBringItBack` seen; its port was not recorded (B115, PR #176).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
