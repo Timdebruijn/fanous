@@ -2040,3 +2040,20 @@ test('preview: a refused viewer the engine moves to a stream that never delivers
   expect(subs).toBe(2);
   await expect(caption.locator('.stalled')).toHaveCount(0, { timeout: 5_000 });  // the new stream's frames are drawn
 });
+
+test('show: the OSC address list fits the side column, no effect text clipped', async ({ page }) => {
+  await openScreen(page, 'Show');
+  const aside = page.getByRole('complementary', { name: 'Control inputs' });
+  await expect(aside.locator('.addresses').getByText('/fanous/cue/go', { exact: true })).toBeVisible();
+  // a three-column table clipped every effect in the 320 px column (measured at 1280 and 1440 wide on the live engine;
+  // this test runs at the config's 1440)
+  const rows = await aside.locator('.addresses li').count();
+  expect(rows).toBeGreaterThan(0);
+  await expect(aside.locator('.addresses .effect')).toHaveCount(rows);
+  const clipped = await aside.evaluate((el) => {
+    const right = el.querySelector('.addresses')!.getBoundingClientRect().right + 0.5;
+    return [...el.querySelectorAll('.addresses .effect')].filter((c) => c.getBoundingClientRect().right > right || c.scrollWidth > c.clientWidth + 1).length;
+  });
+  expect(clipped).toBe(0);
+  expect(await aside.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+});

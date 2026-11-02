@@ -44,17 +44,13 @@
     </ol>
   {/if}
 
-  <h3>Addresses</h3>
-  <div class="scroll">
-    <table>
-      <thead><tr><th scope="col">Address</th><th scope="col">Args</th><th scope="col">Effect</th></tr></thead>
-      <tbody>
-        {#each addresses as a (a.address)}
-          <tr><td class="mono">{a.address}</td><td class="mono">{a.args || '–'}</td><td class="muted">{a.note}</td></tr>
-        {/each}
-      </tbody>
-    </table>
-  </div>
+  <h3 id="osc-addresses">Addresses</h3>
+  <!-- address and args on one line, the effect under it: a three-column table clipped the effect in the 320 px side column -->
+  <ul class="addresses" role="list" aria-labelledby="osc-addresses">
+    {#each addresses as a (a.address)}
+      <li><span class="mono">{a.address}</span><span class="mono faint">{a.args ? `args ${a.args}` : 'no args'}</span><span class="effect muted">{a.note}</span></li>
+    {/each}
+  </ul>
 </section>
 
 <style>
@@ -65,10 +61,8 @@
   .recent li { display: flex; gap: 12px; align-items: baseline; padding: 6px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
   .recent li:last-child { border-bottom: 0; }
   .recent time { flex: none; }
-  .scroll { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th { text-align: left; font-weight: 500; color: var(--text-3); padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); }
-  td { padding: 6px 8px 6px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
-  td.mono { white-space: nowrap; }
-  tbody tr:last-child td { border-bottom: 0; }
+  .addresses { list-style: none; margin: 0; padding: 0; font-size: 12px; }
+  .addresses li { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+  .addresses li:last-child { border-bottom: 0; }
+  .effect { grid-column: 1 / -1; }
 </style>
