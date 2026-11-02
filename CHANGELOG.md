@@ -638,7 +638,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   "Showing all … channels" line, which is now the disclosure, and opens when Control is switched on; on a desktop, and
   for Master and the outputs, it starts open as before (PR #203).
 - Fixed: on the Show screen the OSC address table cut off its Effect column in the 320 px side column (every row, at 1280
-  and 1440 px wide); the addresses are a list now, address and arguments on one line and the effect under it (PR #NNN).
+  and 1440 px wide); the addresses are a list now, address and arguments on one line and the effect under it (PR #205).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
