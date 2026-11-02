@@ -453,6 +453,23 @@ test('media: folder 0 lists the generators and the Syphon servers, and puts one 
   await expect(page.getByText('Layer 1 now shows 0 / 110 · Test card (timecode, frame flags).')).toBeVisible();
 });
 
+test('inputs: key 3 opens the Inputs screen with the live groups; Media folder 0 and System no longer manage them (B137)', async ({ page }) => {
+  await page.keyboard.press('3');
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/inputs');
+  await expect(page.getByRole('heading', { name: 'Inputs', exact: true })).toBeVisible();
+  // no other app publishes Syphon on CI; on a workstation other engines may (this engine's own canvas is never listed)
+  await expect(page.getByText(/^No Syphon servers running\./).or(page.getByRole('list', { name: 'Syphon servers (150–169)' }))).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'Selected input' })).toContainText('Select an input');
+  await openScreen(page, 'Media');
+  await page.getByRole('button', { name: /^0 Built-in and live inputs/ }).click();
+  await expect(page.getByRole('link', { name: 'Inputs screen' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Forget/ })).toHaveCount(0);
+  await openScreen(page, 'System');
+  await expect(page.getByRole('list', { name: 'Capture permissions' })).toHaveCount(0);
+  await page.keyboard.press('7');
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/system');
+});
+
 test('outputs: add an unassigned output and a second slice', async ({ page }) => {
   await addUnassignedOutput(page);
   await page.getByRole('button', { name: 'Warp & Slices' }).click();

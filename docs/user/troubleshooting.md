@@ -94,8 +94,8 @@ The Layers screen (key 1) shows the problem in the Media column of the row.
 
 A layer on folder 0, file 21–28 shows a whole display of this Mac.
 
-- "screen permission not granted": on the System screen, under Capture
-  permissions, press **Authorize screen** (not in show mode) and allow Fanous
+- "screen permission not granted": on the Inputs screen, under Permissions,
+  press **Authorize screen** (not in show mode) and allow Fanous
   in System Settings › Privacy & Security › Screen & System Audio Recording,
   then choose Engine › **Restart Engine**: macOS applies the grant only to a
   new engine process.

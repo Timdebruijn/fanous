@@ -45,19 +45,20 @@ Reference material outside this guide: [channel-map.md](../channel-map.md) lists
 every DMX channel, [DESIGN.md](../DESIGN.md) is the technical design, and
 [BACKLOG.md](../BACKLOG.md) lists everything that is known to be missing.
 
-## The six screens
+## The seven screens
 
-Switch screens with the left rail or the keys 1 to 6; hover a screen in the
+Switch screens with the left rail or the keys 1 to 7; hover a screen in the
 rail to see its key.
 
 | Key | Screen | Purpose | Explained in |
 |---|---|---|---|
 | 1 | Layers | One row per layer: media, position, intensity, play mode, source; preview of the canvas or the selected layer; the layer panel | [getting-started.md](getting-started.md#the-main-window), [show-control.md](show-control.md#controlling-layers-from-the-ui) |
 | 2 | Media | The library: folders, files, built-in content and live inputs, import, transcode, ingest queue | [media-library.md](media-library.md) |
-| 3 | Outputs (Outputs & Mapping) | Canvases, outputs, projector walls, blend, warp, slices, masks, presets | [outputs-and-mapping.md](outputs-and-mapping.md) |
-| 4 | Patch | Who controls, fixture groups and blocks, universes, DMX monitor, patch sheet, GDTF export | [console-setup.md](console-setup.md#the-patch-screen-key-4) |
-| 5 | Show (Show control) | GO, timecode, cues, OSC, MIDI | [show-control.md](show-control.md) |
-| 6 | System | Show mode and readiness, live metrics, machine, library root, network, sync, project versions, roles, logs | [show-day-checklist.md](show-day-checklist.md), [troubleshooting.md](troubleshooting.md) |
+| 3 | Inputs | Cameras, capture cards, displays and Syphon servers: their signal, numbers and Forget, and the permissions they need | [media-library.md](media-library.md#the-inputs-screen-key-3) |
+| 4 | Outputs (Outputs & Mapping) | Canvases, outputs, projector walls, blend, warp, slices, masks, presets | [outputs-and-mapping.md](outputs-and-mapping.md) |
+| 5 | Patch | Who controls, fixture groups and blocks, universes, DMX monitor, patch sheet, GDTF export | [console-setup.md](console-setup.md#the-patch-screen-key-5) |
+| 6 | Show (Show control) | GO, timecode, cues, OSC, MIDI | [show-control.md](show-control.md) |
+| 7 | System | Show mode and readiness, live metrics, machine, library root, network, sync, project versions, roles, logs | [show-day-checklist.md](show-day-checklist.md), [troubleshooting.md](troubleshooting.md) |
 
 Other keys: Cmd-Z undo and Shift-Cmd-Z redo (programmer), L lock or unlock the
 show (programmer; it only asks first when you unlock while show mode is on),

@@ -404,7 +404,7 @@ public final class MediaLoader: @unchecked Sendable {
         wake.signal()
     }
 
-    /// The camera permission was answered (or authorized from the System screen): layers on a capture entry that could
+    /// The camera permission was answered (or authorized from the Inputs screen): layers on a capture entry that could
     /// not open try again.
     public func capturePermissionChanged() {
         captureChanged.store(true, ordering: .relaxed)

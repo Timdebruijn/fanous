@@ -62,12 +62,15 @@ export function outputTone(state: string): DotTone {
   return state === 'bound' ? 'green' : state === 'lost' ? 'red' : 'off';
 }
 
-/** One row of Capture permissions (B73): dot, word, whether Authorize shows, and the caption. A screen grant applies
- * to a new engine process (B125). An unknown state reads as denied for the dot and button but keeps its own word. */
-export function permissionRow(kind: 'camera' | 'screen', state: string): { tone: DotTone; word: string; authorize: boolean; caption: string | null } {
+/** One permission row on the Inputs screen (B73, DESIGN §12.1): dot, word, whether Authorize shows, and the caption.
+ * Missing, the dot is yellow only while a layer shows an input of the kind (`inUse`). The readiness items of B122 also
+ * count `--scene` entries, which the UI does not see. 
+ * A screen grant applies to a new engine process (B125). An unknown state reads as denied but keeps its own word. */
+export function permissionRow(kind: 'camera' | 'screen', state: string, inUse: boolean): { tone: DotTone; word: string; authorize: boolean; caption: string | null } {
   if (state === 'granted') return { tone: 'green', word: 'granted', authorize: false, caption: null };
   const word = state === 'notDetermined' ? 'not asked' : state;
-  return { tone: 'yellow', word, authorize: true, caption: kind === 'screen' ? 'opens System Settings › Privacy & Security › Screen & System Audio Recording: allow Fanous, then Engine › Restart Engine' : null };
+  const caption = kind === 'screen' ? 'opens System Settings › Privacy & Security › Screen & System Audio Recording: allow Fanous, then Engine › Restart Engine' : null;
+  return { tone: inUse ? 'yellow' : 'off', word, authorize: true, caption };
 }
 
 /** Dot colour and word of one readiness row (the word is the accessible name of the dot). */

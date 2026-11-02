@@ -11,6 +11,7 @@ import {
   formatTime,
   layerPreview,
   layerState,
+  layersShowing,
   mediaLine,
   outputFixtures,
   parseThumbFrame,
@@ -18,6 +19,7 @@ import {
   playedPercent,
   positionCaption,
   reservedText,
+  signalText,
   rowThumb,
   thumbnailFor,
   thumbnailIndex,
@@ -165,5 +167,21 @@ describe('layerPreview', () => {
   });
   it('falls back to the canvas without a selected layer and says so', () => {
     expect(layerPreview('layer', null)).toEqual({ target: 'canvas', label: 'Canvas (no layer selected)', shows: 'canvas' });
+  });
+});
+
+describe('live inputs on the Inputs screen (B137)', () => {
+  it('signalText: size, rate and pixel format of a capture layer; the reason when it shows none', () => {
+    const cam = layer({ folder: 0, file: 3, kind: 'live', codec: '2vuy', width: 1920, height: 1080, fps: 59.94 });
+    expect(signalText(cam)).toBe('1920×1080 · 59.94 fps · 2vuy');
+    // as the engine sends it: a Syphon layer has no size or rate
+    expect(signalText({ ...cam, width: 0, height: 0, fps: 0, codec: 'syphon' })).toBe('connected');
+    expect(signalText({ ...cam, width: 0, height: 0, fps: 0 })).toBe('waiting for the first frame');
+    expect(signalText({ ...cam, error: 'no signal' })).toBe('no signal');
+  });
+  it('layersShowing: every layer on a folder/file, none for no media', () => {
+    const map = layersShowing([layer({ index: 1, folder: 0, file: 3 }), layer({ index: 2, folder: 0, file: 3 }), layer({ index: 3, folder: 0, file: 0 })]);
+    expect(map.get('0/3')).toEqual(['Layer 1', 'Layer 2']);
+    expect(map.size).toBe(1);
   });
 });

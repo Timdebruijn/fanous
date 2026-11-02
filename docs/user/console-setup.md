@@ -99,7 +99,7 @@ Fanous writes Art-Net universes as `net.subnet.universe`, shortened to
 Some consoles count Art-Net universes from 0, others from 1: check which one
 yours does, and set the [Patch sheet](#patch-sheet) to match.
 
-## The Patch screen (key 4)
+## The Patch screen (key 5)
 
 The toolbar shows "N fixtures · N universes" and, in red, the number of
 collisions. **Patch sheet** says what to patch on the console (see

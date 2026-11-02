@@ -146,7 +146,7 @@ and the DMX inspector of the selected layer), Media (library browser, upload,
 transcode, ingest queue) and Patch / DMX (fixture groups and blocks with collisions,
 `patch.set` and `patch.setMany`, a 512-cell monitor fed by the `dmx` stream). The canvas preview
 on the Layers screen uses WebCodecs (H.264 from VideoToolbox, `sub` stream
-`preview`) and falls back to JPEG at 5 fps. Keys 1–6 switch screens.
+`preview`) and falls back to JPEG at 5 fps. Keys 1–7 switch screens.
 `cd web && npm run dev` proxies `/api`, `/ws` and `/healthz` to a running
 engine; `npm run build` writes `web/dist`. The web checks, in the order of
 CI's `web` job: `npm test && npm run typecheck && npm run check && npm run build`; `check` is
@@ -197,7 +197,7 @@ engine's grants on the shell (the LaunchAgent is registered through
 lists one entry, "Fanous", under Camera and under Screen & System Audio
 Recording. After a rebuild that entry keeps its switch on but no longer
 matches the binary: the engine reads `notDetermined` / `denied`, and macOS
-does not ask again. Reset the stale entries, then authorize on the System
+does not ask again. Reset the stale entries, then authorize on the Inputs
 screen and switch "Fanous" on:
 
 ```

@@ -1627,8 +1627,8 @@ the capture path's), the counters, the status and `share()`/`stop()` are
 the capture device's, so `layers[].capture` serves both. The subclass
 overrides `endSession()` (capture queue) to stop its stream.
 `ScreenInput.open(uuid:)` refuses without the cached grant ("screen
-permission not granted: authorize on the System screen, then Engine ›
-Restart"; nothing is asked, as macOS applies a grant to a new process
+permission not granted: authorize on the Inputs screen, then Engine ›
+Restart", the System screen until B137 step 1; nothing is asked, as macOS applies a grant to a new process
 only). It finds the display by CG UUID (`CGGetOnlineDisplayList`, any
 thread) with its mode's pixel size, fitted into canvas 1's size at open
 (aspect kept, never scaled up). On the queue `org.fanous.screen.<uuid>`
@@ -1875,9 +1875,10 @@ permissions behave differently, and the design keeps them apart:
 
 - *Camera* (`AVCaptureDevice.requestAccess(for: .video)`): asked once, when a
   layer first selects a capture file or on `capture.authorize {kind:
-  "camera"}` from the System screen, and only outside show mode. In show mode
-  a layer on a capture file with permission `notDetermined` reads "camera
-  permission not asked: authorize on the System screen" and stays black.
+  "camera"}` from the Inputs screen (the System screen until B137 step 1), and
+  only outside show mode. In show mode a layer on a capture file with
+  permission `notDetermined` reads "camera permission not asked: authorize on
+  the Inputs screen" and stays black.
   Denied → "camera permission denied: allow Fanous under Privacy &
   Security › Camera", as B37 does for the microphone. Granted stays granted.
 - *Screen* (`CGPreflightScreenCaptureAccess`, `CGRequestScreenCaptureAccess`):
@@ -1921,10 +1922,10 @@ Media screen's folder 0 list gets the groups "Cameras and capture cards
 (1–20)" and "Displays (21–28)" with the green dot and Forget of the Syphon
 group; the layer panel's folder 0 picker lists them the same way; the
 System screen shows the two permissions with an Authorize button. The console
-side needs nothing: File 1–32 in folder 0 already dials them (§6). Designed in
-§12.1 (2026-11-02, not built): Forget and the permissions move to an Inputs
-screen, which adds a number of your choice and a capture format per device;
-Media keeps folder 0 as the picker.
+side needs nothing: File 1–32 in folder 0 already dials them (§6). Since B137
+step 1 (§12.1, PR #202) Forget and the permissions are on the Inputs screen and
+Media keeps folder 0 as the picker; a number of your choice and a capture
+format per device are designed there, not built.
 
 **Windows (29–32), later.** A window is named by its app's bundle id and title
 (`capture.window {file, app, title}` from a list the engine publishes as
@@ -3701,8 +3702,8 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
 ### 11.4 Frontend (ADR-0012)
 
 Svelte 5 (runes) + Vite + TypeScript strict, Vitest for unit tests; no UI
-component library, no router library (six screens, seven with the Inputs
-screen of §12.1; hash routing in 30 lines), no runtime CDN loads. Chosen
+component library, no router library (seven screens, hash routing in 30
+lines), no runtime CDN loads. Chosen
 over Preact because fine-grained compiled reactivity updates exactly the DOM nodes that changed when 1 000+ live values
 tick at 20 Hz, with no virtual DOM diff and a smaller runtime; the UI must
 stay smooth on an iPad while the mapping editor renders an SVG overlay over a
@@ -3865,11 +3866,14 @@ going active or lost, a lagging client, no output rendering.
    "needs transcode" state and ingest progress. Drag-and-drop or "Import…"
    (native file dialog in the shell; path browser or HTTP upload in
    browsers). Ingest queue panel with per-job codec choice, target number,
-   progress, ETA, errors. Rename/renumber with conflict detection.
-   Designed in §12.1 (2026-11-02, not built): an **Inputs** screen comes
-   after Media (key `3`, the screens below move down one key) and takes over
-   the management of folder 0's live inputs.
-3. **Outputs & Mapping** — three tabs sharing a live preview that can show
+   progress, ETA, errors. Rename/renumber with conflict detection. Folder 0
+   lists the built-in content and the live inputs as a picker; the inputs are
+   managed on the Inputs screen.
+3. **Inputs** (B137, §12.1; step 1 built) — the live inputs of folder 0 by
+   kind (cameras and capture cards, displays, Syphon servers) with status,
+   the layers that show them and their signal, Forget, and the camera and
+   screen permissions; a panel with the selected input's details.
+4. **Outputs & Mapping** — three tabs sharing a live preview that can show
    the canvas, the selected output (post-warp) or the physical display
    arrangement: *Canvases* (size, layers assigned, clock master), *Outputs*
    (display assignment with identity, region, mode, intensity, blend edges
@@ -3880,7 +3884,7 @@ going active or lost, a lagging client, no output rendering.
    two-finger pan/zoom, a "send test pattern to this output" toggle that
    stays visible. Designed in §12.1 (2026-11-02, not built): a fourth tab,
    *Audio* (output device, latency offset, an output pair per layer).
-4. **Patch / DMX** — fixture list (type, universe, address, footprint,
+5. **Patch / DMX** — fixture list (type, universe, address, footprint,
    collisions in red), add/remove layers (bounded by the tier's measured
    limit, shown next to the count), per-universe source protocol and
    interface, sACN priority, hold on signal loss setting; **DMX monitor**: a 512-cell
@@ -3890,13 +3894,13 @@ going active or lost, a lagging client, no output rendering.
    Redesign designed in §6.6 (2026-10-30, not built): fixtures grouped by kind
    and patched as blocks, a Universes panel, a Who controls card and a Patch
    sheet for the console.
-5. **Show control** — timecode (source select: LTC device / MTC port, frame
+6. **Show control** — timecode (source select: LTC device / MTC port, frame
    rate, offset, lock state, big readout), cue list (add/edit/reorder cues,
    per-cue parameters + fade, TC trigger time, go/back/goto, current/next
    highlighting, follow-timecode toggle), OSC (ports, address map viewer,
    last 50 received messages), MIDI (ports; MTC only in v1). Designed in
    §12.1 (2026-11-02, not built): a level meter on the LTC channel.
-6. **System / Health** — machine capabilities and tier (chip, memory
+7. **System / Health** — machine capabilities and tier (chip, memory
    engines, GPU, memory, displays supported, measured benchmark numbers or
    "not benchmarked"), live metrics (frame time histogram per output,
    dropped frames, decode latency per layer, ring occupancy, DMX→photon
@@ -3904,20 +3908,20 @@ going active or lost, a lagging client, no output rendering.
    fix hints, network (interfaces, listener state, TLS fingerprint, Bonjour
    name, clients), logs (filterable tail, download), service (engine
    version, uptime, restart, install/remove agent — shell only), roles and
-   passwords, library root, audio device, backup (v2). Designed in §12.1
-   (2026-11-02, not built): the audio device goes to the Outputs screen's
-   Audio tab and the capture permissions to the Inputs screen.
+   passwords, library root, audio device, backup (v2). The capture
+   permissions moved to the Inputs screen (B137 step 1); designed in §12.1,
+   not built: the audio device goes to the Outputs screen's Audio tab.
 
-Keyboard: `1–6` switch screens, `Space` cue go (operator+), `Esc` closes
+Keyboard: `1–7` switch screens, `Space` cue go (operator+), `Esc` closes
 panels, `Cmd/Ctrl+Z / Shift+Z` undo/redo, `L` toggles show lock (programmer,
 with confirmation). None of them act while a modal dialog is open; `?` still
-closes the shortcut list. Designed in §12.1 (2026-11-02, not built): an
-Inputs screen on key `3`, so `1–7`.
+closes the shortcut list.
 
 ### 12.1 Inputs screen and audio outputs (design 2026-11-02, B137)
 
-**Status:** designed 2026-11-02, not built. The owner approved the four
-decisions below the same day; the build order is at the end.
+**Status:** designed 2026-11-02. The owner approved the four decisions below
+the same day; the build order is at the end. Step 1 is built (PR #202, As
+built at the end of this section); steps 2–6 are not.
 
 **Why.** The owner wants one place to select and set up inputs, and expects
 more settings to come: capture cards, the audio input that carries timecode,
@@ -4156,6 +4160,21 @@ is the owner's order of 2026-11-01):
 - MIDI and DMX inputs, which stay on Show and Patch;
 - the devices' sample rate, which is set in Audio MIDI Setup (the audio
   engine's graph converts).
+
+**As built (2026-11-02, step 1, PR #202):** `web/src/screens/Inputs.svelte`
+on key `3`; the router keeps a second hash segment as `route.item`
+(`#/inputs/21` selects display 21), and selecting replaces the hash instead of
+adding history. A successful Forget clears the selection, so a freed number
+does not select the next new input. Differences from the design above:
+- Media links to an input from the selected item's bar ("Status on Inputs"),
+  not from every row: the rows are buttons.
+- A Syphon server on a layer reads "connected": the engine reads no size or
+  rate from a server, so its layer status has none.
+- A permission's dot follows the layers only (`permissionRow(kind, state,
+  inUse)`); the readiness items of B122 also count `--scene` entries, which
+  the UI does not see.
+- `signalText` and `layersShowing` (shared with Media's tiles) are in
+  `lib/layers.ts`; the counters come from `layers[].capture`.
 
 ---
 

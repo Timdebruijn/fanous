@@ -12,6 +12,7 @@
   import { route, startRouter } from './lib/router.svelte';
   import { app, client } from './lib/state.svelte';
   import Layers from './screens/Layers.svelte';
+  import Inputs from './screens/Inputs.svelte';
   import Media from './screens/Media.svelte';
   import Outputs from './screens/Outputs.svelte';
   import Patch from './screens/Patch.svelte';
@@ -79,6 +80,8 @@
       <Layers />
     {:else if route.screen === 'media'}
       <Media />
+    {:else if route.screen === 'inputs'}
+      <Inputs />
     {:else if route.screen === 'patch'}
       <Patch />
     {:else if route.screen === 'outputs'}

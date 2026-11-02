@@ -281,6 +281,7 @@ struct ScreenInputTests {
         select(3, 21)
         #expect(eventually { status(3).error == CaptureError.screenPermission.description })
         #expect(status(3).name == "Display: Built-in Retina Display" && status(3).kind == "live" && playback(3) == nil)
-        #expect(CaptureError.screenPermission.description == "screen permission not granted: authorize on the System screen, then Engine › Restart")
+        #expect(CaptureError.screenPermission.description == "screen permission not granted: authorize on the Inputs screen, then Engine › Restart")
+        #expect(CaptureError.permissionNotAsked.description == "camera permission not asked: authorize on the Inputs screen")
     }
 }
