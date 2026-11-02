@@ -20,7 +20,6 @@ import UniformTypeIdentifiers
 
     /// 320×176 ProRes 422 HQ with the `TestTone` track, 10 fps (20 frames: HAP Q encoding is slow in a debug build).
     static let sourceFPS: Int32 = 10
-
     static func writeSource(to url: URL, seconds: Int = 2, audio: Bool = true) async throws {
         try await offPool { try writeSourceBlocking(to: url, seconds: seconds, audio: audio) }
     }
