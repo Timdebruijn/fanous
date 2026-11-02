@@ -314,6 +314,20 @@ test('status bar: the universe pills wrap on a phone instead of widening the pag
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 });
 
+test('status bar: three rows on a phone, the role on the badge row, undo and redo on the numbers row', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const banner = page.getByRole('banner');
+  await expect(banner.getByText(/^A 0\.0\.1 · silent/)).toBeVisible();  // the widest bar a fresh engine has
+  // five rows (229 px) took a third of the screen; the badge and numbers rows keep their 44 px buttons, the pills row is lower
+  expect(await banner.evaluate((el) => el.getBoundingClientRect().height)).toBeLessThanOrEqual(140);
+  const row = async (name: string) => Math.round((await banner.getByRole('button', { name }).boundingBox())!.y);
+  expect(await row('PROGRAMMER')).toBe(await row('UNLOCKED'));  // the role on the badge row
+  expect(await row('Undo')).toBeGreaterThan(await row('UNLOCKED'));  // undo on a later row, with the numbers
+  await expect(banner.getByText('web UI open')).toBeAttached();  // for screen readers; shown as its dot
+  await expect(banner.getByRole('button', { name: 'Keyboard shortcuts' })).toBeHidden();  // no keyboard on a phone
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+});
+
 test('status bar: one row on a 1470 px laptop, timecode and ingest left out while off and idle', async ({ page }) => {
   await page.setViewportSize({ width: 1470, height: 900 }); // a MacBook Air; at 1440 the bar takes two rows, as the frame time keeps room for its widest value (B134)
   const banner = page.getByRole('banner');
