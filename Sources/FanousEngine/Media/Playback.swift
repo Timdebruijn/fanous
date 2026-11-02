@@ -682,7 +682,7 @@ public final class MediaLoader: @unchecked Sendable {
             return LayerPlayback(key: key, movie: source, decoder: decoder, ring: ring)
         } catch {
             logger.error("media open failed", metadata: ["layer": "\(layer + 1)", "media": "\(key)", "error": "\(error)"])
-            status.error = "\(error)"
+            status.error = error.clientText  // no file path for the monitor role (B25)
             return nil
         }
     }

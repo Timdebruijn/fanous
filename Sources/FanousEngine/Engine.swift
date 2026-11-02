@@ -297,7 +297,7 @@ public final class Engine: @unchecked Sendable {
                     try service.compositor.reconfigure(startLayout)
                 } catch {
                     logger.error("canvases could not be made at start; canvas 1 runs alone", metadata: ["error": "\(error)"])
-                    canvasSwitch.startFailed(rendering: .init(fps: startLayout.fps, canvases: [startLayout.canvases[0]]), error: "at start: \(error)")
+                    canvasSwitch.startFailed(rendering: .init(fps: startLayout.fps, canvases: [startLayout.canvases[0]]), error: "at start: \(error.clientText)")
                 }
             }
             render = service

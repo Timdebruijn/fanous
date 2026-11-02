@@ -227,7 +227,7 @@ public final class IngestQueue: @unchecked Sendable {
             outcome = .cancelled
         } catch {
             try? FileManager.default.removeItem(at: temporary)
-            let message = Self.message(error)
+            let message = error.clientText
             outcome = .failed(message)
             logger.warning("ingest job failed", metadata: ["source": "\(job.source.path)", "error": "\(message)"])
         }
@@ -350,12 +350,6 @@ public final class IngestQueue: @unchecked Sendable {
             suffix += 1
         }
         return candidate
-    }
-
-    static func message(_ error: Error) -> String {
-        let domain = (error as NSError).domain
-        return domain == NSCocoaErrorDomain || domain == AVFoundationErrorDomain || domain == NSPOSIXErrorDomain
-            ? error.localizedDescription : "\(error)"
     }
 
     enum IngestError: Error, CustomStringConvertible {
