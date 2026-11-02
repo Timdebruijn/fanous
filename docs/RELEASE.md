@@ -71,7 +71,13 @@ With Fanous and the console software on one subnet (Little Snitch: allow
       usage strings and `NSBonjourServices` in `Info.plist`, timestamped
 - [ ] `xcrun notarytool store-credentials fanous --apple-id … --team-id … --password <app-specific>` once, then
       `NOTARY_PROFILE=fanous scripts/notarize.sh` → `dist/Fanous-<version>.dmg`, stapled, `spctl --assess` passes
+      (first run 2026-11-02 on 1.0.0-rc.1: zip and dmg `Accepted` within minutes, `source=Notarized Developer ID`;
+      the app-specific password comes from account.apple.com › Sign-In and Security › App-Specific Passwords)
 - [ ] `shasum -a 256 dist/Fanous-<version>.dmg` goes into the release notes
+- [ ] on a developer Mac that ran ad-hoc builds: the first Developer ID open re-registers the agent (one open, B50),
+      and the Screen Recording grant of the ad-hoc signature no longer matches (its switch stays on, the engine
+      reads `denied`): `tccutil reset ScreenCapture org.fanous.app`, ask again, switch the fresh row on, restart
+      the engine; the camera grant asks again on first use
 
 ## 6. Clean-account install test (owner)
 
