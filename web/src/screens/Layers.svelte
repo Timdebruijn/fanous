@@ -3,6 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script module lang="ts">
   import type { PreviewSource } from '../lib/layers';
+  import { prefs } from '../lib/state.svelte';
 
   // Canvas or This layer, remembered per browser (default Canvas)
   const PREVIEW_KEY = 'fanous.layersPreview';
@@ -28,7 +29,7 @@
   import { loadChannelMap, type ChannelMap } from '../lib/patch-screen';
   import { latestOnly } from '../lib/preview';
   import { go } from '../lib/router.svelte';
-  import { app, prefs, subscribeThumbs } from '../lib/state.svelte';
+  import { app, subscribeThumbs } from '../lib/state.svelte';
 
   // Live layer thumbnails (B29): layer number → object URL of its latest JPEG. Subscribed while this screen is shown,
   // the tab is visible and the engine renders; a layer the engine reports empty, or no stream, shows the library thumbnail.

@@ -2,6 +2,7 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script module lang="ts">
+  import { prefs } from '../lib/state.svelte';
   // handle: the selected point (JSON pointer); group: what moves with it in remote mode (lib/remote.ts)
   const ui = $state({ selected: 0, canvas: 1, tab: 'outputs' as 'canvases' | 'outputs' | 'warp', mapper: 'cornerPin' as MapperMode, slice: 0, handle: null as string | null, group: 'point' as Group, maskAdd: false, draft: null as MapPoint[] | null, tool: null as MaskTool | null, remote: storedRemote() });
 
@@ -33,7 +34,7 @@
     type MapPoint, type MapperMode, type MaskPoint, type MaskShape, type MaskTool, type OutputConfig,
   } from '../lib/outputs';
   import { mediaOptions, mediaPath, type LibrarySnapshot } from '../lib/layers';
-  import { app, can, client, cmd, prefs, programmerLock, toastUndo } from '../lib/state.svelte';
+  import { app, can, client, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
   import { LOCKED_TITLE } from '../lib/patch-screen';
   import { go } from '../lib/router.svelte';
   import { sourcePixels, sourceFromPixels } from '../lib/outputs';
