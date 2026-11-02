@@ -362,13 +362,13 @@ public final class CITPServer: @unchecked Sendable {
                 guard let self else { return }
                 if case .failed = state { connection.cancel() }
                 if case .cancelled = state {
-                    fallback?.cancel()
+                    self.fallback?.cancel()
                     server.forget(self)
                 }
             }
-            let fallback = DispatchWorkItem { [weak self] in if let self { server.assumeVersion1_0(self) } }
-            self.fallback = fallback
-            server.queue.asyncAfter(deadline: .now() + Self.fallbackDelay, execute: fallback)
+            let item = DispatchWorkItem { [weak self] in if let self { server.assumeVersion1_0(self) } }
+            fallback = item
+            server.queue.asyncAfter(deadline: .now() + Self.fallbackDelay, execute: item)
             connection.start(queue: server.queue)
             receive()
         }
