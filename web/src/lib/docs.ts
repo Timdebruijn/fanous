@@ -251,7 +251,8 @@ export interface LiveDoc {
     seen: number;
     error: string | null;
     device: string;
-    /** the LTC channel's peak over the last tenth of a second in dBFS (B137); null while LTC is not open */
+    /** the LTC channel's peak over the last tenth of a second in dBFS (B137); null while LTC is not open or no audio
+     * has arrived for half a second */
     level?: number | null;
   };
   cue: { current: number | null; currentName: string | null; next: number | null; nextName: string | null; fading: boolean; count: number };
@@ -304,6 +305,14 @@ export interface ReadinessItemDoc {
   detail: string;
   fix: string;
   acknowledged: boolean;
+}
+
+/** Puts back the top-level keys a patch removed (the undo of the first `timecode.set` removes `/timecode`, which a
+ * new project lacks): the screens read them without a guard. Returns the keys it restored. */
+export function restoreKeys(doc: Record<string, unknown>, defaults: object): string[] {
+  const missing = Object.keys(defaults).filter((key) => !(key in doc));
+  for (const key of missing) doc[key] = structuredClone((defaults as Record<string, unknown>)[key]);
+  return missing;
 }
 
 export const emptyProject: ProjectDoc = {

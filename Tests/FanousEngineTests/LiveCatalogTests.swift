@@ -254,8 +254,8 @@ extension LiveCatalogTests {
         #expect(!both.camera.blocks && both.screen.blocks)
     }
 
-    /// Readiness item `microphone` (B137): only while timecode is on LTC with the switch on; missing blocks until
-    /// acknowledged, as the camera does.
+    /// Readiness item `microphone` (B137): only while timecode is set to LTC (the switch aside: the operator may turn
+    /// it on in show mode); missing blocks until acknowledged, as the camera does.
     @Test func microphoneReadinessItem() throws {
         func item(ltc: Bool, microphone: String, acknowledged: Set<String> = []) throws -> ReadinessItem {
             var context = ReadinessContext()
@@ -266,7 +266,7 @@ extension LiveCatalogTests {
         #expect(idle.state == .ok && idle.detail == "timecode not on LTC")
         let missing = try item(ltc: true, microphone: "notDetermined")
         #expect(missing.state == .fail && missing.blocks && missing.title == "Microphone permission granted" && missing.detail == "microphone: notDetermined")
-        #expect(missing.fix == "System Settings › Privacy & Security › Microphone, then Engine › Restart")
+        #expect(missing.fix == "Inputs › Authorize microphone, or System Settings › Privacy & Security › Microphone")
         #expect(try !item(ltc: true, microphone: "denied", acknowledged: ["microphone"]).blocks)
         #expect(try item(ltc: true, microphone: "granted").state == .ok)
     }

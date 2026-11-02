@@ -48,9 +48,9 @@ signal dropped and the clock keeps running for the Freewheel time), **Lost**
 **LTC** reads any audio input on the Mac. Frame rates 24, 25, 29.97 (drop and
 non-drop) and 30 are detected by themselves. Under the readout a level meter
 shows the LTC channel's peak over the last tenth of a second in dBFS, so you
-can see whether anything arrives on the channel you chose; it reads "LTC not
-open" when the input could not open and "timecode switched off" while the
-switch is off. The Inputs screen lists every audio input with its channels:
+can see whether anything arrives on the channel you chose; it reads "no
+audio" when the input could not open or nothing has arrived for half a second,
+and "timecode switched off" while the switch is off. The Inputs screen lists every audio input with its channels:
 select one, pick a channel and press **Use for timecode** to set Source,
 Device and Channel at once (one undo step; the switch stays as it is). LTC
 needs the Microphone permission: macOS asks once when LTC opens, or press

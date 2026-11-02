@@ -87,7 +87,7 @@ public final class Engine: @unchecked Sendable {
     private var ltc: LTCInput?
     private var mtc: MTCInput?
     private var lastTimecodeSettings = ShowCommands.TimecodeSettings()
-    /// Timecode on LTC with the switch on, for readiness off the control queue (B137).
+    /// Timecode set to LTC (the switch aside), for readiness off the control queue (B137).
     private let ltcInUse = Atomic<Bool>(false)
     private var midi: MIDIInput?
     private var lastMIDISettings = MIDISettings()
@@ -303,6 +303,11 @@ public final class Engine: @unchecked Sendable {
                 }
             }
             render = service
+            // a microphone grant (Authorize, or System Settings) opens an LTC input that failed for it again (B137)
+            service.captureCatalog.onPermissionsChange = { [weak self] before, now in
+                guard before.microphone != .authorized, now.microphone == .authorized else { return }
+                self?.reopenFailedLTC()
+            }
             startSync(compositor: service.compositor)
         }
 
@@ -336,15 +341,8 @@ public final class Engine: @unchecked Sendable {
             },
             authorizeMicrophone: { [weak self] in
                 let catalog = self?.render?.captureCatalog
-                AVCaptureDevice.requestAccess(for: .audio) { granted in
-                    catalog?.refreshPermissions()
-                    // an LTC input that failed for the permission opens again, on the queue that applies the settings
-                    guard granted, let self, let store = self.store else { return }
-                    store.queue.async {
-                        guard self.ltc?.lastError != nil else { return }
-                        self.applyTimecodeSettings(self.lastTimecodeSettings)
-                    }
-                }
+                // the read that follows the answer sees the grant, and the catalog's change hook reopens LTC
+                AVCaptureDevice.requestAccess(for: .audio) { _ in catalog?.refreshPermissions() }
             },
             displayModes: { [weak self] in Dictionary((self?.displays.withLock { $0 } ?? []).map { ($0.uuid, $0.mode) }, uniquingKeysWith: { a, _ in a }) },
             showPreset: { dmx.show($0, preset: $1) },
@@ -1116,9 +1114,18 @@ public final class Engine: @unchecked Sendable {
     }
     private var tlsFingerprint = ""
 
+    /// An LTC input that failed (the permission, no device) opens again, on the queue that applies the settings.
+    private func reopenFailedLTC() {
+        store?.queue.async { [weak self] in
+            guard let self, self.ltc?.lastError != nil else { return }
+            self.applyTimecodeSettings(self.lastTimecodeSettings)
+        }
+    }
+
     private func applyTimecodeSettings(_ settings: ShowCommands.TimecodeSettings) {
         lastTimecodeSettings = settings
-        ltcInUse.store(settings.enabled != false && settings.source == .ltc, ordering: .relaxed)
+        // the switch does not count: the operator may turn it on in show mode, and LTC then asks for the microphone
+        ltcInUse.store(settings.source == .ltc, ordering: .relaxed)
         ltc?.stop()
         mtc?.stop()
         ltc = nil

@@ -109,8 +109,8 @@ struct ShowControlTests {
         #expect(clock.current(at: 22.1).state == .lost)
     }
 
-    /// Acceptance: chase accuracy ±1 frame against a generated LTC file (the decoder → clock path of `LTCInput`).
-    /// The LTC level (B137): the peak of each tenth of a second, across buffer boundaries, as dBFS.
+    /// The LTC level (B137): the peak of each tenth of a second, across buffer boundaries, as dBFS; nothing before
+    /// the first window or once the last one is older than half a second (a device that stopped delivering).
     @Test func ltcPeakWindow() {
         var window = PeakWindow(sampleRate: 1000)  // a window of 100 samples
         let quiet = [Float](repeating: 0.1, count: 60), loud = [Float](repeating: -0.5, count: 60)
@@ -120,8 +120,14 @@ struct ShowControlTests {
         #expect([Float](repeating: 0.25, count: 80).withUnsafeBufferPointer { window.feed($0) } == 0.5)  // the second window holds 20 of -0.5
         #expect([Float](repeating: 0.25, count: 100).withUnsafeBufferPointer { window.feed($0) } == 0.25)
         #expect(PeakWindow.dBFS(1) == 0 && PeakWindow.dBFS(0.5) == -6 && PeakWindow.dBFS(0) == -96 && PeakWindow.dBFS(1e-9) == -96)
+        let half = Float(0.5).bitPattern
+        #expect(PeakWindow.level(bits: .max, at: 0, now: 0, ticksPerSecond: 1000) == nil)
+        #expect(PeakWindow.level(bits: half, at: 1000, now: 1400, ticksPerSecond: 1000) == -6)
+        #expect(PeakWindow.level(bits: half, at: 1000, now: 1501, ticksPerSecond: 1000) == nil)
+        #expect(LTCInput(clock: TimecodeClock(), logger: Logger(label: "test")).level == nil)
     }
 
+    /// Acceptance: chase accuracy ±1 frame against a generated LTC file (the decoder → clock path of `LTCInput`).
     @Test func ltcFileChasesWithinOneFrame() throws {
         let sampleRate = 48_000.0
         let rate = TimecodeRate.fps25
@@ -265,6 +271,13 @@ struct ShowControlTests {
         let settings = ShowCommands.timecodeSettings(from: store.project)
         #expect(settings.source == .mtc && settings.layerOffsets["3"] == 12)
         #expect(store.execute("timecode.set", args: ["path": "/source", "value": "vhs"], role: .programmer).failureCode == "invalidArgs")
+        // the Inputs screen's Use for timecode (B137): the whole settings at path "", the switch's null kept as on
+        let whole: JSONValue = ["source": "ltc", "device": "UMC404HD", "channel": 2, "offset": 0, "freewheel": 2, "layerOffsets": ["3": 12], "enabled": .null]
+        _ = try store.execute("timecode.set", args: ["path": "", "value": whole], role: .programmer).get()
+        let ltc = ShowCommands.timecodeSettings(from: store.project)
+        #expect(ltc.source == .ltc && ltc.device == "UMC404HD" && ltc.channel == 2 && ltc.enabled == nil && ltc.layerOffsets["3"] == 12)
+        _ = try store.execute("undo", role: .programmer).get()
+        #expect(ShowCommands.timecodeSettings(from: store.project).source == .mtc)
         #expect(fired.withLock { $0 } == ["go", "goto 1.5", "ack power"])
     }
 

@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
-import type { CueDoc, PatchEntry } from './docs';
+import { emptyProject, restoreKeys, type CueDoc, type PatchEntry } from './docs';
 import { FALLBACK_FIXTURES, type ChannelMap, type ParamSpec } from './patch-screen';
 import {
   levelText,
@@ -282,11 +282,26 @@ describe('LTC input on the Inputs screen (B137 step 2)', () => {
     // a device that is not connected keeps its stored channel
     expect(ltcInput({ source: 'ltc', device: 'Gone', channel: 5 }, inputs)).toEqual({ device: 'Gone', channel: 5 });
     expect(ltcInput({ source: 'mtc', device: null, channel: 0 }, inputs)).toBeNull();
+    // while LTC is open the engine names the device it opened: a missing named device fell back to the default
+    expect(ltcInput({ source: 'ltc', device: 'Gone', channel: 3 }, inputs, 'MacBook Pro Microphone')).toEqual({ device: 'MacBook Pro Microphone', channel: 0 });
+    expect(ltcInput({ source: 'ltc', device: 'UMC404HD', channel: -1 }, inputs)).toEqual({ device: 'UMC404HD', channel: 0 });
   });
   it('levelText and meterFill: dBFS with a real minus, the fill over −60…0', () => {
     expect(levelText(-12.34)).toBe('−12.3 dBFS');
     expect(levelText(null, 'LTC not open')).toBe('LTC not open');
     expect(levelText(undefined)).toBe('no level');
     expect([meterFill(0), meterFill(-30), meterFill(-96), meterFill(null)]).toEqual([1, 0.5, 0, 0]);
+  });
+});
+
+describe('restoreKeys (B137 review)', () => {
+  it('puts back a top-level key a patch removed, as a copy, and leaves the others', () => {
+    const project: Record<string, unknown> = { ...structuredClone(emptyProject), name: 'Show' };
+    delete project.timecode;  // the undo of a new project's first timecode.set
+    expect(restoreKeys(project, emptyProject)).toEqual(['timecode']);
+    expect(project.timecode).toEqual(emptyProject.timecode);
+    expect(project.timecode).not.toBe(emptyProject.timecode);
+    expect(project.name).toBe('Show');
+    expect(restoreKeys(project, emptyProject)).toEqual([]);
   });
 });

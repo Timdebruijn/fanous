@@ -8,7 +8,7 @@
   let { level, label, none = 'no level' }: { level: number | null | undefined; label: string; none?: string } = $props();
 </script>
 
-<div class="meter" role="meter" aria-label={label} aria-valuemin={-60} aria-valuemax={0} aria-valuenow={level ?? -60} aria-valuetext={levelText(level, none)}>
+<div class="meter" role="meter" aria-label={label} aria-valuemin={-60} aria-valuemax={0} aria-valuenow={Math.min(0, Math.max(-60, level ?? -60))} aria-valuetext={levelText(level, none)}>
   <span class="bar" aria-hidden="true"><span class="fill" class:hot={level != null && level > -3} style:width="{meterFill(level) * 100}%"></span></span>
   <span class="mono caption">{levelText(level, none)}</span>
 </div>

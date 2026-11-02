@@ -88,7 +88,7 @@ shows what it found; items that are not OK also show a fix hint.
 | No decoder errors | no layer showing a media error |
 | Camera permission granted | the camera permission while a layer shows a camera (folder 0, 1–20) or a `--scene` entry has `capture:` (Permissions on the Inputs screen) |
 | Screen recording granted | the Screen permission while a layer shows a display (folder 0, 21–28) or a `--scene` entry has `screen:`; warns while one does, since macOS asks again about once a month |
-| Microphone permission granted | the Microphone permission while timecode is on LTC with the switch on (Permissions on the Inputs screen) |
+| Microphone permission granted | the Microphone permission while timecode is set to LTC, also with the switch off: the operator may turn it on during the show (Permissions on the Inputs screen) |
 | Image masks found | a still image in the library for every image mask, in the edited mappings and stored presets (warning only: a missing file, or a movie, covers nothing) |
 | Library on a local volume | library on the internal disk |
 | Spotlight indexing off for the library volume | see above |

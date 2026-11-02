@@ -115,6 +115,13 @@ struct PeakWindow {
     static func dBFS(_ peak: Float) -> Double {
         peak > 0 ? max(-96, (20 * log10(Double(peak)) * 10).rounded() / 10) : -96
     }
+
+    /// The level to show: nil before the first window, and once the last window is older than half a second (the
+    /// device went or stopped delivering: no callback clears it). `bits` and the host times as the input stores them.
+    static func level(bits: UInt32, at: UInt64, now: UInt64, ticksPerSecond: Double) -> Double? {
+        guard bits != .max, now >= at, Double(now - at) / ticksPerSecond <= 0.5 else { return nil }
+        return dBFS(Float(bitPattern: bits))
+    }
 }
 
 /// LTC from a CoreAudio input device through an `AVAudioSinkNode` (real-time thread → biphase decoder).
@@ -126,13 +133,19 @@ public final class LTCInput: @unchecked Sendable {
     nonisolated(unsafe) private var decoder: LTCDecoder?
     nonisolated(unsafe) private var sampleBase: Int64 = 0
     nonisolated(unsafe) private var peakWindow: PeakWindow?
-    /// The last tenth of a second's peak as `Float` bits; `UInt32.max` until the first window (B137).
+    /// The last tenth of a second's peak as `Float` bits, `UInt32.max` until the first window, and the host time of
+    /// the buffer that completed it (B137).
     private let peakBits = Atomic<UInt32>(.max)
-    /// The LTC channel's level over the last tenth of a second in dBFS, nil before the first window.
+    private let peakAt = Atomic<UInt64>(0)
+    /// The LTC channel's level over the last tenth of a second in dBFS; nil before the first window and when no audio
+    /// has arrived for half a second.
     public var level: Double? {
-        let bits = peakBits.load(ordering: .relaxed)
-        return bits == .max ? nil : PeakWindow.dBFS(Float(bitPattern: bits))
+        PeakWindow.level(bits: peakBits.load(ordering: .relaxed), at: peakAt.load(ordering: .relaxed), now: mach_absolute_time(), ticksPerSecond: PacedThread.ticksPerSecond)
     }
+    /// `stop()` may come while `start()` still waits for the permission answer: the flag, taken with the attach and
+    /// the engine start under one lock, keeps a stopped input from opening afterwards. The sink is kept to detach it,
+    /// which breaks the input → engine → sink → closure → input cycle.
+    private let lifecycle = Mutex<(stopped: Bool, sink: AVAudioSinkNode?)>((false, nil))
     public private(set) var deviceName = ""
     public private(set) var lastError: String?
 
@@ -163,9 +176,10 @@ public final class LTCInput: @unchecked Sendable {
             logger.warning("LTC input: \(lastError!)")
             return false
         }
-        deviceName = name ?? "default input"
+        // the device the input unit opened: a named one that is missing falls back to the default input (B137)
+        deviceName = Self.currentDevice(of: engine.inputNode.audioUnit).flatMap(Self.name(of:)) ?? name ?? "default input"
         let sampleRate = format.sampleRate
-        let channel = min(self.channel, Int(format.channelCount) - 1)
+        let channel = max(0, min(self.channel, Int(format.channelCount) - 1))
         decoder = LTCDecoder(sampleRate: sampleRate, nominalFrameRate: 25)
         peakWindow = PeakWindow(sampleRate: sampleRate)
         let clock = self.clock
@@ -174,7 +188,10 @@ public final class LTCInput: @unchecked Sendable {
             let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: audioBufferList))
             guard channel < buffers.count, let data = buffers[channel].mData else { return noErr }
             let input = UnsafeBufferPointer(start: data.assumingMemoryBound(to: Float.self), count: Int(frameCount))
-            if let peak = self.peakWindow?.feed(input) { self.peakBits.store(peak.bitPattern, ordering: .relaxed) }
+            if let peak = self.peakWindow?.feed(input) {
+                self.peakBits.store(peak.bitPattern, ordering: .relaxed)
+                self.peakAt.store(timestamp.pointee.mHostTime, ordering: .relaxed)
+            }
             let samples = Array(input)
             let bufferStart = sampleBase
             sampleBase += Int64(frameCount)
@@ -189,22 +206,43 @@ public final class LTCInput: @unchecked Sendable {
             }
             return noErr
         }
-        engine.attach(sink)
-        engine.connect(engine.inputNode, to: sink, format: format)
-        do {
-            try engine.start()
-        } catch {
+        let started: Result<Bool, any Error> = lifecycle.withLock { state in
+            guard !state.stopped else { return .success(false) }
+            engine.attach(sink)
+            engine.connect(engine.inputNode, to: sink, format: format)
+            state.sink = sink
+            return Result { try engine.start(); return true }
+        }
+        switch started {
+        case .success(false):
+            return false  // stopped while it waited for the permission
+        case .failure(let error):
             lastError = "audio engine: \(error)"
             logger.error("LTC input failed", metadata: ["error": "\(error)"])
             return false
+        case .success(true):
+            break
         }
         logger.info("LTC input running", metadata: ["device": "\(deviceName)", "rate": "\(sampleRate)", "channel": "\(channel)"])
         return true
     }
 
     public func stop() {
-        engine.stop()
+        lifecycle.withLock { state in
+            state.stopped = true
+            engine.stop()
+            if let sink = state.sink { engine.detach(sink) }
+            state.sink = nil
+        }
         clock.stop()
+    }
+
+    /// The device an input unit is set to (`kAudioOutputUnitProperty_CurrentDevice`).
+    static func currentDevice(of unit: AudioUnit?) -> AudioDeviceID? {
+        guard let unit else { return nil }
+        var id = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        return AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &id, &size) == noErr && id != 0 ? id : nil
     }
 
     /// CoreAudio's device list; a listener on it (Engine's host facts) hears devices come and go.

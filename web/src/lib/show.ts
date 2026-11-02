@@ -240,13 +240,19 @@ export function timecodeOn(tc: Pick<TimecodeSettingsDoc, 'source' | 'enabled'>):
   return tc.source !== 'off' && tc.enabled !== false;
 }
 
-/** The device and channel LTC reads (B137): a device of null is the default input, and the channel is clamped to the
- * device's channels as the engine's LTC input does. Null while timecode is not on LTC. */
-export function ltcInput(tc: Pick<TimecodeSettingsDoc, 'source' | 'device' | 'channel'>, inputs: readonly AudioInputDoc[]): { device: string; channel: number } | null {
+/** The device and channel LTC reads (B137). While LTC is open the engine names the device it opened (`opened`: a
+ * named device that is missing falls back to the default input); otherwise a device of null is the default input.
+ * The channel is clamped to the device's channels as the engine's LTC input does. Null while timecode is not on LTC. */
+export function ltcInput(
+  tc: Pick<TimecodeSettingsDoc, 'source' | 'device' | 'channel'>,
+  inputs: readonly AudioInputDoc[],
+  opened = '',
+): { device: string; channel: number } | null {
   if (tc.source !== 'ltc') return null;
-  const device = tc.device ? inputs.find((i) => i.name === tc.device) : inputs.find((i) => i.default);
-  const name = tc.device ?? device?.name ?? 'Default input';
-  return { device: name, channel: device ? Math.min(tc.channel, Math.max(0, device.channels - 1)) : tc.channel };
+  const named = opened || tc.device;
+  const device = named ? inputs.find((i) => i.name === named) : inputs.find((i) => i.default);
+  const name = named ?? device?.name ?? 'Default input';
+  return { device: name, channel: device ? Math.max(0, Math.min(tc.channel, device.channels - 1)) : tc.channel };
 }
 
 /** "−12.3 dBFS" for the LTC level; `none` when LTC is not open. */

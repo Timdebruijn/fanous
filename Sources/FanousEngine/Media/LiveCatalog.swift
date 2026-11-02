@@ -159,6 +159,10 @@ public final class LiveCatalog: @unchecked Sendable {
     public var permissions: (camera: AVAuthorizationStatus, screen: Bool, microphone: AVAuthorizationStatus) { permissionState.withLock { $0 } }
     private let permissionState = Mutex<(camera: AVAuthorizationStatus, screen: Bool, microphone: AVAuthorizationStatus)>((.notDetermined, false, .notDetermined))
 
+    /// Runs when a permission read differs from the one before (any thread): a grant in System Settings reaches the
+    /// engine this way, not only one through `capture.authorize` (B137).
+    public var onPermissionsChange: (@Sendable (_ before: (camera: AVAuthorizationStatus, screen: Bool, microphone: AVAuthorizationStatus), _ now: (camera: AVAuthorizationStatus, screen: Bool, microphone: AVAuthorizationStatus)) -> Void)?
+
     /// Reads the permissions again off the calling thread (after a `capture.authorize` ask, and every 2 s).
     public func refreshPermissions() {
         DispatchQueue.global(qos: .utility).async { [weak self] in self?.readPermissions() }
@@ -169,7 +173,11 @@ public final class LiveCatalog: @unchecked Sendable {
             camera: AVCaptureDevice.authorizationStatus(for: .video), screen: CGPreflightScreenCaptureAccess(),
             microphone: AVCaptureDevice.authorizationStatus(for: .audio)
         )
-        permissionState.withLock { $0 = read }
+        let before = permissionState.withLock { state in
+            defer { state = read }
+            return state
+        }
+        if before != read { onPermissionsChange?(before, read) }
     }
 
     static func captureDevices(_ devices: [AVCaptureDevice]) -> [Entry] {

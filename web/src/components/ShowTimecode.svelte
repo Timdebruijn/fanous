@@ -74,7 +74,7 @@
       <span class="caption">{live.seen} frames seen</span>
     </div>
   </div>
-  {#if tc.source === 'ltc'}<LevelMeter level={live.level} label="LTC level" none={on ? 'LTC not open' : 'timecode switched off'} />{/if}
+  {#if tc.source === 'ltc'}<LevelMeter level={live.level} label="LTC level" none={on ? 'no audio' : 'timecode switched off'} />{/if}
   {#if live.error}<p class="err" role="alert">{live.error}</p>{/if}
 
   <div class="fields">
@@ -91,7 +91,7 @@
       <select class="select" value={tc.device ?? ''} disabled={!editable || tc.source === 'off'} title={editTitle} onchange={(e) => { const el = e.currentTarget; void set('/device', el.value === '' ? null : el.value, () => (el.value = tc.device ?? '')); }}>
         <option value="">{noDevice}</option>
         {#if deviceMissing}<option value={tc.device}>{tc.device} (not connected)</option>{/if}
-        {#each devices as d (d)}<option value={d}>{d}</option>{/each}
+        {#each devices as d, i (i)}<option value={d}>{d}</option>{/each}
       </select>
     </label>
     <label class="field">

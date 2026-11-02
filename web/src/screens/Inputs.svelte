@@ -35,7 +35,8 @@
   const audioKey = (input: AudioInputDoc) => `audio:${encodeURIComponent(input.name)}`;
   const pickedAudio = $derived(audioInputs.find((i) => audioKey(i) === route.item));
   const tc = $derived(app.project.timecode);
-  const ltc = $derived(ltcInput(tc, audioInputs));
+  // while LTC is open the engine names the device it opened (live.timecode.device; "" otherwise)
+  const ltc = $derived(ltcInput(tc, audioInputs, app.live.timecode.device));
   const ltcOn = $derived(timecodeOn(tc) && tc.source === 'ltc');
   let channelPick = $state<Record<string, number>>({});
   /** the timecode source set to LTC on this device and channel, as one `timecode.set` (one undo step); the switch stays */
@@ -54,8 +55,9 @@
     return [
       ...((capture?.devices.length ?? 0) > 0 ? [{ kind: 'camera' as const, label: 'Camera', row: permissionRow('camera', p.camera, shownOn('capture')) }] : []),
       ...((capture?.screens?.length ?? 0) > 0 ? [{ kind: 'screen' as const, label: 'Screen recording', row: permissionRow('screen', p.screen, shownOn('screen')) }] : []),
-      // LTC is the one input that needs the microphone: shown while timecode is on LTC, yellow only with the switch on
-      ...(tc.source === 'ltc' && p.microphone ? [{ kind: 'microphone' as const, label: 'Microphone (LTC)', row: permissionRow('microphone', p.microphone, ltcOn) }] : []),
+      // LTC is the one input that needs the microphone: shown and yellow while timecode is set to LTC, the switch aside
+      // (the operator may turn it on during a show, as readiness counts it)
+      ...(tc.source === 'ltc' && p.microphone ? [{ kind: 'microphone' as const, label: 'Microphone (LTC)', row: permissionRow('microphone', p.microphone, true) }] : []),
     ];
   });
   const model = (item: FolderZeroItem) => {
@@ -156,7 +158,8 @@
       <p class="caption">No audio inputs found. An audio interface or microphone connected to this Mac appears here; LTC timecode comes in on one of its channels.</p>
     {:else}
       <ul class="panel" aria-label="Audio inputs">
-        {#each audioInputs as input (input.name)}
+        <!-- two identical USB devices share a name: keyed by place -->
+        {#each audioInputs as input, i (i)}
           <li>
             <button class="list-row" aria-pressed={pickedAudio?.name === input.name} onclick={() => go('inputs', pickedAudio?.name === input.name ? '' : audioKey(input), true)}>
               <span class="num"></span>
@@ -220,7 +223,7 @@
           <dd>
             <div>LTC on channel {ltc!.channel + 1}</div>
             <div class="status"><span class="pill pill-{badge.tone}"><span class="dot"></span>{badge.label}</span> <span class="mono">{live.value}</span> <span class="caption">{live.rate}</span></div>
-            <LevelMeter level={live.level} label="LTC level" none={ltcOn ? 'LTC not open' : 'timecode switched off'} />
+            <LevelMeter level={live.level} label="LTC level" none={ltcOn ? 'no audio' : 'timecode switched off'} />
           </dd>
         {:else}
           <dd class="muted">not used</dd>
