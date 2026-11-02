@@ -63,7 +63,8 @@ export function outputTone(state: string): DotTone {
 }
 
 /** One permission row on the Inputs screen (B73, DESIGN §12.1): dot, word, whether Authorize shows, and the caption.
- * Missing, the dot is yellow only while a layer shows an input of the kind (`inUse`, the readiness rule of B122).
+ * Missing, the dot is yellow only while a layer shows an input of the kind (`inUse`). The readiness items of B122 also
+ * count `--scene` entries, which the UI does not see. 
  * A screen grant applies to a new engine process (B125). An unknown state reads as denied but keeps its own word. */
 export function permissionRow(kind: 'camera' | 'screen', state: string, inUse: boolean): { tone: DotTone; word: string; authorize: boolean; caption: string | null } {
   if (state === 'granted') return { tone: 'green', word: 'granted', authorize: false, caption: null };

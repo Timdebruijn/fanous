@@ -174,7 +174,8 @@ describe('live inputs on the Inputs screen (B137)', () => {
   it('signalText: size, rate and pixel format of a capture layer; the reason when it shows none', () => {
     const cam = layer({ folder: 0, file: 3, kind: 'live', codec: '2vuy', width: 1920, height: 1080, fps: 59.94 });
     expect(signalText(cam)).toBe('1920×1080 · 59.94 fps · 2vuy');
-    expect(signalText({ ...cam, fps: 0, codec: 'syphon' })).toBe('1920×1080');
+    // as the engine sends it: a Syphon layer has no size or rate
+    expect(signalText({ ...cam, width: 0, height: 0, fps: 0, codec: 'syphon' })).toBe('connected');
     expect(signalText({ ...cam, width: 0, height: 0, fps: 0 })).toBe('waiting for the first frame');
     expect(signalText({ ...cam, error: 'no signal' })).toBe('no signal');
   });

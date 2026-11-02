@@ -26,8 +26,15 @@ function fromHash(): { screen: ScreenId; item: string } {
 /** `item` is the second hash segment: the input selected on the Inputs screen (`#/inputs/3`). */
 export const route = $state(fromHash());
 
-export function go(screen: ScreenId, item = ''): void {
-  location.hash = item ? `#/${screen}/${item}` : `#/${screen}`;
+/** `replace` changes the hash without a history entry (selecting an input), so Back leaves the screen. */
+export function go(screen: ScreenId, item = '', replace = false): void {
+  const hash = item ? `#/${screen}/${item}` : `#/${screen}`;
+  if (!replace) {
+    location.hash = hash;
+    return;
+  }
+  history.replaceState(null, '', hash);
+  Object.assign(route, fromHash()); // replaceState fires no hashchange
 }
 
 export function startRouter(): () => void {

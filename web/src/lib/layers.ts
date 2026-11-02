@@ -38,7 +38,7 @@ export interface FolderZeroItem {
   label: string;
 }
 
-/** Folder 0 group headings, the same on the Media screen and in the layer panel's picker. */
+/** Folder 0 group headings, the same on the Media and Inputs screens and in the layer panel's picker. */
 export const ZERO_GROUPS: { kind: FolderZeroItem['kind']; title: string }[] = [
   { kind: 'generator', title: 'Built-in content' },
   { kind: 'capture', title: 'Cameras and capture cards (1–20)' },
@@ -46,7 +46,7 @@ export const ZERO_GROUPS: { kind: FolderZeroItem['kind']; title: string }[] = [
   { kind: 'syphon', title: 'Syphon servers (150–169)' },
 ];
 
-/** Why a live input (camera, display, Syphon server) shows no picture, for the Media list; null while it runs (or for a generator). In use = connected, opened by another app (cameras only). */
+/** Why a live input (camera, display, Syphon server) shows no picture, for the Media and Inputs lists; null while it runs (or for a generator). In use = connected, opened by another app (cameras only). */
 export function zeroCaption(item: FolderZeroItem): string | null {
   if (item.inUse) return 'in use by another app';
   if (item.running) return null;
@@ -65,9 +65,11 @@ export function layersShowing(layers: readonly LayerStatus[]): Map<string, strin
 /** What a layer showing a live input receives (DESIGN §12.1): "1920×1080 · 59.94 fps · 2vuy", or why it shows none. */
 export function signalText(layer: LayerStatus): string {
   if (layer.error) return layer.error;
+  // the engine reads no size or rate from a Syphon server: its layer status has none
+  if (layer.codec === 'syphon') return 'connected';
   if (layer.width <= 0) return 'waiting for the first frame';
-  // a capture layer's codec is the pixel format (2vuy, 420v, BGRA); a Syphon layer's is just "syphon"
-  return [`${layer.width}×${layer.height}`, layer.fps > 0 ? `${fpsText(layer.fps)} fps` : '', layer.codec === 'syphon' ? '' : layer.codec].filter(Boolean).join(' · ');
+  // a capture layer's codec is the pixel format (2vuy, 420v, BGRA)
+  return [`${layer.width}×${layer.height}`, layer.fps > 0 ? `${fpsText(layer.fps)} fps` : '', layer.codec].filter(Boolean).join(' · ');
 }
 
 /** Folder 0 as a list: the generators, the cameras and capture cards, the displays (B73), then the Syphon servers of other apps by number (B61). */

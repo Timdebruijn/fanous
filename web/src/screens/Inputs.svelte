@@ -24,7 +24,7 @@
   const captureNotRunning = $derived(groups.filter((g) => g.kind === 'capture' || g.kind === 'screen').reduce((n, g) => n + g.notRunning, 0));
   const unnumbered = $derived(app.live.syphon?.unnumbered ?? []);
   const showing = $derived(layersShowing(app.live.layers));
-  /** the first layer showing a folder 0 file: its status carries the input's signal */
+  /** the first layer showing a folder 0 file: its status carries the input's signal (a Syphon layer's carries no size) */
   const openOn = (file: number) => app.live.layers.find((l) => l.folder === 0 && l.file === file);
   const picked = $derived(items.find((i) => String(i.file) === route.item));
   const editLock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
@@ -46,9 +46,11 @@
     return m && m !== item.name ? m : undefined;
   };
 
-  function forget(kind: FolderZeroItem['kind'], file?: number) {
+  async function forget(kind: FolderZeroItem['kind'], file?: number) {
     const args = file === undefined ? {} : { file };
-    return kind === 'syphon' ? cmd('syphon.forget', args) : cmd('capture.forget', args);
+    const done = await (kind === 'syphon' ? cmd('syphon.forget', args) : cmd('capture.forget', args));
+    // a freed number goes to the next new input: the selection must not move to it
+    if (done !== undefined && picked && !picked.running && !picked.inUse) go('inputs', '', true);
   }
   function statusWord(item: FolderZeroItem): string {
     return zeroCaption(item) ?? 'running';
@@ -117,7 +119,7 @@
             {@const layer = openOn(item.file)}
             {@const caption = layer && item.running ? signalText(layer) : zeroCaption(item)}
             <li>
-              <button class="list-row" class:dim={item.gone} aria-pressed={picked?.file === item.file} onclick={() => go('inputs', picked?.file === item.file ? '' : String(item.file))}>
+              <button class="list-row" class:dim={item.gone} aria-pressed={picked?.file === item.file} onclick={() => go('inputs', picked?.file === item.file ? '' : String(item.file), true)}>
                 <span class="num mono">{item.file}</span>
                 <span class="dot {item.inUse ? 'dot-yellow' : item.running ? 'dot-green' : 'dot-off'}" aria-hidden="true"></span>
                 <span class="ellipsis grow" title={item.name}>{item.name}</span>

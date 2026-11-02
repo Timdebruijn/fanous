@@ -635,8 +635,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
   step moves to other outputs or the page is hidden, so "Give the test patterns back" is gone (B102, B103, PR #159).
 - UI: an **Inputs** screen (key 3; Outputs, Patch, Show and System move to keys 4–7) lists the cameras, capture cards,
-  displays and Syphon servers of folder 0 with their status, the layers that show them and, while one does, the
-  size, rate and pixel format that arrive, with the frame counters in the selected input's panel. Forget, Forget all
+  displays and Syphon servers of folder 0 with their status, the layers that show them and, while one does, a
+  camera's or display's size, rate and pixel format, with the frame counters in the selected input's panel. Forget, Forget all
   and the camera and screen permissions moved there from the Media and System screens; Media's folder 0 stays the
   picker. A permission's dot is yellow only while a layer shows an input that lacks it. The engine's permission
   texts name the Inputs screen (B137 step 1, DESIGN §12.1, PR #202).

@@ -254,7 +254,7 @@
         <div class="panel playbar" role="group" aria-label="Selected item">
           <span class="ellipsis grow" title={pickedZeroItem.name}><strong>{pickedZeroItem.file}</strong> · {pickedZeroItem.name}</span>
           {@render playMenu(0, pickedZeroItem.file, pickedZeroItem.name)}
-          {#if pickedZeroItem.kind !== 'generator'}<a href="#/inputs/{pickedZeroItem.file}">Status and number on Inputs</a>{/if}
+          {#if pickedZeroItem.kind !== 'generator'}<a href="#/inputs/{pickedZeroItem.file}">Status on Inputs</a>{/if}
         </div>
         <PolicyHint what="content put on a layer from here" />
         {#if playNote}<p class="caption" role="status">{playNote}</p>{/if}

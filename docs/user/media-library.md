@@ -61,8 +61,8 @@ displays of this Mac and the Syphon servers of other apps, each with the file
 number a console dials (see
 [show-control.md](show-control.md#built-in-content-folder-0)).
 Select an item and use **Play on layer** to put it on a layer from here. For a
-camera, display or Syphon server, **Status and number on Inputs** opens it on
-the Inputs screen.
+camera, display or Syphon server, **Status on Inputs** opens it on the Inputs
+screen.
 
 ![Folder 0 on the Media screen: built-in content with Layer badges, then cameras and capture cards](images/media-folder0.png)
 
@@ -72,9 +72,10 @@ The Inputs screen lists the live inputs of folder 0 by kind: **Cameras and
 capture cards (1–20)**, **Displays (21–28)** and **Syphon servers
 (150–169)**. A green dot means it runs; a yellow dot with "in use by another
 app" means another app has the camera open (an iPhone in FaceTime). A
-**Layer N** badge says which layers show it, and while a layer shows it the
-row says what arrives: size, rate and pixel format ("1920×1080 · 59.94 fps ·
-2vuy"), or "no signal". Select an input for its details on the right: kind,
+**Layer N** badge says which layers show it, and while a layer shows a camera
+or display the row says what arrives: size, rate and pixel format ("1920×1080 ·
+59.94 fps · 2vuy"), or "no signal". A Syphon server on a layer reads
+"connected" (Fanous reads no size or rate from it). Select an input for its details on the right: kind,
 model, status, the layers that show it, and its signal and frame counters
 (frames, dropped, out of buffers, unusable). An input is opened only while a
 layer shows it, so one that no layer shows reads "not open: no layer shows

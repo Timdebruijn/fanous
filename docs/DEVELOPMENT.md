@@ -197,7 +197,7 @@ engine's grants on the shell (the LaunchAgent is registered through
 lists one entry, "Fanous", under Camera and under Screen & System Audio
 Recording. After a rebuild that entry keeps its switch on but no longer
 matches the binary: the engine reads `notDetermined` / `denied`, and macOS
-does not ask again. Reset the stale entries, then authorize on the System
+does not ask again. Reset the stale entries, then authorize on the Inputs
 screen and switch "Fanous" on:
 
 ```
