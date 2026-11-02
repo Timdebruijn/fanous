@@ -32,11 +32,11 @@ struct ShowControlTests {
     }
 
     /// B43: a cue's fade measured end to end in the engine, go() → CueRunner (50 Hz) → DMXStore → the published Layer 1
-    /// intensity the compositor reads. Loose bounds (B67): a loaded Mac makes it slower, not red. Stops at the snapshot;
+    /// intensity the compositor reads. Loose bounds (B67), held at load average 31; the sampler thread must keep up. Stops at the snapshot;
     /// nothing here measures light (no photon probe exists).
     @Test func cueFadeReachesTheLayerAt50Hz() async throws {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
-        store.setPolicy(.internal)  // no console: the cue source decides
+        store.setPolicy(.internal)  // the default .dmx policy never lets a cue value through, even without DMX
         let runner = CueRunner(dmx: store)
         defer { runner.stop() }
         let full = CueValue(fixture: .layer(1), parameter: .layer(.intensity), raw: 65535)
