@@ -33,7 +33,7 @@ public enum BlendMath {
         guard width > 0, height > 0 else { return out }
         func rgb(_ t: Double, _ edge: BlendEdge) -> SIMD3<Double> { SIMD3((0..<3).map { factor(t, edge: edge, channel: $0) }) }
         // factor (r, g, b) and "inside a zone" per axis
-        func axis(_ n: Int, _ low: BlendEdge, _ high: BlendEdge) -> (factor: [SIMD3<Double>], zone: [Double]) {
+        func axis(_ n: Int, _ low: BlendEdge, _ high: BlendEdge, feather: Double) -> (factor: [SIMD3<Double>], zone: [Double]) {
             var factor = [SIMD3<Double>](repeating: .one, count: n)
             var zone = [Double](repeating: 0, count: n)  // 1 inside an overlap zone, feathered beyond it
             for i in 0..<n {
@@ -42,20 +42,20 @@ public enum BlendMath {
                 var inZone = 0.0
                 if low.overlap > 0 {
                     if c < low.overlap { f *= rgb(c / low.overlap, low); inZone = 1 }
-                    else if s.liftFeather > 0 { inZone = max(inZone, 1 - min(1, (c - low.overlap) / s.liftFeather)) }
+                    else if feather > 0 { inZone = max(inZone, 1 - min(1, (c - low.overlap) / feather)) }
                 }
                 if high.overlap > 0 {
                     let d = Double(n) - c
                     if d < high.overlap { f *= rgb(d / high.overlap, high); inZone = 1 }
-                    else if s.liftFeather > 0 { inZone = max(inZone, 1 - min(1, (d - high.overlap) / s.liftFeather)) }
+                    else if feather > 0 { inZone = max(inZone, 1 - min(1, (d - high.overlap) / feather)) }
                 }
                 factor[i] = f
                 zone[i] = inZone
             }
             return (factor, zone)
         }
-        let x = axis(width, s.left, s.right)
-        let y = axis(height, s.top, s.bottom)
+        let x = axis(width, s.left, s.right, feather: s.liftFeather)
+        let y = axis(height, s.top, s.bottom, feather: s.liftFeatherY ?? s.liftFeather)
         // ponytail: coverage 4 from the output's own edges (2 per axis); three projectors on one axis still count as 2,
         // take the coverage from the wall's layout if such a rig shows up
         let grid = (s.left.overlap > 0 || s.right.overlap > 0) && (s.top.overlap > 0 || s.bottom.overlap > 0)

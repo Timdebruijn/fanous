@@ -373,8 +373,8 @@ MSEX versions 1.0 to 1.2 are negotiated; the highest common one is used.
   No real console has been tried (B40).
 - Timecode chase is tested with generated LTC and simulated MTC, not with real
   hardware, and not at 29.97 drop frame or over long runs (B44). The
-  microphone prompt has not been tested on a clean install (B37). Cue fades
-  have not been measured from cue to picture (B43).
+  microphone prompt was checked on the notarized build, not on a clean account
+  (B50). Cue fades have not been measured from cue to picture (B43).
 
 ## Built-in content (folder 0)
 

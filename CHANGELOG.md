@@ -620,6 +620,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Tests: a cue fade is measured end to end in the engine, go → `CueRunner` → `DMXStore` → the published Layer 1
   intensity: a 1.0 s fade shows its first step about 1 ms after go and is full after about 1003 ms, in 51 steps 20 ms apart,
   also in a parallel run and under load; nothing past the snapshot (no photon probe) is measured (B43, PR #195).
+- Fixed: the browser preview of an output whose aspect differs from the preview's drew the black-lift feather on the y axis
+  with the x axis's scale; each axis now has its own (B56, PR #191).
+- Changed: a layer showing a static generator (grid, colour bars, …) or the clock no longer makes the compositor redraw the
+  canvas every tick; between changes the canvas is reused like a still, the clock redraws once a second (B56, PR #192).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
