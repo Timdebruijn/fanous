@@ -617,6 +617,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   ingest error texts, now use the error's `localizedDescription`, while the engine's own error texts are unchanged (B25, PR #186).
 - CI: the seam-check lease e2e waits 6 s (three renewals) instead of 3 s for a renewal to be sent; at 3 s none came once
   in 88 CI jobs (PR #190).
+- Fixed: a CITP console that sends no `CInf` (MSEX 1.0/1.1) got neither `SInf` nor layer status; a session still without
+  a version 2 s after connecting is now taken for MSEX 1.0, gets an unsolicited 1.0 `SInf` and `LSta` at 4 Hz, and a later
+  `CInf` still negotiates the version (B78, PR #NNN).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its

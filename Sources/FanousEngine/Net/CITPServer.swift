@@ -9,7 +9,7 @@ import Network
 import Synchronization
 
 /// CITP/MSEX media-server side (DESIGN.md §16.1): PLoc every 5 s on both multicast groups, one TCP listener
-/// (ephemeral port, advertised in PLoc), per connection the MSEX version negotiated from CInf, SInf, layer
+/// (ephemeral port, advertised in PLoc), per connection the MSEX version negotiated from CInf (1.0 when none comes, B78), SInf, layer
 /// status at 4 Hz, element libraries (= numbered folders), media elements (= numbered files), JPEG thumbnails
 /// from the library cache, video sources (the canvas and each layer) and JPEG streaming frames of a source from the
 /// preview path (canvas) or the live thumbnails (layers, B29). Packets come from FanousCore.
@@ -255,6 +255,24 @@ public final class CITPServer: @unchecked Sendable {
 
     // MARK: Requests
 
+    private func serverInformation() -> ServerInformation {
+        ServerInformation(
+            uuid: uuid, productName: Self.productName, productVersionMajor: Self.productVersion.0, productVersionMinor: Self.productVersion.1,
+            productVersionBugfix: Self.productVersion.2,
+            supportedVersions: [.v1_0, .v1_1, .v1_2], supportedLibraryTypes: 1 << 0, thumbnailFormats: ["JPEG", "RGB8"], streamFormats: ["JPEG"],
+            layerDMXSources: providers.layers().map { "Layer \($0.index)" })
+    }
+
+    /// An MSEX 1.0/1.1 console sends no CInf (B78): a session still without a version `Session.fallbackDelay` after
+    /// connecting gets 1.0, an unsolicited SInf and layer status. A later CInf sets the version as usual.
+    fileprivate func assumeVersion1_0(_ session: Session) {
+        guard session.version == nil, connections[ObjectIdentifier(session)] != nil else { return }
+        session.version = .v1_0
+        updateTimers()
+        session.send(.serverInformation(serverInformation()))
+        logger.info("CITP client without CInf", metadata: ["peer": "\(session.connection.endpoint)", "msex": "1.0"])
+    }
+
     fileprivate func handle(_ packet: CITPClientMessage, requestIndex: UInt16, from session: Session) {
         switch packet {
         case .clientInformation(let info):
@@ -262,13 +280,7 @@ public final class CITPServer: @unchecked Sendable {
             session.version = version
             updateTimers()
             let library = providers.library()
-            session.send(
-                .serverInformation(
-                    ServerInformation(
-                        uuid: uuid, productName: Self.productName, productVersionMajor: Self.productVersion.0, productVersionMinor: Self.productVersion.1,
-                        productVersionBugfix: Self.productVersion.2,
-                        supportedVersions: [.v1_0, .v1_1, .v1_2], supportedLibraryTypes: 1 << 0, thumbnailFormats: ["JPEG", "RGB8"], streamFormats: ["JPEG"],
-                        layerDMXSources: providers.layers().map { "Layer \($0.index)" })), requestIndex: requestIndex)
+            session.send(.serverInformation(serverInformation()), requestIndex: requestIndex)
             logger.info("CITP client", metadata: ["peer": "\(session.connection.endpoint)", "msex": "\(version.major).\(version.minor)", "folders": "\(library.folders.count)"])
         case .getElementLibraryInformation(let request):
             let library = providers.library()
@@ -335,6 +347,9 @@ public final class CITPServer: @unchecked Sendable {
         var version: MSEXVersion?
         var streams: [Stream] = []
         private var buffer: [UInt8] = []
+        /// How long a console has to send CInf before it is taken for MSEX 1.0 (B78).
+        static let fallbackDelay = 2.0
+        private var fallback: DispatchWorkItem?
 
         init(connection: NWConnection, server: CITPServer) {
             self.connection = connection
@@ -346,8 +361,14 @@ public final class CITPServer: @unchecked Sendable {
             connection.stateUpdateHandler = { [weak self] state in
                 guard let self else { return }
                 if case .failed = state { connection.cancel() }
-                if case .cancelled = state { server.forget(self) }
+                if case .cancelled = state {
+                    fallback?.cancel()
+                    server.forget(self)
+                }
             }
+            let fallback = DispatchWorkItem { [weak self] in if let self { server.assumeVersion1_0(self) } }
+            self.fallback = fallback
+            server.queue.asyncAfter(deadline: .now() + Self.fallbackDelay, execute: fallback)
             connection.start(queue: server.queue)
             receive()
         }
