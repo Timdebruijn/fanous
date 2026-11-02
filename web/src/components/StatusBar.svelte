@@ -170,23 +170,23 @@
   .role-btn { border: 0; cursor: pointer; min-height: var(--touch); }
   .plain { color: inherit; text-decoration: none; }
   /* a phone: five rows of 44 px took a third of the screen. Value and caption share a line; the frame time, its gpu/cpu
-     detail, the auto-version item, the keyboard-shortcuts button, the app name and the outputs item while they render go
-     (System, the badges, the rail and a red item carry the same); the badges shrink (their names stay for the e2e and
-     screen readers), the dropped caption and the web-UI note shorten; the role joins the badge row, undo and redo the
-     numbers row, the pills take the third: three rows at 375 px */
+     detail, the auto-version item (System carries both), the keyboard-shortcuts button (no keyboard; the ? key still
+     opens the list with one), the app name and the outputs item while they render go; the badges shrink (their names
+     stay for the e2e and screen readers), the dropped caption and the web-UI note shorten on screen only; the role
+     joins the badge row, undo and redo the numbers row, the pills take the third: three rows with a fresh engine at 375 px */
   @media (max-width: 599px) {
     .status { padding: 4px; }
-    .item { padding: 0 4px; gap: 4px; }
+    .item { padding-inline: 4px; gap: 4px; }
     .item:not(.right):not(.brand) { min-height: 32px; }
     .item.col { flex-direction: row; align-items: baseline; gap: 4px; }
     .metrics .value { min-width: 0; }
-    .metrics .caption, .ms, .version, .long, .help, .brand .name, .outputs:not(.off) { display: none; }
+    .metrics .caption, .ms, .version, .help, .brand .name, .outputs:not(.off) { display: none; }
+    /* the long forms stay for screen readers ("web UI open", "dropped · 1 s"), off screen */
+    .long { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .role-btn { padding: 0 8px; font-size: 11px; }
-    .right .btn-icon { width: 36px; }
-    .brand { gap: 6px; }
+    .brand { gap: 6px; }  /* order 0, the default: first */
     .item.dmx { order: 4; }  /* the pills last: fps, dropped and clients share a row, the pills take their own */
     .tag { font-size: 11px; padding: 0 8px; letter-spacing: 0; }
-    .brand { order: 0; }
     .spacer { order: 1; }
     /* the button group dissolves into the bar: the role joins the badge row, undo and redo the numbers row */
     .item.right { display: contents; }

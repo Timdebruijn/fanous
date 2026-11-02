@@ -318,11 +318,12 @@ test('status bar: three rows on a phone, the role on the badge row, undo and red
   await page.setViewportSize({ width: 375, height: 812 });
   const banner = page.getByRole('banner');
   await expect(banner.getByText(/^A 0\.0\.1 · silent/)).toBeVisible();  // the widest bar a fresh engine has
-  // five rows (229 px) took a third of the screen; the badge row keeps its 44 px buttons, the other two are lower
+  // five rows (229 px) took a third of the screen; the badge and numbers rows keep their 44 px buttons, the pills row is lower
   expect(await banner.evaluate((el) => el.getBoundingClientRect().height)).toBeLessThanOrEqual(140);
-  await expect(banner.getByRole('button', { name: 'UNLOCKED' })).toBeVisible();
-  await expect(banner.getByRole('button', { name: 'PROGRAMMER' })).toBeVisible();
-  await expect(banner.getByRole('button', { name: 'Undo' })).toBeVisible();
+  const row = async (name: string) => Math.round((await banner.getByRole('button', { name }).boundingBox())!.y);
+  expect(await row('PROGRAMMER')).toBe(await row('UNLOCKED'));  // the role on the badge row
+  expect(await row('Undo')).toBeGreaterThan(await row('UNLOCKED'));  // undo on a later row, with the numbers
+  await expect(banner.getByText('web UI open')).toBeAttached();  // for screen readers; shown as its dot
   await expect(banner.getByRole('button', { name: 'Keyboard shortcuts' })).toBeHidden();  // no keyboard on a phone
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 });
