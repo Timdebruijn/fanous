@@ -657,6 +657,16 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   rescan the files of one of them were invalid ("duplicate folder number 3"); an upload now looks on disk for the
   folder with that number first, and creating a folder (`POST /api/library/folder`) with a number an upload already
   used answers 409 instead of making a second one (PR #144).
+- UI: the Inputs screen lists the audio inputs with their channels and the default one. **Use for timecode** sets
+  LTC on a device and channel in one undo step, and the selected input shows the timecode state and a level meter of the
+  LTC channel, as Show's Timecode panel now does (`live.timecode.level`: the peak of the last tenth of a second in dBFS).
+  The microphone permission LTC needs has a row with Authorize (`capture.authorize {kind: "microphone"}`), and a
+  readiness item **Microphone permission granted** blocks show mode while timecode is set to LTC without it (also with the
+  switch off). A grant in System Settings now reopens an LTC input that failed for it. `live.audio.inputs` replaces
+  `live.osc.audioInputs` (B137 step 2, DESIGN §12.1, PR #207).
+- Fixed: an LTC input stopped while macOS still asked for the microphone opened anyway once answered and drove the
+  timecode clock with timecode off; a negative LTC channel crashed the audio thread; undoing a new project's first
+  timecode change blanked the Show and Inputs screens (review of PR #207).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
