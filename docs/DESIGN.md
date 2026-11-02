@@ -3922,8 +3922,8 @@ closes the shortcut list.
 ### 12.1 Inputs screen and audio outputs (design 2026-11-02, B137)
 
 **Status:** designed 2026-11-02. The owner approved the four decisions below
-the same day; the build order is at the end. Steps 1 and 2 are built (PR #202
-and PR #207, As built at the end of this section); steps 3–6 are not.
+the same day; the build order is at the end. Steps 1–3 are built (PR #202,
+PR #207 and PR #TBD, As built at the end of this section); steps 4–6 are not.
 
 **Why.** The owner wants one place to select and set up inputs, and expects
 more settings to come: capture cards, the audio input that carries timecode,
@@ -4227,6 +4227,25 @@ does not select the next new input. Differences from the design above:
   channels; rows are keyed by place, as two identical USB devices share a name.
   The Microphone (LTC) permission row shows, yellow when missing, while the
   source is LTC.
+
+**As built (2026-11-02, step 3, PR #TBD):**
+- *Adoption:* `LiveCatalog.adopt` takes the value's numbers for the running
+  entries only when it names each of them exactly once and on numbers of their
+  own; any running source missing or named twice keeps today's rule for all of
+  them. So a forget (the value lacks nothing running), an older version
+  without a running source, and two canvases with one name behave as before,
+  while a renumber, its undo and its redo move running inputs. A loaded version
+  that names every running source once does move them to its numbers.
+- *Commands:* `capture.renumber` (1–20 and 21–28, the range picks the kind) and
+  `syphon.renumber {file, to}` edit `/capture`, `/screens` or `/syphon` as a
+  project command; `to` equal to `file` changes nothing. The replay check is
+  Forget's `checkLiveReplay` behind a show-mode refusal, as `project.revert`
+  has. A Syphon entry sharing its identity with another numbered one is refused
+  on either side of a move or swap.
+- *UI:* the panel's Number field with Apply; `renumberEffect` names the effect
+  ("moves to 5, a free number", "swaps with 2 · Cam B") and keeps Apply off
+  for a number outside the range or the input's own. The selection follows the
+  input to its new number.
 
 ---
 

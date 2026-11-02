@@ -46,6 +46,19 @@ export const ZERO_GROUPS: { kind: FolderZeroItem['kind']; title: string }[] = [
   { kind: 'syphon', title: 'Syphon servers (150–169)' },
 ];
 
+/** The numbers a live input of each kind can take (DESIGN §8.2): a renumber stays within its kind's range. */
+export const ZERO_RANGES = { capture: [1, 20], screen: [21, 28], syphon: [150, 169] } as const;
+
+/** What giving `item` the number `to` does (B137 step 3): null when it is not a number of its range or is its own,
+ * else a move to a free number or a swap with the input on it. */
+export function renumberEffect(items: readonly FolderZeroItem[], item: FolderZeroItem, to: number): { swap: FolderZeroItem | null; text: string } | null {
+  if (item.kind === 'generator') return null;
+  const [low, high] = ZERO_RANGES[item.kind];
+  if (!Number.isInteger(to) || to < low || to > high || to === item.file) return null;
+  const swap = items.find((i) => i.kind === item.kind && i.file === to) ?? null;
+  return { swap, text: swap ? `swaps with ${swap.file} · ${swap.name}` : `moves to ${to}, a free number` };
+}
+
 /** Why a live input (camera, display, Syphon server) shows no picture, for the Media and Inputs lists; null while it runs (or for a generator). In use = connected, opened by another app (cameras only). */
 export function zeroCaption(item: FolderZeroItem): string | null {
   if (item.inUse) return 'in use by another app';

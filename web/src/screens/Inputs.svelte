@@ -6,7 +6,7 @@
   // Media's folder 0 stays the picker; the timecode settings stay on Show, "Use for timecode" is a second way to them.
   import LevelMeter from '../components/LevelMeter.svelte';
   import type { AudioInputDoc } from '../lib/docs';
-  import { ZERO_GROUPS, folderZeroItems, layersShowing, signalText, zeroCaption, type FolderZeroItem } from '../lib/layers';
+  import { ZERO_GROUPS, ZERO_RANGES, folderZeroItems, layersShowing, renumberEffect, signalText, zeroCaption, type FolderZeroItem } from '../lib/layers';
   import { go, route } from '../lib/router.svelte';
   import { lockTitle, ltcInput, timecodeBadge, timecodeOn } from '../lib/show';
   import { app, can, cmd } from '../lib/state.svelte';
@@ -70,6 +70,16 @@
     const done = await (kind === 'syphon' ? cmd('syphon.forget', args) : cmd('capture.forget', args));
     // a freed number goes to the next new input: the selection must not move to it
     if (done !== undefined && picked && !picked.running && !picked.inUse) go('inputs', '', true);
+  }
+  /** the Number field's draft per input, cleared when the input moves */
+  let numberDraft = $state<Record<string, number>>({});
+  const renumberLock = $derived(editLock ?? (app.live.show.mode ? 'Leave show mode first' : undefined));
+  /** a free number moves the input, a taken one swaps the two (B137 step 3); the selection follows it */
+  async function renumber(item: FolderZeroItem, to: number) {
+    const done = await cmd(item.kind === 'syphon' ? 'syphon.renumber' : 'capture.renumber', { file: item.file, to });
+    if (done === undefined) return;
+    delete numberDraft[`${item.kind}:${item.file}`];
+    go('inputs', String(to), true);
   }
   function statusWord(item: FolderZeroItem): string {
     return zeroCaption(item) ?? 'running';
@@ -178,9 +188,22 @@
       {@const layer = openOn(picked.file)}
       {@const on = showing.get(`0/${picked.file}`) ?? []}
       <header class="phead"><h2 class="ellipsis" title={picked.name}>{picked.file} · {picked.name}</h2></header>
+      {@const key = `${picked.kind}:${picked.file}`}
+      {@const draft = numberDraft[key] ?? picked.file}
+      {@const effect = renumberEffect(items, picked, draft)}
+      {@const range = picked.kind === 'generator' ? [0, 0] : ZERO_RANGES[picked.kind]}
       <dl class="kv">
         <dt>Kind</dt>
         <dd>{KIND[picked.kind]}</dd>
+        <dt><label for="input-number">Number</label></dt>
+        <dd>
+          <form class="number" onsubmit={(e) => { e.preventDefault(); if (effect) void renumber(picked, draft); }}>
+            <input id="input-number" class="input mono" type="number" min={range[0]} max={range[1]} step="1" value={draft} disabled={renumberLock !== undefined} title={renumberLock}
+              oninput={(e) => (numberDraft[key] = Number(e.currentTarget.value))} />
+            <button type="submit" class="btn" disabled={renumberLock !== undefined || !effect} title={renumberLock ?? 'Layers and consoles select by number: after this, the number shows this input (undo takes it back)'}>Apply</button>
+          </form>
+          <div class="caption" role="status">{effect ? effect.text : `${range[0]}–${range[1]}`}</div>
+        </dd>
         {#if model(picked)}
           <dt>Model</dt>
           <dd>{model(picked)}</dd>
@@ -261,6 +284,8 @@
   .status { display: flex; align-items: center; gap: 6px; }
   .actions { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding: 0 16px 16px; }
   .actions .select { min-width: 80px; }
+  .number { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .number .input { width: 90px; }
   @media (max-width: 900px) {
     .cols { flex-direction: column; align-items: stretch; }
     .detail { flex-basis: auto; position: static; }

@@ -90,6 +90,16 @@ running** above the Syphon list, or **Forget all not running (cameras and
 displays)** above the cameras (it frees both), does them all at once. Its
 number is then free for the next new one; **Undo** brings it back.
 
+To give an input another number, type it under **Number** in the panel and
+press **Apply**: a free number moves the input there, a taken one swaps the
+two. Layers and consoles select by number, so a layer or cue on that number
+shows the other input from then on: put the stage-left camera on 1 and a cue
+on 1 means that camera, whatever order the cameras were plugged in. A camera
+or capture card stays within 1–20, a display within 21–28, a Syphon server
+within 150–169. **Undo** takes it back. Not in show mode and not while the
+show is locked; two Syphon servers with the same app and name (two Fanous
+canvases) cannot be renumbered until one of them is forgotten.
+
 **Permissions** at the top of the screen list the camera and screen recording
 permissions while this Mac has a camera or a display to number. A dot is
 yellow while a layer shows an input that lacks its permission, grey while none

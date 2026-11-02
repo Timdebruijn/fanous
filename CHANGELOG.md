@@ -667,6 +667,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: an LTC input stopped while macOS still asked for the microphone opened anyway once answered and drove the
   timecode clock with timecode off; a negative LTC channel crashed the audio thread; undoing a new project's first
   timecode change blanked the Show and Inputs screens (review of PR #207).
+- UI: an input's **Number** on the Inputs screen: a free number moves a camera, display or Syphon server there, a taken
+  one swaps the two, within its kind's range (`capture.renumber`, `syphon.renumber`; programmer, undoable, refused in
+  show mode, its undo and redo too). The catalog now moves running inputs when the project names each of them once on
+  numbers of their own, so a swap of two running cameras and its undo hold (B137 step 3, DESIGN §12.1, PR #TBD).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

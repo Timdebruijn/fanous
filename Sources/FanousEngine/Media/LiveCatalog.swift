@@ -229,12 +229,18 @@ public final class LiveCatalog: @unchecked Sendable {
     }
 
     /// An entry not running that `numbers` lists is kept or added (gone until it is seen); one it does not list is
-    /// forgotten. A running entry always keeps its number: a project entry on its number is dropped, and so is a new
-    /// entry with a running source's identity on another number (undo, a loaded version), or that source would move to
-    /// the lower of the two at the next restart. The engine then writes the catalog back into the project.
+    /// forgotten. Running entries move only when `numbers` names each of them exactly once, on numbers of their own (a
+    /// renumber, its undo or redo, B137): they then take those numbers. Otherwise (a source missing, or named twice: an
+    /// older loaded version, two canvases with one name) a running entry keeps its number: a project entry on its
+    /// number is dropped, and so is a new entry with a running source's identity on another number, or that source
+    /// would move to the lower of the two at the next restart. The engine then writes the catalog back into the project.
     static func adopt(_ entries: inout [Entry], numbers: [Entry]) -> Bool {
         let before = entries
-        let running = entries.filter(\.running)
+        var running = entries.filter(\.running)
+        let named = running.map { entry in numbers.filter { $0.kind.files.contains($0.file) && $0.same(entry) } }
+        if named.allSatisfy({ $0.count == 1 }), Set(named.map { $0[0].file }).count == running.count {
+            for i in running.indices { running[i].file = named[i][0].file }
+        }
         var next = running
         for entry in numbers where entry.kind.files.contains(entry.file) && !next.contains(where: { $0.file == entry.file }) {
             if let kept = entries.first(where: { $0.file == entry.file && !$0.running && $0.same(entry) }) {

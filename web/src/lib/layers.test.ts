@@ -12,6 +12,7 @@ import {
   layerPreview,
   layerState,
   layersShowing,
+  renumberEffect,
   mediaLine,
   outputFixtures,
   parseThumbFrame,
@@ -183,5 +184,23 @@ describe('live inputs on the Inputs screen (B137)', () => {
     const map = layersShowing([layer({ index: 1, folder: 0, file: 3 }), layer({ index: 2, folder: 0, file: 3 }), layer({ index: 3, folder: 0, file: 0 })]);
     expect(map.get('0/3')).toEqual(['Layer 1', 'Layer 2']);
     expect(map.size).toBe(1);
+  });
+});
+
+describe('renumberEffect (B137 step 3)', () => {
+  const item = (file: number, name: string, kind: 'capture' | 'screen' | 'syphon' = 'capture') => ({ file, name, kind, running: true, gone: false, inUse: false, label: '' });
+  const items = [item(1, 'Cam A'), item(2, 'Cam B'), item(21, 'Built-in', 'screen'), item(150, 'Syphon: App', 'syphon')];
+  it('a free number moves, a taken one swaps; within the kind range only', () => {
+    expect(renumberEffect(items, items[0], 5)).toEqual({ swap: null, text: 'moves to 5, a free number' });
+    expect(renumberEffect(items, items[0], 2)).toEqual({ swap: items[1], text: 'swaps with 2 · Cam B' });
+    expect(renumberEffect(items, items[2], 22)?.text).toBe('moves to 22, a free number');
+    expect(renumberEffect(items, items[3], 169)?.swap).toBeNull();
+  });
+  it('null for its own number, another range, or no number', () => {
+    expect(renumberEffect(items, items[0], 1)).toBeNull();
+    expect(renumberEffect(items, items[0], 21)).toBeNull();
+    expect(renumberEffect(items, items[2], 3)).toBeNull();
+    expect(renumberEffect(items, items[0], 0)).toBeNull();
+    expect(renumberEffect(items, items[0], 2.5)).toBeNull();
   });
 });
