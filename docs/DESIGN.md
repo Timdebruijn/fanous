@@ -3921,7 +3921,7 @@ closes the shortcut list.
 
 **Status:** designed 2026-11-02. The owner approved the four decisions below
 the same day; the build order is at the end. Steps 1 and 2 are built (PR #202
-and PR #TBD, As built at the end of this section); steps 3–6 are not.
+and PR #207, As built at the end of this section); steps 3–6 are not.
 
 **Why.** The owner wants one place to select and set up inputs, and expects
 more settings to come: capture cards, the audio input that carries timecode,
@@ -4176,7 +4176,7 @@ does not select the next new input. Differences from the design above:
 - `signalText` and `layersShowing` (shared with Media's tiles) are in
   `lib/layers.ts`; the counters come from `layers[].capture`.
 
-**As built (2026-11-02, step 2, PR #TBD):**
+**As built (2026-11-02, step 2, PR #207):**
 - *Devices:* `LTCInput.inputDevices()` returns `{name, channels, isDefault}`
   (input channels summed over the device's input streams; the default from
   `kAudioHardwarePropertyDefaultInputDevice`). The host facts listen to the

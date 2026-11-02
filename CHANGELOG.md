@@ -652,7 +652,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   LTC channel, as Show's Timecode panel now does (`live.timecode.level`: the peak of the last tenth of a second in dBFS).
   The microphone permission LTC needs has a row with Authorize (`capture.authorize {kind: "microphone"}`), and a
   readiness item **Microphone permission granted** blocks show mode while timecode is on LTC without it.
-  `live.audio.inputs` replaces `live.osc.audioInputs` (B137 step 2, DESIGN §12.1, PR #TBD).
+  `live.audio.inputs` replaces `live.osc.audioInputs` (B137 step 2, DESIGN §12.1, PR #207).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
