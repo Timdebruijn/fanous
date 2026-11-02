@@ -2,10 +2,13 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
-  // The live inputs of folder 0 and the permissions they need (DESIGN §12.1, B137 step 1). Media's folder 0 stays the picker.
+  // The live inputs of folder 0, the audio inputs and the permissions they need (DESIGN §12.1, B137 steps 1 and 2).
+  // Media's folder 0 stays the picker; the timecode settings stay on Show, "Use for timecode" is a second way to them.
+  import LevelMeter from '../components/LevelMeter.svelte';
+  import type { AudioInputDoc } from '../lib/docs';
   import { ZERO_GROUPS, folderZeroItems, layersShowing, signalText, zeroCaption, type FolderZeroItem } from '../lib/layers';
   import { go, route } from '../lib/router.svelte';
-  import { lockTitle } from '../lib/show';
+  import { lockTitle, ltcInput, timecodeBadge, timecodeOn } from '../lib/show';
   import { app, can, cmd } from '../lib/state.svelte';
   import { permissionRow } from '../lib/system';
 
@@ -27,6 +30,18 @@
   /** the first layer showing a folder 0 file: its status carries the input's signal (a Syphon layer's carries no size) */
   const openOn = (file: number) => app.live.layers.find((l) => l.folder === 0 && l.file === file);
   const picked = $derived(items.find((i) => String(i.file) === route.item));
+  const audioInputs = $derived(app.live.audio?.inputs ?? []);
+  /** an audio input has no folder 0 number: it is selected by name (`#/inputs/audio:<name>`) */
+  const audioKey = (input: AudioInputDoc) => `audio:${encodeURIComponent(input.name)}`;
+  const pickedAudio = $derived(audioInputs.find((i) => audioKey(i) === route.item));
+  const tc = $derived(app.project.timecode);
+  const ltc = $derived(ltcInput(tc, audioInputs));
+  const ltcOn = $derived(timecodeOn(tc) && tc.source === 'ltc');
+  let channelPick = $state<Record<string, number>>({});
+  /** the timecode source set to LTC on this device and channel, as one `timecode.set` (one undo step); the switch stays */
+  function useForTimecode(input: AudioInputDoc, channel: number) {
+    void cmd('timecode.set', { path: '', value: { ...tc, source: 'ltc', device: input.name, channel } });
+  }
   const editLock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
   const authorizeLock = $derived(editLock ?? (app.live.show.mode ? 'Leave show mode first' : undefined));
 
@@ -39,6 +54,8 @@
     return [
       ...((capture?.devices.length ?? 0) > 0 ? [{ kind: 'camera' as const, label: 'Camera', row: permissionRow('camera', p.camera, shownOn('capture')) }] : []),
       ...((capture?.screens?.length ?? 0) > 0 ? [{ kind: 'screen' as const, label: 'Screen recording', row: permissionRow('screen', p.screen, shownOn('screen')) }] : []),
+      // LTC is the one input that needs the microphone: shown while timecode is on LTC, yellow only with the switch on
+      ...(tc.source === 'ltc' && p.microphone ? [{ kind: 'microphone' as const, label: 'Microphone (LTC)', row: permissionRow('microphone', p.microphone, ltcOn) }] : []),
     ];
   });
   const model = (item: FolderZeroItem) => {
@@ -83,6 +100,9 @@
     </ul>
     {#if capture?.permissions?.camera === 'denied'}
       <p class="caption empty">Camera denied: allow Fanous under System Settings › Privacy & Security › Camera.</p>
+    {/if}
+    {#if tc.source === 'ltc' && capture?.permissions?.microphone === 'denied'}
+      <p class="caption empty">Microphone denied: allow Fanous under System Settings › Privacy & Security › Microphone.</p>
     {/if}
     {#if (capture?.screens?.length ?? 0) > 0}
       <p class="caption empty">Screen recording: macOS asks again about once a month; before a show, check the readiness item Screen recording granted on the System screen.</p>
@@ -131,6 +151,23 @@
         </ul>
       {/if}
     {/each}
+    <div class="head"><h2>Audio inputs</h2></div>
+    {#if audioInputs.length === 0}
+      <p class="caption">No audio inputs found. An audio interface or microphone connected to this Mac appears here; LTC timecode comes in on one of its channels.</p>
+    {:else}
+      <ul class="panel" aria-label="Audio inputs">
+        {#each audioInputs as input (input.name)}
+          <li>
+            <button class="list-row" aria-pressed={pickedAudio?.name === input.name} onclick={() => go('inputs', pickedAudio?.name === input.name ? '' : audioKey(input), true)}>
+              <span class="num"></span>
+              <span class="ellipsis grow" title={input.name}>{input.name}</span>
+              <span class="caption">{input.channels} {input.channels === 1 ? 'channel' : 'channels'}{input.default ? ' · default' : ''}</span>
+              {#if ltc?.device === input.name}<span class="badge badge-accent">Timecode (LTC, channel {ltc.channel + 1})</span>{/if}
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
   </section>
 
   <aside class="panel detail" aria-label="Selected input">
@@ -167,6 +204,38 @@
             onclick={() => void forget(picked.kind, picked.file)}>Forget</button>
         </div>
       {/if}
+    {:else if pickedAudio}
+      {@const used = ltc?.device === pickedAudio.name}
+      {@const live = app.live.timecode}
+      {@const badge = timecodeBadge(live.state)}
+      {@const channel = channelPick[pickedAudio.name] ?? (used ? ltc!.channel : 0)}
+      <header class="phead"><h2 class="ellipsis" title={pickedAudio.name}>{pickedAudio.name}</h2></header>
+      <dl class="kv">
+        <dt>Kind</dt>
+        <dd>Audio input{pickedAudio.default ? ' (system default)' : ''}</dd>
+        <dt>Channels</dt>
+        <dd class="mono">{pickedAudio.channels}</dd>
+        <dt>Timecode</dt>
+        {#if used}
+          <dd>
+            <div>LTC on channel {ltc!.channel + 1}</div>
+            <div class="status"><span class="pill pill-{badge.tone}"><span class="dot"></span>{badge.label}</span> <span class="mono">{live.value}</span> <span class="caption">{live.rate}</span></div>
+            <LevelMeter level={live.level} label="LTC level" none={ltcOn ? 'LTC not open' : 'timecode switched off'} />
+          </dd>
+        {:else}
+          <dd class="muted">not used</dd>
+        {/if}
+      </dl>
+      <div class="actions">
+        <label class="field">
+          <span>Channel</span>
+          <select class="select" value={channel} disabled={editLock !== undefined} onchange={(e) => (channelPick[pickedAudio.name] = Number(e.currentTarget.value))}>
+            {#each Array.from({ length: pickedAudio.channels }, (_, i) => i) as c (c)}<option value={c}>{c + 1}</option>{/each}
+          </select>
+        </label>
+        <button class="btn" disabled={editLock !== undefined || (used && ltc!.channel === channel && tc.device === pickedAudio.name)} title={editLock ?? 'Set the timecode source to LTC on this device and channel (Show › Timecode has the rest; undo takes it back)'}
+          onclick={() => useForTimecode(pickedAudio, channel)}>Use for timecode</button>
+      </div>
     {:else}
       <p class="caption empty">Select an input to see its status. An input is opened only while a layer shows it: opening a camera just to look could take it from another app.</p>
     {/if}
@@ -187,7 +256,8 @@
   .num { flex: 0 0 3ch; text-align: right; }
   .list-row.dim { color: var(--text-3); }
   .status { display: flex; align-items: center; gap: 6px; }
-  .actions { display: flex; gap: 8px; padding: 0 16px 16px; }
+  .actions { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding: 0 16px 16px; }
+  .actions .select { min-width: 80px; }
   @media (max-width: 900px) {
     .cols { flex-direction: column; align-items: stretch; }
     .detail { flex-basis: auto; position: static; }

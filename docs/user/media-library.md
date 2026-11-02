@@ -122,6 +122,16 @@ granted** on the System screen. For a show-critical slides feed, prefer a
 capture card: a second Mac's HDMI into a capture card needs no Screen
 permission and is not re-asked.
 
+**Audio inputs** are listed under the video inputs: every audio interface and
+microphone of this Mac with its number of input channels; "default" marks the
+system's default input. They have no folder 0 number: a layer does not show
+them. One is used for LTC timecode: its row says "Timecode (LTC, channel N)".
+Select an input, pick a channel and press **Use for timecode** to read LTC
+from it; the panel then shows the timecode state, the time, the rate and a
+level meter of that channel (see
+[show-control.md](show-control.md#timecode)). While timecode is on LTC,
+Permissions also lists **Microphone (LTC)**, which LTC needs.
+
 ## Create a folder
 
 On the Media screen press **New folder**, type a number (the first free one is

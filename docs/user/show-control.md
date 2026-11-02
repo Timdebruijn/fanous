@@ -46,9 +46,17 @@ signal dropped and the clock keeps running for the Freewheel time), **Lost**
 | Timecode on/off | the switch in the panel header |
 
 **LTC** reads any audio input on the Mac. Frame rates 24, 25, 29.97 (drop and
-non-drop) and 30 are detected by themselves. LTC needs the Microphone
-permission: macOS asks once when you pick an input. If you said no, turn it on
-in System Settings › Privacy & Security › Microphone. **MTC** reads quarter-frame and full-frame messages from any
+non-drop) and 30 are detected by themselves. Under the readout a level meter
+shows the LTC channel's peak over the last tenth of a second in dBFS, so you
+can see whether anything arrives on the channel you chose; it reads "LTC not
+open" when the input could not open and "timecode switched off" while the
+switch is off. The Inputs screen lists every audio input with its channels:
+select one, pick a channel and press **Use for timecode** to set Source,
+Device and Channel at once (one undo step; the switch stays as it is). LTC
+needs the Microphone permission: macOS asks once when LTC opens, or press
+**Authorize microphone** under Permissions on the Inputs screen (not in show
+mode). If you said no, turn it on in System Settings › Privacy & Security ›
+Microphone. **MTC** reads quarter-frame and full-frame messages from any
 MIDI source; connected sources are listed in the MIDI panel on the right, with a
 "timecode" badge on the chosen one. MIDI controllers and MIDI Show Control are
 described under [MIDI](#midi).

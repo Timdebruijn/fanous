@@ -3920,8 +3920,8 @@ closes the shortcut list.
 ### 12.1 Inputs screen and audio outputs (design 2026-11-02, B137)
 
 **Status:** designed 2026-11-02. The owner approved the four decisions below
-the same day; the build order is at the end. Step 1 is built (PR #202, As
-built at the end of this section); steps 2–6 are not.
+the same day; the build order is at the end. Steps 1 and 2 are built (PR #202
+and PR #TBD, As built at the end of this section); steps 3–6 are not.
 
 **Why.** The owner wants one place to select and set up inputs, and expects
 more settings to come: capture cards, the audio input that carries timecode,
@@ -4175,6 +4175,32 @@ does not select the next new input. Differences from the design above:
   the UI does not see.
 - `signalText` and `layersShowing` (shared with Media's tiles) are in
   `lib/layers.ts`; the counters come from `layers[].capture`.
+
+**As built (2026-11-02, step 2, PR #TBD):**
+- *Devices:* `LTCInput.inputDevices()` returns `{name, channels, isDefault}`
+  (input channels summed over the device's input streams; the default from
+  `kAudioHardwarePropertyDefaultInputDevice`). The host facts listen to the
+  default input as well as the device list, so a new default shows without a
+  device coming or going. `live.audio.inputs` carries them;
+  `live.osc.audioInputs` is gone (Show's device list reads `live.audio`).
+- *Level:* `PeakWindow` in the sink callback keeps the LTC channel's peak per
+  tenth of a second (a loop over the buffer, no allocation, no lock) and stores
+  it as `Float` bits in one `Atomic<UInt32>`; `live.timecode.level` is that
+  peak in dBFS with one decimal (−96 for silence), null while no LTC input
+  exists or before its first window. The sink still copies the samples into an
+  `Array` for the decoder, as before. One `LevelMeter` (−60…0 dBFS, yellow above
+  −3) shows it on Inputs and in Show's Timecode panel.
+- *Permission:* the capture catalog's 2 s permission read includes
+  `AVCaptureDevice.authorizationStatus(for: .audio)`; `live.capture.permissions.
+  microphone`. `capture.authorize {kind: "microphone"}` asks
+  (`requestAccess(for: .audio)`) outside show mode; on a grant, an LTC input
+  that failed is opened again on the control queue, where the timecode settings
+  apply. The readiness item `microphone` reads `ltcInUse`, an atomic the
+  control queue sets with the settings.
+- *UI:* audio inputs are selected as `#/inputs/audio:<name>` (they have no
+  folder 0 number). "Use for timecode" picks the channel in a select beside the
+  button rather than one button per channel: a Dante or MADI device lists 64
+  channels. The Microphone (LTC) permission row shows while the source is LTC.
 
 ---
 

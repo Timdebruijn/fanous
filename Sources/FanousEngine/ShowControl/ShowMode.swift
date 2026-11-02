@@ -226,6 +226,9 @@ public struct ReadinessContext: Sendable {
     /// The camera permission ("granted", "denied", "notDetermined") and the screen-recording grant ("granted", "denied").
     public var cameraPermission = "granted"
     public var screenPermission = "granted"
+    /// Timecode on LTC with the operator's switch on, and the microphone permission it needs (B137, as the camera's).
+    public var ltcInUse = false
+    public var microphonePermission = "granted"
     public init() {}
 }
 
@@ -289,6 +292,9 @@ public enum Readiness {
                     ? "macOS asks about monthly to keep recording the screen, on the main display; prefer a capture card for a show-critical feed"
                     : "System Settings › Privacy & Security › Screen & System Audio Recording, then Engine › Restart",
                 acknowledged: acknowledged.contains("screen")))
+        add(
+            "microphone", "Microphone permission granted", !context.ltcInUse || context.microphonePermission == "granted",
+            context.ltcInUse ? "microphone: \(context.microphonePermission)" : "timecode not on LTC", "System Settings › Privacy & Security › Microphone, then Engine › Restart")
         add("decoders", "No decoder errors", context.layerErrors.isEmpty, context.layerErrors.isEmpty ? "none" : context.layerErrors.joined(separator: "; "), "Fix or replace the failing media")
         // a missing image mask covers nothing: an add mask's slice may go black, a subtract mask cuts no hole
         add(

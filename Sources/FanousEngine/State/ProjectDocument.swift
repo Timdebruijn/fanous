@@ -508,7 +508,8 @@ public enum ProjectDocument {
     /// `checkLibraryRoot`: throws when the engine cannot switch to that root now (B51); gets the expanded absolute path.
     /// `applySync`: restarts the sync sender and receiver with saved settings; throws when the port cannot be bound.
     /// `liveRunning`: the numbers of the live inputs running now, of every catalog (B69: only the others can be
-    /// forgotten). `authorizeCamera`, `authorizeScreen`: ask for the camera permission or screen recording (`capture.authorize`).
+    /// forgotten). `authorizeCamera`, `authorizeScreen`, `authorizeMicrophone`: ask for the camera permission, screen
+    /// recording or the microphone permission LTC needs (`capture.authorize`).
     /// `displayModes`: the current mode of each connected display by UUID (a wall output's pixel size, §9.9).
     /// `showPreset`: the Compare lease of `output.show` (output ids, preset number; 0 ends it), kept on the DMX queue.
     /// `showOverlay`: the edit overlay lease of `output.overlay` (output id, on, selection), kept by the output coordinator.
@@ -520,6 +521,7 @@ public enum ProjectDocument {
         liveRunning: @escaping @Sendable () -> Set<Int> = { [] },
         authorizeCamera: @escaping @Sendable () -> Void = {},
         authorizeScreen: @escaping @Sendable () -> Void = {},
+        authorizeMicrophone: @escaping @Sendable () -> Void = {},
         displayModes: @escaping @Sendable () -> [String: DisplayModeConfig] = { [:] },
         showPreset: @escaping @Sendable ([Int], Int) -> Void = { _, _ in },
         showOverlay: @escaping @Sendable (Int, Bool, OverlaySelection?) -> Void = { _, _, _ in },
@@ -670,12 +672,18 @@ public enum ProjectDocument {
             CommandSpec(
                 name: "capture.authorize", role: .programmer, undoable: false,
                 summary:
-                    "Ask macOS for the camera permission, or for screen recording (allow Fanous in System Settings, then restart the engine); refused in show mode.",
-                argsType: "{ kind: 'camera' | 'screen' }"
+                    "Ask macOS for the camera permission, the microphone permission (LTC), or for screen recording (allow Fanous in System Settings, then restart the engine); refused in show mode.",
+                argsType: "{ kind: 'camera' | 'screen' | 'microphone' }"
             ) { _, args in
-                guard let kind = args["kind"]?.string, kind == "camera" || kind == "screen" else { throw CommandError.invalidArgs("kind must be camera or screen") }
+                guard let kind = args["kind"]?.string, ["camera", "screen", "microphone"].contains(kind) else {
+                    throw CommandError.invalidArgs("kind must be camera, screen or microphone")
+                }
                 guard !showModeOn() else { throw CommandError("showMode", "permissions are not asked in show mode; leave show mode first") }
-                if kind == "camera" { authorizeCamera() } else { authorizeScreen() }
+                switch kind {
+                case "camera": authorizeCamera()
+                case "screen": authorizeScreen()
+                default: authorizeMicrophone()
+                }
                 return nil
             })
         store.register(

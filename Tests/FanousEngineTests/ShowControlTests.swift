@@ -110,6 +110,18 @@ struct ShowControlTests {
     }
 
     /// Acceptance: chase accuracy ±1 frame against a generated LTC file (the decoder → clock path of `LTCInput`).
+    /// The LTC level (B137): the peak of each tenth of a second, across buffer boundaries, as dBFS.
+    @Test func ltcPeakWindow() {
+        var window = PeakWindow(sampleRate: 1000)  // a window of 100 samples
+        let quiet = [Float](repeating: 0.1, count: 60), loud = [Float](repeating: -0.5, count: 60)
+        #expect(quiet.withUnsafeBufferPointer { window.feed($0) } == nil)
+        // 40 more complete the first window (peak 0.5 from the negative samples), 20 start the next
+        #expect(loud.withUnsafeBufferPointer { window.feed($0) } == 0.5)
+        #expect([Float](repeating: 0.25, count: 80).withUnsafeBufferPointer { window.feed($0) } == 0.5)  // the second window holds 20 of -0.5
+        #expect([Float](repeating: 0.25, count: 100).withUnsafeBufferPointer { window.feed($0) } == 0.25)
+        #expect(PeakWindow.dBFS(1) == 0 && PeakWindow.dBFS(0.5) == -6 && PeakWindow.dBFS(0) == -96 && PeakWindow.dBFS(1e-9) == -96)
+    }
+
     @Test func ltcFileChasesWithinOneFrame() throws {
         let sampleRate = 48_000.0
         let rate = TimecodeRate.fps25
@@ -268,7 +280,7 @@ struct ShowControlTests {
         context.libraryRoot = NSHomeDirectory()
         let items = Readiness.check(context, acknowledged: ["dmx"])
         let ids = items.map(\.id)
-        #expect(ids == ["power", "thermal", "disk", "memory", "dmx", "interfaces", "sacnport", "outputs", "modes", "syncmaster", "syncpackets", "camera", "screen", "decoders", "maskimages", "library", "spotlight", "updates", "timemachine", "focus", "displaysleep", "hardware"])
+        #expect(ids == ["power", "thermal", "disk", "memory", "dmx", "interfaces", "sacnport", "outputs", "modes", "syncmaster", "syncpackets", "camera", "screen", "microphone", "decoders", "maskimages", "library", "spotlight", "updates", "timemachine", "focus", "displaysleep", "hardware"])
         let dmx = items.first { $0.id == "dmx" }!
         #expect(dmx.state == .fail && dmx.acknowledged && !dmx.blocks)
         let outputs = items.first { $0.id == "outputs" }!

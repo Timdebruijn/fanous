@@ -197,5 +197,8 @@ describe('capture permissions (B73)', () => {
   it('missing while no layer shows an input of the kind: grey, Authorize still offered (DESIGN §12.1)', () => {
     expect(permissionRow('camera', 'denied', false)).toMatchObject({ tone: 'off', word: 'denied', authorize: true });
     expect(permissionRow('screen', 'granted', false)).toMatchObject({ tone: 'green', authorize: false });
+    // the microphone (LTC, B137): yellow only while timecode is on LTC with the switch on
+    expect(permissionRow('microphone', 'notDetermined', true)).toEqual({ tone: 'yellow', word: 'not asked', authorize: true, caption: null });
+    expect(permissionRow('microphone', 'denied', false)).toMatchObject({ tone: 'off', authorize: true });
   });
 });

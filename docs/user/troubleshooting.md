@@ -166,10 +166,13 @@ Show › Timecode: the pill should say Locked and "frames seen" should count up.
   chosen (an unplugged one is listed as "not connected").
 - **Channel**: 1 is the first input channel of the device; the LTC may be on
   another channel.
-- **Level**: LTC that is too quiet or clipped does not decode; check the input
-  level of the audio interface.
+- **Level**: the meter under the readout shows the channel's peak. A meter
+  that stays near the bottom means nothing arrives on this channel (try another
+  one); yellow, above −3 dBFS, is close to clipping. LTC that is too quiet or clipped does not decode; set the
+  input level of the audio interface.
 - **Permission**: System Settings › Privacy & Security › Microphone must allow
-  Fanous. An error text in red under the readout names the problem.
+  Fanous (or **Authorize microphone** on the Inputs screen). An error text in
+  red under the readout names the problem.
 - Freewheel (yellow) means the signal dropped; Lost (red) means it stayed away
   longer than the Freewheel time.
 

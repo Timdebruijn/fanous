@@ -87,6 +87,8 @@ public final class Engine: @unchecked Sendable {
     private var ltc: LTCInput?
     private var mtc: MTCInput?
     private var lastTimecodeSettings = ShowCommands.TimecodeSettings()
+    /// Timecode on LTC with the switch on, for readiness off the control queue (B137).
+    private let ltcInUse = Atomic<Bool>(false)
     private var midi: MIDIInput?
     private var lastMIDISettings = MIDISettings()
     private var cues: CueRunner?
@@ -330,6 +332,18 @@ public final class Engine: @unchecked Sendable {
                 DispatchQueue.global(qos: .utility).async {
                     _ = CGRequestScreenCaptureAccess()
                     catalog?.refreshPermissions()
+                }
+            },
+            authorizeMicrophone: { [weak self] in
+                let catalog = self?.render?.captureCatalog
+                AVCaptureDevice.requestAccess(for: .audio) { granted in
+                    catalog?.refreshPermissions()
+                    // an LTC input that failed for the permission opens again, on the queue that applies the settings
+                    guard granted, let self, let store = self.store else { return }
+                    store.queue.async {
+                        guard self.ltc?.lastError != nil else { return }
+                        self.applyTimecodeSettings(self.lastTimecodeSettings)
+                    }
                 }
             },
             displayModes: { [weak self] in Dictionary((self?.displays.withLock { $0 } ?? []).map { ($0.uuid, $0.mode) }, uniquingKeysWith: { a, _ in a }) },
@@ -1040,7 +1054,19 @@ public final class Engine: @unchecked Sendable {
             "rate": .string(s.rate.label), "frames": .number(Double(s.frameCount)), "seen": .number(Double(timecodeClock.framesSeen.load(ordering: .relaxed))),
             "error": (ltc?.lastError ?? mtcStatus?.error).map { .string($0) } ?? .null,
             "device": .string(ltc?.deviceName ?? mtcStatus?.connected.joined(separator: ", ") ?? ""),
+            // the LTC channel's peak over the last tenth of a second (B137); null while LTC is not open
+            "level": ltc?.level.map { .number($0) } ?? .null,
         ]
+    }
+
+    /// `live.audio.inputs` (B137): every input device with its channel count; `default` on the system default input.
+    static func audioInputsLive(_ devices: [LTCInput.Device]) -> JSONValue {
+        .array(
+            devices.map { d in
+                var entry: JSONValue = ["name": .string(d.name), "channels": .number(Double(d.channels))]
+                if d.isDefault { try? entry.set(true, at: "/default") }
+                return entry
+            })
     }
 
     private func cueLive() -> JSONValue {
@@ -1092,6 +1118,7 @@ public final class Engine: @unchecked Sendable {
 
     private func applyTimecodeSettings(_ settings: ShowCommands.TimecodeSettings) {
         lastTimecodeSettings = settings
+        ltcInUse.store(settings.enabled != false && settings.source == .ltc, ordering: .relaxed)
         ltc?.stop()
         mtc?.stop()
         ltc = nil
@@ -1145,6 +1172,8 @@ public final class Engine: @unchecked Sendable {
         context.sceneScreen = options.scene?.media.contains { $0.screen != nil } ?? false
         context.cameraPermission = Self.permissionWord(render?.captureCatalog.permissions.camera ?? .authorized)
         context.screenPermission = render?.captureCatalog.permissions.screen ?? true ? "granted" : "denied"
+        context.ltcInUse = ltcInUse.load(ordering: .relaxed)
+        context.microphonePermission = Self.permissionWord(render?.captureCatalog.permissions.microphone ?? .authorized)
         var masters: [Int: Int] = [:]
         for layer in projectLayers {
             let s = layer.syncStatus.withLock { $0 }
@@ -1577,7 +1606,7 @@ public final class Engine: @unchecked Sendable {
     private struct HostFacts {
         var at: CFTimeInterval = 0
         var midiSources: [String] = []
-        var audioInputs: [String] = []
+        var audioInputs: [LTCInput.Device] = []
         var addresses: [String] = []
         var interfaces: [NetworkInterface] = []
     }
@@ -1592,11 +1621,15 @@ public final class Engine: @unchecked Sendable {
     /// path. ponytail: never removed; a deallocated engine's listener is a no-op (weak self), and the block's identity
     /// across the Swift/ObjC bridge is nothing to hand `AudioObjectRemovePropertyListenerBlock`.
     private func listenForAudioDevices() {
-        var devices = LTCInput.devicesAddress
-        let status = AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &devices, nil) { [weak self] _, _ in
-            self?.audioDevicesChanged.store(true, ordering: .relaxed)
+        var statuses: [OSStatus] = []
+        // the device list, and the default input (the Inputs screen marks it, B137)
+        for var address in [LTCInput.devicesAddress, LTCInput.defaultInputAddress] {
+            statuses.append(
+                AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, nil) { [weak self] _, _ in
+                    self?.audioDevicesChanged.store(true, ordering: .relaxed)
+                })
         }
-        audioListening.store(status == noErr, ordering: .relaxed)
+        audioListening.store(statuses.allSatisfy { $0 == noErr }, ordering: .relaxed)
     }
     private func currentHostFacts() -> HostFacts {
         let facts = hostFacts.withLock { $0 }
@@ -1721,7 +1754,8 @@ public final class Engine: @unchecked Sendable {
             "cue": cueLive(),
             "show": showLive(),
             "system": systemLive(addresses: facts.addresses, interfaces: facts.interfaces),
-            "osc": ["port": 8000, "recent": .array(oscLog.withLock { $0 }), "midiSources": .array(facts.midiSources.map { .string($0) }), "audioInputs": .array(facts.audioInputs.map { .string($0) })],
+            "osc": ["port": 8000, "recent": .array(oscLog.withLock { $0 }), "midiSources": .array(facts.midiSources.map { .string($0) })],
+            "audio": ["inputs": Self.audioInputsLive(facts.audioInputs)],
             "midi": midiLive(),
             "citp": citpLive(),
             "versions": versions?.live ?? .null,
@@ -1796,13 +1830,18 @@ public final class Engine: @unchecked Sendable {
 
     /// `live.capture` from the catalog and its cached permissions (a TCC read costs tens of ms: never on the feed).
     private func captureLive() -> JSONValue {
-        guard let render else { return Self.captureLive([], camera: .notDetermined, screen: false) }
+        guard let render else { return Self.captureLive([], camera: .notDetermined, screen: false, microphone: .notDetermined) }
         let permissions = render.captureCatalog.permissions
-        return Self.captureLive(render.captureCatalog.entries, screens: render.screensCatalog.entries, camera: permissions.camera, screen: permissions.screen)
+        return Self.captureLive(
+            render.captureCatalog.entries, screens: render.screensCatalog.entries, camera: permissions.camera, screen: permissions.screen,
+            microphone: permissions.microphone)
     }
 
-    /// `live.capture` (B73): the numbered capture devices and displays, and the permissions (screen: granted | denied).
-    static func captureLive(_ devices: [LiveCatalog.Entry], screens: [LiveCatalog.Entry] = [], camera: AVAuthorizationStatus, screen: Bool) -> JSONValue {
+    /// `live.capture` (B73): the numbered capture devices and displays, and the permissions (screen: granted | denied;
+    /// microphone for LTC, B137).
+    static func captureLive(
+        _ devices: [LiveCatalog.Entry], screens: [LiveCatalog.Entry] = [], camera: AVAuthorizationStatus, screen: Bool, microphone: AVAuthorizationStatus
+    ) -> JSONValue {
         func entry(_ d: LiveCatalog.Entry) -> JSONValue {
             var entry: JSONValue = ["file": .number(Double(d.file)), "name": .string(d.name), "running": .bool(d.running)]
             if d.gone { try? entry.set(true, at: "/gone") }
@@ -1812,7 +1851,7 @@ public final class Engine: @unchecked Sendable {
         return [
             "devices": .array(devices.map(entry)),
             "screens": .array(screens.map(entry)),
-            "permissions": ["camera": .string(permissionWord(camera)), "screen": .string(screen ? "granted" : "denied")],
+            "permissions": ["camera": .string(permissionWord(camera)), "screen": .string(screen ? "granted" : "denied"), "microphone": .string(permissionWord(microphone))],
         ]
     }
 

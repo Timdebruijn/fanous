@@ -647,6 +647,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   and the camera and screen permissions moved there from the Media and System screens; Media's folder 0 stays the
   picker. A permission's dot is yellow only while a layer shows an input that lacks it. The engine's permission
   texts name the Inputs screen (B137 step 1, DESIGN §12.1, PR #202).
+- UI: the Inputs screen lists the audio inputs with their channels and the default one. **Use for timecode** sets
+  LTC on a device and channel in one undo step, and the selected input shows the timecode state and a level meter of the
+  LTC channel, as Show's Timecode panel now does (`live.timecode.level`: the peak of the last tenth of a second in dBFS).
+  The microphone permission LTC needs has a row with Authorize (`capture.authorize {kind: "microphone"}`), and a
+  readiness item **Microphone permission granted** blocks show mode while timecode is on LTC without it.
+  `live.audio.inputs` replaces `live.osc.audioInputs` (B137 step 2, DESIGN §12.1, PR #TBD).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

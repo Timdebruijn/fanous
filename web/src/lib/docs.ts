@@ -192,7 +192,15 @@ export interface CaptureSourceDoc {
 export interface CaptureLiveDoc {
   devices: CaptureSourceDoc[];
   screens?: CaptureSourceDoc[];
-  permissions?: { camera: 'granted' | 'denied' | 'notDetermined'; screen: 'granted' | 'denied' };
+  permissions?: { camera: 'granted' | 'denied' | 'notDetermined'; screen: 'granted' | 'denied'; microphone?: 'granted' | 'denied' | 'notDetermined' };
+}
+
+/** `live.audio.inputs[n]` (B137): an input device as CoreAudio names it. */
+export interface AudioInputDoc {
+  name: string;
+  channels: number;
+  /** the system default input, which a timecode device of null uses */
+  default?: true;
 }
 
 export interface IngestJobDoc {
@@ -234,7 +242,18 @@ export interface LiveDoc {
   security: { webUIOpen: boolean };
   displays: DisplayDoc[];
   outputs: OutputStatusDoc[];
-  timecode: { state: 'off' | 'locked' | 'freewheel' | 'lost'; source: string; value: string; rate: string; frames: number; seen: number; error: string | null; device: string };
+  timecode: {
+    state: 'off' | 'locked' | 'freewheel' | 'lost';
+    source: string;
+    value: string;
+    rate: string;
+    frames: number;
+    seen: number;
+    error: string | null;
+    device: string;
+    /** the LTC channel's peak over the last tenth of a second in dBFS (B137); null while LTC is not open */
+    level?: number | null;
+  };
   cue: { current: number | null; currentName: string | null; next: number | null; nextName: string | null; fading: boolean; count: number };
   /** resumedAt: epoch seconds when show mode came back by itself after an unclean engine stop; null otherwise. */
   show: { mode: boolean; checkedAt: number; ready: boolean; readiness: ReadinessItemDoc[]; resumedAt?: number | null };
@@ -253,7 +272,9 @@ export interface LiveDoc {
     tlsFingerprint: string;
     bonjour: string;
   };
-  osc: { port: number; recent: { at: number; command: string }[]; midiSources: string[]; audioInputs: string[] };
+  osc: { port: number; recent: { at: number; command: string }[]; midiSources: string[] };
+  /** Audio input devices (B137): name, input channels, the system default marked. */
+  audio?: { inputs: AudioInputDoc[] };
   /** MIDI control input: sources listened to, the last message ("source · ch 1 · note 36 on · 127"), learn state;
    * error also lists map entries that cannot be read or cannot work. */
   midi: {
@@ -316,7 +337,8 @@ export const emptyLive: LiveDoc = {
   cue: { current: null, currentName: null, next: null, nextName: null, fading: false, count: 0 },
   show: { mode: false, checkedAt: 0, ready: false, readiness: [], resumedAt: null },
   system: { thermal: 'nominal', onAC: true, power: '', memoryFreeFraction: 1, memoryGB: 0, os: '', host: '', addresses: [], port: 8443, tlsFingerprint: '', bonjour: '' },
-  osc: { port: 8000, recent: [], midiSources: [], audioInputs: [] },
+  osc: { port: 8000, recent: [], midiSources: [] },
+  audio: { inputs: [] },
   midi: { connected: [], last: null, lastAt: null, learning: null, learned: null, error: null },
   citp: { port: 0, clients: [], streams: 0, multicast: [] },
 };

@@ -153,10 +153,11 @@ public final class LiveCatalog: @unchecked Sendable {
         readPermissions()  // once here, so the feed and readiness never start from a guess
     }
 
-    /// Capture: the camera permission and the screen-recording grant as last read (the 2 s poll, after an answer). The
-    /// reads are TCC round trips of tens of milliseconds, so the 10 Hz feed and readiness read this instead.
-    public var permissions: (camera: AVAuthorizationStatus, screen: Bool) { permissionState.withLock { $0 } }
-    private let permissionState = Mutex<(camera: AVAuthorizationStatus, screen: Bool)>((.notDetermined, false))
+    /// Capture: the camera permission, the screen-recording grant and the microphone permission (LTC, B137) as last read
+    /// (the 2 s poll, after an answer). The reads are TCC round trips of tens of milliseconds, so the 10 Hz feed and
+    /// readiness read this instead.
+    public var permissions: (camera: AVAuthorizationStatus, screen: Bool, microphone: AVAuthorizationStatus) { permissionState.withLock { $0 } }
+    private let permissionState = Mutex<(camera: AVAuthorizationStatus, screen: Bool, microphone: AVAuthorizationStatus)>((.notDetermined, false, .notDetermined))
 
     /// Reads the permissions again off the calling thread (after a `capture.authorize` ask, and every 2 s).
     public func refreshPermissions() {
@@ -164,7 +165,10 @@ public final class LiveCatalog: @unchecked Sendable {
     }
 
     private func readPermissions() {
-        let read = (camera: AVCaptureDevice.authorizationStatus(for: .video), screen: CGPreflightScreenCaptureAccess())
+        let read = (
+            camera: AVCaptureDevice.authorizationStatus(for: .video), screen: CGPreflightScreenCaptureAccess(),
+            microphone: AVCaptureDevice.authorizationStatus(for: .audio)
+        )
         permissionState.withLock { $0 = read }
     }
 

@@ -5,6 +5,9 @@ import { describe, expect, it } from 'vitest';
 import type { CueDoc, PatchEntry } from './docs';
 import { FALLBACK_FIXTURES, type ChannelMap, type ParamSpec } from './patch-screen';
 import {
+  levelText,
+  ltcInput,
+  meterFill,
   cueRowLabel, cueRowText, cueStatus, fixtureNames, fixtureType, formatNumber, groupSpecs, isNumberTaken, lockTitle, newValue, nextCueNumber,
   numberAfter, parseTrigger, retargetValue, sortedCues, specsFor, swapSteps, timecodeBadge, timecodeOn, timecodeSource, valueControl, withFade,
   offsetText,
@@ -264,5 +267,26 @@ describe('MIDI map wording', () => {
     expect(midiTargetText({ target: 'fixture:Layer 2/intensity' }, map)).toBe('Layer 2 · Intensity');
     expect(midiTargetText({ target: 'master/intensity' }, null)).toBe('Master · intensity');
     expect(midiParameterTarget('cue.back')).toBeNull();
+  });
+});
+
+describe('LTC input on the Inputs screen (B137 step 2)', () => {
+  const inputs = [
+    { name: 'MacBook Pro Microphone', channels: 1, default: true as const },
+    { name: 'UMC404HD', channels: 4 },
+  ];
+  it('ltcInput: the named device, or the default for null; the channel clamped as the engine does', () => {
+    expect(ltcInput({ source: 'ltc', device: 'UMC404HD', channel: 2 }, inputs)).toEqual({ device: 'UMC404HD', channel: 2 });
+    expect(ltcInput({ source: 'ltc', device: 'UMC404HD', channel: 7 }, inputs)).toEqual({ device: 'UMC404HD', channel: 3 });
+    expect(ltcInput({ source: 'ltc', device: null, channel: 1 }, inputs)).toEqual({ device: 'MacBook Pro Microphone', channel: 0 });
+    // a device that is not connected keeps its stored channel
+    expect(ltcInput({ source: 'ltc', device: 'Gone', channel: 5 }, inputs)).toEqual({ device: 'Gone', channel: 5 });
+    expect(ltcInput({ source: 'mtc', device: null, channel: 0 }, inputs)).toBeNull();
+  });
+  it('levelText and meterFill: dBFS with a real minus, the fill over −60…0', () => {
+    expect(levelText(-12.34)).toBe('−12.3 dBFS');
+    expect(levelText(null, 'LTC not open')).toBe('LTC not open');
+    expect(levelText(undefined)).toBe('no level');
+    expect([meterFill(0), meterFill(-30), meterFill(-96), meterFill(null)]).toEqual([1, 0.5, 0, 0]);
   });
 });

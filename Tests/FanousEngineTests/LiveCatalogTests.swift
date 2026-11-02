@@ -117,14 +117,14 @@ extension LiveCatalogTests {
         catalog.update(running: [Self.device("cam", "FaceTime HD Camera", model: "m"), Self.device("phone", "iPhone", model: "p", inUse: true)])
         #expect(catalog.entry(file: 2)?.running == true && catalog.entry(file: 2)?.inUse == true)
         #expect(
-            Engine.captureLive(catalog.entries, camera: .authorized, screen: false) == [
+            Engine.captureLive(catalog.entries, camera: .authorized, screen: false, microphone: .denied) == [
                 "devices": [
                     ["file": 1, "name": "FaceTime HD Camera", "running": true],
                     ["file": 2, "name": "iPhone", "running": true, "inUse": true],
                     ["file": 3, "name": "Old Cam", "running": false, "gone": true],
                 ],
                 "screens": [],
-                "permissions": ["camera": "granted", "screen": "denied"],
+                "permissions": ["camera": "granted", "screen": "denied", "microphone": "denied"],
             ])
         let before = changes.load(ordering: .relaxed)
         catalog.update(running: [Self.device("cam", "FaceTime HD Camera", model: "m"), Self.device("phone", "iPhone", model: "p")])
@@ -134,11 +134,14 @@ extension LiveCatalogTests {
         #expect(catalog.entry(file: 2)?.running == false && catalog.entry(file: 2)?.inUse == false)
         #expect(Engine.permissionWord(.restricted) == "denied" && Engine.permissionWord(.denied) == "denied")
         #expect(Engine.permissionWord(.notDetermined) == "notDetermined")
-        #expect(Engine.captureLive([], camera: .notDetermined, screen: true)["permissions"] == ["camera": "notDetermined", "screen": "granted"])
+        #expect(
+            Engine.captureLive([], camera: .notDetermined, screen: true, microphone: .authorized)["permissions"]
+                == ["camera": "notDetermined", "screen": "granted", "microphone": "granted"])
     }
 
     /// `capture.forget` as `syphon.forget` (B69) on 1–20: one number or every one not running, never a running one;
-    /// programmer, undoable, refused under show lock. `capture.authorize` asks for the camera outside show mode only.
+    /// programmer, undoable, refused under show lock. `capture.authorize` asks for the camera, the screen or the
+    /// microphone (B137) outside show mode only.
     @Test func captureForgetAndAuthorize() throws {
         let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: StateStoreTests.logger)
         var project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
@@ -146,10 +149,11 @@ extension LiveCatalogTests {
         try project.set(ProjectDocument.liveValue([1, 2, 3].map { Self.numbered($0, "uid-\($0)", "Cam \($0)", model: "m") }), at: "/capture")
         try project.set(ProjectDocument.liveValue([LiveCatalog.Entry(kind: .syphon, file: 150, source: "App", name: "")]), at: "/syphon")
         let store = StateStore(project: project, logger: StateStoreTests.logger)
-        let showMode = Atomic<Bool>(false), asked = Atomic<Int>(0), askedScreen = Atomic<Int>(0)
+        let showMode = Atomic<Bool>(false), asked = Atomic<Int>(0), askedScreen = Atomic<Int>(0), askedMicrophone = Atomic<Int>(0)
         ProjectDocument.registerCommands(
             on: store, auth: auth, showModeOn: { showMode.load(ordering: .relaxed) }, liveRunning: { [1] },
-            authorizeCamera: { asked.add(1, ordering: .relaxed) }, authorizeScreen: { askedScreen.add(1, ordering: .relaxed) })
+            authorizeCamera: { asked.add(1, ordering: .relaxed) }, authorizeScreen: { askedScreen.add(1, ordering: .relaxed) },
+            authorizeMicrophone: { askedMicrophone.add(1, ordering: .relaxed) })
         func files() -> [Int] { ProjectDocument.liveNumbers(.capture, from: store.project).map(\.file) }
 
         #expect(store.execute("capture.forget", args: ["file": 2], role: .operator).failureCode == "forbidden")
@@ -166,8 +170,10 @@ extension LiveCatalogTests {
         #expect(files() == [1])
         #expect(ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.file) == [150])  // the other kind stays
 
-        #expect(store.execute("capture.authorize", args: ["kind": "microphone"], role: .programmer).failureCode == "invalidArgs")
+        #expect(store.execute("capture.authorize", args: ["kind": "speaker"], role: .programmer).failureCode == "invalidArgs")
         let depth = store.historyDepth.undo
+        _ = try store.execute("capture.authorize", args: ["kind": "microphone"], role: .programmer).get()
+        #expect(askedMicrophone.load(ordering: .relaxed) == 1 && asked.load(ordering: .relaxed) == 0 && store.historyDepth.undo == depth)
         _ = try store.execute("capture.authorize", args: ["kind": "camera"], role: .programmer).get()
         #expect(asked.load(ordering: .relaxed) == 1 && store.historyDepth.undo == depth)
         _ = try store.execute("capture.authorize", args: ["kind": "screen"], role: .programmer).get()
@@ -175,12 +181,13 @@ extension LiveCatalogTests {
         showMode.store(true, ordering: .relaxed)
         #expect(store.execute("capture.authorize", args: ["kind": "camera"], role: .programmer).failureCode == "showMode")
         #expect(store.execute("capture.authorize", args: ["kind": "screen"], role: .programmer).failureCode == "showMode")
+        #expect(store.execute("capture.authorize", args: ["kind": "microphone"], role: .programmer).failureCode == "showMode")
         showMode.store(false, ordering: .relaxed)
         _ = try store.execute("show.lock", role: .programmer).get()
         #expect(store.execute("capture.forget", role: .programmer) == .failure(.showLocked))
         #expect(store.execute("capture.authorize", args: ["kind": "camera"], role: .programmer) == .failure(.showLocked))
         #expect(store.execute("capture.authorize", args: ["kind": "screen"], role: .programmer) == .failure(.showLocked))
-        #expect(asked.load(ordering: .relaxed) == 1 && askedScreen.load(ordering: .relaxed) == 1)
+        #expect(asked.load(ordering: .relaxed) == 1 && askedScreen.load(ordering: .relaxed) == 1 && askedMicrophone.load(ordering: .relaxed) == 1)
     }
 
     /// A revert diffs `/capture` too: one field below `/capture/N` folds into the whole entry, and its undo is refused when
@@ -245,5 +252,32 @@ extension LiveCatalogTests {
         // acknowledging one never hides the other
         let both = try items(shown: [3, 22], camera: "denied", screen: "denied", acknowledged: ["camera"])
         #expect(!both.camera.blocks && both.screen.blocks)
+    }
+
+    /// Readiness item `microphone` (B137): only while timecode is on LTC with the switch on; missing blocks until
+    /// acknowledged, as the camera does.
+    @Test func microphoneReadinessItem() throws {
+        func item(ltc: Bool, microphone: String, acknowledged: Set<String> = []) throws -> ReadinessItem {
+            var context = ReadinessContext()
+            (context.ltcInUse, context.microphonePermission) = (ltc, microphone)
+            return try #require(Readiness.check(context, acknowledged: acknowledged).first { $0.id == "microphone" })
+        }
+        let idle = try item(ltc: false, microphone: "denied")
+        #expect(idle.state == .ok && idle.detail == "timecode not on LTC")
+        let missing = try item(ltc: true, microphone: "notDetermined")
+        #expect(missing.state == .fail && missing.blocks && missing.title == "Microphone permission granted" && missing.detail == "microphone: notDetermined")
+        #expect(missing.fix == "System Settings › Privacy & Security › Microphone, then Engine › Restart")
+        #expect(try !item(ltc: true, microphone: "denied", acknowledged: ["microphone"]).blocks)
+        #expect(try item(ltc: true, microphone: "granted").state == .ok)
+    }
+
+    /// `live.audio.inputs` (B137): name and channel count per input device, `default` only on the system default.
+    @Test func audioInputsLiveFeed() {
+        let devices = [LTCInput.Device(name: "MacBook Pro Microphone", channels: 1, isDefault: true), LTCInput.Device(name: "UMC404HD", channels: 4, isDefault: false)]
+        #expect(
+            Engine.audioInputsLive(devices) == [
+                ["name": "MacBook Pro Microphone", "channels": 1, "default": true],
+                ["name": "UMC404HD", "channels": 4],
+            ])
     }
 }
