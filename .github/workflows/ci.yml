@@ -3,9 +3,13 @@
 # Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 name: CI
 on:
+  # a change to docs/ or Markdown alone runs nothing: no job reads them, except check-generated's docs/channel-map.md
+  # (the last matching pattern wins)
   push:
     branches: [main]
+    paths: ['**', '!docs/**', '!**/*.md', 'docs/channel-map.md']
   pull_request:
+    paths: ['**', '!docs/**', '!**/*.md', 'docs/channel-map.md']
 
 jobs:
   swift:

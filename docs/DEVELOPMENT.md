@@ -76,7 +76,8 @@ npx playwright install chromium   # once
 npm run e2e                       # npx playwright test --headed / --ui to watch
 ```
 
-CI runs them in the `e2e` job on macOS; on a failure the traces and engine
+CI runs them in the `e2e` job on macOS (no job runs for a change to `docs/` or
+Markdown alone, except `docs/channel-map.md`); on a failure the traces and engine
 logs are uploaded as the `e2e-results` artifact. To see the preview tests as
 CI's slow VideoToolbox does (B98): `CI=1 E2E_SLOW_DECODER=6000 npm run e2e`
 delays every `VideoDecoder.isConfigSupported` by 6 s (past the browser's 5 s
