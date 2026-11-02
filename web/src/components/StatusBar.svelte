@@ -78,12 +78,12 @@
     </span>
   </div>
   <div class="item col metrics">
-    <span class="mono value">{fps}<span class="faint"> fps </span>{metrics.gpuP99.toFixed(1)}<span class="faint"> ms</span></span>
+    <span class="mono value">{fps}<span class="faint"> fps </span><span class="ms">{metrics.gpuP99.toFixed(1)}<span class="faint"> ms</span></span></span>
     <span class="caption">{app.live.engine.rendering ? `gpu p99 · cpu ${metrics.cpuP99.toFixed(1)} ms` : 'no outputs rendering: add or assign one (Outputs)'}</span>
   </div>
   <div class="item col" class:red={dropped > 0 && app.project.showLock}>
     <span class="mono value">{dropped}</span>
-    <span class="caption">dropped · 1 s</span>
+    <span class="caption">dropped<span class="long">&nbsp;· 1 s</span></span>
   </div>
   <div class="item dmx">
     {#each universes as u (u.id)}
@@ -99,7 +99,7 @@
       <span class="caption">timecode{app.live.timecode.state === 'off' ? '' : ` · ${app.live.timecode.state}`}</span>
     </div>
   {/if}
-  <div class="item col" class:red={!outputsOk && app.project.showLock}>
+  <div class="item col outputs" class:off={!outputsOk} class:red={!outputsOk && app.project.showLock}>
     <span class="mono value"><span class="dot {outputsOk ? 'dot-green' : 'dot-off'}"></span> {outputsOk ? 'on' : 'off'}</span>
     <span class="caption">outputs</span>
   </div>
@@ -109,7 +109,7 @@
       <span class="bar"><span style="width: {progress}%"></span></span>
     </div>
   {/if}
-  <a class="item col plain" href="#/system" title="Project versions (System): the engine saves one at start, on show mode and every 10 minutes after a change">
+  <a class="item col plain version" href="#/system" title="Project versions (System): the engine saves one at start, on show mode and every 10 minutes after a change">
     <span class="mono value">{lastVersionText(app.live.versions?.lastAutomatic)}</span>
     <span class="caption">auto version</span>
   </a>
@@ -121,7 +121,7 @@
     <a class="item red plain" href="#/layers" title="No sync packets for 2 s: {syncLost.join(', ')} play on their own clock (Layers)"><span class="dot dot-red"></span><span class="caption">sync lost</span></a>
   {/if}
   {#if app.live.security.webUIOpen}
-    <div class="item yellow caption"><span class="dot dot-yellow"></span> web UI open</div>
+    <div class="item yellow caption" title="Web UI open: the programmer role has no password (System › Roles)"><span class="dot dot-yellow"></span><span class="long"> web UI open</span></div>
   {/if}
   <span class="spacer"></span>
   <div class="item right">
@@ -131,7 +131,7 @@
     <button class="btn btn-icon" aria-label="Redo" title="Redo (⇧⌘Z)" disabled={!can('programmer')} onclick={() => cmd('redo')}>
       <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5" /><path d="M20 9H9a5 5 0 0 0 0 10h6" /></svg>
     </button>
-    <button type="button" class="btn btn-icon" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" onclick={() => (shell.help = true)}>?</button>
+    <button type="button" class="btn btn-icon help" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" onclick={() => (shell.help = true)}>?</button>
     <button type="button" class="role role-{app.role} role-btn" title="Log in as another role" onclick={() => (showLogin = true)}>{app.role.toUpperCase()}</button>
   </div>
 </header>
@@ -143,6 +143,7 @@
      8.9 ms into 126.6 ms does not widen the item, wrap the bar and move the page below it under a drag (B134); the
      digits are tabular app-wide */
   .metrics .value { min-width: 16ch; }
+  .ms { display: contents; }  /* its two parts stay flex items of the value, as the 16ch above counts them */
   /* min-height: an item that wraps on a phone (the universe pills, the resumed note) grows instead of spilling over */
   .item { display: flex; align-items: center; gap: 8px; min-height: var(--touch); padding: 0 8px; border-right: 1px solid var(--line); }
   .item.col { flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; }
@@ -168,4 +169,29 @@
   .yellow { color: var(--yellow); }
   .role-btn { border: 0; cursor: pointer; min-height: var(--touch); }
   .plain { color: inherit; text-decoration: none; }
+  /* a phone: five rows of 44 px took a third of the screen. Value and caption share a line; the frame time, its gpu/cpu
+     detail, the auto-version item, the keyboard-shortcuts button, the app name and the outputs item while they render go
+     (System, the badges, the rail and a red item carry the same); the badges shrink (their names stay for the e2e and
+     screen readers), the dropped caption and the web-UI note shorten; the role joins the badge row, undo and redo the
+     numbers row, the pills take the third: three rows at 375 px */
+  @media (max-width: 599px) {
+    .status { padding: 4px; }
+    .item { padding: 0 4px; gap: 4px; }
+    .item:not(.right):not(.brand) { min-height: 32px; }
+    .item.col { flex-direction: row; align-items: baseline; gap: 4px; }
+    .metrics .value { min-width: 0; }
+    .metrics .caption, .ms, .version, .long, .help, .brand .name, .outputs:not(.off) { display: none; }
+    .role-btn { padding: 0 8px; font-size: 11px; }
+    .right .btn-icon { width: 36px; }
+    .brand { gap: 6px; }
+    .item.dmx { order: 4; }  /* the pills last: fps, dropped and clients share a row, the pills take their own */
+    .tag { font-size: 11px; padding: 0 8px; letter-spacing: 0; }
+    .brand { order: 0; }
+    .spacer { order: 1; }
+    /* the button group dissolves into the bar: the role joins the badge row, undo and redo the numbers row */
+    .item.right { display: contents; }
+    .right .role-btn { order: 2; }
+    .right .btn-icon { order: 3; }
+    .item:not(.brand):not(.right):not(.spacer):not(.dmx) { order: 3; }
+  }
 </style>
