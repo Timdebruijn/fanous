@@ -623,6 +623,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: a CITP console that sends no `CInf` (MSEX 1.0/1.1) got neither `SInf` nor layer status; a session still without
   a version 2 s after connecting is now taken for MSEX 1.0, gets an unsolicited 1.0 `SInf` and `LSta` at 4 Hz, and a later
   `CInf` still negotiates the version (B78, PR #194).
+- Changed: CITP/MSEX libraries and elements are numbered as 0-based contiguous indexes in folder/file-number order, as
+  MSEX 1.2 defines them, with the folder or file number (the DMX value that selects it) in the DMX range; `GEIn`, `GETh`,
+  the request filters and `LSta` use the same indexes (B78, PR #NNN).
 - Fixed: the browser preview of an output whose aspect differs from the preview's drew the black-lift feather on the y axis
   with the x axis's scale; each axis now has its own (B56, PR #191).
 - Changed: a layer showing a static generator (grid, colour bars, …) or the clock no longer makes the compositor redraw the

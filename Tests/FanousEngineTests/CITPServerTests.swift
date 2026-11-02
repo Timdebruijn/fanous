@@ -163,22 +163,22 @@ struct CITPServerTests {
         #expect(server.activeTimers == (true, false), "negotiated: layer status runs, no frames yet")
 
         client.send(Self.msex("GELI", [1, 0, 0, 0, 0, 0, 0]))  // media, below the root, all libraries
-        let bench = ElementLibrary(id: .topLevel(1), serialNumber: 2, dmxRangeMin: 1, dmxRangeMax: 1, name: "Bench", elementCount: 1)
+        let bench = ElementLibrary(id: .topLevel(0), serialNumber: 2, dmxRangeMin: 1, dmxRangeMax: 1, name: "Bench", elementCount: 1)
         #expect(
             client.wait(for: Self.reply(.elementLibraryInformation(ElementLibraryInformation(libraries: [bench])))),
             "invalid folder names are not libraries")
 
-        client.send(Self.msex("GEIn", [1, 1, 1, 0, 0, 0, 0]))  // media, library 1, all elements
-        let intro = MediaElement(number: 3, dmxRangeMin: 3, dmxRangeMax: 3, name: "Intro", width: 1920, height: 1080, length: 250, fps: 25)
-        #expect(client.wait(for: Self.reply(.mediaElementInformation(MediaElementInformation(libraryID: .topLevel(1), elements: [intro])))))
+        client.send(Self.msex("GEIn", [1, 1, 0, 0, 0, 0, 0]))  // media, library 0 (folder 1), all elements
+        let intro = MediaElement(number: 0, dmxRangeMin: 3, dmxRangeMax: 3, name: "Intro", width: 1920, height: 1080, length: 250, fps: 25)
+        #expect(client.wait(for: Self.reply(.mediaElementInformation(MediaElementInformation(libraryID: .topLevel(0), elements: [intro])))))
 
-        client.send(Self.msex("GETh", Array("JPEG".utf8) + [0x40, 0x01, 0xB4, 0x00, 0, 1, 1, 1, 0, 0, 1, 0, 3]))  // 320 x 180, library 1, element 3
+        client.send(Self.msex("GETh", Array("JPEG".utf8) + [0x40, 0x01, 0xB4, 0x00, 0, 1, 1, 0, 0, 0, 1, 0, 0]))  // 320 x 180, library 0, element 0
         let thumbnail = ElementThumbnail(
-            libraryID: .topLevel(1), elementNumber: 3, width: UInt16(Thumbnailer.width), height: UInt16(Thumbnailer.width * 1080 / 1920), buffer: Self.jpeg)
+            libraryID: .topLevel(0), elementNumber: 0, width: UInt16(Thumbnailer.width), height: UInt16(Thumbnailer.width * 1080 / 1920), buffer: Self.jpeg)
         #expect(client.wait(for: Self.reply(.elementThumbnail(thumbnail))))
 
         let status = LayerStatus(
-            layerNumber: 0, mediaLibraryID: .topLevel(1), mediaNumber: 3, mediaName: "Intro", mediaPosition: 400, mediaLength: 10_000, mediaFPS: 25,
+            layerNumber: 0, mediaLibraryID: .topLevel(0), mediaNumber: 0, mediaName: "Intro", mediaPosition: 400, mediaLength: 10_000, mediaFPS: 25,
             statusFlags: LayerStatus.playing)
         #expect(client.wait(1, for: Self.reply(.layerStatus([status]), requestIndex: 0)))
 
@@ -213,6 +213,60 @@ struct CITPServerTests {
         #expect(server.activeTimers == (false, false), "console gone: no periodic timers")
     }
 
+    /// MSEX numbering (B78): folders 1, 3, 7 with files 2, 5 are libraries 0…2 with elements 0…1; the DMX ranges
+    /// carry the folder and file numbers; request filters and layer status use the indexes.
+    @Test func libraryWithGapsIsNumberedByIndex() throws {
+        let folders = [1, 3, 7].map { folder in
+            LibraryFolder(
+                number: folder, name: "F\(folder)", path: "/lib/\(folder)",
+                items: [2, 5].map { (file: Int) in
+                    LibraryItem(
+                        folder: folder, file: file, name: "\(folder)-\(file)", path: "/lib/\(folder)/\(file)", kind: .still, status: .playable, reason: nil, metadata: nil,
+                        thumbnail: nil, modified: 0, size: 1)
+                })
+        }
+        let library = LibrarySnapshot(root: "/lib", rootExists: true, folders: folders, scannedAt: 0, fileCount: 6, invalidCount: 0)
+        let server = CITPServer(
+            name: "test", uuid: "550e8400-e29b-41d4-a716-446655440000",
+            providers: CITPServer.Providers(
+                layers: {
+                    [
+                        CITPServer.LayerInfo(index: 1, folder: 7, file: 5, name: "7-5", positionMs: 0, lengthMs: 0, fps: 25, flags: 0),
+                        CITPServer.LayerInfo(index: 2, folder: 0, file: 1, name: "Camera", positionMs: 0, lengthMs: 0, fps: 25, flags: 0),
+                    ]
+                },
+                library: { library }, thumbnail: { _ in nil }, frame: { _ in nil }),
+            logger: Self.logger)
+        try server.start()
+        defer { server.stop() }
+        var port: UInt16 = 0
+        for _ in 0..<100 where port == 0 {
+            port = server.status.withLock { $0.port }
+            if port == 0 { usleep(20_000) }
+        }
+        let client = Client(port: port)
+        defer { client.connection.cancel() }
+        client.send(Self.msex("CInf", [1, 2, 1]))  // 1.2
+
+        client.send(Self.msex("GELI", [1, 0, 0, 0, 0, 0, 0]))  // all libraries
+        let libraries = [1, 3, 7].enumerated().map { index, folder in
+            ElementLibrary(id: .topLevel(UInt8(index)), serialNumber: 2, dmxRangeMin: UInt8(folder), dmxRangeMax: UInt8(folder), name: "F\(folder)", elementCount: 2)
+        }
+        #expect(client.wait(for: Self.reply(.elementLibraryInformation(ElementLibraryInformation(libraries: libraries)))))
+        client.send(Self.msex("GELI", [1, 0, 0, 0, 0, 1, 0, 2]))  // library 2 only
+        #expect(client.wait(for: Self.reply(.elementLibraryInformation(ElementLibraryInformation(libraries: [libraries[2]])))))
+
+        client.send(Self.msex("GEIn", [1, 1, 2, 0, 0, 1, 0, 1]))  // library 2 (folder 7), element 1 (file 5)
+        let element = MediaElement(number: 1, dmxRangeMin: 5, dmxRangeMax: 5, name: "7-5")
+        #expect(client.wait(for: Self.reply(.mediaElementInformation(MediaElementInformation(libraryID: .topLevel(2), elements: [element])))))
+
+        let status = [
+            LayerStatus(layerNumber: 0, mediaLibraryID: .topLevel(2), mediaNumber: 1, mediaName: "7-5", mediaPosition: 0, mediaLength: 0, mediaFPS: 25, statusFlags: 0),
+            LayerStatus(layerNumber: 1, mediaLibraryID: MSEXLibraryID(), mediaNumber: 0, mediaName: "Camera", mediaPosition: 0, mediaLength: 0, mediaFPS: 25, statusFlags: 0),
+        ]
+        #expect(client.wait(for: Self.reply(.layerStatus(status), requestIndex: 0)), "the playing file by index; a live input is no library (the root id)")
+    }
+
     /// An MSEX 1.0/1.1 console sends no CInf (B78): after `fallbackDelay` it gets a 1.0 SInf (unsolicited) and 1.0
     /// layer status; a later CInf still sets the version.
     @Test func consoleWithoutClientInformationGetsVersion1_0() throws {
@@ -242,7 +296,7 @@ struct CITPServerTests {
         // the fallback waits its delay from the accept: load makes it later, never earlier (B67)
         #expect(Date().timeIntervalSince(connected) >= 1.9, "SInf not before the delay")
         let status = LayerStatus(
-            layerNumber: 0, mediaLibraryID: .topLevel(1), mediaNumber: 3, mediaName: "Intro", mediaPosition: 400, mediaLength: 10_000, mediaFPS: 25,
+            layerNumber: 0, mediaLibraryID: .topLevel(0), mediaNumber: 0, mediaName: "Intro", mediaPosition: 400, mediaLength: 10_000, mediaFPS: 25,
             statusFlags: LayerStatus.playing)
         #expect(client.wait(5, for: CITPPacket.layerStatus([status]).encoded(version: .v1_0, requestIndex: 0)), "1.0 layer status")
         #expect(server.activeTimers.status)
