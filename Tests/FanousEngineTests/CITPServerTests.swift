@@ -212,4 +212,43 @@ struct CITPServerTests {
         for _ in 0..<100 where server.activeTimers.status { usleep(20_000) }
         #expect(server.activeTimers == (false, false), "console gone: no periodic timers")
     }
+
+    /// An MSEX 1.0/1.1 console sends no CInf (B78): after `fallbackDelay` it gets a 1.0 SInf (unsolicited) and 1.0
+    /// layer status; a later CInf still sets the version.
+    @Test func consoleWithoutClientInformationGetsVersion1_0() throws {
+        let server = CITPServer(
+            name: "test", uuid: "550e8400-e29b-41d4-a716-446655440000",
+            providers: CITPServer.Providers(
+                layers: { [CITPServer.LayerInfo(index: 1, folder: 1, file: 3, name: "Intro", positionMs: 400, lengthMs: 10_000, fps: 25, flags: LayerStatus.playing)] },
+                library: Self.library, thumbnail: { _ in nil }, frame: { _ in nil }),
+            logger: Self.logger)
+        try server.start()
+        defer { server.stop() }
+        var port: UInt16 = 0
+        for _ in 0..<100 where port == 0 {
+            port = server.status.withLock { $0.port }
+            if port == 0 { usleep(20_000) }
+        }
+        #expect(port > 0)
+        let connected = Date()
+        let client = Client(port: port)
+        defer { client.connection.cancel() }
+
+        let info = ServerInformation(
+            uuid: "550e8400-e29b-41d4-a716-446655440000", productName: "Fanous", productVersionMajor: CITPServer.productVersion.0,
+            productVersionMinor: CITPServer.productVersion.1, productVersionBugfix: CITPServer.productVersion.2, supportedVersions: [.v1_0, .v1_1, .v1_2],
+            supportedLibraryTypes: 1, thumbnailFormats: ["JPEG", "RGB8"], streamFormats: ["JPEG"], layerDMXSources: ["Layer 1"])
+        #expect(client.wait(5, for: CITPPacket.serverInformation(info).encoded(version: .v1_0, requestIndex: 0)), "1.0 SInf without CInf")
+        // the fallback waits its delay from the accept: load makes it later, never earlier (B67)
+        #expect(Date().timeIntervalSince(connected) >= 1.9, "SInf not before the delay")
+        let status = LayerStatus(
+            layerNumber: 0, mediaLibraryID: .topLevel(1), mediaNumber: 3, mediaName: "Intro", mediaPosition: 400, mediaLength: 10_000, mediaFPS: 25,
+            statusFlags: LayerStatus.playing)
+        #expect(client.wait(5, for: CITPPacket.layerStatus([status]).encoded(version: .v1_0, requestIndex: 0)), "1.0 layer status")
+        #expect(server.activeTimers.status)
+
+        client.send(Self.msex("CInf", [3, 0, 1, 1, 1, 2, 1]))  // 1.0, 1.1, 1.2
+        #expect(client.wait(for: Self.reply(.serverInformation(info))), "a late CInf still negotiates 1.2")
+        #expect(client.wait(5, for: Self.reply(.layerStatus([status]), requestIndex: 0)))
+    }
 }
