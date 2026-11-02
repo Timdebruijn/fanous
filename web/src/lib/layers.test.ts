@@ -24,6 +24,7 @@ import {
   thumbnailFor,
   thumbnailIndex,
   valueText,
+  layerNumbers,
 } from './layers';
 import type { ParamSpec } from './patch-screen';
 
@@ -183,5 +184,14 @@ describe('live inputs on the Inputs screen (B137)', () => {
     const map = layersShowing([layer({ index: 1, folder: 0, file: 3 }), layer({ index: 2, folder: 0, file: 3 }), layer({ index: 3, folder: 0, file: 0 })]);
     expect(map.get('0/3')).toEqual(['Layer 1', 'Layer 2']);
     expect(map.size).toBe(1);
+  });
+});
+
+describe('layerNumbers', () => {
+  it('counts 1…layerCount and guards a bad count', () => {
+    expect(layerNumbers(3)).toEqual([1, 2, 3]);
+    expect(layerNumbers(2.7)).toEqual([1, 2]);
+    expect(layerNumbers(-1)).toEqual([]);
+    expect(layerNumbers(Number.NaN)).toEqual([]);
   });
 });

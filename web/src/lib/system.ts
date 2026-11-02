@@ -15,7 +15,9 @@ export const ROLES: readonly Role[] = ['monitor', 'operator', 'programmer'];
 export type Tone = '' | 'yellow' | 'red';
 export type DotTone = 'green' | 'yellow' | 'red' | 'off';
 
+/** Two digits: 7 → "07". */
 export const pad2 = (n: number) => String(n).padStart(2, '0');
+
 /** A Copy button's outcome: the text in the clipboard, or not (no permission, no secure context). */
 export async function copied(text: string): Promise<'ok' | 'failed'> {
   try {
