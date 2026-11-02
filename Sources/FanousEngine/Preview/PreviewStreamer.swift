@@ -75,7 +75,7 @@ public final class PreviewStreamer: @unchecked Sendable {
     public let jpegOut = Atomic<Int>(0)
     public let jpegFailed = Atomic<Int>(0)
     public let jpegDropped = Atomic<Int>(0)
-    /// The steps between a tap and its JPEG (B99): completion handlers that ran with `.completed` (`preview.completions`)
+    /// The steps between a tap and its JPEG (B99): completion handlers that ran with `.completed` (`completions`)
     /// or another status (`completionErrors`), `encode` entries on the preview queue (`encodes`) and JPEG encodes started
     /// (`jpegStarted`); `jpegStarted` above `jpegOut` + `jpegFailed` is an encode still in `jpegRepresentation` or its sends
     /// (by 1 transiently while one runs). Per streamer in `/metrics` `preview.streamers`: the sums hide one streamer among the others.
