@@ -1921,7 +1921,10 @@ Media screen's folder 0 list gets the groups "Cameras and capture cards
 (1–20)" and "Displays (21–28)" with the green dot and Forget of the Syphon
 group; the layer panel's folder 0 picker lists them the same way; the
 System screen shows the two permissions with an Authorize button. The console
-side needs nothing: File 1–32 in folder 0 already dials them (§6).
+side needs nothing: File 1–32 in folder 0 already dials them (§6). Designed in
+§12.1 (2026-11-02, not built): Forget and the permissions move to an Inputs
+screen, which adds a number of your choice and a capture format per device;
+Media keeps folder 0 as the picker.
 
 **Windows (29–32), later.** A window is named by its app's bundle id and title
 (`capture.window {file, app, title}` from a list the engine publishes as
@@ -3371,7 +3374,8 @@ groundwork and small engine pieces first):
   supported), run by `AVAudioEngine` with a single `AVAudioSourceNode` whose
   real-time render callback mixes all layers' PCM rings: `out += ring.pull()
   × volume × pan`. Per-layer output pair selection (channels 1-2, 3-4, …) is
-  a project setting.
+  a project setting. Neither is built (B4, B76); their settings are designed
+  as the Outputs screen's Audio tab in §12.1 (2026-11-02).
 - Each layer's decoder fills its PCM ring (48 kHz float, 250 ms) from the
   movie's audio track, positioned by the layer clock. Audio plays only when
   `speed == 100 %` and direction is forward; otherwise the ring is muted
@@ -3697,9 +3701,9 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
 ### 11.4 Frontend (ADR-0012)
 
 Svelte 5 (runes) + Vite + TypeScript strict, Vitest for unit tests; no UI
-component library, no router library (six screens, hash routing in 30
-lines), no runtime CDN loads. Chosen over Preact because fine-grained compiled
-reactivity updates exactly the DOM nodes that changed when 1 000+ live values
+component library, no router library (six screens, seven with the Inputs
+screen of §12.1; hash routing in 30 lines), no runtime CDN loads. Chosen
+over Preact because fine-grained compiled reactivity updates exactly the DOM nodes that changed when 1 000+ live values
 tick at 20 Hz, with no virtual DOM diff and a smaller runtime; the UI must
 stay smooth on an iPad while the mapping editor renders an SVG overlay over a
 live preview.
@@ -3862,6 +3866,9 @@ going active or lost, a lagging client, no output rendering.
    (native file dialog in the shell; path browser or HTTP upload in
    browsers). Ingest queue panel with per-job codec choice, target number,
    progress, ETA, errors. Rename/renumber with conflict detection.
+   Designed in §12.1 (2026-11-02, not built): an **Inputs** screen comes
+   after Media (key `3`, the screens below move down one key) and takes over
+   the management of folder 0's live inputs.
 3. **Outputs & Mapping** — three tabs sharing a live preview that can show
    the canvas, the selected output (post-warp) or the physical display
    arrangement: *Canvases* (size, layers assigned, clock master), *Outputs*
@@ -3871,7 +3878,8 @@ going active or lost, a lagging client, no output rendering.
    path editor with feather, numeric fields for every point, nudge keys,
    point density selector, "raw" bypass). Designed for iPad: large handles,
    two-finger pan/zoom, a "send test pattern to this output" toggle that
-   stays visible.
+   stays visible. Designed in §12.1 (2026-11-02, not built): a fourth tab,
+   *Audio* (output device, latency offset, an output pair per layer).
 4. **Patch / DMX** — fixture list (type, universe, address, footprint,
    collisions in red), add/remove layers (bounded by the tier's measured
    limit, shown next to the count), per-universe source protocol and
@@ -3886,7 +3894,8 @@ going active or lost, a lagging client, no output rendering.
    rate, offset, lock state, big readout), cue list (add/edit/reorder cues,
    per-cue parameters + fade, TC trigger time, go/back/goto, current/next
    highlighting, follow-timecode toggle), OSC (ports, address map viewer,
-   last 50 received messages), MIDI (ports; MTC only in v1).
+   last 50 received messages), MIDI (ports; MTC only in v1). Designed in
+   §12.1 (2026-11-02, not built): a level meter on the LTC channel.
 6. **System / Health** — machine capabilities and tier (chip, memory
    engines, GPU, memory, displays supported, measured benchmark numbers or
    "not benchmarked"), live metrics (frame time histogram per output,
@@ -3895,12 +3904,210 @@ going active or lost, a lagging client, no output rendering.
    fix hints, network (interfaces, listener state, TLS fingerprint, Bonjour
    name, clients), logs (filterable tail, download), service (engine
    version, uptime, restart, install/remove agent — shell only), roles and
-   passwords, library root, audio device, backup (v2).
+   passwords, library root, audio device, backup (v2). Designed in §12.1
+   (2026-11-02, not built): the audio device goes to the Outputs screen's
+   Audio tab and the capture permissions to the Inputs screen.
 
 Keyboard: `1–6` switch screens, `Space` cue go (operator+), `Esc` closes
 panels, `Cmd/Ctrl+Z / Shift+Z` undo/redo, `L` toggles show lock (programmer,
 with confirmation). None of them act while a modal dialog is open; `?` still
-closes the shortcut list.
+closes the shortcut list. Designed in §12.1 (2026-11-02, not built): an
+Inputs screen on key `3`, so `1–7`.
+
+### 12.1 Inputs screen and audio outputs (design 2026-11-02, B137)
+
+**Status:** designed 2026-11-02, not built. The four decisions below are for
+the owner to approve; the build order is at the end.
+
+**Why.** The owner wants one place to select and set up inputs, and expects
+more settings to come: capture cards, the audio input that carries timecode,
+and the audio output, which he wants to set up fully. Checked against the code
+on 2026-11-02, these are spread over three screens, and the audio output has
+no settings at all:
+- Cameras, capture cards, displays and Syphon servers are listed on the Media
+  screen as folder 0 (§8.2.1, "Live feed and UI"), with their numbers, a
+  running dot and Forget. Nothing about them can be set. The engine picks the
+  capture format (B126; B131 for UVC webcams). A number is always the lowest
+  free one and can only be freed. Size, fps and drops show only in the status
+  of a layer that shows the input (`layers[].capture`).
+- The camera and screen permissions are on the System screen (Machine ›
+  Capture permissions). The microphone permission that LTC needs has no row:
+  the engine asks once when LTC opens (§15.1).
+- The LTC device and channel are on the Show screen (Timecode). The device is
+  picked by name from `live.osc.audioInputs`, which has no channel count, and
+  nothing shows whether the channel carries a signal.
+- The audio output is the system default device in one stereo mix:
+  `AudioMixer.deviceUID` is ignored (B4) and the per-layer output pairs of §10
+  are not built (B76). §12 puts the audio device on the System screen, but no
+  UI has it.
+
+**Decisions (for the owner):**
+1. **Two places that mirror each other.** A new **Inputs** screen holds
+   everything that comes in: cameras and capture cards, displays, Syphon
+   servers (later windows and NDI, B74) and audio inputs. Audio out becomes an
+   **Audio** tab on the Outputs screen, beside Canvases, Outputs and Warp &
+   Slices: that screen is where the show leaves the machine. Rejected: one
+   "Devices" screen for both directions, which would split the outputs over
+   two screens (and a Syphon server is no device). Also rejected: "I/O", which
+   reads as a twin of Outputs.
+2. **Inputs is screen 3, key `3`.** Outputs, Patch, Show and System move to
+   keys 4–7. The order follows the signal: what plays (Layers), what it plays
+   (Media, Inputs), where it goes (Outputs), who controls it (Patch, Show),
+   the machine (System). Rejected: key `7` at the end, which keeps today's
+   keys but puts Inputs after System. Before 1.0 the keys can still move.
+3. **Settings move to Inputs, the picker stays.**
+   - Media's folder 0 keeps listing every built-in and live input with its
+     number and play menu, because that is what a console selects. It loses
+     Forget, Forget all and the permission captions, and each live row links
+     to its input on Inputs.
+   - System's Capture permissions block moves to Inputs. System keeps the
+     readiness items, and their fix hints point at Inputs.
+   - The timecode settings stay on Show (source, device, channel, rate,
+     offset). Inputs is a second way to the same `project.timecode` ("Use for
+     timecode" on an audio channel).
+4. **New settings, each its own step:**
+   - choose an input's number (move, or swap with a taken one);
+   - the capture format per device (B131);
+   - the microphone permission, and a level meter on the LTC channel;
+   - the audio output device with latency compensation (B4);
+   - an output pair per layer (B76).
+
+**Inputs screen.** A list and a detail panel, as on the Patch screen (on
+narrow screens the detail goes under the list). Edits need the programmer role
+and are refused under show lock, as on the other screens.
+- *Top:* the permissions this Mac's inputs need, one row each with its state
+  and Authorize: Camera, Screen recording, Microphone. A row shows only while
+  an input of its kind exists (a numbered device or display, or timecode on
+  LTC). It turns red only while an input in use lacks the permission, which is
+  the readiness rule of B122.
+- *List,* grouped by kind, each group with its range: Cameras and capture
+  cards (1–20), Displays (21–28), Syphon servers (150–169), Audio inputs. A row
+  has:
+  - the number;
+  - the dot, as on Media: green running, yellow in use by another app, grey
+    not running;
+  - the name, and the layers that show it (badges);
+  - for an open input, its signal in one caption ("1920×1080 · 59.94 fps ·
+    2vuy", "no signal").
+
+  Forget all not running sits in the group header and the unnumbered-servers
+  note under Syphon, as on Media today. Audio inputs have no folder 0 number
+  and no dot: a row is the device's name and channel count, and on the device
+  in use "Timecode (LTC, channel 1)".
+- *Detail of a video input:*
+  - its name (and model, for a capture device);
+  - Number (a field, step 3) and Forget (only when not running);
+  - its status. While a layer has it open: size, fps, subtype and the counters
+    of `layers[].capture`. An input that no layer shows is not opened for this
+    screen and reads "not open: no layer shows it". Opening a camera just to
+    look can take it from another app and costs a session.
+  - Capture devices add Format (step 4). Displays and Syphon servers have no
+    format.
+- *Detail of an audio input:* its channels, and per channel "Use for
+  timecode". It sets the timecode source to `ltc` with this device and
+  channel, in one `timecode.set` with path "" and the whole settings, so it is
+  one undo step. The channel in use shows LTC's state, rate and value and the
+  level meter (step 2).
+
+**Number.** Two commands, both programmer, refused under show lock and in
+show mode (layers on either number change picture), and undoable:
+- `capture.renumber {file, to}`: 1–20 for devices and 21–28 for displays, each
+  only within its own range;
+- `syphon.renumber {file, to}`: 150–169.
+
+A free `to` moves the entry. A taken one swaps the two. Like Forget, the
+command goes through the catalog, which writes `/capture`, `/screens` or
+`/syphon` back.
+
+The catalog's adoption rule (§8.2, B69) has to change for this. Today it drops
+a project entry that puts a running server's identity on another number. It
+must instead accept a value that holds each running identity exactly once (a
+move or a swap, as an undo writes), or the undo of a renumber is dropped.
+Layers select by number, so after a swap a layer on file 1 shows the device
+that is now on 1. That is the point: a console cue keeps meaning "camera 1".
+
+**Format (capture devices, B131).** `/capture/N/format` takes one of:
+- `"auto"`, or absent: today's rule (§8.2.1 step 2a, B126), where built-in
+  and Continuity cameras fit the canvas and other devices follow the input;
+- `"input"`: follow the input (keep the active format's size);
+- `"canvas"`: the cameras' rule of B126 for any device: the largest size that
+  fits canvas 1 with a frame-rate range holding the canvas rate, else the
+  largest that fits;
+- `{w, h, fps}`: one fixed format.
+
+The feed lists a device's sizes as `live.capture.devices[].formats: [{w, h,
+fps}]`, one entry per size with its highest rate. It is read when the catalog
+first sees the device; a card that changes format with its input updates on
+the next poll. `capture.format {file, format}` is programmer, refused under
+show lock, and undoable. The session reopens, so every layer on the device
+keeps its last frame for up to about a second. A `{w, h, fps}` that the device
+no longer lists falls back to `"auto"`, with a warning in the layer status.
+The pixel format stays the engine's choice (§8.2.1, step 2a).
+
+**Audio inputs (step 2).**
+- `live.audio.inputs: [{name, channels}]` replaces `live.osc.audioInputs`.
+  The host facts read (B133) already reads each device's input stream
+  configuration.
+- `live.capture.permissions.microphone` and `capture.authorize {kind:
+  "microphone"}`, as for the camera.
+- `live.timecode.level`: the peak of the LTC channel over the last 100 ms in
+  dBFS, or `null` while LTC is not open. `LTCInput`'s sink callback writes it
+  as one atomic, with no allocation and no lock.
+- One `LevelMeter` component shows it on Inputs and in Show's Timecode panel.
+  Only the LTC device is metered: a meter on any other input device would need
+  the microphone permission and an input graph of its own.
+
+**Audio tab on Outputs (steps 5 and 6).**
+- *Device:* `live.audio.outputs: [{uid, name, channels}]`, from the same host
+  facts read. It is a machine setting (settings.json `audio {device,
+  offsetMs}`), set with `audio.set {device?, offsetMs?}` like `sync.set`:
+  programmer, refused under show lock and in show mode, applied live (the
+  mixer reopens on the new device). A null `device` means the system default.
+  A chosen device that is not connected plays nowhere rather than on the Mac's
+  speakers. The status bar's audio item (§12) then reads it in yellow, and a
+  readiness item "Audio device connected" fails while a layer has audio. Like
+  the capture items, it blocks show mode until acknowledged.
+- *Latency (B4):* the mixer schedules by the device's reported latency
+  (device and stream latency, safety offset, buffer), so sound leaves with the
+  picture. Offset (ms, −200…+200, positive is later) covers the room: PA
+  delay, projector processing. Measured with a loopback, as B4 says.
+- *Routing (B76):* `layerAudio: {"3": 5}` in the project, keyed by layer like
+  `layerCanvas`. The value is the first channel of the layer's output pair;
+  absent means 1, so channels 1–2. It is set with `layer.set {layer, audio}`,
+  where `canvas` and `audio` then each become optional. The tab shows a matrix with layers as rows and the device's
+  pairs as columns, and a meter per pair. The layer panel gets the same choice
+  as "Audio out". A pair the device does not have plays nowhere, and the
+  layer's row says so.
+
+**Build order** (each step a PR after this design, counted from 1; the stage
+is the owner's order of 2026-11-01):
+1. web: the Inputs screen with today's data (video groups, permissions,
+   Forget). Media's folder 0 loses its management and System its Capture
+   permissions. Keys 1–7, the user guide, `docs/DEVELOPMENT.md` ("Keys 1–6")
+   and the screenshots. No engine change. UI stage.
+2. engine + web: audio inputs with channels, the microphone permission and the
+   LTC level; on the web side the Audio inputs group, "Use for timecode", and
+   the meter on Inputs and Show. UI stage.
+3. engine + web: Number (both commands, the catalog's adoption rule, the
+   field). UI stage.
+4. engine + web: Format (B131), once the owner's live check with a UVC webcam
+   shows the need. Small row.
+5. engine + web: the audio output device and latency (B4, P1): the Audio tab
+   with Device and Offset, the status bar item and the readiness item. Big
+   feature stage, unless the owner pulls it forward.
+6. engine + web: routing (B76): `layerAudio`, the mixer's channel count from
+   the device, the matrix and the pair meters. Big feature stage.
+
+**Not in this design:**
+- audio from a live input as layer audio (§10: live inputs have no audio in
+  v1);
+- windows 29–32 and NDI (B74), beyond joining the list when they are built;
+- settings that only a vendor SDK reaches, such as the input connector or
+  SDI/HDMI choice on DeckLink or AJA cards (§8.2.1);
+- a test tone;
+- MIDI and DMX inputs, which stay on Show and Patch;
+- the devices' sample rate, which is set in Audio MIDI Setup (the audio
+  engine's graph converts).
 
 ---
 
