@@ -125,7 +125,8 @@ public final class Compositor: @unchecked Sendable {
     private var drawnTime: Float = 0
     /// The shader's clock (`texel.w`, the strobe's `fract(time * rate)`) wraps here. 255 s, not an hour (B11): the strobe
     /// rate is an 8-bit step, 1 + 29k/255 Hz, so 255 × rate = 255 + 29k is a whole number of cycles for every k and the wrap
-    /// never moves the phase; at 3600 s 240 of the 256 rates jumped, up to half a cycle. A smaller wrap also keeps the Float
+    /// moves the phase by Float rounding only (under 0.001 cycle, the rate reaches the shader through a percent in Float); at
+    /// 3600 s 240 of the 256 rates jumped, up to half a cycle. A smaller wrap also keeps the Float
     /// clock fine: about 0.0005 cycle at 30 Hz. The 255 belongs to the 8-bit grid: a 16-bit rate would need its own wrap.
     static let timeWrap: Double = 255
     /// This tick reused the last canvas: its own selection is still in `drawItems` (`drawLayer`).

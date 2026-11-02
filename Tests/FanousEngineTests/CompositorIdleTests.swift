@@ -18,7 +18,8 @@ struct CompositorIdleTests {
     /// shader's Float arithmetic; an hour (the old wrap) is not: k = 6 (1.68 Hz) jumped 8/17 of a cycle there.
     @Test func strobePhaseIsContinuousAcrossTheClockWrap() {
         func jump(_ wrap: Double, _ k: Int) -> Float {
-            let rate = 1 + 29 * Float(k) / 255
+            let a = Float(Float(100 * Double(k) / 255) / 100)  // the parameter's path: percent in Double, Float, / 100 (ParameterSnapshot)
+            let rate = 1 + 29 * a
             let phase = (Float(wrap) * rate).truncatingRemainder(dividingBy: 1)
             return min(phase, 1 - phase)
         }
