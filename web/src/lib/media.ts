@@ -47,6 +47,13 @@ export interface LibrarySnapshot {
   invalidCount: number;
 }
 
+/** GET /api/library; a failure throws with the status and the engine's text. */
+export async function loadLibrary(signal?: AbortSignal): Promise<LibrarySnapshot> {
+  const response = await fetch('/api/library', { signal });
+  if (!response.ok) throw new Error(`${response.status} ${(await response.text()).trim()}`.trim());
+  return (await response.json()) as LibrarySnapshot;
+}
+
 /** The names `POST /api/ingest` takes (IngestAPI.codec(named:)); the first is the default. */
 export const transcodeCodecs = [
   { value: 'hapq', label: 'HAP Q' },

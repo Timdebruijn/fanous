@@ -25,6 +25,7 @@
   import LayerStrips from '../components/LayerStrips.svelte';
   import Preview from '../components/Preview.svelte';
   import { layerPreview, parseThumbFrame, rowThumb, thumbnailFor, thumbnailIndex, type LibrarySnapshot } from '../lib/layers';
+  import { loadLibrary } from '../lib/media';
   import { canvasTarget, layerCanvas } from '../lib/outputs';
   import { loadChannelMap, type ChannelMap } from '../lib/patch-screen';
   import { latestOnly } from '../lib/preview';
@@ -83,12 +84,6 @@
   let channelMap = $state.raw<ChannelMap | null>(null);
   let library = $state.raw<LibrarySnapshot | null>(null);
 
-  async function getJSON<T>(url: string, signal: AbortSignal): Promise<T> {
-    const response = await fetch(url, { signal });
-    if (!response.ok) throw new Error(`${url}: ${response.status}`);
-    return (await response.json()) as T;
-  }
-
   // Failures leave the previous data in place: ranges show a dash, thumbnails stay empty boxes.
   onMount(() => {
     void loadChannelMap().then((map) => (channelMap = map));
@@ -98,7 +93,7 @@
   $effect(() => {
     void app.live.library.scannedAt;
     const abort = new AbortController();
-    getJSON<LibrarySnapshot>('/api/library', abort.signal).then((snapshot) => (library = snapshot), () => {});
+    loadLibrary(abort.signal).then((snapshot) => (library = snapshot), () => {});
     return () => abort.abort();
   });
 
