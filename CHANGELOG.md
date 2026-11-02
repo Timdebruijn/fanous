@@ -630,6 +630,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   with the x axis's scale; each axis now has its own (B56, PR #191).
 - Changed: a layer showing a static generator (grid, colour bars, …) or the clock no longer makes the compositor redraw the
   canvas every tick; between changes the canvas is reused like a still, the clock redraws once a second (B56, PR #192).
+- Changed: on a phone the status bar took five rows, a third of the screen. With a fresh engine it takes three now: the
+  badges with the role, the numbers (fps, dropped, clients) with undo and redo, and the universe pills; the frame time and
+  the auto-version item are left out there (System carries both), as are the keyboard-shortcuts button (the ? key still
+  opens the list), the app name and the outputs item while they render. Desktop looks the same (PR #201).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
