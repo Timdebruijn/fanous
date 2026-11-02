@@ -301,7 +301,7 @@ public final class LibraryIndex: @unchecked Sendable {
                     entry.reason = metadata.rotated == true ? "rotated or flipped (phone footage): transcode to make it upright" : "\(metadata.codec) is not ProRes/HAP in .mov"
                 }
             } catch {
-                entry.reason = "\(error)"
+                entry.reason = error.clientText  // `/api/library` reaches monitors: no file path (B25)
             }
         case .sequence:
             let frames = (try? SequenceIngest.frames(in: url)) ?? []
