@@ -9,6 +9,7 @@
   import { app, can, cmd, playOnLayer } from '../lib/state.svelte';
   import { syncStatus } from '../lib/sync';
   import { throttledSender } from '../lib/throttle';
+  import { untrack } from 'svelte';
   import PolicyHint from './PolicyHint.svelte';
 
   let {
@@ -65,7 +66,7 @@
   const rawMax = (spec: ParamSpec | undefined) => (spec?.bits === 16 ? 65535 : 255);
   /** a layer's channel list (about 50 rows) starts closed on a phone, where it made the Layers page 4967 px long at 390 px;
    * open on a desktop, and for Master and the outputs (two rows). Control opens it: its sliders live in the list */
-  let channelsOpen = $state(!isLayer || !window.matchMedia('(max-width: 599px)').matches);
+  let channelsOpen = $state(untrack(() => !isLayer) || !window.matchMedia('(max-width: 599px)').matches);  // the initial value, on purpose
   $effect(() => {
     if (control) channelsOpen = true;
   });
