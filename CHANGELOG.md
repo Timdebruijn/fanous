@@ -602,6 +602,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   Developer ID). `scripts/notarize.sh`'s own signature check failed before the upload: `grep -q` ended the pipe and `codesign` died
   of SIGPIPE under `pipefail`; it reads the whole output now. RELEASE §5 notes the first run and what a developer Mac that ran
   ad-hoc builds needs (agent re-register, screen grant anew) (B50, PR #182).
+- Fixed: a Rec.601-tagged source (SD material, some cameras' recordings) ingested to ProRes came out with 15–40 codes of colour
+  error on saturated colours: the reader copied the 601 tag onto the RGB frames and the writer coded and tagged the file with it,
+  which the layer shader (Rec.709) then misread. Ingested ProRes is now coded and tagged Rec.709 by name. Files the engine plays
+  without ingest keep the 709 reading (B21, PR #184).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
