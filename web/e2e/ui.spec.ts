@@ -51,6 +51,24 @@ async function expectDecoders(page: Page): Promise<void> {
   await expect.poll(seen, { timeout: previewTimeout }).toMatch(/^(1 open: H\.264 · |0 open: JPEG 5 fps · )/);
 }
 
+/** B98/B99: no JPEG frame came for a viewer refused to JPEG on this CI runner. The Actions warning (and the test's
+ * annotation) carries the engine's whole `/metrics`: the preview counters (`framesIn` taps, `skipped`, `jpegOut`,
+ * `jpegFailed`, `jpegDropped`), the compositor's frames and GPU times, so the next occurrence narrows down which step of
+ * the JPEG path stopped, or shows that the engine did not answer; the engine log is attached. The test is skipped: the
+ * rest would only run into the test timeout. */
+async function noJPEGOnCI(engine: Engine, jpegFrames: number, ms: number): Promise<void> {
+  // 5 s: the test has spent most of its 60 s by now; a non-2xx answer shows its status; one line, as a workflow command is one
+  const metrics = await engine.api
+    .get('/metrics', { timeout: 5_000 })
+    .then(async (r) => (r.ok() ? r.text() : `HTTP ${r.status()}: ${await r.text()}`))
+    .catch((error: unknown) => `metrics unreadable: ${String(error)}`);
+  const note = `B98: ${jpegFrames} JPEG frames on the refused canvas:2 stream within ${ms} ms; ${metrics.replace(/\s+/g, ' ')} (B99)`;
+  console.log(`::warning::${note}`);
+  test.info().annotations.push({ type: 'B98', description: note });
+  await test.info().attach('fanousd.log (B98)', { path: join(engine.home, 'Library/Logs/Fanous/fanousd.log'), contentType: 'text/plain' });
+  test.skip(true, 'no JPEG frame for the refused viewer on this runner (B99)');
+}
+
 test('patch API: /api/patch serves the live patch, an added output included', async ({ page, engine }) => {
   const outputPatched = async () => {
     const patch = (await (await engine.api.get('/api/patch')).json()) as { entries: { fixture: Record<string, unknown> }[] };
@@ -1763,33 +1781,14 @@ test('preview: a viewer refused H.264 at the encoder limit shows JPEG at once an
   await page.getByRole('group', { name: 'Canvas', exact: true }).getByRole('button', { name: 'Canvas 2' }).click();
   const figure = page.getByRole('figure');
   await expect.poll(() => subs, { timeout: previewTimeout }).toBe(1);
-  // the engine's JPEG counters (live streamers only) while this viewer is the only one on JPEG: JPEGs made, encodes
-  // that returned nil, sends a connection refused (B99); a failed read gives zeros, never a failed test
-  type JPEGCounters = { jpegOut: number; jpegFailed: number; jpegDropped: number };
-  const jpegCounters = async (): Promise<JPEGCounters> => {
-    try {
-      return ((await (await engine.api.get('/metrics')).json()) as { preview: JPEGCounters }).preview;
-    } catch {
-      return { jpegOut: 0, jpegFailed: 0, jpegDropped: 0 };
-    }
-  };
-  const before = await jpegCounters();
   // the refusal says `codec: "jpeg"`: JPEG at once (not after 5 s without a description), and its frames are drawn
   await expect(figure.locator('figcaption')).toContainText(/^JPEG 5 fps · .* · H\.264 encoders busy/, { timeout: 3_000 });
   const drawn = () => figure.locator('canvas').evaluate((c: HTMLCanvasElement) => c.getContext('2d')!.getImageData(c.width / 2, c.height / 2, 1, 1).data[3]);
   // B98: on CI's VM the engine has sent this refused stream no JPEG frame for 30 s (cause open): on a workstation one
-  // must come; drawing is checked once a frame came, and a CI run without one says so (Actions warning with the
-  // engine's JPEG counters, engine log attached) and is skipped (B99)
+  // must come; drawing is checked once a frame came, and a CI run without one records the engine's /metrics and is skipped (B99)
   await expect.poll(() => jpegFrames, { timeout: previewTimeout }).toBeGreaterThan(0).catch(async (error: unknown) => {
     if (!process.env.CI || !/Timeout \d+ms exceeded/.test((error as Error).message ?? '')) throw error;
-    const after = await jpegCounters();
-    const made = (['jpegOut', 'jpegFailed', 'jpegDropped'] as const).map((k) => `${k} +${after[k] - before[k]} (now ${after[k]})`).join(', ');
-    const note = `B98: ${jpegFrames} JPEG frames on the refused canvas:2 stream within ${previewTimeout} ms; ${made} (B99)`;
-    console.log(`::warning::${note}`);
-    test.info().annotations.push({ type: 'B98', description: note });
-    await test.info().attach('fanousd.log (B98)', { path: join(engine.home, 'Library/Logs/Fanous/fanousd.log'), contentType: 'text/plain' });
-    // the upgrade does not come on such a runner either: the rest would only run into the test timeout
-    test.skip(true, 'no JPEG frame for the refused viewer on this runner (B99)');
+    await noJPEGOnCI(engine, jpegFrames, previewTimeout);
   });
   if (jpegFrames > 0) await expect.poll(drawn, { timeout: previewTimeout }).toBe(255);
 
@@ -1973,14 +1972,10 @@ test('preview: a refused viewer the engine moves to a stream that never delivers
   const caption = figure.locator('figcaption');
   await expect(caption).toContainText(/^JPEG 5 fps · .* · H\.264 encoders busy/, { timeout: previewTimeout });
   // the moved case needs the refused stream's JPEG first: without a frame on it (the B99 symptom) the watchdog fires
-  // before any move. A CI run without one says so (Actions warning, engine log attached) and is skipped, as in B86
+  // before any move. A CI run without one records the engine's /metrics and is skipped, as in B86
   await expect.poll(() => jpegFrames, { timeout: 4_000 }).toBeGreaterThan(0).catch(async (error: unknown) => {
     if (!process.env.CI || !/Timeout \d+ms exceeded/.test((error as Error).message ?? '')) throw error;
-    const note = `B98: ${jpegFrames} JPEG frames on the refused canvas:2 stream within 4000 ms (B99)`;
-    console.log(`::warning::${note}`);
-    test.info().annotations.push({ type: 'B98', description: note });
-    await test.info().attach('fanousd.log (B98)', { path: join(engine.home, 'Library/Logs/Fanous/fanousd.log'), contentType: 'text/plain' });
-    test.skip(true, 'no JPEG frame for the refused viewer on this runner (B99)');
+    await noJPEGOnCI(engine, jpegFrames, 4_000);
   });
   const drawn = () => figure.locator('canvas').evaluate((c: HTMLCanvasElement) => c.getContext('2d')!.getImageData(c.width / 2, c.height / 2, 1, 1).data[3]);
   await expect.poll(drawn).toBe(255);

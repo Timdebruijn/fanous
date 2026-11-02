@@ -586,6 +586,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Tests: a UDP port for a test is handed out once per process. The kernel assigns ports at random, so two tests that probed
   before either bound could share one, and every unicast datagram then goes to the older listener (measured), which is consistent with the one
   failure of `zeroDropsToZeroAndPacketsBringItBack` seen; its port was not recorded (B115, PR #176).
+- CI: the e2e's note for a refused viewer that got no JPEG frame on the runner (B98) now carries the engine's whole `/metrics`
+  or the error of reading it, instead of three JPEG counters that read 0 both when no JPEG was made and when the engine did not
+  answer; measured: the note comes on the slow runner class only, 27 of the last 59 e2e jobs (B99, PR #178).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
