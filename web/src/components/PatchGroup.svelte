@@ -5,8 +5,7 @@
   import { tick } from 'svelte';
   import PatchInspector from './PatchInspector.svelte';
   import type { PatchEntry } from '../lib/docs';
-  import { lockTitle } from '../lib/show';
-  import { app, can, cmd, toastUndo } from '../lib/state.svelte';
+  import { app, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
   import {
     MAX_LAYERS, MAX_OUTPUTS, UNIVERSE_SIZE, groupSlots, layEntries, moveAfterLayers, patchTarget, rowStatus, rowSummary, slotText, standardStart, universeName,
     type FixtureRow, type Group, type Slot,
@@ -31,7 +30,7 @@
   } = $props();
 
   // chips stay clickable when locked, so the editor can still be read
-  const lock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
+  const lock = $derived(programmerLock());
   const locked = $derived(!!lock);
   const policy = $derived(app.project.policy);
   const block = $derived(group.block);

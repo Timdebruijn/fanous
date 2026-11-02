@@ -3,28 +3,18 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script module lang="ts">
   import type { PreviewSource } from '../lib/layers';
+  import { prefs } from '../lib/state.svelte';
 
   // Canvas or This layer, remembered per browser (default Canvas)
   const PREVIEW_KEY = 'fanous.layersPreview';
 
   // Module scope: the router unmounts this screen on navigation, the selected layer should survive that.
   // previewCanvas: the canvas shown while the preview shows a canvas (multiple canvases)
-  const ui = $state({ selected: 1, fixture: null as string | null, preview: storedPreview(), previewCanvas: 1 });
+  const ui = $state({ selected: 1, fixture: null as string | null, preview: (prefs.get(PREVIEW_KEY) === 'layer' ? 'layer' : 'canvas') as PreviewSource, previewCanvas: 1 });
 
-  function storedPreview(): PreviewSource {
-    try {
-      return localStorage.getItem(PREVIEW_KEY) === 'layer' ? 'layer' : 'canvas';
-    } catch {
-      return 'canvas';
-    }
-  }
   function setPreview(source: PreviewSource) {
     ui.preview = source;
-    try {
-      localStorage.setItem(PREVIEW_KEY, source);
-    } catch {
-      // private mode or blocked storage: the choice lasts for this page only
-    }
+    prefs.set(PREVIEW_KEY, source);
   }
 </script>
 

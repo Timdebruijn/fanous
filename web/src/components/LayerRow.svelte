@@ -5,9 +5,8 @@
   import type { LayerStatus, ResolvedParameter } from '../lib/docs';
   import { clampPercent, findParam, formatPercent, layerState, mediaLine, playedPercent, policyName, positionCaption } from '../lib/layers';
   import { layerCanvas } from '../lib/outputs';
-  import { lockTitle } from '../lib/show';
   import { syncStatus } from '../lib/sync';
-  import { app, can, cmd } from '../lib/state.svelte';
+  import { app, cmd, programmerLock } from '../lib/state.svelte';
 
   let {
     n,
@@ -43,7 +42,7 @@
   const canvases = $derived(app.project.canvases);
   const canvas = $derived(layerCanvas(app.project.layerCanvas, n));
   const canvasName = $derived(canvases.find((c) => c.id === canvas)?.name ?? `Canvas ${canvas}`);
-  const canvasLock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
+  const canvasLock = $derived(programmerLock());
   function keydown(event: KeyboardEvent) {
     if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
     event.preventDefault();

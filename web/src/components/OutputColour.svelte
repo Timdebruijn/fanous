@@ -5,8 +5,7 @@
   import { onDestroy } from 'svelte';
   import RangeStepper from './RangeStepper.svelte';
   import { colorOf, type OutputConfig } from '../lib/outputs';
-  import { lockTitle } from '../lib/show';
-  import { app, can, cmd } from '../lib/state.svelte';
+  import { app, cmd, programmerLock } from '../lib/state.svelte';
   import { throttledSender } from '../lib/throttle';
 
   // Per-output colour (DESIGN §9.9): gain R, G, B and the black offset of one output, tuned by eye. On the Outputs tab
@@ -14,7 +13,7 @@
   // keeps a drag on one value as one undo step (output.set merges the same path within 1 s).
   let { output, focus = false }: { output: OutputConfig; focus?: boolean } = $props();
 
-  const lock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
+  const lock = $derived(programmerLock());
   const color = $derived(colorOf(output));
   // throttledSender rounds to whole numbers: values go × SCALE
   const SCALE = 10000;
