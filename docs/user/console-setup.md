@@ -99,7 +99,7 @@ Fanous writes Art-Net universes as `net.subnet.universe`, shortened to
 Some consoles count Art-Net universes from 0, others from 1: check which one
 yours does, and set the [Patch sheet](#patch-sheet) to match.
 
-## The Patch / DMX screen (key 4)
+## The Patch screen (key 4)
 
 The toolbar shows "N fixtures · N universes" and, in red, the number of
 collisions. **Patch sheet** says what to patch on the console (see
@@ -107,6 +107,8 @@ collisions. **Patch sheet** says what to patch on the console (see
 GDTF** downloads the fixture file. On a wide screen the left column has Who
 controls and the fixture groups, the right column Universes and the DMX
 monitor; on a narrow one (an iPad upright, a phone) they stack in that order.
+
+![The Patch screen: Who controls, the Layers, Master and Outputs groups, Universes and the DMX monitor](../images/patch.png)
 
 - **Who controls** (programmer): the project's source policy, with a line
   that explains the current choice (see [Sources and merging](#sources-and-merging)).
@@ -244,13 +246,17 @@ would not fit, and nothing changes.
 
 **Patch sheet** in the Patch toolbar says what to patch on the console, for
 every role. It names the fixture type and modes as the exported GDTF does, so
-you pick the same ones on the console. With 8 layers and two outputs:
+you pick the same ones on the console.
+
+![The Patch sheet dialog over the Patch screen, with 8 layers, the Master and three outputs](images/patch-sheet.png)
+
+With 8 layers and three outputs:
 
 | Fixtures | Fixture type | Mode | Count | Universe | Addresses |
 |---|---|---|---|---|---|
 | Layers 1–8 | Fanous | Layer (64ch) | 8 | A 0.0.0 = universe 0 | 1, 65, 129, 193, 257, 321, 385, 449 |
 | Master | Fanous | Master (8ch) | 1 | A 0.0.1 = universe 1 | 1 |
-| Outputs 1–2 | Fanous | Output (8ch) | 2 | A 0.0.1 = universe 1 | 9, 17 |
+| Outputs 1–3 | Fanous | Output (8ch) | 3 | A 0.0.1 = universe 1 | 9, 17, 25 |
 
 A block gets a line per universe it covers: with 16 layers from A 0.0.0,
 Layers 9–16 are a second line on A 0.0.1. In a Custom group each fixture has
@@ -282,6 +288,8 @@ on it: a change applies to every fixture on that universe. Changes apply at once
 without dropping the other universes, and are part of the project and of
 undo. A universe you never changed runs the defaults, which are how Fanous
 received before these settings existed.
+
+<img src="images/universe-settings.png" width="712" alt="The Universes panel with A 0.0.0 opened: Protocol, Interface, Hold on signal loss and Signal lost after">
 
 | Setting | Choices | Default | Does |
 |---|---|---|---|
@@ -336,7 +344,7 @@ build a fixture by hand from the channel map.
 
 ## sACN instead of Art-Net
 
-Choose an `S n` universe in the inspector instead of an `A` one and send sACN
+Choose an `S n` universe in the fixture's editor instead of an `A` one and send sACN
 (UDP 5568). The engine joins the multicast group of every sACN universe in the
 patch and follows patch changes; unicast to the Mac works for any universe.
 With Interface "All interfaces" (the default) sACN multicast is joined on every
@@ -361,7 +369,7 @@ engine. `sudo lsof -nP -iUDP:5568` shows who holds the port.
 The automated tests check multicast memberships in the kernel but cannot
 receive real multicast (that needs the Local Network permission). Run this
 with sACNView, or another sACN source, on a second machine, a console on a real
-network, and the Show screen's readiness list open. Patch Layer 1 on `S 1`.
+network, and the System screen's readiness list open. Patch Layer 1 on `S 1`.
 
 - [ ] **Default route.** Mac and sACNView on the default-route network (Wi-Fi or
       Ethernet with gateway), Interface "All interfaces": S 1 multicast turns the
@@ -384,7 +392,7 @@ network, and the Show screen's readiness list open. Patch Layer 1 on `S 1`.
       available"; Art-Net still works. Quit nc, Engine › Restart Engine: sACN is
       back.
 - [ ] **Load.** 32 universes at full rate for 10 minutes: no silent universe,
-      DMX p99 in the status bar stays where it is with Art-Net.
+      the DMX to photon p99 under System › Live metrics stays where it is with Art-Net.
 - [ ] **Priority takeover.** Two sources on S 1, priority 150 and 100, different
       levels: 150 wins; stop it: the 100 source takes over after 2.5 s, also
       with Signal lost after set to 10 s.

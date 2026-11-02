@@ -35,8 +35,10 @@ Mac: ______________ Fanous version: ______________
 - [ ] **Focus on** (Do Not Disturb) from the menu bar, so no notification lands
       on an output. Fanous cannot read this; it stays a manual item.
 - [ ] **One network interface** for the console network. Turn Wi-Fi off if the
-      console is on Ethernet. sACN multicast is joined on the default-route
-      interface only, so a second active interface can put it on the wrong network.
+      console is on Ethernet. With "All interfaces" Fanous accepts DMX and joins
+      sACN multicast on every active interface, so a second network can bring in
+      a second source; or set the universe's Interface to the console network
+      (Patch › Universes).
 - [ ] Displays are **not mirrored** (System Settings › Displays). Fanous does
       not check for mirroring (B42). Set each output's **Mode** in Outputs:
       show mode applies it, and the output list warns in yellow when the
@@ -65,7 +67,10 @@ Mac: ______________ Fanous version: ______________
 ## The Readiness list
 
 Show mode runs these checks when you switch it on and every 30 seconds while it
-is on. Each item shows a fix hint.
+is on; **Run checks** on the System screen runs them at any time. Each item
+shows what it found; items that are not OK also show a fix hint.
+
+![System › Readiness after Run checks on a desk Mac: green items, red ones with Acknowledge, Focus as a manual item](images/readiness.png)
 
 | Item | Needs |
 |---|---|
@@ -74,6 +79,8 @@ is on. Each item shows a fix hint.
 | Free disk > 10 % | space on the library volume |
 | Memory headroom | quit other applications |
 | All patched universes receiving | console output and network |
+| Universe interfaces usable | the network adapter a universe is set to is there and joined (warning only; [console-setup.md](console-setup.md#universe-settings)) |
+| sACN port 5568 available | no other program holding UDP 5568 (warning only: Fanous then runs without sACN) |
 | All outputs bound to their displays | displays connected, outputs assigned |
 | Outputs in their desired display mode | the output's Mode is available and a multiple of the canvas rate (warning only) |
 | Sync groups have one master | one master per Sync group in use (warning only; [multi-server.md](multi-server.md)) |
@@ -97,8 +104,9 @@ spare display that is not connected. A setting Fanous cannot read is shown as
 "unknown"; check those yourself (B38).
 
 **Warnings** (yellow, "warning" badge) never block show mode. Today that is
-the display mode item (it names the closest mode a display offers when the
-output's Mode is not available), the two Sync items, since a slave without a
+the two universe items (a missing adapter, sACN port in use), the display mode
+item (it names the closest mode a display offers when the output's Mode is not
+available), the two Sync items, since a slave without a
 master still plays on its own, and Screen recording granted while a layer
 shows a display (folder 0, 21–28): macOS asks again about once a month, on the
 main display, whether Fanous may record the screen. Answer it before doors.
@@ -131,8 +139,9 @@ the whole Mac, show mode comes back if the Mac restarts within two hours.
 
 - [ ] Check the status bar now and then: red means look now (dropped frames, a
       universe that went silent, lost timecode, a lost output).
-- [ ] Cue Go, Back and Go to keep working while the show is locked. Everything
-      else needs the programmer to unlock first (**L**).
+- [ ] Cue Go, Back and Go to, show mode and the Timecode on/off switch keep
+      working while the show is locked. Everything else needs the programmer to
+      unlock first (**L**).
 - [ ] Do not import or transcode media during the show; ingest is paused in show
       mode anyway.
 

@@ -25,6 +25,8 @@ wide as the preview is on your screen in pixels: 320, 640, 960 or 1280 pixels,
 so a large or high-resolution screen gets a sharper picture. Resizing the window
 switches size after a moment.
 
+![The Outputs tab: three outputs in the list, the selected output's preview and its settings below](images/outputs.png)
+
 ## Canvas size and frame rate
 
 On the Canvases tab, **Size w × h** sets the canvas in pixels (or pick a preset:
@@ -32,6 +34,8 @@ On the Canvases tab, **Size w × h** sets the canvas in pixels (or pick a preset
 renders at: 23.976, 24, 25, 29.97, 30, 50, 59.94 or 60 fps. Width and height
 must be even and between 320 and 8192. Nothing changes until you press
 **Apply** and confirm; **Revert** drops your edits.
+
+![The Canvases tab: the canvas preview, Canvas 1 and Add canvas, then name, size, frame rate and clock master](images/canvases.png)
 
 Applying re-creates the canvas: every output blanks (or holds its last picture)
 for a moment, so do it before the show, not during it. It is refused while the
@@ -89,8 +93,9 @@ wins for that run and is shown (and saved, on the next edit) in the project.
 Keep the frame rate equal to the refresh rate of the displays (see "Not done
 yet": display modes are not set by Fanous).
 
-After you add an output, a yellow bar says **Next: align this output**; its
-button opens the Warp & Slices tab for that output.
+After you add an output, a yellow bar says **Next: align this output**:
+**Align this output** opens the Warp & Slices tab for that output, **Later**
+closes the bar.
 
 ## Displays and binding
 
@@ -124,6 +129,8 @@ window is hidden behind it. Use the web UI from another device then.
 | Mode | the wanted resolution and refresh rate, chosen from the modes the display offers. Applied when show mode turns on (see below); **Current** leaves the display as it is |
 | Region x · y · w · h (px) | the part of the display this output draws on; **Full display** resets it |
 | Intensity % | multiplied with the Output fixture's intensity and the Master intensity |
+
+<img src="images/output-settings.png" width="880" alt="The settings of one output: name, display, mode, region, intensity and the four blend edges">
 
 ### Display modes
 
@@ -316,6 +323,10 @@ region or display mode. The outputs of one wall need the same pixel size.
 3. **Make wall.** Blend check appears on every projector of the wall and the
    wall's panel opens on the seam check.
 
+![Step 1 of the wizard: Projector L and Projector R tapped in order, grid 1 × 2](images/wall-wizard.png)
+
+![Step 2 of the wizard: overlap 15 %, and the choice between using the canvas as it is or making it fit the wall](images/wall-wizard-2.png)
+
 **Cancel** at any step changes nothing; the Output IDs go away. **Undo** right
 after Make wall takes the wall away again.
 
@@ -324,6 +335,8 @@ after Make wall takes the wall away again.
 Each wall has a panel above the output list, built around a **map** of the
 wall: one tile per projector (name, Output ID, row and column) and the seams as
 lines between them, each with its gamma (**RGB** when R, G and B are set apart).
+
+![The panel of Wall 1 on the seam check, Blend check on both projectors; the preview shows the grey blend check pattern](images/wall-panel.png)
 
 - **Tap a seam** for its controls. Both sides of the seam always follow.
   - **Gamma** (0.5 to 5, 2.2 to start): down for a bright band in the seam,
@@ -490,6 +503,8 @@ really is (through the corner pin and mesh) and moves them in that picture, so
 a handle stays on the spot you touch while a warp is active.
 
 - **Corner pin**: four corners. **Reset corners** puts them back.
+
+  ![Warp & Slices on the LED wall output: the four corner handles over the warped preview, the mode buttons and presets below](images/warp-corner-pin.png)
 - **Mesh**: **Density** is Off (corner pin only) or 2x2, 3x3, 5x5, 9x9, 17x17
   or 33x33 points. Changing the density keeps the shape: the new points are
   placed on the current surface, so you can start coarse and refine; going to
@@ -522,6 +537,9 @@ a handle stays on the spot you touch while a warp is active.
   doors, the sky above a building). A slice can have several. The slice shows
   what is inside its **add** masks (all of it when it has none), minus what is
   inside its **subtract** masks: a door or a window is a subtract mask, a hole.
+
+  ![Mask mode on the LED wall output: an ellipse mask with its four points, the mask tools and the mask list below](images/masks.png)
+
   The tools each add an add mask, as one step for **Undo**:
   - **Polygon**: tap the corners of the area that stays visible on the picture,
     in order around it; **Done** when you have at least three, **Undo last

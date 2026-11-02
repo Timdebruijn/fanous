@@ -18,6 +18,7 @@ No dongle, no licence server, no account.</p>
 <p align="center">
   <a href="#build-and-run"><b>Build it</b></a> ·
   <a href="docs/user/README.md">User guide</a> ·
+  <a href="docs/user/how-it-works.md">How it works</a> ·
   <a href="docs/user/show-day-checklist.md">Show-day checklist</a> ·
   <a href="#help-test-it-on-a-real-desk">Test it on your desk</a>
 </p>
@@ -52,7 +53,7 @@ already know.
 | ![Layers screen with live preview and DMX inspector](docs/images/layers.png) | ![Patch screen with fixtures and DMX monitor](docs/images/patch.png) |
 | **Layers:** live canvas preview, per-layer DMX inspector | **Patch:** fixtures, collisions, live DMX, GDTF export |
 | ![Corner pin over the output preview](docs/images/outputs-warp.png) | ![Show screen with GO button, cues and timecode](docs/images/show.png) |
-| **Outputs:** blending, corner pin, mesh warp, slices, masks | **Show:** Fanous cue list, timecode, OSC |
+| **Outputs:** blending, corner pin, mesh warp, slices, masks | **Show:** Fanous cue list, timecode, OSC, MIDI |
 
 ## Built for show day
 
@@ -127,8 +128,8 @@ Building for development, protocols and endpoints: [`docs/DEVELOPMENT.md`](docs/
 - **One machine measured** (M1 Pro). Other Apple Silicon chips are expectations.
 - **Apple Silicon only:** no Intel, Windows or Linux.
 - **4K60 is about 6 ProRes layers;** heavy blur and edge effects fit on 2–3 layers.
-- **No NDI, DeckLink or AJA in the open build.** OSC feedback, MIDI notes, project
-  versions and 3D mapping come later. Everything open: [`docs/BACKLOG.md`](docs/BACKLOG.md).
+- **No NDI, DeckLink or AJA in the open build.** No MIDI output; 3D mapping comes
+  later. Everything open: [`docs/BACKLOG.md`](docs/BACKLOG.md).
 
 ### Help test it on a real desk
 

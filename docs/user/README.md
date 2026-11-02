@@ -31,14 +31,15 @@ Art-Net, sACN or console programming.
 
 | Page | What is in it |
 |---|---|
-| [getting-started.md](getting-started.md) | Install, first launch, firewall, the main window, the web UI from an iPad, roles and passwords, where files live |
-| [console-setup.md](console-setup.md) | Fixture types, the standard patch, the Patch / DMX screen, GDTF export, sACN, a first-light walkthrough |
-| [media-library.md](media-library.md) | Folder and file naming, supported formats, import and ingest, thumbnails, performance advice |
-| [outputs-and-mapping.md](outputs-and-mapping.md) | Displays, outputs, blend edges, corner pin and mesh warp, slices, masks, test patterns |
-| [show-control.md](show-control.md) | Timecode (LTC, MTC), cues, OSC, CITP/MSEX |
+| [how-it-works.md](how-it-works.md) | The picture in one page: engine and UI, from console to projector, who controls a value, the project and its versions |
+| [getting-started.md](getting-started.md) | Install, first launch, firewall, the main window and status bar, the web UI from an iPad, roles and passwords, where files live |
+| [console-setup.md](console-setup.md) | Fixture types, the standard patch, the Patch screen, universe settings, GDTF export, sACN, merging, a first-light walkthrough |
+| [media-library.md](media-library.md) | Folder and file naming, built-in content and live inputs (folder 0), formats, import and ingest, thumbnails, performance advice |
+| [outputs-and-mapping.md](outputs-and-mapping.md) | Canvases, displays, outputs, blend edges, test patterns, colour, projector walls, corner pin and mesh warp, slices, masks, presets, keystone |
+| [show-control.md](show-control.md) | Timecode (LTC, MTC), cues, OSC, MIDI, CITP/MSEX, built-in content, controlling layers from the UI |
 | [multi-server.md](multi-server.md) | Several Macs, one picture: the Sync channel, a left/right setup, badges, sync settings, the camera check |
-| [show-day-checklist.md](show-day-checklist.md) | A printable checklist for the day of the show |
-| [troubleshooting.md](troubleshooting.md) | Symptoms, causes, fixes, logs, restart and reset |
+| [show-day-checklist.md](show-day-checklist.md) | A printable checklist for the day of the show, and every readiness check |
+| [troubleshooting.md](troubleshooting.md) | Symptoms, causes, fixes, logs, restart, earlier versions and reset |
 
 Reference material outside this guide: [channel-map.md](../channel-map.md) lists
 every DMX channel, [DESIGN.md](../DESIGN.md) is the technical design, and
@@ -46,22 +47,25 @@ every DMX channel, [DESIGN.md](../DESIGN.md) is the technical design, and
 
 ## The six screens
 
-Switch screens with the left rail or the keys 1 to 6.
+Switch screens with the left rail or the keys 1 to 6; hover a screen in the
+rail to see its key.
 
-| Key | Screen | Purpose |
-|---|---|---|
-| 1 | Layers | One row per layer: media, position, intensity, play mode, source; preview of the canvas or the selected layer |
-| 2 | Media | The library: folders, files, import, transcode, ingest queue |
-| 3 | Outputs (Outputs & Mapping) | Canvases, outputs, blend, warp, slices, masks |
-| 4 | Patch (Patch / DMX) | Fixture groups and blocks, universes, DMX monitor, GDTF export |
-| 5 | Show (Show control) | Timecode, cues, OSC, MIDI sources |
-| 6 | System (System / Health) | Show mode and readiness, library root, metrics, network, project versions, roles, logs |
+| Key | Screen | Purpose | Explained in |
+|---|---|---|---|
+| 1 | Layers | One row per layer: media, position, intensity, play mode, source; preview of the canvas or the selected layer; the layer panel | [getting-started.md](getting-started.md#the-main-window), [show-control.md](show-control.md#controlling-layers-from-the-ui) |
+| 2 | Media | The library: folders, files, built-in content and live inputs, import, transcode, ingest queue | [media-library.md](media-library.md) |
+| 3 | Outputs (Outputs & Mapping) | Canvases, outputs, projector walls, blend, warp, slices, masks, presets | [outputs-and-mapping.md](outputs-and-mapping.md) |
+| 4 | Patch | Who controls, fixture groups and blocks, universes, DMX monitor, patch sheet, GDTF export | [console-setup.md](console-setup.md#the-patch-screen-key-4) |
+| 5 | Show (Show control) | GO, timecode, cues, OSC, MIDI | [show-control.md](show-control.md) |
+| 6 | System | Show mode and readiness, live metrics, machine, library root, network, sync, project versions, roles, logs | [show-day-checklist.md](show-day-checklist.md), [troubleshooting.md](troubleshooting.md) |
 
 Other keys: Cmd-Z undo and Shift-Cmd-Z redo (programmer), L lock or unlock the
 show (programmer; it only asks first when you unlock while show mode is on),
 Space fires the next cue on the Show screen (operator and programmer), ? opens
-the list of shortcuts (also the **?** button in the status bar). The rail shows
-the number key next to each screen. Keys do nothing while you type in a field.
+the list of shortcuts (also the **?** button in the status bar). Keys do
+nothing while you type in a field or while a dialog is open.
+
+<img src="images/shortcuts.png" width="420" alt="The keyboard shortcut list">
 
 ## Known limitations
 
@@ -77,18 +81,20 @@ The pages that follow repeat the ones that matter for their topic.
   each layer at 160 pixels wide) and thumbnails at their stored size, whatever
   size the console asks for (B41). No real console has talked to Fanous over
   CITP yet (B40).
-- OSC has no feedback (no query, no notify); MIDI notes, MIDI Show Control and
-  MIDI-triggered cues do not exist (B36).
-- Several OSC messages sent back to back from one socket may be partly lost;
-  leave about 50 ms between messages (B30).
+- There is no MIDI output (controller lights, MSC replies; not built, DESIGN
+  §15.4), and cues cannot be recorded from MIDI (B36). MIDI input and OSC feedback work: see
+  [show-control.md](show-control.md).
+- Loss of OSC messages sent back to back was seen once and has not been
+  reproduced since (B30). If a console's bursts seem partly lost, leave about
+  50 ms between messages and report it.
 - Show mode does not yet lower the log level, throttle thumbnails or check for
   display mirroring (B42).
 - Audio plays on the default output device; there is no device choice and no
-  latency compensation (B4). A looping clip with audio has a short silent gap at
-  the loop point (B3). Audio plays only forward at 100 % speed, where 100 % is
+  latency compensation (B4). A looping clip whose audio is shorter than its
+  video still has a short gap at each loop, and the first moment after a long
+  pause can be silent (B3). Audio plays only forward at 100 % speed, where 100 % is
   layer speed × Master speed (for a Sync slave, its master's speed). At any
   other speed, and in Freeze, Scrub and Timecode, the layer is silent; there is
   no varispeed.
-- No notarized build and no clean-account
-  install test yet (B50). No app icon (B48).
+- No notarized build and no clean-account install test yet (B50).
 - The GDTF file has not been imported into grandMA3, Eos or MagicQ yet (B7).

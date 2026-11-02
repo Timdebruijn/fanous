@@ -126,13 +126,17 @@ Hover it (or tap the layer and read the detail) for the state in words.
 The layer detail repeats the state under the Sync channel, for a slave with the
 master's layer and machine and the correction of the last frame, for example
 "locked to Layer 1 on 415FF791, −0.2 ms". The machine is its name for a master
-on the same Mac and the first 8 characters of its machine id otherwise (System ›
-Sync shows each machine's id).
+on the same Mac and the first 8 characters of its machine id otherwise (each
+Mac shows its own id under System › Sync › Machine).
 
 **Status bar.** "sync lost" appears in red while any slave on this Mac is lost;
 it links to the Layers screen.
 
-**System › Sync**:
+![System › Sync: machine, packets, masters here, conflicts, then Interface, Port and Target with Apply](images/sync.png)
+
+While nothing renders on this Mac (outputs off in the status bar) the System ›
+Sync panel says "Sync runs with the outputs: nothing is rendering on this
+machine" and shows no settings. Otherwise **System › Sync** shows:
 
 - **Machine**: this Mac's name and the first 8 characters of its machine id
   (hover for the whole id). The lower id wins a group with two masters.
