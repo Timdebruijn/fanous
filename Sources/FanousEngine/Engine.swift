@@ -797,7 +797,8 @@ public final class Engine: @unchecked Sendable {
         for edge in [\OutputConfig.blend.left, \.blend.right] { scaled[keyPath: edge].overlap *= factor }
         for edge in [\OutputConfig.blend.top, \.blend.bottom] { scaled[keyPath: edge].overlap *= factorY }
         scaled.blend.liftFeather *= factor
-        scaled.blend.liftFeatherY = output.blend.liftFeather * factorY  // the y axis has its own scale (B56)
+        // the y axis has its own scale (B56); left nil when the scales match, so such a preview shares the output's blend texture
+        if factorY != factor { scaled.blend.liftFeatherY = output.blend.liftFeather * factorY }
         for i in scaled.slices.indices {
             for m in scaled.slices[i].masks.indices { scaled.slices[i].masks[m].feather *= factor }
         }
