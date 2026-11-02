@@ -20,7 +20,8 @@
   const bound = $derived(app.live.outputs.filter((s) => s.state === 'bound').length);
   // off: the compositor is not running; none: the project has no output; some: an output is lost or has no display
   const outputsState = $derived(!app.live.engine.rendering ? 'off' : app.live.outputs.length === 0 ? 'none' : bound === app.live.outputs.length ? 'all' : 'some');
-  const outputsOk = $derived(outputsState === 'all');
+  const outputsText = $derived(outputsState === 'off' ? 'off' : outputsState === 'none' ? '0' : `${bound}/${app.live.outputs.length}`);
+  const outputsDot = $derived(outputsState === 'all' ? 'dot-green' : outputsState === 'some' ? 'dot-yellow' : 'dot-off');
   // shown on a phone, red under show lock: the compositor down, an output missing, or a locked show without outputs
   const outputsAlert = $derived(outputsState === 'off' || outputsState === 'some' || (outputsState === 'none' && app.project.showLock));
   const running = $derived(app.live.ingest.map((j) => describeJobState(j.state)).filter((s) => s.label === 'transcoding'));
@@ -105,7 +106,7 @@
     </div>
   {/if}
   <div class="item col outputs" class:alert={outputsAlert} class:red={outputsAlert && app.project.showLock}>
-    <span class="mono value" class:yellow={outputsState === 'some' && !app.project.showLock}><span class="dot {outputsOk ? 'dot-green' : outputsState === 'some' ? 'dot-yellow' : 'dot-off'}"></span> {outputsState === 'off' ? 'off' : outputsState === 'none' ? '0' : `${bound}/${app.live.outputs.length}`}</span>
+    <span class="mono value" class:yellow={outputsState === 'some'}><span class="dot {outputsDot}"></span> {outputsText}</span>
     <span class="caption">outputs</span>
   </div>
   {#if progress !== null}
@@ -176,8 +177,8 @@
   .plain { color: inherit; text-decoration: none; }
   /* a phone: five rows of 44 px took a third of the screen. Value and caption share a line; the frame time, its gpu/cpu
      detail, the auto-version item (System carries both), the keyboard-shortcuts button (no keyboard; the ? key still
-     opens the list with one), the app name and the outputs item while it has nothing to say go; the badges shrink (their names
-     stay for the e2e and screen readers), the dropped caption and the web-UI note shorten on screen only; the role
+     opens the list with one), the app name and the outputs item while it has nothing to say go; the badges shrink
+     (their names stay for the e2e and screen readers), the dropped caption and the web-UI note shorten on screen only; the role
      joins the badge row, undo and redo the numbers row, the pills take the third: three rows with a fresh engine at 375 px */
   @media (max-width: 599px) {
     .status { padding: 4px; }

@@ -2068,6 +2068,10 @@ test('status bar: the outputs item counts the bound outputs instead of saying "o
   await page.getByLabel('Add output on').selectOption('none');
   await expect(item).toHaveText(/^\s*0\/1\s*outputs$/);  // one output without a display: not bound
   await expect(item.locator('.dot')).toHaveClass(/dot-yellow/);
+  await page.getByRole('button', { name: 'UNLOCKED' }).click();  // a missing output in a locked show: red
+  await expect(item).toHaveClass(/red/);
+  await page.getByRole('button', { name: 'LOCKED' }).click();
+  await expect(item).not.toHaveClass(/red/);
   await page.getByRole('button', { name: 'Remove output' }).click();
   await expect(item).toHaveText(/^\s*0\s*outputs$/);
   // a phone leaves the item out until it has something to say: a locked show without outputs is one
