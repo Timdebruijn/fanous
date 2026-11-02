@@ -86,7 +86,7 @@ test('layers: the channel list of the selected layer starts closed on a phone an
   await expect(channels.getByText('Intensity', { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 375, height: 812 });
   await page.reload();
-  await expect(page.locator('details.channels').first()).not.toHaveAttribute('open', '');  // the Layers page was five screens long with it open
+  await expect(page.locator('details.channels').first()).not.toHaveAttribute('open', '');  // the Layers page was 4967 px long at 390 px with it open
   await page.locator('details.channels').first().locator('summary').click();
   await expect(page.locator('details.channels').first().getByText('Intensity', { exact: true })).toBeVisible();
 });
