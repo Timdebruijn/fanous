@@ -77,11 +77,14 @@ public final class PreviewStreamer: @unchecked Sendable {
     public let jpegDropped = Atomic<Int>(0)
     /// The steps between a tap and its JPEG (B99): completion handlers that ran with `.completed` (`preview.completions`)
     /// or another status (`completionErrors`), `encode` entries on the preview queue (`encodes`) and JPEG encodes started
-    /// (`jpegStarted`); `jpegStarted` above `jpegOut` + `jpegFailed` is an encode still inside `jpegRepresentation`.
+    /// (`jpegStarted`); `jpegStarted` above `jpegOut` + `jpegFailed` is an encode still in `jpegRepresentation` or its sends
+    /// (by 1 transiently while one runs). Per streamer in `/metrics` `preview.streamers`: the sums hide one streamer among the others.
     public let completions = Atomic<Int>(0)
     public let completionErrors = Atomic<Int>(0)
     public let encodes = Atomic<Int>(0)
     public let jpegStarted = Atomic<Int>(0)
+    /// Subscribers, and those on JPEG (`/metrics`).
+    public var subscriberCounts: (all: Int, jpeg: Int) { subscribers.withLock { ($0.count, $0.filter(\.jpeg).count) } }
     /// The latest JPEG (bytes, width, height) for CITP streaming frames; produced at 5 fps while anyone wants it.
     public let latestJPEG = Mutex<([UInt8], Int, Int)?>(nil)
     /// Set by the CITP server while a console streams; nil = only WebSocket JPEG subscribers count.

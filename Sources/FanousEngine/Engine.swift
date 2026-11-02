@@ -646,7 +646,7 @@ public final class Engine: @unchecked Sendable {
                 // ticks that blocked on the GPU with the ring of 8 committed buffers full, since start (B105)
                 if let render = self.render {
                     m["completionWaits"] = .number(Double(render.compositor.completionWaits.load(ordering: .relaxed)))
-                    m["gpuErrors"] = .number(Double(render.compositor.gpuErrors.load(ordering: .relaxed)))  // command buffers that ended in error (B99)
+                    m["gpuErrors"] = .number(Double(render.compositor.gpuErrors.load(ordering: .relaxed)))  // the compositor's tick buffers that ended in error, booked a few ticks late (B99)
                 }
                 if let audio = self.render?.mixer?.statistics {
                     m["audio"] = ["callbacks": .number(Double(audio.callbacks)), "underruns": .number(Double(audio.underruns)), "corrections": .number(Double(audio.corrections)), "maxDriftMs": .number(audio.maxDriftMillis)]
@@ -662,8 +662,7 @@ public final class Engine: @unchecked Sendable {
                         "framesIn": .number(Double(preview.framesIn)), "framesOut": .number(Double(preview.framesOut)), "skipped": .number(Double(preview.skipped)),
                         "jpegOut": .number(Double(preview.jpegOut)), "jpegFailed": .number(Double(preview.jpegFailed)),
                         "jpegDropped": .number(Double(preview.jpegDropped)),
-                        "completions": .number(Double(preview.completions)), "completionErrors": .number(Double(preview.completionErrors)),
-                        "encodes": .number(Double(preview.encodes)), "jpegStarted": .number(Double(preview.jpegStarted)),
+                        "streamers": .array(preview.rows),
                         "encoders": .number(Double(preview.encoders)), "thumbnailPasses": .number(Double(preview.thumbnails?.passes.load(ordering: .relaxed) ?? 0)),
                         "thumbnailEncodeMs": .number(Double(preview.thumbnails?.encodeMicros.load(ordering: .relaxed) ?? 0) / 1000),
                     ]
