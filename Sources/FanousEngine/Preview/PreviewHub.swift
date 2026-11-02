@@ -335,7 +335,7 @@ public final class PreviewHub: @unchecked Sendable {
                 ("framesIn", s.framesIn.load(ordering: .relaxed)), ("framesOut", s.framesOut.load(ordering: .relaxed)), ("skipped", s.skipped.load(ordering: .relaxed)),
                 ("completions", s.completions.load(ordering: .relaxed)), ("completionErrors", s.completionErrors.load(ordering: .relaxed)),
                 ("encodes", s.encodes.load(ordering: .relaxed)), ("jpegStarted", s.jpegStarted.load(ordering: .relaxed)), ("jpegOut", s.jpegOut.load(ordering: .relaxed)),
-                ("jpegFailed", s.jpegFailed.load(ordering: .relaxed)), ("jpegDropped", s.jpegDropped.load(ordering: .relaxed)),
+                ("jpegFailed", s.jpegFailed.load(ordering: .relaxed)), ("jpegDropped", s.jpegDropped.load(ordering: .relaxed)), ("jpegHung", s.jpegHung.load(ordering: .relaxed)),
             ]
             for (name, count) in counts { row[name] = .number(Double(count)) }
             return .object(row)

@@ -83,6 +83,10 @@ public final class PreviewStreamer: @unchecked Sendable {
     public let completionErrors = Atomic<Int>(0)
     public let encodes = Atomic<Int>(0)
     public let jpegStarted = Atomic<Int>(0)
+    /// JPEG encodes that had not returned 3 s after they started (`jpegHung`), the first per streamer logged: on CI's
+    /// "Apple M1 (Virtual)" runners the refused viewer's streamer's first `jpegRepresentation` never returned and its serial
+    /// queue stayed blocked (B99, measured).
+    public let jpegHung = Atomic<Int>(0)
     /// Subscribers, and those on JPEG (`/metrics`).
     public var subscriberCounts: (all: Int, jpeg: Int) { subscribers.withLock { ($0.count, $0.filter(\.jpeg).count) } }
     /// The latest JPEG (bytes, width, height) for CITP streaming frames; produced at 5 fps while anyone wants it.
@@ -355,7 +359,14 @@ public final class PreviewStreamer: @unchecked Sendable {
         let (h264, jpeg) = subscribers.withLock { subs in (subs.filter { !$0.jpeg }, subs.filter { $0.jpeg }) }
         if !jpeg.isEmpty || externalJPEGWanted?() == true, target - lastJPEG >= 0.18 {  // taps come every 0.2 s when only JPEG listens
             lastJPEG = target
-            jpegStarted.wrappingAdd(1, ordering: .relaxed)
+            let started = jpegStarted.wrappingAdd(1, ordering: .relaxed).newValue
+            // off this queue, which the hang blocks; `started` is this encode's number, finished ones count in jpegOut + jpegFailed
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3) { [weak self] in
+                guard let self, jpegOut.load(ordering: .relaxed) + jpegFailed.load(ordering: .relaxed) < started else { return }
+                if jpegHung.wrappingAdd(1, ordering: .relaxed).oldValue == 0 {
+                    logger.warning("preview JPEG encode did not return within 3 s; this streamer's JPEG and H.264 frames wait until it does", metadata: ["size": "\(width)x\(height)", "target": "\(layer.map { "layer:\($0)" } ?? (outputSet != nil ? "output" : "canvas:\(canvasID)"))"])
+                }
+            }
             if let data = ciContext.jpegRepresentation(of: CIImage(cvPixelBuffer: pixelBuffer), colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.7]) {
                 let bytes = Array(data)
                 latestJPEG.withLock { $0 = (bytes, width, height) }
