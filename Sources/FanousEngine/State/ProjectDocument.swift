@@ -286,6 +286,7 @@ public enum ProjectDocument {
         }
         output.blend.lift = min(0.5, max(0, output.blend.lift))
         output.blend.liftFeather = max(0, output.blend.liftFeather)
+        output.blend.liftFeatherY = nil  // the preview's alone (B56): `output.set blend/*` could write it, so a saved project never keeps it
         guard output.color.gain.count == 3 else { throw CommandError.invalidArgs("color.gain needs three values (r, g, b)") }
         output.color.gain = output.color.gain.map { min(2, max(0, $0)) }
         output.color.black = min(0.2, max(0, output.color.black))
