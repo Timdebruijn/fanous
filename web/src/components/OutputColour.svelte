@@ -34,5 +34,4 @@
 
 <style>
   .colour { display: flex; flex-direction: column; gap: 10px; border-radius: 8px; }
-  .focus { outline: 2px solid var(--accent); outline-offset: 4px; }
 </style>

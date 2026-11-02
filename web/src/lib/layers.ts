@@ -6,6 +6,11 @@ import type { CaptureLiveDoc, LayerStatus, PatchEntry, ProjectDoc, ResolvedParam
 import { codecLabel, displayName } from './media';
 import type { ParamSpec } from './patch-screen';
 
+/** 1…`layerCount` (the project's, guarded against a bad document). */
+export function layerNumbers(layerCount: number): number[] {
+  return Array.from({ length: Math.max(0, Math.floor(layerCount) || 0) }, (_, i) => i + 1);
+}
+
 /** Folder 0 generators (engine `Generators.names`, DESIGN §8.2): drawn on the GPU, no files. */
 export const GENERATORS: { file: number; name: string }[] = [
   { file: 110, name: 'Test card (timecode, frame flags)' },

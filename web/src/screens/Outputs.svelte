@@ -263,7 +263,7 @@
   function moveSelected(on: { x?: number; y?: number }) {
     if (!output || !ui.handle || !selectedScreen) return;
     const p = fromScreen(output, ui.mapper, { x: on.x ?? selectedScreen.x, y: on.y ?? selectedScreen.y });
-    point(ui.handle, { x: Math.min(1, Math.max(0, p.x)), y: Math.min(1, Math.max(0, p.y)) });
+    point(ui.handle, { x: clamp01(p.x), y: clamp01(p.y) });
   }
   function select(next: { group: Group; anchor: number }) {
     ui.group = next.group;

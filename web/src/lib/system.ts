@@ -4,6 +4,7 @@
 // Pure helpers of the System / Health screen: clocks, readiness verdicts, the /metrics summary, the frame-time
 // sparkline and the log filter. The screen stays thin so everything that can go wrong is tested here.
 import type { ReadinessItemDoc } from './docs';
+import { clamp01 } from './outputs';
 import type { Role } from './protocol';
 
 export { LOCKED_TITLE } from './patch-screen';
@@ -14,27 +15,37 @@ export const ROLES: readonly Role[] = ['monitor', 'operator', 'programmer'];
 export type Tone = '' | 'yellow' | 'red';
 export type DotTone = 'green' | 'yellow' | 'red' | 'off';
 
-const pad = (n: number) => n.toString().padStart(2, '0');
+export const pad2 = (n: number) => String(n).padStart(2, '0');
+/** A Copy button's outcome: the text in the clipboard, or not (no permission, no secure context). */
+export async function copied(text: string): Promise<'ok' | 'failed'> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return 'ok';
+  } catch {
+    return 'failed';
+  }
+}
+
 const finite = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
 /** The notice after show mode came back by itself (engine crash or kill); null when it was entered by hand. */
 export function resumedText(resumedAt: number | null | undefined): string | null {
   if (!resumedAt || !(resumedAt > 0)) return null;
   const d = new Date(resumedAt * 1000);
-  return `Show mode resumed after the engine restarted at ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `Show mode resumed after the engine restarted at ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
 /** "h:mm:ss" */
 export function formatClock(seconds: number): string {
   const s = Math.max(0, Math.floor(finite(seconds)));
-  return `${Math.floor(s / 3600)}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
+  return `${Math.floor(s / 3600)}:${pad2(Math.floor((s % 3600) / 60))}:${pad2(s % 60)}`;
 }
 
 /** "hh:mm:ss" in local time for a stamp in epoch seconds; 0 means it never happened. */
 export function stampText(epochSeconds: number): string {
   if (!(epochSeconds > 0)) return 'never';
   const d = new Date(epochSeconds * 1000);
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
 
 /** "M4 Max · macOS 27.0 · engine 0.7.0 · up 1:02:03"; parts the engine has not published yet are left out. */
@@ -49,7 +60,7 @@ export function ageText(seconds: number): string {
 
 /** "62 % free · 64 GB" */
 export function memoryText(freeFraction: number, gb: number): string {
-  const free = `${Math.round(Math.min(1, Math.max(0, finite(freeFraction))) * 100)} % free`;
+  const free = `${Math.round(clamp01(finite(freeFraction)) * 100)} % free`;
   return gb > 0 ? `${free} · ${gb} GB` : free;
 }
 

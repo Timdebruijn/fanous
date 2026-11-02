@@ -4,6 +4,7 @@
 <script lang="ts">
   import { SHEET_HEADER, sheetFaults, sheetRows, sheetTSV, type Group } from '../lib/patch-screen';
   import { app, prefs } from '../lib/state.svelte';
+  import { copied } from '../lib/system';
 
   // The Patch sheet (DESIGN §6.6 item 4): what to patch on the console, with Print and Copy. Read-only, for every role.
   let { groups, onclose }: { groups: Group[]; onclose: () => void } = $props();
@@ -27,12 +28,7 @@
 
   let copy = $state<'idle' | 'ok' | 'failed'>('idle');
   async function copySheet() {
-    try {
-      await navigator.clipboard.writeText(sheetTSV(rows));
-      copy = 'ok';
-    } catch {
-      copy = 'failed';
-    }
+    copy = await copied(sheetTSV(rows));
   }
   $effect(() => {
     if (copy === 'idle') return;
