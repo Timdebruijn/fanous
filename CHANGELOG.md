@@ -605,6 +605,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: the strobe effect's phase jumped once an hour (up to half a cycle, a visible hiccup at low rates) when the shader
   clock wrapped at 3600 s; it wraps at 255 s now, a whole number of cycles for every one of the 256 rate steps, so the phase
   is continuous across the wrap (B11, PR #183).
+- Fixed: a ProRes file with some very small frame sizes (64×48, 256×64 and 320×16 among them) failed to open with VideoToolbox
+  −12910, as the hardware decoder refuses those sizes at session creation; the engine now falls back to the software decoder
+  for such a file and logs that it did (B5, PR #185).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
