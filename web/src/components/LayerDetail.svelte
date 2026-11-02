@@ -2,6 +2,7 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
+  import { untrack } from 'svelte';
   import type { LayerStatus, PatchEntry, ResolvedParameter } from '../lib/docs';
   import { RELEASE_TEXT, ZERO_GROUPS, channelRange, clockText, controlKeys, folderZeroItems, mediaOptions, mediaPath, patchText, playSteps, reservedText, valueText, type LibrarySnapshot } from '../lib/layers';
   import type { ParamSpec } from '../lib/patch-screen';
@@ -64,8 +65,9 @@
   });
   const rawMax = (spec: ParamSpec | undefined) => (spec?.bits === 16 ? 65535 : 255);
   /** a layer's channel list (about 50 rows) starts closed on a phone, where it made the Layers page 4967 px long at 390 px;
-   * open on a desktop, and for Master and the outputs (two rows). Control opens it: its sliders live in the list */
-  let channelsOpen = $state(!isLayer || !window.matchMedia('(max-width: 599px)').matches);
+   * open on a desktop, and for Master and the outputs (two rows); read once (`isLayer` never changes for an instance). Control
+   * opens it: its sliders live in the list */
+  let channelsOpen = $state(untrack(() => !isLayer) || !window.matchMedia('(max-width: 599px)').matches);
   $effect(() => {
     if (control) channelsOpen = true;
   });
