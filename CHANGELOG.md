@@ -608,6 +608,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: a ProRes file with some very small frame sizes (64×48, 256×64 and 320×16 among them) failed to open with VideoToolbox
   −12910, as the hardware decoder refuses those sizes at session creation; the engine now falls back to the software decoder
   for such a file and logs that it did (B5, PR #185).
+- Fixed: a Rec.601-tagged source (SD material) ingested to ProRes came out with 15–40 codes of colour
+  error on saturated colours: the reader copied the 601 tag onto the RGB frames and the writer coded and tagged the file with it,
+  which the layer shader (Rec.709) then misread. Ingested ProRes is now coded and tagged Rec.709 by name. Files the engine plays
+  without ingest keep the 709 reading (B21, PR #184).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
