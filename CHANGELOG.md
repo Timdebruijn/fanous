@@ -602,7 +602,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   Developer ID). `scripts/notarize.sh`'s own signature check failed before the upload: `grep -q` ended the pipe and `codesign` died
   of SIGPIPE under `pipefail`; it reads the whole output now. RELEASE §5 notes the first run and what a developer Mac that ran
   ad-hoc builds needs (agent re-register, screen grant anew) (B50, PR #182).
-- Fixed: a ProRes file with a very small frame (64×48 and some other sizes up to 256×64) failed to open with VideoToolbox
+- Fixed: a ProRes file with some very small frame sizes (64×48, 256×64 and 320×16 among them) failed to open with VideoToolbox
   −12910, as the hardware decoder refuses those sizes at session creation; the engine now falls back to the software decoder
   for such a file and logs that it did (B5, PR #185).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output

@@ -161,8 +161,9 @@ public final class MovieSource: @unchecked Sendable {
                 imageBufferAttributes: attributes as CFDictionary, outputCallback: nil, decompressionSessionOut: &session)
             // B5: the hardware decoder refuses some small frames at creation (−12910: 64×48, 128×96, 160×64, 256×64, 320×16;
             // 144×96, 320×48 and 1280×64 are fine, so no size rule to reject on); the software decoder takes them all, as
-            // v216/y416, which decodeProRes reads. Only when hardware refused: a big file still needs the hardware path
-            if status == kVTVideoDecoderNotAvailableNowErr || status == kVTCouldNotFindVideoDecoderErr || status == -12910 {
+            // v216/y416, which decodeProRes reads. Only on that refusal: "busy now" (−12913) or no decoder (−12906) stay
+            // errors, so a big file never lands on the CPU for its whole playback.
+            if status == kVTVideoDecoderUnsupportedDataFormatErr {
                 status = VTDecompressionSessionCreate(
                     allocator: nil, formatDescription: description, decoderSpecification: nil,
                     imageBufferAttributes: attributes as CFDictionary, outputCallback: nil, decompressionSessionOut: &session)
