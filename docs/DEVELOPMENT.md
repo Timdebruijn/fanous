@@ -146,7 +146,7 @@ and the DMX inspector of the selected layer), Media (library browser, upload,
 transcode, ingest queue) and Patch / DMX (fixture groups and blocks with collisions,
 `patch.set` and `patch.setMany`, a 512-cell monitor fed by the `dmx` stream). The canvas preview
 on the Layers screen uses WebCodecs (H.264 from VideoToolbox, `sub` stream
-`preview`) and falls back to JPEG at 5 fps. Keys 1–6 switch screens.
+`preview`) and falls back to JPEG at 5 fps. Keys 1–7 switch screens.
 `cd web && npm run dev` proxies `/api`, `/ws` and `/healthz` to a running
 engine; `npm run build` writes `web/dist`. The web checks, in the order of
 CI's `web` job: `npm test && npm run typecheck && npm run check && npm run build`; `check` is

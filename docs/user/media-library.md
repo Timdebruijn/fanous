@@ -60,23 +60,43 @@ The first row of the folder list, **0 · Built-in and live inputs**, is folder
 displays of this Mac and the Syphon servers of other apps, each with the file
 number a console dials (see
 [show-control.md](show-control.md#built-in-content-folder-0)).
-Select an item and use **Play on layer** to put it on a layer from here.
+Select an item and use **Play on layer** to put it on a layer from here. For a
+camera, display or Syphon server, **Status and number on Inputs** opens it on
+the Inputs screen.
 
 ![Folder 0 on the Media screen: built-in content with Layer badges, then cameras and capture cards](images/media-folder0.png)
+
+## The Inputs screen (key 3)
+
+The Inputs screen lists the live inputs of folder 0 by kind: **Cameras and
+capture cards (1–20)**, **Displays (21–28)** and **Syphon servers
+(150–169)**. A green dot means it runs; a yellow dot with "in use by another
+app" means another app has the camera open (an iPhone in FaceTime). A
+**Layer N** badge says which layers show it, and while a layer shows it the
+row says what arrives: size, rate and pixel format ("1920×1080 · 59.94 fps ·
+2vuy"), or "no signal". Select an input for its details on the right: kind,
+model, status, the layers that show it, and its signal and frame counters
+(frames, dropped, out of buffers, unusable). An input is opened only while a
+layer shows it, so one that no layer shows reads "not open: no layer shows
+it": opening a camera just to look could take it from another app.
+
+![The Inputs screen: permissions, then the live inputs by kind with the selected one on the right](images/inputs.png)
 
 A camera, capture card, display or Syphon server keeps its number, also across
 engine restarts, until you forget it: select one that is not running and press
 **Forget**. With more than one that is not running, **Forget all not
 running** above the Syphon list, or **Forget all not running (cameras and
 displays)** above the cameras (it frees both), does them all at once. Its
-number is then free for the next new one; **Undo** brings it back. A green dot means it runs; a yellow dot with "in use by
-another app" means another app has the camera open (an iPhone in FaceTime). A
-**Layer N** badge says which layers show it.
+number is then free for the next new one; **Undo** brings it back.
 
-**Cameras and capture cards (1–20)** need the camera permission. Until it is
-granted the list says so: press **Authorize camera** under Capture permissions
-on the System screen (not in show mode). If you denied it once, allow Fanous
-under System Settings › Privacy & Security › Camera.
+**Permissions** at the top of the screen list the camera and screen recording
+permissions while this Mac has a camera or a display to number. A dot is
+yellow while a layer shows an input that lacks its permission, grey while none
+does.
+
+**Cameras and capture cards (1–20)** need the camera permission: press
+**Authorize camera** under Permissions (not in show mode). If you denied it
+once, allow Fanous under System Settings › Privacy & Security › Camera.
 
 **Displays (21–28)** are whole displays of this Mac: what the display shows,
 without the mouse pointer and without sound, at most at the canvas rate. A
@@ -88,7 +108,7 @@ reads "not running" (one that was an output from the start gets no number):
 Fanous leaves its own windows out of a capture, so it would be black.
 
 The first time, displays need the Screen permission: press **Authorize screen**
-under Capture permissions on the System screen (not in show mode). macOS opens
+under Permissions on the Inputs screen (not in show mode). macOS opens
 System Settings; allow Fanous under Privacy & Security › Screen & System
 Audio Recording, then choose Engine › **Restart Engine** (macOS applies the
 grant only to a new engine process; outputs go black for a moment). The row

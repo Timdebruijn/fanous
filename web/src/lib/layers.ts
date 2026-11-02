@@ -53,6 +53,23 @@ export function zeroCaption(item: FolderZeroItem): string | null {
   return item.gone ? 'not seen since the engine started' : 'not running';
 }
 
+/** "folder/file" → the layers showing it ("Layer 2"), for the badges on Media's tiles and on the Inputs screen. */
+export function layersShowing(layers: readonly LayerStatus[]): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const layer of layers) {
+    if (layer.folder >= 0 && layer.file > 0) map.set(`${layer.folder}/${layer.file}`, [...(map.get(`${layer.folder}/${layer.file}`) ?? []), `Layer ${layer.index}`]);
+  }
+  return map;
+}
+
+/** What a layer showing a live input receives (DESIGN §12.1): "1920×1080 · 59.94 fps · 2vuy", or why it shows none. */
+export function signalText(layer: LayerStatus): string {
+  if (layer.error) return layer.error;
+  if (layer.width <= 0) return 'waiting for the first frame';
+  // a capture layer's codec is the pixel format (2vuy, 420v, BGRA); a Syphon layer's is just "syphon"
+  return [`${layer.width}×${layer.height}`, layer.fps > 0 ? `${fpsText(layer.fps)} fps` : '', layer.codec === 'syphon' ? '' : layer.codec].filter(Boolean).join(' · ');
+}
+
 /** Folder 0 as a list: the generators, the cameras and capture cards, the displays (B73), then the Syphon servers of other apps by number (B61). */
 export function folderZeroItems(servers: SyphonServerDoc[] | undefined, capture?: CaptureLiveDoc): FolderZeroItem[] {
   const live = (kind: FolderZeroItem['kind'], list: { file: number; name: string; running: boolean; gone?: true; inUse?: true }[]) =>

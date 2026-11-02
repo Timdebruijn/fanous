@@ -26,6 +26,8 @@ export interface ProjectDoc {
   layerCanvas?: Record<string, number>;
   /** Syphon numbering by folder 0 file "150"–"169" (B69): written by the engine, freed by `syphon.forget` */
   syphon?: Record<string, { app: string; server: string }>;
+  /** Camera and capture card numbering by folder 0 file "1"–"20" (B73): written by the engine, freed by `capture.forget` */
+  capture?: Record<string, { uid: string; name: string; model?: string }>;
   /** per-universe receive settings (`universe.set`, B28); a universe without an entry runs the defaults */
   universes?: UniverseSettingsDoc[];
   outputs: OutputConfig[];
@@ -130,6 +132,8 @@ export interface LayerStatus {
   error: string | null;
   /** Layer channel 51 (B60, DESIGN §23); absent from engines before B60. */
   sync?: LayerSyncDoc;
+  /** A camera or display the layer has open (B73): counters since the session started; null otherwise. */
+  capture?: { frames: number; dropped: number; outOfBuffers: number; unusable: number } | null;
 }
 
 /** A group's master as the engine saw it; `name` only for a master on the engine's own machine. */
