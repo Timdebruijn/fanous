@@ -2,6 +2,7 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
+  import LevelMeter from './LevelMeter.svelte';
   import type { JSONValue } from '../lib/protocol';
   import { lockTitle, offsetText, timecodeBadge, timecodeOn, timecodeSource } from '../lib/show';
   import { app, can, cmd } from '../lib/state.svelte';
@@ -18,7 +19,7 @@
   const switchTitle = $derived(tc.source === 'off' ? 'Choose a source first' : lockTitle('operator', can('operator'), false));
   const switchable = $derived(switchTitle === undefined);
 
-  const devices = $derived(tc.source === 'ltc' ? app.live.osc.audioInputs : tc.source === 'mtc' ? app.live.osc.midiSources : []);
+  const devices = $derived(tc.source === 'ltc' ? (app.live.audio?.inputs ?? []).map((i) => i.name) : tc.source === 'mtc' ? app.live.osc.midiSources : []);
   const deviceMissing = $derived(!!tc.device && !devices.includes(tc.device));
   const noDevice = $derived(tc.source === 'mtc' ? 'All sources' : 'Default input');
 
@@ -73,6 +74,7 @@
       <span class="caption">{live.seen} frames seen</span>
     </div>
   </div>
+  {#if tc.source === 'ltc'}<LevelMeter level={live.level} label="LTC level" none={on ? 'no audio' : 'timecode switched off'} />{/if}
   {#if live.error}<p class="err" role="alert">{live.error}</p>{/if}
 
   <div class="fields">
@@ -89,7 +91,7 @@
       <select class="select" value={tc.device ?? ''} disabled={!editable || tc.source === 'off'} title={editTitle} onchange={(e) => { const el = e.currentTarget; void set('/device', el.value === '' ? null : el.value, () => (el.value = tc.device ?? '')); }}>
         <option value="">{noDevice}</option>
         {#if deviceMissing}<option value={tc.device}>{tc.device} (not connected)</option>{/if}
-        {#each devices as d (d)}<option value={d}>{d}</option>{/each}
+        {#each devices as d, i (i)}<option value={d}>{d}</option>{/each}
       </select>
     </label>
     <label class="field">
@@ -140,7 +142,7 @@
   </div>
   <p class="caption">
     Offset is subtracted from the incoming time. Channel 1 is the first input channel of the device.
-    {#if tc.source === 'ltc'}LTC needs the microphone permission; the engine asks once.{/if}
+    {#if tc.source === 'ltc'}LTC needs the microphone permission: the engine asks once, or authorize it on the <a href="#/inputs">Inputs screen</a>.{/if}
   </p>
 </section>
 

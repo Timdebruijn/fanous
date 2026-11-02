@@ -26,6 +26,8 @@ export interface ProjectDoc {
   layerCanvas?: Record<string, number>;
   /** Syphon numbering by folder 0 file "150"–"169" (B69): written by the engine, freed by `syphon.forget` */
   syphon?: Record<string, { app: string; server: string }>;
+  /** Camera and capture card numbering by folder 0 file "1"–"20" (B73): written by the engine, freed by `capture.forget` */
+  capture?: Record<string, { uid: string; name: string; model?: string }>;
   /** per-universe receive settings (`universe.set`, B28); a universe without an entry runs the defaults */
   universes?: UniverseSettingsDoc[];
   outputs: OutputConfig[];
@@ -130,6 +132,8 @@ export interface LayerStatus {
   error: string | null;
   /** Layer channel 51 (B60, DESIGN §23); absent from engines before B60. */
   sync?: LayerSyncDoc;
+  /** A camera or display the layer has open (B73): counters since the session started; null otherwise. */
+  capture?: { frames: number; dropped: number; outOfBuffers: number; unusable: number } | null;
 }
 
 /** A group's master as the engine saw it; `name` only for a master on the engine's own machine. */
@@ -188,7 +192,15 @@ export interface CaptureSourceDoc {
 export interface CaptureLiveDoc {
   devices: CaptureSourceDoc[];
   screens?: CaptureSourceDoc[];
-  permissions?: { camera: 'granted' | 'denied' | 'notDetermined'; screen: 'granted' | 'denied' };
+  permissions?: { camera: 'granted' | 'denied' | 'notDetermined'; screen: 'granted' | 'denied'; microphone?: 'granted' | 'denied' | 'notDetermined' };
+}
+
+/** `live.audio.inputs[n]` (B137): an input device as CoreAudio names it. */
+export interface AudioInputDoc {
+  name: string;
+  channels: number;
+  /** the system default input, which a timecode device of null uses */
+  default?: true;
 }
 
 export interface IngestJobDoc {
@@ -230,7 +242,19 @@ export interface LiveDoc {
   security: { webUIOpen: boolean };
   displays: DisplayDoc[];
   outputs: OutputStatusDoc[];
-  timecode: { state: 'off' | 'locked' | 'freewheel' | 'lost'; source: string; value: string; rate: string; frames: number; seen: number; error: string | null; device: string };
+  timecode: {
+    state: 'off' | 'locked' | 'freewheel' | 'lost';
+    source: string;
+    value: string;
+    rate: string;
+    frames: number;
+    seen: number;
+    error: string | null;
+    device: string;
+    /** the LTC channel's peak over the last tenth of a second in dBFS (B137); null while LTC is not open or no audio
+     * has arrived for half a second */
+    level?: number | null;
+  };
   cue: { current: number | null; currentName: string | null; next: number | null; nextName: string | null; fading: boolean; count: number };
   /** resumedAt: epoch seconds when show mode came back by itself after an unclean engine stop; null otherwise. */
   show: { mode: boolean; checkedAt: number; ready: boolean; readiness: ReadinessItemDoc[]; resumedAt?: number | null };
@@ -249,7 +273,9 @@ export interface LiveDoc {
     tlsFingerprint: string;
     bonjour: string;
   };
-  osc: { port: number; recent: { at: number; command: string }[]; midiSources: string[]; audioInputs: string[] };
+  osc: { port: number; recent: { at: number; command: string }[]; midiSources: string[] };
+  /** Audio input devices (B137): name, input channels, the system default marked. */
+  audio?: { inputs: AudioInputDoc[] };
   /** MIDI control input: sources listened to, the last message ("source · ch 1 · note 36 on · 127"), learn state;
    * error also lists map entries that cannot be read or cannot work. */
   midi: {
@@ -279,6 +305,14 @@ export interface ReadinessItemDoc {
   detail: string;
   fix: string;
   acknowledged: boolean;
+}
+
+/** Puts back the top-level keys a patch removed (the undo of the first `timecode.set` removes `/timecode`, which a
+ * new project lacks): the screens read them without a guard. Returns the keys it restored. */
+export function restoreKeys(doc: Record<string, unknown>, defaults: object): string[] {
+  const missing = Object.keys(defaults).filter((key) => !(key in doc));
+  for (const key of missing) doc[key] = structuredClone((defaults as Record<string, unknown>)[key]);
+  return missing;
 }
 
 export const emptyProject: ProjectDoc = {
@@ -312,7 +346,8 @@ export const emptyLive: LiveDoc = {
   cue: { current: null, currentName: null, next: null, nextName: null, fading: false, count: 0 },
   show: { mode: false, checkedAt: 0, ready: false, readiness: [], resumedAt: null },
   system: { thermal: 'nominal', onAC: true, power: '', memoryFreeFraction: 1, memoryGB: 0, os: '', host: '', addresses: [], port: 8443, tlsFingerprint: '', bonjour: '' },
-  osc: { port: 8000, recent: [], midiSources: [], audioInputs: [] },
+  osc: { port: 8000, recent: [], midiSources: [] },
+  audio: { inputs: [] },
   midi: { connected: [], last: null, lastAt: null, learning: null, learned: null, error: null },
   citp: { port: 0, clients: [], streams: 0, multicast: [] },
 };

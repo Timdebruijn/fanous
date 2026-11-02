@@ -14,7 +14,7 @@ edges, a warp and one or more slices. A new output shows the whole canvas with
 no blend and no warp. Everything is applied on the GPU in the last step, so it
 costs no layer capacity.
 
-The Outputs screen (key 3, "Outputs & Mapping") has three tabs: **Canvases**,
+The Outputs screen (key 4, "Outputs & Mapping") has three tabs: **Canvases**,
 **Outputs** and **Warp & Slices**. The output list is on the left. The preview
 on top shows the canvas on the Canvases tab and the selected output on the other
 two. The output preview has the output's own aspect ratio (4:3, 16:10, an

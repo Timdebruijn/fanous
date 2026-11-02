@@ -79,6 +79,18 @@ test('patch API: /api/patch serves the live patch, an added output included', as
   await expect.poll(outputPatched).toBe(true);
 });
 
+test('layers: the channel list of the selected layer starts closed on a phone and open on a desktop', async ({ page }) => {
+  await openScreen(page, 'Layers');
+  const channels = page.locator('details.channels').first();
+  await expect(channels).toHaveAttribute('open', '');
+  await expect(channels.getByText('Intensity', { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.reload();
+  await expect(page.locator('details.channels').first()).not.toHaveAttribute('open', '');  // the Layers page was 4967 px long at 390 px with it open
+  await page.locator('details.channels').first().locator('summary').click();
+  await expect(page.locator('details.channels').first().getByText('Intensity', { exact: true })).toBeVisible();
+});
+
 test('layers: Control puts content on a layer, and the engine resolves folder, file and intensity', async ({ page, engine }) => {
   const resolved = async () => {
     const live = (await (await engine.api.get('/api/live')).json()) as { fixtures: Record<string, Param[]> };
@@ -439,6 +451,26 @@ test('media: folder 0 lists the generators and the Syphon servers, and puts one 
   await page.getByRole('list', { name: 'Built-in content' }).getByRole('button', { name: /^110 Test card/ }).click();
   await page.getByLabel('Play on layer').selectOption({ label: 'Layer 1' });
   await expect(page.getByText('Layer 1 now shows 0 / 110 · Test card (timecode, frame flags).')).toBeVisible();
+});
+
+test('inputs: key 3 opens the Inputs screen with the live groups; Media folder 0 and System no longer manage them (B137)', async ({ page }) => {
+  await page.keyboard.press('3');
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/inputs');
+  await expect(page.getByRole('heading', { name: 'Inputs', exact: true })).toBeVisible();
+  // no other app publishes Syphon on CI; on a workstation other engines may (this engine's own canvas is never listed)
+  await expect(page.getByText(/^No Syphon servers running\./).or(page.getByRole('list', { name: 'Syphon servers (150–169)' }))).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'Selected input' })).toContainText('Select an input');
+  // audio inputs (B137 step 2): listed, or none on a runner without one; never put on LTC here, which would ask for
+  // the microphone on a workstation
+  await expect(page.getByText(/^No audio inputs found\./).or(page.getByRole('list', { name: 'Audio inputs' }))).toBeVisible();
+  await openScreen(page, 'Media');
+  await page.getByRole('button', { name: /^0 Built-in and live inputs/ }).click();
+  await expect(page.getByRole('link', { name: 'Inputs screen' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Forget/ })).toHaveCount(0);
+  await openScreen(page, 'System');
+  await expect(page.getByRole('list', { name: 'Capture permissions' })).toHaveCount(0);
+  await page.keyboard.press('7');
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/system');
 });
 
 test('outputs: add an unassigned output and a second slice', async ({ page }) => {
@@ -2010,4 +2042,47 @@ test('preview: a refused viewer the engine moves to a stream that never delivers
   await page.waitForTimeout(1_000);  // the fallback stream has no watchdog: no further subscription
   expect(subs).toBe(2);
   await expect(caption.locator('.stalled')).toHaveCount(0, { timeout: 5_000 });  // the new stream's frames are drawn
+});
+
+test('show: the OSC address list fits the side column, no effect text clipped', async ({ page }) => {
+  await openScreen(page, 'Show');
+  const aside = page.getByRole('complementary', { name: 'Control inputs' });
+  await expect(aside.locator('.addresses').getByText('/fanous/cue/go', { exact: true })).toBeVisible();
+  // a three-column table clipped every effect in the 320 px column (measured at 1280 and 1440 wide on the live engine;
+  // this test runs at the config's 1440)
+  const rows = await aside.locator('.addresses li').count();
+  expect(rows).toBeGreaterThan(0);
+  await expect(aside.locator('.addresses .effect')).toHaveCount(rows);
+  const clipped = await aside.evaluate((el) => {
+    const right = el.querySelector('.addresses')!.getBoundingClientRect().right + 0.5;
+    return [...el.querySelectorAll('.addresses .effect')].filter((c) => c.getBoundingClientRect().right > right || c.scrollWidth > c.clientWidth + 1).length;
+  });
+  expect(clipped).toBe(0);
+  expect(await aside.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+});
+
+test('status bar: the outputs item counts the bound outputs instead of saying "on" while the project has none (0)', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const item = page.getByRole('banner').locator('.outputs');
+  // a fresh engine has no output; the compositor runs, which the bar used to call "on"
+  await expect(item).toHaveText(/^\s*0\s*outputs$/);
+  await expect(item.locator('.dot')).toHaveClass(/dot-off/);
+  await openScreen(page, 'Outputs');
+  await page.getByLabel('Add output on').selectOption('none');
+  await expect(item).toHaveText(/^\s*0\/1\s*outputs$/);  // one output without a display: not bound
+  await expect(item.locator('.dot')).toHaveClass(/dot-yellow/);
+  await page.getByRole('button', { name: 'UNLOCKED' }).click();  // a missing output in a locked show: red
+  await expect(item).toHaveClass(/red/);
+  await page.getByRole('button', { name: 'LOCKED' }).click();
+  await expect(item).not.toHaveClass(/red/);
+  await page.getByRole('button', { name: 'Remove output' }).click();
+  await expect(item).toHaveText(/^\s*0\s*outputs$/);
+  // a phone leaves the item out until it has something to say: a locked show without outputs is one
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(item).toBeHidden();
+  await page.getByRole('button', { name: 'UNLOCKED' }).click();
+  await expect(item).toBeVisible();
+  await expect(item).toHaveClass(/red/);
+  await page.getByRole('button', { name: 'LOCKED' }).click();
+  await expect(item).toBeHidden();
 });

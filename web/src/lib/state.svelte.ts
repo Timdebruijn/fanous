@@ -5,7 +5,7 @@ import { FanousClient, type ConnectionState, type Doc, type PreviewInfo, type St
 import { makeMessage, pushMessage, TOAST_MS, type UIMessage } from './errors';
 import { playSteps } from './layers';
 import { applyPatch } from './patch';
-import { emptyLive, emptyProject, type LiveDoc, type ProjectDoc } from './docs';
+import { emptyLive, emptyProject, restoreKeys, type LiveDoc, type ProjectDoc } from './docs';
 import type { CommandArgs, CommandName, JSONValue, Role } from './protocol';
 
 /** One deep `$state` tree: patches mutate it in place, so only the touched paths re-render. */
@@ -103,6 +103,7 @@ export const client = new FanousClient(
     onPatch(doc, ops, rev) {
       try {
         applyPatch((doc === 'project' ? app.project : app.live) as unknown as JSONValue, ops);
+        if (doc === 'project') restoreKeys(app.project as unknown as Record<string, unknown>, emptyProject);
         app.rev = rev;
       } catch {
         client.requestSnapshot();

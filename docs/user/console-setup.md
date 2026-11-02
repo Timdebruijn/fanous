@@ -99,7 +99,7 @@ Fanous writes Art-Net universes as `net.subnet.universe`, shortened to
 Some consoles count Art-Net universes from 0, others from 1: check which one
 yours does, and set the [Patch sheet](#patch-sheet) to match.
 
-## The Patch screen (key 4)
+## The Patch screen (key 5)
 
 The toolbar shows "N fixtures · N universes" and, in red, the number of
 collisions. **Patch sheet** says what to patch on the console (see
@@ -430,8 +430,8 @@ with that held value.
 
 1. **Media.** On the Media screen press **New folder**, enter number 1 and a
    name, **Create**. Press **Import…** and pick a clip; wait until the ingest
-   queue says done. Or put a ProRes or HAP `.mov` in
-   `~/Movies/Fanous Library/001_Test/001_clip.mov` with Finder.
+   queue says done (the job leaves the queue a minute later). Or put a ProRes
+   or HAP `.mov` in `~/Movies/Fanous Library/001_Test/001_clip.mov` with Finder.
 2. **Output.** On the Outputs screen choose a display under **Add output on**.
    A new output shows the whole canvas.
 3. **Console.** Patch fixture "Fanous", mode Layer, on A 0.0.0 at address 1.

@@ -7,6 +7,7 @@
   const icons: Record<string, string> = {
     layers: 'm12 3 9 5-9 5-9-5 9-5zM3 13l9 5 9-5M3 17l9 5 9-5',
     media: 'M3 4h18v16H3zM3 9h18M3 15h18M8 4v16M16 4v16',
+    inputs: 'M15 3h6v18h-6M10 17l5-5-5-5M15 12H3',
     outputs: 'M2 4h20v13H2zM8 21h8M12 17v4',
     patch: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
     show: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2',

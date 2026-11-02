@@ -64,7 +64,7 @@ another computer opens. Every screen has the same frame:
 
 1. The **status bar**: lock, show mode, frame timing, DMX universes, outputs,
    versions, clients, Undo and Redo, the shortcut list and your role (below).
-2. The **rail**: the six screens, also on the keys 1 to 6. Below 1100 px wide
+2. The **rail**: the seven screens, also on the keys 1 to 7. Below 1100 px wide
    only the icons show; hover a screen for its name and key.
 3. On the Layers screen, one strip for the **Master** (intensity, speed,
    control, test pattern) and one per **Output** fixture (intensity, control,

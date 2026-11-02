@@ -324,6 +324,32 @@ import UniformTypeIdentifiers
         #expect(IngestQueue(persistenceURL: file).jobs.isEmpty)
     }
 
+    /// Done and cancelled jobs older than a minute leave the list (and the file at the next change); a failed one stays.
+    @Test func finishedJobsAreForgottenAfterAMinuteFailedOnesStay() throws {
+        let directory = try tempDir("fanous-ingest-forget")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appending(path: "in.mov"), destination = directory.appending(path: "out.mov")
+        func job(_ state: IngestJob.State, finished seconds: TimeInterval) -> IngestJob {
+            var job = IngestJob(source: source, destination: destination, kind: .transcode(codec: .proRes422))
+            job.state = state
+            job.finishedAt = Date(timeIntervalSinceNow: -seconds)
+            return job
+        }
+        let old = job(.done, finished: 120), cancelled = job(.cancelled, finished: 120)
+        let fresh = job(.done, finished: 5), failed = job(.failed("boom"), finished: 120)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let file = directory.appending(path: "queue.json")
+        try encoder.encode([old, cancelled, fresh, failed]).write(to: file)
+        let queue = IngestQueue(persistenceURL: file)
+        #expect(queue.jobs.map(\.id) == [fresh.id, failed.id])
+        queue.remove(id: failed.id)  // any change rewrites the file without the expired jobs
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let saved = try decoder.decode([IngestJob].self, from: Data(contentsOf: file))
+        #expect(saved.map(\.id) == [fresh.id])
+    }
+
     // MARK: (e) pause and cancel
 
     @Test func pauseHoldsAndCancelRemovesPartialOutput() async throws {
@@ -489,6 +515,23 @@ import UniformTypeIdentifiers
         #expect(!message.isEmpty)
         #expect((try? FileManager.default.contentsOfDirectory(atPath: directory.appending(path: "library").path)) ?? [] == [])
         #expect(FileManager.default.fileExists(atPath: notAMovie.path))
+    }
+
+    /// Two uploads into a folder number the index has not seen yet land in one folder, also with different names: the
+    /// index is never rescanned here, like in the second before the debounced rescan or with a root missing at engine start.
+    @Test func uploadsIntoAnUnindexedFolderNumberShareOneFolder() throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: Logger(label: "test"))
+        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: Logger(label: "test"))
+        let still = directory.appending(path: "still.png")
+        try Self.writePNG(to: still, index: 0)
+        for name in ["red.png", "blue.png"] {
+            #expect(api.enqueue(source: still, folder: 3, file: nil, name: name, codec: nil, fps: nil, keepOriginal: true).status == 202)
+        }
+        #expect(queue.jobs.map { $0.destination.deletingLastPathComponent().lastPathComponent } == ["003_red", "003_red"])
+        #expect(try FileManager.default.contentsOfDirectory(atPath: library.root.path) == ["003_red"])
     }
 
     /// B51: while a library root change holds enqueues, a new job is refused with 409 and nothing is queued.
