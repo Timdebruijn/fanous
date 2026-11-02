@@ -94,6 +94,8 @@ public final class MovieSource: @unchecked Sendable {
 
     public let url: URL
     public let info: MovieInfo
+    /// ProRes on the software decoder because the hardware one refused the frame size (B5); logged by Playback.
+    public private(set) var softwareDecoder = false
     public private(set) var kind: SourcePixelKind
 
     private let device: MTLDevice
@@ -154,9 +156,18 @@ public final class MovieSource: @unchecked Sendable {
             if codec == makeFourCC("ap4h") || codec == makeFourCC("ap4x") {
                 attributes[kCVPixelBufferPixelFormatTypeKey] = kCVPixelFormatType_4444AYpCbCr16
             }
-            let status = VTDecompressionSessionCreate(
+            var status = VTDecompressionSessionCreate(
                 allocator: nil, formatDescription: description, decoderSpecification: specification as CFDictionary,
                 imageBufferAttributes: attributes as CFDictionary, outputCallback: nil, decompressionSessionOut: &session)
+            // B5: the hardware decoder refuses some small frames at creation (−12910: 64×48, 128×96, 160×64, 256×64, 320×16;
+            // 144×96, 320×48 and 1280×64 are fine, so no size rule to reject on); the software decoder takes them all, as
+            // v216/y416, which decodeProRes reads. Only when hardware refused: a big file still needs the hardware path
+            if status == kVTVideoDecoderNotAvailableNowErr || status == kVTCouldNotFindVideoDecoderErr || status == -12910 {
+                status = VTDecompressionSessionCreate(
+                    allocator: nil, formatDescription: description, decoderSpecification: nil,
+                    imageBufferAttributes: attributes as CFDictionary, outputCallback: nil, decompressionSessionOut: &session)
+                softwareDecoder = status == noErr
+            }
             guard status == noErr, let session else { throw MovieError.decoder(status) }
             self.session = session
             CVMetalTextureCacheCreate(nil, nil, device, nil, &textureCache)
