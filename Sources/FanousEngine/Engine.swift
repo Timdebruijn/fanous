@@ -324,6 +324,7 @@ public final class Engine: @unchecked Sendable {
             liveRunning: { [weak self] in
                 Set((self?.liveCatalogs ?? []).flatMap(\.entries).filter(\.running).map(\.file))  // the ranges do not overlap
             },
+            liveNow: { [weak self] kind in (self?.liveCatalogs ?? []).first { $0.kind == kind }.map { ProjectDocument.liveValue($0.entries) } },
             authorizeCamera: { [weak self] in
                 let loader = self?.render?.loader, catalog = self?.render?.captureCatalog
                 CaptureInput.requestAccess(allowed: true) { _ in

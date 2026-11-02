@@ -446,4 +446,52 @@ struct CaptureInputTests {
         #expect(eventually { playback(0) != nil && playback(0) !== failed && playback(1) === playback(0) })
         #expect(opened.withLock { $0 } == ["cam-c", "cam-c", "cam-b", "cam-c2", "cam-c2"])
     }
+
+    /// A renumber (B137 step 3): a layer on the number a running camera left shows what is on that number now, never
+    /// the camera; a layer on its new number opens it; a swap trades the two layers' pictures.
+    @Test func loaderFollowsARenumber() throws {
+        let context = try MetalContext(), device = context.device
+        let layers = (0..<3).map { RenderLayer(index: $0) }
+        let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: Self.logger)
+        let catalog = LiveCatalog(.capture)
+        catalog.onChange = { [loader] in loader.captureDevicesChanged() }
+        loader.captureCatalog = catalog
+        let cams = ["cam-a", "cam-b"].map { LiveCatalogTests.device($0, "Cam \($0.suffix(1).uppercased())", model: "m") }
+        catalog.update(running: cams)
+        let inputs = Mutex<[String: CaptureInput]>([:])
+        loader.captureFactory = { uid in
+            let input = Self.input(device)
+            inputs.withLock { $0[uid] = input }
+            return input
+        }
+        loader.start()
+        defer { loader.stop() }
+        func playback(_ i: Int) -> CaptureInput? { layers[i].pending.withLock { $0.playback?.live as? CaptureInput } }
+        func status(_ i: Int) -> LayerMediaStatus { layers[i].mediaStatus.withLock { $0 } }
+        func eventually(_ condition: () -> Bool) -> Bool { SyphonTests.wait(seconds: 5, until: condition) }
+        func select(_ i: Int, _ file: Int) {
+            layers[i].wanted.store(MediaKey(folder: 0, file: file).packed, ordering: .relaxed)
+            loader.wake.signal()
+        }
+        func numbered(_ files: [String: Int]) -> [LiveCatalog.Entry] {
+            catalog.entries.map { LiveCatalog.Entry(kind: .capture, file: files[$0.source] ?? $0.file, source: $0.source, name: $0.name, model: $0.model) }
+        }
+        select(0, 1)
+        select(1, 2)
+        #expect(eventually { playback(0) != nil && playback(1) != nil })
+        let a = try #require(inputs.withLock { $0["cam-a"] }), b = try #require(inputs.withLock { $0["cam-b"] })
+        #expect(playback(0) === a && playback(1) === b)
+
+        // a swap: layer 1 now shows Cam B, layer 2 Cam A
+        catalog.adopt(numbered(["cam-a": 2, "cam-b": 1]))
+        #expect(eventually { status(0).name == "Camera: Cam B" && status(1).name == "Camera: Cam A" })
+        #expect(eventually { playback(0) != nil && playback(1) != nil && playback(0) !== playback(1) })
+        #expect(status(0).error == nil && status(1).error == nil)
+
+        // Cam B (now on 1) moves to the free number 7: layer 1 shows nothing, a layer on 7 shows Cam B
+        catalog.adopt(numbered(["cam-a": 2, "cam-b": 7]))
+        select(2, 7)
+        #expect(eventually { status(0).error == "no capture device numbered 1 (folder 0, 1–20)" && playback(0) == nil })
+        #expect(eventually { playback(2) != nil && status(2).name == "Camera: Cam B" })
+    }
 }

@@ -282,7 +282,8 @@ extension LiveCatalogTests {
     }
 
     /// B137 step 3: running entries move when the project names each of them once, on numbers of their own (a
-    /// renumber, its undo or redo); a value that lacks one (a forget) or names one twice leaves them where they are.
+    /// renumber, its undo or redo); a value that lacks one (an older version) leaves them where they are, and one
+    /// named twice stays where it is while the others may move.
     @Test func adoptMovesRunningEntriesNamedOnce() throws {
         let catalog = LiveCatalog(.capture, numbers: [Self.numbered(3, "old", "Old Cam", model: "o")])
         catalog.update(running: [Self.device("a", "Cam A", model: "m"), Self.device("b", "Cam B", model: "m")])
@@ -299,13 +300,35 @@ extension LiveCatalogTests {
         #expect(files() == ["a": 7, "b": 1, "old": 3])
         #expect(catalog.adopt(value(["a": 3, "b": 1, "old": 7])))
         #expect(files() == ["a": 3, "b": 1, "old": 7] && catalog.entry(file: 7)?.gone == true && catalog.entry(file: 3)?.running == true)
+        // one unplugged this session (not gone: seen since the start) keeps that state when it moves
+        catalog.update(running: [Self.device("a", "Cam A", model: "m")])
+        #expect(catalog.entry(file: 1)?.running == false && catalog.entry(file: 1)?.gone == false)
+        #expect(catalog.adopt(value(["a": 3, "b": 9, "old": 7])))
+        #expect(catalog.entry(file: 9)?.source == "b" && catalog.entry(file: 9)?.gone == false)
+        catalog.update(running: [Self.device("a", "Cam A", model: "m"), Self.device("b", "Cam B", model: "m")])
+        #expect(catalog.adopt(value(["a": 3, "b": 1, "old": 7])))
         // a value without a running device (a forget of another number) moves nobody: the old rule
         #expect(!catalog.adopt(value(["a": 5, "old": 7])))
         #expect(files()["a"] == 3 && files()["b"] == 1)
-        // a value naming a running device twice moves nobody either
+        // a value naming a running device twice: that one stays, the duplicate is dropped
         let twice = value(["a": 3, "b": 1, "old": 7]) + [LiveCatalog.Entry(kind: .capture, file: 9, source: "b", name: "Cam B")]
         _ = catalog.adopt(twice)
         #expect(files()["b"] == 1 && catalog.entry(file: 9) == nil)
+    }
+
+    /// Twins (two Syphon servers with one app and name) stay where they are; another server moves all the same (review
+    /// of PR #211: before, any twin kept every running server in place and the write-back undid the renumber).
+    @Test func adoptMovesOthersWhileTwinsStay() {
+        let catalog = LiveCatalog(.syphon)
+        catalog.update(running: [SyphonTests.info("Other", "", "o"), SyphonTests.info("fanousd", "Canvas", "x"), SyphonTests.info("fanousd", "Canvas", "y")])
+        #expect(catalog.entries.map(\.file) == [150, 151, 152])
+        let value = catalog.entries.map { LiveCatalog.Entry(kind: .syphon, file: $0.source == "Other" ? 155 : $0.file, source: $0.source, name: $0.name) }
+        #expect(catalog.adopt(value))
+        #expect(catalog.entry(file: 155)?.runtimeID == "o" && catalog.entry(file: 151)?.runtimeID == "x" && catalog.entry(file: 152)?.runtimeID == "y")
+        // a move onto a twin's number moves nobody
+        let onto = catalog.entries.map { LiveCatalog.Entry(kind: .syphon, file: $0.source == "Other" ? 151 : ($0.file == 151 ? 160 : $0.file), source: $0.source, name: $0.name) }
+        _ = catalog.adopt(onto)
+        #expect(catalog.entry(file: 155)?.runtimeID == "o" && catalog.entry(file: 151)?.runtimeID == "x")
     }
 
     /// `capture.renumber` (B137 step 3): a free number moves, a taken one swaps, within the kind's range; programmer,
@@ -352,8 +375,28 @@ extension LiveCatalogTests {
         #expect(store.execute("undo", role: .programmer).failureCode == "historyConflict")
         #expect(uids()[3] == "new")
 
+        // its own number changes nothing and leaves no undo step
+        let depth = store.historyDepth.undo
+        _ = try renumber(7, 7).get()
+        #expect(store.historyDepth.undo == depth)
+
         _ = try store.execute("show.lock", role: .programmer).get()
         #expect(renumber(7, 8) == .failure(.showLocked))
+    }
+
+    /// A source the catalog numbered in the last tenth of a second is not in the project yet: a renumber then is refused
+    /// (the catalog would not find the value naming it and the write-back would undo the change).
+    @Test func renumberRefusedWhileTheProjectLagsTheCatalog() throws {
+        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: StateStoreTests.logger)
+        var project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
+        let numbers = [Self.numbered(1, "uid-1", "Cam 1", model: "m")]
+        try project.set(ProjectDocument.liveValue(numbers), at: "/capture")
+        let store = StateStore(project: project, logger: StateStoreTests.logger)
+        let catalog = Mutex<[LiveCatalog.Entry]>(numbers + [Self.numbered(2, "uid-2", "Cam 2", model: "m")])
+        ProjectDocument.registerCommands(on: store, auth: auth, liveNow: { kind in kind == .capture ? ProjectDocument.liveValue(catalog.withLock { $0 }) : nil })
+        #expect(store.execute("capture.renumber", args: ["file": 1, "to": 5], role: .programmer).failureCode == "liveChanged")
+        store.correct(at: "/capture") { ProjectDocument.liveValue(catalog.withLock { $0 }) }  // the write-back lands
+        _ = try store.execute("capture.renumber", args: ["file": 1, "to": 5], role: .programmer).get()
     }
 
     /// `syphon.renumber` refuses a server that shares its app and name with another numbered one (two engines'

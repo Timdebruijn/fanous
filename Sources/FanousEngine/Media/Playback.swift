@@ -431,9 +431,12 @@ public final class MediaLoader: @unchecked Sendable {
     /// - one whose source went reads "not running" and keeps its input (the last frame); a display's stream is halted
     ///   (it may be bound as an output now, which would show only the engine's excluded windows);
     /// - one is opened again when its source is running but not open, or open under another uid (an unplug and a replug
-    ///   on another port in one update), or its session failed or stopped.
+    ///   on another port in one update), or its session failed or stopped;
+    /// - one whose open source still runs on another number (a renumber, B137) is opened again too: the number shows
+    ///   what is on it now, never the input that left it.
     private func liveSourcesChanged(_ kind: LiveCatalog.Kind) {
         let catalog = kind == .screens ? screensCatalog : captureCatalog
+        let runningElsewhere = Set((catalog?.entries ?? []).filter(\.running).map(\.source))
         for i in loaded.indices where isNumbered(MediaKey(packed: loaded[i]), kind) {
             let source = catalog?.entry(file: MediaKey(packed: loaded[i]).file)
             let open = captureOpen[i]
@@ -443,8 +446,8 @@ public final class MediaLoader: @unchecked Sendable {
             }
             // gone, back under another uid, or a failed session: never shared again
             if let open, captureShared[kind]?[open.uid]?.input === open.input { captureShared[kind]?[open.uid] = nil }
-            if source?.running == true {
-                loaded[i] = .max  // came back, or no longer in use elsewhere: opened again below
+            if source?.running == true || open.map({ runningElsewhere.contains($0.uid) }) == true {
+                loaded[i] = .max  // came back, no longer in use elsewhere, or moved to another number: opened again below
             } else {
                 if kind == .screens { open?.input.halt("not running") }
                 captureOpen[i] = nil  // the input stays on the layer: the last frame
@@ -491,10 +494,11 @@ public final class MediaLoader: @unchecked Sendable {
                     if server?.runtimeID == syphonOpen[i] {
                         // same connection (or still gone): only a rename (SyphonServerUpdate) can have changed
                         if let server { layers[i].mediaStatus.withLock { $0.name = "Syphon: \(server.label)" } }
-                    } else if server?.runtimeID == nil {
+                    } else if server?.runtimeID == nil, !(syphonOpen[i].map { id in syphonCatalog?.entries.contains { $0.runtimeID == id } == true } ?? false) {
                         syphonOpen[i] = nil
                         layers[i].mediaStatus.withLock { $0.error = "not running" }
                     } else {
+                        // back, or its server moved to another number (a renumber, B137): the number shows what is on it now
                         loaded[i] = .max  // never a packed key: opened again below
                     }
                 }

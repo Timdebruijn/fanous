@@ -237,16 +237,25 @@ public final class LiveCatalog: @unchecked Sendable {
     static func adopt(_ entries: inout [Entry], numbers: [Entry]) -> Bool {
         let before = entries
         var running = entries.filter(\.running)
-        let named = running.map { entry in numbers.filter { $0.kind.files.contains($0.file) && $0.same(entry) } }
-        if named.allSatisfy({ $0.count == 1 }), Set(named.map { $0[0].file }).count == running.count {
-            for i in running.indices { running[i].file = named[i][0].file }
+        let inRange = numbers.filter { $0.kind.files.contains($0.file) }
+        // twins (two running sources with one identity, or one named twice) cannot be told apart: they stay where they
+        // are; the others move when each is named once, on free numbers of their own
+        let twin = running.map { entry in running.filter { $0.same(entry) }.count > 1 || inRange.filter { $0.same(entry) }.count > 1 }
+        let fixed = Set(running.indices.filter { twin[$0] }.map { running[$0].file })
+        let movers = running.indices.filter { !twin[$0] }
+        let named = movers.map { i in inRange.first { $0.same(running[i]) } }
+        let targets = named.compactMap { $0?.file }
+        if !movers.isEmpty, targets.count == movers.count, Set(targets).count == targets.count, fixed.isDisjoint(with: targets) {
+            for (k, i) in movers.enumerated() { running[i].file = targets[k] }
         }
         var next = running
         for entry in numbers where entry.kind.files.contains(entry.file) && !next.contains(where: { $0.file == entry.file }) {
             if let kept = entries.first(where: { $0.file == entry.file && !$0.running && $0.same(entry) }) {
                 next.append(kept)  // also a gone twin of a running server (two engines' canvases share a name)
             } else if !running.contains(where: { $0.same(entry) }) {
-                next.append(Entry(kind: entry.kind, file: entry.file, source: entry.source, name: entry.name, gone: true, model: entry.model))
+                // a renumber moves one that is not running: it keeps its gone state (unplugged this session, or never seen)
+                let gone = entries.first { !$0.running && $0.same(entry) }?.gone ?? true
+                next.append(Entry(kind: entry.kind, file: entry.file, source: entry.source, name: entry.name, gone: gone, model: entry.model))
             }
         }
         entries = next.sorted { $0.file < $1.file }

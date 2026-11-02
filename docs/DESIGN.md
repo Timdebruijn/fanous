@@ -4229,23 +4229,37 @@ does not select the next new input. Differences from the design above:
   source is LTC.
 
 **As built (2026-11-02, step 3, PR #211):**
-- *Adoption:* `LiveCatalog.adopt` takes the value's numbers for the running
-  entries only when it names each of them exactly once and on numbers of their
-  own; any running source missing or named twice keeps today's rule for all of
-  them. So a forget (the value lacks nothing running), an older version
-  without a running source, and two canvases with one name behave as before,
-  while a renumber, its undo and its redo move running inputs. A loaded version
-  that names every running source once does move them to its numbers.
+- *Adoption:* `LiveCatalog.adopt` leaves twins where they are (a running
+  source whose identity another running source shares, or that the value names
+  twice: two canvases with one name). The other running entries take the
+  value's numbers when it names each of them exactly once, on numbers of their
+  own and none held by a twin; if one is missing, nobody moves (today's rule).
+  So a forget (the value lacks nothing running) and an older version without a
+  running source behave as before, while a renumber, its undo and its redo move
+  running inputs, also while twins exist. A loaded version that names every
+  running source once moves them to its numbers. A not-running entry that moves
+  keeps its gone state (an unplugged device does not turn into "not seen since
+  the engine started").
+- *Loader:* a layer whose open camera, display or Syphon server still runs on
+  another number is opened again, so the number it selects shows what is on it
+  now (nothing, a gone input, or the swap partner), never the input that left;
+  before, that branch only meant "the source went" and kept the input on the
+  layer as "not running" (review of PR #211).
 - *Commands:* `capture.renumber` (1–20 and 21–28, the range picks the kind) and
   `syphon.renumber {file, to}` edit `/capture`, `/screens` or `/syphon` as a
-  project command; `to` equal to `file` changes nothing. The replay check is
+  project command; `to` equal to `file` changes nothing. A renumber is refused
+  ("liveChanged") while the project lags the catalog (`liveNow`: a source
+  numbered in the last tenth of a second, before the write-back): the catalog
+  would not find the value naming it, keep its numbers and write them back over
+  the change. The replay check is
   Forget's `checkLiveReplay` behind a show-mode refusal, as `project.revert`
   has. A Syphon entry sharing its identity with another numbered one is refused
   on either side of a move or swap.
 - *UI:* the panel's Number field with Apply; `renumberEffect` names the effect
   ("moves to 5, a free number", "swaps with 2 · Cam B") and keeps Apply off
-  for a number outside the range or the input's own. The selection follows the
-  input to its new number.
+  for a number outside the range or the input's own, and while one renumber is
+  on its way (a second Enter would swap back). The selection follows the input
+  to its new number.
 
 ---
 

@@ -71,14 +71,18 @@
     // a freed number goes to the next new input: the selection must not move to it
     if (done !== undefined && picked && !picked.running && !picked.inUse) go('inputs', '', true);
   }
-  /** the Number field's draft per input, cleared when the input moves */
-  let numberDraft = $state<Record<string, number>>({});
-  const renumberLock = $derived(editLock ?? (app.live.show.mode ? 'Leave show mode first' : undefined));
-  /** a free number moves the input, a taken one swaps the two (B137 step 3); the selection follows it */
+  /** the Number field's text per input; all drafts go when an input moves (a swap moves two) */
+  let numberDraft = $state<Record<string, string>>({});
+  let renumbering = $state(false);
+  /** a free number moves the input, a taken one swaps the two (B137 step 3); the selection follows it. One at a time:
+   * a second Enter before the answer would swap back. */
   async function renumber(item: FolderZeroItem, to: number) {
+    if (renumbering) return;
+    renumbering = true;
     const done = await cmd(item.kind === 'syphon' ? 'syphon.renumber' : 'capture.renumber', { file: item.file, to });
+    renumbering = false;
     if (done === undefined) return;
-    delete numberDraft[`${item.kind}:${item.file}`];
+    numberDraft = {};
     go('inputs', String(to), true);
   }
   function statusWord(item: FolderZeroItem): string {
@@ -189,18 +193,19 @@
       {@const on = showing.get(`0/${picked.file}`) ?? []}
       <header class="phead"><h2 class="ellipsis" title={picked.name}>{picked.file} · {picked.name}</h2></header>
       {@const key = `${picked.kind}:${picked.file}`}
-      {@const draft = numberDraft[key] ?? picked.file}
-      {@const effect = renumberEffect(items, picked, draft)}
+      {@const draft = numberDraft[key] ?? String(picked.file)}
+      {@const to = draft.trim() === '' ? NaN : Number(draft)}
+      {@const effect = renumberEffect(items, picked, to)}
       {@const range = picked.kind === 'generator' ? [0, 0] : ZERO_RANGES[picked.kind]}
       <dl class="kv">
         <dt>Kind</dt>
         <dd>{KIND[picked.kind]}</dd>
         <dt><label for="input-number">Number</label></dt>
         <dd>
-          <form class="number" onsubmit={(e) => { e.preventDefault(); if (effect) void renumber(picked, draft); }}>
-            <input id="input-number" class="input mono" type="number" min={range[0]} max={range[1]} step="1" value={draft} disabled={renumberLock !== undefined} title={renumberLock}
-              oninput={(e) => (numberDraft[key] = Number(e.currentTarget.value))} />
-            <button type="submit" class="btn" disabled={renumberLock !== undefined || !effect} title={renumberLock ?? 'Layers and consoles select by number: after this, the number shows this input (undo takes it back)'}>Apply</button>
+          <form class="number" onsubmit={(e) => { e.preventDefault(); if (effect) void renumber(picked, to); }}>
+            <input id="input-number" class="input mono" type="number" min={range[0]} max={range[1]} step="1" value={draft} disabled={authorizeLock !== undefined} title={authorizeLock}
+              oninput={(e) => (numberDraft[key] = e.currentTarget.value)} />
+            <button type="submit" class="btn" disabled={authorizeLock !== undefined || !effect || renumbering} title={authorizeLock ?? 'Layers and consoles select by number: after this, the number shows this input (undo takes it back)'}>Apply</button>
           </form>
           <div class="caption" role="status">{effect ? effect.text : `${range[0]}–${range[1]}`}</div>
         </dd>
