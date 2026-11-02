@@ -139,7 +139,7 @@ struct UniverseSettingsEngineTests {
         try receiver.start()
         #expect(await Self.listening(port))
         sendUDP(Self.artnet(255), to: port)
-        #expect(try await Self.wait(store, for: 65535))
+        #expect(try await Self.wait(store, for: 65535), "port \(port)")
         return (store, receiver, port)
     }
 
@@ -164,7 +164,7 @@ struct UniverseSettingsEngineTests {
         let later = lose(store)
         #expect(Self.intensity(store, at: later)?.raw == 0)
         sendUDP(Self.artnet(128), to: port)
-        #expect(try await Self.wait(store, for: 0x8080))
+        #expect(try await Self.wait(store, for: 0x8080), "port \(port)")
     }
 
     @Test func internalFallsBackToTheUIAndCues() async throws {
@@ -175,7 +175,7 @@ struct UniverseSettingsEngineTests {
         let later = lose(store)
         #expect(Self.intensity(store, at: later)?.raw == 1000 && Self.intensity(store, at: later)?.source == "ui")
         sendUDP(Self.artnet(255), to: port)
-        #expect(try await Self.wait(store, for: 65535))
+        #expect(try await Self.wait(store, for: 65535), "port \(port)")
     }
 
     /// Switching to `zero` (or `internal`) while the universe is already lost applies at once, not at the next loss.
@@ -285,7 +285,7 @@ struct UniverseSettingsEngineTests {
         store.setUniverseSettings([Self.a0: settings])
         sacn.update(groups: UniverseSettings.wire([Self.a0], over: .sacn, settings: [Self.a0: settings]))
         sendUDP(SACNData(cid: cid, sourceName: "Desk", sequence: 2, universe: 1, slots: [UInt8](repeating: 64, count: 512)).encoded(), to: sacnPort)
-        #expect(try await Self.wait(store, for: 0x4040))
+        #expect(try await Self.wait(store, for: 0x4040), "port \(sacnPort)")
         sendUDP(Self.artnet(255), to: artPort)  // Art-Net no longer reaches A 0.0.0
         try await Task.sleep(for: .milliseconds(200))
         #expect(Self.intensity(store)?.raw == 0x4040)
@@ -314,7 +314,7 @@ struct UniverseSettingsEngineTests {
         settings.interface = "127.0.0.1"  // by address: lo0
         store.setUniverseSettings([Self.a0: settings])
         sendUDP(Self.artnet(255), to: port)
-        #expect(try await Self.wait(store, for: 65535))
+        #expect(try await Self.wait(store, for: 65535), "port \(port)")
 
         settings.interface = "en5"
         store.setUniverseSettings([Self.a0: settings])

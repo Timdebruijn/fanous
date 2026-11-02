@@ -30,19 +30,26 @@ func waitUntil(_ deadline: Duration = .seconds(10), every: Duration = .milliseco
 
 /// A UDP port that is free right now: bind port 0 exclusively (no SO_REUSEADDR/SO_REUSEPORT), read back the port the
 /// kernel assigned, release it. Unlike a random pick, it never lands on a port another socket holds; Network.framework
-/// listeners share ports, so such a port would cross-talk silently. Still check-then-release: the window is short.
+/// listeners share ports, so such a port would cross-talk silently. Still check-then-release: the window is short, but
+/// the kernel assigns at random (2000 probes: 110 repeats), so two tests that probe before either binds can get the same
+/// port; their listeners then share it and every unicast datagram goes to the older one (B115, measured). A port is
+/// therefore handed out once per process. ponytail: another process probing in the same window is not covered.
+private let handedOut = Mutex<Set<UInt16>>([])
 func freeUDPPort() throws -> UInt16 {
-    let fd = socket(AF_INET, SOCK_DGRAM, 0)
-    defer { close(fd) }
-    var address = sockaddr_in()
-    address.sin_family = sa_family_t(AF_INET)
-    address.sin_addr.s_addr = INADDR_ANY
-    var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-    let ok = withUnsafeMutablePointer(to: &address) { p in
-        p.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, length) == 0 && getsockname(fd, $0, &length) == 0 }
-    }
-    guard ok else { throw POSIXError(.EADDRINUSE) }
-    return UInt16(bigEndian: address.sin_port)
+    repeat {
+        let fd = socket(AF_INET, SOCK_DGRAM, 0)
+        defer { close(fd) }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_addr.s_addr = INADDR_ANY
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let ok = withUnsafeMutablePointer(to: &address) { p in
+            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, length) == 0 && getsockname(fd, $0, &length) == 0 }
+        }
+        guard ok else { throw POSIXError(.EADDRINUSE) }
+        let port = UInt16(bigEndian: address.sin_port)
+        if handedOut.withLock({ $0.insert(port).inserted }) { return port }
+    } while true
 }
 
 /// One UDP datagram to `host`:`port` from a throwaway socket.
