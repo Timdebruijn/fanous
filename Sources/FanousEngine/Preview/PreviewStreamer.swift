@@ -75,6 +75,16 @@ public final class PreviewStreamer: @unchecked Sendable {
     public let jpegOut = Atomic<Int>(0)
     public let jpegFailed = Atomic<Int>(0)
     public let jpegDropped = Atomic<Int>(0)
+    /// The steps between a tap and its JPEG (B99): completion handlers that ran with `.completed` (`completions`)
+    /// or another status (`completionErrors`), `encode` entries on the preview queue (`encodes`) and JPEG encodes started
+    /// (`jpegStarted`); `jpegStarted` above `jpegOut` + `jpegFailed` is an encode still in `jpegRepresentation` or its sends
+    /// (by 1 transiently while one runs). Per streamer in `/metrics` `preview.streamers`: the sums hide one streamer among the others.
+    public let completions = Atomic<Int>(0)
+    public let completionErrors = Atomic<Int>(0)
+    public let encodes = Atomic<Int>(0)
+    public let jpegStarted = Atomic<Int>(0)
+    /// Subscribers, and those on JPEG (`/metrics`).
+    public var subscriberCounts: (all: Int, jpeg: Int) { subscribers.withLock { ($0.count, $0.filter(\.jpeg).count) } }
     /// The latest JPEG (bytes, width, height) for CITP streaming frames; produced at 5 fps while anyone wants it.
     public let latestJPEG = Mutex<([UInt8], Int, Int)?>(nil)
     /// Set by the CITP server while a console streams; nil = only WebSocket JPEG subscribers count.
@@ -244,7 +254,11 @@ public final class PreviewStreamer: @unchecked Sendable {
         let keep = cvTexture  // the CVMetalTexture must outlive the GPU work
         commandBuffer.addCompletedHandler { [self] buffer in
             _ = keep
-            guard buffer.status == .completed else { return }
+            guard buffer.status == .completed else {
+                completionErrors.wrappingAdd(1, ordering: .relaxed)
+                return
+            }
+            completions.wrappingAdd(1, ordering: .relaxed)
             queue.async { [self] in encode(pixelBuffer, target: target) }
         }
     }
@@ -337,9 +351,11 @@ public final class PreviewStreamer: @unchecked Sendable {
     }
 
     private func encode(_ pixelBuffer: CVPixelBuffer, target: Double) {
+        encodes.wrappingAdd(1, ordering: .relaxed)
         let (h264, jpeg) = subscribers.withLock { subs in (subs.filter { !$0.jpeg }, subs.filter { $0.jpeg }) }
         if !jpeg.isEmpty || externalJPEGWanted?() == true, target - lastJPEG >= 0.18 {  // taps come every 0.2 s when only JPEG listens
             lastJPEG = target
+            jpegStarted.wrappingAdd(1, ordering: .relaxed)
             if let data = ciContext.jpegRepresentation(of: CIImage(cvPixelBuffer: pixelBuffer), colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.7]) {
                 let bytes = Array(data)
                 latestJPEG.withLock { $0 = (bytes, width, height) }

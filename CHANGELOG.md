@@ -589,6 +589,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - CI: the e2e's note for a refused viewer that got no JPEG frame on the runner (B98) now carries the engine's whole `/metrics`
   or the error of reading it, instead of three JPEG counters that read 0 both when no JPEG was made and when the engine did not
   answer; measured: the note comes on the slow runner class only, 27 of the last 59 e2e jobs (B99, PR #178).
+- Engine: `/metrics` `preview.streamers` lists every live preview streamer with its own counters, now also the steps between
+  a tap and its JPEG (`completions`, `completionErrors`, `encodes`, `jpegStarted`), and `gpuErrors` shows the compositor's tick
+  buffers that ended in error; the first full note from a slow CI runner showed 2830 taps encoded and no JPEG encode completed
+  or failed, summed over all streamers. With the rows, two slow-runner runs showed the refused viewer's streamer at
+  `completions` 126, `encodes` 1, `jpegStarted` 1, `jpegOut` 0: its first `jpegRepresentation` never returned and its preview
+  queue is blocked from then on; the H.264 streamers keep up. Not reproduced on hardware (B99, PR #179).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its

@@ -321,4 +321,24 @@ public final class PreviewHub: @unchecked Sendable {
     public var jpegOut: Int { active.withLock { $0 }.reduce(0) { $0 + $1.jpegOut.load(ordering: .relaxed) } }
     public var jpegFailed: Int { active.withLock { $0 }.reduce(0) { $0 + $1.jpegFailed.load(ordering: .relaxed) } }
     public var jpegDropped: Int { active.withLock { $0 }.reduce(0) { $0 + $1.jpegDropped.load(ordering: .relaxed) } }
+    /// `/metrics` `preview.streamers` (B99): one row per live streamer with its own counters, so a refused viewer's JPEG
+    /// streamer is told from the H.264 streamers that tap alongside it; the sums above hide it.
+    public var rows: [JSONValue] {
+        active.withLock { $0 }.map { s in
+            let (all, jpeg) = s.subscriberCounts
+            var row: [String: JSONValue] = [
+                "canvas": .number(Double(s.canvasID)), "size": .string("\(s.width)x\(s.height)"), "output": .bool(s.outputSet != nil),
+                "subscribers": .number(Double(all)), "jpegSubscribers": .number(Double(jpeg)),
+            ]
+            if let layer = s.layer { row["layer"] = .number(Double(layer)) }
+            let counts: [(String, Int)] = [
+                ("framesIn", s.framesIn.load(ordering: .relaxed)), ("framesOut", s.framesOut.load(ordering: .relaxed)), ("skipped", s.skipped.load(ordering: .relaxed)),
+                ("completions", s.completions.load(ordering: .relaxed)), ("completionErrors", s.completionErrors.load(ordering: .relaxed)),
+                ("encodes", s.encodes.load(ordering: .relaxed)), ("jpegStarted", s.jpegStarted.load(ordering: .relaxed)), ("jpegOut", s.jpegOut.load(ordering: .relaxed)),
+                ("jpegFailed", s.jpegFailed.load(ordering: .relaxed)), ("jpegDropped", s.jpegDropped.load(ordering: .relaxed)),
+            ]
+            for (name, count) in counts { row[name] = .number(Double(count)) }
+            return .object(row)
+        }
+    }
 }
