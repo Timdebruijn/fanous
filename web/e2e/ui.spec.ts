@@ -53,12 +53,16 @@ async function expectDecoders(page: Page): Promise<void> {
 
 /** B98/B99: no JPEG frame came for a viewer refused to JPEG on this CI runner. The Actions warning (and the test's
  * annotation) carries the engine's whole `/metrics`: the preview counters (`framesIn` taps, `skipped`, `jpegOut`,
- * `jpegFailed`, `jpegDropped`), the compositor's frames and GPU times, so the next occurrence says which step of the
- * JPEG path stopped, or that the engine did not answer; the engine log is attached. The test is skipped: the H.264
- * upgrade does not come on such a runner either, the rest would only run into the test timeout. */
+ * `jpegFailed`, `jpegDropped`), the compositor's frames and GPU times, so the next occurrence narrows down which step of
+ * the JPEG path stopped, or shows that the engine did not answer; the engine log is attached. The test is skipped: the
+ * rest would only run into the test timeout. */
 async function noJPEGOnCI(engine: Engine, jpegFrames: number, ms: number): Promise<void> {
-  const metrics = await engine.api.get('/metrics').then((r) => r.text()).catch((error: unknown) => `metrics unreadable: ${String(error)}`);
-  const note = `B98: ${jpegFrames} JPEG frames on the refused canvas:2 stream within ${ms} ms; ${metrics} (B99)`;
+  // 5 s: the test has spent most of its 60 s by now; a non-2xx answer shows its status; one line, as a workflow command is one
+  const metrics = await engine.api
+    .get('/metrics', { timeout: 5_000 })
+    .then(async (r) => (r.ok() ? r.text() : `HTTP ${r.status()}: ${await r.text()}`))
+    .catch((error: unknown) => `metrics unreadable: ${String(error)}`);
+  const note = `B98: ${jpegFrames} JPEG frames on the refused canvas:2 stream within ${ms} ms; ${metrics.replace(/\s+/g, ' ')} (B99)`;
   console.log(`::warning::${note}`);
   test.info().annotations.push({ type: 'B98', description: note });
   await test.info().attach('fanousd.log (B98)', { path: join(engine.home, 'Library/Logs/Fanous/fanousd.log'), contentType: 'text/plain' });
@@ -1781,7 +1785,7 @@ test('preview: a viewer refused H.264 at the encoder limit shows JPEG at once an
   await expect(figure.locator('figcaption')).toContainText(/^JPEG 5 fps · .* · H\.264 encoders busy/, { timeout: 3_000 });
   const drawn = () => figure.locator('canvas').evaluate((c: HTMLCanvasElement) => c.getContext('2d')!.getImageData(c.width / 2, c.height / 2, 1, 1).data[3]);
   // B98: on CI's VM the engine has sent this refused stream no JPEG frame for 30 s (cause open): on a workstation one
-  // must come; drawing is checked once a frame came, and a CI run without one records why and is skipped (B99)
+  // must come; drawing is checked once a frame came, and a CI run without one records the engine's /metrics and is skipped (B99)
   await expect.poll(() => jpegFrames, { timeout: previewTimeout }).toBeGreaterThan(0).catch(async (error: unknown) => {
     if (!process.env.CI || !/Timeout \d+ms exceeded/.test((error as Error).message ?? '')) throw error;
     await noJPEGOnCI(engine, jpegFrames, previewTimeout);
@@ -1968,7 +1972,7 @@ test('preview: a refused viewer the engine moves to a stream that never delivers
   const caption = figure.locator('figcaption');
   await expect(caption).toContainText(/^JPEG 5 fps · .* · H\.264 encoders busy/, { timeout: previewTimeout });
   // the moved case needs the refused stream's JPEG first: without a frame on it (the B99 symptom) the watchdog fires
-  // before any move. A CI run without one records why and is skipped, as in B86
+  // before any move. A CI run without one records the engine's /metrics and is skipped, as in B86
   await expect.poll(() => jpegFrames, { timeout: 4_000 }).toBeGreaterThan(0).catch(async (error: unknown) => {
     if (!process.env.CI || !/Timeout \d+ms exceeded/.test((error as Error).message ?? '')) throw error;
     await noJPEGOnCI(engine, jpegFrames, 4_000);
