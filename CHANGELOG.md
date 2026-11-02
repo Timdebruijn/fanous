@@ -604,7 +604,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   ad-hoc builds needs (agent re-register, screen grant anew) (B50, PR #182).
 - Fixed: a layer's error text, the readiness "decoders" detail and a library item's reason could carry the file's full path
   to the monitor role when the error came from AVFoundation (its text prints the file URL); those texts now use the error's
-  description without it, while the engine's own error texts are unchanged (B25, PR #NNN).
+  description without it, while the engine's own error texts are unchanged (B25, PR #186).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
