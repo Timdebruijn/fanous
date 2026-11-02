@@ -252,19 +252,21 @@ struct CITPServerTests {
         let libraries = [1, 3, 7].enumerated().map { index, folder in
             ElementLibrary(id: .topLevel(UInt8(index)), serialNumber: 2, dmxRangeMin: UInt8(folder), dmxRangeMax: UInt8(folder), name: "F\(folder)", elementCount: 2)
         }
-        #expect(client.wait(for: Self.reply(.elementLibraryInformation(ElementLibraryInformation(libraries: libraries)))))
+        #expect(client.wait(10, for: Self.reply(.elementLibraryInformation(ElementLibraryInformation(libraries: libraries)))))
         client.send(Self.msex("GELI", [1, 0, 0, 0, 0, 1, 0, 2]))  // library 2 only
-        #expect(client.wait(for: Self.reply(.elementLibraryInformation(ElementLibraryInformation(libraries: [libraries[2]])))))
+        #expect(client.wait(10, for: Self.reply(.elementLibraryInformation(ElementLibraryInformation(libraries: [libraries[2]])))))
 
         client.send(Self.msex("GEIn", [1, 1, 2, 0, 0, 1, 0, 1]))  // library 2 (folder 7), element 1 (file 5)
         let element = MediaElement(number: 1, dmxRangeMin: 5, dmxRangeMax: 5, name: "7-5")
-        #expect(client.wait(for: Self.reply(.mediaElementInformation(MediaElementInformation(libraryID: .topLevel(2), elements: [element])))))
+        #expect(client.wait(10, for: Self.reply(.mediaElementInformation(MediaElementInformation(libraryID: .topLevel(2), elements: [element])))))
 
         let status = [
             LayerStatus(layerNumber: 0, mediaLibraryID: .topLevel(2), mediaNumber: 1, mediaName: "7-5", mediaPosition: 0, mediaLength: 0, mediaFPS: 25, statusFlags: 0),
-            LayerStatus(layerNumber: 1, mediaLibraryID: MSEXLibraryID(), mediaNumber: 0, mediaName: "Camera", mediaPosition: 0, mediaLength: 0, mediaFPS: 25, statusFlags: 0),
+            LayerStatus(layerNumber: 1, mediaLibraryID: .topLevel(255), mediaNumber: 255, mediaName: "Camera", mediaPosition: 0, mediaLength: 0, mediaFPS: 25, statusFlags: 0),
         ]
-        #expect(client.wait(for: Self.reply(.layerStatus(status), requestIndex: 0)), "the playing file by index; a live input is no library (the root id)")
+        #expect(client.wait(10, for: Self.reply(.layerStatus(status), requestIndex: 0)), "the playing file by index; a live input is no library (255, an index no library has)")
+        client.send(Self.msex("GEIn", [1, 1, 9, 0, 0, 1, 0, 1]))  // library 9: none
+        #expect(client.wait(10, for: Self.reply(.mediaElementInformation(MediaElementInformation(libraryID: .topLevel(9), elements: [])))), "an index past the libraries names nothing")
     }
 
     /// An MSEX 1.0/1.1 console sends no CInf (B78): after `fallbackDelay` it gets a 1.0 SInf (unsolicited) and 1.0

@@ -226,12 +226,14 @@ public final class CITPServer: @unchecked Sendable {
         guard !ready.isEmpty else { return }
         let libraries = providers.library().msexLibraries
         let layers = providers.layers().map { l in
-            // number → index; live inputs (folder 0) and missing media are no library: the root id, element 0
+            // number → index; live inputs (folder 0) and missing media are no library: library 255, element 255, indexes no
+            // library or file can have (numbers run 1–255, so indexes 0–254); 1.0/1.1 carry only the library number, where the
+            // root id {0,0,0,0} would read as library 0 = the first folder
             let library = libraries.firstIndex { $0.number == l.folder }
             let element = library.flatMap { libraries[$0].elements.firstIndex { $0.file == l.file } }
             return LayerStatus(
                 layerNumber: UInt8(clamping: l.index - 1), physicalOutput: 0, mediaLibraryType: 1,
-                mediaLibraryID: element == nil ? MSEXLibraryID() : .topLevel(UInt8(library!)), mediaNumber: UInt8(element ?? 0), mediaName: l.name,
+                mediaLibraryID: .topLevel(element == nil ? 255 : UInt8(library!)), mediaNumber: UInt8(element ?? 255), mediaName: l.name,
                 mediaPosition: l.positionMs, mediaLength: l.lengthMs, mediaFPS: l.fps, statusFlags: l.flags)
         }
         for session in ready { session.send(.layerStatus(layers)) }
@@ -289,10 +291,11 @@ public final class CITPServer: @unchecked Sendable {
         case .getElementLibraryInformation(let request):
             let folders = providers.library().msexLibraries.enumerated().filter { request.libraryNumbers.isEmpty || request.libraryNumbers.contains(UInt8($0.offset)) }
             let libraries = folders.map { index, folder in
-                // SerialNumber: the folder's file count, invalid names included. An added or removed file shifts the
-                // indexes after it and changes the count, so a console revalidates (the spec's change detection).
-                // ponytail: a renamed or renumbered file keeps the count, so a console keeps its cached element;
-                // a serial from the folder's (number, name) list, kept across restarts, when that bites.
+                // SerialNumber: the folder's file count, invalid names included. An added or removed file changes it, which a
+                // 1.2 console sees on its next GELI (no ELUp is sent; 1.0/1.1 have no serial). ponytail: a renamed or
+                // renumbered file, a file added and another removed, or a folder added, removed or renumbered (it shifts the
+                // library indexes after it) keeps the counts, so a console keeps stale cached elements; a serial from the
+                // folder's (number, name) list, kept across restarts, when that bites.
                 ElementLibrary(
                     id: .topLevel(UInt8(index)), serialNumber: UInt32(folder.folder.items.count), dmxRangeMin: folder.number, dmxRangeMax: folder.number,
                     name: folder.folder.name, libraryCount: 0, elementCount: UInt16(folder.elements.count))
@@ -428,7 +431,7 @@ extension LibrarySnapshot {
     /// The elements (index, item) of a library id, only those `numbers` names when it names any.
     func msexElements(_ id: MSEXLibraryID, _ numbers: [UInt8]) -> [(offset: Int, element: LibraryItem)] {
         let libraries = msexLibraries
-        guard Int(id.level1) < libraries.count else { return [] }
+        guard id.level == 1, Int(id.level1) < libraries.count else { return [] }  // one library level: the root or a deeper id names nothing
         return libraries[Int(id.level1)].elements.enumerated().filter { numbers.isEmpty || numbers.contains(UInt8($0.offset)) }
     }
 }

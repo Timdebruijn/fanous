@@ -4269,7 +4269,8 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   gets them) with `dmxRangeMin = dmxRangeMax` = the folder or file number, the
   DMX value that selects it (B78); `GEIn`/`GETh` and their element filters,
   `GELI`'s library filter and `LSta` use the same indexes (a live input or
-  missing media in `LSta`: the root library id, element 0), thumbnails from the library cache, `GVSr` answered with
+  missing media in `LSta`: library 255, element 255, indexes no folder or file can have; `GELI`'s parent id is ignored,
+  Fanous has one library level), thumbnails from the library cache, `GVSr` answered with
   `VSrc` (source 0 = canvas 1 at its preview size, source n = layer n with its
   0-based layer number and thumbnail size), streaming frames = the canvas JPEG
   from the preview path for source 0 (and any id that is no layer, for consoles
