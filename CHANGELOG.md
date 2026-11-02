@@ -618,7 +618,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - CI: the seam-check lease e2e waits 6 s (three renewals) instead of 3 s for a renewal to be sent; at 3 s none came once
   in 88 CI jobs (PR #190).
 - Fixed: the browser preview of an output whose aspect differs from the preview's drew the black-lift feather on the y axis
-  with the x axis's scale; each axis now has its own (B56, PR #NNN).
+  with the x axis's scale; each axis now has its own (B56, PR #191).
 - Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
   and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
   they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
