@@ -3916,8 +3916,8 @@ Inputs screen on key `3`, so `1–7`.
 
 ### 12.1 Inputs screen and audio outputs (design 2026-11-02, B137)
 
-**Status:** designed 2026-11-02, not built. The four decisions below are for
-the owner to approve; the build order is at the end.
+**Status:** designed 2026-11-02, not built. The owner approved the four
+decisions below the same day; the build order is at the end.
 
 **Why.** The owner wants one place to select and set up inputs, and expects
 more settings to come: capture cards, the audio input that carries timecode,
@@ -3941,7 +3941,7 @@ no settings at all:
   are not built (B76). §12 puts the audio device on the System screen, but no
   UI has it.
 
-**Decisions (for the owner):**
+**Decisions (approved by the owner 2026-11-02):**
 1. **Two places that mirror each other.** A new **Inputs** screen holds
    everything that comes in: cameras and capture cards, displays, Syphon
    servers (later windows and NDI, B74) and audio inputs. Audio out becomes an
