@@ -4163,7 +4163,9 @@ MSC and MIDI-triggered cues are additions, not rewrites.
 - MSEX over TCP, negotiating the highest version both sides support
   (1.0/1.1/1.2): `CInf`/`SInf` (server info, layer count), `LSta` (layer
   status: media, position, playing state at 4 Hz), `ELIn`/`MEIn` (element
-  libraries = folders, elements = files with names/dimensions/fps/length),
+  libraries = folders, elements = files with names/dimensions/fps/length;
+  numbered as 0-based contiguous indexes, the folder/file number in the DMX
+  range, B78),
   `EThn` (JPEG/RGB8 thumbnails from the library cache), `StFr` (streaming
   frames of a layer or canvas, JPEG, ≤ 320 px, rate as requested up to
   10 fps, from the live-thumbnail path).
@@ -4262,7 +4264,13 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   multicast groups), per session the highest common version ≤ 1.2,
   `SInf` with one DMX source string per layer, `LSta` at 4 Hz from the layer
   status, libraries = numbered folders, elements = numbered files with their
-  probed metadata, thumbnails from the library cache, `GVSr` answered with
+  probed metadata, both numbered as 0-based contiguous indexes in number order
+  (MSEX 1.2 says so explicitly and calls it the intent before; every version
+  gets them) with `dmxRangeMin = dmxRangeMax` = the folder or file number, the
+  DMX value that selects it (B78); `GEIn`/`GETh` and their element filters,
+  `GELI`'s library filter and `LSta` use the same indexes (a live input or
+  missing media in `LSta`: library 255, element 255, indexes no folder or file can have; `GELI`'s parent id is ignored,
+  Fanous has one library level), thumbnails from the library cache, `GVSr` answered with
   `VSrc` (source 0 = canvas 1 at its preview size, source n = layer n with its
   0-based layer number and thumbnail size), streaming frames = the canvas JPEG
   from the preview path for source 0 (and any id that is no layer, for consoles
