@@ -4230,7 +4230,7 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   removed on leaving. `Engine.stop` leaves show mode, so SIGTERM (launchd stop,
   Stop Engine, Stop Engine and Quit, logout, bootout) clears it; once the stop
   has begun, entering is refused. Engine › Restart Engine (and the shell's
-  re-register of a hung ad-hoc agent) first writes `restart-pending`; a stop
+  re-register of a silent agent) first writes `restart-pending`; a stop
   that finds it fresh (< 60 s, always removed) keeps the file marked `restart`
   and skips the display-mode restore, leaving the ledger. An unclean end (crash,
   kill -9, power loss, launchd's SIGKILL after a hung stop) leaves the file too.
