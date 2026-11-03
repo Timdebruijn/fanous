@@ -122,7 +122,7 @@
 
 <div class="toolbar">
   <h1>Layers</h1>
-  <span class="caption">{canvases.length > 1 ? `${canvases.length} canvases` : (canvases[0]?.name ?? 'Canvas 1')} · {layerCount} layers · <span title="Layer limit of this Mac's performance tier (chip class, see System). Add layer on Patch stops at this number so the show does not drop frames.">tier allows {app.caps.maxLayers ?? '—'} layers</span></span>
+  <span class="caption">{canvases.length > 1 ? `${canvases.length} canvases` : (canvases[0]?.name ?? 'Canvas 1')} · {layerCount} layers · <span title="The engine's layer limit, the same on every Mac. Add layer on Patch stops at this number; what this Mac plays without dropping frames can be lower.">up to {app.caps.maxLayers ?? '—'} layers</span></span>
 </div>
 
 <LayerStrips selected={fixture} onselect={(f) => (ui.fixture = f)} />
@@ -144,7 +144,7 @@
 
 {#if layerCount === 0}
   <div class="panel empty">
-    <p class="muted">The project has no layers, so there is nothing to play on. Add layers on the Patch screen (this Mac's tier allows {app.caps.maxLayers ?? '—'}).</p>
+    <p class="muted">The project has no layers, so there is nothing to play on. Add layers on the Patch screen (up to {app.caps.maxLayers ?? '—'}).</p>
     <button type="button" class="btn btn-primary" onclick={() => go('patch')}>Go to Patch</button>
   </div>
   <!-- Master and outputs stay controllable without layers -->
