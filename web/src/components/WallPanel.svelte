@@ -274,8 +274,8 @@
   }
   .tile:hover { background: var(--surface-3); }
   .tile[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-dim); }
-  .tile .id { font-size: 24px; font-weight: 700; line-height: 1; }
-  .tile .nm { max-width: 100%; font-size: 12px; font-weight: 600; }
+  .tile .id { font-size: 24px; font-weight: 600; line-height: 1; }
+  .tile .nm { max-width: 100%; font-size: 12px; font-weight: 500; }
   .seam { position: relative; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--text-2); }
   .seam::before { content: ''; position: absolute; background: var(--line-strong); border-radius: 2px; }
   .seam.right::before { top: 4px; bottom: 4px; left: calc(50% - 2px); width: 4px; }
@@ -294,7 +294,7 @@
   .hint:hover { background: var(--surface-3); }
   .hint[aria-pressed='true'] { border-color: var(--accent); }
   .turn { color: var(--text-2); }
-  .armed { margin: 0; padding: 8px 12px; border-radius: 6px; background: var(--accent-dim); font-weight: 600; }
+  .armed { margin: 0; padding: 8px 12px; border-radius: 6px; background: var(--accent-dim); font-weight: 500; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .ctl { display: flex; flex-direction: column; gap: 12px; }
   h3 { margin: 0; font-size: 15px; letter-spacing: normal; text-transform: none; color: inherit; }

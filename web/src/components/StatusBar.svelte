@@ -156,7 +156,7 @@
   .item.right { border-right: 0; padding-right: 4px; }
   .item.red { background: var(--red-bg); border-radius: 6px; }
   .item.red .value, .item.red .caption { color: var(--red); }
-  .brand .name { font-weight: 700; letter-spacing: -0.01em; }
+  .brand .name { font-weight: 600; }
   .tag { border: 0; cursor: pointer; }
   .tag.tag-open { border: 1px solid var(--line-strong); background: transparent; }
   .modewrap { position: relative; }

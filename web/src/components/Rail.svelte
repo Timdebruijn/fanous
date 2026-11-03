@@ -28,7 +28,7 @@
   nav { flex: 1 0 84px; display: flex; flex-wrap: wrap; align-content: flex-start; background: var(--surface-1); border-right: 1px solid var(--line); padding: 8px 0; }
   a { flex: 0 0 84px; height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--text-2); text-decoration: none; font-size: 11px; font-weight: 500; }
   a:hover { color: var(--text-1); }
-  a[aria-current='page'] { color: var(--text-1); background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
+  a[aria-current='page'] { color: var(--text-1); background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent); font-weight: 500; }
   /* iPad portrait and narrower: icons only, 56 px */
   @media (max-width: 1100px) {
     nav { flex-basis: 56px; }

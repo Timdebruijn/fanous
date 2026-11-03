@@ -47,9 +47,9 @@ button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: default; }
 a { color: var(--accent); }
-h1 { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.01em; }
-h2 { margin: 0; font-size: 17px; font-weight: 600; }
-h3 { margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--text-3); }
+h1 { margin: 0; font-size: 28px; font-weight: 500; }
+h2 { margin: 0; font-size: 18px; font-weight: 500; }
+h3 { margin: 8px 0 0; font-size: 13px; font-weight: 500; color: var(--text-3); }
 .mono { font-family: var(--font-mono); }
 .muted { color: var(--text-2); }
 .faint { color: var(--text-3); }
@@ -66,9 +66,9 @@ h3 { margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--text-3); }
   font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; text-decoration: none;
 }
 .btn:hover { background: var(--surface-3); }
-.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--ground); font-weight: 600; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--ground); font-weight: 500; }
 .btn-primary:hover { background: var(--accent-hover); }
-.btn-danger { background: transparent; border-color: var(--red); color: var(--red); font-weight: 600; }
+.btn-danger { background: transparent; border-color: var(--red); color: var(--red); font-weight: 500; }
 .btn-danger:hover { background: var(--red-bg); }
 .btn-ghost { background: transparent; border-color: transparent; color: var(--text-2); }
 .btn-ghost:hover { background: var(--surface-2); color: var(--text-1); }
@@ -101,7 +101,7 @@ h3 { margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--text-3); }
 .switch:has(input:disabled) { cursor: default; opacity: 0.55; }
 
 /* Badges, pills, dots */
-.badge { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 4px; background: var(--surface-3); color: var(--text-1); font: 600 11px var(--font-mono); white-space: nowrap; }
+.badge { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 4px; background: var(--surface-3); color: var(--text-1); font: 500 11px var(--font-mono); white-space: nowrap; }
 .badge-outline { background: transparent; border: 1px solid var(--line-strong); color: var(--text-2); font-family: var(--font-ui); }
 .badge-warn { background: var(--yellow-bg); color: var(--yellow); font-family: var(--font-ui); }
 .badge-err { background: var(--red-bg); color: var(--red); font-family: var(--font-ui); }
@@ -118,12 +118,12 @@ h3 { margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--text-3); }
 .dot-yellow { background: var(--yellow); }
 .dot-red { background: var(--red); }
 .dot-off { background: transparent; border: 1.5px solid var(--line-strong); }
-.role { display: inline-flex; align-items: center; min-height: var(--touch); padding: 0 12px; border-radius: var(--radius-control); font-size: 12px; font-weight: 600; }
+.role { display: inline-flex; align-items: center; min-height: var(--touch); padding: 0 12px; border-radius: var(--radius-control); font-size: 12px; font-weight: 500; }
 /* the role in its text colour on a quiet surface: programmer, the one that can change the show, in the accent */
 .role-monitor { background: var(--surface-2); color: var(--text-2); }
 .role-operator { background: var(--surface-2); color: var(--text-1); }
 .role-programmer { background: var(--surface-2); color: var(--accent); }
-.tag { display: inline-flex; align-items: center; gap: 6px; min-height: var(--touch); padding: 0 10px; border-radius: var(--radius-control); font-size: 11px; font-weight: 600; }
+.tag { display: inline-flex; align-items: center; gap: 6px; min-height: var(--touch); padding: 0 10px; border-radius: var(--radius-control); font-size: 11px; font-weight: 500; }
 .tag-lock { background: var(--surface-3); color: var(--text-1); }
 .tag-mode { background: var(--accent-dim); color: var(--text-1); }
 .tag-open { border: 1px solid var(--line-strong); color: var(--text-2); }
@@ -149,7 +149,7 @@ dialog::backdrop { background: var(--scrim); }
 .scrubber .mark { position: absolute; top: 0; margin-left: -5px; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid var(--yellow); }
 .thumb { border-radius: 4px; background: var(--surface-2); position: relative; overflow: hidden; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.thumb .n { position: absolute; left: 4px; top: 4px; height: 20px; padding: 0 6px; border-radius: 4px; background: var(--scrim); font: 600 11px var(--font-mono); display: inline-flex; align-items: center; }
+.thumb .n { position: absolute; left: 4px; top: 4px; height: 20px; padding: 0 6px; border-radius: 4px; background: var(--scrim); font: 500 11px var(--font-mono); display: inline-flex; align-items: center; }
 
 /* Rows that select: button reset */
 .row {

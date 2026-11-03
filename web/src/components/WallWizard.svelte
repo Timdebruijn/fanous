@@ -171,12 +171,12 @@
   }
   .tile:hover { background: var(--surface-3); }
   .tile[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-dim); }
-  .tile .id { font-size: 32px; font-weight: 700; line-height: 1; }
-  .tile .nm { font-weight: 600; max-width: 100%; }
+  .tile .id { font-size: 32px; font-weight: 600; line-height: 1; }
+  .tile .nm { font-weight: 500; max-width: 100%; }
   .tile .caption { max-width: 100%; }
   .order {
     position: absolute; top: 8px; right: 8px; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--ground);
-    display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px;
+    display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px;
   }
   .fieldrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
   .layout { display: grid; gap: 4px; max-width: 360px; }
