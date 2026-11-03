@@ -15,5 +15,5 @@ public enum Attribution {
 }
 
 public enum FanousVersion {
-    public static let string = "1.0.0-rc.2"
+    public static let string = "1.0.0-rc.3"
 }
