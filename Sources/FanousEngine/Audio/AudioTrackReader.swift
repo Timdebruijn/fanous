@@ -24,7 +24,7 @@ public enum AudioError: Error, CustomStringConvertible {
 /// layer's decode thread only (one caller at a time).
 ///
 /// After `open`, `read` allocates nothing in Swift: source bytes are staged in a buffer preallocated at init and
-/// converted straight into the caller's (the converter's channel map makes the stereo pair). The only per-chunk
+/// converted straight into the caller's (the converter's channel map or layout mix makes the stereo pair). The only per-chunk
 /// allocations are AVFoundation's own sample-buffer objects (one request and one `CMSampleBuffer` per 100 ms of
 /// source audio).
 /// ponytail: LPCM only (what ingest stores); AAC/VBR would need packet descriptions and priming discard. Edit
@@ -49,6 +49,12 @@ public final class AudioTrackReader: @unchecked Sendable {
     private let chunkFrames: Int  // source frames per sample-buffer request (100 ms)
     private let staging: UnsafeMutableRawPointer  // raw source bytes of the current chunk
     private let stagingCapacity: Int
+    /// B143: more than two channels with a layout. The converter then gives every channel as 48 kHz float into
+    /// `scratch` (`mixFrames` frames at most per call) and `read` folds them to stereo with Apple's matrix for the
+    /// layout (`kAudioFormatProperty_MatrixMixMap`, `[input channel][output channel]`). Nil: the converter's own channel
+    /// map makes the pair (mono, stereo, a discrete or unknown layout).
+    private let mix: (matrix: [Float], scratch: UnsafeMutablePointer<Float>)?
+    private static let mixFrames = 4096
 
     // Reader-thread state.
     private var cursor: AVSampleCursor?
@@ -82,6 +88,7 @@ public final class AudioTrackReader: @unchecked Sendable {
             chunkFrames = 0
             stagingCapacity = 0
             staging = .allocate(byteCount: 1, alignment: 16)
+            mix = nil
             return
         }
         guard var source = CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee,
@@ -91,14 +98,19 @@ public final class AudioTrackReader: @unchecked Sendable {
             throw AudioError.unsupportedFormat(CMFormatDescriptionGetMediaSubType(description))
         }
         let channels = Int(source.mChannelsPerFrame)
+        // More than two channels with a layout (5.1, 7.1, ...) are folded to stereo by Apple's matrix for that layout, so a
+        // 5.1 file's centre (the dialogue) is heard whichever channel the layout gives it (B143). Mono goes to both sides;
+        // a discrete or unknown layout keeps its first two channels.
+        let matrix = channels > 2 ? Self.stereoMixMatrix(for: description, channels: channels) : nil
+        let outputChannels = matrix == nil ? 2 : channels
         var output = AudioStreamBasicDescription(
             mSampleRate: Double(Self.outputSampleRate), mFormatID: kAudioFormatLinearPCM, mFormatFlags: kAudioFormatFlagsNativeFloatPacked,
-            mBytesPerPacket: 8, mFramesPerPacket: 1, mBytesPerFrame: 8, mChannelsPerFrame: 2, mBitsPerChannel: 32, mReserved: 0)
+            mBytesPerPacket: UInt32(4 * outputChannels), mFramesPerPacket: 1, mBytesPerFrame: UInt32(4 * outputChannels),
+            mChannelsPerFrame: UInt32(outputChannels), mBitsPerChannel: 32, mReserved: 0)
         var converter: AudioConverterRef?
         var status = AudioConverterNew(&source, &output, &converter)
         guard status == noErr, let converter else { throw AudioError.converter(status) }
-        if channels != 2 {
-            // mono goes to both sides; more channels keep their first two
+        if channels != 2, matrix == nil {
             var map: [Int32] = channels == 1 ? [0, 0] : [0, 1]
             status = AudioConverterSetProperty(converter, kAudioConverterChannelMap, UInt32(MemoryLayout<Int32>.size * 2), &map)
             guard status == noErr else {
@@ -107,6 +119,7 @@ public final class AudioTrackReader: @unchecked Sendable {
             }
         }
         self.converter = converter
+        mix = matrix.map { ($0, .allocate(capacity: Self.mixFrames * channels)) }
         hasAudio = true
         self.duration = duration
         sampleRate = source.mSampleRate
@@ -121,6 +134,26 @@ public final class AudioTrackReader: @unchecked Sendable {
     deinit {
         if let converter { AudioConverterDispose(converter) }
         staging.deallocate()
+        mix?.scratch.deallocate()
+    }
+
+    /// Apple's fold-down of the track's layout to stereo, `channels * 2` weights; nil without a layout, for one the
+    /// system has no fold-down for (discrete, unknown), for one with another channel count than the track, or an all-zero one.
+    /// ponytail: the weights are applied as they come (L + 0.7071 (C + Ls) sums to 2.41 for a signal in every channel, and
+    /// `AudioMixer` has no limiter), so loud material in every channel can clip; a −3 dB pad or a limiter if a show shows it.
+    static func stereoMixMatrix(for description: CMFormatDescription, channels: Int) -> [Float]? {
+        var layoutSize = 0
+        guard let layout = CMAudioFormatDescriptionGetChannelLayout(description, sizeOut: &layoutSize), layoutSize > 0 else { return nil }
+        var stereo = AudioChannelLayout()
+        stereo.mChannelLayoutTag = kAudioChannelLayoutTag_Stereo
+        var matrix = [Float](repeating: 0, count: channels * 2)
+        var size = UInt32(MemoryLayout<Float>.size * matrix.count)
+        let status = withUnsafePointer(to: &stereo) { stereoPointer in
+            var layouts: [UnsafePointer<AudioChannelLayout>?] = [layout, stereoPointer]
+            return AudioFormatGetProperty(kAudioFormatProperty_MatrixMixMap, UInt32(MemoryLayout<UnsafePointer<AudioChannelLayout>?>.size * 2), &layouts, &size, &matrix)
+        }
+        guard status == noErr, size == UInt32(MemoryLayout<Float>.size * matrix.count), matrix.contains(where: { $0 != 0 }) else { return nil }
+        return matrix
     }
 
     /// Positions the reader so the next `read` starts at `seconds` (clamped to the track; at or past the end
@@ -145,12 +178,26 @@ public final class AudioTrackReader: @unchecked Sendable {
         guard let converter, frameCount > 0 else { return (0, firstFramePTS) }
         var produced = 0
         while produced < frameCount {
-            let wanted = frameCount - produced
+            let wanted = mix == nil ? frameCount - produced : min(frameCount - produced, Self.mixFrames)
+            let channels = mix == nil ? 2 : channelCount
             var frames = UInt32(wanted)
             var list = AudioBufferList(
-                mNumberBuffers: 1, mBuffers: AudioBuffer(mNumberChannels: 2, mDataByteSize: UInt32(wanted * 8), mData: output + 2 * produced))
+                mNumberBuffers: 1,
+                mBuffers: AudioBuffer(mNumberChannels: UInt32(channels), mDataByteSize: UInt32(wanted * 4 * channels), mData: mix?.scratch ?? output + 2 * produced))
             let status = AudioConverterFillComplexBuffer(converter, Self.inputProc, Unmanaged.passUnretained(self).toOpaque(), &frames, &list, nil)
             let got = Int(frames)
+            if let mix {  // fold the channels to the pair (B143)
+                for frame in 0..<got {
+                    var left: Float = 0, right: Float = 0
+                    for channel in 0..<channels {
+                        let sample = mix.scratch[frame * channels + channel]
+                        left += sample * mix.matrix[channel * 2]
+                        right += sample * mix.matrix[channel * 2 + 1]
+                    }
+                    output[2 * (produced + frame)] = left
+                    output[2 * (produced + frame) + 1] = right
+                }
+            }
             produced += got
             if got == 0 || status != noErr && got < wanted { break }  // end of track (or a converter failure)
         }
