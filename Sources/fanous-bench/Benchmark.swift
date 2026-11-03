@@ -18,14 +18,17 @@ enum Benchmark {
         var missed: Int
         var late: Int
         var textureMisses: Int
+        /// Compositor ticks in the window (presented or not); `frames` counts presents only, so a failing step has fewer.
+        var ticks: Int
         var cpuP50: Double, cpuP99: Double, cpuMax: Double
         var gpuP50: Double, gpuP99: Double, gpuMax: Double
         /// Allocations on the compositor thread over the window (§4.6, `MallocCounter`); nil: no `malloc_logger`, or
         /// the warm-up never ticked.
         var compositorMallocs: Int?
-        /// `compositorMallocs` per frame, "n/a" when nil.
+        /// `compositorMallocs` per tick, "n/a" when nil. Per tick, not per presented frame: a step that misses frames
+        /// still allocates on every tick, so dividing by `frames` read 31/tick where it was 14 (measured 2026-11-03).
         var mallocsPerTick: String {
-            compositorMallocs.map { String(format: "%d (%.2f/tick)", $0, Double($0) / Double(max(1, frames))) } ?? "n/a"
+            compositorMallocs.map { String(format: "%d (%.2f/tick)", $0, Double($0) / Double(max(1, ticks))) } ?? "n/a"
         }
         var dmxToPhotonP50: Double
         var dmxToPhotonP99: Double
@@ -206,6 +209,7 @@ enum Benchmark {
         }
         let start = CACurrentMediaTime()
         let waitsAtStart = service.counters.completionWaits
+        let ticksAtStart = service.counters.ticks
         // the warm-up ticked, so the driver's thread is known; counted from here on, not process-wide (B97)
         let counted = MallocCounter.available ? pthread_t(bitPattern: service.compositor.tickThread.load(ordering: .relaxed)) : nil
         if let counted { MallocCounter.start(thread: counted) }
@@ -229,7 +233,7 @@ enum Benchmark {
         try await Task.sleep(for: .milliseconds(300))
         return Step(
             layers: layers, frames: summary.frames, missed: summary.missed, late: summary.late, textureMisses: summary.textureMisses,
-            cpuP50: summary.cpuP50, cpuP99: summary.cpuP99, cpuMax: summary.cpuMax, gpuP50: summary.gpuP50, gpuP99: summary.gpuP99,
+            ticks: counters.ticks - ticksAtStart, cpuP50: summary.cpuP50, cpuP99: summary.cpuP99, cpuMax: summary.cpuMax, gpuP50: summary.gpuP50, gpuP99: summary.gpuP99,
             gpuMax: summary.gpuMax, compositorMallocs: compositorMallocs,
             dmxToPhotonP50: summary.dmxP50, dmxToPhotonP99: summary.dmxP99, dmxSamples: summary.dmxSamples,
             audioUnderruns: Int(audio.underruns), audioCorrections: Int(audio.corrections), audioMaxDriftMillis: audio.maxDriftMillis,
