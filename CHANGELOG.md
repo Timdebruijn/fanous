@@ -11,7 +11,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Release: 1.0.0-rc.3 is on GitHub as a pre-release with the signed, notarized dmg, built from main 07ac24b
-  (PR #NNN).
+  (PR #267).
 
 ## 1.0.0-rc.3 — 2026-11-03
 
