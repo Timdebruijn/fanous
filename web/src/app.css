@@ -62,7 +62,7 @@ h3 { margin: 8px 0 0; font-size: 13px; font-weight: 500; color: var(--text-3); }
 /* Buttons: 44 px, one primary per view */
 .btn {
   min-height: var(--touch); padding: 0 16px; border-radius: var(--radius-control);
-  border: 1px solid var(--line-strong); background: var(--surface-2); color: var(--text-1);
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--text-1);
   font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; text-decoration: none;
 }
 .btn:hover { background: var(--surface-3); }
@@ -75,9 +75,9 @@ h3 { margin: 8px 0 0; font-size: 13px; font-weight: 500; color: var(--text-3); }
 .btn-icon { width: var(--touch); padding: 0; }
 .btn:disabled { background: var(--surface-1); border-color: var(--line); color: var(--text-3); }
 .btn[aria-pressed='true'] { background: var(--accent-dim); border-color: var(--accent); color: var(--text-1); }
-.segmented { display: inline-flex; border-radius: var(--radius-control); border: 1px solid var(--line-strong); overflow: hidden; }
+.segmented { display: inline-flex; border-radius: var(--radius-control); border: 1px solid var(--line); overflow: hidden; }
 .segmented .btn { border: 0; border-radius: 0; }
-.segmented .btn + .btn { border-left: 1px solid var(--line-strong); }
+.segmented .btn + .btn { border-left: 1px solid var(--line); }
 
 /* Inputs */
 .input, .select {
@@ -102,7 +102,7 @@ h3 { margin: 8px 0 0; font-size: 13px; font-weight: 500; color: var(--text-3); }
 
 /* Badges, pills, dots */
 .badge { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 4px; background: var(--surface-3); color: var(--text-1); font: 500 11px var(--font-mono); white-space: nowrap; }
-.badge-outline { background: transparent; border: 1px solid var(--line-strong); color: var(--text-2); font-family: var(--font-ui); }
+.badge-outline { background: transparent; border: 1px solid var(--line); color: var(--text-2); font-family: var(--font-ui); }
 .badge-warn { background: var(--yellow-bg); color: var(--yellow); font-family: var(--font-ui); }
 .badge-err { background: var(--red-bg); color: var(--red); font-family: var(--font-ui); }
 .badge-accent { background: transparent; border: 1px solid var(--accent); color: var(--accent); font-family: var(--font-ui); }
@@ -126,7 +126,7 @@ h3 { margin: 8px 0 0; font-size: 13px; font-weight: 500; color: var(--text-3); }
 .tag { display: inline-flex; align-items: center; gap: 6px; min-height: var(--touch); padding: 0 10px; border-radius: var(--radius-control); font-size: 11px; font-weight: 500; }
 .tag-lock { background: var(--surface-3); color: var(--text-1); }
 .tag-mode { background: var(--accent-dim); color: var(--text-1); }
-.tag-open { border: 1px solid var(--line-strong); color: var(--text-2); }
+.tag-open { border: 1px solid var(--line); color: var(--text-2); }
 
 /* Panels, banners, bars */
 .panel { background: var(--surface-1); border: 1px solid var(--line); border-radius: var(--radius-panel); }

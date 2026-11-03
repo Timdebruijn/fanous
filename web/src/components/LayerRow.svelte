@@ -118,7 +118,9 @@
   .layer {
     display: grid; grid-template-columns: var(--layer-cols); column-gap: var(--layer-gap); align-items: center;
     min-height: var(--row); font-size: 13px;
+    border-width: 0 0 1px; border-radius: 0;  /* a row of the Layers list: its divider only */
   }
+  @media (min-width: 1321px) { .layer[aria-pressed='true'] { border-color: var(--line); } }  /* the divider stays a divider */
   .c-thumb { display: block; flex: none; width: 96px; height: 54px; border: 1px solid var(--line); background: var(--ground); }
   .layer { cursor: pointer; }
   .c-name { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
@@ -151,7 +153,7 @@
   .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
   @media (max-width: 1320px) {
-    .layer { grid-template-columns: 96px minmax(0, 1fr) auto; row-gap: 12px; align-items: start; align-content: start; height: 100%; padding: 12px; }
+    .layer { border-width: 1px; border-radius: 8px; grid-template-columns: 96px minmax(0, 1fr) auto; row-gap: 12px; align-items: start; align-content: start; height: 100%; padding: 12px; }
     .c-thumb { grid-row: 1 / span 2; }
     .c-name { grid-column: 2; grid-row: 1; }
     .c-dot { grid-column: 3; grid-row: 1; padding-top: 6px; flex-direction: row; }

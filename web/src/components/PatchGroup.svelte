@@ -270,7 +270,7 @@
   .chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .chip {
     display: inline-grid; grid-template-columns: 10px auto; grid-template-areas: 'sw n' '. at'; align-items: center; column-gap: 6px;
-    min-width: 56px; min-height: var(--touch); padding: 4px 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-control);
+    min-width: 56px; min-height: var(--touch); padding: 4px 8px; border: 1px solid var(--line); border-radius: var(--radius-control);
     background: var(--surface-2); color: var(--text-1); text-align: left;
   }
   .chip:hover { background: var(--surface-3); }

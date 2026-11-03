@@ -270,7 +270,7 @@
   .side { flex: 999 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
   .tile {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; min-height: var(--touch); padding: 6px;
-    border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-2); color: var(--text-1); overflow: hidden;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--text-1); overflow: hidden;
   }
   .tile:hover { background: var(--surface-3); }
   .tile[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-dim); }
@@ -284,7 +284,7 @@
   .seam:hover::before { background: var(--text-2); }
   .seam[aria-pressed='true']::before { background: var(--accent); }
   .seam[aria-pressed='true'] span { color: var(--text-1); background: var(--accent-dim); }
-  .check { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); }
+  .check { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
   .steps { display: flex; flex-wrap: wrap; gap: 8px; }
   .hints { display: flex; flex-direction: column; gap: 8px; }
   .hint {
