@@ -12,6 +12,7 @@ func usage() -> Never {
     print(
         """
         usage: fanous-bench media --dir DIR [--seconds N] [--only NAME] [--audio]   generate benchmark media (--audio: LPCM test tone track)
+               fanous-bench samples --dir LIBRARY   smoothness clips: looks in folder 254, the motion test at 24–60p and HAP Q in 255
                fanous-bench run --media DIR [--codec prores422hq|hapq] [--res 1920x1080p60] [--max-layers N]
                                   [--window SECONDS] [--soak SECONDS] [--display N | --headless] [--out DIR]
                                   [--layers N (single step)]
@@ -42,6 +43,9 @@ case "media":
     let seconds = Double(option("--seconds") ?? "3") ?? 3
     let only = option("--only")
     try MediaGenerator.generate(into: URL(fileURLWithPath: dir), seconds: seconds, only: only, audio: flag("--audio"), logger: logger)
+case "samples":
+    guard let dir = option("--dir") else { usage() }
+    try SampleMedia.generate(into: URL(fileURLWithPath: dir), logger: logger)
 case "run":
     guard let media = option("--media") else { usage() }
     try Benchmark.run(
