@@ -55,7 +55,8 @@ public final class MovieWriter {
     /// depth, B19): feed it with `appendAudio(_:)` in step with the video (the writer interleaves sparsely and stalls if
     /// audio runs far behind). `frameDuration` overrides `1/fps` for rational rates; `fps` stays the rounded integer rate.
     /// `pixelAspect` (horizontal, vertical spacing) tags the track for anamorphic frames (B19); nil is square pixels.
-    /// `pixelFormat` is what `append` gets for ProRes (BGRA, or 64ARGB to keep more than 8 bits); HAP always takes BGRA.
+    /// `pixelFormat` is what `append` gets for ProRes (BGRA, or a 16-bit RGB format, 64ARGB or 64RGBALE, to keep more than
+    /// 8 bits); HAP takes BGRA only (any other format throws).
     public init(
         url: URL, width: Int, height: Int, fps: Int32, frameDuration: CMTime? = nil, codec: Codec, audio: Bool = false,
         externalAudio: CMAudioFormatDescription? = nil, pixelAspect: (horizontal: Int, vertical: Int)? = nil,
@@ -77,6 +78,7 @@ public final class MovieWriter {
         ] }
         switch codec {
         case .hap(let variant):
+            guard pixelFormat == kCVPixelFormatType_32BGRA else { throw WriterError.failed("HAP is encoded from BGRA frames") }
             var description: CMFormatDescription?
             let status = CMVideoFormatDescriptionCreate(
                 allocator: kCFAllocatorDefault, codecType: variant.fourCC, width: Int32(width), height: Int32(height),
@@ -95,11 +97,11 @@ public final class MovieWriter {
                 default: .proRes4444
                 }
             hapFormat = nil
-            // Rec.709 by name (B21): the transcoder's BGRA frames carry the source's YCbCr matrix as an attachment, and
+            // Rec.709 by name (B21): the transcoder's RGB frames carry the source's YCbCr matrix as an attachment, and
             // without these the writer coded and tagged the file with it, so a Rec.601 source became a 601 file that the
             // layer shader (one 709 matrix) read 15–40 codes off on saturated colours. The frames are RGB, so the writer's
             // own 709 matrix is the right one for every source; the 709 primaries and transfer are true for SDR sources only (an
-            // HDR/BT.2020 source's BGRA keeps its own primaries and transfer; not measured, no such source here)
+            // HDR/BT.2020 source's RGB frames keep their own primaries and transfer; not measured, no such source here)
             let rec709: [String: Any] = [
                 AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2, AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
                 AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
