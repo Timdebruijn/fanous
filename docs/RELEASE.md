@@ -16,8 +16,8 @@ Phase 8 deliverable of `DESIGN.md` §19; v1.0 ships when every box is ticked.
       average up to ~100); negative checks keep fixed windows (B67)
 - [ ] `scripts/check-mallocs.sh`: 0 allocations for the tick's own work, with no
       GPU encoding (DESIGN §4.6), in a release build. `fanous-bench` reports the
-      GPU path's count, tracked in B105. Also required before merging a PR that
-      touches the compositor path (B89)
+      GPU path's count per tick: 4 at the minimum, all Metal's own (B105). Also
+      required before merging a PR that touches the compositor path (B89)
 - [x] `FANOUS_NET_TESTS=1 scripts/test.sh --filter CITPServerTests` on a Mac
       whose firewall allows the test runner's outgoing UDP (the CITP beacon)
 - [ ] `scripts/check-generated.sh`, `scripts/core-purity.sh`,
@@ -57,8 +57,9 @@ With Fanous and the console software on one subnet (Little Snitch: allow
 
 - [ ] grandMA3 onPC, ChamSys MagicQ PC, ETC Eos Nomad: GDTF import
       (`Patch › Export GDTF`), DMX end to end (intensity, folder/file, play
-      mode), CITP: Fanous appears as a media server, thumbnails show, the
-      canvas stream plays
+      mode). CITP on MagicQ PC only (grandMA3 and Eos have none, see
+      `feature-gaps.md` §0): Fanous appears as a media server, thumbnails show,
+      the canvas stream plays
 - [ ] packet captures of what the consoles send go to
       `Tests/Fixtures/captures/` with provenance in its `README.md`
 - [ ] Art-Net OEM code registered with Artistic Licence and set in
@@ -67,11 +68,14 @@ With Fanous and the console software on one subnet (Little Snitch: allow
 ## 5. Build and notarize (owner: Developer ID)
 
 - [ ] `CODESIGN_IDENTITY="Developer ID Application: <name> (<team>)" scripts/bundle.sh`
-      — hardened runtime, `scripts/entitlements.plist` (microphone for LTC),
-      usage strings and `NSBonjourServices` in `Info.plist`, timestamped
+      — hardened runtime, `scripts/entitlements.plist` (microphone for LTC,
+      camera for capture devices), usage strings and `NSBonjourServices` in
+      `Info.plist`, timestamped. Done for 1.0.0-rc.1 on 2026-11-02 (B50); repeat per release
 - [ ] `xcrun notarytool store-credentials fanous --apple-id … --team-id … --password <app-specific>` once, then
       `NOTARY_PROFILE=fanous scripts/notarize.sh` → `dist/Fanous-<version>.dmg`, stapled, `spctl --assess` passes
-      (the app-specific password: account.apple.com › Sign-In and Security › App-Specific Passwords)
+      (the app-specific password: account.apple.com › Sign-In and Security › App-Specific Passwords).
+      Done for 1.0.0-rc.1 on 2026-11-02: zip and dmg accepted, stapled, Gatekeeper: Notarized
+      Developer ID (B50, PR #182); repeat per release
 - [ ] `shasum -a 256 dist/Fanous-<version>.dmg` goes into the release notes
 - [ ] only on a developer Mac that ran ad-hoc builds: the first Developer ID open re-registers the agent (B50), and
       the old Screen Recording switch stays on while the engine reads `denied` after the signature change:
@@ -118,11 +122,11 @@ On a fresh macOS user account (or a fresh Mac) with the notarized dmg:
       for jewelry (FANOUS JEWELERS, filed 2002, cancelled). The word is the
       Egyptian decorative lantern (fanous), also used for Ramadan. EUIPO and
       the Benelux register still to check
-- [x] positioning (README "Why another media server", 2026-10-26): the survey found no open-source media server with DMX
+- [x] positioning (`docs/marketing/positioning.md`; the README has no "Why another media server" section any more, 2026-10-26): the survey found no open-source media server with DMX
       fixtures + GDTF + CITP + timecode chase together; closest are
       OpenVideoServer (Apache-2.0, Debian/Windows, 2026) and ossia score; the
       free Katrin Media Server (Logvinov, Mac, last release 2013, closed
-      source) is the historical precedent to name in the README
+      source) is the historical precedent, named in `positioning.md`
 - [x] `docs/licensing/DEPENDENCIES.md` and `THIRD-PARTY-NOTICES.md` match
       `Package.resolved` and `web/package-lock.json` (checked 2026-10-26; the app
       bundle now carries the license texts in `Resources/licenses/`)

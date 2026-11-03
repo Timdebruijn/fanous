@@ -173,7 +173,7 @@ public enum Transcoder {
                         }
                         if case .hap = requested, width % 4 != 0 || height % 4 != 0 { throw TranscodeError.hapDimensions(width, height) }
                         writer = try MovieWriter(
-                            url: destination, width: width, height: height, fps: Int32((1 / probe.frameDuration.seconds).rounded()),
+                            url: destination, width: width, height: height, fps: max(1, Int32((1 / probe.frameDuration.seconds).rounded())),  // a slideshow slower than 0.5 fps rounds to 0
                             frameDuration: probe.frameDuration, codec: requested, externalAudio: audioFormat, pixelAspect: pixelAspect)
                     }
                     // A quarter turn or flip is done here in the pixels (vImage, exact, alpha kept: B18) instead of by a composition.

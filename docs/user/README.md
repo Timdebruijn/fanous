@@ -18,10 +18,11 @@ Art-Net, sACN or console programming.
 
 ## Requirements
 
-- An Apple Silicon Mac with a hardware ProRes engine. Base M1 and Intel Macs are
-  not supported (the engine refuses show mode on them). The M1 Pro is the
-  reference machine; all numbers in this guide that come from measurements are
-  from it.
+- An Apple Silicon Mac with a hardware ProRes engine. Intel Macs do not run
+  Fanous at all. A base M1 has no ProRes engine and is not supported, but the
+  engine does not check this yet and does not refuse show mode on it (B144).
+  The M1 Pro is the reference machine; all numbers in this guide that come
+  from measurements are from it.
 - macOS 15 or newer.
 - A lighting console (or software) that sends Art-Net or sACN to the Mac.
 - For the web UI on another device: a browser on the same network. An iPad is

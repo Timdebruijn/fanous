@@ -98,7 +98,7 @@ names the invariant.
 | **MIDI / MTC** | CoreMIDI callback thread, then one serial `DispatchQueue` per input (as built, B36/B64) | `.userInteractive` | the callback copies the words (MTC: with the packet's host time) and hops; the queue parses, assembles MTC quarter frames and follows hot-plug | one small array per packet; never touched by render threads |
 | **Network/UI** | Network.framework queues (one per listener + per connection), `.utility`/`.userInitiated` | — | HTTPS, WebSocket, state diffs, thumbnails | bounded per-client queues; drop, never block |
 | **Preview encoder** | VideoToolbox callback + serial queue | `.utility` | H.264 preview, JPEG thumbnails, CITP frames | bounded; skips frames when behind |
-| **Ingest** | serial `DispatchQueue`, one job at a time | `.utility` | transcodes | paused while show-locked (configurable) |
+| **Ingest** | serial `DispatchQueue`, one job at a time | `.utility` | transcodes | paused while show mode is on (no setting) |
 | **Housekeeping** | timer on Control | `.background` | metrics aggregation, project snapshots, library rescans | — |
 
 **Data flow between domains**
@@ -192,8 +192,9 @@ on every display link. Budgets are measured, not assumed (§13).
   Restart and Stop Engine (stop = `SMAppService.unregister`, since a KeepAlive
   agent only stays down when its registration goes).
 - Bundle: `scripts/bundle.sh` signs with the hardened runtime and
-  `scripts/entitlements.plist` (microphone for LTC), writes the microphone and
-  local-network usage strings and `NSBonjourServices`, timestamps when a
+  `scripts/entitlements.plist` (microphone for LTC, camera for capture
+  devices), writes the microphone, camera and local-network usage strings and
+  `NSBonjourServices`, timestamps when a
   Developer ID is given; `scripts/notarize.sh` submits with `notarytool`,
   staples the app and a UDZO dmg. Version `1.0.0-rc.1` from
   `FanousVersion.string`, also in CITP `SInf`.
@@ -218,29 +219,40 @@ Fanous/
 ├── Package.swift
 ├── Sources/
 │   ├── FanousCore/        pure Swift, Foundation only. Unit-testable on any Mac.
-│   │   ├── Parameters/      ParameterSpec, fixture types, channel map, units
-│   │   ├── DMX/             Art-Net + sACN parsers/builders, universe model, merge
-│   │   ├── OSC/             OSC 1.0 parser/builder, address map from ParameterSpec
+│   │   ├── Parameters/      ParameterSpec, fixture types, channel map, units, patch, resolver
+│   │   ├── DMX/             Art-Net + sACN parsers/builders, universe table, per-universe settings
+│   │   ├── OSC/             OSC 1.0 parser/builder, address map from ParameterSpec, feedback
 │   │   ├── CITP/            CITP/MSEX packet model
 │   │   ├── GDTF/            GDTF XML generation from ParameterSpec
 │   │   ├── Timecode/        LTC bit decoder, MTC assembler, timecode math
+│   │   ├── MIDI/            MIDI message model
 │   │   ├── Cues/            cue list model + fade engine (pure)
-│   │   ├── Mapping/         blend curve/LUT math, warp mesh + displacement field, slice geometry, mask rasterization (pure)
-│   │   ├── Project/         project document (Codable), commands, undo, versioning, JSON patch
-│   │   ├── Protocol/        WebSocket message types, HTTP/1.1 + RFC 6455 framing (pure)
-│   │   └── Capabilities/    chip table, tier model, readiness rules
+│   │   ├── Mapping/         blend curve/LUT math, warp mesh + displacement field, slice geometry, mask rasterization, output and wall models (pure)
+│   │   ├── Media/           layer clock
+│   │   ├── State/           JSON value, JSON patch (the project document, commands and undo are FanousEngine/State)
+│   │   ├── Protocol/        HTTP/1.1 + RFC 6455 framing, roles, sync packet, thumbnail atlas (pure)
+│   │   ├── Security/        DER and X.509 for the TLS identity
+│   │   ├── Docs/            channel-map document (docs/channel-map.md)
+│   │   └── Util/            byte helpers, zip writer
 │   ├── FanousEngine/      Metal, AVFoundation, VideoToolbox, CoreAudio, CoreMIDI, Network.framework
-│   │   ├── Render/          compositor, output pass, shaders (.metal), texture pools, display links
-│   │   ├── Media/           sources: ProRes, HAP, still, Syphon-in; frame rings; layer clocks
-│   │   ├── Audio/           per-layer PCM rings, mixer source node, device selection
-│   │   ├── Outputs/         windows, display identity, hot-plug, modes
-│   │   ├── Net/             Art-Net/sACN/OSC/CITP transports; HTTPS+WSS server; TLS identity
-│   │   ├── Preview/         H.264 (VT) + JPEG encoders, CITP streaming
+│   │   ├── Render/          compositor, output pass, shaders (.metal), output windows, display identity, hot-plug, modes, canvas switch, generators
+│   │   ├── Media/           sources: ProRes, HAP, still; frame rings; layer decoders, playback; live catalog
+│   │   ├── Capture/         camera/capture-card and screen inputs
+│   │   ├── Syphon/          Syphon input and the canvas output
+│   │   ├── Audio/           per-layer PCM rings, mixer source node (output device selection: not built, B4)
+│   │   ├── DMX/             DMX store: universe table, one resolver per fixture
+│   │   ├── Net/             Art-Net/sACN/OSC/CITP transports; HTTPS+WSS server; state server
+│   │   ├── Sync/            multi-server sync: sender, receiver, slave clock (ADR-0021)
+│   │   ├── Preview/         H.264 (VT) + JPEG encoders, thumbnail streamer
 │   │   ├── Library/         scanning, FSEvents, metadata, thumbnails
 │   │   ├── Ingest/          transcode jobs (ProRes via AVAssetWriter, HAP via hap.c)
-│   │   ├── ShowMode/        assertions, readiness checks
-│   │   └── Instrumentation/ metrics ring, exporters
-│   ├── FanousPluginAPI/   C header + Swift shim: the plugin ABI (design only in v1)
+│   │   ├── ShowControl/     show mode, readiness checks, timecode input, cue runner, MIDI control, show commands
+│   │   ├── State/           project document, state store (commands, undo), versions, protocol types
+│   │   ├── Security/        role auth, TLS identity
+│   │   ├── Capabilities/    system info: chip name, memory, OS, addresses (no chip table or tier model, §5)
+│   │   ├── Instrumentation/ metrics ring, malloc counter
+│   │   ├── Logging/         rotating file log handler
+│   │   └── Util/            dispatch helpers
 │   ├── CHap/                vendored Vidvox hap.c/.h (BSD) — C target
 │   ├── CSnappy/             vendored google/snappy (BSD-3) — C++ target
 │   ├── Syphon/              vendored Syphon-Framework sources (BSD) — ObjC target
@@ -252,9 +264,13 @@ Fanous/
 │   ├── FanousEngineTests/ golden images, decode spikes — Apple Silicon only
 │   └── Fixtures/            captures/*.bin + .pcapng, golden/*.png, media/ (generated)
 ├── web/                     Svelte 5 + Vite + TypeScript; builds to web/dist (copied into the .app by bundle.sh)
-├── scripts/                 bundle.sh (assemble .app), sign.sh, license-headers.sh, fixtures.sh
+├── scripts/                 bundle.sh (assemble .app), notarize.sh, entitlements.plist, license-headers.sh, core-purity.sh,
+│                            check-generated.sh, check-mallocs.sh, test.sh, soak.sh, bench-*.sh, capture-dmx.py
 └── docs/
 ```
+
+`FanousPluginAPI` (the plugin ABI, ADR-0016) is design only in v1: there is no
+target or directory for it yet.
 
 Rules enforced by CI (Phase 0): `FanousCore` imports only `Foundation`
 (a test greps for other imports); every source file starts with the SPDX
@@ -445,6 +461,15 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
 
 ## 5. Hardware capability detection and performance tiers
 
+**Status:** design, not built (B144, B145). The engine reads the chip name,
+physical memory and OS (`SystemInfo`) and the thermal state and power source
+(readiness); the System screen shows them. There is no chip table (`FanousCore/Capabilities`
+does not exist), no tier model, no GPU, media-engine or display-limit
+detection and no benchmark numbers stored per machine. The layer limit is the
+constant 32 (`caps.maxLayers`, B145; OPEN-8), and the "Supported hardware"
+readiness check never fails, because nothing sets
+`ReadinessContext.hardwareSupported` (B144).
+
 ### 5.1 Detection at start (and on display changes)
 
 | Fact | How |
@@ -515,7 +540,8 @@ convention consoles and GDTF expect.
 The patch (universe, address, mode) plus per-layer settings (canvas, source
 policy §7.2) is part of the project. Patching a fixture type is also how
 "extensible beyond 16 layers" works: the layer count is a project setting,
-bounded by the tier's measured maximum (hard engine cap 32, `[OPEN-8]`).
+bounded by the engine cap of 32 (`[OPEN-8]`); a tier's measured maximum below
+it is not built (B145).
 The render service holds all 32 layers from start, so a changed layer count
 applies at once (B121): an empty layer makes no draw item (about 1 µs per tick
 and two atomic loads per audio callback), and status, CITP and readiness list
@@ -850,7 +876,7 @@ code on 2026-10-30:
 **2. Groups and blocks.**
 - **Groups**, in channel-map order:
   - **Layers** (kind `layer`). The header holds the layer count with − and +
-    (the tier limit and the undo toast of today's Add layer and Remove layer).
+    (the layer limit, 32, and the undo toast of today's Add layer and Remove layer).
   - **Master** (kind `machine`).
   - **Outputs** (kind `output`). One row per output holds its Output and its
     Keystone fixture, names the display it is on and links to Outputs &
@@ -1166,9 +1192,9 @@ asserts footprints (64/8/8) never change.
 ### 7.2 Sources and the resolver
 
 Per layer (and for master/outputs) the resolver combines values from sources
-into the `ParameterSnapshot` the compositor reads. Designed, not built
-(§6.6, 2026-10-30): every fixture that exists will have a resolver, patched or
-not, and the patch will only feed it DMX:
+into the `ParameterSnapshot` the compositor reads. Since B120 step 1 (§6.6,
+PR #122, built 2026-10-30) every fixture that exists has a resolver, patched
+or not, and the patch only feeds it DMX:
 
 | Source | Produces | Cadence |
 |---|---|---|
@@ -1319,11 +1345,9 @@ Since B73 step 1b: `Media/LiveCatalog.swift`, `LiveCatalog(.syphon, …)`; the B
 
 #### 8.2.1 Cameras, capture cards and screens: files 1–32 (design 2026-10-29, B73)
 
-**Status:** design; steps 1a–2b built (capture devices 1–20) and step 3a
-(displays 21–28, engine side), as-built notes below; windows not yet. The feature-gap survey (`docs/feature-gaps.md`
-**Status:** design; steps 1a–2b built (capture devices 1–20, as-built notes
-below) and the display UI (step 3b); the display engine (step 3a) and windows
-not yet. The feature-gap survey (`docs/feature-gaps.md`
+**Status:** design; steps 1a–2b built (capture devices 1–20) and step 3
+(displays 21–28: engine PR #127, UI PR #126), as-built notes below; windows
+(29–32) not yet. The feature-gap survey (`docs/feature-gaps.md`
 G1, G3; P1) found that every compared product takes a camera or capture card
 and that Millumin, VDMX, Isadora and Mitti take slides and lyrics apps by
 screen capture. Both are system frameworks: AVFoundation capture and
@@ -1870,8 +1894,8 @@ Engine" and carry its usage strings (System Settings lists one entry,
 "Fanous": see the B127 as-built note above). `scripts/bundle.sh` adds
 `NSCameraUsageDescription` and `NSCameraUseContinuityCameraDeviceType` to
 both Info.plists, and the hardened runtime needs
-`com.apple.security.device.camera` in `scripts/entitlements.plist` (today it
-has only `audio-input`). Screen capture needs no entitlement. The two
+`com.apple.security.device.camera` in `scripts/entitlements.plist` (the file
+holds it next to `audio-input`). Screen capture needs no entitlement. The two
 permissions behave differently, and the design keeps them apart:
 
 - *Camera* (`AVCaptureDevice.requestAccess(for: .video)`): asked once, when a
@@ -1962,7 +1986,7 @@ source file(s) ──▶ _incoming/ (remote upload) or in-place (local path)
    │
    ▼ probe (AVAsset): codec, alpha, fps, audio
    ▼ job: target folder/file number, target codec (project default, per-job override)
-   ▼ transcode (one job at a time; paused while show-locked unless "allow ingest in show mode")
+   ▼ transcode (one job at a time; paused while show mode is on)
    │     ProRes:  AVAssetReader (any AVFoundation-decodable source) → AVAssetWriter ProRes (hardware encoder) + LPCM audio
    │     HAP:     AVAssetReader → RGBA frames → hap.c HapEncode (+ Snappy) → AVAssetWriter passthrough samples with a 'HapY'/'Hap5'/'Hap1'/'HapM'/'HapA' format description
    │     stills:  copy (PNG/JPEG/TIFF/HEIF) ; image sequence → ProRes 4444 or HAP Alpha movie at the chosen fps
@@ -2288,7 +2312,8 @@ draws live over a frozen output and the held frame returns when it is off.
 
 **As built (2026-10-26, Syphon orientation):** Syphon surfaces hold the picture in OpenGL order (row 0 at the bottom). `SyphonOutput` publishes the canvas with `flipped: true` so OpenGL clients (checked with the Syphon Simple Client) and Metal clients that follow Syphon's GL-order convention see it upright; `SyphonInput` reports it via `LiveFrame.bottomUp`, and the compositor samples such frames with v0/v1 swapped (`Compositor.uvRect`), so crops keep their meaning. Before this the own round trip looked right while every other app saw the canvas upside down.
 
-`SyphonMetalServer` per canvas, named `Fanous – <canvas name>`, published
+One `SyphonMetalServer` (`SyphonOutput`), named `Fanous – Canvas`, for canvas 1
+(a server per further canvas is not built, §9.5b), published
 from the compositor after the canvas pass with the same completed texture
 (no copy; Syphon shares the IOSurface). Per-output Syphon (post-warp) later.
 
@@ -3416,7 +3441,8 @@ groundwork and small engine pieces first):
   logged if it recurs. "Resync audio" on the Control channel forces a
   re-seek.
 - Stills and live inputs have no audio in v1. Audio metering per layer and
-  master is part of the live state (Layers screen).
+  master (live state, Layers screen) is not built; `/metrics` has engine-wide
+  counters only (callbacks, underruns, corrections, max drift).
 - LTC input shares none of this: it has its own input device and sink node
   (§15.1).
 
@@ -3477,7 +3503,8 @@ The engine holds two documents:
   UI layout prefs. Versioned (§11.5).
 - `live` — runtime only: per-layer resolved parameters and their source
   tags, playback positions, media resolution results, DMX reception per
-  universe, timecode, metrics, ingest jobs, audio meters, connected clients,
+  universe, timecode, metrics, ingest jobs, audio inputs and the LTC level
+  (output meters are not built), connected clients,
   readiness check results, errors.
 
 Protocol (JSON text frames unless noted):
@@ -3865,17 +3892,30 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
 Global chrome (all screens): a fixed **status bar** (top) and the screen
 switcher (left rail, icons + labels, collapses on iPad portrait).
 
-**Status bar**, left to right: engine state (show mode / show lock badge),
-fps & frame time (per output, worst-case highlighted), dropped frames (last
-60 s, red when > 0 in show mode), DMX per universe (green pulse per packet,
-yellow > 1 s silence, red > 2.5 s), timecode (source, value, lock/freewheel;
-left out while timecode is switched off), outputs (count ok / red names of
-missing displays), audio device, ingest (progress when active), clients
-(count, lagging ones), thermal/power (yellow on battery or thermal pressure),
-backup (v2; hidden in v1). Red means "look
-now" and is reserved for: dropped frames in show mode, lost DMX on a patched
-universe, lost output display, decoder error on a visible layer, readiness
-failure while entering show mode. The frame time has room for its widest
+**Status bar**, left to right (`StatusBar.svelte`): the show lock badge
+(LOCKED / UNLOCKED, a button) and the show mode badge (SHOW MODE: ON / OFF, a
+button; a refused entry opens a popover naming the blocking readiness items,
+and a resumed show mode shows its note); fps (frames in the last second) with
+the GPU p99 frame time and, as caption, the CPU p99 (one engine-wide figure,
+not per output; "no outputs rendering" while the compositor is off); dropped
+frames (missed + late in the last 1 s, caption "dropped · 1 s"); DMX per
+universe as a pill (green receiving; red when a patched universe has been
+silent past its `lossTimeout`, default 2.5 s, and for at least 2.5 s; yellow
+otherwise: never received, not patched, or silent for less than that; "no DMX
+received" while there is none); timecode (value and state; left out while
+timecode is switched off); outputs (`N/M` outputs bound: green when all are,
+yellow when one is lost or has no display; `0` when the project has no output,
+`off` while nothing renders); ingest (progress while a transcode runs); auto
+version (age of the last automatic version, links to System); clients (count,
+lagging ones in yellow); "sync lost" (while a slave layer gets no sync packets);
+"web UI open" (yellow, while the programmer role has no password); undo, redo,
+the shortcut list and the role badge on the right. Not built: the audio device
+(B137 step 5, §12.1), thermal/power (yellow on battery or thermal pressure;
+System shows both) and backup (v2). Red means "look now": a lost DMX universe
+and lost sync always; dropped frames above 0, a lost timecode and an outputs
+item that is yellow, `0` or `off` only under **show lock**, not show mode; a
+refused show mode (the popover). A decoder error on a visible layer is red on
+its Layers row, not in the bar. The frame time has room for its widest
 value ("120 fps 999.9 ms"), so it no longer changes the bar's width and wraps
 or unwraps it under a drag (B134): with a fresh engine the bar fits one row
 from 1470 px and takes two at 1440. Events still change its width: a universe
@@ -3884,7 +3924,8 @@ going active or lost, a lagging client, no output rendering.
 1. **Layers / Mixer** — one row (or tile on narrow screens) per layer: live
    thumbnail, layer name + canvas, resolved media ("12 / 4 · intro_loop.mov ·
    HAP Q · 1080p60"), position scrubber with in/out markers, intensity,
-   play mode, speed, audio meter, source policy badge, error/warning. A
+   play mode, speed, audio volume (a level meter is not built), source policy
+   badge, error/warning. A
    "DMX" column shows the incoming raw values of the fixture's channels,
    labelled with their meaning and resolved units; clicking a parameter opens
    the override panel (programmer, auto-expiring). Master and Output
@@ -3897,10 +3938,14 @@ going active or lost, a lagging client, no output rendering.
    progress, ETA, errors. Rename/renumber with conflict detection. Folder 0
    lists the built-in content and the live inputs as a picker; the inputs are
    managed on the Inputs screen.
-3. **Inputs** (B137, §12.1; step 1 built) — the live inputs of folder 0 by
+3. **Inputs** (B137, §12.1; steps 1 and 2 built) — the live inputs of folder 0 by
    kind (cameras and capture cards, displays, Syphon servers) with status,
    the layers that show them and their signal, Forget, and the camera and
-   screen permissions; a panel with the selected input's details.
+   screen permissions; a panel with the selected input's details. An Audio
+   inputs group (device and channel count, the default marked) with "Use for
+   timecode" (sets `project.timecode` to LTC on a channel) and a level meter
+   on the LTC channel; a Microphone (LTC) permission row while timecode is on
+   LTC.
 4. **Outputs & Mapping** — three tabs sharing a live preview that can show
    the canvas, the selected output (post-warp) or the physical display
    arrangement: *Canvases* (size, layers assigned, clock master), *Outputs*
@@ -3913,24 +3958,26 @@ going active or lost, a lagging client, no output rendering.
    stays visible. Designed in §12.1 (2026-11-02, not built): a fourth tab,
    *Audio* (output device, latency offset, an output pair per layer).
 5. **Patch / DMX** — fixture list (type, universe, address, footprint,
-   collisions in red), add/remove layers (bounded by the tier's measured
-   limit, shown next to the count), per-universe source protocol and
+   collisions in red), add/remove layers (bounded by the constant limit of 32,
+   shown next to the count; a tier's measured limit is not built, B145),
+   per-universe source protocol and
    interface, sACN priority, hold on signal loss setting; **DMX monitor**: a 512-cell
    grid for the selected universe with patched ranges coloured per fixture
    and live values, hover shows "Layer 3 · ch 5 · Play mode · 17 → Loop rev";
    GDTF export button and a channel-map viewer (generated from the spec).
-   Redesign designed in §6.6 (2026-10-30, not built): fixtures grouped by kind
-   and patched as blocks, a Universes panel, a Who controls card and a Patch
-   sheet for the console.
+   Redesign of §6.6 (B120, built 2026-10-30): fixtures grouped by kind
+   and patched as blocks (`PatchGroup`), a Universes panel, a Who controls card
+   and a Patch sheet for the console (`PatchSheet`).
 6. **Show control** — timecode (source select: LTC device / MTC port, frame
    rate, offset, lock state, big readout), cue list (add/edit/reorder cues,
    per-cue parameters + fade, TC trigger time, go/back/goto, current/next
    highlighting, follow-timecode toggle), OSC (ports, address map viewer,
-   last 50 received messages), MIDI (ports; MTC only in v1). Designed in
-   §12.1 (2026-11-02, not built): a level meter on the LTC channel.
-7. **System / Health** — machine capabilities and tier (chip, memory
-   engines, GPU, memory, displays supported, measured benchmark numbers or
-   "not benchmarked"), live metrics (frame time histogram per output,
+   last 50 received messages), MIDI (ports; MTC only in v1). A level meter on
+   the LTC channel (B137 step 2, §12.1).
+7. **System / Health** — machine capabilities and tier (chip, OS, memory,
+   thermal, power; the media engines, GPU, displays supported, tier and
+   measured benchmark numbers or "not benchmarked" are not built, B145),
+   live metrics (frame time histogram per output,
    dropped frames, decode latency per layer, ring occupancy, DMX→photon
    estimate, encoder queue, thermal state, memory), readiness checklist with
    fix hints, network (interfaces, listener state, TLS fingerprint, Bonjour
@@ -4266,16 +4313,16 @@ the benchmark.
 | Metric | Source | Exposed as |
 |---|---|---|
 | Frame time: CPU encode, GPU time (`GPUStartTime/GPUEndTime`), present deadline miss | compositor / output threads | per-output histogram, p50/p99, status bar fps |
-| Dropped / late frames | `CAMetalDisplayLinkUpdate.targetTimestamp` vs actual present, drawable timeouts | counters per output, red in show mode |
+| Dropped / late frames | `CAMetalDisplayLinkUpdate.targetTimestamp` vs actual present, drawable timeouts | counters per output, red under show lock in the status bar |
 | Decode latency per layer | sample request → texture ready | p50/p99 per layer, ring occupancy graph |
 | HAP chunk-pool utilisation, Snappy MB/s | chunk pool | System screen |
 | DMX | packets/s, sequence gaps, last-seen per universe, parse errors | status bar + Patch screen |
 | **DMX→photon estimate** | `t_rx` (packet receive on DMX queue) → `t_apply` (snapshot published) → `t_tick` (compositor picked it) → `targetPresentationTimestamp` of that frame; reported as `present − t_rx`, plus a note that display scan-out latency is not included | p50/p99 in System; logged once per minute |
-| Audio | ring underruns, drift corrections | per layer |
+| Audio | ring underruns, drift corrections | engine-wide counters in `/metrics`; per layer: not built |
 | Network | per-client queue depth, drops, lagging | System → clients |
 | Preview encoders | frames in/out, skipped | System |
 | Ingest | job throughput, yields | Media |
-| System | thermal state, memory footprint, on battery, CPU per thread (from `thread_info`) | System + status bar |
+| System | thermal state, memory footprint, on battery, CPU per thread (from `thread_info`; not built) | System; the status bar item is not built |
 
 Logging: `swift-log` with two handlers: `os_log` (Console.app) and a rotating
 file in `~/Library/Logs/Fanous/` (10 × 10 MB). Log lines in hot paths are
@@ -4299,10 +4346,13 @@ with public APIs:
   .userInitiated, .idleDisplaySleepDisabled)` (also disables App Nap for the
   engine); the shell adds the same assertions while visible.
 - Output windows at `CGShieldingWindowLevel`, cursor hidden over outputs,
-  desired display modes applied (§9.6), mirroring disabled check.
-- Ingest paused (default), library rescans reduced to manual, log level
-  `warning`, thumbnails at 1 fps, preview encoders capped.
-- Dropped-frame and DMX-loss events become red.
+  desired display modes applied (§9.6). Not built (B42): the mirroring check.
+- Ingest paused (always; no setting). Not built (B42): library rescans
+  reduced to manual, log level `warning`, thumbnails at 1 fps, preview
+  encoders capped.
+- The status bar's reds follow the show lock, not show mode (§12): dropped
+  frames, a lost timecode and a missing output. A patched universe's DMX loss
+  is red with or without either.
 - Survives an engine crash and Engine › Restart Engine: the state is persisted
   (`show-state.json`), a clean stop clears it, and the next start resumes show
   mode without the readiness refusal and without restoring the display modes
@@ -4313,14 +4363,16 @@ item with a one-line fix): on AC power; thermal state nominal; free disk > 10
 %; memory headroom; all patched universes receiving; "Camera permission
 granted" and "Screen recording granted" (`camera` and `screen`, only for
 inputs a layer shows or a scene entry names, the screen warning while in use and granted; B73 steps 2b and 3,
-B122; §8.2.1; designed in §12.1, not built: `microphone` for LTC and "Audio
-device connected"); all outputs bound and in the desired mode;
+B122; §8.2.1) and "Microphone permission granted" (`microphone`, only while
+timecode is on LTC; B137 step 2; "Audio device connected" is designed in
+§12.1, not built); all outputs bound and in the desired mode;
 no decoder errors; library on a local volume; Spotlight indexing of the
 library volume (`mdutil -s` state read via `MDQuery`/`mdutil` output) off or
 acknowledged; automatic macOS updates state (read from
 `com.apple.SoftwareUpdate` defaults) acknowledged; Time Machine not currently
 backing up; Focus/Do Not Disturb cannot be read reliably → shown as a manual
-checklist item; display sleep settings; unsupported hardware (hard fail).
+checklist item; display sleep settings; unsupported hardware (hard fail; the "Supported
+hardware" item exists but never fails, B144).
 Failed items block show mode until acknowledged (programmer) — except hard
 fails.
 
@@ -4333,7 +4385,8 @@ later deliverable (`[OPEN-20]`).
 
 ### 15.1 Timecode
 
-- **LTC**: any CoreAudio input device/channel (machine setting). An
+- **LTC**: any CoreAudio input device/channel (project setting,
+  `project.timecode`). An
   `AVAudioSinkNode` on an `AVAudioEngine` input graph delivers buffers on the
   real-time thread; the biphase-mark decoder in `FanousCore/Timecode` is
   fed samples and emits frames (24/25/29.97 DF/NDF/30 auto-detected), with
@@ -4514,8 +4567,12 @@ MSC and MIDI-triggered cues are additions, not rewrites.
   in `live.citp.beaconsDropped`, so `stop()`'s join on the CITP queue never
   waits on the network.
 - MSEX over TCP, negotiating the highest version both sides support
-  (1.0/1.1/1.2): `CInf`/`SInf` (server info, layer count), `LSta` (layer
-  status: media, position, playing state at 4 Hz), `ELIn`/`MEIn` (element
+  (1.0/1.1/1.2): `CInf`/`SInf` (server info, layer count). A session that
+  sends no `CInf` within 2 s (an MSEX 1.0/1.1 console sends none) is taken as
+  1.0 and gets an unsolicited `SInf` (B78, PR #194; a later `CInf` sets the
+  version as usual). `LSta` (layer
+  status: media, position, playing state at 4 Hz, once the session has a
+  version), `ELIn`/`MEIn` (element
   libraries = folders, elements = files with names/dimensions/fps/length;
   numbered as 0-based contiguous indexes, the folder/file number in the DMX
   range, B78),
@@ -4614,8 +4671,10 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   transport in Engine (`Net/CITPServer.swift`): one `NWListener` on an
   ephemeral TCP port, `PLoc` every 5 s to `224.0.0.180` and `239.224.0.180`
   (both groups, port 4809, a BSD socket: `NWConnection` does not deliver to
-  multicast groups), per session the highest common version ≤ 1.2,
-  `SInf` with one DMX source string per layer, `LSta` at 4 Hz from the layer
+  multicast groups), per session the highest common version ≤ 1.2 (1.0 when
+  no `CInf` comes within 2 s, `Session.fallbackDelay`, B78, PR #194), `SInf`
+  (in reply to `CInf`, or unsolicited at that fallback) with one DMX source
+  string per layer, `LSta` at 4 Hz from the layer
   status, libraries = numbered folders, elements = numbered files with their
   probed metadata, both numbered as 0-based contiguous indexes in number order
   (MSEX 1.2 says so explicitly and calls it the intent before; every version
@@ -4730,7 +4789,7 @@ and the MDM profile are the v1.x candidates.
 | R13 | macOS updates change Metal/VT behaviour | regressions | golden-image + benchmark suite runs on every macOS beta on the reference machine; minimum-OS decision `[OPEN-1]` |
 | R14 | Single maintainer | bus factor, schedule | design and ADRs are the knowledge base; phases are independently shippable; CLA in place for future contributors |
 | R15 | Memory pressure on 16 GB machines with 4K layers | stalls | budget rules (§4.6), tier knobs, red warning before activation |
-| R16 | Thermal throttling on MacBook Pro during long shows | dropped frames late in a show | thermal state in status bar and readiness; benchmark includes a 10-min soak; recommend AC + stand/airflow in docs |
+| R16 | Thermal throttling on MacBook Pro during long shows | dropped frames late in a show | thermal state in readiness (a status bar item is not built); benchmark includes a 10-min soak; recommend AC + stand/airflow in docs |
 | R17 | `CAMetalDisplayLink` stalls after three presented frames on macOS 27.0.1 (measured, ADR-0006 amendment) | the brief's render clock cannot be used as-is | drawable-loop driver with the same compositor and metrics; display-link driver kept behind a switch; re-test on each macOS release; Apple Feedback with the standalone reproduction |
 | R18 | every supported macOS (ADR-0020) re-asks a screen-capturing engine about monthly ("Allow For One Month"), on the main display, which an unattended show machine cannot answer (§8.2.1) | a dialog over an output, or display capture stopping mid-show | readiness item before show mode; capture card for a show-critical slides feed; MDM profile (OPEN-20) and the persistent-content-capture entitlement with the Developer ID build (B50) to be verified |
 
