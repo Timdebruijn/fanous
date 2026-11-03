@@ -239,7 +239,7 @@
   .h-layer { grid-column: span 2; }
   /* one panel of rows with dividers, not a card per layer; tiles below 1320 px stay cards */
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--surface-1); overflow: hidden; }
-  @media (min-width: 1321px) { .list > li:last-child :global(.layer) { border-bottom: 0; } }
+  @media (width > 1320px) { .list > li:last-child :global(.layer) { border-bottom: 0; } }
   .side { display: flex; flex-direction: column; gap: 12px; flex: 0 0 clamp(320px, 22vw, 360px); position: sticky; top: 16px; max-height: calc(100dvh - 32px); overflow-y: auto; border-radius: var(--radius-panel); }
 
   /* Rows need roughly 860 px of list; narrower than that (11" iPad landscape and down) they become tiles. Keep in step with LayerRow. */

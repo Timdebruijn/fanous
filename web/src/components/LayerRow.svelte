@@ -120,7 +120,11 @@
     min-height: var(--row); font-size: 13px;
     border-width: 0 0 1px; border-radius: 0;  /* a row of the Layers list: its divider only */
   }
-  @media (min-width: 1321px) { .layer[aria-pressed='true'] { border-color: var(--line); } }  /* the divider stays a divider */
+  /* in the list panel: the divider stays a divider, and the focus ring sits inside the row, as the panel clips its outside */
+  @media (width > 1320px) {
+    .layer[aria-pressed='true'] { border-color: var(--line); }
+    .layer:focus-visible { outline-offset: -2px; }
+  }
   .c-thumb { display: block; flex: none; width: 96px; height: 54px; border: 1px solid var(--line); background: var(--ground); }
   .layer { cursor: pointer; }
   .c-name { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
