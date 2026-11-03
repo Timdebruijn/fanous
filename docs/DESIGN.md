@@ -2010,8 +2010,12 @@ source file(s) ──▶ _incoming/ (remote upload) or in-place (local path)
 - An anamorphic source keeps its pixel aspect ratio: the ProRes track is
   tagged (`AVVideoPixelAspectRatioKey`), the HAP format description carries the
   `PixelAspectRatio` extension, `MovieInfo.pixelAspect` reads it and
-  `Compositor.geometry` widens the layer quad by it (B19). The upright path
-  (rotated phone footage) renders the display size with square pixels instead.
+  `Compositor.geometry` widens the layer quad by it (B19).
+- A `preferredTransform` that is a quarter turn or a flip is applied in the
+  pixels (`Transcoder.Turn`, vImage: exact, alpha kept, the pixel aspect ratio
+  swapped by a quarter turn; B18). Only an odd transform still goes through an
+  `AVVideoComposition`, which renders the display size with square pixels over
+  opaque black.
 - Frames are held or dropped by presentation time to a constant rate (B19):
   output frame k shows the latest source frame at or before k + ½ frame
   durations (the middle, so quantised timestamps such as a 1 ms timescale's

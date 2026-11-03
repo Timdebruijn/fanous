@@ -49,19 +49,24 @@ import UniformTypeIdentifiers
     /// H.264 with one second of a 440 Hz tone: AAC 44.1 kHz mono, or (`floatAudio`) LPCM 96 kHz stereo 32-bit float.
     /// `presentationTimes` replaces the 25 frames at 25 fps (variable rate: one pattern frame per time given).
     /// `timescale` sets the video track's media timescale (1000 is what an OBS remux has; the times are then rounded to ms).
+    /// `alpha` writes ProRes 4444 (in a .mov) with the right half of every frame transparent instead of H.264.
+    /// `transform` tags the track (`preferredTransform`); `rotated` is the 90° clockwise tag of a phone held upright.
     static func writeH264(
-        to url: URL, rotated: Bool = false, floatAudio: Bool = false, pixelAspect: (Int, Int)? = nil, presentationTimes: [CMTime]? = nil,
-        timescale: CMTimeScale? = nil
+        to url: URL, rotated: Bool = false, transform: CGAffineTransform? = nil, floatAudio: Bool = false, pixelAspect: (Int, Int)? = nil,
+        presentationTimes: [CMTime]? = nil, timescale: CMTimeScale? = nil, alpha: Bool = false
     ) async throws {
         try await offPool {
-            try writeH264Blocking(to: url, rotated: rotated, floatAudio: floatAudio, pixelAspect: pixelAspect, presentationTimes: presentationTimes, timescale: timescale)
+            try writeH264Blocking(
+                to: url, transform: transform ?? (rotated ? CGAffineTransform(rotationAngle: .pi / 2) : nil), floatAudio: floatAudio, pixelAspect: pixelAspect,
+                presentationTimes: presentationTimes, timescale: timescale, alpha: alpha)
         }
     }
 
     private static func writeH264Blocking(
-        to url: URL, rotated: Bool, floatAudio: Bool, pixelAspect: (Int, Int)?, presentationTimes: [CMTime]?, timescale: CMTimeScale?
+        to url: URL, transform: CGAffineTransform?, floatAudio: Bool, pixelAspect: (Int, Int)?, presentationTimes: [CMTime]?, timescale: CMTimeScale?,
+        alpha: Bool
     ) throws {
-        let writer = try AVAssetWriter(outputURL: url, fileType: floatAudio ? .mov : .mp4)
+        let writer = try AVAssetWriter(outputURL: url, fileType: floatAudio || alpha ? .mov : .mp4)
         let audioInput = AVAssetWriterInput(
             mediaType: .audio,
             outputSettings: floatAudio
@@ -72,14 +77,14 @@ import UniformTypeIdentifiers
                 : [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 44_100, AVNumberOfChannelsKey: 1, AVEncoderBitRateKey: 64_000])
         audioInput.expectsMediaDataInRealTime = false
         writer.add(audioInput)
-        var videoSettings: [String: Any] = [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 320, AVVideoHeightKey: 176]
+        var videoSettings: [String: Any] = [AVVideoCodecKey: alpha ? AVVideoCodecType.proRes4444 : .h264, AVVideoWidthKey: 320, AVVideoHeightKey: 176]
         if let (horizontal, vertical) = pixelAspect {  // anamorphic: 320 coded pixels shown 4:3 wide
             videoSettings[AVVideoPixelAspectRatioKey] = [AVVideoPixelAspectRatioHorizontalSpacingKey: horizontal, AVVideoPixelAspectRatioVerticalSpacingKey: vertical]
         }
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         input.expectsMediaDataInRealTime = false
         if let timescale { input.mediaTimeScale = timescale }
-        if rotated { input.transform = CGAffineTransform(rotationAngle: .pi / 2) }  // how a phone held upright tags its footage
+        if let transform { input.transform = transform }
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: input,
             sourcePixelBufferAttributes: [
@@ -119,6 +124,13 @@ import UniformTypeIdentifiers
         for (frame, time) in times.enumerated() {
             while !input.isReadyForMoreMediaData { usleep(500) }
             let buffer = try patternBuffer(pool: adaptor.pixelBufferPool, frame: frame)
+            if alpha {  // the right half transparent (premultiplied: all zero)
+                CVPixelBufferLockBaseAddress(buffer, [])
+                let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
+                let stride = CVPixelBufferGetBytesPerRow(buffer)
+                for y in 0..<176 { memset(base + y * stride + 160 * 4, 0, 160 * 4) }
+                CVPixelBufferUnlockBaseAddress(buffer, [])
+            }
             guard adaptor.append(buffer, withPresentationTime: time) else {
                 throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "append")
             }
@@ -670,6 +682,106 @@ import UniformTypeIdentifiers
         func pixel(_ x: Int, _ y: Int) -> (r: UInt8, g: UInt8) { (base[y * stride + x * 4 + 2], base[y * stride + x * 4 + 1]) }
         #expect(pixel(4, 4).r > 200 && pixel(4, 315).r > 200)
         #expect(pixel(171, 4).r < 40 && pixel(171, 315).r < 40)
+    }
+
+    /// B18: a rotated source with alpha keeps its alpha. The quarter turn is done in the pixels (vImage), not by a
+    /// composition that renders over opaque black: the source's transparent right half (x ≥ 160) becomes the upright
+    /// file's transparent lower half (y ≥ 160), and the pixel aspect ratio comes along, swapped.
+    @Test func rotatedSourceWithAlphaKeepsItsAlpha() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appending(path: "rotated-alpha.mov")
+        try await Self.writeH264(to: source, rotated: true, pixelAspect: (4, 3), alpha: true)
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        queue.start()
+        defer { queue.stop() }
+        let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_rotated.mov"), kind: .transcode(codec: .proRes422HQ)))
+        #expect(await Self.wait(for: job.id, in: queue) == .done)
+
+        let asset = AVURLAsset(url: job.destination)
+        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
+        let (descriptions, size) = try await track.load(.formatDescriptions, .naturalSize)
+        let description = try #require(descriptions.first)
+        #expect(CMFormatDescriptionGetMediaSubType(description) == makeFourCC("ap4h"), "promoted to 4444")
+        let ratio = CMFormatDescriptionGetExtension(description, extensionKey: kCMFormatDescriptionExtension_PixelAspectRatio) as? [String: Int]
+        #expect(ratio?[kCMFormatDescriptionKey_PixelAspectRatioHorizontalSpacing as String] == 3 && ratio?[kCMFormatDescriptionKey_PixelAspectRatioVerticalSpacing as String] == 4, "swapped ratio: \(ratio ?? [:])")
+        #expect(abs(size.width - 176 * 3 / 4) < 1 && size.height == 320, "\(size)")
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        reader.add(output)
+        reader.startReading()
+        let first = try #require(output.copyNextSampleBuffer())
+        let buffer = try #require(CMSampleBufferGetImageBuffer(first))
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
+        let stride = CVPixelBufferGetBytesPerRow(buffer)
+        func alpha(_ x: Int, _ y: Int) -> UInt8 { base[y * stride + x * 4 + 3] }
+        #expect(alpha(88, 40) == 255 && alpha(4, 150) == 255, "upper half opaque: \(alpha(88, 40)) \(alpha(4, 150))")
+        #expect(alpha(88, 170) == 0 && alpha(171, 315) == 0, "lower half transparent: \(alpha(88, 170)) \(alpha(171, 315))")
+    }
+
+    /// B18: every `Turn` (both quarter turns, 180°, both flips) and the composition fallback (a transpose) put each source
+    /// pixel where the tag says: four interior points of frame 0 (its red/green gradient) are checked at their transformed
+    /// positions. A phone's translation (tx/ty) is added to the clockwise case: the linear part alone decides.
+    @Test(arguments: [
+        ("90 cw", CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: 176, ty: 0)), ("90 ccw", CGAffineTransform(a: 0, b: -1, c: 1, d: 0, tx: 0, ty: 320)),
+        ("180", CGAffineTransform(a: -1, b: 0, c: 0, d: -1, tx: 320, ty: 176)), ("flip h", CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: 320, ty: 0)),
+        ("flip v", CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: 176)), ("transpose (composition)", CGAffineTransform(a: 0, b: 1, c: 1, d: 0, tx: 0, ty: 0)),
+    ])
+    func everyTransformPutsThePixelsWhereTheTagSays(name: String, transform: CGAffineTransform) async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appending(path: "tagged.mp4")
+        try await Self.writeH264(to: source, transform: transform)
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        queue.start()
+        defer { queue.stop() }
+        let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_tagged.mov"), kind: .transcode(codec: .proRes422)))
+        #expect(await Self.wait(for: job.id, in: queue) == .done, "\(name)")
+
+        let asset = AVURLAsset(url: job.destination)
+        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
+        #expect(try await track.load(.preferredTransform).isIdentity, "\(name)")
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        reader.add(output)
+        reader.startReading()
+        let first = try #require(output.copyNextSampleBuffer())
+        let buffer = try #require(CMSampleBufferGetImageBuffer(first))
+        let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
+        let swaps = transform.a == 0
+        #expect(width == (swaps ? 176 : 320) && height == (swaps ? 320 : 176), "\(name): \(width)x\(height)")
+        // The stored (untagged) source frame, through the same H.264 decode: the gradient's codes after that decode are what
+        // the output must show at the moved positions (the colour chain shifts them by more than a pixel of gradient).
+        let sourceAsset = AVURLAsset(url: source)
+        let sourceTrack = try #require(try await sourceAsset.loadTracks(withMediaType: .video).first)
+        let sourceReader = try AVAssetReader(asset: sourceAsset)
+        let sourceOutput = AVAssetReaderTrackOutput(track: sourceTrack, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        sourceReader.add(sourceOutput)
+        sourceReader.startReading()
+        let sourceFirst = try #require(sourceOutput.copyNextSampleBuffer())
+        let stored = try #require(CMSampleBufferGetImageBuffer(sourceFirst))
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        CVPixelBufferLockBaseAddress(stored, .readOnly)
+        defer {
+            CVPixelBufferUnlockBaseAddress(buffer, .readOnly)
+            CVPixelBufferUnlockBaseAddress(stored, .readOnly)
+        }
+        let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
+        let stride = CVPixelBufferGetBytesPerRow(buffer)
+        let storedBase = CVPixelBufferGetBaseAddress(stored)!.assumingMemoryBound(to: UInt8.self)
+        let storedStride = CVPixelBufferGetBytesPerRow(stored)
+        // Where the tag puts the source frame's corners decides the origin; a source pixel centre maps through the linear part.
+        let corners = [CGPoint(x: 0, y: 0), CGPoint(x: 320, y: 0), CGPoint(x: 0, y: 176), CGPoint(x: 320, y: 176)].map { $0.applying(transform) }
+        let origin = CGPoint(x: corners.map(\.x).min()!, y: corners.map(\.y).min()!)
+        for (sx, sy) in [(40, 40), (300, 40), (40, 160), (300, 160), (8, 100), (200, 20)] {  // gradient, the white bar, the black counter
+            let moved = CGPoint(x: Double(sx) + 0.5, y: Double(sy) + 0.5).applying(transform)
+            let (x, y) = (Int(moved.x - origin.x), Int(moved.y - origin.y))
+            let out = base + y * stride + x * 4, src = storedBase + sy * storedStride + sx * 4
+            let off = (0..<3).map { abs(Int(out[$0]) - Int(src[$0])) }.max()!
+            #expect(off <= 12, "\(name): source (\(sx), \(sy)) = (\(src[2]), \(src[1]), \(src[0])) at (\(x), \(y)) reads (\(out[2]), \(out[1]), \(out[0]))")
+        }
     }
 
     @Test func cancelledSequenceLeavesNothing() async throws {

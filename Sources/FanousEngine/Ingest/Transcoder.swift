@@ -3,6 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
 import AVFoundation
+import Accelerate
 import AudioToolbox
 import CoreMedia
 import Foundation
@@ -88,7 +89,7 @@ public enum Transcoder {
         let reader = try AVAssetReader(asset: probe.asset)
         let bgra = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
         let videoOutput: AVAssetReaderOutput
-        if let composition = probe.upright {  // phone footage: the reader bakes the rotation/flip in, the output has the upright (swapped) size
+        if let composition = probe.upright {  // an odd transform (not a quarter turn or flip): the composition bakes it in, over opaque black
             let output = AVAssetReaderVideoCompositionOutput(videoTracks: [probe.video], videoSettings: bgra)
             output.videoComposition = composition
             videoOutput = output
@@ -159,18 +160,24 @@ public enum Transcoder {
             while true {
                 try gate.throwIfCancelled()  // emit() checkpoints per output frame
                 let finished = try autoreleasepool { () throws -> Bool in
-                    guard let sample = videoOutput.copyNextSampleBuffer(), let pixels = CMSampleBufferGetImageBuffer(sample) else { return true }
+                    guard let sample = videoOutput.copyNextSampleBuffer(), let decoded = CMSampleBufferGetImageBuffer(sample) else { return true }
                     if writer == nil {
                         // Size from the decoded buffer, not the track: anamorphic and cropped sources differ. The pixel
-                        // aspect ratio goes with it (B19), except on the upright path, where the composition renders the
-                        // display size with square pixels.
-                        let width = CVPixelBufferGetWidth(pixels), height = CVPixelBufferGetHeight(pixels)
+                        // aspect ratio goes with it (B19), swapped by a quarter turn; not on the composition path, which
+                        // renders the display size with square pixels.
+                        var width = CVPixelBufferGetWidth(decoded), height = CVPixelBufferGetHeight(decoded)
+                        var pixelAspect = probe.upright == nil ? probe.pixelAspect : nil
+                        if let turn = probe.turn, turn.swapsAxes {
+                            swap(&width, &height)
+                            pixelAspect = pixelAspect.map { ($0.vertical, $0.horizontal) }
+                        }
                         if case .hap = requested, width % 4 != 0 || height % 4 != 0 { throw TranscodeError.hapDimensions(width, height) }
                         writer = try MovieWriter(
                             url: destination, width: width, height: height, fps: max(1, Int32((1 / probe.frameDuration.seconds).rounded())),  // a slideshow slower than 0.5 fps rounds to 0
-                            frameDuration: probe.frameDuration, codec: requested, externalAudio: audioFormat,
-                            pixelAspect: probe.upright == nil ? probe.pixelAspect : nil)
+                            frameDuration: probe.frameDuration, codec: requested, externalAudio: audioFormat, pixelAspect: pixelAspect)
                     }
+                    // A quarter turn or flip is done here in the pixels (vImage, exact, alpha kept: B18) instead of by a composition.
+                    let pixels = try probe.turn.map { try $0.apply(to: decoded, into: try writer!.makePixelBuffer()) } ?? decoded
                     // Both video and audio are written at their source times (AVAssetReader has applied the edit lists,
                     // so a track starts at 0); a first frame that sits later than 0 is held from 0.
                     if held == nil { held = pixels }
@@ -267,6 +274,53 @@ public enum Transcoder {
         return nearest
     }
 
+    /// A `preferredTransform` that is a quarter turn or a flip, applied in the pixels: exact (no resampling) and alpha kept.
+    enum Turn: Equatable {
+        /// A `vImageRotate90_ARGB8888` constant (`kRotate90DegreesClockwise` and friends).
+        case quarter(UInt8)
+        case flipHorizontal
+        case flipVertical
+
+        /// The turn for `transform` (its linear part; the translation only re-origins the rotated frame), nil for anything else.
+        init?(_ transform: CGAffineTransform) {
+            switch (transform.a, transform.b, transform.c, transform.d) {
+            case (0, 1, -1, 0): self = .quarter(UInt8(kRotate90DegreesClockwise))  // a phone held upright tags its landscape pixels this way (measured: matches the composition)
+            case (0, -1, 1, 0): self = .quarter(UInt8(kRotate90DegreesCounterClockwise))
+            case (-1, 0, 0, -1): self = .quarter(UInt8(kRotate180DegreesClockwise))
+            case (-1, 0, 0, 1): self = .flipHorizontal
+            case (1, 0, 0, -1): self = .flipVertical
+            default: return nil
+            }
+        }
+
+        var swapsAxes: Bool { if case .quarter(let constant) = self { return constant != UInt8(kRotate180DegreesClockwise) } else { return false } }
+
+        /// `source` turned into `destination` (sized for it: swapped for a quarter turn); returns `destination`.
+        func apply(to source: CVPixelBuffer, into destination: CVPixelBuffer) throws -> CVPixelBuffer {
+            CVPixelBufferLockBaseAddress(source, .readOnly)
+            CVPixelBufferLockBaseAddress(destination, [])
+            defer {
+                CVPixelBufferUnlockBaseAddress(source, .readOnly)
+                CVPixelBufferUnlockBaseAddress(destination, [])
+            }
+            var from = vImage_Buffer(
+                data: CVPixelBufferGetBaseAddress(source), height: vImagePixelCount(CVPixelBufferGetHeight(source)),
+                width: vImagePixelCount(CVPixelBufferGetWidth(source)), rowBytes: CVPixelBufferGetBytesPerRow(source))
+            var to = vImage_Buffer(
+                data: CVPixelBufferGetBaseAddress(destination), height: vImagePixelCount(CVPixelBufferGetHeight(destination)),
+                width: vImagePixelCount(CVPixelBufferGetWidth(destination)), rowBytes: CVPixelBufferGetBytesPerRow(destination))
+            var transparent: [UInt8] = [0, 0, 0, 0]
+            let error =
+                switch self {
+                case .quarter(let constant): vImageRotate90_ARGB8888(&from, &to, constant, &transparent, vImage_Flags(kvImageNoFlags))
+                case .flipHorizontal: vImageHorizontalReflect_ARGB8888(&from, &to, vImage_Flags(kvImageNoFlags))
+                case .flipVertical: vImageVerticalReflect_ARGB8888(&from, &to, vImage_Flags(kvImageNoFlags))
+                }
+            guard error == kvImageNoError else { throw TranscodeError.reader("turn (vImage) failed: \(error)") }
+            return destination
+        }
+    }
+
     /// Track properties, loaded once (async API; the caller's thread is not a cooperative one, so blocking is fine,
     /// like `MediaLoader`).
     private struct Probe: @unchecked Sendable {  // AVAssetTrack is not Sendable in this SDK; the probe is handed over once and then used by one thread
@@ -282,7 +336,9 @@ public enum Transcoder {
         let start: CMTime
         let duration: CMTime
         let hasAlpha: Bool
-        /// Non-nil when the track carries a rotation/flip (`preferredTransform`): applies it and sizes the render to match.
+        /// The track's `preferredTransform` when it is a quarter turn or a flip: applied in the pixels by the read loop.
+        let turn: Turn?
+        /// Non-nil for any other rotation/flip transform: a composition applies it and sizes the render to match (over opaque black).
         let upright: AVVideoComposition?
         /// The track's `PixelAspectRatio` extension (horizontal, vertical spacing); nil for square pixels.
         let pixelAspect: (horizontal: Int, vertical: Int)?
@@ -321,9 +377,11 @@ public enum Transcoder {
                 let subtype = CMFormatDescriptionGetMediaSubType(description)
                 return (flag as? Bool) == true || [makeFourCC("Hap5"), makeFourCC("HapM"), makeFourCC("HapA")].contains(subtype)
             }
-            // ponytail: the composition renders over opaque black, so a rotated source with alpha keeps the alpha codec but loses the alpha channel.
+            let turn = Turn(transform)
+            // ponytail: only an odd transform (not a quarter turn or flip) still goes through the composition, which renders over
+            // opaque black: such a source with alpha keeps the alpha codec but loses the alpha channel.
             var composition: AVMutableVideoComposition?
-            if transform.rotatesOrFlips {
+            if transform.rotatesOrFlips, turn == nil {
                 composition = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: asset)
                 composition?.frameDuration = frameDuration  // caps the composition's rate; the read loop sets the cadence (it delivers the source times)
             }
@@ -339,7 +397,7 @@ public enum Transcoder {
             return Probe(
                 asset: asset, video: video, audio: audio, audioFormat: audioFormat, frameDuration: frameDuration, start: range.start, duration: range.duration,
                 hasAlpha: alpha,
-                upright: composition, pixelAspect: pixelAspect,
+                turn: turn, upright: composition, pixelAspect: pixelAspect,
                 codec: formats.first.map(CMFormatDescriptionGetMediaSubType) ?? 0)
         }
     }
