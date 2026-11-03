@@ -731,7 +731,7 @@ import UniformTypeIdentifiers
 
     /// A sequence job with `fps` 0 (or 241) is refused with 400 and nothing is queued: it used to reach `MovieWriter`,
     /// where a zero timescale trapped the engine, and the persisted job would have trapped it again at every start.
-    @Test func sequenceWithAnImpossibleFrameRateIsRefused() throws {
+    @Test func sequenceWithAnImpossibleFrameRateIsRefused() async throws {
         let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
@@ -743,8 +743,17 @@ import UniformTypeIdentifiers
         for fps: Int32 in [0, -25, 241] {
             #expect(api.enqueue(source: frames, folder: 1, file: nil, name: nil, codec: nil, fps: fps, keepOriginal: true).status == 400, "fps \(fps)")
         }
-        #expect(queue.jobs.isEmpty)
+        #expect(queue.jobs.isEmpty && !FileManager.default.fileExists(atPath: library.root.path), "nothing queued, no folder made")
         #expect(api.enqueue(source: frames, folder: 1, file: nil, name: nil, codec: nil, fps: 240, keepOriginal: true).status == 202)
+
+        // A job persisted with such a rate before the guard ends as failed once the queue runs it, instead of trapping at every start.
+        let old = directory.appending(path: "old-frames")  // its own folder: the accepted job above moves `frames` to _originals
+        try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+        try Self.writePNG(to: old.appending(path: "frame_000.png"), index: 0)
+        let replayed = queue.enqueue(IngestJob(source: old, destination: directory.appending(path: "library/001_Folder/002_old.mov"), kind: .sequence(fps: 0, codec: .proRes422)))
+        queue.start()
+        defer { queue.stop() }
+        if case .failed(let text) = await Self.wait(for: replayed.id, in: queue) { #expect(text.contains("frame rate"), "failed with: \(text)") } else { Issue.record("not failed") }
     }
 
     /// B51: while a library root change holds enqueues, a new job is refused with 409 and nothing is queued.
