@@ -13,6 +13,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: the release dmg was notarized and stapled but not signed itself, so Gatekeeper's check of the dmg
   (`spctl --type open`) rejected it with "no usable signature" while the app inside passed; `scripts/notarize.sh` signs
   the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).
+- Fixed: `POST /api/library/folder` checked for the folder and created it in two steps on a per-client queue, so two
+  clients creating one number, or an upload making the folder in between, could end with two folders of one number; the
+  check and the create now run under one lock (B141). A create that fails (a read-only root) no longer answers 200 with a
+  folder that does not exist: the endpoint answers 500 and an upload 400 (B142, PR #NNN).
 
 ## 1.0.0-rc.2 — 2026-11-03
 
