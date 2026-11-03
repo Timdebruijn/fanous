@@ -119,7 +119,7 @@ The status bar is on every screen. From the left:
 | dropped · 1 s | Missed and late frames over the last second |
 | One pill per universe | Green: receiving. Yellow: never received ("silent"), quiet for up to 2.5 s, or quiet but not in the patch. Red: a patched universe that received and then went quiet for more than 2.5 s. "no DMX received" instead of pills while no universe is patched and none has been heard |
 | timecode | The incoming time and its state; only while timecode is switched on or running |
-| outputs | On while the engine renders the picture |
+| outputs | Outputs bound to their display out of all outputs, for example 2/3: green when all are bound, yellow when one is lost or has no display. 0 when the project has no output, off while the engine renders nothing. Red under show lock when yellow, 0 or off |
 | ingest | Progress of the running transcode; only while one runs |
 | auto version | When the engine last saved a version of the project; opens System |
 | clients | Browsers and windows connected, and how many lag behind |
@@ -127,21 +127,22 @@ The status bar is on every screen. From the left:
 | web UI open | Yellow while the programmer role has no password |
 | Undo, Redo, **?**, role | Undo and redo (programmer), the shortcut list, and your role: press it to log in as another one |
 
-Red means look now: dropped frames, a lost timecode or no outputs while the
-show is locked, a patched universe that went silent, a lost sync master.
+Red means look now: dropped frames, a lost timecode, or outputs missing or not
+rendering while the show is locked; a patched universe that went silent, a lost
+sync master.
 
 Refused commands show a yellow banner with the next step ("Show lock is on:
 press L or the LOCKED tag to unlock", "Not allowed for this role: log in as
 programmer"). It disappears after 10 seconds; **Recent messages** on the banner
 lists the last 20.
 
-The Layers screen header says "tier allows N layers". The tier is the
-performance class of this Mac's chip (System shows the chip); N is the number of
-layers it plays without dropping frames, measured with the benchmark. **Add
-layer** on the Patch screen stops at N so a show cannot be built that the
-machine cannot play. Each layer row shows its state as a word next to the
-dot (OK, LIVE, NO MEDIA, MISSING FILE, DECODER ERROR, or for a live input
-that fails the reason itself, such as NOT RUNNING), and on the left a live
+The Layers screen header says "tier allows N layers". For now N is 32 on every
+Mac: it is the engine's ceiling, not a measurement of this Mac (B145). **Add
+layer** on the Patch screen stops at N. What a Mac plays without dropping
+frames can be far lower, at 4K for example: see the performance advice in
+[media-library.md](media-library.md). Each layer row shows its state as a word
+next to the dot (OK, LIVE, NO MEDIA, MISSING FILE, DECODER ERROR, or for a live
+input that fails the reason itself, such as NOT RUNNING), and on the left a live
 picture of that layer alone, four times a second (colour, effects and position
 included). A layer that shows nothing (no media, intensity 0) shows the library
 thumbnail of its file instead. The live pictures stop while the tab is in the
@@ -194,7 +195,8 @@ A role without a password is open to everyone who can reach the address; each
 role is open or protected on its own. A browser gets the highest role it asks
 for that it is entitled to. To change role click the role name at the right of
 the status bar, pick the role, enter its password and press **Log in**; **Log
-out** drops the session. After five wrong attempts in a minute you must wait.
+out** drops the session. Every login attempt counts, right or wrong: after five
+in a minute from one address you must wait.
 
 <img src="images/login.png" width="420" alt="The Log in dialog opened from the role at the right of the status bar">
 

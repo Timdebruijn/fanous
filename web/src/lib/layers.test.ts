@@ -25,6 +25,7 @@ import {
   thumbnailFor,
   thumbnailIndex,
   valueText,
+  layerNumbers,
 } from './layers';
 import type { ParamSpec } from './patch-screen';
 
@@ -202,5 +203,14 @@ describe('renumberEffect (B137 step 3)', () => {
     expect(renumberEffect(items, items[2], 3)).toBeNull();
     expect(renumberEffect(items, items[0], 0)).toBeNull();
     expect(renumberEffect(items, items[0], 2.5)).toBeNull();
+  });
+});
+
+describe('layerNumbers', () => {
+  it('counts 1…layerCount and guards a bad count', () => {
+    expect(layerNumbers(3)).toEqual([1, 2, 3]);
+    expect(layerNumbers(2.7)).toEqual([1, 2]);
+    expect(layerNumbers(-1)).toEqual([]);
+    expect(layerNumbers(Number.NaN)).toEqual([]);
   });
 });

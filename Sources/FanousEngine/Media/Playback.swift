@@ -113,6 +113,8 @@ public final class LayerPlayback: @unchecked Sendable {
     public let key: MediaKey
     public let width: Int
     public let height: Int
+    /// Shown width of one pixel over its height (anamorphic movies, `MovieInfo.pixelAspect`); 1 for stills and live inputs.
+    public let pixelAspect: Double
     public let frameRate: Double
     public let frameCount: Int
     public let decoder: LayerDecoder?
@@ -138,11 +140,13 @@ public final class LayerPlayback: @unchecked Sendable {
         live = nil
         width = movie.info.width
         height = movie.info.height
+        pixelAspect = movie.info.pixelAspect
         frameRate = movie.info.frameRate
         frameCount = movie.info.frameCount
     }
 
-    public init(key: MediaKey, still: DecodedFrame) {
+    /// `pixelAspect`: the movie's, when the still is one decoded movie frame (the thumbnailer); 1 for a real still.
+    public init(key: MediaKey, still: DecodedFrame, pixelAspect: Double = 1) {
         self.key = key
         self.still = still
         decoder = nil
@@ -150,6 +154,7 @@ public final class LayerPlayback: @unchecked Sendable {
         live = nil
         width = still.texture0?.width ?? 1
         height = still.texture0?.height ?? 1
+        self.pixelAspect = pixelAspect
         frameRate = 1
         frameCount = 1
     }
@@ -162,6 +167,7 @@ public final class LayerPlayback: @unchecked Sendable {
         still = nil
         width = 0  // taken from the texture each tick
         height = 0
+        pixelAspect = 1
         frameRate = 1
         frameCount = 1
     }
@@ -679,7 +685,7 @@ public final class MediaLoader: @unchecked Sendable {
             if source.softwareDecoder { logger.warning("software ProRes decoder: the hardware one refused this frame size (B5)", metadata: ["layer": "\(layer + 1)", "file": "\(url.lastPathComponent)", "size": "\(source.info.width)x\(source.info.height)"]) }
             status.kind = "movie"
             status.codec = source.info.codecName
-            status.width = source.info.width
+            status.width = Int((Double(source.info.width) * source.info.pixelAspect).rounded())  // shown size, like the library's naturalSize
             status.height = source.info.height
             status.fps = source.info.frameRate
             status.frames = source.info.frameCount

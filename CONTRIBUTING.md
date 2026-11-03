@@ -37,10 +37,10 @@ accounts are covered. Pull requests from unsigned authors are not merged.
   CSS, shell):
   ```
   // SPDX-License-Identifier: GPL-3.0-only
-  // Copyright (c) 2026 Tim de Bruijn and Fanous contributors
+  // Copyright (c) 2026 Tim de Bruijn
   // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
   ```
-  `scripts/license-headers.sh` checks this in CI.
+  `scripts/license-headers.sh` checks the SPDX line in CI.
 - **No new dependencies** without an ADR and a row in
   `docs/licensing/DEPENDENCIES.md`. Vendored C code is pinned to a commit.
 - **`FanousCore` imports only Foundation.** Protocol parsers come with
@@ -52,8 +52,9 @@ accounts are covered. Pull requests from unsigned authors are not merged.
   render or decode path (run `fanous-bench` before and after).
 - **Commits** in English, imperative mood, one topic per commit. PRs describe
   what was measured, not only what was changed.
-- Code style: `swift-format` configuration in the repo; `eslint`/`prettier`
-  for `web/`.
+- Code style: the `.swift-format` configuration in the repo (CI does not run
+  it). For `web/`, `npm run typecheck` and `npm run check` (`svelte-check`,
+  warnings fail); there is no eslint or prettier.
 
 ## 4. Review and merge
 

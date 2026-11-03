@@ -4,7 +4,9 @@
 // Pure logic of the Show control screen: cue numbering and reordering, trigger text, fixture and parameter
 // choices for cue values, value controls from the channel map, timecode wording, MIDI map wording.
 import type { AudioInputDoc, CueDoc, CueValueDoc, LiveDoc, MIDIMappingDoc, PatchEntry, TimecodeSettingsDoc } from './docs';
+import { clamp01 } from './outputs';
 import { LOCKED_TITLE, type ChannelMap, type FixtureType, type ParamSpec } from './patch-screen';
+import { pad2 } from './system';
 
 export const LOCKED_OPERATOR = 'Locked: operator only';
 export const LOCKED_SHOW = 'Locked: the show is locked (press L to unlock)';
@@ -95,8 +97,7 @@ export function parseTrigger(text: string): TriggerResult {
   if (!rate) return { ok: false, error: `Unknown rate "${match[5]}"; use 24, 25, 29.97df, 29.97ndf or 30` };
   if (h > 23 || m > 59 || s > 59) return { ok: false, error: 'Hours go to 23, minutes and seconds to 59' };
   if (f >= rate.frames) return { ok: false, error: `Frames go to ${rate.frames - 1} at ${rate.id} fps` };
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return { ok: true, value: `${pad(h)}:${pad(m)}:${pad(s)}:${pad(f)}@${rate.engine}` };
+  return { ok: true, value: `${pad2(h)}:${pad2(m)}:${pad2(s)}:${pad2(f)}@${rate.engine}` };
 }
 
 // ---- cue rows ----------------------------------------------------------------------------------------------
@@ -262,7 +263,7 @@ export function levelText(level: number | null | undefined, none = 'no level'): 
 
 /** The meter's fill, 0…1 over −60…0 dBFS. */
 export function meterFill(level: number | null | undefined): number {
-  return level == null ? 0 : Math.min(1, Math.max(0, (level + 60) / 60));
+  return level == null ? 0 : clamp01((level + 60) / 60);
 }
 
 /** "LTC · Scarlett 2i2 · 25 fps"; "29.97 DF" already names its rate. */

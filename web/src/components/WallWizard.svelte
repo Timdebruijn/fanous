@@ -2,8 +2,7 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
-  import { lockTitle } from '../lib/show';
-  import { app, can } from '../lib/state.svelte';
+  import { app, programmerLock } from '../lib/state.svelte';
   import { applyWizard, cancelWizard, wallUI, wizardBack } from '../lib/wall-session.svelte';
   import { MAX_CANVAS_PIXELS, fitCanvas, freeOutputs, grids, overlapHint, rc, tap, wallPixels, wallSize, type Grid } from '../lib/walls';
 
@@ -11,7 +10,7 @@
   // canvas; Make wall applies it and the wall panel opens on the seam check (§9.9's step 3). The draft lives in
   // lib/wall-session; Cancel ends its Output ID patterns (a lease, B102) and changes nothing else.
   const draft = $derived(wallUI.wizard!);
-  const lock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
+  const lock = $derived(programmerLock());
   const edited = $derived(draft.edit === null ? undefined : app.project.walls?.find((w) => w.id === draft.edit));
   const free = $derived(freeOutputs(app.project.outputs, app.project.walls, draft.edit ?? undefined));
   const statuses = $derived(new Map(app.live.outputs.map((s) => [s.id, s])));

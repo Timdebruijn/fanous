@@ -4,7 +4,7 @@
 // Port of WarpMath (Sources/FanousCore/Mapping/MappingMath.swift): the editor draws slice, mask and mesh handles
 // where the engine puts them on screen, i.e. through the mesh and the corner-pin homography, and maps the
 // pointer back through the inverse when a handle is dragged.
-import type { MapPoint, MapperMode, MeshWarp, OutputConfig, WarpSettings } from './outputs';
+import { clamp01, type MapPoint, type MapperMode, type MeshWarp, type OutputConfig, type WarpSettings } from './outputs';
 
 export type Mat3 = number[];
 const IDENTITY: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
@@ -143,6 +143,6 @@ export function warpedOutline(output: OutputConfig, mode: MapperMode, points: Ma
 /** Moves a stored point by whole output pixels as seen on screen (through the warp), for arrow keys and the nudge pad. */
 export function nudgeStored(output: OutputConfig, mode: MapperMode, point: MapPoint, dx: number, dy: number, size: { w: number; h: number }): MapPoint {
   const s = toScreen(output, mode, point);
-  const p = fromScreen(output, mode, { x: Math.min(1, Math.max(0, s.x + dx / size.w)), y: Math.min(1, Math.max(0, s.y + dy / size.h)) });
-  return { x: Math.min(1, Math.max(0, p.x)), y: Math.min(1, Math.max(0, p.y)) };
+  const p = fromScreen(output, mode, { x: clamp01(s.x + dx / size.w), y: clamp01(s.y + dy / size.h) });
+  return { x: clamp01(p.x), y: clamp01(p.y) };
 }

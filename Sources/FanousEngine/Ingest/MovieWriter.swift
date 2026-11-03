@@ -8,8 +8,9 @@ import Foundation
 
 /// Writes a QuickTime movie: ProRes through AVFoundation's hardware encoder,
 /// HAP through `HAPEncoder` and AVAssetWriter sample passthrough. Optionally
-/// adds a 48 kHz stereo 16-bit LPCM track: either the `TestTone` (`audio`) or
-/// sample buffers the caller supplies through `appendAudio(_:)` (`externalAudio`).
+/// adds an LPCM track: either the `TestTone` (`audio`, 48 kHz stereo 16-bit) or
+/// sample buffers the caller supplies through `appendAudio(_:)` (`externalAudio`,
+/// in the format the caller names).
 public final class MovieWriter {
     public enum Codec: Sendable, Equatable, Codable {
         case proRes422HQ
@@ -50,14 +51,17 @@ public final class MovieWriter {
     private var frame: Int64 = 0
 
     /// `audio: true` adds an LPCM 48 kHz stereo track (`TestTone`), written per video frame so its length matches the video.
-    /// `externalAudio: true` adds the same track but leaves it empty: feed it with `appendAudio(_:)` (16-bit interleaved
-    /// stereo at 48 kHz, in step with the video: the writer interleaves sparsely and stalls if audio runs far behind).
-    /// `frameDuration` overrides `1/fps` for rational rates; `fps` stays the rounded integer rate.
+    /// `externalAudio` adds an empty LPCM track in that format (interleaved; the source's sample rate, channels and bit
+    /// depth, B19): feed it with `appendAudio(_:)` in step with the video (the writer interleaves sparsely and stalls if
+    /// audio runs far behind). `frameDuration` overrides `1/fps` for rational rates; `fps` stays the rounded integer rate.
+    /// `pixelAspect` (horizontal, vertical spacing) tags the track for anamorphic frames (B19); nil is square pixels.
     public init(
         url: URL, width: Int, height: Int, fps: Int32, frameDuration: CMTime? = nil, codec: Codec, audio: Bool = false,
-        externalAudio: Bool = false
+        externalAudio: CMAudioFormatDescription? = nil, pixelAspect: (horizontal: Int, vertical: Int)? = nil
     ) throws {
-        precondition(!(audio && externalAudio), "audio is either the test tone or caller-supplied")
+        precondition(!(audio && externalAudio != nil), "audio is either the test tone or caller-supplied")
+        let duration = frameDuration ?? CMTime(value: 1, timescale: fps)
+        guard fps > 0, duration.isNumeric, duration.seconds > 0 else { throw WriterError.failed("frame rate must be positive") }  // a job that got through would trap below
         self.width = width
         self.height = height
         self.fps = fps
@@ -65,12 +69,17 @@ public final class MovieWriter {
         testTone = audio
         try? FileManager.default.removeItem(at: url)
         writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+        let aspectExtension: [String: Any]? = pixelAspect.map { [
+            kCMFormatDescriptionKey_PixelAspectRatioHorizontalSpacing as String: $0.horizontal,
+            kCMFormatDescriptionKey_PixelAspectRatioVerticalSpacing as String: $0.vertical,
+        ] }
         switch codec {
         case .hap(let variant):
             var description: CMFormatDescription?
             let status = CMVideoFormatDescriptionCreate(
                 allocator: kCFAllocatorDefault, codecType: variant.fourCC, width: Int32(width), height: Int32(height),
-                extensions: nil, formatDescriptionOut: &description)
+                extensions: aspectExtension.map { [kCMFormatDescriptionExtension_PixelAspectRatio as String: $0] as CFDictionary },
+                formatDescriptionOut: &description)
             guard status == noErr, let description else { throw WriterError.failed("format description \(status)") }
             hapFormat = description
             hap = HAPEncoder(variant: variant, width: width, height: height)
@@ -93,9 +102,11 @@ public final class MovieWriter {
                 AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2, AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
                 AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
             ]
-            input = AVAssetWriterInput(
-                mediaType: .video,
-                outputSettings: [AVVideoCodecKey: codecType, AVVideoWidthKey: width, AVVideoHeightKey: height, AVVideoColorPropertiesKey: rec709])
+            var settings: [String: Any] = [AVVideoCodecKey: codecType, AVVideoWidthKey: width, AVVideoHeightKey: height, AVVideoColorPropertiesKey: rec709]
+            if let pixelAspect {
+                settings[AVVideoPixelAspectRatioKey] = [AVVideoPixelAspectRatioHorizontalSpacingKey: pixelAspect.horizontal, AVVideoPixelAspectRatioVerticalSpacingKey: pixelAspect.vertical]
+            }
+            input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
             adaptor = AVAssetWriterInputPixelBufferAdaptor(
                 assetWriterInput: input,
                 sourcePixelBufferAttributes: [
@@ -104,25 +115,29 @@ public final class MovieWriter {
                 ])
         }
         input.expectsMediaDataInRealTime = false
+        // The track's timescale holds the frame duration exactly: 600 for 24/25/30/50/60/120, else the duration's own
+        // (30000 for 29.97; the default 600 would store it as 20/21 ticks and report a 30 fps minimum frame duration).
+        input.mediaTimeScale = 600 % self.frameDuration.timescale == 0 ? 600 : self.frameDuration.timescale
         guard writer.canAdd(input) else { throw WriterError.failed("cannot add input") }
         writer.add(input)
-        if audio || externalAudio {
-            var description = AudioStreamBasicDescription(
-                mSampleRate: TestTone.sampleRate, mFormatID: kAudioFormatLinearPCM,
-                mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked, mBytesPerPacket: 4,
-                mFramesPerPacket: 1, mBytesPerFrame: 4, mChannelsPerFrame: 2, mBitsPerChannel: 16, mReserved: 0)
-            var format: CMAudioFormatDescription?
-            let status = CMAudioFormatDescriptionCreate(
-                allocator: kCFAllocatorDefault, asbd: &description, layoutSize: 0, layout: nil, magicCookieSize: 0,
-                magicCookie: nil, extensions: nil, formatDescriptionOut: &format)
-            guard status == noErr, let format else { throw WriterError.failed("audio format description \(status)") }
-            let audioInput = AVAssetWriterInput(
-                mediaType: .audio,
-                outputSettings: [
-                    AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: TestTone.sampleRate, AVNumberOfChannelsKey: 2,
-                    AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false,
-                    AVLinearPCMIsNonInterleaved: false,
-                ], sourceFormatHint: format)
+        if audio || externalAudio != nil {
+            let format: CMAudioFormatDescription
+            if let externalAudio {
+                format = externalAudio
+            } else {
+                var description = AudioStreamBasicDescription(
+                    mSampleRate: TestTone.sampleRate, mFormatID: kAudioFormatLinearPCM,
+                    mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked, mBytesPerPacket: 4,
+                    mFramesPerPacket: 1, mBytesPerFrame: 4, mChannelsPerFrame: 2, mBitsPerChannel: 16, mReserved: 0)
+                var tone: CMAudioFormatDescription?
+                let status = CMAudioFormatDescriptionCreate(
+                    allocator: kCFAllocatorDefault, asbd: &description, layoutSize: 0, layout: nil, magicCookieSize: 0,
+                    magicCookie: nil, extensions: nil, formatDescriptionOut: &tone)
+                guard status == noErr, let tone else { throw WriterError.failed("audio format description \(status)") }
+                format = tone
+            }
+            // LPCM samples go in as they are (passthrough): the track is whatever `format` says, nothing is re-encoded.
+            let audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: nil, sourceFormatHint: format)
             audioInput.expectsMediaDataInRealTime = false
             // Fed in lockstep with the video, one frame at a time. With the default (tightly interleaved) the writer holds
             // video back until it has a full second of audio ahead of it, and append() stalls forever around frame 37.
@@ -205,7 +220,7 @@ public final class MovieWriter {
         try appendAudio(sample)
     }
 
-    /// Appends caller-supplied audio (`externalAudio`): LPCM, 48 kHz, stereo, 16-bit interleaved; blocks until the writer
+    /// Appends caller-supplied audio (`externalAudio`): LPCM in the format given at init; blocks until the writer
     /// takes it. Timestamps are written as given, on the same timeline as the video (frame `n` is at `n * frameDuration`).
     public func appendAudio(_ sampleBuffer: CMSampleBuffer) throws {
         guard let audioInput else { throw WriterError.notReady }

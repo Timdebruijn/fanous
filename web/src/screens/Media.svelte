@@ -6,7 +6,7 @@
   import MediaIngestQueue from '../components/MediaIngestQueue.svelte';
   import MediaTile from '../components/MediaTile.svelte';
   import PolicyHint from '../components/PolicyHint.svelte';
-  import { app, authHeaders, can, playOnLayer } from '../lib/state.svelte';
+  import { app, authHeaders, can, playOnLayer, programmerLock } from '../lib/state.svelte';
   import {
     LOCKED_TITLE,
     activeSources,
@@ -14,12 +14,13 @@
     displayName,
     filterItems,
     invalidCount,
+    loadLibrary,
     send,
     type LibraryItem,
     type LibrarySnapshot,
   } from '../lib/media';
-  import { ZERO_GROUPS, folderZeroItems, layersShowing, zeroCaption } from '../lib/layers';
-  import { lockTitle } from '../lib/show';
+  import { ZERO_GROUPS, folderZeroItems, layerNumbers, layersShowing, zeroCaption } from '../lib/layers';
+  import { lowestFree } from '../lib/outputs';
 
   interface Upload {
     name: string;
@@ -66,8 +67,8 @@
   const locked = $derived(!can('programmer'));
   const picked = $derived(shown.find((i) => i.path === selectedItem));
   const playable = $derived(picked !== undefined && picked.file !== null && current?.number != null && picked.status === 'playable');
-  const layerNumbers = $derived(Array.from({ length: Math.max(0, Math.floor(app.project.layerCount) || 0) }, (_, i) => i + 1));
-  const playLock = $derived(lockTitle('programmer', !locked, app.project.showLock));
+  const layerList = $derived(layerNumbers(app.project.layerCount));
+  const playLock = $derived(programmerLock());
   let playNote = $state('');
 
   async function play(n: number, folder: number, file: number, name: string) {
@@ -77,18 +78,12 @@
   const canImport = $derived(current?.number != null);
   /** "folder/file" → the layers playing it, for the tile badge */
   const playing = $derived(layersShowing(app.live.layers));
-  const nextFolderNumber = $derived.by(() => {
-    const used = new Set(folders.map((f) => f.number));
-    for (let n = 1; n <= 255; n++) if (!used.has(n)) return n;
-    return 0;
-  });
+  const nextFolderNumber = $derived(lowestFree(folders.flatMap((f) => f.number ?? [])) ?? 0);
 
   async function load() {
     const mine = ++latest;
     try {
-      const response = await fetch('/api/library');
-      if (!response.ok) throw new Error(`${response.status} ${(await response.text()).trim()}`.trim());
-      const snapshot = (await response.json()) as LibrarySnapshot;
+      const snapshot = await loadLibrary();
       if (mine === latest) library = snapshot;
     } catch (error) {
       if (mine === latest) notice = `Cannot load the library: ${error instanceof Error ? error.message : String(error)}`;
@@ -163,13 +158,13 @@
 </script>
 
 {#snippet playMenu(folder: number, file: number, name: string)}
-  <select class="select" aria-label="Play on layer" disabled={playLock !== undefined || layerNumbers.length === 0} title={playLock} value="" onchange={(e) => {
+  <select class="select" aria-label="Play on layer" disabled={playLock !== undefined || layerList.length === 0} title={playLock} value="" onchange={(e) => {
     const n = Number(e.currentTarget.value);
     e.currentTarget.value = '';
     if (n) void play(n, folder, file, name);
   }}>
     <option value="">Play on layer ▾</option>
-    {#each layerNumbers as n (n)}<option value={n}>Layer {n}</option>{/each}
+    {#each layerList as n (n)}<option value={n}>Layer {n}</option>{/each}
   </select>
 {/snippet}
 

@@ -81,8 +81,10 @@ trigger and an optional follow time. The list shows No., Name, Fade, Trigger,
 Follow and Values; the header says "Now 2 Name · next 3 Name", and the rows are
 marked current (or fading) and next.
 
-- **Add cue** takes the next free number and the name "Cue N". **Duplicate**
-  copies fade and values, not trigger and follow. **Remove** shows "Undone? Undo" for 8 seconds. **Move
+- **Add cue** takes the number one above the highest cue, rounded down to a
+  whole number (cues 1, 2 and 5 give 6; a highest cue 2.5 gives 3), and the
+  name "Cue N". **Duplicate** copies fade and values, not trigger and follow.
+  **Remove** shows "Undone? Undo" for 8 seconds. **Move
   up** and **Move down** swap numbers with the neighbour. Numbers may have
   decimals (2.5) and must be unique.
 - In the editor: **Number**, **Name**, **Fade (s)**, **Trigger**, **Follow (s)**,
@@ -186,7 +188,7 @@ same value), so a fader on a controller can follow a layer.
 | `/fanous/layer/{n}/media` | ii | Folder, file |
 | `/fanous/master/{param}` | f | Master parameter |
 | `/fanous/output/{n}/{param}` | f | Output parameter |
-| `/fanous/keystone/{n}/{param}` | f | Keystone parameter, when the Keystone fixture is patched |
+| `/fanous/keystone/{n}/{param}` | f | Keystone parameter, for every output |
 | `/fanous/output/{n}/state` | s | `bound`, `lost` or `unassigned` |
 | `/fanous/output/{n}/bound` | i | 1 when the output shows on its display |
 | `/fanous/cue/current` | f | Number of the current cue, -1 for none |
@@ -356,7 +358,11 @@ sees:
 - one DMX source per layer and the **layer status** (media, position, playing)
   four times a second;
 - the **libraries and elements**: numbered folders and numbered files with name,
-  size, frame rate and length;
+  size, frame rate and length. They are sent as indexes counted from 0 without
+  gaps, in folder or file order: the first folder is library 0 whatever its
+  number. The folder or file number (the DMX value) is in the DMX range min and
+  max. Folder 0 (built-in and live inputs) is not a library: a layer playing
+  it, or media that is missing, reports library 255 and element 255;
 - **thumbnails** of the files (the library thumbnails);
 - the **video sources** it can stream: source 0 is the canvas, source 1 to N
   layer 1 to N;
@@ -365,7 +371,9 @@ sees:
   pixels wide, 4 new pictures a second (black while the layer shows nothing).
   Each is only produced while a console asks for it.
 
-MSEX versions 1.0 to 1.2 are negotiated; the highest common one is used.
+MSEX versions 1.0 to 1.2 are negotiated; the highest common one is used. A
+console that sends no ClientInformation within 2 seconds (MSEX 1.0 and 1.1
+consoles do not) is taken as 1.0 and gets the server information unasked.
 
 ## Not done yet
 
@@ -439,19 +447,21 @@ Settings, then choose Engine › **Restart Engine** (macOS applies the grant onl
 to a new engine process). Without the grant the layer reads "screen permission
 not granted" and stays black.
 
-**Readiness.** Two items on the System screen look only at inputs in use: a
-layer that shows a camera (1–20) or a display (21–28), or an entry of a
-`--scene` file with `capture:` or `screen:`. **Camera permission
+**Readiness.** Three items on the System screen look only at inputs in use: a
+layer that shows a camera (1–20) or a display (21–28), an entry of a `--scene`
+file with `capture:` or `screen:`, or timecode set to LTC. **Camera permission
 granted** fails while a layer shows a camera without the camera permission;
 **Screen recording granted** fails while a layer shows a display without the
-Screen permission. A failed item blocks show mode until a programmer
-acknowledges it, so no permission dialog appears during the show; each is
-acknowledged on its own. While a layer shows a display, Screen recording
-granted also warns with the grant: macOS asks again about once a month whether
-Fanous may record the screen, with a dialog on the main display. A
-numbered camera or display that no layer shows changes neither item. Check
-them before every show, with the show's media loaded; for a show-critical
-slides feed, a capture card is the safer path.
+Screen permission; **Microphone permission granted** fails while the timecode
+Source is LTC without the Microphone permission, whatever the Timecode switch
+says (fix: Authorize microphone on the Inputs screen). A failed item blocks
+show mode until a programmer acknowledges it, so no permission dialog appears
+during the show; each is acknowledged on its own. While a layer shows a
+display, Screen recording granted also warns with the grant: macOS asks again
+about once a month whether Fanous may record the screen, with a dialog on the
+main display. A numbered camera or display that no layer shows changes neither
+of the first two items. Check them before every show, with the show's media
+loaded; for a show-critical slides feed, a capture card is the safer path.
 
 **Syphon servers (150–169).** Every Syphon server another app on this Mac
 publishes gets the lowest free number from 150, up to 169, when the engine

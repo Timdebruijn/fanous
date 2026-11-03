@@ -135,7 +135,8 @@ Building for development, protocols and endpoints: [`docs/DEVELOPMENT.md`](docs/
 
 If you have a grandMA, Eos, ChamSys or Avolites desk and a spare Apple Silicon
 Mac, a test report is the most useful contribution right now: does the GDTF
-import, do thumbnails show up, does a layer follow your faders?
+import, do thumbnails show up (CITP reaches grandMA2, ChamSys MagicQ, Hog 4,
+Onyx and Titan; grandMA3 and Eos have none), does a layer follow your faders?
 [Open an issue](https://github.com/Timdebruijn/fanous/issues/new/choose).
 
 ## Free, and how the project is paid for
