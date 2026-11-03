@@ -564,6 +564,8 @@ public final class MediaLoader: @unchecked Sendable {
     }
 
     private func open(_ key: MediaKey, layer: Int) -> LayerPlayback? {
+        Signposts.begin("open")
+        defer { Signposts.end("open") }
         var status = LayerMediaStatus()
         status.folder = key.folder
         status.file = key.file
