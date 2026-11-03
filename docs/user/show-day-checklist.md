@@ -14,7 +14,7 @@ Mac: ______________ Fanous version: ______________
 - [ ] Layers screen: every layer you use shows its file and a green dot, no red
       message.
 - [ ] Patch screen: no red "collisions" in the toolbar; every universe you use
-      shows a green pill when the console runs.
+      shows green when the console runs.
 - [ ] Outputs screen: every output is bound to its display; blend, warp and masks
       checked with the test patterns.
 - [ ] Timecode source tested if you chase it; cues stepped through with Go.
@@ -47,7 +47,7 @@ Mac: ______________ Fanous version: ______________
 
 ## In Fanous
 
-- [ ] Console is sending: every patched universe pill in the status bar is green.
+- [ ] Console is sending: every patched universe in the status bar is green.
 - [ ] **Programmer password set** (System › Roles and passwords) and the yellow
       "web UI open" notice is gone. Operator password set if an iPad or a
       second computer is in the room.

@@ -118,7 +118,7 @@ The status bar is on every screen. From the left:
 | **SHOW MODE: ON/OFF** | Show mode (operator). When the readiness checks refuse, a popover under it lists what blocks, with **Open System**. After the engine restarted while show mode was on, "Show mode resumed after the engine restarted at HH:MM" appears next to it, as a link to System |
 | fps, ms | Frames per second, GPU p99 and CPU time; "no outputs rendering: add or assign one (Outputs)" while nothing renders |
 | dropped · 1 s | Missed and late frames over the last second |
-| One pill per universe | Green: receiving. Yellow: never received ("silent"), quiet for up to 2.5 s, or quiet but not in the patch. Red: a patched universe that received and then went quiet for more than 2.5 s. "no DMX received" instead of pills while no universe is patched and none has been heard |
+| One status per universe | Green: receiving. Yellow: never received ("silent"), quiet for up to 2.5 s, or quiet but not in the patch. Red: a patched universe that received and then went quiet for more than 2.5 s. "no DMX received" instead of them while no universe is patched and none has been heard |
 | timecode | The incoming time and its state; only while timecode is switched on or running |
 | outputs | Outputs bound to their display out of all outputs, for example 2/3: green when all are bound, yellow when one is lost or has no display. 0 when the project has no output, off while the engine renders nothing. Red under show lock when yellow, 0 or off |
 | ingest | Progress of the running transcode; only while one runs |

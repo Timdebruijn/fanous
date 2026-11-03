@@ -1008,7 +1008,7 @@ code on 2026-10-30:
   universe that the patch uses, the engine hears, or the project stores
   settings for.
   - Each row shows the name, protocol, interface, hold on signal loss, the
-    health pill of today, and the fixtures on it ("Layers 1–8, Master").
+    health status of today, and the fixtures on it ("Layers 1–8, Master").
   - A heard universe with nothing patched says "heard, nothing patched", which
     shows a console sending to the wrong universe. A universe with stored
     settings and no fixture says "not used"; its settings stay until reset.
@@ -3920,7 +3920,7 @@ and a resumed show mode shows its note); fps (frames in the last second) with
 the GPU p99 frame time and, as caption, the CPU p99 (one engine-wide figure,
 not per output; "no outputs rendering" while the compositor is off); dropped
 frames (missed + late in the last 1 s, caption "dropped · 1 s"); DMX per
-universe as a pill (green receiving; red when a patched universe has been
+universe as a status, a dot and a word (filled only when red; green receiving; red when a patched universe has been
 silent past its `lossTimeout`, default 2.5 s, and for at least 2.5 s; yellow
 otherwise: never received, not patched, or silent for less than that; "no DMX
 received" while there is none); timecode (value and state; left out while
