@@ -36,6 +36,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   0.8 s, from ProRes and from H.264). Image sequences to ProRes are drawn at 16 bits per channel too (a 16-bit PNG ramp:
   2.1 codes off on average before, now within half a code). HAP stays 8-bit, as is the format; an odd transform's
   composition stays BGRA (PR #257).
+- Fixed: on macOS 27.2 the encoder labels "canvas N", "output" and "preview" allocated on every assignment (they cost
+  nothing on 27.0), one allocation per canvas per drawn tick and per preview frame on the compositor thread, and
+  `scripts/check-mallocs.sh` was red on main. Every per-tick label is now an `NSString` of at least 12 characters made
+  once ("canvas N composite", "output (no output set)", "preview downscale"): 0 allocations each; a drawn tick in
+  `MasterIntensityTests` counts 4.01 instead of 5.01 (B117, PR #258).
 - Fixed: the release dmg was notarized and stapled but not signed itself, so Gatekeeper's check of the dmg
   (`spctl --type open`) rejected it with "no usable signature" while the app inside passed; `scripts/notarize.sh` signs
   the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).

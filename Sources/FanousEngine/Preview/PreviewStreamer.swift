@@ -237,7 +237,7 @@ public final class PreviewStreamer: @unchecked Sendable {
             skipped.wrappingAdd(1, ordering: .relaxed)
             return
         }
-        encoder.label = "preview"
+        encoder.label = Compositor.previewLabel as String
         if let set = outputSet {
             // called from the compositor tick: the slot that tick read, never a second `read()`, which could hand
             // the tick's slot back to the writer while the tick still draws from it (B71)

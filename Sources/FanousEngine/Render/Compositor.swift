@@ -64,16 +64,20 @@ public final class Compositor: @unchecked Sendable {
     /// slots (`OutputPass.overlaySlots`).
     static let mappedUniformsLength = 256 * (64 + OutputPass.overlaySlots)
 
-    /// Encoder labels made once (B117): a 13–15-byte Swift `String` bridges to a fresh `NSString` on every assignment
-    /// (1 allocation on the compositor thread each, measured), an `NSString` costs none. "canvas N", "output" and
-    /// "preview" bridge to tagged pointers and the 16-byte "secondary output" bridged free as well (0 measured), so
-    /// they stay as they are.
+    /// Encoder labels made once and at least 12 characters long (B117), each costing no allocation on the compositor
+    /// thread (measured): a 13–15-byte Swift `String` bridges to a fresh `NSString` on every assignment, and on macOS 27.2
+    /// a shorter label ("canvas 16", "output", "preview") allocated on every assignment even as an `NSString` made once
+    /// (measured 2026-11-03; none on 27.0): the allocation is in Metal's `setLabel:` with a short, tagged-pointer
+    /// `NSString` (a probe calling it directly allocated 100 in 100; Swift's bridging of the same value, none).
+    /// The 16-byte literal "secondary output" bridges free; "scratch mips" (12) costs none either.
     let mappedOutputLabel: NSString = "mapped output"
     let layerPreviewLabel: NSString = "layer preview"
     let thumbnailAtlasLabel: NSString = "thumbnail atlas"
     let thumbnailCopyLabel: NSString = "thumbnail copy"  // `ThumbnailStreamer`'s copy pass, per thumbnail frame
     let scratchConvertLabel: NSString = "scratch convert"
     let scratchMipsLabel: NSString = "scratch mips"  // the downsample encoder, once per tick
+    let outputLabel: NSString = "output (no output set)"  // tests, fanous-bench
+    nonisolated(unsafe) static let previewLabel: NSString = "preview downscale"  // `PreviewStreamer`'s pass; immutable
     /// The convert pass into a layer's scratch texture (B2): one descriptor, its texture set per layer.
     private let scratchPass = MTLRenderPassDescriptor()
 
@@ -82,7 +86,7 @@ public final class Compositor: @unchecked Sendable {
         let id: Int
         let width: Int
         let height: Int
-        let label: String
+        let label: NSString  // an encoder label, made once and long enough (see `mappedOutputLabel`)
         let textures: [MTLTexture]
         let passes: [MTLRenderPassDescriptor]
         /// Passes in a row that drew nothing: after three every texture is black, so an empty canvas is not cleared again.
@@ -91,7 +95,7 @@ public final class Compositor: @unchecked Sendable {
             self.id = id
             self.width = width
             self.height = height
-            label = "canvas \(id)"
+            label = "canvas \(id) composite" as NSString
             (textures, passes) = try Compositor.makeCanvases(device: device, width: width, height: height)
         }
     }
@@ -494,7 +498,7 @@ public final class Compositor: @unchecked Sendable {
                     canvasValid = false
                     return
                 }
-                encoder.label = canvas.label
+                encoder.label = canvas.label as String
                 encoder.setFragmentSamplerState(context.linearSampler, index: 0)
                 encoder.setFragmentSamplerState(context.nearestSampler, index: 1)
                 encoder.setFragmentSamplerState(context.mipSampler, index: 2)
@@ -531,7 +535,7 @@ public final class Compositor: @unchecked Sendable {
             } else if let output = commandBuffer.makeRenderCommandEncoder(descriptor: outputPass) {
                 // the Master pattern at full level only here, without an output set (tests, fanous-bench); the engine's
                 // displays always have one (OutputCoordinator), so on stage patterns follow the Dimmer and Blackout
-                output.label = "output"
+                output.label = outputLabel as String
                 let buffer = outputUniformBuffers[canvasIndex]
                 buffer.contents().assumingMemoryBound(to: OutputUniforms.self).pointee = {
                     var o = OutputUniforms()

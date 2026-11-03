@@ -468,7 +468,7 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
 
     | Feature | Extra allocations per tick |
     |---|---|
-    | Output pass | +3 (one more encoder; its "mapped output" label is an `NSString` made once, B117: a 13–15-byte Swift `String` bridged, and allocated, on every assignment; shorter ones bridge to tagged pointers and the 16-byte "secondary output" bridged free too) |
+    | Output pass | +3 (one more encoder; its "mapped output" label is an `NSString` made once, B117: a 13–15-byte Swift `String` bridged, and allocated, on every assignment, and on macOS 27.2 a shorter label allocated on every assignment even as an `NSString`, so every per-tick label is an `NSString` of at least 12 characters made once; the 16-byte literal "secondary output" bridges free) |
     | Each extra canvas | +3 |
     | Generators that draw this tick | +2 for the first, about +3 each further (derived): its encoder, the descriptor and label made once per generator (B112). The test card (110), colour sweep and motion test draw every tick, the clock (112) once a second, 100–107 only when made. Was +8 per tick for the test card and +9 for the clock's draw (measured `-c release`, M1 Pro, 2026-10-29) |
     | A layer that blurs or edges (B2) | about +5 per such draw: its convert encoder (2) and the three downsample dispatches of its mip levels (about 3, blur above 4 px only), the compute encoder once per tick about 0 (measured 2026-11-03 on the display path: 4 layers 42.9–43.0 per tick against 21.0–22.0 plain, 8 layers 61.9; `generateMipmaps` instead of the kernel cost about 38 per layer) |
