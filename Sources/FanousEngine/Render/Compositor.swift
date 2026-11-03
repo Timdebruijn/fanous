@@ -358,6 +358,9 @@ public final class Compositor: @unchecked Sendable {
 
     /// One compositor tick. `target` is the target presentation time (host seconds).
     public func tick(target: Double, drawable: CAMetalDrawable?) {
+        let signpost = Signposts.id(self)  // a thumbnail's compositor ticks on the library thread meanwhile
+        Signposts.begin("tick", id: signpost)
+        defer { Signposts.end("tick", id: signpost) }
         ticks.wrappingAdd(1, ordering: .relaxed)
         tickThread.store(UInt(bitPattern: pthread_self()), ordering: .relaxed)
         for i in inFlight.indices { harvest(i) }
@@ -555,7 +558,9 @@ public final class Compositor: @unchecked Sendable {
         commandBuffer.commit()
         if let oldest = inFlight[nextInFlight].buffer {
             completionWaits.wrappingAdd(1, ordering: .relaxed)
+            Signposts.begin("gpu wait")
             oldest.waitUntilCompleted()
+            Signposts.end("gpu wait")
             harvest(nextInFlight)
         }
         inFlight[nextInFlight] = InFlight(buffer: commandBuffer, slot: slot, target: target)

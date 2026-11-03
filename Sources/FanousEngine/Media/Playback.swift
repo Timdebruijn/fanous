@@ -649,6 +649,8 @@ public final class MediaLoader: @unchecked Sendable {
         syphonOpen[layer] = nil
         captureOpen[layer] = nil
         guard !key.isNone else { return nil }
+        Signposts.begin("open")
+        defer { Signposts.end("open") }
         if isNumbered(key, .syphon), let server = syphonCatalog?.entry(file: key.file) {
             status.kind = "live"
             status.codec = "syphon"
