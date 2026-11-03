@@ -51,7 +51,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   (PR #260).
 - Changed: buttons, segmented groups, tags and outline badges have a quiet hairline edge instead of the strong one
   every button carried (inputs, keycaps, dialogs and a selected row keep it), and the Layers list on a desktop is one
-  panel of rows with dividers instead of a bordered card per layer; tiles below 1320 px stay cards (PR #NNN).
+  panel of rows with dividers instead of a bordered card per layer; tiles below 1320 px stay cards (PR #261).
 
 ## 1.0.0-rc.2 — 2026-11-03
 
