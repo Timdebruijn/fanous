@@ -13,6 +13,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: the release dmg was notarized and stapled but not signed itself, so Gatekeeper's check of the dmg
   (`spctl --type open`) rejected it with "no usable signature" while the app inside passed; `scripts/notarize.sh` signs
   the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).
+- Docs: the `CAMetalDisplayLink` stall of macOS 27.0.1 was not reproduced on 27.2 (the reproduction and
+  `fanous-bench --displaylink` both ran at full rate, one run each); the drawable loop stays the shipping driver and the
+  Apple Feedback item is dropped (B8, ADR-0006 amendment 2026-11-03, PR #240).
 - Changed: the web UI's spacing sits on a 4 px grid, its overlay labels (thumbnail number, duration) share one size,
   its colours come from the app.css tokens (the mapping editor's handles included), the Patch header's three actions
   share one button style and a link styled as a button is no longer underlined (PR #236).
