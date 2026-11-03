@@ -301,15 +301,20 @@ public enum Transcoder {
             if !minimum.isNumeric || minimum.seconds <= 0 {
                 guard nominal > 0 else { throw TranscodeError.reader("unknown frame rate") }
                 frameDuration = Transcoder.standardFrameDuration(nearest: Double(nominal)) ?? CMTime(value: 1, timescale: CMTimeScale(nominal.rounded()))
-            } else if abs(minimum.seconds * Double(nominal) - 1) > 0.01 {
+            } else if abs(minimum.seconds * Double(nominal) - 1) > max(0.01, Double(nominal) / Double(minimum.timescale) + 1e-9) {
+                // (over 1 %, or over one tick of the track's timescale: 29.97 on a 1 ms timescale reports 33 ms, 1.1 % off)
                 // Variable rate: the fastest rate, so no frame is lost; the smallest gap would make a 1000 fps file of a
                 // screen recording with one short gap, so at most 60 fps.
                 // ponytail: 60 fps ceiling (no canvas runs faster today; raise it with 120 Hz canvases), and one glitch
                 // frame in a 30 fps file still doubles it to 60 fps; a percentile of the sample durations would be the fix.
                 let rate = min(60, max(1, (1 / minimum.seconds).rounded()))
                 frameDuration = Transcoder.standardFrameDuration(nearest: rate) ?? CMTime(value: 1, timescale: CMTimeScale(rate))
+            } else if let standard = Transcoder.standardFrameDuration(nearest: Double(nominal)) {
+                frameDuration = standard
+            } else if abs(Double(nominal) / Double(nominal).rounded() - 1) < 0.005 {
+                frameDuration = CMTime(value: 1, timescale: CMTimeScale(nominal.rounded()))  // 15 fps on a 1 ms timescale: 1/15, not 66 ms
             } else {
-                frameDuration = Transcoder.standardFrameDuration(nearest: Double(nominal)) ?? minimum
+                frameDuration = minimum
             }
             let alpha = formats.contains { description in
                 let flag = CMFormatDescriptionGetExtension(description, extensionKey: kCMFormatDescriptionExtension_ContainsAlphaChannel)

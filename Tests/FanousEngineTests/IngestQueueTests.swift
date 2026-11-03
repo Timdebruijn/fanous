@@ -609,11 +609,14 @@ import UniformTypeIdentifiers
     /// B19 (review of PR #221): a constant 30 fps source on a 1 ms timescale has 33 and 34 ms frames and reports a 33 ms
     /// smallest frame duration. Snapping the rate to 1/30 and sampling each output frame at its middle keep it frame for
     /// frame over 5 s; sampling at the start dropped and doubled every third frame, and a 33 ms output drifted a frame per 3 s.
-    @Test func millisecondTimestampsStayFrameForFrame() async throws {
+    /// 29.97 fps the same way (33 ms against 33.37: 1.1 % off, within one tick), over 1800 frames because the drift of a
+    /// 1/30 output against a 29.97 source shows only after about 500 frames.
+    @Test(arguments: [(30.0, 150, CMTime(value: 1, timescale: 30)), (30000.0 / 1001, 1800, CMTime(value: 1001, timescale: 30000))])
+    func millisecondTimestampsStayFrameForFrame(rate: Double, frames: Int, frameDuration: CMTime) async throws {
         let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "obs.mp4")
-        let times = (0..<150).map { CMTime(value: Int64((Double($0) * 1000 / 30).rounded()), timescale: 1000) }
+        let times = (0..<frames).map { CMTime(value: Int64((Double($0) * 1000 / rate).rounded()), timescale: 1000) }
         try await Self.writeH264(to: source, presentationTimes: times, timescale: 1000)
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
         queue.start()
@@ -622,10 +625,10 @@ import UniformTypeIdentifiers
         #expect(await Self.wait(for: job.id, in: queue) == .done)
 
         let track = try #require(try await AVURLAsset(url: job.destination).loadTracks(withMediaType: .video).first)
-        let (rate, minimum) = try await track.load(.nominalFrameRate, .minFrameDuration)
-        #expect(abs(rate - 30) < 0.01 && minimum == CMTime(value: 1, timescale: 30), "\(rate) fps, \(minimum)")
+        let (nominal, minimum) = try await track.load(.nominalFrameRate, .minFrameDuration)
+        #expect(abs(Double(nominal) - rate) < 0.01 && minimum == frameDuration, "\(nominal) fps, \(minimum)")
         let bars = try await Self.barPositions(of: job.destination)
-        #expect(bars.count == 150 && bars.enumerated().allSatisfy { abs($0.element - $0.offset * 8 % 304) <= 2 }, "bars \(bars)")
+        #expect(bars.count == frames && bars.enumerated().allSatisfy { abs($0.element - $0.offset * 8 % 304) <= 2 }, "\(bars.count) frames, bars \(bars.prefix(40))")
     }
 
     @Test func rotatedSourceIsBakedUpright() async throws {
