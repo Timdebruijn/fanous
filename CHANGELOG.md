@@ -45,7 +45,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   folder that does not exist: the endpoint answers 500 and an upload 400 (B142, PR #241).
 - Changed: a status (DMX universes, readiness, timecode, power, layer sync) is a dot and a word, filled only when red;
   the role badge is the role's text colour on a quiet surface instead of a filled accent pill. With the shorter labels
-  of PR #243 the status bar now fits one row from 1383 px wide (PR #NNN).
+  of PR #243 the status bar now fits one row from 1383 px wide (PR #259).
 
 ## 1.0.0-rc.2 — 2026-11-03
 
