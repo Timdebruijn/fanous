@@ -733,9 +733,10 @@ fix from FOH without touching the hand alignment.
 
 ## Not done yet
 
-- **Hot-plug** (unplug and replug) is only partly tested: through unit tests and
-  by binding and releasing the built-in display. Test it on your machine before
-  the show (B34).
+- **Hot-plug** (unplug and replug) is tested with one external display: unplug,
+  replug on the same and on another port, a mode change and show mode all
+  rebind within a frame of the display event. With two or more external
+  displays it rests on unit tests; test it on your machine before the show (B34).
 - Dithering is a simple noise function; if you see banding on a projector, tell
   the developers (B34).
 - Not available: per-output Syphon, Syphon for canvases other than Canvas 1,

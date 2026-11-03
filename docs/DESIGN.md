@@ -2293,6 +2293,17 @@ applied entirely on the GPU in the final output pass" is satisfied.
 - The internal display is an ordinary display; using it as an output shows a
   yellow note in the Outputs screen ("the local UI shell will be hidden").
 
+**Checked 2026-11-03 (B34, B56)** on a U32R59x over Thunderbolt, measured in
+`fanousd.log` and `live.outputs`: unplug releases the window and goes headless
+15 ms after the display event (the output is `lost`); a replug on the same or
+another port rebinds by the same UUID and the display is clock master again
+15–20 ms after the event; a refresh-rate change under a bound output replaces
+the window with one master; show mode applies a wanted mode in 0.5 s and
+restores it on leaving (ledger written and removed); after an unplug/replug in
+show mode the display came back in the applied mode, so the re-apply path was
+not exercised. Two external displays were not available, so "other outputs
+unaffected" rests on the `OutputBinding` tests.
+
 ### 9.7 Test patterns
 
 Grid (with pixel-pitch labels), colour bars (SMPTE-style + full-field
