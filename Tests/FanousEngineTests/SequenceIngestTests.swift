@@ -33,7 +33,7 @@ struct SequenceIngestTests {
         }
         let output = directory.appending(path: "ramp.mov")
         let frames = try SequenceIngest.frames(in: directory)
-        try await offPool { try SequenceIngest.convert(frames: frames, to: output, fps: 25, codec: .proRes422HQ) }
+        _ = try await offPool { try SequenceIngest.convert(frames: frames, to: output, fps: 25, codec: .proRes422HQ) }
         let error = try await IngestQueueTests.rampError(output)
         #expect(error.mean < 0.5 && error.max <= 2, "ProRes: \(error)")
     }
