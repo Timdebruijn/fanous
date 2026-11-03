@@ -240,7 +240,7 @@
     <line x1={at.x * W} y1={at.y * H} x2={p.x * W} y2={p.y * H} style:stroke="var(--text-1)" stroke-width="1.5" vector-effect="non-scaling-stroke" />
     <g class="handle" class:sel={selected === h.path} onpointerdown={(e) => down(e, h.path)} role="button" aria-label={h.path} tabindex="-1">
       <circle cx={p.x * W} cy={p.y * H} r="36" fill="transparent" />
-      <circle cx={p.x * W} cy={p.y * H} r="7" style:fill={selected === h.path ? 'var(--text-1)' : colours[h.group % colours.length]} style:stroke="var(--ground)" stroke-width="2" vector-effect="non-scaling-stroke" />
+      <circle cx={p.x * W} cy={p.y * H} r="7" style:fill={selected === h.path ? 'var(--text-1)' : colours[h.group % colours.length]} style:stroke={selected === h.path ? 'var(--accent)' : 'var(--ground)'} stroke-width="2" vector-effect="non-scaling-stroke" />
     </g>
   {/each}
   {#each points.filter((h) => !isKnob(h.path)) as h (h.path)}
@@ -250,7 +250,7 @@
     <g class="handle" class:sel onpointerdown={(e) => down(e, h.path)} role="button" aria-label={h.path} tabindex="-1">
       <circle cx={p.x * W} cy={p.y * H} r="36" fill="transparent" />
       <!-- a subtract mask's points are rings in the colour, an add mask's (and every other) filled -->
-      <circle cx={p.x * W} cy={p.y * H} r={mode === 'mesh' ? 9 : 12} style:fill={sel ? 'var(--text-1)' : subtract(h.path) ? 'var(--ground)' : colour} style:stroke={subtract(h.path) && !sel ? colour : 'var(--ground)'} stroke-width="3" vector-effect="non-scaling-stroke" />
+      <circle cx={p.x * W} cy={p.y * H} r={mode === 'mesh' ? 9 : 12} style:fill={sel ? 'var(--text-1)' : subtract(h.path) ? 'var(--ground)' : colour} style:stroke={sel ? 'var(--accent)' : subtract(h.path) ? colour : 'var(--ground)'} stroke-width="3" vector-effect="non-scaling-stroke" />
     </g>
   {/each}
 </svg>
@@ -261,5 +261,4 @@
   .mapper.adding { cursor: crosshair; }
   .handle { cursor: grab; }
   .handle:active { cursor: grabbing; }
-  .handle.sel circle:last-child { stroke: var(--accent); }
 </style>
