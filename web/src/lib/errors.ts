@@ -23,7 +23,7 @@ export const TOAST_MS = 8_000;
 export function errorHint(code: string): string {
   switch (code) {
     case 'showLocked':
-      return 'Show lock is on — press L or the LOCKED tag in the top bar to unlock (programmer).';
+      return 'Show lock is on — press L or the Locked tag in the top bar to unlock (programmer).';
     case 'forbidden':
       return 'Not allowed for this role — click the role tag in the top bar and log in as programmer.';
     case 'notReady':

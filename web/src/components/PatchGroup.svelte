@@ -204,7 +204,7 @@
         <button type="button" class="chip tone-{st.tone}" data-fixture={r.name} aria-pressed={r.name === selected} aria-label={rowSummary(r, policy)} title={st.text}
           onclick={() => toggle(r.name)}>
           <span class="sw" style:background={r.colour}></span>
-          <span class="n">{group.kind === 'machine' ? r.name : r.number}{#if r.offBlock}<span class="off">OFF</span>{/if}</span>
+          <span class="n">{group.kind === 'machine' ? r.name : r.number}{#if r.offBlock}<span class="off">off</span>{/if}</span>
           <span class="at mono">{at(r)}</span>
         </button>
       {/each}
@@ -226,7 +226,7 @@
               <button type="button" class="chip wide tone-{st.tone}" data-fixture={r.name} aria-pressed={r.name === selected} aria-label={rowSummary(r, policy)}
                 onclick={() => toggle(r.name)}>
                 <span class="sw" style:background={r.colour}></span>
-                <span class="n">{r.typeLabel}{#if r.offBlock}<span class="off">OFF</span>{/if}</span>
+                <span class="n">{r.typeLabel}{#if r.offBlock}<span class="off">off</span>{/if}</span>
                 <span class="at mono">{r.patched && r.universe ? slotText({ universe: r.universe, address: r.address }, r.footprint) : `${r.footprint} ch`}</span>
               </button>
               <span class="status tone-{st.tone}">{st.text}</span>
@@ -280,7 +280,7 @@
   .chip.tone-bad { border-color: var(--red); background: var(--red-bg); }
   .chip .sw { grid-area: sw; width: 10px; height: 10px; border-radius: 3px; border: 1px solid var(--line-strong); }
   .chip .n { grid-area: n; font-weight: 600; }
-  .chip .off { margin-left: 4px; font-size: 11px; font-weight: 700; color: var(--yellow); letter-spacing: 0.04em; }
+  .chip .off { margin-left: 4px; font-size: 11px; font-weight: 700; color: var(--yellow); }
   .chip .at { grid-area: at; font-size: 11px; color: var(--text-2); }
   .chip.wide { min-width: 0; }
   .line { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }

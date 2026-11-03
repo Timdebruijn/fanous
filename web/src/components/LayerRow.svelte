@@ -144,7 +144,7 @@
   .c-src { align-items: flex-start; }
   .pol { height: auto; min-height: 24px; padding: 2px 6px; white-space: normal; line-height: 1.2; font-size: 11px; }
   .c-dot { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-  .chip { font: 700 10px var(--font-ui); letter-spacing: 0.04em; text-align: center; line-height: 1.1; color: var(--text-2); }
+  .chip { font: 700 10px var(--font-ui); text-align: center; line-height: 1.1; color: var(--text-2); }
   .chip-red { color: var(--red); }
   .chip-green { color: var(--green); }
   /* column labels: spoken on the desktop row (the heads are visual), drawn on the tile (no heads there) */
@@ -161,7 +161,7 @@
     .c-vals { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 20px; grid-column: 1 / -1; }
     .c-int { flex: 1 1 90px; }
     .c-mode { flex: 1 1 110px; }
-    .lbl { position: static; width: auto; height: auto; overflow: visible; clip-path: none; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+    .lbl { position: static; width: auto; height: auto; overflow: visible; clip-path: none; font-size: 11px; font-weight: 600; color: var(--text-3); }
     .c-media .lbl { display: none; }
   }
 </style>

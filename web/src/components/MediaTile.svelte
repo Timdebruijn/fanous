@@ -99,7 +99,6 @@
   .dur { position: absolute; right: 4px; bottom: 4px; height: 18px; padding: 0 5px; border-radius: 3px; background: rgba(11, 12, 14, 0.8); font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; }
   .name { display: block; font-weight: 500; }
   .badges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 24px; }
-  .codec { text-transform: uppercase; }
   .reason { display: block; overflow-wrap: anywhere; }
   .actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 8px 8px; }
   .actions .select { flex: 1 1 120px; min-width: 0; }
