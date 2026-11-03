@@ -155,7 +155,9 @@ public final class HTTPSServer: @unchecked Sendable {
             status: 200,
             headers: [
                 HTTPHeader("Content-Type", MIMEType.forPath(relative)),
-                HTTPHeader("Cache-Control", relative == "index.html" ? "no-cache" : "max-age=3600"),
+                // index.html no-store: the shell's first request carries its token in the query, and a cached copy would keep
+                // that address on disk (WebKit's network cache)
+                HTTPHeader("Cache-Control", relative == "index.html" ? "no-store" : "max-age=3600"),
                 HTTPHeader(
                     "Content-Security-Policy",
                     "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'"),

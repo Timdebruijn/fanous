@@ -37,6 +37,15 @@ public enum AppPaths {
     public static var settingsFile: URL { applicationSupport.appending(path: "settings.json") }
     /// Per-install random token the local shell presents to authenticate as programmer (mode 0600).
     public static var shellTokenFile: URL { applicationSupport.appending(path: "shell-token") }
+    /// The web UI's address for the shell: `base` with the token as `?token=` (DESIGN.md §12), which the UI keeps in memory
+    /// and drops from the address at once; `base` as it is while the engine has not written the file yet (its first start).
+    public static func shellPageURL(_ base: URL, tokenFile: URL = shellTokenFile) -> URL {
+        guard let token = try? String(contentsOf: tokenFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty,
+            var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
+        else { return base }
+        components.queryItems = [URLQueryItem(name: "token", value: token)]
+        return components.url ?? base
+    }
     /// The current project document until project bundles exist (DESIGN.md §11.5).
     public static var projectFile: URL { applicationSupport.appending(path: "project.json") }
     /// Project versions next to the project (DESIGN.md §11.5, B23): `<timestamp>-<name>.json`.

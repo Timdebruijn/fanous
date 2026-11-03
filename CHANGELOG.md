@@ -15,6 +15,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   stored and read back as (100, 50, 25) and darkened again on stage. Ingest now un-premultiplies each drawn frame
   (vImage) for ProRes 4444 and HAP Alpha: it comes back as (200, 100, 50, 128). An opaque codec keeps the edge over
   black, as before (PR #263).
+- Fixed: the app window on the Mac came up with the highest role that has no password, not as programmer, although the
+  guide says it is always programmer: the shell never passed its token. It now opens the UI with `?token=` from the
+  token file on every load (the retries while the engine starts, Start/Restart Engine, Engine › Reload UI, and the
+  reloads WebKit makes itself: a crashed page process, Reload or Back in the context menu); the UI keeps it in memory
+  and drops it from the address at once, as DESIGN §12 describes. `index.html` is sent `no-store`, so that address is
+  not kept in WebKit's disk cache (PR #264).
 - Engine: the release build has no compiler warnings in Fanous's own code (the vendored Snappy, HAP and Syphon sources keep
   theirs): the deprecated `String(cString:)` on an array and swift-log's deprecated
   `log(level:message:metadata:source:file:function:line:)` are replaced, and the Swift 6 concurrency warnings on values
