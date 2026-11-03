@@ -90,8 +90,8 @@ every canvas. The clock master is set on Canvas 1 too.
 The size and rate are saved in the project and used at every start. Developers
 who start the engine with `--scene FILE` override them: the scene file's canvas
 wins for that run and is shown (and saved, on the next edit) in the project.
-Keep the frame rate equal to the refresh rate of the displays (see "Not done
-yet": display modes are not set by Fanous).
+Keep the frame rate equal to the refresh rate of the displays; show mode sets
+each output's Mode (see [Display modes](#display-modes)).
 
 After you add an output, a yellow bar says **Next: align this output**:
 **Align this output** opens the Warp & Slices tab for that output, **Later**
