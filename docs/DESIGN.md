@@ -1008,7 +1008,7 @@ code on 2026-10-30:
   universe that the patch uses, the engine hears, or the project stores
   settings for.
   - Each row shows the name, protocol, interface, hold on signal loss, the
-    health pill of today, and the fixtures on it ("Layers 1–8, Master").
+    health status of today, and the fixtures on it ("Layers 1–8, Master").
   - A heard universe with nothing patched says "heard, nothing patched", which
     shows a console sending to the wrong universe. A universe with stored
     settings and no fixture says "not used"; its settings stay until reset.
@@ -1146,7 +1146,7 @@ guide changes with the step that changes what it describes (4–6).
   patched.
 - Status words show in a chip's tooltip and accessible name, next to each
   Output and Keystone, and in the inline editor; a layer chip shows its number
-  and address (with its universe when that is not the block's), and OFF when
+  and address (with its universe when that is not the block's), and "off" when
   it is off the block. A blocker is also printed on the block line, above Move
   Master and outputs. Layers above 32 and outputs above 8 get a caption.
 - A block that would run past the last universe (`slot` nil) is refused with
@@ -3918,13 +3918,13 @@ Global chrome (all screens): a fixed **status bar** (top) and the screen
 switcher (left rail, icons + labels, collapses on iPad portrait).
 
 **Status bar**, left to right (`StatusBar.svelte`): the show lock badge
-(LOCKED / UNLOCKED, a button) and the show mode badge (SHOW MODE: ON / OFF, a
+(Locked / Unlocked, a button) and the show mode badge (Show mode: on / off, a
 button; a refused entry opens a popover naming the blocking readiness items,
 and a resumed show mode shows its note); fps (frames in the last second) with
 the GPU p99 frame time and, as caption, the CPU p99 (one engine-wide figure,
 not per output; "no outputs rendering" while the compositor is off); dropped
 frames (missed + late in the last 1 s, caption "dropped · 1 s"); DMX per
-universe as a pill (green receiving; red when a patched universe has been
+universe as a status, a dot and a word (filled only when red; green receiving; red when a patched universe has been
 silent past its `lossTimeout`, default 2.5 s, and for at least 2.5 s; yellow
 otherwise: never received, not patched, or silent for less than that; "no DMX
 received" while there is none); timecode (value and state; left out while
@@ -3943,8 +3943,10 @@ refused show mode (the popover). A decoder error on a visible layer is red on
 its Layers row, not in the bar. The frame time has room for its widest
 value ("120 fps 999.9 ms"), so it no longer changes the bar's width and wraps
 or unwraps it under a drag (B134): with a fresh engine the bar fits one row
-from 1470 px and takes two at 1440. Events still change its width: a universe
-going active or lost, a lagging client, no output rendering.
+from 1383 px and takes two at 1382 (measured 2026-11-03, with its labels in
+sentence case and its statuses without a fill; 1470 and 1460 before both).
+Events still change its width: a universe going active or lost, a lagging
+client, no output rendering.
 
 1. **Layers / Mixer** — one row (or tile on narrow screens) per layer: live
    thumbnail, layer name + canvas, resolved media ("12 / 4 · intro_loop.mov ·

@@ -235,18 +235,18 @@ export function mediaLine(layer: LayerStatus | undefined): { text: string; title
     case 'still':
       return line(`${layer.folder} / ${layer.file} · ${name}`, `Still · ${layer.width}×${layer.height}`, 'normal');
     default:
-      return line(`${layer.folder} / ${layer.file} · ${name}`, `${codecLabel(layer.codec)} · ${layer.height}p${fpsText(layer.fps)}`, 'normal');
+      return line(`${layer.folder} / ${layer.file} · ${name}`, `${codecLabel(layer.codec)} · ${layer.pixelAspect ? `${layer.width}×` : ''}${layer.height}p${fpsText(layer.fps)}`, 'normal');
   }
 }
 
 /** Status dot plus the same state as a short word, so the colour never carries it alone. */
 export function layerState(layer: LayerStatus | undefined): { dot: DotColor; label: string; chip: string } {
-  if (!layer || layer.kind === 'none') return { dot: 'off', label: 'No media', chip: 'NO MEDIA' };
-  if (layer.kind === 'missing') return { dot: 'red', label: 'Media file is missing', chip: 'MISSING FILE' };
+  if (!layer || layer.kind === 'none') return { dot: 'off', label: 'No media', chip: 'No media' };
+  if (layer.kind === 'missing') return { dot: 'red', label: 'Media file is missing', chip: 'Missing file' };
   // Syphon: "not running" or "could not connect"
-  if (layer.kind === 'live' && layer.error) return { dot: 'red', label: `Live input ${layer.error}`, chip: layer.error.toUpperCase() };
-  if (layer.error) return { dot: 'red', label: 'Decoder error', chip: 'DECODER ERROR' };
-  if (layer.kind === 'live') return { dot: 'green', label: 'Live input', chip: 'LIVE' };
+  if (layer.kind === 'live' && layer.error) return { dot: 'red', label: `Live input ${layer.error}`, chip: layer.error[0].toUpperCase() + layer.error.slice(1) };
+  if (layer.error) return { dot: 'red', label: 'Decoder error', chip: 'Decoder error' };
+  if (layer.kind === 'live') return { dot: 'green', label: 'Live input', chip: 'Live' };
   return { dot: 'green', label: 'Media OK', chip: 'OK' };
 }
 
