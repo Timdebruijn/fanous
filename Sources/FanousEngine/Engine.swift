@@ -584,7 +584,6 @@ public final class Engine: @unchecked Sendable {
         oscFeedback?.start()  // the fixed target is notified once everything it reads exists
 
         let startedAt = self.startedAt
-        let webRoot = options.webRoot
         /// REST calls that change state need the programmer role: the session cookie, the shell token as a bearer, or an open role.
         @Sendable func allowed(_ role: Role, _ request: HTTPRequest) -> Bool {
             let bearer = request.header("Authorization").flatMap { $0.hasPrefix("Bearer ") ? String($0.dropFirst(7)) : nil }
@@ -1586,7 +1585,7 @@ public final class Engine: @unchecked Sendable {
 
     private func libraryRootPutBack(_ running: String, refused root: String, _ refusal: CommandError) {
         logger.warning("library root not changed", metadata: ["root": "\(root)", "reason": "\(refusal.message)"])
-        guard let pointer = try? JSONPointer("/library/root") else { return }
+        let pointer: JSONPointer = "/library/root"
         libraryRootInProject.withLock { $0 = running }  // the correction below is not a change to apply
         store?.correct(.string(running), at: pointer)
     }

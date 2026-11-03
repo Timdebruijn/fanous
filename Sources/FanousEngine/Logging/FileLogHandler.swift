@@ -62,14 +62,11 @@ public struct FileLogHandler: LogHandler {
         set { metadata[key] = newValue }
     }
 
-    public func log(
-        level: Logger.Level, message: Logger.Message, metadata: Logger.Metadata?, source: String,
-        file: String, function: String, line: UInt
-    ) {
-        let merged = self.metadata.merging(metadata ?? [:]) { $1 }
+    public func log(event: LogEvent) {
+        let merged = self.metadata.merging(event.metadata ?? [:]) { $1 }
         let suffix = merged.isEmpty ? "" : " " + merged.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: " ")
         let stamp = Date.ISO8601FormatStyle(includingFractionalSeconds: true).format(Date())
-        sink.write("\(stamp) \(level) [\(label)] \(message)\(suffix)\n")
+        sink.write("\(stamp) \(event.level) [\(label)] \(event.message)\(suffix)\n")
     }
 }
 

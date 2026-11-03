@@ -228,7 +228,8 @@ private final class ClientConnection: @unchecked Sendable {
                 send(.text(400, "bad request"), includeBody: true, close: true)
                 return false
             }
-            guard var (request, headLength) = parsed else { return true }
+            guard let (head, headLength) = parsed else { return true }
+            var request = head
             request.remoteAddress = remoteAddress
             if WebSocketHandshake.isUpgrade(request) {
                 buffer.removeFirst(headLength)

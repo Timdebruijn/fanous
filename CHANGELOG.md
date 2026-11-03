@@ -10,6 +10,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine: the release build has no compiler warnings in Fanous's own code (the vendored Snappy, HAP and Syphon sources keep
+  theirs): the deprecated `String(cString:)` on an array and swift-log's deprecated
+  `log(level:message:metadata:source:file:function:line:)` are replaced, and the Swift 6 concurrency warnings on values
+  handed to Core Video, VideoToolbox, Network and CoreMIDI callbacks or another thread are settled with capture lists or
+  a `nonisolated(unsafe)` whose comment says why it is safe; none was a data race (PR #251).
 - Fixed: the release dmg was notarized and stapled but not signed itself, so Gatekeeper's check of the dmg
   (`spctl --type open`) rejected it with "no usable signature" while the app inside passed; `scripts/notarize.sh` signs
   the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).
