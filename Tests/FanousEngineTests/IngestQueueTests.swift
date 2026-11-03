@@ -10,6 +10,7 @@ import Logging
 import Metal
 import Testing
 import UniformTypeIdentifiers
+import VideoToolbox
 
 @testable import FanousEngine
 
@@ -736,6 +737,86 @@ import UniformTypeIdentifiers
         func pixel(_ x: Int, _ y: Int) -> (r: UInt8, g: UInt8) { (base[y * stride + x * 4 + 2], base[y * stride + x * 4 + 1]) }
         #expect(pixel(4, 4).r > 200 && pixel(4, 315).r > 200)
         #expect(pixel(171, 4).r < 40 && pixel(171, 315).r < 40)
+    }
+
+    /// A 10-bit source keeps its precision in ProRes: a grey ramp of all 877 video-range luma codes in 10-bit HEVC comes
+    /// out of a ProRes 422 HQ ingest within a code of the ramp. Through an 8-bit intermediate (BGRA, before) it was 1.8
+    /// codes off on average and up to 5 (measured; VideoToolbox dithers the 8-bit steps).
+    @Test func tenBitSourceKeepsItsPrecisionInProRes() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appending(path: "ramp10.mov")
+        try await offPool { try Self.writeTenBitRamp(to: source) }
+        let before = try await Self.rampError(source)
+        #expect(before.max <= 1, "source: \(before)")  // the source itself is 10-bit
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        queue.start()
+        defer { queue.stop() }
+        let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_ramp.mov"), kind: .transcode(codec: .proRes422HQ)))
+        #expect(await Self.wait(for: job.id, in: queue) == .done)
+        let after = try await Self.rampError(job.destination)
+        #expect(after.mean < 0.5 && after.max <= 2, "ProRes: \(after)")  // measured 0.14 and 1
+    }
+
+    /// 1024×64, 5 frames at 25 fps, HEVC Main 10: luma 64 + x · 876 / 1023 (every 10-bit video-range code), neutral chroma.
+    static func writeTenBitRamp(to url: URL) throws {
+        let (width, height) = (1024, 64)
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.hevc, AVVideoWidthKey: width, AVVideoHeightKey: height,
+            AVVideoCompressionPropertiesKey: [AVVideoProfileLevelKey: kVTProfileLevel_HEVC_Main10_AutoLevel, AVVideoQualityKey: 1.0],
+        ])
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
+            kCVPixelBufferWidthKey as String: width, kCVPixelBufferHeightKey as String: height,
+        ])
+        writer.add(input)
+        guard writer.startWriting() else { throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "start") }
+        writer.startSession(atSourceTime: .zero)
+        for frame in 0..<5 {
+            var buffer: CVPixelBuffer?
+            CVPixelBufferPoolCreatePixelBuffer(nil, try #require(adaptor.pixelBufferPool), &buffer)
+            let pixels = try #require(buffer)
+            CVPixelBufferLockBaseAddress(pixels, [])
+            // x420: 16-bit words, the 10-bit code in the high bits
+            let luma = CVPixelBufferGetBaseAddressOfPlane(pixels, 0)!.assumingMemoryBound(to: UInt16.self)
+            let lumaStride = CVPixelBufferGetBytesPerRowOfPlane(pixels, 0) / 2
+            for y in 0..<height { for x in 0..<width { luma[y * lumaStride + x] = UInt16(64 + x * 876 / (width - 1)) << 6 } }
+            let chroma = CVPixelBufferGetBaseAddressOfPlane(pixels, 1)!.assumingMemoryBound(to: UInt16.self)
+            let chromaStride = CVPixelBufferGetBytesPerRowOfPlane(pixels, 1) / 2
+            for y in 0..<height / 2 { for x in 0..<width { chroma[y * chromaStride + x] = 512 << 6 } }
+            CVPixelBufferUnlockBaseAddress(pixels, [])
+            while !input.isReadyForMoreMediaData { usleep(500) }
+            guard adaptor.append(pixels, withPresentationTime: CMTime(value: Int64(frame), timescale: 25)) else {
+                throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "append")
+            }
+        }
+        input.markAsFinished()
+        let done = DispatchSemaphore(value: 0)
+        writer.finishWriting { done.signal() }
+        done.wait()
+        guard writer.status == .completed else { throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "finish") }
+    }
+
+    /// How far the middle row of `url`'s first frame is from `writeTenBitRamp`'s ramp, in 10-bit luma codes, read as
+    /// 16-bit 4:2:2 (`v216`: Cb Y0 Cr Y1).
+    static func rampError(_ url: URL) async throws -> (mean: Double, max: Int) {
+        let asset = AVURLAsset(url: url)
+        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_422YpCbCr16])
+        reader.add(output)
+        reader.startReading()
+        let sample = try #require(output.copyNextSampleBuffer())
+        reader.cancelReading()
+        let buffer = try #require(CMSampleBufferGetImageBuffer(sample))
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        let row = CVPixelBufferGetBaseAddress(buffer)!.advanced(by: CVPixelBufferGetHeight(buffer) / 2 * CVPixelBufferGetBytesPerRow(buffer))
+            .assumingMemoryBound(to: UInt16.self)
+        let width = CVPixelBufferGetWidth(buffer)
+        let errors = (0..<width).map { x in abs(Int(row[x / 2 * 4 + 1 + x % 2 * 2] >> 6) - (64 + x * 876 / (width - 1))) }
+        return (Double(errors.reduce(0, +)) / Double(width), errors.max() ?? 0)
     }
 
     /// B18: a rotated source with alpha keeps its alpha. The quarter turn is done in the pixels (vImage), not by a

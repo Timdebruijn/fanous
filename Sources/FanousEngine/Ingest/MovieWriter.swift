@@ -55,9 +55,11 @@ public final class MovieWriter {
     /// depth, B19): feed it with `appendAudio(_:)` in step with the video (the writer interleaves sparsely and stalls if
     /// audio runs far behind). `frameDuration` overrides `1/fps` for rational rates; `fps` stays the rounded integer rate.
     /// `pixelAspect` (horizontal, vertical spacing) tags the track for anamorphic frames (B19); nil is square pixels.
+    /// `pixelFormat` is what `append` gets for ProRes (BGRA, or 64ARGB to keep more than 8 bits); HAP always takes BGRA.
     public init(
         url: URL, width: Int, height: Int, fps: Int32, frameDuration: CMTime? = nil, codec: Codec, audio: Bool = false,
-        externalAudio: CMAudioFormatDescription? = nil, pixelAspect: (horizontal: Int, vertical: Int)? = nil
+        externalAudio: CMAudioFormatDescription? = nil, pixelAspect: (horizontal: Int, vertical: Int)? = nil,
+        pixelFormat: OSType = kCVPixelFormatType_32BGRA
     ) throws {
         precondition(!(audio && externalAudio != nil), "audio is either the test tone or caller-supplied")
         let duration = frameDuration ?? CMTime(value: 1, timescale: fps)
@@ -110,7 +112,7 @@ public final class MovieWriter {
             adaptor = AVAssetWriterInputPixelBufferAdaptor(
                 assetWriterInput: input,
                 sourcePixelBufferAttributes: [
-                    kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                    kCVPixelBufferPixelFormatTypeKey as String: pixelFormat,
                     kCVPixelBufferWidthKey as String: width, kCVPixelBufferHeightKey as String: height,
                 ])
         }
@@ -157,10 +159,10 @@ public final class MovieWriter {
         writer.startSession(atSourceTime: .zero)
     }
 
-    /// A BGRA pixel buffer from `pixelBufferPool` (ProRes) or any BGRA buffer (HAP).
+    /// Pixel buffers in the init's `pixelFormat` (ProRes); nil for HAP, which takes any BGRA buffer.
     public var pixelBufferPool: CVPixelBufferPool? { adaptor?.pixelBufferPool }
 
-    /// A BGRA pixel buffer of the movie's size: from `pixelBufferPool` (ProRes) or a new one (HAP).
+    /// A pixel buffer of the movie's size: from `pixelBufferPool` (ProRes) or a new BGRA one (HAP).
     public func makePixelBuffer() throws -> CVPixelBuffer {
         var buffer: CVPixelBuffer?
         if let pool = pixelBufferPool {
