@@ -52,12 +52,12 @@ Mac: ______________ Fanous version: ______________
       "web UI open" notice is gone. Operator password set if an iPad or a
       second computer is in the room.
 - [ ] System screen: press **Run checks**. Work through the Readiness list (below).
-- [ ] Switch **Show mode** on (the SHOW MODE button in the status bar, or the
+- [ ] Switch **Show mode** on (the Show mode button in the status bar, or the
       switch on the System screen). It refuses while an item blocks and says
       which.
 - [ ] Timecode on, state **Locked**, if you chase timecode.
 - [ ] Press **L** (programmer) to **lock the show**. The status bar says
-      LOCKED. Unlocking while show mode is on asks for confirmation.
+      Locked. Unlocking while show mode is on asks for confirmation.
 - [ ] Look at "dropped" in the status bar: it should read 0 and stay there.
 - [ ] **Save a named version before doors**: System › Project versions ›
       **Save version…**, a name such as "Doors 19:30". It never expires, works

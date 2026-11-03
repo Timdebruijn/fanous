@@ -114,8 +114,8 @@ The status bar is on every screen. From the left:
 
 | Item | What it says |
 |---|---|
-| **UNLOCKED** / **LOCKED** | The show lock; press it or L (programmer) |
-| **SHOW MODE: ON/OFF** | Show mode (operator). When the readiness checks refuse, a popover under it lists what blocks, with **Open System**. After the engine restarted while show mode was on, "Show mode resumed after the engine restarted at HH:MM" appears next to it, as a link to System |
+| **Unlocked** / **Locked** | The show lock; press it or L (programmer) |
+| **Show mode: on/off** | Show mode (operator). When the readiness checks refuse, a popover under it lists what blocks, with **Open System**. After the engine restarted while show mode was on, "Show mode resumed after the engine restarted at HH:MM" appears next to it, as a link to System |
 | fps, ms | Frames per second, GPU p99 and CPU time; "no outputs rendering: add or assign one (Outputs)" while nothing renders |
 | dropped · 1 s | Missed and late frames over the last second |
 | One pill per universe | Green: receiving. Yellow: never received ("silent"), quiet for up to 2.5 s, or quiet but not in the patch. Red: a patched universe that received and then went quiet for more than 2.5 s. "no DMX received" instead of pills while no universe is patched and none has been heard |
@@ -133,7 +133,7 @@ rendering while the show is locked; a patched universe that went silent, a lost
 sync master.
 
 Refused commands show a yellow banner with the next step ("Show lock is on:
-press L or the LOCKED tag to unlock", "Not allowed for this role: log in as
+press L or the Locked tag to unlock", "Not allowed for this role: log in as
 programmer"). It disappears after 10 seconds; **Recent messages** on the banner
 lists the last 20.
 
@@ -142,8 +142,8 @@ Mac: it is the engine's ceiling, not a measurement of this Mac (B145). **Add
 layer** on the Patch screen stops at N. What a Mac plays without dropping
 frames can be far lower, at 4K for example: see the performance advice in
 [media-library.md](media-library.md). Each layer row shows its state as a word
-next to the dot (OK, LIVE, NO MEDIA, MISSING FILE, DECODER ERROR, or for a live
-input that fails the reason itself, such as NOT RUNNING), and on the left a live
+next to the dot (OK, Live, No media, Missing file, Decoder error, or for a live
+input that fails the reason itself, such as Not running), and on the left a live
 picture of that layer alone, four times a second (colour, effects and position
 included). A layer that shows nothing (no media, intensity 0) shows the library
 thumbnail of its file instead. The live pictures stop while the tab is in the
