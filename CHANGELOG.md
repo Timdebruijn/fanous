@@ -10,6 +10,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Fixed: ingest to ProRes went through 8-bit BGRA frames, so a 10-bit source (HEVC from a phone or camera, 10-bit ProRes
+  sent through ingest) lost its low bits: a 10-bit grey ramp came out 1.8 codes off on average and up to 5. ProRes ingest
+  now reads 16-bit RGB (`64ARGB`): within a code (0.14 on average), and faster (360 frames of 1080p60 in 0.5 s instead of
+  0.8 s, from ProRes and from H.264). HAP stays 8-bit, as is the format; an odd transform's composition stays BGRA.
 - Fixed: the release dmg was notarized and stapled but not signed itself, so Gatekeeper's check of the dmg
   (`spctl --type open`) rejected it with "no usable signature" while the app inside passed; `scripts/notarize.sh` signs
   the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).
