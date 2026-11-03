@@ -33,5 +33,5 @@
 </div>
 
 <style>
-  .colour { display: flex; flex-direction: column; gap: 10px; border-radius: 8px; }
+  .colour { display: flex; flex-direction: column; gap: 12px; border-radius: 8px; }
 </style>

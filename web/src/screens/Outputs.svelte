@@ -798,7 +798,7 @@
   .wallbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
   .wallbar .caption { flex: 1 1 280px; }
   .out { flex-direction: column; align-items: stretch; gap: 4px; min-height: var(--touch); }
-  .out .head { display: flex; align-items: center; gap: 10px; }
+  .out .head { display: flex; align-items: center; gap: 8px; }
   .nm { font-weight: 600; font-size: 15px; }
   .wallbadge { align-self: flex-start; }
   .tone-red { color: var(--red); }

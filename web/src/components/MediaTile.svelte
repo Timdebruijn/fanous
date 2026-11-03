@@ -96,7 +96,7 @@
   .n.invalid { color: var(--red); background: var(--red-bg); }
   .on { position: absolute; left: 4px; bottom: 4px; height: 20px; padding: 0 6px; border-radius: 4px; background: var(--accent-dim); font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
   .on .dot { width: 6px; height: 6px; }
-  .dur { position: absolute; right: 4px; bottom: 4px; height: 18px; padding: 0 5px; border-radius: 3px; background: rgba(11, 12, 14, 0.8); font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; }
+  .dur { position: absolute; right: 4px; bottom: 4px; height: 20px; padding: 0 6px; border-radius: 4px; background: var(--scrim); font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; }
   .name { display: block; font-weight: 500; }
   .badges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 24px; }
   .codec { text-transform: uppercase; }

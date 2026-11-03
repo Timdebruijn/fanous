@@ -208,7 +208,8 @@
     onnudge(d[0], d[1]);
   }
 
-  const colours = ['#4C9EFF', '#35D07F', '#FFC532', '#FF5A5F', '#A3AAB4'];
+  // the app.css tokens, so they go in style: (CSS) rather than the fill/stroke attributes
+  const colours = ['var(--accent)', 'var(--green)', 'var(--yellow)', 'var(--red)', 'var(--text-2)'];
 </script>
 
 <!-- role="application" is the ARIA role for a focusable widget that handles its own keys; Svelte counts it as non-interactive -->
@@ -216,14 +217,14 @@
 <svg bind:this={svg} class="mapper" viewBox="0 0 {W} {H}" role="application" aria-label="Mapping editor: drag the handles, arrow keys nudge the selected point, Tab steps to the next one, Escape lets go so Tab leaves" tabindex="0" class:adding={mode === 'mask' && (addMode || draft || tool)} onkeydown={key} onpointerdown={background} ondblclick={doubleClick} onpointermove={move} onpointerup={up} onpointercancel={up}>
   {#if draft && draft.length > 0}
     {@const pts = draft.map((p) => toScreen(output, mode, p))}
-    <polyline points={svgPoints(pts)} fill="none" stroke="#FFC532" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" />
-    {#each pts as p, i (i)}<circle cx={p.x * W} cy={p.y * H} r="10" fill="#FFC532" stroke="#0B0C0E" stroke-width="3" vector-effect="non-scaling-stroke" />{/each}
+    <polyline points={svgPoints(pts)} fill="none" style:stroke="var(--yellow)" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" />
+    {#each pts as p, i (i)}<circle cx={p.x * W} cy={p.y * H} r="10" style:fill="var(--yellow)" style:stroke="var(--ground)" stroke-width="3" vector-effect="non-scaling-stroke" />{/each}
   {/if}
   {#each lines as line, i (i)}
     <polyline
       points={svgPoints(line.points, line.closed)}
-      fill={mode !== 'mask' ? 'none' : line.subtract ? 'rgba(255,90,95,0.12)' : 'rgba(76,158,255,0.12)'}
-      stroke={colours[line.group % colours.length]}
+      style:fill={mode !== 'mask' ? 'none' : `color-mix(in srgb, ${line.subtract ? 'var(--red)' : 'var(--accent)'} 12%, transparent)`}
+      style:stroke={colours[line.group % colours.length]}
       stroke-width="2"
       stroke-dasharray={line.subtract ? '8 6' : undefined}
       vector-effect="non-scaling-stroke"
@@ -231,15 +232,15 @@
     />
   {/each}
   {#if drawn}
-    <polyline points={drawn} fill="none" stroke="#FFC532" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" />
+    <polyline points={drawn} fill="none" style:stroke="var(--yellow)" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" />
   {/if}
   {#each knobs as h (h.path)}
     {@const p = shown(h)}
     {@const at = shown(points.find((q) => q.path === knobsOf) ?? h)}
-    <line x1={at.x * W} y1={at.y * H} x2={p.x * W} y2={p.y * H} stroke="#ECEEF1" stroke-width="1.5" vector-effect="non-scaling-stroke" />
+    <line x1={at.x * W} y1={at.y * H} x2={p.x * W} y2={p.y * H} style:stroke="var(--text-1)" stroke-width="1.5" vector-effect="non-scaling-stroke" />
     <g class="handle" class:sel={selected === h.path} onpointerdown={(e) => down(e, h.path)} role="button" aria-label={h.path} tabindex="-1">
       <circle cx={p.x * W} cy={p.y * H} r="36" fill="transparent" />
-      <circle cx={p.x * W} cy={p.y * H} r="7" fill={selected === h.path ? '#ECEEF1' : colours[h.group % colours.length]} stroke="#0B0C0E" stroke-width="2" vector-effect="non-scaling-stroke" />
+      <circle cx={p.x * W} cy={p.y * H} r="7" style:fill={selected === h.path ? 'var(--text-1)' : colours[h.group % colours.length]} style:stroke="var(--ground)" stroke-width="2" vector-effect="non-scaling-stroke" />
     </g>
   {/each}
   {#each points.filter((h) => !isKnob(h.path)) as h (h.path)}
@@ -249,7 +250,7 @@
     <g class="handle" class:sel onpointerdown={(e) => down(e, h.path)} role="button" aria-label={h.path} tabindex="-1">
       <circle cx={p.x * W} cy={p.y * H} r="36" fill="transparent" />
       <!-- a subtract mask's points are rings in the colour, an add mask's (and every other) filled -->
-      <circle cx={p.x * W} cy={p.y * H} r={mode === 'mesh' ? 9 : 12} fill={sel ? '#ECEEF1' : subtract(h.path) ? '#0B0C0E' : colour} stroke={subtract(h.path) && !sel ? colour : '#0B0C0E'} stroke-width="3" vector-effect="non-scaling-stroke" />
+      <circle cx={p.x * W} cy={p.y * H} r={mode === 'mesh' ? 9 : 12} style:fill={sel ? 'var(--text-1)' : subtract(h.path) ? 'var(--ground)' : colour} style:stroke={subtract(h.path) && !sel ? colour : 'var(--ground)'} stroke-width="3" vector-effect="non-scaling-stroke" />
     </g>
   {/each}
 </svg>
