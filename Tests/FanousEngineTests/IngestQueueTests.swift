@@ -729,6 +729,24 @@ import UniformTypeIdentifiers
         #expect(try FileManager.default.contentsOfDirectory(atPath: library.root.path) == ["003_red"])
     }
 
+    /// A sequence job with `fps` 0 (or 241) is refused with 400 and nothing is queued: it used to reach `MovieWriter`,
+    /// where a zero timescale trapped the engine, and the persisted job would have trapped it again at every start.
+    @Test func sequenceWithAnImpossibleFrameRateIsRefused() throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: Logger(label: "test"))
+        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: Logger(label: "test"))
+        let frames = directory.appending(path: "frames")
+        try FileManager.default.createDirectory(at: frames, withIntermediateDirectories: true)
+        try Self.writePNG(to: frames.appending(path: "frame_000.png"), index: 0)
+        for fps: Int32 in [0, -25, 241] {
+            #expect(api.enqueue(source: frames, folder: 1, file: nil, name: nil, codec: nil, fps: fps, keepOriginal: true).status == 400, "fps \(fps)")
+        }
+        #expect(queue.jobs.isEmpty)
+        #expect(api.enqueue(source: frames, folder: 1, file: nil, name: nil, codec: nil, fps: 240, keepOriginal: true).status == 202)
+    }
+
     /// B51: while a library root change holds enqueues, a new job is refused with 409 and nothing is queued.
     @Test func heldEnqueueIsRefused() throws {
         let directory = try tempDir("fanous-ingest-tests")

@@ -692,6 +692,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   frame per source frame at the smallest frame duration, so a two-second recording could become a shorter file that ran
   ahead of its audio. Ingest now holds and drops by presentation time to a constant rate, the source's fastest rate up
   to 60 fps; a constant-rate source still comes out frame for frame (B19, PR #221).
+- Fixed: `POST /api/ingest` for an image sequence with `fps` 0 took the engine down (a zero timescale in the writer),
+  and the persisted job would have done so again at every start. The API now refuses a frame rate outside 1–240 with
+  400, and `MovieWriter` throws on a non-positive rate instead of trapping (found in the review of PR #221, PR #NNN).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
