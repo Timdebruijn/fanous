@@ -712,8 +712,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   M1 (no ProRes engine) is expected to fail it hard and be refused show mode (from Apple's documentation; not run on
   one); the engine logs `proResEngine` at start (B144, DESIGN §5,
   PR #230).
-- Fixed: fanousd stalled at start on a macOS VM (CI) with the VideoToolbox probe of B144, main was red; the chip name
-  decides now (only `Apple M1` lacks the ProRes engine) (B144, PR #232).
+- Fixed: a CI run with the VideoToolbox probe of B144 stalled fanousd at start on its macOS VM, main was red; the chip
+  name decides now (only `Apple M1` lacks the ProRes engine) (B144, PR #232).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

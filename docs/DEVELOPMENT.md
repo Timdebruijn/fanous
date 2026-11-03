@@ -10,9 +10,10 @@ Building, protocols, endpoints and internals. The user guide is in [`user/`](use
 Requirements: Apple Silicon Mac with a ProRes engine, macOS 15+, Swift 6.2+
 (Command Line Tools are enough: the Metal shaders are compiled at engine start
 from source), Node 26 for the web UI. The "Supported hardware" readiness item
-goes by the chip name (only `Apple M1` fails), so a macOS VM passes it; do not
-probe VideoToolbox at start, `VTIsHardwareDecodeSupported` stalled fanousd on
-CI's VM (B144).
+goes by the chip name (only `Apple M1` fails); CI's VM reports `Apple M1
+(Virtual)` and passes. Do not probe VideoToolbox at engine start: one CI run
+with `VTIsHardwareDecodeSupported` there stalled every engine after the first
+(B144).
 
 ```bash
 swift build                      # engine, shell, core

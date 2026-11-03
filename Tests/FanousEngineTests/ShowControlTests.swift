@@ -285,6 +285,7 @@ struct ShowControlTests {
     @Test func aMacWithoutAProResEngineIsRefusedShowMode() throws {
         #expect(SystemInfo.hasProResEngine)  // engine tests need the hardware decoder anyway (CI runs Core tests only)
         #expect(!SystemInfo.proResEngine(chip: "Apple M1") && SystemInfo.proResEngine(chip: "Apple M1 Pro") && SystemInfo.proResEngine(chip: "Apple M2"))
+        #expect(SystemInfo.proResEngine(chip: "Apple M1 (Virtual)"))  // CI's runner (B99): the e2e engines must pass
         var context = ReadinessContext()
         context.hardwareSupported = false
         let item = try #require(Readiness.check(context, acknowledged: ["hardware"]).first { $0.id == "hardware" })

@@ -9,9 +9,10 @@ import Foundation
 /// Runtime facts about this machine. Phase 0 only logs them; tiers come in Phase 2.
 public enum SystemInfo {
     public static var chipName: String { sysctlString("machdep.cpu.brand_string") ?? "unknown" }
-    /// The platform floor (DESIGN.md §5): of the Apple Silicon chips only the base M1 has no ProRes engine (B144; from Apple's
-    /// documentation, no base M1 was at hand). By name, not `VTIsHardwareDecodeSupported`: that call stalled fanousd at
-    /// start on CI's macOS VM (every engine after the first answered nothing for 20 s, main 59fb9db). A VM's "(Virtual)" name passes.
+    /// The platform floor (DESIGN.md §5): of the Mac chips only the base M1 has no ProRes engine (B144; from Apple's
+    /// documentation, no base M1 was at hand). By name, not `VTIsHardwareDecodeSupported`: a CI run with that call at start
+    /// stalled every fanousd after the first for 20 s before its "fanousd starting" line (main 59fb9db; other runs with it
+    /// passed). CI's VM reports "Apple M1 (Virtual)" (B99) and passes.
     public static var hasProResEngine: Bool { proResEngine(chip: chipName) }
     static func proResEngine(chip: String) -> Bool { chip != "Apple M1" }
     public static var physicalMemoryBytes: UInt64 { ProcessInfo.processInfo.physicalMemory }
