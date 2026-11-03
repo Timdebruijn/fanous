@@ -20,6 +20,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   and getting started point at the Releases page (PR #242).
 - Docs: the README and the user guide's known limitations say display hot-plug is checked with one external display
   (PR #228); with two or more it rests on unit tests (PR #246).
+- Docs: rough performance runs of 2026-11-03 on the 4K60 display under load: the GPU-time rise since 2026-10-26 is the
+  machine's state, not the code (the bench of that commit measures the same today), blur and edge fail at layer counts
+  that pass plain (B2), the display path counts a fixed 14 allocations per tick more than headless (derived), decoder
+  threads at `.userInteractive` leave the texture misses as they are (B1), and a dissolve on blurred layers allocates
+  27–31 per tick, cause not found (new row B148) (B1, B2, B49, DESIGN §4.6, PR #245).
 - Fixed: the remote-mode choice on Warp & Slices was not read back on load (always the touch-screen default), and the
   Vite dev server showed a black page; the key was read before it was declared (PR #237).
 
