@@ -270,7 +270,8 @@ public final class LibraryIndex: @unchecked Sendable {
 
     // MARK: Probing (library thread)
 
-    static func cacheKey(_ item: LibraryItem) -> String { "\(item.path)|\(Int(item.modified))|\(item.size)" }
+    /// The trailing version re-probes every file once when the metadata gains a field (v2: `pixelAspect`, B146).
+    static func cacheKey(_ item: LibraryItem) -> String { "\(item.path)|\(Int(item.modified))|\(item.size)|v2" }
 
     private func probeLoop() {
         while running.load(ordering: .relaxed) {
@@ -382,7 +383,7 @@ public final class LibraryIndex: @unchecked Sendable {
                     metadata.codec = fourCCString(codec)
                     metadata.hasAlpha = ["ap4h", "ap4x", "Hap5", "HapM", "HapA"].contains(metadata.codec)
                     let ratio = MovieSource.pixelAspect(of: description)
-                    if ratio != 1 { metadata.pixelAspect = ratio }
+                    if abs(ratio - 1) > 0.005 { metadata.pixelAspect = ratio }  // 1001:1000-style tags are square pixels
                 }
             } else {
                 throw MovieError.noVideoTrack
