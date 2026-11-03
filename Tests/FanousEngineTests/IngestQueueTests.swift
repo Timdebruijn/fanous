@@ -52,24 +52,26 @@ import UniformTypeIdentifiers
     /// `alpha` writes ProRes 4444 (in a .mov) with the right half of every frame transparent instead of H.264.
     /// `transform` tags the track (`preferredTransform`); `rotated` is the 90° clockwise tag of a phone held upright.
     static func writeH264(
-        to url: URL, rotated: Bool = false, transform: CGAffineTransform? = nil, floatAudio: Bool = false, fiveOne: Bool = false, pixelAspect: (Int, Int)? = nil,
+        to url: URL, rotated: Bool = false, transform: CGAffineTransform? = nil, floatAudio: Bool = false, sixChannels: AudioChannelLayoutTag? = nil, pixelAspect: (Int, Int)? = nil,
         presentationTimes: [CMTime]? = nil, timescale: CMTimeScale? = nil, alpha: Bool = false
     ) async throws {
         try await offPool {
             try writeH264Blocking(
-                to: url, transform: transform ?? (rotated ? CGAffineTransform(rotationAngle: .pi / 2) : nil), floatAudio: floatAudio, fiveOne: fiveOne, pixelAspect: pixelAspect,
+                to: url, transform: transform ?? (rotated ? CGAffineTransform(rotationAngle: .pi / 2) : nil), floatAudio: floatAudio, sixChannels: sixChannels, pixelAspect: pixelAspect,
                 presentationTimes: presentationTimes, timescale: timescale, alpha: alpha)
         }
     }
 
     private static func writeH264Blocking(
-        to url: URL, transform: CGAffineTransform?, floatAudio: Bool, fiveOne: Bool, pixelAspect: (Int, Int)?, presentationTimes: [CMTime]?,
+        to url: URL, transform: CGAffineTransform?, floatAudio: Bool, sixChannels: AudioChannelLayoutTag?, pixelAspect: (Int, Int)?, presentationTimes: [CMTime]?,
         timescale: CMTimeScale?, alpha: Bool
     ) throws {
+        let fiveOne = sixChannels != nil
         let writer = try AVAssetWriter(outputURL: url, fileType: floatAudio || fiveOne || alpha ? .mov : .mp4)
-        // fiveOne: 48 kHz 16-bit 5.1 (MPEG order L R C LFE Ls Rs), channel i a constant (i + 1) × 3000 (B143)
+        // sixChannels: 48 kHz 16-bit six channels with that layout (5.1 in MPEG order L R C LFE Ls Rs, or discrete), channel i
+        // a constant (i + 1) × 3000 (B143)
         var fiveOneLayout = AudioChannelLayout()
-        fiveOneLayout.mChannelLayoutTag = kAudioChannelLayoutTag_MPEG_5_1_A
+        fiveOneLayout.mChannelLayoutTag = sixChannels ?? 0
         let audioInput = AVAssetWriterInput(
             mediaType: .audio,
             outputSettings: floatAudio
@@ -572,30 +574,35 @@ import UniformTypeIdentifiers
     }
 
     /// B143: a 5.1 source keeps its six channels and layout in the library file, and the player folds them to stereo by the
-    /// layout, so the centre is in both sides (before: ingest mixed to stereo, and the player took channels 0 and 1).
-    @Test func fiveOneSourceKeepsItsChannelsAndFoldsAtPlayback() async throws {
+    /// layout, so the centre is in both sides (before: ingest mixed to stereo, and the player took channels 0 and 1). Six
+    /// discrete channels are kept too (the writer and the reader take `DiscreteInOrder | 6`), and play as channels 0 and 1.
+    @Test(arguments: [kAudioChannelLayoutTag_MPEG_5_1_A, kAudioChannelLayoutTag_DiscreteInOrder | 6])
+    func sixChannelSourceKeepsItsChannelsAndFoldsAtPlayback(tag: AudioChannelLayoutTag) async throws {
         let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let source = directory.appending(path: "five-one.mov")
-        try await Self.writeH264(to: source, fiveOne: true)
+        let source = directory.appending(path: "six.mov")
+        try await Self.writeH264(to: source, sixChannels: tag)
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
         queue.start()
         defer { queue.stop() }
-        let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_five-one.mov"), kind: .transcode(codec: .proRes422)))
+        let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_six.mov"), kind: .transcode(codec: .proRes422)))
         #expect(await Self.wait(for: job.id, in: queue) == .done)
         let track = try #require(try await AVURLAsset(url: job.destination).loadTracks(withMediaType: .audio).first)
         let description = try #require(try await track.load(.formatDescriptions).first)
         let asbd = try #require(CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee)
         var layoutSize = 0
         let layout = CMAudioFormatDescriptionGetChannelLayout(description, sizeOut: &layoutSize)
-        #expect(asbd.mChannelsPerFrame == 6 && asbd.mSampleRate == 48_000 && layout?.pointee.mChannelLayoutTag == kAudioChannelLayoutTag_MPEG_5_1_A, "\(asbd)")
+        #expect(asbd.mChannelsPerFrame == 6 && asbd.mSampleRate == 48_000 && layout?.pointee.mChannelLayoutTag == tag, "\(asbd)")
         let reader = try await AudioTrackReader.open(url: job.destination)
         #expect(reader.channelCount == 6)
         reader.seek(toSeconds: 0.25)
         let samples = AudioTests.read(reader, frames: 4800).samples
-        let left = samples[2 * 2400] * 32768, right = samples[2 * 2400 + 1] * 32768
-        // L + 0.7071 (C + Ls), R + 0.7071 (C + Rs): 3000 + 0.7071 (9000 + 15000), 6000 + 0.7071 (9000 + 18000)
-        #expect(abs(left - 19971) < 40 && abs(right - 25092) < 40, "\(left) \(right)")
+        for frame in [2400, 4700] {
+            let left = samples[2 * frame] * 32768, right = samples[2 * frame + 1] * 32768
+            // 5.1: L + 0.7071 (C + Ls), R + 0.7071 (C + Rs) = 3000 + 0.7071 (9000 + 15000), 6000 + 0.7071 (9000 + 18000)
+            let (wantLeft, wantRight): (Float, Float) = tag == kAudioChannelLayoutTag_MPEG_5_1_A ? (19971, 25092) : (3000, 6000)
+            #expect(abs(left - wantLeft) < 40 && abs(right - wantRight) < 40, "\(frame): \(left) \(right)")
+        }
     }
 
     /// B19: an anamorphic source keeps its pixel aspect ratio in the ProRes and the HAP file (the format description's

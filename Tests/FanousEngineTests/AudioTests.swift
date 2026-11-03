@@ -55,9 +55,8 @@ extension LayerAudioChannel {
         try writer.finish()
     }
 
-    /// An audio-only movie, one second, 16-bit LPCM; channel `c` holds the constant `(c + 1) * 3000`.
-    /// One second of a constant per channel: channel i holds (i + 1) × 3000 / 32768. Mono, stereo or discrete by count
-    /// unless `layoutTag` names the layout.
+    /// An audio-only movie, one second, 16-bit LPCM; channel `c` holds the constant `(c + 1) * 3000`. Mono, stereo or
+    /// discrete by count unless `layoutTag` names the layout.
     static func writeConstantAudio(to url: URL, rate: Double, channels: Int, layoutTag: AudioChannelLayoutTag? = nil) async throws {
         try await offPool { try writeConstantAudioBlocking(to: url, rate: rate, channels: channels, layoutTag: layoutTag) }
     }
@@ -231,15 +230,17 @@ extension LayerAudioChannel {
         reader.seek(toSeconds: 0.25)
         let result = Self.read(reader, frames: 4800)
         #expect(result.framesRead == 4800)
-        let left = result.samples[2 * 2400] * 32768, right = result.samples[2 * 2400 + 1] * 32768
-        if tag == kAudioChannelLayoutTag_DiscreteInOrder | 6 {
-            #expect(abs(left - 3000) < 30 && abs(right - 6000) < 30, "\(left) \(right)")
-        } else {
-            // Apple's fold-down (measured on macOS 27): L + 0.7071 (C + Ls), R + 0.7071 (C + Rs), the LFE dropped
-            let order = tag == kAudioChannelLayoutTag_MPEG_5_1_A ? ["L", "R", "C", "LFE", "Ls", "Rs"] : ["C", "L", "R", "Ls", "Rs", "LFE"]
-            let value: (String) -> Float = { Float(order.firstIndex(of: $0)! + 1) * 3000 }  // the constant the file holds on that channel
-            #expect(abs(left - (value("L") + 0.7071 * (value("C") + value("Ls")))) < 30, "left \(left)")
-            #expect(abs(right - (value("R") + 0.7071 * (value("C") + value("Rs")))) < 30, "right \(right)")
+        for frame in [2400, 4700] {  // the second converter piece (4096 frames each with a matrix) lands at the right offset
+            let left = result.samples[2 * frame] * 32768, right = result.samples[2 * frame + 1] * 32768
+            if tag == kAudioChannelLayoutTag_DiscreteInOrder | 6 {
+                #expect(abs(left - 3000) < 30 && abs(right - 6000) < 30, "\(frame): \(left) \(right)")
+            } else {
+                // Apple's fold-down (measured on macOS 27): L + 0.7071 (C + Ls), R + 0.7071 (C + Rs), the LFE dropped
+                let order = tag == kAudioChannelLayoutTag_MPEG_5_1_A ? ["L", "R", "C", "LFE", "Ls", "Rs"] : ["C", "L", "R", "Ls", "Rs", "LFE"]
+                let value: (String) -> Float = { Float(order.firstIndex(of: $0)! + 1) * 3000 }  // the constant the file holds on that channel
+                #expect(abs(left - (value("L") + 0.7071 * (value("C") + value("Ls")))) < 30, "\(frame): left \(left)")
+                #expect(abs(right - (value("R") + 0.7071 * (value("C") + value("Rs")))) < 30, "\(frame): right \(right)")
+            }
         }
     }
 

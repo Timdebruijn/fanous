@@ -137,8 +137,10 @@ public final class AudioTrackReader: @unchecked Sendable {
         mix?.scratch.deallocate()
     }
 
-    /// Apple's fold-down of the track's layout to stereo, `channels * 2` weights; nil without a layout, or for one the
-    /// system has no fold-down for (discrete, unknown), or an all-zero one.
+    /// Apple's fold-down of the track's layout to stereo, `channels * 2` weights; nil without a layout, for one the
+    /// system has no fold-down for (discrete, unknown), for one with another channel count than the track, or an all-zero one.
+    /// ponytail: the weights are applied as they come (L + 0.7071 (C + Ls) sums to 2.41 for a signal in every channel, and
+    /// `AudioMixer` has no limiter), so loud material in every channel can clip; a −3 dB pad or a limiter if a show shows it.
     static func stereoMixMatrix(for description: CMFormatDescription, channels: Int) -> [Float]? {
         var layoutSize = 0
         guard let layout = CMAudioFormatDescriptionGetChannelLayout(description, sizeOut: &layoutSize), layoutSize > 0 else { return nil }
@@ -150,7 +152,7 @@ public final class AudioTrackReader: @unchecked Sendable {
             var layouts: [UnsafePointer<AudioChannelLayout>?] = [layout, stereoPointer]
             return AudioFormatGetProperty(kAudioFormatProperty_MatrixMixMap, UInt32(MemoryLayout<UnsafePointer<AudioChannelLayout>?>.size * 2), &layouts, &size, &matrix)
         }
-        guard status == noErr, matrix.contains(where: { $0 != 0 }) else { return nil }
+        guard status == noErr, size == UInt32(MemoryLayout<Float>.size * matrix.count), matrix.contains(where: { $0 != 0 }) else { return nil }
         return matrix
     }
 

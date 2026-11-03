@@ -2018,8 +2018,9 @@ source file(s) ──▶ _incoming/ (remote upload) or in-place (local path)
   converts to 48 kHz stereo float at playback (B19); more than two channels
   with a layout (5.1, 7.1) are folded to the pair with Apple's matrix for that
   layout (`kAudioFormatProperty_MatrixMixMap`: L + 0.7071 (C + Ls), R + 0.7071
-  (C + Rs), the LFE dropped, measured), a discrete or unknown layout keeps its
-  first two channels (B143).
+  (C + Rs), the LFE dropped, measured; the weights are applied as they come,
+  so a loud signal in every channel can clip, as the mixer has no limiter), a
+  discrete or unknown layout keeps its first two channels (B143).
 - An anamorphic source keeps its pixel aspect ratio: the ProRes track is
   tagged (`AVVideoPixelAspectRatioKey`), the HAP format description carries the
   `PixelAspectRatio` extension, `MovieInfo.pixelAspect` reads it and
