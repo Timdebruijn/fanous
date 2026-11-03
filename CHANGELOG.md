@@ -712,6 +712,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   M1 (no ProRes engine) is expected to fail it hard and be refused show mode (from Apple's documentation; not run on
   one); the engine logs `proResEngine` at start (B144, DESIGN §5,
   PR #230).
+- Fixed: a CI run with the VideoToolbox probe of B144 stalled fanousd at start on its macOS VM, main was red; the chip
+  name decides now (only `Apple M1` lacks the ProRes engine) (B144, PR #232).
 - Media screen: an anamorphic movie's label shows its shown size with the rate ("1920×1080p25"); the library index
   carries the pixel aspect ratio (`metadata.pixelAspect`, absent when 1); the index cache key gained a version, so every
   file is probed once more at the first start (B146, PR #231).
