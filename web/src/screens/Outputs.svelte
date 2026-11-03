@@ -3,15 +3,16 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script module lang="ts">
   import { prefs } from '../lib/state.svelte';
-  // handle: the selected point (JSON pointer); group: what moves with it in remote mode (lib/remote.ts)
-  const ui = $state({ selected: 0, canvas: 1, tab: 'outputs' as 'canvases' | 'outputs' | 'warp', mapper: 'cornerPin' as MapperMode, slice: 0, handle: null as string | null, group: 'point' as Group, maskAdd: false, draft: null as MapPoint[] | null, tool: null as MaskTool | null, remote: storedRemote() });
-
   // Remote mode on Warp & Slices, remembered per browser; by default on for touch screens narrower than 900 px
+  // (above ui: its initializer calls storedRemote, which reads REMOTE_KEY)
   const REMOTE_KEY = 'fanous.remote';
   function storedRemote(): boolean {
     const stored = prefs.get(REMOTE_KEY);
     return stored === undefined ? matchMedia('(pointer: coarse) and (max-width: 899.98px)').matches : stored === '1';
   }
+
+  // handle: the selected point (JSON pointer); group: what moves with it in remote mode (lib/remote.ts)
+  const ui = $state({ selected: 0, canvas: 1, tab: 'outputs' as 'canvases' | 'outputs' | 'warp', mapper: 'cornerPin' as MapperMode, slice: 0, handle: null as string | null, group: 'point' as Group, maskAdd: false, draft: null as MapPoint[] | null, tool: null as MaskTool | null, remote: storedRemote() });
   function setRemote(on: boolean) {
     ui.remote = on;
     ui.group = 'point';
