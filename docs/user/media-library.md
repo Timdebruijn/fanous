@@ -208,10 +208,11 @@ when the uploads are done. Only the programmer role can import.
 - **HAP files cannot be imported or transcoded** (the macOS decoder cannot read
   them; B20). Copy HAP files into the folder with Finder under the right name.
 - Phone footage with a rotation flag (portrait video) is imported upright: the
-  quarter turn or flip is applied to the pixels exactly (no resampling), the
-  file gets the swapped width and height, and alpha and the pixel aspect ratio
+  quarter turn or flip is applied to the pixels exactly (no resampling), a
+  quarter turn swaps width and height, and alpha and the pixel aspect ratio
   come along. Only an odd transform (not a quarter turn or flip) is rendered by
-  a composition, which loses alpha.
+  a composition, which loses alpha and draws the display size with square
+  pixels.
 - Anamorphic sources (non-square pixels, such as 1440x1080 shown as 16:9) keep
   their pixel aspect ratio: the file is tagged and the layer draws it at its
   display width; the Media screen shows the display size.

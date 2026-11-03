@@ -276,7 +276,7 @@ public enum Transcoder {
 
     /// A `preferredTransform` that is a quarter turn or a flip, applied in the pixels: exact (no resampling) and alpha kept.
     enum Turn: Equatable {
-        /// `vImageRotate90_ARGB8888` constant: 1 = 90° counter-clockwise, 2 = 180°, 3 = 90° clockwise.
+        /// A `vImageRotate90_ARGB8888` constant (`kRotate90DegreesClockwise` and friends).
         case quarter(UInt8)
         case flipHorizontal
         case flipVertical
@@ -284,16 +284,16 @@ public enum Transcoder {
         /// The turn for `transform` (its linear part; the translation only re-origins the rotated frame), nil for anything else.
         init?(_ transform: CGAffineTransform) {
             switch (transform.a, transform.b, transform.c, transform.d) {
-            case (0, 1, -1, 0): self = .quarter(3)  // a phone held upright tags its landscape pixels this way (measured: matches the composition)
-            case (0, -1, 1, 0): self = .quarter(1)
-            case (-1, 0, 0, -1): self = .quarter(2)
+            case (0, 1, -1, 0): self = .quarter(UInt8(kRotate90DegreesClockwise))  // a phone held upright tags its landscape pixels this way (measured: matches the composition)
+            case (0, -1, 1, 0): self = .quarter(UInt8(kRotate90DegreesCounterClockwise))
+            case (-1, 0, 0, -1): self = .quarter(UInt8(kRotate180DegreesClockwise))
             case (-1, 0, 0, 1): self = .flipHorizontal
             case (1, 0, 0, -1): self = .flipVertical
             default: return nil
             }
         }
 
-        var swapsAxes: Bool { if case .quarter(let constant) = self { return constant != 2 } else { return false } }
+        var swapsAxes: Bool { if case .quarter(let constant) = self { return constant != UInt8(kRotate180DegreesClockwise) } else { return false } }
 
         /// `source` turned into `destination` (sized for it: swapped for a quarter turn); returns `destination`.
         func apply(to source: CVPixelBuffer, into destination: CVPixelBuffer) throws -> CVPixelBuffer {
@@ -316,7 +316,7 @@ public enum Transcoder {
                 case .flipHorizontal: vImageHorizontalReflect_ARGB8888(&from, &to, vImage_Flags(kvImageNoFlags))
                 case .flipVertical: vImageVerticalReflect_ARGB8888(&from, &to, vImage_Flags(kvImageNoFlags))
                 }
-            guard error == kvImageNoError else { throw TranscodeError.reader("rotate: vImage error \(error)") }
+            guard error == kvImageNoError else { throw TranscodeError.reader("turn (vImage) failed: \(error)") }
             return destination
         }
     }
