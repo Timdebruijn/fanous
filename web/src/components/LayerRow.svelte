@@ -125,8 +125,7 @@
   .canvas { min-height: 28px; height: 28px; padding: 0 6px; font-size: 12px; max-width: 100%; }
   .nm { font-weight: 600; font-size: 14px; }
   .sync { height: 20px; margin-top: 2px; font-size: 11px; font-weight: 700; }
-  .sync-green { color: var(--text-2); }
-  .sync-green .dot { background: var(--green); }
+  .sync-green { color: var(--green); }  /* its label (M1, S1) has no state word, so the colour stays on the text */
   .sync-yellow { color: var(--yellow); }
   .sync-red { padding: 0 6px; background: var(--red-bg); color: var(--red); }
   .sync-grey { color: var(--text-3); }
