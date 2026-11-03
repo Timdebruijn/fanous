@@ -75,7 +75,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, WKD
     // MARK: Downloads (GDTF export, log download, CSV)
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-        navigationAction.shouldPerformDownload ? .download : .allow
+        // WebKit's own reload or back/forward (the context menu) would load the address the UI already stripped of the
+        // token, and the window would drop to an open role: load it with the token instead
+        if navigationAction.targetFrame?.isMainFrame == true, [.reload, .backForward].contains(navigationAction.navigationType) {
+            DispatchQueue.main.async { [self] in load() }
+            return .cancel
+        }
+        return navigationAction.shouldPerformDownload ? .download : .allow
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse) async -> WKNavigationResponsePolicy {
@@ -101,7 +107,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, WKD
         Task { await present(alert) }
     }
 
-    /// With the shell token, read on every load (a retry or Engine › Reload UI): the engine writes it on its first start.
+    /// With the shell token, read on every load (a retry, Start/Restart Engine, Engine › Reload UI, a reload WebKit wanted):
+    /// the engine writes it on its first start.
     func load() { webView.load(URLRequest(url: AppPaths.shellPageURL(url), cachePolicy: .reloadIgnoringLocalCacheData)) }
 
     /// The engine may still be starting: retry every second until the page loads.
@@ -113,6 +120,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, WKD
             load()
         }
     }
+
+    /// The page's process crashed or was killed (memory pressure): load again, with the token (WebKit's own reload has none).
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { load() }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
         scheduleRetry()
