@@ -9,14 +9,14 @@
 </script>
 
 <div class="meter" role="meter" aria-label={label} aria-valuemin={-60} aria-valuemax={0} aria-valuenow={Math.min(0, Math.max(-60, level ?? -60))} aria-valuetext={levelText(level, none)}>
-  <span class="bar" aria-hidden="true"><span class="fill" class:hot={level != null && level > -3} style:width="{meterFill(level) * 100}%"></span></span>
+  <span class="bar" aria-hidden="true"><span class="fill" class:hot={level != null && level > -3} style:transform="scaleX({meterFill(level)})"></span></span>
   <span class="mono caption">{levelText(level, none)}</span>
 </div>
 
 <style>
   .meter { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .bar { flex: 1 1 120px; max-width: 240px; height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
-  .fill { display: block; height: 100%; background: var(--green); transition: width 80ms linear; }
+  .fill { display: block; height: 100%; background: var(--green); transform-origin: left; transition: transform 80ms linear; }
   .fill.hot { background: var(--yellow); }
   @media (prefers-reduced-motion: reduce) { .fill { transition: none; } }
 </style>

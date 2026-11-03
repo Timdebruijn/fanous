@@ -30,6 +30,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   that pass plain (B2), the display path counts a fixed 14 allocations per tick more than headless (derived), decoder
   threads at `.userInteractive` leave the texture misses as they are (B1), and a dissolve on blurred layers allocates
   27–31 per tick, cause not found (new row B148) (B1, B2, B49, DESIGN §4.6, PR #245).
+- Changed: the web UI's spacing sits on a 4 px grid, its overlay labels (thumbnail number, duration) share one size,
+  its colours come from the app.css tokens (the mapping editor's handles included), the Patch header's three actions
+  share one button style and a link styled as a button is no longer underlined (PR #236).
 - Fixed: the layer's media line on the Layers screen read "hevc · 1080p25" for an anamorphic movie, where the Media tile
   shows "1440×1080p25" (B146); the layer status now carries the pixel aspect (`live.layers[].pixelAspect`, null for
   square pixels) and the line shows the shown width with it (B147, PR #239).
