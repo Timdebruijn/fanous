@@ -152,6 +152,6 @@
   .legend li { display: inline-flex; align-items: center; gap: 6px; }
   @media (max-width: 480px) {
     .monitor { padding: 8px; }
-    .cell { font-size: 9px; letter-spacing: -0.06em; }  /* 16 cells on a phone leave 16 px each: "255" fits only this tight (measured) */
+    .cell { font-size: 9px; letter-spacing: -0.06em; }  /* 16 cells on a 375 px phone leave 16 px each: "255" fits only this tight (measured) */
   }
 </style>
