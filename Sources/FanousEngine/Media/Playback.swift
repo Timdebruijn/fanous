@@ -121,6 +121,15 @@ public final class LayerPlayback: @unchecked Sendable {
     public let ring: FrameRing?
     public let still: DecodedFrame?
     public let live: (any LiveTextureSource)?
+    /// The media as upright RGBA at its own size with four mip levels, written by the compositor's convert pass on a
+    /// tick where the layer blurs or edges and read by those taps (DESIGN.md §4.3, B2). Made with the media (one more
+    /// frame of memory), none for a live input: the compositor then samples the source per tap as before.
+    public var scratch: MTLTexture? {
+        didSet { scratchLevels = Self.levels(of: scratch) }  // not run by the inits: they set both
+    }
+    /// One single-level view per level of `scratch`, made with it: the compositor's downsample kernel reads level
+    /// n − 1 and writes level n through these (B2).
+    public private(set) var scratchLevels: [MTLTexture] = []
     private let liveFrame = DecodedFrame(poolIndex: 0)
     var clock = LayerClock()
     /// The clock followed a sync master last tick (DESIGN.md §23.3).
@@ -132,7 +141,8 @@ public final class LayerPlayback: @unchecked Sendable {
     /// The mixer channel this playback's decoder fills (movies with an audio track only).
     public var audioChannel: LayerAudioChannel? { decoder?.audio?.channel }
 
-    public init(key: MediaKey, movie: MovieSource, decoder: LayerDecoder, ring: FrameRing) {
+    /// `device` nil (tests): no scratch texture.
+    public init(key: MediaKey, movie: MovieSource, decoder: LayerDecoder, ring: FrameRing, device: MTLDevice? = nil) {
         self.key = key
         self.decoder = decoder
         self.ring = ring
@@ -143,6 +153,28 @@ public final class LayerPlayback: @unchecked Sendable {
         pixelAspect = movie.info.pixelAspect
         frameRate = movie.info.frameRate
         frameCount = movie.info.frameCount
+        scratch = device.flatMap { Self.makeScratch(device: $0, width: width, height: height) }
+        scratchLevels = Self.levels(of: scratch)
+    }
+
+    static func levels(of scratch: MTLTexture?) -> [MTLTexture] {
+        guard let scratch else { return [] }
+        return (0..<scratch.mipmapLevelCount).compactMap {
+            scratch.makeTextureView(pixelFormat: scratch.pixelFormat, textureType: .type2D, levels: $0..<($0 + 1), slices: 0..<1)
+        }
+    }
+
+    /// The scratch texture for a media of this size (B2): canvas format, four mip levels (the blur reads up to 1/8),
+    /// private storage. Nil when Metal refuses (the layer then draws without one).
+    public static func makeScratch(device: MTLDevice, width: Int, height: Int) -> MTLTexture? {
+        guard width > 0, height > 0 else { return nil }
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.canvasFormat, width: width, height: height, mipmapped: true)
+        descriptor.mipmapLevelCount = min(4, descriptor.mipmapLevelCount)
+        descriptor.usage = [.renderTarget, .shaderRead, .shaderWrite]  // the downsample kernel writes the mip levels
+        descriptor.storageMode = .private
+        let texture = device.makeTexture(descriptor: descriptor)
+        texture?.label = "scratch"
+        return texture
     }
 
     /// `pixelAspect`: the movie's, when the still is one decoded movie frame (the thumbnailer); 1 for a real still.
@@ -157,6 +189,8 @@ public final class LayerPlayback: @unchecked Sendable {
         self.pixelAspect = pixelAspect
         frameRate = 1
         frameCount = 1
+        if let device = still.texture0?.device { scratch = Self.makeScratch(device: device, width: width, height: height) }
+        scratchLevels = Self.levels(of: scratch)
     }
 
     public init(key: MediaKey, live: any LiveTextureSource) {
@@ -689,7 +723,7 @@ public final class MediaLoader: @unchecked Sendable {
             status.height = source.info.height
             status.fps = source.info.frameRate
             status.frames = source.info.frameCount
-            return LayerPlayback(key: key, movie: source, decoder: decoder, ring: ring)
+            return LayerPlayback(key: key, movie: source, decoder: decoder, ring: ring, device: device)
         } catch {
             logger.error("media open failed", metadata: ["layer": "\(layer + 1)", "media": "\(key)", "error": "\(error)"])
             status.error = error.clientText  // no file path for the monitor role (B25)

@@ -165,7 +165,8 @@ struct GoldenTests {
         }
     }
 
-    static func render(_ c: Case, context: MetalContext) throws -> (Int, Int, [UInt8]) {
+    /// `scratch` false: the layers draw without their scratch textures, the per-tap source path (B2).
+    static func render(_ c: Case, context: MetalContext, scratch: Bool = true) throws -> (Int, Int, [UInt8]) {
         let metrics = MetricsRing(capacity: 16)
         let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 2) }
         let compositor = try Compositor(
@@ -183,6 +184,7 @@ struct GoldenTests {
             layer.dissolveStart = 100
             layer.dissolveDuration = 1
         }
+        if !scratch { for l in [background, layer] { l.current?.scratch = nil; l.outgoing?.scratch = nil } }
         compositor.setLayers([background, layer])
         var outputTexture: MTLTexture?
         if c.output {
@@ -240,6 +242,29 @@ struct GoldenTests {
             if let problem = Self.compare(rgba, reference, name: c.name) { failures.append(problem) }
         }
         #expect(failures.isEmpty, Comment(rawValue: failures.joined(separator: "\n")))
+    }
+
+    /// The scratch path (B2) against the per-tap source path: edge reads scratch level 0, so it matches the source
+    /// within the golden tolerance; blur reads a mip level, so it differs smoothly (bounded mean), and is not empty.
+    @Test func scratchPathMatchesSourcePath() throws {
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
+        let context = try MetalContext()
+        for name in ["effect-edge", "effect-blur", "effect-blur-motion"] {
+            var c = try #require(Self.cases.first { $0.name == name })
+            // the golden canvas is small: at full radius (5 % of the height) the blur reads about level 1
+            if name != "effect-edge" { c.layer.effect1A = 1 }
+            let (_, _, with) = try Self.render(c, context: context)
+            let (_, _, without) = try Self.render(c, context: context, scratch: false)
+            let mean = Double(zip(with, without).reduce(0) { $0 + abs(Int($1.0) - Int($1.1)) }) / Double(with.count)
+            let brightness = Double(with.reduce(0) { $0 + Int($1) }) / Double(with.count)
+            #expect(brightness > 20, "\(name): the scratch path drew \(brightness) mean")
+            if name == "effect-edge" {
+                #expect(Self.compare(with, without, name: name) == nil)
+            } else {
+                #expect(mean > 0.05 && mean < 6, "\(name): mean difference \(mean) between the scratch and source paths")
+            }
+            print("scratch vs source \(name): mean difference \(String(format: "%.2f", mean)), brightness \(String(format: "%.1f", brightness))")
+        }
     }
 
     /// GPUs differ in the last bits (fast math, filtering): allow small noise, catch real changes.
