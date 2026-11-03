@@ -128,6 +128,8 @@ export interface LayerStatus {
   height: number;
   fps: number;
   frames: number;
+  /** Non-square pixels (B147): `width` is the shown width; null (or absent, engines before B147) means 1. */
+  pixelAspect?: number | null;
   frame: number; // current frame index
   error: string | null;
   /** Layer channel 51 (B60, DESIGN §23); absent from engines before B60. */

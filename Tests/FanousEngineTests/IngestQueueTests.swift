@@ -634,6 +634,29 @@ import UniformTypeIdentifiers
         let movie = try await MovieSource.open(url: proRes.destination, device: device, poolSize: 2)
         #expect(movie.info.width == 320 && abs(movie.info.pixelAspect - 4.0 / 3) < 0.001)
 
+        // The layer status carries the ratio for the Layers screen's media line (B147), and a square-pixel movie loaded
+        // after it has none (the status starts fresh per load).
+        let square = directory.appending(path: "square.mp4")
+        try await Self.writeH264(to: square)
+        let squareJob = queue.enqueue(IngestJob(source: square, destination: directory.appending(path: "library/003_square.mov"), kind: .transcode(codec: .proRes422)))
+        #expect(await Self.wait(for: squareJob.id, in: queue) == .done)
+        let layer = RenderLayer(index: 0)
+        let loader = MediaLoader(layers: [layer], media: [], device: device, ringCapacity: 4, logger: Logger(label: "test"))
+        let paths = [1: proRes.destination, 3: squareJob.destination]
+        loader.resolver = { key in paths[key.file] }
+        loader.start()
+        defer { loader.stop() }
+        for (file, width, aspect) in [(1, 427, 4.0 / 3), (3, 320, 1.0)] {
+            layer.wanted.store(MediaKey(folder: 1, file: file).packed, ordering: .relaxed)
+            loader.wake.signal()
+            var status = LayerMediaStatus()
+            for _ in 0..<500 where status.file != file || status.kind != "movie" {
+                try await Task.sleep(for: .milliseconds(10))
+                status = layer.mediaStatus.withLock { $0 }
+            }
+            #expect(status.kind == "movie" && status.width == width && abs((status.pixelAspect ?? 1) - aspect) < 0.001 && (status.pixelAspect == nil) == (aspect == 1), "file \(file): \(status)")
+        }
+
         // The Media screen's thumbnail fills its 427:176 frame edge to edge (the still path carries the ratio too; it
         // used to draw the coded 320:176 picture in it, with black bars at both sides).
         let thumbnails = Thumbnailer(context: try MetalContext(), directory: directory.appending(path: "thumbs"), logger: Logger(label: "test"))
