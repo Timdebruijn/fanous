@@ -3943,9 +3943,10 @@ refused show mode (the popover). A decoder error on a visible layer is red on
 its Layers row, not in the bar. The frame time has room for its widest
 value ("120 fps 999.9 ms"), so it no longer changes the bar's width and wraps
 or unwraps it under a drag (B134): with a fresh engine the bar fits one row
-from 1416 px and takes two at 1412 (measured 2026-11-03, after its labels went to
-sentence case; 1470 and 1460 before). Events still change its width: a universe
-going active or lost, a lagging client, no output rendering.
+from 1383 px and takes two at 1382 (measured 2026-11-03, with its labels in
+sentence case and its statuses without a fill; 1470 and 1460 before both).
+Events still change its width: a universe going active or lost, a lagging
+client, no output rendering.
 
 1. **Layers / Mixer** — one row (or tile on narrow screens) per layer: live
    thumbnail, layer name + canvas, resolved media ("12 / 4 · intro_loop.mov ·

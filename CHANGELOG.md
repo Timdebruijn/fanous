@@ -43,6 +43,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   clients creating one number, or an upload making the folder in between, could end with two folders of one number; the
   check and the create now run under one lock (B141). A create that fails (a read-only root) no longer answers 200 with a
   folder that does not exist: the endpoint answers 500 and an upload 400 (B142, PR #241).
+- Changed: a status (DMX universes, readiness, timecode, power, layer sync) is a dot and a word, filled only when red;
+  the role badge is the role's text colour on a quiet surface instead of a filled accent pill. With the shorter labels
+  of PR #243 the status bar now fits one row from 1383 px wide (PR #NNN).
 
 ## 1.0.0-rc.2 — 2026-11-03
 
