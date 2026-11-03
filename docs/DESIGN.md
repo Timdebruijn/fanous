@@ -196,7 +196,7 @@ on every display link. Budgets are measured, not assumed (§13).
   devices), writes the microphone, camera and local-network usage strings and
   `NSBonjourServices`, timestamps when a
   Developer ID is given; `scripts/notarize.sh` submits with `notarytool`,
-  staples the app and a UDZO dmg. Version `1.0.0-rc.1` from
+  staples the app and a UDZO dmg. The version comes from
   `FanousVersion.string`, also in CITP `SInf`.
 - `docs/RELEASE.md` is the release checklist (code green, version,
   measurements per machine, console interop, build/notarize, clean-account

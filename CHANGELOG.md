@@ -4,7 +4,8 @@
 
 # Changelog
 
-Dates are the day the phase was committed on `main`. The design each phase
+Dates are the day the phase was committed on `main`, for a release candidate the
+day it was built. New entries go under Unreleased. The design each phase
 implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
@@ -13,7 +14,125 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   (`spctl --type open`) rejected it with "no usable signature" while the app inside passed; `scripts/notarize.sh` signs
   the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).
 
-## 1.0.0-rc.1 — unreleased (Phase 8, 2026-10-24)
+## 1.0.0-rc.2 — 2026-11-03
+
+- Fixed: the strobe effect's phase jumped once an hour (up to half a cycle, a visible hiccup at low rates) when the shader
+  clock wrapped at 3600 s; it wraps at 255 s now, a whole number of cycles for every one of the 256 rate steps, so the phase
+  is continuous across the wrap (B11, PR #183).
+- Fixed: a ProRes file with some very small frame sizes (64×48, 256×64 and 320×16 among them) failed to open with VideoToolbox
+  −12910, as the hardware decoder refuses those sizes at session creation; the engine now falls back to the software decoder
+  for such a file and logs that it did (B5, PR #185).
+- Fixed: a Rec.601-tagged source (SD material) ingested to ProRes came out with 15–40 codes of colour
+  error on saturated colours: the reader copied the 601 tag onto the RGB frames and the writer coded and tagged the file with it,
+  which the layer shader (Rec.709) then misread. Ingested ProRes is now coded and tagged Rec.709 by name. Files the engine plays
+  without ingest keep the 709 reading (B21, PR #184).
+- Fixed: a layer's error text, the readiness "decoders" detail and a library item's reason could carry the file's full path
+  to the monitor role when the error came from AVFoundation (its text prints the file URL); those texts, and the canvas and
+  ingest error texts, now use the error's `localizedDescription`, while the engine's own error texts are unchanged (B25, PR #186).
+- CI: the seam-check lease e2e waits 6 s (three renewals) instead of 3 s for a renewal to be sent; at 3 s none came once
+  in 88 CI jobs (PR #190).
+- Tests: a cue fade is measured end to end in the engine, go → `CueRunner` → `DMXStore` → the published Layer 1
+  intensity: a 1.0 s fade shows its first step about 1 ms after go and is full after about 1003 ms, in 51 steps 20 ms apart,
+  also in a parallel run and under load; nothing past the snapshot (no photon probe) is measured (B43, PR #195).
+- Fixed: a CITP console that sends no `CInf` (MSEX 1.0/1.1) got neither `SInf` nor layer status; a session still without
+  a version 2 s after connecting is now taken for MSEX 1.0, gets an unsolicited 1.0 `SInf` and `LSta` at 4 Hz, and a later
+  `CInf` still negotiates the version (B78, PR #194).
+- Changed: CITP/MSEX libraries and elements are numbered as 0-based contiguous indexes in folder/file-number order, as
+  MSEX 1.2 defines them, with the folder or file number (the DMX value that selects it) in the DMX range; `GEIn`, `GETh`,
+  the request filters and `LSta` use the same indexes (B78, PR #198).
+- Fixed: the browser preview of an output whose aspect differs from the preview's drew the black-lift feather on the y axis
+  with the x axis's scale; each axis now has its own (B56, PR #191).
+- Changed: a layer showing a static generator (grid, colour bars, …) or the clock no longer makes the compositor redraw the
+  canvas every tick; between changes the canvas is reused like a still, the clock redraws once a second (B56, PR #192).
+- Changed: on a phone the status bar took five rows, a third of the screen. With a fresh engine it takes three now: the
+  badges with the role, the numbers (fps, dropped, clients) with undo and redo, and the universe pills; the frame time and
+  the auto-version item are left out there (System carries both), as are the keyboard-shortcuts button (the ? key still
+  opens the list), the app name and the outputs item while they render. Desktop looks the same (PR #201).
+- Changed: the selected layer's channel list (about 50 rows in the layer panel) starts closed on a phone, behind its
+  "Showing all … channels" line, which is now the disclosure, and opens when Control is switched on; on a desktop, and
+  for Master and the outputs, it starts open as before (PR #203).
+- Fixed: on the Show screen the OSC address table cut off its Effect column in the 320 px side column (every row, at 1280
+  and 1440 px wide); the addresses are a list now, address and arguments on one line and the effect under it (PR #205).
+- Changed: an ingest job that is done or cancelled leaves the Media screen's queue a minute after it finished (a
+  cancelled job from October was still listed on 2 November); a failed job stays with its error until it is removed
+  (PR #208).
+- Fixed: the status bar's outputs item said "on" whenever the compositor ran, also with no output in the project or an
+  output without a display; it now counts the bound outputs: "2/3" in yellow when one is lost or has no display, "0"
+  with none, "off" when the compositor is not running, and red under show lock in those three cases (a locked show
+  without outputs is one); a phone shows the item only when it is yellow, red or off (PR #210).
+- Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
+  and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
+  they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
+  step moves to other outputs or the page is hidden, so "Give the test patterns back" is gone (B102, B103, PR #159).
+- UI: an **Inputs** screen (key 3; Outputs, Patch, Show and System move to keys 4–7) lists the cameras, capture cards,
+  displays and Syphon servers of folder 0 with their status, the layers that show them and, while one does, a
+  camera's or display's size, rate and pixel format, with the frame counters in the selected input's panel. Forget, Forget all
+  and the camera and screen permissions moved there from the Media and System screens; Media's folder 0 stays the
+  picker. A permission's dot is yellow only while a layer shows an input that lacks it. The engine's permission
+  texts name the Inputs screen (B137 step 1, DESIGN §12.1, PR #202).
+- Fixed: two API uploads into a folder number the index had not seen yet (within about a second before the rescan, or
+  any time with a library root that was missing at engine start behind a symlink, B140) created two folders, `003_red`
+  and `003_blue`, and after the rescan the files of one of them were invalid ("duplicate folder number 3"); an upload
+  now looks on disk for the folder with that number first, and creating a folder (`POST /api/library/folder`) with a
+  number an upload already used answers 409 instead of making a second one (PR #144).
+- UI: the Inputs screen lists the audio inputs with their channels and the default one. **Use for timecode** sets
+  LTC on a device and channel in one undo step, and the selected input shows the timecode state and a level meter of the
+  LTC channel, as Show's Timecode panel now does (`live.timecode.level`: the peak of the last tenth of a second in dBFS).
+  The microphone permission LTC needs has a row with Authorize (`capture.authorize {kind: "microphone"}`), and a
+  readiness item **Microphone permission granted** blocks show mode while timecode is set to LTC without it (also with the
+  switch off). A grant in System Settings now reopens an LTC input that failed for it. `live.audio.inputs` replaces
+  `live.osc.audioInputs` (B137 step 2, DESIGN §12.1, PR #207).
+- Fixed: an LTC input stopped while macOS still asked for the microphone opened anyway once answered and drove the
+  timecode clock with timecode off; a negative LTC channel crashed the audio thread; undoing a new project's first
+  timecode change blanked the Show and Inputs screens (review of PR #207).
+- Fixed: a library root that did not exist at engine start and whose path runs through a symlink (`/tmp`, a `~/Movies`
+  linked to another disk that is mounted at start) was never rescanned after it was made: FSEvents resolves a watched
+  path's symlinks only when it exists, so its events never matched. Uploads, folders made by hand and finished ingest
+  jobs then stayed off the Media screen until **Rescan** or a restart. The index now watches the real path of the part
+  that exists plus the rest (B140, PR #209).
+- CI: a push or pull request that changes only `docs/` or Markdown files runs no jobs; no job reads them, except
+  `docs/channel-map.md`, which `scripts/check-generated.sh` compares and which still runs CI (PR #212).
+- Changed: ingest keeps the source's audio format. The library track is still interleaved LPCM (the player needs no
+  compressed-audio decoder), but in the source's sample rate, channel count, channel layout and bit depth, integer or
+  float, instead of everything resampled to 48 kHz stereo 16-bit; a compressed source (AAC, ...) decodes to 24-bit.
+  The exceptions are what the reader accepts: 8–192 kHz, 8/16/24/32-bit (64-bit float becomes 32-bit), and more than
+  two channels are still mixed to stereo because the player has no matrix mix yet (B143). Playback converts to 48 kHz
+  stereo float as before (B19, PR #218).
+- Changed: ingest keeps an anamorphic source's pixel aspect ratio (a 1440x1080 file meant as 16:9, for example): the
+  ProRes or HAP track is tagged with it, the layer draws the movie at its display width in every fit mode, and the layer
+  status and the Media screen show the display size. Before, such a file played squeezed with square pixels. Rotated
+  footage is the exception: its display size is rendered with square pixels (B19, PR #220).
+- Fixed: a variable-frame-rate source (a screen recording, some phone footage) came out of ingest with one output
+  frame per source frame at the smallest frame duration, so a two-second recording could become a shorter file that ran
+  ahead of its audio. Ingest now holds and drops by presentation time to a constant rate, the source's fastest rate up
+  to 60 fps; a constant-rate source still comes out frame for frame (B19, PR #221).
+- Fixed: `POST /api/ingest` for an image sequence with `fps` 0 took the engine down (a zero timescale in the writer),
+  and the persisted job would have done so again at every start. The API now refuses a frame rate outside 1–240 with
+  400, and `MovieWriter` throws on a non-positive rate instead of trapping (found in the review of PR #221, PR #222).
+- Fixed: a rotated source with alpha (phone footage tagged with a quarter turn, ProRes 4444 or HEVC with alpha) came out
+  of ingest opaque: the composition that baked the rotation in rendered over black. A quarter turn or flip is now applied
+  to the pixels exactly (vImage, no resampling), alpha and the pixel aspect ratio come along (the ratio swapped by a
+  quarter turn). Only an odd transform still goes through the composition (B18, PR #226).
+- UI: an input's **Number** on the Inputs screen: a free number moves a camera, display or Syphon server there, a taken
+  one swaps the two, within its kind's range (`capture.renumber`, `syphon.renumber`; programmer, undoable, refused in
+  show mode, its undo and redo too). The catalog now moves running inputs when the project names each of them once on
+  numbers of their own (two Syphon servers with one app and name stay where they are), so a swap of two running cameras
+  and its undo hold, and a layer on the number an input left shows what is on that number now (B137 step 3, DESIGN
+  §12.1, PR #211).
+- Checked on hardware: display hot-plug (unplug, replug on the same and another port, a mode change under a bound
+  output) rebinds within 25 ms of the display event, and show mode applies and restores a wanted mode (unplug/replug
+  in show mode did not exercise the re-apply); no code change (B34, B56, DESIGN §9.6, PR #228).
+- The "Supported hardware" readiness item is real: it asks VideoToolbox whether ProRes 422 decodes in hardware, so a base
+  M1 (no ProRes engine) is expected to fail it hard and be refused show mode (from Apple's documentation; not run on
+  one); the engine logs `proResEngine` at start (B144, DESIGN §5,
+  PR #230).
+- Fixed: a CI run with the VideoToolbox probe of B144 stalled fanousd at start on its macOS VM, main was red; the chip
+  name decides now (only `Apple M1` lacks the ProRes engine) (B144, PR #232).
+- Media screen: an anamorphic movie's label shows its shown size with the rate ("1920×1080p25"); the library index
+  carries the pixel aspect ratio (`metadata.pixelAspect`, absent when 1); the index cache key gained a version, so every
+  file is probed once more at the first start (B146, PR #231).
+
+## 1.0.0-rc.1 — 2026-11-02 (Phase 8 from 2026-10-24)
 
 - Renamed Lanthorn → **Fanous** (2026-10-25; name collisions, `docs/RELEASE.md` §7). Existing machine
   state moves once from `~/Library/Application Support/Lanthorn` and `~/Library/Logs/Lanthorn`.
@@ -608,121 +727,6 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   Developer ID). `scripts/notarize.sh`'s own signature check failed before the upload: `grep -q` ended the pipe and `codesign` died
   of SIGPIPE under `pipefail`; it reads the whole output now. RELEASE §5 notes the first run and what a developer Mac that ran
   ad-hoc builds needs (agent re-register, screen grant anew) (B50, PR #182).
-- Fixed: the strobe effect's phase jumped once an hour (up to half a cycle, a visible hiccup at low rates) when the shader
-  clock wrapped at 3600 s; it wraps at 255 s now, a whole number of cycles for every one of the 256 rate steps, so the phase
-  is continuous across the wrap (B11, PR #183).
-- Fixed: a ProRes file with some very small frame sizes (64×48, 256×64 and 320×16 among them) failed to open with VideoToolbox
-  −12910, as the hardware decoder refuses those sizes at session creation; the engine now falls back to the software decoder
-  for such a file and logs that it did (B5, PR #185).
-- Fixed: a Rec.601-tagged source (SD material) ingested to ProRes came out with 15–40 codes of colour
-  error on saturated colours: the reader copied the 601 tag onto the RGB frames and the writer coded and tagged the file with it,
-  which the layer shader (Rec.709) then misread. Ingested ProRes is now coded and tagged Rec.709 by name. Files the engine plays
-  without ingest keep the 709 reading (B21, PR #184).
-- Fixed: a layer's error text, the readiness "decoders" detail and a library item's reason could carry the file's full path
-  to the monitor role when the error came from AVFoundation (its text prints the file URL); those texts, and the canvas and
-  ingest error texts, now use the error's `localizedDescription`, while the engine's own error texts are unchanged (B25, PR #186).
-- CI: the seam-check lease e2e waits 6 s (three renewals) instead of 3 s for a renewal to be sent; at 3 s none came once
-  in 88 CI jobs (PR #190).
-- Tests: a cue fade is measured end to end in the engine, go → `CueRunner` → `DMXStore` → the published Layer 1
-  intensity: a 1.0 s fade shows its first step about 1 ms after go and is full after about 1003 ms, in 51 steps 20 ms apart,
-  also in a parallel run and under load; nothing past the snapshot (no photon probe) is measured (B43, PR #195).
-- Fixed: a CITP console that sends no `CInf` (MSEX 1.0/1.1) got neither `SInf` nor layer status; a session still without
-  a version 2 s after connecting is now taken for MSEX 1.0, gets an unsolicited 1.0 `SInf` and `LSta` at 4 Hz, and a later
-  `CInf` still negotiates the version (B78, PR #194).
-- Changed: CITP/MSEX libraries and elements are numbered as 0-based contiguous indexes in folder/file-number order, as
-  MSEX 1.2 defines them, with the folder or file number (the DMX value that selects it) in the DMX range; `GEIn`, `GETh`,
-  the request filters and `LSta` use the same indexes (B78, PR #198).
-- Fixed: the browser preview of an output whose aspect differs from the preview's drew the black-lift feather on the y axis
-  with the x axis's scale; each axis now has its own (B56, PR #191).
-- Changed: a layer showing a static generator (grid, colour bars, …) or the clock no longer makes the compositor redraw the
-  canvas every tick; between changes the canvas is reused like a still, the clock redraws once a second (B56, PR #192).
-- Changed: on a phone the status bar took five rows, a third of the screen. With a fresh engine it takes three now: the
-  badges with the role, the numbers (fps, dropped, clients) with undo and redo, and the universe pills; the frame time and
-  the auto-version item are left out there (System carries both), as are the keyboard-shortcuts button (the ? key still
-  opens the list), the app name and the outputs item while they render. Desktop looks the same (PR #201).
-- Changed: the selected layer's channel list (about 50 rows in the layer panel) starts closed on a phone, behind its
-  "Showing all … channels" line, which is now the disclosure, and opens when Control is switched on; on a desktop, and
-  for Master and the outputs, it starts open as before (PR #203).
-- Fixed: on the Show screen the OSC address table cut off its Effect column in the 320 px side column (every row, at 1280
-  and 1440 px wide); the addresses are a list now, address and arguments on one line and the effect under it (PR #205).
-- Changed: an ingest job that is done or cancelled leaves the Media screen's queue a minute after it finished (a
-  cancelled job from October was still listed on 2 November); a failed job stays with its error until it is removed
-  (PR #208).
-- Fixed: the status bar's outputs item said "on" whenever the compositor ran, also with no output in the project or an
-  output without a display; it now counts the bound outputs: "2/3" in yellow when one is lost or has no display, "0"
-  with none, "off" when the compositor is not running, and red under show lock in those three cases (a locked show
-  without outputs is one); a phone shows the item only when it is yellow, red or off (PR #210).
-- Fixed: the projector-wall wizard's and seam check's test patterns were saved on the outputs, one undo step per output
-  and step that also cleared redo, and a second client's check could keep the first one's pattern as the outputs' own;
-  they are now a lease (`output.pattern`) that is never saved or undone and ends when the wizard or check closes, its
-  step moves to other outputs or the page is hidden, so "Give the test patterns back" is gone (B102, B103, PR #159).
-- UI: an **Inputs** screen (key 3; Outputs, Patch, Show and System move to keys 4–7) lists the cameras, capture cards,
-  displays and Syphon servers of folder 0 with their status, the layers that show them and, while one does, a
-  camera's or display's size, rate and pixel format, with the frame counters in the selected input's panel. Forget, Forget all
-  and the camera and screen permissions moved there from the Media and System screens; Media's folder 0 stays the
-  picker. A permission's dot is yellow only while a layer shows an input that lacks it. The engine's permission
-  texts name the Inputs screen (B137 step 1, DESIGN §12.1, PR #202).
-- Fixed: two API uploads into a folder number the index had not seen yet (within about a second before the rescan, or
-  any time with a library root that was missing at engine start behind a symlink, B140) created two folders, `003_red`
-  and `003_blue`, and after the rescan the files of one of them were invalid ("duplicate folder number 3"); an upload
-  now looks on disk for the folder with that number first, and creating a folder (`POST /api/library/folder`) with a
-  number an upload already used answers 409 instead of making a second one (PR #144).
-- UI: the Inputs screen lists the audio inputs with their channels and the default one. **Use for timecode** sets
-  LTC on a device and channel in one undo step, and the selected input shows the timecode state and a level meter of the
-  LTC channel, as Show's Timecode panel now does (`live.timecode.level`: the peak of the last tenth of a second in dBFS).
-  The microphone permission LTC needs has a row with Authorize (`capture.authorize {kind: "microphone"}`), and a
-  readiness item **Microphone permission granted** blocks show mode while timecode is set to LTC without it (also with the
-  switch off). A grant in System Settings now reopens an LTC input that failed for it. `live.audio.inputs` replaces
-  `live.osc.audioInputs` (B137 step 2, DESIGN §12.1, PR #207).
-- Fixed: an LTC input stopped while macOS still asked for the microphone opened anyway once answered and drove the
-  timecode clock with timecode off; a negative LTC channel crashed the audio thread; undoing a new project's first
-  timecode change blanked the Show and Inputs screens (review of PR #207).
-- Fixed: a library root that did not exist at engine start and whose path runs through a symlink (`/tmp`, a `~/Movies`
-  linked to another disk that is mounted at start) was never rescanned after it was made: FSEvents resolves a watched
-  path's symlinks only when it exists, so its events never matched. Uploads, folders made by hand and finished ingest
-  jobs then stayed off the Media screen until **Rescan** or a restart. The index now watches the real path of the part
-  that exists plus the rest (B140, PR #209).
-- CI: a push or pull request that changes only `docs/` or Markdown files runs no jobs; no job reads them, except
-  `docs/channel-map.md`, which `scripts/check-generated.sh` compares and which still runs CI (PR #212).
-- Changed: ingest keeps the source's audio format. The library track is still interleaved LPCM (the player needs no
-  compressed-audio decoder), but in the source's sample rate, channel count, channel layout and bit depth, integer or
-  float, instead of everything resampled to 48 kHz stereo 16-bit; a compressed source (AAC, ...) decodes to 24-bit.
-  The exceptions are what the reader accepts: 8–192 kHz, 8/16/24/32-bit (64-bit float becomes 32-bit), and more than
-  two channels are still mixed to stereo because the player has no matrix mix yet (B143). Playback converts to 48 kHz
-  stereo float as before (B19, PR #218).
-- Changed: ingest keeps an anamorphic source's pixel aspect ratio (a 1440x1080 file meant as 16:9, for example): the
-  ProRes or HAP track is tagged with it, the layer draws the movie at its display width in every fit mode, and the layer
-  status and the Media screen show the display size. Before, such a file played squeezed with square pixels. Rotated
-  footage is the exception: its display size is rendered with square pixels (B19, PR #220).
-- Fixed: a variable-frame-rate source (a screen recording, some phone footage) came out of ingest with one output
-  frame per source frame at the smallest frame duration, so a two-second recording could become a shorter file that ran
-  ahead of its audio. Ingest now holds and drops by presentation time to a constant rate, the source's fastest rate up
-  to 60 fps; a constant-rate source still comes out frame for frame (B19, PR #221).
-- Fixed: `POST /api/ingest` for an image sequence with `fps` 0 took the engine down (a zero timescale in the writer),
-  and the persisted job would have done so again at every start. The API now refuses a frame rate outside 1–240 with
-  400, and `MovieWriter` throws on a non-positive rate instead of trapping (found in the review of PR #221, PR #222).
-- Fixed: a rotated source with alpha (phone footage tagged with a quarter turn, ProRes 4444 or HEVC with alpha) came out
-  of ingest opaque: the composition that baked the rotation in rendered over black. A quarter turn or flip is now applied
-  to the pixels exactly (vImage, no resampling), alpha and the pixel aspect ratio come along (the ratio swapped by a
-  quarter turn). Only an odd transform still goes through the composition (B18, PR #226).
-- UI: an input's **Number** on the Inputs screen: a free number moves a camera, display or Syphon server there, a taken
-  one swaps the two, within its kind's range (`capture.renumber`, `syphon.renumber`; programmer, undoable, refused in
-  show mode, its undo and redo too). The catalog now moves running inputs when the project names each of them once on
-  numbers of their own (two Syphon servers with one app and name stay where they are), so a swap of two running cameras
-  and its undo hold, and a layer on the number an input left shows what is on that number now (B137 step 3, DESIGN
-  §12.1, PR #211).
-- Checked on hardware: display hot-plug (unplug, replug on the same and another port, a mode change under a bound
-  output) rebinds within 25 ms of the display event, and show mode applies and restores a wanted mode (unplug/replug
-  in show mode did not exercise the re-apply); no code change (B34, B56, DESIGN §9.6, PR #228).
-- The "Supported hardware" readiness item is real: it asks VideoToolbox whether ProRes 422 decodes in hardware, so a base
-  M1 (no ProRes engine) is expected to fail it hard and be refused show mode (from Apple's documentation; not run on
-  one); the engine logs `proResEngine` at start (B144, DESIGN §5,
-  PR #230).
-- Fixed: a CI run with the VideoToolbox probe of B144 stalled fanousd at start on its macOS VM, main was red; the chip
-  name decides now (only `Apple M1` lacks the ProRes engine) (B144, PR #232).
-- Media screen: an anamorphic movie's label shows its shown size with the rate ("1920×1080p25"); the library index
-  carries the pixel aspect ratio (`metadata.pixelAspect`, absent when 1); the index cache key gained a version, so every
-  file is probed once more at the first start (B146, PR #231).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
