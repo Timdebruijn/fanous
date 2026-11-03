@@ -484,13 +484,13 @@ final class MIDISourceListener: @unchecked Sendable {
                     for word in raw.bindMemory(to: UInt32.self).prefix(count) { words.append((word, hostTime)) }
                 }
             }
-            self.queue.async { self.receive(words, uid) }
+            self.queue.async { [words] in self.receive(words, uid) }
         }
         guard made == noErr else {
             MIDIClientDispose(client)
             return fail("cannot create the MIDI input port (\(made))")
         }
-        queue.async { [self] in
+        queue.async { [self, client, port] in
             // stopped while the main thread was getting here (the settings changed again at once)
             guard !stopped else {
                 MIDIPortDispose(port)

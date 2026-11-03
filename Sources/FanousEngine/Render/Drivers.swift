@@ -20,7 +20,7 @@ public final class DisplayLinkDriver: NSObject, CAMetalDisplayLinkDelegate, @unc
         link = CAMetalDisplayLink(metalLayer: layer)
         link.preferredFrameLatency = Float(frameLatency)
         link.preferredFrameRateRange = CAFrameRateRange(minimum: Float(fps), maximum: Float(fps), preferred: Float(fps))
-        let link = self.link
+        nonisolated(unsafe) let link = self.link  // added to the thread's run loop below, then only read by Core Animation
         let box = RunLoopBox()
         let onMain = ProcessInfo.processInfo.environment["FANOUS_LINK_MAIN"] == "1"  // diagnostic switch
         let done = self.done
@@ -79,6 +79,7 @@ final class PacedThread: @unchecked Sendable {
     private let done = DispatchSemaphore(value: 0)
 
     init(name: String, hz: Double, catchUp: Bool = false, body: @escaping (_ target: Double) -> Void) {
+        nonisolated(unsafe) let body = body  // called on this thread only
         let thread = Thread { [self] in
             let ticksPerSecond = Self.ticksPerSecond
             let period = UInt64(ticksPerSecond / hz)

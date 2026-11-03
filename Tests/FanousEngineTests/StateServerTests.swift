@@ -171,7 +171,7 @@ struct StateServerTests {
         let connection = Mutex<StateServer.Connection?>(nil)
         f.server.upgradeRoute = { [stateServer = f.stateServer] request in
             let handler = stateServer.upgrade(request)
-            connection.withLock { $0 = handler as? StateServer.Connection }
+            connection.withLock { $0 = handler }
             return handler
         }
         let a = f.socket()

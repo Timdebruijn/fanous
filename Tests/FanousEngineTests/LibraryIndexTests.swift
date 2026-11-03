@@ -232,7 +232,7 @@ struct LibraryIndexTests {
 
         // as Engine.switchLibrary: build the new index, swap, re-resolve, stop the old one last
         observer.holdProbes.store(true, ordering: .relaxed)
-        weak var old = current.withLock { $0 }
+        weak let old = current.withLock { $0 }
         let second = try #require(current.withLock { $0 }?.replacement(root: b))
         do {
             let replaced = current.withLock { box in

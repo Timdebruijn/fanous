@@ -255,7 +255,8 @@ public final class PreviewStreamer: @unchecked Sendable {
         }
         encoder.endEncoding()
         framesIn.wrappingAdd(1, ordering: .relaxed)
-        let keep = cvTexture  // the CVMetalTexture must outlive the GPU work
+        // the CVMetalTexture must outlive the GPU work; neither is touched on this thread again
+        nonisolated(unsafe) let keep = cvTexture, frame = pixelBuffer
         commandBuffer.addCompletedHandler { [self] buffer in
             _ = keep
             guard buffer.status == .completed else {
@@ -263,7 +264,7 @@ public final class PreviewStreamer: @unchecked Sendable {
                 return
             }
             completions.wrappingAdd(1, ordering: .relaxed)
-            queue.async { [self] in encode(pixelBuffer, target: target) }
+            queue.async { [self] in encode(frame, target: target) }
         }
     }
 
@@ -402,8 +403,8 @@ public final class PreviewStreamer: @unchecked Sendable {
         let length = CMBlockBufferGetDataLength(dataBuffer)
         payload.reserveCapacity(9 + length)
         payload.append(contentsOf: [UInt8](repeating: 0, count: length))
-        payload.withUnsafeMutableBufferPointer { CMBlockBufferCopyDataBytes(dataBuffer, atOffset: 0, dataLength: length, destination: $0.baseAddress! + 9) }
-        queue.async { [self] in
+        _ = payload.withUnsafeMutableBufferPointer { CMBlockBufferCopyDataBytes(dataBuffer, atOffset: 0, dataLength: length, destination: $0.baseAddress! + 9) }
+        queue.async { [self, payload] in
             let subs = subscribers.withLock { $0.filter { !$0.jpeg } }
             if !record.isEmpty, record != avcC {
                 avcC = record

@@ -153,14 +153,16 @@ public final class ThumbnailStreamer: @unchecked Sendable {
         passes.wrappingAdd(1, ordering: .relaxed)
         let cells = layout.cells
         encoding.store(true, ordering: .relaxed)
+        // the CVMetalTexture must outlive the GPU work; neither is touched on this thread again
+        nonisolated(unsafe) let keep = cvTexture, frame = pixelBuffer
         commandBuffer.addCompletedHandler { [self] buffer in
-            _ = cvTexture  // the CVMetalTexture must outlive the GPU work
+            _ = keep
             guard buffer.status == .completed else {
                 encoding.store(false, ordering: .relaxed)
                 return
             }
             queue.async { [self] in
-                encode(pixelBuffer, cells: cells, shapes: shapes)
+                encode(frame, cells: cells, shapes: shapes)
                 encoding.store(false, ordering: .relaxed)
             }
         }
