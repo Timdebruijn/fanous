@@ -234,7 +234,7 @@
   }
   .heads {
     display: grid; grid-template-columns: var(--layer-cols); column-gap: var(--layer-gap); padding: 0 13px;  /* the row's 1 px border + 12 px padding */
-    font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3);
+    font-size: 11px; font-weight: 600; color: var(--text-3);
   }
   .h-layer { grid-column: span 2; }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }

@@ -30,6 +30,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   that pass plain (B2), the display path counts a fixed 14 allocations per tick more than headless (derived), decoder
   threads at `.userInteractive` leave the texture misses as they are (B1), and a dissolve on blurred layers allocates
   27–31 per tick, cause not found (new row B148) (B1, B2, B49, DESIGN §4.6, PR #245).
+- Changed: the web UI's labels are in sentence case instead of tracked capitals (Locked / Unlocked, "Show mode: on",
+  Programmer, No media, Missing file, the column heads); acronyms such as LTC, HAP and GO keep theirs. The shorter words
+  let the status bar fit one row from 1416 px wide instead of 1470 (PR #243).
 - Changed: the web UI's spacing sits on a 4 px grid, its overlay labels (thumbnail number, duration) share one size,
   its colours come from the app.css tokens (the mapping editor's handles included), the Patch header's three actions
   share one button style and a link styled as a button is no longer underlined (PR #236).

@@ -117,7 +117,7 @@ monitor; on a narrow one (an iPad upright, a phone) they stack in that order.
   [Blocks](#blocks)). The layers are chips that wrap, each with its number and
   address; a chip on another universe than the block's start names it
   ("A 0.0.1 · 1"), so Layer 1 and Layer 9 never both read "1". A chip marked
-  **OFF** sits off the block (placed by hand). The Master is one chip. The
+  **off** sits off the block (placed by hand). The Master is one chip. The
   Outputs group has one row per output on the Outputs & Mapping screen, no more
   and no fewer: "Output 1 · on <display> · Outputs & Mapping", then its Output
   and Keystone fixture with their address and status. Removing an output
@@ -215,7 +215,7 @@ the start. The block line says:
   Keystones with their outputs, in one step. "1 unplaced" counts the fixtures
   of the group without an address; they do not break the block.
 - **Custom · 2 of 8 off the block**: some fixtures were placed by hand (their
-  chips say OFF), or the start would fall below address 1 (Layer 9 alone at
+  chips say off), or the start would fall below address 1 (Layer 9 alone at
   A 0.0.1 1). **Re-lay as block** puts every fixture on its place from the
   lowest-numbered one's start.
 - **No address**, with **Patch as block**: nothing of the group is patched.

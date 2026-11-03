@@ -176,7 +176,7 @@ export const test = base.extend<{ engine: Engine }>({
       );
     }
     await page.goto(`${engine.url}/?token=${engine.token}`);
-    await expect(page.getByRole('button', { name: 'PROGRAMMER' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Programmer' })).toBeVisible();
     // and the first live document (the status bar counts this page): until it arrives the preview block is missing
     // and the layout shifts under a click
     await expect(page.getByRole('banner')).toContainText(/\b[1-9]\d* clients/);

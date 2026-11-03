@@ -49,7 +49,7 @@ button:disabled { cursor: default; }
 a { color: var(--accent); }
 h1 { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.01em; }
 h2 { margin: 0; font-size: 17px; font-weight: 600; }
-h3 { margin: 8px 0 0; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+h3 { margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--text-3); }
 .mono { font-family: var(--font-mono); }
 .muted { color: var(--text-2); }
 .faint { color: var(--text-3); }
@@ -101,7 +101,7 @@ h3 { margin: 8px 0 0; font-size: 13px; font-weight: 600; letter-spacing: 0.06em;
 .switch:has(input:disabled) { cursor: default; opacity: 0.55; }
 
 /* Badges, pills, dots */
-.badge { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 4px; background: var(--surface-3); color: var(--text-1); font: 600 11px var(--font-mono); letter-spacing: 0.04em; white-space: nowrap; }
+.badge { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 4px; background: var(--surface-3); color: var(--text-1); font: 600 11px var(--font-mono); white-space: nowrap; }
 .badge-outline { background: transparent; border: 1px solid var(--line-strong); color: var(--text-2); font-family: var(--font-ui); }
 .badge-warn { background: var(--yellow-bg); color: var(--yellow); font-family: var(--font-ui); }
 .badge-err { background: var(--red-bg); color: var(--red); font-family: var(--font-ui); }
@@ -115,11 +115,11 @@ h3 { margin: 8px 0 0; font-size: 13px; font-weight: 600; letter-spacing: 0.06em;
 .dot-yellow { background: var(--yellow); }
 .dot-red { background: var(--red); }
 .dot-off { background: transparent; border: 1.5px solid var(--line-strong); }
-.role { display: inline-flex; align-items: center; min-height: var(--touch); padding: 0 10px; border-radius: 14px; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
+.role { display: inline-flex; align-items: center; min-height: var(--touch); padding: 0 10px; border-radius: 14px; font-size: 12px; font-weight: 600; }
 .role-monitor { background: var(--surface-3); color: var(--text-2); }
 .role-operator { background: var(--accent-dim); color: var(--text-1); }
 .role-programmer { background: var(--accent); color: var(--ground); }
-.tag { display: inline-flex; align-items: center; gap: 6px; min-height: var(--touch); padding: 0 10px; border-radius: var(--radius-control); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; }
+.tag { display: inline-flex; align-items: center; gap: 6px; min-height: var(--touch); padding: 0 10px; border-radius: var(--radius-control); font-size: 11px; font-weight: 600; }
 .tag-lock { background: var(--surface-3); color: var(--text-1); }
 .tag-mode { background: var(--accent-dim); color: var(--text-1); }
 .tag-open { border: 1px solid var(--line-strong); color: var(--text-2); }

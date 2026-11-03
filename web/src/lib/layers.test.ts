@@ -66,11 +66,11 @@ describe('position', () => {
 
 describe('mediaLine and layerState', () => {
   it('describes each media kind', () => {
-    expect(mediaLine(layer())).toMatchObject({ title: '2 / 5 · intro.mov', detail: 'hevc · 1080p25', text: '2 / 5 · intro.mov · hevc · 1080p25', tone: 'normal' });
+    expect(mediaLine(layer())).toMatchObject({ title: '2 / 5 · intro.mov', detail: 'HEVC · 1080p25', text: '2 / 5 · intro.mov · HEVC · 1080p25', tone: 'normal' });
     expect(mediaLine(layer({ fps: 29.97002997, codec: 'HapY' })).detail).toBe('HAP Q · 1080p29.97');
     // an anamorphic movie shows its shown width too, as the Media tile does (B146, B147)
-    expect(mediaLine(layer({ width: 1440, pixelAspect: 4 / 3 })).detail).toBe('hevc · 1440×1080p25');
-    expect(mediaLine(layer({ pixelAspect: null })).detail).toBe('hevc · 1080p25');
+    expect(mediaLine(layer({ width: 1440, pixelAspect: 4 / 3 })).detail).toBe('HEVC · 1440×1080p25');
+    expect(mediaLine(layer({ pixelAspect: null })).detail).toBe('HEVC · 1080p25');
     expect(mediaLine(layer({ kind: 'still', name: 'logo.png', width: 800, height: 600 })).text).toBe('2 / 5 · logo.png · Still · 800×600');
     expect(mediaLine(layer({ kind: 'live', name: 'Syphon: Resolume' })).text).toBe('Syphon: Resolume · Live · 1920×1080');
     expect(mediaLine(layer({ kind: 'none' }))).toMatchObject({ text: 'no media', detail: '', tone: 'faint' });
