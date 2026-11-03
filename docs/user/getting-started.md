@@ -81,7 +81,7 @@ another computer opens. Every screen has the same frame:
 Menus of the app window:
 
 - **Fanous**: About, Hide, Quit.
-- **Engine**: the first line shows the state, for example "Engine 1.0.0-rc.2
+- **Engine**: the first line shows the state, for example "Engine 1.0.0-rc.3
   running · service installed" (or "service needs approval in Login Items").
   **Reload UI** (Cmd-R) reloads the page. **Start Engine**, **Restart Engine**
   and **Stop Engine…** control the service. Stop removes the service

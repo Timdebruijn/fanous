@@ -9,7 +9,7 @@ No dongle, no licence server, no account.</p>
 <p align="center">
   <a href="LICENSE"><img alt="License: GPL-3.0-only" src="https://img.shields.io/badge/license-GPL--3.0--only-blue"></a>
   <img alt="Platform: macOS 15+ on Apple Silicon" src="https://img.shields.io/badge/platform-macOS%2015%2B%20Apple%20Silicon-lightgrey">
-  <img alt="Status: 1.0.0 release candidate" src="https://img.shields.io/badge/status-1.0.0--rc.2-orange">
+  <img alt="Status: 1.0.0 release candidate" src="https://img.shields.io/badge/status-1.0.0--rc.3-orange">
   <a href="https://github.com/Timdebruijn/fanous/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Timdebruijn/fanous/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 

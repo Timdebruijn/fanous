@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+## 1.0.0-rc.3 — 2026-11-03
+
 - Fixed: an image sequence with soft edges or semi-transparent areas came out too dark: frames were stored premultiplied
   while ProRes 4444, HAP Alpha and the layer shader take straight alpha, so a pixel (200, 100, 50) at half alpha was
   stored and read back as (100, 50, 25) and darkened again on stage. Ingest now un-premultiplies each drawn frame
