@@ -178,6 +178,7 @@ public final class LayerPlayback: @unchecked Sendable {
     }
 
     /// `pixelAspect`: the movie's, when the still is one decoded movie frame (the thumbnailer); 1 for a real still.
+    /// No scratch texture: `Playback.open` sets one for a layer's still, the thumbnailer's one-frame stills never blur.
     public init(key: MediaKey, still: DecodedFrame, pixelAspect: Double = 1) {
         self.key = key
         self.still = still
@@ -189,8 +190,6 @@ public final class LayerPlayback: @unchecked Sendable {
         self.pixelAspect = pixelAspect
         frameRate = 1
         frameCount = 1
-        if let device = still.texture0?.device { scratch = Self.makeScratch(device: device, width: width, height: height) }
-        scratchLevels = Self.levels(of: scratch)
     }
 
     public init(key: MediaKey, live: any LiveTextureSource) {
@@ -696,6 +695,7 @@ public final class MediaLoader: @unchecked Sendable {
             status.name = url.lastPathComponent
             if StillSource.extensions.contains(url.pathExtension.lowercased()) {
                 let playback = LayerPlayback(key: key, still: try StillSource.load(url: url, device: device))
+                playback.scratch = LayerPlayback.makeScratch(device: device, width: playback.width, height: playback.height)
                 status.kind = "still"
                 status.codec = url.pathExtension.lowercased()
                 status.width = playback.width

@@ -165,7 +165,7 @@ struct GoldenTests {
         }
     }
 
-    /// `scratch` false: the layers draw without their scratch textures, the per-tap source path (B2).
+    /// `scratch` false: the layers get no scratch textures and draw through the per-tap source path (B2).
     static func render(_ c: Case, context: MetalContext, scratch: Bool = true) throws -> (Int, Int, [UInt8]) {
         let metrics = MetricsRing(capacity: 16)
         let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 2) }
@@ -184,7 +184,11 @@ struct GoldenTests {
             layer.dissolveStart = 100
             layer.dissolveDuration = 1
         }
-        if !scratch { for l in [background, layer] { l.current?.scratch = nil; l.outgoing?.scratch = nil } }
+        if scratch {  // as `Playback.open` does for a layer's still
+            for p in [background.current, layer.current, layer.outgoing].compactMap({ $0 }) {
+                p.scratch = LayerPlayback.makeScratch(device: context.device, width: p.width, height: p.height)
+            }
+        }
         compositor.setLayers([background, layer])
         var outputTexture: MTLTexture?
         if c.output {
