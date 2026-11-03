@@ -114,7 +114,7 @@ import UniformTypeIdentifiers
             mBytesPerPacket: bytesPerFrame, mFramesPerPacket: 1, mBytesPerFrame: bytesPerFrame, mChannelsPerFrame: channels,
             mBitsPerChannel: bytesPerFrame / channels * 8, mReserved: 0)
         var format: CMAudioFormatDescription?
-        withUnsafePointer(to: &fiveOneLayout) { layout in
+        _ = withUnsafePointer(to: &fiveOneLayout) { layout in
             CMAudioFormatDescriptionCreate(
                 allocator: nil, asbd: &description, layoutSize: fiveOne ? MemoryLayout<AudioChannelLayout>.size : 0, layout: fiveOne ? layout : nil,
                 magicCookieSize: 0, magicCookie: nil, extensions: nil, formatDescriptionOut: &format)
