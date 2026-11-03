@@ -23,6 +23,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   os_signpost intervals (subsystem `org.fanous`), so Instruments shows them next to the GPU work; off by default, no
   allocation on the compositor thread either way (3.99 mallocs per tick, as before). DEVELOPMENT.md has the command
   (PR #254).
+- Fixed: with `FANOUS_LOG=debug` the engine logged each HTTPS request's whole target, so a token passed as `?token=`
+  (which the web UI accepts in place of a login) was written to `fanousd.log`; the debug line now carries the path only.
+  A log written with debug logging before this can still hold such a token (`/api/logs` serves it to the programmer
+  role) (PR #255).
 - Fixed: the release dmg was notarized and stapled but not signed itself, so Gatekeeper's check of the dmg
   (`spctl --type open`) rejected it with "no usable signature" while the app inside passed; `scripts/notarize.sh` signs
   the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).

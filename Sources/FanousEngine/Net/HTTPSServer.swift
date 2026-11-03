@@ -164,7 +164,7 @@ public final class HTTPSServer: @unchecked Sendable {
     }
 
     fileprivate func log(_ request: HTTPRequest, _ response: HTTPResponse) {
-        logger.debug("\(request.method) \(request.target) → \(response.status)")
+        logger.debug("\(request.method) \(request.path) → \(response.status)")  // the path only: the web UI takes a token as ?token=
     }
 }
 
