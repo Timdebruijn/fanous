@@ -692,6 +692,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   frame per source frame at the smallest frame duration, so a two-second recording could become a shorter file that ran
   ahead of its audio. Ingest now holds and drops by presentation time to a constant rate, the source's fastest rate up
   to 60 fps; a constant-rate source still comes out frame for frame (B19, PR #221).
+- Fixed: a rotated source with alpha (phone footage tagged with a quarter turn, ProRes 4444 or HEVC with alpha) came out
+  of ingest opaque: the composition that baked the rotation in rendered over black. A quarter turn or flip is now applied
+  to the pixels exactly (vImage, no resampling), alpha and the pixel aspect ratio come along (the ratio swapped by a
+  quarter turn). Only an odd transform still goes through the composition (B18, PR #NNN).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

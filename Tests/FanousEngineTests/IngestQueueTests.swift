@@ -49,19 +49,21 @@ import UniformTypeIdentifiers
     /// H.264 with one second of a 440 Hz tone: AAC 44.1 kHz mono, or (`floatAudio`) LPCM 96 kHz stereo 32-bit float.
     /// `presentationTimes` replaces the 25 frames at 25 fps (variable rate: one pattern frame per time given).
     /// `timescale` sets the video track's media timescale (1000 is what an OBS remux has; the times are then rounded to ms).
+    /// `alpha` writes ProRes 4444 (in a .mov) with the right half of every frame transparent instead of H.264.
     static func writeH264(
         to url: URL, rotated: Bool = false, floatAudio: Bool = false, pixelAspect: (Int, Int)? = nil, presentationTimes: [CMTime]? = nil,
-        timescale: CMTimeScale? = nil
+        timescale: CMTimeScale? = nil, alpha: Bool = false
     ) async throws {
         try await offPool {
-            try writeH264Blocking(to: url, rotated: rotated, floatAudio: floatAudio, pixelAspect: pixelAspect, presentationTimes: presentationTimes, timescale: timescale)
+            try writeH264Blocking(
+                to: url, rotated: rotated, floatAudio: floatAudio, pixelAspect: pixelAspect, presentationTimes: presentationTimes, timescale: timescale, alpha: alpha)
         }
     }
 
     private static func writeH264Blocking(
-        to url: URL, rotated: Bool, floatAudio: Bool, pixelAspect: (Int, Int)?, presentationTimes: [CMTime]?, timescale: CMTimeScale?
+        to url: URL, rotated: Bool, floatAudio: Bool, pixelAspect: (Int, Int)?, presentationTimes: [CMTime]?, timescale: CMTimeScale?, alpha: Bool
     ) throws {
-        let writer = try AVAssetWriter(outputURL: url, fileType: floatAudio ? .mov : .mp4)
+        let writer = try AVAssetWriter(outputURL: url, fileType: floatAudio || alpha ? .mov : .mp4)
         let audioInput = AVAssetWriterInput(
             mediaType: .audio,
             outputSettings: floatAudio
@@ -72,7 +74,7 @@ import UniformTypeIdentifiers
                 : [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 44_100, AVNumberOfChannelsKey: 1, AVEncoderBitRateKey: 64_000])
         audioInput.expectsMediaDataInRealTime = false
         writer.add(audioInput)
-        var videoSettings: [String: Any] = [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 320, AVVideoHeightKey: 176]
+        var videoSettings: [String: Any] = [AVVideoCodecKey: alpha ? AVVideoCodecType.proRes4444 : .h264, AVVideoWidthKey: 320, AVVideoHeightKey: 176]
         if let (horizontal, vertical) = pixelAspect {  // anamorphic: 320 coded pixels shown 4:3 wide
             videoSettings[AVVideoPixelAspectRatioKey] = [AVVideoPixelAspectRatioHorizontalSpacingKey: horizontal, AVVideoPixelAspectRatioVerticalSpacingKey: vertical]
         }
@@ -119,6 +121,13 @@ import UniformTypeIdentifiers
         for (frame, time) in times.enumerated() {
             while !input.isReadyForMoreMediaData { usleep(500) }
             let buffer = try patternBuffer(pool: adaptor.pixelBufferPool, frame: frame)
+            if alpha {  // the right half transparent (premultiplied: all zero)
+                CVPixelBufferLockBaseAddress(buffer, [])
+                let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
+                let stride = CVPixelBufferGetBytesPerRow(buffer)
+                for y in 0..<176 { memset(base + y * stride + 160 * 4, 0, 160 * 4) }
+                CVPixelBufferUnlockBaseAddress(buffer, [])
+            }
             guard adaptor.append(buffer, withPresentationTime: time) else {
                 throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "append")
             }
@@ -670,6 +679,43 @@ import UniformTypeIdentifiers
         func pixel(_ x: Int, _ y: Int) -> (r: UInt8, g: UInt8) { (base[y * stride + x * 4 + 2], base[y * stride + x * 4 + 1]) }
         #expect(pixel(4, 4).r > 200 && pixel(4, 315).r > 200)
         #expect(pixel(171, 4).r < 40 && pixel(171, 315).r < 40)
+    }
+
+    /// B18: a rotated source with alpha keeps its alpha. The quarter turn is done in the pixels (vImage), not by a
+    /// composition that renders over opaque black: the source's transparent right half (x ≥ 160) becomes the upright
+    /// file's transparent lower half (y ≥ 160), and the pixel aspect ratio comes along, swapped.
+    @Test func rotatedSourceWithAlphaKeepsItsAlpha() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appending(path: "rotated-alpha.mov")
+        try await Self.writeH264(to: source, rotated: true, pixelAspect: (4, 3), alpha: true)
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        queue.start()
+        defer { queue.stop() }
+        let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_rotated.mov"), kind: .transcode(codec: .proRes422HQ)))
+        #expect(await Self.wait(for: job.id, in: queue) == .done)
+
+        let asset = AVURLAsset(url: job.destination)
+        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
+        let (descriptions, size) = try await track.load(.formatDescriptions, .naturalSize)
+        let description = try #require(descriptions.first)
+        #expect(CMFormatDescriptionGetMediaSubType(description) == makeFourCC("ap4h"), "promoted to 4444")
+        let ratio = CMFormatDescriptionGetExtension(description, extensionKey: kCMFormatDescriptionExtension_PixelAspectRatio) as? [String: Int]
+        #expect(ratio?[kCMFormatDescriptionKey_PixelAspectRatioHorizontalSpacing as String] == 3 && ratio?[kCMFormatDescriptionKey_PixelAspectRatioVerticalSpacing as String] == 4, "swapped ratio: \(ratio ?? [:])")
+        #expect(abs(size.width - 176 * 3 / 4) < 1 && size.height == 320, "\(size)")
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        reader.add(output)
+        reader.startReading()
+        let first = try #require(output.copyNextSampleBuffer())
+        let buffer = try #require(CMSampleBufferGetImageBuffer(first))
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
+        let stride = CVPixelBufferGetBytesPerRow(buffer)
+        func alpha(_ x: Int, _ y: Int) -> UInt8 { base[y * stride + x * 4 + 3] }
+        #expect(alpha(88, 40) == 255 && alpha(4, 150) == 255, "upper half opaque: \(alpha(88, 40)) \(alpha(4, 150))")
+        #expect(alpha(88, 170) == 0 && alpha(171, 315) == 0, "lower half transparent: \(alpha(88, 170)) \(alpha(171, 315))")
     }
 
     @Test func cancelledSequenceLeavesNothing() async throws {
