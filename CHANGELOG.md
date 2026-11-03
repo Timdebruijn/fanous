@@ -19,7 +19,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Release: 1.0.0-rc.2 is on GitHub as a pre-release with the signed, notarized dmg; the README ("Download or build")
   and getting started point at the Releases page (PR #242).
 - Docs: the README and the user guide's known limitations say display hot-plug is checked with one external display
-  (PR #228); with two or more it rests on unit tests.
+  (PR #228); with two or more it rests on unit tests (PR #246).
 
 ## 1.0.0-rc.2 — 2026-11-03
 
