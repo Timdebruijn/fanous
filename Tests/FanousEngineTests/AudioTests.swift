@@ -55,12 +55,13 @@ extension LayerAudioChannel {
         try writer.finish()
     }
 
-    /// An audio-only movie, one second, 16-bit LPCM; channel `c` holds the constant `(c + 1) * 3000`.
-    static func writeConstantAudio(to url: URL, rate: Double, channels: Int) async throws {
-        try await offPool { try writeConstantAudioBlocking(to: url, rate: rate, channels: channels) }
+    /// An audio-only movie, one second, 16-bit LPCM; channel `c` holds the constant `(c + 1) * 3000`. Mono, stereo or
+    /// discrete by count unless `layoutTag` names the layout.
+    static func writeConstantAudio(to url: URL, rate: Double, channels: Int, layoutTag: AudioChannelLayoutTag? = nil) async throws {
+        try await offPool { try writeConstantAudioBlocking(to: url, rate: rate, channels: channels, layoutTag: layoutTag) }
     }
 
-    private static func writeConstantAudioBlocking(to url: URL, rate: Double, channels: Int) throws {
+    private static func writeConstantAudioBlocking(to url: URL, rate: Double, channels: Int, layoutTag: AudioChannelLayoutTag?) throws {
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         var description = AudioStreamBasicDescription(
@@ -73,7 +74,7 @@ extension LayerAudioChannel {
         ]
         var layout = AudioChannelLayout()
         layout.mChannelLayoutTag =
-            channels == 1 ? kAudioChannelLayoutTag_Mono : channels == 2 ? kAudioChannelLayoutTag_Stereo : kAudioChannelLayoutTag_DiscreteInOrder | UInt32(channels)
+            layoutTag ?? (channels == 1 ? kAudioChannelLayoutTag_Mono : channels == 2 ? kAudioChannelLayoutTag_Stereo : kAudioChannelLayoutTag_DiscreteInOrder | UInt32(channels))
         settings[AVChannelLayoutKey] = Data(bytes: &layout, count: MemoryLayout<AudioChannelLayout>.size)
         var format: CMAudioFormatDescription?
         let status = CMAudioFormatDescriptionCreate(
@@ -213,6 +214,33 @@ extension LayerAudioChannel {
         for i in stride(from: 300, to: 4700, by: 97) {  // past the converter's start-up transient
             #expect(abs(result.samples[2 * i] - expectedLeft) < 0.002)
             #expect(abs(result.samples[2 * i + 1] - expectedRight) < 0.002)
+        }
+    }
+
+    /// B143: a 5.1 file is mixed to stereo by its layout, so the centre is heard in both sides whichever channel carries it
+    /// (MPEG order L R C LFE Ls Rs, AAC order C L R Ls Rs LFE); a discrete six-channel file keeps its first two.
+    @Test(arguments: [kAudioChannelLayoutTag_MPEG_5_1_A, kAudioChannelLayoutTag_AAC_5_1, kAudioChannelLayoutTag_DiscreteInOrder | 6])
+    func readerMixesFiveOneByItsLayout(tag: AudioChannelLayoutTag) async throws {
+        let directory = try tempDir("fanous-audio-tests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appending(path: "five-one.mov")
+        try await Self.writeConstantAudio(to: url, rate: 48_000, channels: 6, layoutTag: tag)
+        let reader = try await AudioTrackReader.open(url: url)
+        #expect(reader.channelCount == 6)
+        reader.seek(toSeconds: 0.25)
+        let result = Self.read(reader, frames: 4800)
+        #expect(result.framesRead == 4800)
+        for frame in [2400, 4700] {  // the second converter piece (4096 frames each with a matrix) lands at the right offset
+            let left = result.samples[2 * frame] * 32768, right = result.samples[2 * frame + 1] * 32768
+            if tag == kAudioChannelLayoutTag_DiscreteInOrder | 6 {
+                #expect(abs(left - 3000) < 30 && abs(right - 6000) < 30, "\(frame): \(left) \(right)")
+            } else {
+                // Apple's fold-down (measured on macOS 27): L + 0.7071 (C + Ls), R + 0.7071 (C + Rs), the LFE dropped
+                let order = tag == kAudioChannelLayoutTag_MPEG_5_1_A ? ["L", "R", "C", "LFE", "Ls", "Rs"] : ["C", "L", "R", "Ls", "Rs", "LFE"]
+                let value: (String) -> Float = { Float(order.firstIndex(of: $0)! + 1) * 3000 }  // the constant the file holds on that channel
+                #expect(abs(left - (value("L") + 0.7071 * (value("C") + value("Ls")))) < 30, "\(frame): left \(left)")
+                #expect(abs(right - (value("R") + 0.7071 * (value("C") + value("Rs")))) < 30, "\(frame): right \(right)")
+            }
         }
     }
 
