@@ -71,15 +71,20 @@ public struct FileLogHandler: LogHandler {
 }
 
 public enum EngineLogging {
-    /// stderr + rotating file. Call once, before the first Logger is created.
+    /// stderr + unified log + rotating file. Call once, before the first Logger is created.
     public static func bootstrap(fileURL: URL, level: Logger.Level = .info) {
         let sink = FileLogSink(url: fileURL)
-        LoggingSystem.bootstrap { label in
-            var stderr = StreamLogHandler.standardError(label: label)
-            stderr.logLevel = level
-            var file = FileLogHandler(label: label, sink: sink)
-            file.logLevel = level
-            return MultiplexLogHandler([stderr, file])
-        }
+        LoggingSystem.bootstrap { handler(label: $0, level: level, sink: sink) }
+    }
+
+    /// The handler `bootstrap` gives every logger (tests: the process is bootstrapped once).
+    static func handler(label: String, level: Logger.Level, sink: FileLogSink) -> any LogHandler {
+        var stderr = StreamLogHandler.standardError(label: label)
+        stderr.logLevel = level
+        var unified = OSLogHandler(label: label)
+        unified.logLevel = level
+        var file = FileLogHandler(label: label, sink: sink)
+        file.logLevel = level
+        return MultiplexLogHandler([stderr, unified, file])
     }
 }

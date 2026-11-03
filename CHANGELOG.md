@@ -15,6 +15,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   `log(level:message:metadata:source:file:function:line:)` are replaced, and the Swift 6 concurrency warnings on values
   handed to Core Video, VideoToolbox, Network and CoreMIDI callbacks or another thread are settled with capture lists or
   a `nonisolated(unsafe)` whose comment says why it is safe; none was a data race (PR #251).
+- Engine: log lines also go to the unified log (subsystem `org.fanous`, the logger's label as the category), so Console.app,
+  `log stream` and a sysdiagnose show them next to the system's own; info lines are stored at the default level so they are
+  kept like the file's. DESIGN.md §13 named an `os_log` handler that was never built and a 10 × 10 MB rotation; the file
+  rotates once to `.1` past 10 MB, as now documented (PR #252).
 - Fixed: the release dmg was notarized and stapled but not signed itself, so Gatekeeper's check of the dmg
   (`spctl --type open`) rejected it with "no usable signature" while the app inside passed; `scripts/notarize.sh` signs
   the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).

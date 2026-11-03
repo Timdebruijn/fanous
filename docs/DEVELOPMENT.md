@@ -100,7 +100,9 @@ writes the public certificate and its fingerprint to
 the data-protection keychain; builds without a team identifier (ad-hoc
 development builds) keep it in `tls/private-key.der` (mode 0600) and never
 touch the login keychain, so there are no keychain prompts. `fanousd
-reset-tls` discards the identity. Logs: `~/Library/Logs/Fanous/fanousd.log`.
+reset-tls` discards the identity. Logs: `~/Library/Logs/Fanous/fanousd.log`,
+and the same lines in the unified log: `/usr/bin/log stream --predicate 'subsystem == "org.fanous"'`
+(the full path: zsh has a `log` builtin).
 
 `fanousd --scene scene.json` (development and the bench) renders a scene
 driven by the standard DMX patch; for that run its canvas, layer count, source
