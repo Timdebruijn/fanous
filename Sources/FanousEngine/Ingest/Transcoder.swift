@@ -275,7 +275,8 @@ public enum Transcoder {
             if let first = formats.first,
                 let ratio = CMFormatDescriptionGetExtension(first, extensionKey: kCMFormatDescriptionExtension_PixelAspectRatio) as? [String: Int],
                 let horizontal = ratio[kCMFormatDescriptionKey_PixelAspectRatioHorizontalSpacing as String],
-                let vertical = ratio[kCMFormatDescriptionKey_PixelAspectRatioVerticalSpacing as String], horizontal > 0, vertical > 0, horizontal != vertical
+                let vertical = ratio[kCMFormatDescriptionKey_PixelAspectRatioVerticalSpacing as String], horizontal > 0, vertical > 0, horizontal != vertical,
+                (0.1...10).contains(Double(horizontal) / Double(vertical))  // a broken tag is not carried over (the player ignores it too)
             {
                 pixelAspect = (horizontal, vertical)
             }
