@@ -16,12 +16,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Docs: the `CAMetalDisplayLink` stall of macOS 27.0.1 was not reproduced on 27.2 (the reproduction and
   `fanous-bench --displaylink` both ran at full rate, one run each); the drawable loop stays the shipping driver and the
   Apple Feedback item is dropped (B8, ADR-0006 amendment 2026-11-03, PR #240).
+- Release: 1.0.0-rc.2 is on GitHub as a pre-release with the signed, notarized dmg; the README ("Download or build")
+  and getting started point at the Releases page (PR #242).
 - Docs: rough performance runs of 2026-11-03 on the 4K60 display under load: the GPU-time rise since October is the
   machine's state, not the code (the October bench measures the same today), effects are the one thing that fails a
   layer count that is otherwise fine (B2), the display path allocates a fixed 14 per tick for the drawable, and decoder
-  threads at `.userInteractive` change nothing (B1, B2, B49, DESIGN §4.6, PR #NNN).
-- Release: 1.0.0-rc.2 is on GitHub as a pre-release with the signed, notarized dmg; the README ("Download or build")
-  and getting started point at the Releases page (PR #242).
+  threads at `.userInteractive` change nothing (B1, B2, B49, DESIGN §4.6, PR #245).
 
 ## 1.0.0-rc.2 — 2026-11-03
 
