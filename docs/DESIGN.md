@@ -550,7 +550,7 @@ the fixture is patched and "at default". A freshly patched layer is black
 | 17–18 | Position Z | 16 | 32768 | depth −100 … +100 % (towards / away from the camera; perspective) |
 | 19–20 | Scale X | 16 | 32768 | 0–32767 → 0–100 % · 32768–65535 → 100–800 % |
 | 21–22 | Scale Y | 16 | 32768 | same |
-| 23 | Fit mode | 8 | 0 | 0–63 Fit (letterbox) · 64–127 Fill (crop) · 128–191 Stretch · 192–255 Native (1:1 pixels) |
+| 23 | Fit mode | 8 | 0 | 0–63 Fit (letterbox) · 64–127 Fill (crop) · 128–191 Stretch · 192–255 Native (1:1 pixels; anamorphic media at its display width) |
 | 24–25 | Rotation X | 16 | 32768 | −180 … +180° |
 | 26–27 | Rotation Y | 16 | 32768 | −180 … +180° |
 | 28–29 | Rotation Z | 16 | 32768 | −180 … +180° |

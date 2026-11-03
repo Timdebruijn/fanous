@@ -213,7 +213,7 @@ when the uploads are done. Only the programmer role can import.
   their pixel aspect ratio: the file is tagged and the layer draws it at its
   display width; the Media screen shows the display size. Rotated footage is
   the exception: there the display size is rendered with square pixels.
-  Variable-frame-rate sources can drift against their audio (B19).
+- Variable-frame-rate sources can drift against their audio (B19).
 
 ## Transcode a file that is already in the library
 

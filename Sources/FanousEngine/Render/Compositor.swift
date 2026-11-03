@@ -783,7 +783,8 @@ public final class Compositor: @unchecked Sendable {
         u.adjust = SIMD4(p.brightness, p.contrast, p.saturation, p.hue)
         u.effect1 = SIMD4(Float(p.effect1.rawValue), p.effect1A, p.effect1B, frame.bottomUp ? 1 : 0)  // w: rows bottom-up
         u.effect2 = SIMD4(Float(p.effect2.rawValue), p.effect2A, p.effect2B, 0)
-        u.texel = SIMD4(1 / Float(max(1, mediaWidth)), 1 / Float(max(1, mediaHeight)), Float(mediaWidth) / Float(max(1, mediaHeight)), time)
+        // xy: one coded texel (the Sobel step); z: the aspect as shown, so blur, pixelate and kaleidoscope stay round on an anamorphic layer
+        u.texel = SIMD4(1 / Float(max(1, mediaWidth)), 1 / Float(max(1, mediaHeight)), Float(Double(mediaWidth) * playback.pixelAspect) / Float(max(1, mediaHeight)), time)
         u.kind = frame.kind.rawValue
         u.deep = texture0.pixelFormat == .rgba16Unorm || texture0.pixelFormat == .r16Unorm ? 1 : 0  // v216/y416, r16 planes (B119)
         u.blend = UInt32(p.blendMode.rawValue)

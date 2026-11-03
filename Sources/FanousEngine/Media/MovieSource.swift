@@ -96,11 +96,13 @@ public final class MovieSource: @unchecked Sendable {
         makeFourCC("HapR"): (.bc7_rgbaUnorm, nil, .rgba),
     ]
 
-    /// The `PixelAspectRatio` extension as horizontal over vertical spacing; 1 when absent or malformed.
+    /// The `PixelAspectRatio` extension as horizontal over vertical spacing; 1 when absent, malformed or outside 0.1–10
+    /// (no real format is wider; a broken tag would otherwise draw a hairline or a huge quad).
     static func pixelAspect(of description: CMFormatDescription) -> Double {
         guard let ratio = CMFormatDescriptionGetExtension(description, extensionKey: kCMFormatDescriptionExtension_PixelAspectRatio) as? [String: Double],
             let horizontal = ratio[kCMFormatDescriptionKey_PixelAspectRatioHorizontalSpacing as String],
-            let vertical = ratio[kCMFormatDescriptionKey_PixelAspectRatioVerticalSpacing as String], horizontal > 0, vertical > 0
+            let vertical = ratio[kCMFormatDescriptionKey_PixelAspectRatioVerticalSpacing as String], horizontal > 0, vertical > 0,
+            (0.1...10).contains(horizontal / vertical)
         else { return 1 }
         return horizontal / vertical
     }

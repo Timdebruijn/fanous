@@ -71,7 +71,7 @@ public final class Thumbnailer: @unchecked Sendable {
             try source.decode(frame: source.info.frameCount / 2, into: frame)
             frame.frameIndex = 0
             let layer = RenderLayer(index: 0)
-            layer.current = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: frame)
+            layer.current = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: frame, pixelAspect: source.info.pixelAspect)  // anamorphic: fills the canvas like on stage
             layer.wanted.store(MediaKey(folder: 1, file: 1).packed, ordering: .relaxed)
             compositor.setLayers([layer])
             parameters.write { slot in

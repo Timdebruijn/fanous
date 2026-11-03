@@ -145,7 +145,8 @@ public final class LayerPlayback: @unchecked Sendable {
         frameCount = movie.info.frameCount
     }
 
-    public init(key: MediaKey, still: DecodedFrame) {
+    /// `pixelAspect`: the movie's, when the still is one decoded movie frame (the thumbnailer); 1 for a real still.
+    public init(key: MediaKey, still: DecodedFrame, pixelAspect: Double = 1) {
         self.key = key
         self.still = still
         decoder = nil
@@ -153,7 +154,7 @@ public final class LayerPlayback: @unchecked Sendable {
         live = nil
         width = still.texture0?.width ?? 1
         height = still.texture0?.height ?? 1
-        pixelAspect = 1
+        self.pixelAspect = pixelAspect
         frameRate = 1
         frameCount = 1
     }

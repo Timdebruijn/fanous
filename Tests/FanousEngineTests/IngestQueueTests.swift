@@ -556,6 +556,18 @@ import UniformTypeIdentifiers
         guard let device = MTLCreateSystemDefaultDevice() else { return }
         let movie = try await MovieSource.open(url: proRes.destination, device: device, poolSize: 2)
         #expect(movie.info.width == 320 && abs(movie.info.pixelAspect - 4.0 / 3) < 0.001)
+
+        // The Media screen's thumbnail fills its 427:176 frame edge to edge (the still path carries the ratio too; it
+        // used to draw the coded 320:176 picture in it, with black bars at both sides).
+        let thumbnails = Thumbnailer(context: try MetalContext(), directory: directory.appending(path: "thumbs"), logger: Logger(label: "test"))
+        var metadata = MediaMetadata()
+        (metadata.width, metadata.height) = (427, 176)
+        let name = try #require(thumbnails.make(for: proRes.destination, metadata: metadata, kind: .movie))
+        let pixels = try #require(GoldenTests.readPNG(directory.appending(path: "thumbs").appending(path: name)))
+        let width = Thumbnailer.width, height = pixels.count / 4 / width
+        let row = height / 2
+        let left = pixels[(row * width) * 4 + 2], right = pixels[(row * width + width - 1) * 4 + 2]  // blue, 128 in the pattern
+        #expect(abs(height - 132) <= 1 && left > 60 && right > 60, "\(width)x\(height) edges blue \(left) \(right)")
     }
 
     @Test func rotatedSourceIsBakedUpright() async throws {
