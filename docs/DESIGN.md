@@ -1977,8 +1977,12 @@ source file(s) ──▶ _incoming/ (remote upload) or in-place (local path)
 - Target codec defaults: ProRes 422 HQ; sources with alpha → ProRes 4444;
   per job: HAP, HAP Alpha, HAP Q, HAP Q Alpha, HAP Alpha-only, ProRes 422
   (Proxy/LT/422/HQ), ProRes 4444 (XQ).
-- Audio is transcoded to 48 kHz LPCM so playback never needs a compressed
-  audio decoder.
+- Audio is transcoded to interleaved LPCM so playback never needs a compressed
+  audio decoder; the source's sample rate, channel count, layout and bit depth
+  are kept (a compressed source decodes to 24-bit) within what the reader
+  accepts (8–192 kHz, 8/16/24/32-bit; more than two channels are mixed to
+  stereo until the player has a matrix mix, B143), the layer's
+  `AudioTrackReader` converts to 48 kHz stereo float at playback (B19).
 - HAP muxing through `AVAssetWriter` passthrough works (`MovieWriter`,
   Phases 2–4); the own-muxer fallback was not needed (`[OPEN-13]` resolved).
 - **Phase 4 as built:** `LibraryIndex` (scan + FSEvents, 500 ms debounce,
@@ -1987,7 +1991,7 @@ source file(s) ──▶ _incoming/ (remote upload) or in-place (local path)
   mid-file frame through the layer pipeline; `IngestQueue` (one `.utility`
   thread, JSON-persisted, yields while the last 250 ms of frames exceeded 70 %
   of the frame budget), `Transcoder` (AVAssetReader → `MovieWriter`, audio to
-  48 kHz LPCM, alpha sources promoted to ProRes 4444 / HAP Alpha),
+  LPCM in the source's format, alpha sources promoted to ProRes 4444 / HAP Alpha),
   `IngestAPI` (`/api/ingest`, `PUT /api/upload/<folder>/<name>` streamed to
   `_incoming/`). Role checks come with Phase 5.
 - Transcode never runs on the compositor's P-cores exclusively: ingest threads

@@ -46,14 +46,21 @@ import UniformTypeIdentifiers
 
     /// A 1 s, 25 fps H.264 `.mp4` (320×176) written with AVAssetWriter, with a 1 s 440 Hz mono AAC track at 44.1 kHz
     /// (what a phone records: not 48 kHz, not stereo, not LPCM).
-    static func writeH264(to url: URL, rotated: Bool = false) async throws {
-        try await offPool { try writeH264Blocking(to: url, rotated: rotated) }
+    /// H.264 with one second of a 440 Hz tone: AAC 44.1 kHz mono, or (`floatAudio`) LPCM 96 kHz stereo 32-bit float.
+    static func writeH264(to url: URL, rotated: Bool = false, floatAudio: Bool = false) async throws {
+        try await offPool { try writeH264Blocking(to: url, rotated: rotated, floatAudio: floatAudio) }
     }
 
-    private static func writeH264Blocking(to url: URL, rotated: Bool) throws {
-        let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+    private static func writeH264Blocking(to url: URL, rotated: Bool, floatAudio: Bool) throws {
+        let writer = try AVAssetWriter(outputURL: url, fileType: floatAudio ? .mov : .mp4)
         let audioInput = AVAssetWriterInput(
-            mediaType: .audio, outputSettings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 44_100, AVNumberOfChannelsKey: 1, AVEncoderBitRateKey: 64_000])
+            mediaType: .audio,
+            outputSettings: floatAudio
+                ? [
+                    AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 96_000, AVNumberOfChannelsKey: 2, AVLinearPCMBitDepthKey: 32,
+                    AVLinearPCMIsFloatKey: true, AVLinearPCMIsBigEndianKey: false, AVLinearPCMIsNonInterleaved: false,
+                ]
+                : [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 44_100, AVNumberOfChannelsKey: 1, AVEncoderBitRateKey: 64_000])
         audioInput.expectsMediaDataInRealTime = false
         writer.add(audioInput)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 320, AVVideoHeightKey: 176])
@@ -68,16 +75,28 @@ import UniformTypeIdentifiers
         writer.add(input)
         guard writer.startWriting() else { throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "startWriting") }
         writer.startSession(atSourceTime: .zero)
+        let rate = floatAudio ? 96_000.0 : 44_100.0
+        let channels: UInt32 = floatAudio ? 2 : 1
+        let bytesPerFrame: UInt32 = floatAudio ? 8 : 2
         var description = AudioStreamBasicDescription(
-            mSampleRate: 44_100, mFormatID: kAudioFormatLinearPCM, mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
-            mBytesPerPacket: 2, mFramesPerPacket: 1, mBytesPerFrame: 2, mChannelsPerFrame: 1, mBitsPerChannel: 16, mReserved: 0)
+            mSampleRate: rate, mFormatID: kAudioFormatLinearPCM,
+            mFormatFlags: (floatAudio ? kAudioFormatFlagIsFloat : kAudioFormatFlagIsSignedInteger) | kAudioFormatFlagIsPacked,
+            mBytesPerPacket: bytesPerFrame, mFramesPerPacket: 1, mBytesPerFrame: bytesPerFrame, mChannelsPerFrame: channels,
+            mBitsPerChannel: bytesPerFrame / channels * 8, mReserved: 0)
         var format: CMAudioFormatDescription?
         CMAudioFormatDescriptionCreate(allocator: nil, asbd: &description, layoutSize: 0, layout: nil, magicCookieSize: 0, magicCookie: nil, extensions: nil, formatDescriptionOut: &format)
-        let tone = (0..<44_100).map { Int16(sin(2 * .pi * 440 * Double($0) / 44_100) * 16_000) }
-        let block = try tone.withUnsafeBytes { try MovieWriter.blockBuffer(copying: $0) }
+        let frames = Int(rate)
+        let block: CMBlockBuffer
+        if floatAudio {
+            let tone = (0..<frames * 2).map { Float(sin(2 * .pi * 440 * Double($0 / 2) / rate) * 0.5) }
+            block = try tone.withUnsafeBytes { try MovieWriter.blockBuffer(copying: $0) }
+        } else {
+            let tone = (0..<frames).map { Int16(sin(2 * .pi * 440 * Double($0) / rate) * 16_000) }
+            block = try tone.withUnsafeBytes { try MovieWriter.blockBuffer(copying: $0) }
+        }
         var audioSample: CMSampleBuffer?
         CMAudioSampleBufferCreateReadyWithPacketDescriptions(
-            allocator: nil, dataBuffer: block, formatDescription: format!, sampleCount: tone.count, presentationTimeStamp: .zero, packetDescriptions: nil,
+            allocator: nil, dataBuffer: block, formatDescription: format!, sampleCount: frames, presentationTimeStamp: .zero, packetDescriptions: nil,
             sampleBufferOut: &audioSample)
         while !audioInput.isReadyForMoreMediaData { usleep(500) }
         guard audioInput.append(audioSample!) else { throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "append (audio)") }
@@ -424,15 +443,87 @@ import UniformTypeIdentifiers
 
         guard let device = MTLCreateSystemDefaultDevice() else { return }
         try await Self.expectPlayable(job.destination, device: device, frames: 25, fps: 25, codec: "Hap1")
-        // The AAC track arrives as 48 kHz stereo LPCM, the mono tone on both channels.
+        // The AAC track is stored as LPCM in its own rate and channel count (B19); the reader plays the mono tone on both channels.
         let reader = try await AudioTrackReader.open(url: job.destination)
-        #expect(reader.hasAudio && reader.sampleRate == 48_000 && reader.channelCount == 2)
+        #expect(reader.hasAudio && reader.sampleRate == 44_100 && reader.channelCount == 1)
         #expect(abs(reader.duration - 1) < 0.1)
+        let track = try #require(try await AVURLAsset(url: job.destination).loadTracks(withMediaType: .audio).first)
+        let description = try #require(try await track.load(.formatDescriptions).first)
+        #expect(CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee.mBitsPerChannel == 24)  // a compressed source decodes to 24-bit
         let (samples, count, _) = AudioTests.read(reader, frames: 24_000)
         #expect(count == 24_000)
         for channel in 0..<2 {
             #expect(AudioTests.peak(samples, channel: channel, frames: 2000..<22_000) > 0.3)
             #expect(abs(AudioTests.crossings(samples, channel: channel, frames: 2000..<22_000) - 366) <= 4)  // 440 Hz over 20 000 frames
+        }
+    }
+
+    /// B19: an LPCM source keeps its sample rate, channel count, bit depth and float form; nothing is resampled to 48 kHz
+    /// stereo 16-bit any more (the reader converts at playback).
+    @Test func lpcmSourceKeepsItsAudioFormat() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appending(path: "master.mov")
+        try await Self.writeH264(to: source, floatAudio: true)
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        queue.start()
+        defer { queue.stop() }
+        let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_master.mov"), kind: .transcode(codec: .proRes422)))
+        #expect(await Self.wait(for: job.id, in: queue) == .done)
+
+        let track = try #require(try await AVURLAsset(url: job.destination).loadTracks(withMediaType: .audio).first)
+        let description = try #require(try await track.load(.formatDescriptions).first)
+        let format = try #require(CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee)
+        #expect(format.mFormatID == kAudioFormatLinearPCM && format.mSampleRate == 96_000 && format.mChannelsPerFrame == 2)
+        #expect(format.mBitsPerChannel == 32 && format.mFormatFlags & kAudioFormatFlagIsFloat != 0)
+        let reader = try await AudioTrackReader.open(url: job.destination)
+        #expect(reader.hasAudio && reader.sampleRate == 96_000 && abs(reader.duration - 1) < 0.1)
+        let (samples, count, _) = AudioTests.read(reader, frames: 24_000)
+        #expect(count == 24_000)
+        #expect(abs(AudioTests.crossings(samples, channel: 0, frames: 2000..<22_000) - 366) <= 4)  // 440 Hz over 20 000 frames at 48 kHz
+    }
+
+    /// `lpcmFormat` only ever asks `AVAssetReaderAudioMixOutput` for what it accepts: that initialiser raises an ObjC
+    /// exception (not a Swift error) on a depth outside 8/16/24/32, a rate outside 8–192 kHz or a layout that does not match
+    /// the channel count, which would kill the engine. Each case builds the output here, so a regression crashes this test.
+    @Test func lpcmFormatStaysWithinWhatTheReaderAccepts() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appending(path: "source.mov")
+        try await Self.writeSource(to: source, seconds: 1)
+        let track = try #require(try await AVURLAsset(url: source).loadTracks(withMediaType: .audio).first)
+
+        func describe(rate: Double, channels: UInt32, bits: UInt32, float: Bool = false, lpcm: Bool = true, layoutTag: AudioChannelLayoutTag? = nil) throws -> CMAudioFormatDescription {
+            var asbd = AudioStreamBasicDescription(
+                mSampleRate: rate, mFormatID: lpcm ? kAudioFormatLinearPCM : kAudioFormatMPEG4AAC,
+                mFormatFlags: lpcm ? (float ? kAudioFormatFlagIsFloat : kAudioFormatFlagIsSignedInteger) | kAudioFormatFlagIsPacked : 0,
+                mBytesPerPacket: lpcm ? bits / 8 * channels : 0, mFramesPerPacket: lpcm ? 1 : 1024, mBytesPerFrame: lpcm ? bits / 8 * channels : 0,
+                mChannelsPerFrame: channels, mBitsPerChannel: lpcm ? bits : 0, mReserved: 0)
+            var layout = AudioChannelLayout()
+            layout.mChannelLayoutTag = layoutTag ?? 0
+            var format: CMAudioFormatDescription?
+            let status = withUnsafePointer(to: &layout) { pointer in
+                CMAudioFormatDescriptionCreate(
+                    allocator: nil, asbd: &asbd, layoutSize: layoutTag == nil ? 0 : MemoryLayout<AudioChannelLayout>.size, layout: layoutTag == nil ? nil : pointer,
+                    magicCookieSize: 0, magicCookie: nil, extensions: nil, formatDescriptionOut: &format)
+            }
+            return try #require(format, "format description \(status)")
+        }
+        let cases: [(CMAudioFormatDescription, Double, UInt32, UInt32, Bool)] = [
+            (try describe(rate: 384_000, channels: 1, bits: 64, float: true), 192_000, 1, 32, true),  // DXD fl64: clamped, float32
+            (try describe(rate: 44_100, channels: 2, bits: 20), 44_100, 2, 24, false),  // 20-bit → 24
+            (try describe(rate: 7350, channels: 1, bits: 0, lpcm: false), 8000, 1, 24, false),  // low-rate AAC: clamped, 24-bit
+            (try describe(rate: 48_000, channels: 6, bits: 24, layoutTag: kAudioChannelLayoutTag_MPEG_5_1_A), 48_000, 2, 24, false),  // 5.1 → stereo (ponytail)
+            (try describe(rate: 48_000, channels: 2, bits: 16, layoutTag: kAudioChannelLayoutTag_MPEG_5_1_A), 48_000, 2, 16, false),  // layout disagrees with the count → by count
+            (try describe(rate: 44_100, channels: 0, bits: 0, lpcm: false), 44_100, 2, 24, false),  // no channel count: stereo (a description cannot carry rate 0)
+        ]
+        for (description, rate, channels, bits, float) in cases {
+            let (format, settings) = try #require(Transcoder.lpcmFormat(matching: description))
+            let asbd = try #require(CMAudioFormatDescriptionGetStreamBasicDescription(format)?.pointee)
+            #expect(asbd.mSampleRate == rate && asbd.mChannelsPerFrame == channels && asbd.mBitsPerChannel == bits, "\(asbd)")
+            #expect((asbd.mFormatFlags & kAudioFormatFlagIsFloat != 0) == float)
+            #expect(asbd.mBytesPerFrame == bits / 8 * channels)
+            _ = AVAssetReaderAudioMixOutput(audioTracks: [track], audioSettings: settings)  // raises on anything the reader refuses
         }
     }
 

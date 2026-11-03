@@ -3,6 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
 import AVFoundation
+import AudioToolbox
 import CoreMedia
 import Foundation
 import Synchronization
@@ -60,8 +61,9 @@ final class IngestGate: Sendable {
 }
 
 /// Converts one source movie (anything AVFoundation can read) to a `.mov` the engine plays (DESIGN.md §8.3): ProRes or
-/// HAP video from BGRA frames, audio as 48 kHz stereo 16-bit LPCM. Runs on the calling thread; a run cancelled through
-/// its gate (from any thread) removes its partial output.
+/// HAP video from BGRA frames, audio as interleaved LPCM in the source's sample rate, channels and bit depth (see
+/// `lpcmFormat` for the exceptions). Runs on the calling thread; a run cancelled through its gate (from any thread)
+/// removes its partial output.
 public enum Transcoder {
     /// An alpha source must keep its alpha: ProRes 422 becomes 4444, HAP and HAP Q become HAP Alpha. HAP Q Alpha ('HapM')
     /// is not available in `HAPEncoder` (it has no two-texture frames), so HAP Q loses its quality tier here, not its alpha.
@@ -96,9 +98,15 @@ public enum Transcoder {
         videoOutput.alwaysCopiesSampleData = false
         guard reader.canAdd(videoOutput) else { throw TranscodeError.reader("cannot read the video track") }
         reader.add(videoOutput)
-        var audioOutput = probe.audio.map { AVAssetReaderAudioMixOutput(audioTracks: [$0], audioSettings: Self.audioSettings) }
-        if let output = audioOutput {
-            if reader.canAdd(output) { reader.add(output) } else { audioOutput = nil }  // an undecodable audio track must not block the video
+        var audioOutput: AVAssetReaderAudioMixOutput?
+        var audioFormat: CMAudioFormatDescription?
+        if let audio = probe.audio, let source = probe.audioFormat, let (format, settings) = Self.lpcmFormat(matching: source) {
+            let output = AVAssetReaderAudioMixOutput(audioTracks: [audio], audioSettings: settings)
+            if reader.canAdd(output) {  // an undecodable audio track must not block the video
+                reader.add(output)
+                audioOutput = output
+                audioFormat = format
+            }
         }
         // ponytail: AVFoundation has no HAP decoder ("Cannot Decode"), so a HAP source fails here; the engine's own
         // decoder (MovieSource) plus a texture read-back would cover it, but HAP is already playable and needs no ingest.
@@ -138,7 +146,7 @@ public enum Transcoder {
                         if case .hap = requested, width % 4 != 0 || height % 4 != 0 { throw TranscodeError.hapDimensions(width, height) }
                         writer = try MovieWriter(
                             url: destination, width: width, height: height, fps: Int32((1 / probe.frameDuration.seconds).rounded()),
-                            frameDuration: probe.frameDuration, codec: requested, externalAudio: audioOutput != nil)
+                            frameDuration: probe.frameDuration, codec: requested, externalAudio: audioFormat)
                     }
                     // ponytail: one output frame per source frame at the track's frame duration, so a variable-frame-rate
                     // source (screen recordings) drifts against its audio; resample by PTS (hold/drop) when that matters.
@@ -167,18 +175,58 @@ public enum Transcoder {
         }
     }
 
-    /// 48 kHz stereo 16-bit interleaved LPCM: what `AudioTrackReader` reads without a compressed-audio decoder (ADR-0019).
-    /// The mix output resamples and up/downmixes whatever the source has.
-    /// ponytail: 16 bit; a 24-bit master loses its low bits (the writer's track format is 16-bit like the test tone).
-    private static var audioSettings: [String: Any] {
-        var layout = AudioChannelLayout()
-        layout.mChannelLayoutTag = kAudioChannelLayoutTag_Stereo
-        return [
-            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: TestTone.sampleRate, AVNumberOfChannelsKey: 2,
-            AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false,
-            AVLinearPCMIsNonInterleaved: false,
-            AVChannelLayoutKey: Data(bytes: &layout, count: MemoryLayout<AudioChannelLayout>.size),
+    /// The interleaved LPCM the library stores for `source` (ADR-0019: what `AudioTrackReader` reads without a
+    /// compressed-audio decoder, converting to 48 kHz stereo float itself), as a format description for `MovieWriter` and
+    /// the matching reader settings. The source's sample rate and channel count/layout stay, an LPCM source keeps its bit
+    /// depth and integer/float form, a compressed source (AAC, ...) decodes to 24-bit (B19). The exceptions are what
+    /// `AVAssetReaderAudioMixOutput` refuses (it raises, which would kill the engine): the rate is clamped to 8–192 kHz,
+    /// the depth to 8/16/24/32 (float is always 32), a layout that does not match the channel count is replaced by one
+    /// made from the count, a track without a channel count gets stereo.
+    /// ponytail: more than two channels are mixed down to stereo here, as before, because the player takes channels 0 and
+    /// 1 by index (a 5.1 file would lose its centre); keep them once `AudioTrackReader` has a matrix mix (B143).
+    /// Nil only when the format description cannot be made.
+    static func lpcmFormat(matching source: CMAudioFormatDescription) -> (CMAudioFormatDescription, [String: Any])? {
+        let input = CMAudioFormatDescriptionGetStreamBasicDescription(source)?.pointee
+        let rate = min(max(input?.mSampleRate ?? 48_000, 8_000), 192_000)
+        let sourceChannels = input?.mChannelsPerFrame ?? 0
+        let channels: UInt32 = sourceChannels == 0 || sourceChannels > 2 ? 2 : sourceChannels
+        let isLPCM = input?.mFormatID == kAudioFormatLinearPCM && (input?.mBitsPerChannel ?? 0) > 0
+        let isFloat = isLPCM && (input?.mFormatFlags ?? 0) & kAudioFormatFlagIsFloat != 0
+        let wanted: UInt32 = isLPCM ? input!.mBitsPerChannel : 24
+        let bits: UInt32 = isFloat ? 32 : [8, 16, 24, 32].first { $0 >= wanted } ?? 32
+        var description = AudioStreamBasicDescription(
+            mSampleRate: rate, mFormatID: kAudioFormatLinearPCM,
+            mFormatFlags: (isFloat ? kAudioFormatFlagIsFloat : kAudioFormatFlagIsSignedInteger) | kAudioFormatFlagIsPacked,
+            mBytesPerPacket: bits / 8 * channels, mFramesPerPacket: 1, mBytesPerFrame: bits / 8 * channels, mChannelsPerFrame: channels,
+            mBitsPerChannel: bits, mReserved: 0)
+        // The source's layout when it has one that agrees with the channel count; mono/stereo by count otherwise.
+        var layoutSize = 0
+        var layoutData: Data?
+        if channels == sourceChannels, let layout = CMAudioFormatDescriptionGetChannelLayout(source, sizeOut: &layoutSize), layoutSize > 0 {
+            var count: UInt32 = 0
+            var countSize = UInt32(MemoryLayout<UInt32>.size)
+            let status = AudioFormatGetProperty(kAudioFormatProperty_NumberOfChannelsForLayout, UInt32(layoutSize), layout, &countSize, &count)
+            if status == noErr, count == channels { layoutData = Data(bytes: layout, count: layoutSize) }
+        }
+        if layoutData == nil {
+            var layout = AudioChannelLayout()
+            layout.mChannelLayoutTag = channels == 1 ? kAudioChannelLayoutTag_Mono : kAudioChannelLayoutTag_Stereo
+            layoutData = Data(bytes: &layout, count: MemoryLayout<AudioChannelLayout>.size)
+        }
+        var format: CMAudioFormatDescription?
+        let status = layoutData!.withUnsafeBytes { bytes in
+            CMAudioFormatDescriptionCreate(
+                allocator: kCFAllocatorDefault, asbd: &description, layoutSize: bytes.count,
+                layout: bytes.baseAddress!.assumingMemoryBound(to: AudioChannelLayout.self), magicCookieSize: 0, magicCookie: nil,
+                extensions: nil, formatDescriptionOut: &format)
+        }
+        guard status == noErr, let format else { return nil }
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: rate, AVNumberOfChannelsKey: channels,
+            AVLinearPCMBitDepthKey: bits, AVLinearPCMIsFloatKey: isFloat, AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false, AVChannelLayoutKey: layoutData!,
         ]
+        return (format, settings)
     }
 
     /// Track properties, loaded once (async API; the caller's thread is not a cooperative one, so blocking is fine,
@@ -187,6 +235,7 @@ public enum Transcoder {
         let asset: AVURLAsset
         let video: AVAssetTrack
         let audio: AVAssetTrack?
+        let audioFormat: CMAudioFormatDescription?
         let frameDuration: CMTime
         let duration: CMTime
         let hasAlpha: Bool
@@ -198,6 +247,7 @@ public enum Transcoder {
             let asset = AVURLAsset(url: url)
             guard let video = try await asset.loadTracks(withMediaType: .video).first else { throw TranscodeError.noVideoTrack(url) }
             let audio = try await asset.loadTracks(withMediaType: .audio).first
+            let audioFormat = try? await audio?.load(.formatDescriptions).first  // a track whose format will not load is skipped, like an undecodable one
             let (nominal, minimum, range, formats, transform) = try await video.load(
                 .nominalFrameRate, .minFrameDuration, .timeRange, .formatDescriptions, .preferredTransform)
             // Constant-rate sources: the smallest frame duration is the frame duration. Fall back to the nominal rate.
@@ -218,7 +268,8 @@ public enum Transcoder {
                 composition?.frameDuration = frameDuration  // match the identity path: same frame count and pacing
             }
             return Probe(
-                asset: asset, video: video, audio: audio, frameDuration: frameDuration, duration: range.duration, hasAlpha: alpha,
+                asset: asset, video: video, audio: audio, audioFormat: audioFormat, frameDuration: frameDuration, duration: range.duration,
+                hasAlpha: alpha,
                 upright: composition,
                 codec: formats.first.map(CMFormatDescriptionGetMediaSubType) ?? 0)
         }
