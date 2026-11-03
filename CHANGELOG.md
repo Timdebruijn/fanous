@@ -16,6 +16,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Docs: the `CAMetalDisplayLink` stall of macOS 27.0.1 was not reproduced on 27.2 (the reproduction and
   `fanous-bench --displaylink` both ran at full rate, one run each); the drawable loop stays the shipping driver and the
   Apple Feedback item is dropped (B8, ADR-0006 amendment 2026-11-03, PR #240).
+- Release: 1.0.0-rc.2 is on GitHub as a pre-release with the signed, notarized dmg; the README ("Download or build")
+  and getting started point at the Releases page (PR #242).
+- Docs: the README and the user guide's known limitations say display hot-plug is checked with one external display
+  (PR #228); with two or more it rests on unit tests (PR #246).
 - Fixed: count captions in the web UI put the plural after a count of 1 ("1 outputs · 1 displays connected",
   "1 layers", "1 frames seen" and others) and the Media header said "2 invalid name"; every count string now goes
   through one `plural` helper (PR #238).
