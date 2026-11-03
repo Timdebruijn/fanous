@@ -18,6 +18,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   Apple Feedback item is dropped (B8, ADR-0006 amendment 2026-11-03, PR #240).
 - Release: 1.0.0-rc.2 is on GitHub as a pre-release with the signed, notarized dmg; the README ("Download or build")
   and getting started point at the Releases page (PR #242).
+- Docs: the README and the user guide's known limitations say display hot-plug is checked with one external display
+  (PR #228); with two or more it rests on unit tests (PR #246).
 - Fixed: `POST /api/library/folder` checked for the folder and created it in two steps on a per-client queue, so two
   clients creating one number, or an upload making the folder in between, could end with two folders of one number; the
   check and the create now run under one lock (B141). A create that fails (a read-only root) no longer answers 200 with a
