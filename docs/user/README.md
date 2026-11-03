@@ -74,8 +74,8 @@ nothing while you type in a field or while a dialog is open.
 Everything below is also in [BACKLOG.md](../BACKLOG.md) under the given number.
 The pages that follow repeat the ones that matter for their topic.
 
-- Hot-plugging a display has only been tested through unit tests and the
-  built-in display (B34).
+- Hot-plugging a display is checked with one external display; with two or
+  more it rests on unit tests (B34).
 - There is one project per machine; versions of it can be restored (System ›
   Project versions), but there are no project bundles to open or switch
   between, and no diff between two versions.

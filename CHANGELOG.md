@@ -18,6 +18,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   Apple Feedback item is dropped (B8, ADR-0006 amendment 2026-11-03, PR #240).
 - Release: 1.0.0-rc.2 is on GitHub as a pre-release with the signed, notarized dmg; the README ("Download or build")
   and getting started point at the Releases page (PR #242).
+- Docs: the README and the user guide's known limitations say display hot-plug is checked with one external display
+  (PR #228); with two or more it rests on unit tests (PR #246).
 - Changed: the web UI's labels are in sentence case instead of tracked capitals (Locked / Unlocked, "Show mode: on",
   Programmer, No media, Missing file, the column heads); acronyms such as LTC, HAP and GO keep theirs. The shorter words
   let the status bar fit one row from 1416 px wide instead of 1470 (PR #243).
