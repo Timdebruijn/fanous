@@ -262,3 +262,23 @@ store whether anything records or not (about 600 a second), and the
 dynamicTracing category was not switched on by any `xctrace` template on
 macOS 27.2. Measured 2026-11-03 (release bench, 4 × ProRes 1080p60 headless):
 3.99 compositor mallocs per tick off, on and while recording, as before.
+
+To judge smoothness by eye, write seamless 10 s loops at 1920 × 1080 into the
+library, which must exist (1.6 GB, about two minutes on an M1 Pro). It
+refuses when a folder of yours already has number 254 or 255:
+
+```
+fanous-bench samples --dir "$HOME/Movies/Fanous Library"
+```
+
+Folder 254 holds three looks at 60p: warm glows, scrolling stained glass and a
+starfield, whose sharp edges and points show judder plainly. Folder 255 holds
+the built-in Motion test's layout (0/113) as files, at 24, 25, 30, 50 and 60p
+in ProRes 422 HQ and at 60p in HAP Q. They move as fast as the generator does
+on a 60 fps 1080p canvas (the bar 1920 px/s, the stripes 960 px/s), at every
+rate. Held against the generator, which draws on every canvas tick, a file
+shows what decoding adds. A layer shows the media frame of each tick without
+blending, so a rate that does not divide the canvas rate (24, 25 or 50p on a
+60 fps canvas) judders by its cadence, not by a fault. Every pattern moves a
+whole number of periods per loop, so a hitch at the loop point is the
+engine's.

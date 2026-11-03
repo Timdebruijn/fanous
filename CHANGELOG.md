@@ -43,6 +43,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   `MasterIntensityTests` counts 4.01 instead of 5.01 (B117, PR #258).
 - Docs: the Motion test (0/113) was described as a bar moving 16 px and stripes 8 px per frame at 1080p; the step scales
   with the canvas height, so at 1080p they move 32 and 16 px per frame (`show-control.md`, the shader comment).
+- Added: `fanous-bench samples --dir LIBRARY` writes clips to judge playback smoothness by eye: three 60p looks in folder 254
+  and the Motion test's layout as files at 24–60p (ProRes 422 HQ) and 60p HAP Q in folder 255, all seamless 10 s loops
+  (`docs/DEVELOPMENT.md`, PR #248).
 - Fixed: the release dmg was notarized and stapled but not signed itself, so Gatekeeper's check of the dmg
   (`spctl --type open`) rejected it with "no usable signature" while the app inside passed; `scripts/notarize.sh` signs
   the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).
