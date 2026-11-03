@@ -48,11 +48,19 @@ import UniformTypeIdentifiers
     /// (what a phone records: not 48 kHz, not stereo, not LPCM).
     /// H.264 with one second of a 440 Hz tone: AAC 44.1 kHz mono, or (`floatAudio`) LPCM 96 kHz stereo 32-bit float.
     /// `presentationTimes` replaces the 25 frames at 25 fps (variable rate: one pattern frame per time given).
-    static func writeH264(to url: URL, rotated: Bool = false, floatAudio: Bool = false, pixelAspect: (Int, Int)? = nil, presentationTimes: [CMTime]? = nil) async throws {
-        try await offPool { try writeH264Blocking(to: url, rotated: rotated, floatAudio: floatAudio, pixelAspect: pixelAspect, presentationTimes: presentationTimes) }
+    /// `timescale` sets the video track's media timescale (1000 is what an OBS remux has; the times are then rounded to ms).
+    static func writeH264(
+        to url: URL, rotated: Bool = false, floatAudio: Bool = false, pixelAspect: (Int, Int)? = nil, presentationTimes: [CMTime]? = nil,
+        timescale: CMTimeScale? = nil
+    ) async throws {
+        try await offPool {
+            try writeH264Blocking(to: url, rotated: rotated, floatAudio: floatAudio, pixelAspect: pixelAspect, presentationTimes: presentationTimes, timescale: timescale)
+        }
     }
 
-    private static func writeH264Blocking(to url: URL, rotated: Bool, floatAudio: Bool, pixelAspect: (Int, Int)?, presentationTimes: [CMTime]?) throws {
+    private static func writeH264Blocking(
+        to url: URL, rotated: Bool, floatAudio: Bool, pixelAspect: (Int, Int)?, presentationTimes: [CMTime]?, timescale: CMTimeScale?
+    ) throws {
         let writer = try AVAssetWriter(outputURL: url, fileType: floatAudio ? .mov : .mp4)
         let audioInput = AVAssetWriterInput(
             mediaType: .audio,
@@ -70,6 +78,7 @@ import UniformTypeIdentifiers
         }
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         input.expectsMediaDataInRealTime = false
+        if let timescale { input.mediaTimeScale = timescale }
         if rotated { input.transform = CGAffineTransform(rotationAngle: .pi / 2) }  // how a phone held upright tags its footage
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: input,
@@ -595,6 +604,28 @@ import UniformTypeIdentifiers
         let bars = try await Self.barPositions(of: job.destination)
         let expected = (0..<60).map { k in (k < 30 ? k / 3 : 10 + (k - 30)) * 8 % 304 }
         #expect(bars.count == 60 && zip(bars, expected).allSatisfy { abs($0 - $1) <= 2 }, "bars \(bars)")
+    }
+
+    /// B19 (review of PR #221): a constant 30 fps source on a 1 ms timescale has 33 and 34 ms frames and reports a 33 ms
+    /// smallest frame duration. Snapping the rate to 1/30 and sampling each output frame at its middle keep it frame for
+    /// frame over 5 s; sampling at the start dropped and doubled every third frame, and a 33 ms output drifted a frame per 3 s.
+    @Test func millisecondTimestampsStayFrameForFrame() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appending(path: "obs.mp4")
+        let times = (0..<150).map { CMTime(value: Int64((Double($0) * 1000 / 30).rounded()), timescale: 1000) }
+        try await Self.writeH264(to: source, presentationTimes: times, timescale: 1000)
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        queue.start()
+        defer { queue.stop() }
+        let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_obs.mov"), kind: .transcode(codec: .proRes422)))
+        #expect(await Self.wait(for: job.id, in: queue) == .done)
+
+        let track = try #require(try await AVURLAsset(url: job.destination).loadTracks(withMediaType: .video).first)
+        let (rate, minimum) = try await track.load(.nominalFrameRate, .minFrameDuration)
+        #expect(abs(rate - 30) < 0.01 && minimum == CMTime(value: 1, timescale: 30), "\(rate) fps, \(minimum)")
+        let bars = try await Self.barPositions(of: job.destination)
+        #expect(bars.count == 150 && bars.enumerated().allSatisfy { abs($0.element - $0.offset * 8 % 304) <= 2 }, "bars \(bars)")
     }
 
     @Test func rotatedSourceIsBakedUpright() async throws {

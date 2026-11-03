@@ -119,22 +119,25 @@ public enum Transcoder {
         var written = 0
         var audioEnd = CMTime.zero
         var audioDone = audioOutput == nil
-        // Hold/drop by presentation time (B19): output frame k covers [k, k + 1) frame durations from the first source
-        // frame; it shows the latest source frame at or before its start. A constant-rate source comes out frame for
-        // frame; a variable-rate one (screen recordings) is held or dropped so it stays in step with its audio.
+        // Hold/drop by presentation time (B19): output frame k shows the latest source frame at or before its middle,
+        // (k + ½) frame durations. Sampling the middle, not the start, keeps a source whose timestamps are quantised
+        // (1 ms timescales from OBS remuxes) frame for frame instead of dropping and doubling every third one. A
+        // constant-rate source comes out frame for frame; a variable-rate one (screen recordings) is held or dropped so
+        // it stays in step with its audio.
         var held: CVPixelBuffer?
-        var origin: CMTime?
-        /// Output frames that start before `time` (relative to the first frame); a rounding margin keeps n × duration at n.
+        /// Output frames whose middle lies before `time`.
         func slots(before time: CMTime) -> Int {
-            max(0, Int((time.seconds / probe.frameDuration.seconds - 1e-6).rounded(.up)))
+            max(0, Int((time.seconds / probe.frameDuration.seconds - 0.5).rounded(.up)))
         }
-        /// Writes `held` until `count` frames are out, the audio in step.
+        /// Writes `held` until `count` frames are out, the audio in step; a long hold (a static stretch of a screen
+        /// recording) still yields to the compositor and pauses under show lock.
         func emit(upTo count: Int) throws {
             while written < count, let held, let writer {
-                try gate.throwIfCancelled()
+                try gate.checkpoint()
                 try pumpAudio(until: CMTime(value: Int64(written + 1) * probe.frameDuration.value, timescale: probe.frameDuration.timescale))
                 try writer.append(held)  // ProRes: the reader's buffer goes straight to the adaptor; HAP: encoded from BGRA
                 written += 1
+                progress?(written, max(written, expected))
             }
         }
 
@@ -154,7 +157,7 @@ public enum Transcoder {
 
         do {
             while true {
-                try gate.checkpoint()
+                try gate.throwIfCancelled()  // emit() checkpoints per output frame
                 let finished = try autoreleasepool { () throws -> Bool in
                     guard let sample = videoOutput.copyNextSampleBuffer(), let pixels = CMSampleBufferGetImageBuffer(sample) else { return true }
                     if writer == nil {
@@ -168,20 +171,17 @@ public enum Transcoder {
                             frameDuration: probe.frameDuration, codec: requested, externalAudio: audioFormat,
                             pixelAspect: probe.upright == nil ? probe.pixelAspect : nil)
                     }
-                    // ponytail: the audio is written at its source time and the video from its first frame's time, which
-                    // AVAssetReader puts at 0 after the edit lists; a source whose first frame sits later than its audio
-                    // start would be that much early.
-                    let time = CMSampleBufferGetPresentationTimeStamp(sample)
-                    if origin == nil { origin = time }
-                    try emit(upTo: slots(before: time - origin!))
+                    // Both video and audio are written at their source times (AVAssetReader has applied the edit lists,
+                    // so a track starts at 0); a first frame that sits later than 0 is held from 0.
+                    if held == nil { held = pixels }
+                    try emit(upTo: slots(before: CMSampleBufferGetPresentationTimeStamp(sample)))
                     held = pixels
                     return false
                 }
                 if finished { break }
-                progress?(written, max(written, expected))
             }
             if reader.status == .failed { throw TranscodeError.reader(reader.error?.localizedDescription ?? "unknown") }
-            if let origin { try emit(upTo: max(written + 1, slots(before: probe.duration - (origin - probe.start)))) }  // the last frame, to the track's end
+            try emit(upTo: max(written + 1, slots(before: probe.start + probe.duration)))  // the last frame, to the track's end (nearest frame)
             guard let writer, written > 0 else { throw TranscodeError.noFrames }
             try pumpAudio(until: CMTime(value: .max, timescale: 1))  // the audio tail, if it outlasts the video
             try gate.throwIfCancelled()
@@ -250,6 +250,23 @@ public enum Transcoder {
         return (format, settings)
     }
 
+    /// 23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 100 and 120 fps, as exact durations.
+    static let standardFrameDurations: [CMTime] = [
+        CMTime(value: 1001, timescale: 24000), CMTime(value: 1, timescale: 24), CMTime(value: 1, timescale: 25), CMTime(value: 1001, timescale: 30000),
+        CMTime(value: 1, timescale: 30), CMTime(value: 1, timescale: 48), CMTime(value: 1, timescale: 50), CMTime(value: 1001, timescale: 60000),
+        CMTime(value: 1, timescale: 60), CMTime(value: 1, timescale: 100), CMTime(value: 1, timescale: 120),
+    ]
+
+    /// The standard frame duration nearest to `rate`, when within 0.5 % of it (29.97 and 30 are 0.1 % apart, so nearest,
+    /// not first); nil otherwise. A track with a 1 ms timescale reports 33 ms for 30 fps, and 33 ms output would drift a
+    /// frame every 3 s against the source and its audio.
+    static func standardFrameDuration(nearest rate: Double) -> CMTime? {
+        guard rate > 0, let nearest = standardFrameDurations.min(by: { abs(1 / $0.seconds - rate) < abs(1 / $1.seconds - rate) }),
+            abs(1 / nearest.seconds / rate - 1) < 0.005
+        else { return nil }
+        return nearest
+    }
+
     /// Track properties, loaded once (async API; the caller's thread is not a cooperative one, so blocking is fine,
     /// like `MediaLoader`).
     private struct Probe: @unchecked Sendable {  // AVAssetTrack is not Sendable in this SDK; the probe is handed over once and then used by one thread
@@ -257,8 +274,10 @@ public enum Transcoder {
         let video: AVAssetTrack
         let audio: AVAssetTrack?
         let audioFormat: CMAudioFormatDescription?
-        /// Output frame duration: the track's smallest frame duration for a constant-rate source; a variable-rate source
-        /// (its nominal rate differs from that by over 1 %) gets its fastest rate, at most 60 fps, and is held/dropped to it.
+        /// Output frame duration: a constant-rate source's nominal rate (its smallest frame duration when no standard rate
+        /// is within 0.5 %); a variable-rate source (its nominal rate differs from its smallest frame duration by over
+        /// 1 %) gets its fastest rate, at most 60 fps. Snapped to a standard rate (`standardFrameDurations`), so a 1 ms
+        /// timescale (33/34 ms) still means 1/30.
         let frameDuration: CMTime
         let start: CMTime
         let duration: CMTime
@@ -276,15 +295,21 @@ public enum Transcoder {
             let audioFormat = try? await audio?.load(.formatDescriptions).first  // a track whose format will not load is skipped, like an undecodable one
             let (nominal, minimum, range, formats, transform) = try await video.load(
                 .nominalFrameRate, .minFrameDuration, .timeRange, .formatDescriptions, .preferredTransform)
-            // Constant-rate sources: the smallest frame duration is the frame duration. Fall back to the nominal rate.
-            var frameDuration = minimum
-            if !frameDuration.isNumeric || frameDuration.seconds <= 0 {
+            // Constant-rate sources: the nominal rate (frames over duration, exact on any timescale) snapped to a standard
+            // rate, else the smallest frame duration as it is. Fall back to the nominal rate without a usable minimum.
+            var frameDuration: CMTime
+            if !minimum.isNumeric || minimum.seconds <= 0 {
                 guard nominal > 0 else { throw TranscodeError.reader("unknown frame rate") }
-                frameDuration = CMTime(value: 1, timescale: CMTimeScale(nominal.rounded()))
-            } else if abs(frameDuration.seconds * Double(nominal) - 1) > 0.01 {
-                // Variable rate: the smallest gap would make a 1000 fps file of a screen recording with one short gap.
-                // ponytail: 60 fps ceiling (no canvas runs faster today); raise it with 120 Hz canvases.
-                frameDuration = CMTime(value: 1, timescale: CMTimeScale(min(60, max(1, (1 / frameDuration.seconds).rounded()))))
+                frameDuration = Transcoder.standardFrameDuration(nearest: Double(nominal)) ?? CMTime(value: 1, timescale: CMTimeScale(nominal.rounded()))
+            } else if abs(minimum.seconds * Double(nominal) - 1) > 0.01 {
+                // Variable rate: the fastest rate, so no frame is lost; the smallest gap would make a 1000 fps file of a
+                // screen recording with one short gap, so at most 60 fps.
+                // ponytail: 60 fps ceiling (no canvas runs faster today; raise it with 120 Hz canvases), and one glitch
+                // frame in a 30 fps file still doubles it to 60 fps; a percentile of the sample durations would be the fix.
+                let rate = min(60, max(1, (1 / minimum.seconds).rounded()))
+                frameDuration = Transcoder.standardFrameDuration(nearest: rate) ?? CMTime(value: 1, timescale: CMTimeScale(rate))
+            } else {
+                frameDuration = Transcoder.standardFrameDuration(nearest: Double(nominal)) ?? minimum
             }
             let alpha = formats.contains { description in
                 let flag = CMFormatDescriptionGetExtension(description, extensionKey: kCMFormatDescriptionExtension_ContainsAlphaChannel)
@@ -295,7 +320,7 @@ public enum Transcoder {
             var composition: AVMutableVideoComposition?
             if transform.rotatesOrFlips {
                 composition = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: asset)
-                composition?.frameDuration = frameDuration  // match the identity path: same frame count and pacing
+                composition?.frameDuration = frameDuration  // caps the composition's rate; the read loop sets the cadence (it delivers the source times)
             }
             var pixelAspect: (horizontal: Int, vertical: Int)?
             if let first = formats.first,
