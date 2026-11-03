@@ -77,7 +77,7 @@ side with a soft-edge blend in the middle, one console.
    of "Layer 1 on both" sets folder, file and intensity in one go.
 3. **The console reaches both Macs**: Art-Net broadcast, or sACN (multicast
    reaches every machine that listens to the universe). Check on each Mac's
-   Patch screen that its universe pills are green.
+   Patch screen that its universes show green.
 4. **Sync channel**: on the left Mac, Layer 1 Sync = **Master 1**; on the right
    Mac, Layer 1 Sync = **Slave 1**. Put the same media on both (step 1).
    Further layers that must play in step get their own group: Layer 2 Master 2

@@ -152,7 +152,6 @@
   .readout-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; }
   .readout { font-size: clamp(34px, 11vw, 48px); font-weight: 600; line-height: 1.1; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
   .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
-  .pill-off { background: var(--surface-3); color: var(--text-3); }
   .err { margin: 0; color: var(--red); font-size: 13px; }
   .fields { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; }
   .fields .select { min-width: 200px; max-width: 100%; }

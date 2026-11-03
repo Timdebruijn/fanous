@@ -106,19 +106,23 @@ h3 { margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--text-3); }
 .badge-warn { background: var(--yellow-bg); color: var(--yellow); font-family: var(--font-ui); }
 .badge-err { background: var(--red-bg); color: var(--red); font-family: var(--font-ui); }
 .badge-accent { background: transparent; border: 1px solid var(--accent); color: var(--accent); font-family: var(--font-ui); }
-.pill { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 14px; font: 500 12px var(--font-mono); white-space: nowrap; }
-.pill-green { background: var(--green-bg); color: var(--green); }
-.pill-yellow { background: var(--yellow-bg); color: var(--yellow); }
-.pill-red { background: var(--red-bg); color: var(--red); }
+/* a status is its dot and word; only red (look now) gets a fill, so a calm screen has no coloured blocks */
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 28px; border-radius: var(--radius-control); font: 500 12px var(--font-mono); white-space: nowrap; }
+.pill-green { color: var(--text-2); }
+.pill-green .dot { background: var(--green); }
+.pill-yellow { color: var(--yellow); }
+.pill-red { padding: 0 8px; background: var(--red-bg); color: var(--red); }
+.pill-off { color: var(--text-3); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
 .dot-green { background: var(--green); }
 .dot-yellow { background: var(--yellow); }
 .dot-red { background: var(--red); }
 .dot-off { background: transparent; border: 1.5px solid var(--line-strong); }
-.role { display: inline-flex; align-items: center; min-height: var(--touch); padding: 0 10px; border-radius: 14px; font-size: 12px; font-weight: 600; }
-.role-monitor { background: var(--surface-3); color: var(--text-2); }
-.role-operator { background: var(--accent-dim); color: var(--text-1); }
-.role-programmer { background: var(--accent); color: var(--ground); }
+.role { display: inline-flex; align-items: center; min-height: var(--touch); padding: 0 12px; border-radius: var(--radius-control); font-size: 12px; font-weight: 600; }
+/* the role in its text colour on a quiet surface: programmer, the one that can change the show, in the accent */
+.role-monitor { background: var(--surface-2); color: var(--text-2); }
+.role-operator { background: var(--surface-2); color: var(--text-1); }
+.role-programmer { background: var(--surface-2); color: var(--accent); }
 .tag { display: inline-flex; align-items: center; gap: 6px; min-height: var(--touch); padding: 0 10px; border-radius: var(--radius-control); font-size: 11px; font-weight: 600; }
 .tag-lock { background: var(--surface-3); color: var(--text-1); }
 .tag-mode { background: var(--accent-dim); color: var(--text-1); }
