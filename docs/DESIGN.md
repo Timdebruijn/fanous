@@ -2298,7 +2298,7 @@ applied entirely on the GPU in the final output pass" is satisfied.
 15 ms after the display event (the output is `lost`); a replug on the same or
 another port rebinds by the same UUID and the display is clock master again
 15–20 ms after the event; a refresh-rate change under a bound output replaces
-the window with one master; show mode applies a wanted mode in 0.5 s and
+the window with one master (25 ms); show mode applies a wanted mode in 0.5 s and
 restores it on leaving (ledger written and removed); after an unplug/replug in
 show mode the display came back in the applied mode, so the re-apply path was
 not exercised. Two external displays were not available, so "other outputs
