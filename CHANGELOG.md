@@ -17,7 +17,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   dialogue) was silent, or with the AAC channel order (C L R …) the centre and left played as the pair; the player now folds
   the channels to stereo by the file's layout with Apple's matrix (L + 0.7071 (C + Ls), R + 0.7071 (C + Rs), the LFE dropped),
   and ingest keeps the source's channels instead of mixing them to stereo. A file without a layout keeps channels 0 and 1
-  (B143, PR #NNN).
+  (B143, PR #244).
 - Docs: the `CAMetalDisplayLink` stall of macOS 27.0.1 was not reproduced on 27.2 (the reproduction and
   `fanous-bench --displaylink` both ran at full rate, one run each); the drawable loop stays the shipping driver and the
   Apple Feedback item is dropped (B8, ADR-0006 amendment 2026-11-03, PR #240).
