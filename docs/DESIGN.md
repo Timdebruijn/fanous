@@ -1988,6 +1988,13 @@ source file(s) ──▶ _incoming/ (remote upload) or in-place (local path)
   `PixelAspectRatio` extension, `MovieInfo.pixelAspect` reads it and
   `Compositor.geometry` widens the layer quad by it (B19). The upright path
   (rotated phone footage) renders the display size with square pixels instead.
+- Frames are held or dropped by presentation time to a constant rate (B19):
+  output frame k shows the latest source frame at or before k frame durations
+  from the first frame. A constant-rate source comes out frame for frame at
+  its own rate; a variable-rate source (its nominal rate differs from its
+  smallest frame duration by over 1 %) gets its fastest rate, at most 60 fps.
+  The player (`MovieSource`) steps frames by index, so the library format is
+  constant-rate by necessity.
 - HAP muxing through `AVAssetWriter` passthrough works (`MovieWriter`,
   Phases 2–4); the own-muxer fallback was not needed (`[OPEN-13]` resolved).
 - **Phase 4 as built:** `LibraryIndex` (scan + FSEvents, 500 ms debounce,

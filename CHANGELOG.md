@@ -688,6 +688,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   ProRes or HAP track is tagged with it, the layer draws the movie at its display width in every fit mode, and the layer
   status and the Media screen show the display size. Before, such a file played squeezed with square pixels. Rotated
   footage is the exception: its display size is rendered with square pixels (B19, PR #220).
+- Fixed: a variable-frame-rate source (a screen recording, some phone footage) came out of ingest with one output
+  frame per source frame at the smallest frame duration, so a two-second recording could become a shorter file that ran
+  ahead of its audio. Ingest now holds and drops by presentation time to a constant rate, the source's fastest rate up
+  to 60 fps; a constant-rate source still comes out frame for frame (B19, PR #NNN).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

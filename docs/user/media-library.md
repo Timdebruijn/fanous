@@ -213,7 +213,11 @@ when the uploads are done. Only the programmer role can import.
   their pixel aspect ratio: the file is tagged and the layer draws it at its
   display width; the Media screen shows the display size. Rotated footage is
   the exception: there the display size is rendered with square pixels.
-- Variable-frame-rate sources can drift against their audio (B19).
+- A variable-frame-rate source (a screen recording, some phone footage) is
+  written at a constant rate, its fastest rate up to 60 fps: each output frame
+  shows the source frame that was current at that moment, so the picture
+  keeps its timing against the audio. A constant-rate source comes out frame
+  for frame.
 
 ## Transcode a file that is already in the library
 
