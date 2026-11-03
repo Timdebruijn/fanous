@@ -691,7 +691,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: a variable-frame-rate source (a screen recording, some phone footage) came out of ingest with one output
   frame per source frame at the smallest frame duration, so a two-second recording could become a shorter file that ran
   ahead of its audio. Ingest now holds and drops by presentation time to a constant rate, the source's fastest rate up
-  to 60 fps; a constant-rate source still comes out frame for frame (B19, PR #NNN).
+  to 60 fps; a constant-rate source still comes out frame for frame (B19, PR #221).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
