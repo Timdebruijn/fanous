@@ -10,6 +10,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Changed: the web UI's spacing sits on a 4 px grid, its overlay labels (thumbnail number, duration) share one size,
+  its colours come from the app.css tokens (the mapping editor's handles included), the Patch header's three actions
+  share one button style and a link styled as a button is no longer underlined (PR #236).
+
 ## 1.0.0-rc.2 — 2026-11-03
 
 - Fixed: the strobe effect's phase jumped once an hour (up to half a cycle, a visible hiccup at low rates) when the shader
