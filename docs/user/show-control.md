@@ -31,7 +31,7 @@ key does the same as GO, but only when no field or button has the focus.
 
 ## Timecode
 
-The Timecode panel shows the current time in big digits, a state pill and the
+The Timecode panel shows the current time in big digits, its state and the
 number of frames seen. States: **Locked** (green), **Freewheel** (yellow, the
 signal dropped and the clock keeps running for the Freewheel time), **Lost**
 (red, layers stop chasing) and **Off**.

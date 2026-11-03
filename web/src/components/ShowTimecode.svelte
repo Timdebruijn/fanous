@@ -6,6 +6,7 @@
   import type { JSONValue } from '../lib/protocol';
   import { lockTitle, offsetText, timecodeBadge, timecodeOn, timecodeSource } from '../lib/show';
   import { app, can, cmd, programmerLock } from '../lib/state.svelte';
+  import { plural } from '../lib/system';
 
   const tc = $derived(app.project.timecode);
   const live = $derived(app.live.timecode);
@@ -71,7 +72,7 @@
     <div class="meta">
       <span class="pill pill-{badge.tone}"><span class="dot"></span>{badge.label}</span>
       <span class="mono">{timecodeSource(live)}</span>
-      <span class="caption">{live.seen} frames seen</span>
+      <span class="caption">{plural(live.seen, 'frame')} seen</span>
     </div>
   </div>
   {#if tc.source === 'ltc'}<LevelMeter level={live.level} label="LTC level" none={on ? 'no audio' : 'timecode switched off'} />{/if}
@@ -150,9 +151,8 @@
   .tc { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
   header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
   .readout-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; }
-  .readout { font-size: clamp(34px, 11vw, 48px); font-weight: 600; line-height: 1.1; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+  .readout { font-size: clamp(34px, 11vw, 48px); font-weight: 500; line-height: 1.1; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
   .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
-  .pill-off { background: var(--surface-3); color: var(--text-3); }
   .err { margin: 0; color: var(--red); font-size: 13px; }
   .fields { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; }
   .fields .select { min-width: 200px; max-width: 100%; }

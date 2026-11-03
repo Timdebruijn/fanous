@@ -61,8 +61,9 @@ final class IngestGate: Sendable {
     }
 }
 
-/// Converts one source movie (anything AVFoundation can read) to a `.mov` the engine plays (DESIGN.md §8.3): ProRes or
-/// HAP video from BGRA frames, audio as interleaved LPCM in the source's sample rate, channels and bit depth (see
+/// Converts one source movie (anything AVFoundation can read) to a `.mov` the engine plays (DESIGN.md §8.3): ProRes video
+/// from 16-bit RGB frames (`64ARGB`, so a 10-bit source keeps its precision; BGRA for an odd transform) or HAP from BGRA
+/// (HAP is 8-bit), audio as interleaved LPCM in the source's sample rate, channels and bit depth (see
 /// `lpcmFormat` for the exceptions). Runs on the calling thread; a run cancelled through its gate (from any thread)
 /// removes its partial output.
 public enum Transcoder {
@@ -87,14 +88,22 @@ public enum Transcoder {
         let requested = Self.effectiveCodec(codec, sourceHasAlpha: probe.hasAlpha)
 
         let reader = try AVAssetReader(asset: probe.asset)
-        let bgra = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+        // RGB, not the source's YCbCr: the reader converts with the source's own matrix and the writer codes Rec.709 (B21).
+        // 16-bit for ProRes, so a 10-bit source keeps its precision; BGRA for HAP (8-bit) and for an odd transform's
+        // composition, whose 64ARGB render came out up to 28 codes off in colour (measured, a transpose; BGRA within 12).
+        let pixelFormat =
+            switch (requested, probe.upright) {
+            case (.hap, _), (_, .some): kCVPixelFormatType_32BGRA
+            default: kCVPixelFormatType_64ARGB
+            }
+        let pixels = [kCVPixelBufferPixelFormatTypeKey as String: pixelFormat]
         let videoOutput: AVAssetReaderOutput
         if let composition = probe.upright {  // an odd transform (not a quarter turn or flip): the composition bakes it in, over opaque black
-            let output = AVAssetReaderVideoCompositionOutput(videoTracks: [probe.video], videoSettings: bgra)
+            let output = AVAssetReaderVideoCompositionOutput(videoTracks: [probe.video], videoSettings: pixels)
             output.videoComposition = composition
             videoOutput = output
         } else {
-            videoOutput = AVAssetReaderTrackOutput(track: probe.video, outputSettings: bgra)
+            videoOutput = AVAssetReaderTrackOutput(track: probe.video, outputSettings: pixels)
         }
         videoOutput.alwaysCopiesSampleData = false
         guard reader.canAdd(videoOutput) else { throw TranscodeError.reader("cannot read the video track") }
@@ -136,7 +145,7 @@ public enum Transcoder {
             while written < count, let held, let writer {
                 try gate.checkpoint()
                 try pumpAudio(until: CMTime(value: Int64(written + 1) * probe.frameDuration.value, timescale: probe.frameDuration.timescale))
-                try writer.append(held)  // ProRes: the reader's buffer goes straight to the adaptor; HAP: encoded from BGRA
+                try writer.append(held)  // ProRes: the reader's 64ARGB buffer goes straight to the adaptor; HAP: encoded from BGRA
                 written += 1
                 progress?(written, max(written, expected))
             }
@@ -174,7 +183,8 @@ public enum Transcoder {
                         if case .hap = requested, width % 4 != 0 || height % 4 != 0 { throw TranscodeError.hapDimensions(width, height) }
                         writer = try MovieWriter(
                             url: destination, width: width, height: height, fps: max(1, Int32((1 / probe.frameDuration.seconds).rounded())),  // a slideshow slower than 0.5 fps rounds to 0
-                            frameDuration: probe.frameDuration, codec: requested, externalAudio: audioFormat, pixelAspect: pixelAspect)
+                            frameDuration: probe.frameDuration, codec: requested, externalAudio: audioFormat, pixelAspect: pixelAspect,
+                            pixelFormat: pixelFormat)
                     }
                     // A quarter turn or flip is done here in the pixels (vImage, exact, alpha kept: B18) instead of by a composition.
                     let pixels = try probe.turn.map { try $0.apply(to: decoded, into: try writer!.makePixelBuffer()) } ?? decoded
@@ -209,15 +219,14 @@ public enum Transcoder {
     /// depth and integer/float form, a compressed source (AAC, ...) decodes to 24-bit (B19). The exceptions are what
     /// `AVAssetReaderAudioMixOutput` refuses (it raises, which would kill the engine): the rate is clamped to 8–192 kHz,
     /// the depth to 8/16/24/32 (float is always 32), a layout that does not match the channel count is replaced by one
-    /// made from the count, a track without a channel count gets stereo.
-    /// ponytail: more than two channels are mixed down to stereo here, as before, because the player takes channels 0 and
-    /// 1 by index (a 5.1 file would lose its centre); keep them once `AudioTrackReader` has a matrix mix (B143).
+    /// made from the count (discrete in order above two channels), a track without a channel count gets stereo. More than
+    /// two channels stay since `AudioTrackReader` mixes by layout (B143).
     /// Nil only when the format description cannot be made.
     static func lpcmFormat(matching source: CMAudioFormatDescription) -> (CMAudioFormatDescription, [String: Any])? {
         let input = CMAudioFormatDescriptionGetStreamBasicDescription(source)?.pointee
         let rate = min(max(input?.mSampleRate ?? 48_000, 8_000), 192_000)
         let sourceChannels = input?.mChannelsPerFrame ?? 0
-        let channels: UInt32 = sourceChannels == 0 || sourceChannels > 2 ? 2 : sourceChannels
+        let channels: UInt32 = sourceChannels == 0 ? 2 : sourceChannels
         let isLPCM = input?.mFormatID == kAudioFormatLinearPCM && (input?.mBitsPerChannel ?? 0) > 0
         let isFloat = isLPCM && (input?.mFormatFlags ?? 0) & kAudioFormatFlagIsFloat != 0
         let wanted: UInt32 = isLPCM ? input!.mBitsPerChannel : 24
@@ -227,7 +236,7 @@ public enum Transcoder {
             mFormatFlags: (isFloat ? kAudioFormatFlagIsFloat : kAudioFormatFlagIsSignedInteger) | kAudioFormatFlagIsPacked,
             mBytesPerPacket: bits / 8 * channels, mFramesPerPacket: 1, mBytesPerFrame: bits / 8 * channels, mChannelsPerFrame: channels,
             mBitsPerChannel: bits, mReserved: 0)
-        // The source's layout when it has one that agrees with the channel count; mono/stereo by count otherwise.
+        // The source's layout when it has one that agrees with the channel count; mono/stereo/discrete by count otherwise.
         var layoutSize = 0
         var layoutData: Data?
         if channels == sourceChannels, let layout = CMAudioFormatDescriptionGetChannelLayout(source, sizeOut: &layoutSize), layoutSize > 0 {
@@ -238,7 +247,8 @@ public enum Transcoder {
         }
         if layoutData == nil {
             var layout = AudioChannelLayout()
-            layout.mChannelLayoutTag = channels == 1 ? kAudioChannelLayoutTag_Mono : kAudioChannelLayoutTag_Stereo
+            layout.mChannelLayoutTag =
+                channels == 1 ? kAudioChannelLayoutTag_Mono : channels == 2 ? kAudioChannelLayoutTag_Stereo : kAudioChannelLayoutTag_DiscreteInOrder | channels
             layoutData = Data(bytes: &layout, count: MemoryLayout<AudioChannelLayout>.size)
         }
         var format: CMAudioFormatDescription?
@@ -276,7 +286,7 @@ public enum Transcoder {
 
     /// A `preferredTransform` that is a quarter turn or a flip, applied in the pixels: exact (no resampling) and alpha kept.
     enum Turn: Equatable {
-        /// A `vImageRotate90_ARGB8888` constant (`kRotate90DegreesClockwise` and friends).
+        /// A `vImageRotate90_ARGB8888` / `_ARGB16U` constant (`kRotate90DegreesClockwise` and friends).
         case quarter(UInt8)
         case flipHorizontal
         case flipVertical
@@ -295,7 +305,8 @@ public enum Transcoder {
 
         var swapsAxes: Bool { if case .quarter(let constant) = self { return constant != UInt8(kRotate180DegreesClockwise) } else { return false } }
 
-        /// `source` turned into `destination` (sized for it: swapped for a quarter turn); returns `destination`.
+        /// `source` turned into `destination` (sized for it: swapped for a quarter turn); returns `destination`. Both are
+        /// BGRA or both 64ARGB (16-bit channels; their byte order does not matter for moving whole pixels).
         func apply(to source: CVPixelBuffer, into destination: CVPixelBuffer) throws -> CVPixelBuffer {
             CVPixelBufferLockBaseAddress(source, .readOnly)
             CVPixelBufferLockBaseAddress(destination, [])
@@ -309,12 +320,20 @@ public enum Transcoder {
             var to = vImage_Buffer(
                 data: CVPixelBufferGetBaseAddress(destination), height: vImagePixelCount(CVPixelBufferGetHeight(destination)),
                 width: vImagePixelCount(CVPixelBufferGetWidth(destination)), rowBytes: CVPixelBufferGetBytesPerRow(destination))
-            var transparent: [UInt8] = [0, 0, 0, 0]
+            let flags = vImage_Flags(kvImageNoFlags)
             let error =
-                switch self {
-                case .quarter(let constant): vImageRotate90_ARGB8888(&from, &to, constant, &transparent, vImage_Flags(kvImageNoFlags))
-                case .flipHorizontal: vImageHorizontalReflect_ARGB8888(&from, &to, vImage_Flags(kvImageNoFlags))
-                case .flipVertical: vImageVerticalReflect_ARGB8888(&from, &to, vImage_Flags(kvImageNoFlags))
+                if CVPixelBufferGetPixelFormatType(source) == kCVPixelFormatType_64ARGB {
+                    switch self {
+                    case .quarter(let constant): vImageRotate90_ARGB16U(&from, &to, constant, [0, 0, 0, 0], flags)
+                    case .flipHorizontal: vImageHorizontalReflect_ARGB16U(&from, &to, flags)
+                    case .flipVertical: vImageVerticalReflect_ARGB16U(&from, &to, flags)
+                    }
+                } else {
+                    switch self {
+                    case .quarter(let constant): vImageRotate90_ARGB8888(&from, &to, constant, [0, 0, 0, 0], flags)
+                    case .flipHorizontal: vImageHorizontalReflect_ARGB8888(&from, &to, flags)
+                    case .flipVertical: vImageVerticalReflect_ARGB8888(&from, &to, flags)
+                    }
                 }
             guard error == kvImageNoError else { throw TranscodeError.reader("turn (vImage) failed: \(error)") }
             return destination

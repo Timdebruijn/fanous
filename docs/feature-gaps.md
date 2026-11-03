@@ -158,7 +158,7 @@ priority for each row comes from §4.
 | G24 | Thumbnails for desks without CITP (MA3, Eos): export the library thumbnails as an image set named by folder and file, for the desk's image pool | none found (users build it by hand) | `—` | S; first check what MA3 and Eos can import |
 | G25 | SRT/RTSP H.264 preview stream for Eos (3.3.5 and later, per the survey; the page returned 404 on re-check) | Eos side only | `◐` the H.264 encoder exists for the web preview | M |
 | G26 | Art-Net timecode in (`ArtTimeCode`, 0x9700) | Pixera, Kinetic; MagicQ sends it | `—` (Core parses `ArtSync` only) | S |
-| G27 | Timecode out, LTC generator | QLab, Millumin, VDMX, Pixera | `◐` `LTCEncoder` in Core, used by tests only | S–M |
+| G27 | Timecode out, LTC generator | QLab, Millumin, VDMX, Pixera | `◐` `LTCEncoder` in Core, used by tests only; a generator with Art-Net, MTC and LTC out in the backlog (B138) | S–M |
 | G28 | PosiStageNet and tracking | HE 5/6 · Hippotizer; MA3 and MagicQ send PSN | `D` (B53) | M |
 | G29 | GDTF `MediaServerLayer` / `MediaServerMaster` geometry types | no consuming desk verified | `◐` generic `Geometry` | S |
 | G30 | Honour sACN sync and `ArtSync`; sACN 0xDD | niche | `◐` parsed | S |

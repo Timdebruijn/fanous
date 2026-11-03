@@ -9,7 +9,7 @@
   import SystemVersions from '../components/SystemVersions.svelte';
   import { modeText } from '../lib/outputs';
   import { app, can, cmd } from '../lib/state.svelte';
-  import { LOCKED_TITLE, OPERATOR_TITLE, ageText, copied, headerCaption, memoryText, outputTone, readinessBadge, readinessSummary, resumedText, stampText, thermalTone } from '../lib/system';
+  import { LOCKED_TITLE, OPERATOR_TITLE, ageText, copied, headerCaption, memoryText, outputTone, plural, readinessBadge, readinessSummary, resumedText, stampText, thermalTone } from '../lib/system';
 
   const show = $derived(app.live.show);
   const sys = $derived(app.live.system);
@@ -132,7 +132,7 @@
         <div class="mono wrap">{library.root || '—'}</div>
         <div class="caption status">
           <span class="dot dot-{library.rootExists ? 'green' : 'yellow'}"></span>
-          {library.rootExists ? 'folder found' : 'folder not found'} · {library.folders} folders · {library.fileCount} files{library.invalidCount > 0 ? ` · ${library.invalidCount} invalid` : ''}
+          {library.rootExists ? 'folder found' : 'folder not found'} · {plural(library.folders, 'folder')} · {plural(library.fileCount, 'file')}{library.invalidCount > 0 ? ` · ${library.invalidCount} invalid` : ''}
         </div>
         <form class="rootform" onsubmit={applyRoot}>
           <input class="input mono" type="text" aria-label="Library root path" autocomplete="off" spellcheck="false" value={rootValue} disabled={lockedProgrammer} title={lockedProgrammer ? LOCKED_TITLE : undefined} oninput={(event) => (rootDraft = event.currentTarget.value)} />
@@ -177,7 +177,7 @@
           <span class="dot dot-{u.active ? 'green' : 'off'}" role="img" aria-label={u.active ? 'active' : 'silent'}></span>
           <span class="mono">{u.id}</span>
           <span class="grow ellipsis muted" title={u.source}>{u.source || '—'}</span>
-          <span class="mono muted">{u.packets} packets</span>
+          <span class="mono muted">{plural(u.packets, 'packet')}</span>
           <span class="mono muted">{ageText(u.ageSeconds)}</span>
         </li>
       {:else}
@@ -218,7 +218,7 @@
       <dt>CITP</dt>
       <dd class="mono wrap">
         {#if app.live.citp.port}
-          TCP {app.live.citp.port} · {app.live.citp.clients.length} console{app.live.citp.clients.length === 1 ? '' : 's'} · {app.live.citp.streams} stream{app.live.citp.streams === 1 ? '' : 's'}
+          TCP {app.live.citp.port} · {plural(app.live.citp.clients.length, 'console')} · {plural(app.live.citp.streams, 'stream')}
           {#each app.live.citp.clients as client (client)}<div>{client}</div>{/each}
         {:else}
           not running

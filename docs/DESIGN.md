@@ -364,7 +364,21 @@ triple-buffered `rgba16Float` canvas texture (ADR-0007):
      benchmark with blur + edge on every layer is the proof; function-constant
      specialisation stays the fallback if a later effect needs it).
      Neighbourhood effects (blur, pixelate, kaleidoscope, edge) sample the
-     *source* texture multiple times; no intermediate textures. The meaning of
+     *source* texture multiple times; no intermediate textures, except the
+     scratch texture of B2 (2026-11-03): a layer that blurs or edges is first
+     converted, upright, into its media's own scratch texture (canvas format,
+     four mip levels, made by the loader the first time the layer asks for
+     one and adopted by the compositor on a later tick; until then the draw
+     takes the source path), and its canvas draw uses the
+     pipeline variant whose taps read that RGBA directly, the blur at a mip
+     level matched to its radius (about one level per halving from 4 px, at
+     most 1/8). The gain is the taps' shader, not their reads: 13 inlined
+     copies of the source conversion cost the draw its occupancy, and reading
+     the mip levels through them saved under 10 %, while the direct taps cut a
+     blurred ProRes layer from about 2.3 ms to 0.9 ms and an edged one from
+     about 1.6 ms to 0.3 ms (derived as the frame's p99 less the plain frame's
+     over 4 layers, 1080p60, A/B under load; B2). A live input has no scratch
+     texture and draws as before. The meaning of
      the two parameter channels per effect is the `EffectSpec` table in Core,
      rendered into `docs/channel-map.md`.
    - Dissolve: the outgoing media keeps playing and is drawn first; with
@@ -417,7 +431,12 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
 
 - Texture/buffer pools are sized at layer activation from the file's
   dimensions and the tier's ring depth; a layer that switches to a larger file
-  reallocates on Control, not on the compositor.
+  reallocates on Control, not on the compositor. A playback's scratch texture
+  (§4.3, B2) is made by the loader on its thread the first time the layer
+  blurs or edges, handed over through the layer's lock and adopted by the
+  compositor (two stores), and goes with the playback: about 10.6 bytes per
+  media pixel (rgba16Float with four mip levels, 2.7× an 8-bit RGBA frame),
+  84 MiB for a 4K media, twice that during a dissolve.
 - Uniforms live in a per-frame ring of `MTLBuffer`s (3 × max layers); argument
   tables are filled by offset, never by creating objects.
 - Allocation rule on the compositor thread (Phase 2 acceptance, restated by
@@ -449,9 +468,10 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
 
     | Feature | Extra allocations per tick |
     |---|---|
-    | Output pass | +3 (one more encoder; its "mapped output" label is an `NSString` made once, B117: a 13–15-byte Swift `String` bridged, and allocated, on every assignment; shorter ones bridge to tagged pointers and the 16-byte "secondary output" bridged free too) |
+    | Output pass | +3 (one more encoder; its "mapped output" label is an `NSString` made once, B117: a 13–15-byte Swift `String` bridged, and allocated, on every assignment, and on macOS 27.2 a shorter label allocated on every assignment even as an `NSString`, so every per-tick label is an `NSString` of at least 12 characters made once; the 16-byte literal "secondary output" bridges free) |
     | Each extra canvas | +3 |
     | Generators that draw this tick | +2 for the first, about +3 each further (derived): its encoder, the descriptor and label made once per generator (B112). The test card (110), colour sweep and motion test draw every tick, the clock (112) once a second, 100–107 only when made. Was +8 per tick for the test card and +9 for the clock's draw (measured `-c release`, M1 Pro, 2026-10-29) |
+    | A layer that blurs or edges (B2) | about +5 per such draw: its convert encoder (2) and the three downsample dispatches of its mip levels (about 3, blur above 4 px only), the compute encoder once per tick about 0 (measured 2026-11-03 on the display path: 4 layers 42.9–43.0 per tick against 21.0–22.0 plain, 8 layers 61.9; `generateMipmaps` instead of the kernel cost about 38 per layer) |
     | Each preview or thumbnail streamer | about +6 (derived: an encoder and a capturing handler; the encoder's label is an `NSString`, B117) |
     | `present` (a display run: `nextDrawable()`, `present(drawable)` and the drawable's texture) | about +14 (derived): a display run counts 20.97–21.00 per tick at 1, 4, 8 and 16 layers, headless 3.99–4.00, so the drawable path is a fixed cost, 4 + 3 (output pass) + 14, which is the residual, not a count of those three calls (measured 2026-11-03, `fanous-bench run --display 0`, M1 Pro, macOS 27.2; not split further). A dissolve on blurred layers counted 27–31 (B148) |
     | Syphon publish (while a client is attached) | +4: the flip draw's encoder (2) and Syphon's `addCompletedHandler` block (2); its render pass descriptor is made once (`VENDORED.md` local change 6), 8 when it was made per frame (B109; measured `-c release`, M1 Pro, 2026-10-29) |
@@ -1008,7 +1028,7 @@ code on 2026-10-30:
   universe that the patch uses, the engine hears, or the project stores
   settings for.
   - Each row shows the name, protocol, interface, hold on signal loss, the
-    health pill of today, and the fixtures on it ("Layers 1–8, Master").
+    health status of today, and the fixtures on it ("Layers 1–8, Master").
   - A heard universe with nothing patched says "heard, nothing patched", which
     shows a console sending to the wrong universe. A universe with stored
     settings and no fixture says "not used"; its settings stay until reset.
@@ -1146,7 +1166,7 @@ guide changes with the step that changes what it describes (4–6).
   patched.
 - Status words show in a chip's tooltip and accessible name, next to each
   Output and Keystone, and in the inline editor; a layer chip shows its number
-  and address (with its universe when that is not the block's), and OFF when
+  and address (with its universe when that is not the block's), and "off" when
   it is off the block. A blocker is also printed on the block line, above Move
   Master and outputs. Layers above 32 and outputs above 8 get a caption.
 - A block that would run past the last universe (`slot` nil) is refused with
@@ -1997,9 +2017,9 @@ source file(s) ──▶ _incoming/ (remote upload) or in-place (local path)
    ▼ probe (AVAsset): codec, alpha, fps, audio
    ▼ job: target folder/file number, target codec (project default, per-job override)
    ▼ transcode (one job at a time; paused while show mode is on)
-   │     ProRes:  AVAssetReader (any AVFoundation-decodable source) → AVAssetWriter ProRes (hardware encoder) + LPCM audio
+   │     ProRes:  AVAssetReader (any AVFoundation-decodable source) → 16-bit RGB (64ARGB; BGRA for an odd transform's composition) → AVAssetWriter ProRes (hardware encoder) + LPCM audio
    │     HAP:     AVAssetReader → RGBA frames → hap.c HapEncode (+ Snappy) → AVAssetWriter passthrough samples with a 'HapY'/'Hap5'/'Hap1'/'HapM'/'HapA' format description
-   │     stills:  copy (PNG/JPEG/TIFF/HEIF) ; image sequence → ProRes 4444 or HAP Alpha movie at the chosen fps
+   │     stills:  copy (PNG/JPEG/TIFF/HEIF) ; image sequence → ProRes 4444 (drawn at 16 bits per channel) or HAP Alpha movie at the chosen fps
    ▼ write to NNN_name.mov in the target folder, original moved to _originals/ (configurable: keep in place / delete)
    ▼ index update → thumbnail → available to DMX
 ```
@@ -2014,9 +2034,13 @@ source file(s) ──▶ _incoming/ (remote upload) or in-place (local path)
 - Audio is transcoded to interleaved LPCM so playback never needs a compressed
   audio decoder; the source's sample rate, channel count, layout and bit depth
   are kept (a compressed source decodes to 24-bit) within what the reader
-  accepts (8–192 kHz, 8/16/24/32-bit; more than two channels are mixed to
-  stereo until the player has a matrix mix, B143), the layer's
-  `AudioTrackReader` converts to 48 kHz stereo float at playback (B19).
+  accepts (8–192 kHz, 8/16/24/32-bit), the layer's `AudioTrackReader`
+  converts to 48 kHz stereo float at playback (B19); more than two channels
+  with a layout (5.1, 7.1) are folded to the pair with Apple's matrix for that
+  layout (`kAudioFormatProperty_MatrixMixMap`: L + 0.7071 (C + Ls), R + 0.7071
+  (C + Rs), the LFE dropped, measured; the weights are applied as they come,
+  so a loud signal in every channel can clip, as the mixer has no limiter), a
+  discrete or unknown layout keeps its first two channels (B143).
 - An anamorphic source keeps its pixel aspect ratio: the ProRes track is
   tagged (`AVVideoPixelAspectRatioKey`), the HAP format description carries the
   `PixelAspectRatio` extension, `MovieInfo.pixelAspect` reads it and
@@ -3914,13 +3938,13 @@ Global chrome (all screens): a fixed **status bar** (top) and the screen
 switcher (left rail, icons + labels, collapses on iPad portrait).
 
 **Status bar**, left to right (`StatusBar.svelte`): the show lock badge
-(LOCKED / UNLOCKED, a button) and the show mode badge (SHOW MODE: ON / OFF, a
+(Locked / Unlocked, a button) and the show mode badge (Show mode: on / off, a
 button; a refused entry opens a popover naming the blocking readiness items,
 and a resumed show mode shows its note); fps (frames in the last second) with
 the GPU p99 frame time and, as caption, the CPU p99 (one engine-wide figure,
 not per output; "no outputs rendering" while the compositor is off); dropped
 frames (missed + late in the last 1 s, caption "dropped · 1 s"); DMX per
-universe as a pill (green receiving; red when a patched universe has been
+universe as a status, a dot and a word (filled only when red; green receiving; red when a patched universe has been
 silent past its `lossTimeout`, default 2.5 s, and for at least 2.5 s; yellow
 otherwise: never received, not patched, or silent for less than that; "no DMX
 received" while there is none); timecode (value and state; left out while
@@ -3939,8 +3963,11 @@ refused show mode (the popover). A decoder error on a visible layer is red on
 its Layers row, not in the bar. The frame time has room for its widest
 value ("120 fps 999.9 ms"), so it no longer changes the bar's width and wraps
 or unwraps it under a drag (B134): with a fresh engine the bar fits one row
-from 1470 px and takes two at 1440. Events still change its width: a universe
-going active or lost, a lagging client, no output rendering.
+from 1380 px and takes two at 1379 (measured 2026-11-03, with its labels in
+sentence case, its statuses without a fill and its weights one step lighter;
+1470 and 1460 before all three).
+Events still change its width: a universe going active or lost, a lagging
+client, no output rendering.
 
 1. **Layers / Mixer** — one row (or tile on narrow screens) per layer: live
    thumbnail, layer name + canvas, resolved media ("12 / 4 · intro_loop.mov ·
@@ -4379,8 +4406,11 @@ the benchmark.
 | Ingest | job throughput, yields | Media |
 | System | thermal state, memory footprint, on battery, CPU per thread (from `thread_info`; not built) | System; the status bar item is not built |
 
-Logging: `swift-log` with two handlers: `os_log` (Console.app) and a rotating
-file in `~/Library/Logs/Fanous/` (10 × 10 MB). Log lines in hot paths are
+Logging: `swift-log` with three handlers: stderr, the unified log
+(`os.Logger`, subsystem `org.fanous`, the logger's label as the category;
+Console.app, `log stream`, sysdiagnose; it cuts a line at about 1 KB) and a
+file in `~/Library/Logs/Fanous/` that rotates once to `.1` past 10 MB. Log
+lines in hot paths are
 pre-formatted off-thread from ring events; the compositor itself never calls
 the logger. Anomalies (first dropped frame in show mode, DMX loss, display
 loss, decoder error) are logged at `warning` with the metric context, and a

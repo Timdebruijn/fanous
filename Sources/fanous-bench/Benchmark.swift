@@ -55,7 +55,7 @@ enum Benchmark {
         var date: String
     }
 
-    static func run(
+    @MainActor static func run(
         mediaDirectory: URL, codec: String, resolution: String, maxLayers: Int, window: Double, soak: Double, display: Int?,
         headless: Bool, outputDirectory: URL, onlyLayers: Int? = nil, dmx: Bool = false,
         useDisplayLink: Bool = false, effects: [Effect] = [], dissolve: Double = 0, ingest: URL? = nil, logger: Logger

@@ -3,7 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { app } from '../lib/state.svelte';
-  import { metricTiles, parseMetrics, pushHistory, sparkline, type Metrics } from '../lib/system';
+  import { metricTiles, parseMetrics, plural, pushHistory, sparkline, type Metrics } from '../lib/system';
 
   const W = 240;
   const H = 48;
@@ -80,7 +80,7 @@
     {/each}
   </div>
   <figure class="spark">
-    <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" role="img" aria-label="GPU p99 frame time over the last {history.length} polls{latest === undefined ? '' : `, now ${latest.toFixed(1)} ms`}">
+    <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" role="img" aria-label="GPU p99 frame time over the last {plural(history.length, 'poll')}{latest === undefined ? '' : `, now ${latest.toFixed(1)} ms`}">
       {#if trace.refY !== null}<line class="ref" x1="0" x2={W} y1={trace.refY} y2={trace.refY} />{/if}
       {#if trace.points}<polyline class="trace" points={trace.points} />{/if}
     </svg>
@@ -90,11 +90,11 @@
 
 <style>
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 8px; padding: 0 16px 12px; }
-  .tile { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
-  .num { font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
+  .tile { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+  .num { font-size: 18px; font-weight: 500; overflow-wrap: anywhere; }
   .tone-red { color: var(--red); }
   .tone-yellow { color: var(--yellow); }
-  .spark { margin: 0; padding: 0 16px 16px; display: flex; flex-direction: column; gap: 6px; }
+  .spark { margin: 0; padding: 0 16px 16px; display: flex; flex-direction: column; gap: 8px; }
   .spark svg { display: block; width: 100%; height: 48px; border-radius: 4px; background: var(--surface-2); }
   .trace { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   .ref { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }

@@ -107,7 +107,7 @@
   .editor:focus { outline: none; }
   .editor:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .what { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0; }
-  .strong { font-weight: 600; font-size: 15px; }
+  .strong { font-weight: 500; font-size: 15px; }
   .status { font-size: 13px; color: var(--text-2); }
   .tone-faint { color: var(--text-3); }
   .tone-warn { color: var(--yellow); }

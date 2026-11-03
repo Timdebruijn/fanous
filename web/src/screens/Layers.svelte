@@ -31,6 +31,7 @@
   import { latestOnly } from '../lib/preview';
   import { go } from '../lib/router.svelte';
   import { app, subscribeThumbs } from '../lib/state.svelte';
+  import { plural } from '../lib/system';
 
   // Live layer thumbnails (B29): layer number → object URL of its latest JPEG. Subscribed while this screen is shown,
   // the tab is visible and the engine renders; a layer the engine reports empty, or no stream, shows the library thumbnail.
@@ -122,7 +123,7 @@
 
 <div class="toolbar">
   <h1>Layers</h1>
-  <span class="caption">{canvases.length > 1 ? `${canvases.length} canvases` : (canvases[0]?.name ?? 'Canvas 1')} · {layerCount} layers · <span title="The engine's layer limit, the same on every Mac. Add layer on Patch stops at this number; what this Mac plays without dropping frames can be lower.">up to {app.caps.maxLayers ?? '—'} layers</span></span>
+  <span class="caption">{canvases.length > 1 ? `${canvases.length} canvases` : (canvases[0]?.name ?? 'Canvas 1')} · {plural(layerCount, 'layer')} · <span title="The engine's layer limit, the same on every Mac. Add layer on Patch stops at this number; what this Mac plays without dropping frames can be lower.">up to {app.caps.maxLayers ?? '—'} layers</span></span>
 </div>
 
 <LayerStrips selected={fixture} onselect={(f) => (ui.fixture = f)} />
@@ -223,27 +224,29 @@
   .empty { padding: 32px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
   .empty p { margin: 0; }
   .alone { max-width: 360px; margin-top: 12px; }
-  .preview { display: flex; flex-direction: column; gap: 6px; }
+  .preview { display: flex; flex-direction: column; gap: 8px; }
   .preview .segmented { align-self: flex-start; }
   .layout { display: flex; gap: 12px; align-items: flex-start; }
   .table {
     /* LayerRow reads these two; the heads below use the same grid so the columns line up. */
     --layer-cols: 96px 70px minmax(0, 1fr) 200px 64px 92px 56px 120px 84px;
     --layer-gap: 8px;
-    flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 6px;
+    flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 8px;
   }
   .heads {
-    display: grid; grid-template-columns: var(--layer-cols); column-gap: var(--layer-gap); padding: 0 13px;
-    font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3);
+    display: grid; grid-template-columns: var(--layer-cols); column-gap: var(--layer-gap); padding: 0 13px;  /* the list's 1 px border + the row's 12 px padding */
+    font-size: 11px; font-weight: 500; color: var(--text-3);
   }
   .h-layer { grid-column: span 2; }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  /* one panel of rows with dividers, not a card per layer; tiles below 1320 px stay cards */
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--surface-1); overflow: hidden; }
+  @media (width > 1320px) { .list > li:last-child :global(.layer) { border-bottom: 0; } }
   .side { display: flex; flex-direction: column; gap: 12px; flex: 0 0 clamp(320px, 22vw, 360px); position: sticky; top: 16px; max-height: calc(100dvh - 32px); overflow-y: auto; border-radius: var(--radius-panel); }
 
   /* Rows need roughly 860 px of list; narrower than that (11" iPad landscape and down) they become tiles. Keep in step with LayerRow. */
   @media (max-width: 1320px) {
     .heads { display: none; }
-    .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr)); }
+    .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr)); gap: 8px; border: 0; border-radius: 0; background: none; overflow: visible; }
   }
   /* Below 1100 px the detail goes under the list. */
   @media (max-width: 1100px) {

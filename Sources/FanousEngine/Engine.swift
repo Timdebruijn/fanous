@@ -584,7 +584,6 @@ public final class Engine: @unchecked Sendable {
         oscFeedback?.start()  // the fixed target is notified once everything it reads exists
 
         let startedAt = self.startedAt
-        let webRoot = options.webRoot
         /// REST calls that change state need the programmer role: the session cookie, the shell token as a bearer, or an open role.
         @Sendable func allowed(_ role: Role, _ request: HTTPRequest) -> Bool {
             let bearer = request.header("Authorization").flatMap { $0.hasPrefix("Bearer ") ? String($0.dropFirst(7)) : nil }
@@ -612,11 +611,13 @@ public final class Engine: @unchecked Sendable {
                 guard let body = try? JSONDecoder().decode(JSONValue.self, from: Data(request.body)), let number = body["number"]?.int, (1...255).contains(number),
                     let name = body["name"]?.string, !name.trimmingCharacters(in: .whitespaces).isEmpty
                 else { return .text(400, "expected {\"number\": 1–255, \"name\": …}") }
-                if library.folderURL(number: number) != nil { return .text(409, "folder \(number) exists") }  // also one an upload just made
-                try? FileManager.default.createDirectory(at: library.root, withIntermediateDirectories: true)
-                guard let url = library.folderURL(number: number, createAs: name) else { return .text(500, "cannot create the folder") }
-                library.rescan()
-                return .text(200, url.lastPathComponent)
+                switch library.createFolder(number: number, name: name) {  // check and create under one lock (B141)
+                case .exists: return .text(409, "folder \(number) exists")  // also one an upload just made
+                case .failed: return .text(500, "cannot create the folder")  // a root that cannot be written (B142)
+                case .created(let url):
+                    library.rescan()
+                    return .text(200, url.lastPathComponent)
+                }
             }
             switch request.path {
             case "/healthz":
@@ -1584,7 +1585,7 @@ public final class Engine: @unchecked Sendable {
 
     private func libraryRootPutBack(_ running: String, refused root: String, _ refusal: CommandError) {
         logger.warning("library root not changed", metadata: ["root": "\(root)", "reason": "\(refusal.message)"])
-        guard let pointer = try? JSONPointer("/library/root") else { return }
+        let pointer: JSONPointer = "/library/root"
         libraryRootInProject.withLock { $0 = running }  // the correction below is not a change to apply
         store?.correct(.string(running), at: pointer)
     }
@@ -1725,6 +1726,7 @@ public final class Engine: @unchecked Sendable {
                         "name": s.name.map { .string($0) } ?? .null, "kind": .string(s.kind), "codec": .string(s.codec),
                         "width": .number(Double(s.width)), "height": .number(Double(s.height)), "fps": .number(s.fps),
                         "frames": .number(Double(s.frames)), "frame": .number(Double(layer.currentFrame)), "error": s.error.map { .string($0) } ?? .null,
+                        "pixelAspect": s.pixelAspect.map { .number($0) } ?? .null,
                         "sync": syncLive(layer.syncStatus.withLock { $0 }),
                         "capture": s.capture.map { c in
                             [

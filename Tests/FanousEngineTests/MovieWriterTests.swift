@@ -19,7 +19,7 @@ struct MovieWriterTests {
         #expect(throws: MovieWriter.WriterError.self) { try MovieWriter(url: url, width: 64, height: 48, fps: 25, frameDuration: .positiveInfinity, codec: .proRes422) }
     }
 
-    /// B21: the ProRes the ingest writes is Rec.709, whatever the source was tagged. The transcoder's BGRA frames carry the
+    /// B21: the ProRes the ingest writes is Rec.709, whatever the source was tagged. The transcoder's RGB frames carry the
     /// source's YCbCr matrix as an attachment (AVAssetReader copies it), and without colour properties the writer took that
     /// tag and matrix for the file, so a Rec.601 source became a 601-coded file that the layer shader (one 709 matrix) read
     /// with 15–40 codes of error on saturated colours (measured 2026-11-02).

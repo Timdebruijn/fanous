@@ -11,10 +11,14 @@ import FanousCore
 /// Per-pixel effects branch on per-draw uniforms (free on Apple GPUs). The
 /// neighbourhood effects (blur, edge) are function-constant specialisations:
 /// inlined into the one shader they cost every draw its occupancy (measured
-/// 2026-10-23: 3.7 ms per 1080p layer for 13 taps), so four pipelines are
-/// built at start (none / blur / edge / both) and nothing is ever compiled
-/// during a show. Blend modes read the destination with framebuffer fetch
-/// (`[[color(0)]]`), so no extra passes.
+/// 2026-10-23: 3.7 ms per 1080p layer for 13 taps), so eight pipelines are
+/// built at start (none / blur / edge / both, each with and without the
+/// scratch taps of B2) and nothing is ever compiled during a show. A draw
+/// with a scratch texture (DESIGN.md §4.3) has its source converted first by
+/// `convert_fragment`, and its taps are plain RGBA reads: 13 inlined copies
+/// of `fetch` in the blur loop cost the draw its occupancy, which is where
+/// the blur's time went (B2, 2026-11-03). Blend modes read the destination
+/// with framebuffer fetch (`[[color(0)]]`), so no extra passes.
 public enum ShaderSource {
     /// Seven-segment digits 0–9, bits gfedcba: the test patterns' and generators' digits, and the edit overlay's label.
     static let sevenSegments: [UInt8] = [0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F]
@@ -36,10 +40,13 @@ public enum ShaderSource {
         uint blend;           // BlendMode
         float master;         // Master intensity: scales the colour, not the alpha (B108)
         uint deep;            // 1 when the planes are 16-bit textures: video-range levels at 16-bit scale (B119)
+        float lod;            // the mip level the blur taps read from the scratch texture (B2); 0 for a source
     };
 
     constant bool hasBlur [[function_constant(0)]];
     constant bool hasEdge [[function_constant(1)]];
+    // the draw reads its scratch texture (upright RGBA with mips, B2): every tap is one sample, no source maths
+    constant bool tapsFromScratch [[function_constant(2)]];
 
     struct VertexOut {
         float4 position [[position]];
@@ -96,8 +103,9 @@ public enum ShaderSource {
     }
 
     // Source conversion: straight (non-premultiplied) RGBA in the source's own colour.
+    // `lod` reaches the RGBA case only: a layer's scratch texture has mips, the sources have none (level 0 either way)
     static float4 fetch(constant LayerUniforms& u, texture2d<float> tex0, texture2d<float> tex1, texture2d<float> tex2,
-                        sampler linearSampler, sampler nearestSampler, float2 uv) {
+                        sampler linearSampler, sampler nearestSampler, sampler mipSampler, float2 uv, float lod) {
         float4 rgba;
         switch (u.kind) {
         case 1:    // v216: texel = (Cb, Y0, Cr, Y1) for a pixel pair
@@ -139,8 +147,8 @@ public enum ShaderSource {
             rgba = float4(ycbcr_to_rgb(y, cbcr.x, cbcr.y, u.deep != 0u), alpha);
             break;
         }
-        default:   // straight RGBA (stills, HAP, HAP Alpha, HAP R, live inputs)
-            rgba = tex0.sample(linearSampler, uv);
+        default:   // straight RGBA (stills, HAP, HAP Alpha, HAP R, live inputs, a layer's scratch texture)
+            rgba = tex0.sample(mipSampler, uv, level(lod));
             break;
         }
         return rgba;
@@ -160,6 +168,15 @@ public enum ShaderSource {
     static float2 mirror01(float2 x) { return 1.0 - abs(fract(x * 0.5) * 2.0 - 1.0); }
 
     // Effects that move the sampling position (DESIGN.md §6.2, EffectSpec in Core).
+    // One picture read for the blur, edge and main samples: a scratch draw samples its RGBA texture directly, so the
+    // blur loop is 13 reads instead of 13 inlined copies of `fetch` (every kind's maths), which cost the whole draw its
+    // occupancy (B2, measured 2026-11-03: mip-level taps through `fetch` saved under 10 %).
+    static float4 tap(constant LayerUniforms& u, texture2d<float> tex0, texture2d<float> tex1, texture2d<float> tex2,
+                      sampler linearSampler, sampler nearestSampler, sampler mipSampler, float2 uv, float lod) {
+        if (tapsFromScratch) return tex0.sample(mipSampler, uv, level(lod));
+        return fetch(u, tex0, tex1, tex2, linearSampler, nearestSampler, mipSampler, uv, lod);
+    }
+
     static float2 effect_uv(uint id, float a, float b, float2 uv, float aspect) {
         switch (id) {
         case 2: {  // pixelate: block size 0–10 % of frame height
@@ -248,6 +265,7 @@ public enum ShaderSource {
                                    texture2d<float> tex2 [[texture(2)]],
                                    sampler linearSampler [[sampler(0)]],
                                    sampler nearestSampler [[sampler(1)]],
+                                   sampler mipSampler [[sampler(2)]],
                                    float4 dst [[color(0)]]) {
         uint e1 = uint(u.effect1.x), e2 = uint(u.effect2.x);
         float aspect = u.texel.z;
@@ -264,19 +282,19 @@ public enum ShaderSource {
         if (hasBlur && radius > 0.0) {  // blur: A = radius 0–5 % of height, B = 0 round, else motion blur angle
             float angle = e1 == 1u ? u.effect1.z : u.effect2.z;
             float2 scale = float2(1.0 / aspect, 1.0) * radius * 0.05;
-            float4 sum = fetch(u, tex0, tex1, tex2, linearSampler, nearestSampler, uv);
+            float4 sum = tap(u, tex0, tex1, tex2, linearSampler, nearestSampler, mipSampler, uv, u.lod);
             if (angle > 0.0) {
                 float2 dir = float2(cos(angle * 2.0 * M_PI_F), sin(angle * 2.0 * M_PI_F));
                 for (int i = 0; i < 12; i++) {
                     float t = (float(i) - 5.5) / 5.5;
-                    sum += fetch(u, tex0, tex1, tex2, linearSampler, nearestSampler, uv + dir * t * scale);
+                    sum += tap(u, tex0, tex1, tex2, linearSampler, nearestSampler, mipSampler, uv + dir * t * scale, u.lod);
                 }
             } else {
-                for (int i = 0; i < 12; i++) sum += fetch(u, tex0, tex1, tex2, linearSampler, nearestSampler, uv + poisson[i] * scale);
+                for (int i = 0; i < 12; i++) sum += tap(u, tex0, tex1, tex2, linearSampler, nearestSampler, mipSampler, uv + poisson[i] * scale, u.lod);
             }
             c = sum / 13.0;
         } else {
-            c = fetch(u, tex0, tex1, tex2, linearSampler, nearestSampler, uv);
+            c = tap(u, tex0, tex1, tex2, linearSampler, nearestSampler, mipSampler, uv, 0.0);
         }
 
         if (hasEdge && (e1 == 9u || e2 == 9u)) {  // edge (Sobel): A = gain 1–8×, B = mix with original
@@ -286,7 +304,7 @@ public enum ShaderSource {
             int k = 0;
             for (int y = -1; y <= 1; y++)
                 for (int x = -1; x <= 1; x++)
-                    l[k++] = luma(fetch(u, tex0, tex1, tex2, linearSampler, nearestSampler, uv + float2(x, y) * d).rgb);
+                    l[k++] = luma(tap(u, tex0, tex1, tex2, linearSampler, nearestSampler, mipSampler, uv + float2(x, y) * d, 0.0).rgb);
             float gx = -l[0] - 2.0 * l[3] - l[6] + l[2] + 2.0 * l[5] + l[8];
             float gy = -l[0] - 2.0 * l[1] - l[2] + l[6] + 2.0 * l[7] + l[8];
             float mag = saturate(length(float2(gx, gy)) * (1.0 + 7.0 * a));
@@ -316,6 +334,34 @@ public enum ShaderSource {
         default: b = sm; break;                        // normal
         }
         return float4(mix(d, clamp(b, float3(0.0), float3(m)), a), a + dst.a * (1.0 - a));
+    }
+
+    // Source conversion alone (B2): the layer's frame as upright RGBA into its scratch texture, so the blur and edge
+    // taps of the canvas pass read one texel each instead of the planes and the YCbCr maths per tap, and the blur reads
+    // a mip level matched to its radius. Uses `output_vertex` (full quad, v0 = top); the layer's crop is applied later.
+    fragment float4 convert_fragment(VertexOut in [[stage_in]],
+                                     constant LayerUniforms& u [[buffer(0)]],
+                                     texture2d<float> tex0 [[texture(0)]],
+                                     texture2d<float> tex1 [[texture(1)]],
+                                     texture2d<float> tex2 [[texture(2)]],
+                                     sampler linearSampler [[sampler(0)]],
+                                     sampler nearestSampler [[sampler(1)]],
+                                     sampler mipSampler [[sampler(2)]]) {
+        float2 uv = u.effect1.w > 0.5 ? float2(in.uv.x, 1.0 - in.uv.y) : in.uv;
+        return fetch(u, tex0, tex1, tex2, linearSampler, nearestSampler, mipSampler, uv, 0.0);
+    }
+
+    // One mip level of a scratch texture from the level above it (B2): a bilinear read at the texel's centre is the
+    // 2×2 average. Levels are single-level texture views made with the scratch texture; one compute encoder per tick
+    // does every blurred layer's levels, where `generateMipmaps` allocated about 38 times per layer per tick (measured
+    // 2026-11-03).
+    kernel void downsample(texture2d<float, access::sample> src [[texture(0)]],
+                           texture2d<float, access::write> dst [[texture(1)]],
+                           sampler linearSampler [[sampler(0)]],
+                           uint2 gid [[thread_position_in_grid]]) {
+        if (gid.x >= dst.get_width() || gid.y >= dst.get_height()) return;
+        float2 uv = (float2(gid) + 0.5) / float2(dst.get_width(), dst.get_height());
+        dst.write(src.sample(linearSampler, uv, level(0)), gid);
     }
 
     // Plain output pass: canvas → drawable, also the canvas preview and the thumbnail copy (pattern 0). A test pattern at

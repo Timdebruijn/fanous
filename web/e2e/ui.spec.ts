@@ -333,15 +333,15 @@ test('status bar: three rows on a phone, the role on the badge row, undo and red
   // five rows (229 px) took a third of the screen; the badge and numbers rows keep their 44 px buttons, the pills row is lower
   expect(await banner.evaluate((el) => el.getBoundingClientRect().height)).toBeLessThanOrEqual(140);
   const row = async (name: string) => Math.round((await banner.getByRole('button', { name }).boundingBox())!.y);
-  expect(await row('PROGRAMMER')).toBe(await row('UNLOCKED'));  // the role on the badge row
-  expect(await row('Undo')).toBeGreaterThan(await row('UNLOCKED'));  // undo on a later row, with the numbers
+  expect(await row('Programmer')).toBe(await row('Unlocked'));  // the role on the badge row
+  expect(await row('Undo')).toBeGreaterThan(await row('Unlocked'));  // undo on a later row, with the numbers
   await expect(banner.getByText('web UI open')).toBeAttached();  // for screen readers; shown as its dot
   await expect(banner.getByRole('button', { name: 'Keyboard shortcuts' })).toBeHidden();  // no keyboard on a phone
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 });
 
 test('status bar: one row on a 1470 px laptop, timecode and ingest left out while off and idle', async ({ page }) => {
-  await page.setViewportSize({ width: 1470, height: 900 }); // a MacBook Air; at 1440 the bar takes two rows, as the frame time keeps room for its widest value (B134)
+  await page.setViewportSize({ width: 1470, height: 900 }); // a MacBook Air; below 1380 px the bar takes two rows, as the frame time keeps room for its widest value (B134)
   const banner = page.getByRole('banner');
   // a fresh engine shows two silent universes and the "web UI open" warning, the widest bar it has
   await expect(banner.getByText(/^A 0\.0\.1 · silent/)).toBeVisible();
@@ -422,7 +422,7 @@ test('keys: the global shortcuts do nothing while a modal dialog is open, and ? 
   await page.keyboard.press('1');
   await expect.poll(hash).toBe('#/layers');
   // L and undo had their round trips by now: the lock is still off and no "history is empty" alert came back
-  await expect(page.getByRole('button', { name: 'UNLOCKED' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Unlocked' })).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
@@ -534,7 +534,7 @@ async function onPage(page: Page, path: string): Promise<{ x: number; y: number 
 }
 
 /** The dashed previews of a shape being drawn. */
-const previews = (page: Page) => page.locator('.mapper polyline[stroke="#FFC532"]');
+const previews = (page: Page) => page.locator('.mapper polyline.draft');
 
 /** The number of points a mask row of the list names. */
 async function pointCount(row: Locator): Promise<number> {
@@ -1573,11 +1573,11 @@ test('outputs: opening Warp & Slices puts the edit overlay on the output with th
 
   // the show locked: the switch shows off and why; nothing is sent (the engine ended the lease); unlocked, it is back
   const count = sent.length;
-  await page.getByRole('button', { name: 'UNLOCKED' }).click();
+  await page.getByRole('button', { name: 'Unlocked' }).click();
   await expect(toggle).not.toBeChecked();
   await expect(toggle).toBeDisabled();
   await expect(toggle).toHaveAccessibleDescription(/the show is locked/);
-  await page.getByRole('button', { name: 'LOCKED', exact: true }).click();
+  await page.getByRole('button', { name: 'Locked', exact: true }).click();
   await expect.poll(() => sent.length, 'only the one after unlocking').toBe(count + 1);
   expect(sent.at(-1)).toEqual(on);
   await expect(toggle).toBeChecked();
@@ -2071,18 +2071,18 @@ test('status bar: the outputs item counts the bound outputs instead of saying "o
   await page.getByLabel('Add output on').selectOption('none');
   await expect(item).toHaveText(/^\s*0\/1\s*outputs$/);  // one output without a display: not bound
   await expect(item.locator('.dot')).toHaveClass(/dot-yellow/);
-  await page.getByRole('button', { name: 'UNLOCKED' }).click();  // a missing output in a locked show: red
+  await page.getByRole('button', { name: 'Unlocked' }).click();  // a missing output in a locked show: red
   await expect(item).toHaveClass(/red/);
-  await page.getByRole('button', { name: 'LOCKED' }).click();
+  await page.getByRole('button', { name: 'Locked' }).click();
   await expect(item).not.toHaveClass(/red/);
   await page.getByRole('button', { name: 'Remove output' }).click();
   await expect(item).toHaveText(/^\s*0\s*outputs$/);
   // a phone leaves the item out until it has something to say: a locked show without outputs is one
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(item).toBeHidden();
-  await page.getByRole('button', { name: 'UNLOCKED' }).click();
+  await page.getByRole('button', { name: 'Unlocked' }).click();
   await expect(item).toBeVisible();
   await expect(item).toHaveClass(/red/);
-  await page.getByRole('button', { name: 'LOCKED' }).click();
+  await page.getByRole('button', { name: 'Locked' }).click();
   await expect(item).toBeHidden();
 });

@@ -6,7 +6,7 @@
 import type { AudioInputDoc, CueDoc, CueValueDoc, LiveDoc, MIDIMappingDoc, PatchEntry, TimecodeSettingsDoc } from './docs';
 import { clamp01 } from './outputs';
 import { LOCKED_TITLE, type ChannelMap, type FixtureType, type ParamSpec } from './patch-screen';
-import { pad2 } from './system';
+import { pad2, plural } from './system';
 
 export const LOCKED_OPERATOR = 'Locked: operator only';
 export const LOCKED_SHOW = 'Locked: the show is locked (press L to unlock)';
@@ -126,7 +126,7 @@ export function cueRowLabel(cue: CueDoc, status: 'current' | 'next' | null): str
   const parts = [`Cue ${t.number}`, cue.name || 'unnamed', `fade ${t.fade}`];
   if (cue.trigger) parts.push(`trigger ${cue.trigger}`);
   if (cue.follow != null) parts.push(`follow ${t.follow}`);
-  parts.push(`${t.values} ${cue.values.length === 1 ? 'value' : 'values'}`);
+  parts.push(plural(cue.values.length, 'value'));
   if (status) parts.push(status);
   return parts.join(', ');
 }
