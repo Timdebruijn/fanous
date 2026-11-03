@@ -281,6 +281,14 @@ struct ShowControlTests {
         #expect(fired.withLock { $0 } == ["go", "goto 1.5", "ack power"])
     }
 
+    /// B144: a Mac without a ProRes engine fails the "Supported hardware" item hard; acknowledging does not unblock it.
+    @Test func aMacWithoutAProResEngineIsRefusedShowMode() {
+        var context = ReadinessContext()
+        context.hardwareSupported = false
+        let item = Readiness.check(context, acknowledged: ["hardware"]).first { $0.id == "hardware" }!
+        #expect(item.state == .hard && item.blocks && item.detail == "no hardware ProRes decoder")
+    }
+
     @Test func readinessReflectsTheContextAndRunsEveryProbe() {
         var context = ReadinessContext()
         context.universesSilent = ["artnet:0.0.1"]

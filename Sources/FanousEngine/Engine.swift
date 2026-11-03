@@ -161,7 +161,7 @@ public final class Engine: @unchecked Sendable {
         logger.info(
             "fanousd starting",
             metadata: [
-                "version": "\(FanousVersion.string)", "chip": "\(SystemInfo.chipName)",
+                "version": "\(FanousVersion.string)", "chip": "\(SystemInfo.chipName)", "proResEngine": "\(SystemInfo.hasProResEngine)",
                 "memoryGB": "\(SystemInfo.physicalMemoryBytes / 1_073_741_824)", "os": "\(SystemInfo.osVersion)",
                 "webRoot": "\(options.webRoot.path)",
             ])
@@ -1149,6 +1149,7 @@ public final class Engine: @unchecked Sendable {
 
     private func readinessContext() -> ReadinessContext {
         var context = ReadinessContext()
+        context.hardwareSupported = SystemInfo.hasProResEngine
         if let dmx {
             let snapshot = dmx.snapshot()
             let patched = Set(dmx.currentPatch.universes.map(\.description))

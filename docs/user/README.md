@@ -19,8 +19,8 @@ Art-Net, sACN or console programming.
 ## Requirements
 
 - An Apple Silicon Mac with a hardware ProRes engine. Intel Macs do not run
-  Fanous at all. A base M1 has no ProRes engine and is not supported, but the
-  engine does not check this yet and does not refuse show mode on it (B144).
+  Fanous at all. A base M1 has no ProRes engine and is not supported: the
+  Supported hardware readiness item fails on it and show mode is refused.
   The M1 Pro is the reference machine; all numbers in this guide that come
   from measurements are from it.
 - macOS 15 or newer.

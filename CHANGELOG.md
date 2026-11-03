@@ -708,6 +708,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Checked on hardware: display hot-plug (unplug, replug on the same and another port, a mode change under a bound
   output) rebinds within 25 ms of the display event, and show mode applies and restores a wanted mode (unplug/replug
   in show mode did not exercise the re-apply); no code change (B34, B56, DESIGN §9.6, PR #228).
+- The "Supported hardware" readiness item is real: it asks VideoToolbox whether ProRes 422 decodes in hardware, so a base
+  M1 (no ProRes engine) fails it hard and is refused show mode; the engine logs `proResEngine` at start (B144, DESIGN §5,
+  PR #NNN).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
