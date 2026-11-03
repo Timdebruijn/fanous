@@ -279,9 +279,10 @@ something has its live picture there instead. A file that changes is probed agai
   4 to 5 ms of GPU time (p99) on the idle M1 Pro, against about 0.25 ms for a
   plain layer, so 3 such layers ran at 1080p60 and 4 did not (headless
   measurement). Since 2026-11-03 (B2) the blur and edge taps read a converted
-  copy of the layer: in a loaded A/B a blurred layer cost 0.9 ms instead of
-  2.3 and an edged one 0.3 instead of 1.6, so expect about twice the layers;
-  the idle figures are to be re-measured. A dissolve (Dissolve channel) uses a
+  copy of the layer: in a loaded A/B a blurred layer cost about 0.9 ms instead
+  of 2.3 and an edged one about 0.3 instead of 1.6 (derived from 4-layer
+  frames), so expect more layers with Blur alone or Edge alone; with both,
+  the gain was smaller. The idle figures are to be re-measured. A dissolve (Dissolve channel) uses a
   second decoder, which counts as one more layer.
 - Watch "dropped" in the status bar and the tiles under System › Live metrics while
   you build the show.

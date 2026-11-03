@@ -6,7 +6,7 @@ import Foundation
 import Metal
 import simd
 
-/// Mirrors `LayerUniforms` in Shaders.swift (natural alignment, 192 bytes).
+/// Mirrors `LayerUniforms` in Shaders.swift (natural alignment, 196 bytes, stride 208).
 public struct LayerUniforms {
     public var transform: simd_float4x4 = matrix_identity_float4x4
     public var quadRect: SIMD4<Float> = SIMD4(-1, -1, 1, 1)

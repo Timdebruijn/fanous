@@ -394,6 +394,10 @@ public final class Compositor: @unchecked Sendable {
         for layer in layers {
             let p = layer.index < snapshot.layers.count ? snapshot.layers[layer.index] : LayerParameters()
             handOff(layer: layer, p: p, target: target)
+            if Self.usesTaps(p) {
+                requestScratch(for: layer.current, layer: layer)
+                requestScratch(for: layer.outgoing, layer: layer)
+            }
             let canvas = self.target(forLayer: layer.index) ?? -1
             if canvas >= 0 {
                 fitGenerator(layer.current, to: targets[canvas])
@@ -603,6 +607,8 @@ public final class Compositor: @unchecked Sendable {
         /// The playback's scratch texture when this draw blurs or edges (B2): the convert pass fills it before the
         /// canvas pass and the draw reads it as RGBA; nil draws the source itself. Implied by `playback` and `p`.
         var scratch: MTLTexture?
+        /// The mip level the blur taps read from `scratch` (B2): above 0 only with a blur over 4 px and the levels made.
+        var lod: Float = 0
 
         static func == (l: DrawItem, r: DrawItem) -> Bool {
             l.playback === r.playback && l.frame === r.frame && l.frameIndex == r.frameIndex && l.intensity == r.intensity && l.master == r.master && l.slot == r.slot && l.canvas == r.canvas
@@ -615,6 +621,15 @@ public final class Compositor: @unchecked Sendable {
         if layer.wanted.load(ordering: .relaxed) != wanted {
             layer.wanted.store(wanted, ordering: .relaxed)
             loaderWake?.signal()
+        }
+        layer.pendingScratch.withLockIfAvailable { box in
+            guard box.set else { return }
+            box.set = false
+            if let playback = box.playback, playback === layer.current || playback === layer.outgoing || playback === layer.staged {
+                playback.adopt(box.answer)
+            }
+            box.playback = nil
+            box.answer = nil
         }
         let taken: PendingPlayback? = layer.pending.withLockIfAvailable { box in
             guard box.set else { return nil }
@@ -641,6 +656,16 @@ public final class Compositor: @unchecked Sendable {
         if let staged = layer.staged, staged.hasFrame {
             layer.staged = nil
             swap(in: staged, layer: layer, p: p, target: target)
+        }
+    }
+
+    /// A scratch texture for a playback that blurs or edges without one (B2): asked of the loader once, adopted here on a
+    /// later tick (`handOff` takes the answer). A live input never gets one.
+    private func requestScratch(for playback: LayerPlayback?, layer: RenderLayer) {
+        guard let playback, playback.scratch == nil, !playback.scratchRequested, playback.live == nil else { return }
+        if layer.scratchRequest.withLockIfAvailable({ $0 = playback }) != nil {
+            playback.scratchRequested = true
+            loaderWake?.signal()
         }
     }
 
@@ -751,8 +776,11 @@ public final class Compositor: @unchecked Sendable {
         let changing = if let g = playback.live as? GeneratorSource { !g.isStatic && (g.kind != 112 || g.drawnSecond != Int(time(nil))) } else { playback.live != nil }
         if changing || p.effect1 == .strobe || p.effect2 == .strobe { ctx.dynamic = true }
         let scratch = Self.usesTaps(p) && frame.texture0 != nil ? playback.scratch : nil
+        let lod = scratch == nil ? 0 : Self.blurLevel(p, mediaHeight: playback.height, levels: playback.scratchLevels.count)
         drawItems.append(
-            DrawItem(playback: playback, frame: frame, frameIndex: frameIndex, p: p, intensity: intensity, master: ctx.masterIntensity, slot: slot, canvas: canvas, scratch: scratch))
+            DrawItem(
+                playback: playback, frame: frame, frameIndex: frameIndex, p: p, intensity: intensity, master: ctx.masterIntensity, slot: slot, canvas: canvas,
+                scratch: scratch, lod: lod))
     }
 
     /// Blur with a radius, or edge: the effects that sample the picture more than once per pixel (B2).
@@ -766,11 +794,15 @@ public final class Compositor: @unchecked Sendable {
     /// once per tick (§4.6).
     private func encodeScratch(_ commandBuffer: MTLCommandBuffer) {
         var wantsMips = false
-        for item in drawItems {  // one encoder at a time on a command buffer: every convert pass first, then the mips
+        defer { scratchPass.colorAttachments[0].texture = nil }  // not kept alive past the tick
+        for i in drawItems.indices {  // one encoder at a time on a command buffer: every convert pass first, then the mips
+            let item = drawItems[i]
             guard let scratch = item.scratch, let texture0 = item.frame.texture0 else { continue }
             scratchPass.colorAttachments[0].texture = scratch
             guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: scratchPass) else {
                 encoderFailures.wrappingAdd(1, ordering: .relaxed)
+                drawItems[i].scratch = nil  // unwritten: the draw takes the source path
+                drawItems[i].lod = 0
                 continue
             }
             encoder.label = scratchConvertLabel as String
@@ -789,15 +821,19 @@ public final class Compositor: @unchecked Sendable {
             encoder.setFragmentSamplerState(context.mipSampler, index: 2)
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             encoder.endEncoding()
-            if item.playback.scratchLevels.count > 1, Self.blurRadius(item.p) > 0 { wantsMips = true }
+            if item.lod > 0 { wantsMips = true }
         }
-        guard wantsMips, let mips = commandBuffer.makeComputeCommandEncoder() else { return }
+        guard wantsMips else { return }
+        guard let mips = commandBuffer.makeComputeCommandEncoder() else {
+            encoderFailures.wrappingAdd(1, ordering: .relaxed)
+            for i in drawItems.indices where drawItems[i].lod > 0 { drawItems[i].lod = 0 }  // level 0 is written
+            return
+        }
         mips.label = scratchMipsLabel as String
         mips.setComputePipelineState(context.downsamplePipeline)
         mips.setSamplerState(context.linearSampler, index: 0)
-        for item in drawItems {
+        for item in drawItems where item.scratch != nil && item.lod > 0 {
             let levels = item.playback.scratchLevels
-            guard item.scratch != nil, levels.count > 1, Self.blurRadius(item.p) > 0 else { continue }
             for level in 1..<levels.count {
                 mips.setTexture(levels[level - 1], index: 0)
                 mips.setTexture(levels[level], index: 1)
@@ -814,7 +850,7 @@ public final class Compositor: @unchecked Sendable {
     }
 
     /// The mip level the blur taps read (B2): about one level per halving of the radius in pixels from 4 px, at most
-    /// level 3 (1/8). 0 without a scratch texture or without blur.
+    /// level 3 (1/8). 0 without the levels, without blur, or with a blur of 4 px or less (level 0 is enough: no mips then).
     static func blurLevel(_ p: LayerParameters, mediaHeight: Int, levels: Int) -> Float {
         let radiusPixels = blurRadius(p) * 0.05 * Float(mediaHeight)
         guard radiusPixels > 4, levels > 1 else { return 0 }
@@ -866,12 +902,12 @@ public final class Compositor: @unchecked Sendable {
         u.texel = SIMD4(1 / Float(max(1, mediaWidth)), 1 / Float(max(1, mediaHeight)), Float(Double(mediaWidth) * playback.pixelAspect) / Float(max(1, mediaHeight)), time)
         u.kind = frame.kind.rawValue
         u.deep = texture0.pixelFormat == .rgba16Unorm || texture0.pixelFormat == .r16Unorm ? 1 : 0  // v216/y416, r16 planes (B119)
-        if let scratch = item.scratch {  // converted upright this tick (B2): one RGBA texel per tap, the blur at a mip level
+        if item.scratch != nil {  // converted upright this tick (B2): one RGBA texel per tap, the blur at a mip level
             u.kind = SourcePixelKind.rgba.rawValue
             u.deep = 0
             u.effect1.w = 0
             u.uvRect = Self.uvRect(cropLeft: p.cropLeft, cropTop: p.cropTop, cropRight: p.cropRight, cropBottom: p.cropBottom, bottomUp: false)
-            u.lod = Self.blurLevel(p, mediaHeight: mediaHeight, levels: scratch.mipmapLevelCount)
+            u.lod = item.lod
         }
         u.blend = UInt32(p.blendMode.rawValue)
         u.master = item.master

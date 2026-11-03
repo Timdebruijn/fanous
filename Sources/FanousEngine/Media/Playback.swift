@@ -122,14 +122,28 @@ public final class LayerPlayback: @unchecked Sendable {
     public let still: DecodedFrame?
     public let live: (any LiveTextureSource)?
     /// The media as upright RGBA at its own size with four mip levels, written by the compositor's convert pass on a
-    /// tick where the layer blurs or edges and read by those taps (DESIGN.md §4.3, B2). Made with the media (one more
-    /// frame of memory), none for a live input: the compositor then samples the source per tap as before.
-    public var scratch: MTLTexture? {
-        didSet { scratchLevels = Self.levels(of: scratch) }  // not run by the inits: they set both
-    }
+    /// tick where the layer blurs or edges and read by those taps (DESIGN.md §4.3, B2). Made the first time the layer
+    /// asks for one (the loader allocates on its thread, the compositor adopts it on a later tick; until then, and for
+    /// a live input, the draw samples the source per tap as before). Compositor thread owns both `var`s.
+    public private(set) var scratch: MTLTexture?
     /// One single-level view per level of `scratch`, made with it: the compositor's downsample kernel reads level
-    /// n − 1 and writes level n through these (B2).
+    /// n − 1 and writes level n through these (B2). Empty when any view could not be made: the taps then read level 0.
     public private(set) var scratchLevels: [MTLTexture] = []
+    /// Compositor thread: a scratch texture was asked of the loader (once per playback; a refusal leaves the source path).
+    var scratchRequested = false
+
+    /// The compositor takes the loader's texture (B2): two stores, no allocation.
+    public func adopt(_ set: ScratchSet?) {
+        scratch = set?.texture
+        scratchLevels = set?.levels ?? []
+    }
+
+    /// The scratch texture and its level views for a media of this size (B2); nil when Metal refuses either.
+    public static func makeScratchSet(device: MTLDevice, width: Int, height: Int) -> ScratchSet? {
+        guard let texture = makeScratch(device: device, width: width, height: height) else { return nil }
+        let levels = levels(of: texture)
+        return levels.isEmpty ? nil : ScratchSet(texture: texture, levels: levels)
+    }
     private let liveFrame = DecodedFrame(poolIndex: 0)
     var clock = LayerClock()
     /// The clock followed a sync master last tick (DESIGN.md §23.3).
@@ -141,8 +155,7 @@ public final class LayerPlayback: @unchecked Sendable {
     /// The mixer channel this playback's decoder fills (movies with an audio track only).
     public var audioChannel: LayerAudioChannel? { decoder?.audio?.channel }
 
-    /// `device` nil (tests): no scratch texture.
-    public init(key: MediaKey, movie: MovieSource, decoder: LayerDecoder, ring: FrameRing, device: MTLDevice? = nil) {
+    public init(key: MediaKey, movie: MovieSource, decoder: LayerDecoder, ring: FrameRing) {
         self.key = key
         self.decoder = decoder
         self.ring = ring
@@ -153,15 +166,15 @@ public final class LayerPlayback: @unchecked Sendable {
         pixelAspect = movie.info.pixelAspect
         frameRate = movie.info.frameRate
         frameCount = movie.info.frameCount
-        scratch = device.flatMap { Self.makeScratch(device: $0, width: width, height: height) }
-        scratchLevels = Self.levels(of: scratch)
     }
 
-    static func levels(of scratch: MTLTexture?) -> [MTLTexture] {
+    /// Every level of `scratch` as a single-level view, or none when one could not be made (B2).
+    public static func levels(of scratch: MTLTexture?) -> [MTLTexture] {
         guard let scratch else { return [] }
-        return (0..<scratch.mipmapLevelCount).compactMap {
+        let views = (0..<scratch.mipmapLevelCount).compactMap {
             scratch.makeTextureView(pixelFormat: scratch.pixelFormat, textureType: .type2D, levels: $0..<($0 + 1), slices: 0..<1)
         }
+        return views.count == scratch.mipmapLevelCount ? views : []
     }
 
     /// The scratch texture for a media of this size (B2): canvas format, four mip levels (the blur reads up to 1/8),
@@ -178,7 +191,6 @@ public final class LayerPlayback: @unchecked Sendable {
     }
 
     /// `pixelAspect`: the movie's, when the still is one decoded movie frame (the thumbnailer); 1 for a real still.
-    /// No scratch texture: `Playback.open` sets one for a layer's still, the thumbnailer's one-frame stills never blur.
     public init(key: MediaKey, still: DecodedFrame, pixelAspect: Double = 1) {
         self.key = key
         self.still = still
@@ -283,6 +295,20 @@ struct PendingPlayback {
     var playback: LayerPlayback?
 }
 
+/// A scratch texture with its level views (B2), made by the loader and handed to the compositor through a lock.
+public struct ScratchSet: @unchecked Sendable {
+    public let texture: MTLTexture
+    public let levels: [MTLTexture]
+}
+
+/// A scratch texture the loader made for a playback (B2); the compositor adopts it when that playback is still its own.
+struct PendingScratch {
+    var set = false
+    var playback: LayerPlayback?
+    /// Nil: Metal refused; the playback keeps the source path.
+    var answer: ScratchSet?
+}
+
 /// One layer slot: the playing media, the outgoing one during a dissolve, and
 /// the lock-free hand-off with the media loader (compositor thread owns the
 /// `var`s).
@@ -324,6 +350,10 @@ public final class RenderLayer: @unchecked Sendable {
     let pending = Mutex(PendingPlayback())
     /// Playbacks the compositor has let go of; the loader stops and releases them.
     let retired = Mutex<[LayerPlayback]>([])
+    /// The playback the compositor wants a scratch texture for (B2); the loader takes it and answers in `pendingScratch`.
+    let scratchRequest = Mutex<LayerPlayback?>(nil)
+    /// Set by the loader; the compositor takes it with `withLockIfAvailable` (never blocks).
+    let pendingScratch = Mutex(PendingScratch())
     var retireLater: [LayerPlayback] = []
 
     public init(index: Int) {
@@ -576,6 +606,19 @@ public final class MediaLoader: @unchecked Sendable {
                     return copy
                 }
                 for playback in retired { playback.stop() }
+                let asking = layer.scratchRequest.withLock { box -> LayerPlayback? in
+                    let taken = box
+                    box = nil
+                    return taken
+                }
+                if let asking {
+                    let answer = LayerPlayback.makeScratchSet(device: device, width: asking.width, height: asking.height)
+                    layer.pendingScratch.withLock { box in
+                        box.set = true
+                        box.playback = asking
+                        box.answer = answer
+                    }
+                }
                 let want = layer.wanted.load(ordering: .relaxed)
                 guard want != loaded[i] else { continue }
                 loaded[i] = want
@@ -695,7 +738,6 @@ public final class MediaLoader: @unchecked Sendable {
             status.name = url.lastPathComponent
             if StillSource.extensions.contains(url.pathExtension.lowercased()) {
                 let playback = LayerPlayback(key: key, still: try StillSource.load(url: url, device: device))
-                playback.scratch = LayerPlayback.makeScratch(device: device, width: playback.width, height: playback.height)
                 status.kind = "still"
                 status.codec = url.pathExtension.lowercased()
                 status.width = playback.width
@@ -723,7 +765,7 @@ public final class MediaLoader: @unchecked Sendable {
             status.height = source.info.height
             status.fps = source.info.frameRate
             status.frames = source.info.frameCount
-            return LayerPlayback(key: key, movie: source, decoder: decoder, ring: ring, device: device)
+            return LayerPlayback(key: key, movie: source, decoder: decoder, ring: ring)
         } catch {
             logger.error("media open failed", metadata: ["layer": "\(layer + 1)", "media": "\(key)", "error": "\(error)"])
             status.error = error.clientText  // no file path for the monitor role (B25)

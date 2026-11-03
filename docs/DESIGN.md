@@ -367,15 +367,18 @@ triple-buffered `rgba16Float` canvas texture (ADR-0007):
      *source* texture multiple times; no intermediate textures, except the
      scratch texture of B2 (2026-11-03): a layer that blurs or edges is first
      converted, upright, into its media's own scratch texture (canvas format,
-     four mip levels, made with the media), and its canvas draw uses the
+     four mip levels, made by the loader the first time the layer asks for
+     one and adopted by the compositor on a later tick; until then the draw
+     takes the source path), and its canvas draw uses the
      pipeline variant whose taps read that RGBA directly, the blur at a mip
      level matched to its radius (about one level per halving from 4 px, at
      most 1/8). The gain is the taps' shader, not their reads: 13 inlined
      copies of the source conversion cost the draw its occupancy, and reading
      the mip levels through them saved under 10 %, while the direct taps cut a
      blurred ProRes layer from about 2.3 ms to 0.9 ms and an edged one from
-     about 1.6 ms to 0.3 ms (4 layers, 1080p60, A/B under load; B2). A live
-     input has no scratch texture and draws as before. The meaning of
+     about 1.6 ms to 0.3 ms (derived as the frame's p99 less the plain frame's
+     over 4 layers, 1080p60, A/B under load; B2). A live input has no scratch
+     texture and draws as before. The meaning of
      the two parameter channels per effect is the `EffectSpec` table in Core,
      rendered into `docs/channel-map.md`.
    - Dissolve: the outgoing media keeps playing and is drawn first; with
@@ -428,9 +431,12 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
 
 - Texture/buffer pools are sized at layer activation from the file's
   dimensions and the tier's ring depth; a layer that switches to a larger file
-  reallocates on Control, not on the compositor. A media's scratch texture
-  (§4.3, B2) is made with it on the media thread, one more frame of memory
-  in the canvas format with four mip levels, and goes with it.
+  reallocates on Control, not on the compositor. A playback's scratch texture
+  (§4.3, B2) is made by the loader on its thread the first time the layer
+  blurs or edges, handed over through the layer's lock and adopted by the
+  compositor (two stores), and goes with the playback: about 10.6 bytes per
+  media pixel (rgba16Float with four mip levels, 2.7× an 8-bit RGBA frame),
+  84 MiB for a 4K media, twice that during a dissolve.
 - Uniforms live in a per-frame ring of `MTLBuffer`s (3 × max layers); argument
   tables are filled by offset, never by creating objects.
 - Allocation rule on the compositor thread (Phase 2 acceptance, restated by
@@ -465,7 +471,7 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
     | Output pass | +3 (one more encoder; its "mapped output" label is an `NSString` made once, B117: a 13–15-byte Swift `String` bridged, and allocated, on every assignment; shorter ones bridge to tagged pointers and the 16-byte "secondary output" bridged free too) |
     | Each extra canvas | +3 |
     | Generators that draw this tick | +2 for the first, about +3 each further (derived): its encoder, the descriptor and label made once per generator (B112). The test card (110), colour sweep and motion test draw every tick, the clock (112) once a second, 100–107 only when made. Was +8 per tick for the test card and +9 for the clock's draw (measured `-c release`, M1 Pro, 2026-10-29) |
-    | A layer that blurs or edges (B2) | about +5 per such draw: its convert encoder (2) and the three downsample dispatches of its mip levels (about 3, blur only), the compute encoder once per tick about 0 (measured 2026-11-03 on the display path: 4 layers 42.9–43.0 per tick against 21.0–22.0 plain, 8 layers 61.9; `generateMipmaps` instead of the kernel cost about 38 per layer) |
+    | A layer that blurs or edges (B2) | about +5 per such draw: its convert encoder (2) and the three downsample dispatches of its mip levels (about 3, blur above 4 px only), the compute encoder once per tick about 0 (measured 2026-11-03 on the display path: 4 layers 42.9–43.0 per tick against 21.0–22.0 plain, 8 layers 61.9; `generateMipmaps` instead of the kernel cost about 38 per layer) |
     | Each preview or thumbnail streamer | about +6 (derived: an encoder and a capturing handler; the encoder's label is an `NSString`, B117) |
     | `present` (a display run: `nextDrawable()`, `present(drawable)` and the drawable's texture) | about +14 (derived): a display run counts 20.97–21.00 per tick at 1, 4, 8 and 16 layers, headless 3.99–4.00, so the drawable path is a fixed cost, 4 + 3 (output pass) + 14, which is the residual, not a count of those three calls (measured 2026-11-03, `fanous-bench run --display 0`, M1 Pro, macOS 27.2; not split further). A dissolve on blurred layers counted 27–31 (B148) |
     | Syphon publish (while a client is attached) | +4: the flip draw's encoder (2) and Syphon's `addCompletedHandler` block (2); its render pass descriptor is made once (`VENDORED.md` local change 6), 8 when it was made per frame (B109; measured `-c release`, M1 Pro, 2026-10-29) |
