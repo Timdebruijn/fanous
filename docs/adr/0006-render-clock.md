@@ -63,21 +63,23 @@ therefore ruled out; the drawable-loop driver stays. Apple's own guidance
 the intended render loop, and no replacement API exists in the macOS 26/27
 SDKs, so the switch remains worth re-testing per macOS release.
 
-## Amendment 2026-11-03: the stall is gone on macOS 27.2
+## Amendment 2026-11-03: not reproduced on macOS 27.2
 
 Re-test on the same M1 Pro after the update to macOS 27.2 (build 26B123,
 Xcode 27.2). The standalone reproduction
-(`docs/benchmarks/cametaldisplaylink-repro.swift`) now delivers about 153
-updates, 152 completions and 150 presents in 2.5 s in every link variant
-(`link`, `lat2`, `count2`, `after`), the same as its timer path (155). The
+(`docs/benchmarks/cametaldisplaylink-repro.swift`) now delivers 152–155
+updates, 152–155 completions and 149–152 presents in 2.5 s per link variant
+(`link`, `link-lat2`, `link-count2`, `link-after`; the timer path 155/155/152),
+one run each. The
 engine's own driver agrees: `fanous-bench run --display 0 --layers 4
 --window 10 --displaylink` (HAP Q 1080p60) passes with 603 frames, 0 missed,
 0 late, GPU p99 3.64 ms, against 624 frames and 3.63 ms for the drawable
-loop in a run just before it. One 10 s window at 4 layers, not a sweep.
+loop in a separate run. One 10 s window at 4 layers, not a sweep; no 27.1.
 
 The drawable loop stays the shipping driver: it works on 27.0.1 and 27.2
-alike, and the link showed no gain in this window. No Feedback is filed with
-Apple, as there is nothing left to show on the current release. The switch
+alike, and the link showed no gain in this window. Decision: no Feedback is
+filed with Apple, as the current release shows nothing in these runs, though
+27.0.x users are still affected and 27.1 was not measured. The switch
 is re-tested on each macOS release (B8); switching back is the one-line
 change named above, once the stall has stayed absent on the releases users
 run.
