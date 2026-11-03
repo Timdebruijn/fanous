@@ -3,7 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { app } from '../lib/state.svelte';
-  import { metricTiles, parseMetrics, pushHistory, sparkline, type Metrics } from '../lib/system';
+  import { metricTiles, parseMetrics, plural, pushHistory, sparkline, type Metrics } from '../lib/system';
 
   const W = 240;
   const H = 48;
@@ -80,7 +80,7 @@
     {/each}
   </div>
   <figure class="spark">
-    <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" role="img" aria-label="GPU p99 frame time over the last {history.length} polls{latest === undefined ? '' : `, now ${latest.toFixed(1)} ms`}">
+    <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" role="img" aria-label="GPU p99 frame time over the last {plural(history.length, 'poll')}{latest === undefined ? '' : `, now ${latest.toFixed(1)} ms`}">
       {#if trace.refY !== null}<line class="ref" x1="0" x2={W} y1={trace.refY} y2={trace.refY} />{/if}
       {#if trace.points}<polyline class="trace" points={trace.points} />{/if}
     </svg>

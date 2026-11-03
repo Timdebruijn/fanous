@@ -6,7 +6,7 @@
   import type { ChannelMap } from '../lib/patch-screen';
   import { fixtureNames, formatNumber, groupSpecs, midiControlText, midiParameterTarget, midiTargetText, specsFor } from '../lib/show';
   import { app, cmd, programmerLock } from '../lib/state.svelte';
-  import { stampText } from '../lib/system';
+  import { plural, stampText } from '../lib/system';
 
   /** null while the channel map is not there: parameter targets are then offered by key only once it arrives */
   let { map }: { map: ChannelMap | null } = $props();
@@ -52,7 +52,7 @@
   <header>
     <h2 id="midi-title">MIDI</h2>
     <span class="spacer"></span>
-    <span class="caption">{live.connected.length} {live.connected.length === 1 ? 'source' : 'sources'} listened to</span>
+    <span class="caption">{plural(live.connected.length, 'source')} listened to</span>
   </header>
 
   <p class="last mono" aria-live="polite">

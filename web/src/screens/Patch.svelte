@@ -9,6 +9,7 @@
   import UniversesPanel from '../components/UniversesPanel.svelte';
   import { POLICIES } from '../lib/layers';
   import { app, cmd, programmerLock } from '../lib/state.svelte';
+  import { plural } from '../lib/system';
   import { buildPatch, loadChannelMap, summarize, universeOptions, universeRows, type ChannelMap } from '../lib/patch-screen';
 
   // Modes and footprints come from the engine's channel map; until it arrives (or if it cannot be fetched) the four
@@ -58,7 +59,7 @@
 <div class="toolbar">
   <h1>Patch</h1>
   <span class="caption">
-    {summary.fixtures} fixtures · {summary.universes} universes{#if summary.collisions > 0}{' · '}<span class="alert">{summary.collisions} collisions</span>{/if}
+    {plural(summary.fixtures, 'fixture')} · {plural(summary.universes, 'universe')}{#if summary.collisions > 0}{' · '}<span class="alert">{plural(summary.collisions, 'collision')}</span>{/if}
   </span>
   <span class="spacer"></span>
   <button type="button" class="btn" onclick={() => (sheetOpen = true)}>Patch sheet</button>

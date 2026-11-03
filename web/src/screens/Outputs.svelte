@@ -37,6 +37,7 @@
   import { mediaOptions, mediaPath, type LibrarySnapshot } from '../lib/layers';
   import { loadLibrary } from '../lib/media';
   import { app, can, client, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
+  import { plural } from '../lib/system';
   import { LOCKED_TITLE } from '../lib/patch-screen';
   import { go } from '../lib/router.svelte';
   import { sourcePixels, sourceFromPixels } from '../lib/outputs';
@@ -413,7 +414,7 @@
     <button type="button" class="btn" aria-pressed={ui.tab === 'warp'} onclick={() => (ui.tab = 'warp')}>Warp &amp; Slices</button>
   </div>
   <span class="spacer"></span>
-  <span class="caption">{outputs.length} outputs · {displays.length} displays connected</span>
+  <span class="caption">{plural(outputs.length, 'output')} · {plural(displays.length, 'display')} connected</span>
 </div>
 
 {#each lost as s (s.id)}

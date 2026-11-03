@@ -18,6 +18,9 @@ export type DotTone = 'green' | 'yellow' | 'red' | 'off';
 /** Two digits: 7 → "07". */
 export const pad2 = (n: number) => String(n).padStart(2, '0');
 
+/** A count with its noun: 1 → "1 layer", 2 → "2 layers"; `many` for an irregular plural ("canvases"). */
+export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
 /** A Copy button's outcome: the text in the clipboard, or not (no permission, no secure context). */
 export async function copied(text: string): Promise<'ok' | 'failed'> {
   try {

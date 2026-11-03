@@ -3,6 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { app, programmerLock } from '../lib/state.svelte';
+  import { plural } from '../lib/system';
   import { applyWizard, cancelWizard, wallUI, wizardBack } from '../lib/wall-session.svelte';
   import { MAX_CANVAS_PIXELS, fitCanvas, freeOutputs, grids, overlapHint, rc, tap, wallPixels, wallSize, type Grid } from '../lib/walls';
 
@@ -84,7 +85,7 @@
           <span class="label">Grid (rows × columns)</span>
           <div class="segmented" role="group" aria-label="Grid">
             {#each options as g (`${g.rows}x${g.cols}`)}
-              <button type="button" class="btn" aria-pressed={same(draft.grid, g)} title="{g.rows} {g.rows === 1 ? 'row' : 'rows'} of {g.cols}" onclick={() => (draft.grid = g)}>{g.rows} × {g.cols}</button>
+              <button type="button" class="btn" aria-pressed={same(draft.grid, g)} title="{plural(g.rows, 'row')} of {g.cols}" onclick={() => (draft.grid = g)}>{g.rows} × {g.cols}</button>
             {/each}
           </div>
         </div>

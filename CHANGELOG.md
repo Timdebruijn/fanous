@@ -54,6 +54,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   panel of rows with dividers instead of a bordered card per layer; tiles below 1320 px stay cards (PR #261).
 - Fixed: the remote-mode choice on Warp & Slices was not read back on load (always the touch-screen default), and the
   Vite dev server showed a black page; the key was read before it was declared (PR #237).
+- Fixed: count captions in the web UI put the plural after a count of 1 ("1 outputs · 1 displays connected",
+  "1 layers", "1 frames seen" and others) and the Media header said "2 invalid name"; every count string now goes
+  through one `plural` helper (PR #238).
 
 ## 1.0.0-rc.2 — 2026-11-03
 

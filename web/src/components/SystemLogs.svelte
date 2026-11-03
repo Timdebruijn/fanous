@@ -4,7 +4,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { app } from '../lib/state.svelte';
-  import { filterLines, formatClock } from '../lib/system';
+  import { filterLines, formatClock, plural } from '../lib/system';
 
   let text = $state('');
   let query = $state('');
@@ -42,7 +42,7 @@
 <section class="panel" aria-labelledby="logs-title">
   <header class="phead">
     <h2 id="logs-title">Logs</h2>
-    <span class="caption" aria-live="polite">{visible.shown} of {visible.total} lines · last 64 KB</span>
+    <span class="caption" aria-live="polite">{visible.shown} of {plural(visible.total, 'line')} · last 64 KB</span>
     <span class="spacer"></span>
     <input class="input" type="search" aria-label="Filter log lines" placeholder="Filter lines" autocomplete="off" spellcheck="false" bind:value={query} />
     <button type="button" class="btn" disabled={loading} onclick={load}>Refresh</button>
