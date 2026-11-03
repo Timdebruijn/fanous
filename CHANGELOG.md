@@ -7,6 +7,12 @@
 Dates are the day the phase was committed on `main`. The design each phase
 implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
+## Unreleased
+
+- Fixed: the release dmg was notarized and stapled but not signed itself, so Gatekeeper's check of the dmg
+  (`spctl --type open`) rejected it with "no usable signature" while the app inside passed; `scripts/notarize.sh` signs
+  the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #<pr>).
+
 ## 1.0.0-rc.1 — unreleased (Phase 8, 2026-10-24)
 
 - Renamed Lanthorn → **Fanous** (2026-10-25; name collisions, `docs/RELEASE.md` §7). Existing machine

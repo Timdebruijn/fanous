@@ -72,10 +72,15 @@ With Fanous and the console software on one subnet (Little Snitch: allow
       camera for capture devices), usage strings and `NSBonjourServices` in
       `Info.plist`, timestamped. Done for 1.0.0-rc.1 on 2026-11-02 (B50); repeat per release
 - [ ] `xcrun notarytool store-credentials fanous --apple-id … --team-id … --password <app-specific>` once, then
-      `NOTARY_PROFILE=fanous scripts/notarize.sh` → `dist/Fanous-<version>.dmg`, stapled, `spctl --assess` passes
+      `NOTARY_PROFILE=fanous scripts/notarize.sh` → `dist/Fanous-<version>.dmg`, signed with the app's Developer ID,
+      notarized and stapled; the script ends with `spctl --assess --type execute` on the app and
+      `spctl --assess --type open --context context:primary-signature` on the dmg, both `accepted`,
+      `source=Notarized Developer ID`
       (the app-specific password: account.apple.com › Sign-In and Security › App-Specific Passwords).
       Done for 1.0.0-rc.1 on 2026-11-02: zip and dmg accepted, stapled, Gatekeeper: Notarized
-      Developer ID (B50, PR #182); repeat per release
+      Developer ID for the app (B50, PR #182); repeat per release. The rc.1 and rc.2 dmgs themselves were not signed
+      (measured 2026-11-03: `codesign -dv` "not signed at all", the dmg check "rejected, source=no usable signature",
+      `syspolicy_check distribution` flagged the dmg, the app inside passed); the script signs it since PR #<pr>
 - [ ] `shasum -a 256 dist/Fanous-<version>.dmg` goes into the release notes
 - [ ] only on a developer Mac that ran ad-hoc builds: the first Developer ID open re-registers the agent (B50), and
       the old Screen Recording switch stays on while the engine reads `denied` after the signature change:
