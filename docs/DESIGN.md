@@ -453,7 +453,7 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
     | Each extra canvas | +3 |
     | Generators that draw this tick | +2 for the first, about +3 each further (derived): its encoder, the descriptor and label made once per generator (B112). The test card (110), colour sweep and motion test draw every tick, the clock (112) once a second, 100–107 only when made. Was +8 per tick for the test card and +9 for the clock's draw (measured `-c release`, M1 Pro, 2026-10-29) |
     | Each preview or thumbnail streamer | about +6 (derived: an encoder and a capturing handler; the encoder's label is an `NSString`, B117) |
-    | `present` | not measured |
+    | `present` (a display run: `nextDrawable()`, `present(drawable)` and the drawable's texture) | about +14: a display run counts 20.97–21.00 per tick at 1, 4 and 16 layers, headless 3.99–4.00, so the drawable path is a fixed cost, 4 + 3 (output pass) + 14 (measured 2026-11-03, `fanous-bench run --display 0`, M1 Pro, macOS 27.2; not split further) |
     | Syphon publish (while a client is attached) | +4: the flip draw's encoder (2) and Syphon's `addCompletedHandler` block (2); its render pass descriptor is made once (`VENDORED.md` local change 6), 8 when it was made per frame (B109; measured `-c release`, M1 Pro, 2026-10-29) |
 - Unified memory budget: engine warns at 60 % of physical memory, refuses to
   activate a layer that would exceed 75 %. Read-ahead depth is the first knob
