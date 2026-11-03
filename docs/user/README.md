@@ -7,7 +7,7 @@
 Fanous is a media server for live events. Your lighting console patches it
 as a fixture and drives video layers over Art-Net or sACN; Fanous plays the
 media, blends, warps and maps it onto projectors and displays, and reports back
-what it is doing. This guide describes version 1.0.0-rc.1.
+what it is doing. This guide describes version 1.0.0-rc.2.
 
 ## Who this is for
 

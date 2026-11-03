@@ -12,7 +12,7 @@ end.
 Banners: "Connecting to the engine…", "Engine unreachable: …; retrying", or the
 red "Connection lost … values shown are stale".
 
-1. Open the **Engine** menu in the app and read the first line. "Engine 1.0.0-rc.1
+1. Open the **Engine** menu in the app and read the first line. "Engine 1.0.0-rc.2
    running · service installed" means the engine is fine and the problem is the
    connection (network, firewall, wrong address). "Engine not running" means it
    is down.
