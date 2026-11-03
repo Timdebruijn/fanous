@@ -461,14 +461,17 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
 
 ## 5. Hardware capability detection and performance tiers
 
-**Status:** design, not built (B144, B145). The engine reads the chip name,
+**Status:** design, not built except the platform floor (B144, B145). The engine reads the chip name,
 physical memory and OS (`SystemInfo`) and the thermal state and power source
 (readiness); the System screen shows them. There is no chip table (`FanousCore/Capabilities`
-does not exist), no tier model, no GPU, media-engine or display-limit
+does not exist), no tier model, no GPU or display-limit
 detection and no benchmark numbers stored per machine. The layer limit is the
-constant 32 (`caps.maxLayers`, B145; OPEN-8), and the "Supported hardware"
-readiness check never fails, because nothing sets
-`ReadinessContext.hardwareSupported` (B144).
+constant 32 (`caps.maxLayers`, B145; OPEN-8). The one capability read is the
+ProRes engine (B144, 2026-11-03): `SystemInfo.hasProResEngine` asks VideoToolbox
+whether ProRes 422 decodes in hardware (`VTIsHardwareDecodeSupported`), and
+`Engine.readinessContext()` puts it in `hardwareSupported`, so a Mac without
+the engine fails the hard "Supported hardware" item and is refused show mode.
+True on the M1 Pro; the base M1's false rests on Apple's documentation (none at hand).
 
 ### 5.1 Detection at start (and on display changes)
 
@@ -482,9 +485,10 @@ readiness check never fails, because nothing sets
 | Media-engine count, max external displays | **static table** keyed by chip name (`FanousCore/Capabilities`), marked "Apple spec" in the UI, with `unknown` fallback → conservative tier and a yellow "unknown chip, benchmark recommended" status |
 | Thermal / power | `ProcessInfo.thermalState`, `IOPSCopyPowerSourcesInfo` (on battery = yellow) |
 
-Unsupported machine (no hardware ProRes, i.e. base M1 / Intel): the engine
-starts, shows a red "unsupported hardware" status, and refuses to enter show
-mode. Development on such a machine still works for the UI.
+Unsupported machine (no hardware ProRes decoder, i.e. the base M1; Intel cannot
+run the arm64 app at all): the engine starts, the hard "Supported hardware"
+readiness item fails ("no hardware ProRes decoder") and show mode is refused.
+Development on such a machine still works for the UI.
 
 ### 5.2 Tiers
 
@@ -4416,8 +4420,8 @@ library volume (`mdutil -s` state read via `MDQuery`/`mdutil` output) off or
 acknowledged; automatic macOS updates state (read from
 `com.apple.SoftwareUpdate` defaults) acknowledged; Time Machine not currently
 backing up; Focus/Do Not Disturb cannot be read reliably → shown as a manual
-checklist item; display sleep settings; unsupported hardware (hard fail; the "Supported
-hardware" item exists but never fails, B144).
+checklist item; display sleep settings; unsupported hardware (hard fail: no hardware ProRes
+decoder, `SystemInfo.hasProResEngine`, B144).
 Failed items block show mode until acknowledged (programmer) — except hard
 fails.
 

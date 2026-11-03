@@ -313,7 +313,7 @@ public enum Readiness {
         add("focus", "Focus / Do Not Disturb on", nil, "cannot be read; check the menu bar", "Turn on a Focus so notifications stay off the outputs")
         let sleep = displaySleepMinutes()
         add("displaysleep", "Display sleep disabled", sleep.map { $0 == 0 } ?? true, sleep.map { $0 == 0 ? "never" : "\($0) min (held off by the show-mode assertion)" } ?? "unknown", "System Settings › Lock Screen › Turn display off: never")
-        add("hardware", "Supported hardware", context.hardwareSupported, context.hardwareSupported ? "Apple Silicon with ProRes engine" : "unsupported machine", "Use an Apple Silicon Mac with a ProRes engine (M1 Pro or newer)", failing: .hard)
+        add("hardware", "Supported hardware", context.hardwareSupported, context.hardwareSupported ? "Apple Silicon with ProRes engine" : "no hardware ProRes decoder", "Use an Apple Silicon Mac with a ProRes engine (M1 Pro or newer)", failing: .hard)
         return items
     }
 
