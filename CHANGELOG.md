@@ -15,7 +15,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).
 - Fixed: the layer's media line on the Layers screen read "hevc · 1080p25" for an anamorphic movie, where the Media tile
   shows "1440×1080p25" (B146); the layer status now carries the pixel aspect (`live.layers[].pixelAspect`, null for
-  square pixels) and the line shows the shown width with it (B147, PR #NNN).
+  square pixels) and the line shows the shown width with it (B147, PR #239).
 
 ## 1.0.0-rc.2 — 2026-11-03
 
