@@ -15,7 +15,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).
 - Docs: the `CAMetalDisplayLink` stall of macOS 27.0.1 is gone on 27.2 (the reproduction and `fanous-bench --displaylink`
   both run at full rate); the drawable loop stays the shipping driver and the Apple Feedback item is dropped (B8, ADR-0006
-  amendment, PR #NNN).
+  amendment, PR #240).
 
 ## 1.0.0-rc.2 — 2026-11-03
 
