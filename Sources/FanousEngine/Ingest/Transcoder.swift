@@ -3,6 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
 import AVFoundation
+import AudioToolbox
 import CoreMedia
 import Foundation
 import Synchronization
@@ -60,8 +61,9 @@ final class IngestGate: Sendable {
 }
 
 /// Converts one source movie (anything AVFoundation can read) to a `.mov` the engine plays (DESIGN.md §8.3): ProRes or
-/// HAP video from BGRA frames, audio as interleaved LPCM in the source's sample rate, channels and bit depth. Runs on the
-/// calling thread; a run cancelled through its gate (from any thread) removes its partial output.
+/// HAP video from BGRA frames, audio as interleaved LPCM in the source's sample rate, channels and bit depth (see
+/// `lpcmFormat` for the exceptions). Runs on the calling thread; a run cancelled through its gate (from any thread)
+/// removes its partial output.
 public enum Transcoder {
     /// An alpha source must keep its alpha: ProRes 422 becomes 4444, HAP and HAP Q become HAP Alpha. HAP Q Alpha ('HapM')
     /// is not available in `HAPEncoder` (it has no two-texture frames), so HAP Q loses its quality tier here, not its alpha.
@@ -100,7 +102,7 @@ public enum Transcoder {
         var audioFormat: CMAudioFormatDescription?
         if let audio = probe.audio, let source = probe.audioFormat, let (format, settings) = Self.lpcmFormat(matching: source) {
             let output = AVAssetReaderAudioMixOutput(audioTracks: [audio], audioSettings: settings)
-            if reader.canAdd(output) {  // an undecodable audio track must not block the video (nor one without a usable format)
+            if reader.canAdd(output) {  // an undecodable audio track must not block the video
                 reader.add(output)
                 audioOutput = output
                 audioFormat = format
@@ -175,33 +177,44 @@ public enum Transcoder {
 
     /// The interleaved LPCM the library stores for `source` (ADR-0019: what `AudioTrackReader` reads without a
     /// compressed-audio decoder, converting to 48 kHz stereo float itself), as a format description for `MovieWriter` and
-    /// the matching reader settings. Nothing of the source is changed (B19): its sample rate, channel count and layout
-    /// stay, an LPCM source keeps its bit depth and integer/float form, a compressed source (AAC, ...) decodes to 24-bit.
-    /// Nil for a track without a usable format (no rate or channels): the video is transcoded without audio.
+    /// the matching reader settings. The source's sample rate and channel count/layout stay, an LPCM source keeps its bit
+    /// depth and integer/float form, a compressed source (AAC, ...) decodes to 24-bit (B19). The exceptions are what
+    /// `AVAssetReaderAudioMixOutput` refuses (it raises, which would kill the engine): the rate is clamped to 8–192 kHz,
+    /// the depth to 8/16/24/32 (float is always 32), a layout that does not match the channel count is replaced by one
+    /// made from the count, a track without a channel count gets stereo.
+    /// ponytail: more than two channels are mixed down to stereo here, as before, because the player takes channels 0 and
+    /// 1 by index (a 5.1 file would lose its centre); keep them once `AudioTrackReader` has a matrix mix (B143).
+    /// Nil only when the format description cannot be made.
     static func lpcmFormat(matching source: CMAudioFormatDescription) -> (CMAudioFormatDescription, [String: Any])? {
-        guard let input = CMAudioFormatDescriptionGetStreamBasicDescription(source)?.pointee, input.mSampleRate > 0, input.mChannelsPerFrame > 0
-        else { return nil }
-        let channels = input.mChannelsPerFrame
-        let isLPCM = input.mFormatID == kAudioFormatLinearPCM && input.mBitsPerChannel > 0
-        let isFloat = isLPCM && input.mFormatFlags & kAudioFormatFlagIsFloat != 0
-        let bits = isLPCM ? input.mBitsPerChannel : 24
+        let input = CMAudioFormatDescriptionGetStreamBasicDescription(source)?.pointee
+        let rate = min(max(input?.mSampleRate ?? 0, 8_000), 192_000)
+        let sourceChannels = input?.mChannelsPerFrame ?? 0
+        let channels: UInt32 = sourceChannels == 0 || sourceChannels > 2 ? 2 : sourceChannels
+        let isLPCM = input?.mFormatID == kAudioFormatLinearPCM && (input?.mBitsPerChannel ?? 0) > 0
+        let isFloat = isLPCM && (input?.mFormatFlags ?? 0) & kAudioFormatFlagIsFloat != 0
+        let wanted: UInt32 = isLPCM ? input!.mBitsPerChannel : 24
+        let bits: UInt32 = isFloat ? 32 : [8, 16, 24, 32].first { $0 >= wanted } ?? 32
         var description = AudioStreamBasicDescription(
-            mSampleRate: input.mSampleRate, mFormatID: kAudioFormatLinearPCM,
+            mSampleRate: rate, mFormatID: kAudioFormatLinearPCM,
             mFormatFlags: (isFloat ? kAudioFormatFlagIsFloat : kAudioFormatFlagIsSignedInteger) | kAudioFormatFlagIsPacked,
             mBytesPerPacket: bits / 8 * channels, mFramesPerPacket: 1, mBytesPerFrame: bits / 8 * channels, mChannelsPerFrame: channels,
             mBitsPerChannel: bits, mReserved: 0)
-        // The source's channel layout when it has one (the reader and writer both want one above stereo); mono/stereo by count otherwise.
+        // The source's layout when it has one that agrees with the channel count; mono/stereo by count otherwise.
         var layoutSize = 0
-        var layoutData: Data
-        if let layout = CMAudioFormatDescriptionGetChannelLayout(source, sizeOut: &layoutSize), layoutSize > 0 {
-            layoutData = Data(bytes: layout, count: layoutSize)
-        } else {
+        var layoutData: Data?
+        if channels == sourceChannels, let layout = CMAudioFormatDescriptionGetChannelLayout(source, sizeOut: &layoutSize), layoutSize > 0 {
+            var count: UInt32 = 0
+            var countSize = UInt32(MemoryLayout<UInt32>.size)
+            let status = AudioFormatGetProperty(kAudioFormatProperty_NumberOfChannelsForLayout, UInt32(layoutSize), layout, &countSize, &count)
+            if status == noErr, count == channels { layoutData = Data(bytes: layout, count: layoutSize) }
+        }
+        if layoutData == nil {
             var layout = AudioChannelLayout()
-            layout.mChannelLayoutTag = channels == 1 ? kAudioChannelLayoutTag_Mono : channels == 2 ? kAudioChannelLayoutTag_Stereo : kAudioChannelLayoutTag_DiscreteInOrder | channels
+            layout.mChannelLayoutTag = channels == 1 ? kAudioChannelLayoutTag_Mono : kAudioChannelLayoutTag_Stereo
             layoutData = Data(bytes: &layout, count: MemoryLayout<AudioChannelLayout>.size)
         }
         var format: CMAudioFormatDescription?
-        let status = layoutData.withUnsafeBytes { bytes in
+        let status = layoutData!.withUnsafeBytes { bytes in
             CMAudioFormatDescriptionCreate(
                 allocator: kCFAllocatorDefault, asbd: &description, layoutSize: bytes.count,
                 layout: bytes.baseAddress!.assumingMemoryBound(to: AudioChannelLayout.self), magicCookieSize: 0, magicCookie: nil,
@@ -209,9 +222,9 @@ public enum Transcoder {
         }
         guard status == noErr, let format else { return nil }
         let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: input.mSampleRate, AVNumberOfChannelsKey: channels,
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: rate, AVNumberOfChannelsKey: channels,
             AVLinearPCMBitDepthKey: bits, AVLinearPCMIsFloatKey: isFloat, AVLinearPCMIsBigEndianKey: false,
-            AVLinearPCMIsNonInterleaved: false, AVChannelLayoutKey: layoutData,
+            AVLinearPCMIsNonInterleaved: false, AVChannelLayoutKey: layoutData!,
         ]
         return (format, settings)
     }

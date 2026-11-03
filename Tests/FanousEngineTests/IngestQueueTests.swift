@@ -483,6 +483,50 @@ import UniformTypeIdentifiers
         #expect(abs(AudioTests.crossings(samples, channel: 0, frames: 2000..<22_000) - 366) <= 4)  // 440 Hz over 20 000 frames at 48 kHz
     }
 
+    /// `lpcmFormat` only ever asks `AVAssetReaderAudioMixOutput` for what it accepts: that initialiser raises an ObjC
+    /// exception (not a Swift error) on a depth outside 8/16/24/32, a rate outside 8–192 kHz or a layout that does not match
+    /// the channel count, which would kill the engine. Each case builds the output here, so a regression crashes this test.
+    @Test func lpcmFormatStaysWithinWhatTheReaderAccepts() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appending(path: "source.mov")
+        try await Self.writeSource(to: source, seconds: 1)
+        let track = try #require(try await AVURLAsset(url: source).loadTracks(withMediaType: .audio).first)
+
+        func describe(rate: Double, channels: UInt32, bits: UInt32, float: Bool = false, lpcm: Bool = true, layoutTag: AudioChannelLayoutTag? = nil) throws -> CMAudioFormatDescription {
+            var asbd = AudioStreamBasicDescription(
+                mSampleRate: rate, mFormatID: lpcm ? kAudioFormatLinearPCM : kAudioFormatMPEG4AAC,
+                mFormatFlags: lpcm ? (float ? kAudioFormatFlagIsFloat : kAudioFormatFlagIsSignedInteger) | kAudioFormatFlagIsPacked : 0,
+                mBytesPerPacket: lpcm ? bits / 8 * channels : 0, mFramesPerPacket: lpcm ? 1 : 1024, mBytesPerFrame: lpcm ? bits / 8 * channels : 0,
+                mChannelsPerFrame: channels, mBitsPerChannel: lpcm ? bits : 0, mReserved: 0)
+            var layout = AudioChannelLayout()
+            layout.mChannelLayoutTag = layoutTag ?? 0
+            var format: CMAudioFormatDescription?
+            let status = withUnsafePointer(to: &layout) { pointer in
+                CMAudioFormatDescriptionCreate(
+                    allocator: nil, asbd: &asbd, layoutSize: layoutTag == nil ? 0 : MemoryLayout<AudioChannelLayout>.size, layout: layoutTag == nil ? nil : pointer,
+                    magicCookieSize: 0, magicCookie: nil, extensions: nil, formatDescriptionOut: &format)
+            }
+            return try #require(format, "format description \(status)")
+        }
+        let cases: [(CMAudioFormatDescription, Double, UInt32, UInt32, Bool)] = [
+            (try describe(rate: 384_000, channels: 1, bits: 64, float: true), 192_000, 1, 32, true),  // DXD fl64: clamped, float32
+            (try describe(rate: 44_100, channels: 2, bits: 20), 44_100, 2, 24, false),  // 20-bit → 24
+            (try describe(rate: 7350, channels: 1, bits: 0, lpcm: false), 8000, 1, 24, false),  // low-rate AAC: clamped, 24-bit
+            (try describe(rate: 48_000, channels: 6, bits: 24, layoutTag: kAudioChannelLayoutTag_MPEG_5_1_A), 48_000, 2, 24, false),  // 5.1 → stereo (ponytail)
+            (try describe(rate: 48_000, channels: 2, bits: 16, layoutTag: kAudioChannelLayoutTag_MPEG_5_1_A), 48_000, 2, 16, false),  // layout disagrees with the count → by count
+            (try describe(rate: 44_100, channels: 0, bits: 0, lpcm: false), 44_100, 2, 24, false),  // no channel count: stereo (a description cannot carry rate 0)
+        ]
+        for (description, rate, channels, bits, float) in cases {
+            let (format, settings) = try #require(Transcoder.lpcmFormat(matching: description))
+            let asbd = try #require(CMAudioFormatDescriptionGetStreamBasicDescription(format)?.pointee)
+            #expect(asbd.mSampleRate == rate && asbd.mChannelsPerFrame == channels && asbd.mBitsPerChannel == bits, "\(asbd)")
+            #expect((asbd.mFormatFlags & kAudioFormatFlagIsFloat != 0) == float)
+            #expect(asbd.mBytesPerFrame == bits / 8 * channels)
+            _ = AVAssetReaderAudioMixOutput(audioTracks: [track], audioSettings: settings)  // raises on anything the reader refuses
+        }
+    }
+
     @Test func rotatedSourceIsBakedUpright() async throws {
         let directory = try tempDir("fanous-ingest-tests")
         defer { try? FileManager.default.removeItem(at: directory) }

@@ -1979,7 +1979,9 @@ source file(s) ──▶ _incoming/ (remote upload) or in-place (local path)
   (Proxy/LT/422/HQ), ProRes 4444 (XQ).
 - Audio is transcoded to interleaved LPCM so playback never needs a compressed
   audio decoder; the source's sample rate, channel count, layout and bit depth
-  are kept (a compressed source decodes to 24-bit), the layer's
+  are kept (a compressed source decodes to 24-bit) within what the reader
+  accepts (8–192 kHz, 8/16/24/32-bit; more than two channels are mixed to
+  stereo until the player has a matrix mix, B143), the layer's
   `AudioTrackReader` converts to 48 kHz stereo float at playback (B19).
 - HAP muxing through `AVAssetWriter` passthrough works (`MovieWriter`,
   Phases 2–4); the own-muxer fallback was not needed (`[OPEN-13]` resolved).

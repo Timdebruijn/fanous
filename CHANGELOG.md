@@ -681,7 +681,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Changed: ingest keeps the source's audio format. The library track is still interleaved LPCM (the player needs no
   compressed-audio decoder), but in the source's sample rate, channel count, channel layout and bit depth, integer or
   float, instead of everything resampled to 48 kHz stereo 16-bit; a compressed source (AAC, ...) decodes to 24-bit.
-  Playback converts to 48 kHz stereo float as before (B19, PR #218).
+  The exceptions are what the reader accepts: 8–192 kHz, 8/16/24/32-bit (64-bit float becomes 32-bit), and more than
+  two channels are still mixed to stereo because the player has no matrix mix yet (B143). Playback converts to 48 kHz
+  stereo float as before (B19, PR #218).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
