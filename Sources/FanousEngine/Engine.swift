@@ -612,11 +612,13 @@ public final class Engine: @unchecked Sendable {
                 guard let body = try? JSONDecoder().decode(JSONValue.self, from: Data(request.body)), let number = body["number"]?.int, (1...255).contains(number),
                     let name = body["name"]?.string, !name.trimmingCharacters(in: .whitespaces).isEmpty
                 else { return .text(400, "expected {\"number\": 1–255, \"name\": …}") }
-                if library.folderURL(number: number) != nil { return .text(409, "folder \(number) exists") }  // also one an upload just made
-                try? FileManager.default.createDirectory(at: library.root, withIntermediateDirectories: true)
-                guard let url = library.folderURL(number: number, createAs: name) else { return .text(500, "cannot create the folder") }
-                library.rescan()
-                return .text(200, url.lastPathComponent)
+                switch library.createFolder(number: number, name: name) {  // check and create under one lock (B141)
+                case .exists: return .text(409, "folder \(number) exists")  // also one an upload just made
+                case .failed: return .text(500, "cannot create the folder")  // a root that cannot be written (B142)
+                case .created(let url):
+                    library.rescan()
+                    return .text(200, url.lastPathComponent)
+                }
             }
             switch request.path {
             case "/healthz":

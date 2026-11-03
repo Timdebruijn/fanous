@@ -275,9 +275,11 @@ something has its live picture there instead. A file that changes is probed agai
   without missed frames, and at 7 some frames finished late on the GPU (B1;
   measured while the Mac was busy with other work). HAP Q at 4K60: at least 4
   layers.
-- Effects cost frame time: Blur and Edge take about 1.6 to 1.9 ms per 1080p
-  layer each, so 2 to 3 layers with both at 1080p60 (B2). A dissolve (Dissolve
-  channel) uses a second decoder, which counts as one more layer.
+- Effects cost frame time: a 1080p ProRes layer with both Blur and Edge took
+  4 to 5 ms of GPU time (p99) on the idle M1 Pro, against about 0.25 ms for a
+  plain layer, so 3 such layers ran at 1080p60 and 4 did not (headless
+  measurement, B2). A dissolve (Dissolve channel) uses a second decoder, which
+  counts as one more layer.
 - Watch "dropped" in the status bar and the tiles under System › Live metrics while
   you build the show.
 - Keep the library on the internal disk with more than 10 % free, and switch
