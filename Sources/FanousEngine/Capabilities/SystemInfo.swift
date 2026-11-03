@@ -5,10 +5,14 @@
 import Darwin
 import FanousCore
 import Foundation
+import VideoToolbox
 
 /// Runtime facts about this machine. Phase 0 only logs them; tiers come in Phase 2.
 public enum SystemInfo {
     public static var chipName: String { sysctlString("machdep.cpu.brand_string") ?? "unknown" }
+    /// The platform floor (DESIGN.md §5): VideoToolbox decodes ProRes 422 in hardware. True on the M1 Pro and every later
+    /// chip; the base M1 has no ProRes engine (B144; its false is from Apple's documentation, no base M1 was at hand).
+    public static let hasProResEngine = VTIsHardwareDecodeSupported(kCMVideoCodecType_AppleProRes422)
     public static var physicalMemoryBytes: UInt64 { ProcessInfo.processInfo.physicalMemory }
     public static var osVersion: String { ProcessInfo.processInfo.operatingSystemVersionString }
     public static var hostName: String { ProcessInfo.processInfo.hostName }

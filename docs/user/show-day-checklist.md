@@ -96,7 +96,7 @@ shows what it found; items that are not OK also show a fix hint.
 | Time Machine not backing up | see above |
 | Focus / Do Not Disturb on | manual, check the menu bar |
 | Display sleep disabled | see above |
-| Supported hardware | Apple Silicon with a ProRes engine; always reads OK for now, the check is not built (B144) |
+| Supported hardware | Apple Silicon with a ProRes engine (the Mac decodes ProRes 422 in hardware); a base M1 fails here |
 
 **Failed** items (red) block show mode. A programmer can press **Acknowledge**
 next to an item to accept the risk: the badge changes to "acknowledged" and it
@@ -117,9 +117,9 @@ a slice whose only add mask it is stays black.
 **Manual** items (Focus) have no button; the check is yours.
 
 **Blocking** items (shown with a "blocking" badge) cannot be acknowledged. Today
-that is only Supported hardware, meant for a Mac without a ProRes engine. It
-always reads OK for now, because the check is not built (B144). Use a Mac with
-an M1 Pro or newer.
+that is only Supported hardware: a Mac without a ProRes engine (the base M1)
+reads "no hardware ProRes decoder" and show mode stays off. Use a Mac with an
+M1 Pro or newer.
 
 While show mode is on, the Mac does not sleep (display and system), the engine is
 exempt from App Nap, the ingest queue is paused, the cursor is hidden over
