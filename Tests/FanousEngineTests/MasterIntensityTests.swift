@@ -122,9 +122,9 @@ struct MasterIntensityTests {
         let encoder = try #require(buffer.makeRenderCommandEncoder(descriptor: pass))
         let canvasLabel = "canvas \(16) composite" as NSString  // made at runtime, as `CanvasTarget.label` is
         let labels: [(String, () -> Void)] = [
-            ("canvas 16", { encoder.label = canvasLabel as String }),
-            ("output", { encoder.label = compositor.outputLabel as String }),
-            ("preview", { encoder.label = Compositor.previewLabel as String }),
+            ("canvas 16 composite", { encoder.label = canvasLabel as String }),
+            ("output (no output set)", { encoder.label = compositor.outputLabel as String }),
+            ("preview downscale", { encoder.label = Compositor.previewLabel as String }),
             ("secondary output", { encoder.label = "secondary output" }),
             ("mapped output", { encoder.label = compositor.mappedOutputLabel as String }),
             ("layer preview", { encoder.label = compositor.layerPreviewLabel as String }),

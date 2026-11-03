@@ -67,7 +67,8 @@ public final class Compositor: @unchecked Sendable {
     /// Encoder labels made once and at least 13 characters long (B117), each costing no allocation on the compositor
     /// thread (measured): a 13–15-byte Swift `String` bridges to a fresh `NSString` on every assignment, and on macOS 27.2
     /// a shorter label ("canvas 16", "output", "preview") allocated on every assignment even as an `NSString` made once
-    /// (measured 2026-11-03; none on 27.0; short strings are tagged pointers, the setter's use of them was not traced).
+    /// (measured 2026-11-03; none on 27.0): the allocation is in Metal's `setLabel:` with a short, tagged-pointer
+    /// `NSString` (a probe calling it directly allocated 100 in 100; Swift's bridging of the same value, none).
     /// The 16-byte literal "secondary output" bridges free.
     let mappedOutputLabel: NSString = "mapped output"
     let layerPreviewLabel: NSString = "layer preview"
