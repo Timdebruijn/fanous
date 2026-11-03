@@ -575,6 +575,9 @@ import UniformTypeIdentifiers
             let ratio = CMFormatDescriptionGetExtension(try #require(descriptions.first), extensionKey: kCMFormatDescriptionExtension_PixelAspectRatio) as? [String: Int]
             #expect(ratio?[kCMFormatDescriptionKey_PixelAspectRatioHorizontalSpacing as String] == 4 && ratio?[kCMFormatDescriptionKey_PixelAspectRatioVerticalSpacing as String] == 3, "\(job.destination.lastPathComponent): \(ratio ?? [:])")
             #expect(abs(size.width - 320 * 4 / 3) < 1 && size.height == 176, "\(job.destination.lastPathComponent): \(size)")
+            // the library index carries the ratio and the shown width, for the Media screen's label (B146)
+            let probed = try await offPool { try LibraryIndex.probeMovie(job.destination) }
+            #expect(probed.width == 427 && probed.height == 176 && abs((probed.pixelAspect ?? 1) - 4.0 / 3) < 0.001, "\(job.destination.lastPathComponent): \(probed)")
         }
         guard let device = MTLCreateSystemDefaultDevice() else { return }
         let movie = try await MovieSource.open(url: proRes.destination, device: device, poolSize: 2)

@@ -708,6 +708,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Checked on hardware: display hot-plug (unplug, replug on the same and another port, a mode change under a bound
   output) rebinds within 25 ms of the display event, and show mode applies and restores a wanted mode (unplug/replug
   in show mode did not exercise the re-apply); no code change (B34, B56, DESIGN §9.6, PR #228).
+- Media screen: an anamorphic movie's label shows its shown size with the rate ("1920×1080p25"); the library index
+  carries the pixel aspect ratio (`metadata.pixelAspect`, absent when 1) (B146, PR #NNN).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

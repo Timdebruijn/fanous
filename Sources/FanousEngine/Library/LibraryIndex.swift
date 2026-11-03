@@ -41,6 +41,8 @@ public struct MediaMetadata: Codable, Sendable, Equatable {
     public var frameCount = 0
     /// The track carries a rotation/flip (`preferredTransform`); the decoder ignores it, so ingest must bake it in.
     public var rotated: Bool?
+    /// Non-square pixels (B146): `width` is the shown width (`naturalSize` has the ratio in), the file holds `width / pixelAspect` columns. nil = 1.
+    public var pixelAspect: Double?
 }
 
 extension CGAffineTransform {
@@ -379,6 +381,8 @@ public final class LibraryIndex: @unchecked Sendable {
                     let codec = CMFormatDescriptionGetMediaSubType(description)
                     metadata.codec = fourCCString(codec)
                     metadata.hasAlpha = ["ap4h", "ap4x", "Hap5", "HapM", "HapA"].contains(metadata.codec)
+                    let ratio = MovieSource.pixelAspect(of: description)
+                    if ratio != 1 { metadata.pixelAspect = ratio }
                 }
             } else {
                 throw MovieError.noVideoTrack

@@ -226,8 +226,8 @@ when the uploads are done. Only the programmer role can import.
   pixels.
 - Anamorphic sources (non-square pixels, such as 1440x1080 shown as 16:9) keep
   their pixel aspect ratio: the file is tagged and the layer draws it at its
-  display width. The thumbnail has the display shape; the label shows height
-  and rate, and the display width is not shown yet (B146).
+  display width. The thumbnail has the display shape and the label shows the
+  shown size with the rate ("1920×1080p25"); square-pixel movies keep "1080p25".
 - A variable-frame-rate source (a screen recording, some phone footage) is
   written at a constant rate, its fastest rate up to 60 fps: each output frame
   shows the source frame that was current at that moment, so the picture

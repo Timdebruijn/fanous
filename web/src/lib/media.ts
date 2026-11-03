@@ -18,6 +18,8 @@ export interface MediaMetadata {
   audioChannels: number;
   audioSampleRate: number;
   frameCount: number;
+  /** non-square pixels: `width` is the shown width; absent when 1 */
+  pixelAspect?: number;
 }
 
 export interface LibraryItem {
@@ -106,10 +108,14 @@ export function durationBadge(item: LibraryItem): string | null {
   return meta.duration > 0 ? formatDuration(meta.duration) : null;
 }
 
-/** "1080p25" (rate without a trailing .0, 29.97 stays 29.97); "1920×1080" where there is no frame rate (stills, sequences). */
+/**
+ * "1080p25" (rate without a trailing .0, 29.97 stays 29.97); "1920×1080" where there is no frame rate (stills, sequences).
+ * An anamorphic movie shows its shown size too, "1920×1080p25" (B146): the height alone would hide that it is not what the file holds.
+ */
 export function formatLabel(meta: MediaMetadata): string {
   if (meta.height <= 0) return '';
-  if (meta.frameRate > 0) return `${meta.height}p${Number(meta.frameRate.toFixed(3))}`;
+  const anamorphic = meta.pixelAspect !== undefined && meta.pixelAspect !== 1 && meta.width > 0;
+  if (meta.frameRate > 0) return `${anamorphic ? `${meta.width}×` : ''}${meta.height}p${Number(meta.frameRate.toFixed(3))}`;
   return meta.width > 0 ? `${meta.width}×${meta.height}` : `${meta.height}p`;
 }
 
