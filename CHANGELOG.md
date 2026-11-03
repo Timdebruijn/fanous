@@ -10,6 +10,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Fixed: the release dmg was notarized and stapled but not signed itself, so Gatekeeper's check of the dmg
+  (`spctl --type open`) rejected it with "no usable signature" while the app inside passed; `scripts/notarize.sh` signs
+  the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).
+
 ## 1.0.0-rc.2 — 2026-11-03
 
 - Fixed: the strobe effect's phase jumped once an hour (up to half a cycle, a visible hiccup at low rates) when the shader
