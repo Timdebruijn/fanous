@@ -13,6 +13,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: the release dmg was notarized and stapled but not signed itself, so Gatekeeper's check of the dmg
   (`spctl --type open`) rejected it with "no usable signature" while the app inside passed; `scripts/notarize.sh` signs
   the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).
+- Docs: the `CAMetalDisplayLink` stall of macOS 27.0.1 is gone on 27.2 (the reproduction and `fanous-bench --displaylink`
+  both run at full rate); the drawable loop stays the shipping driver and the Apple Feedback item is dropped (B8, ADR-0006
+  amendment, PR #NNN).
 
 ## 1.0.0-rc.2 — 2026-11-03
 

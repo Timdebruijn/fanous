@@ -405,7 +405,9 @@ Dithering to the drawable's 8-bit format uses a 64×64 blue-noise texture
   presented frames in every configuration tried (ADR-0006 amendment). The
   shipping driver is therefore a mach-clock-paced thread using
   `nextDrawable()` on a `displaySyncEnabled` layer with two drawables; the
-  display-link driver is kept behind a switch for re-testing.
+  display-link driver is kept behind a switch for re-testing. Re-tested
+  2026-11-03 on macOS 27.2: the link runs at full rate again (ADR-0006, second
+  amendment); the drawable loop stays, as it works on both releases.
 - No output displays (preview-only / headless bench): the compositor runs on a
   `mach_wait_until` loop at the project's canvas rate.
 - Display sleep, mode change or hot-unplug: the output thread stops its link;
@@ -4843,7 +4845,7 @@ and the MDM profile are the v1.x candidates.
 | R14 | Single maintainer | bus factor, schedule | design and ADRs are the knowledge base; phases are independently shippable; CLA in place for future contributors |
 | R15 | Memory pressure on 16 GB machines with 4K layers | stalls | budget rules (§4.6), tier knobs, red warning before activation |
 | R16 | Thermal throttling on MacBook Pro during long shows | dropped frames late in a show | thermal state in readiness (a status bar item is not built); benchmark includes a 10-min soak; recommend AC + stand/airflow in docs |
-| R17 | `CAMetalDisplayLink` stalls after three presented frames on macOS 27.0.1 (measured, ADR-0006 amendment) | the brief's render clock cannot be used as-is | drawable-loop driver with the same compositor and metrics; display-link driver kept behind a switch; re-test on each macOS release; Apple Feedback with the standalone reproduction |
+| R17 | `CAMetalDisplayLink` stalls after three presented frames on macOS 27.0.1 (measured, ADR-0006 amendment) | the brief's render clock cannot be used as-is | drawable-loop driver with the same compositor and metrics; display-link driver kept behind a switch; re-test on each macOS release (27.2: full rate again, ADR-0006 amendment 2026-11-03; no Apple Feedback, nothing left to show) |
 | R18 | every supported macOS (ADR-0020) re-asks a screen-capturing engine about monthly ("Allow For One Month"), on the main display, which an unattended show machine cannot answer (§8.2.1) | a dialog over an output, or display capture stopping mid-show | readiness item before show mode; capture card for a show-critical slides feed; MDM profile (OPEN-20) and the persistent-content-capture entitlement with the Developer ID build (B50) to be verified |
 
 ---
