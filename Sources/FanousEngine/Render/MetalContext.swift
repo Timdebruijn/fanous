@@ -6,7 +6,7 @@ import Foundation
 import Metal
 import simd
 
-/// Mirrors `LayerUniforms` in Shaders.swift (natural alignment, 192 bytes).
+/// Mirrors `LayerUniforms` in Shaders.swift (natural alignment, 196 bytes, stride 208).
 public struct LayerUniforms {
     public var transform: simd_float4x4 = matrix_identity_float4x4
     public var quadRect: SIMD4<Float> = SIMD4(-1, -1, 1, 1)
@@ -20,6 +20,8 @@ public struct LayerUniforms {
     public var blend: UInt32 = 0
     public var master: Float = 1
     public var deep: UInt32 = 0  // 1 when the planes are 16-bit textures: video-range levels at 16-bit scale (B119)
+    /// The mip level the blur taps read from the layer's scratch texture (B2); 0 for the source itself.
+    public var lod: Float = 0
 
     public init() {}
 }
@@ -62,8 +64,14 @@ public final class MetalContext: @unchecked Sendable {
     /// The edit overlay's lines (DESIGN.md §9.10 item 4), opaque over the slices.
     let overlayPipeline: MTLRenderPipelineState
     let generatorPipeline: MTLRenderPipelineState
+    /// Source conversion alone into a layer's scratch texture, before the canvas pass (DESIGN.md §4.3, B2).
+    let convertPipeline: MTLRenderPipelineState
+    /// One scratch mip level from the one above (B2).
+    let downsamplePipeline: MTLComputePipelineState
     let linearSampler: MTLSamplerState
     let nearestSampler: MTLSamplerState
+    /// Linear with a linear mip filter: the blur taps read the scratch texture at a level matched to the radius (B2).
+    let mipSampler: MTLSamplerState
 
     public init() throws {
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else { throw RenderError.noDevice }
@@ -78,13 +86,15 @@ public final class MetalContext: @unchecked Sendable {
             throw RenderError.shader("\(error)")
         }
         var layers: [MTLRenderPipelineDescriptor] = []
-        for variant in 0..<4 {
+        // bit 0 blur, bit 1 edge, bit 2 the draw reads its scratch texture (B2): eight pipelines, built once at start
+        for variant in 0..<8 {
             let layer = MTLRenderPipelineDescriptor()
-            layer.label = "layer\(variant & 1 != 0 ? "+blur" : "")\(variant & 2 != 0 ? "+edge" : "")"
+            layer.label = "layer\(variant & 1 != 0 ? "+blur" : "")\(variant & 2 != 0 ? "+edge" : "")\(variant & 4 != 0 ? "+scratch" : "")"
             let constants = MTLFunctionConstantValues()
-            var hasBlur = variant & 1 != 0, hasEdge = variant & 2 != 0
+            var hasBlur = variant & 1 != 0, hasEdge = variant & 2 != 0, tapsFromScratch = variant & 4 != 0
             constants.setConstantValue(&hasBlur, type: .bool, index: 0)
             constants.setConstantValue(&hasEdge, type: .bool, index: 1)
+            constants.setConstantValue(&tapsFromScratch, type: .bool, index: 2)
             layer.vertexFunction = library.makeFunction(name: "layer_vertex")
             do {
                 layer.fragmentFunction = try library.makeFunction(name: "layer_fragment", constantValues: constants)
@@ -114,6 +124,11 @@ public final class MetalContext: @unchecked Sendable {
         mapped.colorAttachments[0].isBlendingEnabled = true  // one, one-minus-source-alpha (add and one are the defaults)
         mapped.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
         mapped.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        let convert = MTLRenderPipelineDescriptor()
+        convert.label = "scratch convert"
+        convert.vertexFunction = library.makeFunction(name: "output_vertex")
+        convert.fragmentFunction = library.makeFunction(name: "convert_fragment")
+        convert.colorAttachments[0].pixelFormat = Self.canvasFormat
         let overlay = MTLRenderPipelineDescriptor()
         overlay.label = "edit overlay"
         overlay.vertexFunction = library.makeFunction(name: "overlay_vertex")
@@ -125,6 +140,9 @@ public final class MetalContext: @unchecked Sendable {
             mappedPipeline = try device.makeRenderPipelineState(descriptor: mapped)
             overlayPipeline = try device.makeRenderPipelineState(descriptor: overlay)
             generatorPipeline = try device.makeRenderPipelineState(descriptor: generator)
+            convertPipeline = try device.makeRenderPipelineState(descriptor: convert)
+            guard let downsample = library.makeFunction(name: "downsample") else { throw RenderError.shader("downsample") }
+            downsamplePipeline = try device.makeComputePipelineState(function: downsample)
         } catch {
             throw RenderError.pipeline("\(error)")
         }
@@ -133,11 +151,18 @@ public final class MetalContext: @unchecked Sendable {
         linear.minFilter = .linear
         linear.magFilter = .linear
         let nearest = MTLSamplerDescriptor()
-        guard let linearSampler = device.makeSamplerState(descriptor: linear), let nearestSampler = device.makeSamplerState(descriptor: nearest) else {
+        let mip = MTLSamplerDescriptor()
+        mip.minFilter = .linear
+        mip.magFilter = .linear
+        mip.mipFilter = .linear
+        guard let linearSampler = device.makeSamplerState(descriptor: linear), let nearestSampler = device.makeSamplerState(descriptor: nearest),
+            let mipSampler = device.makeSamplerState(descriptor: mip)
+        else {
             throw RenderError.pipeline("samplers")
         }
         self.linearSampler = linearSampler
         self.nearestSampler = nearestSampler
+        self.mipSampler = mipSampler
     }
 
     public var deviceName: String { device.name }
