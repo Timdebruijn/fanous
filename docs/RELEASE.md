@@ -153,6 +153,5 @@ On a fresh macOS user account (or a fresh Mac) with the notarized dmg:
 
 - [ ] GitHub release `v<version>` with the dmg, its SHA-256, the CHANGELOG
       section and the interop/benchmark notes
-- [ ] Apple Feedback for the CAMetalDisplayLink stall (R17) referenced in the
-      release notes so early adopters know why the drawable-loop driver is the
-      default
+- [ ] the release notes name the drawable-loop driver and the macOS 27.0.1
+      stall (R17, ADR-0006) so early adopters know why it is the default
