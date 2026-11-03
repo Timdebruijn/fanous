@@ -88,6 +88,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: count captions in the web UI put the plural after a count of 1 ("1 outputs · 1 displays connected",
   "1 layers", "1 frames seen" and others) and the Media header said "2 invalid name"; every count string now goes
   through one `plural` helper (PR #238).
+- Docs: every screenshot of the user guide and the README and the tour GIF are retaken for the web UI's new look
+  (PRs #236, #238, #243, #259, #260, #261), on a demo engine as before (PR #262).
 - Performance: a layer with Blur or Edge is first converted into its media's scratch texture and its taps read that
   RGBA directly, the blur at a mip level matched to its radius; a blurred ProRes 1080p60 layer went from about 2.3 ms to
   0.9 ms of GPU time and an edged one from about 1.6 ms to 0.3 ms (derived from 4-layer frames in an A/B under load),
