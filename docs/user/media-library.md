@@ -209,6 +209,10 @@ when the uploads are done. Only the programmer role can import.
   them; B20). Copy HAP files into the folder with Finder under the right name.
 - Phone footage with a rotation flag (portrait video) is imported upright: the
   rotation is baked in and the file gets the swapped width and height.
+- Anamorphic sources (non-square pixels, such as 1440x1080 shown as 16:9) keep
+  their pixel aspect ratio: the file is tagged and the layer draws it at its
+  display width; the Media screen shows the display size. Rotated footage is
+  the exception: there the display size is rendered with square pixels.
   Variable-frame-rate sources can drift against their audio (B19).
 
 ## Transcode a file that is already in the library

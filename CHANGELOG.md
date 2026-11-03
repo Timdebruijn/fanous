@@ -684,6 +684,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   The exceptions are what the reader accepts: 8–192 kHz, 8/16/24/32-bit (64-bit float becomes 32-bit), and more than
   two channels are still mixed to stereo because the player has no matrix mix yet (B143). Playback converts to 48 kHz
   stereo float as before (B19, PR #218).
+- Changed: ingest keeps an anamorphic source's pixel aspect ratio (a 1440x1080 file meant as 16:9, for example): the
+  ProRes or HAP track is tagged with it, the layer draws the movie at its display width in every fit mode, and the layer
+  status and the Media screen show the display size. Before, such a file played squeezed with square pixels. Rotated
+  footage is the exception: its display size is rendered with square pixels (B19, PR #NNN).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

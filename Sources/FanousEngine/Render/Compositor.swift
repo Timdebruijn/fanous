@@ -773,7 +773,8 @@ public final class Compositor: @unchecked Sendable {
         // a live frame's size is its texture's; packed 4:2:2 (`2vuy` as `.v216`, `yuvs` as `.yuy2`) holds two pixels per texel
         let mediaWidth = playback.live != nil ? texture0.width * (frame.kind == .v216 || frame.kind == .yuy2 ? 2 : 1) : playback.width
         let mediaHeight = playback.live != nil ? texture0.height : playback.height
-        let (transform, quad) = Self.geometry(for: p, mediaWidth: mediaWidth, mediaHeight: mediaHeight, canvasWidth: canvasWidth, canvasHeight: canvasHeight)
+        let (transform, quad) = Self.geometry(
+            for: p, mediaWidth: mediaWidth, mediaHeight: mediaHeight, pixelAspect: Float(playback.pixelAspect), canvasWidth: canvasWidth, canvasHeight: canvasHeight)
         var u = LayerUniforms()
         u.transform = transform
         u.quadRect = quad
@@ -802,10 +803,12 @@ public final class Compositor: @unchecked Sendable {
 
     /// Layer quad in canvas units (half-height = 1, x spans ±aspect) and the
     /// perspective transform to clip space: fit → crop → scale → rotate XYZ →
-    /// translate → camera at z = 2 (DESIGN.md §4.3).
-    static func geometry(for p: LayerParameters, mediaWidth: Int, mediaHeight: Int, canvasWidth: Int, canvasHeight: Int) -> (simd_float4x4, SIMD4<Float>) {
+    /// translate → camera at z = 2 (DESIGN.md §4.3). `pixelAspect` widens each
+    /// media pixel (anamorphic movies, 1 for square pixels; B19).
+    static func geometry(for p: LayerParameters, mediaWidth: Int, mediaHeight: Int, pixelAspect: Float = 1, canvasWidth: Int, canvasHeight: Int) -> (simd_float4x4, SIMD4<Float>) {
         let aspect = Float(canvasWidth) / Float(max(1, canvasHeight))
-        let mediaAspect = Float(mediaWidth) / Float(max(1, mediaHeight))
+        let shownWidth = Float(mediaWidth) * pixelAspect
+        let mediaAspect = shownWidth / Float(max(1, mediaHeight))
         var w: Float, h: Float
         switch p.fitMode {
         case .fit:
@@ -815,7 +818,7 @@ public final class Compositor: @unchecked Sendable {
         case .stretch:
             w = aspect; h = 1
         case .native:
-            h = Float(mediaHeight) / Float(max(1, canvasHeight)); w = Float(mediaWidth) / Float(max(1, canvasHeight))
+            h = Float(mediaHeight) / Float(max(1, canvasHeight)); w = shownWidth / Float(max(1, canvasHeight))
         }
         let quad = SIMD4(-w + 2 * w * p.cropLeft, -h + 2 * h * p.cropBottom, w - 2 * w * p.cropRight, h - 2 * h * p.cropTop)
         let scale = simd_float4x4(diagonal: SIMD4(p.scaleX, p.scaleY, 1, 1))

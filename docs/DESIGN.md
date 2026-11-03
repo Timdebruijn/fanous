@@ -1983,6 +1983,11 @@ source file(s) ──▶ _incoming/ (remote upload) or in-place (local path)
   accepts (8–192 kHz, 8/16/24/32-bit; more than two channels are mixed to
   stereo until the player has a matrix mix, B143), the layer's
   `AudioTrackReader` converts to 48 kHz stereo float at playback (B19).
+- An anamorphic source keeps its pixel aspect ratio: the ProRes track is
+  tagged (`AVVideoPixelAspectRatioKey`), the HAP format description carries the
+  `PixelAspectRatio` extension, `MovieInfo.pixelAspect` reads it and
+  `Compositor.geometry` widens the layer quad by it (B19). The upright path
+  (rotated phone footage) renders the display size with square pixels instead.
 - HAP muxing through `AVAssetWriter` passthrough works (`MovieWriter`,
   Phases 2–4); the own-muxer fallback was not needed (`[OPEN-13]` resolved).
 - **Phase 4 as built:** `LibraryIndex` (scan + FSEvents, 500 ms debounce,

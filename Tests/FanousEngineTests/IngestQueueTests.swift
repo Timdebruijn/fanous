@@ -47,11 +47,11 @@ import UniformTypeIdentifiers
     /// A 1 s, 25 fps H.264 `.mp4` (320×176) written with AVAssetWriter, with a 1 s 440 Hz mono AAC track at 44.1 kHz
     /// (what a phone records: not 48 kHz, not stereo, not LPCM).
     /// H.264 with one second of a 440 Hz tone: AAC 44.1 kHz mono, or (`floatAudio`) LPCM 96 kHz stereo 32-bit float.
-    static func writeH264(to url: URL, rotated: Bool = false, floatAudio: Bool = false) async throws {
-        try await offPool { try writeH264Blocking(to: url, rotated: rotated, floatAudio: floatAudio) }
+    static func writeH264(to url: URL, rotated: Bool = false, floatAudio: Bool = false, pixelAspect: (Int, Int)? = nil) async throws {
+        try await offPool { try writeH264Blocking(to: url, rotated: rotated, floatAudio: floatAudio, pixelAspect: pixelAspect) }
     }
 
-    private static func writeH264Blocking(to url: URL, rotated: Bool, floatAudio: Bool) throws {
+    private static func writeH264Blocking(to url: URL, rotated: Bool, floatAudio: Bool, pixelAspect: (Int, Int)?) throws {
         let writer = try AVAssetWriter(outputURL: url, fileType: floatAudio ? .mov : .mp4)
         let audioInput = AVAssetWriterInput(
             mediaType: .audio,
@@ -63,7 +63,11 @@ import UniformTypeIdentifiers
                 : [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 44_100, AVNumberOfChannelsKey: 1, AVEncoderBitRateKey: 64_000])
         audioInput.expectsMediaDataInRealTime = false
         writer.add(audioInput)
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 320, AVVideoHeightKey: 176])
+        var videoSettings: [String: Any] = [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 320, AVVideoHeightKey: 176]
+        if let (horizontal, vertical) = pixelAspect {  // anamorphic: 320 coded pixels shown 4:3 wide
+            videoSettings[AVVideoPixelAspectRatioKey] = [AVVideoPixelAspectRatioHorizontalSpacingKey: horizontal, AVVideoPixelAspectRatioVerticalSpacingKey: vertical]
+        }
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         input.expectsMediaDataInRealTime = false
         if rotated { input.transform = CGAffineTransform(rotationAngle: .pi / 2) }  // how a phone held upright tags its footage
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
@@ -525,6 +529,33 @@ import UniformTypeIdentifiers
             #expect(asbd.mBytesPerFrame == bits / 8 * channels)
             _ = AVAssetReaderAudioMixOutput(audioTracks: [track], audioSettings: settings)  // raises on anything the reader refuses
         }
+    }
+
+    /// B19: an anamorphic source keeps its pixel aspect ratio in the ProRes and the HAP file (the format description's
+    /// `PixelAspectRatio` extension; `naturalSize` then reports the display size), and the player reads it.
+    @Test func anamorphicSourceKeepsItsPixelAspect() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appending(path: "anamorphic.mp4")
+        try await Self.writeH264(to: source, pixelAspect: (4, 3))
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        queue.start()
+        defer { queue.stop() }
+        let proRes = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_prores.mov"), kind: .transcode(codec: .proRes422)))
+        let hap = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/002_hap.mov"), kind: .transcode(codec: .hap(.hap))))
+        #expect(await Self.wait(for: proRes.id, in: queue) == .done)
+        #expect(await Self.wait(for: hap.id, in: queue) == .done)
+
+        for job in [proRes, hap] {
+            let track = try #require(try await AVURLAsset(url: job.destination).loadTracks(withMediaType: .video).first)
+            let (descriptions, size) = try await track.load(.formatDescriptions, .naturalSize)
+            let ratio = CMFormatDescriptionGetExtension(try #require(descriptions.first), extensionKey: kCMFormatDescriptionExtension_PixelAspectRatio) as? [String: Int]
+            #expect(ratio?[kCMFormatDescriptionKey_PixelAspectRatioHorizontalSpacing as String] == 4 && ratio?[kCMFormatDescriptionKey_PixelAspectRatioVerticalSpacing as String] == 3, "\(job.destination.lastPathComponent): \(ratio ?? [:])")
+            #expect(abs(size.width - 320 * 4 / 3) < 1 && size.height == 176, "\(job.destination.lastPathComponent): \(size)")
+        }
+        guard let device = MTLCreateSystemDefaultDevice() else { return }
+        let movie = try await MovieSource.open(url: proRes.destination, device: device, poolSize: 2)
+        #expect(movie.info.width == 320 && abs(movie.info.pixelAspect - 4.0 / 3) < 0.001)
     }
 
     @Test func rotatedSourceIsBakedUpright() async throws {

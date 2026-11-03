@@ -54,9 +54,10 @@ public final class MovieWriter {
     /// `externalAudio` adds an empty LPCM track in that format (interleaved; the source's sample rate, channels and bit
     /// depth, B19): feed it with `appendAudio(_:)` in step with the video (the writer interleaves sparsely and stalls if
     /// audio runs far behind). `frameDuration` overrides `1/fps` for rational rates; `fps` stays the rounded integer rate.
+    /// `pixelAspect` (horizontal, vertical spacing) tags the track for anamorphic frames (B19); nil is square pixels.
     public init(
         url: URL, width: Int, height: Int, fps: Int32, frameDuration: CMTime? = nil, codec: Codec, audio: Bool = false,
-        externalAudio: CMAudioFormatDescription? = nil
+        externalAudio: CMAudioFormatDescription? = nil, pixelAspect: (horizontal: Int, vertical: Int)? = nil
     ) throws {
         precondition(!(audio && externalAudio != nil), "audio is either the test tone or caller-supplied")
         self.width = width
@@ -66,12 +67,17 @@ public final class MovieWriter {
         testTone = audio
         try? FileManager.default.removeItem(at: url)
         writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+        let aspectExtension: [String: Any]? = pixelAspect.map { [
+            kCMFormatDescriptionKey_PixelAspectRatioHorizontalSpacing as String: $0.horizontal,
+            kCMFormatDescriptionKey_PixelAspectRatioVerticalSpacing as String: $0.vertical,
+        ] }
         switch codec {
         case .hap(let variant):
             var description: CMFormatDescription?
             let status = CMVideoFormatDescriptionCreate(
                 allocator: kCFAllocatorDefault, codecType: variant.fourCC, width: Int32(width), height: Int32(height),
-                extensions: nil, formatDescriptionOut: &description)
+                extensions: aspectExtension.map { [kCMFormatDescriptionExtension_PixelAspectRatio as String: $0] as CFDictionary },
+                formatDescriptionOut: &description)
             guard status == noErr, let description else { throw WriterError.failed("format description \(status)") }
             hapFormat = description
             hap = HAPEncoder(variant: variant, width: width, height: height)
@@ -94,9 +100,11 @@ public final class MovieWriter {
                 AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2, AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
                 AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
             ]
-            input = AVAssetWriterInput(
-                mediaType: .video,
-                outputSettings: [AVVideoCodecKey: codecType, AVVideoWidthKey: width, AVVideoHeightKey: height, AVVideoColorPropertiesKey: rec709])
+            var settings: [String: Any] = [AVVideoCodecKey: codecType, AVVideoWidthKey: width, AVVideoHeightKey: height, AVVideoColorPropertiesKey: rec709]
+            if let pixelAspect {
+                settings[AVVideoPixelAspectRatioKey] = [AVVideoPixelAspectRatioHorizontalSpacingKey: pixelAspect.horizontal, AVVideoPixelAspectRatioVerticalSpacingKey: pixelAspect.vertical]
+            }
+            input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
             adaptor = AVAssetWriterInputPixelBufferAdaptor(
                 assetWriterInput: input,
                 sourcePixelBufferAttributes: [
