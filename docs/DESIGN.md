@@ -3938,10 +3938,11 @@ going active or lost, a lagging client, no output rendering.
    progress, ETA, errors. Rename/renumber with conflict detection. Folder 0
    lists the built-in content and the live inputs as a picker; the inputs are
    managed on the Inputs screen.
-3. **Inputs** (B137, §12.1; steps 1 and 2 built) — the live inputs of folder 0 by
+3. **Inputs** (B137, §12.1; steps 1–3 built) — the live inputs of folder 0 by
    kind (cameras and capture cards, displays, Syphon servers) with status,
    the layers that show them and their signal, Forget, and the camera and
-   screen permissions; a panel with the selected input's details. An Audio
+   screen permissions; a panel with the selected input's details and its
+   Number (move to a free number, or swap with a taken one). An Audio
    inputs group (device and channel count, the default marked) with "Use for
    timecode" (sets `project.timecode` to LTC on a channel) and a level meter
    on the LTC channel; a Microphone (LTC) permission row while timecode is on
@@ -3995,8 +3996,8 @@ closes the shortcut list.
 ### 12.1 Inputs screen and audio outputs (design 2026-11-02, B137)
 
 **Status:** designed 2026-11-02. The owner approved the four decisions below
-the same day; the build order is at the end. Steps 1 and 2 are built (PR #202
-and PR #207, As built at the end of this section); steps 3–6 are not.
+the same day; the build order is at the end. Steps 1–3 are built (PR #202,
+PR #207 and PR #211, As built at the end of this section); steps 4–6 are not.
 
 **Why.** The owner wants one place to select and set up inputs, and expects
 more settings to come: capture cards, the audio input that carries timecode,
@@ -4300,6 +4301,39 @@ does not select the next new input. Differences from the design above:
   channels; rows are keyed by place, as two identical USB devices share a name.
   The Microphone (LTC) permission row shows, yellow when missing, while the
   source is LTC.
+
+**As built (2026-11-02, step 3, PR #211):**
+- *Adoption:* `LiveCatalog.adopt` leaves twins where they are (a running
+  source whose identity another running source shares, or that the value names
+  twice: two canvases with one name). The other running entries take the
+  value's numbers when it names each of them exactly once, on numbers of their
+  own and none held by a twin; if one is missing, nobody moves (today's rule).
+  So a forget (the value lacks nothing running) and an older version without a
+  running source behave as before, while a renumber, its undo and its redo move
+  running inputs, also while twins exist. A loaded version that names every
+  running source once moves them to its numbers. A not-running entry that moves
+  keeps its gone state (an unplugged device does not turn into "not seen since
+  the engine started").
+- *Loader:* a layer whose open camera, display or Syphon server still runs on
+  another number is opened again, so the number it selects shows what is on it
+  now (nothing, a gone input, or the swap partner), never the input that left;
+  before, that branch only meant "the source went" and kept the input on the
+  layer as "not running" (review of PR #211).
+- *Commands:* `capture.renumber` (1–20 and 21–28, the range picks the kind) and
+  `syphon.renumber {file, to}` edit `/capture`, `/screens` or `/syphon` as a
+  project command; `to` equal to `file` changes nothing. A renumber is refused
+  ("liveChanged") while the project lags the catalog (`liveNow`: a source
+  numbered in the last tenth of a second, before the write-back): the catalog
+  would not find the value naming it, keep its numbers and write them back over
+  the change. The replay check is
+  Forget's `checkLiveReplay` behind a show-mode refusal, as `project.revert`
+  has. A Syphon entry sharing its identity with another numbered one is refused
+  on either side of a move or swap.
+- *UI:* the panel's Number field with Apply; `renumberEffect` names the effect
+  ("moves to 5, a free number", "swaps with 2 · Cam B") and keeps Apply off
+  for a number outside the range or the input's own, and while one renumber is
+  on its way (a second Enter would swap back). The selection follows the input
+  to its new number.
 
 ---
 

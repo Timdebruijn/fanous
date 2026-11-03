@@ -423,7 +423,8 @@ only one gone device matches. **Forget** on the Inputs screen frees a number (a 
 not running, or **Forget all not running (cameras and displays)**, which frees
 displays too; programmer, undoable, not while
 the show is locked). A device another app has open (an iPhone in FaceTime)
-reads "in use by another app" with a yellow dot. A card follows its input signal: the picture takes the size and rate of what
+reads "in use by another app" with a yellow dot. **Number** on the Inputs
+screen gives a device another number (a taken one swaps). A card follows its input signal: the picture takes the size and rate of what
 comes in, and a card without a signal for 2 seconds reads "no signal" on the
 Layers screen and keeps its last frame. macOS asks for the camera permission
 once, for "Fanous Engine" (listed as "Fanous" in System Settings): when a
@@ -472,7 +473,8 @@ and when it starts again (same app and server name) it gets its old number
 back. After a restart a server that has not answered yet is listed greyed,
 "not seen since the engine started". A number is freed with **Forget** on
 the Inputs screen (one server that is not running, or **Forget all not running**;
-programmer, undoable, not while the show is locked); undo, redo and loading a
+programmer, undoable, not while the show is locked), and **Number** there
+gives a server another one; undo, redo and loading a
 project version also free the numbers of servers that are not running and that
 the restored project does not list; with all 20 numbers taken a
 new server gets none and the Inputs screen names it. When an app quits, its dot goes grey at once; when it crashes,

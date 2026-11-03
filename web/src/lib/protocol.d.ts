@@ -21,6 +21,7 @@ export type CommandName =
   | 'canvas.set'
   | 'capture.authorize'
   | 'capture.forget'
+  | 'capture.renumber'
   | 'cue.add'
   | 'cue.back'
   | 'cue.go'
@@ -62,6 +63,7 @@ export type CommandName =
   | 'show.unlock'
   | 'sync.set'
   | 'syphon.forget'
+  | 'syphon.renumber'
   | 'timecode.enable'
   | 'timecode.set'
   | 'undo'
@@ -83,6 +85,8 @@ export interface CommandArgs {
   'capture.authorize': { kind: 'camera' | 'screen' | 'microphone' };
   /** Forget a numbered capture device (folder 0, 1–20) or display (21–28) that is not running, or without file every one not running (1–28): the number is free again. Role: programmer, refused under show lock, undoable. */
   'capture.forget': { file?: number };
+  /** Give a capture device (folder 0, 1–20) or display (21–28) another number in its range: a free one moves it, a taken one swaps the two. Refused in show mode, also its undo and redo. Role: programmer, refused under show lock, undoable. */
+  'capture.renumber': { file: number; to: number };
   /** Add a cue: { number, name, fade?, values?: [{fixture, parameter, raw, fade?}], trigger?: "hh:mm:ss:ff@rate", follow? }. Role: programmer, refused under show lock, undoable. */
   'cue.add': { number: number; name: string; fade?: number; values?: { fixture: string; parameter: string; raw: number; fade?: number }[]; trigger?: string | null; follow?: number | null };
   /** Fire the previous cue. Role: operator. */
@@ -165,6 +169,8 @@ export interface CommandArgs {
   'sync.set': { interface?: string; port?: number; target?: string };
   /** Forget a numbered Syphon server that is not running (folder 0, 150–169), or without file every one not running: the number is free again. Role: programmer, refused under show lock, undoable. */
   'syphon.forget': { file?: number };
+  /** Give a Syphon server (folder 0, 150–169) another number: a free one moves it, a taken one swaps the two; refused for a server whose app and name another numbered server shares. Refused in show mode, also its undo and redo. Role: programmer, refused under show lock, undoable. */
+  'syphon.renumber': { file: number; to: number };
   /** Operator switch: chase the configured timecode source (true) or ignore it (false). Role: operator. */
   'timecode.enable': { on: boolean };
   /** Timecode settings: source (off|ltc|mtc), device, channel, offset (frames), freewheel (s), layerOffsets. Role: programmer, refused under show lock, undoable. */

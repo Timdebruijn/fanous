@@ -699,6 +699,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   of ingest opaque: the composition that baked the rotation in rendered over black. A quarter turn or flip is now applied
   to the pixels exactly (vImage, no resampling), alpha and the pixel aspect ratio come along (the ratio swapped by a
   quarter turn). Only an odd transform still goes through the composition (B18, PR #226).
+- UI: an input's **Number** on the Inputs screen: a free number moves a camera, display or Syphon server there, a taken
+  one swaps the two, within its kind's range (`capture.renumber`, `syphon.renumber`; programmer, undoable, refused in
+  show mode, its undo and redo too). The catalog now moves running inputs when the project names each of them once on
+  numbers of their own (two Syphon servers with one app and name stay where they are), so a swap of two running cameras
+  and its undo hold, and a layer on the number an input left shows what is on that number now (B137 step 3, DESIGN
+  §12.1, PR #211).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
