@@ -140,13 +140,15 @@ public enum Transcoder {
                 let finished = try autoreleasepool { () throws -> Bool in
                     guard let sample = videoOutput.copyNextSampleBuffer(), let pixels = CMSampleBufferGetImageBuffer(sample) else { return true }
                     if writer == nil {
-                        // Size from the decoded buffer, not the track: anamorphic and cropped sources differ.
-                        // ponytail: pixel aspect ratio is not carried over; an anamorphic source plays with square pixels.
+                        // Size from the decoded buffer, not the track: anamorphic and cropped sources differ. The pixel
+                        // aspect ratio goes with it (B19), except on the upright path, where the composition renders the
+                        // display size with square pixels.
                         let width = CVPixelBufferGetWidth(pixels), height = CVPixelBufferGetHeight(pixels)
                         if case .hap = requested, width % 4 != 0 || height % 4 != 0 { throw TranscodeError.hapDimensions(width, height) }
                         writer = try MovieWriter(
                             url: destination, width: width, height: height, fps: Int32((1 / probe.frameDuration.seconds).rounded()),
-                            frameDuration: probe.frameDuration, codec: requested, externalAudio: audioFormat)
+                            frameDuration: probe.frameDuration, codec: requested, externalAudio: audioFormat,
+                            pixelAspect: probe.upright == nil ? probe.pixelAspect : nil)
                     }
                     // ponytail: one output frame per source frame at the track's frame duration, so a variable-frame-rate
                     // source (screen recordings) drifts against its audio; resample by PTS (hold/drop) when that matters.
@@ -241,6 +243,8 @@ public enum Transcoder {
         let hasAlpha: Bool
         /// Non-nil when the track carries a rotation/flip (`preferredTransform`): applies it and sizes the render to match.
         let upright: AVVideoComposition?
+        /// The track's `PixelAspectRatio` extension (horizontal, vertical spacing); nil for square pixels.
+        let pixelAspect: (horizontal: Int, vertical: Int)?
         let codec: FourCharCode
 
         static func load(_ url: URL) async throws -> Probe {
@@ -267,10 +271,19 @@ public enum Transcoder {
                 composition = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: asset)
                 composition?.frameDuration = frameDuration  // match the identity path: same frame count and pacing
             }
+            var pixelAspect: (horizontal: Int, vertical: Int)?
+            if let first = formats.first,
+                let ratio = CMFormatDescriptionGetExtension(first, extensionKey: kCMFormatDescriptionExtension_PixelAspectRatio) as? [String: Int],
+                let horizontal = ratio[kCMFormatDescriptionKey_PixelAspectRatioHorizontalSpacing as String],
+                let vertical = ratio[kCMFormatDescriptionKey_PixelAspectRatioVerticalSpacing as String], horizontal > 0, vertical > 0, horizontal != vertical,
+                (0.1...10).contains(Double(horizontal) / Double(vertical))  // a broken tag is not carried over (the player ignores it too)
+            {
+                pixelAspect = (horizontal, vertical)
+            }
             return Probe(
                 asset: asset, video: video, audio: audio, audioFormat: audioFormat, frameDuration: frameDuration, duration: range.duration,
                 hasAlpha: alpha,
-                upright: composition,
+                upright: composition, pixelAspect: pixelAspect,
                 codec: formats.first.map(CMFormatDescriptionGetMediaSubType) ?? 0)
         }
     }
