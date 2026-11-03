@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Fixed: the release dmg was notarized and stapled but not signed itself, so Gatekeeper's check of the dmg
+  (`spctl --type open`) rejected it with "no usable signature" while the app inside passed; `scripts/notarize.sh` signs
+  the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).
 - Changed: the web UI's spacing sits on a 4 px grid, its overlay labels (thumbnail number, duration) share one size,
   its colours come from the app.css tokens (the mapping editor's handles included), the Patch header's three actions
   share one button style and a link styled as a button is no longer underlined (PR #236).
