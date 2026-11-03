@@ -201,7 +201,8 @@ a network MIDI session, then choose it under Device (or "All sources").
   ![System › Logs with the filter field, Refresh, Download and the Service line](images/logs.png)
 
 - `~/Library/Logs/Fanous/fanousd.log` (Engine › **Open Logs** opens the
-  folder).
+  folder). The same lines are in Console.app: search for subsystem
+  `org.fanous`.
 
 ## Restart the engine
 

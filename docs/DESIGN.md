@@ -4379,8 +4379,10 @@ the benchmark.
 | Ingest | job throughput, yields | Media |
 | System | thermal state, memory footprint, on battery, CPU per thread (from `thread_info`; not built) | System; the status bar item is not built |
 
-Logging: `swift-log` with two handlers: `os_log` (Console.app) and a rotating
-file in `~/Library/Logs/Fanous/` (10 × 10 MB). Log lines in hot paths are
+Logging: `swift-log` with three handlers: stderr, the unified log
+(`os.Logger`, subsystem `org.fanous`, the logger's label as the category;
+Console.app, `log stream`, sysdiagnose) and a file in `~/Library/Logs/Fanous/`
+that rotates once to `.1` past 10 MB. Log lines in hot paths are
 pre-formatted off-thread from ring events; the compositor itself never calls
 the logger. Anomalies (first dropped frame in show mode, DMX loss, display
 loss, decoder error) are logged at `warning` with the metric context, and a

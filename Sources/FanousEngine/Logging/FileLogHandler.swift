@@ -74,15 +74,17 @@ public struct FileLogHandler: LogHandler {
 }
 
 public enum EngineLogging {
-    /// stderr + rotating file. Call once, before the first Logger is created.
+    /// stderr + unified log + rotating file. Call once, before the first Logger is created.
     public static func bootstrap(fileURL: URL, level: Logger.Level = .info) {
         let sink = FileLogSink(url: fileURL)
         LoggingSystem.bootstrap { label in
             var stderr = StreamLogHandler.standardError(label: label)
             stderr.logLevel = level
+            var unified = OSLogHandler(label: label)
+            unified.logLevel = level
             var file = FileLogHandler(label: label, sink: sink)
             file.logLevel = level
-            return MultiplexLogHandler([stderr, file])
+            return MultiplexLogHandler([stderr, unified, file])
         }
     }
 }
