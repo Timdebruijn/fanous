@@ -13,6 +13,69 @@ import UniformTypeIdentifiers
 @testable import FanousEngine
 
 struct SequenceIngestTests {
+    /// A semi-transparent sequence pixel keeps its colour: ProRes 4444 and the layer shader take straight alpha, so a PNG
+    /// pixel (200, 100, 50) at alpha 128 must come back as that, not darkened by its own alpha (100, 50, 25 before, measured).
+    @Test func semiTransparentPixelKeepsItsColour() async throws {
+        let directory = try tempDir("fanous-seq")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (w, h) = (64, 32)
+        let data = Data(Array([[UInt8]](repeating: [200, 100, 50, 128], count: w * h).joined()))
+        let image = try #require(CGImage(
+            width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue), provider: CGDataProvider(data: data as CFData)!, decode: nil,
+            shouldInterpolate: false, intent: .defaultIntent))
+        for i in 0..<2 {
+            let destination = try #require(CGImageDestinationCreateWithURL(
+                directory.appending(path: "half_\(i).png") as CFURL, UTType.png.identifier as CFString, 1, nil))
+            CGImageDestinationAddImage(destination, image, nil)
+            #expect(CGImageDestinationFinalize(destination))
+        }
+        let output = directory.appending(path: "half.mov")
+        let frames = try SequenceIngest.frames(in: directory)
+        _ = try await offPool { try SequenceIngest.convert(frames: frames, to: output, fps: 25, codec: .proRes4444) }
+        let asset = AVURLAsset(url: output)
+        let reader = try AVAssetReader(asset: asset)
+        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
+        let readOut = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        reader.add(readOut)
+        reader.startReading()
+        let buffer = try #require(readOut.copyNextSampleBuffer().flatMap(CMSampleBufferGetImageBuffer))
+        reader.cancelReading()
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        let pixel = CVPixelBufferGetBaseAddress(buffer)!.advanced(by: 16 * CVPixelBufferGetBytesPerRow(buffer) + 32 * 4).assumingMemoryBound(to: UInt8.self)
+        let rgba = [Int(pixel[2]), Int(pixel[1]), Int(pixel[0]), Int(pixel[3])]
+        #expect(zip(rgba, [200, 100, 50, 128]).allSatisfy { abs($0 - $1) <= 3 }, "read back \(rgba)")
+
+        // the 8-bit path (HAP Alpha's input): the drawn BGRA pixel itself is straight
+        var bgra: CVPixelBuffer?
+        CVPixelBufferCreate(nil, w, h, kCVPixelFormatType_32BGRA, nil, &bgra)
+        let drawn = try #require(bgra)
+        try SequenceIngest.draw(image, from: frames[0], into: drawn, deep: false, straight: true, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+        CVPixelBufferLockBaseAddress(drawn, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(drawn, .readOnly) }
+        let eight = CVPixelBufferGetBaseAddress(drawn)!.advanced(by: 16 * CVPixelBufferGetBytesPerRow(drawn) + 32 * 4).assumingMemoryBound(to: UInt8.self)
+        let straight = [Int(eight[2]), Int(eight[1]), Int(eight[0]), Int(eight[3])]
+        #expect(zip(straight, [200, 100, 50, 128]).allSatisfy { abs($0 - $1) <= 2 }, "BGRA \(straight)")
+
+        // an opaque codec keeps the premultiplied colour: the half-transparent pixel over black, not at full colour
+        let opaque = directory.appending(path: "opaque.mov")
+        _ = try await offPool { try SequenceIngest.convert(frames: frames, to: opaque, fps: 25, codec: .proRes422HQ) }
+        let opaqueAsset = AVURLAsset(url: opaque)
+        let opaqueReader = try AVAssetReader(asset: opaqueAsset)
+        let opaqueTrack = try #require(try await opaqueAsset.loadTracks(withMediaType: .video).first)
+        let opaqueOut = AVAssetReaderTrackOutput(track: opaqueTrack, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        opaqueReader.add(opaqueOut)
+        opaqueReader.startReading()
+        let opaqueBuffer = try #require(opaqueOut.copyNextSampleBuffer().flatMap(CMSampleBufferGetImageBuffer))
+        opaqueReader.cancelReading()
+        CVPixelBufferLockBaseAddress(opaqueBuffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(opaqueBuffer, .readOnly) }
+        let o = CVPixelBufferGetBaseAddress(opaqueBuffer)!.advanced(by: 16 * CVPixelBufferGetBytesPerRow(opaqueBuffer) + 32 * 4).assumingMemoryBound(to: UInt8.self)
+        let overBlack = [Int(o[2]), Int(o[1]), Int(o[0])]
+        #expect(zip(overBlack, [100, 50, 25]).allSatisfy { abs($0 - $1) <= 3 }, "ProRes 422 HQ \(overBlack)")
+    }
+
     /// A 16-bit image sequence keeps more than 8 bits in ProRes: a 16-bit grey PNG ramp (1024 wide, full range) comes out
     /// of ProRes 422 HQ on the 10-bit video-range ramp `IngestQueueTests.rampError` expects.
     @Test func sixteenBitSequenceKeepsItsPrecisionInProRes() async throws {

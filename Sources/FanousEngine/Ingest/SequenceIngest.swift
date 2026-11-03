@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
+import Accelerate
 import CoreGraphics
 import CoreVideo
 import Foundation
@@ -45,28 +46,47 @@ public enum SequenceIngest {
         let writer = try MovieWriter(
             url: output, width: width, height: height, fps: fps, codec: codec, pixelFormat: deep ? kCVPixelFormatType_64RGBALE : kCVPixelFormatType_32BGRA)
         guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { throw IngestError.unreadable(first) }
+        // Straight alpha where the codec keeps it; an opaque codec drops the alpha, and a soft edge drawn premultiplied is
+        // then that edge over black, as it should be (un-premultiplied it would come out at full colour).
+        let straight: Bool = switch codec { case .proRes4444, .hap(.hapAlpha): true; default: false }
         for (index, url) in frames.enumerated() {
             try autoreleasepool {
                 guard let image = index == 0 ? probe : image(at: url) else { throw IngestError.unreadable(url) }
                 guard image.width == width, image.height == height else { throw IngestError.sizeMismatch(url, width, height) }
                 let buffer = try writer.makePixelBuffer()
-                CVPixelBufferLockBaseAddress(buffer, [])
-                defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
-                guard let context = CGContext(
-                    data: CVPixelBufferGetBaseAddress(buffer), width: width, height: height, bitsPerComponent: deep ? 16 : 8,
-                    bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: colorSpace,
-                    bitmapInfo: deep
-                        ? CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder16Little.rawValue
-                        : CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
-                else { throw IngestError.unreadable(url) }
-                context.clear(CGRect(x: 0, y: 0, width: width, height: height))
-                context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+                try draw(image, from: url, into: buffer, deep: deep, straight: straight, colorSpace: colorSpace)
                 try writer.append(buffer)
             }
             try progress?(index + 1, frames.count)
         }
         try writer.finish()
         return frames.count
+    }
+
+    /// Draws `image` into `buffer` (16-bit RGBA little-endian when `deep`, else BGRA), premultiplied as Core Graphics draws,
+    /// or with `straight` alpha, which ProRes 4444, HAP Alpha and the layer shader take: un-premultiplied after drawing
+    /// (before, a pixel at half alpha was stored at half its colour and the shader darkened it once more).
+    static func draw(_ image: CGImage, from url: URL, into buffer: CVPixelBuffer, deep: Bool, straight: Bool, colorSpace: CGColorSpace) throws {
+        CVPixelBufferLockBaseAddress(buffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
+        guard let context = CGContext(
+            data: CVPixelBufferGetBaseAddress(buffer), width: width, height: height, bitsPerComponent: deep ? 16 : 8,
+            bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: colorSpace,
+            bitmapInfo: deep
+                ? CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder16Little.rawValue
+                : CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+        else { throw IngestError.unreadable(url) }
+        context.clear(CGRect(x: 0, y: 0, width: width, height: height))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard straight else { return }
+        var pixels = vImage_Buffer(
+            data: CVPixelBufferGetBaseAddress(buffer), height: vImagePixelCount(height), width: vImagePixelCount(width),
+            rowBytes: CVPixelBufferGetBytesPerRow(buffer))
+        let flags = vImage_Flags(kvImageNoFlags)
+        // BGRA through the RGBA8888 function (the C header's BGRA one is a macro for it): only the alpha's place counts, last
+        let error = deep ? vImageUnpremultiplyData_RGBA16U(&pixels, &pixels, flags) : vImageUnpremultiplyData_RGBA8888(&pixels, &pixels, flags)
+        guard error == kvImageNoError else { throw IngestError.unreadable(url) }
     }
 
     static func image(at url: URL) -> CGImage? {
