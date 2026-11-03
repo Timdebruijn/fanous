@@ -470,9 +470,10 @@ public enum ShaderSource {
         }
         if (g.kind == 113u) {
             // motion test, locked to the frame counter (not to time): at a steady rate every step is equal, a dropped or
-            // doubled frame shows as a jump or a stop. Top: a bar moving 16 px per frame at 1080p. Middle: stripes
-            // scrolling 8 px per frame (follow them with the eyes: judder shows as stutter). Bottom: 60 cells, one lit
-            // per frame; in a photo with a long exposure every cell of a run must be lit once.
+            // doubled frame shows as a jump or a stop. Steps scale with the canvas height (`lw`), so at 1080p: top, a bar
+            // moving 32 px per frame; middle, stripes scrolling 16 px per frame (follow them with the eyes: judder shows
+            // as stutter); bottom, 60 cells, one lit per frame (in a photo with a long exposure every cell of a run must
+            // be lit once).
             float3 c = float3(0.06);
             float step_ = lw * 16.0;
             if (uv.y > 0.08 && uv.y < 0.3) {
