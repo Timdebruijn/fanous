@@ -3938,10 +3938,11 @@ going active or lost, a lagging client, no output rendering.
    progress, ETA, errors. Rename/renumber with conflict detection. Folder 0
    lists the built-in content and the live inputs as a picker; the inputs are
    managed on the Inputs screen.
-3. **Inputs** (B137, §12.1; steps 1 and 2 built) — the live inputs of folder 0 by
+3. **Inputs** (B137, §12.1; steps 1–3 built) — the live inputs of folder 0 by
    kind (cameras and capture cards, displays, Syphon servers) with status,
    the layers that show them and their signal, Forget, and the camera and
-   screen permissions; a panel with the selected input's details. An Audio
+   screen permissions; a panel with the selected input's details and its
+   Number (move to a free number, or swap with a taken one). An Audio
    inputs group (device and channel count, the default marked) with "Use for
    timecode" (sets `project.timecode` to LTC on a channel) and a level meter
    on the LTC channel; a Microphone (LTC) permission row while timecode is on
