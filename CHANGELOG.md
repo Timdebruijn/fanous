@@ -705,6 +705,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   numbers of their own (two Syphon servers with one app and name stay where they are), so a swap of two running cameras
   and its undo hold, and a layer on the number an input left shows what is on that number now (B137 step 3, DESIGN
   §12.1, PR #211).
+- Checked on hardware: display hot-plug (unplug, replug on the same and another port, a mode change under a bound
+  output) rebinds within 25 ms of the display event, and show mode applies and restores a wanted mode (unplug/replug
+  in show mode did not exercise the re-apply); no code change (B34, B56, DESIGN §9.6, PR #228).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 
