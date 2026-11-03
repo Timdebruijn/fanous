@@ -110,8 +110,8 @@ describe('codecLabel', () => {
     expect(codecLabel('avc1')).toBe('H.264');
     expect(codecLabel('hvc1')).toBe('HEVC');
     expect(codecLabel('hev1')).toBe('HEVC');
-    expect(codecLabel('png')).toBe('png');
-    expect(codecLabel('constructor')).toBe('constructor');
+    expect(codecLabel('png')).toBe('PNG');
+    expect(codecLabel('constructor')).toBe('CONSTRUCTOR');
   });
 });
 
