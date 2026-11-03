@@ -117,7 +117,7 @@ monitor; on a narrow one (an iPad upright, a phone) they stack in that order.
   [Blocks](#blocks)). The layers are chips that wrap, each with its number and
   address; a chip on another universe than the block's start names it
   ("A 0.0.1 · 1"), so Layer 1 and Layer 9 never both read "1". A chip marked
-  **OFF** sits off the block (placed by hand). The Master is one chip. The
+  **off** sits off the block (placed by hand). The Master is one chip. The
   Outputs group has one row per output on the Outputs & Mapping screen, no more
   and no fewer: "Output 1 · on <display> · Outputs & Mapping", then its Output
   and Keystone fixture with their address and status. Removing an output
@@ -154,21 +154,21 @@ monitor; on a narrow one (an iPad upright, a phone) they stack in that order.
   - has settings in the project.
 
   A row shows the universe, the fixtures on it ("Layers 1–8, Master"), the
-  health pill, and its protocol, interface and Hold on signal loss. Without a
+  health status, and its protocol, interface and Hold on signal loss. Without a
   fixture it says:
   - "heard, nothing patched" (yellow): a console sends to a universe no
     fixture listens on; often the console's universe is one off. The row goes
     away once that universe has been quiet for its Signal lost after time,
     unless it has settings or is open in the panel or shown in the DMX monitor
-    (then it stays, with a yellow "quiet" pill, until you pick another one);
+    (then it stays, with a yellow "quiet" status, until you pick another one);
   - "feeds A 0.0.0": the other protocol's universe that a patched universe
     receives (its protocol is sACN or Art-Net + sACN, see
     [Universe settings](#universe-settings));
   - "not used": the universe has settings but no fixture and no console; the
     settings stay.
 
-  A universe without fixtures never shows a red pill: once it is quiet for
-  longer than its Signal lost after time, the pill says "quiet" in yellow (the
+  A universe without fixtures never shows a red status: once it is quiet for
+  longer than its Signal lost after time, the status says "quiet" in yellow (the
   status bar's yellow "silent" means nothing was received yet). Tap a row to open its settings (see
   [Universe settings](#universe-settings)); the DMX monitor switches to it.
 - **DMX monitor**: 512 cells for one universe, coloured per fixture, red where
@@ -177,7 +177,7 @@ monitor; on a narrow one (an iPad upright, a phone) they stack in that order.
   raw value and what it means ("17 → Loop rev"). The buttons above the grid
   switch universe.
 
-The pill for a universe is green while packets arrive. It is yellow when
+The status for a universe is green while packets arrive. It is yellow when
 nothing has been received yet or for up to the universe's Signal lost after time
 (2.5 s by default) of silence, and red when a patched universe has been silent longer.
 What the fixtures do then is the universe's **Hold on signal loss** setting; by
@@ -215,7 +215,7 @@ the start. The block line says:
   Keystones with their outputs, in one step. "1 unplaced" counts the fixtures
   of the group without an address; they do not break the block.
 - **Custom · 2 of 8 off the block**: some fixtures were placed by hand (their
-  chips say OFF), or the start would fall below address 1 (Layer 9 alone at
+  chips say off), or the start would fall below address 1 (Layer 9 alone at
   A 0.0.1 1). **Re-lay as block** puts every fixture on its place from the
   lowest-numbered one's start.
 - **No address**, with **Patch as block**: nothing of the group is patched.
@@ -297,7 +297,7 @@ received before these settings existed.
 | sACN universe / Art-Net universe | a universe of the other protocol, e.g. `S 1` or `A 0.0.0` | S n+1 for A port-address n (A 0.0.0 ↔ S 1) | Shown when the protocol is not the universe's own. Set it when your console numbers the other way. |
 | Interface | All interfaces, an interface (`en0`) or one of its addresses | All interfaces | All interfaces: every sender is accepted and sACN multicast is joined on every interface that can multicast. A named interface: only senders in its network are accepted and sACN multicast is joined on it alone. |
 | Hold on signal loss | Hold last values, Go to zero, UI and cues take over | Hold last values | What the fixtures do when the universe goes silent. "UI and cues take over" resolves them as Who controls *Fanous only* until packets return. Changing it while the universe is already lost applies at once. |
-| Signal lost after (s) | 1 to 60 | 2.5 | Silence after which the universe counts as lost (red pill, Hold on signal loss applies). At least 1 s: consoles that send only on change repeat every 0.8 to 1 s. |
+| Signal lost after (s) | 1 to 60 | 2.5 | Silence after which the universe counts as lost (red status, Hold on signal loss applies). At least 1 s: consoles that send only on change repeat every 0.8 to 1 s. |
 | sACN priority | Highest wins, Merge equal (HTP) | Highest wins | Sources at the same, highest priority: the latest packet wins, or they merge with the highest value per channel. |
 
 There are two timeouts. **Signal lost after** is this universe's: when it
@@ -376,17 +376,17 @@ network, and the System screen's readiness list open. Patch Layer 1 on `S 1`.
 
 - [ ] **Default route.** Mac and sACNView on the default-route network (Wi-Fi or
       Ethernet with gateway), Interface "All interfaces": S 1 multicast turns the
-      pill green and moves Layer 1.
+      status green and moves Layer 1.
 - [ ] **Named NIC.** A second NIC (USB Ethernet) to the console network, Interface
       set to that NIC (`en7`): S 1 arrives; sACN sent on the other network is
       ignored.
 - [ ] **Any with NIC.** Same NIC, no gateway on it, Interface back to "All
       interfaces": S 1 still arrives (joined on every multicast interface).
 - [ ] **Unplug and replug.** Unplug the USB NIC: readiness warns "Universe
-      interfaces usable" for a named Interface; the pill goes red once
+      interfaces usable" for a named Interface; the status goes red once
       Signal lost after has passed. Replug: packets return within 5 s without touching anything.
 - [ ] **Unicast.** sACNView unicast to the Mac's address on S 1: received, with
-      the sender shown in the pill.
+      the sender shown in the status.
 - [ ] **sACNView receiving on the Mac.** Open a sACNView receive window for S 1 on
       the same Mac: both show multicast; note that unicast now goes to sACNView
       only.
@@ -438,7 +438,7 @@ with that held value.
 2. **Output.** On the Outputs screen choose a display under **Add output on**.
    A new output shows the whole canvas.
 3. **Console.** Patch fixture "Fanous", mode Layer, on A 0.0.0 at address 1.
-   The universe pill in the status bar turns green when packets arrive.
+   The universe's status in the status bar turns green when packets arrive.
 4. **Values.** Set Folder to 1, File to 1 and Intensity to full (100 %; 65535
    on the 16-bit pair). The other channels can stay at their defaults, which the
    GDTF carries.

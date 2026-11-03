@@ -60,11 +60,11 @@
     <span class="name">Fanous</span>
     <button type="button" class="tag {app.project.showLock ? 'tag-lock' : 'tag-open'}" aria-pressed={app.project.showLock} onclick={toggleLock} disabled={!can('programmer')} title={can('programmer') ? (app.project.showLock ? 'Unlock the show (L)' : 'Lock the show: configuration is refused (L)') : 'Programmer only'}>
       {#if app.project.showLock}<svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>{/if}
-      {app.project.showLock ? 'LOCKED' : 'UNLOCKED'}
+      {app.project.showLock ? 'Locked' : 'Unlocked'}
     </button>
     <span class="modewrap">
       <button type="button" class="tag {showMode ? 'tag-mode' : 'tag-open'}" aria-pressed={showMode} aria-expanded={refused !== null} onclick={toggleShowMode} disabled={!can('operator')} title={can('operator') ? (showMode ? 'Leave show mode' : 'Enter show mode: runs the readiness checks first') : 'Operator or programmer only'}>
-        SHOW MODE: {showMode ? 'ON' : 'OFF'}
+        Show mode: {showMode ? 'on' : 'off'}
       </button>
       <span role="status">{#if showMode && resumed}<a class="caption resumed" href="#/system">{resumed}</a>{/if}</span>
       {#if refused !== null}
@@ -138,7 +138,7 @@
       <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5" /><path d="M20 9H9a5 5 0 0 0 0 10h6" /></svg>
     </button>
     <button type="button" class="btn btn-icon help" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" onclick={() => (shell.help = true)}>?</button>
-    <button type="button" class="role role-{app.role} role-btn" title="Log in as another role" onclick={() => (showLogin = true)}>{app.role.toUpperCase()}</button>
+    <button type="button" class="role role-{app.role} role-btn" title="Log in as another role" onclick={() => (showLogin = true)}>{app.role[0].toUpperCase() + app.role.slice(1)}</button>
   </div>
 </header>
 {#if showLogin}<Login onclose={() => (showLogin = false)} />{/if}
@@ -160,8 +160,8 @@
   .tag { border: 0; cursor: pointer; }
   .tag.tag-open { border: 1px solid var(--line-strong); background: transparent; }
   .modewrap { position: relative; }
-  .pop { position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; width: 320px; max-width: calc(100vw - 24px); padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--surface-2); border-color: var(--red); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
-  .pop ul { margin: 0; padding-left: 18px; font-size: 13px; }
+  .pop { position: absolute; z-index: 40; top: calc(100% + 8px); left: 0; width: 320px; max-width: calc(100vw - 24px); padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--surface-2); border-color: var(--red); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
+  .pop ul { margin: 0; padding-left: 20px; font-size: 13px; }
   .pop p { margin: 0; }
   .popactions { display: flex; gap: 8px; }
   .popactions a { text-decoration: none; }
@@ -169,11 +169,12 @@
   .resumed { margin-left: 8px; color: var(--yellow); text-decoration: none; }
   .value { font-size: 15px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
   /* the pills wrap inside the item, so 3+ universes on a phone take a second row instead of widening the page */
-  .dmx { gap: 6px; flex-wrap: wrap; padding-block: 4px; }
+  .dmx { gap: 4px 12px; flex-wrap: wrap; padding-block: 4px; }
   .ingest { width: 150px; }
   .ingest .bar { width: 100%; height: 4px; margin-top: 4px; }
   .yellow { color: var(--yellow); }
   .role-btn { border: 0; cursor: pointer; min-height: var(--touch); }
+  .role-btn:hover { background: var(--surface-3); }
   .plain { color: inherit; text-decoration: none; }
   /* a phone: five rows of 44 px took a third of the screen. Value and caption share a line; the frame time, its gpu/cpu
      detail, the auto-version item (System carries both), the keyboard-shortcuts button (no keyboard; the ? key still
@@ -190,7 +191,7 @@
     /* the long forms stay for screen readers ("web UI open", "dropped · 1 s"), off screen */
     .long { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .role-btn { padding: 0 8px; font-size: 11px; }
-    .brand { gap: 6px; }  /* order 0, the default: first */
+    .brand { gap: 8px; }  /* order 0, the default: first */
     .item.dmx { order: 4; }  /* the pills last: fps, dropped and clients share a row, the pills take their own */
     .tag { font-size: 11px; padding: 0 8px; letter-spacing: 0; }
     .spacer { order: 1; }

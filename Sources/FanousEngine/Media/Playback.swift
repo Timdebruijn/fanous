@@ -265,6 +265,8 @@ public struct LayerMediaStatus: Sendable, Equatable {
     public var height = 0
     public var fps = 0.0
     public var frames = 0
+    /// Non-square pixels (B147): `width` is the shown width; nil = 1, like the library's metadata (B146).
+    public var pixelAspect: Double? = nil
     public var error: String? = nil
     /// A capture layer's counters (frames, dropped, outOfBuffers, unusable), nil for other media.
     public var capture: CaptureInput.Counters? = nil
@@ -687,6 +689,7 @@ public final class MediaLoader: @unchecked Sendable {
             status.codec = source.info.codecName
             status.width = Int((Double(source.info.width) * source.info.pixelAspect).rounded())  // shown size, like the library's naturalSize
             status.height = source.info.height
+            if abs(source.info.pixelAspect - 1) > 0.005 { status.pixelAspect = source.info.pixelAspect }  // same rule as the library (B146)
             status.fps = source.info.frameRate
             status.frames = source.info.frameCount
             return LayerPlayback(key: key, movie: source, decoder: decoder, ring: ring)

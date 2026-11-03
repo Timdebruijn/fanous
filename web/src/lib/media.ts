@@ -88,9 +88,10 @@ const fourCCNames = new Map([
   ['generator', 'Built-in'],
 ]);
 
-/** Display name of a probed codec or a layer's codec ("generator" for folder 0); unknown ones stay as they are (the badge upper-cases them). */
+/** Display name of a probed codec or a layer's codec ("generator" for folder 0); an unknown one, a still's extension or an
+ *  unmapped fourCC, in capitals ("PNG", "MP4V"). */
 export function codecLabel(codec: string): string {
-  return fourCCNames.get(codec) ?? codec;
+  return fourCCNames.get(codec) ?? codec.toUpperCase();
 }
 
 /** "m:ss.s", tenths rounded as a whole so 59.96 s reads 1:00.0, never 0:60.0. */

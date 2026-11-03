@@ -173,7 +173,7 @@
   .ctl input[type='range'] { width: 100%; min-height: var(--touch); accent-color: var(--accent); }
   .ctl .select, .ctl .input { width: 100%; }
   .ui { color: var(--accent); }
-  .uinote { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+  .uinote { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
   .titlebar { display: flex; align-items: center; gap: 8px; }
   .releasebar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 4px; }
   .releasebar .caption { flex: 1 1 160px; }
@@ -184,7 +184,7 @@
   .val { color: var(--text-2); font-size: 12px; }
   .val.red { color: var(--red); }
   .note { margin: 0; padding: 0 4px; }
-  summary { cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 0 4px; list-style: none; }
+  summary { cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 0 4px; list-style: none; }
   summary::-webkit-details-marker { display: none; }
   summary::before { content: '▸' / ''; width: 10px; color: var(--text-2); }  /* flex hides the native marker; the glyph is decorative */
   details[open] > summary::before { content: '▾' / ''; }

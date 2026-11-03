@@ -167,7 +167,7 @@
   .yellow { color: var(--yellow); }
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
   .tile {
-    position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 96px; padding: 10px 12px;
+    position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 96px; padding: 12px;
     border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); color: var(--text-1); text-align: left; min-width: 0;
   }
   .tile:hover { background: var(--surface-3); }
@@ -187,7 +187,7 @@
   .slider input { flex: 1; min-width: 0; min-height: var(--touch); accent-color: var(--accent); }
   .val { min-width: 48px; text-align: right; }
   .choices { display: flex; flex-direction: column; gap: 8px; }
-  .choice { display: flex; align-items: flex-start; gap: 12px; min-height: var(--touch); padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  .choice { display: flex; align-items: flex-start; gap: 12px; min-height: var(--touch); padding: 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
   .choice:has(input:checked) { border-color: var(--accent); background: var(--surface-2); }
   .choice:has(input:disabled) { cursor: default; color: var(--text-3); }
   .choice input { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--accent); flex: none; }
