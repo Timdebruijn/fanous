@@ -534,7 +534,7 @@ async function onPage(page: Page, path: string): Promise<{ x: number; y: number 
 }
 
 /** The dashed previews of a shape being drawn. */
-const previews = (page: Page) => page.locator('.mapper polyline[stroke="#FFC532"]');
+const previews = (page: Page) => page.locator('.mapper polyline.draft');
 
 /** The number of points a mask row of the list names. */
 async function pointCount(row: Locator): Promise<number> {

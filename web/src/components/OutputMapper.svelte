@@ -217,7 +217,7 @@
 <svg bind:this={svg} class="mapper" viewBox="0 0 {W} {H}" role="application" aria-label="Mapping editor: drag the handles, arrow keys nudge the selected point, Tab steps to the next one, Escape lets go so Tab leaves" tabindex="0" class:adding={mode === 'mask' && (addMode || draft || tool)} onkeydown={key} onpointerdown={background} ondblclick={doubleClick} onpointermove={move} onpointerup={up} onpointercancel={up}>
   {#if draft && draft.length > 0}
     {@const pts = draft.map((p) => toScreen(output, mode, p))}
-    <polyline points={svgPoints(pts)} fill="none" style:stroke="var(--yellow)" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" />
+    <polyline class="draft" points={svgPoints(pts)} fill="none" style:stroke="var(--yellow)" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" />
     {#each pts as p, i (i)}<circle cx={p.x * W} cy={p.y * H} r="10" style:fill="var(--yellow)" style:stroke="var(--ground)" stroke-width="3" vector-effect="non-scaling-stroke" />{/each}
   {/if}
   {#each lines as line, i (i)}
@@ -232,7 +232,7 @@
     />
   {/each}
   {#if drawn}
-    <polyline points={drawn} fill="none" style:stroke="var(--yellow)" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" />
+    <polyline class="draft" points={drawn} fill="none" style:stroke="var(--yellow)" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" />
   {/if}
   {#each knobs as h (h.path)}
     {@const p = shown(h)}
