@@ -112,6 +112,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   RGBA directly, the blur at a mip level matched to its radius; a blurred ProRes 1080p60 layer went from about 2.3 ms to
   0.9 ms of GPU time and an edged one from about 1.6 ms to 0.3 ms (derived from 4-layer frames in an A/B under load),
   plain layers are unchanged, and the blur reads a smoother picture at large radii (B2, DESIGN §4.3, PR #253).
+- Dev: the web build tools move to svelte 5.57.3, vitest 5.1.0 and svelte-check 4.7.8 (the latest releases on 2026-11-03;
+  nothing of them ships in the app) (PR #266).
 
 ## 1.0.0-rc.2 — 2026-11-03
 
