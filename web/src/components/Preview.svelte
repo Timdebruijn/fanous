@@ -298,6 +298,6 @@
 
 <style>
   .stalled { color: var(--yellow); }
-  .preview { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+  .preview { margin: 0; display: flex; flex-direction: column; gap: 8px; }
   canvas { width: 100%; height: auto; aspect-ratio: 16 / 9; border-radius: 8px; background: #000; border: 1px solid var(--line); display: block; }
 </style>

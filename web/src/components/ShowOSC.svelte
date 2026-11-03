@@ -58,11 +58,11 @@
   header { display: flex; align-items: center; gap: 12px; }
   p { margin: 0; }
   .recent { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
-  .recent li { display: flex; gap: 12px; align-items: baseline; padding: 6px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .recent li { display: flex; gap: 12px; align-items: baseline; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
   .recent li:last-child { border-bottom: 0; }
   .recent time { flex: none; }
   .addresses { list-style: none; margin: 0; padding: 0; font-size: 12px; }
-  .addresses li { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+  .addresses li { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
   .addresses li:last-child { border-bottom: 0; }
   .effect { grid-column: 1 / -1; }
 </style>

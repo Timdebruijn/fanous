@@ -49,7 +49,7 @@ H.264.
 
 ## A DMX universe is silent
 
-The status bar has one pill per universe. Green: packets arrive. Yellow with
+The status bar has one status per universe. Green: packets arrive. Yellow with
 "silent": nothing received yet. Yellow with seconds: silent for less than 2.5 s.
 Red: a patched universe silent for more than 2.5 s (the Patch screen's
 Universes panel uses the universe's own **Signal lost after** time instead).
@@ -160,7 +160,7 @@ before it; in the status bar a dropped frame is red while the show is locked.
 
 ## LTC does not lock
 
-Show › Timecode: the pill should say Locked and "frames seen" should count up.
+Show › Timecode: the state should say Locked and "frames seen" should count up.
 
 - Source is **LTC**, the **Timecode** switch is on, the right **Device** is
   chosen (an unplugged one is listed as "not connected").

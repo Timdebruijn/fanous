@@ -223,21 +223,21 @@
   .empty { padding: 32px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
   .empty p { margin: 0; }
   .alone { max-width: 360px; margin-top: 12px; }
-  .preview { display: flex; flex-direction: column; gap: 6px; }
+  .preview { display: flex; flex-direction: column; gap: 8px; }
   .preview .segmented { align-self: flex-start; }
   .layout { display: flex; gap: 12px; align-items: flex-start; }
   .table {
     /* LayerRow reads these two; the heads below use the same grid so the columns line up. */
     --layer-cols: 96px 70px minmax(0, 1fr) 200px 64px 92px 56px 120px 84px;
     --layer-gap: 8px;
-    flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 6px;
+    flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 8px;
   }
   .heads {
-    display: grid; grid-template-columns: var(--layer-cols); column-gap: var(--layer-gap); padding: 0 13px;
-    font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3);
+    display: grid; grid-template-columns: var(--layer-cols); column-gap: var(--layer-gap); padding: 0 13px;  /* the row's 1 px border + 12 px padding */
+    font-size: 11px; font-weight: 600; color: var(--text-3);
   }
   .h-layer { grid-column: span 2; }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
   .side { display: flex; flex-direction: column; gap: 12px; flex: 0 0 clamp(320px, 22vw, 360px); position: sticky; top: 16px; max-height: calc(100dvh - 32px); overflow-y: auto; border-radius: var(--radius-panel); }
 
   /* Rows need roughly 860 px of list; narrower than that (11" iPad landscape and down) they become tiles. Keep in step with LayerRow. */

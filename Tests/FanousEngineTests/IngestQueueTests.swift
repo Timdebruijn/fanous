@@ -52,21 +52,26 @@ import UniformTypeIdentifiers
     /// `alpha` writes ProRes 4444 (in a .mov) with the right half of every frame transparent instead of H.264.
     /// `transform` tags the track (`preferredTransform`); `rotated` is the 90° clockwise tag of a phone held upright.
     static func writeH264(
-        to url: URL, rotated: Bool = false, transform: CGAffineTransform? = nil, floatAudio: Bool = false, pixelAspect: (Int, Int)? = nil,
+        to url: URL, rotated: Bool = false, transform: CGAffineTransform? = nil, floatAudio: Bool = false, sixChannels: AudioChannelLayoutTag? = nil, pixelAspect: (Int, Int)? = nil,
         presentationTimes: [CMTime]? = nil, timescale: CMTimeScale? = nil, alpha: Bool = false
     ) async throws {
         try await offPool {
             try writeH264Blocking(
-                to: url, transform: transform ?? (rotated ? CGAffineTransform(rotationAngle: .pi / 2) : nil), floatAudio: floatAudio, pixelAspect: pixelAspect,
+                to: url, transform: transform ?? (rotated ? CGAffineTransform(rotationAngle: .pi / 2) : nil), floatAudio: floatAudio, sixChannels: sixChannels, pixelAspect: pixelAspect,
                 presentationTimes: presentationTimes, timescale: timescale, alpha: alpha)
         }
     }
 
     private static func writeH264Blocking(
-        to url: URL, transform: CGAffineTransform?, floatAudio: Bool, pixelAspect: (Int, Int)?, presentationTimes: [CMTime]?, timescale: CMTimeScale?,
-        alpha: Bool
+        to url: URL, transform: CGAffineTransform?, floatAudio: Bool, sixChannels: AudioChannelLayoutTag?, pixelAspect: (Int, Int)?, presentationTimes: [CMTime]?,
+        timescale: CMTimeScale?, alpha: Bool
     ) throws {
-        let writer = try AVAssetWriter(outputURL: url, fileType: floatAudio || alpha ? .mov : .mp4)
+        let fiveOne = sixChannels != nil
+        let writer = try AVAssetWriter(outputURL: url, fileType: floatAudio || fiveOne || alpha ? .mov : .mp4)
+        // sixChannels: 48 kHz 16-bit six channels with that layout (5.1 in MPEG order L R C LFE Ls Rs, or discrete), channel i
+        // a constant (i + 1) × 3000 (B143)
+        var fiveOneLayout = AudioChannelLayout()
+        fiveOneLayout.mChannelLayoutTag = sixChannels ?? 0
         let audioInput = AVAssetWriterInput(
             mediaType: .audio,
             outputSettings: floatAudio
@@ -74,7 +79,13 @@ import UniformTypeIdentifiers
                     AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 96_000, AVNumberOfChannelsKey: 2, AVLinearPCMBitDepthKey: 32,
                     AVLinearPCMIsFloatKey: true, AVLinearPCMIsBigEndianKey: false, AVLinearPCMIsNonInterleaved: false,
                 ]
-                : [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 44_100, AVNumberOfChannelsKey: 1, AVEncoderBitRateKey: 64_000])
+                : fiveOne
+                    ? [
+                        AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 6, AVLinearPCMBitDepthKey: 16,
+                        AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false, AVLinearPCMIsNonInterleaved: false,
+                        AVChannelLayoutKey: Data(bytes: &fiveOneLayout, count: MemoryLayout<AudioChannelLayout>.size),
+                    ]
+                    : [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 44_100, AVNumberOfChannelsKey: 1, AVEncoderBitRateKey: 64_000])
         audioInput.expectsMediaDataInRealTime = false
         writer.add(audioInput)
         var videoSettings: [String: Any] = [AVVideoCodecKey: alpha ? AVVideoCodecType.proRes4444 : .h264, AVVideoWidthKey: 320, AVVideoHeightKey: 176]
@@ -94,19 +105,26 @@ import UniformTypeIdentifiers
         writer.add(input)
         guard writer.startWriting() else { throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "startWriting") }
         writer.startSession(atSourceTime: .zero)
-        let rate = floatAudio ? 96_000.0 : 44_100.0
-        let channels: UInt32 = floatAudio ? 2 : 1
-        let bytesPerFrame: UInt32 = floatAudio ? 8 : 2
+        let rate = floatAudio ? 96_000.0 : fiveOne ? 48_000.0 : 44_100.0
+        let channels: UInt32 = floatAudio ? 2 : fiveOne ? 6 : 1
+        let bytesPerFrame: UInt32 = floatAudio ? 8 : fiveOne ? 12 : 2
         var description = AudioStreamBasicDescription(
             mSampleRate: rate, mFormatID: kAudioFormatLinearPCM,
             mFormatFlags: (floatAudio ? kAudioFormatFlagIsFloat : kAudioFormatFlagIsSignedInteger) | kAudioFormatFlagIsPacked,
             mBytesPerPacket: bytesPerFrame, mFramesPerPacket: 1, mBytesPerFrame: bytesPerFrame, mChannelsPerFrame: channels,
             mBitsPerChannel: bytesPerFrame / channels * 8, mReserved: 0)
         var format: CMAudioFormatDescription?
-        CMAudioFormatDescriptionCreate(allocator: nil, asbd: &description, layoutSize: 0, layout: nil, magicCookieSize: 0, magicCookie: nil, extensions: nil, formatDescriptionOut: &format)
+        withUnsafePointer(to: &fiveOneLayout) { layout in
+            CMAudioFormatDescriptionCreate(
+                allocator: nil, asbd: &description, layoutSize: fiveOne ? MemoryLayout<AudioChannelLayout>.size : 0, layout: fiveOne ? layout : nil,
+                magicCookieSize: 0, magicCookie: nil, extensions: nil, formatDescriptionOut: &format)
+        }
         let frames = Int(rate)
         let block: CMBlockBuffer
-        if floatAudio {
+        if fiveOne {
+            let constants = (0..<frames * 6).map { Int16(($0 % 6 + 1) * 3000) }
+            block = try constants.withUnsafeBytes { try MovieWriter.blockBuffer(copying: $0) }
+        } else if floatAudio {
             let tone = (0..<frames * 2).map { Float(sin(2 * .pi * 440 * Double($0 / 2) / rate) * 0.5) }
             block = try tone.withUnsafeBytes { try MovieWriter.blockBuffer(copying: $0) }
         } else {
@@ -540,7 +558,8 @@ import UniformTypeIdentifiers
             (try describe(rate: 384_000, channels: 1, bits: 64, float: true), 192_000, 1, 32, true),  // DXD fl64: clamped, float32
             (try describe(rate: 44_100, channels: 2, bits: 20), 44_100, 2, 24, false),  // 20-bit → 24
             (try describe(rate: 7350, channels: 1, bits: 0, lpcm: false), 8000, 1, 24, false),  // low-rate AAC: clamped, 24-bit
-            (try describe(rate: 48_000, channels: 6, bits: 24, layoutTag: kAudioChannelLayoutTag_MPEG_5_1_A), 48_000, 2, 24, false),  // 5.1 → stereo (ponytail)
+            (try describe(rate: 48_000, channels: 6, bits: 24, layoutTag: kAudioChannelLayoutTag_MPEG_5_1_A), 48_000, 6, 24, false),  // 5.1 stays (B143)
+            (try describe(rate: 48_000, channels: 6, bits: 24), 48_000, 6, 24, false),  // six channels without a layout: discrete in order
             (try describe(rate: 48_000, channels: 2, bits: 16, layoutTag: kAudioChannelLayoutTag_MPEG_5_1_A), 48_000, 2, 16, false),  // layout disagrees with the count → by count
             (try describe(rate: 44_100, channels: 0, bits: 0, lpcm: false), 44_100, 2, 24, false),  // no channel count: stereo (a description cannot carry rate 0)
         ]
@@ -551,6 +570,38 @@ import UniformTypeIdentifiers
             #expect((asbd.mFormatFlags & kAudioFormatFlagIsFloat != 0) == float)
             #expect(asbd.mBytesPerFrame == bits / 8 * channels)
             _ = AVAssetReaderAudioMixOutput(audioTracks: [track], audioSettings: settings)  // raises on anything the reader refuses
+        }
+    }
+
+    /// B143: a 5.1 source keeps its six channels and layout in the library file, and the player folds them to stereo by the
+    /// layout, so the centre is in both sides (before: ingest mixed to stereo, and the player took channels 0 and 1). Six
+    /// discrete channels are kept too (the writer and the reader take `DiscreteInOrder | 6`), and play as channels 0 and 1.
+    @Test(arguments: [kAudioChannelLayoutTag_MPEG_5_1_A, kAudioChannelLayoutTag_DiscreteInOrder | 6])
+    func sixChannelSourceKeepsItsChannelsAndFoldsAtPlayback(tag: AudioChannelLayoutTag) async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appending(path: "six.mov")
+        try await Self.writeH264(to: source, sixChannels: tag)
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        queue.start()
+        defer { queue.stop() }
+        let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_six.mov"), kind: .transcode(codec: .proRes422)))
+        #expect(await Self.wait(for: job.id, in: queue) == .done)
+        let track = try #require(try await AVURLAsset(url: job.destination).loadTracks(withMediaType: .audio).first)
+        let description = try #require(try await track.load(.formatDescriptions).first)
+        let asbd = try #require(CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee)
+        var layoutSize = 0
+        let layout = CMAudioFormatDescriptionGetChannelLayout(description, sizeOut: &layoutSize)
+        #expect(asbd.mChannelsPerFrame == 6 && asbd.mSampleRate == 48_000 && layout?.pointee.mChannelLayoutTag == tag, "\(asbd)")
+        let reader = try await AudioTrackReader.open(url: job.destination)
+        #expect(reader.channelCount == 6)
+        reader.seek(toSeconds: 0.25)
+        let samples = AudioTests.read(reader, frames: 4800).samples
+        for frame in [2400, 4700] {
+            let left = samples[2 * frame] * 32768, right = samples[2 * frame + 1] * 32768
+            // 5.1: L + 0.7071 (C + Ls), R + 0.7071 (C + Rs) = 3000 + 0.7071 (9000 + 15000), 6000 + 0.7071 (9000 + 18000)
+            let (wantLeft, wantRight): (Float, Float) = tag == kAudioChannelLayoutTag_MPEG_5_1_A ? (19971, 25092) : (3000, 6000)
+            #expect(abs(left - wantLeft) < 40 && abs(right - wantRight) < 40, "\(frame): \(left) \(right)")
         }
     }
 
@@ -582,6 +633,29 @@ import UniformTypeIdentifiers
         guard let device = MTLCreateSystemDefaultDevice() else { return }
         let movie = try await MovieSource.open(url: proRes.destination, device: device, poolSize: 2)
         #expect(movie.info.width == 320 && abs(movie.info.pixelAspect - 4.0 / 3) < 0.001)
+
+        // The layer status carries the ratio for the Layers screen's media line (B147), and a square-pixel movie loaded
+        // after it has none (the status starts fresh per load).
+        let square = directory.appending(path: "square.mp4")
+        try await Self.writeH264(to: square)
+        let squareJob = queue.enqueue(IngestJob(source: square, destination: directory.appending(path: "library/003_square.mov"), kind: .transcode(codec: .proRes422)))
+        #expect(await Self.wait(for: squareJob.id, in: queue) == .done)
+        let layer = RenderLayer(index: 0)
+        let loader = MediaLoader(layers: [layer], media: [], device: device, ringCapacity: 4, logger: Logger(label: "test"))
+        let paths = [1: proRes.destination, 3: squareJob.destination]
+        loader.resolver = { key in paths[key.file] }
+        loader.start()
+        defer { loader.stop() }
+        for (file, width, aspect) in [(1, 427, 4.0 / 3), (3, 320, 1.0)] {
+            layer.wanted.store(MediaKey(folder: 1, file: file).packed, ordering: .relaxed)
+            loader.wake.signal()
+            var status = LayerMediaStatus()
+            for _ in 0..<500 where status.file != file || status.kind != "movie" {
+                try await Task.sleep(for: .milliseconds(10))
+                status = layer.mediaStatus.withLock { $0 }
+            }
+            #expect(status.kind == "movie" && status.width == width && abs((status.pixelAspect ?? 1) - aspect) < 0.001 && (status.pixelAspect == nil) == (aspect == 1), "file \(file): \(status)")
+        }
 
         // The Media screen's thumbnail fills its 427:176 frame edge to edge (the still path carries the ratio too; it
         // used to draw the coded 320:176 picture in it, with black bars at both sides).

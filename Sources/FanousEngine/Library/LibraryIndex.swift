@@ -479,17 +479,45 @@ extension LibraryIndex {
     /// Uploads land here before ingest (DESIGN.md §8.1); never indexed.
     public var incomingDirectory: URL { root.appending(path: "_incoming") }
 
-    /// The folder with this number, or a new `NNN_<name>` folder when `createAs` is given. Reads the disk, not the snapshot:
-    /// a folder an upload just created is there before the debounced rescan. Sorted like `rescan()`, so a duplicate number
-    /// gives the folder the index keeps (hidden and `_` names have no prefix number).
+    /// One lock around list-and-create (B141): each HTTP client has its own queue, so two folder creates for one number,
+    /// or an upload making the folder between an endpoint's check and its create, would make two folders. Static: an
+    /// upload keeps its index when the root changes (`IngestAPI.enqueueNow`).
+    private static let folderLock = Mutex(())
+
+    /// The folder with this number, or a new `NNN_<name>` folder when `createAs` is given; nil when there is none and no
+    /// name, or the create fails (B142: a read-only root). Reads the disk, not the snapshot: a folder an upload just
+    /// created is there before the debounced rescan. Sorted like `rescan()`, so a duplicate number gives the folder the
+    /// index keeps (hidden and `_` names have no prefix number).
     public func folderURL(number: Int, createAs name: String? = nil) -> URL? {
+        Self.folderLock.withLock { _ in existingFolder(number) ?? name.flatMap { makeFolder(number, $0) } }
+    }
+
+    public enum FolderCreate: Equatable, Sendable {
+        case created(URL), exists(URL), failed
+    }
+
+    /// Creates `NNN_<name>`, under the one lock, so `.exists` also covers a folder an upload or another client made a
+    /// moment ago (B141), and `.failed` a root that cannot be written (B142).
+    public func createFolder(number: Int, name: String) -> FolderCreate {
+        Self.folderLock.withLock { _ in
+            if let url = existingFolder(number) { return .exists(url) }
+            return makeFolder(number, name).map { .created($0) } ?? .failed
+        }
+    }
+
+    private func existingFolder(_ number: Int) -> URL? {
         for folder in ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).sorted() where Self.prefixNumber(folder) == number {
             let url = root.appending(path: folder)
             if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true { return url }
         }
-        guard let name, (1...255).contains(number) else { return nil }
+        return nil
+    }
+
+    /// Also makes the root (`withIntermediateDirectories`).
+    private func makeFolder(_ number: Int, _ name: String) -> URL? {
+        guard (1...255).contains(number) else { return nil }
         let url = root.appending(path: String(format: "%03d_%@", number, Self.safeName(name)))
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        do { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) } catch { return nil }
         return url
     }
 
