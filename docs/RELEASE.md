@@ -141,7 +141,8 @@ On a fresh macOS user account (or a fresh Mac) with the notarized dmg:
 
 ## 8. Docs
 
-- [ ] `README.md` install paragraph points at the dmg and `docs/user/`
+- [ ] `README.md` install paragraph points at the dmg and `docs/user/`. Done 2026-11-03 with 1.0.0-rc.2: README
+      "Download or build" and getting-started point at the Releases page, not at one version
 - [ ] `docs/user/*` read through against the build (button labels, paths)
 - [ ] `docs/DESIGN.md`: every phase has its "as built" notes; `[OPEN-n]`
       rows are decided, resolved or marked v1.x; §19 scope guard lists the
@@ -152,6 +153,8 @@ On a fresh macOS user account (or a fresh Mac) with the notarized dmg:
 ## 9. Publish
 
 - [ ] GitHub release `v<version>` with the dmg, its SHA-256, the CHANGELOG
-      section and the interop/benchmark notes
+      section and the interop/benchmark notes. 1.0.0-rc.2 was published as a pre-release on 2026-11-03 with the
+      signed dmg, its SHA-256, a link to the CHANGELOG and what is not tested yet; no interop or benchmark notes
+      (no console measured yet)
 - [ ] the release notes name the drawable-loop driver and the macOS 27.0.1
       stall (R17, ADR-0006) so early adopters know why it is the default
