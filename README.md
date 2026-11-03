@@ -129,7 +129,7 @@ Building for development, protocols and endpoints: [`docs/DEVELOPMENT.md`](docs/
 ## What it does not do yet
 
 - **A release candidate.** A first install on a clean Mac account is not tested yet.
-- **Not tested with real consoles, LTC/MTC hardware or display hot-plug.** Built and tested against loopback, generated signals and captured packets.
+- **Not tested with real consoles or LTC/MTC hardware.** Built and tested against loopback, generated signals and captured packets. Display hot-plug is checked with one external display; with two or more it rests on unit tests.
 - **One machine measured** (M1 Pro). Other Apple Silicon chips are expectations.
 - **Apple Silicon only:** no Intel, Windows or Linux.
 - **4K60 is about 6 ProRes layers;** heavy blur and edge effects fit on 2–3 layers.
