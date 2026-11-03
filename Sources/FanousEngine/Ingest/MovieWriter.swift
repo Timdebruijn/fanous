@@ -113,6 +113,9 @@ public final class MovieWriter {
                 ])
         }
         input.expectsMediaDataInRealTime = false
+        // The track's timescale holds the frame duration exactly: 600 for 24/25/30/50/60/120, else the duration's own
+        // (30000 for 29.97; the default 600 would store it as 20/21 ticks and report a 30 fps minimum frame duration).
+        input.mediaTimeScale = 600 % self.frameDuration.timescale == 0 ? 600 : self.frameDuration.timescale
         guard writer.canAdd(input) else { throw WriterError.failed("cannot add input") }
         writer.add(input)
         if audio || externalAudio != nil {

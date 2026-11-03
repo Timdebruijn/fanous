@@ -47,11 +47,20 @@ import UniformTypeIdentifiers
     /// A 1 s, 25 fps H.264 `.mp4` (320×176) written with AVAssetWriter, with a 1 s 440 Hz mono AAC track at 44.1 kHz
     /// (what a phone records: not 48 kHz, not stereo, not LPCM).
     /// H.264 with one second of a 440 Hz tone: AAC 44.1 kHz mono, or (`floatAudio`) LPCM 96 kHz stereo 32-bit float.
-    static func writeH264(to url: URL, rotated: Bool = false, floatAudio: Bool = false, pixelAspect: (Int, Int)? = nil) async throws {
-        try await offPool { try writeH264Blocking(to: url, rotated: rotated, floatAudio: floatAudio, pixelAspect: pixelAspect) }
+    /// `presentationTimes` replaces the 25 frames at 25 fps (variable rate: one pattern frame per time given).
+    /// `timescale` sets the video track's media timescale (1000 is what an OBS remux has; the times are then rounded to ms).
+    static func writeH264(
+        to url: URL, rotated: Bool = false, floatAudio: Bool = false, pixelAspect: (Int, Int)? = nil, presentationTimes: [CMTime]? = nil,
+        timescale: CMTimeScale? = nil
+    ) async throws {
+        try await offPool {
+            try writeH264Blocking(to: url, rotated: rotated, floatAudio: floatAudio, pixelAspect: pixelAspect, presentationTimes: presentationTimes, timescale: timescale)
+        }
     }
 
-    private static func writeH264Blocking(to url: URL, rotated: Bool, floatAudio: Bool, pixelAspect: (Int, Int)?) throws {
+    private static func writeH264Blocking(
+        to url: URL, rotated: Bool, floatAudio: Bool, pixelAspect: (Int, Int)?, presentationTimes: [CMTime]?, timescale: CMTimeScale?
+    ) throws {
         let writer = try AVAssetWriter(outputURL: url, fileType: floatAudio ? .mov : .mp4)
         let audioInput = AVAssetWriterInput(
             mediaType: .audio,
@@ -69,6 +78,7 @@ import UniformTypeIdentifiers
         }
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         input.expectsMediaDataInRealTime = false
+        if let timescale { input.mediaTimeScale = timescale }
         if rotated { input.transform = CGAffineTransform(rotationAngle: .pi / 2) }  // how a phone held upright tags its footage
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: input,
@@ -105,10 +115,11 @@ import UniformTypeIdentifiers
         while !audioInput.isReadyForMoreMediaData { usleep(500) }
         guard audioInput.append(audioSample!) else { throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "append (audio)") }
         audioInput.markAsFinished()
-        for frame in 0..<25 {
+        let times = presentationTimes ?? (0..<25).map { CMTime(value: Int64($0), timescale: 25) }
+        for (frame, time) in times.enumerated() {
             while !input.isReadyForMoreMediaData { usleep(500) }
             let buffer = try patternBuffer(pool: adaptor.pixelBufferPool, frame: frame)
-            guard adaptor.append(buffer, withPresentationTime: CMTime(value: Int64(frame), timescale: 25)) else {
+            guard adaptor.append(buffer, withPresentationTime: time) else {
                 throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "append")
             }
         }
@@ -568,6 +579,56 @@ import UniformTypeIdentifiers
         let row = height / 2
         let left = pixels[(row * width) * 4 + 2], right = pixels[(row * width + width - 1) * 4 + 2]  // blue, 128 in the pattern
         #expect(abs(height - 132) <= 1 && left > 60 && right > 60, "\(width)x\(height) edges blue \(left) \(right)")
+    }
+
+    /// B19: a variable-frame-rate source (a screen recording: 10 frames in its first second, 30 in its second) is held and
+    /// dropped to a constant rate by presentation time, its fastest rate (30 fps), so it keeps its 2 s and stays in step
+    /// with its audio. Before, every source frame became one output frame at the smallest frame duration: 40 frames at
+    /// 30 fps, a 1.33 s file that ran ahead of its sound.
+    @Test func variableFrameRateSourceIsHeldAndDroppedToAConstantRate() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appending(path: "screen.mp4")
+        let times = (0..<10).map { CMTime(value: Int64($0) * 100, timescale: 1000) } + (0..<30).map { CMTime(value: 30 + Int64($0), timescale: 30) }
+        try await Self.writeH264(to: source, presentationTimes: times)
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        queue.start()
+        defer { queue.stop() }
+        let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_screen.mov"), kind: .transcode(codec: .proRes422)))
+        #expect(await Self.wait(for: job.id, in: queue) == .done)
+
+        let track = try #require(try await AVURLAsset(url: job.destination).loadTracks(withMediaType: .video).first)
+        let (rate, range) = try await track.load(.nominalFrameRate, .timeRange)
+        #expect(abs(rate - 30) < 0.01 && abs(range.duration.seconds - 2) < 0.04, "\(rate) fps, \(range.duration.seconds) s")
+        // output frame k (at k/30 s) shows the latest source frame at or before it: k/3 in the first second, then one each
+        let bars = try await Self.barPositions(of: job.destination)
+        let expected = (0..<60).map { k in (k < 30 ? k / 3 : 10 + (k - 30)) * 8 % 304 }
+        #expect(bars.count == 60 && zip(bars, expected).allSatisfy { abs($0 - $1) <= 2 }, "bars \(bars)")
+    }
+
+    /// B19 (review of PR #221): a constant 30 fps source on a 1 ms timescale has 33 and 34 ms frames and reports a 33 ms
+    /// smallest frame duration. Snapping the rate to 1/30 and sampling each output frame at its middle keep it frame for
+    /// frame over 5 s; sampling at the start dropped and doubled every third frame, and a 33 ms output drifted a frame per 3 s.
+    /// 29.97 fps the same way (33 ms against 33.37: 1.1 % off, within one tick), over 1800 frames because the drift of a
+    /// 1/30 output against a 29.97 source shows only after about 500 frames.
+    @Test(arguments: [(30.0, 150, CMTime(value: 1, timescale: 30)), (30000.0 / 1001, 1800, CMTime(value: 1001, timescale: 30000))])
+    func millisecondTimestampsStayFrameForFrame(rate: Double, frames: Int, frameDuration: CMTime) async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appending(path: "obs.mp4")
+        let times = (0..<frames).map { CMTime(value: Int64((Double($0) * 1000 / rate).rounded()), timescale: 1000) }
+        try await Self.writeH264(to: source, presentationTimes: times, timescale: 1000)
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        queue.start()
+        defer { queue.stop() }
+        let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_obs.mov"), kind: .transcode(codec: .proRes422)))
+        #expect(await Self.wait(for: job.id, in: queue) == .done)
+
+        let track = try #require(try await AVURLAsset(url: job.destination).loadTracks(withMediaType: .video).first)
+        let (nominal, minimum) = try await track.load(.nominalFrameRate, .minFrameDuration)
+        #expect(abs(Double(nominal) - rate) < 0.01 && minimum == frameDuration, "\(nominal) fps, \(minimum)")
+        let bars = try await Self.barPositions(of: job.destination)
+        #expect(bars.count == frames && bars.enumerated().allSatisfy { abs($0.element - $0.offset * 8 % 304) <= 2 }, "\(bars.count) frames, bars \(bars.prefix(40))")
     }
 
     @Test func rotatedSourceIsBakedUpright() async throws {

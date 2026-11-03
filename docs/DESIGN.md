@@ -1988,6 +1988,18 @@ source file(s) ──▶ _incoming/ (remote upload) or in-place (local path)
   `PixelAspectRatio` extension, `MovieInfo.pixelAspect` reads it and
   `Compositor.geometry` widens the layer quad by it (B19). The upright path
   (rotated phone footage) renders the display size with square pixels instead.
+- Frames are held or dropped by presentation time to a constant rate (B19):
+  output frame k shows the latest source frame at or before k + ½ frame
+  durations (the middle, so quantised timestamps such as a 1 ms timescale's
+  33/34 ms do not drop and double frames). A constant-rate source comes out
+  frame for frame at its nominal rate (its smallest frame duration when no
+  standard rate is within 0.5 %); a variable-rate source (its nominal rate
+  differs from its smallest frame duration by over 1 %) gets its fastest rate,
+  at most 60 fps. Either rate is snapped to the nearest standard one (23.976 …
+  120) within 0.5 %. The player (`MovieSource`) steps frames by index, so the
+  library format is constant-rate by necessity. Known ceiling: one glitch
+  frame in a 30 fps file doubles its output to 60 fps (every frame twice);
+  a percentile of the sample durations would be the fix.
 - HAP muxing through `AVAssetWriter` passthrough works (`MovieWriter`,
   Phases 2–4); the own-muxer fallback was not needed (`[OPEN-13]` resolved).
 - **Phase 4 as built:** `LibraryIndex` (scan + FSEvents, 500 ms debounce,
