@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
+import Accelerate
 import CoreGraphics
 import CoreVideo
 import Foundation
@@ -50,23 +51,38 @@ public enum SequenceIngest {
                 guard let image = index == 0 ? probe : image(at: url) else { throw IngestError.unreadable(url) }
                 guard image.width == width, image.height == height else { throw IngestError.sizeMismatch(url, width, height) }
                 let buffer = try writer.makePixelBuffer()
-                CVPixelBufferLockBaseAddress(buffer, [])
-                defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
-                guard let context = CGContext(
-                    data: CVPixelBufferGetBaseAddress(buffer), width: width, height: height, bitsPerComponent: deep ? 16 : 8,
-                    bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: colorSpace,
-                    bitmapInfo: deep
-                        ? CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder16Little.rawValue
-                        : CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
-                else { throw IngestError.unreadable(url) }
-                context.clear(CGRect(x: 0, y: 0, width: width, height: height))
-                context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+                try draw(image, from: url, into: buffer, deep: deep, colorSpace: colorSpace)
                 try writer.append(buffer)
             }
             try progress?(index + 1, frames.count)
         }
         try writer.finish()
         return frames.count
+    }
+
+    /// Draws `image` into `buffer` (16-bit RGBA little-endian when `deep`, else BGRA) with straight alpha, which ProRes 4444,
+    /// HAP Alpha and the layer shader take: Core Graphics draws premultiplied only, so the pixels are un-premultiplied after
+    /// (before, a pixel at half alpha was stored at half its colour and the shader darkened it once more).
+    static func draw(_ image: CGImage, from url: URL, into buffer: CVPixelBuffer, deep: Bool, colorSpace: CGColorSpace) throws {
+        CVPixelBufferLockBaseAddress(buffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
+        guard let context = CGContext(
+            data: CVPixelBufferGetBaseAddress(buffer), width: width, height: height, bitsPerComponent: deep ? 16 : 8,
+            bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: colorSpace,
+            bitmapInfo: deep
+                ? CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder16Little.rawValue
+                : CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+        else { throw IngestError.unreadable(url) }
+        context.clear(CGRect(x: 0, y: 0, width: width, height: height))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        var pixels = vImage_Buffer(
+            data: CVPixelBufferGetBaseAddress(buffer), height: vImagePixelCount(height), width: vImagePixelCount(width),
+            rowBytes: CVPixelBufferGetBytesPerRow(buffer))
+        let flags = vImage_Flags(kvImageNoFlags)
+        // BGRA through the RGBA8888 function (the C header's BGRA one is a macro for it): only the alpha's place counts, last
+        let error = deep ? vImageUnpremultiplyData_RGBA16U(&pixels, &pixels, flags) : vImageUnpremultiplyData_RGBA8888(&pixels, &pixels, flags)
+        guard error == kvImageNoError else { throw IngestError.unreadable(url) }
     }
 
     static func image(at url: URL) -> CGImage? {

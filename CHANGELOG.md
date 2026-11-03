@@ -10,6 +10,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Fixed: an image sequence with soft edges or semi-transparent areas came out too dark: frames were stored premultiplied
+  while ProRes 4444, HAP Alpha and the layer shader take straight alpha, so a pixel (200, 100, 50) at half alpha was
+  stored and read back as (100, 50, 25) and darkened again on stage. Ingest now un-premultiplies each drawn frame
+  (vImage): it comes back as (200, 100, 50, 128).
 - Engine: the release build has no compiler warnings in Fanous's own code (the vendored Snappy, HAP and Syphon sources keep
   theirs): the deprecated `String(cString:)` on an array and swift-log's deprecated
   `log(level:message:metadata:source:file:function:line:)` are replaced, and the Swift 6 concurrency warnings on values
