@@ -51,12 +51,29 @@ struct SequenceIngestTests {
         var bgra: CVPixelBuffer?
         CVPixelBufferCreate(nil, w, h, kCVPixelFormatType_32BGRA, nil, &bgra)
         let drawn = try #require(bgra)
-        try SequenceIngest.draw(image, from: frames[0], into: drawn, deep: false, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+        try SequenceIngest.draw(image, from: frames[0], into: drawn, deep: false, straight: true, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
         CVPixelBufferLockBaseAddress(drawn, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(drawn, .readOnly) }
         let eight = CVPixelBufferGetBaseAddress(drawn)!.advanced(by: 16 * CVPixelBufferGetBytesPerRow(drawn) + 32 * 4).assumingMemoryBound(to: UInt8.self)
         let straight = [Int(eight[2]), Int(eight[1]), Int(eight[0]), Int(eight[3])]
         #expect(zip(straight, [200, 100, 50, 128]).allSatisfy { abs($0 - $1) <= 2 }, "BGRA \(straight)")
+
+        // an opaque codec keeps the premultiplied colour: the half-transparent pixel over black, not at full colour
+        let opaque = directory.appending(path: "opaque.mov")
+        _ = try await offPool { try SequenceIngest.convert(frames: frames, to: opaque, fps: 25, codec: .proRes422HQ) }
+        let opaqueAsset = AVURLAsset(url: opaque)
+        let opaqueReader = try AVAssetReader(asset: opaqueAsset)
+        let opaqueTrack = try #require(try await opaqueAsset.loadTracks(withMediaType: .video).first)
+        let opaqueOut = AVAssetReaderTrackOutput(track: opaqueTrack, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        opaqueReader.add(opaqueOut)
+        opaqueReader.startReading()
+        let opaqueBuffer = try #require(opaqueOut.copyNextSampleBuffer().flatMap(CMSampleBufferGetImageBuffer))
+        opaqueReader.cancelReading()
+        CVPixelBufferLockBaseAddress(opaqueBuffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(opaqueBuffer, .readOnly) }
+        let o = CVPixelBufferGetBaseAddress(opaqueBuffer)!.advanced(by: 16 * CVPixelBufferGetBytesPerRow(opaqueBuffer) + 32 * 4).assumingMemoryBound(to: UInt8.self)
+        let overBlack = [Int(o[2]), Int(o[1]), Int(o[0])]
+        #expect(zip(overBlack, [100, 50, 25]).allSatisfy { abs($0 - $1) <= 3 }, "ProRes 422 HQ \(overBlack)")
     }
 
     /// A 16-bit image sequence keeps more than 8 bits in ProRes: a 16-bit grey PNG ramp (1024 wide, full range) comes out
