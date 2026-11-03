@@ -118,13 +118,19 @@
   .layer {
     display: grid; grid-template-columns: var(--layer-cols); column-gap: var(--layer-gap); align-items: center;
     min-height: var(--row); font-size: 13px;
+    border-width: 0 0 1px; border-radius: 0;  /* a row of the Layers list: its divider only */
+  }
+  /* in the list panel: the divider stays a divider, and the focus ring sits inside the row, as the panel clips its outside */
+  @media (width > 1320px) {
+    .layer[aria-pressed='true'] { border-color: var(--line); }
+    .layer:focus-visible { outline-offset: -2px; }
   }
   .c-thumb { display: block; flex: none; width: 96px; height: 54px; border: 1px solid var(--line); background: var(--ground); }
   .layer { cursor: pointer; }
   .c-name { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
   .canvas { min-height: 28px; height: 28px; padding: 0 6px; font-size: 12px; max-width: 100%; }
-  .nm { font-weight: 600; font-size: 14px; }
-  .sync { height: 20px; margin-top: 2px; font-size: 11px; font-weight: 700; }
+  .nm { font-weight: 500; font-size: 14px; }
+  .sync { height: 20px; margin-top: 2px; font-size: 11px; font-weight: 600; }
   .sync-green { color: var(--green); }  /* its label (M1, S1) has no state word, so the colour stays on the text */
   .sync-yellow { color: var(--yellow); }
   .sync-red { padding: 0 6px; background: var(--red-bg); color: var(--red); }
@@ -144,14 +150,14 @@
   .c-src { align-items: flex-start; }
   .pol { height: auto; min-height: 24px; padding: 2px 6px; white-space: normal; line-height: 1.2; font-size: 11px; }
   .c-dot { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-  .chip { font: 700 10px var(--font-ui); text-align: center; line-height: 1.1; color: var(--text-2); }
+  .chip { font: 600 11px var(--font-ui); text-align: center; line-height: 1.1; color: var(--text-2); }
   .chip-red { color: var(--red); }
   .chip-green { color: var(--green); }
   /* column labels: spoken on the desktop row (the heads are visual), drawn on the tile (no heads there) */
   .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
   @media (max-width: 1320px) {
-    .layer { grid-template-columns: 96px minmax(0, 1fr) auto; row-gap: 12px; align-items: start; align-content: start; height: 100%; padding: 12px; }
+    .layer { border-width: 1px; border-radius: 8px; grid-template-columns: 96px minmax(0, 1fr) auto; row-gap: 12px; align-items: start; align-content: start; height: 100%; padding: 12px; }
     .c-thumb { grid-row: 1 / span 2; }
     .c-name { grid-column: 2; grid-row: 1; }
     .c-dot { grid-column: 3; grid-row: 1; padding-top: 6px; flex-direction: row; }
@@ -161,7 +167,7 @@
     .c-vals { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 20px; grid-column: 1 / -1; }
     .c-int { flex: 1 1 90px; }
     .c-mode { flex: 1 1 110px; }
-    .lbl { position: static; width: auto; height: auto; overflow: visible; clip-path: none; font-size: 11px; font-weight: 600; color: var(--text-3); }
+    .lbl { position: static; width: auto; height: auto; overflow: visible; clip-path: none; font-size: 11px; font-weight: 500; color: var(--text-3); }
     .c-media .lbl { display: none; }
   }
 </style>
