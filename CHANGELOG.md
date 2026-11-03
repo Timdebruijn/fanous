@@ -16,6 +16,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Docs: the `CAMetalDisplayLink` stall of macOS 27.0.1 was not reproduced on 27.2 (the reproduction and
   `fanous-bench --displaylink` both ran at full rate, one run each); the drawable loop stays the shipping driver and the
   Apple Feedback item is dropped (B8, ADR-0006 amendment 2026-11-03, PR #240).
+- Release: 1.0.0-rc.2 is on GitHub as a pre-release with the signed, notarized dmg; the README ("Download or build")
+  and getting started point at the Releases page (PR #242).
 - Fixed: `POST /api/library/folder` checked for the folder and created it in two steps on a per-client queue, so two
   clients creating one number, or an upload making the folder in between, could end with two folders of one number; the
   check and the create now run under one lock (B141). A create that fails (a read-only root) no longer answers 200 with a
