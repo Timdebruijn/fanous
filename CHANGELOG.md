@@ -12,7 +12,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Docs: the preview's H.264 encoder was measured with VideoToolbox's low-latency rate control: same encode latency (about
   5 ms at 640×360, 10 ms at 1280×720), a different encoder than the hardware one, and an infinite GOP the preview cannot use;
-  not taken (ADR-0014 amendment 2026-11-03).
+  not taken (ADR-0014 amendment 2026-11-03, PR #256).
 - Fixed: the release dmg was notarized and stapled but not signed itself, so Gatekeeper's check of the dmg
   (`spctl --type open`) rejected it with "no usable signature" while the app inside passed; `scripts/notarize.sh` signs
   the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).
