@@ -1727,6 +1727,7 @@ public final class Engine: @unchecked Sendable {
                         "name": s.name.map { .string($0) } ?? .null, "kind": .string(s.kind), "codec": .string(s.codec),
                         "width": .number(Double(s.width)), "height": .number(Double(s.height)), "fps": .number(s.fps),
                         "frames": .number(Double(s.frames)), "frame": .number(Double(layer.currentFrame)), "error": s.error.map { .string($0) } ?? .null,
+                        "pixelAspect": s.pixelAspect.map { .number($0) } ?? .null,
                         "sync": syncLive(layer.syncStatus.withLock { $0 }),
                         "capture": s.capture.map { c in
                             [

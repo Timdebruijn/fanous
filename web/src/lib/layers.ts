@@ -235,7 +235,7 @@ export function mediaLine(layer: LayerStatus | undefined): { text: string; title
     case 'still':
       return line(`${layer.folder} / ${layer.file} · ${name}`, `Still · ${layer.width}×${layer.height}`, 'normal');
     default:
-      return line(`${layer.folder} / ${layer.file} · ${name}`, `${codecLabel(layer.codec)} · ${layer.height}p${fpsText(layer.fps)}`, 'normal');
+      return line(`${layer.folder} / ${layer.file} · ${name}`, `${codecLabel(layer.codec)} · ${layer.pixelAspect ? `${layer.width}×` : ''}${layer.height}p${fpsText(layer.fps)}`, 'normal');
   }
 }
 
