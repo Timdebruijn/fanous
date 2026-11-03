@@ -307,9 +307,9 @@ struct LibraryIndexTests {
             for i in 0..<20 { group.addTask { index.createFolder(number: 7, name: "Client \(i)") } }
             return await group.reduce(into: []) { $0.append($1) }
         }
-        let created = results.filter { if case .created = $0 { true } else { false } }
+        let created = results.compactMap { if case .created(let url) = $0 { url } else { nil } }
         #expect(created.count == 1, "\(results)")
-        #expect(results.allSatisfy { $0 == .exists(root.appending(path: "007_Client 0")) || $0 == created.first })
+        #expect(results.allSatisfy { $0 == .exists(created[0]) || $0 == .created(created[0]) }, "\(results)")  // any client may win the lock
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).filter { LibraryIndex.prefixNumber($0) == 7 }.count == 1)
     }
 
