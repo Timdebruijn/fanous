@@ -48,7 +48,7 @@ Fanous Library/
 The Media screen (key 2) shows invalid items in red: a folder row gets an
 "N invalid" badge, a file tile gets an "invalid name" badge with the reason
 ("no 1-255 prefix", "duplicate file number 4", "folder: duplicate folder number
-3"), and the header counts "N invalid name". An invalid folder has no number in
+3"), and the header counts "N invalid names". An invalid folder has no number in
 the list. The library is watched, so a rename in Finder shows up after a moment;
 **Rescan** (the circular arrow) forces it.
 
@@ -227,7 +227,8 @@ when the uploads are done. Only the programmer role can import.
 - Anamorphic sources (non-square pixels, such as 1440x1080 shown as 16:9) keep
   their pixel aspect ratio: the file is tagged and the layer draws it at its
   display width. The thumbnail has the display shape and the label shows the
-  shown size with the rate ("1920×1080p25"); square-pixel movies keep "1080p25".
+  shown size with the rate ("1920×1080p25"), as does the layer's media line on
+  the Layers screen; square-pixel movies keep "1080p25".
 - A variable-frame-rate source (a screen recording, some phone footage) is
   written at a constant rate, its fastest rate up to 60 fps: each output frame
   shows the source frame that was current at that moment, so the picture
@@ -275,9 +276,15 @@ something has its live picture there instead. A file that changes is probed agai
   without missed frames, and at 7 some frames finished late on the GPU (B1;
   measured while the Mac was busy with other work). HAP Q at 4K60: at least 4
   layers.
-- Effects cost frame time: Blur and Edge take about 1.6 to 1.9 ms per 1080p
-  layer each, so 2 to 3 layers with both at 1080p60 (B2). A dissolve (Dissolve
-  channel) uses a second decoder, which counts as one more layer.
+- Effects cost frame time: a 1080p ProRes layer with both Blur and Edge took
+  4 to 5 ms of GPU time (p99) on the idle M1 Pro, against about 0.25 ms for a
+  plain layer, so 3 such layers ran at 1080p60 and 4 did not (headless
+  measurement). Since 2026-11-03 (B2) the blur and edge taps read a converted
+  copy of the layer: in a loaded A/B a blurred layer cost about 0.9 ms instead
+  of 2.3 and an edged one about 0.3 instead of 1.6 (derived from 4-layer
+  frames), so expect more layers with Blur alone or Edge alone; with both,
+  the gain was smaller. The idle figures are to be re-measured. A dissolve (Dissolve channel) uses a
+  second decoder, which counts as one more layer.
 - Watch "dropped" in the status bar and the tiles under System › Live metrics while
   you build the show.
 - Keep the library on the internal disk with more than 10 % free, and switch

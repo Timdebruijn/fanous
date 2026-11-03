@@ -31,7 +31,7 @@ key does the same as GO, but only when no field or button has the focus.
 
 ## Timecode
 
-The Timecode panel shows the current time in big digits, a state pill and the
+The Timecode panel shows the current time in big digits, its state and the
 number of frames seen. States: **Locked** (green), **Freewheel** (yellow, the
 signal dropped and the clock keeps running for the Freewheel time), **Lost**
 (red, layers stop chasing) and **Off**.
@@ -409,7 +409,7 @@ position, scale, colour, effects and dissolves apply.
 | 110 | Test card: grid, aspect circle, border, colour bars, running time (or the incoming timecode when it runs) with a frame number, a bar that sweeps once a second, and two squares that swap every frame (a dropped or doubled frame shows as both lit or both dark) |
 | 111 | Colour sweep: a slow moving hue gradient |
 | 112 | Clock: time of day, hh:mm:ss |
-| 113 | Motion test: a bar moving 16 px per frame (at 1080p), stripes scrolling 8 px per frame and a strip of 60 cells with one lit per frame. At a steady rate every step is equal; a dropped or doubled frame shows as a jump or a stop |
+| 113 | Motion test: a bar moving 32 px per frame and stripes scrolling 16 px per frame on a 1080p canvas (half that at 540 lines, double at 2160), and a strip of 60 cells with one lit per frame. At a steady rate every step is equal; a dropped or doubled frame shows as a jump or a stop |
 | 150–169 | Syphon servers of other apps on this Mac, numbered as the engine first sees them and kept in the project (see below) |
 
 **Cameras and capture cards (1–20).** Every camera and capture card on this

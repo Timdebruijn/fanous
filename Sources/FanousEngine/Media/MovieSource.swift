@@ -240,7 +240,7 @@ public final class MovieSource: @unchecked Sendable {
 
     private func decodeProRes(_ sample: CMSampleBuffer, into slot: DecodedFrame) throws {
         guard let session else { throw MovieError.decoder(-1) }
-        let output = Output()
+        nonisolated(unsafe) let output = Output()  // filled by the callback, which runs before a synchronous decode returns
         let status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil) { status, _, buffer, _, _ in
             output.status = status
             output.buffer = buffer
@@ -301,6 +301,7 @@ public final class MovieSource: @unchecked Sendable {
         if count <= 1 {
             for i in 0..<count { function(context, i) }
         } else {
+            nonisolated(unsafe) let context = context  // hap.c's chunk table, which outlives the concurrent pass
             DispatchQueue.concurrentPerform(iterations: Int(count)) { function(context, UInt32($0)) }
         }
     }

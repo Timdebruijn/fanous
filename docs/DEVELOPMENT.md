@@ -100,7 +100,9 @@ writes the public certificate and its fingerprint to
 the data-protection keychain; builds without a team identifier (ad-hoc
 development builds) keep it in `tls/private-key.der` (mode 0600) and never
 touch the login keychain, so there are no keychain prompts. `fanousd
-reset-tls` discards the identity. Logs: `~/Library/Logs/Fanous/fanousd.log`.
+reset-tls` discards the identity. Logs: `~/Library/Logs/Fanous/fanousd.log`,
+and the same lines in the unified log: `/usr/bin/log stream --predicate 'subsystem == "org.fanous"'`
+(the full path: zsh has a `log` builtin).
 
 `fanousd --scene scene.json` (development and the bench) renders a scene
 driven by the standard DMX patch; for that run its canvas, layer count, source
@@ -244,6 +246,22 @@ application firewall; in the run above that happened only after the delay.
 drift; `fanous-bench run` ramps layers until a frame drops (`--effects
 blur,edge`, `--dissolve 2`, `--ingest FILE` for the Phase 3/4 variants) and
 `scripts/bench-sweep.sh` / `scripts/bench-phase3.sh` run the matrices.
+
+For Instruments, start `fanousd` or `fanous-bench` with `FANOUS_SIGNPOSTS=1`:
+the os_signpost instrument then shows the intervals `tick` (compositor),
+`gpu wait` (a tick waiting for its oldest frame in flight), `decode` (per
+decode thread) and `open` (a layer opening its media) under subsystem
+`org.fanous`, next to the GPU tracks when added to a Metal System Trace:
+
+```
+xcrun xctrace record --instrument os_signpost --env FANOUS_SIGNPOSTS=1 --launch -- .build/release/fanous-bench run --media DIR --layers 4 --headless
+```
+
+Off by default: signposts of an ordinary category go to the persistent log
+store whether anything records or not (about 600 a second), and the
+dynamicTracing category was not switched on by any `xctrace` template on
+macOS 27.2. Measured 2026-11-03 (release bench, 4 × ProRes 1080p60 headless):
+3.99 compositor mallocs per tick off, on and while recording, as before.
 
 To judge smoothness by eye, write seamless 10 s loops at 1920 × 1080 into the
 library, which must exist (1.6 GB, about two minutes on an M1 Pro). It

@@ -5,6 +5,7 @@
 // synthesized Codable writes (IngestQueue.swift, MovieWriter.swift), formatting and filtering.
 import type { IngestJobDoc } from './docs';
 import { clamp01 } from './outputs';
+import { plural } from './system';
 
 export { LOCKED_TITLE } from './patch-screen';
 
@@ -87,9 +88,10 @@ const fourCCNames = new Map([
   ['generator', 'Built-in'],
 ]);
 
-/** Display name of a probed codec or a layer's codec ("generator" for folder 0); unknown ones stay as they are (the badge upper-cases them). */
+/** Display name of a probed codec or a layer's codec ("generator" for folder 0); an unknown one, a still's extension or an
+ *  unmapped fourCC, in capitals ("PNG", "MP4V"). */
 export function codecLabel(codec: string): string {
-  return fourCCNames.get(codec) ?? codec;
+  return fourCCNames.get(codec) ?? codec.toUpperCase();
 }
 
 /** "m:ss.s", tenths rounded as a whole so 59.96 s reads 1:00.0, never 0:60.0. */
@@ -104,7 +106,7 @@ export function durationBadge(item: LibraryItem): string | null {
   if (item.kind === 'still') return 'still';
   const meta = item.metadata;
   if (!meta) return null;
-  if (item.kind === 'sequence') return meta.frameCount > 0 ? `${meta.frameCount} frames` : null;
+  if (item.kind === 'sequence') return meta.frameCount > 0 ? plural(meta.frameCount, 'frame') : null;
   return meta.duration > 0 ? formatDuration(meta.duration) : null;
 }
 

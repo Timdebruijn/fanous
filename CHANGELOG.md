@@ -10,15 +10,95 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine: the release build has no compiler warnings in Fanous's own code (the vendored Snappy, HAP and Syphon sources keep
+  theirs): the deprecated `String(cString:)` on an array and swift-log's deprecated
+  `log(level:message:metadata:source:file:function:line:)` are replaced, and the Swift 6 concurrency warnings on values
+  handed to Core Video, VideoToolbox, Network and CoreMIDI callbacks or another thread are settled with capture lists or
+  a `nonisolated(unsafe)` whose comment says why it is safe; none was a data race (PR #251).
+- Engine: log lines also go to the unified log (subsystem `org.fanous`, the logger's label as the category), so Console.app,
+  `log stream` and a sysdiagnose show them next to the system's own; info lines are stored at the default level so they are
+  kept like the file's. DESIGN.md §13 named an `os_log` handler that was never built and a 10 × 10 MB rotation; the file
+  rotates once to `.1` past 10 MB, as now documented (PR #252).
+- Engine: with `FANOUS_SIGNPOSTS=1` the compositor tick, its wait for the GPU, each layer's decode and media opens are
+  os_signpost intervals (subsystem `org.fanous`), so Instruments shows them next to the GPU work; off by default, no
+  allocation on the compositor thread either way (3.99 mallocs per tick, as before). DEVELOPMENT.md has the command
+  (PR #254).
+- Fixed: with `FANOUS_LOG=debug` the engine logged each HTTPS request's whole target, so a token passed as `?token=`
+  (which the web UI accepts in place of a login) was written to `fanousd.log`; the debug line now carries the path only.
+  A log written with debug logging before this can still hold such a token (`/api/logs` serves it to the programmer
+  role) (PR #255).
+- Docs: the preview's H.264 encoder was measured with VideoToolbox's low-latency rate control: no latency gain (about
+  5 ms at 640×360, 10 ms at 1280×720 either way), and the mode picks a different encoder than the hardware one (`h264.rtvc`,
+  which does not report hardware use); not taken (ADR-0014 amendment 2026-11-03, PR #256).
+- Fixed: ingest to ProRes went through 8-bit BGRA frames, so a 10-bit source (HEVC from a phone or camera, 10-bit ProRes
+  sent through ingest) lost its low bits: a 10-bit grey ramp came out 1.8 codes off on average and up to 5. ProRes ingest
+  now reads 16-bit RGB (`64ARGB`): within a code (0.14 on average), and faster (360 frames of 1080p60 in 0.5 s instead of
+  0.8 s, from ProRes and from H.264). Image sequences to ProRes are drawn at 16 bits per channel too (a 16-bit PNG ramp:
+  2.1 codes off on average before, now within half a code). HAP stays 8-bit, as is the format; an odd transform's
+  composition stays BGRA (PR #257).
+- Fixed: on macOS 27.2 the encoder labels "canvas N", "output" and "preview" allocated on every assignment (they cost
+  nothing on 27.0), one allocation per canvas per drawn tick and per preview frame on the compositor thread, and
+  `scripts/check-mallocs.sh` was red on main. Every per-tick label is now an `NSString` of at least 12 characters made
+  once ("canvas N composite", "output (no output set)", "preview downscale"): 0 allocations each; a drawn tick in
+  `MasterIntensityTests` counts 4.01 instead of 5.01 (B117, PR #258).
+- Docs: the Motion test (0/113) was described as a bar moving 16 px and stripes 8 px per frame at 1080p; the step scales
+  with the canvas height, so at 1080p they move 32 and 16 px per frame (`show-control.md`, the shader comment).
 - Added: `fanous-bench samples --dir LIBRARY` writes clips to judge playback smoothness by eye: three 60p looks in folder 254
   and the Motion test's layout as files at 24–60p (ProRes 422 HQ) and 60p HAP Q in folder 255, all seamless 10 s loops
   (`docs/DEVELOPMENT.md`, PR #248).
 - Fixed: the release dmg was notarized and stapled but not signed itself, so Gatekeeper's check of the dmg
   (`spctl --type open`) rejected it with "no usable signature" while the app inside passed; `scripts/notarize.sh` signs
   the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).
+- Fixed: a movie with more than two audio channels played channels 0 and 1 by index, so a 5.1 file's centre (usually the
+  dialogue) was silent, or with the AAC channel order (C L R …) the centre and left played as the pair; the player now folds
+  the channels to stereo by the file's layout with Apple's matrix (L + 0.7071 (C + Ls), R + 0.7071 (C + Rs), the LFE dropped),
+  and ingest keeps the source's channels instead of mixing them to stereo. A file without a layout keeps channels 0 and 1
+  (B143, PR #244).
 - Docs: the `CAMetalDisplayLink` stall of macOS 27.0.1 was not reproduced on 27.2 (the reproduction and
   `fanous-bench --displaylink` both ran at full rate, one run each); the drawable loop stays the shipping driver and the
   Apple Feedback item is dropped (B8, ADR-0006 amendment 2026-11-03, PR #240).
+- Release: 1.0.0-rc.2 is on GitHub as a pre-release with the signed, notarized dmg; the README ("Download or build")
+  and getting started point at the Releases page (PR #242).
+- Docs: the README and the user guide's known limitations say display hot-plug is checked with one external display
+  (PR #228); with two or more it rests on unit tests (PR #246).
+- Docs: rough performance runs of 2026-11-03 on the 4K60 display under load: the GPU-time rise since 2026-10-26 is the
+  machine's state, not the code (the bench of that commit measures the same today), blur and edge fail at layer counts
+  that pass plain (B2), the display path counts a fixed 14 allocations per tick more than headless (derived), decoder
+  threads at `.userInteractive` leave the texture misses as they are (B1), and a dissolve on blurred layers allocates
+  27–31 per tick, cause not found (new row B148) (B1, B2, B49, DESIGN §4.6, PR #245).
+- Changed: the web UI's labels are in sentence case instead of tracked capitals (Locked / Unlocked, "Show mode: on",
+  Programmer, No media, Missing file, the column heads); acronyms such as LTC, HAP and GO keep theirs. The shorter words
+  let the status bar fit one row from 1416 px wide instead of 1470 (PR #243).
+- Changed: the web UI's spacing sits on a 4 px grid, its overlay labels (thumbnail number, duration) share one size,
+  its colours come from the app.css tokens (the mapping editor's handles included), the Patch header's three actions
+  share one button style and a link styled as a button is no longer underlined (PR #236).
+- Fixed: the layer's media line on the Layers screen read "hevc · 1080p25" for an anamorphic movie, where the Media tile
+  shows "1440×1080p25" (B146); the layer status now carries the pixel aspect (`live.layers[].pixelAspect`, null for
+  square pixels) and the line shows the shown width with it (B147, PR #239).
+- Fixed: `POST /api/library/folder` checked for the folder and created it in two steps on a per-client queue, so two
+  clients creating one number, or an upload making the folder in between, could end with two folders of one number; the
+  check and the create now run under one lock (B141). A create that fails (a read-only root) no longer answers 200 with a
+  folder that does not exist: the endpoint answers 500 and an upload 400 (B142, PR #241).
+- Changed: a status (DMX universes, readiness, timecode, power, layer sync) is a dot and a word, filled only when red;
+  the role badge is the role's text colour on a quiet surface instead of a filled accent pill. With the shorter labels
+  of PR #243 the status bar now fits one row from 1383 px wide (PR #259).
+- Changed: the web UI's font weights are one step lighter (600 → 500, 700 → 600 for the few that lead) and it uses ten
+  font sizes instead of fourteen, none under 11 px but the phone DMX cell; the status bar fits one row from 1380 px
+  (PR #260).
+- Changed: buttons, segmented groups, tags and outline badges have a quiet hairline edge instead of the strong one
+  every button carried (inputs, keycaps, dialogs and a selected row keep it), and the Layers list on a desktop is one
+  panel of rows with dividers instead of a bordered card per layer; tiles below 1320 px stay cards (PR #261).
+- Fixed: the remote-mode choice on Warp & Slices was not read back on load (always the touch-screen default), and the
+  Vite dev server showed a black page; the key was read before it was declared (PR #237).
+- Fixed: count captions in the web UI put the plural after a count of 1 ("1 outputs · 1 displays connected",
+  "1 layers", "1 frames seen" and others) and the Media header said "2 invalid name"; every count string now goes
+  through one `plural` helper (PR #238).
+- Docs: every screenshot of the user guide and the README and the tour GIF are retaken for the web UI's new look
+  (PRs #236, #238, #243, #259, #260, #261), on a demo engine as before (PR #262).
+- Performance: a layer with Blur or Edge is first converted into its media's scratch texture and its taps read that
+  RGBA directly, the blur at a mip level matched to its radius; a blurred ProRes 1080p60 layer went from about 2.3 ms to
+  0.9 ms of GPU time and an edged one from about 1.6 ms to 0.3 ms (derived from 4-layer frames in an A/B under load),
+  plain layers are unchanged, and the blur reads a smoother picture at large radii (B2, DESIGN §4.3, PR #253).
 
 ## 1.0.0-rc.2 — 2026-11-03
 

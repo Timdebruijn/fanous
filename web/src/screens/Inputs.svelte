@@ -10,7 +10,7 @@
   import { go, route } from '../lib/router.svelte';
   import { ltcInput, timecodeBadge, timecodeOn } from '../lib/show';
   import { app, cmd, programmerLock } from '../lib/state.svelte';
-  import { permissionRow } from '../lib/system';
+  import { permissionRow, plural } from '../lib/system';
 
   const capture = $derived(app.live.capture);
   const items = $derived(folderZeroItems(app.live.syphon?.servers, capture).filter((i) => i.kind !== 'generator'));
@@ -178,7 +178,7 @@
             <button class="list-row" aria-pressed={pickedAudio?.name === input.name} onclick={() => go('inputs', pickedAudio?.name === input.name ? '' : audioKey(input), true)}>
               <span class="num"></span>
               <span class="ellipsis grow" title={input.name}>{input.name}</span>
-              <span class="caption">{input.channels} {input.channels === 1 ? 'channel' : 'channels'}{input.default ? ' · default' : ''}</span>
+              <span class="caption">{plural(input.channels, 'channel')}{input.default ? ' · default' : ''}</span>
               {#if ltc?.device === input.name}<span class="badge badge-accent">Timecode (LTC, channel {ltc.channel + 1})</span>{/if}
             </button>
           </li>

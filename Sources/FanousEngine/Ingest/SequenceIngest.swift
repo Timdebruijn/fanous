@@ -39,7 +39,11 @@ public enum SequenceIngest {
     public static func convert(frames: [URL], to output: URL, fps: Int32, codec: MovieWriter.Codec, progress: ((Int, Int) throws -> Void)? = nil) throws -> Int {
         guard let first = frames.first, let probe = image(at: first) else { throw IngestError.noImages(output) }
         let width = probe.width, height = probe.height
-        let writer = try MovieWriter(url: output, width: width, height: height, fps: fps, codec: codec)
+        // ProRes: 16 bits per channel, so a 16-bit TIFF/PNG render keeps its precision. RGBA little-endian (64RGBALE), not
+        // the transcoder's 64ARGB: Core Graphics draws 16-bit RGB with the alpha last only. HAP is 8-bit.
+        let deep: Bool = if case .hap = codec { false } else { true }
+        let writer = try MovieWriter(
+            url: output, width: width, height: height, fps: fps, codec: codec, pixelFormat: deep ? kCVPixelFormatType_64RGBALE : kCVPixelFormatType_32BGRA)
         guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { throw IngestError.unreadable(first) }
         for (index, url) in frames.enumerated() {
             try autoreleasepool {
@@ -49,9 +53,11 @@ public enum SequenceIngest {
                 CVPixelBufferLockBaseAddress(buffer, [])
                 defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
                 guard let context = CGContext(
-                    data: CVPixelBufferGetBaseAddress(buffer), width: width, height: height, bitsPerComponent: 8,
+                    data: CVPixelBufferGetBaseAddress(buffer), width: width, height: height, bitsPerComponent: deep ? 16 : 8,
                     bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: colorSpace,
-                    bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+                    bitmapInfo: deep
+                        ? CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder16Little.rawValue
+                        : CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
                 else { throw IngestError.unreadable(url) }
                 context.clear(CGRect(x: 0, y: 0, width: width, height: height))
                 context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))

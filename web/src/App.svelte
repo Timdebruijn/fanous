@@ -105,5 +105,5 @@
   .messages { padding: 8px 16px; }
   .messages header { display: flex; align-items: center; }
   .messages ul { list-style: none; margin: 0; padding: 0; font-size: 13px; }
-  .messages li { padding: 6px 0; border-top: 1px solid var(--line); }
+  .messages li { padding: 8px 0; border-top: 1px solid var(--line); }
 </style>

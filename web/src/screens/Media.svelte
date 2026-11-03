@@ -21,6 +21,7 @@
   } from '../lib/media';
   import { ZERO_GROUPS, folderZeroItems, layerNumbers, layersShowing, zeroCaption } from '../lib/layers';
   import { lowestFree } from '../lib/outputs';
+  import { plural } from '../lib/system';
 
   interface Upload {
     name: string;
@@ -282,7 +283,7 @@
         <div>
           <h1>{current ? (current.number === null ? current.name : `${current.number} · ${displayName(current.name, true)}`) : 'Media'}</h1>
           {#if current}
-            <div class="caption">{items.length} {items.length === 1 ? 'file' : 'files'}{invalid > 0 ? ` · ${invalid} invalid name` : ''}</div>
+            <div class="caption">{plural(items.length, 'file')}{invalid > 0 ? ` · ${plural(invalid, 'invalid name')}` : ''}</div>
           {/if}
         </div>
         <span class="spacer"></span>

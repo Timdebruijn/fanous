@@ -4,7 +4,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { app } from '../lib/state.svelte';
-  import { filterLines, formatClock } from '../lib/system';
+  import { filterLines, formatClock, plural } from '../lib/system';
 
   let text = $state('');
   let query = $state('');
@@ -42,7 +42,7 @@
 <section class="panel" aria-labelledby="logs-title">
   <header class="phead">
     <h2 id="logs-title">Logs</h2>
-    <span class="caption" aria-live="polite">{visible.shown} of {visible.total} lines · last 64 KB</span>
+    <span class="caption" aria-live="polite">{visible.shown} of {plural(visible.total, 'line')} · last 64 KB</span>
     <span class="spacer"></span>
     <input class="input" type="search" aria-label="Filter log lines" placeholder="Filter lines" autocomplete="off" spellcheck="false" bind:value={query} />
     <button type="button" class="btn" disabled={loading} onclick={load}>Refresh</button>
@@ -65,7 +65,7 @@
   .phead .input { flex: 0 1 240px; min-width: 0; }
   a.btn { text-decoration: none; }
   .err { margin: 0; padding: 0 16px 8px; color: var(--yellow); }
-  .log { margin: 0 16px; height: 320px; overflow: auto; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--ground); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .log { margin: 0 16px; height: 320px; overflow: auto; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--ground); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
   .service { display: grid; grid-template-columns: minmax(96px, 30%) minmax(0, 1fr); gap: 8px 16px; margin: 0; padding: 12px 16px 16px; }
   .service dt { color: var(--text-2); font-size: 13px; font-weight: 500; }
   .service dd { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
