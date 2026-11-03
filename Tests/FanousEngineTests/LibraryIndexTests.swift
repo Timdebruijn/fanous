@@ -144,6 +144,24 @@ struct LibraryIndexTests {
         #expect(seen, "the watcher did not pick up the new file within 5 s")
     }
 
+    /// A root missing at start behind a symlink is watched once it is made (B140): FSEvents never matched it before.
+    @Test func aMissingRootBehindASymlinkIsWatchedOnceMade() async throws {
+        let base = try tempDir("fanous-library-link")
+        defer { try? FileManager.default.removeItem(at: base) }
+        try FileManager.default.createDirectory(at: base.appending(path: "real"), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: base.appending(path: "link"), withDestinationURL: base.appending(path: "real"))
+        let root = base.appending(path: "link/Fanous Library")
+        let index = LibraryIndex(root: root, cacheDirectory: base.appending(path: "cache"), logger: Logger(label: "test"))
+        index.start()
+        defer { index.stop() }
+        #expect(!index.snapshot.rootExists)
+        try Self.touch(root.appending(path: "001_Show/001_a.mov"))
+        #expect(await waitUntil(every: .milliseconds(50)) { index.snapshot.folders.first?.number == 1 })
+        // a missing top-level folder: "//x" would get no events
+        let topLevel = "/fanous-no-such-\(UUID().uuidString)/Fanous Library"
+        #expect(LibraryIndex.watchPath(URL(fileURLWithPath: topLevel)) == topLevel)
+    }
+
     /// A 2×2 PNG: enough for the still probe to call it playable.
     static func png(_ url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -214,7 +232,7 @@ struct LibraryIndexTests {
 
         // as Engine.switchLibrary: build the new index, swap, re-resolve, stop the old one last
         observer.holdProbes.store(true, ordering: .relaxed)
-        weak var old = current.withLock { $0 }
+        weak let old = current.withLock { $0 }
         let second = try #require(current.withLock { $0 }?.replacement(root: b))
         do {
             let replaced = current.withLock { box in
@@ -267,8 +285,45 @@ struct LibraryIndexTests {
         #expect(index.folderURL(number: 3)?.lastPathComponent == "003_Show")
         #expect(index.folderURL(number: 9) == nil)
         #expect(index.folderURL(number: 9, createAs: "New: Folder")?.lastPathComponent == "009_New_ Folder")
+        #expect(index.folderURL(number: 9, createAs: "Other")?.lastPathComponent == "009_New_ Folder", "on disk, not yet indexed")
+        try Self.touch(root.appending(path: "005_A"))  // a file, not a folder
+        for name in ["5_Dup", "005_Show"] { try FileManager.default.createDirectory(at: root.appending(path: name), withIntermediateDirectories: false) }
+        #expect(index.folderURL(number: 5)?.lastPathComponent == "005_Show")
+        index.rescan()
+        #expect(index.snapshot.folders.first { $0.number == 5 }?.name == "005_Show", "the folder the index keeps for a duplicate number")
+        #expect(index.createFolder(number: 9, name: "Third") == .exists(root.appending(path: "009_New_ Folder")))
+        #expect(index.createFolder(number: 10, name: "Ten") == .created(root.appending(path: "010_Ten")))
         #expect(LibraryIndex.destinationName(number: 7, originalName: "12 intro loop.MOV", pathExtension: "mov") == "007_intro loop.mov")
         #expect(LibraryIndex.destinationName(number: 7, originalName: "../../evil.mp4", pathExtension: "mov") == "007_evil.mov")
         #expect(LibraryIndex.destinationName(number: 7, originalName: "123", pathExtension: "png") == "007_media.png")
+    }
+
+    /// B141: twenty clients creating one number at once make one folder; the others see it exist.
+    @Test func concurrentFolderCreatesMakeOneFolder() async throws {
+        let root = try tempDir("fanous-library")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+        let results = await withTaskGroup(of: LibraryIndex.FolderCreate.self) { group in
+            for i in 0..<20 { group.addTask { index.createFolder(number: 7, name: "Client \(i)") } }
+            return await group.reduce(into: []) { $0.append($1) }
+        }
+        let created = results.compactMap { if case .created(let url) = $0 { url } else { nil } }
+        #expect(created.count == 1, "\(results)")
+        #expect(results.allSatisfy { $0 == .exists(created[0]) || $0 == .created(created[0]) }, "\(results)")  // any client may win the lock
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).filter { LibraryIndex.prefixNumber($0) == 7 }.count == 1)
+    }
+
+    /// B142: a root that cannot be written gives no URL for a folder that does not exist.
+    @Test func folderCreateFailsOnAReadOnlyRoot() throws {
+        let root = try tempDir("fanous-library")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let readOnly = root.appending(path: "root")
+        try FileManager.default.createDirectory(at: readOnly, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: readOnly.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: readOnly.path) }
+        let index = LibraryIndex(root: readOnly, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+        #expect(index.createFolder(number: 1, name: "One") == .failed)
+        #expect(index.folderURL(number: 1, createAs: "One") == nil)
+        #expect(!FileManager.default.fileExists(atPath: readOnly.appending(path: "001_One").path))
     }
 }

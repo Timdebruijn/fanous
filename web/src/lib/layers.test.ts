@@ -11,6 +11,8 @@ import {
   formatTime,
   layerPreview,
   layerState,
+  layersShowing,
+  renumberEffect,
   mediaLine,
   outputFixtures,
   parseThumbFrame,
@@ -18,10 +20,12 @@ import {
   playedPercent,
   positionCaption,
   reservedText,
+  signalText,
   rowThumb,
   thumbnailFor,
   thumbnailIndex,
   valueText,
+  layerNumbers,
 } from './layers';
 import type { ParamSpec } from './patch-screen';
 
@@ -62,8 +66,11 @@ describe('position', () => {
 
 describe('mediaLine and layerState', () => {
   it('describes each media kind', () => {
-    expect(mediaLine(layer())).toMatchObject({ title: '2 / 5 · intro.mov', detail: 'hevc · 1080p25', text: '2 / 5 · intro.mov · hevc · 1080p25', tone: 'normal' });
+    expect(mediaLine(layer())).toMatchObject({ title: '2 / 5 · intro.mov', detail: 'HEVC · 1080p25', text: '2 / 5 · intro.mov · HEVC · 1080p25', tone: 'normal' });
     expect(mediaLine(layer({ fps: 29.97002997, codec: 'HapY' })).detail).toBe('HAP Q · 1080p29.97');
+    // an anamorphic movie shows its shown width too, as the Media tile does (B146, B147)
+    expect(mediaLine(layer({ width: 1440, pixelAspect: 4 / 3 })).detail).toBe('HEVC · 1440×1080p25');
+    expect(mediaLine(layer({ pixelAspect: null })).detail).toBe('HEVC · 1080p25');
     expect(mediaLine(layer({ kind: 'still', name: 'logo.png', width: 800, height: 600 })).text).toBe('2 / 5 · logo.png · Still · 800×600');
     expect(mediaLine(layer({ kind: 'live', name: 'Syphon: Resolume' })).text).toBe('Syphon: Resolume · Live · 1920×1080');
     expect(mediaLine(layer({ kind: 'none' }))).toMatchObject({ text: 'no media', detail: '', tone: 'faint' });
@@ -165,5 +172,48 @@ describe('layerPreview', () => {
   });
   it('falls back to the canvas without a selected layer and says so', () => {
     expect(layerPreview('layer', null)).toEqual({ target: 'canvas', label: 'Canvas (no layer selected)', shows: 'canvas' });
+  });
+});
+
+describe('live inputs on the Inputs screen (B137)', () => {
+  it('signalText: size, rate and pixel format of a capture layer; the reason when it shows none', () => {
+    const cam = layer({ folder: 0, file: 3, kind: 'live', codec: '2vuy', width: 1920, height: 1080, fps: 59.94 });
+    expect(signalText(cam)).toBe('1920×1080 · 59.94 fps · 2vuy');
+    // as the engine sends it: a Syphon layer has no size or rate
+    expect(signalText({ ...cam, width: 0, height: 0, fps: 0, codec: 'syphon' })).toBe('connected');
+    expect(signalText({ ...cam, width: 0, height: 0, fps: 0 })).toBe('waiting for the first frame');
+    expect(signalText({ ...cam, error: 'no signal' })).toBe('no signal');
+  });
+  it('layersShowing: every layer on a folder/file, none for no media', () => {
+    const map = layersShowing([layer({ index: 1, folder: 0, file: 3 }), layer({ index: 2, folder: 0, file: 3 }), layer({ index: 3, folder: 0, file: 0 })]);
+    expect(map.get('0/3')).toEqual(['Layer 1', 'Layer 2']);
+    expect(map.size).toBe(1);
+  });
+});
+
+describe('renumberEffect (B137 step 3)', () => {
+  const item = (file: number, name: string, kind: 'capture' | 'screen' | 'syphon' = 'capture') => ({ file, name, kind, running: true, gone: false, inUse: false, label: '' });
+  const items = [item(1, 'Cam A'), item(2, 'Cam B'), item(21, 'Built-in', 'screen'), item(150, 'Syphon: App', 'syphon')];
+  it('a free number moves, a taken one swaps; within the kind range only', () => {
+    expect(renumberEffect(items, items[0], 5)).toEqual({ swap: null, text: 'moves to 5, a free number' });
+    expect(renumberEffect(items, items[0], 2)).toEqual({ swap: items[1], text: 'swaps with 2 · Cam B' });
+    expect(renumberEffect(items, items[2], 22)?.text).toBe('moves to 22, a free number');
+    expect(renumberEffect(items, items[3], 169)?.swap).toBeNull();
+  });
+  it('null for its own number, another range, or no number', () => {
+    expect(renumberEffect(items, items[0], 1)).toBeNull();
+    expect(renumberEffect(items, items[0], 21)).toBeNull();
+    expect(renumberEffect(items, items[2], 3)).toBeNull();
+    expect(renumberEffect(items, items[0], 0)).toBeNull();
+    expect(renumberEffect(items, items[0], 2.5)).toBeNull();
+  });
+});
+
+describe('layerNumbers', () => {
+  it('counts 1…layerCount and guards a bad count', () => {
+    expect(layerNumbers(3)).toEqual([1, 2, 3]);
+    expect(layerNumbers(2.7)).toEqual([1, 2]);
+    expect(layerNumbers(-1)).toEqual([]);
+    expect(layerNumbers(Number.NaN)).toEqual([]);
   });
 });

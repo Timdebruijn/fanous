@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it, vi } from 'vitest';
-import { canvasSizeError, canvasTarget, colorOf, compareLease, freePresetNumber, previewReady, layerCanvas, layerRuns, layersOn, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, recalledText, sharedPresets, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, KAPPA, UNIT_QUAD, circleMask, ellipsePath, finishMask, freehandPath, handles, insertNearest, keystoneBadges, maskHandle, maskOutline, maskRemoval, maskTarget, modeText, movedHandle, outlines, outputSize, rectanglePath, simplify, smoothPoint, statusText, toggleSmooth, toolPath, triangleDest, type MapPoint, type MaskPoint, type MaskShape, type OutputConfig } from './outputs';
+import { canvasSizeError, canvasTarget, colorOf, compareLease, freePresetNumber, lowestFree, previewReady, layerCanvas, layerRuns, layersOn, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, recalledText, sharedPresets, sourceFromPixels, sourcePixels, spreadSources, blendCurvePath, KAPPA, UNIT_QUAD, circleMask, ellipsePath, finishMask, freehandPath, handles, insertNearest, keystoneBadges, maskHandle, maskOutline, maskRemoval, maskTarget, modeText, movedHandle, outlines, outputSize, rectanglePath, simplify, smoothPoint, statusText, toggleSmooth, toolPath, triangleDest, type MapPoint, type MaskPoint, type MaskShape, type OutputConfig } from './outputs';
 import { resampleMesh } from './warp';
 
 const output: OutputConfig = {
@@ -19,6 +19,11 @@ const output: OutputConfig = {
 };
 
 describe('outputs helpers', () => {
+  it('lowestFree: the first gap, null when every number up to max is taken', () => {
+    expect(lowestFree([1, 2, 4])).toBe(3);
+    expect(lowestFree([])).toBe(1);
+    expect(lowestFree([1, 2, 3], 3)).toBeNull();
+  });
   it('reads an output without colour (saved before M1.7) as gain 1, black 0', () => {
     expect(colorOf(output)).toEqual({ gain: [1, 1, 1], black: 0 });
     const tinted = { gain: [0.9, 1, 1.1] as [number, number, number], black: 0.02 };

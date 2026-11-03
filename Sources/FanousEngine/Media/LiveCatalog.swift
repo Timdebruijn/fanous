@@ -153,10 +153,15 @@ public final class LiveCatalog: @unchecked Sendable {
         readPermissions()  // once here, so the feed and readiness never start from a guess
     }
 
-    /// Capture: the camera permission and the screen-recording grant as last read (the 2 s poll, after an answer). The
-    /// reads are TCC round trips of tens of milliseconds, so the 10 Hz feed and readiness read this instead.
-    public var permissions: (camera: AVAuthorizationStatus, screen: Bool) { permissionState.withLock { $0 } }
-    private let permissionState = Mutex<(camera: AVAuthorizationStatus, screen: Bool)>((.notDetermined, false))
+    /// Capture: the camera permission, the screen-recording grant and the microphone permission (LTC, B137) as last read
+    /// (the 2 s poll, after an answer). The reads are TCC round trips of tens of milliseconds, so the 10 Hz feed and
+    /// readiness read this instead.
+    public var permissions: (camera: AVAuthorizationStatus, screen: Bool, microphone: AVAuthorizationStatus) { permissionState.withLock { $0 } }
+    private let permissionState = Mutex<(camera: AVAuthorizationStatus, screen: Bool, microphone: AVAuthorizationStatus)>((.notDetermined, false, .notDetermined))
+
+    /// Runs when a permission read differs from the one before (any thread): a grant in System Settings reaches the
+    /// engine this way, not only one through `capture.authorize` (B137).
+    public var onPermissionsChange: (@Sendable (_ before: (camera: AVAuthorizationStatus, screen: Bool, microphone: AVAuthorizationStatus), _ now: (camera: AVAuthorizationStatus, screen: Bool, microphone: AVAuthorizationStatus)) -> Void)?
 
     /// Reads the permissions again off the calling thread (after a `capture.authorize` ask, and every 2 s).
     public func refreshPermissions() {
@@ -164,8 +169,15 @@ public final class LiveCatalog: @unchecked Sendable {
     }
 
     private func readPermissions() {
-        let read = (camera: AVCaptureDevice.authorizationStatus(for: .video), screen: CGPreflightScreenCaptureAccess())
-        permissionState.withLock { $0 = read }
+        let read = (
+            camera: AVCaptureDevice.authorizationStatus(for: .video), screen: CGPreflightScreenCaptureAccess(),
+            microphone: AVCaptureDevice.authorizationStatus(for: .audio)
+        )
+        let before = permissionState.withLock { state in
+            defer { state = read }
+            return state
+        }
+        if before != read { onPermissionsChange?(before, read) }
     }
 
     static func captureDevices(_ devices: [AVCaptureDevice]) -> [Entry] {
@@ -217,18 +229,33 @@ public final class LiveCatalog: @unchecked Sendable {
     }
 
     /// An entry not running that `numbers` lists is kept or added (gone until it is seen); one it does not list is
-    /// forgotten. A running entry always keeps its number: a project entry on its number is dropped, and so is a new
-    /// entry with a running source's identity on another number (undo, a loaded version), or that source would move to
-    /// the lower of the two at the next restart. The engine then writes the catalog back into the project.
+    /// forgotten. Running entries move only when `numbers` names each of them exactly once, on numbers of their own (a
+    /// renumber, its undo or redo, B137): they then take those numbers. Otherwise (a source missing, or named twice: an
+    /// older loaded version, two canvases with one name) a running entry keeps its number: a project entry on its
+    /// number is dropped, and so is a new entry with a running source's identity on another number, or that source
+    /// would move to the lower of the two at the next restart. The engine then writes the catalog back into the project.
     static func adopt(_ entries: inout [Entry], numbers: [Entry]) -> Bool {
         let before = entries
-        let running = entries.filter(\.running)
+        var running = entries.filter(\.running)
+        let inRange = numbers.filter { $0.kind.files.contains($0.file) }
+        // twins (two running sources with one identity, or one named twice) cannot be told apart: they stay where they
+        // are; the others move when each is named once, on free numbers of their own
+        let twin = running.map { entry in running.filter { $0.same(entry) }.count > 1 || inRange.filter { $0.same(entry) }.count > 1 }
+        let fixed = Set(running.indices.filter { twin[$0] }.map { running[$0].file })
+        let movers = running.indices.filter { !twin[$0] }
+        let named = movers.map { i in inRange.first { $0.same(running[i]) } }
+        let targets = named.compactMap { $0?.file }
+        if !movers.isEmpty, targets.count == movers.count, Set(targets).count == targets.count, fixed.isDisjoint(with: targets) {
+            for (k, i) in movers.enumerated() { running[i].file = targets[k] }
+        }
         var next = running
         for entry in numbers where entry.kind.files.contains(entry.file) && !next.contains(where: { $0.file == entry.file }) {
             if let kept = entries.first(where: { $0.file == entry.file && !$0.running && $0.same(entry) }) {
                 next.append(kept)  // also a gone twin of a running server (two engines' canvases share a name)
             } else if !running.contains(where: { $0.same(entry) }) {
-                next.append(Entry(kind: entry.kind, file: entry.file, source: entry.source, name: entry.name, gone: true, model: entry.model))
+                // a renumber moves one that is not running: it keeps its gone state (unplugged this session, or never seen)
+                let gone = entries.first { !$0.running && $0.same(entry) }?.gone ?? true
+                next.append(Entry(kind: entry.kind, file: entry.file, source: entry.source, name: entry.name, gone: gone, model: entry.model))
             }
         }
         entries = next.sorted { $0.file < $1.file }

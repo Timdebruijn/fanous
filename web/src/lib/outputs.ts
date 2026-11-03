@@ -236,8 +236,13 @@ export function sharedPresets(outputs: OutputConfig[]): { number: number; name: 
 
 /** The lowest preset number none of `outputs` uses, for "Store as"; null when 1–255 are all taken. */
 export function freePresetNumber(outputs: OutputConfig[]): number | null {
-  const used = new Set(outputs.flatMap((o) => o.presets?.map((p) => p.number) ?? []));
-  for (let n = 1; n <= 255; n++) if (!used.has(n)) return n;
+  return lowestFree(outputs.flatMap((o) => o.presets?.map((p) => p.number) ?? []));
+}
+
+/** The lowest number in 1…`max` not in `used`; null when all are taken. */
+export function lowestFree(used: Iterable<number>, max = 255): number | null {
+  const taken = new Set(used);
+  for (let n = 1; n <= max; n++) if (!taken.has(n)) return n;
   return null;
 }
 

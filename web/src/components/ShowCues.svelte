@@ -4,8 +4,8 @@
 <script lang="ts">
   import type { CueDoc } from '../lib/docs';
   import type { JSONValue } from '../lib/protocol';
-  import { cueRowLabel, cueRowText, cueStatus, formatNumber, lockTitle, nextCueNumber, numberAfter, sortedCues, swapSteps } from '../lib/show';
-  import { app, can, cmd, toastUndo } from '../lib/state.svelte';
+  import { cueRowLabel, cueRowText, cueStatus, formatNumber, nextCueNumber, numberAfter, sortedCues, swapSteps } from '../lib/show';
+  import { app, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
 
   let { selected = $bindable('') }: { selected: string } = $props();
 
@@ -14,7 +14,7 @@
   const picked = $derived(cues[index]);
   const status = $derived(app.live.cue);
 
-  const lock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
+  const lock = $derived(programmerLock());
   let busy = $state(false);
   const blocked = $derived(lock !== undefined || busy);
 
@@ -127,7 +127,7 @@
   .cue.head:hover { background: var(--surface-1); }
   .cue.current { background: var(--accent-dim); }
   .cue.current:hover { background: var(--accent-dim); }
-  .cue.current .c-num, .cue.current .c-name { font-weight: 600; }
+  .cue.current .c-num, .cue.current .c-name { font-weight: 500; }
   .c-num { grid-area: num; text-align: right; }
   .c-name { grid-area: name; }
   .c-fade { grid-area: fade; text-align: right; }

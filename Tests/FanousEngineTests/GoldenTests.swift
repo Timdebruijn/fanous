@@ -116,8 +116,8 @@ struct GoldenTests {
 
     /// 256×144 synthetic still: hue across x, luminance across y, a white square,
     /// a transparent corner, a saturated green patch and hard edges.
-    static func pattern(device: MTLDevice, variant: Int) throws -> DecodedFrame {
-        let w = 256, h = 144
+    static func pattern(device: MTLDevice, variant: Int, scale: Int = 1) throws -> DecodedFrame {
+        let w = 256 * scale, h = 144 * scale
         var pixels = [UInt8](repeating: 0, count: w * h * 4)
         for y in 0..<h {
             for x in 0..<w {
@@ -165,7 +165,9 @@ struct GoldenTests {
         }
     }
 
-    static func render(_ c: Case, context: MetalContext) throws -> (Int, Int, [UInt8]) {
+    /// `scratch` false: the layers get no scratch textures and draw through the per-tap source path (B2); `scale`
+    /// makes the stills that many times 256×144.
+    static func render(_ c: Case, context: MetalContext, scratch: Bool = true, scale: Int = 1) throws -> (Int, Int, [UInt8]) {
         let metrics = MetricsRing(capacity: 16)
         let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 2) }
         let compositor = try Compositor(
@@ -173,7 +175,7 @@ struct GoldenTests {
             logger: Logger(label: "golden"))
         let background = RenderLayer(index: 0)
         let layer = RenderLayer(index: 1)
-        let still = try pattern(device: context.device, variant: 0)
+        let still = try pattern(device: context.device, variant: 0, scale: scale)
         layer.current = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: still)
         if c.background != nil {
             background.current = LayerPlayback(key: MediaKey(folder: 1, file: 2), still: try pattern(device: context.device, variant: 1))
@@ -182,6 +184,11 @@ struct GoldenTests {
             layer.outgoing = LayerPlayback(key: MediaKey(folder: 1, file: 2), still: try pattern(device: context.device, variant: 1))
             layer.dissolveStart = 100
             layer.dissolveDuration = 1
+        }
+        if scratch {  // as the loader answers a request and the compositor adopts it (B2)
+            for p in [background.current, layer.current, layer.outgoing].compactMap({ $0 }) {
+                p.adopt(LayerPlayback.makeScratchSet(device: context.device, width: p.width, height: p.height))
+            }
         }
         compositor.setLayers([background, layer])
         var outputTexture: MTLTexture?
@@ -240,6 +247,31 @@ struct GoldenTests {
             if let problem = Self.compare(rgba, reference, name: c.name) { failures.append(problem) }
         }
         #expect(failures.isEmpty, Comment(rawValue: failures.joined(separator: "\n")))
+    }
+
+    /// The scratch path (B2) against the per-tap source path: edge reads scratch level 0, so it matches the source
+    /// within the golden tolerance; blur reads a mip level, so it differs smoothly (bounded mean), and is not empty.
+    /// On the 144 px still at full radius (7.2 px) the blur reads level 0.85; on the 4× still (28.8 px) level 2.85, so
+    /// the second and third downsample dispatches are read too, there with a crop.
+    @Test func scratchPathMatchesSourcePath() throws {
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
+        let context = try MetalContext()
+        for (name, scale) in [("effect-edge", 1), ("effect-blur", 1), ("effect-blur-motion", 1), ("effect-blur", 4)] {
+            var c = try #require(Self.cases.first { $0.name == name })
+            if name != "effect-edge" { c.layer.effect1A = 1 }
+            if scale > 1 { c.layer.cropLeft = 0.1; c.layer.cropTop = 0.2; c.layer.cropRight = 0.05 }
+            let (_, _, with) = try Self.render(c, context: context, scale: scale)
+            let (_, _, without) = try Self.render(c, context: context, scratch: false, scale: scale)
+            let mean = Double(zip(with, without).reduce(0) { $0 + abs(Int($1.0) - Int($1.1)) }) / Double(with.count)
+            let brightness = Double(with.reduce(0) { $0 + Int($1) }) / Double(with.count)
+            #expect(brightness > 20, "\(name): the scratch path drew \(brightness) mean")
+            if name == "effect-edge" {
+                #expect(Self.compare(with, without, name: name) == nil)
+            } else {
+                #expect(mean > 0.01 && mean < 6, "\(name): mean difference \(mean) between the scratch and source paths")
+            }
+            print("scratch vs source \(name) ×\(scale): mean difference \(String(format: "%.2f", mean)), brightness \(String(format: "%.1f", brightness))")
+        }
     }
 
     /// GPUs differ in the last bits (fast math, filtering): allow small noise, catch real changes.

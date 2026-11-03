@@ -113,12 +113,37 @@ public final class LayerPlayback: @unchecked Sendable {
     public let key: MediaKey
     public let width: Int
     public let height: Int
+    /// Shown width of one pixel over its height (anamorphic movies, `MovieInfo.pixelAspect`); 1 for stills and live inputs.
+    public let pixelAspect: Double
     public let frameRate: Double
     public let frameCount: Int
     public let decoder: LayerDecoder?
     public let ring: FrameRing?
     public let still: DecodedFrame?
     public let live: (any LiveTextureSource)?
+    /// The media as upright RGBA at its own size with four mip levels, written by the compositor's convert pass on a
+    /// tick where the layer blurs or edges and read by those taps (DESIGN.md §4.3, B2). Made the first time the layer
+    /// asks for one (the loader allocates on its thread, the compositor adopts it on a later tick; until then, and for
+    /// a live input, the draw samples the source per tap as before). Compositor thread owns both `var`s.
+    public private(set) var scratch: MTLTexture?
+    /// One single-level view per level of `scratch`, made with it: the compositor's downsample kernel reads level
+    /// n − 1 and writes level n through these (B2). Empty when any view could not be made: the taps then read level 0.
+    public private(set) var scratchLevels: [MTLTexture] = []
+    /// Compositor thread: a scratch texture was asked of the loader (once per playback; a refusal leaves the source path).
+    var scratchRequested = false
+
+    /// The compositor takes the loader's texture (B2): two stores, no allocation.
+    public func adopt(_ set: ScratchSet?) {
+        scratch = set?.texture
+        scratchLevels = set?.levels ?? []
+    }
+
+    /// The scratch texture and its level views for a media of this size (B2); nil when Metal refuses either.
+    public static func makeScratchSet(device: MTLDevice, width: Int, height: Int) -> ScratchSet? {
+        guard let texture = makeScratch(device: device, width: width, height: height) else { return nil }
+        let levels = levels(of: texture)
+        return levels.isEmpty ? nil : ScratchSet(texture: texture, levels: levels)
+    }
     private let liveFrame = DecodedFrame(poolIndex: 0)
     var clock = LayerClock()
     /// The clock followed a sync master last tick (DESIGN.md §23.3).
@@ -138,11 +163,35 @@ public final class LayerPlayback: @unchecked Sendable {
         live = nil
         width = movie.info.width
         height = movie.info.height
+        pixelAspect = movie.info.pixelAspect
         frameRate = movie.info.frameRate
         frameCount = movie.info.frameCount
     }
 
-    public init(key: MediaKey, still: DecodedFrame) {
+    /// Every level of `scratch` as a single-level view, or none when one could not be made (B2).
+    public static func levels(of scratch: MTLTexture?) -> [MTLTexture] {
+        guard let scratch else { return [] }
+        let views = (0..<scratch.mipmapLevelCount).compactMap {
+            scratch.makeTextureView(pixelFormat: scratch.pixelFormat, textureType: .type2D, levels: $0..<($0 + 1), slices: 0..<1)
+        }
+        return views.count == scratch.mipmapLevelCount ? views : []
+    }
+
+    /// The scratch texture for a media of this size (B2): canvas format, four mip levels (the blur reads up to 1/8),
+    /// private storage. Nil when Metal refuses (the layer then draws without one).
+    public static func makeScratch(device: MTLDevice, width: Int, height: Int) -> MTLTexture? {
+        guard width > 0, height > 0 else { return nil }
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.canvasFormat, width: width, height: height, mipmapped: true)
+        descriptor.mipmapLevelCount = min(4, descriptor.mipmapLevelCount)
+        descriptor.usage = [.renderTarget, .shaderRead, .shaderWrite]  // the downsample kernel writes the mip levels
+        descriptor.storageMode = .private
+        let texture = device.makeTexture(descriptor: descriptor)
+        texture?.label = "scratch"
+        return texture
+    }
+
+    /// `pixelAspect`: the movie's, when the still is one decoded movie frame (the thumbnailer); 1 for a real still.
+    public init(key: MediaKey, still: DecodedFrame, pixelAspect: Double = 1) {
         self.key = key
         self.still = still
         decoder = nil
@@ -150,6 +199,7 @@ public final class LayerPlayback: @unchecked Sendable {
         live = nil
         width = still.texture0?.width ?? 1
         height = still.texture0?.height ?? 1
+        self.pixelAspect = pixelAspect
         frameRate = 1
         frameCount = 1
     }
@@ -162,6 +212,7 @@ public final class LayerPlayback: @unchecked Sendable {
         still = nil
         width = 0  // taken from the texture each tick
         height = 0
+        pixelAspect = 1
         frameRate = 1
         frameCount = 1
     }
@@ -244,6 +295,20 @@ struct PendingPlayback {
     var playback: LayerPlayback?
 }
 
+/// A scratch texture with its level views (B2), made by the loader and handed to the compositor through a lock.
+public struct ScratchSet: @unchecked Sendable {
+    public let texture: MTLTexture
+    public let levels: [MTLTexture]
+}
+
+/// A scratch texture the loader made for a playback (B2); the compositor adopts it when that playback is still its own.
+struct PendingScratch {
+    var set = false
+    var playback: LayerPlayback?
+    /// Nil: Metal refused; the playback keeps the source path.
+    var answer: ScratchSet?
+}
+
 /// One layer slot: the playing media, the outgoing one during a dissolve, and
 /// the lock-free hand-off with the media loader (compositor thread owns the
 /// `var`s).
@@ -259,6 +324,8 @@ public struct LayerMediaStatus: Sendable, Equatable {
     public var height = 0
     public var fps = 0.0
     public var frames = 0
+    /// Non-square pixels (B147): `width` is the shown width; nil = 1, like the library's metadata (B146).
+    public var pixelAspect: Double? = nil
     public var error: String? = nil
     /// A capture layer's counters (frames, dropped, outOfBuffers, unusable), nil for other media.
     public var capture: CaptureInput.Counters? = nil
@@ -285,6 +352,10 @@ public final class RenderLayer: @unchecked Sendable {
     let pending = Mutex(PendingPlayback())
     /// Playbacks the compositor has let go of; the loader stops and releases them.
     let retired = Mutex<[LayerPlayback]>([])
+    /// The playback the compositor wants a scratch texture for (B2); the loader takes it and answers in `pendingScratch`.
+    let scratchRequest = Mutex<LayerPlayback?>(nil)
+    /// Set by the loader; the compositor takes it with `withLockIfAvailable` (never blocks).
+    let pendingScratch = Mutex(PendingScratch())
     var retireLater: [LayerPlayback] = []
 
     public init(index: Int) {
@@ -404,7 +475,7 @@ public final class MediaLoader: @unchecked Sendable {
         wake.signal()
     }
 
-    /// The camera permission was answered (or authorized from the System screen): layers on a capture entry that could
+    /// The camera permission was answered (or authorized from the Inputs screen): layers on a capture entry that could
     /// not open try again.
     public func capturePermissionChanged() {
         captureChanged.store(true, ordering: .relaxed)
@@ -431,9 +502,12 @@ public final class MediaLoader: @unchecked Sendable {
     /// - one whose source went reads "not running" and keeps its input (the last frame); a display's stream is halted
     ///   (it may be bound as an output now, which would show only the engine's excluded windows);
     /// - one is opened again when its source is running but not open, or open under another uid (an unplug and a replug
-    ///   on another port in one update), or its session failed or stopped.
+    ///   on another port in one update), or its session failed or stopped;
+    /// - one whose open source still runs on another number (a renumber, B137) is opened again too: the number shows
+    ///   what is on it now, never the input that left it.
     private func liveSourcesChanged(_ kind: LiveCatalog.Kind) {
         let catalog = kind == .screens ? screensCatalog : captureCatalog
+        let runningElsewhere = Set((catalog?.entries ?? []).filter(\.running).map(\.source))
         for i in loaded.indices where isNumbered(MediaKey(packed: loaded[i]), kind) {
             let source = catalog?.entry(file: MediaKey(packed: loaded[i]).file)
             let open = captureOpen[i]
@@ -443,8 +517,8 @@ public final class MediaLoader: @unchecked Sendable {
             }
             // gone, back under another uid, or a failed session: never shared again
             if let open, captureShared[kind]?[open.uid]?.input === open.input { captureShared[kind]?[open.uid] = nil }
-            if source?.running == true {
-                loaded[i] = .max  // came back, or no longer in use elsewhere: opened again below
+            if source?.running == true || open.map({ runningElsewhere.contains($0.uid) }) == true {
+                loaded[i] = .max  // came back, no longer in use elsewhere, or moved to another number: opened again below
             } else {
                 if kind == .screens { open?.input.halt("not running") }
                 captureOpen[i] = nil  // the input stays on the layer: the last frame
@@ -491,10 +565,11 @@ public final class MediaLoader: @unchecked Sendable {
                     if server?.runtimeID == syphonOpen[i] {
                         // same connection (or still gone): only a rename (SyphonServerUpdate) can have changed
                         if let server { layers[i].mediaStatus.withLock { $0.name = "Syphon: \(server.label)" } }
-                    } else if server?.runtimeID == nil {
+                    } else if server?.runtimeID == nil, !(syphonOpen[i].map { id in syphonCatalog?.entries.contains { $0.runtimeID == id } == true } ?? false) {
                         syphonOpen[i] = nil
                         layers[i].mediaStatus.withLock { $0.error = "not running" }
                     } else {
+                        // back, or its server moved to another number (a renumber, B137): the number shows what is on it now
                         loaded[i] = .max  // never a packed key: opened again below
                     }
                 }
@@ -533,6 +608,19 @@ public final class MediaLoader: @unchecked Sendable {
                     return copy
                 }
                 for playback in retired { playback.stop() }
+                let asking = layer.scratchRequest.withLock { box -> LayerPlayback? in
+                    let taken = box
+                    box = nil
+                    return taken
+                }
+                if let asking {
+                    let answer = LayerPlayback.makeScratchSet(device: device, width: asking.width, height: asking.height)
+                    layer.pendingScratch.withLock { box in
+                        box.set = true
+                        box.playback = asking
+                        box.answer = answer
+                    }
+                }
                 let want = layer.wanted.load(ordering: .relaxed)
                 guard want != loaded[i] else { continue }
                 loaded[i] = want
@@ -561,6 +649,8 @@ public final class MediaLoader: @unchecked Sendable {
         syphonOpen[layer] = nil
         captureOpen[layer] = nil
         guard !key.isNone else { return nil }
+        Signposts.begin("open")
+        defer { Signposts.end("open") }
         if isNumbered(key, .syphon), let server = syphonCatalog?.entry(file: key.file) {
             status.kind = "live"
             status.codec = "syphon"
@@ -675,8 +765,9 @@ public final class MediaLoader: @unchecked Sendable {
             if source.softwareDecoder { logger.warning("software ProRes decoder: the hardware one refused this frame size (B5)", metadata: ["layer": "\(layer + 1)", "file": "\(url.lastPathComponent)", "size": "\(source.info.width)x\(source.info.height)"]) }
             status.kind = "movie"
             status.codec = source.info.codecName
-            status.width = source.info.width
+            status.width = Int((Double(source.info.width) * source.info.pixelAspect).rounded())  // shown size, like the library's naturalSize
             status.height = source.info.height
+            if abs(source.info.pixelAspect - 1) > 0.005 { status.pixelAspect = source.info.pixelAspect }  // same rule as the library (B146)
             status.fps = source.info.frameRate
             status.frames = source.info.frameCount
             return LayerPlayback(key: key, movie: source, decoder: decoder, ring: ring)

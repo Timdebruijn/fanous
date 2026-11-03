@@ -4,7 +4,7 @@
 
 # Show control
 
-The Show screen (key 5, "Show control") holds timecode, the cue list, OSC and
+The Show screen (key 6, "Show control") holds timecode, the cue list, OSC and
 MIDI. Fanous can also be seen and browsed from a console
 over CITP/MSEX.
 
@@ -31,7 +31,7 @@ key does the same as GO, but only when no field or button has the focus.
 
 ## Timecode
 
-The Timecode panel shows the current time in big digits, a state pill and the
+The Timecode panel shows the current time in big digits, its state and the
 number of frames seen. States: **Locked** (green), **Freewheel** (yellow, the
 signal dropped and the clock keeps running for the Freewheel time), **Lost**
 (red, layers stop chasing) and **Off**.
@@ -46,9 +46,17 @@ signal dropped and the clock keeps running for the Freewheel time), **Lost**
 | Timecode on/off | the switch in the panel header |
 
 **LTC** reads any audio input on the Mac. Frame rates 24, 25, 29.97 (drop and
-non-drop) and 30 are detected by themselves. LTC needs the Microphone
-permission: macOS asks once when you pick an input. If you said no, turn it on
-in System Settings › Privacy & Security › Microphone. **MTC** reads quarter-frame and full-frame messages from any
+non-drop) and 30 are detected by themselves. Under the readout a level meter
+shows the LTC channel's peak over the last tenth of a second in dBFS, so you
+can see whether anything arrives on the channel you chose; it reads "no
+audio" when the input could not open or nothing has arrived for half a second,
+and "timecode switched off" while the switch is off. The Inputs screen lists every audio input with its channels:
+select one, pick a channel and press **Use for timecode** to set Source,
+Device and Channel at once (one undo step; the switch stays as it is). LTC
+needs the Microphone permission: macOS asks once when LTC opens, or press
+**Authorize microphone** under Permissions on the Inputs screen (not in show
+mode). If you said no, turn it on in System Settings › Privacy & Security ›
+Microphone. **MTC** reads quarter-frame and full-frame messages from any
 MIDI source; connected sources are listed in the MIDI panel on the right, with a
 "timecode" badge on the chosen one. MIDI controllers and MIDI Show Control are
 described under [MIDI](#midi).
@@ -73,8 +81,10 @@ trigger and an optional follow time. The list shows No., Name, Fade, Trigger,
 Follow and Values; the header says "Now 2 Name · next 3 Name", and the rows are
 marked current (or fading) and next.
 
-- **Add cue** takes the next free number and the name "Cue N". **Duplicate**
-  copies fade and values, not trigger and follow. **Remove** shows "Undone? Undo" for 8 seconds. **Move
+- **Add cue** takes the number one above the highest cue, rounded down to a
+  whole number (cues 1, 2 and 5 give 6; a highest cue 2.5 gives 3), and the
+  name "Cue N". **Duplicate** copies fade and values, not trigger and follow.
+  **Remove** shows "Undone? Undo" for 8 seconds. **Move
   up** and **Move down** swap numbers with the neighbour. Numbers may have
   decimals (2.5) and must be unique.
 - In the editor: **Number**, **Name**, **Fade (s)**, **Trigger**, **Follow (s)**,
@@ -178,7 +188,7 @@ same value), so a fader on a controller can follow a layer.
 | `/fanous/layer/{n}/media` | ii | Folder, file |
 | `/fanous/master/{param}` | f | Master parameter |
 | `/fanous/output/{n}/{param}` | f | Output parameter |
-| `/fanous/keystone/{n}/{param}` | f | Keystone parameter, when the Keystone fixture is patched |
+| `/fanous/keystone/{n}/{param}` | f | Keystone parameter, for every output |
 | `/fanous/output/{n}/state` | s | `bound`, `lost` or `unassigned` |
 | `/fanous/output/{n}/bound` | i | 1 when the output shows on its display |
 | `/fanous/cue/current` | f | Number of the current cue, -1 for none |
@@ -348,7 +358,11 @@ sees:
 - one DMX source per layer and the **layer status** (media, position, playing)
   four times a second;
 - the **libraries and elements**: numbered folders and numbered files with name,
-  size, frame rate and length;
+  size, frame rate and length. They are sent as indexes counted from 0 without
+  gaps, in folder or file order: the first folder is library 0 whatever its
+  number. The folder or file number (the DMX value) is in the DMX range min and
+  max. Folder 0 (built-in and live inputs) is not a library: a layer playing
+  it, or media that is missing, reports library 255 and element 255;
 - **thumbnails** of the files (the library thumbnails);
 - the **video sources** it can stream: source 0 is the canvas, source 1 to N
   layer 1 to N;
@@ -357,7 +371,9 @@ sees:
   pixels wide, 4 new pictures a second (black while the layer shows nothing).
   Each is only produced while a console asks for it.
 
-MSEX versions 1.0 to 1.2 are negotiated; the highest common one is used.
+MSEX versions 1.0 to 1.2 are negotiated; the highest common one is used. A
+console that sends no ClientInformation within 2 seconds (MSEX 1.0 and 1.1
+consoles do not) is taken as 1.0 and gets the server information unasked.
 
 ## Not done yet
 
@@ -398,21 +414,22 @@ position, scale, colour, effects and dissolves apply.
 
 **Cameras and capture cards (1–20).** Every camera and capture card on this
 Mac gets the lowest free number from 1, up to 20, when the engine first sees
-it; the Media screen lists them under **Cameras and capture cards (1–20)**
+it; the Media and Inputs screens list them under **Cameras and capture cards (1–20)**
 with a green dot while the device delivers and a grey ring when it has gone,
 and the numbers are kept in the project like the Syphon numbers below. A
 device you unplug keeps its number and gets it back when you plug it in again;
 a USB card moved to another port is found again by its model and name when
-only one gone device matches. **Forget** frees a number (a device that is
+only one gone device matches. **Forget** on the Inputs screen frees a number (a device that is
 not running, or **Forget all not running (cameras and displays)**, which frees
 displays too; programmer, undoable, not while
 the show is locked). A device another app has open (an iPhone in FaceTime)
-reads "in use by another app" with a yellow dot. A card follows its input signal: the picture takes the size and rate of what
+reads "in use by another app" with a yellow dot. **Number** on the Inputs
+screen gives a device another number (a taken one swaps). A card follows its input signal: the picture takes the size and rate of what
 comes in, and a card without a signal for 2 seconds reads "no signal" on the
 Layers screen and keeps its last frame. macOS asks for the camera permission
 once, for "Fanous Engine" (listed as "Fanous" in System Settings): when a
 layer first selects a camera, or when you press **Authorize camera** under
-Capture permissions on the System screen; never in show mode, so authorize
+Permissions on the Inputs screen; never in show mode, so authorize
 before the show. Denied: allow Fanous under System Settings › Privacy &
 Security › Camera. Verified so far: the built-in
 camera, an iPhone over Continuity Camera; UVC cards such as Elgato Cam Link
@@ -420,44 +437,47 @@ camera, an iPhone over Continuity Camera; UVC cards such as Elgato Cam Link
 UltraStudio do not (they need their own SDK, see the backlog).
 
 **Displays (21–28).** Every display of this Mac gets the lowest free number
-from 21, up to 28, listed under **Displays (21–28)** on the Media screen the
-same way; a display that Fanous uses as an output reads "not running". A
+from 21, up to 28, listed under **Displays (21–28)** on the Media and Inputs
+screens the same way; a display that Fanous uses as an output reads "not running". A
 display layer is named `Display: <name>` and shows the whole display, scaled down to
 the canvas when larger (more in [media-library.md](media-library.md)). It
-needs the Screen permission: **Authorize screen** under Capture permissions
-on the System screen, never in show mode, allow Fanous in System
+needs the Screen permission: **Authorize screen** under Permissions on the
+Inputs screen, never in show mode, allow Fanous in System
 Settings, then choose Engine › **Restart Engine** (macOS applies the grant only
 to a new engine process). Without the grant the layer reads "screen permission
 not granted" and stays black.
 
-**Readiness.** Two items on the System screen look only at inputs in use: a
-layer that shows a camera (1–20) or a display (21–28), or an entry of a
-`--scene` file with `capture:` or `screen:`. **Camera permission
+**Readiness.** Three items on the System screen look only at inputs in use: a
+layer that shows a camera (1–20) or a display (21–28), an entry of a `--scene`
+file with `capture:` or `screen:`, or timecode set to LTC. **Camera permission
 granted** fails while a layer shows a camera without the camera permission;
 **Screen recording granted** fails while a layer shows a display without the
-Screen permission. A failed item blocks show mode until a programmer
-acknowledges it, so no permission dialog appears during the show; each is
-acknowledged on its own. While a layer shows a display, Screen recording
-granted also warns with the grant: macOS asks again about once a month whether
-Fanous may record the screen, with a dialog on the main display. A
-numbered camera or display that no layer shows changes neither item. Check
-them before every show, with the show's media loaded; for a show-critical
-slides feed, a capture card is the safer path.
+Screen permission; **Microphone permission granted** fails while the timecode
+Source is LTC without the Microphone permission, whatever the Timecode switch
+says (fix: Authorize microphone on the Inputs screen). A failed item blocks
+show mode until a programmer acknowledges it, so no permission dialog appears
+during the show; each is acknowledged on its own. While a layer shows a
+display, Screen recording granted also warns with the grant: macOS asks again
+about once a month whether Fanous may record the screen, with a dialog on the
+main display. A numbered camera or display that no layer shows changes neither
+of the first two items. Check them before every show, with the show's media
+loaded; for a show-critical slides feed, a capture card is the safer path.
 
 **Syphon servers (150–169).** Every Syphon server another app on this Mac
 publishes gets the lowest free number from 150, up to 169, when the engine
-first sees it; the Media screen lists them with their number, a green dot
+first sees it; the Media and Inputs screens list them with their number, a green dot
 while the server runs and a grey ring when it has gone. The numbers are kept
 in the project, so they stay the same across an engine restart (also a restart
 after a crash in the middle of a show): a server that stops keeps its number,
 and when it starts again (same app and server name) it gets its old number
 back. After a restart a server that has not answered yet is listed greyed,
 "not seen since the engine started". A number is freed with **Forget** on
-the Media screen (one server that is not running, or **Forget all not running**;
-programmer, undoable, not while the show is locked); undo, redo and loading a
+the Inputs screen (one server that is not running, or **Forget all not running**;
+programmer, undoable, not while the show is locked), and **Number** there
+gives a server another one; undo, redo and loading a
 project version also free the numbers of servers that are not running and that
 the restored project does not list; with all 20 numbers taken a
-new server gets none and the Media screen names it. When an app quits, its dot goes grey at once; when it crashes,
+new server gets none and the Inputs screen names it. When an app quits, its dot goes grey at once; when it crashes,
 within about 11 seconds. A layer on a server that has gone keeps its last
 picture and shows "Syphon: App/Server · not running" on the Layers screen;
 when the server comes back the picture returns without selecting it again.

@@ -226,6 +226,10 @@ public struct ReadinessContext: Sendable {
     /// The camera permission ("granted", "denied", "notDetermined") and the screen-recording grant ("granted", "denied").
     public var cameraPermission = "granted"
     public var screenPermission = "granted"
+    /// Timecode set to LTC (whatever the operator's switch: it may be turned on in show mode), and the microphone
+    /// permission LTC needs (B137, as the camera's).
+    public var ltcInUse = false
+    public var microphonePermission = "granted"
     public init() {}
 }
 
@@ -289,6 +293,9 @@ public enum Readiness {
                     ? "macOS asks about monthly to keep recording the screen, on the main display; prefer a capture card for a show-critical feed"
                     : "System Settings › Privacy & Security › Screen & System Audio Recording, then Engine › Restart",
                 acknowledged: acknowledged.contains("screen")))
+        add(
+            "microphone", "Microphone permission granted", !context.ltcInUse || context.microphonePermission == "granted",
+            context.ltcInUse ? "microphone: \(context.microphonePermission)" : "timecode not on LTC", "Inputs › Authorize microphone, or System Settings › Privacy & Security › Microphone")
         add("decoders", "No decoder errors", context.layerErrors.isEmpty, context.layerErrors.isEmpty ? "none" : context.layerErrors.joined(separator: "; "), "Fix or replace the failing media")
         // a missing image mask covers nothing: an add mask's slice may go black, a subtract mask cuts no hole
         add(
@@ -306,7 +313,7 @@ public enum Readiness {
         add("focus", "Focus / Do Not Disturb on", nil, "cannot be read; check the menu bar", "Turn on a Focus so notifications stay off the outputs")
         let sleep = displaySleepMinutes()
         add("displaysleep", "Display sleep disabled", sleep.map { $0 == 0 } ?? true, sleep.map { $0 == 0 ? "never" : "\($0) min (held off by the show-mode assertion)" } ?? "unknown", "System Settings › Lock Screen › Turn display off: never")
-        add("hardware", "Supported hardware", context.hardwareSupported, context.hardwareSupported ? "Apple Silicon with ProRes engine" : "unsupported machine", "Use an Apple Silicon Mac with a ProRes engine (M1 Pro or newer)", failing: .hard)
+        add("hardware", "Supported hardware", context.hardwareSupported, context.hardwareSupported ? "Apple Silicon with ProRes engine" : "no hardware ProRes decoder", "Use an Apple Silicon Mac with a ProRes engine (M1 Pro or newer)", failing: .hard)
         return items
     }
 

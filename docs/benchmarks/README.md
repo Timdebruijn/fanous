@@ -1,8 +1,8 @@
 # Benchmarks
 
 Results of `fanous-bench run` per machine, codec and resolution. One
-`.md` + `.json` pair per run; the engine will read the JSON for its tier
-display (Phase 5).
+`.md` + `.json` pair per run. Planned, not built (B145): the engine reading the
+JSON for a tier display.
 
 ```bash
 swift build -c release --product fanous-bench
@@ -39,7 +39,8 @@ driver on the built-in display (ADR-0006 amendment).
 | HAP Q | 4K60 | 8 | headless | ≥ 4 (max tested) | GPU p99 3.0 ms at 4 |
 
 Ring depth (frames decoded ahead per layer) is the decisive tier knob at 4K:
-the engine now defaults to 8 for 4K and 6 for 1080p. The remaining 4K60 ProRes
+the engine defaults to 8 at every resolution (`RenderService.ringCapacity`),
+`fanous-bench` to 6 up to 2000 px width and 8 above. The remaining 4K60 ProRes
 failures are single late decodes in 20 s windows (zero-tolerance criterion),
 to be attacked in Phase 3 (decode-thread scheduling, VT asynchronous decode).
 
@@ -92,8 +93,8 @@ every draw its occupancy (DESIGN.md §4.3).
 
 So the tier numbers hold with both effect slots in use for the per-pixel
 effects; the two neighbourhood effects (blur, edge) cost about one extra
-1080p layer each per layer they are on, which the Layers screen will show as
-a per-layer cost (Phase 5). A cheaper blur (separable or mip-based) is a
+1080p layer each per layer they are on; the Layers screen does not show that
+cost yet. A cheaper blur (separable or mip-based) is a
 v1.x option if shows want blur on many layers at once.
 
 A dissolve costs exactly one extra layer (its decoder and draw) for its

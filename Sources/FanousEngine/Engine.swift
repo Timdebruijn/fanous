@@ -87,6 +87,8 @@ public final class Engine: @unchecked Sendable {
     private var ltc: LTCInput?
     private var mtc: MTCInput?
     private var lastTimecodeSettings = ShowCommands.TimecodeSettings()
+    /// Timecode set to LTC (the switch aside), for readiness off the control queue (B137).
+    private let ltcInUse = Atomic<Bool>(false)
     private var midi: MIDIInput?
     private var lastMIDISettings = MIDISettings()
     private var cues: CueRunner?
@@ -159,7 +161,7 @@ public final class Engine: @unchecked Sendable {
         logger.info(
             "fanousd starting",
             metadata: [
-                "version": "\(FanousVersion.string)", "chip": "\(SystemInfo.chipName)",
+                "version": "\(FanousVersion.string)", "chip": "\(SystemInfo.chipName)", "proResEngine": "\(SystemInfo.hasProResEngine)",
                 "memoryGB": "\(SystemInfo.physicalMemoryBytes / 1_073_741_824)", "os": "\(SystemInfo.osVersion)",
                 "webRoot": "\(options.webRoot.path)",
             ])
@@ -301,6 +303,11 @@ public final class Engine: @unchecked Sendable {
                 }
             }
             render = service
+            // a microphone grant (Authorize, or System Settings) opens an LTC input that failed for it again (B137)
+            service.captureCatalog.onPermissionsChange = { [weak self] before, now in
+                guard before.microphone != .authorized, now.microphone == .authorized else { return }
+                self?.reopenFailedLTC()
+            }
             startSync(compositor: service.compositor)
         }
 
@@ -317,6 +324,7 @@ public final class Engine: @unchecked Sendable {
             liveRunning: { [weak self] in
                 Set((self?.liveCatalogs ?? []).flatMap(\.entries).filter(\.running).map(\.file))  // the ranges do not overlap
             },
+            liveNow: { [weak self] kind in (self?.liveCatalogs ?? []).first { $0.kind == kind }.map { ProjectDocument.liveValue($0.entries) } },
             authorizeCamera: { [weak self] in
                 let loader = self?.render?.loader, catalog = self?.render?.captureCatalog
                 CaptureInput.requestAccess(allowed: true) { _ in
@@ -331,6 +339,11 @@ public final class Engine: @unchecked Sendable {
                     _ = CGRequestScreenCaptureAccess()
                     catalog?.refreshPermissions()
                 }
+            },
+            authorizeMicrophone: { [weak self] in
+                let catalog = self?.render?.captureCatalog
+                // the read that follows the answer sees the grant, and the catalog's change hook reopens LTC
+                AVCaptureDevice.requestAccess(for: .audio) { _ in catalog?.refreshPermissions() }
             },
             displayModes: { [weak self] in Dictionary((self?.displays.withLock { $0 } ?? []).map { ($0.uuid, $0.mode) }, uniquingKeysWith: { a, _ in a }) },
             showPreset: { dmx.show($0, preset: $1) },
@@ -571,7 +584,6 @@ public final class Engine: @unchecked Sendable {
         oscFeedback?.start()  // the fixed target is notified once everything it reads exists
 
         let startedAt = self.startedAt
-        let webRoot = options.webRoot
         /// REST calls that change state need the programmer role: the session cookie, the shell token as a bearer, or an open role.
         @Sendable func allowed(_ role: Role, _ request: HTTPRequest) -> Bool {
             let bearer = request.header("Authorization").flatMap { $0.hasPrefix("Bearer ") ? String($0.dropFirst(7)) : nil }
@@ -599,11 +611,13 @@ public final class Engine: @unchecked Sendable {
                 guard let body = try? JSONDecoder().decode(JSONValue.self, from: Data(request.body)), let number = body["number"]?.int, (1...255).contains(number),
                     let name = body["name"]?.string, !name.trimmingCharacters(in: .whitespaces).isEmpty
                 else { return .text(400, "expected {\"number\": 1–255, \"name\": …}") }
-                if library.snapshot.folders.contains(where: { $0.number == number }) { return .text(409, "folder \(number) exists") }
-                try? FileManager.default.createDirectory(at: library.root, withIntermediateDirectories: true)
-                guard let url = library.folderURL(number: number, createAs: name) else { return .text(500, "cannot create the folder") }
-                library.rescan()
-                return .text(200, url.lastPathComponent)
+                switch library.createFolder(number: number, name: name) {  // check and create under one lock (B141)
+                case .exists: return .text(409, "folder \(number) exists")  // also one an upload just made
+                case .failed: return .text(500, "cannot create the folder")  // a root that cannot be written (B142)
+                case .created(let url):
+                    library.rescan()
+                    return .text(200, url.lastPathComponent)
+                }
             }
             switch request.path {
             case "/healthz":
@@ -1040,7 +1054,19 @@ public final class Engine: @unchecked Sendable {
             "rate": .string(s.rate.label), "frames": .number(Double(s.frameCount)), "seen": .number(Double(timecodeClock.framesSeen.load(ordering: .relaxed))),
             "error": (ltc?.lastError ?? mtcStatus?.error).map { .string($0) } ?? .null,
             "device": .string(ltc?.deviceName ?? mtcStatus?.connected.joined(separator: ", ") ?? ""),
+            // the LTC channel's peak over the last tenth of a second (B137); null while LTC is not open
+            "level": ltc?.level.map { .number($0) } ?? .null,
         ]
+    }
+
+    /// `live.audio.inputs` (B137): every input device with its channel count; `default` on the system default input.
+    static func audioInputsLive(_ devices: [LTCInput.Device]) -> JSONValue {
+        .array(
+            devices.map { d in
+                var entry: JSONValue = ["name": .string(d.name), "channels": .number(Double(d.channels))]
+                if d.isDefault { try? entry.set(true, at: "/default") }
+                return entry
+            })
     }
 
     private func cueLive() -> JSONValue {
@@ -1090,8 +1116,18 @@ public final class Engine: @unchecked Sendable {
     }
     private var tlsFingerprint = ""
 
+    /// An LTC input that failed (the permission, no device) opens again, on the queue that applies the settings.
+    private func reopenFailedLTC() {
+        store?.queue.async { [weak self] in
+            guard let self, self.ltc?.lastError != nil else { return }
+            self.applyTimecodeSettings(self.lastTimecodeSettings)
+        }
+    }
+
     private func applyTimecodeSettings(_ settings: ShowCommands.TimecodeSettings) {
         lastTimecodeSettings = settings
+        // the switch does not count: the operator may turn it on in show mode, and LTC then asks for the microphone
+        ltcInUse.store(settings.source == .ltc, ordering: .relaxed)
         ltc?.stop()
         mtc?.stop()
         ltc = nil
@@ -1114,6 +1150,7 @@ public final class Engine: @unchecked Sendable {
 
     private func readinessContext() -> ReadinessContext {
         var context = ReadinessContext()
+        context.hardwareSupported = SystemInfo.hasProResEngine
         if let dmx {
             let snapshot = dmx.snapshot()
             let patched = Set(dmx.currentPatch.universes.map(\.description))
@@ -1145,6 +1182,8 @@ public final class Engine: @unchecked Sendable {
         context.sceneScreen = options.scene?.media.contains { $0.screen != nil } ?? false
         context.cameraPermission = Self.permissionWord(render?.captureCatalog.permissions.camera ?? .authorized)
         context.screenPermission = render?.captureCatalog.permissions.screen ?? true ? "granted" : "denied"
+        context.ltcInUse = ltcInUse.load(ordering: .relaxed)
+        context.microphonePermission = Self.permissionWord(render?.captureCatalog.permissions.microphone ?? .authorized)
         var masters: [Int: Int] = [:]
         for layer in projectLayers {
             let s = layer.syncStatus.withLock { $0 }
@@ -1546,7 +1585,7 @@ public final class Engine: @unchecked Sendable {
 
     private func libraryRootPutBack(_ running: String, refused root: String, _ refusal: CommandError) {
         logger.warning("library root not changed", metadata: ["root": "\(root)", "reason": "\(refusal.message)"])
-        guard let pointer = try? JSONPointer("/library/root") else { return }
+        let pointer: JSONPointer = "/library/root"
         libraryRootInProject.withLock { $0 = running }  // the correction below is not a change to apply
         store?.correct(.string(running), at: pointer)
     }
@@ -1577,7 +1616,7 @@ public final class Engine: @unchecked Sendable {
     private struct HostFacts {
         var at: CFTimeInterval = 0
         var midiSources: [String] = []
-        var audioInputs: [String] = []
+        var audioInputs: [LTCInput.Device] = []
         var addresses: [String] = []
         var interfaces: [NetworkInterface] = []
     }
@@ -1592,11 +1631,15 @@ public final class Engine: @unchecked Sendable {
     /// path. ponytail: never removed; a deallocated engine's listener is a no-op (weak self), and the block's identity
     /// across the Swift/ObjC bridge is nothing to hand `AudioObjectRemovePropertyListenerBlock`.
     private func listenForAudioDevices() {
-        var devices = LTCInput.devicesAddress
-        let status = AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &devices, nil) { [weak self] _, _ in
-            self?.audioDevicesChanged.store(true, ordering: .relaxed)
+        var statuses: [OSStatus] = []
+        // the device list, and the default input (the Inputs screen marks it, B137)
+        for var address in [LTCInput.devicesAddress, LTCInput.defaultInputAddress] {
+            statuses.append(
+                AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, nil) { [weak self] _, _ in
+                    self?.audioDevicesChanged.store(true, ordering: .relaxed)
+                })
         }
-        audioListening.store(status == noErr, ordering: .relaxed)
+        audioListening.store(statuses.allSatisfy { $0 == noErr }, ordering: .relaxed)
     }
     private func currentHostFacts() -> HostFacts {
         let facts = hostFacts.withLock { $0 }
@@ -1683,6 +1726,7 @@ public final class Engine: @unchecked Sendable {
                         "name": s.name.map { .string($0) } ?? .null, "kind": .string(s.kind), "codec": .string(s.codec),
                         "width": .number(Double(s.width)), "height": .number(Double(s.height)), "fps": .number(s.fps),
                         "frames": .number(Double(s.frames)), "frame": .number(Double(layer.currentFrame)), "error": s.error.map { .string($0) } ?? .null,
+                        "pixelAspect": s.pixelAspect.map { .number($0) } ?? .null,
                         "sync": syncLive(layer.syncStatus.withLock { $0 }),
                         "capture": s.capture.map { c in
                             [
@@ -1721,7 +1765,8 @@ public final class Engine: @unchecked Sendable {
             "cue": cueLive(),
             "show": showLive(),
             "system": systemLive(addresses: facts.addresses, interfaces: facts.interfaces),
-            "osc": ["port": 8000, "recent": .array(oscLog.withLock { $0 }), "midiSources": .array(facts.midiSources.map { .string($0) }), "audioInputs": .array(facts.audioInputs.map { .string($0) })],
+            "osc": ["port": 8000, "recent": .array(oscLog.withLock { $0 }), "midiSources": .array(facts.midiSources.map { .string($0) })],
+            "audio": ["inputs": Self.audioInputsLive(facts.audioInputs)],
             "midi": midiLive(),
             "citp": citpLive(),
             "versions": versions?.live ?? .null,
@@ -1796,13 +1841,18 @@ public final class Engine: @unchecked Sendable {
 
     /// `live.capture` from the catalog and its cached permissions (a TCC read costs tens of ms: never on the feed).
     private func captureLive() -> JSONValue {
-        guard let render else { return Self.captureLive([], camera: .notDetermined, screen: false) }
+        guard let render else { return Self.captureLive([], camera: .notDetermined, screen: false, microphone: .notDetermined) }
         let permissions = render.captureCatalog.permissions
-        return Self.captureLive(render.captureCatalog.entries, screens: render.screensCatalog.entries, camera: permissions.camera, screen: permissions.screen)
+        return Self.captureLive(
+            render.captureCatalog.entries, screens: render.screensCatalog.entries, camera: permissions.camera, screen: permissions.screen,
+            microphone: permissions.microphone)
     }
 
-    /// `live.capture` (B73): the numbered capture devices and displays, and the permissions (screen: granted | denied).
-    static func captureLive(_ devices: [LiveCatalog.Entry], screens: [LiveCatalog.Entry] = [], camera: AVAuthorizationStatus, screen: Bool) -> JSONValue {
+    /// `live.capture` (B73): the numbered capture devices and displays, and the permissions (screen: granted | denied;
+    /// microphone for LTC, B137).
+    static func captureLive(
+        _ devices: [LiveCatalog.Entry], screens: [LiveCatalog.Entry] = [], camera: AVAuthorizationStatus, screen: Bool, microphone: AVAuthorizationStatus
+    ) -> JSONValue {
         func entry(_ d: LiveCatalog.Entry) -> JSONValue {
             var entry: JSONValue = ["file": .number(Double(d.file)), "name": .string(d.name), "running": .bool(d.running)]
             if d.gone { try? entry.set(true, at: "/gone") }
@@ -1812,7 +1862,7 @@ public final class Engine: @unchecked Sendable {
         return [
             "devices": .array(devices.map(entry)),
             "screens": .array(screens.map(entry)),
-            "permissions": ["camera": .string(permissionWord(camera)), "screen": .string(screen ? "granted" : "denied")],
+            "permissions": ["camera": .string(permissionWord(camera)), "screen": .string(screen ? "granted" : "denied"), "microphone": .string(permissionWord(microphone))],
         ]
     }
 

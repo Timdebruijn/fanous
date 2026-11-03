@@ -5,6 +5,7 @@
 // words (DESIGN §6.6), per-universe cell ownership, parameter lookup by fixture-relative channel, universe naming and
 // option lists, the Universes panel's rows and the Patch sheet.
 import type { PatchEntry, UniverseInfo, UniverseSettingsDoc } from './docs';
+import { plural } from './system';
 
 export const UNIVERSE_SIZE = 512;
 export const LOCKED_TITLE = 'Locked: programmer only';
@@ -215,7 +216,7 @@ export interface Health {
 
 /** active -> green, silent for at most the loss timeout or never seen -> yellow, lost after having received -> red (DESIGN §12: red = look now). */
 export function universeHealth(info: UniverseInfo | undefined, lossTimeout = 2.5): Health {
-  if (info?.active) return { tone: 'green', text: `${info.packets} packets · ${info.source}` };
+  if (info?.active) return { tone: 'green', text: `${plural(info.packets, 'packet')} · ${info.source}` };
   if (!info || info.ageSeconds < 0) return { tone: 'yellow', text: 'never seen' };
   if (info.ageSeconds <= lossTimeout) return { tone: 'yellow', text: `${info.ageSeconds.toFixed(1)} s` };
   return { tone: 'red', text: 'lost' };

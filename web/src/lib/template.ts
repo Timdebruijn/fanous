@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Content template: what of the canvas ends up visible on an output, drawn at canvas resolution for a designer.
-import { maskOutline, type MapPoint, type OutputConfig, type SliceConfig } from './outputs';
+import { clamp01, maskOutline, type MapPoint, type OutputConfig, type SliceConfig } from './outputs';
 
 /** Bilinear position in a slice's destination quad (TL, TR, BR, BL), as the engine's slice mesh interpolates it. */
 export function bilinear(dest: MapPoint[], u: number, v: number): MapPoint {
@@ -34,7 +34,7 @@ export function inverseBilinear(dest: MapPoint[], p: MapPoint): { u: number; v: 
 export function maskPointOnCanvas(slice: SliceConfig, p: MapPoint, canvas: { width: number; height: number }): MapPoint | null {
   const uv = inverseBilinear(slice.dest, p);
   if (!uv) return null;
-  const u = Math.max(0, Math.min(1, uv.u)), v = Math.max(0, Math.min(1, uv.v));
+  const u = clamp01(uv.u), v = clamp01(uv.v);
   return { x: (slice.source.x + slice.source.w * u) * canvas.width, y: (slice.source.y + slice.source.h * v) * canvas.height };
 }
 

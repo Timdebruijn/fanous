@@ -103,11 +103,11 @@ struct MasterIntensityTests {
         #expect(Self.near(got, [128, 128, 0]), "add at Master 50 %: \(got)")
     }
 
-    /// The compositor's stored label constants, and literals equal to the labels it assigns as plain strings, bridge
-    /// to `encoder.label` without an allocation (B117): "mapped output", "layer preview", "thumbnail atlas" and
-    /// "thumbnail copy" are `NSString`s, because a 13–15-byte Swift `String` bridged on every assignment (1 each,
-    /// measured); "canvas N", "output", "preview" and "secondary output" bridge free as plain strings. Assigned here,
-    /// not through the draw functions.
+    /// The compositor's stored label constants, and the literal "secondary output" it assigns as a plain string, go to
+    /// `encoder.label` without an allocation (B117): `NSString`s made once, at least 12 characters, because a 13–15-byte
+    /// Swift `String` bridged on every assignment and on macOS 27.2 a shorter label ("canvas 16", "output", "preview")
+    /// allocated on every assignment even as an `NSString` (1 each, measured). Assigned here, not through the draw
+    /// functions.
     /// Asserted in an optimised build (`scripts/check-mallocs.sh`); a debug build prints the counts.
     @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
     func mallocCounterEncoderLabelsAllocateNothing() throws {
@@ -120,16 +120,18 @@ struct MasterIntensityTests {
         pass.colorAttachments[0].storeAction = .store
         let buffer = try #require(context.queue.makeCommandBuffer())
         let encoder = try #require(buffer.makeRenderCommandEncoder(descriptor: pass))
-        let canvasLabel = "canvas \(16)"  // a runtime small string, as `CanvasTarget.label` is
+        let canvasLabel = "canvas \(16) composite" as NSString  // made at runtime, as `CanvasTarget.label` is
         let labels: [(String, () -> Void)] = [
-            ("canvas 16", { encoder.label = canvasLabel }),
-            ("output", { encoder.label = "output" }),
-            ("preview", { encoder.label = "preview" }),
+            ("canvas 16 composite", { encoder.label = canvasLabel as String }),
+            ("output (no output set)", { encoder.label = compositor.outputLabel as String }),
+            ("preview downscale", { encoder.label = Compositor.previewLabel as String }),
             ("secondary output", { encoder.label = "secondary output" }),
             ("mapped output", { encoder.label = compositor.mappedOutputLabel as String }),
             ("layer preview", { encoder.label = compositor.layerPreviewLabel as String }),
             ("thumbnail atlas", { encoder.label = compositor.thumbnailAtlasLabel as String }),
             ("thumbnail copy", { encoder.label = compositor.thumbnailCopyLabel as String }),
+            ("scratch convert", { encoder.label = compositor.scratchConvertLabel as String }),
+            ("scratch mips", { encoder.label = compositor.scratchMipsLabel as String }),
         ]
         for (name, assign) in labels {
             assign()

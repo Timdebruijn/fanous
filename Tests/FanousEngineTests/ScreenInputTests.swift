@@ -61,7 +61,7 @@ struct ScreenInputTests {
         #expect(next.entries.count == 8 && next.unnumbered == ["Display 5", "Display 6", "Display 7", "Display 8"])
 
         // `live.capture.screens`, and the screen permission granted | denied
-        let feed = Engine.captureLive([], screens: catalog.entries, camera: .authorized, screen: false)
+        let feed = Engine.captureLive([], screens: catalog.entries, camera: .authorized, screen: false, microphone: .authorized)
         #expect(
             feed == [
                 "devices": [],
@@ -69,10 +69,10 @@ struct ScreenInputTests {
                     ["file": 21, "name": "Built-in Retina Display", "running": true], ["file": 22, "name": "DELL U2720Q", "running": true],
                     ["file": 23, "name": "LG", "running": true],
                 ],
-                "permissions": ["camera": "granted", "screen": "denied"],
+                "permissions": ["camera": "granted", "screen": "denied", "microphone": "granted"],
             ])
-        #expect(Engine.captureLive([], screens: next.entries, camera: .authorized, screen: true)["permissions"]?["screen"] == "granted")
-        #expect(Engine.captureLive([], screens: next.entries, camera: .authorized, screen: false)["screens"]?[0] == ["file": 21, "name": "Built-in Retina Display", "running": false, "gone": true])
+        #expect(Engine.captureLive([], screens: next.entries, camera: .authorized, screen: true, microphone: .authorized)["permissions"]?["screen"] == "granted")
+        #expect(Engine.captureLive([], screens: next.entries, camera: .authorized, screen: false, microphone: .authorized)["screens"]?[0] == ["file": 21, "name": "Built-in Retina Display", "running": false, "gone": true])
     }
 
     /// `/screens` is in a new project and the load migration adds it to an older one.
@@ -281,6 +281,7 @@ struct ScreenInputTests {
         select(3, 21)
         #expect(eventually { status(3).error == CaptureError.screenPermission.description })
         #expect(status(3).name == "Display: Built-in Retina Display" && status(3).kind == "live" && playback(3) == nil)
-        #expect(CaptureError.screenPermission.description == "screen permission not granted: authorize on the System screen, then Engine › Restart")
+        #expect(CaptureError.screenPermission.description == "screen permission not granted: authorize on the Inputs screen, then Engine › Restart")
+        #expect(CaptureError.permissionNotAsked.description == "camera permission not asked: authorize on the Inputs screen")
     }
 }

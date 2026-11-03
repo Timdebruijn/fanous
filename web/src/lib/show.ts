@@ -3,8 +3,10 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Pure logic of the Show control screen: cue numbering and reordering, trigger text, fixture and parameter
 // choices for cue values, value controls from the channel map, timecode wording, MIDI map wording.
-import type { CueDoc, CueValueDoc, LiveDoc, MIDIMappingDoc, PatchEntry, TimecodeSettingsDoc } from './docs';
+import type { AudioInputDoc, CueDoc, CueValueDoc, LiveDoc, MIDIMappingDoc, PatchEntry, TimecodeSettingsDoc } from './docs';
+import { clamp01 } from './outputs';
 import { LOCKED_TITLE, type ChannelMap, type FixtureType, type ParamSpec } from './patch-screen';
+import { pad2, plural } from './system';
 
 export const LOCKED_OPERATOR = 'Locked: operator only';
 export const LOCKED_SHOW = 'Locked: the show is locked (press L to unlock)';
@@ -95,8 +97,7 @@ export function parseTrigger(text: string): TriggerResult {
   if (!rate) return { ok: false, error: `Unknown rate "${match[5]}"; use 24, 25, 29.97df, 29.97ndf or 30` };
   if (h > 23 || m > 59 || s > 59) return { ok: false, error: 'Hours go to 23, minutes and seconds to 59' };
   if (f >= rate.frames) return { ok: false, error: `Frames go to ${rate.frames - 1} at ${rate.id} fps` };
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return { ok: true, value: `${pad(h)}:${pad(m)}:${pad(s)}:${pad(f)}@${rate.engine}` };
+  return { ok: true, value: `${pad2(h)}:${pad2(m)}:${pad2(s)}:${pad2(f)}@${rate.engine}` };
 }
 
 // ---- cue rows ----------------------------------------------------------------------------------------------
@@ -125,7 +126,7 @@ export function cueRowLabel(cue: CueDoc, status: 'current' | 'next' | null): str
   const parts = [`Cue ${t.number}`, cue.name || 'unnamed', `fade ${t.fade}`];
   if (cue.trigger) parts.push(`trigger ${cue.trigger}`);
   if (cue.follow != null) parts.push(`follow ${t.follow}`);
-  parts.push(`${t.values} ${cue.values.length === 1 ? 'value' : 'values'}`);
+  parts.push(plural(cue.values.length, 'value'));
   if (status) parts.push(status);
   return parts.join(', ');
 }
@@ -238,6 +239,31 @@ export function timecodeBadge(state: LiveDoc['timecode']['state']): { label: str
 /** The operator's switch with a source chosen (Show › Timecode); a missing or null `enabled` is on. */
 export function timecodeOn(tc: Pick<TimecodeSettingsDoc, 'source' | 'enabled'>): boolean {
   return tc.source !== 'off' && tc.enabled !== false;
+}
+
+/** The device and channel LTC reads (B137). While LTC is open the engine names the device it opened (`opened`: a
+ * named device that is missing falls back to the default input); otherwise a device of null is the default input.
+ * The channel is clamped to the device's channels as the engine's LTC input does. Null while timecode is not on LTC. */
+export function ltcInput(
+  tc: Pick<TimecodeSettingsDoc, 'source' | 'device' | 'channel'>,
+  inputs: readonly AudioInputDoc[],
+  opened = '',
+): { device: string; channel: number } | null {
+  if (tc.source !== 'ltc') return null;
+  const named = opened || tc.device;
+  const device = named ? inputs.find((i) => i.name === named) : inputs.find((i) => i.default);
+  const name = named ?? device?.name ?? 'Default input';
+  return { device: name, channel: device ? Math.max(0, Math.min(tc.channel, device.channels - 1)) : tc.channel };
+}
+
+/** "−12.3 dBFS" for the LTC level; `none` when LTC is not open. */
+export function levelText(level: number | null | undefined, none = 'no level'): string {
+  return level == null ? none : `${level.toFixed(1).replace('-', '−')} dBFS`;
+}
+
+/** The meter's fill, 0…1 over −60…0 dBFS. */
+export function meterFill(level: number | null | undefined): number {
+  return level == null ? 0 : clamp01((level + 60) / 60);
 }
 
 /** "LTC · Scarlett 2i2 · 25 fps"; "29.97 DF" already names its rate. */

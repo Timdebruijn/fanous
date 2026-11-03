@@ -14,7 +14,7 @@ Mac: ______________ Fanous version: ______________
 - [ ] Layers screen: every layer you use shows its file and a green dot, no red
       message.
 - [ ] Patch screen: no red "collisions" in the toolbar; every universe you use
-      shows a green pill when the console runs.
+      shows green when the console runs.
 - [ ] Outputs screen: every output is bound to its display; blend, warp and masks
       checked with the test patterns.
 - [ ] Timecode source tested if you chase it; cues stepped through with Go.
@@ -47,17 +47,17 @@ Mac: ______________ Fanous version: ______________
 
 ## In Fanous
 
-- [ ] Console is sending: every patched universe pill in the status bar is green.
+- [ ] Console is sending: every patched universe in the status bar is green.
 - [ ] **Programmer password set** (System › Roles and passwords) and the yellow
       "web UI open" notice is gone. Operator password set if an iPad or a
       second computer is in the room.
 - [ ] System screen: press **Run checks**. Work through the Readiness list (below).
-- [ ] Switch **Show mode** on (the SHOW MODE button in the status bar, or the
+- [ ] Switch **Show mode** on (the Show mode button in the status bar, or the
       switch on the System screen). It refuses while an item blocks and says
       which.
 - [ ] Timecode on, state **Locked**, if you chase timecode.
 - [ ] Press **L** (programmer) to **lock the show**. The status bar says
-      LOCKED. Unlocking while show mode is on asks for confirmation.
+      Locked. Unlocking while show mode is on asks for confirmation.
 - [ ] Look at "dropped" in the status bar: it should read 0 and stay there.
 - [ ] **Save a named version before doors**: System › Project versions ›
       **Save version…**, a name such as "Doors 19:30". It never expires, works
@@ -86,8 +86,9 @@ shows what it found; items that are not OK also show a fix hint.
 | Sync groups have one master | one master per Sync group in use (warning only; [multi-server.md](multi-server.md)) |
 | Sync packets arriving | the master Mac and the network, with slaves in use (warning only) |
 | No decoder errors | no layer showing a media error |
-| Camera permission granted | the camera permission while a layer shows a camera (folder 0, 1–20) or a `--scene` entry has `capture:` (Capture permissions on the System screen) |
+| Camera permission granted | the camera permission while a layer shows a camera (folder 0, 1–20) or a `--scene` entry has `capture:` (Permissions on the Inputs screen) |
 | Screen recording granted | the Screen permission while a layer shows a display (folder 0, 21–28) or a `--scene` entry has `screen:`; warns while one does, since macOS asks again about once a month |
+| Microphone permission granted | the Microphone permission while timecode is set to LTC, also with the switch off: the operator may turn it on during the show (Permissions on the Inputs screen) |
 | Image masks found | a still image in the library for every image mask, in the edited mappings and stored presets (warning only: a missing file, or a movie, covers nothing) |
 | Library on a local volume | library on the internal disk |
 | Spotlight indexing off for the library volume | see above |
@@ -95,7 +96,7 @@ shows what it found; items that are not OK also show a fix hint.
 | Time Machine not backing up | see above |
 | Focus / Do Not Disturb on | manual, check the menu bar |
 | Display sleep disabled | see above |
-| Supported hardware | Apple Silicon with a ProRes engine |
+| Supported hardware | Apple Silicon with a ProRes engine (every chip but the base M1); a base M1 fails here |
 
 **Failed** items (red) block show mode. A programmer can press **Acknowledge**
 next to an item to accept the risk: the badge changes to "acknowledged" and it
@@ -116,8 +117,9 @@ a slice whose only add mask it is stays black.
 **Manual** items (Focus) have no button; the check is yours.
 
 **Blocking** items (shown with a "blocking" badge) cannot be acknowledged. Today
-that is Supported hardware: the Mac has no ProRes engine and cannot run a show.
-Use a Mac with an M1 Pro or newer.
+that is only Supported hardware: a Mac without a ProRes engine (the base M1)
+reads "no hardware ProRes decoder" and show mode stays off. Use a Mac with an
+M1 Pro or newer.
 
 While show mode is on, the Mac does not sleep (display and system), the engine is
 exempt from App Nap, the ingest queue is paused, the cursor is hidden over

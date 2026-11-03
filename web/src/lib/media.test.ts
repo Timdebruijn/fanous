@@ -110,8 +110,8 @@ describe('codecLabel', () => {
     expect(codecLabel('avc1')).toBe('H.264');
     expect(codecLabel('hvc1')).toBe('HEVC');
     expect(codecLabel('hev1')).toBe('HEVC');
-    expect(codecLabel('png')).toBe('png');
-    expect(codecLabel('constructor')).toBe('constructor');
+    expect(codecLabel('png')).toBe('PNG');
+    expect(codecLabel('constructor')).toBe('CONSTRUCTOR');
   });
 });
 
@@ -138,6 +138,8 @@ describe('formatting', () => {
     expect(formatLabel(meta({ frameRate: 29.970030784606934 }))).toBe('1080p29.97');
     expect(formatLabel(meta({ frameRate: 23.976024627685547 }))).toBe('1080p23.976');
     expect(formatLabel(meta({ frameRate: 0 }))).toBe('1920×1080');
+    expect(formatLabel(meta({ pixelAspect: 4 / 3 }))).toBe('1920×1080p25');
+    expect(formatLabel(meta({ pixelAspect: 1 }))).toBe('1080p25');
     expect(formatLabel(meta({ height: 0 }))).toBe('');
     expect(audioLabel(meta())).toBe('');
     expect(audioLabel(meta({ audioChannels: 2, audioSampleRate: 48000 }))).toBe('48k');

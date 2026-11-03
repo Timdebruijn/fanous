@@ -18,12 +18,12 @@ const library: LibrarySnapshot = {
 
 describe('layer status word', () => {
   it('names every state next to the dot', () => {
-    expect(layerState(layer({ kind: 'missing' }))).toMatchObject({ dot: 'red', chip: 'MISSING FILE' });
-    expect(layerState(layer({ error: 'decoder failed' }))).toMatchObject({ dot: 'red', chip: 'DECODER ERROR' });
-    expect(layerState(layer({ kind: 'live' })).chip).toBe('LIVE');
+    expect(layerState(layer({ kind: 'missing' }))).toMatchObject({ dot: 'red', chip: 'Missing file' });
+    expect(layerState(layer({ error: 'decoder failed' }))).toMatchObject({ dot: 'red', chip: 'Decoder error' });
+    expect(layerState(layer({ kind: 'live' })).chip).toBe('Live');
     expect(layerState(layer()).chip).toBe('OK');
-    expect(layerState(layer({ kind: 'none' })).chip).toBe('NO MEDIA');
-    expect(layerState(undefined).chip).toBe('NO MEDIA');
+    expect(layerState(layer({ kind: 'none' })).chip).toBe('No media');
+    expect(layerState(undefined).chip).toBe('No media');
   });
 });
 
@@ -139,8 +139,8 @@ describe('folder 0 (B61)', () => {
   it('shows a gone server by name with "not running" on the layer', () => {
     const gone = layer({ folder: 0, file: 151, kind: 'live', name: 'Syphon: Simple Server', error: 'not running', width: 0, height: 0 });
     expect(mediaLine(gone)).toMatchObject({ text: 'Syphon: Simple Server · not running', tone: 'error' });
-    expect(layerState(gone)).toMatchObject({ dot: 'red', chip: 'NOT RUNNING', label: 'Live input not running' });
-    expect(layerState({ ...gone, error: 'could not connect' }).chip).toBe('COULD NOT CONNECT');
+    expect(layerState(gone)).toMatchObject({ dot: 'red', chip: 'Not running', label: 'Live input not running' });
+    expect(layerState({ ...gone, error: 'could not connect' }).chip).toBe('Could not connect');
     expect(mediaLine(layer({ kind: 'live', name: 'Syphon: X', width: 0, height: 0 })).text).toBe('Syphon: X · Live');
   });
 });

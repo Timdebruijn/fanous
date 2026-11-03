@@ -359,6 +359,36 @@ import Testing
         #expect(playback(1) === connected && catalog.entry(file: 150)?.file == 150)
     }
 
+    /// A renumber (B137 step 3): a layer on the number a running server left shows what is on that number now, not
+    /// the server it was connected to.
+    @Test func loaderFollowsARenumberedServer() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { return }
+        let layers = [RenderLayer(index: 0), RenderLayer(index: 1)]
+        let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: Logger(label: "test"))
+        loader.liveFactory = { _, uuid in FakeLive(uuid: uuid) }
+        let catalog = LiveCatalog(.syphon)
+        catalog.onChange = { [loader] in loader.syphonServersChanged() }
+        loader.syphonCatalog = catalog
+        catalog.update(running: [Self.info("Resolume", "Out", "a")])
+        loader.start()
+        defer { loader.stop() }
+        func playback(_ i: Int) -> FakeLive? { layers[i].pending.withLock { $0.playback?.live as? FakeLive } }
+        func status(_ i: Int) -> LayerMediaStatus { layers[i].mediaStatus.withLock { $0 } }
+        func eventually(_ condition: () -> Bool) -> Bool { Self.wait(seconds: 5, until: condition) }
+        layers[0].wanted.store(MediaKey(folder: 0, file: 150).packed, ordering: .relaxed)
+        loader.wake.signal()
+        #expect(eventually { playback(0)?.uuid == "a" })
+        let first = try #require(playback(0))
+        catalog.adopt([LiveCatalog.Entry(kind: .syphon, file: 155, source: "Resolume", name: "Out")])
+        #expect(catalog.entry(file: 155)?.runtimeID == "a")
+        #expect(eventually { status(0).error == "no Syphon server numbered 150 (folder 0, 150–169)" && playback(0) == nil })
+        let stopped = first.stopped.load(ordering: .relaxed)
+        #expect(stopped)
+        layers[1].wanted.store(MediaKey(folder: 0, file: 155).packed, ordering: .relaxed)
+        loader.wake.signal()
+        #expect(eventually { playback(1)?.uuid == "a" && status(1).error == nil })
+    }
+
     @Test func loaderSaysCouldNotConnectWhenARunningServerRefuses() throws {
         guard let device = MTLCreateSystemDefaultDevice() else { return }
         let layer = RenderLayer(index: 0)

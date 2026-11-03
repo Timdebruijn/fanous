@@ -7,7 +7,7 @@
 Fanous is a media server for live events. Your lighting console patches it
 as a fixture and drives video layers over Art-Net or sACN; Fanous plays the
 media, blends, warps and maps it onto projectors and displays, and reports back
-what it is doing. This guide describes version 1.0.0-rc.1.
+what it is doing. This guide describes version 1.0.0-rc.2.
 
 ## Who this is for
 
@@ -18,10 +18,11 @@ Art-Net, sACN or console programming.
 
 ## Requirements
 
-- An Apple Silicon Mac with a hardware ProRes engine. Base M1 and Intel Macs are
-  not supported (the engine refuses show mode on them). The M1 Pro is the
-  reference machine; all numbers in this guide that come from measurements are
-  from it.
+- An Apple Silicon Mac with a hardware ProRes engine. Intel Macs do not run
+  Fanous at all. A base M1 has no ProRes engine and is not supported: the
+  Supported hardware readiness item fails on it and show mode is refused.
+  The M1 Pro is the reference machine; all numbers in this guide that come
+  from measurements are from it.
 - macOS 15 or newer.
 - A lighting console (or software) that sends Art-Net or sACN to the Mac.
 - For the web UI on another device: a browser on the same network. An iPad is
@@ -45,19 +46,20 @@ Reference material outside this guide: [channel-map.md](../channel-map.md) lists
 every DMX channel, [DESIGN.md](../DESIGN.md) is the technical design, and
 [BACKLOG.md](../BACKLOG.md) lists everything that is known to be missing.
 
-## The six screens
+## The seven screens
 
-Switch screens with the left rail or the keys 1 to 6; hover a screen in the
+Switch screens with the left rail or the keys 1 to 7; hover a screen in the
 rail to see its key.
 
 | Key | Screen | Purpose | Explained in |
 |---|---|---|---|
 | 1 | Layers | One row per layer: media, position, intensity, play mode, source; preview of the canvas or the selected layer; the layer panel | [getting-started.md](getting-started.md#the-main-window), [show-control.md](show-control.md#controlling-layers-from-the-ui) |
 | 2 | Media | The library: folders, files, built-in content and live inputs, import, transcode, ingest queue | [media-library.md](media-library.md) |
-| 3 | Outputs (Outputs & Mapping) | Canvases, outputs, projector walls, blend, warp, slices, masks, presets | [outputs-and-mapping.md](outputs-and-mapping.md) |
-| 4 | Patch | Who controls, fixture groups and blocks, universes, DMX monitor, patch sheet, GDTF export | [console-setup.md](console-setup.md#the-patch-screen-key-4) |
-| 5 | Show (Show control) | GO, timecode, cues, OSC, MIDI | [show-control.md](show-control.md) |
-| 6 | System | Show mode and readiness, live metrics, machine, library root, network, sync, project versions, roles, logs | [show-day-checklist.md](show-day-checklist.md), [troubleshooting.md](troubleshooting.md) |
+| 3 | Inputs | Cameras, capture cards, displays and Syphon servers: their signal, numbers and Forget, and the permissions they need | [media-library.md](media-library.md#the-inputs-screen-key-3) |
+| 4 | Outputs (Outputs & Mapping) | Canvases, outputs, projector walls, blend, warp, slices, masks, presets | [outputs-and-mapping.md](outputs-and-mapping.md) |
+| 5 | Patch | Who controls, fixture groups and blocks, universes, DMX monitor, patch sheet, GDTF export | [console-setup.md](console-setup.md#the-patch-screen-key-5) |
+| 6 | Show (Show control) | GO, timecode, cues, OSC, MIDI | [show-control.md](show-control.md) |
+| 7 | System | Show mode and readiness, live metrics, machine, library root, network, sync, project versions, roles, logs | [show-day-checklist.md](show-day-checklist.md), [troubleshooting.md](troubleshooting.md) |
 
 Other keys: Cmd-Z undo and Shift-Cmd-Z redo (programmer), L lock or unlock the
 show (programmer; it only asks first when you unlock while show mode is on),
@@ -72,8 +74,8 @@ nothing while you type in a field or while a dialog is open.
 Everything below is also in [BACKLOG.md](../BACKLOG.md) under the given number.
 The pages that follow repeat the ones that matter for their topic.
 
-- Hot-plugging a display has only been tested through unit tests and the
-  built-in display (B34).
+- Hot-plugging a display is checked with one external display; with two or
+  more it rests on unit tests (B34).
 - There is one project per machine; versions of it can be restored (System ›
   Project versions), but there are no project bundles to open or switch
   between, and no diff between two versions.

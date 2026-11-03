@@ -2,8 +2,8 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
-  import { lockTitle } from '../lib/show';
-  import { app, can } from '../lib/state.svelte';
+  import { app, programmerLock } from '../lib/state.svelte';
+  import { plural } from '../lib/system';
   import { applyWizard, cancelWizard, wallUI, wizardBack } from '../lib/wall-session.svelte';
   import { MAX_CANVAS_PIXELS, fitCanvas, freeOutputs, grids, overlapHint, rc, tap, wallPixels, wallSize, type Grid } from '../lib/walls';
 
@@ -11,7 +11,7 @@
   // canvas; Make wall applies it and the wall panel opens on the seam check (§9.9's step 3). The draft lives in
   // lib/wall-session; Cancel ends its Output ID patterns (a lease, B102) and changes nothing else.
   const draft = $derived(wallUI.wizard!);
-  const lock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
+  const lock = $derived(programmerLock());
   const edited = $derived(draft.edit === null ? undefined : app.project.walls?.find((w) => w.id === draft.edit));
   const free = $derived(freeOutputs(app.project.outputs, app.project.walls, draft.edit ?? undefined));
   const statuses = $derived(new Map(app.live.outputs.map((s) => [s.id, s])));
@@ -85,7 +85,7 @@
           <span class="label">Grid (rows × columns)</span>
           <div class="segmented" role="group" aria-label="Grid">
             {#each options as g (`${g.rows}x${g.cols}`)}
-              <button type="button" class="btn" aria-pressed={same(draft.grid, g)} title="{g.rows} {g.rows === 1 ? 'row' : 'rows'} of {g.cols}" onclick={() => (draft.grid = g)}>{g.rows} × {g.cols}</button>
+              <button type="button" class="btn" aria-pressed={same(draft.grid, g)} title="{plural(g.rows, 'row')} of {g.cols}" onclick={() => (draft.grid = g)}>{g.rows} × {g.cols}</button>
             {/each}
           </div>
         </div>
@@ -167,17 +167,17 @@
   .yellow { color: var(--yellow); }
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
   .tile {
-    position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 96px; padding: 10px 12px;
-    border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); color: var(--text-1); text-align: left; min-width: 0;
+    position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 96px; padding: 12px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--text-1); text-align: left; min-width: 0;
   }
   .tile:hover { background: var(--surface-3); }
   .tile[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-dim); }
-  .tile .id { font-size: 32px; font-weight: 700; line-height: 1; }
-  .tile .nm { font-weight: 600; max-width: 100%; }
+  .tile .id { font-size: 32px; font-weight: 600; line-height: 1; }
+  .tile .nm { font-weight: 500; max-width: 100%; }
   .tile .caption { max-width: 100%; }
   .order {
     position: absolute; top: 8px; right: 8px; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--ground);
-    display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px;
+    display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px;
   }
   .fieldrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
   .layout { display: grid; gap: 4px; max-width: 360px; }
@@ -187,7 +187,7 @@
   .slider input { flex: 1; min-width: 0; min-height: var(--touch); accent-color: var(--accent); }
   .val { min-width: 48px; text-align: right; }
   .choices { display: flex; flex-direction: column; gap: 8px; }
-  .choice { display: flex; align-items: flex-start; gap: 12px; min-height: var(--touch); padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  .choice { display: flex; align-items: flex-start; gap: 12px; min-height: var(--touch); padding: 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
   .choice:has(input:checked) { border-color: var(--accent); background: var(--surface-2); }
   .choice:has(input:disabled) { cursor: default; color: var(--text-3); }
   .choice input { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--accent); flex: none; }

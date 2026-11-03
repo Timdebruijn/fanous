@@ -9,14 +9,14 @@ No dongle, no licence server, no account.</p>
 <p align="center">
   <a href="LICENSE"><img alt="License: GPL-3.0-only" src="https://img.shields.io/badge/license-GPL--3.0--only-blue"></a>
   <img alt="Platform: macOS 15+ on Apple Silicon" src="https://img.shields.io/badge/platform-macOS%2015%2B%20Apple%20Silicon-lightgrey">
-  <img alt="Status: 1.0.0 release candidate" src="https://img.shields.io/badge/status-1.0.0--rc.1-orange">
+  <img alt="Status: 1.0.0 release candidate" src="https://img.shields.io/badge/status-1.0.0--rc.2-orange">
   <a href="https://github.com/Timdebruijn/fanous/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Timdebruijn/fanous/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
 <p align="center"><img src="docs/images/tour.gif" width="800" alt="Tour of the Fanous screens: layers, media, outputs and mapping, patch, show, system"></p>
 
 <p align="center">
-  <a href="#build-and-run"><b>Build it</b></a> ·
+  <a href="#download-or-build"><b>Download or build</b></a> ·
   <a href="docs/user/README.md">User guide</a> ·
   <a href="docs/user/how-it-works.md">How it works</a> ·
   <a href="docs/user/show-day-checklist.md">Show-day checklist</a> ·
@@ -102,10 +102,15 @@ Export a content template for your designer so windows and edges land where the
 mapping expects them. Syphon in and out.
 Guide: [Outputs and mapping](docs/user/outputs-and-mapping.md).
 
-## Build and run
+## Download or build
 
-Needs an Apple Silicon Mac with a ProRes engine (not the base M1), macOS 15+,
-Swift 6.2+ and Node 26.
+Needs an Apple Silicon Mac with a ProRes engine (not the base M1) and macOS 15+.
+
+**Download** the signed, notarized disk image from
+[Releases](https://github.com/Timdebruijn/fanous/releases), drag Fanous to
+Applications and open it.
+
+**Build** with Swift 6.2+ and Node 26:
 
 ```bash
 git clone https://github.com/Timdebruijn/fanous && cd fanous
@@ -123,8 +128,8 @@ Building for development, protocols and endpoints: [`docs/DEVELOPMENT.md`](docs/
 
 ## What it does not do yet
 
-- **No download.** Source only; a signed, notarized app comes later.
-- **Not tested with real consoles, LTC/MTC hardware or display hot-plug.** Built and tested against loopback, generated signals and captured packets.
+- **A release candidate.** A first install on a clean Mac account is not tested yet.
+- **Not tested with real consoles or LTC/MTC hardware.** Built and tested against loopback, generated signals and captured packets. Display hot-plug is checked with one external display; with two or more it rests on unit tests.
 - **One machine measured** (M1 Pro). Other Apple Silicon chips are expectations.
 - **Apple Silicon only:** no Intel, Windows or Linux.
 - **4K60 is about 6 ProRes layers;** heavy blur and edge effects fit on 2–3 layers.
@@ -135,7 +140,8 @@ Building for development, protocols and endpoints: [`docs/DEVELOPMENT.md`](docs/
 
 If you have a grandMA, Eos, ChamSys or Avolites desk and a spare Apple Silicon
 Mac, a test report is the most useful contribution right now: does the GDTF
-import, do thumbnails show up, does a layer follow your faders?
+import, do thumbnails show up (CITP reaches grandMA2, ChamSys MagicQ, Hog 4,
+Onyx and Titan; grandMA3 and Eos have none), does a layer follow your faders?
 [Open an issue](https://github.com/Timdebruijn/fanous/issues/new/choose).
 
 ## Free, and how the project is paid for

@@ -8,12 +8,16 @@ Building, protocols, endpoints and internals. The user guide is in [`user/`](use
 
 
 Requirements: Apple Silicon Mac with a ProRes engine, macOS 15+, Swift 6.2+
-(Command Line Tools are enough until Metal shaders arrive), Node 26 for the
-web UI.
+(Command Line Tools are enough: the Metal shaders are compiled at engine start
+from source), Node 26 for the web UI. The "Supported hardware" readiness item
+goes by the chip name (only `Apple M1` fails); CI's VM reports `Apple M1
+(Virtual)` and passes. Do not probe VideoToolbox at engine start: one CI run
+with `VTIsHardwareDecodeSupported` there stalled every engine after the first
+(B144).
 
 ```bash
 swift build                      # engine, shell, core
-scripts/test.sh                  # Core unit tests (Swift Testing)
+scripts/test.sh                  # every test, engine included (CI's Core job: --filter FanousCoreTests)
 scripts/check-mallocs.sh         # §4.6 zero-malloc rule, release build (before merging compositor changes)
 (cd web && npm install && npm run build)   # web UI → web/dist
 .build/debug/fanousd --foreground        # https://127.0.0.1:8443 (self-signed; fingerprint in the log)
@@ -64,8 +68,7 @@ Browser end-to-end tests (`web/e2e/`, Playwright with Chromium) run the built
 UI against such an engine, one engine per test on a free port with a fresh
 temporary `FANOUS_HOME`, opened as the shell does (`?token=` from that home, so
 programmer). A page error, console error, refused command or refused stream
-fails, except a preview refused for an output or canvas that appeared less than
-1.5 s earlier (two known engine races, see `web/e2e/fixtures.ts`). Each home
+fails, except the error that ends a stream whose canvas was removed. Each home
 holds `fanousd.pid`; the next run kills engines an aborted run left behind. The
 tests need `.build/debug/fanousd` and `web/dist` (or `FANOUSD=/path/to/fanousd`):
 
@@ -76,7 +79,8 @@ npx playwright install chromium   # once
 npm run e2e                       # npx playwright test --headed / --ui to watch
 ```
 
-CI runs them in the `e2e` job on macOS; on a failure the traces and engine
+CI runs them in the `e2e` job on macOS (no job runs for a change to `docs/` or
+Markdown alone, except `docs/channel-map.md`); on a failure the traces and engine
 logs are uploaded as the `e2e-results` artifact. To see the preview tests as
 CI's slow VideoToolbox does (B98): `CI=1 E2E_SLOW_DECODER=6000 npm run e2e`
 delays every `VideoDecoder.isConfigSupported` by 6 s (past the browser's 5 s
@@ -96,10 +100,13 @@ writes the public certificate and its fingerprint to
 the data-protection keychain; builds without a team identifier (ad-hoc
 development builds) keep it in `tls/private-key.der` (mode 0600) and never
 touch the login keychain, so there are no keychain prompts. `fanousd
-reset-tls` discards the identity. Logs: `~/Library/Logs/Fanous/fanousd.log`.
+reset-tls` discards the identity. Logs: `~/Library/Logs/Fanous/fanousd.log`,
+and the same lines in the unified log: `/usr/bin/log stream --predicate 'subsystem == "org.fanous"'`
+(the full path: zsh has a `log` builtin).
 
-Until projects exist (Phase 5), `fanousd --scene scene.json` renders a scene
-driven by the standard DMX patch:
+`fanousd --scene scene.json` (development and the bench) renders a scene
+driven by the standard DMX patch; for that run its canvas, layer count, source
+policy and library root win over the project's:
 
 ```json
 {"canvasWidth": 1920, "canvasHeight": 1080, "fps": 60, "display": 0, "layerCount": 4,
@@ -141,12 +148,15 @@ and loaded at start; `fanousd protocol-dts` prints `web/src/lib/protocol.d.ts`
 (checked by `scripts/check-generated.sh`).
 
 Web UI (`web/`, Svelte 5 + Vite, served by the engine from `web/dist`):
-status bar, Layers / Mixer (rows with the resolved media, position, intensity
-and the DMX inspector of the selected layer), Media (library browser, upload,
-transcode, ingest queue) and Patch / DMX (fixture groups and blocks with collisions,
-`patch.set` and `patch.setMany`, a 512-cell monitor fed by the `dmx` stream). The canvas preview
+status bar and seven screens: Layers (rows with the resolved media, position,
+intensity and the DMX inspector of the selected layer), Media (library browser,
+upload, transcode, ingest queue), Inputs (cameras and capture cards, displays,
+Syphon servers, audio and LTC inputs), Outputs (outputs and mapping), Patch
+(fixture groups and blocks with collisions, `patch.set` and `patch.setMany`, a
+512-cell monitor fed by the `dmx` stream), Show (cues, timecode, OSC, MIDI)
+and System (readiness, machine, network, sync, roles, metrics, logs). The canvas preview
 on the Layers screen uses WebCodecs (H.264 from VideoToolbox, `sub` stream
-`preview`) and falls back to JPEG at 5 fps. Keys 1–6 switch screens.
+`preview`) and falls back to JPEG at 5 fps. Keys 1–7 switch screens.
 `cd web && npm run dev` proxies `/api`, `/ws` and `/healthz` to a running
 engine; `npm run build` writes `web/dist`. The web checks, in the order of
 CI's `web` job: `npm test && npm run typecheck && npm run check && npm run build`; `check` is
@@ -180,7 +190,7 @@ pauses ingest after the readiness check (`readiness.run/acknowledge`,
 `live.show`). CITP/MSEX advertises the engine (`PLoc` on both multicast
 groups) and serves consoles layer status, libraries, elements, thumbnails and
 streaming frames over TCP (`live.citp`). `/metrics` and `/api/logs` feed the
-System / Health screen.
+System screen.
 
 Install and release (Phase 8, `RELEASE.md`): `scripts/bundle.sh` assembles
 `dist/Fanous.app` (shell + `fanousd` LaunchAgent + web UI) with the
@@ -197,7 +207,7 @@ engine's grants on the shell (the LaunchAgent is registered through
 lists one entry, "Fanous", under Camera and under Screen & System Audio
 Recording. After a rebuild that entry keeps its switch on but no longer
 matches the binary: the engine reads `notDetermined` / `denied`, and macOS
-does not ask again. Reset the stale entries, then authorize on the System
+does not ask again. Reset the stale entries, then authorize on the Inputs
 screen and switch "Fanous" on:
 
 ```
@@ -236,3 +246,19 @@ application firewall; in the run above that happened only after the delay.
 drift; `fanous-bench run` ramps layers until a frame drops (`--effects
 blur,edge`, `--dissolve 2`, `--ingest FILE` for the Phase 3/4 variants) and
 `scripts/bench-sweep.sh` / `scripts/bench-phase3.sh` run the matrices.
+
+For Instruments, start `fanousd` or `fanous-bench` with `FANOUS_SIGNPOSTS=1`:
+the os_signpost instrument then shows the intervals `tick` (compositor),
+`gpu wait` (a tick waiting for its oldest frame in flight), `decode` (per
+decode thread) and `open` (a layer opening its media) under subsystem
+`org.fanous`, next to the GPU tracks when added to a Metal System Trace:
+
+```
+xcrun xctrace record --instrument os_signpost --env FANOUS_SIGNPOSTS=1 --launch -- .build/release/fanous-bench run --media DIR --layers 4 --headless
+```
+
+Off by default: signposts of an ordinary category go to the persistent log
+store whether anything records or not (about 600 a second), and the
+dynamicTracing category was not switched on by any `xctrace` template on
+macOS 27.2. Measured 2026-11-03 (release bench, 4 × ProRes 1080p60 headless):
+3.99 compositor mallocs per tick off, on and while recording, as before.

@@ -14,7 +14,7 @@ edges, a warp and one or more slices. A new output shows the whole canvas with
 no blend and no warp. Everything is applied on the GPU in the last step, so it
 costs no layer capacity.
 
-The Outputs screen (key 3, "Outputs & Mapping") has three tabs: **Canvases**,
+The Outputs screen (key 4, "Outputs & Mapping") has three tabs: **Canvases**,
 **Outputs** and **Warp & Slices**. The output list is on the left. The preview
 on top shows the canvas on the Canvases tab and the selected output on the other
 two. The output preview has the output's own aspect ratio (4:3, 16:10, an
@@ -90,8 +90,8 @@ every canvas. The clock master is set on Canvas 1 too.
 The size and rate are saved in the project and used at every start. Developers
 who start the engine with `--scene FILE` override them: the scene file's canvas
 wins for that run and is shown (and saved, on the next edit) in the project.
-Keep the frame rate equal to the refresh rate of the displays (see "Not done
-yet": display modes are not set by Fanous).
+Keep the frame rate equal to the refresh rate of the displays; show mode sets
+each output's Mode (see [Display modes](#display-modes)).
 
 After you add an output, a yellow bar says **Next: align this output**:
 **Align this output** opens the Warp & Slices tab for that output, **Later**
@@ -733,9 +733,13 @@ fix from FOH without touching the hand alignment.
 
 ## Not done yet
 
-- **Hot-plug** (unplug and replug) is only partly tested: through unit tests and
-  by binding and releasing the built-in display. Test it on your machine before
-  the show (B34).
+- **Hot-plug** (unplug and replug) is checked with one external display: unplug
+  releases the output, and replug on the same or another port and a mode change
+  rebind it, all within 25 ms of the display event. Show mode applied and
+  restored a wanted mode, but after an unplug in show mode the display came
+  back in the applied mode, so the re-apply was not exercised. With two or more
+  external displays it rests on unit tests; test it on your machine before the
+  show (B34).
 - Dithering is a simple noise function; if you see banding on a projector, tell
   the developers (B34).
 - Not available: per-output Syphon, Syphon for canvases other than Canvas 1,

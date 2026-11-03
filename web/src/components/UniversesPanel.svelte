@@ -2,8 +2,7 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
-  import { app, can, cmd } from '../lib/state.svelte';
-  import { lockTitle as lockFor } from '../lib/show';
+  import { app, cmd, programmerLock } from '../lib/state.svelte';
   import { HOLD_LABELS, PROTOCOL_LABELS, interfaceOptions, parseUniverseName, universeName, type UniverseRow } from '../lib/patch-screen';
 
   // The universes and their receive settings (B28, DESIGN §6.6). Settings belong to the universe, not to the fixtures on it.
@@ -14,7 +13,7 @@
     onopen: (id: string) => void;
   } = $props();
 
-  const lockTitle = $derived(lockFor('programmer', can('programmer'), app.project.showLock));
+  const lockTitle = $derived(programmerLock());
 
   /** One universe setting; a refused change (show lock, invalid value) puts the control back. */
   async function set(id: string, path: string, value: string | number | null, el: HTMLInputElement | HTMLSelectElement, previous: string) {
@@ -108,10 +107,10 @@
   /* name and fixtures, then the pill and the settings on a line of their own that wraps (a long pill on a phone) */
   .uni {
     display: grid; grid-template-columns: max-content minmax(0, 1fr); grid-template-areas: 'name fx' 'meta meta';
-    column-gap: 12px; row-gap: 6px; padding: 10px 16px;
+    column-gap: 12px; row-gap: 8px; padding: 12px 16px;
   }
   .uni[aria-expanded='true'] { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent); }
-  .name { grid-area: name; font-weight: 600; font-size: 14px; }
+  .name { grid-area: name; font-weight: 500; font-size: 14px; }
   .fx { grid-area: fx; font-size: 13px; }
   .meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
   .pill { min-width: 0; max-width: 100%; }

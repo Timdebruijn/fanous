@@ -6,8 +6,7 @@
   import OutputColour from './OutputColour.svelte';
   import PresetStrip from './PresetStrip.svelte';
   import RangeStepper, { GRACE } from './RangeStepper.svelte';
-  import { lockTitle } from '../lib/show';
-  import { app, can, cmd, toastUndo } from '../lib/state.svelte';
+  import { app, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
   import { throttledSender } from '../lib/throttle';
   import { endCheck, pick, removeWall, startWizard, stepCheck, wallUI } from '../lib/wall-session.svelte';
   import { SEAM_STEPS, overlapHint, rc, seamLines, wallPixels, type Control, type ManualField, type SeamLine, type WallConfig } from '../lib/walls';
@@ -19,7 +18,7 @@
   // coalesce key).
   let { wall, onwarp }: { wall: WallConfig; onwarp: (output: number) => void } = $props();
 
-  const lock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
+  const lock = $derived(programmerLock());
   const outputs = $derived(new Map(app.project.outputs.map((o) => [o.id, o])));
   const name = (id: number) => outputs.get(id)?.name ?? `Output ${id}`;
   const lines = $derived(seamLines(wall));
@@ -271,23 +270,23 @@
   .side { flex: 999 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
   .tile {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; min-height: var(--touch); padding: 6px;
-    border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-2); color: var(--text-1); overflow: hidden;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--text-1); overflow: hidden;
   }
   .tile:hover { background: var(--surface-3); }
   .tile[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-dim); }
-  .tile .id { font-size: 24px; font-weight: 700; line-height: 1; }
-  .tile .nm { max-width: 100%; font-size: 12px; font-weight: 600; }
+  .tile .id { font-size: 24px; font-weight: 600; line-height: 1; }
+  .tile .nm { max-width: 100%; font-size: 12px; font-weight: 500; }
   .seam { position: relative; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--text-2); }
   .seam::before { content: ''; position: absolute; background: var(--line-strong); border-radius: 2px; }
   .seam.right::before { top: 4px; bottom: 4px; left: calc(50% - 2px); width: 4px; }
   .seam.bottom::before { left: 4px; right: 4px; top: calc(50% - 2px); height: 4px; }
-  .seam span { position: relative; padding: 1px 3px; border-radius: 3px; background: var(--surface-1); font-size: 11px; }
+  .seam span { position: relative; padding: 2px 4px; border-radius: 4px; background: var(--surface-1); font-size: 11px; }
   .seam:hover::before { background: var(--text-2); }
   .seam[aria-pressed='true']::before { background: var(--accent); }
   .seam[aria-pressed='true'] span { color: var(--text-1); background: var(--accent-dim); }
-  .check { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); }
-  .steps { display: flex; flex-wrap: wrap; gap: 6px; }
-  .hints { display: flex; flex-direction: column; gap: 6px; }
+  .check { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+  .steps { display: flex; flex-wrap: wrap; gap: 8px; }
+  .hints { display: flex; flex-direction: column; gap: 8px; }
   .hint {
     display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 4px 12px; align-items: center; min-height: var(--touch); padding: 8px 12px;
     border: 1px solid var(--line); border-radius: 6px; background: var(--surface-1); color: var(--text-1); text-align: left; font-size: 13px;
@@ -295,11 +294,10 @@
   .hint:hover { background: var(--surface-3); }
   .hint[aria-pressed='true'] { border-color: var(--accent); }
   .turn { color: var(--text-2); }
-  .armed { margin: 0; padding: 8px 12px; border-radius: 6px; background: var(--accent-dim); font-weight: 600; }
+  .armed { margin: 0; padding: 8px 12px; border-radius: 6px; background: var(--accent-dim); font-weight: 500; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-  .ctl { display: flex; flex-direction: column; gap: 10px; }
+  .ctl { display: flex; flex-direction: column; gap: 12px; }
   h3 { margin: 0; font-size: 15px; letter-spacing: normal; text-transform: none; color: inherit; }
-  .focus { outline: 2px solid var(--accent); outline-offset: 4px; }
   .manual { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
   @media (max-width: 600px) {
     .hint { grid-template-columns: 1fr; }

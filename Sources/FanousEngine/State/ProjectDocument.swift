@@ -508,7 +508,9 @@ public enum ProjectDocument {
     /// `checkLibraryRoot`: throws when the engine cannot switch to that root now (B51); gets the expanded absolute path.
     /// `applySync`: restarts the sync sender and receiver with saved settings; throws when the port cannot be bound.
     /// `liveRunning`: the numbers of the live inputs running now, of every catalog (B69: only the others can be
-    /// forgotten). `authorizeCamera`, `authorizeScreen`: ask for the camera permission or screen recording (`capture.authorize`).
+    /// forgotten). `liveNow`: a catalog's numbering as it would be written back (`liveValue`), nil without one; a
+    /// renumber is refused while the project lags behind it (B137). `authorizeCamera`, `authorizeScreen`, `authorizeMicrophone`: ask for the camera permission, screen
+    /// recording or the microphone permission LTC needs (`capture.authorize`).
     /// `displayModes`: the current mode of each connected display by UUID (a wall output's pixel size, §9.9).
     /// `showPreset`: the Compare lease of `output.show` (output ids, preset number; 0 ends it), kept on the DMX queue.
     /// `showOverlay`: the edit overlay lease of `output.overlay` (output id, on, selection), kept by the output coordinator.
@@ -518,8 +520,10 @@ public enum ProjectDocument {
         checkLibraryRoot: @escaping @Sendable (String) throws -> Void = { _ in },
         applySync: @escaping @Sendable (SyncSettings) throws -> Void = { _ in },
         liveRunning: @escaping @Sendable () -> Set<Int> = { [] },
+        liveNow: @escaping @Sendable (LiveCatalog.Kind) -> JSONValue? = { _ in nil },
         authorizeCamera: @escaping @Sendable () -> Void = {},
         authorizeScreen: @escaping @Sendable () -> Void = {},
+        authorizeMicrophone: @escaping @Sendable () -> Void = {},
         displayModes: @escaping @Sendable () -> [String: DisplayModeConfig] = { [:] },
         showPreset: @escaping @Sendable ([Int], Int) -> Void = { _, _ in },
         showOverlay: @escaping @Sendable (Int, Bool, OverlaySelection?) -> Void = { _, _, _ in },
@@ -666,16 +670,73 @@ public enum ProjectDocument {
                     return nil
                 })
         }
+        // `capture.renumber` and `syphon.renumber` (B137, DESIGN §12.1): a free number moves the input, a taken one swaps
+        // the two; the catalog adopts the value (its running entries move when it names each once). Layers select by
+        // number, so a cue on number 1 keeps meaning "camera 1".
+        let renumbers: [(name: String, kinds: [LiveCatalog.Kind], summary: String)] = [
+            (
+                "capture.renumber", [.capture, .screens],
+                "Give a capture device (folder 0, 1–20) or display (21–28) another number in its range: a free one moves it, a taken one swaps the two. Refused in show mode, also its undo and redo."
+            ),
+            (
+                "syphon.renumber", [.syphon],
+                "Give a Syphon server (folder 0, 150–169) another number: a free one moves it, a taken one swaps the two; refused for a server whose app and name another numbered server shares. Refused in show mode, also its undo and redo."
+            ),
+        ]
+        for (name, kinds, summary) in renumbers {
+            store.register(
+                CommandSpec(
+                    name: name, role: .programmer, summary: summary, argsType: "{ file: number; to: number }",
+                    replayCheck: { patch, done, project in
+                        // layers on either number change picture: as the command, never in show mode
+                        guard !showModeOn() else { throw CommandError("showMode", "numbers are not changed in show mode; leave show mode first") }
+                        try checkLiveReplay(patch, undoing: done, on: project, running: liveRunning())
+                    }
+                ) { project, args in
+                    guard let file = args["file"]?.int, let to = args["to"]?.int else { throw CommandError.invalidArgs("args: { file, to }") }
+                    guard !showModeOn() else { throw CommandError("showMode", "numbers are not changed in show mode; leave show mode first") }
+                    guard let kind = kinds.first(where: { $0.files.contains(file) }) else {
+                        throw CommandError.invalidArgs("\(file) is not a number of \(name == "syphon.renumber" ? "a Syphon server (150–169)" : "a capture device (1–20) or display (21–28)")")
+                    }
+                    let noun = nouns[kind] ?? kind.noun
+                    guard kind.files.contains(to) else {
+                        throw CommandError.invalidArgs("a \(noun) takes a number from \(kind.files.lowerBound) to \(kind.files.upperBound), not \(to)")
+                    }
+                    // a source numbered or renumbered by the catalog in the last tenth of a second is not in the project yet: the
+                    // catalog would not find the value naming it, keep its numbers and write them back over this change
+                    if let now = liveNow(kind), now != (project[kind.projectKey] ?? [:]) {
+                        throw CommandError("liveChanged", "the inputs changed a moment ago; try again")
+                    }
+                    var numbers = liveNumbers(kind, from: project)
+                    guard let moved = numbers.firstIndex(where: { $0.file == file }) else { throw CommandError.invalidArgs("no \(noun) numbered \(file)") }
+                    guard to != file else { return nil }
+                    let other = numbers.firstIndex { $0.file == to }
+                    // two servers with one identity (two engines' canvases) cannot be told apart once moved
+                    for i in [moved] + (other.map { [$0] } ?? []) where numbers.contains(where: { $0.file != numbers[i].file && $0.same(numbers[i]) }) {
+                        throw CommandError.invalidArgs("\(numbers[i].label) shares its app and name with another numbered server; forget the one that is not running first")
+                    }
+                    numbers[moved].file = to
+                    if let other { numbers[other].file = file }
+                    try project.set(liveValue(numbers), at: JSONPointer(tokens: [kind.projectKey]))
+                    return nil
+                })
+        }
         store.register(
             CommandSpec(
                 name: "capture.authorize", role: .programmer, undoable: false,
                 summary:
-                    "Ask macOS for the camera permission, or for screen recording (allow Fanous in System Settings, then restart the engine); refused in show mode.",
-                argsType: "{ kind: 'camera' | 'screen' }"
+                    "Ask macOS for the camera permission, the microphone permission (LTC), or for screen recording (allow Fanous in System Settings, then restart the engine); refused in show mode.",
+                argsType: "{ kind: 'camera' | 'screen' | 'microphone' }"
             ) { _, args in
-                guard let kind = args["kind"]?.string, kind == "camera" || kind == "screen" else { throw CommandError.invalidArgs("kind must be camera or screen") }
+                guard let kind = args["kind"]?.string, ["camera", "screen", "microphone"].contains(kind) else {
+                    throw CommandError.invalidArgs("kind must be camera, screen or microphone")
+                }
                 guard !showModeOn() else { throw CommandError("showMode", "permissions are not asked in show mode; leave show mode first") }
-                if kind == "camera" { authorizeCamera() } else { authorizeScreen() }
+                switch kind {
+                case "camera": authorizeCamera()
+                case "screen": authorizeScreen()
+                default: authorizeMicrophone()
+                }
                 return nil
             })
         store.register(

@@ -6,7 +6,7 @@
   import MediaIngestQueue from '../components/MediaIngestQueue.svelte';
   import MediaTile from '../components/MediaTile.svelte';
   import PolicyHint from '../components/PolicyHint.svelte';
-  import { app, authHeaders, can, cmd, playOnLayer } from '../lib/state.svelte';
+  import { app, authHeaders, can, playOnLayer, programmerLock } from '../lib/state.svelte';
   import {
     LOCKED_TITLE,
     activeSources,
@@ -14,12 +14,14 @@
     displayName,
     filterItems,
     invalidCount,
+    loadLibrary,
     send,
     type LibraryItem,
     type LibrarySnapshot,
   } from '../lib/media';
-  import { ZERO_GROUPS, folderZeroItems, zeroCaption, type FolderZeroItem } from '../lib/layers';
-  import { lockTitle } from '../lib/show';
+  import { ZERO_GROUPS, folderZeroItems, layerNumbers, layersShowing, zeroCaption } from '../lib/layers';
+  import { lowestFree } from '../lib/outputs';
+  import { plural } from '../lib/system';
 
   interface Upload {
     name: string;
@@ -48,25 +50,14 @@
   /** absent from engines before B73 step 2: then no camera or display group */
   const capture = $derived(app.live.capture);
   const zeroItems = $derived(folderZeroItems(app.live.syphon?.servers, capture));
+  // numbers, Forget and permissions of the live inputs are on the Inputs screen (DESIGN §12.1)
   const zeroGroups = $derived(
-    ZERO_GROUPS.map((g) => {
-      const list = zeroItems.filter((i) => i.kind === g.kind);
-      // live inputs not running (in use counts as running): their numbers can be forgotten (B69, B73)
-      return { ...g, list, notRunning: list.filter((i) => !i.running && !i.inUse).length };
-    }).filter((g) => (g.kind === 'capture' ? capture !== undefined : g.kind === 'screen' ? g.list.length > 0 : true)),
+    ZERO_GROUPS.map((g) => ({ ...g, list: zeroItems.filter((i) => i.kind === g.kind) })).filter((g) =>
+      g.kind === 'capture' ? capture !== undefined : g.kind === 'screen' ? g.list.length > 0 : true,
+    ),
   );
-  const cameraPermission = $derived(capture?.permissions?.camera);
-  const screenPermission = $derived(capture?.permissions?.screen);
-  const NOUN = { syphon: 'server', capture: 'device', screen: 'display', generator: '' } as const;
-  // capture.forget without a file sweeps cameras and displays (1–28) at once, so one button above the cameras covers both
-  const captureNotRunning = $derived(zeroGroups.filter((g) => g.kind === 'capture' || g.kind === 'screen').reduce((n, g) => n + g.notRunning, 0));
   let pickedZero = $state<number | null>(null);
   const pickedZeroItem = $derived(zeroItems.find((i) => i.file === pickedZero));
-  function forget(kind: FolderZeroItem['kind'], file?: number) {
-    const args = file === undefined ? {} : { file };
-    return kind === 'syphon' ? cmd('syphon.forget', args) : cmd('capture.forget', args);
-  }
-  const unnumbered = $derived(app.live.syphon?.unnumbered ?? []);
   const folders = $derived(library?.folders ?? []);
   const current = $derived(isZero ? undefined : (folders.find((f) => f.path === selectedFolder) ?? defaultFolder(folders)));
   const items = $derived(current?.items ?? []);
@@ -77,8 +68,8 @@
   const locked = $derived(!can('programmer'));
   const picked = $derived(shown.find((i) => i.path === selectedItem));
   const playable = $derived(picked !== undefined && picked.file !== null && current?.number != null && picked.status === 'playable');
-  const layerNumbers = $derived(Array.from({ length: Math.max(0, Math.floor(app.project.layerCount) || 0) }, (_, i) => i + 1));
-  const playLock = $derived(lockTitle('programmer', !locked, app.project.showLock));
+  const layerList = $derived(layerNumbers(app.project.layerCount));
+  const playLock = $derived(programmerLock());
   let playNote = $state('');
 
   async function play(n: number, folder: number, file: number, name: string) {
@@ -87,25 +78,13 @@
   }
   const canImport = $derived(current?.number != null);
   /** "folder/file" → the layers playing it, for the tile badge */
-  const playing = $derived.by(() => {
-    const map = new Map<string, string[]>();
-    for (const layer of app.live.layers) {
-      if (layer.folder >= 0 && layer.file > 0) map.set(`${layer.folder}/${layer.file}`, [...(map.get(`${layer.folder}/${layer.file}`) ?? []), `Layer ${layer.index}`]);
-    }
-    return map;
-  });
-  const nextFolderNumber = $derived.by(() => {
-    const used = new Set(folders.map((f) => f.number));
-    for (let n = 1; n <= 255; n++) if (!used.has(n)) return n;
-    return 0;
-  });
+  const playing = $derived(layersShowing(app.live.layers));
+  const nextFolderNumber = $derived(lowestFree(folders.flatMap((f) => f.number ?? [])) ?? 0);
 
   async function load() {
     const mine = ++latest;
     try {
-      const response = await fetch('/api/library');
-      if (!response.ok) throw new Error(`${response.status} ${(await response.text()).trim()}`.trim());
-      const snapshot = (await response.json()) as LibrarySnapshot;
+      const snapshot = await loadLibrary();
       if (mine === latest) library = snapshot;
     } catch (error) {
       if (mine === latest) notice = `Cannot load the library: ${error instanceof Error ? error.message : String(error)}`;
@@ -180,13 +159,13 @@
 </script>
 
 {#snippet playMenu(folder: number, file: number, name: string)}
-  <select class="select" aria-label="Play on layer" disabled={playLock !== undefined || layerNumbers.length === 0} title={playLock} value="" onchange={(e) => {
+  <select class="select" aria-label="Play on layer" disabled={playLock !== undefined || layerList.length === 0} title={playLock} value="" onchange={(e) => {
     const n = Number(e.currentTarget.value);
     e.currentTarget.value = '';
     if (n) void play(n, folder, file, name);
   }}>
     <option value="">Play on layer ▾</option>
-    {#each layerNumbers as n (n)}<option value={n}>Layer {n}</option>{/each}
+    {#each layerList as n (n)}<option value={n}>Layer {n}</option>{/each}
   </select>
 {/snippet}
 
@@ -264,48 +243,24 @@
       <div class="toolbar">
         <div>
           <h1>0 · Built-in and live inputs</h1>
-          <div class="caption">Drawn by the engine, the cameras, capture cards and displays of this Mac, and the Syphon servers of other apps. A console selects them as folder 0, file n.</div>
+          <div class="caption">Drawn by the engine, the cameras, capture cards and displays of this Mac, and the Syphon servers of other apps. A console selects them as folder 0, file n. Their status, numbers and permissions are on the <a href="#/inputs">Inputs screen</a>.</div>
         </div>
       </div>
       {#if pickedZeroItem}
         <div class="panel playbar" role="group" aria-label="Selected item">
           <span class="ellipsis grow" title={pickedZeroItem.name}><strong>{pickedZeroItem.file}</strong> · {pickedZeroItem.name}</span>
           {@render playMenu(0, pickedZeroItem.file, pickedZeroItem.name)}
-          {#if pickedZeroItem.kind !== 'generator' && !pickedZeroItem.running && !pickedZeroItem.inUse}
-            <button class="btn" disabled={playLock !== undefined} title={playLock ?? `Free this number: a console cue on it then selects the next new ${NOUN[pickedZeroItem.kind]} (undo brings it back)`}
-              onclick={() => void forget(pickedZeroItem.kind, pickedZeroItem.file)}>Forget</button>
-          {/if}
+          {#if pickedZeroItem.kind !== 'generator'}<a href="#/inputs/{pickedZeroItem.file}">Status on Inputs</a>{/if}
         </div>
         <PolicyHint what="content put on a layer from here" />
         {#if playNote}<p class="caption" role="status">{playNote}</p>{/if}
       {/if}
       {#each zeroGroups as group (group.kind)}
-        <div class="zero-head">
-          <h2 class="zero-title">{group.title}</h2>
-          {#if group.kind === 'syphon' && group.notRunning > 1}
-            <button class="btn" disabled={playLock !== undefined} title={playLock ?? 'Free the numbers of every server that is not running (undo brings them back)'}
-              onclick={() => void forget(group.kind)}>Forget all not running</button>
-          {:else if group.kind === 'capture' && captureNotRunning > 1}
-            <button class="btn" disabled={playLock !== undefined} title={playLock ?? 'Free the numbers of every camera, capture card and display that is not running (undo brings them back)'}
-              onclick={() => void forget(group.kind)}>Forget all not running (cameras and displays)</button>
-          {/if}
-        </div>
-        {#if group.kind === 'syphon' && unnumbered.length > 0}
-          <p class="caption" role="status">Not numbered, all 20 numbers are taken: {unnumbered.join(', ')}. Forget a server that is not running to free one.</p>
-        {/if}
-        {#if group.kind === 'capture' && cameraPermission && cameraPermission !== 'granted'}
-          <p class="caption" role="status">{cameraPermission === 'denied' ? 'Camera permission denied: allow Fanous under Privacy & Security › Camera.' : 'Camera permission not granted: authorize on the System screen.'}</p>
-        {/if}
-        {#if group.kind === 'screen'}
-          {#if screenPermission && screenPermission !== 'granted'}
-            <p class="caption" role="status">Screen permission not granted: authorize on the System screen, then Engine › Restart Engine.</p>
-          {/if}
-          <p class="caption">A display used as a Fanous output reads not running (one that was an output from the start gets no number). macOS asks again about once a month whether Fanous may record the screen: see Capture permissions on the <a href="#/system">System screen</a>.</p>
-        {/if}
+        <h2 class="zero-title">{group.title}</h2>
         {#if group.list.length === 0}
           <p class="caption">{group.kind === 'capture'
-            ? 'No cameras or capture cards found. One connected to this Mac appears here with the lowest free number from 1; it keeps that number, also across engine restarts, until you forget it here.'
-            : 'No Syphon servers running. When another app on this Mac starts one, it appears here with the lowest free number from 150; it keeps that number, also across engine restarts, until you forget it here.'}</p>
+            ? 'No cameras or capture cards found. One connected to this Mac appears here with the lowest free number from 1.'
+            : 'No Syphon servers running. When another app on this Mac starts one, it appears here with the lowest free number from 150.'}</p>
         {:else}
           <ul class="panel zero" aria-label={group.title}>
             {#each group.list as item (item.file)}
@@ -328,7 +283,7 @@
         <div>
           <h1>{current ? (current.number === null ? current.name : `${current.number} · ${displayName(current.name, true)}`) : 'Media'}</h1>
           {#if current}
-            <div class="caption">{items.length} {items.length === 1 ? 'file' : 'files'}{invalid > 0 ? ` · ${invalid} invalid name` : ''}</div>
+            <div class="caption">{plural(items.length, 'file')}{invalid > 0 ? ` · ${plural(invalid, 'invalid name')}` : ''}</div>
           {/if}
         </div>
         <span class="spacer"></span>
@@ -425,8 +380,7 @@
   .fail { color: var(--red); }
   .playbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 12px; }
   .playbar .select { min-width: 180px; }
-  .zero-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; }
-  .zero-title { margin: 0; font-size: 15px; }
+  .zero-title { margin: 8px 0 0; font-size: 15px; }
   .zero { list-style: none; margin: 0; padding: 0; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
   @media (max-width: 900px) {

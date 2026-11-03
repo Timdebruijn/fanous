@@ -8,9 +8,8 @@
   import SystemSync from '../components/SystemSync.svelte';
   import SystemVersions from '../components/SystemVersions.svelte';
   import { modeText } from '../lib/outputs';
-  import { lockTitle } from '../lib/show';
   import { app, can, cmd } from '../lib/state.svelte';
-  import { LOCKED_TITLE, OPERATOR_TITLE, ageText, headerCaption, memoryText, outputTone, permissionRow, readinessBadge, readinessSummary, resumedText, stampText, thermalTone } from '../lib/system';
+  import { LOCKED_TITLE, OPERATOR_TITLE, ageText, copied, headerCaption, memoryText, outputTone, plural, readinessBadge, readinessSummary, resumedText, stampText, thermalTone } from '../lib/system';
 
   const show = $derived(app.live.show);
   const sys = $derived(app.live.system);
@@ -28,9 +27,6 @@
       uptimeSeconds: app.live.engine.uptimeSeconds,
     }),
   );
-  // live.capture is absent from engines before B73 step 2: then no block
-  const permissions = $derived(app.live.capture?.permissions);
-  const authorizeLock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock) ?? (show.mode ? 'Leave show mode first' : undefined));
   const outputName = (id: number) => app.project.outputs.find((o) => o.id === id)?.name ?? `Output ${id}`;
 
   let readinessPanel: HTMLElement | undefined = $state();
@@ -55,12 +51,7 @@
 
   let copy = $state<'idle' | 'ok' | 'failed'>('idle');
   async function copyFingerprint() {
-    try {
-      await navigator.clipboard.writeText(sys.tlsFingerprint);
-      copy = 'ok';
-    } catch {
-      copy = 'failed';
-    }
+    copy = await copied(sys.tlsFingerprint);
   }
   $effect(() => {
     if (copy === 'idle') return;
@@ -141,7 +132,7 @@
         <div class="mono wrap">{library.root || '—'}</div>
         <div class="caption status">
           <span class="dot dot-{library.rootExists ? 'green' : 'yellow'}"></span>
-          {library.rootExists ? 'folder found' : 'folder not found'} · {library.folders} folders · {library.fileCount} files{library.invalidCount > 0 ? ` · ${library.invalidCount} invalid` : ''}
+          {library.rootExists ? 'folder found' : 'folder not found'} · {plural(library.folders, 'folder')} · {plural(library.fileCount, 'file')}{library.invalidCount > 0 ? ` · ${library.invalidCount} invalid` : ''}
         </div>
         <form class="rootform" onsubmit={applyRoot}>
           <input class="input mono" type="text" aria-label="Library root path" autocomplete="off" spellcheck="false" value={rootValue} disabled={lockedProgrammer} title={lockedProgrammer ? LOCKED_TITLE : undefined} oninput={(event) => (rootDraft = event.currentTarget.value)} />
@@ -186,38 +177,13 @@
           <span class="dot dot-{u.active ? 'green' : 'off'}" role="img" aria-label={u.active ? 'active' : 'silent'}></span>
           <span class="mono">{u.id}</span>
           <span class="grow ellipsis muted" title={u.source}>{u.source || '—'}</span>
-          <span class="mono muted">{u.packets} packets</span>
+          <span class="mono muted">{plural(u.packets, 'packet')}</span>
           <span class="mono muted">{ageText(u.ageSeconds)}</span>
         </li>
       {:else}
         <li class="caption empty">No DMX universes seen. Nothing has arrived on Art-Net or sACN: check that the console sends to this Mac's address, the cable or Wi-Fi, and the universe numbers on the Patch screen.</li>
       {/each}
     </ul>
-
-    {#if permissions}
-      <h3>Capture permissions</h3>
-      <ul aria-label="Capture permissions">
-        {#each [{ kind: 'camera', label: 'Camera', state: permissions.camera }, { kind: 'screen', label: 'Screen', state: permissions.screen }] as const as row (row.kind)}
-          {@const p = permissionRow(row.kind, row.state)}
-          <li class="list-row item">
-            <span class="dot dot-{p.tone}" aria-hidden="true"></span>
-            <span class="grow">{row.label}</span>
-            <span class="muted">{p.word}</span>
-            {#if p.authorize}
-              <button type="button" class="btn" disabled={authorizeLock !== undefined} title={authorizeLock} onclick={() => void cmd('capture.authorize', { kind: row.kind })}>Authorize {row.label.toLowerCase()}</button>
-            {/if}
-            <!-- always rendered, so the live region announces the caption when it appears -->
-            <span class="caption" role="status">{p.caption ?? ''}</span>
-          </li>
-        {/each}
-      </ul>
-      {#if permissions.camera === 'denied'}
-        <p class="caption empty">Camera denied: allow Fanous under System Settings › Privacy & Security › Camera.</p>
-      {/if}
-      {#if (app.live.capture?.screens?.length ?? 0) > 0}
-        <p class="caption empty">Screen: macOS asks again about once a month; before a show, check the readiness item Screen recording granted.</p>
-      {/if}
-    {/if}
   </section>
 
   <section class="panel" aria-labelledby="network-title">
@@ -252,7 +218,7 @@
       <dt>CITP</dt>
       <dd class="mono wrap">
         {#if app.live.citp.port}
-          TCP {app.live.citp.port} · {app.live.citp.clients.length} console{app.live.citp.clients.length === 1 ? '' : 's'} · {app.live.citp.streams} stream{app.live.citp.streams === 1 ? '' : 's'}
+          TCP {app.live.citp.port} · {plural(app.live.citp.clients.length, 'console')} · {plural(app.live.citp.streams, 'stream')}
           {#each app.live.citp.clients as client (client)}<div>{client}</div>{/each}
         {:else}
           not running

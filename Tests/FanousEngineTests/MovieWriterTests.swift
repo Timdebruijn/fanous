@@ -9,7 +9,17 @@ import Testing
 @testable import FanousEngine
 
 struct MovieWriterTests {
-    /// B21: the ProRes the ingest writes is Rec.709, whatever the source was tagged. The transcoder's BGRA frames carry the
+    /// A zero or negative frame rate throws instead of trapping in init (a job replayed from queue.json with such a
+    /// rate would otherwise take the engine down at every start).
+    @Test func zeroFrameRateThrows() throws {
+        let url = try tempDir("fanous-writer").appending(path: "zero.mov")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        #expect(throws: MovieWriter.WriterError.self) { try MovieWriter(url: url, width: 64, height: 48, fps: 0, codec: .proRes422) }
+        #expect(throws: MovieWriter.WriterError.self) { try MovieWriter(url: url, width: 64, height: 48, fps: 25, frameDuration: .zero, codec: .proRes422) }
+        #expect(throws: MovieWriter.WriterError.self) { try MovieWriter(url: url, width: 64, height: 48, fps: 25, frameDuration: .positiveInfinity, codec: .proRes422) }
+    }
+
+    /// B21: the ProRes the ingest writes is Rec.709, whatever the source was tagged. The transcoder's RGB frames carry the
     /// source's YCbCr matrix as an attachment (AVAssetReader copies it), and without colour properties the writer took that
     /// tag and matrix for the file, so a Rec.601 source became a 601-coded file that the layer shader (one 709 matrix) read
     /// with 15–40 codes of error on saturated colours (measured 2026-11-02).

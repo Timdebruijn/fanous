@@ -23,12 +23,12 @@ public enum CaptureError: Error, CustomStringConvertible {
 
     public var description: String {
         switch self {
-        case .permissionNotAsked: "camera permission not asked: authorize on the System screen"
+        case .permissionNotAsked: "camera permission not asked: authorize on the Inputs screen"
         case .permissionPending: "waiting for camera permission"
         case .permissionDenied: "camera permission denied: allow Fanous under Privacy & Security › Camera"
         case .noDevice(let uid): "no capture device \(uid)"
         case .session(let reason): "capture could not start: \(reason)"
-        case .screenPermission: "screen permission not granted: authorize on the System screen, then Engine › Restart"
+        case .screenPermission: "screen permission not granted: authorize on the Inputs screen, then Engine › Restart"
         case .noDisplay(let uuid): "no display \(uuid)"
         }
     }

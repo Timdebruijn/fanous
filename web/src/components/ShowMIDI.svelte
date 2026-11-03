@@ -4,9 +4,9 @@
 <script lang="ts">
   import type { MIDIMappingDoc } from '../lib/docs';
   import type { ChannelMap } from '../lib/patch-screen';
-  import { fixtureNames, formatNumber, groupSpecs, lockTitle, midiControlText, midiParameterTarget, midiTargetText, specsFor } from '../lib/show';
-  import { app, can, cmd } from '../lib/state.svelte';
-  import { stampText } from '../lib/system';
+  import { fixtureNames, formatNumber, groupSpecs, midiControlText, midiParameterTarget, midiTargetText, specsFor } from '../lib/show';
+  import { app, cmd, programmerLock } from '../lib/state.svelte';
+  import { plural, stampText } from '../lib/system';
 
   /** null while the channel map is not there: parameter targets are then offered by key only once it arrives */
   let { map }: { map: ChannelMap | null } = $props();
@@ -25,7 +25,7 @@
   const sources = $derived(app.live.osc.midiSources);
   const sourceMissing = $derived(!!midi.source && !sources.includes(midi.source));
   const mtcDevice = $derived(app.project.timecode.source === 'mtc' ? (app.project.timecode.device ?? '') : null);
-  const editTitle = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
+  const editTitle = $derived(programmerLock());
   const editable = $derived(editTitle === undefined);
 
   // the target the next Learn maps to
@@ -52,7 +52,7 @@
   <header>
     <h2 id="midi-title">MIDI</h2>
     <span class="spacer"></span>
-    <span class="caption">{live.connected.length} {live.connected.length === 1 ? 'source' : 'sources'} listened to</span>
+    <span class="caption">{plural(live.connected.length, 'source')} listened to</span>
   </header>
 
   <p class="last mono" aria-live="polite">
@@ -199,12 +199,12 @@
   .fields .select, .learn .select { min-width: 0; max-width: 100%; }
   .fields .input { width: 90px; }
   .sources { list-style: none; margin: 0; padding: 0; }
-  .sources li { display: flex; align-items: center; gap: 10px; min-height: var(--touch); border-bottom: 1px solid var(--line); }
+  .sources li { display: flex; align-items: center; gap: 8px; min-height: var(--touch); border-bottom: 1px solid var(--line); }
   .sources li:last-child { border-bottom: 0; }
   .scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th { text-align: left; font-weight: 500; color: var(--text-3); padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); }
-  td { padding: 6px 8px 6px 0; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  td { padding: 8px 8px 8px 0; border-bottom: 1px solid var(--line); vertical-align: middle; }
   td .faint { font-size: 12px; max-width: 160px; }
   tbody tr:last-child td { border-bottom: 0; }
   td:last-child { padding-right: 0; text-align: right; }

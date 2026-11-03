@@ -83,7 +83,7 @@
 
 <style>
   dialog { width: min(420px, calc(100vw - 32px)); }
-  form { display: flex; flex-direction: column; gap: 14px; }
+  form { display: flex; flex-direction: column; gap: 16px; }
   form p { margin: 0; }
   .field .select, .field .input { width: 100%; }
   .err { color: var(--red); font-size: 13px; }

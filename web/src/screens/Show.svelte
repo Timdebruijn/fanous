@@ -17,6 +17,7 @@
   import { loadChannelMap, type ChannelMap } from '../lib/patch-screen';
   import { formatNumber, lockTitle } from '../lib/show';
   import { app, can, cmd } from '../lib/state.svelte';
+  import { plural } from '../lib/system';
 
   /** undefined while loading, null when it could not be fetched (the next visit retries) */
   let channelMap = $state.raw<ChannelMap | null | undefined>(undefined);
@@ -56,7 +57,7 @@
 
 <div class="toolbar">
   <h1>Show control</h1>
-  <span class="caption">{cues.length} {cues.length === 1 ? 'cue' : 'cues'} · timecode {app.live.timecode.state}</span>
+  <span class="caption">{plural(cues.length, 'cue')} · timecode {app.live.timecode.state}</span>
   <span class="spacer"></span>
   <form
     class="goto"
@@ -96,8 +97,8 @@
 
 <style>
   .transport { display: flex; align-items: center; gap: 48px; }
-  .go { flex: 1 1 320px; max-width: 520px; height: 72px; flex-direction: column; gap: 2px; font-size: 22px; letter-spacing: 0.02em; }
-  .go-title { font-weight: 700; }
+  .go { flex: 1 1 320px; max-width: 520px; height: 72px; flex-direction: column; gap: 2px; font-size: 24px; letter-spacing: 0.02em; }
+  .go-title { font-weight: 600; }
   .go-next { max-width: 100%; font-size: 14px; font-weight: 500; }
   .back { min-width: 96px; }
   .goto { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

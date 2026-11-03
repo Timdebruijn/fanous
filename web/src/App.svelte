@@ -12,6 +12,7 @@
   import { route, startRouter } from './lib/router.svelte';
   import { app, client } from './lib/state.svelte';
   import Layers from './screens/Layers.svelte';
+  import Inputs from './screens/Inputs.svelte';
   import Media from './screens/Media.svelte';
   import Outputs from './screens/Outputs.svelte';
   import Patch from './screens/Patch.svelte';
@@ -79,6 +80,8 @@
       <Layers />
     {:else if route.screen === 'media'}
       <Media />
+    {:else if route.screen === 'inputs'}
+      <Inputs />
     {:else if route.screen === 'patch'}
       <Patch />
     {:else if route.screen === 'outputs'}
@@ -102,5 +105,5 @@
   .messages { padding: 8px 16px; }
   .messages header { display: flex; align-items: center; }
   .messages ul { list-style: none; margin: 0; padding: 0; font-size: 13px; }
-  .messages li { padding: 6px 0; border-top: 1px solid var(--line); }
+  .messages li { padding: 8px 0; border-top: 1px solid var(--line); }
 </style>

@@ -4,6 +4,8 @@
 // Pure helpers of the Media screen: library shapes (LibraryIndex.swift), codec and job-state names for what Swift's
 // synthesized Codable writes (IngestQueue.swift, MovieWriter.swift), formatting and filtering.
 import type { IngestJobDoc } from './docs';
+import { clamp01 } from './outputs';
+import { plural } from './system';
 
 export { LOCKED_TITLE } from './patch-screen';
 
@@ -17,6 +19,8 @@ export interface MediaMetadata {
   audioChannels: number;
   audioSampleRate: number;
   frameCount: number;
+  /** non-square pixels: `width` is the shown width; absent when 1 */
+  pixelAspect?: number;
 }
 
 export interface LibraryItem {
@@ -45,6 +49,13 @@ export interface LibrarySnapshot {
   scannedAt: number;
   fileCount: number;
   invalidCount: number;
+}
+
+/** GET /api/library; a failure throws with the status and the engine's text. */
+export async function loadLibrary(signal?: AbortSignal): Promise<LibrarySnapshot> {
+  const response = await fetch('/api/library', { signal });
+  if (!response.ok) throw new Error(`${response.status} ${(await response.text()).trim()}`.trim());
+  return (await response.json()) as LibrarySnapshot;
 }
 
 /** The names `POST /api/ingest` takes (IngestAPI.codec(named:)); the first is the default. */
@@ -77,9 +88,10 @@ const fourCCNames = new Map([
   ['generator', 'Built-in'],
 ]);
 
-/** Display name of a probed codec or a layer's codec ("generator" for folder 0); unknown ones stay as they are (the badge upper-cases them). */
+/** Display name of a probed codec or a layer's codec ("generator" for folder 0); an unknown one, a still's extension or an
+ *  unmapped fourCC, in capitals ("PNG", "MP4V"). */
 export function codecLabel(codec: string): string {
-  return fourCCNames.get(codec) ?? codec;
+  return fourCCNames.get(codec) ?? codec.toUpperCase();
 }
 
 /** "m:ss.s", tenths rounded as a whole so 59.96 s reads 1:00.0, never 0:60.0. */
@@ -94,14 +106,18 @@ export function durationBadge(item: LibraryItem): string | null {
   if (item.kind === 'still') return 'still';
   const meta = item.metadata;
   if (!meta) return null;
-  if (item.kind === 'sequence') return meta.frameCount > 0 ? `${meta.frameCount} frames` : null;
+  if (item.kind === 'sequence') return meta.frameCount > 0 ? plural(meta.frameCount, 'frame') : null;
   return meta.duration > 0 ? formatDuration(meta.duration) : null;
 }
 
-/** "1080p25" (rate without a trailing .0, 29.97 stays 29.97); "1920×1080" where there is no frame rate (stills, sequences). */
+/**
+ * "1080p25" (rate without a trailing .0, 29.97 stays 29.97); "1920×1080" where there is no frame rate (stills, sequences).
+ * An anamorphic movie shows its shown size too, "1920×1080p25" (B146): the height alone would hide that it is not what the file holds.
+ */
 export function formatLabel(meta: MediaMetadata): string {
   if (meta.height <= 0) return '';
-  if (meta.frameRate > 0) return `${meta.height}p${Number(meta.frameRate.toFixed(3))}`;
+  const anamorphic = meta.pixelAspect !== undefined && meta.pixelAspect !== 1 && meta.width > 0;
+  if (meta.frameRate > 0) return `${anamorphic ? `${meta.width}×` : ''}${meta.height}p${Number(meta.frameRate.toFixed(3))}`;
   return meta.width > 0 ? `${meta.width}×${meta.height}` : `${meta.height}p`;
 }
 
@@ -208,7 +224,7 @@ export function describeJobState(state: unknown): JobState {
   switch (s?.[0]) {
     case 'running': {
       const progress = Number(s[1].progress);
-      return { label: 'transcoding', progress: Number.isFinite(progress) ? Math.min(1, Math.max(0, progress)) : 0 };
+      return { label: 'transcoding', progress: Number.isFinite(progress) ? clamp01(progress) : 0 };
     }
     case 'done':
       return { label: 'done', progress: 1 };

@@ -9,6 +9,12 @@ import Foundation
 /// Runtime facts about this machine. Phase 0 only logs them; tiers come in Phase 2.
 public enum SystemInfo {
     public static var chipName: String { sysctlString("machdep.cpu.brand_string") ?? "unknown" }
+    /// The platform floor (DESIGN.md §5): of the Mac chips only the base M1 has no ProRes engine (B144; from Apple's
+    /// documentation, no base M1 was at hand). By name, not `VTIsHardwareDecodeSupported`: a CI run with that call at start
+    /// stalled every fanousd after the first for 20 s before its "fanousd starting" line (main 59fb9db; other runs with it
+    /// passed). CI's VM reports "Apple M1 (Virtual)" (B99) and passes.
+    public static var hasProResEngine: Bool { proResEngine(chip: chipName) }
+    static func proResEngine(chip: String) -> Bool { chip != "Apple M1" }
     public static var physicalMemoryBytes: UInt64 { ProcessInfo.processInfo.physicalMemory }
     public static var osVersion: String { ProcessInfo.processInfo.operatingSystemVersionString }
     public static var hostName: String { ProcessInfo.processInfo.hostName }
@@ -16,9 +22,9 @@ public enum SystemInfo {
     static func sysctlString(_ name: String) -> String? {
         var size = 0
         guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return nil }
-        var buffer = [CChar](repeating: 0, count: size)
+        var buffer = [UInt8](repeating: 0, count: size)
         guard sysctlbyname(name, &buffer, &size, nil, 0) == 0 else { return nil }
-        return String(cString: buffer)
+        return String(decoding: buffer.prefix { $0 != 0 }, as: UTF8.self)
     }
 
     /// Non-loopback IPv4 addresses of all interfaces, for the certificate's SAN.

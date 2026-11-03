@@ -5,7 +5,8 @@ import { FanousClient, type ConnectionState, type Doc, type PreviewInfo, type St
 import { makeMessage, pushMessage, TOAST_MS, type UIMessage } from './errors';
 import { playSteps } from './layers';
 import { applyPatch } from './patch';
-import { emptyLive, emptyProject, type LiveDoc, type ProjectDoc } from './docs';
+import { lockTitle } from './show';
+import { emptyLive, emptyProject, restoreKeys, type LiveDoc, type ProjectDoc } from './docs';
 import type { CommandArgs, CommandName, JSONValue, Role } from './protocol';
 
 /** One deep `$state` tree: patches mutate it in place, so only the touched paths re-render. */
@@ -52,16 +53,35 @@ export function can(role: Role): boolean {
   return roleRank[app.role] >= roleRank[role];
 }
 
+/** The title of a disabled programmer control: the role is lower or the show is locked; undefined when it may be used. */
+export function programmerLock(): string | undefined {
+  return lockTitle('programmer', can('programmer'), app.project.showLock);
+}
+
+/** A choice remembered per browser. Blocked storage (private mode) reads as unset and forgets: the choice lasts for this page only. */
+export const prefs = {
+  get(key: string): string | undefined {
+    try {
+      return localStorage.getItem(key) ?? undefined;
+    } catch {
+      return undefined;
+    }
+  },
+  set(key: string, value: string): void {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // blocked storage
+    }
+  },
+};
+
 function clientId(): string {
-  try {
-    const existing = localStorage.getItem('fanous.clientId');
-    if (existing) return existing;
-    const id = crypto.randomUUID();
-    localStorage.setItem('fanous.clientId', id);
-    return id;
-  } catch {
-    return crypto.randomUUID();
-  }
+  const existing = prefs.get('fanous.clientId');
+  if (existing) return existing;
+  const id = crypto.randomUUID();
+  prefs.set('fanous.clientId', id);
+  return id;
 }
 
 /** The shell opens the UI with `?token=` from its 0600 file; the token leaves the URL at once. */
@@ -103,6 +123,7 @@ export const client = new FanousClient(
     onPatch(doc, ops, rev) {
       try {
         applyPatch((doc === 'project' ? app.project : app.live) as unknown as JSONValue, ops);
+        if (doc === 'project') restoreKeys(app.project as unknown as Record<string, unknown>, emptyProject);
         app.rev = rev;
       } catch {
         client.requestSnapshot();

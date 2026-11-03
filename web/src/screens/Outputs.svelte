@@ -2,28 +2,21 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script module lang="ts">
-  // handle: the selected point (JSON pointer); group: what moves with it in remote mode (lib/remote.ts)
-  const ui = $state({ selected: 0, canvas: 1, tab: 'outputs' as 'canvases' | 'outputs' | 'warp', mapper: 'cornerPin' as MapperMode, slice: 0, handle: null as string | null, group: 'point' as Group, maskAdd: false, draft: null as MapPoint[] | null, tool: null as MaskTool | null, remote: storedRemote() });
-
+  import { prefs } from '../lib/state.svelte';
   // Remote mode on Warp & Slices, remembered per browser; by default on for touch screens narrower than 900 px
+  // (above ui: its initializer calls storedRemote, which reads REMOTE_KEY)
   const REMOTE_KEY = 'fanous.remote';
   function storedRemote(): boolean {
-    try {
-      const stored = localStorage.getItem(REMOTE_KEY);
-      if (stored !== null) return stored === '1';
-    } catch {
-      // blocked storage: the default
-    }
-    return matchMedia('(pointer: coarse) and (max-width: 899.98px)').matches;
+    const stored = prefs.get(REMOTE_KEY);
+    return stored === undefined ? matchMedia('(pointer: coarse) and (max-width: 899.98px)').matches : stored === '1';
   }
+
+  // handle: the selected point (JSON pointer); group: what moves with it in remote mode (lib/remote.ts)
+  const ui = $state({ selected: 0, canvas: 1, tab: 'outputs' as 'canvases' | 'outputs' | 'warp', mapper: 'cornerPin' as MapperMode, slice: 0, handle: null as string | null, group: 'point' as Group, maskAdd: false, draft: null as MapPoint[] | null, tool: null as MaskTool | null, remote: storedRemote() });
   function setRemote(on: boolean) {
     ui.remote = on;
     ui.group = 'point';
-    try {
-      localStorage.setItem(REMOTE_KEY, on ? '1' : '0');
-    } catch {
-      // private mode or blocked storage: the choice lasts for this page only
-    }
+    prefs.set(REMOTE_KEY, on ? '1' : '0');
   }
 </script>
 
@@ -42,9 +35,10 @@
     type MapPoint, type MapperMode, type MaskPoint, type MaskShape, type MaskTool, type OutputConfig,
   } from '../lib/outputs';
   import { mediaOptions, mediaPath, type LibrarySnapshot } from '../lib/layers';
-  import { app, can, client, cmd, toastUndo } from '../lib/state.svelte';
+  import { loadLibrary } from '../lib/media';
+  import { app, can, client, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
+  import { plural } from '../lib/system';
   import { LOCKED_TITLE } from '../lib/patch-screen';
-  import { lockTitle } from '../lib/show';
   import { go } from '../lib/router.svelte';
   import { sourcePixels, sourceFromPixels } from '../lib/outputs';
   import { downloadTemplatePNG, templateSVG } from '../lib/template';
@@ -56,7 +50,7 @@
 
   const locked = $derived(!can('programmer'));
   /** why the remote cannot move points: the role, or the show lock (the engine would refuse) */
-  const moveLock = $derived(lockTitle('programmer', !locked, app.project.showLock));
+  const moveLock = $derived(programmerLock());
   const outputs = $derived(app.project.outputs);
   const displays = $derived(app.live.displays);
   const statuses = $derived(new Map(app.live.outputs.map((s) => [s.id, s])));
@@ -73,7 +67,7 @@
   /** the wall the selected output is in */
   const wall = $derived(output ? wallOf(walls, output.id) : undefined);
   /** why a wall cannot be made or changed: the role, the show lock */
-  const wallLock = $derived(lockTitle('programmer', !locked, app.project.showLock));
+  const wallLock = $derived(programmerLock());
   const freeCount = $derived(freeOutputs(outputs, walls).length);
   const checking = $derived(wallUI.check ? walls.find((w) => w.id === wallUI.check?.wall) : undefined);
   // a seam check whose wall went (Undo, another client) ends
@@ -247,9 +241,7 @@
     void app.live.library.scannedAt;
     if (ui.tab !== 'warp' || ui.mapper !== 'mask') return;
     const abort = new AbortController();
-    fetch('/api/library', { signal: abort.signal })
-      .then((r) => (r.ok ? (r.json() as Promise<LibrarySnapshot>) : null))
-      .then((snapshot) => snapshot && (library = snapshot), () => {});
+    loadLibrary(abort.signal).then((snapshot) => (library = snapshot), () => {});
     return () => abort.abort();
   });
   const stills = $derived(mediaOptions(library, 'still'));
@@ -273,7 +265,7 @@
   function moveSelected(on: { x?: number; y?: number }) {
     if (!output || !ui.handle || !selectedScreen) return;
     const p = fromScreen(output, ui.mapper, { x: on.x ?? selectedScreen.x, y: on.y ?? selectedScreen.y });
-    point(ui.handle, { x: Math.min(1, Math.max(0, p.x)), y: Math.min(1, Math.max(0, p.y)) });
+    point(ui.handle, { x: clamp01(p.x), y: clamp01(p.y) });
   }
   function select(next: { group: Group; anchor: number }) {
     ui.group = next.group;
@@ -422,7 +414,7 @@
     <button type="button" class="btn" aria-pressed={ui.tab === 'warp'} onclick={() => (ui.tab = 'warp')}>Warp &amp; Slices</button>
   </div>
   <span class="spacer"></span>
-  <span class="caption">{outputs.length} outputs · {displays.length} displays connected</span>
+  <span class="caption">{plural(outputs.length, 'output')} · {plural(displays.length, 'display')} connected</span>
 </div>
 
 {#each lost as s (s.id)}
@@ -617,7 +609,7 @@
           {#each EDGES as edge (edge)}
             {@const e = output.blend[edge]}
             <div class="edge panel" role="group" aria-label="{edge} edge">
-              <div class="ehead"><span class="label">{edge}</span>{#if isManual(wall, output.id, `overlap.${edge}`)}<span class="badge badge-warn">manual</span>{/if}<svg class="curve" viewBox="0 0 100 40" aria-hidden="true"><path d={blendCurvePath(e, 100, 40)} fill="none" stroke="#4C9EFF" stroke-width="2" /></svg></div>
+              <div class="ehead"><span class="label">{edge}</span>{#if isManual(wall, output.id, `overlap.${edge}`)}<span class="badge badge-warn">manual</span>{/if}<svg class="curve" viewBox="0 0 100 40" aria-hidden="true"><path d={blendCurvePath(e, 100, 40)} fill="none" style:stroke="var(--accent)" stroke-width="2" /></svg></div>
               <label class="field"><span>Overlap (px)</span><input class="input mono" type="number" min="0" value={e.overlap} disabled={locked} onchange={(ev) => number(ev, `/blend/${edge}/overlap`)} /></label>
               {#if isManual(wall, output.id, `overlap.${edge}`)}<button type="button" class="btn" disabled={!!wallLock} title={wallLock ?? `Give this overlap back to ${wall?.name}`} onclick={() => backToWall(`overlap.${edge}`)}>Back to wall</button>{/if}
               <p class="caption">Overlap: width of the strip shared with the neighbouring projector, in pixels of this output.</p>
@@ -808,8 +800,8 @@
   .wallbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
   .wallbar .caption { flex: 1 1 280px; }
   .out { flex-direction: column; align-items: stretch; gap: 4px; min-height: var(--touch); }
-  .out .head { display: flex; align-items: center; gap: 10px; }
-  .nm { font-weight: 600; font-size: 15px; }
+  .out .head { display: flex; align-items: center; gap: 8px; }
+  .nm { font-weight: 500; font-size: 15px; }
   .wallbadge { align-self: flex-start; }
   .tone-red { color: var(--red); }
   .tone-faint { color: var(--text-3); }
@@ -850,7 +842,7 @@
   .mask { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
   .mask .caption.grow { flex: 1 1 120px; min-width: 0; }
   .mask .input { width: 80px; }
-  .mname { padding: 0 12px; font-weight: 600; }
+  .mname { padding: 0 12px; font-weight: 500; }
   .field.inline { flex-direction: row; align-items: center; gap: 8px; }
   @media (max-width: 900px) {
     .list { max-width: none; }

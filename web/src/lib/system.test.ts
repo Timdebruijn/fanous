@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { ReadinessItemDoc } from './docs';
 import {
   ageText, droppedTone, filterLines, formatClock, headerCaption, memoryText, metricTiles, outputTone, parseMetrics, parseOpenRoles, permissionRow,
-  pushHistory, readinessBadge, readinessSummary, resumedText, sparkline, stampText, thermalTone,
+  plural, pushHistory, readinessBadge, readinessSummary, resumedText, sparkline, stampText, thermalTone,
 } from './system';
 
 const item = (state: ReadinessItemDoc['state'], acknowledged = false): ReadinessItemDoc => ({ id: state, title: state, state, detail: '', fix: '', acknowledged });
@@ -182,16 +182,33 @@ describe('session', () => {
 
 describe('capture permissions (B73)', () => {
   it('screen: denied offers Authorize with the Settings-then-restart caption, granted is green', () => {
-    expect(permissionRow('screen', 'denied')).toEqual({
+    expect(permissionRow('screen', 'denied', true)).toEqual({
       tone: 'yellow', word: 'denied', authorize: true,
       caption: 'opens System Settings › Privacy & Security › Screen & System Audio Recording: allow Fanous, then Engine › Restart Engine',
     });
-    expect(permissionRow('screen', 'granted')).toEqual({ tone: 'green', word: 'granted', authorize: false, caption: null });
+    expect(permissionRow('screen', 'granted', true)).toEqual({ tone: 'green', word: 'granted', authorize: false, caption: null });
     // an engine from before B125 may still send "pending": denied, with its own word
-    expect(permissionRow('screen', 'pending')).toMatchObject({ tone: 'yellow', word: 'pending', authorize: true });
+    expect(permissionRow('screen', 'pending', true)).toMatchObject({ tone: 'yellow', word: 'pending', authorize: true });
   });
   it('camera: not asked and denied offer Authorize without a caption; an unknown state reads as denied but keeps its word', () => {
-    expect(permissionRow('camera', 'notDetermined')).toMatchObject({ tone: 'yellow', word: 'not asked', authorize: true, caption: null });
-    expect(permissionRow('camera', 'restricted')).toMatchObject({ tone: 'yellow', word: 'restricted', authorize: true, caption: null });
+    expect(permissionRow('camera', 'notDetermined', true)).toMatchObject({ tone: 'yellow', word: 'not asked', authorize: true, caption: null });
+    expect(permissionRow('camera', 'restricted', true)).toMatchObject({ tone: 'yellow', word: 'restricted', authorize: true, caption: null });
+  });
+  it('missing while no layer shows an input of the kind: grey, Authorize still offered (DESIGN §12.1)', () => {
+    expect(permissionRow('camera', 'denied', false)).toMatchObject({ tone: 'off', word: 'denied', authorize: true });
+    expect(permissionRow('screen', 'granted', false)).toMatchObject({ tone: 'green', authorize: false });
+    // the microphone (LTC, B137): yellow only while timecode is on LTC with the switch on
+    expect(permissionRow('microphone', 'notDetermined', true)).toEqual({ tone: 'yellow', word: 'not asked', authorize: true, caption: null });
+    expect(permissionRow('microphone', 'denied', false)).toMatchObject({ tone: 'off', authorize: true });
+  });
+});
+
+describe('plural', () => {
+  it('puts the singular after 1 only', () => {
+    expect(plural(1, 'output')).toBe('1 output');
+    expect(plural(0, 'output')).toBe('0 outputs');
+    expect(plural(2, 'decode error')).toBe('2 decode errors');
+    expect(plural(1, 'canvas', 'canvases')).toBe('1 canvas');
+    expect(plural(3, 'canvas', 'canvases')).toBe('3 canvases');
   });
 });

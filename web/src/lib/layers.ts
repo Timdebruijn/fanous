@@ -6,6 +6,11 @@ import type { CaptureLiveDoc, LayerStatus, PatchEntry, ProjectDoc, ResolvedParam
 import { codecLabel, displayName } from './media';
 import type { ParamSpec } from './patch-screen';
 
+/** 1…`layerCount` (the project's, guarded against a bad document). */
+export function layerNumbers(layerCount: number): number[] {
+  return Array.from({ length: Math.max(0, Math.floor(layerCount) || 0) }, (_, i) => i + 1);
+}
+
 /** Folder 0 generators (engine `Generators.names`, DESIGN §8.2): drawn on the GPU, no files. */
 export const GENERATORS: { file: number; name: string }[] = [
   { file: 110, name: 'Test card (timecode, frame flags)' },
@@ -38,7 +43,7 @@ export interface FolderZeroItem {
   label: string;
 }
 
-/** Folder 0 group headings, the same on the Media screen and in the layer panel's picker. */
+/** Folder 0 group headings, the same on the Media and Inputs screens and in the layer panel's picker. */
 export const ZERO_GROUPS: { kind: FolderZeroItem['kind']; title: string }[] = [
   { kind: 'generator', title: 'Built-in content' },
   { kind: 'capture', title: 'Cameras and capture cards (1–20)' },
@@ -46,11 +51,43 @@ export const ZERO_GROUPS: { kind: FolderZeroItem['kind']; title: string }[] = [
   { kind: 'syphon', title: 'Syphon servers (150–169)' },
 ];
 
-/** Why a live input (camera, display, Syphon server) shows no picture, for the Media list; null while it runs (or for a generator). In use = connected, opened by another app (cameras only). */
+/** The numbers a live input of each kind can take (DESIGN §8.2): a renumber stays within its kind's range. */
+export const ZERO_RANGES = { capture: [1, 20], screen: [21, 28], syphon: [150, 169] } as const;
+
+/** What giving `item` the number `to` does (B137 step 3): null when it is not a number of its range or is its own,
+ * else a move to a free number or a swap with the input on it. */
+export function renumberEffect(items: readonly FolderZeroItem[], item: FolderZeroItem, to: number): { swap: FolderZeroItem | null; text: string } | null {
+  if (item.kind === 'generator') return null;
+  const [low, high] = ZERO_RANGES[item.kind];
+  if (!Number.isInteger(to) || to < low || to > high || to === item.file) return null;
+  const swap = items.find((i) => i.kind === item.kind && i.file === to) ?? null;
+  return { swap, text: swap ? `swaps with ${swap.file} · ${swap.name}` : `moves to ${to}, a free number` };
+}
+
+/** Why a live input (camera, display, Syphon server) shows no picture, for the Media and Inputs lists; null while it runs (or for a generator). In use = connected, opened by another app (cameras only). */
 export function zeroCaption(item: FolderZeroItem): string | null {
   if (item.inUse) return 'in use by another app';
   if (item.running) return null;
   return item.gone ? 'not seen since the engine started' : 'not running';
+}
+
+/** "folder/file" → the layers showing it ("Layer 2"), for the badges on Media's tiles and on the Inputs screen. */
+export function layersShowing(layers: readonly LayerStatus[]): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const layer of layers) {
+    if (layer.folder >= 0 && layer.file > 0) map.set(`${layer.folder}/${layer.file}`, [...(map.get(`${layer.folder}/${layer.file}`) ?? []), `Layer ${layer.index}`]);
+  }
+  return map;
+}
+
+/** What a layer showing a live input receives (DESIGN §12.1): "1920×1080 · 59.94 fps · 2vuy", or why it shows none. */
+export function signalText(layer: LayerStatus): string {
+  if (layer.error) return layer.error;
+  // the engine reads no size or rate from a Syphon server: its layer status has none
+  if (layer.codec === 'syphon') return 'connected';
+  if (layer.width <= 0) return 'waiting for the first frame';
+  // a capture layer's codec is the pixel format (2vuy, 420v, BGRA)
+  return [`${layer.width}×${layer.height}`, layer.fps > 0 ? `${fpsText(layer.fps)} fps` : '', layer.codec].filter(Boolean).join(' · ');
 }
 
 /** Folder 0 as a list: the generators, the cameras and capture cards, the displays (B73), then the Syphon servers of other apps by number (B61). */
@@ -198,18 +235,18 @@ export function mediaLine(layer: LayerStatus | undefined): { text: string; title
     case 'still':
       return line(`${layer.folder} / ${layer.file} · ${name}`, `Still · ${layer.width}×${layer.height}`, 'normal');
     default:
-      return line(`${layer.folder} / ${layer.file} · ${name}`, `${codecLabel(layer.codec)} · ${layer.height}p${fpsText(layer.fps)}`, 'normal');
+      return line(`${layer.folder} / ${layer.file} · ${name}`, `${codecLabel(layer.codec)} · ${layer.pixelAspect ? `${layer.width}×` : ''}${layer.height}p${fpsText(layer.fps)}`, 'normal');
   }
 }
 
 /** Status dot plus the same state as a short word, so the colour never carries it alone. */
 export function layerState(layer: LayerStatus | undefined): { dot: DotColor; label: string; chip: string } {
-  if (!layer || layer.kind === 'none') return { dot: 'off', label: 'No media', chip: 'NO MEDIA' };
-  if (layer.kind === 'missing') return { dot: 'red', label: 'Media file is missing', chip: 'MISSING FILE' };
+  if (!layer || layer.kind === 'none') return { dot: 'off', label: 'No media', chip: 'No media' };
+  if (layer.kind === 'missing') return { dot: 'red', label: 'Media file is missing', chip: 'Missing file' };
   // Syphon: "not running" or "could not connect"
-  if (layer.kind === 'live' && layer.error) return { dot: 'red', label: `Live input ${layer.error}`, chip: layer.error.toUpperCase() };
-  if (layer.error) return { dot: 'red', label: 'Decoder error', chip: 'DECODER ERROR' };
-  if (layer.kind === 'live') return { dot: 'green', label: 'Live input', chip: 'LIVE' };
+  if (layer.kind === 'live' && layer.error) return { dot: 'red', label: `Live input ${layer.error}`, chip: layer.error[0].toUpperCase() + layer.error.slice(1) };
+  if (layer.error) return { dot: 'red', label: 'Decoder error', chip: 'Decoder error' };
+  if (layer.kind === 'live') return { dot: 'green', label: 'Live input', chip: 'Live' };
   return { dot: 'green', label: 'Media OK', chip: 'OK' };
 }
 

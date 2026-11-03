@@ -6,17 +6,17 @@
   import type { ChannelMap, ParamSpec } from '../lib/patch-screen';
   import type { JSONValue } from '../lib/protocol';
   import {
-    LOCKED_OPERATOR, TRIGGER_HINT, clampRaw, fixtureNames, formatNumber, groupSpecs, isNumberTaken, lockTitle, newValue, parseTrigger, retargetValue,
+    LOCKED_OPERATOR, TRIGGER_HINT, clampRaw, fixtureNames, formatNumber, groupSpecs, isNumberTaken, newValue, parseTrigger, retargetValue,
     specsFor, valueControl, withFade,
   } from '../lib/show';
-  import { app, can, cmd } from '../lib/state.svelte';
+  import { app, can, cmd, programmerLock } from '../lib/state.svelte';
 
   /** `map`: undefined while the channel map loads, null when it could not be loaded */
   let { cue, map: loaded }: { cue: CueDoc | undefined; map: ChannelMap | null | undefined } = $props();
 
   const map = $derived(loaded ?? null);
 
-  const lock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
+  const lock = $derived(programmerLock());
   const editable = $derived(lock === undefined);
   const fixtures = $derived(fixtureNames(app.project.layerCount, app.project.patch));
   /** the last entry that was refused here, shown under the fields (the engine's refusals show in the app banner) */

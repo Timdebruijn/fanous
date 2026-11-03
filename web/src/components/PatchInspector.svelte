@@ -2,8 +2,7 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
-  import { lockTitle } from '../lib/show';
-  import { app, can, cmd, toastUndo } from '../lib/state.svelte';
+  import { app, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
   import { UNIVERSE_SIZE, compareUniverse, rangeText, universeName, type FixtureRow, type Slot, type Status } from '../lib/patch-screen';
 
   // The inline editor of one fixture, inside its group (DESIGN §6.6 item 2): universe, address, Patch or Unpatch.
@@ -19,7 +18,7 @@
     onpatched: (universe: string) => void;
   } = $props();
 
-  const lock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
+  const lock = $derived(programmerLock());
   const locked = $derived(!!lock);
   const maxAddress = $derived(Math.max(0, UNIVERSE_SIZE - row.footprint + 1));
   // Drafts: they follow the patch (or the slot) until edited, so quick repeated taps add up before the engine answers.
@@ -108,7 +107,7 @@
   .editor:focus { outline: none; }
   .editor:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .what { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0; }
-  .strong { font-weight: 600; font-size: 15px; }
+  .strong { font-weight: 500; font-size: 15px; }
   .status { font-size: 13px; color: var(--text-2); }
   .tone-faint { color: var(--text-3); }
   .tone-warn { color: var(--yellow); }

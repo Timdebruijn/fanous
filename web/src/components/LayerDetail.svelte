@@ -2,11 +2,12 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
+  import { untrack } from 'svelte';
   import type { LayerStatus, PatchEntry, ResolvedParameter } from '../lib/docs';
   import { RELEASE_TEXT, ZERO_GROUPS, channelRange, clockText, controlKeys, folderZeroItems, mediaOptions, mediaPath, patchText, playSteps, reservedText, valueText, type LibrarySnapshot } from '../lib/layers';
   import type { ParamSpec } from '../lib/patch-screen';
-  import { lockTitle as lockFor } from '../lib/show';
-  import { app, can, cmd, playOnLayer } from '../lib/state.svelte';
+  import { app, cmd, playOnLayer, programmerLock } from '../lib/state.svelte';
+  import { plural } from '../lib/system';
   import { syncStatus } from '../lib/sync';
   import { throttledSender } from '../lib/throttle';
   import PolicyHint from './PolicyHint.svelte';
@@ -44,7 +45,7 @@
   const shown = $derived(keys ? (params ?? []).filter((p) => keys.includes(p.key)) : (params ?? []));
   // the engine releases UI values 10 min after the last change, but only while a console is received for the fixture
   const expiresIn = $derived(app.live.dmx.uiExpiresIn?.[fixture]);
-  const lockTitle = $derived(lockFor('programmer', can('programmer'), app.project.showLock));
+  const lockTitle = $derived(programmerLock());
   const options = $derived(mediaOptions(library));
   const folderZero = $derived(folderZeroItems(app.live.syphon?.servers, app.live.capture));
   const current = $derived(layer && layer.folder > 0 && layer.file > 0 ? `${layer.folder}/${layer.file}` : '');
@@ -63,6 +64,13 @@
     return throttle.flush;
   });
   const rawMax = (spec: ParamSpec | undefined) => (spec?.bits === 16 ? 65535 : 255);
+  /** a layer's channel list (about 50 rows) starts closed on a phone, where it made the Layers page 4967 px long at 390 px;
+   * open on a desktop, and for Master and the outputs (two rows); read once (`isLayer` never changes for an instance). Control
+   * opens it: its sliders live in the list */
+  let channelsOpen = $state(untrack(() => !isLayer) || !window.matchMedia('(max-width: 599px)').matches);
+  $effect(() => {
+    if (control) channelsOpen = true;
+  });
   const isNumber = (key: string) => key === 'folder' || key === 'file';
 </script>
 
@@ -123,6 +131,8 @@
     {/if}
   {/if}
 
+  <details class="channels" bind:open={channelsOpen}>
+    <summary class="caption note">{specs && isLayer ? reservedText(specs, footprint) : plural(shown.length, 'value')}</summary>
   <ul class="params">
     {#each shown as param (param.key)}
       <li class="param">
@@ -150,7 +160,7 @@
       <li class="param none"><span class="caption">No resolved values from the engine yet.</span></li>
     {/each}
   </ul>
-  {#if specs && isLayer}<p class="caption note">{reservedText(specs, footprint)}</p>{/if}
+  </details>
 </section>
 
 <style>
@@ -163,7 +173,7 @@
   .ctl input[type='range'] { width: 100%; min-height: var(--touch); accent-color: var(--accent); }
   .ctl .select, .ctl .input { width: 100%; }
   .ui { color: var(--accent); }
-  .uinote { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+  .uinote { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
   .titlebar { display: flex; align-items: center; gap: 8px; }
   .releasebar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 4px; }
   .releasebar .caption { flex: 1 1 160px; }
@@ -174,6 +184,13 @@
   .val { color: var(--text-2); font-size: 12px; }
   .val.red { color: var(--red); }
   .note { margin: 0; padding: 0 4px; }
+  summary { cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 0 4px; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: '▸' / ''; width: 10px; color: var(--text-2); }  /* flex hides the native marker; the glyph is decorative */
+  details[open] > summary::before { content: '▾' / ''; }
+  @media (max-width: 599px) {
+    summary { min-height: var(--touch); }
+  }
   .syncline { grid-column: 1 / -1; padding: 0 0 8px 48px; }
   .sync-green { color: var(--green); }
   .sync-yellow { color: var(--yellow); }

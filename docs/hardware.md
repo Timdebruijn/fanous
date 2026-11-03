@@ -1,10 +1,14 @@
 # Hardware capability table
 
-Source for `FanousCore/Capabilities`. Runtime detection (chip name, cores,
-memory, GPU, displays, hardware ProRes) is authoritative; this table only adds
-what macOS does not expose: media-engine count and Apple's external-display
-limit. Cells marked *unverified* were not confirmed from an Apple page on
-2026-10-22 and must be checked before the tier is shown as "Apple spec".
+Reference for the planned tier model (DESIGN §5). The engine does not read
+this table yet (B145): `Sources/FanousEngine/Capabilities/SystemInfo.swift`
+reads the chip name, memory, OS version and network addresses, and the layer
+limit is a constant 32. In the planned model runtime detection (chip name,
+cores, memory, GPU, displays, hardware ProRes) is authoritative; this table
+only adds what macOS does not expose: media-engine count and Apple's
+external-display limit. Cells marked *unverified* were not confirmed from an
+Apple page on 2026-10-22 and must be checked before the tier is shown as
+"Apple spec".
 
 | Chip | Tier | ProRes engines | Max external displays | Memory bandwidth GB/s | Verification |
 |---|---|---|---|---|---|
@@ -27,8 +31,8 @@ limit. Cells marked *unverified* were not confirmed from an Apple page on
 | M5 Pro | 2 Pro | 1 | 3 | 307 | Apple (regional spec) |
 | M5 Max | 3 Max | 2 | 4 (MBP) / 5 (Studio) | 460/614 | Apple |
 | M5 Ultra | 4 Ultra | 4 | 8 | 1200 | Apple (single source) |
-| unknown | conservative = Base | 1 | 1 | — | UI shows "unknown chip, run the benchmark" |
+| unknown | conservative = Base | 1 | 1 | — | planned: the UI shows "unknown chip, run the benchmark" (not built) |
 
-Apple publishes display limits per Mac model, not per chip; the engine
-therefore reports "Apple spec for this Mac model where known" and always
+Apple publishes display limits per Mac model, not per chip; the planned tier
+model therefore reports "Apple spec for this Mac model where known" and always
 shows the *currently connected* displays as ground truth.

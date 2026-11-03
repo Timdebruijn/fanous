@@ -12,7 +12,7 @@ end.
 Banners: "Connecting to the engine…", "Engine unreachable: …; retrying", or the
 red "Connection lost … values shown are stale".
 
-1. Open the **Engine** menu in the app and read the first line. "Engine 1.0.0-rc.1
+1. Open the **Engine** menu in the app and read the first line. "Engine 1.0.0-rc.2
    running · service installed" means the engine is fine and the problem is the
    connection (network, firewall, wrong address). "Engine not running" means it
    is down.
@@ -49,7 +49,7 @@ H.264.
 
 ## A DMX universe is silent
 
-The status bar has one pill per universe. Green: packets arrive. Yellow with
+The status bar has one status per universe. Green: packets arrive. Yellow with
 "silent": nothing received yet. Yellow with seconds: silent for less than 2.5 s.
 Red: a patched universe silent for more than 2.5 s (the Patch screen's
 Universes panel uses the universe's own **Signal lost after** time instead).
@@ -94,8 +94,8 @@ The Layers screen (key 1) shows the problem in the Media column of the row.
 
 A layer on folder 0, file 21–28 shows a whole display of this Mac.
 
-- "screen permission not granted": on the System screen, under Capture
-  permissions, press **Authorize screen** (not in show mode) and allow Fanous
+- "screen permission not granted": on the Inputs screen, under Permissions,
+  press **Authorize screen** (not in show mode) and allow Fanous
   in System Settings › Privacy & Security › Screen & System Audio Recording,
   then choose Engine › **Restart Engine**: macOS applies the grant only to a
   new engine process.
@@ -160,16 +160,19 @@ before it; in the status bar a dropped frame is red while the show is locked.
 
 ## LTC does not lock
 
-Show › Timecode: the pill should say Locked and "frames seen" should count up.
+Show › Timecode: the state should say Locked and "frames seen" should count up.
 
 - Source is **LTC**, the **Timecode** switch is on, the right **Device** is
   chosen (an unplugged one is listed as "not connected").
 - **Channel**: 1 is the first input channel of the device; the LTC may be on
   another channel.
-- **Level**: LTC that is too quiet or clipped does not decode; check the input
-  level of the audio interface.
+- **Level**: the meter under the readout shows the channel's peak. A meter
+  that stays near the bottom means nothing arrives on this channel (try another
+  one); yellow, above −3 dBFS, is close to clipping. LTC that is too quiet or clipped does not decode; set the
+  input level of the audio interface.
 - **Permission**: System Settings › Privacy & Security › Microphone must allow
-  Fanous. An error text in red under the readout names the problem.
+  Fanous (or **Authorize microphone** on the Inputs screen). An error text in
+  red under the readout names the problem.
 - Freewheel (yellow) means the signal dropped; Lost (red) means it stayed away
   longer than the Freewheel time.
 
@@ -198,7 +201,9 @@ a network MIDI session, then choose it under Device (or "All sources").
   ![System › Logs with the filter field, Refresh, Download and the Service line](images/logs.png)
 
 - `~/Library/Logs/Fanous/fanousd.log` (Engine › **Open Logs** opens the
-  folder).
+  folder). The same lines are in Console.app: search for subsystem
+  `org.fanous` (a line longer than about 1 KB is cut there; the file has it
+  whole).
 
 ## Restart the engine
 
