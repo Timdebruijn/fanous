@@ -136,7 +136,7 @@ press L or the LOCKED tag to unlock", "Not allowed for this role: log in as
 programmer"). It disappears after 10 seconds; **Recent messages** on the banner
 lists the last 20.
 
-The Layers screen header says "tier allows N layers". For now N is 32 on every
+The Layers screen header says "up to N layers". For now N is 32 on every
 Mac: it is the engine's ceiling, not a measurement of this Mac (B145). **Add
 layer** on the Patch screen stops at N. What a Mac plays without dropping
 frames can be far lower, at 4K for example: see the performance advice in

@@ -119,7 +119,7 @@
     section?.querySelector<HTMLElement>(`[data-fixture="${CSS.escape(r.name)}"]`)?.focus();
   }
 
-  // Layers: the count, with the tier limit and Remove's undo toast
+  // Layers: the count, with the engine's limit and Remove's undo toast
   const layerCount = $derived(app.project.layerCount);
   /** `caps.maxLayers` is undefined until the welcome arrives; the protocol allows 1-64 anyway */
   const maxLayers = $derived(typeof app.caps.maxLayers === 'number' ? app.caps.maxLayers : undefined);
@@ -150,9 +150,9 @@
       <div class="stepper" role="group" aria-label="Layer count">
         <button type="button" aria-label="Remove layer {layerCount}" disabled={locked || layerCount <= 1} title={lock ?? `Remove layer ${layerCount} (undo brings it back)`} onclick={removeLast}>−</button>
         <span class="count mono">{layerCount}</span>
-        <button type="button" aria-label="Add layer" disabled={locked || atLimit} title={lock ?? (atLimit ? 'Layer limit of this Mac (performance tier)' : 'Add layer')} onclick={() => void cmd('layers.setCount', { count: layerCount + 1 })}>+</button>
+        <button type="button" aria-label="Add layer" disabled={locked || atLimit} title={lock ?? (atLimit ? 'Layer limit of the engine' : 'Add layer')} onclick={() => void cmd('layers.setCount', { count: layerCount + 1 })}>+</button>
       </div>
-      <span class="caption">of {maxLayers ?? '?'} · <span title="The layer limit of this Mac's performance tier; Add layer stops there so the show does not drop frames.">tier limit</span> measured on this machine</span>
+      <span class="caption">of {maxLayers ?? '?'} · <span title="The engine's layer limit, the same on every Mac; what this Mac plays without dropping frames can be lower.">engine limit</span></span>
     {:else if group.kind === 'output'}
       <span class="spacer"></span>
       <button type="button" class="btn" disabled={locked} title={lock ?? 'A new output without a display; pick its display on Outputs & Mapping'} onclick={addOutput}>Add output</button>
