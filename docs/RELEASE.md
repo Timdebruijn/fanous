@@ -80,7 +80,9 @@ With Fanous and the console software on one subnet (Little Snitch: allow
       Done for 1.0.0-rc.1 on 2026-11-02: zip and dmg accepted, stapled, Gatekeeper: Notarized
       Developer ID for the app (B50, PR #182); repeat per release. The rc.1 and rc.2 dmgs themselves were not signed
       (measured 2026-11-03: `codesign -dv` "not signed at all", the dmg check "rejected, source=no usable signature",
-      `syspolicy_check distribution` flagged the dmg, the app inside passed); the script signs it since PR #234
+      `syspolicy_check distribution` flagged the dmg, the app inside passed); the script signs it since PR #234.
+      Done again for 1.0.0-rc.2 on 2026-11-03 from main 845948f: zip and signed dmg accepted, both stapled, both
+      `spctl` checks `accepted`, `source=Notarized Developer ID`, `syspolicy_check distribution` passes the dmg
 - [ ] `shasum -a 256 dist/Fanous-<version>.dmg` goes into the release notes
 - [ ] only on a developer Mac that ran ad-hoc builds: the first Developer ID open re-registers the agent (B50), and
       the old Screen Recording switch stays on while the engine reads `denied` after the signature change:
