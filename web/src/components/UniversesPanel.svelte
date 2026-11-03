@@ -107,7 +107,7 @@
   /* name and fixtures, then the pill and the settings on a line of their own that wraps (a long pill on a phone) */
   .uni {
     display: grid; grid-template-columns: max-content minmax(0, 1fr); grid-template-areas: 'name fx' 'meta meta';
-    column-gap: 12px; row-gap: 6px; padding: 10px 16px;
+    column-gap: 12px; row-gap: 8px; padding: 12px 16px;
   }
   .uni[aria-expanded='true'] { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent); }
   .name { grid-area: name; font-weight: 600; font-size: 14px; }

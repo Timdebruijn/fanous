@@ -60,11 +60,11 @@
     <span class="name">Fanous</span>
     <button type="button" class="tag {app.project.showLock ? 'tag-lock' : 'tag-open'}" aria-pressed={app.project.showLock} onclick={toggleLock} disabled={!can('programmer')} title={can('programmer') ? (app.project.showLock ? 'Unlock the show (L)' : 'Lock the show: configuration is refused (L)') : 'Programmer only'}>
       {#if app.project.showLock}<svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>{/if}
-      {app.project.showLock ? 'LOCKED' : 'UNLOCKED'}
+      {app.project.showLock ? 'Locked' : 'Unlocked'}
     </button>
     <span class="modewrap">
       <button type="button" class="tag {showMode ? 'tag-mode' : 'tag-open'}" aria-pressed={showMode} aria-expanded={refused !== null} onclick={toggleShowMode} disabled={!can('operator')} title={can('operator') ? (showMode ? 'Leave show mode' : 'Enter show mode: runs the readiness checks first') : 'Operator or programmer only'}>
-        SHOW MODE: {showMode ? 'ON' : 'OFF'}
+        Show mode: {showMode ? 'on' : 'off'}
       </button>
       <span role="status">{#if showMode && resumed}<a class="caption resumed" href="#/system">{resumed}</a>{/if}</span>
       {#if refused !== null}
@@ -138,7 +138,7 @@
       <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5" /><path d="M20 9H9a5 5 0 0 0 0 10h6" /></svg>
     </button>
     <button type="button" class="btn btn-icon help" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" onclick={() => (shell.help = true)}>?</button>
-    <button type="button" class="role role-{app.role} role-btn" title="Log in as another role" onclick={() => (showLogin = true)}>{app.role.toUpperCase()}</button>
+    <button type="button" class="role role-{app.role} role-btn" title="Log in as another role" onclick={() => (showLogin = true)}>{app.role[0].toUpperCase() + app.role.slice(1)}</button>
   </div>
 </header>
 {#if showLogin}<Login onclose={() => (showLogin = false)} />{/if}

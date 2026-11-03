@@ -62,7 +62,7 @@
   </span>
   <span class="spacer"></span>
   <button type="button" class="btn" onclick={() => (sheetOpen = true)}>Patch sheet</button>
-  <a class="link" href="/api/channel-map.md" target="_blank" rel="noopener">Channel map</a>
+  <a class="btn" href="/api/channel-map.md" target="_blank" rel="noopener">Channel map</a>
   <a class="btn" href="/api/gdtf" download>Export GDTF</a>
 </div>
 
@@ -100,6 +100,5 @@
   .screen { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; }
   .left { flex: 1 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
   .right { flex: 1 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
-  .link { display: inline-flex; align-items: center; min-height: var(--touch); padding: 0 8px; }
   .alert { color: var(--red); }
 </style>

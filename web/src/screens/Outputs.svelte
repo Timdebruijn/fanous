@@ -607,7 +607,7 @@
           {#each EDGES as edge (edge)}
             {@const e = output.blend[edge]}
             <div class="edge panel" role="group" aria-label="{edge} edge">
-              <div class="ehead"><span class="label">{edge}</span>{#if isManual(wall, output.id, `overlap.${edge}`)}<span class="badge badge-warn">manual</span>{/if}<svg class="curve" viewBox="0 0 100 40" aria-hidden="true"><path d={blendCurvePath(e, 100, 40)} fill="none" stroke="#4C9EFF" stroke-width="2" /></svg></div>
+              <div class="ehead"><span class="label">{edge}</span>{#if isManual(wall, output.id, `overlap.${edge}`)}<span class="badge badge-warn">manual</span>{/if}<svg class="curve" viewBox="0 0 100 40" aria-hidden="true"><path d={blendCurvePath(e, 100, 40)} fill="none" style:stroke="var(--accent)" stroke-width="2" /></svg></div>
               <label class="field"><span>Overlap (px)</span><input class="input mono" type="number" min="0" value={e.overlap} disabled={locked} onchange={(ev) => number(ev, `/blend/${edge}/overlap`)} /></label>
               {#if isManual(wall, output.id, `overlap.${edge}`)}<button type="button" class="btn" disabled={!!wallLock} title={wallLock ?? `Give this overlap back to ${wall?.name}`} onclick={() => backToWall(`overlap.${edge}`)}>Back to wall</button>{/if}
               <p class="caption">Overlap: width of the strip shared with the neighbouring projector, in pixels of this output.</p>
@@ -798,7 +798,7 @@
   .wallbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
   .wallbar .caption { flex: 1 1 280px; }
   .out { flex-direction: column; align-items: stretch; gap: 4px; min-height: var(--touch); }
-  .out .head { display: flex; align-items: center; gap: 10px; }
+  .out .head { display: flex; align-items: center; gap: 8px; }
   .nm { font-weight: 600; font-size: 15px; }
   .wallbadge { align-self: flex-start; }
   .tone-red { color: var(--red); }

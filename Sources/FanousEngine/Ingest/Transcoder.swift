@@ -209,15 +209,14 @@ public enum Transcoder {
     /// depth and integer/float form, a compressed source (AAC, ...) decodes to 24-bit (B19). The exceptions are what
     /// `AVAssetReaderAudioMixOutput` refuses (it raises, which would kill the engine): the rate is clamped to 8–192 kHz,
     /// the depth to 8/16/24/32 (float is always 32), a layout that does not match the channel count is replaced by one
-    /// made from the count, a track without a channel count gets stereo.
-    /// ponytail: more than two channels are mixed down to stereo here, as before, because the player takes channels 0 and
-    /// 1 by index (a 5.1 file would lose its centre); keep them once `AudioTrackReader` has a matrix mix (B143).
+    /// made from the count (discrete in order above two channels), a track without a channel count gets stereo. More than
+    /// two channels stay since `AudioTrackReader` mixes by layout (B143).
     /// Nil only when the format description cannot be made.
     static func lpcmFormat(matching source: CMAudioFormatDescription) -> (CMAudioFormatDescription, [String: Any])? {
         let input = CMAudioFormatDescriptionGetStreamBasicDescription(source)?.pointee
         let rate = min(max(input?.mSampleRate ?? 48_000, 8_000), 192_000)
         let sourceChannels = input?.mChannelsPerFrame ?? 0
-        let channels: UInt32 = sourceChannels == 0 || sourceChannels > 2 ? 2 : sourceChannels
+        let channels: UInt32 = sourceChannels == 0 ? 2 : sourceChannels
         let isLPCM = input?.mFormatID == kAudioFormatLinearPCM && (input?.mBitsPerChannel ?? 0) > 0
         let isFloat = isLPCM && (input?.mFormatFlags ?? 0) & kAudioFormatFlagIsFloat != 0
         let wanted: UInt32 = isLPCM ? input!.mBitsPerChannel : 24
@@ -227,7 +226,7 @@ public enum Transcoder {
             mFormatFlags: (isFloat ? kAudioFormatFlagIsFloat : kAudioFormatFlagIsSignedInteger) | kAudioFormatFlagIsPacked,
             mBytesPerPacket: bits / 8 * channels, mFramesPerPacket: 1, mBytesPerFrame: bits / 8 * channels, mChannelsPerFrame: channels,
             mBitsPerChannel: bits, mReserved: 0)
-        // The source's layout when it has one that agrees with the channel count; mono/stereo by count otherwise.
+        // The source's layout when it has one that agrees with the channel count; mono/stereo/discrete by count otherwise.
         var layoutSize = 0
         var layoutData: Data?
         if channels == sourceChannels, let layout = CMAudioFormatDescriptionGetChannelLayout(source, sizeOut: &layoutSize), layoutSize > 0 {
@@ -238,7 +237,8 @@ public enum Transcoder {
         }
         if layoutData == nil {
             var layout = AudioChannelLayout()
-            layout.mChannelLayoutTag = channels == 1 ? kAudioChannelLayoutTag_Mono : kAudioChannelLayoutTag_Stereo
+            layout.mChannelLayoutTag =
+                channels == 1 ? kAudioChannelLayoutTag_Mono : channels == 2 ? kAudioChannelLayoutTag_Stereo : kAudioChannelLayoutTag_DiscreteInOrder | channels
             layoutData = Data(bytes: &layout, count: MemoryLayout<AudioChannelLayout>.size)
         }
         var format: CMAudioFormatDescription?
