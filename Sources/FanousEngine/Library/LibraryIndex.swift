@@ -41,6 +41,8 @@ public struct MediaMetadata: Codable, Sendable, Equatable {
     public var frameCount = 0
     /// The track carries a rotation/flip (`preferredTransform`); the decoder ignores it, so ingest must bake it in.
     public var rotated: Bool?
+    /// Non-square pixels (B146): `width` is the shown width (`naturalSize` has the ratio in), the file holds `width / pixelAspect` columns. nil = 1.
+    public var pixelAspect: Double?
 }
 
 extension CGAffineTransform {
@@ -268,7 +270,8 @@ public final class LibraryIndex: @unchecked Sendable {
 
     // MARK: Probing (library thread)
 
-    static func cacheKey(_ item: LibraryItem) -> String { "\(item.path)|\(Int(item.modified))|\(item.size)" }
+    /// The trailing version re-probes every file once when the metadata gains a field (v2: `pixelAspect`, B146).
+    static func cacheKey(_ item: LibraryItem) -> String { "\(item.path)|\(Int(item.modified))|\(item.size)|v2" }
 
     private func probeLoop() {
         while running.load(ordering: .relaxed) {
@@ -379,6 +382,8 @@ public final class LibraryIndex: @unchecked Sendable {
                     let codec = CMFormatDescriptionGetMediaSubType(description)
                     metadata.codec = fourCCString(codec)
                     metadata.hasAlpha = ["ap4h", "ap4x", "Hap5", "HapM", "HapA"].contains(metadata.codec)
+                    let ratio = MovieSource.pixelAspect(of: description)
+                    if abs(ratio - 1) > 0.005 { metadata.pixelAspect = ratio }  // 1001:1000-style tags are square pixels
                 }
             } else {
                 throw MovieError.noVideoTrack
