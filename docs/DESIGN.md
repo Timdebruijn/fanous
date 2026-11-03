@@ -485,9 +485,10 @@ True on the M1 Pro; the base M1's false rests on Apple's documentation (none at 
 | Media-engine count, max external displays | **static table** keyed by chip name (`FanousCore/Capabilities`), marked "Apple spec" in the UI, with `unknown` fallback → conservative tier and a yellow "unknown chip, benchmark recommended" status |
 | Thermal / power | `ProcessInfo.thermalState`, `IOPSCopyPowerSourcesInfo` (on battery = yellow) |
 
-Unsupported machine (no hardware ProRes, i.e. base M1 / Intel): the engine
-starts, shows a red "unsupported hardware" status, and refuses to enter show
-mode. Development on such a machine still works for the UI.
+Unsupported machine (no hardware ProRes decoder, i.e. the base M1; Intel cannot
+run the arm64 app at all): the engine starts, the hard "Supported hardware"
+readiness item fails ("no hardware ProRes decoder") and show mode is refused.
+Development on such a machine still works for the UI.
 
 ### 5.2 Tiers
 
