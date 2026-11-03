@@ -187,7 +187,7 @@ public enum Transcoder {
     /// Nil only when the format description cannot be made.
     static func lpcmFormat(matching source: CMAudioFormatDescription) -> (CMAudioFormatDescription, [String: Any])? {
         let input = CMAudioFormatDescriptionGetStreamBasicDescription(source)?.pointee
-        let rate = min(max(input?.mSampleRate ?? 0, 8_000), 192_000)
+        let rate = min(max(input?.mSampleRate ?? 48_000, 8_000), 192_000)
         let sourceChannels = input?.mChannelsPerFrame ?? 0
         let channels: UInt32 = sourceChannels == 0 || sourceChannels > 2 ? 2 : sourceChannels
         let isLPCM = input?.mFormatID == kAudioFormatLinearPCM && (input?.mBitsPerChannel ?? 0) > 0
