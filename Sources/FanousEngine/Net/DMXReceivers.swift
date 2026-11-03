@@ -331,8 +331,8 @@ public final class OSCReceiver: @unchecked Sendable {
     }
 
     private func receiveStream(on connection: NWConnection, decoder: SLIPDecoder, from source: OSCSource) {
-        var decoder = decoder
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [self] data, _, isComplete, error in
+            var decoder = decoder
             if let data { for packet in decoder.feed(Array(data)) { handle(packet, from: source) } }
             if isComplete || error != nil { return connection.cancel() }
             receiveStream(on: connection, decoder: decoder, from: source)

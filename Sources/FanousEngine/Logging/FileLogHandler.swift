@@ -62,27 +62,29 @@ public struct FileLogHandler: LogHandler {
         set { metadata[key] = newValue }
     }
 
-    public func log(
-        level: Logger.Level, message: Logger.Message, metadata: Logger.Metadata?, source: String,
-        file: String, function: String, line: UInt
-    ) {
-        let merged = self.metadata.merging(metadata ?? [:]) { $1 }
+    public func log(event: LogEvent) {
+        let merged = self.metadata.merging(event.metadata ?? [:]) { $1 }
         let suffix = merged.isEmpty ? "" : " " + merged.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: " ")
         let stamp = Date.ISO8601FormatStyle(includingFractionalSeconds: true).format(Date())
-        sink.write("\(stamp) \(level) [\(label)] \(message)\(suffix)\n")
+        sink.write("\(stamp) \(event.level) [\(label)] \(event.message)\(suffix)\n")
     }
 }
 
 public enum EngineLogging {
-    /// stderr + rotating file. Call once, before the first Logger is created.
+    /// stderr + unified log + rotating file. Call once, before the first Logger is created.
     public static func bootstrap(fileURL: URL, level: Logger.Level = .info) {
         let sink = FileLogSink(url: fileURL)
-        LoggingSystem.bootstrap { label in
-            var stderr = StreamLogHandler.standardError(label: label)
-            stderr.logLevel = level
-            var file = FileLogHandler(label: label, sink: sink)
-            file.logLevel = level
-            return MultiplexLogHandler([stderr, file])
-        }
+        LoggingSystem.bootstrap { handler(label: $0, level: level, sink: sink) }
+    }
+
+    /// The handler `bootstrap` gives every logger (tests: the process is bootstrapped once).
+    static func handler(label: String, level: Logger.Level, sink: FileLogSink) -> any LogHandler {
+        var stderr = StreamLogHandler.standardError(label: label)
+        stderr.logLevel = level
+        var unified = OSLogHandler(label: label)
+        unified.logLevel = level
+        var file = FileLogHandler(label: label, sink: sink)
+        file.logLevel = level
+        return MultiplexLogHandler([stderr, unified, file])
     }
 }

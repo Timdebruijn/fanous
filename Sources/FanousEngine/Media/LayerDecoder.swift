@@ -68,6 +68,7 @@ public final class LayerDecoder: @unchecked Sendable {
 
     private func loop() {
         let count = source.info.frameCount
+        let signpost = Signposts.id(self)
         while running.load(ordering: .relaxed) {
             if let audio, audioEnabled.load(ordering: .relaxed) { audio.channel.fill(from: audio.reader) }
             guard let slot = ring.slotForWriting() else {
@@ -83,6 +84,8 @@ public final class LayerDecoder: @unchecked Sendable {
                 next = ahead <= ring.capacity ? (lastProduced + dir + count) % count : want
             }
             do {
+                Signposts.begin("decode", id: signpost)
+                defer { Signposts.end("decode", id: signpost) }
                 try autoreleasepool { try source.decode(frame: next, into: slot) }
                 ring.commit()
                 lastProduced = next

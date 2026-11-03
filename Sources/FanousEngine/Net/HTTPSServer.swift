@@ -164,7 +164,7 @@ public final class HTTPSServer: @unchecked Sendable {
     }
 
     fileprivate func log(_ request: HTTPRequest, _ response: HTTPResponse) {
-        logger.debug("\(request.method) \(request.target) → \(response.status)")
+        logger.debug("\(request.method) \(request.path) → \(response.status)")  // the path only: the web UI takes a token as ?token=
     }
 }
 
@@ -228,7 +228,8 @@ private final class ClientConnection: @unchecked Sendable {
                 send(.text(400, "bad request"), includeBody: true, close: true)
                 return false
             }
-            guard var (request, headLength) = parsed else { return true }
+            guard let (head, headLength) = parsed else { return true }
+            var request = head
             request.remoteAddress = remoteAddress
             if WebSocketHandshake.isUpgrade(request) {
                 buffer.removeFirst(headLength)

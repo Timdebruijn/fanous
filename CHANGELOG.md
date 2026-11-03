@@ -10,6 +10,37 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine: the release build has no compiler warnings in Fanous's own code (the vendored Snappy, HAP and Syphon sources keep
+  theirs): the deprecated `String(cString:)` on an array and swift-log's deprecated
+  `log(level:message:metadata:source:file:function:line:)` are replaced, and the Swift 6 concurrency warnings on values
+  handed to Core Video, VideoToolbox, Network and CoreMIDI callbacks or another thread are settled with capture lists or
+  a `nonisolated(unsafe)` whose comment says why it is safe; none was a data race (PR #251).
+- Engine: log lines also go to the unified log (subsystem `org.fanous`, the logger's label as the category), so Console.app,
+  `log stream` and a sysdiagnose show them next to the system's own; info lines are stored at the default level so they are
+  kept like the file's. DESIGN.md §13 named an `os_log` handler that was never built and a 10 × 10 MB rotation; the file
+  rotates once to `.1` past 10 MB, as now documented (PR #252).
+- Engine: with `FANOUS_SIGNPOSTS=1` the compositor tick, its wait for the GPU, each layer's decode and media opens are
+  os_signpost intervals (subsystem `org.fanous`), so Instruments shows them next to the GPU work; off by default, no
+  allocation on the compositor thread either way (3.99 mallocs per tick, as before). DEVELOPMENT.md has the command
+  (PR #254).
+- Fixed: with `FANOUS_LOG=debug` the engine logged each HTTPS request's whole target, so a token passed as `?token=`
+  (which the web UI accepts in place of a login) was written to `fanousd.log`; the debug line now carries the path only.
+  A log written with debug logging before this can still hold such a token (`/api/logs` serves it to the programmer
+  role) (PR #255).
+- Docs: the preview's H.264 encoder was measured with VideoToolbox's low-latency rate control: no latency gain (about
+  5 ms at 640×360, 10 ms at 1280×720 either way), and the mode picks a different encoder than the hardware one (`h264.rtvc`,
+  which does not report hardware use); not taken (ADR-0014 amendment 2026-11-03, PR #256).
+- Fixed: ingest to ProRes went through 8-bit BGRA frames, so a 10-bit source (HEVC from a phone or camera, 10-bit ProRes
+  sent through ingest) lost its low bits: a 10-bit grey ramp came out 1.8 codes off on average and up to 5. ProRes ingest
+  now reads 16-bit RGB (`64ARGB`): within a code (0.14 on average), and faster (360 frames of 1080p60 in 0.5 s instead of
+  0.8 s, from ProRes and from H.264). Image sequences to ProRes are drawn at 16 bits per channel too (a 16-bit PNG ramp:
+  2.1 codes off on average before, now within half a code). HAP stays 8-bit, as is the format; an odd transform's
+  composition stays BGRA (PR #257).
+- Fixed: on macOS 27.2 the encoder labels "canvas N", "output" and "preview" allocated on every assignment (they cost
+  nothing on 27.0), one allocation per canvas per drawn tick and per preview frame on the compositor thread, and
+  `scripts/check-mallocs.sh` was red on main. Every per-tick label is now an `NSString` of at least 12 characters made
+  once ("canvas N composite", "output (no output set)", "preview downscale"): 0 allocations each; a drawn tick in
+  `MasterIntensityTests` counts 4.01 instead of 5.01 (B117, PR #258).
 - Fixed: the release dmg was notarized and stapled but not signed itself, so Gatekeeper's check of the dmg
   (`spctl --type open`) rejected it with "no usable signature" while the app inside passed; `scripts/notarize.sh` signs
   the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).
@@ -59,6 +90,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   through one `plural` helper (PR #238).
 - Docs: every screenshot of the user guide and the README and the tour GIF are retaken for the web UI's new look
   (PRs #236, #238, #243, #259, #260, #261), on a demo engine as before (PR #262).
+- Performance: a layer with Blur or Edge is first converted into its media's scratch texture and its taps read that
+  RGBA directly, the blur at a mip level matched to its radius; a blurred ProRes 1080p60 layer went from about 2.3 ms to
+  0.9 ms of GPU time and an edged one from about 1.6 ms to 0.3 ms (derived from 4-layer frames in an A/B under load),
+  plain layers are unchanged, and the blur reads a smoother picture at large radii (B2, DESIGN §4.3, PR #253).
 
 ## 1.0.0-rc.2 — 2026-11-03
 
