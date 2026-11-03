@@ -30,6 +30,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   that pass plain (B2), the display path counts a fixed 14 allocations per tick more than headless (derived), decoder
   threads at `.userInteractive` leave the texture misses as they are (B1), and a dissolve on blurred layers allocates
   27–31 per tick, cause not found (new row B148) (B1, B2, B49, DESIGN §4.6, PR #245).
+- Fixed: `POST /api/library/folder` checked for the folder and created it in two steps on a per-client queue, so two
+  clients creating one number, or an upload making the folder in between, could end with two folders of one number; the
+  check and the create now run under one lock (B141). A create that fails (a read-only root) no longer answers 200 with a
+  folder that does not exist: the endpoint answers 500 and an upload 400 (B142, PR #241).
 
 ## 1.0.0-rc.2 — 2026-11-03
 
