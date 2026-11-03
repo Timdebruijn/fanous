@@ -7,6 +7,7 @@
   import { RELEASE_TEXT, ZERO_GROUPS, channelRange, clockText, controlKeys, folderZeroItems, mediaOptions, mediaPath, patchText, playSteps, reservedText, valueText, type LibrarySnapshot } from '../lib/layers';
   import type { ParamSpec } from '../lib/patch-screen';
   import { app, cmd, playOnLayer, programmerLock } from '../lib/state.svelte';
+  import { plural } from '../lib/system';
   import { syncStatus } from '../lib/sync';
   import { throttledSender } from '../lib/throttle';
   import PolicyHint from './PolicyHint.svelte';
@@ -131,7 +132,7 @@
   {/if}
 
   <details class="channels" bind:open={channelsOpen}>
-    <summary class="caption note">{specs && isLayer ? reservedText(specs, footprint) : `${shown.length} values`}</summary>
+    <summary class="caption note">{specs && isLayer ? reservedText(specs, footprint) : plural(shown.length, 'value')}</summary>
   <ul class="params">
     {#each shown as param (param.key)}
       <li class="param">

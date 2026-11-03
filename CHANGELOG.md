@@ -13,6 +13,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: the release dmg was notarized and stapled but not signed itself, so Gatekeeper's check of the dmg
   (`spctl --type open`) rejected it with "no usable signature" while the app inside passed; `scripts/notarize.sh` signs
   the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).
+- Fixed: count captions in the web UI put the plural after a count of 1 ("1 outputs · 1 displays connected",
+  "1 layers", "1 frames seen" and others) and the Media header said "2 invalid name"; every count string now goes
+  through one `plural` helper.
 
 ## 1.0.0-rc.2 — 2026-11-03
 

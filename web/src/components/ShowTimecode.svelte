@@ -6,6 +6,7 @@
   import type { JSONValue } from '../lib/protocol';
   import { lockTitle, offsetText, timecodeBadge, timecodeOn, timecodeSource } from '../lib/show';
   import { app, can, cmd, programmerLock } from '../lib/state.svelte';
+  import { plural } from '../lib/system';
 
   const tc = $derived(app.project.timecode);
   const live = $derived(app.live.timecode);
@@ -71,7 +72,7 @@
     <div class="meta">
       <span class="pill pill-{badge.tone}"><span class="dot"></span>{badge.label}</span>
       <span class="mono">{timecodeSource(live)}</span>
-      <span class="caption">{live.seen} frames seen</span>
+      <span class="caption">{plural(live.seen, 'frame')} seen</span>
     </div>
   </div>
   {#if tc.source === 'ltc'}<LevelMeter level={live.level} label="LTC level" none={on ? 'no audio' : 'timecode switched off'} />{/if}

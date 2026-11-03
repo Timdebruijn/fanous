@@ -6,6 +6,7 @@
   import PatchInspector from './PatchInspector.svelte';
   import type { PatchEntry } from '../lib/docs';
   import { app, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
+  import { plural } from '../lib/system';
   import {
     MAX_LAYERS, MAX_OUTPUTS, UNIVERSE_SIZE, groupSlots, layEntries, moveAfterLayers, patchTarget, rowStatus, rowSummary, slotText, standardStart, universeName,
     type FixtureRow, type Group, type Slot,
@@ -68,7 +69,7 @@
   }
 
   function moved(n: number): string {
-    return n > 0 ? ` ${n} hand-placed fixture${n === 1 ? '' : 's'} moved.` : '';
+    return n > 0 ? ` ${plural(n, 'hand-placed fixture')} moved.` : '';
   }
 
   /** Lays the group from `start`; `verb` says how ("moved to", "re-laid as a block from"). Nothing is sent when the block runs past the last universe. */

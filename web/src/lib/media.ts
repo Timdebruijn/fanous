@@ -5,6 +5,7 @@
 // synthesized Codable writes (IngestQueue.swift, MovieWriter.swift), formatting and filtering.
 import type { IngestJobDoc } from './docs';
 import { clamp01 } from './outputs';
+import { plural } from './system';
 
 export { LOCKED_TITLE } from './patch-screen';
 
@@ -104,7 +105,7 @@ export function durationBadge(item: LibraryItem): string | null {
   if (item.kind === 'still') return 'still';
   const meta = item.metadata;
   if (!meta) return null;
-  if (item.kind === 'sequence') return meta.frameCount > 0 ? `${meta.frameCount} frames` : null;
+  if (item.kind === 'sequence') return meta.frameCount > 0 ? plural(meta.frameCount, 'frame') : null;
   return meta.duration > 0 ? formatDuration(meta.duration) : null;
 }
 

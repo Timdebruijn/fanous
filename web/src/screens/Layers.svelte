@@ -31,6 +31,7 @@
   import { latestOnly } from '../lib/preview';
   import { go } from '../lib/router.svelte';
   import { app, subscribeThumbs } from '../lib/state.svelte';
+  import { plural } from '../lib/system';
 
   // Live layer thumbnails (B29): layer number → object URL of its latest JPEG. Subscribed while this screen is shown,
   // the tab is visible and the engine renders; a layer the engine reports empty, or no stream, shows the library thumbnail.
@@ -122,7 +123,7 @@
 
 <div class="toolbar">
   <h1>Layers</h1>
-  <span class="caption">{canvases.length > 1 ? `${canvases.length} canvases` : (canvases[0]?.name ?? 'Canvas 1')} · {layerCount} layers · <span title="The engine's layer limit, the same on every Mac. Add layer on Patch stops at this number; what this Mac plays without dropping frames can be lower.">up to {app.caps.maxLayers ?? '—'} layers</span></span>
+  <span class="caption">{canvases.length > 1 ? `${canvases.length} canvases` : (canvases[0]?.name ?? 'Canvas 1')} · {plural(layerCount, 'layer')} · <span title="The engine's layer limit, the same on every Mac. Add layer on Patch stops at this number; what this Mac plays without dropping frames can be lower.">up to {app.caps.maxLayers ?? '—'} layers</span></span>
 </div>
 
 <LayerStrips selected={fixture} onselect={(f) => (ui.fixture = f)} />

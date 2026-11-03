@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { ReadinessItemDoc } from './docs';
 import {
   ageText, droppedTone, filterLines, formatClock, headerCaption, memoryText, metricTiles, outputTone, parseMetrics, parseOpenRoles, permissionRow,
-  pushHistory, readinessBadge, readinessSummary, resumedText, sparkline, stampText, thermalTone,
+  plural, pushHistory, readinessBadge, readinessSummary, resumedText, sparkline, stampText, thermalTone,
 } from './system';
 
 const item = (state: ReadinessItemDoc['state'], acknowledged = false): ReadinessItemDoc => ({ id: state, title: state, state, detail: '', fix: '', acknowledged });
@@ -200,5 +200,15 @@ describe('capture permissions (B73)', () => {
     // the microphone (LTC, B137): yellow only while timecode is on LTC with the switch on
     expect(permissionRow('microphone', 'notDetermined', true)).toEqual({ tone: 'yellow', word: 'not asked', authorize: true, caption: null });
     expect(permissionRow('microphone', 'denied', false)).toMatchObject({ tone: 'off', authorize: true });
+  });
+});
+
+describe('plural', () => {
+  it('puts the singular after 1 only', () => {
+    expect(plural(1, 'output')).toBe('1 output');
+    expect(plural(0, 'output')).toBe('0 outputs');
+    expect(plural(2, 'decode error')).toBe('2 decode errors');
+    expect(plural(1, 'canvas', 'canvases')).toBe('1 canvas');
+    expect(plural(3, 'canvas', 'canvases')).toBe('3 canvases');
   });
 });

@@ -48,7 +48,7 @@ Fanous Library/
 The Media screen (key 2) shows invalid items in red: a folder row gets an
 "N invalid" badge, a file tile gets an "invalid name" badge with the reason
 ("no 1-255 prefix", "duplicate file number 4", "folder: duplicate folder number
-3"), and the header counts "N invalid name". An invalid folder has no number in
+3"), and the header counts "N invalid names". An invalid folder has no number in
 the list. The library is watched, so a rename in Finder shows up after a moment;
 **Rescan** (the circular arrow) forces it.
 

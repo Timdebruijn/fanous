@@ -3,6 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { app, cmd, programmerLock } from '../lib/state.svelte';
+  import { plural } from '../lib/system';
   import { interfaceChoices, mastersHere, shortId } from '../lib/sync';
 
   // Multi-server sync (B60, DESIGN §23.4): this machine's id, the settings (sync.set) and the packet counters.
@@ -40,7 +41,7 @@
       <dt>Machine</dt>
       <dd class="mono wrap" title={sync.machine}>{app.live.system.host || '—'} · {shortId(sync.machine)}</dd>
       <dt>Packets</dt>
-      <dd class="mono">in {sync.packetsIn} · out {sync.packetsOut} · <span class:red={sync.decodeErrors > 0}>{sync.decodeErrors} decode errors</span></dd>
+      <dd class="mono">in {sync.packetsIn} · out {sync.packetsOut} · <span class:red={sync.decodeErrors > 0}>{plural(sync.decodeErrors, 'decode error')}</span></dd>
       <dt>Masters here</dt>
       <dd class="mono wrap">
         {#each here as m (m.group)}<div>Group {m.group} · Layer {m.layer}</div>{:else}none{/each}

@@ -17,6 +17,7 @@
   import { loadChannelMap, type ChannelMap } from '../lib/patch-screen';
   import { formatNumber, lockTitle } from '../lib/show';
   import { app, can, cmd } from '../lib/state.svelte';
+  import { plural } from '../lib/system';
 
   /** undefined while loading, null when it could not be fetched (the next visit retries) */
   let channelMap = $state.raw<ChannelMap | null | undefined>(undefined);
@@ -56,7 +57,7 @@
 
 <div class="toolbar">
   <h1>Show control</h1>
-  <span class="caption">{cues.length} {cues.length === 1 ? 'cue' : 'cues'} · timecode {app.live.timecode.state}</span>
+  <span class="caption">{plural(cues.length, 'cue')} · timecode {app.live.timecode.state}</span>
   <span class="spacer"></span>
   <form
     class="goto"

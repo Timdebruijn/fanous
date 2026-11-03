@@ -3,7 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Project versions (B23): the `project.versions` result, row texts and when a revert is allowed.
 import { LOCKED_TITLE } from './patch-screen';
-import { pad2 } from './system';
+import { pad2, plural } from './system';
 
 /** One entry of `project.versions`, newest first. `at` is epoch seconds. */
 export interface ProjectVersion {
@@ -31,8 +31,6 @@ export function parseVersions(value: unknown): ProjectVersion[] {
     }];
   });
 }
-
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** "8 layers · 2 outputs · 1 canvas · 12 cues" */
 export function versionSummary(v: ProjectVersion): string {
