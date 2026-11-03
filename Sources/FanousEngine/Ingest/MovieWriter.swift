@@ -60,6 +60,8 @@ public final class MovieWriter {
         externalAudio: CMAudioFormatDescription? = nil, pixelAspect: (horizontal: Int, vertical: Int)? = nil
     ) throws {
         precondition(!(audio && externalAudio != nil), "audio is either the test tone or caller-supplied")
+        let duration = frameDuration ?? CMTime(value: 1, timescale: fps)
+        guard fps > 0, duration.isNumeric, duration.seconds > 0 else { throw WriterError.failed("frame rate must be positive") }  // a job that got through would trap below
         self.width = width
         self.height = height
         self.fps = fps
