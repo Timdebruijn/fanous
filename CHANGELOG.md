@@ -48,7 +48,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   of PR #243 the status bar now fits one row from 1383 px wide (PR #259).
 - Changed: the web UI's font weights are one step lighter (600 → 500, 700 → 600 for the few that lead) and it uses ten
   font sizes instead of fourteen, none under 11 px but the phone DMX cell; the status bar fits one row from 1380 px
-  (PR #NNN).
+  (PR #260).
 
 ## 1.0.0-rc.2 — 2026-11-03
 
