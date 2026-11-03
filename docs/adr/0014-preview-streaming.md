@@ -25,10 +25,10 @@ full WebCodecs support from version 26 and partial from 16.4 (verified
   browsers for the smooth path.
 
 ## Amendment 2026-11-03: low-latency rate control measured, not taken
-Apple's `VTCompressionProperties.h` lists two profiles: "live capture and
-live broadcast" (`RealTime`, `ExpectedFrameRate`), which the preview encoder
-follows, and "ultra-low-latency conferencing and cloud gaming"
-(`kVTVideoEncoderSpecification_EnableLowLatencyRateControl`). The second
+Apple's `VTCompressionProperties.h` recommends settings for four scenarios;
+the preview encoder follows "live capture and live broadcast" (`RealTime`,
+`ExpectedFrameRate`). For "ultra-low-latency conferencing and cloud gaming"
+it adds `kVTVideoEncoderSpecification_EnableLowLatencyRateControl`. That
 was measured with the preview's settings (BGRA input, 30 fps paced, 240
 frames, two rounds each, M1 Pro, macOS 27.2, load average 15–30 from other
 work), encode latency from `VTCompressionSessionEncodeFrame` to its output
@@ -39,10 +39,13 @@ handler:
 | 640×360 | 4.9 / 7.3 and 5.0 / 20.8 ms | 4.9 / 20.4 and 5.0 / 11.4 ms |
 | 1280×720 | 10.2 / 18.2 and 10.2 / 12.3 ms | 9.8 / 10.4 and 11.0 / 15.0 ms |
 
-No gain: the medians match and the tails move with the load. The mode also
-selects a different encoder (`com.apple.videotoolbox.videoencoder.h264.rtvc`
-instead of the hardware `ave.avc`; the session does not answer
-`UsingHardwareAcceleratedVideoEncoder`), and it forces an infinite GOP and
-High profile, while the preview relies on a key frame every second for
-subscribers that join late and for recovery after a dropped frame. Not
-taken; the encoder keeps the live-broadcast profile.
+No gain: the medians match within a millisecond either way (a second run
+at load ~30 had the mode about 1.3 ms slower at 1280×720) and the tails move
+with the load. The mode also selects a different encoder
+(`com.apple.videotoolbox.videoencoder.h264.rtvc` instead of the hardware
+`ave.avc`), which does not answer `UsingHardwareAcceleratedVideoEncoder`
+(−12900), and the process used 15–50 % more CPU with it in a review probe (a
+hint, not proof of a software encoder). The header says the mode forces an
+infinite GOP and High profile; on macOS 27.2, with the preview's settings, a
+session kept Baseline and the key frame every second, so that is not a
+reason here. Not taken; the encoder keeps the live-broadcast profile.
