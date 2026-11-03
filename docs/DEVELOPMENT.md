@@ -8,12 +8,12 @@ Building, protocols, endpoints and internals. The user guide is in [`user/`](use
 
 
 Requirements: Apple Silicon Mac with a ProRes engine, macOS 15+, Swift 6.2+
-(Command Line Tools are enough until Metal shaders arrive), Node 26 for the
-web UI.
+(Command Line Tools are enough: the Metal shaders are compiled at engine start
+from source), Node 26 for the web UI.
 
 ```bash
 swift build                      # engine, shell, core
-scripts/test.sh                  # Core unit tests (Swift Testing)
+scripts/test.sh                  # every test, engine included (CI's Core job: --filter FanousCoreTests)
 scripts/check-mallocs.sh         # §4.6 zero-malloc rule, release build (before merging compositor changes)
 (cd web && npm install && npm run build)   # web UI → web/dist
 .build/debug/fanousd --foreground        # https://127.0.0.1:8443 (self-signed; fingerprint in the log)
@@ -64,8 +64,7 @@ Browser end-to-end tests (`web/e2e/`, Playwright with Chromium) run the built
 UI against such an engine, one engine per test on a free port with a fresh
 temporary `FANOUS_HOME`, opened as the shell does (`?token=` from that home, so
 programmer). A page error, console error, refused command or refused stream
-fails, except a preview refused for an output or canvas that appeared less than
-1.5 s earlier (two known engine races, see `web/e2e/fixtures.ts`). Each home
+fails, except the error that ends a stream whose canvas was removed. Each home
 holds `fanousd.pid`; the next run kills engines an aborted run left behind. The
 tests need `.build/debug/fanousd` and `web/dist` (or `FANOUSD=/path/to/fanousd`):
 
@@ -76,7 +75,8 @@ npx playwright install chromium   # once
 npm run e2e                       # npx playwright test --headed / --ui to watch
 ```
 
-CI runs them in the `e2e` job on macOS; on a failure the traces and engine
+CI runs them in the `e2e` job on macOS (no job runs for a change to `docs/` or
+Markdown alone, except `docs/channel-map.md`); on a failure the traces and engine
 logs are uploaded as the `e2e-results` artifact. To see the preview tests as
 CI's slow VideoToolbox does (B98): `CI=1 E2E_SLOW_DECODER=6000 npm run e2e`
 delays every `VideoDecoder.isConfigSupported` by 6 s (past the browser's 5 s
@@ -98,8 +98,9 @@ development builds) keep it in `tls/private-key.der` (mode 0600) and never
 touch the login keychain, so there are no keychain prompts. `fanousd
 reset-tls` discards the identity. Logs: `~/Library/Logs/Fanous/fanousd.log`.
 
-Until projects exist (Phase 5), `fanousd --scene scene.json` renders a scene
-driven by the standard DMX patch:
+`fanousd --scene scene.json` (development and the bench) renders a scene
+driven by the standard DMX patch; for that run its canvas, layer count, source
+policy and library root win over the project's:
 
 ```json
 {"canvasWidth": 1920, "canvasHeight": 1080, "fps": 60, "display": 0, "layerCount": 4,
@@ -141,10 +142,13 @@ and loaded at start; `fanousd protocol-dts` prints `web/src/lib/protocol.d.ts`
 (checked by `scripts/check-generated.sh`).
 
 Web UI (`web/`, Svelte 5 + Vite, served by the engine from `web/dist`):
-status bar, Layers / Mixer (rows with the resolved media, position, intensity
-and the DMX inspector of the selected layer), Media (library browser, upload,
-transcode, ingest queue) and Patch / DMX (fixture groups and blocks with collisions,
-`patch.set` and `patch.setMany`, a 512-cell monitor fed by the `dmx` stream). The canvas preview
+status bar and seven screens: Layers (rows with the resolved media, position,
+intensity and the DMX inspector of the selected layer), Media (library browser,
+upload, transcode, ingest queue), Inputs (cameras and capture cards, displays,
+Syphon servers, audio and LTC inputs), Outputs (outputs and mapping), Patch
+(fixture groups and blocks with collisions, `patch.set` and `patch.setMany`, a
+512-cell monitor fed by the `dmx` stream), Show (cues, timecode, OSC, MIDI)
+and System (readiness, machine, network, sync, roles, metrics, logs). The canvas preview
 on the Layers screen uses WebCodecs (H.264 from VideoToolbox, `sub` stream
 `preview`) and falls back to JPEG at 5 fps. Keys 1–7 switch screens.
 `cd web && npm run dev` proxies `/api`, `/ws` and `/healthz` to a running
@@ -180,7 +184,7 @@ pauses ingest after the readiness check (`readiness.run/acknowledge`,
 `live.show`). CITP/MSEX advertises the engine (`PLoc` on both multicast
 groups) and serves consoles layer status, libraries, elements, thumbnails and
 streaming frames over TCP (`live.citp`). `/metrics` and `/api/logs` feed the
-System / Health screen.
+System screen.
 
 Install and release (Phase 8, `RELEASE.md`): `scripts/bundle.sh` assembles
 `dist/Fanous.app` (shell + `fanousd` LaunchAgent + web UI) with the

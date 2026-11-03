@@ -310,9 +310,12 @@ values until it is lost.
 
 **Go to zero** sets every channel of the universe's fixtures to 0 as a new DMX
 change, except a Keystone fixture's: it goes to its default, 32768 on every
-channel, so a lost universe centres the keystone instead of moving the picture. Under Who controls *Console and Fanous* (latest change or highest value wins) that
-change is the latest, so the zeros also win over UI and cue values set before
-the loss; the UI or a cue has to set a value again after it.
+channel, so a lost universe centres the keystone instead of moving the picture.
+Under Who controls *Console and Fanous, latest change wins* that change is the
+latest, so the zeros win over UI and cue values set before the loss; the UI or
+a cue has to set a value again after it. Under *highest value wins* a
+continuous parameter takes the higher value, so a UI or cue value above 0 still
+wins; folder, file and modes take the latest change, so the zero wins there.
 
 With Art-Net + sACN, Art-Net competes as an sACN source at priority 100: a
 higher sACN priority wins, a lower one loses, equal priorities follow the sACN

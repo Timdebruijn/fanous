@@ -4,8 +4,9 @@
 
 # Fanous: blending and mapping, research and a user-friendly design
 
-**Status:** proposal of 2026-10-28. The owner's decisions are in §6, and the
-M1 design is DESIGN §9.9. Building waits for the owner's approval of §9.9.
+**Status:** proposal of 2026-10-28, approved the same day (DESIGN §9.9). M1
+(DESIGN §9.9) and M2 (DESIGN §9.10) are built; M3, the camera and MPCDI
+import, is not. The owner's decisions are in §6.
 
 **Research:** three web surveys:
 - professional media servers
@@ -53,7 +54,9 @@ estimates. Competitor prices stay out of the repository.
 - **Undo:** a drag or nudge burst already merges into one undo step
   (`StateStore`, 1 s coalescing window).
 
-**Frictions, measured against the surveys:**
+**Frictions, measured against the surveys.** The Today column is the state of
+2026-10-28. Fixed since: F1 and F2 (M1), F3 to F6 (M2); F7 is M3, not built
+(§5 maps each item to its friction).
 
 | # | Friction | Today |
 |---|---|---|

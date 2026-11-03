@@ -101,6 +101,7 @@ public final class IngestAPI: @unchecked Sendable {
     private func enqueueNow(source: URL, folder: Int, file: Int?, name: String?, codec: String?, fps: Int32?, keepOriginal: Bool) -> HTTPResponse {
         let library = self.library  // one index for the whole job, also if the root changes meanwhile
         guard (1...255).contains(folder) else { return .text(400, "folder must be 1–255") }
+        guard (1...240).contains(fps ?? 25) else { return .text(400, "fps must be 1–240") }  // 0 reached MovieWriter and trapped the engine
         guard FileManager.default.fileExists(atPath: source.path) else { return .text(404, "source not found") }
         guard let folderURL = library.folderURL(number: folder, createAs: name.map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent } ?? "Folder")
         else { return .text(400, "cannot create folder \(folder)") }

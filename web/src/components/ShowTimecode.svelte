@@ -5,7 +5,7 @@
   import LevelMeter from './LevelMeter.svelte';
   import type { JSONValue } from '../lib/protocol';
   import { lockTitle, offsetText, timecodeBadge, timecodeOn, timecodeSource } from '../lib/show';
-  import { app, can, cmd } from '../lib/state.svelte';
+  import { app, can, cmd, programmerLock } from '../lib/state.svelte';
 
   const tc = $derived(app.project.timecode);
   const live = $derived(app.live.timecode);
@@ -14,7 +14,7 @@
   const on = $derived(timecodeOn(tc));
 
   // Settings are configuration (programmer, refused under show lock); the switch is the operator's.
-  const editTitle = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
+  const editTitle = $derived(programmerLock());
   const editable = $derived(editTitle === undefined);
   const switchTitle = $derived(tc.source === 'off' ? 'Choose a source first' : lockTitle('operator', can('operator'), false));
   const switchable = $derived(switchTitle === undefined);

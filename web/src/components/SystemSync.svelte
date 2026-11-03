@@ -2,13 +2,12 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
-  import { lockTitle } from '../lib/show';
-  import { app, can, cmd } from '../lib/state.svelte';
+  import { app, cmd, programmerLock } from '../lib/state.svelte';
   import { interfaceChoices, mastersHere, shortId } from '../lib/sync';
 
   // Multi-server sync (B60, DESIGN §23.4): this machine's id, the settings (sync.set) and the packet counters.
   const sync = $derived(app.live.sync ?? null);
-  const locked = $derived(lockTitle('programmer', can('programmer'), app.project.showLock) ?? (app.live.show.mode ? 'Leave show mode first' : undefined));
+  const locked = $derived(programmerLock() ?? (app.live.show.mode ? 'Leave show mode first' : undefined));
 
   // drafts: null = follow the engine
   let iface = $state<string | null>(null);

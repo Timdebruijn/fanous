@@ -3,28 +3,18 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script module lang="ts">
   import type { PreviewSource } from '../lib/layers';
+  import { prefs } from '../lib/state.svelte';
 
   // Canvas or This layer, remembered per browser (default Canvas)
   const PREVIEW_KEY = 'fanous.layersPreview';
 
   // Module scope: the router unmounts this screen on navigation, the selected layer should survive that.
   // previewCanvas: the canvas shown while the preview shows a canvas (multiple canvases)
-  const ui = $state({ selected: 1, fixture: null as string | null, preview: storedPreview(), previewCanvas: 1 });
+  const ui = $state({ selected: 1, fixture: null as string | null, preview: (prefs.get(PREVIEW_KEY) === 'layer' ? 'layer' : 'canvas') as PreviewSource, previewCanvas: 1 });
 
-  function storedPreview(): PreviewSource {
-    try {
-      return localStorage.getItem(PREVIEW_KEY) === 'layer' ? 'layer' : 'canvas';
-    } catch {
-      return 'canvas';
-    }
-  }
   function setPreview(source: PreviewSource) {
     ui.preview = source;
-    try {
-      localStorage.setItem(PREVIEW_KEY, source);
-    } catch {
-      // private mode or blocked storage: the choice lasts for this page only
-    }
+    prefs.set(PREVIEW_KEY, source);
   }
 </script>
 
@@ -34,7 +24,8 @@
   import LayerRow from '../components/LayerRow.svelte';
   import LayerStrips from '../components/LayerStrips.svelte';
   import Preview from '../components/Preview.svelte';
-  import { layerPreview, parseThumbFrame, rowThumb, thumbnailFor, thumbnailIndex, type LibrarySnapshot } from '../lib/layers';
+  import { layerNumbers, layerPreview, parseThumbFrame, rowThumb, thumbnailFor, thumbnailIndex, type LibrarySnapshot } from '../lib/layers';
+  import { loadLibrary } from '../lib/media';
   import { canvasTarget, layerCanvas } from '../lib/outputs';
   import { loadChannelMap, type ChannelMap } from '../lib/patch-screen';
   import { latestOnly } from '../lib/preview';
@@ -93,12 +84,6 @@
   let channelMap = $state.raw<ChannelMap | null>(null);
   let library = $state.raw<LibrarySnapshot | null>(null);
 
-  async function getJSON<T>(url: string, signal: AbortSignal): Promise<T> {
-    const response = await fetch(url, { signal });
-    if (!response.ok) throw new Error(`${url}: ${response.status}`);
-    return (await response.json()) as T;
-  }
-
   // Failures leave the previous data in place: ranges show a dash, thumbnails stay empty boxes.
   onMount(() => {
     void loadChannelMap().then((map) => (channelMap = map));
@@ -108,12 +93,12 @@
   $effect(() => {
     void app.live.library.scannedAt;
     const abort = new AbortController();
-    getJSON<LibrarySnapshot>('/api/library', abort.signal).then((snapshot) => (library = snapshot), () => {});
+    loadLibrary(abort.signal).then((snapshot) => (library = snapshot), () => {});
     return () => abort.abort();
   });
 
-  const layerCount = $derived(Math.max(0, Math.floor(app.project.layerCount) || 0));
-  const numbers = $derived(Array.from({ length: layerCount }, (_, i) => i + 1));
+  const numbers = $derived(layerNumbers(app.project.layerCount));
+  const layerCount = $derived(numbers.length);
   const selected = $derived(Math.min(Math.max(ui.selected, 1), Math.max(layerCount, 1)));
   const liveByIndex = $derived(new Map(app.live.layers.map((layer) => [layer.index, layer])));
   const patchByFixture = $derived(new Map(app.project.patch.map((entry) => [entry.fixture, entry])));

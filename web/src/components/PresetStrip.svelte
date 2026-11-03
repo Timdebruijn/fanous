@@ -4,15 +4,14 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
   import { compareLease, freePresetNumber, recalledText, sharedPresets } from '../lib/outputs';
-  import { lockTitle } from '../lib/show';
-  import { app, can, client, cmd, toastUndo } from '../lib/state.svelte';
+  import { app, client, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
 
   // Mapping presets (DESIGN §9.10 item 3) of one output, or of a whole wall (`ids` = its outputs, one command each for
   // all of them): store the warp and slices as a number, recall, rename, remove, and hold Compare to see one on the
   // output (a lease the engine lets run out) while the preview keeps showing the mapping being edited.
   let { ids }: { ids: number[] } = $props();
 
-  const lock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
+  const lock = $derived(programmerLock());
   const targets = $derived(app.project.outputs.filter((o) => ids.includes(o.id)));
   const presets = $derived(sharedPresets(targets));
   let chosen = $state<number | null>(null);

@@ -3,28 +3,18 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { SHEET_HEADER, sheetFaults, sheetRows, sheetTSV, type Group } from '../lib/patch-screen';
-  import { app } from '../lib/state.svelte';
+  import { app, prefs } from '../lib/state.svelte';
+  import { copied } from '../lib/system';
 
   // The Patch sheet (DESIGN §6.6 item 4): what to patch on the console, with Print and Copy. Read-only, for every role.
   let { groups, onclose }: { groups: Group[]; onclose: () => void } = $props();
 
   // Count Art-Net universes from 1, remembered per browser (default off)
   const FROM_ONE_KEY = 'fanous.artnetFromOne';
-  function storedFromOne(): boolean {
-    try {
-      return localStorage.getItem(FROM_ONE_KEY) === '1';
-    } catch {
-      return false;
-    }
-  }
-  let fromOne = $state(storedFromOne());
+  let fromOne = $state(prefs.get(FROM_ONE_KEY) === '1');
   function setFromOne(on: boolean) {
     fromOne = on;
-    try {
-      localStorage.setItem(FROM_ONE_KEY, on ? '1' : '0');
-    } catch {
-      // private mode or blocked storage: the choice lasts for this page only
-    }
+    prefs.set(FROM_ONE_KEY, on ? '1' : '0');
   }
 
   const rows = $derived(sheetRows(groups, fromOne, app.project.universes));
@@ -38,12 +28,7 @@
 
   let copy = $state<'idle' | 'ok' | 'failed'>('idle');
   async function copySheet() {
-    try {
-      await navigator.clipboard.writeText(sheetTSV(rows));
-      copy = 'ok';
-    } catch {
-      copy = 'failed';
-    }
+    copy = await copied(sheetTSV(rows));
   }
   $effect(() => {
     if (copy === 'idle') return;

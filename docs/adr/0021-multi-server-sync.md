@@ -1,6 +1,6 @@
 # ADR-0021: Multi-server sync with a Sync channel and a broadcast clock packet
 
-Status: Proposed · 2026-10-28 (design only, B60)
+Status: Accepted · 2026-10-28 (built the same day, B60: PRs #31, #32, #35)
 
 ## Context
 A show can need two Macs for one picture: each drives one projector with

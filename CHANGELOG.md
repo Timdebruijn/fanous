@@ -657,10 +657,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   picker. A permission's dot is yellow only while a layer shows an input that lacks it. The engine's permission
   texts name the Inputs screen (B137 step 1, DESIGN §12.1, PR #202).
 - Fixed: two API uploads into a folder number the index had not seen yet (within about a second before the rescan, or
-  any time with a library root missing at engine start) created two folders, `003_red` and `003_blue`, and after the
-  rescan the files of one of them were invalid ("duplicate folder number 3"); an upload now looks on disk for the
-  folder with that number first, and creating a folder (`POST /api/library/folder`) with a number an upload already
-  used answers 409 instead of making a second one (PR #144).
+  any time with a library root that was missing at engine start behind a symlink, B140) created two folders, `003_red`
+  and `003_blue`, and after the rescan the files of one of them were invalid ("duplicate folder number 3"); an upload
+  now looks on disk for the folder with that number first, and creating a folder (`POST /api/library/folder`) with a
+  number an upload already used answers 409 instead of making a second one (PR #144).
 - UI: the Inputs screen lists the audio inputs with their channels and the default one. **Use for timecode** sets
   LTC on a device and channel in one undo step, and the selected input shows the timecode state and a level meter of the
   LTC channel, as Show's Timecode panel now does (`live.timecode.level`: the peak of the last tenth of a second in dBFS).
@@ -671,6 +671,34 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: an LTC input stopped while macOS still asked for the microphone opened anyway once answered and drove the
   timecode clock with timecode off; a negative LTC channel crashed the audio thread; undoing a new project's first
   timecode change blanked the Show and Inputs screens (review of PR #207).
+- Fixed: a library root that did not exist at engine start and whose path runs through a symlink (`/tmp`, a `~/Movies`
+  linked to another disk that is mounted at start) was never rescanned after it was made: FSEvents resolves a watched
+  path's symlinks only when it exists, so its events never matched. Uploads, folders made by hand and finished ingest
+  jobs then stayed off the Media screen until **Rescan** or a restart. The index now watches the real path of the part
+  that exists plus the rest (B140, PR #209).
+- CI: a push or pull request that changes only `docs/` or Markdown files runs no jobs; no job reads them, except
+  `docs/channel-map.md`, which `scripts/check-generated.sh` compares and which still runs CI (PR #212).
+- Changed: ingest keeps the source's audio format. The library track is still interleaved LPCM (the player needs no
+  compressed-audio decoder), but in the source's sample rate, channel count, channel layout and bit depth, integer or
+  float, instead of everything resampled to 48 kHz stereo 16-bit; a compressed source (AAC, ...) decodes to 24-bit.
+  The exceptions are what the reader accepts: 8–192 kHz, 8/16/24/32-bit (64-bit float becomes 32-bit), and more than
+  two channels are still mixed to stereo because the player has no matrix mix yet (B143). Playback converts to 48 kHz
+  stereo float as before (B19, PR #218).
+- Changed: ingest keeps an anamorphic source's pixel aspect ratio (a 1440x1080 file meant as 16:9, for example): the
+  ProRes or HAP track is tagged with it, the layer draws the movie at its display width in every fit mode, and the layer
+  status and the Media screen show the display size. Before, such a file played squeezed with square pixels. Rotated
+  footage is the exception: its display size is rendered with square pixels (B19, PR #220).
+- Fixed: a variable-frame-rate source (a screen recording, some phone footage) came out of ingest with one output
+  frame per source frame at the smallest frame duration, so a two-second recording could become a shorter file that ran
+  ahead of its audio. Ingest now holds and drops by presentation time to a constant rate, the source's fastest rate up
+  to 60 fps; a constant-rate source still comes out frame for frame (B19, PR #221).
+- Fixed: `POST /api/ingest` for an image sequence with `fps` 0 took the engine down (a zero timescale in the writer),
+  and the persisted job would have done so again at every start. The API now refuses a frame rate outside 1–240 with
+  400, and `MovieWriter` throws on a non-positive rate instead of trapping (found in the review of PR #221, PR #222).
+- Fixed: a rotated source with alpha (phone footage tagged with a quarter turn, ProRes 4444 or HEVC with alpha) came out
+  of ingest opaque: the composition that baked the rotation in rendered over black. A quarter turn or flip is now applied
+  to the pixels exactly (vImage, no resampling), alpha and the pixel aspect ratio come along (the ratio swapped by a
+  quarter turn). Only an odd transform still goes through the composition (B18, PR #226).
 
 ## 0.0.1 — Phases 0–7 (2026-10-22 … 2026-10-24)
 

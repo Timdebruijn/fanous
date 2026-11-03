@@ -26,12 +26,14 @@ repository.
    - NDI is designed as a closed plugin and deferred for its licence
      obligations (§4, B74). Until it lands, an MA3 programmer sees no
      Fanous picture on the desk.
-2. **Live input is the gap nearly every product has closed.**
+2. **Live input is the gap nearly every product has closed, and Fanous has
+   closed most of it since 2026-10-30.**
    - Cameras or capture cards: all 6 Mac tools, all 5 console-native servers
-     and 5 of 6 touring servers. Fanous takes Syphon only.
-   - AVFoundation capture and ScreenCaptureKit are native, need no SDK, and fit
-     folder 0, files 1–32. DESIGN §8.2 reserves those slots for live inputs, but
-     they were never built.
+     and 5 of 6 touring servers. Fanous takes Syphon, cameras and capture
+     cards (folder 0, files 1–20) and displays (files 21–28).
+   - AVFoundation capture and ScreenCaptureKit are native and need no SDK.
+     Still open (B73): windows of other apps (files 29–32) and capture cards
+     whose only path is a vendor SDK (DeckLink, AJA).
 3. **Audio goes to the default device only, in stereo.**
    - The cause is B4: `AudioMixer.deviceUID` is ignored. The per-layer channel
      pairs of DESIGN §10 are not built either.
@@ -100,8 +102,9 @@ repository.
   | Watchout Producer | no output without a key |
   | MediaMaster | demo |
 
-- **CITP coverage:** grandMA3 and Eos have none (§0.1). The README and
-  `docs/marketing/positioning.md` should name the desks CITP thumbnails reach.
+- **CITP coverage:** grandMA3 and Eos have none (§0.1). The README names the
+  desks CITP thumbnails reach in its test request;
+  `docs/marketing/positioning.md` should too.
 
 ## 3. Gap matrix
 
@@ -119,9 +122,9 @@ priority for each row comes from §4.
 
 | # | Capability | Who has it | Fanous | Effort |
 |---|---|---|---|---|
-| G1 | Camera/capture input: UVC, and capture cards with a macOS driver | CN 5/5 · HE 5/6 · Mac 6/6 | `—` (folder 0, files 1–32 reserved, never built) | M: `AVCaptureSession` → `CVMetalTextureCache`, as a `LiveTextureSource` like Syphon and the folder 0 generators |
+| G1 | Camera/capture input: UVC, and capture cards with a macOS driver | CN 5/5 · HE 5/6 · Mac 6/6 | `◐` UVC cameras and capture cards with a macOS driver are built as folder 0 files 1–20 (B73 step 2, PRs #116, #120); cards whose only path is a vendor SDK (DeckLink, AJA) are not | SDK-only cards: in-tree source or plugin, after a licence check (DESIGN §8.2.1) |
 | G2 | NDI in and out | CN 3/5 (Ai pulled it) · HE 6/6 in · Mac 6/6 in; **the live-preview path of MA3, MagicQ and Onyx** (Titan until v19) | `D`: closed plugin (ADR-0016), deferred for its licence (B74) | M, plus the plugin loader |
-| G3 | Screen/window capture: slides, presentation and lyrics apps | Millumin, VDMX, Isadora, Mitti | `—` | S–M: ScreenCaptureKit, the same `LiveTextureSource` path as G1 |
+| G3 | Screen/window capture: slides, presentation and lyrics apps | Millumin, VDMX, Isadora, Mitti | `◐` displays are built as folder 0 files 21–28 (B73 step 3, PRs #126, #127); windows (29–32) are not | S–M for windows, when a show asks (B73 step 4) |
 | G4 | Text layer: static and live text over OSC/API, countdown, SRT subtitles | CN 4/5 · HE 5/6 · Mac 5/6 | `◐` clock generator only | M: CoreText into a folder 0 generator; text set over OSC/WebSocket |
 | G5 | Transitions beyond crossfade: through black, fade-up-first, wipes, shader transitions | CN 4/5 (Hippotizer 3, Ai 38, Mbox ~66) · Resolume, Millumin | `◐` crossfade 0.1–25.5 s | S for through black and fade-up-first; M for a catalogue. Needs 1–2 reserved channels |
 | G6 | More effects through a shader format (others have 60–220 effects) | ISF/GLSL: Mbox, Ai, Pixera, Smode · Mac 5/6 (ISF, FFGL, GLSL) · Notch blocks: HE 4/6 | `◐` 11 fixed effects, 2 slots | M–L: ISF is GLSL and Fanous is Metal, so either a translation dependency (SPIRV-Cross) or our own MSL format |
@@ -151,7 +154,7 @@ priority for each row comes from §4.
 | # | Capability | Who has it | Fanous | Effort |
 |---|---|---|---|---|
 | G22 | Desk personalities beyond GDTF (MA2 XML, MagicQ head file, Avolites personality, Eos library request, Onyx), plus a test on a real desk. Eos's GDTF import does not create media or models (ETC support page) | CN 5/5 ship desk profiles or appear in MagicQ's patch presets | `◐` GDTF only, untested (B7, B40) | S each, plus owner time |
-| G23 | CITP compliance details. Fall back to a v1.0 `SInf`. Respect the 256-library/256-element cap and 0-based contiguous indexes. Titan Active Fixtures auto-patch from what the server reports. MagicQ needs layers on ascending DMX addresses with ascending head numbers. | MA2, MagicQ, Hog, Onyx, Titan | `◐` MSEX 1.2, verified on loopback only (B40) | S |
+| G23 | CITP compliance details. Titan Active Fixtures auto-patch from what the server reports. MagicQ needs layers on ascending DMX addresses with ascending head numbers. Whether to send the v1.0 `SInf` at accept, as the spec says, instead of after 2 s. | MA2, MagicQ, Hog, Onyx, Titan | `◐` MSEX 1.2, verified on loopback only (B40). Built: the v1.0 `SInf` fallback and 0-based contiguous library and element indexes, which also keep the 256 cap (B78, PRs #194, #198) | S |
 | G24 | Thumbnails for desks without CITP (MA3, Eos): export the library thumbnails as an image set named by folder and file, for the desk's image pool | none found (users build it by hand) | `—` | S; first check what MA3 and Eos can import |
 | G25 | SRT/RTSP H.264 preview stream for Eos (3.3.5 and later, per the survey; the page returned 404 on re-check) | Eos side only | `◐` the H.264 encoder exists for the web preview | M |
 | G26 | Art-Net timecode in (`ArtTimeCode`, 0x9700) | Pixera, Kinetic; MagicQ sends it | `—` (Core parses `ArtSync` only) | S |
@@ -190,8 +193,9 @@ priority for each row comes from §4.
 
 **P1: close before 1.0 or right after.** These are the gaps a first user hits.
 1. **G1 and G3: live inputs** through AVFoundation and ScreenCaptureKit, in
-   folder 0, files 1–32 (already reserved). Both are system frameworks, with
-   no vendor SDK.
+   folder 0. Cameras, capture cards and displays (files 1–28) are built; what
+   is left is windows (files 29–32) and SDK-only capture cards, when a show
+   asks (B73).
 2. **G44 and G45: audio device selection** and per-layer channel pairs (B4 and
    DESIGN §10).
 3. **G4: text layer** with text set over OSC.

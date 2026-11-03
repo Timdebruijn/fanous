@@ -6,8 +6,7 @@
   import OutputColour from './OutputColour.svelte';
   import PresetStrip from './PresetStrip.svelte';
   import RangeStepper, { GRACE } from './RangeStepper.svelte';
-  import { lockTitle } from '../lib/show';
-  import { app, can, cmd, toastUndo } from '../lib/state.svelte';
+  import { app, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
   import { throttledSender } from '../lib/throttle';
   import { endCheck, pick, removeWall, startWizard, stepCheck, wallUI } from '../lib/wall-session.svelte';
   import { SEAM_STEPS, overlapHint, rc, seamLines, wallPixels, type Control, type ManualField, type SeamLine, type WallConfig } from '../lib/walls';
@@ -19,7 +18,7 @@
   // coalesce key).
   let { wall, onwarp }: { wall: WallConfig; onwarp: (output: number) => void } = $props();
 
-  const lock = $derived(lockTitle('programmer', can('programmer'), app.project.showLock));
+  const lock = $derived(programmerLock());
   const outputs = $derived(new Map(app.project.outputs.map((o) => [o.id, o])));
   const name = (id: number) => outputs.get(id)?.name ?? `Output ${id}`;
   const lines = $derived(seamLines(wall));
@@ -299,7 +298,6 @@
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .ctl { display: flex; flex-direction: column; gap: 10px; }
   h3 { margin: 0; font-size: 15px; letter-spacing: normal; text-transform: none; color: inherit; }
-  .focus { outline: 2px solid var(--accent); outline-offset: 4px; }
   .manual { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
   @media (max-width: 600px) {
     .hint { grid-template-columns: 1fr; }

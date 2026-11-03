@@ -6,8 +6,7 @@
   import type { LayerStatus, PatchEntry, ResolvedParameter } from '../lib/docs';
   import { RELEASE_TEXT, ZERO_GROUPS, channelRange, clockText, controlKeys, folderZeroItems, mediaOptions, mediaPath, patchText, playSteps, reservedText, valueText, type LibrarySnapshot } from '../lib/layers';
   import type { ParamSpec } from '../lib/patch-screen';
-  import { lockTitle as lockFor } from '../lib/show';
-  import { app, can, cmd, playOnLayer } from '../lib/state.svelte';
+  import { app, cmd, playOnLayer, programmerLock } from '../lib/state.svelte';
   import { syncStatus } from '../lib/sync';
   import { throttledSender } from '../lib/throttle';
   import PolicyHint from './PolicyHint.svelte';
@@ -45,7 +44,7 @@
   const shown = $derived(keys ? (params ?? []).filter((p) => keys.includes(p.key)) : (params ?? []));
   // the engine releases UI values 10 min after the last change, but only while a console is received for the fixture
   const expiresIn = $derived(app.live.dmx.uiExpiresIn?.[fixture]);
-  const lockTitle = $derived(lockFor('programmer', can('programmer'), app.project.showLock));
+  const lockTitle = $derived(programmerLock());
   const options = $derived(mediaOptions(library));
   const folderZero = $derived(folderZeroItems(app.live.syphon?.servers, app.live.capture));
   const current = $derived(layer && layer.folder > 0 && layer.file > 0 ? `${layer.folder}/${layer.file}` : '');

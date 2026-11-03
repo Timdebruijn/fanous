@@ -109,5 +109,4 @@
   .line { display: flex; align-items: center; gap: 8px; }
   .line input { flex: 1; min-width: 0; min-height: var(--touch); accent-color: var(--accent); }
   .val { min-width: 64px; text-align: right; }
-  .focus { outline: 2px solid var(--accent); outline-offset: 4px; }
 </style>
