@@ -16,6 +16,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Docs: the `CAMetalDisplayLink` stall of macOS 27.0.1 was not reproduced on 27.2 (the reproduction and
   `fanous-bench --displaylink` both ran at full rate, one run each); the drawable loop stays the shipping driver and the
   Apple Feedback item is dropped (B8, ADR-0006 amendment 2026-11-03, PR #240).
+- Release: 1.0.0-rc.2 is on GitHub as a pre-release with the signed, notarized dmg; the README ("Download or build")
+  and getting started point at the Releases page (PR #242).
 - Changed: the web UI's labels are in sentence case instead of tracked capitals (Locked / Unlocked, "Show mode: on",
   Programmer, No media, Missing file, the column heads); acronyms such as LTC, HAP and GO keep theirs. The shorter words
   let the status bar fit one row from 1416 px wide instead of 1470 (PR #243).
