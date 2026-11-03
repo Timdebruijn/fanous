@@ -284,6 +284,7 @@ struct ShowControlTests {
     /// B144: a Mac without a ProRes engine fails the "Supported hardware" item hard; acknowledging does not unblock it.
     @Test func aMacWithoutAProResEngineIsRefusedShowMode() throws {
         #expect(SystemInfo.hasProResEngine)  // engine tests need the hardware decoder anyway (CI runs Core tests only)
+        #expect(!SystemInfo.proResEngine(chip: "Apple M1") && SystemInfo.proResEngine(chip: "Apple M1 Pro") && SystemInfo.proResEngine(chip: "Apple M2"))
         var context = ReadinessContext()
         context.hardwareSupported = false
         let item = try #require(Readiness.check(context, acknowledged: ["hardware"]).first { $0.id == "hardware" })

@@ -467,11 +467,13 @@ physical memory and OS (`SystemInfo`) and the thermal state and power source
 does not exist), no tier model, no GPU or display-limit
 detection and no benchmark numbers stored per machine. The layer limit is the
 constant 32 (`caps.maxLayers`, B145; OPEN-8). The one capability read is the
-ProRes engine (B144, 2026-11-03): `SystemInfo.hasProResEngine` asks VideoToolbox
-whether ProRes 422 decodes in hardware (`VTIsHardwareDecodeSupported`), and
-`Engine.readinessContext()` puts it in `hardwareSupported`, so a Mac without
-the engine fails the hard "Supported hardware" item and is refused show mode.
-True on the M1 Pro; the base M1's false rests on Apple's documentation (none at hand).
+ProRes engine (B144, 2026-11-03): `SystemInfo.hasProResEngine` is the chip name
+not being exactly `Apple M1` (the one Apple Silicon chip without the engine, per
+Apple's documentation; none at hand), and `Engine.readinessContext()` puts it in
+`hardwareSupported`, so a base M1 fails the hard "Supported hardware" item and is
+refused show mode. The first version asked `VTIsHardwareDecodeSupported`: on CI's
+macOS VM that call stalled fanousd at start (every engine after the first answered
+nothing for 20 s; main 59fb9db, runs 41625445415 and 41625487294), so it is not used.
 
 ### 5.1 Detection at start (and on display changes)
 
@@ -479,7 +481,7 @@ True on the M1 Pro; the base M1's false rests on Apple's documentation (none at 
 |---|---|
 | Chip name, P/E core counts, memory | `sysctl machdep.cpu.brand_string`, `hw.perflevel0.physicalcpu`, `hw.memsize` |
 | GPU family, core count, unified memory, working-set hint | `MTLDevice.supportsFamily(.apple7/8/9…)`, IORegistry `AGXAccelerator/gpu-core-count`, `recommendedMaxWorkingSetSize` |
-| Hardware ProRes decode / encode | `VTIsHardwareDecodeSupported(kCMVideoCodecType_AppleProRes422)`; encoder list (`VTCopyVideoEncoderList`) filtered on `kVTVideoEncoderList_IsHardwareAccelerated` |
+| Hardware ProRes decode / encode | the chip name (only the base M1 lacks the engine; `VTIsHardwareDecodeSupported` stalls on a VM, B144); encoder list (`VTCopyVideoEncoderList`) filtered on `kVTVideoEncoderList_IsHardwareAccelerated` |
 | H.264 hardware encode (preview) | encoder list, same |
 | Displays, modes, identity | `CGGetOnlineDisplayList`, `CGDisplayCopyAllDisplayModes`, `CGDisplayCreateUUIDFromDisplayID`, EDID name via IOKit |
 | Media-engine count, max external displays | **static table** keyed by chip name (`FanousCore/Capabilities`), marked "Apple spec" in the UI, with `unknown` fallback → conservative tier and a yellow "unknown chip, benchmark recommended" status |

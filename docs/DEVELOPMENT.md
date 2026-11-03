@@ -9,10 +9,10 @@ Building, protocols, endpoints and internals. The user guide is in [`user/`](use
 
 Requirements: Apple Silicon Mac with a ProRes engine, macOS 15+, Swift 6.2+
 (Command Line Tools are enough: the Metal shaders are compiled at engine start
-from source), Node 26 for the web UI. A macOS VM (CI's runner included) likely
-reports no hardware ProRes decoder (not measured): the "Supported hardware"
-readiness item then fails and show mode cannot be entered there; the
-`fanousd starting` log line says `proResEngine=false` when that is the case.
+from source), Node 26 for the web UI. The "Supported hardware" readiness item
+goes by the chip name (only `Apple M1` fails), so a macOS VM passes it; do not
+probe VideoToolbox at start, `VTIsHardwareDecodeSupported` stalled fanousd on
+CI's VM (B144).
 
 ```bash
 swift build                      # engine, shell, core
