@@ -28,7 +28,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Performance: a layer with Blur or Edge is first converted into its media's scratch texture and its taps read that
   RGBA directly, the blur at a mip level matched to its radius; a blurred ProRes 1080p60 layer went from about 2.3 ms to
   0.9 ms of GPU time and an edged one from about 1.6 ms to 0.3 ms (A/B under load, 4 layers), plain layers are unchanged,
-  and the blur reads a smoother picture at large radii (B2, DESIGN §4.3, PR #NNN).
+  and the blur reads a smoother picture at large radii (B2, DESIGN §4.3, PR #253).
 ## 1.0.0-rc.2 — 2026-11-03
 
 - Fixed: the strobe effect's phase jumped once an hour (up to half a cycle, a visible hiccup at low rates) when the shader
