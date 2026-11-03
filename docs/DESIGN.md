@@ -1999,7 +1999,7 @@ source file(s) ──▶ _incoming/ (remote upload) or in-place (local path)
    ▼ transcode (one job at a time; paused while show mode is on)
    │     ProRes:  AVAssetReader (any AVFoundation-decodable source) → 16-bit RGB (64ARGB) → AVAssetWriter ProRes (hardware encoder) + LPCM audio
    │     HAP:     AVAssetReader → RGBA frames → hap.c HapEncode (+ Snappy) → AVAssetWriter passthrough samples with a 'HapY'/'Hap5'/'Hap1'/'HapM'/'HapA' format description
-   │     stills:  copy (PNG/JPEG/TIFF/HEIF) ; image sequence → ProRes 4444 or HAP Alpha movie at the chosen fps
+   │     stills:  copy (PNG/JPEG/TIFF/HEIF) ; image sequence → ProRes 4444 (drawn at 16 bits per channel) or HAP Alpha movie at the chosen fps
    ▼ write to NNN_name.mov in the target folder, original moved to _originals/ (configurable: keep in place / delete)
    ▼ index update → thumbnail → available to DMX
 ```
