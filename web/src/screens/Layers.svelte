@@ -233,17 +233,19 @@
     flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 8px;
   }
   .heads {
-    display: grid; grid-template-columns: var(--layer-cols); column-gap: var(--layer-gap); padding: 0 13px;  /* the row's 1 px border + 12 px padding */
+    display: grid; grid-template-columns: var(--layer-cols); column-gap: var(--layer-gap); padding: 0 13px;  /* the list's 1 px border + the row's 12 px padding */
     font-size: 11px; font-weight: 500; color: var(--text-3);
   }
   .h-layer { grid-column: span 2; }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  /* one panel of rows with dividers, not a card per layer; tiles below 1320 px stay cards */
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--surface-1); overflow: hidden; }
+  @media (width > 1320px) { .list > li:last-child :global(.layer) { border-bottom: 0; } }
   .side { display: flex; flex-direction: column; gap: 12px; flex: 0 0 clamp(320px, 22vw, 360px); position: sticky; top: 16px; max-height: calc(100dvh - 32px); overflow-y: auto; border-radius: var(--radius-panel); }
 
   /* Rows need roughly 860 px of list; narrower than that (11" iPad landscape and down) they become tiles. Keep in step with LayerRow. */
   @media (max-width: 1320px) {
     .heads { display: none; }
-    .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr)); }
+    .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr)); gap: 8px; border: 0; border-radius: 0; background: none; overflow: visible; }
   }
   /* Below 1100 px the detail goes under the list. */
   @media (max-width: 1100px) {

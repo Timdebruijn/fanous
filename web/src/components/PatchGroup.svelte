@@ -270,12 +270,12 @@
   .chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .chip {
     display: inline-grid; grid-template-columns: 10px auto; grid-template-areas: 'sw n' '. at'; align-items: center; column-gap: 6px;
-    min-width: 56px; min-height: var(--touch); padding: 4px 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-control);
+    min-width: 56px; min-height: var(--touch); padding: 4px 8px; border: 1px solid var(--line); border-radius: var(--radius-control);
     background: var(--surface-2); color: var(--text-1); text-align: left;
   }
   .chip:hover { background: var(--surface-3); }
   .chip[aria-pressed='true'] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-  .chip.tone-faint { border-style: dashed; color: var(--text-2); }
+  .chip.tone-faint { border-style: dashed; border-color: var(--line-strong); color: var(--text-2); }  /* the dashes say "not used": they keep the stronger edge */
   .chip.tone-warn { border-color: var(--yellow); }
   .chip.tone-bad { border-color: var(--red); background: var(--red-bg); }
   .chip .sw { grid-area: sw; width: 10px; height: 10px; border-radius: 3px; border: 1px solid var(--line-strong); }

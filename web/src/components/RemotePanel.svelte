@@ -74,7 +74,7 @@
 </section>
 
 <style>
-  .remote { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-panel); background: var(--surface-1); }
+  .remote { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--surface-1); }
   .now { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
   .big { font-size: 32px; font-weight: 500; line-height: 1.15; color: var(--text-1); }
   .now .caption { font-family: var(--font-mono); font-size: 14px; }

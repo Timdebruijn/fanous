@@ -49,6 +49,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Changed: the web UI's font weights are one step lighter (600 → 500, 700 → 600 for the few that lead) and it uses ten
   font sizes instead of fourteen, none under 11 px but the phone DMX cell; the status bar fits one row from 1380 px
   (PR #260).
+- Changed: buttons, segmented groups, tags and outline badges have a quiet hairline edge instead of the strong one
+  every button carried (inputs, keycaps, dialogs and a selected row keep it), and the Layers list on a desktop is one
+  panel of rows with dividers instead of a bordered card per layer; tiles below 1320 px stay cards (PR #261).
 
 ## 1.0.0-rc.2 — 2026-11-03
 

@@ -167,7 +167,7 @@
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
   .tile {
     position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 96px; padding: 12px;
-    border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); color: var(--text-1); text-align: left; min-width: 0;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--text-1); text-align: left; min-width: 0;
   }
   .tile:hover { background: var(--surface-3); }
   .tile[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-dim); }
