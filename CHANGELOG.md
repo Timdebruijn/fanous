@@ -57,6 +57,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fixed: count captions in the web UI put the plural after a count of 1 ("1 outputs · 1 displays connected",
   "1 layers", "1 frames seen" and others) and the Media header said "2 invalid name"; every count string now goes
   through one `plural` helper (PR #238).
+- Docs: every screenshot of the user guide and the README and the tour GIF are retaken for the web UI's new look
+  (PRs #236, #238, #243, #259, #260, #261), on a demo engine as before.
 
 ## 1.0.0-rc.2 — 2026-11-03
 
