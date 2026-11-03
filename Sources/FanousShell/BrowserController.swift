@@ -101,7 +101,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, WKD
         Task { await present(alert) }
     }
 
-    func load() { webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)) }
+    /// With the shell token, read on every load (a retry or Engine › Reload UI): the engine writes it on its first start.
+    func load() { webView.load(URLRequest(url: AppPaths.shellPageURL(url), cachePolicy: .reloadIgnoringLocalCacheData)) }
 
     /// The engine may still be starting: retry every second until the page loads.
     private func scheduleRetry() {
