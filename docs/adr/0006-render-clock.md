@@ -73,7 +73,7 @@ updates, 152 completions and 150 presents in 2.5 s in every link variant
 engine's own driver agrees: `fanous-bench run --display 0 --layers 4
 --window 10 --displaylink` (HAP Q 1080p60) passes with 603 frames, 0 missed,
 0 late, GPU p99 3.64 ms, against 624 frames and 3.63 ms for the drawable
-loop in the same run. One 10 s window at 4 layers, not a sweep.
+loop in a run just before it. One 10 s window at 4 layers, not a sweep.
 
 The drawable loop stays the shipping driver: it works on 27.0.1 and 27.2
 alike, and the link showed no gain in this window. No Feedback is filed with
