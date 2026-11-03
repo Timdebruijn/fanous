@@ -291,8 +291,39 @@ struct LibraryIndexTests {
         #expect(index.folderURL(number: 5)?.lastPathComponent == "005_Show")
         index.rescan()
         #expect(index.snapshot.folders.first { $0.number == 5 }?.name == "005_Show", "the folder the index keeps for a duplicate number")
+        #expect(index.createFolder(number: 9, name: "Third") == .exists(root.appending(path: "009_New_ Folder")))
+        #expect(index.createFolder(number: 10, name: "Ten") == .created(root.appending(path: "010_Ten")))
         #expect(LibraryIndex.destinationName(number: 7, originalName: "12 intro loop.MOV", pathExtension: "mov") == "007_intro loop.mov")
         #expect(LibraryIndex.destinationName(number: 7, originalName: "../../evil.mp4", pathExtension: "mov") == "007_evil.mov")
         #expect(LibraryIndex.destinationName(number: 7, originalName: "123", pathExtension: "png") == "007_media.png")
+    }
+
+    /// B141: twenty clients creating one number at once make one folder; the others see it exist.
+    @Test func concurrentFolderCreatesMakeOneFolder() async throws {
+        let root = try tempDir("fanous-library")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+        let results = await withTaskGroup(of: LibraryIndex.FolderCreate.self) { group in
+            for i in 0..<20 { group.addTask { index.createFolder(number: 7, name: "Client \(i)") } }
+            return await group.reduce(into: []) { $0.append($1) }
+        }
+        let created = results.filter { if case .created = $0 { true } else { false } }
+        #expect(created.count == 1, "\(results)")
+        #expect(results.allSatisfy { $0 == .exists(root.appending(path: "007_Client 0")) || $0 == created.first })
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).filter { LibraryIndex.prefixNumber($0) == 7 }.count == 1)
+    }
+
+    /// B142: a root that cannot be written gives no URL for a folder that does not exist.
+    @Test func folderCreateFailsOnAReadOnlyRoot() throws {
+        let root = try tempDir("fanous-library")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let readOnly = root.appending(path: "root")
+        try FileManager.default.createDirectory(at: readOnly, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: readOnly.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: readOnly.path) }
+        let index = LibraryIndex(root: readOnly, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+        #expect(index.createFolder(number: 1, name: "One") == .failed)
+        #expect(index.folderURL(number: 1, createAs: "One") == nil)
+        #expect(!FileManager.default.fileExists(atPath: readOnly.appending(path: "001_One").path))
     }
 }
