@@ -352,8 +352,9 @@ public final class Compositor: @unchecked Sendable {
 
     /// One compositor tick. `target` is the target presentation time (host seconds).
     public func tick(target: Double, drawable: CAMetalDrawable?) {
-        Signposts.begin("tick")
-        defer { Signposts.end("tick") }
+        let signpost = Signposts.id(self)  // a thumbnail's compositor ticks on the library thread meanwhile
+        Signposts.begin("tick", id: signpost)
+        defer { Signposts.end("tick", id: signpost) }
         ticks.wrappingAdd(1, ordering: .relaxed)
         tickThread.store(UInt(bitPattern: pthread_self()), ordering: .relaxed)
         for i in inFlight.indices { harvest(i) }

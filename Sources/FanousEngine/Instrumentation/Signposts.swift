@@ -15,10 +15,11 @@ import os
 /// and the compositor thread keeps a malloc budget (DESIGN.md §4.6).
 /// Callers do not import os (its `Logger` would clash with swift-log's).
 enum Signposts {
-    static let log = ProcessInfo.processInfo.environment["FANOUS_SIGNPOSTS"] == "1" ? OSLog(subsystem: "org.fanous", category: "signposts") : .disabled
+    /// `getenv`, not `ProcessInfo.environment`: the first use may be on the compositor thread, and that builds a dictionary.
+    static let log = getenv("FANOUS_SIGNPOSTS").map { strcmp($0, "1") == 0 } == true ? OSLog(subsystem: "org.fanous", category: "signposts") : .disabled
 
     static func begin(_ name: StaticString, id: OSSignpostID = .exclusive) { os_signpost(.begin, log: log, name: name, signpostID: id) }
     static func end(_ name: StaticString, id: OSSignpostID = .exclusive) { os_signpost(.end, log: log, name: name, signpostID: id) }
-    /// An id for intervals that overlap other threads' intervals of the same name (one per decoder).
+    /// An id for intervals that overlap other threads' intervals of the same name (one per decoder, one per compositor).
     static func id(_ object: AnyObject) -> OSSignpostID { OSSignpostID(log: log, object: object) }
 }
