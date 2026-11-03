@@ -14,7 +14,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   theirs): the deprecated `String(cString:)` on an array and swift-log's 1.0 `log(level:…)` entry point are replaced, and the
   Swift 6 concurrency warnings on values handed to Core Video, VideoToolbox, Network and CoreMIDI callbacks are settled
   with capture lists or a commented `nonisolated(unsafe)` (none was a data race: each value is handed over and not
-  touched by the sender again).
+  touched by the sender again) (PR #251).
 - Fixed: the release dmg was notarized and stapled but not signed itself, so Gatekeeper's check of the dmg
   (`spctl --type open`) rejected it with "no usable signature" while the app inside passed; `scripts/notarize.sh` signs
   the dmg with the app's Developer ID before notarizing it and checks it with `spctl` at the end (B50, PR #234).
