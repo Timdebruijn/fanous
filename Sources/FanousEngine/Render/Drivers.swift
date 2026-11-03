@@ -20,7 +20,7 @@ public final class DisplayLinkDriver: NSObject, CAMetalDisplayLinkDelegate, @unc
         link = CAMetalDisplayLink(metalLayer: layer)
         link.preferredFrameLatency = Float(frameLatency)
         link.preferredFrameRateRange = CAFrameRateRange(minimum: Float(fps), maximum: Float(fps), preferred: Float(fps))
-        nonisolated(unsafe) let link = self.link  // added to the thread's run loop below, then only read by Core Animation
+        nonisolated(unsafe) let link = self.link  // the thread only adds it to its run loop
         let box = RunLoopBox()
         let onMain = ProcessInfo.processInfo.environment["FANOUS_LINK_MAIN"] == "1"  // diagnostic switch
         let done = self.done
