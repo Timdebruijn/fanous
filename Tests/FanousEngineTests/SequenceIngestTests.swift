@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
+import AVFoundation
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -12,6 +13,31 @@ import UniformTypeIdentifiers
 @testable import FanousEngine
 
 struct SequenceIngestTests {
+    /// A 16-bit image sequence keeps more than 8 bits in ProRes: a 16-bit grey PNG ramp (1024 wide, full range) comes out
+    /// of ProRes 422 HQ on the 10-bit video-range ramp `IngestQueueTests.rampError` expects.
+    @Test func sixteenBitSequenceKeepsItsPrecisionInProRes() async throws {
+        let directory = try tempDir("fanous-seq")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (w, h) = (1024, 16)
+        let row = (0..<w).flatMap { x in [UInt16](repeating: UInt16(x * 65535 / (w - 1)), count: 3) }
+        let data = (0..<h).flatMap { _ in row }.withUnsafeBufferPointer { Data(buffer: $0) }
+        let image = try #require(CGImage(
+            width: w, height: h, bitsPerComponent: 16, bitsPerPixel: 48, bytesPerRow: w * 6, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue | CGBitmapInfo.byteOrder16Little.rawValue),
+            provider: CGDataProvider(data: data as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        for i in 0..<3 {
+            let destination = try #require(CGImageDestinationCreateWithURL(
+                directory.appending(path: "ramp_\(i).png") as CFURL, UTType.png.identifier as CFString, 1, nil))
+            CGImageDestinationAddImage(destination, image, nil)
+            #expect(CGImageDestinationFinalize(destination))
+        }
+        let output = directory.appending(path: "ramp.mov")
+        let frames = try SequenceIngest.frames(in: directory)
+        try await offPool { try SequenceIngest.convert(frames: frames, to: output, fps: 25, codec: .proRes422HQ) }
+        let error = try await IngestQueueTests.rampError(output)
+        #expect(error.mean < 0.5 && error.max <= 2, "ProRes: \(error)")
+    }
+
     /// Ten PNG frames with alpha → ProRes 4444 → the engine opens it with ten frames and decodes with alpha.
     @Test func sequenceBecomesPlayableMovie() async throws {
         let directory = try tempDir("fanous-seq")
@@ -61,5 +87,20 @@ struct SequenceIngestTests {
         let slot = DecodedFrame(poolIndex: 0)
         try source.decode(frame: 5, into: slot)
         #expect(slot.kind == .y416 || slot.kind == .planarYCbCrA)  // an alpha-carrying layout
+
+        // the movie's own alpha and colour (the 16-bit RGBA path): left half opaque with the red ramp, right half transparent
+        let asset = AVURLAsset(url: output)
+        let reader = try AVAssetReader(asset: asset)
+        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
+        let readOut = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        reader.add(readOut)
+        reader.startReading()
+        let buffer = try #require(readOut.copyNextSampleBuffer().flatMap(CMSampleBufferGetImageBuffer))
+        reader.cancelReading()
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        let pixel = CVPixelBufferGetBaseAddress(buffer)!.advanced(by: 80 * CVPixelBufferGetBytesPerRow(buffer)).assumingMemoryBound(to: UInt8.self)
+        #expect(pixel[100 * 4 + 3] == 255 && abs(Int(pixel[100 * 4 + 2]) - 100 * 255 / (w - 1)) <= 3, "opaque: \((0..<4).map { pixel[100 * 4 + $0] })")
+        #expect(pixel[250 * 4 + 3] == 0, "transparent: \((0..<4).map { pixel[250 * 4 + $0] })")
     }
 }
