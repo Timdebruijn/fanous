@@ -341,7 +341,7 @@ test('status bar: three rows on a phone, the role on the badge row, undo and red
 });
 
 test('status bar: one row on a 1470 px laptop, timecode and ingest left out while off and idle', async ({ page }) => {
-  await page.setViewportSize({ width: 1470, height: 900 }); // a MacBook Air; below 1383 px the bar takes two rows, as the frame time keeps room for its widest value (B134)
+  await page.setViewportSize({ width: 1470, height: 900 }); // a MacBook Air; below 1380 px the bar takes two rows, as the frame time keeps room for its widest value (B134)
   const banner = page.getByRole('banner');
   // a fresh engine shows two silent universes and the "web UI open" warning, the widest bar it has
   await expect(banner.getByText(/^A 0\.0\.1 · silent/)).toBeVisible();

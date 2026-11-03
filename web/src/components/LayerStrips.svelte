@@ -52,7 +52,7 @@
 <style>
   .strips { display: flex; flex-wrap: wrap; gap: 8px; }
   .strip { flex: 1 1 280px; min-width: 0; min-height: 56px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 8px 16px; }
-  .name { display: inline-flex; align-items: center; gap: 8px; min-width: 64px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+  .name { display: inline-flex; align-items: center; gap: 8px; min-width: 64px; font-size: 12px; font-weight: 500; color: var(--text-2); }
   .val { display: flex; flex-direction: column; min-width: 0; }
   .pick { margin-left: auto; }
   .pick[aria-pressed='true'] { border-color: var(--accent); color: var(--accent); }

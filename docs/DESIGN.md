@@ -3943,8 +3943,9 @@ refused show mode (the popover). A decoder error on a visible layer is red on
 its Layers row, not in the bar. The frame time has room for its widest
 value ("120 fps 999.9 ms"), so it no longer changes the bar's width and wraps
 or unwraps it under a drag (B134): with a fresh engine the bar fits one row
-from 1383 px and takes two at 1382 (measured 2026-11-03, with its labels in
-sentence case and its statuses without a fill; 1470 and 1460 before both).
+from 1380 px and takes two at 1379 (measured 2026-11-03, with its labels in
+sentence case, its statuses without a fill and its weights one step lighter;
+1470 and 1460 before all three).
 Events still change its width: a universe going active or lost, a lagging
 client, no output rendering.
 
