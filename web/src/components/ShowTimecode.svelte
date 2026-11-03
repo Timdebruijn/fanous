@@ -151,7 +151,7 @@
   .tc { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
   header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
   .readout-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; }
-  .readout { font-size: clamp(34px, 11vw, 48px); font-weight: 600; line-height: 1.1; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+  .readout { font-size: clamp(34px, 11vw, 48px); font-weight: 500; line-height: 1.1; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
   .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
   .err { margin: 0; color: var(--red); font-size: 13px; }
   .fields { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; }

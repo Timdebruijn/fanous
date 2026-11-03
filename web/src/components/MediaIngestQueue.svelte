@@ -64,7 +64,7 @@
   .state { flex: 0 0 120px; color: var(--text-2); }
   .state.run { color: var(--accent); }
   .pct { margin-left: 8px; }
-  .state.fail { color: var(--red); font-weight: 600; }
+  .state.fail { color: var(--red); font-weight: 500; }
   .bar { flex: 0 0 140px; }
   .error { flex-basis: 100%; color: var(--red); font-size: 13px; overflow-wrap: anywhere; user-select: text; }
 </style>

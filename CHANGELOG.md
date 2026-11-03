@@ -46,6 +46,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Changed: a status (DMX universes, readiness, timecode, power, layer sync) is a dot and a word, filled only when red;
   the role badge is the role's text colour on a quiet surface instead of a filled accent pill. With the shorter labels
   of PR #243 the status bar now fits one row from 1383 px wide (PR #259).
+- Changed: the web UI's font weights are one step lighter (600 → 500, 700 → 600 for the few that lead) and it uses ten
+  font sizes instead of fourteen, none under 11 px but the phone DMX cell; the status bar fits one row from 1380 px
+  (PR #260).
+- Changed: buttons, segmented groups, tags and outline badges have a quiet hairline edge instead of the strong one
+  every button carried (inputs, keycaps, dialogs and a selected row keep it), and the Layers list on a desktop is one
+  panel of rows with dividers instead of a bordered card per layer; tiles below 1320 px stay cards (PR #261).
 - Fixed: count captions in the web UI put the plural after a count of 1 ("1 outputs · 1 displays connected",
   "1 layers", "1 frames seen" and others) and the Media header said "2 invalid name"; every count string now goes
   through one `plural` helper (PR #238).

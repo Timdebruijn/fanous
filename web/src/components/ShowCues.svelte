@@ -127,7 +127,7 @@
   .cue.head:hover { background: var(--surface-1); }
   .cue.current { background: var(--accent-dim); }
   .cue.current:hover { background: var(--accent-dim); }
-  .cue.current .c-num, .cue.current .c-name { font-weight: 600; }
+  .cue.current .c-num, .cue.current .c-name { font-weight: 500; }
   .c-num { grid-area: num; text-align: right; }
   .c-name { grid-area: name; }
   .c-fade { grid-area: fade; text-align: right; }

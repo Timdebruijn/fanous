@@ -110,7 +110,7 @@
     column-gap: 12px; row-gap: 8px; padding: 12px 16px;
   }
   .uni[aria-expanded='true'] { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent); }
-  .name { grid-area: name; font-weight: 600; font-size: 14px; }
+  .name { grid-area: name; font-weight: 500; font-size: 14px; }
   .fx { grid-area: fx; font-size: 13px; }
   .meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
   .pill { min-width: 0; max-width: 100%; }

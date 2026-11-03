@@ -800,7 +800,7 @@
   .wallbar .caption { flex: 1 1 280px; }
   .out { flex-direction: column; align-items: stretch; gap: 4px; min-height: var(--touch); }
   .out .head { display: flex; align-items: center; gap: 8px; }
-  .nm { font-weight: 600; font-size: 15px; }
+  .nm { font-weight: 500; font-size: 15px; }
   .wallbadge { align-self: flex-start; }
   .tone-red { color: var(--red); }
   .tone-faint { color: var(--text-3); }
@@ -841,7 +841,7 @@
   .mask { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
   .mask .caption.grow { flex: 1 1 120px; min-width: 0; }
   .mask .input { width: 80px; }
-  .mname { padding: 0 12px; font-weight: 600; }
+  .mname { padding: 0 12px; font-weight: 500; }
   .field.inline { flex-direction: row; align-items: center; gap: 8px; }
   @media (max-width: 900px) {
     .list { max-width: none; }

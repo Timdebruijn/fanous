@@ -97,8 +97,8 @@
 
 <style>
   .transport { display: flex; align-items: center; gap: 48px; }
-  .go { flex: 1 1 320px; max-width: 520px; height: 72px; flex-direction: column; gap: 2px; font-size: 22px; letter-spacing: 0.02em; }
-  .go-title { font-weight: 700; }
+  .go { flex: 1 1 320px; max-width: 520px; height: 72px; flex-direction: column; gap: 2px; font-size: 24px; letter-spacing: 0.02em; }
+  .go-title { font-weight: 600; }
   .go-next { max-width: 100%; font-size: 14px; font-weight: 500; }
   .back { min-width: 96px; }
   .goto { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

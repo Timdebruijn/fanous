@@ -156,9 +156,9 @@
   .item.right { border-right: 0; padding-right: 4px; }
   .item.red { background: var(--red-bg); border-radius: 6px; }
   .item.red .value, .item.red .caption { color: var(--red); }
-  .brand .name { font-weight: 700; letter-spacing: -0.01em; }
+  .brand .name { font-weight: 600; }
   .tag { border: 0; cursor: pointer; }
-  .tag.tag-open { border: 1px solid var(--line-strong); background: transparent; }
+  .tag.tag-open { border: 1px solid var(--line); background: transparent; }
   .modewrap { position: relative; }
   .pop { position: absolute; z-index: 40; top: calc(100% + 8px); left: 0; width: 320px; max-width: calc(100vw - 24px); padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--surface-2); border-color: var(--red); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
   .pop ul { margin: 0; padding-left: 20px; font-size: 13px; }
