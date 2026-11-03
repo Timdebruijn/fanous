@@ -6,8 +6,9 @@
 
 Fanous runs on show networks and opens network services: HTTPS and WebSocket
 on 8443 (web UI, roles and passwords), Art-Net (UDP 6454), sACN (UDP 5568),
-OSC (UDP/TCP 8000) and CITP (multicast 4809 plus a TCP port). A flaw in any
-of them can stop a show, so please report it privately.
+OSC (UDP/TCP 8000), CITP (multicast 4809 plus a TCP port) and, between several
+Macs, multi-server sync (UDP 8002). A flaw in any of them can stop a show, so
+please report it privately.
 
 ## Reporting a vulnerability
 
@@ -29,9 +30,10 @@ fixes.
 
 ## Scope and known limits
 
-- Art-Net, sACN and OSC have no authentication by design; anyone on the show
-  network can send DMX. Keep the control network separate from public
-  networks. This is expected behaviour, not a vulnerability.
+- Art-Net, sACN, OSC and multi-server sync have no authentication by design;
+  anyone on the show network can send DMX, or a sync clock that moves a slave's
+  layers. Keep the control network separate from public networks. This is
+  expected behaviour, not a vulnerability.
 - The web UI is open (no password) until you set one under System › Roles and
   passwords; the status bar shows "web UI open" until then.
 - The engine's TLS certificate is self-signed; the Mac app pins its
