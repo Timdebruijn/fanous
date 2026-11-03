@@ -96,7 +96,7 @@ shows what it found; items that are not OK also show a fix hint.
 | Time Machine not backing up | see above |
 | Focus / Do Not Disturb on | manual, check the menu bar |
 | Display sleep disabled | see above |
-| Supported hardware | Apple Silicon with a ProRes engine (the Mac decodes ProRes 422 in hardware); a base M1 fails here |
+| Supported hardware | Apple Silicon with a ProRes engine (every chip but the base M1); a base M1 fails here |
 
 **Failed** items (red) block show mode. A programmer can press **Acknowledge**
 next to an item to accept the risk: the badge changes to "acknowledged" and it
