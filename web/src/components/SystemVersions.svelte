@@ -115,7 +115,7 @@
   .grow { flex: 1 1 160px; min-width: 0; }
   .empty { margin: 0; padding: 8px 16px 12px; }
   dialog { width: min(440px, calc(100vw - 32px)); }
-  form { display: flex; flex-direction: column; gap: 14px; }
+  form { display: flex; flex-direction: column; gap: 16px; }
   form p, form h2 { margin: 0; overflow-wrap: anywhere; }
   .field .input { width: 100%; text-align: left; }
   .actions { display: flex; gap: 8px; align-items: center; }

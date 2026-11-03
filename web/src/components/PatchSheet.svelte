@@ -89,7 +89,7 @@
   .caption { margin: 8px 0 16px; }
   .scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; }
-  th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th, td { padding: 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
   th { color: var(--text-2); font-weight: 600; white-space: nowrap; }
   td:not(:last-child) { white-space: nowrap; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }

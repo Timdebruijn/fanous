@@ -19,5 +19,5 @@
 {/if}
 
 <style>
-  .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 8px; max-width: calc(100vw - 32px); padding: 6px 6px 6px 16px; background: var(--surface-3); border: 1px solid var(--line-strong); border-radius: var(--radius-panel); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
+  .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 8px; max-width: calc(100vw - 32px); padding: 4px 4px 4px 16px; background: var(--surface-3); border: 1px solid var(--line-strong); border-radius: var(--radius-panel); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
 </style>

@@ -33,6 +33,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Changed: the web UI's labels are in sentence case instead of tracked capitals (Locked / Unlocked, "Show mode: on",
   Programmer, No media, Missing file, the column heads); acronyms such as LTC, HAP and GO keep theirs. The shorter words
   let the status bar fit one row from 1416 px wide instead of 1470 (PR #243).
+- Changed: the web UI's spacing sits on a 4 px grid, its overlay labels (thumbnail number, duration) share one size,
+  its colours come from the app.css tokens (the mapping editor's handles included), the Patch header's three actions
+  share one button style and a link styled as a button is no longer underlined (PR #236).
 - Fixed: the layer's media line on the Layers screen read "hevc · 1080p25" for an anamorphic movie, where the Media tile
   shows "1440×1080p25" (B146); the layer status now carries the pixel aspect (`live.layers[].pixelAspect`, null for
   square pixels) and the line shows the shown width with it (B147, PR #239).
