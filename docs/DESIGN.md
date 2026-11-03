@@ -4381,8 +4381,9 @@ the benchmark.
 
 Logging: `swift-log` with three handlers: stderr, the unified log
 (`os.Logger`, subsystem `org.fanous`, the logger's label as the category;
-Console.app, `log stream`, sysdiagnose) and a file in `~/Library/Logs/Fanous/`
-that rotates once to `.1` past 10 MB. Log lines in hot paths are
+Console.app, `log stream`, sysdiagnose; it cuts a line at about 1 KB) and a
+file in `~/Library/Logs/Fanous/` that rotates once to `.1` past 10 MB. Log
+lines in hot paths are
 pre-formatted off-thread from ring events; the compositor itself never calls
 the logger. Anomalies (first dropped frame in show mode, DMX loss, display
 loss, decoder error) are logged at `warning` with the metric context, and a

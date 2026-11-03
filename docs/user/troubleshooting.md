@@ -202,7 +202,8 @@ a network MIDI session, then choose it under Device (or "All sources").
 
 - `~/Library/Logs/Fanous/fanousd.log` (Engine › **Open Logs** opens the
   folder). The same lines are in Console.app: search for subsystem
-  `org.fanous`.
+  `org.fanous` (a line longer than about 1 KB is cut there; the file has it
+  whole).
 
 ## Restart the engine
 

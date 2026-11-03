@@ -27,7 +27,8 @@ struct OSLogHandler: LogHandler {
     }
 
     /// The engine's info lines are its run history (start, settings, devices): `.default`, so the unified log keeps them
-    /// on disk and Console shows them like the file does; `.info` would hold them in memory only.
+    /// on disk and Console shows them like the file does; `.info` is, by default, held in memory only (written out when a
+    /// fault follows).
     static func type(_ level: Logging.Logger.Level) -> OSLogType {
         switch level {
         case .trace, .debug: .debug
