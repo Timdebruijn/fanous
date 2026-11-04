@@ -89,4 +89,19 @@ import Testing
         api.releaseEnqueue()
         #expect(incoming().isEmpty)
     }
+
+    /// Two parallel uploads with the same name: each gets its own file the moment it asks, so B's refusal (a hold → 409)
+    /// removes only B's file, never the one A claimed and is still writing (B155).
+    @Test func parallelUploadsWithOneNameGetTheirOwnFiles() throws {
+        let (api, _) = try Self.api()
+        let a = try #require(api.uploadTarget(for: try Self.put("/api/upload/1/clip.mov")))
+        let b = try #require(api.uploadTarget(for: try Self.put("/api/upload/1/clip.mov")))
+        #expect(a != b)
+        #expect(FileManager.default.fileExists(atPath: a.path) && FileManager.default.fileExists(atPath: b.path))
+        api.holdEnqueue("root change")
+        #expect(api.handle(try Self.put("/api/upload/1/clip.mov"), uploadedFile: b).status == 409)
+        #expect(api.handle(try Self.put("/api/upload/1/clip.mov", body: [1, 2, 3]), uploadedFile: nil).status == 409)
+        #expect(FileManager.default.fileExists(atPath: a.path))
+        api.releaseEnqueue()
+    }
 }

@@ -38,11 +38,12 @@ public final class IngestAPI: @unchecked Sendable {
         var keepOriginal: Bool?
     }
 
-    /// Where a large `PUT /api/upload/...` body is streamed; nil refuses it.
+    /// Where a `PUT /api/upload/...` body goes: an empty file this call created in `_incoming`, so no other upload gets
+    /// it (B155); nil refuses the body. Whoever gets the file writes it or removes it.
     public func uploadTarget(for request: HTTPRequest) -> URL? {
         guard request.method == "PUT", let (_, name) = Self.uploadComponents(request.path) else { return nil }
         try? FileManager.default.createDirectory(at: library.incomingDirectory, withIntermediateDirectories: true)
-        return IngestQueue.uniqueURL(for: name, in: library.incomingDirectory)
+        return try? IngestQueue.claimURL(for: name, in: library.incomingDirectory)
     }
 
     public func handle(_ request: HTTPRequest, uploadedFile: URL?) -> HTTPResponse {
@@ -51,7 +52,10 @@ public final class IngestAPI: @unchecked Sendable {
             guard request.method == "PUT", let (folder, name) = Self.uploadComponents(path), let file = uploadedFile ?? uploadTarget(for: request)
             else { return .text(400, "PUT /api/upload/<folder 1–255>/<name>") }
             if uploadedFile == nil {
-                do { try Data(request.body).write(to: file) } catch { return .text(500, "cannot store upload: \(error)") }
+                do { try Data(request.body).write(to: file) } catch {
+                    try? FileManager.default.removeItem(at: file)
+                    return .text(500, "cannot store upload: \(error)")
+                }
             }
             let response = enqueue(source: file, folder: folder, file: nil, name: name, codec: nil, fps: nil, keepOriginal: false)
             if response.status != 202 { try? FileManager.default.removeItem(at: file) }  // a refused upload (hold, folder full) leaves nothing
