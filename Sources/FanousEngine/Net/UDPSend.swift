@@ -34,7 +34,8 @@ enum UDPSend {
     }
 
     /// A receiver's socket (sACN, sync): SO_REUSEADDR and SO_REUSEPORT (other receivers share the port), the receive
-    /// buffer when given, bound to `port` on `address`, then `O_NONBLOCK`; closed again when a step fails.
+    /// buffer when given, bound to `port` on `address`, then `O_NONBLOCK`; closed again when a step fails. Port 0 (tests
+    /// only) takes a port the kernel picks: `localPort` tells which.
     static func bound(port: UInt16, address: in_addr_t, receiveBuffer: Int32? = nil) throws -> Int32 {
         let fd = Darwin.socket(AF_INET, SOCK_DGRAM, 0)
         guard fd >= 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
@@ -55,6 +56,14 @@ enum UDPSend {
             throw error
         }
         return fd
+    }
+
+    /// The port `fd` is bound to; nil when `getsockname` fails.
+    static func localPort(_ fd: Int32) -> UInt16? {
+        var address = sockaddr_in()
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let ok = withUnsafeMutablePointer(to: &address) { p in p.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) == 0 } }
+        return ok ? UInt16(bigEndian: address.sin_port) : nil
     }
 
     static func send(_ fd: Int32, _ bytes: [UInt8], to address: sockaddr_in, using sendto: Function = Darwin.sendto) -> Outcome {

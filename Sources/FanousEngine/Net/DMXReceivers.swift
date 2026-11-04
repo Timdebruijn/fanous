@@ -22,13 +22,17 @@ public final class ArtNetReceiver: @unchecked Sendable {
         self.port = port
     }
 
+    /// The port listened on, once the listener is ready (nil or 0 before). Differs from the one given only for port 0
+    /// (tests only: the kernel picks one).
+    public var boundPort: UInt16? { listener?.port?.rawValue }
+
     public func start() throws {
         let parameters = NWParameters.udp
         parameters.allowLocalEndpointReuse = true
         let listener = try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port)!)
-        listener.stateUpdateHandler = { [logger, port] state in
+        listener.stateUpdateHandler = { [logger, port, weak listener] state in
             switch state {
-            case .ready: logger.info("Art-Net listening", metadata: ["port": "\(port)"])
+            case .ready: logger.info("Art-Net listening", metadata: ["port": "\(listener?.port?.rawValue ?? port)"])
             case .failed(let error): logger.error("Art-Net listener failed", metadata: ["error": "\(error)"])
             default: break
             }
@@ -113,10 +117,13 @@ public final class SACNReceiver: @unchecked Sendable {
         self.port = port
     }
 
-    /// Binds the port (shared with other receivers, SO_REUSEPORT) and joins `groups` (interface → universes).
-    public func start(groups: [String: [Int]]) throws {
+    /// Binds the port (shared with other receivers, SO_REUSEPORT) and joins `groups` (interface → universes); returns
+    /// the port bound, which differs only for port 0 (tests only: the kernel picks one).
+    @discardableResult
+    public func start(groups: [String: [Int]]) throws -> UInt16 {
         // 32 universes at 44 Hz while the DMX queue is busy for a moment: 4 MB holds several seconds of packets
         let fd = try UDPSend.bound(port: port, address: INADDR_ANY, receiveBuffer: 4 << 20)
+        let port = UDPSend.localPort(fd) ?? port
         let reader = DispatchSource.makeReadSource(fileDescriptor: fd, queue: store.queue)
         reader.setEventHandler { [weak self] in self?.read() }
         reader.setCancelHandler { close(fd) }
@@ -134,6 +141,7 @@ public final class SACNReceiver: @unchecked Sendable {
         monitor.start(queue: store.queue)
         logger.info("sACN listening", metadata: ["port": "\(port)"])
         update(groups: groups)
+        return port
     }
 
     /// Patch or universe settings changed. Without sACN universes, universe 1 is joined on any interface (as before B28).
@@ -265,12 +273,16 @@ public final class OSCReceiver: @unchecked Sendable {
         self.feedback = feedback
     }
 
+    /// The UDP port listened on, once the listener is ready (nil or 0 before). Differs from the one given only for port 0
+    /// (tests only), where the kernel picks one for UDP and another for TCP.
+    public var boundUDPPort: UInt16? { udp?.port?.rawValue }
+
     public func start() throws {
         let udpParameters = NWParameters.udp
         udpParameters.allowLocalEndpointReuse = true
         let udp = try NWListener(using: udpParameters, on: NWEndpoint.Port(rawValue: port)!)
-        udp.stateUpdateHandler = { [logger, port] state in
-            if case .ready = state { logger.info("OSC listening", metadata: ["udp": "\(port)", "tcp": "\(port)"]) }
+        udp.stateUpdateHandler = { [logger, port, weak udp] state in
+            if case .ready = state { logger.info("OSC listening", metadata: ["udp": "\(udp?.port?.rawValue ?? port)", "tcp": "\(port)"]) }
             if case .failed(let error) = state { logger.error("OSC UDP failed", metadata: ["error": "\(error)"]) }
         }
         udp.newConnectionHandler = { [weak self] connection in
@@ -315,7 +327,13 @@ public final class OSCReceiver: @unchecked Sendable {
     private func receiveStream(on connection: NWConnection, decoder: SLIPDecoder, from source: OSCSource) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [self] data, _, isComplete, error in
             var decoder = decoder
+            let dropped = decoder.dropped
             if let data { for packet in decoder.feed(Array(data)) { handle(packet, from: source) } }
+            if decoder.dropped > dropped {
+                logger.warning(
+                    "OSC TCP packet dropped: longer than \(SLIPDecoder.maxPacketBytes) bytes",
+                    metadata: ["peer": "\(connection.endpoint)", "dropped": "\(decoder.dropped)"])
+            }
             if isComplete || error != nil { return connection.cancel() }
             receiveStream(on: connection, decoder: decoder, from: source)
         }

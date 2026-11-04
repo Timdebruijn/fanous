@@ -10,6 +10,13 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine: OSC over TCP drops a SLIP packet longer than 64 KiB and logs it with the peer, instead of buffering a
+  client that never sends END until the engine runs out of memory (PR #288).
+- Engine: a refused upload leaves nothing in `_incoming`: `PUT /api/upload/<folder>/<name>` with a folder outside
+  1–255, or named `.` or `..` (also percent-encoded), is refused before the body is written (`..` was taken as the
+  working directory's parent's name), and an upload refused after it was written (a root change in progress, folder
+  full) is deleted. A large body refused before it is written gets 413 "body too large" (the sink can only say no);
+  small bodies get the 400 text (PR #287).
 - Tests: Core drops 6 tests that asserted nothing the suite did not already pin (an OSC capture loop over a
   directory that does not exist, the Sync markdown and GDTF strings, Sync channel 51 as a whole test, the
   highest-channel arithmetic, the X.509 byte offsets; the packet-size pins moved into the layout test) and pins
@@ -40,6 +47,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   11 s on it in one thread), and the five picture tests are a serialized suite of their own (`IngestPictureTests`)
   beside it. Fully parallel, the ingest tests hung once in three runs with every pool thread in an `AVAssetReader`
   read, so both suites stay serialized (PR #NNN).
+- Tests: the engine's network tests no longer probe a free port and bind it a moment later (another process could take
+  it in between, "Address already in use" three times on 2026-11-04): the sACN, Art-Net, OSC and sync receivers and the
+  sync catcher bind port 0 and the tests read the port the kernel gave (`SACNReceiver.start` and `SyncReceiver.start`
+  return it, `ArtNetReceiver.boundPort` and `OSCReceiver.boundUDPPort` once listening); the sACN bind-failure test holds
+  its own port-0 socket. No change to the production ports (PR #289).
 - Tests: the REST routes moved out of `Engine.start` into `RESTRoutes` (same routes, statuses and bodies), and a
   table test pins their role gates without a GPU or a socket: who gets 403 on `/api/ingest`, uploads,
   `/api/library/folder` and `/api/logs`, the redacted `/api/library` root below operator, `/api/login` 405/400/401
