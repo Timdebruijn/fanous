@@ -142,6 +142,24 @@ func writePatternMovie(
     }
 }
 
+/// Where `PatternFrames`' white bar starts in `frame`, one decoded frame of a pattern movie of `size` (any codec), drawn
+/// through the compositor as on stage: the first column of row 100 (below the counter) whose blue is above 200, which only
+/// the bar's is. Frame n has it at x = 8n (mod width − 16), so it tells which frame was decoded; -1: no bar.
+func patternBarX(_ frame: DecodedFrame, size: (Int, Int)) throws -> Int {
+    let (compositor, parameters) = try makeCompositor(try MetalContext(), size: size)
+    compositor.setLayers([.still(frame)])
+    parameters.write { slot in
+        slot.sequence = 1
+        slot.layers[0].intensity = 1
+        slot.layers[0].folder = 1
+        slot.layers[0].file = 1
+        slot.layers[0].fitMode = .stretch
+    }
+    compositor.tick(target: 3600, drawable: nil)
+    let (width, _, rgba) = compositor.readback()
+    return (0..<width).first { rgba[(100 * width + $0) * 4 + 2] > 200 } ?? -1
+}
+
 extension AVAssetWriter {
     /// `finishWriting`, waited for; throws unless the movie is complete. Blocks: call it off the pool (`offPool`).
     func finishBlocking() throws {

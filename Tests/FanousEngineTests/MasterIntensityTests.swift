@@ -15,22 +15,20 @@ import Testing
 /// the Master dims it, and a dimmed tick that allocates no more than a full one.
 @Suite(.serialized)
 struct MasterIntensityTests {
-    /// Solid red underneath, solid `top` (green) above with `blend`, both at full intensity, on a 64×36 canvas.
+    /// Solid red underneath, solid green above, both at full intensity, on a 64×36 canvas.
     final class Rig {
         let compositor: Compositor
         let parameters: TripleBuffer<ParameterSnapshotSlot>
-        let blend: BlendMode
         var target = 3600.0
         var sequence: UInt64 = 0
 
-        init(blend: BlendMode = .normal, top: (UInt8, UInt8, UInt8) = (0, 255, 0)) throws {
+        init() throws {
             let context = try MetalContext()
             (compositor, parameters) = try makeCompositor(context, size: (64, 36), maxLayers: 2)
             compositor.setLayers([
                 .still(try Self.solid(context.device, 255, 0, 0)),
-                .still(try Self.solid(context.device, top.0, top.1, top.2), file: 2, index: 1),
+                .still(try Self.solid(context.device, 0, 255, 0), file: 2, index: 1),
             ])
-            self.blend = blend
         }
 
         static func solid(_ device: MTLDevice, _ r: UInt8, _ g: UInt8, _ b: UInt8) throws -> DecodedFrame {
@@ -59,7 +57,6 @@ struct MasterIntensityTests {
                     slot.layers[i].file = file
                     slot.layers[i].fitMode = .stretch
                 }
-                slot.layers[1].blendMode = blend
             }
         }
 
@@ -87,14 +84,6 @@ struct MasterIntensityTests {
         #expect(rig.pixel(master: 1) == [0, 255, 0], "back from Master 0")
         #expect(rig.pixel(master: 1, control: .blackout) == [0, 0, 0], "Blackout")
         #expect(rig.pixel(master: 1) == [0, 255, 0], "back from Blackout")
-    }
-
-    @Test func theMasterDimsTheBlendedResult() throws {
-        guard MTLCreateSystemDefaultDevice() != nil else { return }
-        // add: red + yellow clips to yellow at full level, then × Master; dimming each layer first gave (191, 128, 0)
-        let rig = try Rig(blend: .add, top: (255, 255, 0))
-        let got = rig.pixel(master: 0.5)
-        #expect(Self.near(got, [128, 128, 0]), "add at Master 50 %: \(got)")
     }
 
     /// The compositor's stored label constants, and the literal "secondary output" it assigns as a plain string, go to

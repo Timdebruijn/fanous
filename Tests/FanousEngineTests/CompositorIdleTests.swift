@@ -153,7 +153,8 @@ struct CompositorIdleTests {
     }
 
     /// Printed, not asserted: GPU time of 600 ticks of a 1080p still, watched (drawn every tick / reused) and unwatched.
-    @Test func printIdleSavings() throws {
+    /// `FANOUS_BENCH=1 scripts/test.sh --filter printIdleSavings`.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["FANOUS_BENCH"] != nil)) func printIdleSavings() throws {
         func run(idleWork: Bool, offscreen: Bool) throws -> (cpu: Double, gpu: Double) {
             let rig = try Rig(idleWork: idleWork, offscreen: offscreen, size: (1920, 1080))
             rig.tick(30)

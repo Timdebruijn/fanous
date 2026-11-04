@@ -173,7 +173,8 @@ import VideoToolbox
         return state() ?? .cancelled
     }
 
-    /// Opens `url` the way the engine does and checks the frame count, codec and size.
+    /// Opens `url` the way the engine does and checks the frame count, codec and size, and that the middle frame decodes
+    /// to that frame's picture (its `PatternFrames` bar).
     static func expectPlayable(_ url: URL, device: MTLDevice, frames: Int, fps: Double, codec: String, sourceLocation: SourceLocation = #_sourceLocation) async throws {
         let source = try await MovieSource.open(url: url, device: device, poolSize: 2)
         #expect(source.info.frameCount == frames, sourceLocation: sourceLocation)
@@ -182,7 +183,7 @@ import VideoToolbox
         #expect(abs(source.info.frameRate - fps) < 0.01, sourceLocation: sourceLocation)
         let slot = DecodedFrame(poolIndex: 0)
         try source.decode(frame: frames / 2, into: slot)
-        #expect(slot.frameIndex == frames / 2, sourceLocation: sourceLocation)
+        #expect(try patternBarX(slot, size: (320, 176)) == frames / 2 * 8, sourceLocation: sourceLocation)
     }
 
     /// The track is readable by `AudioTrackReader` (48 kHz stereo, 2 s) and still holds the test tone: 1 kHz on the left.
@@ -535,11 +536,11 @@ import VideoToolbox
         }
     }
 
-    /// B143: a 5.1 source keeps its six channels and layout in the library file, and the player folds them to stereo by the
-    /// layout, so the centre is in both sides (before: ingest mixed to stereo, and the player took channels 0 and 1). Six
-    /// discrete channels are kept too (the writer and the reader take `DiscreteInOrder | 6`), and play as channels 0 and 1.
+    /// B143: a 5.1 source keeps its six channels and layout in the library file (before: ingest mixed to stereo), and the
+    /// player folds them by the layout (AudioTests' check, so a channel reordered on the way fails it). Six discrete
+    /// channels are kept too (the writer and the reader take `DiscreteInOrder | 6`), and play as channels 0 and 1.
     @Test(arguments: [kAudioChannelLayoutTag_MPEG_5_1_A, kAudioChannelLayoutTag_DiscreteInOrder | 6])
-    func sixChannelSourceKeepsItsChannelsAndFoldsAtPlayback(tag: AudioChannelLayoutTag) async throws {
+    func sixChannelSourceKeepsItsChannels(tag: AudioChannelLayoutTag) async throws {
         let directory = try tempDir("fanous-ingest-tests")
         let source = directory.appending(path: "six.mov")
         try await Self.writeH264(to: source, sixChannels: tag)
@@ -559,10 +560,12 @@ import VideoToolbox
         reader.seek(toSeconds: 0.25)
         let samples = AudioTests.read(reader, frames: 4800).samples
         for frame in [2400, 4700] {
-            let left = samples[2 * frame] * 32768, right = samples[2 * frame + 1] * 32768
-            // 5.1: L + 0.7071 (C + Ls), R + 0.7071 (C + Rs) = 3000 + 0.7071 (9000 + 15000), 6000 + 0.7071 (9000 + 18000)
-            let (wantLeft, wantRight): (Float, Float) = tag == kAudioChannelLayoutTag_MPEG_5_1_A ? (19971, 25092) : (3000, 6000)
-            #expect(abs(left - wantLeft) < 40 && abs(right - wantRight) < 40, "\(frame): \(left) \(right)")
+            if tag == kAudioChannelLayoutTag_MPEG_5_1_A {
+                AudioTests.expectFiveOneFold(samples, frame: frame, tag: tag)
+            } else {  // the constants of channels 0 and 1
+                let left = samples[2 * frame] * 32768, right = samples[2 * frame + 1] * 32768
+                #expect(abs(left - 3000) < 40 && abs(right - 6000) < 40, "\(frame): \(left) \(right)")
+            }
         }
     }
 

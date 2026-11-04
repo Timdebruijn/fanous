@@ -67,7 +67,6 @@ struct MIDIControlTests {
         #expect(run(.controlChange(channel: 0, controller: 20, value: 64)) == [.cueBack])
         // any program change: program n (0-based) fires cue n + 1
         #expect(run(.programChange(channel: 0, program: 4)) == [.cueGoto(5)])
-        // MSC: our device id or the all-call; GO with a cue is a go to; STOP and RESUME do nothing
         // MSC (video format by default): our device id or the all-call; GO with a cue is a go to; STOP and RESUME do nothing
         #expect(run(.showControl(MSCMessage(deviceID: 5, format: 0x30, command: 1))) == [.cueGo])
         #expect(run(.showControl(MSCMessage(deviceID: 0x7F, format: 0x3F, command: 1, cue: "12.5"))) == [.cueGoto(12.5)])

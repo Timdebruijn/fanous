@@ -206,17 +206,28 @@ extension LayerAudioChannel {
         let result = Self.read(reader, frames: 4800)
         #expect(result.framesRead == 4800)
         for frame in [2400, 4700] {  // the second converter piece (4096 frames each with a matrix) lands at the right offset
-            let left = result.samples[2 * frame] * 32768, right = result.samples[2 * frame + 1] * 32768
             if tag == kAudioChannelLayoutTag_DiscreteInOrder | 6 {
+                let left = result.samples[2 * frame] * 32768, right = result.samples[2 * frame + 1] * 32768
                 #expect(abs(left - 3000) < 30 && abs(right - 6000) < 30, "\(frame): \(left) \(right)")
             } else {
-                // Apple's fold-down (measured on macOS 27): L + 0.7071 (C + Ls), R + 0.7071 (C + Rs), the LFE dropped
-                let order = tag == kAudioChannelLayoutTag_MPEG_5_1_A ? ["L", "R", "C", "LFE", "Ls", "Rs"] : ["C", "L", "R", "Ls", "Rs", "LFE"]
-                let value: (String) -> Float = { Float(order.firstIndex(of: $0)! + 1) * 3000 }  // the constant the file holds on that channel
-                #expect(abs(left - (value("L") + 0.7071 * (value("C") + value("Ls")))) < 30, "\(frame): left \(left)")
-                #expect(abs(right - (value("R") + 0.7071 * (value("C") + value("Rs")))) < 30, "\(frame): right \(right)")
+                Self.expectFiveOneFold(result.samples, frame: frame, tag: tag)
             }
         }
+    }
+
+    /// Stereo frame `frame` of `samples` read from a 5.1 file of constants, (i + 1) × 3000 on channel i in `tag`'s order,
+    /// folded whatever Apple's coefficients (L + 0.7071 (C + Ls) on macOS 27): something is added to both sides, and the
+    /// sides differ by no more than the surrounds do (Rs − Ls is +3000 in both orders): the centre went to both, each
+    /// surround to its own; nothing clips.
+    static func expectFiveOneFold(_ samples: [Float], frame: Int, tag: AudioChannelLayoutTag, sourceLocation: SourceLocation = #_sourceLocation) {
+        let left = samples[2 * frame] * 32768, right = samples[2 * frame + 1] * 32768
+        let order = tag == kAudioChannelLayoutTag_MPEG_5_1_A ? ["L", "R", "C", "LFE", "Ls", "Rs"] : ["C", "L", "R", "Ls", "Rs", "LFE"]
+        let value: (String) -> Float = { Float(order.firstIndex(of: $0)! + 1) * 3000 }  // the constant the file holds on that channel
+        let addedLeft = left - value("L"), addedRight = right - value("R")
+        let surrounds = value("Rs") - value("Ls")
+        #expect(
+            addedLeft > 0 && addedRight > addedLeft && addedRight - addedLeft <= surrounds + 30 && max(left, right) < 32767,
+            "\(frame): \(left) \(right)", sourceLocation: sourceLocation)
     }
 
     // MARK: LayerAudioChannel

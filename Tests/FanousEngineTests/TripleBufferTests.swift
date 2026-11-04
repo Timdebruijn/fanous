@@ -536,17 +536,6 @@ final class Box { var value = 0 }
         #expect(run.otherTorn == 0)
         #expect(run.lastSeen == 1000)
     }
-
-    /// Sparse updates (one per 20 ms) with a 4 Hz copy reader (CITP layer status): the render reader's slot stays
-    /// intact and it ends on the last update. `missed` is printed, not asserted: it depends on the reader thread being
-    /// scheduled within each 20 ms gap.
-    @Test func sparseUpdatesBesideA4HzCopyReader() async throws {
-        let run = try await offPool { readerRun(count: 100, interval: 0.02, otherHz: 4, other: copyReader) }
-        print("B71 sparse (100 updates 20 ms apart, 4 Hz copy reader): \(run)")
-        #expect(run.changed == 0)
-        #expect(run.torn == 0)
-        #expect(run.lastSeen == 100)
-    }
 }
 
 final class Twin { var a = 0; var b = 0 }

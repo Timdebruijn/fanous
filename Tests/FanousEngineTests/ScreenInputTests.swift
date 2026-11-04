@@ -16,8 +16,8 @@ import Testing
 
 /// Displays as folder 0 files 21–28 (B73 step 3a, DESIGN.md §8.2.1) without a stream or the screen permission (neither
 /// exists on CI): the catalog from fake display lists, the project key, the feed, the forget and authorize rules, the
-/// readiness item, `ScreenInput`'s texture path with a synthetic BGRA buffer, the loader with a fake factory, and the
-/// grant poll with an injected preflight.
+/// readiness item, `ScreenInput`'s frame hold with a synthetic BGRA buffer (its texture path is `CaptureInput`'s, read
+/// back in `CaptureInputTests`), the loader with a fake factory, and the grant poll with an injected preflight.
 @Suite(.cleansTempFiles)
 struct ScreenInputTests {
 
@@ -114,26 +114,6 @@ struct ScreenInputTests {
 
     // MARK: Input
 
-    /// A display's BGRA frame through `ScreenInput` (the capture BGRA path: `.rgba` as `bgra8Unorm`, one plane, top-down)
-    /// into the layer shader reads back exactly: white, black, red, grey, then the white/black pair (sampled linearly
-    /// half a canvas pixel off centre, as for every sampled live frame).
-    @Test func screenFrameReadsBack() throws {
-        let context = try MetalContext()
-        let input = Self.input(context.device)
-        input.deliver(try CaptureInputTests.runsBuffer("BGRA"))
-        let frame = try #require(input.latestFrame)
-        #expect(frame.kind == .rgba && frame.texture0.pixelFormat == .bgra8Unorm && frame.texture1 == nil && !frame.bottomUp)
-        let image = try LiveSourceTests.render(input, context: context)
-        let y = GeneratorTests.height / 2
-        func at(run i: Int) -> (r: Int, g: Int, b: Int) { GeneratorTests.pixel(image, LiveSourceTests.x(run: i), y) }
-        LiveSourceTests.expect(at(run: 0), (255, 255, 255), "white", tolerance: 0)
-        LiveSourceTests.expect(at(run: 1), (0, 0, 0), "black", tolerance: 0)
-        LiveSourceTests.expect(at(run: 2), (255, 0, 0), "red", tolerance: 0)
-        LiveSourceTests.expect(at(run: 3), (128, 128, 128), "grey", tolerance: 0)
-        LiveSourceTests.expect(GeneratorTests.pixel(image, LiveSourceTests.x(pixel: 16), y), (252, 252, 252), "Y0", tolerance: 1)
-        LiveSourceTests.expect(GeneratorTests.pixel(image, LiveSourceTests.x(pixel: 17), y), (3, 3, 3), "Y1", tolerance: 1)
-    }
-
     /// No "no signal" for a display: a still picture sends no frames, and an hour later the input still runs with its
     /// last frame. `halt` (the display bound as an output) keeps the frame but is not shared again.
     @Test func aStillDisplayKeepsRunningAndAHaltKeepsTheFrame() throws {
@@ -191,28 +171,6 @@ struct ScreenInputTests {
         #expect(ScreenInput.fit(width: 3840, height: 2160, into: (1920, 1080)) == (1920, 1080))
         #expect(ScreenInput.fit(width: 1280, height: 720, into: (1920, 1080)) == (1280, 720))
         #expect(ScreenInput.fit(width: 2560, height: 1080, into: (1920, 1080)) == (1920, 810))
-    }
-
-    /// The tick's read of a display frame allocates nothing (as the capture device's).
-    @Test(.mallocCounter)
-    func mallocCounterScreenFrameReadAllocatesNothing() throws {
-        try requireMallocCounter()
-        let context = try MetalContext()
-        let input = Self.input(context.device)
-        let buffers = try (0..<4).map { i in try CaptureInputTests.buffer(kCVPixelFormatType_32BGRA, 16, 8) { _ in Array(repeating: UInt8(i * 60), count: 64) } }
-        let playback = LayerPlayback(key: MediaKey(folder: 0, file: 21), live: input)
-        var mallocs = 0
-        for window in 0..<3 {
-            for buffer in buffers { input.deliver(buffer) }  // views made, ring filled: the window reads warm
-            input.deliver(buffers[window])
-            mallocs = MallocCounter.count {
-                for _ in 0..<100 { _ = playback.frame(at: 0, direction: 1) }
-            }
-        }
-        #if !DEBUG
-            #expect(mallocs == 0, "100 screen frame reads: \(mallocs) allocations on the calling thread")
-        #endif
-        print("screen frame read × 100: \(mallocs) allocations")
     }
 
     // MARK: Loader

@@ -3,16 +3,13 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
 import Foundation
-import Network
 import Security
 import Testing
 
 @testable import FanousEngine
 
-/// Spike (OPEN-26): a TLS identity that never touches a keychain. The key is
-/// an in-memory SecKey, the identity comes from `SecIdentityCreate` (public in
-/// the macOS 27 SDK, 10.12+), and Network.framework must complete a handshake
-/// with it. No keychain means no SecurityAgent prompt on ad-hoc builds.
+/// The TLS identity of an unsigned build (OPEN-26): key and certificate in private files, no keychain, so no
+/// SecurityAgent prompt. A handshake with a `makeCertificate` identity: StateServerTests' HTTPS fixture.
 @Suite(.cleansTempFiles) struct TLSIdentityTests {
     /// The file storage is what an unsigned build (this test binary) gets: the data-protection keychain refuses a new key
     /// (errSecMissingEntitlement). Probed with a key under a tag of its own, removed again if the keychain took it; the
@@ -68,55 +65,5 @@ import Testing
         let other = try #require(SecKeyCopyExternalRepresentation(try makeKey(), &error) as Data?)
         try other.write(to: directory.appending(path: "private-key.der"))
         #expect(try Self.loadOrCreate(directory).fingerprintSHA256 != first.fingerprintSHA256)
-    }
-
-    @Test func inMemoryIdentityServesHandshake() throws {
-        let privateKey = try makeKey()
-        var error: Unmanaged<CFError>?
-        // round-trip through the external representation: that is what a key file on disk would hold
-        guard let external = SecKeyCopyExternalRepresentation(privateKey, &error) as Data? else { throw error!.takeRetainedValue() }
-        let reloadAttributes: [String: Any] = [
-            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
-            kSecAttrKeyClass as String: kSecAttrKeyClassPrivate,
-            kSecAttrKeySizeInBits as String: 256,
-        ]
-        guard let reloaded = SecKeyCreateWithData(external as CFData, reloadAttributes as CFDictionary, &error) else { throw error!.takeRetainedValue() }
-        let (certificate, _) = try TLSIdentity.makeCertificate(privateKey: reloaded, hostnames: ["localhost"], ipAddresses: ["127.0.0.1"])
-        let identity = try #require(SecIdentityCreate(nil, certificate, reloaded))
-
-        let serverOptions = NWProtocolTLS.Options()
-        sec_protocol_options_set_local_identity(serverOptions.securityProtocolOptions, sec_identity_create(identity)!)
-        let listener = try NWListener(using: NWParameters(tls: serverOptions), on: .any)
-        let queue = DispatchQueue(label: "tls-spike")
-        let ready = Ready()
-        listener.newConnectionHandler = { connection in
-            connection.stateUpdateHandler = { state in if case .ready = state { ready.serverReady.signal() } }
-            connection.start(queue: queue)
-        }
-        listener.stateUpdateHandler = { state in if case .ready = state { ready.listening.signal() } }
-        listener.start(queue: queue)
-        #expect(ready.listening.wait(timeout: .now() + 5) == .success)
-        let port = try #require(listener.port)
-
-        let clientOptions = NWProtocolTLS.Options()
-        sec_protocol_options_set_verify_block(clientOptions.securityProtocolOptions, { _, _, complete in complete(true) }, queue)
-        let client = NWConnection(host: "127.0.0.1", port: port, using: NWParameters(tls: clientOptions))
-        client.stateUpdateHandler = { state in
-            if case .ready = state { ready.clientReady.signal() }
-            if case .failed(let e) = state { ready.failure = "\(e)"; ready.clientReady.signal() }
-        }
-        client.start(queue: queue)
-        #expect(ready.clientReady.wait(timeout: .now() + 5) == .success)
-        #expect(ready.failure == nil, Comment(rawValue: ready.failure ?? ""))
-        #expect(ready.serverReady.wait(timeout: .now() + 5) == .success)
-        client.cancel()
-        listener.cancel()
-    }
-
-    final class Ready: @unchecked Sendable {
-        let listening = DispatchSemaphore(value: 0)
-        let serverReady = DispatchSemaphore(value: 0)
-        let clientReady = DispatchSemaphore(value: 0)
-        var failure: String?
     }
 }

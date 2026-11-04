@@ -287,7 +287,6 @@ struct ShowControlTests {
 
     /// B144: a Mac without a ProRes engine fails the "Supported hardware" item hard; acknowledging does not unblock it.
     @Test func aMacWithoutAProResEngineIsRefusedShowMode() throws {
-        #expect(SystemInfo.hasProResEngine)  // engine tests need the hardware decoder anyway (CI runs Core tests only)
         #expect(!SystemInfo.proResEngine(chip: "Apple M1") && SystemInfo.proResEngine(chip: "Apple M1 Pro") && SystemInfo.proResEngine(chip: "Apple M2"))
         #expect(SystemInfo.proResEngine(chip: "Apple M1 (Virtual)"))  // CI's runner (B99): the e2e engines must pass
         var context = ReadinessContext()
@@ -430,12 +429,16 @@ struct ShowControlTests {
 /// The ShowControlTests that need the GPU or a decoder: local and self-hosted runs only (scripts/test.sh --hosted leaves them out).
 @Suite(.cleansTempFiles)
 struct ShowControlGPUTests {
-    @Test func compositorChasesTimecode() throws {
+    @Test func compositorChasesTimecode() async throws {
         let context = try MetalContext()
         let (compositor, parameters) = try makeCompositor(context, size: (64, 36))
-        let still = try OutputPassTests.flat(context.device, value: 100)
-        // a "movie" of 250 frames at 25 fps built from the still: the clock only needs frameCount and frameRate
-        let playback = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: still)
+        // a movie of 100 frames at 25 fps; the chase only needs its frameCount and frameRate: the decoder never starts
+        let url = tempFile("fanous-chase", ext: "mov")
+        try await writePatternMovie(to: url, size: (64, 36), fps: 25, frames: 100, codec: .hap(.hap))
+        let movie = try await MovieSource.open(url: url, device: context.device, poolSize: 2)
+        let ring = FrameRing(capacity: 2)
+        let decoder = LayerDecoder(source: movie, ring: ring, logger: testLogger)
+        let playback = LayerPlayback(key: MediaKey(folder: 1, file: 1), movie: movie, decoder: decoder, ring: ring)
         compositor.setLayers([.playing(playback)])
         let clock = TimecodeClock()
         compositor.timecode = clock
@@ -449,8 +452,7 @@ struct ShowControlGPUTests {
         }
         clock.update(Timecode(frameCount: 100, rate: .fps25), at: 1000, source: "test")
         compositor.tick(target: 1000, drawable: nil)
-        // (100 − 25 − 5) frames at 25 fps = 2.8 s; a still has one frame, so the chase clamps to it
-        #expect(playback.clock.position == 0)
-        #expect(playback.frameCount == 1)
+        // (100 − 25 − 5) frames at 25 fps = 2.8 s = frame 70 of the file
+        #expect(abs(playback.clock.position - 70) < 1e-6, "\(playback.clock.position)")
     }
 }

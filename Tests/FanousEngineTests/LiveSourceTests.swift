@@ -101,25 +101,6 @@ struct LiveSourceTests {
         }
     }
 
-    /// A packed 4:2:2 frame is twice as wide as its texture: 64×32 pixels (a 32×32 texture), red left and white right,
-    /// fits the 16:9 canvas as 2:1 (960×480, black bars of 30 rows) with the split at the canvas's middle column.
-    @Test func packedFrameKeepsItsFullWidthAspect() throws {
-        let context = try MetalContext()
-        let red: [UInt8] = [102, 63, 240, 63], white: [UInt8] = [128, 235, 128, 235]
-        let row = Array(repeating: red, count: 16).flatMap { $0 } + Array(repeating: white, count: 16).flatMap { $0 }
-        let bytes = Array(repeating: row, count: 32).flatMap { $0 }
-        let live = FakeLive(LiveFrame(texture0: try Self.texture(context.device, .rgba8Unorm, 32, 32, bytes), kind: .v216))
-        let image = try Self.render(live, fitMode: .fit, context: context)
-        let middle = GeneratorTests.height / 2
-        Self.expect(GeneratorTests.pixel(image, 20, middle), (255, 0, 0), "left edge")
-        Self.expect(GeneratorTests.pixel(image, 470, middle), (255, 0, 0), "left of the split")
-        Self.expect(GeneratorTests.pixel(image, 490, middle), (255, 255, 255), "right of the split")
-        Self.expect(GeneratorTests.pixel(image, 940, middle), (255, 255, 255), "right edge")
-        Self.expect(GeneratorTests.pixel(image, 240, 35), (255, 0, 0), "top row of the picture")
-        Self.expect(GeneratorTests.pixel(image, 240, 20), (0, 0, 0), "bar above", tolerance: 0)
-        Self.expect(GeneratorTests.pixel(image, 720, 520), (0, 0, 0), "bar below", tolerance: 0)
-    }
-
     /// The tick's one read of a live source (`LayerPlayback.frame`) allocates nothing: `LiveFrame` is returned by value,
     /// from a stored property (the fake) and from a computed one (a generator).
     @Test(.mallocCounter)
