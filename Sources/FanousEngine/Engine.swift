@@ -594,68 +594,10 @@ public final class Engine: @unchecked Sendable {
         oscFeedback?.start()  // the fixed target is notified once everything it reads exists
 
         let startedAt = self.startedAt
-        /// REST calls that change state need the programmer role: the session cookie, the shell token as a bearer, or an open role.
-        @Sendable func allowed(_ role: Role, _ request: HTTPRequest) -> Bool {
-            let bearer = request.header("Authorization").flatMap { $0.hasPrefix("Bearer ") ? String($0.dropFirst(7)) : nil }
-            let sessionRole = auth.role(forToken: bearer) ?? auth.role(forCookie: RoleAuth.cookie(in: request))
-            return auth.grant(requested: role, sessionRole: sessionRole) == role
-        }
-        @Sendable func programmerAllowed(_ request: HTTPRequest) -> Bool { allowed(.programmer, request) }
-        logger.info("engine start", metadata: ["step": "https"])
-        let server = try HTTPSServer(port: options.port, identity: identity, webRoot: options.webRoot, loopbackOnly: !options.network, logger: logger) { request in
-            if request.path.hasPrefix("/api/ingest") || request.path.hasPrefix("/api/upload/") {
-                if request.method != "GET", !programmerAllowed(request) { return .text(403, "programmer role required") }
-                if request.method == "GET", !allowed(.operator, request) { return .text(403, "operator role required") }  // job lists carry file paths
-                return ingestAPI.handle(request, uploadedFile: nil)
-            }
-            let library = self.library!
-            if request.path == "/api/library/rescan" {
-                // any role: it only re-reads the disk
-                library.rescan()
-                return .text(200, "rescanned")
-            }
-            if request.path == "/api/library/folder" {
-                // POST {"number": N, "name": "…"} creates NNN_name under the root (and the root itself)
-                guard request.method == "POST" else { return HTTPResponse(status: 405, headers: [HTTPHeader("Allow", "POST")]) }
-                guard programmerAllowed(request) else { return .text(403, "programmer role required") }
-                guard let body = try? JSONDecoder().decode(JSONValue.self, from: Data(request.body)), let number = body["number"]?.int, (1...255).contains(number),
-                    let name = body["name"]?.string, !name.trimmingCharacters(in: .whitespaces).isEmpty
-                else { return .text(400, "expected {\"number\": 1–255, \"name\": …}") }
-                switch library.createFolder(number: number, name: name) {  // check and create under one lock (B141)
-                case .exists: return .text(409, "folder \(number) exists")  // also one an upload just made
-                case .failed: return .text(500, "cannot create the folder")  // a root that cannot be written (B142)
-                case .created(let url):
-                    library.rescan()
-                    return .text(200, url.lastPathComponent)
-                }
-            }
-            switch request.path {
-            case "/healthz":
-                let health: JSONValue = [
-                    "status": "ok", "version": .string(FanousVersion.string), "uptimeSeconds": .number(Double(Int(Date().timeIntervalSince(startedAt)))),
-                    "chip": .string(SystemInfo.chipName),
-                ]
-                return .json(200, Array((try? encoder.encode(health)) ?? Data()))
-            case "/api/live":
-                return .json(200, Array((try? encoder.encode(dmx.snapshot())) ?? Data()))
-            case "/api/login":
-                guard request.method == "POST" else { return HTTPResponse(status: 405, headers: [HTTPHeader("Allow", "POST")]) }
-                guard let body = try? JSONDecoder().decode(JSONValue.self, from: Data(request.body)),
-                    let role = body["role"]?.string.flatMap(Role.init(rawValue:))
-                else { return .text(400, "expected {\"role\": …, \"password\": …}") }
-                do {
-                    let cookie = try auth.login(role: role, password: body["password"]?.string ?? "", from: request.remoteAddress)
-                    return HTTPResponse(status: 204, headers: [HTTPHeader("Set-Cookie", RoleAuth.cookieHeader(cookie))])
-                } catch RoleAuth.LoginError.rateLimited {
-                    return .text(429, "too many attempts; wait a minute")
-                } catch {
-                    return .text(401, "wrong password")
-                }
-            case "/api/logout":
-                guard request.method == "POST" else { return HTTPResponse(status: 405, headers: [HTTPHeader("Allow", "POST")]) }
-                if let cookie = RoleAuth.cookie(in: request) { auth.logout(cookie: cookie) }
-                return HTTPResponse(status: 204, headers: [HTTPHeader("Set-Cookie", "\(RoleAuth.cookieName)=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0")])
-            case "/metrics":
+        let routes = RESTRoutes(
+            auth: auth, store: store, ingestAPI: ingestAPI, library: { self.library! }, encoder: encoder, dmx: dmx,
+            thumbnails: thumbnailer.directory, logFile: AppPaths.logs.appending(path: "fanousd.log"), startedAt: startedAt,
+            metricsJSON: {
                 // DESIGN.md §13: the current 1-second summary as JSON for external monitoring
                 let s = metrics.summary(seconds: 1, now: CACurrentMediaTime())
                 var m: [String: JSONValue] = [
@@ -692,51 +634,8 @@ public final class Engine: @unchecked Sendable {
                     ]
                 }
                 return .json(200, Array(store.encode(.object(m)).utf8))
-            case "/api/logs":
-                guard programmerAllowed(request) else { return .text(403, "programmer role required") }
-                // the last 64 KB of the engine log (System › Logs); `?download=1` sends the whole file
-                let file = AppPaths.logs.appending(path: "fanousd.log")
-                guard let handle = try? FileHandle(forReadingFrom: file) else { return .text(404, "no log file") }
-                defer { try? handle.close() }
-                let size = (try? handle.seekToEnd()) ?? 0
-                let download = request.target.contains("download=1")
-                let from = download ? 0 : max(0, Int(size) - 65_536)
-                try? handle.seek(toOffset: UInt64(from))
-                let data = (try? handle.readToEnd()) ?? Data()
-                return HTTPResponse(
-                    status: 200,
-                    headers: [HTTPHeader("Content-Type", "text/plain; charset=utf-8")] + (download ? [HTTPHeader("Content-Disposition", "attachment; filename=\"fanousd.log\"")] : []),
-                    body: Array(data))
-            case "/api/session":
-                let role = auth.role(forCookie: RoleAuth.cookie(in: request))
-                let session: JSONValue = [
-                    "role": role.map { .string($0.rawValue) } ?? .null,
-                    "open": .array(Role.allCases.filter { auth.isOpen($0) }.map { .string($0.rawValue) }),
-                ]
-                return .json(200, Array(store.encode(session).utf8))
-            case "/api/patch":
-                return .json(200, Array((try? encoder.encode(dmx.currentPatch)) ?? Data()))
-            case "/api/gdtf":
-                return HTTPResponse(
-                    status: 200,
-                    headers: [HTTPHeader("Content-Type", "application/zip"), HTTPHeader("Content-Disposition", "attachment; filename=\"Fanous.gdtf\"")],
-                    body: GDTFExporter.gdtf())
-            case "/api/channel-map.md":
-                return .text(200, ChannelMapDocument.markdown())
-            case "/api/channel-map.json":
-                return .json(200, Array(store.encode(ChannelMapDocument.json()).utf8))
-            case "/api/library":
-                // below operator: no absolute paths (B25); the UI keys files by `path`, which stays unique relative to the root
-                let snapshot = allowed(.operator, request) ? library.snapshot : library.snapshot.redacted()
-                return .json(200, Array((try? encoder.encode(snapshot)) ?? Data()))
-            case let path where path.hasPrefix("/api/thumbnail/"):
-                // thumbnail file names are hashes written by the engine itself: no path component may escape the cache
-                let name = String(path.dropFirst("/api/thumbnail/".count))
-                guard !name.contains("/"), !name.contains(".."), name.hasSuffix(".jpg"),
-                    let data = try? Data(contentsOf: thumbnailer.directory.appending(path: name))
-                else { return .text(404, "no thumbnail") }
-                return HTTPResponse(status: 200, headers: [HTTPHeader("Content-Type", "image/jpeg"), HTTPHeader("Cache-Control", "max-age=86400")], body: Array(data))
-            case "/api/metrics":
+            },
+            metricsText: {
                 var text = metrics.summary(seconds: 10, now: CACurrentMediaTime()).description
                 if let audio = self.render?.mixer?.statistics {
                     text += String(format: "\naudio: callbacks %llu  underruns %llu  corrections %llu  max drift %.1f ms", audio.callbacks, audio.underruns, audio.corrections, audio.maxDriftMillis)
@@ -745,12 +644,13 @@ public final class Engine: @unchecked Sendable {
                     text += "\nsync: packets in \(receiver.packetsIn.load(ordering: .relaxed))  out \(sender.packetsOut.load(ordering: .relaxed))  dropped \(sender.packetsDropped.load(ordering: .relaxed))  decode errors \(receiver.decodeErrors.load(ordering: .relaxed))"
                 }
                 return .text(200, text)
-            default:
-                return nil
-            }
+            })
+        logger.info("engine start", metadata: ["step": "https"])
+        let server = try HTTPSServer(port: options.port, identity: identity, webRoot: options.webRoot, loopbackOnly: !options.network, logger: logger) {
+            routes.handle($0)
         }
         // large uploads stream to _incoming/ before the route runs (role checked before the body is accepted)
-        server.uploadSink = { request in programmerAllowed(request) ? ingestAPI.uploadTarget(for: request) : nil }
+        server.uploadSink = { routes.uploadTarget($0) }
         server.uploadRoute = { request, file in ingestAPI.handle(request, uploadedFile: file) }
         server.upgradeRoute = { request in stateServer.upgrade(request) }
         if options.network { server.bonjour(name: SystemInfo.hostName) }

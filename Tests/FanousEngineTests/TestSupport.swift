@@ -70,6 +70,22 @@ func testStore(
     return (store, auth)
 }
 
+/// The engine's REST routes over `store` and `auth`, with the library root, ingest queue, thumbnail cache and log file
+/// in a fresh temporary directory (`dir`: `library/`, `thumbnails/`, `fanousd.log`, none made yet); the metrics routes
+/// answer stubs. Needs `.cleansTempFiles`.
+func testRoutes(store: StateStore, auth: RoleAuth) throws -> (routes: RESTRoutes, dir: URL) {
+    let dir = try tempDir("rest")
+    let library = LibraryIndex(root: dir.appending(path: "library"), cacheDirectory: dir.appending(path: "cache"), logger: testLogger)
+    let encoder = JSONEncoder()
+    let queue = IngestQueue(persistenceURL: dir.appending(path: "queue.json"), logger: testLogger)
+    let routes = RESTRoutes(
+        auth: auth, store: store, ingestAPI: IngestAPI(library: { library }, queue: queue, encoder: encoder, logger: testLogger),
+        library: { library }, encoder: encoder, dmx: DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger),
+        thumbnails: dir.appending(path: "thumbnails"), logFile: dir.appending(path: "fanousd.log"), startedAt: Date(),
+        metricsJSON: { .json(200, Array("{}".utf8)) }, metricsText: { .text(200, "metrics") })
+    return (routes, dir)
+}
+
 /// Syphon server `app` (`name`) on number `file`, as the project's `/syphon` list holds it.
 func syphonServer(_ file: Int, _ app: String, name: String = "Server") -> LiveCatalog.Entry {
     LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: name)
