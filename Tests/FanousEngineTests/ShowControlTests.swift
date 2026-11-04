@@ -421,7 +421,11 @@ struct ShowControlTests {
         #expect(!idle.stop(keepingState: true))  // restart outside show mode: nothing kept
         #expect(!FileManager.default.fileExists(atPath: url.path))
     }
+}
 
+/// The ShowControlTests that need the GPU or a decoder: local and self-hosted runs only (scripts/test.sh --hosted leaves them out).
+@Suite(.cleansTempFiles)
+struct ShowControlGPUTests {
     @Test func compositorChasesTimecode() throws {
         let context = try MetalContext()
         let (compositor, parameters) = try makeCompositor(context, size: (64, 36))

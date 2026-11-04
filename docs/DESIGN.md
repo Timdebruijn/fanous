@@ -4824,9 +4824,11 @@ trademark search for "Fanous" (`[OPEN-21]`).
 | **Protocol interop** | manual checklist with free console software (CITP thumbnails visible, GDTF imports, DMX control end-to-end) | Phase 7 |
 | **UI** | Vitest unit tests for the protocol client, state store and mapping-editor geometry; Playwright browser tests against a real `fanousd --no-network` per test (`[OPEN-22]`, B47) | GitHub Actions |
 
-CI (Phase 0): build all targets, Core tests, license-header check, Core
-purity check, `web` lint/typecheck/test/build. Hardware tests are a separate
-workflow triggered manually or by a self-hosted runner label.
+CI (Phase 0): build all targets, Core tests and the engine suites that need no
+GPU, media hardware or display (`scripts/test.sh --hosted`, the list lives
+there; a mixed file keeps its GPU tests in a `…GPUTests` suite), license-header
+check, Core purity check, `web` lint/typecheck/test/build. Hardware tests are a
+separate workflow triggered manually or by a self-hosted runner label.
 
 ---
 
