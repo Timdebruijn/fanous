@@ -62,10 +62,7 @@ struct StateServerTests {
     }
 
     static func start() async throws -> Fixture {
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: logger)
-        let project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
-        let store = StateStore(project: project, logger: logger)
-        ProjectDocument.registerCommands(on: store, auth: auth)
+        let (store, auth) = testStore()
         let stateServer = StateServer(store: store, auth: auth, caps: ["schema": 1], logger: logger)
         let server = try HTTPSServer(port: 0, identity: try makeIdentity(), webRoot: URL(fileURLWithPath: "/nonexistent"), logger: logger) { request in
             guard request.path == "/api/login", request.method == "POST",

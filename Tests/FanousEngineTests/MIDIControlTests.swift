@@ -124,7 +124,7 @@ struct MIDIControlTests {
     }
 
     @Test func mapCommandsValidateReplaceAndLock() throws {
-        let (store, _) = StateStoreTests.makeStore()
+        let (store, _) = testStore(outputs: 0)
         let learned = Mutex<[String?]>([])
         MIDICommands.register(on: store, learn: { target, _ in learned.withLock { $0.append(target) } })
         let id = try store.execute("midi.map.set", args: ["channel": 1, "kind": "note", "number": 36, "target": "cue.go"], role: .programmer).get().value?.string

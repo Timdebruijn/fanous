@@ -96,7 +96,7 @@ struct MaskTests {
         """
 
     static func oldProject() throws -> JSONValue {
-        var project = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx)
+        var project = testProject(layers: 1, outputs: 1)
         try project.set(.array([try JSONDecoder().decode(JSONValue.self, from: Data(oldOutput.utf8))]), at: "/outputs")
         return project
     }
@@ -411,7 +411,7 @@ struct MaskTests {
     /// hard edge) keeps its mask with no feather, and the output takes other edits.
     @Test func anOldNegativeFeatherIsNone() throws {
         let old = Self.oldOutput.replacingOccurrences(of: #""feather":24"#, with: #""feather":-3"#)
-        var project = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx)
+        var project = testProject(layers: 1, outputs: 1)
         try project.set(.array([try JSONDecoder().decode(JSONValue.self, from: Data(old.utf8))]), at: "/outputs")
         let url = tempFile("fanous-masks", ext: "json")
         try ProjectDocument.save(project, to: url)

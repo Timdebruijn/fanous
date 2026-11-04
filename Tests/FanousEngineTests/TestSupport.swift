@@ -3,6 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
 import AVFoundation
+import FanousCore
 import Foundation
 import Logging
 import Metal
@@ -32,6 +33,37 @@ nonisolated(nonsending) func waitUntil(_ deadline: Duration = .seconds(10), ever
         guard ContinuousClock.now < end, (try? await Task.sleep(for: every)) != nil else { return condition() }
     }
     return true
+}
+
+/// The logger every test hands the engine.
+let testLogger = Logger(label: "test")
+
+/// The role gate with every role open and nothing on disk; 1000 PBKDF2 iterations keep a password test fast.
+func testAuth() -> RoleAuth { RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: testLogger) }
+
+/// A new project on the standard patch of `layers` layers and `outputs` output fixtures, DMX policy.
+func testProject(layers: Int, outputs: Int, libraryRoot: String = "/tmp/lib") -> JSONValue {
+    ProjectDocument.initial(patch: .standard(layers: layers, outputs: outputs), layerCount: layers, libraryRoot: libraryRoot, policy: .dmx)
+}
+
+/// A store on `project` (a `testProject` of `layers` and `outputs` by default) with `register`'s commands, the plain
+/// project commands by default.
+func testStore(
+    layers: Int = 2, outputs: Int = 1, project: JSONValue? = nil,
+    registering register: (StateStore, RoleAuth) -> Void = { ProjectDocument.registerCommands(on: $0, auth: $1) }
+) -> (store: StateStore, auth: RoleAuth) {
+    let auth = testAuth()
+    let store = StateStore(project: project ?? testProject(layers: layers, outputs: outputs), logger: testLogger)
+    register(store, auth)
+    return (store, auth)
+}
+
+/// `count` outputs added to `store`, each a full 1920×1080 region (ids 1…count).
+func addOutputs(_ store: StateStore, _ count: Int) throws {
+    for id in 1...count {
+        _ = try store.execute("output.add", role: .programmer).get()
+        _ = try store.execute("output.set", args: ["id": .number(Double(id)), "path": "/region", "value": ["x": 0, "y": 0, "w": 1920, "h": 1080]], role: .programmer).get()
+    }
 }
 
 /// `image` as a PNG at `url`.
@@ -69,7 +101,7 @@ func makeCompositor(
     let parameters = parameters ?? TripleBuffer { ParameterSnapshotSlot(maxLayers: maxLayers) }
     let compositor = try Compositor(
         context: context, canvasWidth: size.0, canvasHeight: size.1, fps: fps, maxLayers: maxLayers, metrics: metrics, parameters: parameters,
-        logger: Logger(label: "test"))
+        logger: testLogger)
     return (compositor, parameters)
 }
 

@@ -15,15 +15,6 @@ struct UniverseSettingsEngineTests {
     static let logger = Logger(label: "test")
     static let a0 = UniverseID(.artnet, 0)
 
-    static func makeStore(
-        project: JSONValue = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx)
-    ) -> StateStore {
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: logger)
-        let store = StateStore(project: project, logger: logger)
-        ProjectDocument.registerCommands(on: store, auth: auth)
-        return store
-    }
-
     static func set(_ store: StateStore, _ path: String, _ value: JSONValue, id: String = "artnet:0.0.0", role: Role = .programmer) -> Result<CommandResult, CommandError> {
         store.execute("universe.set", args: ["id": .string(id), "path": .string(path), "value": value], role: role)
     }
@@ -31,7 +22,7 @@ struct UniverseSettingsEngineTests {
     // MARK: project model and command
 
     @Test func defaultsChangeNothingAndResettingRemovesTheEntry() throws {
-        let store = Self.makeStore()
+        let (store, _) = testStore(layers: 1)
         #expect(store.project["universes"] == nil)
         #expect(ProjectDocument.universeSettings(from: store.project).isEmpty)
         #expect(try Self.set(store, "/holdOnLoss", "hold").get().rev == 0)  // the default: nothing to store
@@ -52,7 +43,7 @@ struct UniverseSettingsEngineTests {
     }
 
     @Test func validationAndRefusals() throws {
-        let store = Self.makeStore()
+        let (store, _) = testStore(layers: 1)
         let bad: [(String, String, JSONValue)] = [
             ("artnet:0.0.0", "/protocol", "dmx"), ("artnet:0.0.0", "/holdOnLoss", "release"), ("artnet:0.0.0", "/sacnPriorityMode", "lowest"),
             ("artnet:0.0.0", "/interface", "eth 0"), ("artnet:0.0.0", "/interface", 3), ("artnet:0.0.0", "/lossTimeout", 0.1), ("artnet:0.0.0", "/lossTimeout", 0.5),
@@ -91,9 +82,9 @@ struct UniverseSettingsEngineTests {
         ])
 
         // universe.set starts from what the engine runs and leaves one entry per universe
-        var document = Self.makeStore().project
+        var document = testStore(layers: 1).store.project
         try document.set(entries, at: "/universes")
-        let store = Self.makeStore(project: document)
+        let (store, _) = testStore(project: document)
         _ = try Self.set(store, "/protocol", "both", id: "sacn:2").get()
         _ = try Self.set(store, "/sacnPriorityMode", "htp").get()
         let list = try #require(store.project["universes"]?.array)

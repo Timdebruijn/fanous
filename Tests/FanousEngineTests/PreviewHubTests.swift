@@ -35,9 +35,8 @@ import Testing
         init() throws {
             context = try MetalContext()
             (compositor, parameters) = try makeCompositor(context, size: (160, 90))
-            let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: PreviewHubTests.logger)
-            let project = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx)
-            server = StateServer(store: StateStore(project: project, logger: PreviewHubTests.logger), auth: auth, caps: ["schema": 1], logger: PreviewHubTests.logger)
+            let (store, auth) = testStore(layers: 1) { _, _ in }  // no commands
+            server = StateServer(store: store, auth: auth, caps: ["schema": 1], logger: PreviewHubTests.logger)
             let context = context, parameters = parameters, shapes = shapes
             hub = try PreviewHub(make: PreviewHubTests.make(context, parameters)) { target in
                 shapes.withLock { $0[target] } ?? (target.hasPrefix("canvas:") ? nil : (160, 90))
@@ -194,9 +193,7 @@ import Testing
     /// store's queue (it did, and deadlocked). Wired like the engine: Control hops to the main actor.
     @Test(.timeLimit(.minutes(1))) func layerSetWithALayerSubscriberDoesNotHang() async throws {
         let rig = try LayerRig()
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
-        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/x", policy: .dmx), logger: Self.logger)
-        ProjectDocument.registerCommands(on: store, auth: auth)
+        let (store, _) = testStore(project: testProject(layers: 2, outputs: 1, libraryRoot: "/x"))
         let compositor = rig.compositor, made = rig.made
         rig.hub.configure = { target, streamer in
             guard let index = PreviewHub.layerIndex(of: target, layerCount: store.project["layerCount"]?.int ?? 0), (try? streamer.showLayer(index, of: compositor)) != nil else { return false }

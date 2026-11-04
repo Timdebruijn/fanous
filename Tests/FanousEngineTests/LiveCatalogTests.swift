@@ -143,17 +143,17 @@ extension LiveCatalogTests {
     /// programmer, undoable, refused under show lock. `capture.authorize` asks for the camera, the screen or the
     /// microphone (B137) outside show mode only.
     @Test func captureForgetAndAuthorize() throws {
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: StateStoreTests.logger)
-        var project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
+        var project = testProject(layers: 2, outputs: 1)
         #expect(project["capture"] == [:])
         try project.set(ProjectDocument.liveValue([1, 2, 3].map { Self.numbered($0, "uid-\($0)", "Cam \($0)", model: "m") }), at: "/capture")
         try project.set(ProjectDocument.liveValue([LiveCatalog.Entry(kind: .syphon, file: 150, source: "App", name: "")]), at: "/syphon")
-        let store = StateStore(project: project, logger: StateStoreTests.logger)
         let showMode = Atomic<Bool>(false), asked = Atomic<Int>(0), askedScreen = Atomic<Int>(0), askedMicrophone = Atomic<Int>(0)
-        ProjectDocument.registerCommands(
-            on: store, auth: auth, showModeOn: { showMode.load(ordering: .relaxed) }, liveRunning: { [1] },
-            authorizeCamera: { asked.add(1, ordering: .relaxed) }, authorizeScreen: { askedScreen.add(1, ordering: .relaxed) },
-            authorizeMicrophone: { askedMicrophone.add(1, ordering: .relaxed) })
+        let (store, _) = testStore(project: project) { store, auth in
+            ProjectDocument.registerCommands(
+                on: store, auth: auth, showModeOn: { showMode.load(ordering: .relaxed) }, liveRunning: { [1] },
+                authorizeCamera: { asked.add(1, ordering: .relaxed) }, authorizeScreen: { askedScreen.add(1, ordering: .relaxed) },
+                authorizeMicrophone: { askedMicrophone.add(1, ordering: .relaxed) })
+        }
         func files() -> [Int] { ProjectDocument.liveNumbers(.capture, from: store.project).map(\.file) }
 
         #expect(store.execute("capture.forget", args: ["file": 2], role: .operator).failureCode == "forbidden")
@@ -212,7 +212,7 @@ extension LiveCatalogTests {
 
     /// The load migration gives a project from before step 2b its `/capture` key, so it never appears mid-session.
     @Test func loadAddsTheCaptureKey() throws {
-        guard case .object(var map) = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 0), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx) else {
+        guard case .object(var map) = testProject(layers: 1, outputs: 0) else {
             Issue.record("the initial project is an object")
             return
         }
@@ -333,13 +333,13 @@ extension LiveCatalogTests {
     /// undoable, refused under show lock and in show mode, its undo and redo too; an undo that would overwrite a
     /// number taken meanwhile is refused (B90, as Forget's).
     @Test func captureRenumberMovesSwapsAndUndoes() throws {
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: StateStoreTests.logger)
-        var project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
+        var project = testProject(layers: 2, outputs: 1)
         try project.set(ProjectDocument.liveValue([1, 2, 3].map { Self.numbered($0, "uid-\($0)", "Cam \($0)", model: "m") }), at: "/capture")
         try project.set(ProjectDocument.liveValue([LiveCatalog.Entry(kind: .screens, file: 21, source: "disp", name: "Built-in")]), at: "/screens")
-        let store = StateStore(project: project, logger: StateStoreTests.logger)
         let showMode = Atomic<Bool>(false)
-        ProjectDocument.registerCommands(on: store, auth: auth, showModeOn: { showMode.load(ordering: .relaxed) }, liveRunning: { [1, 2, 21] })
+        let (store, _) = testStore(project: project) {
+            ProjectDocument.registerCommands(on: $0, auth: $1, showModeOn: { showMode.load(ordering: .relaxed) }, liveRunning: { [1, 2, 21] })
+        }
         func uids() -> [Int: String] { Dictionary(uniqueKeysWithValues: ProjectDocument.liveNumbers(.capture, from: store.project).map { ($0.file, $0.source) }) }
         func renumber(_ file: Int, _ to: Int) -> Result<CommandResult, CommandError> { store.execute("capture.renumber", args: ["file": .number(Double(file)), "to": .number(Double(to))], role: .programmer) }
 
@@ -385,13 +385,13 @@ extension LiveCatalogTests {
     /// A source the catalog numbered in the last tenth of a second is not in the project yet: a renumber then is refused
     /// (the catalog would not find the value naming it and the write-back would undo the change).
     @Test func renumberRefusedWhileTheProjectLagsTheCatalog() throws {
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: StateStoreTests.logger)
-        var project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
+        var project = testProject(layers: 2, outputs: 1)
         let numbers = [Self.numbered(1, "uid-1", "Cam 1", model: "m")]
         try project.set(ProjectDocument.liveValue(numbers), at: "/capture")
-        let store = StateStore(project: project, logger: StateStoreTests.logger)
         let catalog = Mutex<[LiveCatalog.Entry]>(numbers + [Self.numbered(2, "uid-2", "Cam 2", model: "m")])
-        ProjectDocument.registerCommands(on: store, auth: auth, liveNow: { kind in kind == .capture ? ProjectDocument.liveValue(catalog.withLock { $0 }) : nil })
+        let (store, _) = testStore(project: project) {
+            ProjectDocument.registerCommands(on: $0, auth: $1, liveNow: { kind in kind == .capture ? ProjectDocument.liveValue(catalog.withLock { $0 }) : nil })
+        }
         #expect(store.execute("capture.renumber", args: ["file": 1, "to": 5], role: .programmer).failureCode == "liveChanged")
         store.correct(at: "/capture") { ProjectDocument.liveValue(catalog.withLock { $0 }) }  // the write-back lands
         _ = try store.execute("capture.renumber", args: ["file": 1, "to": 5], role: .programmer).get()
@@ -400,7 +400,7 @@ extension LiveCatalogTests {
     /// `syphon.renumber` refuses a server that shares its app and name with another numbered one (two engines'
     /// canvases): the catalog could not tell a swap of such twins from no change.
     @Test func syphonRenumberRefusesTwins() throws {
-        let (store, _) = StateStoreTests.makeStore()
+        let (store, _) = testStore(outputs: 0)
         func server(_ file: Int, _ app: String, _ name: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: name) }
         store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "fanousd", "Canvas"), server(151, "fanousd", "Canvas"), server(152, "Other", "")]) }
         func renumber(_ file: Int, _ to: Int) -> Result<CommandResult, CommandError> { store.execute("syphon.renumber", args: ["file": .number(Double(file)), "to": .number(Double(to))], role: .programmer) }

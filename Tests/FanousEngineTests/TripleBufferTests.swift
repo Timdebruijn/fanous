@@ -486,7 +486,7 @@ final class Box { var value = 0 }
 
     /// Without `layerCount` (a hand-written project) the layers the engine starts with; outputs above 8 have no fixture.
     @Test func fixturesFromAProject() throws {
-        var project = ProjectDocument.initial(patch: .standard(layers: 3, outputs: 0), layerCount: 3, libraryRoot: "/tmp/lib", policy: .dmx)
+        var project = testProject(layers: 3, outputs: 0)
         try ProjectDocument.setOutputs([OutputConfig(id: 1), OutputConfig(id: 9)], in: &project)
         #expect(ProjectDocument.fixtures(from: project) == [.layer(1), .layer(2), .layer(3), .master, .output(1), .keystone(1)])
         try project.set(.null, at: "/layerCount")

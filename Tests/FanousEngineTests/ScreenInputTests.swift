@@ -78,7 +78,7 @@ struct ScreenInputTests {
 
     /// `/screens` is in a new project and the load migration adds it to an older one.
     @Test func projectHasTheScreensKey() throws {
-        let initial = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 0), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx)
+        let initial = testProject(layers: 1, outputs: 0)
         #expect(initial["screens"] == [:])
         guard case .object(var map) = initial else {
             Issue.record("the initial project is an object")
@@ -93,14 +93,12 @@ struct ScreenInputTests {
     /// `capture.forget {file}` takes 21–28 too (never a running display); without a file it forgets every capture device
     /// and display not running, and Syphon's numbers stay.
     @Test func captureForgetCoversDisplays() throws {
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: StateStoreTests.logger)
-        var project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
+        var project = testProject(layers: 2, outputs: 1)
         try project.set(ProjectDocument.liveValue([1, 2].map { LiveCatalogTests.numbered($0, "uid-\($0)", "Cam \($0)", model: "m") }), at: "/capture")
         try project.set(
             ProjectDocument.liveValue([21, 22, 23].map { LiveCatalog.Entry(kind: .screens, file: $0, source: "uuid-\($0)", name: "Display \($0)") }), at: "/screens")
         try project.set(ProjectDocument.liveValue([LiveCatalog.Entry(kind: .syphon, file: 150, source: "App", name: "")]), at: "/syphon")
-        let store = StateStore(project: project, logger: StateStoreTests.logger)
-        ProjectDocument.registerCommands(on: store, auth: auth, liveRunning: { [1, 21] })
+        let (store, _) = testStore(project: project) { ProjectDocument.registerCommands(on: $0, auth: $1, liveRunning: { [1, 21] }) }
         func files(_ kind: LiveCatalog.Kind) -> [Int] { ProjectDocument.liveNumbers(kind, from: store.project).map(\.file) }
 
         #expect(

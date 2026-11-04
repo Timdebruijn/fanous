@@ -28,7 +28,7 @@ struct ProjectVersionsTests {
 
     static func make() -> Fixture {
         let base = tempFile("fanous-versions")
-        let (store, _) = StateStoreTests.makeStore()
+        let (store, _) = testStore(outputs: 0)
         let versions = ProjectVersions(directory: base.appending(path: "versions"), logger: StateStoreTests.logger)
         let flag = ShowModeFlag()
         versions.registerCommands(on: store, showModeOn: { flag.on.load(ordering: .relaxed) })
@@ -273,7 +273,7 @@ struct ProjectVersionsTests {
             #expect(error?.code == "invalidArgs")
             #expect(error?.message.contains(word) == true, "\(version.name): \(error?.message ?? "accepted")")
         }
-        #expect(f.store.project == StateStoreTests.makeStore().0.project)
+        #expect(f.store.project == testStore(outputs: 0).store.project)
     }
 
     @Test func deleteNamedOnly() throws {

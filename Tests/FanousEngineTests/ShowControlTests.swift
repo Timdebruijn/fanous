@@ -233,7 +233,7 @@ struct ShowControlTests {
     }
 
     @Test func cueJSONRoundTripAndCommands() throws {
-        let (store, _) = StateStoreTests.makeStore()
+        let (store, _) = testStore(outputs: 0)
         let fired = Mutex<[String]>([])
         ShowCommands.register(
             on: store,
