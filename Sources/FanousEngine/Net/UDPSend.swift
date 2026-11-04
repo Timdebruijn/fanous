@@ -5,7 +5,8 @@
 import Darwin
 import Foundation
 
-/// The engine's raw UDP senders (CITP PLoc, sync) never block (B123): the socket is `O_NONBLOCK`, and a datagram the
+/// The engine's raw UDP sockets: the senders (CITP PLoc, sync) and the receivers' bound sockets (sACN, sync, `bound`).
+/// A sender never blocks (B123): the socket is `O_NONBLOCK`, and a datagram the
 /// kernel cannot take at once (a full send buffer, a stalled interface) is dropped and counted by the caller, so a
 /// stuck network path cannot hold a queue or thread that a `stop()` waits on.
 enum UDPSend {
