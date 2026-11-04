@@ -54,7 +54,7 @@ struct SequenceIngestTests {
     }
 
     /// A 16-bit image sequence keeps more than 8 bits in ProRes: a 16-bit grey PNG ramp (1024 wide, full range) comes out
-    /// of ProRes 422 HQ on the 10-bit video-range ramp `IngestQueueTests.rampError` expects.
+    /// of ProRes 422 HQ on the 10-bit video-range ramp `IngestPictureTests.rampError` expects.
     @Test func sixteenBitSequenceKeepsItsPrecisionInProRes() async throws {
         let directory = try tempDir("fanous-seq")
         let (w, h) = (1024, 16)
@@ -68,7 +68,7 @@ struct SequenceIngestTests {
         let output = directory.appending(path: "ramp.mov")
         let frames = try SequenceIngest.frames(in: directory)
         _ = try await offPool { try SequenceIngest.convert(frames: frames, to: output, fps: 25, codec: .proRes422HQ) }
-        let error = try await IngestQueueTests.rampError(output)
+        let error = try await IngestPictureTests.rampError(output)
         #expect(error.mean < 0.5 && error.max <= 2, "ProRes: \(error)")
     }
 

@@ -6,7 +6,7 @@
 # in a directory the compiler does not search by default; Xcode toolchains do.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-# Tests run in parallel (engine suite ~15 s, ~58 s serially). Swift Testing runs every test as a task on
+# Tests run in parallel (engine suite ~24 s on an M1 Pro, 2026-11-04; serially far longer). Swift Testing runs every test as a task on
 # the cooperative pool: blocking AVFoundation work in a test (MovieWriter.finish, finishWriting + semaphore)
 # goes through offPool (Tests/FanousEngineTests/TestSupport.swift), or enough of those tests at once hang
 # the run (B63). Tests that wait for something poll with a deadline (waitUntil in TestSupport.swift), so a loaded

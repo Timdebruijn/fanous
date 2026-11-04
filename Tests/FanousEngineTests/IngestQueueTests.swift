@@ -14,15 +14,17 @@ import VideoToolbox
 
 @testable import FanousEngine
 
-/// Serialized: `IngestQueue.stop()` parks the test's cooperative-pool thread until the worker exits, and a worker that is
-/// just loading an asset needs a pool thread itself; ten tests parked there at once would starve it.
+/// Serialized: the tests block their cooperative-pool thread (`IngestQueue.stop()` until the worker exits, an
+/// `AVAssetReader` read in `firstFrame` or `barPositions`), and the worker and AVFoundation need pool threads themselves.
+/// Run fully parallel, the suite hung once in three engine runs: all ten pool threads in `copyNextSampleBuffer` (sampled,
+/// 2026-11-04). `IngestPictureTests` is a second lane beside this one.
 @Suite(.serialized, .cleansTempFiles) struct IngestQueueTests {
     // MARK: Helpers
 
-    /// 320×176 ProRes 422 HQ with the `TestTone` track, 10 fps (20 frames: HAP Q encoding is slow in a debug build).
+    /// 320×176 ProRes 422 HQ with the `TestTone` track, 10 fps by default.
     static let sourceFPS: Int32 = 10
-    static func writeSource(to url: URL, seconds: Int = 2, audio: Bool = true) async throws {
-        try await writePatternMovie(to: url, size: (320, 176), fps: sourceFPS, frames: seconds * Int(sourceFPS), audio: audio)
+    static func writeSource(to url: URL, seconds: Int = 2, fps: Int32 = sourceFPS, audio: Bool = true) async throws {
+        try await writePatternMovie(to: url, size: (320, 176), fps: fps, frames: seconds * Int(fps), audio: audio)
     }
 
     /// A 1 s, 25 fps H.264 `.mp4` (320×176) written with AVAssetWriter, with a 1 s 440 Hz mono AAC track at 44.1 kHz
@@ -120,21 +122,29 @@ import VideoToolbox
         guard audioInput.append(audioSample!) else { throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "append (audio)") }
         audioInput.markAsFinished()
         let times = presentationTimes ?? (0..<25).map { CMTime(value: Int64($0), timescale: 25) }
-        for (frame, time) in times.enumerated() {
-            while !input.isReadyForMoreMediaData { usleep(500) }
-            var pooled: CVPixelBuffer?
-            if let pool = adaptor.pixelBufferPool { CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pooled) }
-            guard let pooled else { throw MovieWriter.WriterError.failed("pixel buffer") }
-            let buffer = fillPattern(pooled, frame: frame)
-            if alpha {  // the right half transparent (premultiplied: all zero)
-                CVPixelBufferLockBaseAddress(buffer, [])
-                let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
-                let stride = CVPixelBufferGetBytesPerRow(buffer)
-                for y in 0..<176 { memset(base + y * stride + 160 * 4, 0, 160 * 4) }
-                CVPixelBufferUnlockBaseAddress(buffer, [])
+        // 16 frames at a time, filled in parallel: the pattern fill takes ~6 ms a frame in a debug build, most of the time
+        // of a long source (1800 frames: 11 s in one thread)
+        for start in stride(from: 0, to: times.count, by: 16) {
+            let chunk = start..<min(start + 16, times.count)
+            let buffers = try chunk.map { _ in
+                var pooled: CVPixelBuffer?
+                if let pool = adaptor.pixelBufferPool { CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pooled) }
+                guard let pooled else { throw MovieWriter.WriterError.failed("pixel buffer") }
+                return pooled
             }
-            guard adaptor.append(buffer, withPresentationTime: time) else {
-                throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "append")
+            DispatchQueue.concurrentPerform(iterations: buffers.count) { fillPattern(buffers[$0], frame: start + $0) }
+            for (frame, buffer) in zip(chunk, buffers) {
+                if alpha {  // the right half transparent (premultiplied: all zero)
+                    CVPixelBufferLockBaseAddress(buffer, [])
+                    let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
+                    let stride = CVPixelBufferGetBytesPerRow(buffer)
+                    for y in 0..<176 { memset(base + y * stride + 160 * 4, 0, 160 * 4) }
+                    CVPixelBufferUnlockBaseAddress(buffer, [])
+                }
+                while !input.isReadyForMoreMediaData { usleep(500) }
+                guard adaptor.append(buffer, withPresentationTime: times[frame]) else {
+                    throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "append")
+                }
             }
         }
         input.markAsFinished()
@@ -221,22 +231,23 @@ import VideoToolbox
 
     @Test func transcodesToHAPQAndProResWithAudio() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        let source = directory.appending(path: "source.mov")
+        let source = directory.appending(path: "source.mov"), hapSource = directory.appending(path: "source-hap.mov")
         try await Self.writeSource(to: source)
+        try await Self.writeSource(to: hapSource, fps: 2)  // 4 frames: HAP Q encoding takes ~0.2 s a frame in a debug build
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
         queue.start()
         defer { queue.stop() }
 
-        let hapJob = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_hap.mov"), kind: .transcode(codec: .hap(.hapQ))))
+        let hapJob = queue.enqueue(IngestJob(source: hapSource, destination: directory.appending(path: "library/001_hap.mov"), kind: .transcode(codec: .hap(.hapQ))))
         let proResJob = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/002_prores.mov"), kind: .transcode(codec: .proRes422HQ)))
         #expect(await Self.wait(for: hapJob.id, in: queue) == .done)
         #expect(await Self.wait(for: proResJob.id, in: queue) == .done)
-        #expect(FileManager.default.fileExists(atPath: source.path))  // no originals directory, no delete: left in place
+        #expect(FileManager.default.fileExists(atPath: source.path) && FileManager.default.fileExists(atPath: hapSource.path))  // no originals directory, no delete: left in place
 
         let bars = try await Self.barPositions(of: proResJob.destination)
         #expect(bars.count == 20 && zip(bars, 0..<20).allSatisfy { abs($0 - $1 * 8) <= 2 }, "bar positions \(bars)")  // every frame, in order, content intact
         guard let device = MTLCreateSystemDefaultDevice() else { return }
-        try await Self.expectPlayable(hapJob.destination, device: device, frames: 20, fps: 10, codec: "HapY")
+        try await Self.expectPlayable(hapJob.destination, device: device, frames: 4, fps: 2, codec: "HapY")
         try await Self.expectPlayable(proResJob.destination, device: device, frames: 20, fps: 10, codec: "apch")
         try await Self.expectTestToneAudio(hapJob.destination)
         try await Self.expectTestToneAudio(proResJob.destination)
@@ -656,7 +667,11 @@ import VideoToolbox
         let expected = (0..<60).map { k in (k < 30 ? k / 3 : 10 + (k - 30)) * 8 % 304 }
         #expect(bars.count == 60 && zip(bars, expected).allSatisfy { abs($0 - $1) <= 2 }, "bars \(bars)")
     }
+}
 
+/// The picture through a transcode (frame timing, rotation, bit depth, alpha), on `IngestQueueTests`' helpers: a
+/// serialized suite of its own, so it runs beside that one (two lanes, not every test at once: see `IngestQueueTests`).
+@Suite(.serialized, .cleansTempFiles) struct IngestPictureTests {
     /// B19 (review of PR #221): a constant 30 fps source on a 1 ms timescale has 33 and 34 ms frames and reports a 33 ms
     /// smallest frame duration. Snapping the rate to 1/30 and sampling each output frame at its middle keep it frame for
     /// frame over 5 s; sampling at the start dropped and doubled every third frame, and a 33 ms output drifted a frame per 3 s.
@@ -667,29 +682,29 @@ import VideoToolbox
         let directory = try tempDir("fanous-ingest-tests")
         let source = directory.appending(path: "obs.mp4")
         let times = (0..<frames).map { CMTime(value: Int64((Double($0) * 1000 / rate).rounded()), timescale: 1000) }
-        try await Self.writeH264(to: source, presentationTimes: times, timescale: 1000)
+        try await IngestQueueTests.writeH264(to: source, presentationTimes: times, timescale: 1000)
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
         queue.start()
         defer { queue.stop() }
         let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_obs.mov"), kind: .transcode(codec: .proRes422)))
-        #expect(await Self.wait(for: job.id, in: queue) == .done)
+        #expect(await IngestQueueTests.wait(for: job.id, in: queue) == .done)
 
         let track = try #require(try await AVURLAsset(url: job.destination).loadTracks(withMediaType: .video).first)
         let (nominal, minimum) = try await track.load(.nominalFrameRate, .minFrameDuration)
         #expect(abs(Double(nominal) - rate) < 0.01 && minimum == frameDuration, "\(nominal) fps, \(minimum)")
-        let bars = try await Self.barPositions(of: job.destination)
+        let bars = try await IngestQueueTests.barPositions(of: job.destination)
         #expect(bars.count == frames && bars.enumerated().allSatisfy { abs($0.element - $0.offset * 8 % 304) <= 2 }, "\(bars.count) frames, bars \(bars.prefix(40))")
     }
 
     @Test func rotatedSourceIsBakedUpright() async throws {
         let directory = try tempDir("fanous-ingest-tests")
         let source = directory.appending(path: "rotated.mp4")
-        try await Self.writeH264(to: source, rotated: true)
+        try await IngestQueueTests.writeH264(to: source, rotated: true)
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
         queue.start()
         defer { queue.stop() }
         let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_rotated.mov"), kind: .transcode(codec: .proRes422HQ)))
-        #expect(await Self.wait(for: job.id, in: queue) == .done)
+        #expect(await IngestQueueTests.wait(for: job.id, in: queue) == .done)
 
         // The library flags the source (upright size, needs ingest) and the output is plain.
         let (before, after) = try await offPool { (try LibraryIndex.probeMovie(source), try LibraryIndex.probeMovie(job.destination)) }
@@ -734,7 +749,7 @@ import VideoToolbox
         queue.start()
         defer { queue.stop() }
         let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_ramp.mov"), kind: .transcode(codec: .proRes422HQ)))
-        #expect(await Self.wait(for: job.id, in: queue) == .done)
+        #expect(await IngestQueueTests.wait(for: job.id, in: queue) == .done)
         let after = try await Self.rampError(job.destination)
         #expect(after.mean < 0.5 && after.max <= 2, "ProRes: \(after)")  // measured 0.14 and 1
     }
@@ -795,12 +810,12 @@ import VideoToolbox
     @Test func rotatedSourceWithAlphaKeepsItsAlpha() async throws {
         let directory = try tempDir("fanous-ingest-tests")
         let source = directory.appending(path: "rotated-alpha.mov")
-        try await Self.writeH264(to: source, rotated: true, pixelAspect: (4, 3), alpha: true)
+        try await IngestQueueTests.writeH264(to: source, rotated: true, pixelAspect: (4, 3), alpha: true)
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
         queue.start()
         defer { queue.stop() }
         let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_rotated.mov"), kind: .transcode(codec: .proRes422HQ)))
-        #expect(await Self.wait(for: job.id, in: queue) == .done)
+        #expect(await IngestQueueTests.wait(for: job.id, in: queue) == .done)
 
         let asset = AVURLAsset(url: job.destination)
         let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
@@ -831,12 +846,12 @@ import VideoToolbox
     func everyTransformPutsThePixelsWhereTheTagSays(name: String, transform: CGAffineTransform) async throws {
         let directory = try tempDir("fanous-ingest-tests")
         let source = directory.appending(path: "tagged.mp4")
-        try await Self.writeH264(to: source, transform: transform)
+        try await IngestQueueTests.writeH264(to: source, transform: transform)
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
         queue.start()
         defer { queue.stop() }
         let job = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_tagged.mov"), kind: .transcode(codec: .proRes422)))
-        #expect(await Self.wait(for: job.id, in: queue) == .done, "\(name)")
+        #expect(await IngestQueueTests.wait(for: job.id, in: queue) == .done, "\(name)")
 
         let asset = AVURLAsset(url: job.destination)
         let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
@@ -869,7 +884,9 @@ import VideoToolbox
             #expect(off <= 12, "\(name): source (\(sx), \(sy)) = (\(src[2]), \(src[1]), \(src[0])) at (\(x), \(y)) reads (\(out[2]), \(out[1]), \(out[0]))")
         }
     }
+}
 
+extension IngestQueueTests {
     @Test func cancelledSequenceLeavesNothing() async throws {
         let directory = try tempDir("fanous-ingest-tests")
         let frames = directory.appending(path: "frames")
