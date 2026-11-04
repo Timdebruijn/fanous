@@ -43,6 +43,15 @@ import Testing
         }
     }
 
+    /// A claim that fails for an I/O reason is a 500, not the 400 usage text (review of PR #291).
+    @Test func aClaimThatFailsIsAServerError() throws {
+        let (api, library) = try Self.api()
+        try FileManager.default.createDirectory(at: library.incomingDirectory, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAt: library.incomingDirectory)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAt: library.incomingDirectory) }
+        #expect(api.handle(try Self.put("/api/upload/1/clip.mov", body: [1, 2, 3]), uploadedFile: nil).status == 500)
+    }
+
     static func api() throws -> (IngestAPI, LibraryIndex) {
         let root = try tempDir("ingest-api")
         let library = LibraryIndex(root: root, cacheDirectory: root.appending(path: "cache"), logger: testLogger)

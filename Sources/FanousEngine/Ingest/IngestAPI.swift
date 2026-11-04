@@ -49,9 +49,15 @@ public final class IngestAPI: @unchecked Sendable {
     public func handle(_ request: HTTPRequest, uploadedFile: URL?) -> HTTPResponse {
         let path = request.path
         if path.hasPrefix("/api/upload/") {
-            guard request.method == "PUT", let (folder, name) = Self.uploadComponents(path), let file = uploadedFile ?? uploadTarget(for: request)
+            guard request.method == "PUT", let (folder, name) = Self.uploadComponents(path)
             else { return .text(400, "PUT /api/upload/<folder 1–255>/<name>") }
-            if uploadedFile == nil {
+            let file: URL
+            if let uploadedFile {
+                file = uploadedFile
+            } else {
+                // claimed here, not through uploadTarget: a claim that fails (a full or read-only disk) is a 500, not the usage text
+                try? FileManager.default.createDirectory(at: library.incomingDirectory, withIntermediateDirectories: true)
+                do { file = try IngestQueue.claimURL(for: name, in: library.incomingDirectory) } catch { return .text(500, "cannot store upload: \(error)") }
                 do { try Data(request.body).write(to: file) } catch {
                     try? FileManager.default.removeItem(at: file)
                     return .text(500, "cannot store upload: \(error)")
