@@ -30,10 +30,7 @@ import Testing
             return out
         }
         #expect(source.info.codecName == "Hap1")
-        let first = bytes(a)
-        #expect(first == bytes(b), "same decoded texture either way")
-        #expect(first.contains { $0 != 0 }, "and it is not empty")
-        #expect(source.hapInPlaceFrames == 1)
-        #expect(direct.frameIndex == 2 && staged.frameIndex == 2)
+        #expect(bytes(a) == bytes(b), "same decoded texture either way")
+        #expect(try patternBarX(direct, size: (320, 176)) == 16, "and it is frame 2: its bar at x = 16")
     }
 }

@@ -5,7 +5,6 @@
 import FanousCore
 import Foundation
 import Logging
-import Network
 import Synchronization
 import Testing
 
@@ -287,9 +286,8 @@ import Testing
         #expect(sender.receive(timeout: 0.1) == nil)
     }
 
-    /// Link-local IPv6 senders keep their scope for the connection back; the host a request names is compared without it.
-    @Test func scopedHostsKeepTheirScope() {
-        #expect("\(NWEndpoint.Host("fe80::1%lo0"))".hasSuffix("%lo0"))
+    /// The host a request names is compared without a link-local IPv6 sender's scope.
+    @Test func sameHostIgnoresTheScope() {
         #expect(OSCFeedbackServer.sameHost("fe80::1", "fe80::1%lo0"))
         #expect(OSCFeedbackServer.sameHost("localhost", "127.0.0.1"))
         #expect(!OSCFeedbackServer.sameHost("10.0.0.5", "10.0.0.6"))

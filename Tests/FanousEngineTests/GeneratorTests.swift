@@ -10,7 +10,7 @@ import Testing
 
 @testable import FanousEngine
 
-/// Folder 0 generators and the output test patterns, rendered through the real compositor. `FANOUS_DUMP_PATTERNS=DIR`
+/// Folder 0 generators and an output's own test pattern, rendered through the real compositor. `FANOUS_DUMP_PATTERNS=DIR`
 /// writes every image as PNG for review.
 struct GeneratorTests {
     static let width = 960, height = 540
@@ -129,14 +129,10 @@ struct GeneratorTests {
         }
     }
 
-    @Test func testPatternsRender() throws {
+    /// An output's own test pattern (the plan's, not the Master's) is drawn: output ID, a large "1" through the centre of
+    /// output 1, on its colour. Every pattern's picture is in GoldenTests.
+    @Test func outputIDPatternRenders() throws {
         let context = try MetalContext()
-        for pattern in TestPattern.allCases where pattern != .off {
-            let (_, image) = try Self.render(nil, pattern: pattern.rawValue, context: context)
-            #expect(Self.lit(image) == (pattern != .grey0), "\(pattern): lit \(Self.lit(image))")
-            try Self.dump(image, "pattern-\(pattern.rawValue)-\(pattern)")
-        }
-        // output ID: a large "1" through the centre of output 1, on its colour
         let (_, id) = try Self.render(nil, pattern: TestPattern.outputID.rawValue, context: context)
         #expect(Self.pixel(id, 480, 270).r > 240 && Self.pixel(id, 480, 270).g > 240, "\(Self.pixel(id, 480, 270))")
         #expect(Self.pixel(id, 300, 270).r < 200, "background is the output colour, not white")

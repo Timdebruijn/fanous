@@ -73,10 +73,11 @@ struct CaptureInputTests {
         let image = try LiveSourceTests.render(input, context: context)
         let y = GeneratorTests.height / 2
         func at(run i: Int) -> (r: Int, g: Int, b: Int) { GeneratorTests.pixel(image, LiveSourceTests.x(run: i), y) }
-        LiveSourceTests.expect(at(run: 0), (255, 255, 255), "\(format) white", tolerance: 1)
+        let exact = format == "BGRA" ? 0 : 1  // BGRA is the identity path: no YCbCr rounding
+        LiveSourceTests.expect(at(run: 0), (255, 255, 255), "\(format) white", tolerance: exact)
         LiveSourceTests.expect(at(run: 1), (0, 0, 0), "\(format) black", tolerance: 0)
-        LiveSourceTests.expect(at(run: 2), (255, 0, 0), "\(format) red", tolerance: 1)
-        LiveSourceTests.expect(at(run: 3), (128, 128, 128), "\(format) grey", tolerance: 1)
+        LiveSourceTests.expect(at(run: 2), (255, 0, 0), "\(format) red", tolerance: exact)
+        LiveSourceTests.expect(at(run: 3), (128, 128, 128), "\(format) grey", tolerance: exact)
         let packed = format == "2vuy" || format == "yuvs"
         let (y0, y1) = packed ? (255, 0) : (252, 3)
         LiveSourceTests.expect(GeneratorTests.pixel(image, LiveSourceTests.x(pixel: 16), y), (y0, y0, y0), "\(format) Y0", tolerance: packed ? 0 : 1)
@@ -84,7 +85,7 @@ struct CaptureInputTests {
     }
 
     /// Packed 4:2:2 from a capture buffer is as wide as the buffer, not its half-width texture: 64×32, red left and white
-    /// right, fits the 16:9 canvas as 2:1 with the split in the middle (as `LiveSourceTests.packedFrameKeepsItsFullWidthAspect`).
+    /// right, fits the 16:9 canvas as 2:1 (960×480, black bars of 30 rows) with the split at the canvas's middle column.
     @Test(arguments: ["2vuy", "yuvs"])
     func packedCaptureKeepsItsFullWidthAspect(format: String) throws {
         let context = try MetalContext()
@@ -94,10 +95,13 @@ struct CaptureInputTests {
         input.deliver(try Self.buffer(format == "2vuy" ? kCVPixelFormatType_422YpCbCr8 : kCVPixelFormatType_422YpCbCr8_yuvs, 64, 32) { _ in row })
         let image = try LiveSourceTests.render(input, fitMode: .fit, context: context)
         let middle = GeneratorTests.height / 2
+        LiveSourceTests.expect(GeneratorTests.pixel(image, 20, middle), (255, 0, 0), "\(format) left edge")
         LiveSourceTests.expect(GeneratorTests.pixel(image, 470, middle), (255, 0, 0), "\(format) left of the split")
         LiveSourceTests.expect(GeneratorTests.pixel(image, 490, middle), (255, 255, 255), "\(format) right of the split")
+        LiveSourceTests.expect(GeneratorTests.pixel(image, 940, middle), (255, 255, 255), "\(format) right edge")
         LiveSourceTests.expect(GeneratorTests.pixel(image, 240, 35), (255, 0, 0), "\(format) top row of the picture")
         LiveSourceTests.expect(GeneratorTests.pixel(image, 240, 20), (0, 0, 0), "\(format) bar above", tolerance: 0)
+        LiveSourceTests.expect(GeneratorTests.pixel(image, 720, 520), (0, 0, 0), "\(format) bar below", tolerance: 0)
     }
 
     @Test func outputFormatFollowsTheNativeSubtype() {

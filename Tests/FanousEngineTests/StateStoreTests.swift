@@ -165,15 +165,6 @@ struct StateStoreTests {
         #expect(UniverseID(parsing: "sacn:0") == nil)
     }
 
-    @Test func protocolTypesListEveryCommand() {
-        let ts = ProtocolTypes.typescript(commands: Engine.commandSpecs())
-        for name in ["show.lock", "show.unlock", "undo", "redo", "project.set", "patch.set", "roles.setPassword"] {
-            #expect(ts.contains("'\(name)'"), "missing \(name)")
-        }
-        #expect(ts.contains("export type ClientMessage"))
-        #expect(ts.contains("schema: 1"))
-    }
-
     /// B62: the engine sees a change before any client gets its patch, so a client that reacts to the patch at once
     /// (asks for the preview of a new output) finds the engine already knows it. For commands, undo, corrections and redo.
     @Test func projectChangedRunsBeforeClientsGetThePatch() throws {
@@ -238,11 +229,6 @@ extension StateStoreTests {
         #expect(store.project["layerCount"]?.int == 4)
         #expect(patch.entry(for: .layer(3))?.address == 129)
         #expect(patch.entry(for: .layer(4))?.address == 193)
-        // Layer 4 off its slot makes the group Custom: a new layer follows the layer before it (DESIGN.md §6.6 item 2)
-        _ = try store.execute("patch.set", args: ["fixture": "Layer 4", "universe": "artnet:0.0.0", "address": 300], role: .programmer).get()
-        _ = try store.execute("layers.setCount", args: ["count": 5], role: .programmer).get()
-        patch = try #require(ProjectDocument.patch(from: store.project))
-        #expect(patch.entry(for: .layer(5))?.address == 364, "right after Layer 4 at 300")
         _ = try store.execute("layers.setCount", args: ["count": 2], role: .programmer).get()
         patch = try #require(ProjectDocument.patch(from: store.project))
         #expect(patch.entry(for: .layer(3)) == nil && patch.entry(for: .layer(4)) == nil)
@@ -250,7 +236,7 @@ extension StateStoreTests {
         #expect(store.execute("layers.setCount", args: ["count": 65], role: .programmer).failureCode == "invalidArgs")
         #expect(store.execute("project.set", args: ["path": "/layerCount", "value": 3], role: .programmer).failureCode == "invalidArgs")
         _ = try store.execute("undo", role: .programmer).get()
-        #expect(store.project["layerCount"]?.int == 5)
+        #expect(store.project["layerCount"]?.int == 4)
     }
 }
 

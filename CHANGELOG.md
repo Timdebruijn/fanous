@@ -10,6 +10,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Tests: engine tests that checked a value the code under test had just set now check the result: a decoded movie
+  frame is that frame's picture (HAP, HAP Q, ProRes; not only its index), and the timecode chase lands on frame 70
+  of a 100-frame movie instead of a still that never chases. Duplicates and tests that asserted the OS or nothing
+  are gone (the screen-input read-back, a second triple-buffer stress run, the TLS handshake spike, the protocol
+  spot check, a repeated 5.1 fold-down); the idle-savings print is behind FANOUS_BENCH (PR #NNN).
 - Tests: the REST routes moved out of `Engine.start` into `RESTRoutes` (same routes, statuses and bodies), and a
   table test pins their role gates without a GPU or a socket: who gets 403 on `/api/ingest`, uploads,
   `/api/library/folder` and `/api/logs`, the redacted `/api/library` root below operator, `/api/login` 405/400/401
