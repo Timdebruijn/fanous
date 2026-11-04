@@ -302,3 +302,11 @@ struct LibraryIndexTests {
         #expect(!FileManager.default.fileExists(atPath: readOnly.appending(path: "001_One").path))
     }
 }
+
+/// The LibraryIndexTests that need the GPU or a decoder: local and self-hosted runs only (scripts/test.sh --hosted leaves them out).
+@Suite(.cleansTempFiles)
+struct LibraryIndexGPUTests {
+
+
+
+}

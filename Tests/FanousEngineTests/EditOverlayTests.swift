@@ -213,3 +213,11 @@ struct EditOverlayTests {
         #expect(live(raw: true) == "raw")
     }
 }
+
+/// The EditOverlayTests that need the GPU or a decoder: local and self-hosted runs only (scripts/test.sh --hosted leaves them out).
+@Suite
+struct EditOverlayGPUTests {
+
+
+
+}

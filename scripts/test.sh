@@ -12,6 +12,18 @@ cd "$(dirname "$0")/.."
 # the run (B63). Tests that wait for something poll with a deadline (waitUntil in TestSupport.swift), so a loaded
 # Mac makes the run slower, not red, in the loads tested (load average up to ~100); negative checks keep fixed
 # windows (B67).
+# `--hosted`: the suites a hosted CI runner can run: Core, and the engine suites that need no GPU, media hardware or
+# display (the GPU tests of a mixed file live in its …GPUTests suite). Add a suite here once it passes on macos-26.
+if [[ "${1:-}" == "--hosted" ]]; then
+  shift
+  hosted='AudioLifecycleTests|BonjourTests|CITPServerTests|ClientErrorTextTests|DXTCompressorTests|DisplayModeSwitcherTests'
+  hosted+='|EditOverlayTests|HTTPSServerLogTests|LayerGeometryTests|LibraryIndexTests|LibraryRedactionTests|LiveCatalogTests'
+  hosted+='|MIDIControlTests|OSCFeedbackServerTests|OSCReceiverTests|OSLogHandlerTests|PresetCommandsTests|ProjectVersionsTests'
+  hosted+='|RoleAuthTests|ShowControlTests|SlaveClockTests|StateServerTests|StateStoreRedactionTests|StateStoreTests'
+  hosted+='|SyncReceiverTests|SyncSenderTests|TLSIdentityTests|TripleBufferTests|UDPSendTests|UIExpiryTests'
+  hosted+='|UniverseSettingsEngineTests|WallCommandsTests|WebSocketHandshakeTests'
+  set -- --filter "FanousCoreTests|FanousEngineTests\.($hosted)/" "$@"
+fi
 plugins="$(xcode-select -p)/usr/lib/swift/host/plugins/testing"
 if [[ -d "$plugins" ]]; then
   exec swift test -Xswiftc -plugin-path -Xswiftc "$plugins" "$@"

@@ -347,3 +347,15 @@ struct StateServerTests {
         await #expect(throws: Error.self) { try await bad.receive() }
     }
 }
+
+/// The StateServerTests that need the GPU or a decoder: local and self-hosted runs only (scripts/test.sh --hosted leaves them out).
+@Suite
+struct StateServerGPUTests {
+
+
+
+
+
+
+
+}

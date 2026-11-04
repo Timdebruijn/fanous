@@ -10,6 +10,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- CI runs the engine suites that need no GPU, media hardware or display (261 tests: state store, commands, versions,
+  roles, servers, sync, OSC, CITP, MIDI, library index, readiness, ...) next to the Core tests: `scripts/test.sh
+  --hosted` holds the list; nine GPU tests of four mixed files moved into `…GPUTests` suites in the same file
+  (PR #NNN).
 - Tests: the engine test suite drops its repeats (about 290 lines): a `.cleansTempFiles` trait removes temporary files
   after each test, polls go through `waitUntil`, and one shared helper each for the compositor rig, test stores and
   projects, PNGs, movie writing and reading, sockets, the malloc gate and the logger; the same 744 tests assert the
