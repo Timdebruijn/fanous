@@ -33,10 +33,13 @@ import Testing
         #expect(Self.name("a%00.mov").map { !$0.contains("\0") } ?? true)
     }
 
-    /// `URL(fileURLWithPath:)` resolves `..` against the process's working directory, so the `name != ".."` guard never
-    /// sees it: the name becomes that directory's parent's name ("/" when the engine runs in "/").
-    @Test func dotDotIsNotRefused() {
-        withKnownIssue("`..` becomes the working directory's parent's name instead of nil") {
+    /// `URL(fileURLWithPath:)` resolves `.` and `..` against the process's working directory, so the dot-name guards
+    /// never see them: the name becomes that directory's or its parent's name ("/" when the engine runs in "/", as
+    /// launchd starts it; the file then lands as `_incoming/-2`). The known issue needs a working directory whose name
+    /// and parent's name do not start with a dot (a checkout under `~/.x/` would make the guard fire after all).
+    @Test func dotNamesAreNotRefused() {
+        withKnownIssue("`.` and `..` become the working directory's or its parent's name instead of nil") {
+            #expect(Self.name(".") == nil)
             #expect(Self.name("..") == nil)
             #expect(Self.name("%2E%2E") == nil)
         }

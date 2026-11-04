@@ -226,6 +226,7 @@ struct StateServerTests {
         #expect(try upgrade(origin: "https://127.0.0.1:8443") != nil)
         #expect(try upgrade(origin: nil) != nil)
         #expect(try upgrade(host: "fanous.local:8443", origin: "https://Fanous.LOCAL:8443") != nil)
+        #expect(try upgrade(host: "[::1]:8443", origin: "https://[::1]:8443") != nil)  // URL.host drops the brackets
         #expect(try upgrade(origin: "https://evil.example") == nil)
         #expect(try upgrade(origin: "https://evil.example:8443") == nil)
         #expect(try upgrade(origin: "https://127.0.0.1:9443") == nil)

@@ -91,10 +91,10 @@ struct WebSocketSessionTests {
                 accepted.withLock { $0 = connection }
             }
             listener.start(queue: queue)
-            await waitUntil { listener.state == .ready }
+            try #require(await waitUntil { listener.state == .ready })
             let client = NWConnection(host: "127.0.0.1", port: try #require(listener.port), using: .tcp)
             client.start(queue: queue)
-            await waitUntil { accepted.withLock { $0?.state == .ready } && client.state == .ready }
+            try #require(await waitUntil { accepted.withLock { $0?.state == .ready } && client.state == .ready })
             let session = WebSocketSession(
                 connection: try #require(accepted.withLock { $0 }), remoteAddress: "test", handler: handler)
             session.opened()
@@ -104,6 +104,7 @@ struct WebSocketSessionTests {
         }
 
         func stop() {
+            session.close()  // idempotent; cancels the accepted connection, which the listener's cancel does not
             client.cancel()
             listener.cancel()
         }
@@ -165,6 +166,5 @@ struct WebSocketSessionTests {
         let start = ContinuousClock.now
         #expect(!pair.feed(large(0x01), large(0x00), Self.frame(.continuation, [0x61])))
         #expect(await pair.closeCode() == 1009)
-        print("16 MB + 1 fragments: \(ContinuousClock.now - start)")
     }
 }

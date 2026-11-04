@@ -42,7 +42,8 @@ public final class StateServer: @unchecked Sendable {
         guard request.path == Self.path else { return nil }
         if let origin = request.header("Origin"), let host = request.header("Host") {
             guard let url = URL(string: origin), let originHost = url.host(percentEncoded: false) else { return nil }
-            let originAuthority = url.port.map { "\(originHost):\($0)" } ?? originHost
+            let bracketed = originHost.contains(":") ? "[\(originHost)]" : originHost  // an IPv6 literal, as the Host header carries it
+            let originAuthority = url.port.map { "\(bracketed):\($0)" } ?? bracketed
             guard originAuthority.caseInsensitiveCompare(host) == .orderedSame else {
                 logger.warning("WebSocket origin refused", metadata: ["origin": "\(origin)", "host": "\(host)"])
                 return nil
