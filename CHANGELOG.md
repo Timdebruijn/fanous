@@ -12,9 +12,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Tests: web test cleanup. `layers-media.test.ts` merged into `layers.test.ts` (one `layer()` factory, the
   `layerState` assertions in one place), the tautological `GENERATORS` line and the doubled `transcodeCodecs` check
-  gone, the POLICIES copy narrowed to the `line` texts nothing else pins. In the e2e suite three tests that only
-  repeated others are gone (second slice, Spread canvas folded into the slice-drag test, the 10-minute overlay idle,
-  which `outputs.test.ts` pins), and the Space and L/Ctrl+Z key tests now also fail when the shortcut is broken
+  gone, the POLICIES copy narrowed to the `line` texts nothing else pins. In the e2e suite two tests that only
+  repeated others are gone (second slice, now pinned by the slice labels in the slice-drag test; Spread canvas, folded
+  into that test), and the Space and L/Ctrl+Z key tests now also fail when the shortcut is broken
   (PR #284).
 
 - Tests: the REST routes moved out of `Engine.start` into `RESTRoutes` (same routes, statuses and bodies), and a

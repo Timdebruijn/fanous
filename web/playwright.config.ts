@@ -9,7 +9,7 @@ export default defineConfig({
   // one engine per test; one at a time keeps the GPU and the machine quiet
   workers: 1,
   timeout: 60_000,
-  // the same 55 tests take 2.6–3.5 min on a fast CI runner and 7 to over 10 min on a slow one (about 8 s more per test
+  // the suite takes 2.6–3.5 min on a fast CI runner (measured at 52 tests, 56 now) and 7 to over 10 min on a slow one (about 8 s more per test
   // on average, probably the engine start; the slowest tests stay 21–24 s on both), so 10 min cut six runs short on
   // 2026-11-01, four of them on main (B135)
   globalTimeout: 20 * 60_000,

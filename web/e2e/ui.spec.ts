@@ -491,6 +491,7 @@ test('outputs: with two slices on the same corners, a drag moves the selected sl
   await page.getByRole('button', { name: 'Add slice' }).click();
   const slice = page.getByRole('combobox', { name: 'Slice', exact: true });
   await expect(slice).toHaveValue('1');
+  await expect(slice.locator('option')).toHaveText(['Slice 1', 'Slice 2']); // ids, not indexes: nextSliceId
 
   // slice 2 lies on top of slice 1: select slice 1, grab the shared top-left corner and drop it in the middle
   await slice.selectOption('0');
@@ -1566,6 +1567,21 @@ test('outputs: opening Warp & Slices puts the edit overlay on the output with th
   // leaving the screen ends it
   await openScreen(page, 'Layers');
   await expect.poll(() => sent.at(-1)).toEqual(off);
+});
+
+test('outputs: the edit overlay switches itself off after 10 minutes without an edit; one click brings it back', async ({ page, engine }) => {
+  const sent = overlaySent(page);
+  await page.clock.install();
+  await page.goto(`${engine.url}/?token=${engine.token}`);
+  await addUnassignedOutput(page);
+  await page.getByRole('button', { name: 'Warp & Slices' }).click();
+  await expect.poll(() => sent.at(-1)).toEqual({ id: 1, on: true, selected: null });
+  const toggle = page.getByRole('switch', { name: 'Show on output' });
+  await page.clock.fastForward('10:30');
+  await expect.poll(() => sent.at(-1)).toEqual({ id: 1, on: false, selected: null });
+  await expect(toggle).not.toBeChecked();
+  await toggle.check({ force: true }); // the drawn track covers the input
+  await expect.poll(() => sent.at(-1)).toEqual({ id: 1, on: true, selected: null });
 });
 
 test('outputs: remove an output, then Undo brings it back', async ({ page }) => {
