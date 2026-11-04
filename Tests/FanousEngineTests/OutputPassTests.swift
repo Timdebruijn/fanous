@@ -1301,7 +1301,7 @@ struct OutputPassTests {
             let rgba = Self.rgba(fromBGRA: try Self.render(plan, still: still, context: context))
             let url = Self.golden.appending(path: "\(name).png")
             if GoldenTests.record {
-                try GoldenTests.writePNG(rgba, width: Self.width, height: Self.height, to: url)
+                try writePNG(cgImage(rgba: rgba, width: Self.width, height: Self.height, alpha: .noneSkipLast), to: url)
                 continue
             }
             guard let reference = GoldenTests.readPNG(url) else {

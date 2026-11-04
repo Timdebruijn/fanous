@@ -50,7 +50,7 @@ struct GeneratorTests {
         guard let dir = ProcessInfo.processInfo.environment["FANOUS_DUMP_PATTERNS"] else { return }
         var rgba = bgra
         for i in stride(from: 0, to: rgba.count, by: 4) { rgba.swapAt(i, i + 2) }
-        try GoldenTests.writePNG(rgba, width: width, height: height, to: URL(fileURLWithPath: dir).appending(path: "\(name).png"))
+        try writePNG(cgImage(rgba: rgba, width: width, height: height, alpha: .noneSkipLast), to: URL(fileURLWithPath: dir).appending(path: "\(name).png"))
     }
 
     /// Any colour byte above `threshold` (alpha is skipped: it is always 255).

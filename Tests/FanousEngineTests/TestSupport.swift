@@ -8,6 +8,7 @@ import Logging
 import Metal
 import Synchronization
 import Testing
+import UniformTypeIdentifiers
 
 @testable import FanousEngine
 
@@ -31,6 +32,21 @@ nonisolated(nonsending) func waitUntil(_ deadline: Duration = .seconds(10), ever
         guard ContinuousClock.now < end, (try? await Task.sleep(for: every)) != nil else { return condition() }
     }
     return true
+}
+
+/// `image` as a PNG at `url`.
+func writePNG(_ image: CGImage, to url: URL) throws {
+    let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil))
+    CGImageDestinationAddImage(destination, image, nil)
+    try #require(CGImageDestinationFinalize(destination), "PNG not written: \(url.lastPathComponent)")
+}
+
+/// An sRGB image of `rgba` (8 bits a channel, rows top to bottom); `alpha` says how to read the fourth byte.
+func cgImage(rgba: [UInt8], width: Int, height: Int, alpha: CGImageAlphaInfo = .last) throws -> CGImage {
+    try #require(CGImage(
+        width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGBitmapInfo(rawValue: alpha.rawValue), provider: CGDataProvider(data: Data(rgba) as CFData)!, decode: nil,
+        shouldInterpolate: false, intent: .defaultIntent))
 }
 
 /// The first frame of `url`'s video track, decoded to `format`.

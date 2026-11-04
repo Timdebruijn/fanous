@@ -162,10 +162,7 @@ struct LibraryIndexTests {
     /// A 2×2 PNG: enough for the still probe to call it playable.
     static func png(_ url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let context = CGContext(data: nil, width: 2, height: 2, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-        let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
-        CGImageDestinationAddImage(destination, context.makeImage()!, nil)
-        #expect(CGImageDestinationFinalize(destination))
+        try writePNG(cgImage(rgba: [UInt8](repeating: 0, count: 16), width: 2, height: 2), to: url)
     }
 
     @Test func rootProblems() throws {

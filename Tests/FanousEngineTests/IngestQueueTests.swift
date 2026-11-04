@@ -162,7 +162,7 @@ import VideoToolbox
     }
 
     /// A 320×176 PNG: the left half opaque, the right half transparent; the green channel encodes `index`.
-    static func writePNG(to url: URL, index: Int) throws {
+    static func writeFramePNG(to url: URL, index: Int) throws {
         let (w, h) = (320, 176)
         var pixels = [UInt8](repeating: 0, count: w * h * 4)
         for y in 0..<h {
@@ -175,14 +175,7 @@ import VideoToolbox
                 pixels[p + 3] = opaque ? 255 : 0
             }
         }
-        let image = pixels.withUnsafeMutableBytes { raw in
-            CGContext(
-                data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!.makeImage()!
-        }
-        let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)!
-        CGImageDestinationAddImage(destination, image, nil)
-        guard CGImageDestinationFinalize(destination) else { throw MovieWriter.WriterError.failed("png") }
+        try writePNG(cgImage(rgba: pixels, width: w, height: h, alpha: .premultipliedLast), to: url)
     }
 
     /// Polls until the job is finished (or `timeout`, an issue that says how long it waited); returns its last state.
@@ -274,7 +267,7 @@ import VideoToolbox
         let directory = try tempDir("fanous-ingest-tests")
         let frames = directory.appending(path: "frames")
         try FileManager.default.createDirectory(at: frames, withIntermediateDirectories: true)
-        for i in 0..<10 { try Self.writePNG(to: frames.appending(path: String(format: "frame_%03d.png", i)), index: i) }
+        for i in 0..<10 { try Self.writeFramePNG(to: frames.appending(path: String(format: "frame_%03d.png", i)), index: i) }
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
         queue.start()
         defer { queue.stop() }
@@ -301,7 +294,7 @@ import VideoToolbox
         let incoming = directory.appending(path: "incoming")
         try FileManager.default.createDirectory(at: incoming, withIntermediateDirectories: true)
         let png = incoming.appending(path: "title.png")
-        try Self.writePNG(to: png, index: 3)
+        try Self.writeFramePNG(to: png, index: 3)
         let bytes = try Data(contentsOf: png)
         let library = directory.appending(path: "library/001_Opening")  // does not exist yet
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
@@ -901,7 +894,7 @@ import VideoToolbox
         let directory = try tempDir("fanous-ingest-tests")
         let frames = directory.appending(path: "frames")
         try FileManager.default.createDirectory(at: frames, withIntermediateDirectories: true)
-        for i in 0..<10 { try Self.writePNG(to: frames.appending(path: String(format: "frame_%03d.png", i)), index: i) }
+        for i in 0..<10 { try Self.writeFramePNG(to: frames.appending(path: String(format: "frame_%03d.png", i)), index: i) }
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
         queue.shouldYield = { true }
         queue.start()
@@ -943,7 +936,7 @@ import VideoToolbox
         let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: Logger(label: "test"))
         let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: Logger(label: "test"))
         let still = directory.appending(path: "still.png")
-        try Self.writePNG(to: still, index: 0)
+        try Self.writeFramePNG(to: still, index: 0)
         for name in ["red.png", "blue.png"] {
             #expect(api.enqueue(source: still, folder: 3, file: nil, name: name, codec: nil, fps: nil, keepOriginal: true).status == 202)
         }
@@ -960,7 +953,7 @@ import VideoToolbox
         let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: Logger(label: "test"))
         let frames = directory.appending(path: "frames")
         try FileManager.default.createDirectory(at: frames, withIntermediateDirectories: true)
-        try Self.writePNG(to: frames.appending(path: "frame_000.png"), index: 0)
+        try Self.writeFramePNG(to: frames.appending(path: "frame_000.png"), index: 0)
         for fps: Int32 in [0, -25, 241] {
             #expect(api.enqueue(source: frames, folder: 1, file: nil, name: nil, codec: nil, fps: fps, keepOriginal: true).status == 400, "fps \(fps)")
         }
@@ -970,7 +963,7 @@ import VideoToolbox
         // A job persisted with such a rate before the guard ends as failed once the queue runs it, instead of trapping at every start.
         let old = directory.appending(path: "old-frames")  // its own folder: the accepted job above moves `frames` to _originals
         try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
-        try Self.writePNG(to: old.appending(path: "frame_000.png"), index: 0)
+        try Self.writeFramePNG(to: old.appending(path: "frame_000.png"), index: 0)
         let replayed = queue.enqueue(IngestJob(source: old, destination: directory.appending(path: "library/001_Folder/002_old.mov"), kind: .sequence(fps: 0, codec: .proRes422)))
         queue.start()
         defer { queue.stop() }
@@ -984,7 +977,7 @@ import VideoToolbox
         let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: Logger(label: "test"))
         let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: Logger(label: "test"))
         let still = directory.appending(path: "still.png")
-        try Self.writePNG(to: still, index: 0)
+        try Self.writeFramePNG(to: still, index: 0)
         api.holdEnqueue("the library root is changing")
         api.holdEnqueue("the library root is changing")
         #expect(api.enqueue(source: still, folder: 1, file: nil, name: nil, codec: nil, fps: nil, keepOriginal: true).status == 409)
@@ -1004,7 +997,7 @@ import VideoToolbox
         let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: Logger(label: "test"))
         let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: Logger(label: "test"))
         let sources = (1...3).map { directory.appending(path: "red-\($0).png") }
-        for (index, source) in sources.enumerated() { try Self.writePNG(to: source, index: index) }
+        for (index, source) in sources.enumerated() { try Self.writeFramePNG(to: source, index: index) }
         func upload(_ source: URL, file: Int? = nil) -> String? {
             #expect(api.enqueue(source: source, folder: 3, file: file, name: "red.png", codec: nil, fps: nil, keepOriginal: false).status == 202)
             return queue.jobs.last?.destination.lastPathComponent

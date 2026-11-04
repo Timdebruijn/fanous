@@ -226,7 +226,7 @@ struct GoldenTests {
             let file = Self.directory.appending(path: "\(c.name).png")
             if Self.record {
                 try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-                try Self.writePNG(rgba, width: w, height: h, to: file)
+                try writePNG(cgImage(rgba: rgba, width: w, height: h, alpha: .noneSkipLast), to: file)
                 continue
             }
             guard let reference = Self.readPNG(file) else {
@@ -278,19 +278,6 @@ struct GoldenTests {
             return "\(name): mean \(String(format: "%.2f", mean)), max \(maxDiff), \(over4) samples > 4"
         }
         return nil
-    }
-
-    static func writePNG(_ rgba: [UInt8], width: Int, height: Int, to url: URL) throws {
-        let data = rgba.withUnsafeBufferPointer { Data(buffer: $0) }
-        guard let provider = CGDataProvider(data: data as CFData),
-            let image = CGImage(
-                width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
-                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
-                provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent),
-            let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)
-        else { throw RenderError.pipeline("png") }
-        CGImageDestinationAddImage(destination, image, nil)
-        guard CGImageDestinationFinalize(destination) else { throw RenderError.pipeline("png write") }
     }
 
     static func readPNG(_ url: URL) -> [UInt8]? {
