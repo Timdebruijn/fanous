@@ -34,7 +34,7 @@ import Testing
         #expect(!mixer.isRunning, "an inactive channel does not start it")
 
         mixer.channels[0].setState(wantedPTS: 0, active: true, volume: 1, pan: 0)
-        await waitUntil(.seconds(2)) { mixer.isRunning }
+        await waitUntil { mixer.isRunning }
         #expect(mixer.isRunning && counts.starts.load(ordering: .relaxed) == 1, "the first active channel starts it, once")
         mixer.channels[0].setState(wantedPTS: 0, active: true, volume: 1, pan: 0)
         mixer.ensureRunning()
@@ -47,17 +47,17 @@ import Testing
         let counts = Counts()
         let mixer = Self.mixer(counts: counts)
         mixer.channels[0].setState(wantedPTS: 0, active: true, volume: 1, pan: 0)
-        await waitUntil(.seconds(2)) { mixer.isRunning }
+        await waitUntil { mixer.isRunning }
         #expect(mixer.isRunning)
         // still active: never stops
         try await Task.sleep(for: .milliseconds(2300))
         #expect(mixer.isRunning && counts.stops.load(ordering: .relaxed) == 0, "an active channel keeps the device open")
         mixer.channels[0].setState(wantedPTS: 0, active: false, volume: 1, pan: 0)
-        await waitUntil(.seconds(4)) { !mixer.isRunning }
+        await waitUntil { !mixer.isRunning }
         #expect(!mixer.isRunning && counts.stops.load(ordering: .relaxed) == 1, "closed once everything is quiet")
         // playing again opens it again
         mixer.channels[0].setState(wantedPTS: 0, active: true, volume: 1, pan: 0)
-        await waitUntil(.seconds(2)) { mixer.isRunning }
+        await waitUntil { mixer.isRunning }
         #expect(mixer.isRunning && counts.starts.load(ordering: .relaxed) == 2)
         mixer.stop()
     }
@@ -67,11 +67,11 @@ import Testing
         let mixer = Self.mixer(counts: counts)
         mixer.keepRunning = { true }
         mixer.ensureRunning()
-        await waitUntil(.seconds(2)) { mixer.isRunning }
+        await waitUntil { mixer.isRunning }
         try await Task.sleep(for: .milliseconds(2500))
         #expect(mixer.isRunning && counts.stops.load(ordering: .relaxed) == 0, "show mode: never stopped, even with every channel quiet")
         mixer.keepRunning = { false }
-        await waitUntil(.seconds(4)) { !mixer.isRunning }
+        await waitUntil { !mixer.isRunning }
         #expect(!mixer.isRunning, "and it goes once show mode is off")
     }
 }

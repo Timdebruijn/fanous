@@ -250,6 +250,7 @@ func sendUDP(_ datagrams: [[UInt8]], to port: UInt16, host: String = "127.0.0.1"
 
 /// Removes what `tempDir` and `tempFile` handed out in a test once that test ends. The list is task-local: it reaches
 /// child tasks and `Task {}`, not `offPool` or GCD; a path made there is not registered, and the test removes it itself.
+/// A test outside such a suite that asks for one gets an issue instead of a silent leak.
 struct CleansTempFiles: SuiteTrait, TestTrait, TestScoping {
     final class Paths: Sendable { let urls = Mutex<[URL]>([]) }
     @TaskLocal static var current: Paths?
@@ -269,7 +270,11 @@ extension Trait where Self == CleansTempFiles {
 /// `CleansTempFiles`).
 func tempFile(_ prefix: String, ext: String = "") -> URL {
     let url = FileManager.default.temporaryDirectory.appending(path: "\(prefix)-\(UUID().uuidString)\(ext.isEmpty ? "" : "." + ext)")
-    CleansTempFiles.current?.urls.withLock { $0.append(url) }
+    if let paths = CleansTempFiles.current {
+        paths.urls.withLock { $0.append(url) }
+    } else if Test.current != nil {
+        Issue.record("\(prefix): the suite needs the .cleansTempFiles trait")
+    }
     return url
 }
 

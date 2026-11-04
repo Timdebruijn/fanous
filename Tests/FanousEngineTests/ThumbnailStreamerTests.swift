@@ -60,7 +60,7 @@ import Testing
         func pass() async throws -> [ThumbnailStreamer.Thumb?] {
             let before = published.withLock { $0.count }
             tick(15)
-            await waitUntil(.seconds(3)) { published.withLock { $0.count } > before }
+            await waitUntil { published.withLock { $0.count } > before }
             return try #require(published.withLock { $0.count > before ? $0.last : nil })
         }
     }

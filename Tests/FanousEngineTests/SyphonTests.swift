@@ -66,7 +66,7 @@ import Testing
         try input.connect(description: output.serverDescription)
 
         // The client registers for frames asynchronously, so keep publishing until one arrives.
-        let arrived = await waitUntil(.seconds(3)) {
+        let arrived = await waitUntil {
             guard let commandBuffer = queue.makeCommandBuffer() else { return false }
             output.publish(texture: source, commandBuffer: commandBuffer)
             commandBuffer.commit()
@@ -313,40 +313,40 @@ import Testing
         layers[0].wanted.store(MediaKey(folder: 0, file: 150).packed, ordering: .relaxed)
         layers[1].wanted.store(MediaKey(folder: 0, file: 151).packed, ordering: .relaxed)
         loader.wake.signal()
-        #expect(await waitUntil(.seconds(5)) { playback(0)?.uuid == "a" && status(0).name == "Syphon: Resolume/Out" })
+        #expect(await waitUntil { playback(0)?.uuid == "a" && status(0).name == "Syphon: Resolume/Out" })
         #expect(status(0).kind == "live" && status(0).error == nil)
         // the scene's entry on 151 wins over the catalog's "Other"
-        #expect(await waitUntil(.seconds(5)) { status(1).name == "Syphon: Scene App/Fixed" })
+        #expect(await waitUntil { status(1).name == "Syphon: Scene App/Fixed" })
         #expect(calls.withLock { $0 }.contains("Scene App/Fixed|-"))
 
         // the server goes: "not running", the last picture stays (same playback, not stopped)
         let first = try #require(playback(0))
         catalog.update(running: [Self.info("Other", "", "b")])
-        #expect(await waitUntil(.seconds(5)) { status(0).error == "not running" })
+        #expect(await waitUntil { status(0).error == "not running" })
         #expect(status(0).name == "Syphon: Resolume/Out" && status(0).kind == "live")
         #expect(playback(0) === first && !first.stopped.load(ordering: .relaxed))
 
         // it comes back with a new id: connected again without selecting the file again
         catalog.update(running: [Self.info("Other", "", "b"), Self.info("Resolume", "Out", "a2")])
-        #expect(await waitUntil(.seconds(5)) { playback(0)?.uuid == "a2" && status(0).error == nil })
+        #expect(await waitUntil { playback(0)?.uuid == "a2" && status(0).error == nil })
         #expect(catalog.entry(file: 150)?.runtimeID == "a2")
 
         // a number no server has: missing; a gone server picked anew: not running, nothing to show
         layers[1].wanted.store(MediaKey(folder: 0, file: 160).packed, ordering: .relaxed)
         loader.wake.signal()
-        #expect(await waitUntil(.seconds(5)) { status(1).kind == "missing" && status(1).error == "no Syphon server numbered 160 (folder 0, 150–169)" })
+        #expect(await waitUntil { status(1).kind == "missing" && status(1).error == "no Syphon server numbered 160 (folder 0, 150–169)" })
         catalog.update(running: [Self.info("Other", "", "b")])
         layers[1].wanted.store(MediaKey(folder: 0, file: 150).packed, ordering: .relaxed)
         loader.wake.signal()
-        #expect(await waitUntil(.seconds(5)) { status(1).error == "not running" && status(1).name == "Syphon: Resolume/Out" && playback(1) == nil })
+        #expect(await waitUntil { status(1).error == "not running" && status(1).name == "Syphon: Resolume/Out" && playback(1) == nil })
         // ... and connects when it starts
         catalog.update(running: [Self.info("Other", "", "b"), Self.info("Resolume", "Out", "a3")])
-        #expect(await waitUntil(.seconds(5)) { playback(1)?.uuid == "a3" && status(1).error == nil })
+        #expect(await waitUntil { playback(1)?.uuid == "a3" && status(1).error == nil })
 
         // a rename while playing shows without a new selection (same connection, same number)
         let connected = try #require(playback(1))
         catalog.update(running: [Self.info("Other", "", "b"), Self.info("Resolume", "Main", "a3")])
-        #expect(await waitUntil(.seconds(5)) { status(1).name == "Syphon: Resolume/Main" })
+        #expect(await waitUntil { status(1).name == "Syphon: Resolume/Main" })
         #expect(playback(1) === connected && catalog.entry(file: 150)?.file == 150)
     }
 
@@ -367,16 +367,16 @@ import Testing
         func status(_ i: Int) -> LayerMediaStatus { layers[i].mediaStatus.withLock { $0 } }
         layers[0].wanted.store(MediaKey(folder: 0, file: 150).packed, ordering: .relaxed)
         loader.wake.signal()
-        #expect(await waitUntil(.seconds(5)) { playback(0)?.uuid == "a" })
+        #expect(await waitUntil { playback(0)?.uuid == "a" })
         let first = try #require(playback(0))
         catalog.adopt([LiveCatalog.Entry(kind: .syphon, file: 155, source: "Resolume", name: "Out")])
         #expect(catalog.entry(file: 155)?.runtimeID == "a")
-        #expect(await waitUntil(.seconds(5)) { status(0).error == "no Syphon server numbered 150 (folder 0, 150–169)" && playback(0) == nil })
+        #expect(await waitUntil { status(0).error == "no Syphon server numbered 150 (folder 0, 150–169)" && playback(0) == nil })
         let stopped = first.stopped.load(ordering: .relaxed)
         #expect(stopped)
         layers[1].wanted.store(MediaKey(folder: 0, file: 155).packed, ordering: .relaxed)
         loader.wake.signal()
-        #expect(await waitUntil(.seconds(5)) { playback(1)?.uuid == "a" && status(1).error == nil })
+        #expect(await waitUntil { playback(1)?.uuid == "a" && status(1).error == nil })
     }
 
     @Test func loaderSaysCouldNotConnectWhenARunningServerRefuses() async throws {
@@ -391,7 +391,7 @@ import Testing
         defer { loader.stop() }
         layer.wanted.store(MediaKey(folder: 0, file: 150).packed, ordering: .relaxed)
         loader.wake.signal()
-        #expect(await waitUntil(.seconds(5)) { layer.mediaStatus.withLock { $0.error == "could not connect" && $0.name == "Syphon: App" } })
+        #expect(await waitUntil { layer.mediaStatus.withLock { $0.error == "could not connect" && $0.name == "Syphon: App" } })
     }
 
     @Test func catalogLeavesTheEnginesOwnServerOut() {

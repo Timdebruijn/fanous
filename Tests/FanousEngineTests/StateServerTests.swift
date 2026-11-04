@@ -72,7 +72,7 @@ struct StateServerTests {
         }
         server.upgradeRoute = { stateServer.upgrade($0) }
         server.start()
-        await waitUntil(.seconds(2)) { server.boundPort != nil }
+        await waitUntil { server.boundPort != nil }
         let port = try #require(server.boundPort)
         let session = URLSession(configuration: .ephemeral, delegate: TrustAll(), delegateQueue: nil)
         return Fixture(server: server, stateServer: stateServer, store: store, auth: auth, port: port, session: session)
@@ -148,7 +148,7 @@ struct StateServerTests {
 
         a.cancel(with: .normalClosure, reason: nil)
         b.cancel(with: .normalClosure, reason: nil)
-        await waitUntil(.seconds(1)) { f.store.clientCount == 0 }
+        await waitUntil { f.store.clientCount == 0 }
         #expect(f.store.clientCount == 0)
     }
 
@@ -280,7 +280,7 @@ struct StateServerTests {
         let id = try #require(sub["id"]?.int)
         #expect(thumbnails.hasSubscribers && thumbnails.wantsFrames)
         try await a.send(.string(#"{"t":"unsub","id":\#(id)}"#))
-        await waitUntil(.seconds(1)) { !thumbnails.hasSubscribers }
+        await waitUntil { !thumbnails.hasSubscribers }
         #expect(!thumbnails.hasSubscribers && !thumbnails.wantsFrames, "nobody wants thumbnails: no atlas pass")
         a.cancel(with: .normalClosure, reason: nil)
     }
@@ -305,7 +305,7 @@ struct StateServerTests {
         try await Task.sleep(for: .milliseconds(200))
         #expect(changes.withLock { $0 } == [true], "b still watches")
         b.cancel(with: .normalClosure, reason: nil)
-        await waitUntil(.seconds(2)) { changes.withLock { $0.count } >= 2 }
+        await waitUntil { changes.withLock { $0.count } >= 2 }
         #expect(changes.withLock { $0 } == [true, false], "stopped with the last one (closing the socket counts)")
         a.cancel(with: .normalClosure, reason: nil)
     }
