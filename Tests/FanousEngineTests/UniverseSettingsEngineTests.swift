@@ -233,14 +233,7 @@ struct UniverseSettingsEngineTests {
         let port = try freeUDPPort()
         let holder = socket(AF_INET, SOCK_DGRAM, 0)
         defer { close(holder) }
-        var address = sockaddr_in()
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = port.bigEndian
-        address.sin_addr.s_addr = INADDR_ANY
-        let held = withUnsafePointer(to: &address) { p in
-            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(holder, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
-        }
-        try #require(held == 0)
+        try #require(withSockaddr(port: port) { bind(holder, $0, $1) } == 0)
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
         #expect(throws: POSIXError.self) { try SACNReceiver(store: store, logger: Self.logger, port: port).start(groups: [:]) }
 

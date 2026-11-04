@@ -173,6 +173,32 @@ extension RenderLayer {
     }
 }
 
+/// `body` with an IPv4 address `host`:`port` (any address by default) as the `sockaddr` pointer and length the socket calls take.
+func withSockaddr<T>(port: UInt16 = 0, host: String? = nil, _ body: (UnsafePointer<sockaddr>, socklen_t) throws -> T) rethrows -> T {
+    var address = sockaddr_in()
+    address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_port = port.bigEndian
+    address.sin_addr.s_addr = host.map { inet_addr($0) } ?? INADDR_ANY
+    return try withUnsafePointer(to: &address) { p in
+        try p.withMemoryRebound(to: sockaddr.self, capacity: 1) { try body($0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+    }
+}
+
+/// The port `fd` is bound to; nil when `getsockname` fails.
+func localPort(_ fd: Int32) -> UInt16? {
+    var address = sockaddr_in()
+    var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+    let ok = withUnsafeMutablePointer(to: &address) { p in p.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) == 0 } }
+    return ok ? UInt16(bigEndian: address.sin_port) : nil
+}
+
+/// `recv` on `fd` gives up after `seconds`.
+func setReceiveTimeout(_ fd: Int32, _ seconds: Double) {
+    var wait = timeval(tv_sec: Int(seconds), tv_usec: Int32((seconds - seconds.rounded(.down)) * 1e6))
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &wait, socklen_t(MemoryLayout<timeval>.size))
+}
+
 /// The ports `freeUDPPort` handed out in this process (B115).
 private let handedOut = Mutex<Set<UInt16>>([])
 
@@ -186,15 +212,7 @@ func freeUDPPort() throws -> UInt16 {
     repeat {
         let fd = socket(AF_INET, SOCK_DGRAM, 0)
         defer { close(fd) }
-        var address = sockaddr_in()
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_addr.s_addr = INADDR_ANY
-        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let ok = withUnsafeMutablePointer(to: &address) { p in
-            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, length) == 0 && getsockname(fd, $0, &length) == 0 }
-        }
-        guard ok else { throw POSIXError(.EADDRINUSE) }
-        let port = UInt16(bigEndian: address.sin_port)
+        guard withSockaddr({ bind(fd, $0, $1) }) == 0, let port = localPort(fd) else { throw POSIXError(.EADDRINUSE) }
         if handedOut.withLock({ $0.insert(port).inserted }) { return port }
     } while true
 }
@@ -211,18 +229,9 @@ func sendUDP(_ bytes: [UInt8], to port: UInt16, host: String = "127.0.0.1") {
 func sendUDP(_ datagrams: [[UInt8]], to port: UInt16, host: String = "127.0.0.1", reply: Double = 0) -> (sent: [Int], replied: Bool) {
     let fd = socket(AF_INET, SOCK_DGRAM, 0)
     defer { close(fd) }
-    var address = sockaddr_in()
-    address.sin_family = sa_family_t(AF_INET)
-    address.sin_port = port.bigEndian
-    address.sin_addr.s_addr = inet_addr(host)
-    let sent = datagrams.map { bytes in
-        withUnsafePointer(to: &address) { p in
-            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sendto(fd, bytes, bytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
-        }
-    }
+    let sent = datagrams.map { bytes in withSockaddr(port: port, host: host) { sendto(fd, bytes, bytes.count, 0, $0, $1) } }
     guard reply > 0 else { return (sent, false) }
-    var wait = timeval(tv_sec: Int(reply), tv_usec: Int32((reply - reply.rounded(.down)) * 1e6))
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &wait, socklen_t(MemoryLayout<timeval>.size))
+    setReceiveTimeout(fd, reply)
     var buffer = [UInt8](repeating: 0, count: 1500)
     return (sent, recv(fd, &buffer, buffer.count, 0) > 0)
 }
@@ -263,16 +272,8 @@ func tempDir(_ prefix: String) throws -> URL {
 final class UDPCatcher {
     let fd = socket(AF_INET, SOCK_DGRAM, 0)
     init(port: UInt16, timeout: Double) throws {
-        var address = sockaddr_in()
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = port.bigEndian
-        address.sin_addr.s_addr = inet_addr("127.0.0.1")
-        var wait = timeval(tv_sec: Int(timeout), tv_usec: Int32((timeout - timeout.rounded(.down)) * 1e6))
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &wait, socklen_t(MemoryLayout<timeval>.size))
-        let bound = withUnsafePointer(to: &address) { p in
-            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
-        }
-        guard bound == 0 else { throw POSIXError(.EADDRINUSE) }
+        setReceiveTimeout(fd, timeout)
+        guard withSockaddr(port: port, host: "127.0.0.1", { bind(fd, $0, $1) }) == 0 else { throw POSIXError(.EADDRINUSE) }
     }
     deinit { close(fd) }
     func receive() -> [UInt8]? {

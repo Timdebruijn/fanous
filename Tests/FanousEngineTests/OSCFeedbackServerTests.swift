@@ -25,41 +25,20 @@ import Testing
         init() throws {
             let fd = socket(AF_INET, SOCK_DGRAM, 0)
             self.fd = fd
-            var address = sockaddr_in()
-            address.sin_family = sa_family_t(AF_INET)
-            address.sin_addr.s_addr = UInt32(0x7F00_0001).bigEndian
-            let bound = withUnsafePointer(to: &address) { p in
-                p.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-                }
-            }
-            try #require(bound == 0)
-            var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-            _ = withUnsafeMutablePointer(to: &address) { p in
-                p.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) }
-            }
-            port = UInt16(bigEndian: address.sin_port)
+            try #require(withSockaddr(host: "127.0.0.1") { bind(fd, $0, $1) } == 0)
+            port = try #require(localPort(fd))
         }
 
         func close() { _ = Darwin.close(fd) }
 
         func send(_ message: OSCMessage, to port: UInt16) {
-            var address = sockaddr_in()
-            address.sin_family = sa_family_t(AF_INET)
-            address.sin_port = port.bigEndian
-            address.sin_addr.s_addr = UInt32(0x7F00_0001).bigEndian
             let bytes = message.encoded()
-            _ = withUnsafePointer(to: &address) { p in
-                p.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    sendto(fd, bytes, bytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-                }
-            }
+            _ = withSockaddr(port: port, host: "127.0.0.1") { sendto(fd, bytes, bytes.count, 0, $0, $1) }
         }
 
         /// The next datagram, or nil after the timeout.
         func receive(timeout: Double = 2) -> OSCPacket? {
-            var tv = timeval(tv_sec: Int(timeout), tv_usec: Int32((timeout - timeout.rounded(.down)) * 1e6))
-            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+            setReceiveTimeout(fd, timeout)
             var buffer = [UInt8](repeating: 0, count: 65_536)
             let n = recv(fd, &buffer, buffer.count, 0)
             return n > 0 ? try? OSCPacket.parse(Array(buffer[0..<n])) : nil
@@ -92,13 +71,7 @@ import Testing
             let port = try freeUDPPort()
             let fd = socket(AF_INET, SOCK_STREAM, 0)
             defer { _ = Darwin.close(fd) }
-            var address = sockaddr_in()
-            address.sin_family = sa_family_t(AF_INET)
-            address.sin_port = port.bigEndian
-            let bound = withUnsafePointer(to: &address) { p in
-                p.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
-            }
-            if bound == 0 { return port }
+            if withSockaddr(port: port, { bind(fd, $0, $1) }) == 0 { return port }
         }
         throw POSIXError(.EADDRINUSE)
     }
