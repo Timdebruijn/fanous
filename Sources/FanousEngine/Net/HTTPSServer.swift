@@ -36,7 +36,7 @@ public final class HTTPSServer: @unchecked Sendable {
     private var httpsRegistration: DNSServiceRef?
     private let loopbackOnly: Bool
     private let queue = DispatchQueue(label: "org.fanous.https", qos: .userInitiated)
-    private let logger: Logger
+    fileprivate let logger: Logger
     private let webRoot: URL
     private let route: Route
     public let port: UInt16
@@ -211,7 +211,10 @@ private final class ClientConnection: @unchecked Sendable {
                 guard process() else { return }
             }
             if isComplete || error != nil {
+                // here, not in `.cancelled`: only this pending receive keeps the connection object alive, so the
+                // state handler's weak self is gone by then (an upload cleanup there never ran)
                 websocket?.connectionDidEnd()
+                abandonUpload()
                 connection.cancel()
                 return
             }
@@ -295,6 +298,18 @@ private final class ClientConnection: @unchecked Sendable {
         server.log(current.request, response)
         send(response, includeBody: true, close: current.request.wantsClose)
         return !current.request.wantsClose
+    }
+
+    /// A client that went away mid-upload leaves no partial file in `_incoming` (B156). A finished upload cleared
+    /// `upload` before its response was sent, so the end of the connection that follows never gets here with it.
+    private func abandonUpload() {
+        guard let current = upload else { return }
+        upload = nil
+        try? current.handle.close()
+        try? FileManager.default.removeItem(at: current.file)
+        server.logger.info(
+            "upload abandoned by the client",
+            metadata: ["peer": "\(remoteAddress)", "file": "\(current.file.lastPathComponent)", "received": "\(current.request.contentLength - current.remaining)"])
     }
 
     private func send(_ response: HTTPResponse, includeBody: Bool, close: Bool) {

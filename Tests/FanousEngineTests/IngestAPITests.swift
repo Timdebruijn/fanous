@@ -4,6 +4,7 @@
 
 import FanousCore
 import Foundation
+import Network
 import Testing
 
 @testable import FanousEngine
@@ -112,5 +113,41 @@ import Testing
         #expect(api.handle(try Self.put("/api/upload/1/clip.mov", body: [1, 2, 3]), uploadedFile: nil).status == 409)
         #expect(FileManager.default.fileExists(atPath: a.path))
         api.releaseEnqueue()
+    }
+
+    /// A client that disconnects mid-stream leaves no partial file in `_incoming`, and the same upload sent in full still
+    /// lands (B156). Raw TLS for the first: URLSession cannot stop halfway through a body.
+    @Test func abandonedStreamedUploadLeavesNoFile() async throws {
+        let (api, library) = try Self.api()
+        let incoming = { (try? FileManager.default.contentsOfDirectory(atPath: library.incomingDirectory.path)) ?? [] }
+        let server = try HTTPSServer(
+            port: 0, identity: try StateServerTests.makeIdentity(), webRoot: URL(fileURLWithPath: "/nonexistent"), logger: testLogger
+        ) { _ in nil }
+        server.uploadSink = { api.uploadTarget(for: $0) }
+        server.uploadRoute = { api.handle($0, uploadedFile: $1) }
+        server.start()
+        defer { server.stop() }
+        #expect(await waitUntil { server.boundPort != nil })
+        let port = try #require(server.boundPort)
+        let size = HTTPSServer.maxInlineBody + 1000
+
+        let tls = NWProtocolTLS.Options()
+        sec_protocol_options_set_verify_block(tls.securityProtocolOptions, { _, _, complete in complete(true) }, .global())
+        let connection = NWConnection(
+            host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!, using: NWParameters(tls: tls, tcp: .init()))
+        connection.start(queue: .global())
+        let head = "PUT /api/upload/1/partial.mov HTTP/1.1\r\nHost: x\r\nContent-Length: \(size)\r\n\r\n"
+        connection.send(content: Data(head.utf8) + Data(count: 1000), completion: .idempotent)
+        let partial = { (try? FileManager.default.attributesOfItem(atPath: library.incomingDirectory.appending(path: "partial.mov").path))?[.size] as? Int ?? 0 }
+        #expect(await waitUntil { partial() == 1000 })  // the server is streaming into its file
+        connection.cancel()
+        #expect(await waitUntil { incoming().isEmpty }, "\(incoming())")
+
+        var request = URLRequest(url: URL(string: "https://127.0.0.1:\(port)/api/upload/1/partial.mov")!)
+        request.httpMethod = "PUT"
+        let session = URLSession(configuration: .ephemeral, delegate: StateServerTests.TrustAll(), delegateQueue: nil)
+        let (_, response) = try await session.upload(for: request, from: Data(count: size))
+        #expect((response as? HTTPURLResponse)?.statusCode == 202)
+        #expect(incoming() == ["partial.mov"])
     }
 }
