@@ -14,7 +14,6 @@ import Testing
 /// Loopback: a console-side TCP client talks MSEX to `CITPServer` (version negotiation, library, elements,
 /// thumbnails, layer status, streaming frames).
 struct CITPServerTests {
-    static let logger = Logger(label: "test")
     static let jpeg: [UInt8] = [0xFF, 0xD8, 0xFF, 0xD9]
 
     static func library() -> LibrarySnapshot {
@@ -107,7 +106,7 @@ struct CITPServerTests {
 
         let server = CITPServer(
             name: "beacon-test", uuid: "550e8400-e29b-41d4-a716-446655440000",
-            providers: CITPServer.Providers(layers: { [] }, library: Self.library, thumbnail: { _ in nil }, frame: { _ in nil }), logger: Self.logger)
+            providers: CITPServer.Providers(layers: { [] }, library: Self.library, thumbnail: { _ in nil }, frame: { _ in nil }), logger: testLogger)
         try server.start()
         defer { server.stop() }
         var buffer = [UInt8](repeating: 0, count: 512)
@@ -135,7 +134,7 @@ struct CITPServerTests {
                 },
                 sources: { sources },
                 layerCount: { 1 }),
-            logger: Self.logger)
+            logger: testLogger)
         try server.start()
         defer { server.stop() }
         var port: UInt16 = 0
@@ -230,7 +229,7 @@ struct CITPServerTests {
                     ]
                 },
                 library: { library }, thumbnail: { _ in nil }, frame: { _ in nil }),
-            logger: Self.logger)
+            logger: testLogger)
         try server.start()
         defer { server.stop() }
         var port: UInt16 = 0
@@ -271,7 +270,7 @@ struct CITPServerTests {
             providers: CITPServer.Providers(
                 layers: { [CITPServer.LayerInfo(index: 1, folder: 1, file: 3, name: "Intro", positionMs: 400, lengthMs: 10_000, fps: 25, flags: LayerStatus.playing)] },
                 library: Self.library, thumbnail: { _ in nil }, frame: { _ in nil }),
-            logger: Self.logger)
+            logger: testLogger)
         try server.start()
         defer { server.stop() }
         var port: UInt16 = 0

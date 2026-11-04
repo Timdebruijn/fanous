@@ -29,7 +29,7 @@ struct ProjectVersionsTests {
     static func make() -> Fixture {
         let base = tempFile("fanous-versions")
         let (store, _) = testStore(outputs: 0)
-        let versions = ProjectVersions(directory: base.appending(path: "versions"), logger: StateStoreTests.logger)
+        let versions = ProjectVersions(directory: base.appending(path: "versions"), logger: testLogger)
         let flag = ShowModeFlag()
         versions.registerCommands(on: store, showModeOn: { flag.on.load(ordering: .relaxed) })
         return Fixture(store: store, versions: versions, flag: flag, base: base)
@@ -309,7 +309,7 @@ struct ProjectVersionsTests {
             try f.versions.save(project, name: "Periodic", automatic: true, now: future)
         }
         // the engine restarts with the clock years behind the newest version
-        let restarted = ProjectVersions(directory: f.directory, logger: StateStoreTests.logger)
+        let restarted = ProjectVersions(directory: f.directory, logger: testLogger)
         try project.set("after the restart", at: "/name")
         let saved = try #require(restarted.saveAutomatic(project, reason: .start, now: Date(timeIntervalSince1970: 1_000_000_000)))
         let list = restarted.list()
@@ -337,7 +337,7 @@ struct ProjectVersionsTests {
         #expect(f.versions.saveAutomatic(project, reason: .periodic)?.name == "Periodic")
         #expect(f.versions.list().count == 2)
         // after a restart the newest version is read once and compared the same way
-        let restarted = ProjectVersions(directory: f.directory, logger: StateStoreTests.logger)
+        let restarted = ProjectVersions(directory: f.directory, logger: testLogger)
         #expect(restarted.saveAutomatic(project, reason: .start) == nil)
     }
 

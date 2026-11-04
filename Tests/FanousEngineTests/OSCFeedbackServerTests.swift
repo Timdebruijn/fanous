@@ -80,10 +80,9 @@ import Testing
         store: DMXStore, fixed: OSCFeedbackTarget? = nil, state: @escaping @Sendable () -> OSCFeedback.State = { [:] },
         fixtures: @escaping @Sendable () -> [FixtureRef: [UInt16]] = { [:] }
     ) async throws -> (OSCReceiver, OSCFeedbackServer, UInt16) {
-        let logger = Logger(label: "test")
-        let feedback = OSCFeedbackServer(fixed: fixed, logger: logger, fixtures: fixtures, engine: state)
+        let feedback = OSCFeedbackServer(fixed: fixed, logger: testLogger, fixtures: fixtures, engine: state)
         let port = try freePort()
-        let receiver = OSCReceiver(store: store, logger: logger, port: port, feedback: feedback)
+        let receiver = OSCReceiver(store: store, logger: testLogger, port: port, feedback: feedback)
         try receiver.start()
         feedback.start()
         var started = false
@@ -118,7 +117,7 @@ import Testing
 
     /// A value set over OSC is read back with `/get`, as a bundle to the sender's own port, in the units it was set in.
     @Test func queryAnswersTheSender() async throws {
-        let store = DMXStore(patch: .standard(layers: 2, outputs: 1), logger: Logger(label: "test"))
+        let store = DMXStore(patch: .standard(layers: 2, outputs: 1), logger: testLogger)
         for n in 1...2 { store.setPolicy(.internal, for: .layer(n)) }  // OSC values win, as with a project set to internal
         let (receiver, feedback, port) = try await Self.start(store: store, fixtures: { store.resolvedRaw() })
         defer {
@@ -177,7 +176,7 @@ import Testing
                 "/fanous/show/mode": [.int32(0)],
             ]
         }
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Logger(label: "test"))
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let (receiver, feedback, port) = try await Self.start(store: store) { box.state.withLock { $0 } }
         defer {
             receiver.stop()
@@ -224,7 +223,7 @@ import Testing
 
     /// Feedback never goes to a third party: a subscribe naming another host is refused with an error to the sender.
     @Test func subscribeForAnotherHostIsRefused() async throws {
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Logger(label: "test"))
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let (receiver, feedback, port) = try await Self.start(store: store) { ["/fanous/show/mode": [.int32(1)]] }
         defer {
             receiver.stop()
@@ -244,7 +243,7 @@ import Testing
         box.state.withLock { $0 = ["/fanous/show/mode": [.int32(0)]] }
         let client = try Client()
         defer { client.close() }
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Logger(label: "test"))
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let (receiver, feedback, port) = try await Self.start(
             store: store, fixed: OSCFeedbackTarget(host: "127.0.0.1", port: client.port)
         ) {
@@ -264,7 +263,7 @@ import Testing
     /// Companion style: commands from one port, feedback to another. The cookie goes to the feedback port; the ack
     /// comes from the same host; only then does that port get values, and a `get` naming it is answered there.
     @Test func subscriptionToAnotherPortNeedsTheAck() async throws {
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Logger(label: "test"))
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let (receiver, feedback, port) = try await Self.start(store: store) { ["/fanous/show/mode": [.int32(1)]] }
         defer {
             receiver.stop()

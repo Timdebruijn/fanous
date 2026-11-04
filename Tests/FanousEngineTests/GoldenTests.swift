@@ -216,8 +216,7 @@ struct GoldenTests {
     static func slot(_ p: LayerParameters?) -> UInt32 { p?.mediaKey.packed ?? 0 }
 
     @Test func goldenImages() throws {
-        guard let device = MTLCreateSystemDefaultDevice() else { return }
-        _ = device
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
         let context = try MetalContext()
         var failures: [String] = []
         for c in Self.cases {

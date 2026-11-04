@@ -31,7 +31,7 @@ struct SyncSenderTests {
     static func sender(port: UInt16) -> SyncSender {
         var settings = SyncSettings()
         settings.target = "127.0.0.1:\(port)"
-        return SyncSender(machine: machine, settings: settings, network: false, logger: Logger(label: "sync-test"))
+        return SyncSender(machine: machine, settings: settings, network: false, logger: testLogger)
     }
 
     /// The compositor's write: 32 masters into each of the three slots, then never a new buffer (DESIGN.md §4.6).
@@ -111,7 +111,7 @@ struct SyncSenderTests {
         let catcher = try UDPCatcher(port: port, timeout: 1.5)
         settings.port = port  // broadcast would go to this port on the LAN
         let sender = SyncSender(
-            machine: Self.machine, settings: settings, network: false, logger: Logger(label: "sync-test"))
+            machine: Self.machine, settings: settings, network: false, logger: testLogger)
         sender.start()
         defer { sender.stop() }
         #expect(catcher.receive() == nil)
@@ -145,7 +145,7 @@ struct SyncSenderTests {
             var settings = SyncSettings()
             settings.target = target
             return SyncSender(
-                machine: Self.machine, settings: settings, network: false, logger: Logger(label: "sync-test"))
+                machine: Self.machine, settings: settings, network: false, logger: testLogger)
         }
         for sender in senders {
             sender.start()

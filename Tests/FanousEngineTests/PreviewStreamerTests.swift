@@ -15,10 +15,9 @@ import Testing
 /// buffer) → VideoToolbox H.264 → avcC + a key frame access unit in the wire layout (DESIGN.md §11.3).
 struct PreviewStreamerTests {
     @Test func canvasTickProducesKeyFrameAndAVCC() async throws {
-        let logger = Logger(label: "test")
         let context = try MetalContext()
         let (compositor, parameters) = try makeCompositor(context, size: (320, 180))
-        let streamer = try PreviewStreamer(context: context, width: 320, height: 180, fps: 30, canvasFPS: 60, parameters: parameters, logger: logger)
+        let streamer = try PreviewStreamer(context: context, width: 320, height: 180, fps: 30, canvasFPS: 60, parameters: parameters, logger: testLogger)
         let frames = Mutex<[(payload: [UInt8], avcC: [UInt8])]>([])
         streamer.onFrame = { payload, avcC in frames.withLock { $0.append((payload, avcC)) } }
         streamer.alwaysEncode = true  // no WebSocket subscriber in this test
@@ -71,7 +70,7 @@ struct PreviewStreamerTests {
         weak var gone: PreviewStreamer?
         do {
             let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
-            let unused = try PreviewStreamer(context: rig.context, width: 320, height: 180, fps: 30, canvasFPS: 60, parameters: parameters, logger: Logger(label: "test"))
+            let unused = try PreviewStreamer(context: rig.context, width: 320, height: 180, fps: 30, canvasFPS: 60, parameters: parameters, logger: testLogger)
             gone = unused
             #expect(!unused.hasEncoder)
         }

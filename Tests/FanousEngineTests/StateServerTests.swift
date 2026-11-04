@@ -14,7 +14,6 @@ import Testing
 /// End to end over TLS: a real `HTTPSServer`, the WebSocket upgrade, hello/welcome, commands, acks, patches,
 /// show lock, login cookies and a second client seeing the same revision (DESIGN.md §11.2).
 struct StateServerTests {
-    static let logger = Logger(label: "test")
 
     /// Accepts the self-signed test certificate.
     final class TrustAll: NSObject, URLSessionDelegate {
@@ -50,12 +49,7 @@ struct StateServerTests {
     }
 
     static func makeIdentity() throws -> TLSIdentity {
-        let attributes: [String: Any] = [
-            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom, kSecAttrKeySizeInBits as String: 256,
-            kSecPrivateKeyAttrs as String: [kSecAttrIsPermanent as String: false],
-        ]
-        var error: Unmanaged<CFError>?
-        guard let key = SecKeyCreateRandomKey(attributes as CFDictionary, &error) else { throw error!.takeRetainedValue() }
+        let key = try makeKey()
         let (certificate, der) = try TLSIdentity.makeCertificate(privateKey: key, hostnames: ["localhost"], ipAddresses: ["127.0.0.1"])
         let identity = try #require(SecIdentityCreate(nil, certificate, key))
         return TLSIdentity(identity: identity, certificateDER: der, storage: .file)
@@ -63,8 +57,8 @@ struct StateServerTests {
 
     static func start() async throws -> Fixture {
         let (store, auth) = testStore()
-        let stateServer = StateServer(store: store, auth: auth, caps: ["schema": 1], logger: logger)
-        let server = try HTTPSServer(port: 0, identity: try makeIdentity(), webRoot: URL(fileURLWithPath: "/nonexistent"), logger: logger) { request in
+        let stateServer = StateServer(store: store, auth: auth, caps: ["schema": 1], logger: testLogger)
+        let server = try HTTPSServer(port: 0, identity: try makeIdentity(), webRoot: URL(fileURLWithPath: "/nonexistent"), logger: testLogger) { request in
             guard request.path == "/api/login", request.method == "POST",
                 let body = try? JSONDecoder().decode(JSONValue.self, from: Data(request.body)),
                 let role = body["role"]?.string.flatMap(Role.init(rawValue:))

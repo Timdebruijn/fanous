@@ -15,11 +15,10 @@ import Testing
 /// Preview targets are per subscriber: a client asking for an output does not move the canvas preview of another, and a
 /// consumer that only wants JPEG (5 fps) throttles the GPU copy as well.
 @Suite(.serialized) struct PreviewHubTests {
-    static let logger = Logger(label: "preview-hub-test")
 
     /// The hub's `make`: a streamer of the asked size at 30 of 60 fps.
     static func make(_ context: MetalContext, _ parameters: TripleBuffer<ParameterSnapshotSlot>) -> @Sendable (Int, Int) throws -> PreviewStreamer {
-        { width, height in try PreviewStreamer(context: context, width: width, height: height, fps: 30, canvasFPS: 60, parameters: parameters, logger: logger) }
+        { width, height in try PreviewStreamer(context: context, width: width, height: height, fps: 30, canvasFPS: 60, parameters: parameters, logger: testLogger) }
     }
 
     struct Rig {
@@ -36,7 +35,7 @@ import Testing
             context = try MetalContext()
             (compositor, parameters) = try makeCompositor(context, size: (160, 90))
             let (store, auth) = testStore(layers: 1) { _, _ in }  // no commands
-            server = StateServer(store: store, auth: auth, caps: ["schema": 1], logger: PreviewHubTests.logger)
+            server = StateServer(store: store, auth: auth, caps: ["schema": 1], logger: testLogger)
             let context = context, parameters = parameters, shapes = shapes
             hub = try PreviewHub(make: PreviewHubTests.make(context, parameters)) { target in
                 shapes.withLock { $0[target] } ?? (target.hasPrefix("canvas:") ? nil : (160, 90))

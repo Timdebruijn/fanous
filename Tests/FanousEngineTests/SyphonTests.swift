@@ -295,7 +295,7 @@ import Testing
         guard let device = MTLCreateSystemDefaultDevice() else { return }
         let layers = [RenderLayer(index: 0), RenderLayer(index: 1)]
         let loader = MediaLoader(
-            layers: layers, media: [MediaEntry(folder: 0, file: 151, syphon: "Scene App/Fixed")], device: device, ringCapacity: 4, logger: Logger(label: "test"))
+            layers: layers, media: [MediaEntry(folder: 0, file: 151, syphon: "Scene App/Fixed")], device: device, ringCapacity: 4, logger: testLogger)
         let calls = Mutex<[String]>([])
         loader.liveFactory = { spec, uuid in
             calls.withLock { $0.append("\(spec)|\(uuid ?? "-")") }
@@ -355,7 +355,7 @@ import Testing
     @Test func loaderFollowsARenumberedServer() async throws {
         guard let device = MTLCreateSystemDefaultDevice() else { return }
         let layers = [RenderLayer(index: 0), RenderLayer(index: 1)]
-        let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: Logger(label: "test"))
+        let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: testLogger)
         loader.liveFactory = { _, uuid in FakeLive(uuid: uuid) }
         let catalog = LiveCatalog(.syphon)
         catalog.onChange = { [loader] in loader.changed(.syphonServers) }
@@ -382,7 +382,7 @@ import Testing
     @Test func loaderSaysCouldNotConnectWhenARunningServerRefuses() async throws {
         guard let device = MTLCreateSystemDefaultDevice() else { return }
         let layer = RenderLayer(index: 0)
-        let loader = MediaLoader(layers: [layer], media: [], device: device, ringCapacity: 4, logger: Logger(label: "test"))
+        let loader = MediaLoader(layers: [layer], media: [], device: device, ringCapacity: 4, logger: testLogger)
         loader.liveFactory = { _, _ in nil }
         let catalog = LiveCatalog(.syphon)
         catalog.update(running: [Self.info("App", "", "a")])

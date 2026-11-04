@@ -14,10 +14,9 @@ import Testing
 
 @Suite(.cleansTempFiles)
 struct ShowControlTests {
-    static let logger = Logger(label: "test")
 
     @Test func cueFollowFiresWithoutAFade() async throws {
-        let runner = CueRunner(dmx: DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger))
+        let runner = CueRunner(dmx: DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger))
         defer { runner.stop() }
         runner.replace(list: CueList(cues: [
             Cue(number: 1, fadeTime: 0, followTime: 0.6),
@@ -36,7 +35,7 @@ struct ShowControlTests {
     /// intensity the compositor reads. Loose bounds (B67), held at load average 31; the sampler thread must keep up. Stops at the snapshot;
     /// nothing here measures light (no photon probe exists).
     @Test func cueFadeReachesTheLayerAt50Hz() async throws {
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         store.setPolicy(.internal)  // the default .dmx policy never lets a cue value through, even without DMX
         let runner = CueRunner(dmx: store)
         defer { runner.stop() }
@@ -125,7 +124,7 @@ struct ShowControlTests {
         #expect(PeakWindow.level(bits: .max, at: 0, now: 0, ticksPerSecond: 1000) == nil)
         #expect(PeakWindow.level(bits: half, at: 1000, now: 1400, ticksPerSecond: 1000) == -6)
         #expect(PeakWindow.level(bits: half, at: 1000, now: 1501, ticksPerSecond: 1000) == nil)
-        #expect(LTCInput(clock: TimecodeClock(), logger: Logger(label: "test")).level == nil)
+        #expect(LTCInput(clock: TimecodeClock(), logger: testLogger).level == nil)
     }
 
     /// Acceptance: chase accuracy ±1 frame against a generated LTC file (the decoder → clock path of `LTCInput`).
@@ -180,7 +179,7 @@ struct ShowControlTests {
 
     @Test func mtcQuarterFramesAssembleATimecode() {
         let clock = TimecodeClock()
-        let input = MTCInput(clock: clock, logger: Self.logger)
+        let input = MTCInput(clock: clock, logger: testLogger)
         let tc = Timecode(hours: 0, minutes: 0, seconds: 1, frames: 2, rate: .fps25)
         for (piece, word) in Self.quarterFrames(tc).enumerated() { Self.feed(input, [word], at: 5 + Double(piece) * 0.01) }
         let sample = clock.current(at: 5.08)
@@ -201,7 +200,7 @@ struct ShowControlTests {
     /// leaving is signal loss (freewheel, then lost), with late words from it dropped.
     @Test func mtcSourcesKeepTheirOwnStateAndLeavingFreewheelsTheClock() {
         let clock = TimecodeClock()
-        let input = MTCInput(clock: clock, logger: Self.logger)
+        let input = MTCInput(clock: clock, logger: testLogger)
         input.queue.sync { input.setSources([1: "Pad", 2: "Console"]) }
         let a = Self.quarterFrames(Timecode(hours: 1, minutes: 0, seconds: 0, frames: 0, rate: .fps25))
         let b = Self.quarterFrames(Timecode(hours: 2, minutes: 0, seconds: 0, frames: 0, rate: .fps25))
@@ -324,7 +323,7 @@ struct ShowControlTests {
     }
 
     @Test func showModeAssertionsToggle() {
-        let controller = ShowModeController(logger: Self.logger)
+        let controller = ShowModeController(logger: testLogger)
         let changes = Mutex<[Bool]>([])
         controller.onChange = { on in changes.withLock { $0.append(on) } }
         controller.enter()
@@ -343,7 +342,7 @@ struct ShowControlTests {
         #expect(ShowModeState.load(from: url) == nil)  // normal start
 
         let since = Date(timeIntervalSince1970: 1_800_000_000)
-        let crashed = ShowModeController(logger: Self.logger, stateURL: url)
+        let crashed = ShowModeController(logger: testLogger, stateURL: url)
         crashed.enter(since: since)
         // a kill -9 here: nothing more runs, so the next start sees show mode on, written in this boot
         let saved = try #require(ShowModeState.load(from: url))
@@ -351,7 +350,7 @@ struct ShowControlTests {
         #expect(saved.boot == ShowModeState.bootTime && saved.boot > 0)
         #expect(abs(saved.written - Date().timeIntervalSince1970) < 5)
 
-        let restarted = ShowModeController(logger: Self.logger, stateURL: url)
+        let restarted = ShowModeController(logger: testLogger, stateURL: url)
         restarted.enter(since: since)  // the resume keeps the original entry time
         #expect(ShowModeState.load(from: url)?.since == since.timeIntervalSince1970)
         restarted.leave()  // leaving
@@ -398,7 +397,7 @@ struct ShowControlTests {
         #expect(!FileManager.default.fileExists(atPath: marker.path))
 
         let since = Date(timeIntervalSince1970: 1_800_000_000)
-        let restarting = ShowModeController(logger: Self.logger, stateURL: url)
+        let restarting = ShowModeController(logger: testLogger, stateURL: url)
         let changes = Mutex<[Bool]>([])
         restarting.onChange = { on in changes.withLock { $0.append(on) } }
         restarting.enter(since: since)
@@ -411,14 +410,14 @@ struct ShowControlTests {
         restarting.enter()  // refused while stopping
         #expect(!restarting.isOn)
 
-        let stopping = ShowModeController(logger: Self.logger, stateURL: url)
+        let stopping = ShowModeController(logger: testLogger, stateURL: url)
         stopping.enter()
         #expect(!stopping.stop(keepingState: false))
         #expect(!FileManager.default.fileExists(atPath: url.path))
         stopping.enter()
         #expect(!stopping.isOn && !FileManager.default.fileExists(atPath: url.path))
 
-        let idle = ShowModeController(logger: Self.logger, stateURL: url)
+        let idle = ShowModeController(logger: testLogger, stateURL: url)
         #expect(!idle.stop(keepingState: true))  // restart outside show mode: nothing kept
         #expect(!FileManager.default.fileExists(atPath: url.path))
     }

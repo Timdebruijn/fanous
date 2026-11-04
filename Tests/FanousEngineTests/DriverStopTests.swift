@@ -120,7 +120,7 @@ struct RenderServiceStopTests {
         scene.syphonOutput = true
         return try RenderService(
             scene: scene, context: try MetalContext(), parameters: parameters, metrics: MetricsRing(capacity: 64),
-            logger: Logger(label: "render-stop-test"))
+            logger: testLogger)
     }
 
     @Test func syphonStopsAfterTheTickInFlight() async throws {

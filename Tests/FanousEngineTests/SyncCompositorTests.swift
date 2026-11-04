@@ -21,10 +21,10 @@ struct SyncCompositorTests {
     final class Rig {
         let compositor: Compositor
         let layers: [RenderLayer]
-        let receiver = SyncReceiver(machine: SyncCompositorTests.own, logger: Logger(label: "sync-test"))
+        let receiver = SyncReceiver(machine: SyncCompositorTests.own, logger: testLogger)
         let sender = SyncSender(
             machine: SyncCompositorTests.own, settings: SyncSettings(), network: false,
-            logger: Logger(label: "sync-test"))
+            logger: testLogger)
         let metrics = MetricsRing(capacity: 4096)
         let source: MovieSource
         private let parameters: TripleBuffer<ParameterSnapshotSlot>
@@ -63,7 +63,7 @@ struct SyncCompositorTests {
             let ring = FrameRing(capacity: 4)
             return LayerPlayback(
                 key: MediaKey(folder: 1, file: 1), movie: source,
-                decoder: LayerDecoder(source: source, ring: ring, logger: Logger(label: "sync-test")), ring: ring)
+                decoder: LayerDecoder(source: source, ring: ring, logger: testLogger), ring: ring)
         }
 
         func publish() {

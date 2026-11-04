@@ -13,12 +13,11 @@ import Testing
 struct OSCReceiverTests {
     /// A console fires hundreds of datagrams back-to-back from one socket; none may be lost (B30).
     @Test func udpBurstFromOneSocketArrivesComplete() async throws {
-        let logger = Logger(label: "test")
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: logger)
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let seen = Mutex<Set<Double>>([])
         store.onCommand = { if case .cueGoto(let n) = $0 { seen.withLock { _ = $0.insert(n) } } }
         let port = try freeUDPPort()
-        let receiver = OSCReceiver(store: store, logger: logger, port: port)
+        let receiver = OSCReceiver(store: store, logger: testLogger, port: port)
         try receiver.start()
         defer { receiver.stop() }
         // listening once a goto 0 (no cue of the burst) arrives; a fixed 300 ms was too short on a loaded Mac (B67)
@@ -41,12 +40,11 @@ struct OSCReceiverTests {
 
     /// The Phase 5 demo burst: 4 layers x (media, intensity, scale, position) back-to-back must all land in the resolvers.
     @Test func layerParameterBurstResolvesEveryLayer() async throws {
-        let logger = Logger(label: "test")
-        let store = DMXStore(patch: .standard(layers: 4, outputs: 1), logger: logger)
+        let store = DMXStore(patch: .standard(layers: 4, outputs: 1), logger: testLogger)
         let listening = Mutex(false)
         store.onCommand = { _ in listening.withLock { $0 = true } }
         let port = try freeUDPPort()
-        let receiver = OSCReceiver(store: store, logger: logger, port: port)
+        let receiver = OSCReceiver(store: store, logger: testLogger, port: port)
         try receiver.start()
         defer { receiver.stop() }
         // listening once a probe command arrives; a fixed 300 ms was too short on a loaded Mac (B67)

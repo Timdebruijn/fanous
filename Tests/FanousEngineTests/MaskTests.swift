@@ -378,7 +378,7 @@ struct MaskTests {
         let file = root.appending(path: "003_Masks/005_door.png")
         try Self.writeGrey([UInt8](repeating: 255, count: 64), width: 8, height: 8, to: file)
         try Data("not a movie".utf8).write(to: root.appending(path: "003_Masks/006_clip.mov"))
-        let library = LibraryIndex(root: root, cacheDirectory: cache, logger: Logger(label: "test"))
+        let library = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
         library.start()
         defer { library.stop() }
         let key = MediaKey(folder: 3, file: 5)

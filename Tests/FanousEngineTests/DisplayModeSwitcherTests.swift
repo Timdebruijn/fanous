@@ -61,7 +61,7 @@ struct DisplayModeSwitcherTests {
     static func make() -> (DisplayModeSwitcher, FakeBackend, URL) {
         let backend = FakeBackend()
         let url = tempFile("fanous-switcher").appending(path: "display-modes.json")
-        return (DisplayModeSwitcher(logger: Logger(label: "test"), backend: backend, ledgerURL: url), backend, url)
+        return (DisplayModeSwitcher(logger: testLogger, backend: backend, ledgerURL: url), backend, url)
     }
 
     @Test func leavingSupersedesAPendingApplyAndUndoesTheOneInFlight() {
@@ -124,7 +124,7 @@ struct DisplayModeSwitcherTests {
         try ledger.save(to: url)
         let backend = FakeBackend()
         backend.state.withLock { $0.current = Self.m60 }  // the show mode the crash left behind
-        let switcher = DisplayModeSwitcher(logger: Logger(label: "test"), backend: backend, ledgerURL: url)
+        let switcher = DisplayModeSwitcher(logger: testLogger, backend: backend, ledgerURL: url)
         switcher.restore(connected: [])  // display not there yet: entry kept
         switcher.flush()
         #expect(FileManager.default.fileExists(atPath: url.path))
@@ -143,7 +143,7 @@ struct DisplayModeSwitcherTests {
         try ledger.save(to: url)
         let backend = FakeBackend()
         backend.state.withLock { $0.current = Self.m60 }
-        let switcher = DisplayModeSwitcher(logger: Logger(label: "test"), backend: backend, ledgerURL: url)
+        let switcher = DisplayModeSwitcher(logger: testLogger, backend: backend, ledgerURL: url)
         for _ in 0..<2 {  // first sync, then a rebind's sync
             switcher.apply([(Self.display, Self.m60.descriptor.config)], connected: [Self.display])
         }

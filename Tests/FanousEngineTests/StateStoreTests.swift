@@ -33,7 +33,6 @@ final class RecordingClient: StateClient, @unchecked Sendable {
 
 @Suite(.cleansTempFiles)
 struct StateStoreTests {
-    static let logger = Logger(label: "test")
 
     @Test func commandProducesPatchAndUndoRestores() throws {
         let (store, _) = testStore(outputs: 0)
@@ -210,7 +209,7 @@ extension StateStoreTests {
         _ = try store.execute("layers.setCount", args: ["count": 8], role: .programmer).get()
         let dmx = DMXStore(
             patch: try #require(ProjectDocument.effectivePatch(from: store.project)), fixtures: ProjectDocument.fixtures(from: store.project),
-            logger: Logger(label: "test"))
+            logger: testLogger)
         dmx.setPolicy(.internal)
         var last = ProjectDocument.fixtures(from: store.project)
         func apply(_ document: JSONValue) -> Bool {
@@ -401,9 +400,9 @@ extension StateStoreTests {
     @Test func syncSetValidatesSavesAndApplies() throws {
         let directory = try tempDir("sync")
         let file = directory.appending(path: "settings.json")
-        let auth = RoleAuth(settingsURL: file, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
+        let auth = RoleAuth(settingsURL: file, shellTokenURL: nil, iterations: 1000, logger: testLogger)
         try auth.setPassword("pw", for: .programmer)
-        let store = StateStore(project: testProject(layers: 1, outputs: 1, libraryRoot: "/x"), logger: Self.logger)
+        let store = StateStore(project: testProject(layers: 1, outputs: 1, libraryRoot: "/x"), logger: testLogger)
         let showMode = Mutex(false), applied = Mutex<[SyncSettings]>([])
         ProjectDocument.registerCommands(
             on: store, auth: auth, showModeOn: { showMode.withLock { $0 } }, applySync: { s in applied.withLock { $0.append(s) } })
@@ -865,7 +864,7 @@ extension StateStoreTests {
     @Test func anAddressNeedsAFixtureThatExists() throws {
         let auth = testAuth()
         // a project from before the check: Layer 3 patched above a layer count of 2
-        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 3, outputs: 0), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx), logger: Self.logger)
+        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 3, outputs: 0), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx), logger: testLogger)
         ProjectDocument.registerCommands(on: store, auth: auth)
         func run(_ command: String, _ fixture: String, _ address: Int) -> Result<CommandResult, CommandError> {
             let args: JSONValue = ["fixture": .string(fixture), "universe": "sacn:7", "address": .number(Double(address))]

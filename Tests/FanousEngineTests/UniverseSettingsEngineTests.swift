@@ -12,7 +12,6 @@ import Testing
 /// B28: `universe.set` in the project, and the receivers applying hold on loss, protocol and interface live. Packets go
 /// to loopback on random high ports, never 6454/5568.
 struct UniverseSettingsEngineTests {
-    static let logger = Logger(label: "test")
     static let a0 = UniverseID(.artnet, 0)
 
     static func set(_ store: StateStore, _ path: String, _ value: JSONValue, id: String = "artnet:0.0.0", role: Role = .programmer) -> Result<CommandResult, CommandError> {
@@ -117,12 +116,12 @@ struct UniverseSettingsEngineTests {
     static func artnet(_ level: UInt8, sequence: UInt8 = 0) -> [UInt8] { ArtDmx(sequence: sequence, portAddress: 0, data: [UInt8](repeating: level, count: 512)).encoded() }
 
     func receiving(_ loss: UniverseSettings.Loss) async throws -> (DMXStore, ArtNetReceiver, UInt16) {
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         var settings = UniverseSettings(for: Self.a0)
         settings.holdOnLoss = loss
         store.setUniverseSettings([Self.a0: settings])
         let port = try freeUDPPort()
-        let receiver = ArtNetReceiver(store: store, logger: Self.logger, nodeName: "test", port: port)
+        let receiver = ArtNetReceiver(store: store, logger: testLogger, nodeName: "test", port: port)
         try receiver.start()
         #expect(await Self.listening(port))
         sendUDP(Self.artnet(255), to: port)
@@ -187,8 +186,8 @@ struct UniverseSettingsEngineTests {
     /// the next path update or re-assert, and dropped when no universe wants them; an absent interface is reported.
     /// Asked of the kernel (multicast delivery itself needs the Local Network permission, which a test run lacks).
     @Test func sacnMembershipsFollowSettingsAndSurviveReplug() async throws {
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
-        let sacn = SACNReceiver(store: store, logger: Self.logger, port: try freeUDPPort())
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
+        let sacn = SACNReceiver(store: store, logger: testLogger, port: try freeUDPPort())
         try sacn.start(groups: ["lo0": [7], "en42": [8]])
         defer { sacn.stop() }
         sacn.pathUpdated()
@@ -209,10 +208,10 @@ struct UniverseSettingsEngineTests {
     /// "any" joins on every up, multicast, non-loopback interface, reports a failed join per interface, and is not
     /// a warning for the universe-1 placeholder joined when no universe asks for sACN.
     @Test func sacnAnyJoinsEveryMulticastInterface() throws {
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let real = SystemInfo.ipv4Interfaces.filter(\.multicast)
         store.interfaceList = { real + [NetworkInterface(name: "en99", address: "10.99.0.1", netmask: "255.255.0.0", multicast: true)] }
-        let sacn = SACNReceiver(store: store, logger: Self.logger, port: try freeUDPPort())
+        let sacn = SACNReceiver(store: store, logger: testLogger, port: try freeUDPPort())
         try sacn.start(groups: ["any": [3]])
         defer { sacn.stop() }
         sacn.pathUpdated()
@@ -234,8 +233,8 @@ struct UniverseSettingsEngineTests {
         let holder = socket(AF_INET, SOCK_DGRAM, 0)
         defer { close(holder) }
         try #require(withSockaddr(port: port) { bind(holder, $0, $1) } == 0)
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
-        #expect(throws: POSIXError.self) { try SACNReceiver(store: store, logger: Self.logger, port: port).start(groups: [:]) }
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
+        #expect(throws: POSIXError.self) { try SACNReceiver(store: store, logger: testLogger, port: port).start(groups: [:]) }
 
         var context = ReadinessContext()
         context.sacnError = "Address already in use"
@@ -244,11 +243,11 @@ struct UniverseSettingsEngineTests {
     }
 
     @Test func protocolSwitchesLiveToSACNOnThePair() async throws {
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let artPort = try freeUDPPort(), sacnPort = try freeUDPPort()
-        let artnet = ArtNetReceiver(store: store, logger: Self.logger, nodeName: "test", port: artPort)
+        let artnet = ArtNetReceiver(store: store, logger: testLogger, nodeName: "test", port: artPort)
         try artnet.start()
-        let sacn = SACNReceiver(store: store, logger: Self.logger, port: sacnPort)
+        let sacn = SACNReceiver(store: store, logger: testLogger, port: sacnPort)
         try sacn.start(groups: ["any": [1]])
         defer {
             artnet.stop()
@@ -273,12 +272,12 @@ struct UniverseSettingsEngineTests {
     }
 
     @Test func interfaceFiltersSendersAndReportsMissingOnes() async throws {
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         store.interfaceList = {
             [NetworkInterface(name: "lo0", address: "127.0.0.1", netmask: "255.0.0.0"), NetworkInterface(name: "en9", address: "10.9.0.1", netmask: "255.255.0.0")]
         }
         let port = try freeUDPPort()
-        let receiver = ArtNetReceiver(store: store, logger: Self.logger, nodeName: "test", port: port)
+        let receiver = ArtNetReceiver(store: store, logger: testLogger, nodeName: "test", port: port)
         try receiver.start()
         defer { receiver.stop() }
         #expect(await Self.listening(port))

@@ -84,7 +84,7 @@ final class Box { var value = 0 }
     }
 
     @Test func dmxCopyEqualsTheLastPublishedSlot() {
-        let store = DMXStore(patch: .standard(layers: 2, outputs: 1), logger: Logger(label: "test"))
+        let store = DMXStore(patch: .standard(layers: 2, outputs: 1), logger: testLogger)
         for i in 1...3 {
             store.snapshots.write { slot in
                 slot.sequence = UInt64(i)
@@ -120,7 +120,7 @@ final class Box { var value = 0 }
         let output = PatchEntry(fixture: .output(1), universe: universe, address: 1)
         let keystone = PatchEntry(fixture: .keystone(1), universe: universe, address: 9)
         for entries in [[output, keystone], [keystone, output]] {
-            let store = DMXStore(patch: Patch(entries: entries), logger: Logger(label: "test"))
+            let store = DMXStore(patch: Patch(entries: entries), logger: testLogger)
             var time = 1000.0
             /// Output 1 intensity, Keystone 1 centred but for the top-left corner.
             func send(intensity: UInt16, topLeft: (x: UInt16, y: UInt16)) {
@@ -162,7 +162,7 @@ final class Box { var value = 0 }
     /// fixture can still compare.
     @Test func compareWinsOverChannel6AndExpires() {
         let universe = UniverseID(.artnet, 0)
-        let store = DMXStore(patch: Patch(entries: [PatchEntry(fixture: .output(1), universe: universe, address: 1)]), logger: Logger(label: "test"))
+        let store = DMXStore(patch: Patch(entries: [PatchEntry(fixture: .output(1), universe: universe, address: 1)]), logger: testLogger)
         let t = 1000.0
         func send(ch6: UInt8, at time: Double) {
             var data = [UInt8](repeating: 0, count: 512)
@@ -192,7 +192,7 @@ final class Box { var value = 0 }
     /// and Compare starting or ending cut.
     @Test func channel7MorphsAChannel6Change() {
         let universe = UniverseID(.artnet, 0)
-        let store = DMXStore(patch: Patch(entries: [PatchEntry(fixture: .output(1), universe: universe, address: 1)]), logger: Logger(label: "test"))
+        let store = DMXStore(patch: Patch(entries: [PatchEntry(fixture: .output(1), universe: universe, address: 1)]), logger: testLogger)
         let t = 1000.0
         func send(ch6: UInt8, ch7: UInt8, at time: Double) {
             var data = [UInt8](repeating: 0, count: 512)
@@ -221,7 +221,7 @@ final class Box { var value = 0 }
     /// preset with the UI's fade.
     @Test(arguments: [UniverseSettings.Loss.hold, .zero, .internal]) func aMorphFollowsChannel6OnLoss(_ loss: UniverseSettings.Loss) {
         let universe = UniverseID(.artnet, 0)
-        let store = DMXStore(patch: Patch(entries: [PatchEntry(fixture: .output(1), universe: universe, address: 1)]), logger: Logger(label: "test"))
+        let store = DMXStore(patch: Patch(entries: [PatchEntry(fixture: .output(1), universe: universe, address: 1)]), logger: testLogger)
         var settings = UniverseSettings(for: universe)
         settings.holdOnLoss = loss
         let t = 1000.0
@@ -251,7 +251,7 @@ final class Box { var value = 0 }
     /// offset is no offset, so a keystone universe that drops alone does not shift a lit picture.
     @Test func zeroOnLossCentresTheKeystone() {
         let universe = UniverseID(.artnet, 0)
-        let store = DMXStore(patch: Patch(entries: [PatchEntry(fixture: .keystone(1), universe: universe, address: 1)]), logger: Logger(label: "test"))
+        let store = DMXStore(patch: Patch(entries: [PatchEntry(fixture: .keystone(1), universe: universe, address: 1)]), logger: testLogger)
         var settings = UniverseSettings(for: universe)
         settings.holdOnLoss = .zero
         let time = 1000.0
@@ -274,7 +274,7 @@ final class Box { var value = 0 }
     /// An unpatched layer (Unpatch, Remove last layer, beyond the layer count) no longer plays at its last values, and
     /// an unpatched Master no longer holds the show at its last level: both render as with no console.
     @Test func unpatchedLayerAndMasterFallBackToDefaults() {
-        let store = DMXStore(patch: .standard(layers: 2, outputs: 0), logger: Logger(label: "test"))
+        let store = DMXStore(patch: .standard(layers: 2, outputs: 0), logger: testLogger)
         for fixture in [FixtureRef.layer(2), .master] { store.setPolicy(.internal, for: fixture) }
         // values in every slot: a publish writes into a slot that holds an older publish
         for raw in UInt16(1)...3 {
@@ -299,7 +299,7 @@ final class Box { var value = 0 }
     /// An unpatched (or removed) Output fixture no longer holds its output at the last values: a re-added output with
     /// the same number and no fixture renders as with no console.
     @Test func unpatchedOutputFallsBackToDefaults() {
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Logger(label: "test"))
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         store.setPolicy(.internal, for: .output(1))
         // Blackout in every slot: a publish writes into a slot that holds an older publish
         for raw in UInt16(64)...70 { store.queue.sync { store.applyUI(.output(1), .output(.control), raw: raw, at: 1000) } }
@@ -315,7 +315,7 @@ final class Box { var value = 0 }
 
     /// Layer 1 on A 0.0.0 at 1, the Master on A 0.0.1 at 1; nothing else patched.
     static func store(fixtures: Set<FixtureRef>, policy: SourcePolicy) -> DMXStore {
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 0), fixtures: fixtures, logger: Logger(label: "test"))
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 0), fixtures: fixtures, logger: testLogger)
         store.setPolicy(policy)
         return store
     }
@@ -367,7 +367,7 @@ final class Box { var value = 0 }
     @Test func htpWithoutDMXLetsAUIMasterAt50Win() {
         var patch = Patch.standard(layers: 1, outputs: 0)
         patch.entries.removeAll { $0.fixture == .master }
-        let store = DMXStore(patch: patch, fixtures: ProjectDocument.fixtures(layerCount: 1, outputs: []), logger: Logger(label: "test"))
+        let store = DMXStore(patch: patch, fixtures: ProjectDocument.fixtures(layerCount: 1, outputs: []), logger: testLogger)
         store.setPolicy(.htp)
         store.setUI(.master, .master(.intensity), raw: 32768)
         store.queue.sync {}
@@ -396,7 +396,7 @@ final class Box { var value = 0 }
         reset.resetMaster()
         #expect(fromResolver.master == reset.master && fromResolver.masterControl == reset.masterControl)
         #expect(fromResolver.masterSpeed == reset.masterSpeed && fromResolver.testPattern == reset.testPattern)
-        let store = DMXStore(patch: Patch(entries: []), fixtures: ProjectDocument.fixtures(layerCount: 1, outputs: [1]), logger: Logger(label: "test"))
+        let store = DMXStore(patch: Patch(entries: []), fixtures: ProjectDocument.fixtures(layerCount: 1, outputs: [1]), logger: testLogger)
         store.queue.sync { store.publish(receivedAt: 0) }
         #expect(store.snapshots.withLatest { $0.keystones[0] == matrix_identity_float3x3 && !$0.keystoneInvalid[0] })
     }
@@ -408,7 +408,7 @@ final class Box { var value = 0 }
         #expect(fixtures == Set((1...32).map(FixtureRef.layer) + [.master, .output(1), .keystone(1)]))
         #expect(ProjectDocument.fixtures(layerCount: 3, outputs: []) == [.layer(1), .layer(2), .layer(3), .master])
         let patch = Patch(entries: [PatchEntry(fixture: .layer(33), universe: Self.a0, address: 1)])
-        let store = DMXStore(patch: patch, fixtures: ProjectDocument.fixtures(layerCount: 3, outputs: []), logger: Logger(label: "test"))
+        let store = DMXStore(patch: patch, fixtures: ProjectDocument.fixtures(layerCount: 3, outputs: []), logger: testLogger)
         #expect(store.resolvedRaw(.layer(3), .layer(.intensity)) != nil)
         #expect(store.resolvedRaw(.layer(4), .layer(.intensity)) == nil)
         #expect(store.resolvedRaw(.layer(33), .layer(.intensity)) == nil)
@@ -440,7 +440,7 @@ final class Box { var value = 0 }
     /// the console's value (fed now) beats the cue's (from when the cue ran), as it would on a layer that existed.
     @Test func aLayerAddedOnALiveUniverseGivesTheConsoleTheLatestChange() {
         let store = DMXStore(
-            patch: .standard(layers: 2, outputs: 0), fixtures: ProjectDocument.fixtures(layerCount: 1, outputs: []), logger: Logger(label: "test"))
+            patch: .standard(layers: 2, outputs: 0), fixtures: ProjectDocument.fixtures(layerCount: 1, outputs: []), logger: testLogger)
         store.setPolicy(.ltp)
         var cues = CueEngine(list: CueList(cues: [Cue(number: 5, values: [CueValue(fixture: .layer(2), parameter: .layer(.file), raw: 7)])]))
         cues.go(at: 0)
@@ -460,7 +460,7 @@ final class Box { var value = 0 }
     /// universe that is not received it is at its defaults.
     @Test func aPatchOnALiveUniverseTakesItsValuesAtOnce() {
         let fixtures = ProjectDocument.fixtures(layerCount: 1, outputs: [])
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 0), fixtures: fixtures, logger: Logger(label: "test"))
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 0), fixtures: fixtures, logger: testLogger)
         Self.console(store, port: 0, [0xFF, 0xFF, 0, 5], at: 1000)  // A 0.0.0: Layer 1 full, file 5
         Self.console(store, port: 2, [0x80, 0x00, 0, 9], at: 1000)  // A 0.0.2: half, file 9
         func layer1() -> LayerParameters { store.snapshots.withLatest { $0.layers[0] } }
@@ -503,7 +503,7 @@ final class Box { var value = 0 }
         let fixtures = ProjectDocument.fixtures(layerCount: 8, outputs: Array(1...8))
         var counts: [Int] = []
         for set in [fixtures, fixtures.filter { if case .keystone = $0 { false } else { true } }] {
-            let store = DMXStore(patch: .standard(layers: 8, outputs: 8), fixtures: set, logger: Logger(label: "test"))
+            let store = DMXStore(patch: .standard(layers: 8, outputs: 8), fixtures: set, logger: testLogger)
             var mallocs = 0
             store.queue.sync {
                 // warm: every slot of the triple buffer written once

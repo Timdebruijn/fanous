@@ -12,7 +12,6 @@ import Testing
 
 /// B36 with injected messages: no CoreMIDI device is opened (a virtual source for a real-port test stays out of CI).
 struct MIDIControlTests {
-    static let logger = Logger(label: "test")
 
     static func settings(_ map: [MIDIMapping], mscDevice: Int = 0, mscFormat: Int? = nil) -> MIDISettings {
         var s = MIDISettings()
@@ -163,9 +162,9 @@ struct MIDIControlTests {
 
     /// The input end to end: bytes → parser → map → the resolver's `midi` source and cue actions; learn → stored entry.
     @Test func injectedBytesReachTheResolverAndLearn() throws {
-        let dmx = DMXStore(patch: .standard(layers: 2, outputs: 1), logger: Self.logger)
+        let dmx = DMXStore(patch: .standard(layers: 2, outputs: 1), logger: testLogger)
         dmx.setPolicy(.ltp, for: .layer(1))
-        let input = MIDIInput(dmx: dmx, logger: Self.logger)
+        let input = MIDIInput(dmx: dmx, logger: testLogger)
         let cues = Mutex<[OSCCommand]>([])
         let stored = Mutex<[MIDIMapping]>([])
         input.onCue = { action in cues.withLock { $0.append(action) } }
@@ -196,8 +195,8 @@ struct MIDIControlTests {
 
     /// Two identical controllers share a name: running status is kept per source id, not per name.
     @Test func parsersArePerSourceID() {
-        let dmx = DMXStore(patch: .standard(layers: 2, outputs: 1), logger: Self.logger)
-        let input = MIDIInput(dmx: dmx, logger: Self.logger)
+        let dmx = DMXStore(patch: .standard(layers: 2, outputs: 1), logger: testLogger)
+        let input = MIDIInput(dmx: dmx, logger: testLogger)
         let cues = Mutex<Int>(0)
         input.onCue = { _ in cues.withLock { $0 += 1 } }
         input.apply(Self.settings([MIDIMapping(kind: .note, number: 36, target: "cue.go")]))
@@ -210,9 +209,9 @@ struct MIDIControlTests {
     /// MIDI values are a controller like the UI: they expire after masking a console, Release clears them, and they go
     /// when their entry is removed or their source disconnects.
     @Test func midiValuesNeverStayStuck() {
-        let dmx = DMXStore(patch: .standard(layers: 2, outputs: 1), logger: Self.logger)
+        let dmx = DMXStore(patch: .standard(layers: 2, outputs: 1), logger: testLogger)
         dmx.setPolicy(.internal, for: .layer(1))
-        let input = MIDIInput(dmx: dmx, logger: Self.logger)
+        let input = MIDIInput(dmx: dmx, logger: testLogger)
         let fader = MIDIMapping(kind: .cc, number: 7, target: "fixture:Layer 1/intensity")
         let knob = MIDIMapping(kind: .cc, number: 8, target: "fixture:Layer 1/speed")
         func midi() -> [String] { (dmx.snapshot().internalValues["Layer 1"] ?? []).filter { $0.source == "midi" }.map(\.key).sorted() }
@@ -266,7 +265,7 @@ struct MIDIControlTests {
         #expect(MIDISettings.from(project: fixed).map.allSatisfy { !$0.id.isEmpty })
         #expect(MIDISettings.assigningIDs(fixed) == nil)
         // midi.map.set and remove leave the unreadable entry exactly as it was
-        let store = StateStore(project: fixed, logger: Self.logger)
+        let store = StateStore(project: fixed, logger: testLogger)
         MIDICommands.register(on: store, learn: { _, _ in })
         let id = try store.execute("midi.map.set", args: ["kind": "cc", "number": 1, "target": "cue.back"], role: .programmer).get().value?.string
         _ = try store.execute("midi.map.remove", args: ["id": .string(id!)], role: .programmer).get()

@@ -19,7 +19,7 @@ import Testing
         let device = try #require(MTLCreateSystemDefaultDevice())
         let source = try await MovieSource.open(url: url, device: device, poolSize: 4)
         let ring = FrameRing(capacity: 4)
-        let decoder = LayerDecoder(source: source, ring: ring, logger: Logger(label: "decoder-test"))
+        let decoder = LayerDecoder(source: source, ring: ring, logger: testLogger)
         decoder.start(name: "test.decode")
         defer { decoder.stop() }
 

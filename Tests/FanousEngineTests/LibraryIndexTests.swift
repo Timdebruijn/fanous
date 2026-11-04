@@ -45,7 +45,7 @@ struct LibraryIndexTests {
         try Self.touch(root.appending(path: "Unnumbered/001_y.mov"))
         try Self.touch(root.appending(path: "_incoming/upload.mp4"))
         try FileManager.default.createDirectory(at: root.appending(path: "012_Show/005_sequence"), withIntermediateDirectories: true)
-        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: testLogger)
         index.rescan()
         let snapshot = index.snapshot
         #expect(snapshot.rootExists)
@@ -77,7 +77,7 @@ struct LibraryIndexTests {
                 FileManager.default.createFile(atPath: dir.appending(path: String(format: "%03d_clip.mov", file)).path, contents: nil)
             }
         }
-        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: testLogger)
         let start = Date()
         index.rescan()
         let elapsed = Date().timeIntervalSince(start)
@@ -95,7 +95,7 @@ struct LibraryIndexTests {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let movie = folder.appending(path: "003_clip.mov")
         try await writePatternMovie(to: movie, size: (320, 176), fps: 25, frames: 5)
-        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: testLogger)
         // heap-allocated observers: callbacks may still run on the library thread after this function returns
         final class Observer: Sendable {
             let thumbnails = Mutex<[String]>([])
@@ -120,7 +120,7 @@ struct LibraryIndexTests {
         #expect(observer.thumbnails.withLock { $0 } == ["003_clip.mov"])
         // a second index on the same cache needs no probe (the first writes the cache just after it resolves)
         #expect(await waitUntil(every: .milliseconds(50)) {
-            let again = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+            let again = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: testLogger)
             again.rescan()
             return again.resolve(MediaKey(folder: 7, file: 3)) != nil
         })
@@ -142,7 +142,7 @@ struct LibraryIndexTests {
         try FileManager.default.createDirectory(at: base.appending(path: "real"), withIntermediateDirectories: true)
         try FileManager.default.createSymbolicLink(at: base.appending(path: "link"), withDestinationURL: base.appending(path: "real"))
         let root = base.appending(path: "link/Fanous Library")
-        let index = LibraryIndex(root: root, cacheDirectory: base.appending(path: "cache"), logger: Logger(label: "test"))
+        let index = LibraryIndex(root: root, cacheDirectory: base.appending(path: "cache"), logger: testLogger)
         index.start()
         defer { index.stop() }
         #expect(!index.snapshot.rootExists)
@@ -184,10 +184,10 @@ struct LibraryIndexTests {
         let observer = Observer()
         // the engine's wiring: one box with the index of the moment (and no other strong reference), the loader
         // resolving through it, every library change asking the loader to retry its missing layers
-        let current = Mutex<LibraryIndex?>(LibraryIndex(root: a, cacheDirectory: cache, logger: Logger(label: "test")))
+        let current = Mutex<LibraryIndex?>(LibraryIndex(root: a, cacheDirectory: cache, logger: testLogger))
         let device = try #require(MTLCreateSystemDefaultDevice())
         let layer = RenderLayer(index: 0)
-        let loader = MediaLoader(layers: [layer], media: [], device: device, ringCapacity: 4, logger: Logger(label: "test"))
+        let loader = MediaLoader(layers: [layer], media: [], device: device, ringCapacity: 4, logger: testLogger)
         loader.resolver = { key in current.withLock { $0 }?.resolve(key) }
         current.withLock { first in
             first!.onChange = {
@@ -254,7 +254,7 @@ struct LibraryIndexTests {
         try Self.touch(root.appending(path: "003_Show/001_a.mov"))
         try Self.touch(root.appending(path: "003_Show/002_b.mov"))
         try Self.touch(root.appending(path: "003_Show/004_d.mov"))
-        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: testLogger)
         index.rescan()
         #expect(LibraryIndex.nextFileNumber(in: root.appending(path: "003_Show")) == 3)
         #expect(LibraryIndex.nextFileNumber(in: root.appending(path: "003_Show"), pending: ["003_c.mov"]) == 5)
@@ -278,7 +278,7 @@ struct LibraryIndexTests {
     /// B141: twenty clients creating one number at once make one folder; the others see it exist.
     @Test func concurrentFolderCreatesMakeOneFolder() async throws {
         let root = try tempDir("fanous-library")
-        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: testLogger)
         let results = await withTaskGroup(of: LibraryIndex.FolderCreate.self) { group in
             for i in 0..<20 { group.addTask { index.createFolder(number: 7, name: "Client \(i)") } }
             return await group.reduce(into: []) { $0.append($1) }
@@ -296,7 +296,7 @@ struct LibraryIndexTests {
         try FileManager.default.createDirectory(at: readOnly, withIntermediateDirectories: true)
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: readOnly.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: readOnly.path) }
-        let index = LibraryIndex(root: readOnly, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+        let index = LibraryIndex(root: readOnly, cacheDirectory: root.appending(path: ".cache"), logger: testLogger)
         #expect(index.createFolder(number: 1, name: "One") == .failed)
         #expect(index.folderURL(number: 1, createAs: "One") == nil)
         #expect(!FileManager.default.fileExists(atPath: readOnly.appending(path: "001_One").path))

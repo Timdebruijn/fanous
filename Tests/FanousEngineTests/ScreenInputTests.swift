@@ -20,14 +20,13 @@ import Testing
 /// grant poll with an injected preflight.
 @Suite(.cleansTempFiles)
 struct ScreenInputTests {
-    static let logger = Logger(label: "screen-test")
 
     static func display(_ id: UInt32, _ uuid: String, _ name: String) -> DisplayInfo {
         DisplayInfo(id: id, uuid: uuid, name: name, pixelWidth: 1920, pixelHeight: 1080, scale: 1, hz: 60, isMain: false, isBuiltin: false, modes: [])
     }
 
     static func input(_ device: MTLDevice, now: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }) -> ScreenInput {
-        ScreenInput(name: "synthetic", metal: device, logger: logger, noSignalAfter: .infinity, now: now)
+        ScreenInput(name: "synthetic", metal: device, logger: testLogger, noSignalAfter: .infinity, now: now)
     }
 
     // MARK: Catalog, project, feed
@@ -226,7 +225,7 @@ struct ScreenInputTests {
         let context = try MetalContext(), device = context.device
         let layers = (0..<4).map { RenderLayer(index: $0) }
         let loader = MediaLoader(
-            layers: layers, media: [MediaEntry(folder: 0, file: 24, screen: "uuid-scene")], device: device, ringCapacity: 4, logger: Self.logger)
+            layers: layers, media: [MediaEntry(folder: 0, file: 24, screen: "uuid-scene")], device: device, ringCapacity: 4, logger: testLogger)
         let catalog = LiveCatalog(.screens)
         catalog.onChange = { [loader] in loader.changed(.screens) }
         loader.screensCatalog = catalog

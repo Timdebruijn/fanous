@@ -601,7 +601,7 @@ import VideoToolbox
         let squareJob = queue.enqueue(IngestJob(source: square, destination: directory.appending(path: "library/003_square.mov"), kind: .transcode(codec: .proRes422)))
         #expect(await Self.wait(for: squareJob.id, in: queue) == .done)
         let layer = RenderLayer(index: 0)
-        let loader = MediaLoader(layers: [layer], media: [], device: device, ringCapacity: 4, logger: Logger(label: "test"))
+        let loader = MediaLoader(layers: [layer], media: [], device: device, ringCapacity: 4, logger: testLogger)
         let paths = [1: proRes.destination, 3: squareJob.destination]
         loader.resolver = { key in paths[key.file] }
         loader.start()
@@ -619,7 +619,7 @@ import VideoToolbox
 
         // The Media screen's thumbnail fills its 427:176 frame edge to edge (the still path carries the ratio too; it
         // used to draw the coded 320:176 picture in it, with black bars at both sides).
-        let thumbnails = Thumbnailer(context: try MetalContext(), directory: directory.appending(path: "thumbs"), logger: Logger(label: "test"))
+        let thumbnails = Thumbnailer(context: try MetalContext(), directory: directory.appending(path: "thumbs"), logger: testLogger)
         var metadata = MediaMetadata()
         (metadata.width, metadata.height) = (427, 176)
         let name = try #require(thumbnails.make(for: proRes.destination, metadata: metadata, kind: .movie))
@@ -910,8 +910,8 @@ import VideoToolbox
     @Test func uploadsIntoAnUnindexedFolderNumberShareOneFolder() throws {
         let directory = try tempDir("fanous-ingest-tests")
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: Logger(label: "test"))
-        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: Logger(label: "test"))
+        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: testLogger)
+        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: testLogger)
         let still = directory.appending(path: "still.png")
         try Self.writeFramePNG(to: still, index: 0)
         for name in ["red.png", "blue.png"] {
@@ -926,8 +926,8 @@ import VideoToolbox
     @Test func sequenceWithAnImpossibleFrameRateIsRefused() async throws {
         let directory = try tempDir("fanous-ingest-tests")
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: Logger(label: "test"))
-        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: Logger(label: "test"))
+        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: testLogger)
+        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: testLogger)
         let frames = directory.appending(path: "frames")
         try FileManager.default.createDirectory(at: frames, withIntermediateDirectories: true)
         try Self.writeFramePNG(to: frames.appending(path: "frame_000.png"), index: 0)
@@ -951,8 +951,8 @@ import VideoToolbox
     @Test func heldEnqueueIsRefused() throws {
         let directory = try tempDir("fanous-ingest-tests")
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: Logger(label: "test"))
-        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: Logger(label: "test"))
+        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: testLogger)
+        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: testLogger)
         let still = directory.appending(path: "still.png")
         try Self.writeFramePNG(to: still, index: 0)
         api.holdEnqueue("the library root is changing")
@@ -971,8 +971,8 @@ import VideoToolbox
     @Test func quickUploadsIntoOneFolderGetConsecutiveNumbers() async throws {
         let directory = try tempDir("fanous-ingest-tests")
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: Logger(label: "test"))
-        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: Logger(label: "test"))
+        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: testLogger)
+        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: testLogger)
         let sources = (1...3).map { directory.appending(path: "red-\($0).png") }
         for (index, source) in sources.enumerated() { try Self.writeFramePNG(to: source, index: index) }
         func upload(_ source: URL, file: Int? = nil) -> String? {

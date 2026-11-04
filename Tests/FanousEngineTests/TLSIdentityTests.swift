@@ -15,13 +15,8 @@ import Testing
 /// with it. No keychain means no SecurityAgent prompt on ad-hoc builds.
 struct TLSIdentityTests {
     @Test func inMemoryIdentityServesHandshake() throws {
-        let attributes: [String: Any] = [
-            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
-            kSecAttrKeySizeInBits as String: 256,
-            kSecPrivateKeyAttrs as String: [kSecAttrIsPermanent as String: false],
-        ]
+        let privateKey = try makeKey()
         var error: Unmanaged<CFError>?
-        guard let privateKey = SecKeyCreateRandomKey(attributes as CFDictionary, &error) else { throw error!.takeRetainedValue() }
         // round-trip through the external representation: that is what a key file on disk would hold
         guard let external = SecKeyCopyExternalRepresentation(privateKey, &error) as Data? else { throw error!.takeRetainedValue() }
         let reloadAttributes: [String: Any] = [

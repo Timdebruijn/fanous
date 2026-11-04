@@ -52,7 +52,7 @@ struct UDPSendTests {
         let server = CITPServer(
             name: "full-buffer", uuid: "550e8400-e29b-41d4-a716-446655440000",
             providers: CITPServer.Providers(layers: { [] }, library: CITPServerTests.library, thumbnail: { _ in nil }, frame: { _ in nil }),
-            logger: Logger(label: "test"))
+            logger: testLogger)
         server.sendDatagram = { fd, _, _, _, _, _ in
             nonBlocking.withLock { $0 = fcntl(fd, F_GETFL) & O_NONBLOCK != 0 }
             errno = EAGAIN

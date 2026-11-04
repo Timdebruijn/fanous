@@ -235,7 +235,7 @@ struct CompositorIdleTests {
     @MainActor @Test func setCanvasesRunsTheCompositorAtTheNewSizeAndRate() async throws {
         let rig = try Rig(idleWork: false, offscreen: false)
         let compositor = rig.compositor
-        let coordinator = OutputCoordinator(compositor: compositor, context: rig.context, fps: 60, displays: [], logger: Logger(label: "canvas-test"))
+        let coordinator = OutputCoordinator(compositor: compositor, context: rig.context, fps: 60, displays: [], logger: testLogger)
         coordinator.apply(outputs: [], clockMaster: nil)
         defer { coordinator.stop() }
         func ticksAdvance() async throws {

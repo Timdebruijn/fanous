@@ -7,6 +7,7 @@ import FanousCore
 import Foundation
 import Logging
 import Metal
+import Security
 import Synchronization
 import Testing
 import UniformTypeIdentifiers
@@ -37,6 +38,17 @@ nonisolated(nonsending) func waitUntil(_ deadline: Duration = .seconds(10), ever
 
 /// The logger every test hands the engine.
 let testLogger = Logger(label: "test")
+
+/// A new P-256 private key, in memory only (no keychain, so no SecurityAgent prompt).
+func makeKey() throws -> SecKey {
+    let attributes: [String: Any] = [
+        kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom, kSecAttrKeySizeInBits as String: 256,
+        kSecPrivateKeyAttrs as String: [kSecAttrIsPermanent as String: false],
+    ]
+    var error: Unmanaged<CFError>?
+    guard let key = SecKeyCreateRandomKey(attributes as CFDictionary, &error) else { throw error!.takeRetainedValue() }
+    return key
+}
 
 /// The role gate with every role open and nothing on disk; 1000 PBKDF2 iterations keep a password test fast.
 func testAuth() -> RoleAuth { RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: testLogger) }

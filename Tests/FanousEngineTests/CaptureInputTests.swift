@@ -17,7 +17,6 @@ import Testing
 /// output asks for, through the texture views and the layer shader (the `LiveSourceTests` readback rig); retention of
 /// taken frames; the no-signal status. A real device is checked only where one is present and authorized.
 struct CaptureInputTests {
-    static let logger = Logger(label: "capture-test")
 
     /// An IOSurface-backed buffer; `rows(plane)` gives one row of bytes, repeated over the plane's height.
     static func buffer(_ format: OSType, _ width: Int, _ height: Int, _ rows: (Int) -> [UInt8]) throws -> CVPixelBuffer {
@@ -57,7 +56,7 @@ struct CaptureInputTests {
     }
 
     static func input(_ device: MTLDevice, noSignalAfter: Double = 2, now: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }) -> CaptureInput {
-        CaptureInput(name: "synthetic", metal: device, logger: logger, noSignalAfter: noSignalAfter, now: now)
+        CaptureInput(name: "synthetic", metal: device, logger: testLogger, noSignalAfter: noSignalAfter, now: now)
     }
 
     /// Every format the output can be asked for reads the step-1a numbers: the packed ones pick each luma with the
@@ -258,7 +257,7 @@ struct CaptureInputTests {
             return
         }
         let context = try MetalContext()
-        let input = CaptureInput(device: device, metal: context.device, fps: 60, logger: Self.logger)  // starts on its queue
+        let input = CaptureInput(device: device, metal: context.device, fps: 60, logger: testLogger)  // starts on its queue
         defer { input.stop() }
         #expect(await waitUntil(.seconds(3)) { input.latestFrame != nil }, "no frame from \(device.localizedName) in 3 s: \(input.status)")
         print("capture \(device.localizedName): \(input.format), \(input.counters)")
@@ -326,7 +325,7 @@ struct CaptureInputTests {
         let layers = [RenderLayer(index: 0), RenderLayer(index: 1)]
         let loader = MediaLoader(
             layers: layers, media: [MediaEntry(folder: 0, file: 5, capture: "cam-1"), MediaEntry(folder: 0, file: 6, capture: "cam-2")], device: device,
-            ringCapacity: 4, logger: Self.logger)
+            ringCapacity: 4, logger: testLogger)
         let clock = Clock()
         let granted = Atomic<Bool>(false)
         loader.captureFactory = { uid in
@@ -368,7 +367,7 @@ struct CaptureInputTests {
     @Test func loaderResolvesNumberedCaptureDevicesToOneSharedInput() async throws {
         let context = try MetalContext(), device = context.device
         let layers = (0..<4).map { RenderLayer(index: $0) }
-        let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: Self.logger)
+        let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: testLogger)
         let catalog = LiveCatalog(.capture, numbers: [LiveCatalogTests.numbered(5, "away", "Away Cam", model: "")])
         catalog.onChange = { [loader] in loader.changed(.captureDevices) }
         loader.captureCatalog = catalog
@@ -450,7 +449,7 @@ struct CaptureInputTests {
     @Test func loaderFollowsARenumber() async throws {
         let context = try MetalContext(), device = context.device
         let layers = (0..<3).map { RenderLayer(index: $0) }
-        let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: Self.logger)
+        let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: testLogger)
         let catalog = LiveCatalog(.capture)
         catalog.onChange = { [loader] in loader.changed(.captureDevices) }
         loader.captureCatalog = catalog

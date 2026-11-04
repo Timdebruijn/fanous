@@ -521,7 +521,7 @@ struct OutputPassTests {
         /// (its own compiler, no overlay).
         func previewStreamer(_ config: OutputConfig, size: (Int, Int) = (160, 90), patterns: PatternLeases? = nil) throws -> PreviewStreamer {
             let streamer = try PreviewStreamer(
-                context: context, width: size.0, height: size.1, fps: 5, canvasFPS: 5, parameters: parameters, logger: Logger(label: "output-test"))
+                context: context, width: size.0, height: size.1, fps: 5, canvasFPS: 5, parameters: parameters, logger: testLogger)
             streamer.outputSet = OutputSet(plans: [try compile(config, drawable: size, patterns: patterns)])
             return streamer
         }
