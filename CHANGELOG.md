@@ -14,7 +14,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   table test pins their role gates without a GPU or a socket: who gets 403 on `/api/ingest`, uploads,
   `/api/library/folder` and `/api/logs`, the redacted `/api/library` root below operator, `/api/login` 405/400/401
   and the sixth attempt in a minute 429, thumbnail names that would leave the cache, and the ungated routes. It runs
-  on CI; the state-server test now logs in through the real route instead of a copy (PR #NNN).
+  on CI; the state-server test now logs in through the real route instead of a copy (PR #282).
 - Fixed: a WebSocket client that started a new text or binary message while a fragmented one was open had it
   delivered with the fragment still open, or replaced the fragment; it now gets close 1002 (RFC 6455 §5.4). A
   browser on an IPv6 literal (`https://[::1]:8443`) could not open the WebSocket: the Origin check compared the host
