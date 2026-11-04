@@ -157,6 +157,7 @@ public indirect enum OSCPacket: Equatable, Sendable {
                 guard size >= 0, cursor + size <= end else { throw OSCParseError.truncated }
                 arguments.append(.blob(Array(b[cursor..<cursor + size])))
                 cursor += size + (4 - size % 4) % 4
+                guard cursor <= end else { throw OSCParseError.truncated }  // padding missing before the next argument
             case "h": arguments.append(.int64(Int64(bitPattern: try read64(b, &cursor, end: end))))
             case "d": arguments.append(.double(Double(bitPattern: try read64(b, &cursor, end: end))))
             case "t": arguments.append(.timetag(try read64(b, &cursor, end: end)))

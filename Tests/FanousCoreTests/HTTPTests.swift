@@ -38,6 +38,12 @@ import Testing
         #expect(throws: HTTPRequest.ParseError.headTooLarge) {
             try HTTPRequest.parse([UInt8](repeating: 0x41, count: HTTPRequest.maxHeadBytes + 1))
         }
+        // a negative or non-numeric Content-Length once reached the body slice as -1 and trapped the server
+        for value in ["-1", "abc", "1,2", ""] {
+            #expect(throws: HTTPRequest.ParseError.badContentLength, "\(value)") {
+                try HTTPRequest.parse(Array("POST / HTTP/1.1\r\nContent-Length: \(value)\r\n\r\n".utf8))
+            }
+        }
     }
 
     @Test func keepAliveDefaultsForHTTP11() throws {

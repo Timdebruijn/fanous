@@ -18,9 +18,13 @@ import Testing
         #expect(try OSCPacket.parse(bytes) == .message(message))
     }
 
-    @Test func alignmentOfStringsAndBlobs() {
+    @Test func alignmentOfStringsAndBlobs() throws {
         #expect(OSCMessage("/abc").encoded() == Array("/abc\0\0\0\0,\0\0\0".utf8))
         #expect(OSCMessage("/ab", [.blob([1])]).encoded().count == 4 + 4 + 8)
+        // a blob whose padding is missing before the next argument once moved the cursor past the end and trapped
+        let unpadded = Array("/a\0\0,bs\0".utf8) + [0, 0, 0, 1, 0xAA]
+        #expect(throws: OSCParseError.truncated) { try OSCPacket.parse(unpadded) }
+        #expect(try OSCPacket.parse(unpadded + [0, 0, 0] + [0, 0, 0, 0]) == .message(OSCMessage("/a", [.blob([0xAA]), .string("")])))
     }
 
     @Test func bundlesNest() throws {
