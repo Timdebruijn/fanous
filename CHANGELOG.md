@@ -19,7 +19,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   `badBundle` past 8 levels, 400). A fuzz test cuts every sample of every network parser in Core (Art-Net, sACN,
   OSC, CITP, WebSocket, HTTP, sync, MIDI; real captures and encoded messages) at every length and mutates every
   byte; it runs on CI and traps on the old OSC blob code (PR #277).
-- CI runs the engine suites that need no GPU, media hardware or display ( tests: state store, commands, versions,
+- CI runs the engine suites that need no GPU, media hardware or display (254 tests: state store, commands, versions,
   roles, servers, sync, OSC, CITP, MIDI, library index, readiness, ...) next to the Core tests: `scripts/test.sh
   --hosted` holds the list; nine GPU tests of four mixed files moved into `…GPUTests` suites in the same file
   (PR #278).
