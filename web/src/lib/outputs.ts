@@ -246,15 +246,18 @@ export function lowestFree(used: Iterable<number>, max = 255): number | null {
   return null;
 }
 
-/** Compare held from the UI (DESIGN §9.10 item 4): `start` sends the preset at once and again every `every` ms (the
+/** How often a lease from the UI is renewed (compare, edit overlay, test patterns); the engine drops one 5 s after the last. */
+export const LEASE_MS = 2000;
+
+/** Compare held from the UI (DESIGN §9.10 item 4): `start` sends the preset at once and again every `LEASE_MS` (the
  * engine lets the lease run out 5 s after the last one); `stop` ends it with preset 0. The latest `start` wins. */
-export function compareLease(send: (preset: number) => void, every = 2000) {
+export function compareLease(send: (preset: number) => void) {
   let timer: ReturnType<typeof setInterval> | null = null;
   return {
     start(preset: number) {
       if (timer) clearInterval(timer);
       send(preset);
-      timer = setInterval(() => send(preset), every);
+      timer = setInterval(() => send(preset), LEASE_MS);
     },
     stop() {
       if (!timer) return;
@@ -307,11 +310,12 @@ export function maskTarget(slice: SliceConfig | undefined, sliceIndex: number, h
 }
 
 /** The edit overlay's lease from Warp & Slices (DESIGN §9.10 item 4): `start` sends at once when the output or the
- *  selection changed (or it was off) and renews every `every` ms; after `quiet` ms without `edited` (an edit, the tab
+ *  selection changed (or it was off) and renews every `LEASE_MS`; after 10 min without `edited` (an edit, the tab
  *  opened or the switch turned on) it ends the lease with `on: false` and calls `idle`, and a `start` after that long
  *  does the same instead of sending (a lease off meanwhile: a hidden page, show lock or show mode); `stop` ends it with
  *  `on: false`. */
-export function overlayLease(send: (id: number, on: boolean, selected: OverlaySelection | null) => void, idle: () => void, every = 2000, quiet = 600_000) {
+export function overlayLease(send: (id: number, on: boolean, selected: OverlaySelection | null) => void, idle: () => void) {
+  const quiet = 600_000;
   let timer: ReturnType<typeof setInterval> | null = null;
   let id = 0, selected: OverlaySelection | null = null, editedAt = 0;
   function stop() {
@@ -332,7 +336,7 @@ export function overlayLease(send: (id: number, on: boolean, selected: OverlaySe
         if (Date.now() - editedAt < quiet) return send(id, true, selected);
         stop();
         idle();
-      }, every);
+      }, LEASE_MS);
     },
     edited() {
       editedAt = Date.now();

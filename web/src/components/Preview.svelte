@@ -23,7 +23,7 @@
   let served = $state<{ w: number; h: number; fallback: boolean } | null>(null);
   const fallback = $derived(served !== null && (served.fallback || otherShape(served.w, served.h, aspect)));
   // a hidden tab (another tab in front, minimised window) takes no preview stream; it resumes when the tab shows again
-  let hidden = typeof document !== 'undefined' && document.hidden;
+  let hidden = document.hidden;
   // a new canvas renders only after the canvas switch: its preview is asked for once the engine lists it as rendered
   const ready = $derived(previewReady(target, app.live.canvas?.canvases));
 

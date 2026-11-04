@@ -7,8 +7,6 @@ import type { IngestJobDoc } from './docs';
 import { clamp01 } from './outputs';
 import { plural } from './system';
 
-export { LOCKED_TITLE } from './patch-screen';
-
 export interface MediaMetadata {
   width: number;
   height: number;
@@ -56,6 +54,14 @@ export async function loadLibrary(signal?: AbortSignal): Promise<LibrarySnapshot
   const response = await fetch('/api/library', { signal });
   if (!response.ok) throw new Error(`${response.status} ${(await response.text()).trim()}`.trim());
   return (await response.json()) as LibrarySnapshot;
+}
+
+/** `loadLibrary` for an `$effect`: hands the snapshot to `set` (a failure keeps what was there) and returns the abort
+ * as the effect's cleanup. */
+export function fetchLibrary(set: (snapshot: LibrarySnapshot) => void): () => void {
+  const abort = new AbortController();
+  loadLibrary(abort.signal).then(set, () => {});
+  return () => abort.abort();
 }
 
 /** The names `POST /api/ingest` takes (IngestAPI.codec(named:)); the first is the default. */
@@ -152,9 +158,9 @@ export function basename(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1);
 }
 
-/** The last `parts` path components: "…/003_Intro/012_clip.mov" → "003_Intro/012_clip.mov". */
-export function pathTail(path: string, parts = 2): string {
-  return path.split('/').filter(Boolean).slice(-parts).join('/');
+/** The last two path components: "…/003_Intro/012_clip.mov" → "003_Intro/012_clip.mov". */
+export function pathTail(path: string): string {
+  return path.split('/').filter(Boolean).slice(-2).join('/');
 }
 
 // MARK: ingest jobs

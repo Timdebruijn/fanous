@@ -31,16 +31,15 @@
   import WallWizard from '../components/WallWizard.svelte';
   import Preview from '../components/Preview.svelte';
   import {
-    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, circleMask, finishMask, handles, keystoneBadges, maskHandle, maskRemoval, maskTarget, modeText, movedHandle, nextSliceId, outputSize, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, redrawIndex, spreadSources, statusText, toggleSmooth, toolPath, triangleDest,
-    type MapPoint, type MapperMode, type MaskPoint, type MaskShape, type MaskTool, type OutputConfig,
+    CANVAS_PRESETS, CANVAS_RATES, MAX_CANVASES, canvasSizeError, canvasTarget, layerRuns, layersOn, EDGES, insertNearest, clamp01, TEST_PATTERNS, UNIT_QUAD, blendCurvePath, circleMask, finishMask, handles, keystoneBadges, maskHandle, maskRemoval, maskTarget, modeText, movedHandle, nextSliceId, outputSize, overlayBadges, overlayLease, overlaySelection, presetBadges, presetNote, redrawIndex, sourceFromPixels, sourcePixels, spreadSources, statusText, toggleSmooth, toolPath, triangleDest,
+    type MapPoint, type MapperMode, type MaskPoint, type MaskShape, type MaskTool,
   } from '../lib/outputs';
   import { mediaOptions, mediaPath, type LibrarySnapshot } from '../lib/layers';
-  import { loadLibrary } from '../lib/media';
+  import { fetchLibrary } from '../lib/media';
   import { app, can, client, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
   import { plural } from '../lib/system';
   import { LOCKED_TITLE } from '../lib/patch-screen';
   import { go } from '../lib/router.svelte';
-  import { sourcePixels, sourceFromPixels } from '../lib/outputs';
   import { downloadTemplatePNG, templateSVG } from '../lib/template';
   import { choose, grid, groups, label, members, nudgeCommand, nudgeQueue, step, type Group } from '../lib/remote';
   import { fromScreen, resampleMesh, toScreen } from '../lib/warp';
@@ -124,10 +123,11 @@
   const canvasLayers = $derived(canvas ? layerRuns(layersOn(app.project.layerCanvas, app.project.layerCount, canvas.id)) : '');
   const sliceIndex = $derived(Math.min(ui.slice, Math.max(0, (output?.slices.length ?? 1) - 1)));
 
-  function set(path: string, value: JSONValue) {
+  // `value` is a config shape (a mask, a slice, a mesh): JSON, typed as such once here
+  function set(path: string, value: unknown) {
     if (!output) return;
     overlay.edited();
-    void cmd('output.set', { id: output.id, path, value });
+    void cmd('output.set', { id: output.id, path, value: value as JSONValue });
   }
   function number(event: Event, path: string, scale = 1) {
     const v = Number((event.currentTarget as HTMLInputElement).value);
@@ -158,40 +158,40 @@
     // a mask point keeps its Bézier handles; a Bézier handle is stored as the offset from its point
     if (!output) return;
     const moved = movedHandle(output, path, p);
-    set(moved.path, moved.value as unknown as JSONValue);
+    set(moved.path, moved.value);
   }
   /** A new density keeps the current shape: the new points are placed on the current surface. */
   function setMesh(n: number) {
-    set('/warp/mesh', n <= 1 ? null : (resampleMesh(output?.warp.mesh, n, n) as unknown as JSONValue));
+    set('/warp/mesh', n <= 1 ? null : resampleMesh(output?.warp.mesh, n, n));
   }
   function resetMesh() {
     const mesh = output?.warp.mesh;
-    if (mesh) set('/warp/mesh', resampleMesh(null, mesh.cols, mesh.rows) as unknown as JSONValue);
+    if (mesh) set('/warp/mesh', resampleMesh(null, mesh.cols, mesh.rows));
   }
   function addSlice() {
     if (!output) return;
     // output.set only replaces existing pointers, so append by setting the whole list
     const slice = { id: nextSliceId(output), canvas: output.slices[sliceIndex]?.canvas ?? 1, source: { x: 0, y: 0, w: 1, h: 1 }, dest: UNIT_QUAD, opacity: 1 };
-    set('/slices', [...output.slices, slice] as unknown as JSONValue);
+    set('/slices', [...output.slices, slice]);
     ui.slice = output.slices.length;
   }
   function removeSlice() {
     if (!output || output.slices.length <= 1) return;
     const id = output.slices[sliceIndex]?.id;
     const next = output.slices.filter((_, i) => i !== sliceIndex);
-    set('/slices', next as unknown as JSONValue);
+    set('/slices', next);
     ui.slice = 0;
     toastUndo(`Slice ${id} removed.`);
   }
   function resetSlice() {
     const s = output?.slices[sliceIndex];
     if (!s) return;
-    set(`/slices/${sliceIndex}`, { ...s, source: { x: 0, y: 0, w: 1, h: 1 }, dest: UNIT_QUAD, opacity: 1 } as unknown as JSONValue);
+    set(`/slices/${sliceIndex}`, { ...s, source: { x: 0, y: 0, w: 1, h: 1 }, dest: UNIT_QUAD, opacity: 1 });
     toastUndo(`Slice ${s.id} reset to the whole canvas.`);
   }
   function spreadCanvas() {
     if (!output) return;
-    set('/slices', spreadSources(output.slices, size) as unknown as JSONValue);
+    set('/slices', spreadSources(output.slices, size));
     toastUndo('Canvas spread over the slices, left to right.');
   }
   /** Slice shapes (DESIGN §9.10 item 5), each one edit: Triangle meets the top corners in the middle of the top edge,
@@ -199,13 +199,13 @@
   function triangle() {
     const s = output?.slices[sliceIndex];
     if (!s) return;
-    set(`/slices/${sliceIndex}/dest`, triangleDest(s.dest) as unknown as JSONValue);
+    set(`/slices/${sliceIndex}/dest`, triangleDest(s.dest));
     toastUndo(`Slice ${s.id} is a triangle: drag a top corner away for a quad again.`);
   }
   function circle() {
     const s = output?.slices[sliceIndex];
     if (!s) return;
-    set(`/slices/${sliceIndex}/masks`, [...(s.masks ?? []), circleMask(s.dest)] as unknown as JSONValue);
+    set(`/slices/${sliceIndex}/masks`, [...(s.masks ?? []), circleMask(s.dest)]);
     toastUndo(`Slice ${s.id} has a circle mask: Mask mode edits it.`);
   }
   /** the slice's masks, and the path mask Add points acts on (−1: none) */
@@ -218,7 +218,7 @@
   });
   function removeMask(m: number) {
     const which = masks.length > 1 ? `Mask ${m + 1}` : 'Mask';
-    set(`/slices/${sliceIndex}/masks`, masks.filter((_, k) => k !== m) as unknown as JSONValue);
+    set(`/slices/${sliceIndex}/masks`, masks.filter((_, k) => k !== m));
     ui.handle = null;
     toastUndo(`${which} of slice ${output?.slices[sliceIndex]?.id} removed.`);
   }
@@ -232,7 +232,7 @@
     const list = h?.slice === sliceIndex ? masks[h.mask]?.path : undefined;
     if (!h || !list || locked) return;
     const at = `/slices/${sliceIndex}/masks/${h.mask}/path/${h.point}`;
-    set(at, toggleSmooth(list, h.point) as unknown as JSONValue);
+    set(at, toggleSmooth(list, h.point));
     ui.handle = at;
   }
   /** the library's stills, for an image mask (read while the mask tools show, again after each library scan) */
@@ -240,14 +240,12 @@
   $effect(() => {
     void app.live.library.scannedAt;
     if (ui.tab !== 'warp' || ui.mapper !== 'mask') return;
-    const abort = new AbortController();
-    loadLibrary(abort.signal).then((snapshot) => (library = snapshot), () => {});
-    return () => abort.abort();
+    return fetchLibrary((snapshot) => (library = snapshot));
   });
   const stills = $derived(mediaOptions(library, 'still'));
   function imageMask(value: string) {
     const [folder, file] = value.split('/').map(Number);
-    if (folder && file) set(`/slices/${sliceIndex}/masks`, [...masks, { mode: 'add', feather: 0, image: { folder, file } }] as unknown as JSONValue);
+    if (folder && file) set(`/slices/${sliceIndex}/masks`, [...masks, { mode: 'add', feather: 0, image: { folder, file } }]);
   }
   /** the points of the mapper mode; the selected one is the anchor of the selection */
   const points = $derived(output ? handles(output, ui.mapper, sliceIndex) : []);
@@ -356,7 +354,7 @@
     const target = masks[maskIndex]?.path;
     if (!target) return;
     const { path, index } = insertNearest(target, q);
-    set(`/slices/${sliceIndex}/masks/${maskIndex}/path`, path as unknown as JSONValue);
+    set(`/slices/${sliceIndex}/masks/${maskIndex}/path`, path);
     ui.handle = `/slices/${sliceIndex}/masks/${maskIndex}/path/${index}`;
   }
   /** the mask Redraw was chosen on, as it was then (`finishMask` looks it up when the shape is done; a copy, as patches
@@ -383,7 +381,7 @@
   });
   /** a tool's path, as one edit */
   function addMask(path: MaskPoint[]) {
-    set(`/slices/${sliceIndex}/masks`, finishMask(masks, path, redraw) as unknown as JSONValue);
+    set(`/slices/${sliceIndex}/masks`, finishMask(masks, path, redraw));
     stopTool();
   }
   function finishDrawing() {
@@ -398,7 +396,7 @@
   const removal = $derived(output && maskHandle(ui.handle)?.slice === sliceIndex ? maskRemoval(output, ui.handle) : null);
   function removeMaskPoint() {
     if (!removal) return;
-    set(removal.path, removal.value as unknown as JSONValue);
+    set(removal.path, removal.value);
     ui.handle = maskHandle(ui.handle)?.side ? removal.path : null;
     ui.group = 'point';
   }
@@ -674,7 +672,7 @@
         {#if ui.mapper === 'cornerPin'}
           <div class="fields">
             <p class="caption grow">Drag the four corners on the preview; arrow keys nudge the selected corner by one pixel (Shift: ten). For a curved or uneven surface, switch to Mesh and pick a density; the mesh works on top of the corner pin.</p>
-            <button type="button" class="btn" disabled={locked} onclick={() => set('/warp/cornerPin', UNIT_QUAD as unknown as JSONValue)}>Reset corners</button>
+            <button type="button" class="btn" disabled={locked} onclick={() => set('/warp/cornerPin', UNIT_QUAD)}>Reset corners</button>
           </div>
         {:else if ui.mapper === 'mesh'}
           <div class="fields">

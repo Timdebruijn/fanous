@@ -3,7 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Pure logic of projector walls on the Outputs screen (DESIGN §9.9): the wall as the engine stores it (WallModel.swift),
 // the wizard's grid choice and canvas preview, the mini-map's seams, badges, test patterns and the seam check steps.
-import { TEST_PATTERNS, type DisplayDoc, type OutputConfig, type OutputStatusDoc } from './outputs';
+import { LEASE_MS, TEST_PATTERNS, type DisplayDoc, type OutputConfig, type OutputStatusDoc } from './outputs';
 
 export type ManualField = 'source' | 'overlap.left' | 'overlap.right' | 'overlap.top' | 'overlap.bottom';
 
@@ -213,10 +213,10 @@ export function wallPatterns(
 }
 
 /** The test patterns of the wizard or the seam check, a lease (`output.pattern`, B102): `show` sends `pattern` for the
- * outputs `ids`, with 0 for those of the last `show` that are not among them, and again every `every` ms (the engine
+ * outputs `ids`, with 0 for those of the last `show` that are not among them, and again every `LEASE_MS` (the engine
  * drops a lease 5 s after the last); a `show` of what already shows sends nothing new, one of no outputs is a `stop`.
  * `stop` ends them all with 0. */
-export function patternLease(send: (patterns: { id: number; pattern: number }[]) => void, every = 2000) {
+export function patternLease(send: (patterns: { id: number; pattern: number }[]) => void) {
   let timer: ReturnType<typeof setInterval> | null = null;
   let shown: { id: number; pattern: number }[] = [];
   const ends = (keep: number[]) => shown.filter((p) => !keep.includes(p.id)).map(({ id }) => ({ id, pattern: 0 }));
@@ -235,7 +235,7 @@ export function patternLease(send: (patterns: { id: number; pattern: number }[])
       if (timer) clearInterval(timer);
       send([...next, ...ends(ids)]);
       shown = next;
-      timer = setInterval(() => send(shown), every);
+      timer = setInterval(() => send(shown), LEASE_MS);
     },
     stop,
   };

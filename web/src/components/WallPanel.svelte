@@ -9,7 +9,7 @@
   import { app, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
   import { throttledSender } from '../lib/throttle';
   import { endCheck, pick, removeWall, startWizard, stepCheck, wallUI } from '../lib/wall-session.svelte';
-  import { SEAM_STEPS, overlapHint, rc, seamLines, wallPixels, type Control, type ManualField, type SeamLine, type WallConfig } from '../lib/walls';
+  import { SEAM_STEPS, overlapHint, rc, seamLines, wallPixels, type ManualField, type SeamLine, type WallConfig } from '../lib/walls';
 
   // A projector wall (DESIGN §9.9) around a mini-map: one tile per projector, the seams as lines between them. Tap a
   // seam for its gamma and curve, a projector for its black floor and colour; Geometry for the overlap, Edit layout… and Remove
@@ -221,7 +221,7 @@
         {@const at = rc(wall.outputs.indexOf(projector.id), wall.cols)}
         <section class="ctl" aria-label="Projector">
           <h3>{projector.name} · r{at.row} c{at.col}</h3>
-          {@render slider({ label: 'Black floor', key: `${projector.id}-lift`, value: projector.blend.lift * 100, min: 0, max: 20, step: 0.1, digits: 1, unit: ' %', set: (v) => throttle.send(`lift:${projector.id}`, 'lift', (v / 100) * SCALE), focus: wallUI.focus === 'floor' })}
+          {@render slider({ label: 'Black floor', key: `${projector.id}-lift`, value: projector.blend.lift * 100, max: 20, step: 0.1, digits: 1, unit: ' %', set: (v) => throttle.send(`lift:${projector.id}`, 'lift', (v / 100) * SCALE), focus: wallUI.focus === 'floor' })}
           <p class="caption">Lifts this projector's black to match the overlaps, where the blacks of two projectors add up, or four where rows and columns cross. On Grey 0 %, raise it on the projectors next to a lighter seam, one by one, until even.</p>
           <OutputColour output={projector} focus={wallUI.focus === 'colour'} />
           <p class="caption">Colour gain: on Grey 25 %, 75 % and White, turn down the channel that is too strong on a brighter or tinted projector (or up on a darker one) until it matches its neighbours. Black offset raises this projector's black everywhere, overlaps included, for a projector whose black is darker than the others'.</p>
@@ -235,10 +235,10 @@
         {@const hint = overlaps.map(overlapHint).find((h) => h)}
         <section class="ctl" aria-label="Geometry">
           {#if wall.cols > 1}
-            {@render slider({ label: 'Overlap across', key: 'ox', value: Math.round(wall.overlap.x * 100), min: 0, max: 50, step: 1, digits: 0, unit: ' %', set: (v) => setOverlap('x', v), onRelease: true, off: noSize })}
+            {@render slider({ label: 'Overlap across', key: 'ox', value: Math.round(wall.overlap.x * 100), max: 50, step: 1, digits: 0, unit: ' %', set: (v) => setOverlap('x', v), onRelease: true, off: noSize })}
           {/if}
           {#if wall.rows > 1}
-            {@render slider({ label: 'Overlap down', key: 'oy', value: Math.round(wall.overlap.y * 100), min: 0, max: 50, step: 1, digits: 0, unit: ' %', set: (v) => setOverlap('y', v), onRelease: true, off: noSize })}
+            {@render slider({ label: 'Overlap down', key: 'oy', value: Math.round(wall.overlap.y * 100), max: 50, step: 1, digits: 0, unit: ' %', set: (v) => setOverlap('y', v), onRelease: true, off: noSize })}
           {/if}
           {#if typeof pixels !== 'string'}
             <p class="caption">Each projector shares {[wall.cols > 1 ? `${Math.round(wall.overlap.x * pixels.width)} of its ${pixels.width} px across` : '', wall.rows > 1 ? `${Math.round(wall.overlap.y * pixels.height)} of its ${pixels.height} px down` : ''].filter(Boolean).join(' and ')} with its neighbour.</p>

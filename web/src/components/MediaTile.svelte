@@ -3,8 +3,8 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { can } from '../lib/state.svelte';
+  import { LOCKED_TITLE } from '../lib/patch-screen';
   import {
-    LOCKED_TITLE,
     audioLabel,
     codecLabel,
     displayName,

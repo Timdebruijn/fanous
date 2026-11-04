@@ -49,7 +49,7 @@ function escape(text: string): string {
  * back onto the canvas (filled: what they leave visible on the output). A mask edge is cut into pieces so it follows the
  * slice's bilinear mapping.
  */
-export function templateSVG(output: OutputConfig, canvas: { width: number; height: number }, name = output.name): string {
+export function templateSVG(output: OutputConfig, canvas: { width: number; height: number }): string {
   const { width: W, height: H } = canvas;
   const line = Math.max(2, Math.round(H / 540));
   const font = Math.max(14, Math.round(H / 40));
@@ -93,7 +93,7 @@ export function templateSVG(output: OutputConfig, canvas: { width: number; heigh
     parts.push(`<text x="${x + font * 0.6}" y="${y + font * 1.4}" fill="${colour}" font-family="Helvetica, Arial, sans-serif" font-size="${font}" font-weight="700">${escape(label)}</text>`);
   });
   parts.push(
-    `<text x="${font * 0.6}" y="${H - font * 0.8}" fill="#A3AAB4" font-family="Helvetica, Arial, sans-serif" font-size="${font}">${escape(`Fanous content template · ${name} · canvas ${W}×${H} px · filled = visible on this output`)}</text>`,
+    `<text x="${font * 0.6}" y="${H - font * 0.8}" fill="#A3AAB4" font-family="Helvetica, Arial, sans-serif" font-size="${font}">${escape(`Fanous content template · ${output.name} · canvas ${W}×${H} px · filled = visible on this output`)}</text>`,
   );
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${parts.join('')}</svg>`;
 }

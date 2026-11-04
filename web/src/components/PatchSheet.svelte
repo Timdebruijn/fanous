@@ -2,9 +2,9 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
+  import CopyButton from './CopyButton.svelte';
   import { SHEET_HEADER, sheetFaults, sheetRows, sheetTSV, type Group } from '../lib/patch-screen';
   import { app, prefs } from '../lib/state.svelte';
-  import { copied } from '../lib/system';
 
   // The Patch sheet (DESIGN §6.6 item 4): what to patch on the console, with Print and Copy. Read-only, for every role.
   let { groups, onclose }: { groups: Group[]; onclose: () => void } = $props();
@@ -24,16 +24,6 @@
   let dialog: HTMLDialogElement | undefined = $state();
   $effect(() => {
     dialog?.showModal();
-  });
-
-  let copy = $state<'idle' | 'ok' | 'failed'>('idle');
-  async function copySheet() {
-    copy = await copied(sheetTSV(rows));
-  }
-  $effect(() => {
-    if (copy === 'idle') return;
-    const timer = setTimeout(() => (copy = 'idle'), 2500);
-    return () => clearTimeout(timer);
   });
 </script>
 
@@ -77,8 +67,7 @@
       <span class="label">Count Art-Net universes from 1</span>
     </label>
     <span class="spacer"></span>
-    <span class="caption" role="status">{copy === 'ok' ? 'Copied' : copy === 'failed' ? 'Copy is not available here; select the text instead' : ''}</span>
-    <button type="button" class="btn" onclick={copySheet}>Copy</button>
+    <CopyButton text={sheetTSV(rows)} captionFirst />
     <button type="button" class="btn" onclick={() => window.print()}>Print</button>
     <button type="button" class="btn btn-primary" onclick={() => dialog?.close()}>Close</button>
   </div>
@@ -93,7 +82,6 @@
   th { color: var(--text-2); font-weight: 500; white-space: nowrap; }
   td:not(:last-child) { white-space: nowrap; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }
-  .actions .caption { margin: 0; }
   .alert { color: var(--red); margin: 12px 0 0; }
   h2:focus { outline: none; }
 

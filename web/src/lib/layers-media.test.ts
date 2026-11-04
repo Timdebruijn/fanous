@@ -3,7 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { describe, expect, it } from 'vitest';
 import type { LayerStatus, ResolvedParameter } from './docs';
-import { GENERATORS, POLICIES, ZERO_GROUPS, folderZeroItems, zeroCaption, layerState, mediaLine, mediaOptions, mediaPath, playSteps, policyName, type LibrarySnapshot } from './layers';
+import { GENERATORS, POLICIES, ZERO_GROUPS, folderZeroItems, zeroCaption, layerState, mediaLine, mediaOptions, mediaPath, playSteps, policyName, zeroGroups, type LibrarySnapshot } from './layers';
 
 const layer = (over: Partial<LayerStatus> = {}): LayerStatus => ({ index: 1, folder: 3, file: 12, name: 'loop.mov', kind: 'movie', codec: 'HapY', width: 1920, height: 1080, fps: 25, frames: 100, frame: 0, error: null, ...over });
 
@@ -135,6 +135,12 @@ describe('folder 0 (B61)', () => {
     const kinds = [...new Set(items.map((i) => i.kind))];
     expect(kinds).toEqual(ZERO_GROUPS.map((g) => g.kind));
     expect(ZERO_GROUPS.find((g) => g.kind === 'screen')?.title).toBe('Displays (21–28)');
+  });
+  it('groups by heading: no camera group without a capture feed, no display group without displays', () => {
+    const groups = (capture?: Parameters<typeof folderZeroItems>[1]) => zeroGroups(folderZeroItems(servers, capture), capture).map((g) => `${g.kind} ${g.list.length}`);
+    expect(groups()).toEqual([`generator ${GENERATORS.length}`, 'syphon 2']);
+    expect(groups({ devices: [] })).toEqual([`generator ${GENERATORS.length}`, 'capture 0', 'syphon 2']);
+    expect(groups({ devices: [], screens: [{ file: 21, name: 'Built-in Retina Display', running: true }] })).toEqual([`generator ${GENERATORS.length}`, 'capture 0', 'screen 1', 'syphon 2']);
   });
   it('shows a gone server by name with "not running" on the layer', () => {
     const gone = layer({ folder: 0, file: 151, kind: 'live', name: 'Syphon: Simple Server', error: 'not running', width: 0, height: 0 });

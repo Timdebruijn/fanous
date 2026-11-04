@@ -158,17 +158,17 @@ export function trackpad(dx: number, dy: number, ms: number): [number, number] {
   return [dx * gain, dy * gain];
 }
 
-/** Nudges go out one command at a time and at most one per `gap` ms; what comes in meanwhile for the same selection
+/** Nudges go out one command at a time and at most one per 100 ms; what comes in meanwhile for the same selection
  *  (`key`) is added up and sent next. A fast burst of taps or a trackpad drag then loses no step to a command that
  *  was computed before the previous one came back, and the engine is not flooded. */
-export function nudgeQueue(gap = 100) {
+export function nudgeQueue() {
   const queue: { key: string; dx: number; dy: number; run: (dx: number, dy: number) => Promise<unknown> }[] = [];
   let busy = false;
   async function drain() {
     busy = true;
     for (let next = queue.shift(); next; next = queue.shift()) {
       // a failed send must not stall the nudges behind it
-      await Promise.all([next.run(next.dx, next.dy).catch(() => undefined), new Promise((done) => setTimeout(done, gap))]);
+      await Promise.all([next.run(next.dx, next.dy).catch(() => undefined), new Promise((done) => setTimeout(done, 100))]);
     }
     busy = false;
   }

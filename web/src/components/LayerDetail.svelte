@@ -20,7 +20,7 @@
     specs,
     footprint,
     library = null,
-    name = undefined,
+    name,
   }: {
     n: number;
     layer: LayerStatus | undefined;

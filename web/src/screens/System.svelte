@@ -2,14 +2,16 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
+  import CopyButton from '../components/CopyButton.svelte';
   import SystemLogs from '../components/SystemLogs.svelte';
   import SystemMetrics from '../components/SystemMetrics.svelte';
   import SystemRoles from '../components/SystemRoles.svelte';
   import SystemSync from '../components/SystemSync.svelte';
   import SystemVersions from '../components/SystemVersions.svelte';
   import { modeText } from '../lib/outputs';
+  import { LOCKED_TITLE } from '../lib/patch-screen';
   import { app, can, cmd } from '../lib/state.svelte';
-  import { LOCKED_TITLE, OPERATOR_TITLE, ageText, copied, headerCaption, memoryText, outputTone, plural, readinessBadge, readinessSummary, resumedText, stampText, thermalTone } from '../lib/system';
+  import { OPERATOR_TITLE, ageText, headerCaption, memoryText, outputTone, plural, readinessBadge, readinessSummary, resumedText, stampText, thermalTone } from '../lib/system';
 
   const show = $derived(app.live.show);
   const sys = $derived(app.live.system);
@@ -48,16 +50,6 @@
     if (rootDraft === null || !rootDirty) return;
     if ((await cmd('project.set', { path: '/library/root', value: rootDraft.trim() })) !== undefined) rootDraft = null;
   }
-
-  let copy = $state<'idle' | 'ok' | 'failed'>('idle');
-  async function copyFingerprint() {
-    copy = await copied(sys.tlsFingerprint);
-  }
-  $effect(() => {
-    if (copy === 'idle') return;
-    const timer = setTimeout(() => (copy = 'idle'), 2500);
-    return () => clearTimeout(timer);
-  });
 </script>
 
 <div class="toolbar">
@@ -209,8 +201,7 @@
       <dd>
         <div class="mono wrap">{sys.tlsFingerprint || '—'}</div>
         <div class="copyrow">
-          <button type="button" class="btn" disabled={!sys.tlsFingerprint} onclick={copyFingerprint}>Copy</button>
-          <span class="caption" role="status">{copy === 'ok' ? 'Copied' : copy === 'failed' ? 'Copy is not available here; select the text instead' : ''}</span>
+          <CopyButton text={sys.tlsFingerprint} disabled={!sys.tlsFingerprint} />
         </div>
       </dd>
       <dt>Clients</dt>
