@@ -7,7 +7,6 @@ import type { ReadinessItemDoc } from './docs';
 import { clamp01 } from './outputs';
 import type { Role } from './protocol';
 
-export { LOCKED_TITLE } from './patch-screen';
 export const OPERATOR_TITLE = 'Locked: operator or programmer';
 export const ROLES: readonly Role[] = ['monitor', 'operator', 'programmer'];
 
@@ -21,23 +20,13 @@ export const pad2 = (n: number) => String(n).padStart(2, '0');
 /** A count with its noun: 1 → "1 layer", 2 → "2 layers"; `many` for an irregular plural ("canvases"). */
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-/** A Copy button's outcome: the text in the clipboard, or not (no permission, no secure context). */
-export async function copied(text: string): Promise<'ok' | 'failed'> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return 'ok';
-  } catch {
-    return 'failed';
-  }
-}
-
 const finite = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
 /** The notice after show mode came back by itself (engine crash or kill); null when it was entered by hand. */
 export function resumedText(resumedAt: number | null | undefined): string | null {
   if (!resumedAt || !(resumedAt > 0)) return null;
   const d = new Date(resumedAt * 1000);
-  return `Show mode resumed after the engine restarted at ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  return `Show mode resumed after the engine restarted at ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
 /** "h:mm:ss" */
@@ -50,7 +39,7 @@ export function formatClock(seconds: number): string {
 export function stampText(epochSeconds: number): string {
   if (!(epochSeconds > 0)) return 'never';
   const d = new Date(epochSeconds * 1000);
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 /** "M4 Max · macOS 27.0 · engine 0.7.0 · up 1:02:03"; parts the engine has not published yet are left out. */

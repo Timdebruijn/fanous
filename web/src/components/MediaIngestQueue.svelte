@@ -2,8 +2,9 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
-  import { app, authHeaders, can } from '../lib/state.svelte';
-  import { LOCKED_TITLE, basename, describeCodec, describeJobState, isActive, orderJobs, pathTail, queueSummary, send } from '../lib/media';
+  import { app, can, post } from '../lib/state.svelte';
+  import { LOCKED_TITLE } from '../lib/patch-screen';
+  import { basename, describeCodec, describeJobState, isActive, orderJobs, pathTail, queueSummary } from '../lib/media';
 
   let { onfail }: { onfail: (message: string) => void } = $props();
 
@@ -12,7 +13,7 @@
   const locked = $derived(!can('programmer'));
 
   async function act(id: string, action: 'cancel' | 'remove') {
-    const error = await send(`/api/ingest/${encodeURIComponent(id)}/${action}`, { method: 'POST', headers: authHeaders() });
+    const error = await post(`/api/ingest/${encodeURIComponent(id)}/${action}`);
     if (error) onfail(`Could not ${action} the job: ${error}`);
   }
 </script>

@@ -6,7 +6,7 @@
   // Media's folder 0 stays the picker; the timecode settings stay on Show, "Use for timecode" is a second way to them.
   import LevelMeter from '../components/LevelMeter.svelte';
   import type { AudioInputDoc } from '../lib/docs';
-  import { ZERO_GROUPS, ZERO_RANGES, folderZeroItems, layersShowing, renumberEffect, signalText, zeroCaption, type FolderZeroItem } from '../lib/layers';
+  import { ZERO_RANGES, folderZeroItems, layersShowing, renumberEffect, signalText, zeroCaption, zeroGroups, type FolderZeroItem } from '../lib/layers';
   import { go, route } from '../lib/router.svelte';
   import { ltcInput, timecodeBadge, timecodeOn } from '../lib/show';
   import { app, cmd, programmerLock } from '../lib/state.svelte';
@@ -15,13 +15,10 @@
   const capture = $derived(app.live.capture);
   const items = $derived(folderZeroItems(app.live.syphon?.servers, capture).filter((i) => i.kind !== 'generator'));
   const groups = $derived(
-    ZERO_GROUPS.filter((g) => g.kind !== 'generator')
-      .map((g) => {
-        const list = items.filter((i) => i.kind === g.kind);
-        // not running (in use counts as running): their numbers can be forgotten (B69, B73)
-        return { ...g, list, notRunning: list.filter((i) => !i.running && !i.inUse).length };
-      })
-      .filter((g) => (g.kind === 'capture' ? capture !== undefined : g.kind === 'screen' ? g.list.length > 0 : true)),
+    zeroGroups(items, capture)
+      .filter((g) => g.kind !== 'generator')
+      // not running (in use counts as running): their numbers can be forgotten (B69, B73)
+      .map((g) => ({ ...g, notRunning: g.list.filter((i) => !i.running && !i.inUse).length })),
   );
   // capture.forget without a file sweeps cameras and displays (1–28) at once, so one button above the cameras covers both
   const captureNotRunning = $derived(groups.filter((g) => g.kind === 'capture' || g.kind === 'screen').reduce((n, g) => n + g.notRunning, 0));
@@ -84,9 +81,6 @@
     if (done === undefined) return;
     numberDraft = {};
     go('inputs', String(to), true);
-  }
-  function statusWord(item: FolderZeroItem): string {
-    return zeroCaption(item) ?? 'running';
   }
 </script>
 
@@ -214,7 +208,7 @@
           <dd>{model(picked)}</dd>
         {/if}
         <dt>Status</dt>
-        <dd class="status"><span class="dot {picked.inUse ? 'dot-yellow' : picked.running ? 'dot-green' : 'dot-off'}" aria-hidden="true"></span>{statusWord(picked)}</dd>
+        <dd class="status"><span class="dot {picked.inUse ? 'dot-yellow' : picked.running ? 'dot-green' : 'dot-off'}" aria-hidden="true"></span>{zeroCaption(picked) ?? 'running'}</dd>
         <dt>Shown on</dt>
         <dd>{#each on as l (l)}<span class="badge badge-accent">{l}</span> {:else}no layer{/each}</dd>
         {#if layer}

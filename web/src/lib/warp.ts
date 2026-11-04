@@ -128,8 +128,9 @@ export function fromScreen(output: OutputConfig, mode: MapperMode, p: MapPoint):
 }
 
 /** An outline through the warp: each edge is cut into pieces because a straight line bends under a mesh or a pin. */
-export function warpedOutline(output: OutputConfig, mode: MapperMode, points: MapPoint[], closed: boolean, pieces = 12): MapPoint[] {
+export function warpedOutline(output: OutputConfig, mode: MapperMode, points: MapPoint[], closed: boolean): MapPoint[] {
   if (mode === 'cornerPin' || points.length === 0) return points;
+  const pieces = 12;
   const out: MapPoint[] = [];
   const n = closed ? points.length : points.length - 1;
   for (let i = 0; i < n; i++) {

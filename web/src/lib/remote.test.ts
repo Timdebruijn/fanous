@@ -218,7 +218,7 @@ describe('nudgeQueue', () => {
   it('sends the first nudge at once, adds up what comes in meanwhile and sends it after the gap', async () => {
     const sent: [string, number, number][] = [];
     const run = (key: string) => async (dx: number, dy: number) => void sent.push([key, dx, dy]);
-    const nudge = nudgeQueue(100);
+    const nudge = nudgeQueue();
     nudge('a', 1, 0, run('a'));
     nudge('a', 1, 0, run('a'));
     nudge('a', 0.25, -1, run('a'));
@@ -235,7 +235,7 @@ describe('nudgeQueue', () => {
 
   it('a failed send does not stall the nudges behind it', async () => {
     const sent: number[] = [];
-    const nudge = nudgeQueue(100);
+    const nudge = nudgeQueue();
     nudge('a', 1, 0, () => Promise.reject(new Error('socket closed')));
     nudge('b', 2, 0, async (dx) => void sent.push(dx));
     await vi.advanceTimersByTimeAsync(100);

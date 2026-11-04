@@ -13,7 +13,6 @@ export interface UIMessage {
   hint: string;
 }
 
-export const MESSAGE_LIMIT = 20;
 /** the banner goes away by itself after this long */
 export const BANNER_MS = 10_000;
 /** an Undo toast stays this long */
@@ -39,13 +38,4 @@ export function errorHint(code: string): string {
     default:
       return '';
   }
-}
-
-/** Prepends a message (newest first), keeping at most `limit`. */
-export function pushMessage(list: readonly UIMessage[], entry: UIMessage, limit = MESSAGE_LIMIT): UIMessage[] {
-  return [entry, ...list].slice(0, limit);
-}
-
-export function makeMessage(id: number, at: number, error: { code: string; message: string }): UIMessage {
-  return { id, at, code: error.code, message: error.message, hint: errorHint(error.code) };
 }

@@ -6,9 +6,8 @@
   import MediaIngestQueue from '../components/MediaIngestQueue.svelte';
   import MediaTile from '../components/MediaTile.svelte';
   import PolicyHint from '../components/PolicyHint.svelte';
-  import { app, authHeaders, can, playOnLayer, programmerLock } from '../lib/state.svelte';
+  import { app, authHeaders, can, playOnLayer, post, programmerLock } from '../lib/state.svelte';
   import {
-    LOCKED_TITLE,
     activeSources,
     defaultFolder,
     displayName,
@@ -19,8 +18,9 @@
     type LibraryItem,
     type LibrarySnapshot,
   } from '../lib/media';
-  import { ZERO_GROUPS, folderZeroItems, layerNumbers, layersShowing, zeroCaption } from '../lib/layers';
+  import { folderZeroItems, layerNumbers, layersShowing, zeroCaption, zeroGroups } from '../lib/layers';
   import { lowestFree } from '../lib/outputs';
+  import { LOCKED_TITLE } from '../lib/patch-screen';
   import { plural } from '../lib/system';
 
   interface Upload {
@@ -49,13 +49,8 @@
   const isZero = $derived(selectedFolder === ZERO);
   /** absent from engines before B73 step 2: then no camera or display group */
   const capture = $derived(app.live.capture);
-  const zeroItems = $derived(folderZeroItems(app.live.syphon?.servers, capture));
   // numbers, Forget and permissions of the live inputs are on the Inputs screen (DESIGN §12.1)
-  const zeroGroups = $derived(
-    ZERO_GROUPS.map((g) => ({ ...g, list: zeroItems.filter((i) => i.kind === g.kind) })).filter((g) =>
-      g.kind === 'capture' ? capture !== undefined : g.kind === 'screen' ? g.list.length > 0 : true,
-    ),
-  );
+  const zeroItems = $derived(folderZeroItems(app.live.syphon?.servers, capture));
   let pickedZero = $state<number | null>(null);
   const pickedZeroItem = $derived(zeroItems.find((i) => i.file === pickedZero));
   const folders = $derived(library?.folders ?? []);
@@ -115,9 +110,7 @@
 
   async function createFolder(event: SubmitEvent) {
     event.preventDefault();
-    const error = await send('/api/library/folder', {
-      method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ number: newNumber, name: newName.trim() }),
-    });
+    const error = await post('/api/library/folder', { number: newNumber, name: newName.trim() });
     if (error) {
       notice = `Cannot create the folder: ${error}`;
       return;
@@ -129,7 +122,7 @@
 
   async function rescan() {
     rescanning = true;
-    const error = await send('/api/library/rescan', { method: 'POST', headers: authHeaders() });
+    const error = await post('/api/library/rescan');
     if (error) notice = `Rescan failed: ${error}`;
     rescanning = false;
     await load();
@@ -137,7 +130,7 @@
 
   async function transcode(item: LibraryItem, codec: string) {
     const body = { source: item.path, folder: current?.number, file: item.file, name: item.name, codec, ...(item.kind === 'sequence' ? { fps: 25 } : {}) };
-    const error = await send('/api/ingest', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const error = await post('/api/ingest', body);
     if (error) notice = `Cannot transcode ${item.name}: ${error}`;
   }
 
@@ -255,7 +248,7 @@
         <PolicyHint what="content put on a layer from here" />
         {#if playNote}<p class="caption" role="status">{playNote}</p>{/if}
       {/if}
-      {#each zeroGroups as group (group.kind)}
+      {#each zeroGroups(zeroItems, capture) as group (group.kind)}
         <h2 class="zero-title">{group.title}</h2>
         {#if group.list.length === 0}
           <p class="caption">{group.kind === 'capture'

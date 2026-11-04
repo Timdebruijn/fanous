@@ -2,8 +2,9 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 import { FanousClient, type ConnectionState, type Doc, type PreviewInfo, type StreamDescription } from './client';
-import { makeMessage, pushMessage, TOAST_MS, type UIMessage } from './errors';
+import { errorHint, TOAST_MS, type UIMessage } from './errors';
 import { playSteps } from './layers';
+import { send } from './media';
 import { applyPatch } from './patch';
 import { lockTitle } from './show';
 import { emptyLive, emptyProject, restoreKeys, type LiveDoc, type ProjectDoc } from './docs';
@@ -105,6 +106,12 @@ export function authHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+/** A state-changing POST, with `body` as JSON when given; resolves to an error message, or null when the engine accepted it. */
+export function post(url: string, body?: unknown): Promise<string | null> {
+  const headers = authHeaders();
+  return send(url, body === undefined ? { method: 'POST', headers } : { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
+
 export const client = new FanousClient(
   {
     url: `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`,
@@ -151,7 +158,9 @@ export async function cmd<N extends CommandName>(name: N, args?: CommandArgs[N])
   } catch (error) {
     const refusal = error as { code: string; message: string };
     app.lastError = refusal;
-    app.messages = pushMessage(app.messages, makeMessage(++messageId, Date.now(), refusal));
+    const { code, message } = refusal;
+    // newest first, at most 20
+    app.messages = [{ id: ++messageId, at: Date.now(), code, message, hint: errorHint(code) }, ...app.messages].slice(0, 20);
     return undefined;
   }
 }

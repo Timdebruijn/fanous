@@ -3,7 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Project versions (B23): the `project.versions` result, row texts and when a revert is allowed.
 import { LOCKED_TITLE } from './patch-screen';
-import { pad2, plural } from './system';
+import { plural } from './system';
 
 /** One entry of `project.versions`, newest first. `at` is epoch seconds. */
 export interface ProjectVersion {
@@ -40,7 +40,7 @@ export function versionSummary(v: ProjectVersion): string {
 /** Local time: "14:30" today, "25 Oct 14:30" on another day of the year, with the year when it differs. */
 export function versionTime(at: number, now: Date = new Date()): string {
   const d = new Date(at * 1000);
-  const time = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   if (d.toDateString() === now.toDateString()) return time;
   const day = `${d.getDate()} ${d.toLocaleString('en-GB', { month: 'short' })}`;
   return d.getFullYear() === now.getFullYear() ? `${day} ${time}` : `${day} ${d.getFullYear()} ${time}`;

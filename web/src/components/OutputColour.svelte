@@ -5,7 +5,7 @@
   import { onDestroy } from 'svelte';
   import RangeStepper from './RangeStepper.svelte';
   import { colorOf, type OutputConfig } from '../lib/outputs';
-  import { app, cmd, programmerLock } from '../lib/state.svelte';
+  import { cmd, programmerLock } from '../lib/state.svelte';
   import { throttledSender } from '../lib/throttle';
 
   // Per-output colour (DESIGN §9.9): gain R, G, B and the black offset of one output, tuned by eye. On the Outputs tab

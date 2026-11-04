@@ -30,6 +30,7 @@ describe('project versions', () => {
   it('shows the time today, the date on other days and the year when it differs', () => {
     const now = new Date(2026, 9, 26, 18, 0);
     expect(versionTime(at(2026, 9, 26, 14, 5), now)).toBe('14:05');
+    expect(versionTime(at(2026, 9, 26, 0, 5), now)).toBe('00:05');
     expect(versionTime(at(2026, 9, 25, 9, 30), now)).toBe('25 Oct 09:30');
     expect(versionTime(at(2025, 11, 31, 23, 59), now)).toBe('31 Dec 2025 23:59');
     expect(lastVersionText(null, now)).toBe('none yet');

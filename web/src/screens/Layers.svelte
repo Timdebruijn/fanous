@@ -25,7 +25,7 @@
   import LayerStrips from '../components/LayerStrips.svelte';
   import Preview from '../components/Preview.svelte';
   import { layerNumbers, layerPreview, parseThumbFrame, rowThumb, thumbnailFor, thumbnailIndex, type LibrarySnapshot } from '../lib/layers';
-  import { loadLibrary } from '../lib/media';
+  import { fetchLibrary } from '../lib/media';
   import { canvasTarget, layerCanvas } from '../lib/outputs';
   import { loadChannelMap, type ChannelMap } from '../lib/patch-screen';
   import { latestOnly } from '../lib/preview';
@@ -93,9 +93,7 @@
   // Runs on mount and again when the engine reports a new library scan.
   $effect(() => {
     void app.live.library.scannedAt;
-    const abort = new AbortController();
-    loadLibrary(abort.signal).then((snapshot) => (library = snapshot), () => {});
-    return () => abort.abort();
+    return fetchLibrary((snapshot) => (library = snapshot));
   });
 
   const numbers = $derived(layerNumbers(app.project.layerCount));

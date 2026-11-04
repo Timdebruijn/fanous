@@ -105,6 +105,14 @@ export function folderZeroItems(servers: SyphonServerDoc[] | undefined, capture?
   ];
 }
 
+/** Folder 0's items by `ZERO_GROUPS` heading, for the Media and Inputs screens: no camera group without a capture feed
+ * (an engine before B73 step 2), no display group without displays. */
+export function zeroGroups(items: readonly FolderZeroItem[], capture: CaptureLiveDoc | undefined) {
+  return ZERO_GROUPS.map((g) => ({ ...g, list: items.filter((i) => i.kind === g.kind) })).filter((g) =>
+    g.kind === 'capture' ? capture !== undefined : g.kind === 'screen' ? g.list.length > 0 : true,
+  );
+}
+
 /** The part of GET /api/library the Layers screen reads: thumbnails and the names for the media picker (and Warp &
  *  Slices: the stills for an image mask). */
 export interface LibrarySnapshot {

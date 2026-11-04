@@ -16,6 +16,18 @@ const webRoot = join(repo, 'web/dist');
 
 export type Engine = { url: string; home: string; token: string; api: APIRequestContext };
 
+/** Each text frame `page` sends or receives on its WebSockets from its next load on, parsed, with its raw text (binary
+ * frames are skipped). */
+export function frames<T = unknown>(page: Page, direction: 'sent' | 'received', on: (message: T, payload: string) => void): void {
+  page.on('websocket', (socket) => {
+    const frame = ({ payload }: { payload: unknown }) => {
+      if (typeof payload === 'string') on(JSON.parse(payload) as T, payload);
+    };
+    if (direction === 'sent') socket.on('framesent', frame);
+    else socket.on('framereceived', frame);
+  });
+}
+
 function freePort(): Promise<number> {
   return new Promise((done, fail) => {
     const server = createServer().once('error', fail);
@@ -127,20 +139,15 @@ export const test = base.extend<{ engine: Engine }>({
     page.on('console', (message) => {
       if (message.type() === 'error') errors.push(`console error: ${message.text()}`);
     });
-    page.on('websocket', (socket) =>
-      socket.on('framereceived', ({ payload }) => {
-        if (typeof payload !== 'string') return;
-        const message = JSON.parse(payload) as {
-          t: string; ok?: boolean; error?: unknown; code?: string; message?: string; id?: number; stream?: string;
-        };
-        if (message.t === 'ack' && !message.ok) errors.push(`command refused: ${JSON.stringify(message.error)}`);
-        // an error with a stream id and no `stream` ends a stream that went away (a removed canvas); a refused request
-        // has no id, or (a refused preview) both
-        if (message.t === 'error' && (message.id === undefined || message.stream !== undefined)) {
-          errors.push(`protocol error: ${message.code}: ${message.message}`);
-        }
-      }),
-    );
+    type Message = { t: string; ok?: boolean; error?: unknown; code?: string; message?: string; id?: number; stream?: string };
+    frames<Message>(page, 'received', (message) => {
+      if (message.t === 'ack' && !message.ok) errors.push(`command refused: ${JSON.stringify(message.error)}`);
+      // an error with a stream id and no `stream` ends a stream that went away (a removed canvas); a refused request
+      // has no id, or (a refused preview) both
+      if (message.t === 'error' && (message.id === undefined || message.stream !== undefined)) {
+        errors.push(`protocol error: ${message.code}: ${message.message}`);
+      }
+    });
     page.on('dialog', (dialog) => void dialog.accept());
     // CI's slow VideoToolbox on a workstation (B98): `E2E_SLOW_DECODER=<ms>` delays every `VideoDecoder.isConfigSupported`
     // by that long (over 5000: the browser's B66 fallback to JPEG); `E2E_FAILING_DECODER=1` makes each decoder fail with

@@ -5,7 +5,8 @@
   import { onMount } from 'svelte';
   import type { Role } from '../lib/protocol';
   import { can, cmd } from '../lib/state.svelte';
-  import { LOCKED_TITLE, ROLES, parseOpenRoles } from '../lib/system';
+  import { LOCKED_TITLE } from '../lib/patch-screen';
+  import { ROLES, parseOpenRoles } from '../lib/system';
 
   // null = unknown (not loaded yet or the request failed)
   let open = $state.raw<Role[] | null>(null);

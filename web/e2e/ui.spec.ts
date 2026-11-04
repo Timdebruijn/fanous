@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import { previewClass } from '../src/lib/preview';
-import { binary, expect, expectPreviewStreaming, openScreen, previewTimeout, repo, test, type Engine } from './fixtures';
+import { binary, expect, expectPreviewStreaming, frames, openScreen, previewTimeout, repo, test, type Engine } from './fixtures';
 
 type Param = { key: string; raw: number; source: string };
 
@@ -428,7 +428,7 @@ test('keys: the global shortcuts do nothing while a modal dialog is open, and ? 
 
 test('keys: Space on the Show screen fires no cue while the shortcut list is open', async ({ page }) => {
   const sent: string[] = [];
-  page.on('websocket', (socket) => socket.on('framesent', ({ payload }) => typeof payload === 'string' && sent.push(payload)));
+  frames(page, 'sent', (_, payload) => sent.push(payload));
   await page.reload();
   await expect(page.getByRole('banner')).toContainText(/\b[1-9]\d* clients/);
   await openScreen(page, 'Show');
@@ -671,9 +671,7 @@ test('outputs: Bézier handles: a press takes the nearest, a handle drags alone 
 
 test('outputs: the mask list: an image mask from the library, Invert, feather, a point drag, a double-tap, Remove', async ({ page, engine }) => {
   const sets: unknown[] = [];
-  page.on('websocket', (socket) =>
-    socket.on('framesent', ({ payload }) => typeof payload === 'string' && payload.includes('"output.set"') && sets.push(JSON.parse(payload))),
-  );
+  frames(page, 'sent', (message, payload) => payload.includes('"output.set"') && sets.push(message));
   await page.goto(`${engine.url}/?token=${engine.token}`);
   // a still as folder 1 file 1 of a new library
   const library = join(engine.home, 'library');
@@ -878,14 +876,10 @@ test('outputs: Spread canvas gives each slice its strip of the canvas', async ({
  * of a test pattern. */
 function patternsSent(page: Page): { leases: { id: number; pattern: number }[][]; sets: number } {
   const sent = { leases: [] as { id: number; pattern: number }[][], sets: 0 };
-  page.on('websocket', (socket) =>
-    socket.on('framesent', ({ payload }) => {
-      if (typeof payload !== 'string') return;
-      const message = JSON.parse(payload) as { name?: string; args?: { patterns?: { id: number; pattern: number }[]; path?: string } };
-      if (message.name === 'output.pattern') sent.leases.push(message.args!.patterns!);
-      if (message.name === 'output.set' && message.args?.path === '/testPattern') sent.sets++;
-    }),
-  );
+  frames<{ name?: string; args?: { patterns?: { id: number; pattern: number }[]; path?: string } }>(page, 'sent', (message) => {
+    if (message.name === 'output.pattern') sent.leases.push(message.args!.patterns!);
+    if (message.name === 'output.set' && message.args?.path === '/testPattern') sent.sets++;
+  });
   return sent;
 }
 const both = (pattern: number) => [{ id: 1, pattern }, { id: 2, pattern }];
@@ -895,18 +889,14 @@ function livePatterns(page: Page): (number | null)[] {
   type Status = { pattern?: number | null };
   const patterns: (number | null)[] = [];
   const take = (outputs: Status[]) => outputs.forEach((o, i) => (patterns[i] = o.pattern ?? null));
-  page.on('websocket', (socket) =>
-    socket.on('framereceived', ({ payload }) => {
-      if (typeof payload !== 'string') return;
-      const message = JSON.parse(payload) as { doc?: string; live?: { outputs?: Status[] }; ops?: { path: string; value?: unknown }[] };
-      if (message.live?.outputs) take(message.live.outputs);
-      for (const op of message.doc === 'live' ? (message.ops ?? []) : []) {
-        if (op.path === '/outputs') take(op.value as Status[]);
-        const at = op.path.match(/^\/outputs\/(\d+)\/pattern$/);
-        if (at) patterns[Number(at[1])] = (op.value ?? null) as number | null;
-      }
-    }),
-  );
+  frames<{ doc?: string; live?: { outputs?: Status[] }; ops?: { path: string; value?: unknown }[] }>(page, 'received', (message) => {
+    if (message.live?.outputs) take(message.live.outputs);
+    for (const op of message.doc === 'live' ? (message.ops ?? []) : []) {
+      if (op.path === '/outputs') take(op.value as Status[]);
+      const at = op.path.match(/^\/outputs\/(\d+)\/pattern$/);
+      if (at) patterns[Number(at[1])] = (op.value ?? null) as number | null;
+    }
+  });
   return patterns;
 }
 
@@ -914,11 +904,9 @@ test("walls: the wizard makes a 1 × 2 wall at 15 %, a seam gamma drag is one un
   const sent = patternsSent(page);
   // the wall.seam commands this page sends (the socket of the page as loaded again with the listener in place)
   let seamCommands = 0;
-  page.on('websocket', (socket) =>
-    socket.on('framesent', ({ payload }) => {
-      if (typeof payload === 'string' && (JSON.parse(payload) as { name?: string }).name === 'wall.seam') seamCommands++;
-    }),
-  );
+  frames<{ name?: string }>(page, 'sent', (message) => {
+    if (message.name === 'wall.seam') seamCommands++;
+  });
   await page.goto(`${engine.url}/?token=${engine.token}`);
 
   // two outputs of 1920 × 1200: an unassigned output has no pixel size until it gets a region (or a display mode)
@@ -1017,11 +1005,9 @@ test("walls: the wizard makes a 1 × 2 wall at 15 %, a seam gamma drag is one un
 test('walls: the seam check leases its patterns (B102): renewed, no output.set, no undo step; End, a hidden page, leaving the screen and a reload end the lease', async ({ page, engine }) => {
   const sent = patternsSent(page), live = livePatterns(page);
   let wallAdds = 0;
-  page.on('websocket', (socket) =>
-    socket.on('framesent', ({ payload }) => {
-      if (typeof payload === 'string' && (JSON.parse(payload) as { name?: string }).name === 'wall.add') wallAdds++;
-    }),
-  );
+  frames<{ name?: string }>(page, 'sent', (message) => {
+    if (message.name === 'wall.add') wallAdds++;
+  });
   await page.goto(`${engine.url}/?token=${engine.token}`);
   await addUnassignedOutput(page);
   await page.getByLabel('Add output on').selectOption('none');
@@ -1116,13 +1102,9 @@ test('walls: the seam check leases its patterns (B102): renewed, no output.set, 
 test('outputs: a colour gain drag is one undo step; the black offset steps by 0.1 %', async ({ page, engine }) => {
   // the output.set commands for red gain this page sends (the socket of the page as loaded again with the listener in place)
   let redSets = 0;
-  page.on('websocket', (socket) =>
-    socket.on('framesent', ({ payload }) => {
-      if (typeof payload !== 'string') return;
-      const message = JSON.parse(payload) as { name?: string; args?: { path?: string } };
-      if (message.name === 'output.set' && message.args?.path === '/color/gain/0') redSets++;
-    }),
-  );
+  frames<{ name?: string; args?: { path?: string } }>(page, 'sent', (message) => {
+    if (message.name === 'output.set' && message.args?.path === '/color/gain/0') redSets++;
+  });
   await page.goto(`${engine.url}/?token=${engine.token}`);
   await addUnassignedOutput(page);
   const colour = page.getByRole('region', { name: 'Output settings' }).getByRole('group', { name: 'Colour' });
@@ -1331,11 +1313,9 @@ test('outputs: Undo right after a tap on a colour + shows at once, not at the en
   // the engine's echo of the tap (the socket of the page as loaded again with the listener in place)
   let echoed = () => {};
   const echo = new Promise<void>((done) => (echoed = done));
-  page.on('websocket', (socket) =>
-    socket.on('framereceived', ({ payload }) => {
-      if (typeof payload === 'string' && payload.includes('/color/black')) echoed();
-    }),
-  );
+  frames(page, 'received', (_, payload) => {
+    if (payload.includes('/color/black')) echoed();
+  });
   await page.goto(`${engine.url}/?token=${engine.token}`);
   await addUnassignedOutput(page);
   const colour = colourOf(page);
@@ -1537,13 +1517,9 @@ test('outputs: holding Compare with the mouse keeps the preset on the output unt
 /** The `output.overlay` arguments `page` sends from its next load on (any the engine refuses fails the test, fixtures). */
 function overlaySent(page: Page): unknown[] {
   const sent: unknown[] = [];
-  page.on('websocket', (socket) =>
-    socket.on('framesent', ({ payload }) => {
-      if (typeof payload !== 'string') return;
-      const message = JSON.parse(payload) as { name?: string; args?: unknown };
-      if (message.name === 'output.overlay') sent.push(message.args);
-    }),
-  );
+  frames<{ name?: string; args?: unknown }>(page, 'sent', (message) => {
+    if (message.name === 'output.overlay') sent.push(message.args);
+  });
   return sent;
 }
 
@@ -1692,15 +1668,11 @@ test('canvases: add a canvas, put a layer on it, remove it', async ({ page }) =>
 test('preview: Canvas / This layer and fast layer switching leave one stream running', async ({ page, engine }) => {
   // preview streams this page holds: granted by the engine (`sub`) and not stopped (`unsub`)
   const streams = new Set<number>();
-  page.on('websocket', (socket) => {
-    socket.on('framereceived', ({ payload }) => {
-      const m = typeof payload === 'string' ? (JSON.parse(payload) as { t: string; stream?: string; id: number }) : null;
-      if (m?.t === 'sub' && m.stream === 'preview') streams.add(m.id);
-    });
-    socket.on('framesent', ({ payload }) => {
-      const m = typeof payload === 'string' ? (JSON.parse(payload) as { t: string; id: number }) : null;
-      if (m?.t === 'unsub') streams.delete(m.id);
-    });
+  frames<{ t: string; stream?: string; id: number }>(page, 'received', (m) => {
+    if (m.t === 'sub' && m.stream === 'preview') streams.add(m.id);
+  });
+  frames<{ t: string; id: number }>(page, 'sent', (m) => {
+    if (m.t === 'unsub') streams.delete(m.id);
   });
   await trackDecoders(page);
   await page.goto(`${engine.url}/?token=${engine.token}`);  // again, with the listener above in place
@@ -1788,11 +1760,11 @@ test('preview: a viewer refused H.264 at the encoder limit shows JPEG at once an
   let refusedId = 0;
   let jpegFrames = 0;
   let upgradedAt = 0;  // `subs` when the first `stream` description (H.264) came on the refused subscription; 0 = none yet
+  frames<{ t: string; stream?: string; target?: string }>(page, 'sent', (m) => {
+    if (m.t === 'sub' && m.stream === 'preview' && m.target === 'canvas:2') subs++;
+  });
+  // binary frames too (the JPEG pictures), so not `frames`
   page.on('websocket', (socket) => {
-    socket.on('framesent', ({ payload }) => {
-      const m = typeof payload === 'string' ? (JSON.parse(payload) as { t: string; stream?: string; target?: string }) : null;
-      if (m?.t === 'sub' && m.stream === 'preview' && m.target === 'canvas:2') subs++;
-    });
     socket.on('framereceived', ({ payload }) => {
       if (typeof payload === 'string') {
         const m = JSON.parse(payload) as { t: string; id: number; stream?: string; target?: string };
@@ -1866,19 +1838,16 @@ test("preview: an output stream has the output's shape and the size of its box (
   const told: { w: number; h: number }[] = [];
   let subs = 0;
   const codecs = new Set<string>();  // H.264: JPEG streams have no descriptions
-  page.on('websocket', (socket) =>
-    socket.on('framereceived', ({ payload }) => {
-      type Message = { t: string; id: number; stream?: string; target?: string; codec?: string; w: number; h: number };
-      const m = typeof payload === 'string' ? (JSON.parse(payload) as Message) : null;
-      if (m?.t === 'sub' && m.stream === 'preview' && m.target === 'output:1') {
-        codecs.add(m.codec ?? '');
-        ids.add(m.id);
-        subs++;
-        told.push({ w: m.w, h: m.h });
-      }
-      if (m?.t === 'stream' && ids.has(m.id)) told.push({ w: m.w, h: m.h });
-    }),
-  );
+  type Message = { t: string; id: number; stream?: string; target?: string; codec?: string; w: number; h: number };
+  frames<Message>(page, 'received', (m) => {
+    if (m.t === 'sub' && m.stream === 'preview' && m.target === 'output:1') {
+      codecs.add(m.codec ?? '');
+      ids.add(m.id);
+      subs++;
+      told.push({ w: m.w, h: m.h });
+    }
+    if (m.t === 'stream' && ids.has(m.id)) told.push({ w: m.w, h: m.h });
+  });
   await page.goto(`${engine.url}/?token=${engine.token}`);  // again, with the listener above in place
   await addUnassignedOutput(page);
   // the class the engine picks for the preview's rendered width in device pixels

@@ -3,7 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { app, can, cmd } from '../lib/state.svelte';
-  import { LOCKED_TITLE } from '../lib/system';
+  import { LOCKED_TITLE } from '../lib/patch-screen';
   import { type ProjectVersion, parseVersions, revertBlocked, versionSummary, versionTime } from '../lib/versions';
 
   // Project versions (B23): the engine saves automatic ones; a named one is saved here and never expires.

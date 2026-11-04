@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Changed: the web UI drops its over-engineering: one `frames` helper for the e2e WebSocket spies, one `CopyButton`, one
+  `zeroGroups`, `fetchLibrary` and `post` helper each, one `LEASE_MS`, parameters and re-exports nobody used, and
+  `noUnusedLocals` in tsconfig (PR #NNN); no behaviour change.
 - Release: 1.0.0-rc.3 is on GitHub as a pre-release with the signed, notarized dmg, built from main 07ac24b
   (PR #267).
 
