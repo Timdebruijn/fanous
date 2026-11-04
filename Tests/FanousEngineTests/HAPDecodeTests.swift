@@ -21,6 +21,7 @@ import Testing
         #expect(source.hapInPlaceFrames == 1, "the contiguous block buffer was decoded without a copy")
         source.forceHAPStaging = true
         try source.decode(frame: 2, into: staged)
+        #expect(source.hapInPlaceFrames == 1, "the staged decode took the copy")
         let a = try #require(direct.texture0), b = try #require(staged.texture0)
         func bytes(_ texture: MTLTexture) -> [UInt8] {
             let blocks = texture.width / 4 * texture.height / 4

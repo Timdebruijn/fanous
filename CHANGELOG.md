@@ -12,9 +12,13 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Tests: engine tests that checked a value the code under test had just set now check the result: a decoded movie
   frame is that frame's picture (HAP, HAP Q, ProRes; not only its index), and the timecode chase lands on frame 70
-  of a 100-frame movie instead of a still that never chases. Duplicates and tests that asserted the OS or nothing
-  are gone (the screen-input read-back, a second triple-buffer stress run, the TLS handshake spike, the protocol
-  spot check, a repeated 5.1 fold-down); the idle-savings print is behind FANOUS_BENCH (PR #286).
+  of a 100-frame movie instead of a still that never chases. The 5.1 fold-down is checked structurally (centre in
+  both sides, each surround on its own) instead of by Apple's exact coefficients, once, and the ingest test runs the
+  same check on its library file. Removed: duplicates (the screen-input read-back and malloc tests, a second
+  triple-buffer stress run, the protocol.d.ts spot check), assertions about the OS (the `NWEndpoint` scope format,
+  `hasProResEngine` on the test Mac) and the TLS handshake spike (the state-server fixture now reloads its key from
+  DER as a restart does); ClientErrorText builds its `NSError` by hand instead of asking AVFoundation for one; the
+  idle-savings print is behind FANOUS_BENCH (PR #286).
 - Tests: the REST routes moved out of `Engine.start` into `RESTRoutes` (same routes, statuses and bodies), and a
   table test pins their role gates without a GPU or a socket: who gets 403 on `/api/ingest`, uploads,
   `/api/library/folder` and `/api/logs`, the redacted `/api/library` root below operator, `/api/login` 405/400/401

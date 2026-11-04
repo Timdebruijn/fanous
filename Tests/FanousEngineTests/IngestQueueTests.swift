@@ -536,9 +536,9 @@ import VideoToolbox
         }
     }
 
-    /// B143: a 5.1 source keeps its six channels and layout in the library file (before: ingest mixed to stereo); the
-    /// player's fold by the layout is AudioTests' `readerMixesFiveOneByItsLayout`. Six discrete channels are kept too (the
-    /// writer and the reader take `DiscreteInOrder | 6`), and play as channels 0 and 1.
+    /// B143: a 5.1 source keeps its six channels and layout in the library file (before: ingest mixed to stereo), and the
+    /// player folds them by the layout (AudioTests' check, so a channel reordered on the way fails it). Six discrete
+    /// channels are kept too (the writer and the reader take `DiscreteInOrder | 6`), and play as channels 0 and 1.
     @Test(arguments: [kAudioChannelLayoutTag_MPEG_5_1_A, kAudioChannelLayoutTag_DiscreteInOrder | 6])
     func sixChannelSourceKeepsItsChannels(tag: AudioChannelLayoutTag) async throws {
         let directory = try tempDir("fanous-ingest-tests")
@@ -557,12 +557,15 @@ import VideoToolbox
         #expect(asbd.mChannelsPerFrame == 6 && asbd.mSampleRate == 48_000 && layout?.pointee.mChannelLayoutTag == tag, "\(asbd)")
         let reader = try await AudioTrackReader.open(url: job.destination)
         #expect(reader.channelCount == 6)
-        guard tag != kAudioChannelLayoutTag_MPEG_5_1_A else { return }
         reader.seek(toSeconds: 0.25)
         let samples = AudioTests.read(reader, frames: 4800).samples
-        for frame in [2400, 4700] {  // the constants of channels 0 and 1
-            let left = samples[2 * frame] * 32768, right = samples[2 * frame + 1] * 32768
-            #expect(abs(left - 3000) < 40 && abs(right - 6000) < 40, "\(frame): \(left) \(right)")
+        for frame in [2400, 4700] {
+            if tag == kAudioChannelLayoutTag_MPEG_5_1_A {
+                AudioTests.expectFiveOneFold(samples, frame: frame, tag: tag)
+            } else {  // the constants of channels 0 and 1
+                let left = samples[2 * frame] * 32768, right = samples[2 * frame + 1] * 32768
+                #expect(abs(left - 3000) < 40 && abs(right - 6000) < 40, "\(frame): \(left) \(right)")
+            }
         }
     }
 

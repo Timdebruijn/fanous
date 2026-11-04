@@ -49,7 +49,10 @@ import Testing
     }
 
     static func makeIdentity() throws -> TLSIdentity {
-        let key = try makeKey()
+        // the key through its DER file form and back, as `TLSIdentity.load` reads it on every restart of an unsigned build
+        var error: Unmanaged<CFError>?
+        let keyData = try #require(SecKeyCopyExternalRepresentation(try makeKey(), &error) as Data?)
+        let key = try #require(SecKeyCreateWithData(keyData as CFData, TLSIdentity.keyAttributes as CFDictionary, &error))
         let (certificate, der) = try TLSIdentity.makeCertificate(privateKey: key, hostnames: ["localhost"], ipAddresses: ["127.0.0.1"])
         let identity = try #require(SecIdentityCreate(nil, certificate, key))
         return TLSIdentity(identity: identity, certificateDER: der, storage: .file)
