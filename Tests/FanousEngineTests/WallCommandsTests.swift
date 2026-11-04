@@ -19,17 +19,22 @@ struct WallCommandsTests {
 
     /// A store with `outputs` outputs of 1920 × 1080 (a region each).
     static func makeStore(outputs: Int) throws -> (StateStore, Machine) {
-        let logger = Logger(label: "test")
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: logger)
-        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx), logger: logger)
         let machine = Machine()
-        ProjectDocument.registerCommands(
-            on: store, auth: auth, showModeOn: { machine.showMode.withLock { $0 } }, displayModes: { machine.displays.withLock { $0 } })
+        let store = Self.store(ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx), machine: machine)
         for id in 1...outputs {
             _ = try store.execute("output.add", role: .programmer).get()
             _ = try store.execute("output.set", args: ["id": .number(Double(id)), "path": "/region", "value": ["x": 0, "y": 0, "w": 1920, "h": 1080]], role: .programmer).get()
         }
         return (store, machine)
+    }
+
+    static func store(_ project: JSONValue, machine: Machine) -> StateStore {
+        let logger = Logger(label: "test")
+        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: logger)
+        let store = StateStore(project: project, logger: logger)
+        ProjectDocument.registerCommands(
+            on: store, auth: auth, showModeOn: { machine.showMode.withLock { $0 } }, displayModes: { machine.displays.withLock { $0 } })
+        return store
     }
 
     static func output(_ store: StateStore, _ id: Int) -> OutputConfig { ProjectDocument.outputs(from: store.project).first { $0.id == id }! }
@@ -184,8 +189,8 @@ struct WallCommandsTests {
     /// A stored wall without `manual` or `seams` (hand-edited) loads with the defaults; an unreadable one is skipped
     /// and reported while the others stay, so the next wall command does not wipe them.
     @Test func wallsAreReadOneByOne() throws {
-        let (store, _) = try Self.makeStore(outputs: 4)
-        var project = store.project
+        let (first, machine) = try Self.makeStore(outputs: 4)
+        var project = first.project
         try project.set(
             [
                 ["id": 1, "name": "Left", "cols": 2, "rows": 1, "outputs": [1, 2], "overlap": ["x": 0.15, "y": 0]],
@@ -194,7 +199,7 @@ struct WallCommandsTests {
         let (walls, issues) = ProjectDocument.wallEntries(from: project)
         #expect(walls.map(\.id) == [1] && walls[0].name == "Left" && walls[0].seams == [SeamConfig(a: 1, b: 2)] && walls[0].manual.isEmpty)
         #expect(issues.count == 1 && issues[0].hasPrefix("walls[1] cannot be read"))
-        store.replaceProject(project)
+        let store = Self.store(project, machine: machine)
         _ = try Self.add(store, [3, 4], cols: 2, rows: 1).get()
         #expect(ProjectDocument.walls(from: store.project).map(\.name) == ["Left", "Wall 2"])
         _ = try store.execute("wall.seam", args: ["id": 1, "a": 1, "b": 2, "gamma": 2], role: .programmer).get()

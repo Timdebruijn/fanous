@@ -75,6 +75,16 @@ public enum ShowCommands {
         }
     }
 
+    /// `cue` in place of `cues[index]` (appended when nil), the list sorted by number into `/cues`; refused when
+    /// another cue already has `number` (cue.add compares the number it was given, cue.set the normalized one).
+    static func storeCues(_ cues: [JSONValue], _ cue: JSONValue, at index: Int?, number: Double?, in project: inout JSONValue) throws {
+        if cues.contains(where: { $0["id"]?.string != cue["id"]?.string && $0["number"]?.double == number }) { throw CommandError.invalidArgs("cue number exists") }
+        var cues = cues
+        if let index { cues[index] = cue } else { cues.append(cue) }
+        cues.sort { ($0["number"]?.double ?? 0) < ($1["number"]?.double ?? 0) }
+        try project.set(.array(cues), at: "/cues")
+    }
+
     public static func timecodeSettings(from project: JSONValue) -> TimecodeSettings {
         (try? project["timecode"]?.decoded(as: TimecodeSettings.self)) ?? TimecodeSettings()
     }
@@ -113,11 +123,7 @@ public enum ShowCommands {
                 let id = UUID().uuidString
                 let cue = normalizedCue(args, id: id)
                 try validateCue(cue)
-                var cues = project["cues"]?.array ?? []
-                if cues.contains(where: { $0["number"]?.double == args["number"]?.double }) { throw CommandError.invalidArgs("cue number exists") }
-                cues.append(cue)
-                cues.sort { ($0["number"]?.double ?? 0) < ($1["number"]?.double ?? 0) }
-                try project.set(.array(cues), at: "/cues")
+                try storeCues(project["cues"]?.array ?? [], cue, at: nil, number: args["number"]?.double, in: &project)
                 return .string(id)
             })
         store.register(
@@ -125,12 +131,9 @@ public enum ShowCommands {
                 guard let id = args["id"]?.string, let given = args["cue"] else { throw CommandError.invalidArgs("args: { id, cue }") }
                 let cue = normalizedCue(given, id: id)
                 try validateCue(cue)
-                var cues = project["cues"]?.array ?? []
+                let cues = project["cues"]?.array ?? []
                 guard let index = cues.firstIndex(where: { $0["id"]?.string == id }) else { throw CommandError.invalidArgs("no cue \(id)") }
-                if cues.contains(where: { $0["id"]?.string != id && $0["number"]?.double == cue["number"]?.double }) { throw CommandError.invalidArgs("cue number exists") }
-                cues[index] = cue
-                cues.sort { ($0["number"]?.double ?? 0) < ($1["number"]?.double ?? 0) }
-                try project.set(.array(cues), at: "/cues")
+                try storeCues(cues, cue, at: index, number: cue["number"]?.double, in: &project)
                 return nil
             })
         store.register(CommandSpec(name: "cue.remove", role: .programmer, summary: "Remove a cue by id.", argsType: "{ id: string }") { project, args in

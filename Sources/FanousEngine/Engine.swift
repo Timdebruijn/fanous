@@ -15,7 +15,7 @@ import Synchronization
 public struct EngineOptions: Sendable {
     public var port: UInt16
     public var webRoot: URL
-    /// Phase 2: a static scene to render (until projects exist in Phase 5).
+    /// `--scene` (development, bench): its canvas, layer count, source policy and library win over the project's.
     public var scene: SceneConfig?
     /// false (`--no-network`): no Art-Net, sACN, OSC, CITP or Bonjour, and HTTPS on 127.0.0.1 only, so a test engine
     /// runs next to a real one and the network cannot reach it (B47).
@@ -29,7 +29,7 @@ public struct EngineOptions: Sendable {
     }
 }
 
-/// Phase 0 engine: logs the machine, owns the TLS identity and serves the UI.
+/// The engine: DMX and show-control inputs, the project and live state, the renderer, and the UI over HTTPS.
 public final class Engine: @unchecked Sendable {
     private let options: EngineOptions
     private let logger: Logger
@@ -1107,7 +1107,7 @@ public final class Engine: @unchecked Sendable {
         let thermal = ProcessInfo.processInfo.thermalState
         return [
             "thermal": .string(thermal == .nominal ? "nominal" : thermal == .fair ? "fair" : thermal == .serious ? "serious" : "critical"),
-            "onAC": .bool(power.onAC), "power": .string(power.detail), "memoryFreeFraction": .number((memory.fraction * 1000).rounded() / 1000),
+            "onAC": .bool(power.onAC), "power": .string(power.detail), "memoryFreeFraction": .number((memory * 1000).rounded() / 1000),
             "memoryGB": .number(Double(SystemInfo.physicalMemoryBytes / 1_073_741_824)), "os": .string(SystemInfo.osVersion), "host": .string(SystemInfo.hostName),
             "addresses": .array(addresses.map { .string($0) }),
             "interfaces": .array(interfaces.map { ["name": .string($0.name), "address": .string($0.address), "broadcast": .bool($0.broadcast), "multicast": .bool($0.multicast)] }), "port": .number(Double(options.port)),
@@ -1406,8 +1406,7 @@ public final class Engine: @unchecked Sendable {
         return (try? ProjectDocument.validated((canvas.width, canvas.height, canvas.fps))) ?? ProjectDocument.defaultCanvas
     }
 
-    /// Control queue: re-applies the patch when it changed and schedules the autosave (2 s after the last change).
-    /// The bundled agent runs without a scene file: canvas from the project's first canvas, media from the library.
+    /// The scene without a `--scene` file (the bundled agent): the start canvas, layers and policy, media from the library.
     static func defaultScene(canvas: ProjectDocument.CanvasFormat, layerCount: Int, policy: SourcePolicy, library: URL) -> SceneConfig {
         var scene = SceneConfig()
         scene.canvasWidth = canvas.width
@@ -1443,6 +1442,7 @@ public final class Engine: @unchecked Sendable {
         return true
     }
 
+    /// Control queue: re-applies the patch when it changed and schedules the autosave (2 s after the last change).
     private func projectChanged(_ document: JSONValue) {
         oscFacts(from: document)
         if document["showLock"]?.bool == true { endLeases() }

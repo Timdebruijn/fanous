@@ -250,7 +250,7 @@ public enum Readiness {
         let disk = freeDisk(at: context.libraryRoot)
         add("disk", "Free disk > 10 %", disk.fraction > 0.10, String(format: "%.0f %% free (%.1f GB)", disk.fraction * 100, disk.freeGB), "Free space on the library volume")
         let memory = memoryHeadroom()
-        add("memory", "Memory headroom", memory.fraction > 0.15, String(format: "%.0f %% free", memory.fraction * 100), "Quit other applications")
+        add("memory", "Memory headroom", memory > 0.15, String(format: "%.0f %% free", memory * 100), "Quit other applications")
         add("dmx", "All patched universes receiving", context.universesSilent.isEmpty, context.universesSilent.isEmpty ? "all receiving" : "silent: \(context.universesSilent.joined(separator: ", "))", "Check the console's output and the network")
         add(
             "interfaces", "Universe interfaces usable", context.interfacesMissing.isEmpty,
@@ -333,32 +333,35 @@ public enum Readiness {
         return (true, "no battery")
     }
 
-    static func freeDisk(at path: String) -> (fraction: Double, freeGB: Double) {
+    /// The path, or the home folder when it is empty or missing.
+    static func existingPath(_ path: String) -> URL {
         let url = URL(fileURLWithPath: path.isEmpty ? NSHomeDirectory() : path)
-        let target = FileManager.default.fileExists(atPath: url.path) ? url : URL(fileURLWithPath: NSHomeDirectory())
-        guard let values = try? target.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]),
+        return FileManager.default.fileExists(atPath: url.path) ? url : URL(fileURLWithPath: NSHomeDirectory())
+    }
+
+    static func freeDisk(at path: String) -> (fraction: Double, freeGB: Double) {
+        guard let values = try? existingPath(path).resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]),
             let free = values.volumeAvailableCapacityForImportantUsage, let total = values.volumeTotalCapacity, total > 0
         else { return (1, 0) }
         return (Double(free) / Double(total), Double(free) / 1e9)
     }
 
-    static func memoryHeadroom() -> (fraction: Double, freeGB: Double) {
+    /// The free fraction of physical memory (free, inactive and purgeable pages).
+    static func memoryHeadroom() -> Double {
         var stats = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
         let result = withUnsafeMutablePointer(to: &stats) {
             $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count) }
         }
-        guard result == KERN_SUCCESS else { return (1, 0) }
+        guard result == KERN_SUCCESS else { return 1 }
         let pageSize = Double(sysconf(_SC_PAGESIZE))
         let free = (Double(stats.free_count) + Double(stats.inactive_count) + Double(stats.purgeable_count)) * pageSize
         let total = Double(ProcessInfo.processInfo.physicalMemory)
-        return (free / total, free / 1e9)
+        return free / total
     }
 
     static func volumeIsLocal(_ path: String) -> Bool {
-        let url = URL(fileURLWithPath: path.isEmpty ? NSHomeDirectory() : path)
-        let target = FileManager.default.fileExists(atPath: url.path) ? url : URL(fileURLWithPath: NSHomeDirectory())
-        guard let values = try? target.resourceValues(forKeys: [.volumeIsLocalKey, .volumeIsRemovableKey]) else { return true }
+        guard let values = try? existingPath(path).resourceValues(forKeys: [.volumeIsLocalKey, .volumeIsRemovableKey]) else { return true }
         return (values.volumeIsLocal ?? true) && !(values.volumeIsRemovable ?? false)
     }
 
@@ -385,12 +388,10 @@ public enum Readiness {
         return nil
     }
 
+    /// `/Library/Preferences/com.apple.SoftwareUpdate` › AutomaticallyInstallMacOSUpdates; nil when the key is absent.
     static func automaticUpdatesEnabled() -> Bool? {
-        guard let output = run("/usr/bin/defaults", ["read", "/Library/Preferences/com.apple.SoftwareUpdate", "AutomaticallyInstallMacOSUpdates"]) else { return nil }
-        let value = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        if value == "1" { return true }
-        if value == "0" { return false }
-        return nil
+        CFPreferencesCopyValue(
+            "AutomaticallyInstallMacOSUpdates" as CFString, "com.apple.SoftwareUpdate" as CFString, kCFPreferencesAnyUser, kCFPreferencesAnyHost) as? Bool
     }
 
     static func timeMachineRunning() -> Bool? {

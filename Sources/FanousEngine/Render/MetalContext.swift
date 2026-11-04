@@ -106,34 +106,22 @@ public final class MetalContext: @unchecked Sendable {
             layer.colorAttachments[0].isBlendingEnabled = false
             layers.append(layer)
         }
-        let output = MTLRenderPipelineDescriptor()
-        output.label = "output"
-        output.vertexFunction = library.makeFunction(name: "output_vertex")
-        output.fragmentFunction = library.makeFunction(name: "output_fragment")
-        output.colorAttachments[0].pixelFormat = Self.outputFormat
-        let generator = MTLRenderPipelineDescriptor()
-        generator.label = "generator"
-        generator.vertexFunction = library.makeFunction(name: "output_vertex")
-        generator.fragmentFunction = library.makeFunction(name: "generator_fragment")
-        generator.colorAttachments[0].pixelFormat = .bgra8Unorm
-        let mapped = MTLRenderPipelineDescriptor()
-        mapped.label = "mapped output"
-        mapped.vertexFunction = library.makeFunction(name: "mapped_vertex")
-        mapped.fragmentFunction = library.makeFunction(name: "mapped_fragment")
-        mapped.colorAttachments[0].pixelFormat = Self.outputFormat
+        let describe = { [library] (label: String, vertex: String, fragment: String, format: MTLPixelFormat) in
+            let descriptor = MTLRenderPipelineDescriptor()
+            descriptor.label = label
+            descriptor.vertexFunction = library.makeFunction(name: vertex)
+            descriptor.fragmentFunction = library.makeFunction(name: fragment)
+            descriptor.colorAttachments[0].pixelFormat = format
+            return descriptor
+        }
+        let output = describe("output", "output_vertex", "output_fragment", Self.outputFormat)
+        let generator = describe("generator", "output_vertex", "generator_fragment", .bgra8Unorm)
+        let mapped = describe("mapped output", "mapped_vertex", "mapped_fragment", Self.outputFormat)
         mapped.colorAttachments[0].isBlendingEnabled = true  // one, one-minus-source-alpha (add and one are the defaults)
         mapped.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
         mapped.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
-        let convert = MTLRenderPipelineDescriptor()
-        convert.label = "scratch convert"
-        convert.vertexFunction = library.makeFunction(name: "output_vertex")
-        convert.fragmentFunction = library.makeFunction(name: "convert_fragment")
-        convert.colorAttachments[0].pixelFormat = Self.canvasFormat
-        let overlay = MTLRenderPipelineDescriptor()
-        overlay.label = "edit overlay"
-        overlay.vertexFunction = library.makeFunction(name: "overlay_vertex")
-        overlay.fragmentFunction = library.makeFunction(name: "overlay_fragment")
-        overlay.colorAttachments[0].pixelFormat = Self.outputFormat
+        let convert = describe("scratch convert", "output_vertex", "convert_fragment", Self.canvasFormat)
+        let overlay = describe("edit overlay", "overlay_vertex", "overlay_fragment", Self.outputFormat)
         do {
             layerPipelines = try layers.map { try device.makeRenderPipelineState(descriptor: $0) }
             outputPipeline = try device.makeRenderPipelineState(descriptor: output)

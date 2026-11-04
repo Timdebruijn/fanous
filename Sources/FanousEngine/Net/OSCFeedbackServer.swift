@@ -98,7 +98,7 @@ public final class OSCFeedbackServer: @unchecked Sendable {
                 case .pending(let cookie):
                     // step two is the ack from that host: a spoofed subscribe never reaches the confirmed table
                     let confirm = OSCMessage("/fanous/subscribe/confirm", [.string(cookie)]).encoded()
-                    if port == source.port { source.reply(confirm) } else { sendOnce([confirm], to: key) }
+                    if port == source.port { source.reply(confirm) } else { sendOnce(confirm, to: key) }
                 case .full:
                     logger.warning("OSC subscribe refused: too many subscribers", metadata: ["sender": "\(key)"])
                     source.reply(Self.error("subscribe: \(OSCSubscriptions.limit) subscribers at most"))
@@ -205,14 +205,13 @@ public final class OSCFeedbackServer: @unchecked Sendable {
         connection.send(content: Data(bytes), completion: .idempotent)
     }
 
-    /// One connection for the whole answer, cancelled after its last datagram.
-    private func sendOnce(_ packets: [[UInt8]], to key: OSCSubscriptions.Key) {
-        if flows[key] != nil || connections[key] != nil { return packets.forEach { send($0, to: key) } }
-        guard let port = NWEndpoint.Port(rawValue: key.port), !packets.isEmpty else { return }
+    /// One connection for one datagram, cancelled after it.
+    private func sendOnce(_ packet: [UInt8], to key: OSCSubscriptions.Key) {
+        if flows[key] != nil || connections[key] != nil { return send(packet, to: key) }
+        guard let port = NWEndpoint.Port(rawValue: key.port) else { return }
         let connection = NWConnection(host: NWEndpoint.Host(key.host), port: port, using: .udp)
         connection.start(queue: queue)
-        for bytes in packets.dropLast() { connection.send(content: Data(bytes), completion: .idempotent) }
-        connection.send(content: Data(packets.last!), completion: .contentProcessed { _ in connection.cancel() })
+        connection.send(content: Data(packet), completion: .contentProcessed { _ in connection.cancel() })
     }
 
     /// Connections and flows of keys that are no longer subscribed.

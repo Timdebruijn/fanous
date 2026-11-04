@@ -3565,7 +3565,7 @@ client → server   {"t":"sub","stream":"dmx","universe":"artnet:0:0:1"} / {"t":
 server → client   {"t":"sub","id":7,"stream":"preview",…}  |  {"t":"error","id":7,"stream":"preview","code":"badTarget","message":"…"}   // refused; an error with an id and no stream ends that stream
 client → server   {"t":"sub","stream":"thumbs"}   // live layer thumbnails (B29, §11.3)
 server → client   {"t":"sub","id":8,"stream":"thumbs","w":160,"fps":4}  |  {"t":"error","id":8,"stream":"thumbs","code":"noPreview","message":"…"}
-server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H.264 AU (AVCC) , 2 = JPEG , 3 = DMX universe (512 B) , 4 = metrics ring page
+server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H.264 AU (AVCC) , 2 = JPEG , 3 = DMX universe (512 B)
 ```
 
 - A preview `sub` reply carries `codec` (`"avc"`, or `"jpeg"` when refused

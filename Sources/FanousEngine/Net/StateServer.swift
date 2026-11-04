@@ -13,7 +13,7 @@ public final class StateServer: @unchecked Sendable {
     public static let schema = 1
     public static let path = "/ws"
     /// Binary frame kinds: `[u8 kind][u32 stream id][payload]`.
-    public enum StreamKind: UInt8 { case h264 = 1, jpeg = 2, dmx = 3, metrics = 4 }
+    public enum StreamKind: UInt8 { case h264 = 1, jpeg = 2, dmx = 3 }
 
     public let store: StateStore
     public let auth: RoleAuth

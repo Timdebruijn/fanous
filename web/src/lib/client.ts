@@ -44,7 +44,7 @@ export interface ClientCallbacks {
   /** one patch to apply; the client already checked the revision chain */
   onPatch(doc: 'project' | 'live', ops: PatchOp[], rev: number): void;
   onState(state: ConnectionState, detail?: string): void;
-  /** binary stream frames: kind 1 H.264, 2 JPEG, 3 DMX universe, 4 metrics */
+  /** binary stream frames: kind 1 H.264, 2 JPEG, 3 DMX universe */
   onBinary?(kind: number, stream: number, payload: Uint8Array): void;
   /** an H.264 preview stream (re)announced its decoder configuration */
   onStream?(description: StreamDescription & { id: number }): void;

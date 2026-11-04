@@ -45,7 +45,7 @@ struct StateStoreTests {
     @Test func commandProducesPatchAndUndoRestores() throws {
         let (store, _) = Self.makeStore()
         let client = RecordingClient(role: .programmer)
-        store.attach(client)
+        store.admit(client, role: client.role, caps: [:]) {}
         let result = try store.execute("project.set", args: ["path": "/name", "value": "Tour 2026"], role: .programmer).get()
         #expect(result.rev == 1)
         #expect(store.project["name"]?.string == "Tour 2026")
@@ -68,12 +68,12 @@ struct StateStoreTests {
     @Test func showLockRefusesConfigCommandsOnly() throws {
         let (store, _) = Self.makeStore()
         _ = try store.execute("show.lock", role: .programmer).get()
-        #expect(store.isShowLocked)
+        #expect(store.project["showLock"]?.bool == true)
         let refused = store.execute("project.set", args: ["path": "/name", "value": "x"], role: .programmer)
         #expect(refused == .failure(.showLocked))
         #expect(store.execute("undo", role: .programmer) == .failure(.showLocked))
         _ = try store.execute("show.unlock", role: .programmer).get()
-        #expect(!store.isShowLocked)
+        #expect(store.project["showLock"]?.bool == false)
         _ = try store.execute("project.set", args: ["path": "/name", "value": "x"], role: .programmer).get()
         // lock/unlock are not in the history
         #expect(store.historyDepth.undo == 1)
@@ -104,7 +104,7 @@ struct StateStoreTests {
     @Test func liveUpdatesAreDiffedAndCoalesced() async throws {
         let (store, _) = Self.makeStore()
         let client = RecordingClient(role: .monitor)
-        store.attach(client)
+        store.admit(client, role: client.role, caps: [:]) {}
         store.updateLive(["metrics": ["fps": 60], "dmx": ["a": 1]])
         store.updateLive(["metrics": ["fps": 59], "dmx": ["a": 1]])
         store.setLive(.number(58), at: JSONPointer(tokens: ["metrics", "fps"]))
@@ -126,7 +126,7 @@ struct StateStoreTests {
     @Test func laggingClientsDropLiveButNotProject() async throws {
         let (store, _) = Self.makeStore()
         let client = RecordingClient(role: .programmer)
-        store.attach(client)
+        store.admit(client, role: client.role, caps: [:]) {}
         client.accepting.withLock { $0 = false }
         store.updateLive(["x": 1])
         store.queue.sync {}
@@ -188,7 +188,7 @@ struct StateStoreTests {
     @Test func projectChangedRunsBeforeClientsGetThePatch() throws {
         let (store, _) = StateStoreTests.makeStore()
         let client = RecordingClient(role: .programmer)
-        store.attach(client)
+        store.admit(client, role: client.role, caps: [:]) {}
         let seen = Mutex<[(name: String?, patchesSent: Int)]>([])
         store.onProjectChanged = { document in seen.withLock { $0.append((document["name"]?.string, client.patches.count)) } }
         _ = try store.execute("project.set", args: ["path": "/name", "value": "Tour 2026"], role: .programmer).get()
@@ -664,8 +664,8 @@ struct StateStoreRedactionTests {
         store.queue.sync {}
         let monitor = RecordingClient(role: .monitor)
         let programmer = RecordingClient(role: .programmer)
-        store.attach(monitor)
-        store.attach(programmer)
+        store.admit(monitor, role: monitor.role, caps: [:]) {}
+        store.admit(programmer, role: programmer.role, caps: [:]) {}
 
         let welcome = try JSONDecoder().decode(JSONValue.self, from: Data(store.welcome(role: .monitor, caps: [:]).utf8))
         #expect(welcome["project"]?["library"]?["root"]?.string == "")
