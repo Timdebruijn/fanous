@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine: a client that disconnects while streaming an upload no longer leaves a partial file in `_incoming`; the
+  server removes it and logs the peer and the bytes received (PR #NNN).
 - Engine: two parallel uploads with the same name get their own files in `_incoming` (`clip.mov`, `clip-2.mov`):
   the name is claimed with `O_EXCL` when the upload starts, so a refused upload can no longer delete the other's
   queued file (PR #NNN).
