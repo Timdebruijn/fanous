@@ -41,8 +41,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   `hasProResEngine` on the test Mac) and the TLS handshake spike (the state-server fixture now reloads its key from
   DER as a restart does); ClientErrorText builds its `NSError` by hand instead of asking AVFoundation for one; the
   idle-savings print is behind FANOUS_BENCH (PR #286).
-- Tests: the engine suite runs in 24.1–24.5 s instead of 41.2–41.5 s (M1 Pro, parallel run), and its slowest suite,
-  `IngestQueueTests`, in 12.7–13.1 s instead of 32.5–32.6 s: the HAP Q leg of the ingest test transcodes 4 frames
+- Tests: the engine suite runs in 24.1–24.5 s instead of 41.2–41.5 s (M1 Pro, parallel run); the ingest tests, before
+  32.5–32.6 s in one serialized suite, now run as two serialized suites beside each other (`IngestQueueTests` 12.7–13.1 s,
+  `IngestPictureTests` about 17 s in a full run): the HAP Q leg of the ingest test transcodes 4 frames
   instead of 20, the H.264 test sources fill their pattern frames 16 at a time in parallel (an 1800-frame source spent
   11 s on it in one thread), and the five picture tests are a serialized suite of their own (`IngestPictureTests`)
   beside it. Fully parallel, the ingest tests hung once in three runs with every pool thread in an `AVAssetReader`
