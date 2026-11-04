@@ -10,6 +10,13 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Tests: web test cleanup. `layers-media.test.ts` merged into `layers.test.ts` (one `layer()` factory, the
+  `layerState` assertions in one place), the tautological `GENERATORS` line and the doubled `transcodeCodecs` check
+  gone, the POLICIES copy narrowed to the `line` texts nothing else pins. In the e2e suite three tests that only
+  repeated others are gone (second slice, Spread canvas folded into the slice-drag test, the 10-minute overlay idle,
+  which `outputs.test.ts` pins), and the Space and L/Ctrl+Z key tests now also fail when the shortcut is broken
+  (PR #NNN).
+
 - Tests: the REST routes moved out of `Engine.start` into `RESTRoutes` (same routes, statuses and bodies), and a
   table test pins their role gates without a GPU or a socket: who gets 403 on `/api/ingest`, uploads,
   `/api/library/folder` and `/api/logs`, the redacted `/api/library` root below operator, `/api/login` 405/400/401
