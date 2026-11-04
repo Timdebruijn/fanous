@@ -11,10 +11,9 @@ import Testing
 @testable import FanousEngine
 
 /// The decode thread sleeps on a full ring and is only woken by a changed request or a freed slot.
-@Suite(.serialized) struct LayerDecoderTests {
+@Suite(.serialized, .cleansTempFiles) struct LayerDecoderTests {
     @Test func aFullRingSleepsUntilTheRequestChanges() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "clip.mov")
         try await IngestQueueTests.writeSource(to: url, seconds: 2, audio: false)
         let device = try #require(MTLCreateSystemDefaultDevice())

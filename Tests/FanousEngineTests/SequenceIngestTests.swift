@@ -12,12 +12,12 @@ import UniformTypeIdentifiers
 
 @testable import FanousEngine
 
+@Suite(.cleansTempFiles)
 struct SequenceIngestTests {
     /// A semi-transparent sequence pixel keeps its colour: ProRes 4444 and the layer shader take straight alpha, so a PNG
     /// pixel (200, 100, 50) at alpha 128 must come back as that, not darkened by its own alpha (100, 50, 25 before, measured).
     @Test func semiTransparentPixelKeepsItsColour() async throws {
         let directory = try tempDir("fanous-seq")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let (w, h) = (64, 32)
         let data = Data(Array([[UInt8]](repeating: [200, 100, 50, 128], count: w * h).joined()))
         let image = try #require(CGImage(
@@ -80,7 +80,6 @@ struct SequenceIngestTests {
     /// of ProRes 422 HQ on the 10-bit video-range ramp `IngestQueueTests.rampError` expects.
     @Test func sixteenBitSequenceKeepsItsPrecisionInProRes() async throws {
         let directory = try tempDir("fanous-seq")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let (w, h) = (1024, 16)
         let row = (0..<w).flatMap { x in [UInt16](repeating: UInt16(x * 65535 / (w - 1)), count: 3) }
         let data = (0..<h).flatMap { _ in row }.withUnsafeBufferPointer { Data(buffer: $0) }
@@ -104,7 +103,6 @@ struct SequenceIngestTests {
     /// Ten PNG frames with alpha → ProRes 4444 → the engine opens it with ten frames and decodes with alpha.
     @Test func sequenceBecomesPlayableMovie() async throws {
         let directory = try tempDir("fanous-seq")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let w = 320, h = 176
         for i in 0..<10 {
             var pixels = [UInt8](repeating: 0, count: w * h * 4)

@@ -82,9 +82,34 @@ func sendUDP(_ datagrams: [[UInt8]], to port: UInt16, host: String = "127.0.0.1"
     return (sent, recv(fd, &buffer, buffer.count, 0) > 0)
 }
 
-/// A fresh directory `prefix`-<UUID> under the temporary directory.
+/// Removes what `tempDir` and `tempFile` handed out in a test once that test ends. The list is task-local: it reaches
+/// child tasks and `Task {}`, not `offPool` or GCD; a path made there is not registered, and the test removes it itself.
+struct CleansTempFiles: SuiteTrait, TestTrait, TestScoping {
+    final class Paths: Sendable { let urls = Mutex<[URL]>([]) }
+    @TaskLocal static var current: Paths?
+    var isRecursive: Bool { true }
+    func provideScope(for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void) async throws {
+        let paths = Paths()
+        defer { for url in paths.urls.withLock({ $0 }) { try? FileManager.default.removeItem(at: url) } }
+        try await Self.$current.withValue(paths) { try await function() }
+    }
+}
+
+extension Trait where Self == CleansTempFiles {
+    static var cleansTempFiles: Self { Self() }
+}
+
+/// A path `prefix`-<UUID>[.`ext`] under the temporary directory, nothing made there yet; removed after the test (see
+/// `CleansTempFiles`).
+func tempFile(_ prefix: String, ext: String = "") -> URL {
+    let url = FileManager.default.temporaryDirectory.appending(path: "\(prefix)-\(UUID().uuidString)\(ext.isEmpty ? "" : "." + ext)")
+    CleansTempFiles.current?.urls.withLock { $0.append(url) }
+    return url
+}
+
+/// A fresh directory `prefix`-<UUID> under the temporary directory; removed after the test (see `CleansTempFiles`).
 func tempDir(_ prefix: String) throws -> URL {
-    let url = FileManager.default.temporaryDirectory.appending(path: "\(prefix)-\(UUID().uuidString)")
+    let url = tempFile(prefix)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
 }

@@ -12,6 +12,7 @@ import Testing
 
 @testable import FanousEngine
 
+@Suite(.cleansTempFiles)
 struct ShowControlTests {
     static let logger = Logger(label: "test")
 

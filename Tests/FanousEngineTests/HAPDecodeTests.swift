@@ -9,10 +9,9 @@ import Testing
 @testable import FanousEngine
 
 /// HAP frames are decoded straight from the sample's block buffer; the staging-copy fallback must give the same texture.
-@Suite(.serialized) struct HAPDecodeTests {
+@Suite(.serialized, .cleansTempFiles) struct HAPDecodeTests {
     @Test func decodingInPlaceMatchesTheStagingCopy() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "clip.mov")
         try await offPool {
             let writer = try MovieWriter(url: url, width: 320, height: 176, fps: 10, codec: .hap(.hap), audio: false)

@@ -18,6 +18,7 @@ import Testing
 /// exists on CI): the catalog from fake display lists, the project key, the feed, the forget and authorize rules, the
 /// readiness item, `ScreenInput`'s texture path with a synthetic BGRA buffer, the loader with a fake factory, and the
 /// grant poll with an injected preflight.
+@Suite(.cleansTempFiles)
 struct ScreenInputTests {
     static let logger = Logger(label: "screen-test")
 
@@ -84,8 +85,7 @@ struct ScreenInputTests {
             return
         }
         map["screens"] = nil
-        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-screens-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = tempFile("fanous-screens", ext: "json")
         try ProjectDocument.save(.object(map), to: url)
         #expect(try #require(ProjectDocument.load(from: url))["screens"] == [:])
     }

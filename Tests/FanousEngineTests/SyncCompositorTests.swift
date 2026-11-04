@@ -12,7 +12,7 @@ import Testing
 
 /// The Sync channel in the compositor (DESIGN.md §23.2–23.3): slaves set their clock from the table, masters fill the
 /// packet slot and the local table.
-@Suite(.serialized)
+@Suite(.serialized, .cleansTempFiles)
 struct SyncCompositorTests {
     static let own = UUID(uuidString: "40000000-0000-0000-0000-000000000000")!
     static let remote = UUID(uuidString: "30000000-0000-0000-0000-000000000000")!
@@ -62,8 +62,6 @@ struct SyncCompositorTests {
             compositor.sync = (receiver, sender)
             publish()
         }
-
-        deinit { try? FileManager.default.removeItem(at: directory) }
 
         func playback() -> LayerPlayback {
             let ring = FrameRing(capacity: 4)

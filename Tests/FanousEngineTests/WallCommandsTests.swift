@@ -11,6 +11,7 @@ import Testing
 @testable import FanousEngine
 
 /// The `wall.*` commands and what `output.set` / `output.remove` do to a wall's outputs (DESIGN.md §9.9).
+@Suite(.cleansTempFiles)
 struct WallCommandsTests {
     final class Machine: Sendable {
         let showMode = Mutex(false)
@@ -179,8 +180,7 @@ struct WallCommandsTests {
 
         var old = store.project
         try old.remove(at: "/walls")
-        let file = FileManager.default.temporaryDirectory.appending(path: "walls-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: file) }
+        let file = tempFile("walls", ext: "json")
         try ProjectDocument.save(old, to: file)
         let loaded = try #require(ProjectDocument.load(from: file))
         #expect(loaded["walls"] == [] && ProjectDocument.walls(from: loaded).isEmpty)

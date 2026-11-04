@@ -11,6 +11,7 @@ import Testing
 @testable import FanousEngine
 
 /// B23: project versions in `versions/` and the commands that make, list, restore and delete them.
+@Suite(.cleansTempFiles)
 struct ProjectVersionsTests {
     final class ShowModeFlag: Sendable {
         let on = Atomic<Bool>(false)
@@ -26,7 +27,7 @@ struct ProjectVersionsTests {
     }
 
     static func make() -> Fixture {
-        let base = FileManager.default.temporaryDirectory.appending(path: "fanous-versions-\(UUID().uuidString)")
+        let base = tempFile("fanous-versions")
         let (store, _) = StateStoreTests.makeStore()
         let versions = ProjectVersions(directory: base.appending(path: "versions"), logger: StateStoreTests.logger)
         let flag = ShowModeFlag()
@@ -41,7 +42,6 @@ struct ProjectVersionsTests {
 
     @Test func snapshotListRevertAndUndo() throws {
         let f = Self.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         let store = f.store
         _ = try store.execute("project.set", args: ["path": "/name", "value": "Doors"], role: .programmer).get()
         let saved = try #require(try store.execute("project.snapshot", args: ["name": "Before doors"], role: .programmer).get().value)
@@ -72,7 +72,6 @@ struct ProjectVersionsTests {
 
     @Test func revertingToTheCurrentProjectChangesAndSavesNothing() throws {
         let f = Self.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         let id = try #require(try f.store.execute("project.snapshot", args: ["name": "Doors"], role: .programmer).get().value?["id"]?.string)
         // an OSC console repeating /fanous/project/load: every repeat is a no-op, no version piles up
         for _ in 0..<5 {
@@ -91,7 +90,6 @@ struct ProjectVersionsTests {
 
     @Test func revertRefusedUnderShowLockAndInShowMode() throws {
         let f = Self.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         let store = f.store
         _ = try store.execute("show.lock", role: .programmer).get()
         // saving a version is allowed under the lock (before doors); it records the lock but a revert never changes it
@@ -114,7 +112,6 @@ struct ProjectVersionsTests {
 
     @Test func undoAndRedoOfARevertAreRefusedInShowMode() throws {
         let f = Self.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         let store = f.store
         let id = try #require(try store.execute("project.snapshot", args: ["name": "Doors"], role: .programmer).get().value?["id"]?.string)
         _ = try store.execute("project.set", args: ["path": "/name", "value": "Changed"], role: .programmer).get()
@@ -147,7 +144,6 @@ struct ProjectVersionsTests {
     /// refusal drops the history below the revert too: it was recorded against the project the revert replaced.
     @Test func revertUndoRefusedWhenAnotherServerTookADroppedNumber() throws {
         let f = Self.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         let store = f.store
         func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
         store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "A")]) }
@@ -170,7 +166,6 @@ struct ProjectVersionsTests {
     /// 151 meanwhile (B91).
     @Test func revertUndoRefusedWhenItWouldFreeAnotherServersNumber() throws {
         let f = Self.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         let store = f.store
         func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
         store.correct(at: "/syphon") { ProjectDocument.liveValue([server(151, "X")]) }
@@ -187,7 +182,6 @@ struct ProjectVersionsTests {
     /// of the missing key instead of failing and dropping the history; its redo is still checked (B91).
     @Test func revertUndoSkipsANumberTheEngineAlreadyDropped() throws {
         let f = Self.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         let store = f.store
         func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
         store.correct(at: "/syphon") { ProjectDocument.liveValue([server(151, "X")]) }
@@ -212,7 +206,6 @@ struct ProjectVersionsTests {
     /// differs, and the whole entry comes back (B104).
     @Test func revertUndoRestoresARenamedNumber() throws {
         let f = Self.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         let store = f.store
         func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
         store.correct(at: "/syphon") { ProjectDocument.liveValue([server(151, "Z")]) }
@@ -230,7 +223,6 @@ struct ProjectVersionsTests {
     /// meanwhile (B91).
     @Test func revertUndoRefusedWhenItWouldRenameAnotherServersNumber() throws {
         let f = Self.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         let store = f.store
         func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
         store.correct(at: "/syphon") { ProjectDocument.liveValue([server(151, "Z")]) }
@@ -247,7 +239,6 @@ struct ProjectVersionsTests {
     /// has the `app` the revert left but not its `server`, so the undo is refused instead of renaming it to X/T (B104).
     @Test func revertUndoRefusedWhenATakerSharesOnlyTheApp() throws {
         let f = Self.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         let store = f.store
         store.correct(at: "/syphon") { ProjectDocument.liveValue([LiveCatalog.Entry(kind: .syphon, file: 151, source: "Y", name: "S")]) }
         let id = try #require(try store.execute("project.snapshot", args: ["name": "Doors"], role: .programmer).get().value?["id"]?.string)
@@ -263,7 +254,6 @@ struct ProjectVersionsTests {
 
     @Test func invalidVersionsAreNotRestored() throws {
         let f = Self.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         var project = f.store.project
         try project.set(.number(0), at: "/layerCount")
         let noLayers = try f.versions.save(project, name: "No layers", automatic: false)
@@ -288,7 +278,6 @@ struct ProjectVersionsTests {
 
     @Test func deleteNamedOnly() throws {
         let f = Self.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         let store = f.store
         let named = try #require(try store.execute("project.snapshot", args: ["name": "Keep"], role: .programmer).get().value?["id"]?.string)
         let automatic = try #require(try store.execute("project.snapshot", role: .programmer).get().value)
@@ -302,7 +291,6 @@ struct ProjectVersionsTests {
 
     @Test func retentionKeepsNamedVersions() throws {
         let f = Self.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         var project = f.store.project
         try f.versions.save(project, name: "Premiere", automatic: false)
         for i in 0..<(ProjectVersions.keepAutomatic + 5) {
@@ -319,7 +307,6 @@ struct ProjectVersionsTests {
 
     @Test func aClockSetBackNeitherReordersNorPrunesTheNewVersion() throws {
         let f = Self.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         var project = f.store.project
         let future = Date(timeIntervalSince1970: 2_000_000_000)
         for i in 0..<ProjectVersions.keepAutomatic {
@@ -338,7 +325,6 @@ struct ProjectVersionsTests {
 
     @Test func savesInOneMillisecondGetDistinctIDs() throws {
         let f = Self.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         let now = Date(timeIntervalSince1970: 1_792_938_612.345)
         let ids = try (0..<3).map { _ in try f.versions.save(f.store.project, name: "Same", automatic: false, now: now).id }
         #expect(Set(ids).count == 3)
@@ -347,7 +333,6 @@ struct ProjectVersionsTests {
 
     @Test func automaticSnapshotSkipsAnUnchangedProject() throws {
         let f = Self.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         var project = f.store.project
         #expect(f.versions.saveAutomatic(project, reason: .start) != nil)
         #expect(f.versions.saveAutomatic(project, reason: .periodic) == nil)
@@ -363,7 +348,6 @@ struct ProjectVersionsTests {
 
     @Test func filesAddedOrRemovedByHandAreSeen() throws {
         let f = Self.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         let a = try f.versions.save(f.store.project, name: "A", automatic: false)
         let b = try f.versions.save(f.store.project, name: "B", automatic: false)
         #expect(f.versions.list().count == 2)
@@ -374,7 +358,6 @@ struct ProjectVersionsTests {
 
     @Test func corruptAndForeignFilesAreSkipped() throws {
         let f = Self.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         let good = try f.versions.save(f.store.project, name: "Good", automatic: false)
         let project = try JSONEncoder().encode(f.store.project)
         try Data("{ not json".utf8).write(to: f.directory.appending(path: "20260101T000000.000Z-broken.json"))

@@ -9,7 +9,7 @@ import Testing
 
 @testable import FanousEngine
 
-@Suite struct LiveCatalogTests {
+@Suite(.cleansTempFiles) struct LiveCatalogTests {
     static func device(_ uid: String, _ name: String) -> LiveCatalog.Entry {
         LiveCatalog.Entry(kind: .capture, file: 0, source: uid, name: name, runtimeID: uid)
     }
@@ -194,7 +194,6 @@ extension LiveCatalogTests {
     /// another device took the number meanwhile (B91, B104 on the capture key).
     @Test func captureRevertUndoIsCheckedLikeSyphon() throws {
         let f = ProjectVersionsTests.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         let store = f.store
         store.correct(at: "/capture") { ProjectDocument.liveValue([Self.numbered(3, "a", "Old", model: "m")]) }
         let id = try #require(try store.execute("project.snapshot", args: ["name": "Doors"], role: .programmer).get().value?["id"]?.string)
@@ -218,8 +217,7 @@ extension LiveCatalogTests {
             return
         }
         map["capture"] = nil
-        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-capture-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = tempFile("fanous-capture", ext: "json")
         try ProjectDocument.save(.object(map), to: url)
         let loaded = try #require(ProjectDocument.load(from: url))
         #expect(loaded["capture"] == [:])

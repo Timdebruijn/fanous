@@ -13,6 +13,7 @@ import Testing
 
 @testable import FanousEngine
 
+@Suite(.cleansTempFiles)
 struct LibraryIndexTests {
     static func touch(_ url: URL, bytes: Int = 16) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -33,7 +34,6 @@ struct LibraryIndexTests {
     /// Numbering, invalid names, duplicates, ignored folders; files are empty so every probe ends "unreadable".
     @Test func scanClassifiesNamesAndDuplicates() throws {
         let root = try tempDir("fanous-library")
-        defer { try? FileManager.default.removeItem(at: root) }
         try Self.touch(root.appending(path: "001_Opening/001_intro.mov"))
         try Self.touch(root.appending(path: "001_Opening/002_title.png"))
         try Self.touch(root.appending(path: "001_Opening/002_dup.png"))
@@ -70,7 +70,6 @@ struct LibraryIndexTests {
     /// 10 000 files scan in well under a second and the probe queue stays bounded by the file count.
     @Test func tenThousandFiles() throws {
         let root = try tempDir("fanous-library")
-        defer { try? FileManager.default.removeItem(at: root) }
         for folder in 1...40 {
             let dir = root.appending(path: String(format: "%03d_Folder", folder))
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -92,7 +91,6 @@ struct LibraryIndexTests {
     /// A playable movie resolves after probing, its thumbnail is requested, and FSEvents picks up a new file.
     @Test func probeResolvesAndWatcherRescans() async throws {
         let root = try tempDir("fanous-library")
-        defer { try? FileManager.default.removeItem(at: root) }
         let folder = root.appending(path: "007_Test")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let movie = folder.appending(path: "003_clip.mov")
@@ -147,7 +145,6 @@ struct LibraryIndexTests {
     /// A root missing at start behind a symlink is watched once it is made (B140): FSEvents never matched it before.
     @Test func aMissingRootBehindASymlinkIsWatchedOnceMade() async throws {
         let base = try tempDir("fanous-library-link")
-        defer { try? FileManager.default.removeItem(at: base) }
         try FileManager.default.createDirectory(at: base.appending(path: "real"), withIntermediateDirectories: true)
         try FileManager.default.createSymbolicLink(at: base.appending(path: "link"), withDestinationURL: base.appending(path: "real"))
         let root = base.appending(path: "link/Fanous Library")
@@ -181,7 +178,6 @@ struct LibraryIndexTests {
 
     @Test func rootProblems() throws {
         let root = try tempDir("fanous-library")
-        defer { try? FileManager.default.removeItem(at: root) }
         try Self.touch(root.appending(path: "file.txt"))
         #expect(LibraryIndex.rootProblem(root.path) == nil)
         #expect(LibraryIndex.rootProblem("Movies/Fanous Library")?.contains("absolute") == true)
@@ -194,7 +190,6 @@ struct LibraryIndexTests {
     /// the root lacks stays "missing". Switching back needs no new probes.
     @Test func switchingRootsReindexesAndReresolvesLayers() async throws {
         let a = try tempDir("fanous-library"), b = try tempDir("fanous-library"), cache = try tempDir("fanous-library")
-        defer { for url in [a, b, cache] { try? FileManager.default.removeItem(at: url) } }
         try Self.png(a.appending(path: "001_A/001_one.png"))
         try Self.png(a.appending(path: "001_A/002_two.png"))
         try Self.png(b.appending(path: "001_B/001_uno.png"))
@@ -273,7 +268,6 @@ struct LibraryIndexTests {
 
     @Test func ingestTargets() throws {
         let root = try tempDir("fanous-library")
-        defer { try? FileManager.default.removeItem(at: root) }
         try Self.touch(root.appending(path: "003_Show/001_a.mov"))
         try Self.touch(root.appending(path: "003_Show/002_b.mov"))
         try Self.touch(root.appending(path: "003_Show/004_d.mov"))
@@ -301,7 +295,6 @@ struct LibraryIndexTests {
     /// B141: twenty clients creating one number at once make one folder; the others see it exist.
     @Test func concurrentFolderCreatesMakeOneFolder() async throws {
         let root = try tempDir("fanous-library")
-        defer { try? FileManager.default.removeItem(at: root) }
         let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
         let results = await withTaskGroup(of: LibraryIndex.FolderCreate.self) { group in
             for i in 0..<20 { group.addTask { index.createFolder(number: 7, name: "Client \(i)") } }
@@ -316,7 +309,6 @@ struct LibraryIndexTests {
     /// B142: a root that cannot be written gives no URL for a folder that does not exist.
     @Test func folderCreateFailsOnAReadOnlyRoot() throws {
         let root = try tempDir("fanous-library")
-        defer { try? FileManager.default.removeItem(at: root) }
         let readOnly = root.appending(path: "root")
         try FileManager.default.createDirectory(at: readOnly, withIntermediateDirectories: true)
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: readOnly.path)

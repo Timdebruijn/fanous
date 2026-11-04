@@ -12,6 +12,7 @@ import Testing
 
 /// `output.preset.*`, the Compare lease `output.show` (DESIGN.md §9.10 item 3) and the test pattern lease `output.pattern`
 /// (§9.9, B102).
+@Suite(.cleansTempFiles)
 struct PresetCommandsTests {
     final class Machine: Sendable {
         let showMode = Mutex(false)
@@ -177,8 +178,7 @@ struct PresetCommandsTests {
         output.presets = [preset(3, "first"), preset(0, "zero"), preset(3, "second"), preset(300, "high"), preset(7, "seven")]
         var project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
         try project.set(try JSONValue(encoding: [output]), at: "/outputs")
-        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-presets-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = tempFile("fanous-presets", ext: "json")
         try ProjectDocument.save(project, to: url)
         let loaded = try #require(ProjectDocument.load(from: url))
         let presets = try #require(ProjectDocument.outputs(from: loaded).first).presets

@@ -31,6 +31,7 @@ final class RecordingClient: StateClient, @unchecked Sendable {
     var patches: [JSONValue] { messages.withLock { $0.filter { $0["t"]?.string == "patch" } } }
 }
 
+@Suite(.cleansTempFiles)
 struct StateStoreTests {
     static let logger = Logger(label: "test")
 
@@ -153,7 +154,7 @@ struct StateStoreTests {
         var document = ProjectDocument.initial(patch: patch, layerCount: 16, libraryRoot: "/x", policy: .ltp)
         #expect(ProjectDocument.patch(from: document) == patch)
         try document.set(try JSONValue(encoding: (1...4).map { OutputConfig(id: $0) }), at: "/outputs")
-        let url = FileManager.default.temporaryDirectory.appending(path: "project-\(UUID().uuidString).json")
+        let url = tempFile("project", ext: "json")
         try ProjectDocument.save(document, to: url)
         #expect(ProjectDocument.load(from: url) == document)
         // an Output fixture without its output is unpatched on load
@@ -165,7 +166,6 @@ struct StateStoreTests {
         try ProjectDocument.save(document, to: url)
         let loaded = try #require(ProjectDocument.load(from: url))
         #expect(ProjectDocument.patch(from: loaded)?.entries == patch.entries.filter { $0.fixture != .output(3) && $0.fixture != .output(4) }, "and 9: above the console's outputs; Keystone 3 has no output")
-        try? FileManager.default.removeItem(at: url)
         #expect(FixtureRef(parsing: "layer 7") == .layer(7))
         #expect(FixtureRef(parsing: "Output 0") == nil)
         #expect(FixtureRef(parsing: "Keystone 2") == .keystone(2) && FixtureRef(parsing: "keystone 2")?.description == "Keystone 2")
@@ -347,7 +347,6 @@ extension StateStoreTests {
     /// B51: `project.set /library/root` expands `~`, normalises the path and asks the engine; refusals leave the project as it was.
     @Test func libraryRootIsNormalisedAndChecked() throws {
         let root = try tempDir("fanous-root")
-        defer { try? FileManager.default.removeItem(at: root) }
         let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
         let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx), logger: Self.logger)
         let state = Mutex((showMode: false, ingestBusy: false))
@@ -411,7 +410,6 @@ extension StateStoreTests {
     /// B60: `sync.set` validates, writes `settings.json` › `sync` next to the passwords, applies, and is refused in show mode.
     @Test func syncSetValidatesSavesAndApplies() throws {
         let directory = try tempDir("sync")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appending(path: "settings.json")
         let auth = RoleAuth(settingsURL: file, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
         try auth.setPassword("pw", for: .programmer)

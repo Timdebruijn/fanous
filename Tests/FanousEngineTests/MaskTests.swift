@@ -15,6 +15,7 @@ import UniformTypeIdentifiers
 @testable import FanousEngine
 
 /// Masks v2 (DESIGN.md §9.10 item 5): older projects, the rasteriser, image masks and the render.
+@Suite(.cleansTempFiles)
 struct MaskTests {
     static let release: Bool = {
         #if DEBUG
@@ -106,8 +107,7 @@ struct MaskTests {
     /// (a null one goes); it renders as before (the golden image of that mask), and preset 2 on Output ch 6 still shows the
     /// mask, which `decodeIfPresent` would have dropped without the conversion.
     @Test func anOlderProjectLoadsRendersAsBeforeAndItsPresetKeepsTheMask() throws {
-        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-masks-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = tempFile("fanous-masks", ext: "json")
         try ProjectDocument.save(try Self.oldProject(), to: url)
         let loaded = try #require(ProjectDocument.load(from: url))
         let output = try #require(loaded["outputs"]?[0])
@@ -141,7 +141,6 @@ struct MaskTests {
     /// `masks` too.
     @Test func aRevertConvertsTheMask() throws {
         let f = ProjectVersionsTests.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         f.store.correct(try #require(try Self.oldProject()["outputs"]), at: "/outputs")
         let saved = try #require(try f.store.execute("project.snapshot", args: ["name": "Old masks"], role: .programmer).get().value)
         f.store.correct([], at: "/outputs")
@@ -282,8 +281,7 @@ struct MaskTests {
     /// An image mask's file is decoded once per file and size (E7 of the M2.7 review): a 4K picture beside a path mask the
     /// operator drags; each drag step rasterises the masks again but finds the picture in the cache. Release only, as above.
     @Test(.enabled(if: MaskTests.release)) func aDragBesideA4KImageMaskDoesNotDecodeItAgain() throws {
-        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-mask-\(UUID().uuidString).png")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = tempFile("fanous-mask", ext: "png")
         let (w, h) = (3840, 2160)
         try Self.writeGrey((0..<(w * h)).map { UInt8(($0 % w) * 255 / w) ^ UInt8(($0 / w) & 0x3f) }, width: w, height: h, to: url)
         let device = try MetalContext().device
@@ -314,8 +312,7 @@ struct MaskTests {
     /// or unreadable file covers nothing: an add mask adds no area (alone it leaves the slice black), a subtract mask cuts
     /// no hole.
     @Test func anImageMaskIsItsLuminanceAndAMissingOneCoversNothing() throws {
-        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-mask-\(UUID().uuidString).png")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = tempFile("fanous-mask", ext: "png")
         // four bands of 0, 100, 200 and 255, 4 px each (CoreGraphics stretches an image of a few pixels oddly)
         try Self.writeGrey((0..<(16 * 8)).map { [0, 100, 200, 255][$0 % 16 / 4] }, width: 16, height: 8, to: url)
         let picture = try #require(StillSource.image(url))
@@ -333,9 +330,8 @@ struct MaskTests {
         let square = MaskShape(path: Self.square(0.25, 0.25, 0.75, 0.75))
         #expect(raster([square, MaskShape(image: image)], file: nil) == raster([square], file: nil), "a missing add mask adds nothing")
         #expect(raster([square, MaskShape(mode: .subtract, image: image)], file: nil) == raster([square], file: nil))
-        let unreadable = FileManager.default.temporaryDirectory.appending(path: "fanous-mask-\(UUID().uuidString).png")
+        let unreadable = tempFile("fanous-mask", ext: "png")
         try Data("not a picture".utf8).write(to: unreadable)
-        defer { try? FileManager.default.removeItem(at: unreadable) }
         #expect(StillSource.image(unreadable) == nil)
     }
 
@@ -343,8 +339,7 @@ struct MaskTests {
     /// change compiles again) gives a new raster with the new picture, also for the slice plan that holds it. The picture
     /// is decoded once per file: an edit of another mask of the slice finds it in the cache.
     @Test func aChangedFileIsRasterisedAgain() throws {
-        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-mask-\(UUID().uuidString).png")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = tempFile("fanous-mask", ext: "png")
         try Self.writeGrey([UInt8](repeating: 255, count: 64), width: 8, height: 8, to: url)
         let device = try MetalContext().device
         let file = Mutex<URL?>(url)
@@ -379,8 +374,7 @@ struct MaskTests {
     /// mask still reads it (`LibraryIndex.still`, by the scan), so a door cut out by a subtract mask does not close while
     /// the probe runs. A movie at that number is no image mask.
     @Test func anImageMaskKeepsItsFileWhileTheLibraryProbesIt() async throws {
-        let base = FileManager.default.temporaryDirectory.appending(path: "fanous-masklib-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: base) }
+        let base = tempFile("fanous-masklib")
         let (root, cache) = (base.appending(path: "root"), base.appending(path: "cache"))
         try FileManager.default.createDirectory(at: root.appending(path: "003_Masks"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
@@ -422,8 +416,7 @@ struct MaskTests {
         let old = Self.oldOutput.replacingOccurrences(of: #""feather":24"#, with: #""feather":-3"#)
         var project = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx)
         try project.set(.array([try JSONDecoder().decode(JSONValue.self, from: Data(old.utf8))]), at: "/outputs")
-        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-masks-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = tempFile("fanous-masks", ext: "json")
         try ProjectDocument.save(project, to: url)
         let loaded = try #require(ProjectDocument.load(from: url))
         let config = try #require(ProjectDocument.outputs(from: loaded).first)

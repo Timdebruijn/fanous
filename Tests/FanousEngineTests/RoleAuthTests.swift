@@ -9,6 +9,7 @@ import Testing
 
 @testable import FanousEngine
 
+@Suite(.cleansTempFiles)
 struct RoleAuthTests {
     static let logger = Logger(label: "test")
 
