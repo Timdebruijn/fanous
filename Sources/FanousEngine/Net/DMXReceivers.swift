@@ -320,7 +320,7 @@ public final class OSCReceiver: @unchecked Sendable {
             if decoder.dropped > dropped {
                 logger.warning(
                     "OSC TCP packet dropped: longer than \(SLIPDecoder.maxPacketBytes) bytes",
-                    metadata: ["peer": "\(source.host):\(source.port)", "dropped": "\(decoder.dropped)"])
+                    metadata: ["peer": "\(connection.endpoint)", "dropped": "\(decoder.dropped)"])
             }
             if isComplete || error != nil { return connection.cancel() }
             receiveStream(on: connection, decoder: decoder, from: source)

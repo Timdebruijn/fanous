@@ -84,6 +84,9 @@ import Testing
         #expect(decoder.dropped == 1)
         #expect(decoder.feed(SLIPDecoder.encode(packet)) == [packet])
         #expect(decoder.dropped == 1)
+        // a second oversized packet is dropped again: discarding was reset by the END in between
+        _ = decoder.feed([UInt8](repeating: 0x41, count: 70_000) + [0xC0])
+        #expect(decoder.dropped == 2)
         // an escape pair split across feeds right at the limit
         var straddling = SLIPDecoder()
         #expect(straddling.feed([UInt8](repeating: 0x41, count: SLIPDecoder.maxPacketBytes) + [0xDB]) == [])
