@@ -10,6 +10,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine: a refused upload leaves nothing in `_incoming`: `PUT /api/upload/<folder>/<name>` with a folder outside
+  1–255, or named `.` or `..` (also percent-encoded), is refused before the body is written (`..` was taken as the
+  working directory's parent's name), and an upload refused after it was written (a root change in progress, folder
+  full) is deleted (PR #NNN).
 - Tests: Core drops 6 tests that asserted nothing the suite did not already pin (an OSC capture loop over a
   directory that does not exist, the Sync markdown and GDTF strings, Sync channel 51 as a whole test, the
   highest-channel arithmetic, the X.509 byte offsets; the packet-size pins moved into the layout test) and pins

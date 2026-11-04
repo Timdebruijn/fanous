@@ -49,11 +49,13 @@ public final class IngestAPI: @unchecked Sendable {
         let path = request.path
         if path.hasPrefix("/api/upload/") {
             guard request.method == "PUT", let (folder, name) = Self.uploadComponents(path), let file = uploadedFile ?? uploadTarget(for: request)
-            else { return .text(400, "PUT /api/upload/<folder>/<name>") }
+            else { return .text(400, "PUT /api/upload/<folder 1–255>/<name>") }
             if uploadedFile == nil {
                 do { try Data(request.body).write(to: file) } catch { return .text(500, "cannot store upload: \(error)") }
             }
-            return enqueue(source: file, folder: folder, file: nil, name: name, codec: nil, fps: nil, keepOriginal: false)
+            let response = enqueue(source: file, folder: folder, file: nil, name: name, codec: nil, fps: nil, keepOriginal: false)
+            if response.status != 202 { try? FileManager.default.removeItem(at: file) }  // a refused upload (hold, folder full) leaves nothing
+            return response
         }
         switch (request.method, path) {
         case ("GET", "/api/ingest"):
@@ -128,12 +130,15 @@ public final class IngestAPI: @unchecked Sendable {
         return .json(202, Array((try? encoder.encode(job)) ?? Data()))
     }
 
-    /// `/api/upload/<folder>/<name>` → (folder, percent-decoded file name without path components).
+    /// `/api/upload/<folder>/<name>` → (folder, percent-decoded file name without path components). Everything an upload
+    /// can be refused for before its body is written is checked here (B154).
     static func uploadComponents(_ path: String) -> (Int, String)? {
         let parts = path.dropFirst("/api/upload/".count).split(separator: "/", maxSplits: 1).map(String.init)
-        guard parts.count == 2, let folder = Int(parts[0]), let decoded = parts[1].removingPercentEncoding else { return nil }
-        let name = URL(fileURLWithPath: decoded).lastPathComponent
-        guard !name.isEmpty, name != ".", name != "..", !name.hasPrefix(".") else { return nil }
+        guard parts.count == 2, let folder = Int(parts[0]), (1...255).contains(folder), let decoded = parts[1].removingPercentEncoding
+        else { return nil }
+        // the raw last component: `URL(fileURLWithPath:)` would resolve `.` and `..` against the working directory
+        let name = decoded.split(separator: "/").last.map(String.init) ?? ""
+        guard !name.isEmpty, !name.hasPrefix("."), !name.contains("\0") else { return nil }  // hidden names, `.` and `..`, a NUL
         return (folder, name)
     }
 }
