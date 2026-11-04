@@ -73,11 +73,14 @@ struct SyncReceiverTests {
     @Test func ownPacketsGarbageAndKeepalivesTouchNothing() async throws {
         let (receiver, port) = try Self.receiver()
         defer { receiver.stop() }
-        sendUDP(Self.packet(from: Self.own, [Self.clock(group: 1)]), to: port)
-        sendUDP(Array("not a sync packet".utf8), to: port)
-        sendUDP(Array("FSYN".utf8) + [9] + [UInt8](repeating: 0, count: 40), to: port)  // a version we do not speak
-        sendUDP(Self.packet(from: Self.high, []), to: port)  // keepalive
-        sendUDP(Self.packet(from: Self.low, [Self.clock(group: 2)]), to: port)
+        let datagrams = [
+            Self.packet(from: Self.own, [Self.clock(group: 1)]),
+            Array("not a sync packet".utf8),
+            Array("FSYN".utf8) + [9] + [UInt8](repeating: 0, count: 40),  // a version we do not speak
+            Self.packet(from: Self.high, []),  // keepalive
+            Self.packet(from: Self.low, [Self.clock(group: 2)]),
+        ]
+        #expect(sendUDP(datagrams, to: port).sent == datagrams.map(\.count))
         #expect(try await Self.entry(receiver, group: 2) != nil, "still receiving after the garbage")
         let table = receiver.table.withLock { $0 }
         #expect(table.entries[0] == nil, "our own id is dropped")
@@ -89,16 +92,23 @@ struct SyncReceiverTests {
     @Test func theLowerMachineIdWinsAGroup() async throws {
         let (receiver, port) = try Self.receiver()
         defer { receiver.stop() }
-        sendUDP(Self.packet(from: Self.high, [Self.clock(group: 1, position: 1)]), to: port)
-        sendUDP(Self.packet(from: Self.low, [Self.clock(group: 1, position: 2)]), to: port)
-        sendUDP(Self.packet(from: Self.high, [Self.clock(group: 1, position: 3)]), to: port)
-        sendUDP(Self.packet(from: Self.low, [Self.clock(group: 3)]), to: port)  // marks the end
-        _ = try await Self.entry(receiver, group: 3)
+        // one socket: one flow, read in order, as a console sends
+        let datagrams = [
+            Self.packet(from: Self.high, [Self.clock(group: 1, position: 1)]),
+            Self.packet(from: Self.low, [Self.clock(group: 1, position: 2)]),
+            Self.packet(from: Self.high, [Self.clock(group: 1, position: 3)]),
+            Self.packet(from: Self.low, [Self.clock(group: 3)]),  // marks the end
+        ]
+        #expect(sendUDP(datagrams, to: port).sent == datagrams.map(\.count))
+        _ = try #require(try await Self.entry(receiver, group: 3))
         let table = receiver.table.withLock { $0 }
         #expect(table.entries[0]?.machine == Self.low)
         #expect(table.entries[0]?.clock.position == 2, "the higher id's later packet is ignored")
-        #expect(table.conflict(group: 1, now: CACurrentMediaTime()) == Self.high)
-        #expect(table.conflict(group: 3, now: CACurrentMediaTime()) == nil)
+        // asked at the conflict's own time: the hosted CI runner once stalled past the 2 s freewheel window between
+        // receiving the packets and reading the table (2026-11-04), which made the conflict look expired
+        let recorded = try #require(table.conflicts[0]?.at)
+        #expect(table.conflict(group: 1, now: recorded) == Self.high)
+        #expect(table.conflict(group: 3, now: recorded) == nil)
     }
 
     /// After the freewheel time without the winner, the other machine takes the group over.

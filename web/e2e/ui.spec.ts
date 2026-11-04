@@ -402,6 +402,7 @@ test('status bar: the show-mode-resumed note wraps inside its item on a phone in
 });
 
 test('keys: the global shortcuts do nothing while a modal dialog is open, and ? still closes the shortcut list', async ({ page }) => {
+  const output = await addUnassignedOutput(page); // something for Ctrl+Z to undo
   await openScreen(page, 'Patch');
   await page.getByRole('button', { name: 'Patch sheet' }).click();
   const sheet = page.getByRole('dialog', { name: 'Patch sheet' });
@@ -421,17 +422,25 @@ test('keys: the global shortcuts do nothing while a modal dialog is open, and ? 
   await expect(help).toBeHidden();
   await page.keyboard.press('1');
   await expect.poll(hash).toBe('#/layers');
-  // L and undo had their round trips by now: the lock is still off and no "history is empty" alert came back
+  // with the dialogs closed the same keys work: L toggles the lock, and the output survived the dialog's Ctrl+Z
   await expect(page.getByRole('button', { name: 'Unlocked' })).toBeVisible();
-  await expect(page.getByRole('alert')).toHaveCount(0);
+  await page.keyboard.press('l');
+  await expect(page.getByRole('button', { name: 'Locked', exact: true })).toBeVisible();
+  await page.keyboard.press('l');
+  await expect(page.getByRole('button', { name: 'Unlocked' })).toBeVisible();
+  await openScreen(page, 'Outputs');
+  await expect(output).toBeVisible();
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(page.getByText('No outputs yet.')).toBeVisible();
 });
 
-test('keys: Space on the Show screen fires no cue while the shortcut list is open', async ({ page }) => {
+test('keys: Space on the Show screen fires the next cue, but not while the shortcut list is open', async ({ page }) => {
   const sent: string[] = [];
   frames(page, 'sent', (_, payload) => sent.push(payload));
   await page.reload();
   await expect(page.getByRole('banner')).toContainText(/\b[1-9]\d* clients/);
   await openScreen(page, 'Show');
+  await page.getByRole('button', { name: 'Add cue' }).click();
   await page.keyboard.press('?');
   // a click on the list's text leaves the focus on the page's body, which Space does not skip
   await page.getByRole('heading', { name: 'Keyboard shortcuts' }).click();
@@ -439,6 +448,8 @@ test('keys: Space on the Show screen fires no cue while the shortcut list is ope
   await page.keyboard.press('?');
   await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeHidden();
   expect(sent.filter((p) => p.includes('cue.go'))).toEqual([]);
+  await page.keyboard.press('Space');
+  await expect.poll(() => sent.filter((p) => p.includes('cue.go')).length).toBe(1);
 });
 
 test('media: folder 0 lists the generators and the Syphon servers, and puts one on a layer', async ({ page }) => {
@@ -473,16 +484,6 @@ test('inputs: key 3 opens the Inputs screen with the live groups; Media folder 0
   await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/system');
 });
 
-test('outputs: add an unassigned output and a second slice', async ({ page }) => {
-  await addUnassignedOutput(page);
-  await page.getByRole('button', { name: 'Warp & Slices' }).click();
-  await page.getByRole('button', { name: 'Slices', exact: true }).click();
-  await page.getByRole('button', { name: 'Add slice' }).click();
-  const slice = page.getByRole('combobox', { name: 'Slice', exact: true });
-  await expect(slice.locator('option')).toHaveText(['Slice 1', 'Slice 2']);
-  await expect(slice).toHaveValue('1');
-});
-
 test('outputs: with two slices on the same corners, a drag moves the selected slice only; Reset slice puts it back', async ({ page }) => {
   await addUnassignedOutput(page);
   await page.getByRole('button', { name: 'Warp & Slices' }).click();
@@ -490,6 +491,7 @@ test('outputs: with two slices on the same corners, a drag moves the selected sl
   await page.getByRole('button', { name: 'Add slice' }).click();
   const slice = page.getByRole('combobox', { name: 'Slice', exact: true });
   await expect(slice).toHaveValue('1');
+  await expect(slice.locator('option')).toHaveText(['Slice 1', 'Slice 2']); // ids, not indexes: nextSliceId
 
   // slice 2 lies on top of slice 1: select slice 1, grab the shared top-left corner and drop it in the middle
   await slice.selectOption('0');
@@ -509,6 +511,12 @@ test('outputs: with two slices on the same corners, a drag moves the selected sl
   await slice.selectOption('0');
   await page.getByRole('button', { name: 'Reset slice' }).click();
   await expect.poll(() => handleAt(page, '/slices/0/dest/0')).toEqual({ x: 0, y: 0 });
+
+  // Spread canvas gives slice 2 the right half of the canvas: its source x equals its source width
+  await slice.selectOption('1');
+  await page.getByRole('button', { name: 'Spread canvas' }).click();
+  await expect(page.getByLabel('Source x in pixels')).not.toHaveValue('0');
+  await expect(page.getByLabel('Source x in pixels')).toHaveValue(await page.getByLabel('Source w in pixels').inputValue());
 });
 
 /** A pointer drag on the mapping editor from one place to another, given as fractions of the picture, through `via`. */
@@ -857,19 +865,6 @@ test('outputs: a change of mesh density keeps the shape; Reset mesh flattens it'
 
   await page.getByRole('button', { name: 'Reset mesh' }).click();
   await expect.poll(() => rounded('/warp/mesh/points/12')).toEqual(flat);
-});
-
-test('outputs: Spread canvas gives each slice its strip of the canvas', async ({ page }) => {
-  await addUnassignedOutput(page);
-  await page.getByRole('button', { name: 'Warp & Slices' }).click();
-  await page.getByRole('button', { name: 'Slices', exact: true }).click();
-  await page.getByRole('button', { name: 'Add slice' }).click();
-  await page.getByRole('button', { name: 'Spread canvas' }).click();
-  // two slices of equal width: slice 2 takes the right half
-  const x = page.getByLabel('Source x in pixels');
-  const w = page.getByLabel('Source w in pixels');
-  await expect(x).not.toHaveValue('0');
-  await expect(x).toHaveValue(await w.inputValue());
 });
 
 /** What `page` sends from its next load on: the `patterns` of each `output.pattern` (B102), and how many `output.set`

@@ -191,7 +191,6 @@ describe('library helpers', () => {
   });
 
   it('offers the codec names the ingest API understands, HAP Q first', () => {
-    expect(transcodeCodecs[0].value).toBe('hapq');
     expect(transcodeCodecs.map((c) => c.value)).toEqual(['hapq', 'hap', 'hapalpha', 'prores422hq', 'prores4444']);
   });
 });

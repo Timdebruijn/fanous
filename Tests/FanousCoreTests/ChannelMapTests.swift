@@ -27,6 +27,17 @@ import Testing
         #expect([FixtureMode.layer: 64, .master: 8, .output: 8, .keystone: 16][mode] == mode.footprint)
     }
 
+    @Test(arguments: FixtureMode.allCases) func everyParameterHasASpec(mode: FixtureMode) {
+        let parameters =
+            switch mode {
+            case .layer: LayerParameter.allCases.count
+            case .master: MasterParameter.allCases.count
+            case .output: OutputParameter.allCases.count
+            case .keystone: KeystoneParameter.allCases.count
+            }
+        #expect(ChannelMap.specs(for: mode).count == parameters)
+    }
+
     /// DESIGN.md §6.4a: four corners × X/Y, 16-bit, centred = no change, ±50 %; the other modes keep their footprints and
     /// reserved channels (Output ch 8).
     @Test func keystoneModeHasSixteenCentredChannels() {
@@ -42,13 +53,6 @@ import Testing
         #expect(FixtureRef.keystone(2).mode == .keystone && FixtureRef.keystone(2).description == "Keystone 2")
         #expect(PatchEntry(fixture: .keystone(1), universe: UniverseID(.artnet, 0), address: 497).fitsInUniverse)
         #expect(!PatchEntry(fixture: .keystone(1), universe: UniverseID(.artnet, 0), address: 498).fitsInUniverse)
-    }
-
-    @Test func layerUsesFiftyOneChannels() {
-        #expect(ChannelMap.layer.count == LayerParameter.allCases.count)
-        #expect(ChannelMap.layer.map(\.channels.upperBound).max() == 51)
-        #expect(ChannelMap.master.map(\.channels.upperBound).max() == 6)
-        #expect(ChannelMap.output.map(\.channels.upperBound).max() == 7)
     }
 
     @Test func decodesRawValuesFromAUniverse() {

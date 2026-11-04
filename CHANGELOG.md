@@ -10,6 +10,21 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Tests: Core drops 6 tests that asserted nothing the suite did not already pin (an OSC capture loop over a
+  directory that does not exist, the Sync markdown and GDTF strings, Sync channel 51 as a whole test, the
+  highest-channel arithmetic, the X.509 byte offsets; the packet-size pins moved into the layout test) and pins
+  what they missed: the Art-Net and sACN capture directories must not be empty, every parameter has a spec in all
+  four modes, the Sync wire row and the certificate's v3 version field, the lookup tables are checked for Keystone,
+  and the MIME table for `.wasm`, `.mjs`, `.css` and `.svg` (PR #283).
+- Tests: web test cleanup. `layers-media.test.ts` merged into `layers.test.ts` (one `layer()` factory, the
+  `layerState` assertions in one place), the tautological `GENERATORS` line and the doubled `transcodeCodecs` check
+  gone, the POLICIES copy narrowed to the `line` texts nothing else pins. In the e2e suite two tests that only
+  repeated others are gone (second slice, now pinned by the slice labels in the slice-drag test; Spread canvas, folded
+  into that test), and the Space and L/Ctrl+Z key tests now also fail when the shortcut is broken
+  (PR #284).
+- Tests: the sync receiver tests send their datagrams from one socket, in order, fail instead of reading the table
+  when the end marker never arrives, and ask for a group's conflict at the conflict's own time: the hosted CI runner
+  once stalled past the 2 s freewheel window and the conflict looked expired (PR #285).
 - Tests: engine tests that checked a value the code under test had just set now check the result: a decoded movie
   frame is that frame's picture (HAP, HAP Q, ProRes; not only its index), and the timecode chase lands on frame 70
   of a 100-frame movie instead of a still that never chases. The 5.1 fold-down is checked structurally (centre in
