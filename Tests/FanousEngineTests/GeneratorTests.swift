@@ -130,7 +130,8 @@ struct GeneratorTests {
     }
 
     /// An output's own test pattern (the plan's, not the Master's) is drawn: output ID, a large "1" through the centre of
-    /// output 1, on its colour. Every pattern's picture is in GoldenTests.
+    /// output 1, on its colour. GoldenTests draws every pattern through the plain output pass (the Master's pattern and a
+    /// plan's own resolve to one `pattern` in `OutputRenderer`).
     @Test func outputIDPatternRenders() throws {
         let context = try MetalContext()
         let (_, id) = try Self.render(nil, pattern: TestPattern.outputID.rawValue, context: context)
