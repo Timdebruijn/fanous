@@ -89,6 +89,11 @@ public final class WebSocketSession: @unchecked Sendable {
                 close(code: frame.closeCode ?? 1000)
                 return false
             case .text, .binary:
+                // RFC 6455 §5.4: no new data frame while a fragmented message is open
+                guard fragment == nil else {
+                    close(code: 1002, reason: "new message inside a fragmented one")
+                    return false
+                }
                 if frame.fin {
                     deliver(frame.opcode, frame.payload)
                 } else {

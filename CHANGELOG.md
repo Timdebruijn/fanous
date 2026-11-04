@@ -10,6 +10,13 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Fixed: a WebSocket client that started a new text or binary message while a fragmented one was open had it
+  delivered with the fragment still open, or replaced the fragment; it now gets close 1002 (RFC 6455 §5.4). A
+  browser on an IPv6 literal (`https://[::1]:8443`) could not open the WebSocket: the Origin check compared the host
+  without its brackets. Tests: the trust boundary is pinned: the WebSocket Origin check, fragment reassembly and the close codes 1002/1007/1009, upload names that stay in
+  `_incoming`, and the TLS identity files (reload, regenerate on a damaged certificate or a foreign key, modes
+  0600/0700). Two known issues are marked: an upload to folder 0 or 256 is left in `_incoming`, and an upload named
+  `..` is not refused (PR #280).
 - Fixed: a `project.json` the engine could not read (damaged, another schema) was replaced without a word: the
   fresh project's first autosave wrote over it two seconds later. It is now kept next to itself as
   `project.json.unreadable-<time>` and the log says so (PR #279).

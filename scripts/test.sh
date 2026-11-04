@@ -17,11 +17,11 @@ cd "$(dirname "$0")/.."
 if [[ "${1:-}" == "--hosted" ]]; then
   shift
   hosted='AudioLifecycleTests|BonjourTests|CITPServerTests|ClientErrorTextTests|DXTCompressorTests|DisplayModeSwitcherTests'
-  hosted+='|EditOverlayTests|HTTPSServerLogTests|LayerGeometryTests|LibraryIndexTests|LibraryRedactionTests|LiveCatalogTests'
+  hosted+='|EditOverlayTests|HTTPSServerLogTests|IngestAPITests|LayerGeometryTests|LibraryIndexTests|LibraryRedactionTests|LiveCatalogTests'
   hosted+='|MIDIControlTests|OSCFeedbackServerTests|OSCReceiverTests|OSLogHandlerTests|PresetCommandsTests|ProjectVersionsTests'
   hosted+='|RoleAuthTests|ShowControlTests|SlaveClockTests|StateServerTests|StateStoreRedactionTests|StateStoreTests'
   hosted+='|SyncReceiverTests|SyncSenderTests|TLSIdentityTests|TripleBufferTests|UDPSendTests|UIExpiryTests'
-  hosted+='|UniverseSettingsEngineTests|WallCommandsTests|WebSocketHandshakeTests'
+  hosted+='|UniverseSettingsEngineTests|WallCommandsTests|WebSocketHandshakeTests|WebSocketSessionTests'
   set -- --filter "FanousCoreTests|FanousEngineTests\.($hosted)/" "$@"
 fi
 plugins="$(xcode-select -p)/usr/lib/swift/host/plugins/testing"
