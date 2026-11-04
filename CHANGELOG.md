@@ -10,6 +10,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Tests: the engine test suite drops its repeats (about 290 lines): a `.cleansTempFiles` trait removes temporary files
+  after each test, polls go through `waitUntil`, and one shared helper each for the compositor rig, test stores and
+  projects, PNGs, movie writing and reading, sockets, the malloc gate and the logger; the same 744 tests assert the
+  same things, and the unused `FanousCore`/`FanousEngine` library products are gone (PR #NNN).
 - Changed: the engine's control side has one UDP receiver socket setup (sACN, sync), one pipeline descriptor helper,
   one welcome message, one CoreAudio device list, one cue store and one sync target parser instead of copies; the
   automatic-updates readiness item reads the preference with CFPreferences instead of running `defaults`; the never-sent
