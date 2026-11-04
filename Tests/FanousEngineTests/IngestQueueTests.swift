@@ -426,8 +426,7 @@ import VideoToolbox
             if case .running(let value) = queue.jobs.first(where: { $0.id == job.id })?.state { return value }
             return nil
         }
-        let deadline = Date().addingTimeInterval(5)
-        while (progress() ?? 0) < 0.1, Date() < deadline { try await Task.sleep(for: .milliseconds(5)) }
+        await waitUntil(.seconds(5)) { (progress() ?? 0) >= 0.1 }
         #expect((progress() ?? 0) >= 0.1)
 
         // Timings are loose on purpose: a .utility thread's 20 ms sleeps are coalesced to 150 ms and more on a busy machine.
@@ -444,8 +443,7 @@ import VideoToolbox
         #expect(progress() == held)
         #expect(held.map { $0 < 1 } == true)
         queue.paused = false
-        let resumeDeadline = Date().addingTimeInterval(5)
-        while (progress() ?? 1) <= (held ?? 1), Date() < resumeDeadline { try await Task.sleep(for: .milliseconds(20)) }
+        await waitUntil(.seconds(5)) { (progress() ?? 1) > (held ?? 1) }
         #expect((progress() ?? 1) > (held ?? 1))
 
         queue.cancel(id: job.id)

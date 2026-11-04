@@ -240,7 +240,7 @@ struct CompositorIdleTests {
         defer { coordinator.stop() }
         func ticksAdvance() async throws {
             let start = compositor.completed.load(ordering: .relaxed)
-            for _ in 0..<200 where compositor.completed.load(ordering: .relaxed) < start + 5 { try await Task.sleep(for: .milliseconds(10)) }
+            await waitUntil(.seconds(2)) { compositor.completed.load(ordering: .relaxed) >= start + 5 }
             #expect(compositor.completed.load(ordering: .relaxed) >= start + 5, "the render loop runs")
         }
         try await ticksAdvance()

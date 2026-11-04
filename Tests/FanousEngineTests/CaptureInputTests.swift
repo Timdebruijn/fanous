@@ -321,7 +321,7 @@ struct CaptureInputTests {
     /// A scene entry `{folder: 0, file, capture: uid}` opens through `captureFactory`: the layer reads "Camera: <name>",
     /// "no signal" while frames stop (same playback), the factory's error as its status, and a layer refused for the
     /// permission opens once the answer comes (`changed(.capturePermission)`).
-    @Test func loaderOpensSceneCaptureEntries() throws {
+    @Test func loaderOpensSceneCaptureEntries() async throws {
         let context = try MetalContext(), device = context.device
         let layers = [RenderLayer(index: 0), RenderLayer(index: 1)]
         let loader = MediaLoader(
@@ -337,36 +337,35 @@ struct CaptureInputTests {
         defer { loader.stop() }
         func playback(_ i: Int) -> CaptureInput? { layers[i].pending.withLock { $0.playback?.live as? CaptureInput } }
         func status(_ i: Int) -> LayerMediaStatus { layers[i].mediaStatus.withLock { $0 } }
-        func eventually(_ condition: () -> Bool) -> Bool { SyphonTests.wait(seconds: 5, until: condition) }
         layers[0].wanted.store(MediaKey(folder: 0, file: 5).packed, ordering: .relaxed)
         layers[1].wanted.store(MediaKey(folder: 0, file: 6).packed, ordering: .relaxed)
         loader.wake.signal()
-        #expect(eventually { playback(0) != nil && status(0).name == "Camera: synthetic" })
+        #expect(await waitUntil(.seconds(5)) { playback(0) != nil && status(0).name == "Camera: synthetic" })
         #expect(status(0).kind == "live" && status(0).error == nil)
-        #expect(eventually { status(1).error == CaptureError.permissionNotAsked.description })
+        #expect(await waitUntil(.seconds(5)) { status(1).error == CaptureError.permissionNotAsked.description })
         #expect(status(1).kind == "live" && playback(1) == nil)
 
         let input = try #require(playback(0))
         input.deliver(try Self.runsBuffer("BGRA"))
         clock.advance(2.5)
-        #expect(eventually { status(0).error == "no signal" })
+        #expect(await waitUntil(.seconds(5)) { status(0).error == "no signal" })
         #expect(playback(0) === input && input.latestFrame != nil)
         input.deliver(try Self.runsBuffer("BGRA"))
-        #expect(eventually { status(0).error == nil })
+        #expect(await waitUntil(.seconds(5)) { status(0).error == nil })
         // size and counters follow the input (a card changing format), polled by the loader
         input.deliver(try Self.buffer(kCVPixelFormatType_32BGRA, 64, 32) { _ in Array(repeating: 9, count: 256) })
-        #expect(eventually { status(0).width == 64 && status(0).height == 32 && status(0).capture?.frames == 3 })
+        #expect(await waitUntil(.seconds(5)) { status(0).width == 64 && status(0).height == 32 && status(0).capture?.frames == 3 })
 
         granted.store(true, ordering: .relaxed)
         loader.changed(.capturePermission)
-        #expect(eventually { playback(1) != nil && status(1).error == nil && status(1).name == "Camera: synthetic" })
+        #expect(await waitUntil(.seconds(5)) { playback(1) != nil && status(1).error == nil && status(1).name == "Camera: synthetic" })
         #expect(playback(0) === input)  // an open layer is left alone
     }
 
     /// Folder 0 files 1–20 resolve through the capture catalog (B73 step 2b): two layers on file 3 share one input (one
     /// factory call); a device that goes reads "not running" and keeps the layers' input, one that comes back opens a
     /// new session for both, and the old one stops when its last layer lets go. A device in use elsewhere is not opened.
-    @Test func loaderResolvesNumberedCaptureDevicesToOneSharedInput() throws {
+    @Test func loaderResolvesNumberedCaptureDevicesToOneSharedInput() async throws {
         let context = try MetalContext(), device = context.device
         let layers = (0..<4).map { RenderLayer(index: $0) }
         let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: Self.logger)
@@ -385,47 +384,46 @@ struct CaptureInputTests {
         defer { loader.stop() }
         func playback(_ i: Int) -> CaptureInput? { layers[i].pending.withLock { $0.playback?.live as? CaptureInput } }
         func status(_ i: Int) -> LayerMediaStatus { layers[i].mediaStatus.withLock { $0 } }
-        func eventually(_ condition: () -> Bool) -> Bool { SyphonTests.wait(seconds: 5, until: condition) }
         func select(_ i: Int, _ file: Int) {
             layers[i].wanted.store(MediaKey(folder: 0, file: file).packed, ordering: .relaxed)
             loader.wake.signal()
         }
 
         select(0, 3)
-        #expect(eventually { playback(0) != nil })
+        #expect(await waitUntil(.seconds(5)) { playback(0) != nil })
         select(1, 3)
-        #expect(eventually { playback(1) != nil })
+        #expect(await waitUntil(.seconds(5)) { playback(1) != nil })
         let input = try #require(playback(0))
         #expect(playback(1) === input && opened.withLock { $0 } == ["cam-c"])
         #expect(status(0).name == "Camera: Cam C" && status(0).kind == "live" && status(1).name == "Camera: Cam C")
         select(2, 5)
         select(3, 9)
-        #expect(eventually { status(2).error == "not running" && status(3).error == "no capture device numbered 9 (folder 0, 1–20)" })
+        #expect(await waitUntil(.seconds(5)) { status(2).error == "not running" && status(3).error == "no capture device numbered 9 (folder 0, 1–20)" })
         #expect(status(2).name == "Camera: Away Cam" && playback(2) == nil)
 
         // unplugged: both layers read "not running" and keep the input (the last frame)
         catalog.update(running: Array(cams.prefix(2)))
-        #expect(eventually { status(0).error == "not running" && status(1).error == "not running" })
+        #expect(await waitUntil(.seconds(5)) { status(0).error == "not running" && status(1).error == "not running" })
         #expect(playback(0) === input && input.status != .stopped)
         // back: one new session for both layers; the old input stops when both have let go
         catalog.update(running: cams)
-        #expect(eventually { playback(0) != nil && playback(0) !== input && playback(1) === playback(0) })
+        #expect(await waitUntil(.seconds(5)) { playback(0) != nil && playback(0) !== input && playback(1) === playback(0) })
         #expect(opened.withLock { $0 } == ["cam-c", "cam-c"])
         #expect(input.status == .stopped)
 
         // in use by another app: an open layer stays; a layer selecting it now is not opened until the other app lets go
         catalog.update(running: [cams[0], LiveCatalogTests.device("cam-b", "Cam B", model: "m", inUse: true), cams[2]])
         select(2, 2)
-        #expect(eventually { status(2).error == "in use by another app" && status(2).name == "Camera: Cam B" })
+        #expect(await waitUntil(.seconds(5)) { status(2).error == "in use by another app" && status(2).name == "Camera: Cam B" })
         #expect(playback(2) == nil)
         catalog.update(running: cams)
-        #expect(eventually { playback(2) != nil && status(2).error == nil })
+        #expect(await waitUntil(.seconds(5)) { playback(2) != nil && status(2).error == nil })
         #expect(opened.withLock { $0 } == ["cam-c", "cam-c", "cam-b"])
 
         // our own session is shared before the in-use check: another app opening the device after us refuses nobody
         catalog.update(running: [cams[0], LiveCatalogTests.device("cam-b", "Cam B", model: "m", inUse: true), cams[2]])
         select(3, 2)
-        #expect(eventually { playback(3) != nil })
+        #expect(await waitUntil(.seconds(5)) { playback(3) != nil })
         #expect(playback(3) === playback(2) && status(3).error != "in use by another app")
         #expect(opened.withLock { $0 } == ["cam-c", "cam-c", "cam-b"])
 
@@ -434,7 +432,7 @@ struct CaptureInputTests {
         let before = try #require(playback(0))
         catalog.update(running: [cams[0], cams[1], LiveCatalogTests.device("cam-c2", "Cam C", model: "m")])
         #expect(catalog.entry(file: 3)?.source == "cam-c2")
-        #expect(eventually { playback(0) != nil && playback(0) !== before && playback(1) === playback(0) })
+        #expect(await waitUntil(.seconds(5)) { playback(0) != nil && playback(0) !== before && playback(1) === playback(0) })
         #expect(opened.withLock { $0 } == ["cam-c", "cam-c", "cam-b", "cam-c2"])
         #expect(before.status == .stopped)
 
@@ -443,13 +441,13 @@ struct CaptureInputTests {
         failed.slot.withLock { $0.failure = "device in use" }
         #expect(!failed.share())
         catalog.update(running: [LiveCatalogTests.device("cam-a", "Cam A", model: "m", inUse: true), cams[1], LiveCatalogTests.device("cam-c2", "Cam C", model: "m")])
-        #expect(eventually { playback(0) != nil && playback(0) !== failed && playback(1) === playback(0) })
+        #expect(await waitUntil(.seconds(5)) { playback(0) != nil && playback(0) !== failed && playback(1) === playback(0) })
         #expect(opened.withLock { $0 } == ["cam-c", "cam-c", "cam-b", "cam-c2", "cam-c2"])
     }
 
     /// A renumber (B137 step 3): a layer on the number a running camera left shows what is on that number now, never
     /// the camera; a layer on its new number opens it; a swap trades the two layers' pictures.
-    @Test func loaderFollowsARenumber() throws {
+    @Test func loaderFollowsARenumber() async throws {
         let context = try MetalContext(), device = context.device
         let layers = (0..<3).map { RenderLayer(index: $0) }
         let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: Self.logger)
@@ -468,7 +466,6 @@ struct CaptureInputTests {
         defer { loader.stop() }
         func playback(_ i: Int) -> CaptureInput? { layers[i].pending.withLock { $0.playback?.live as? CaptureInput } }
         func status(_ i: Int) -> LayerMediaStatus { layers[i].mediaStatus.withLock { $0 } }
-        func eventually(_ condition: () -> Bool) -> Bool { SyphonTests.wait(seconds: 5, until: condition) }
         func select(_ i: Int, _ file: Int) {
             layers[i].wanted.store(MediaKey(folder: 0, file: file).packed, ordering: .relaxed)
             loader.wake.signal()
@@ -478,20 +475,20 @@ struct CaptureInputTests {
         }
         select(0, 1)
         select(1, 2)
-        #expect(eventually { playback(0) != nil && playback(1) != nil })
+        #expect(await waitUntil(.seconds(5)) { playback(0) != nil && playback(1) != nil })
         let a = try #require(inputs.withLock { $0["cam-a"] }), b = try #require(inputs.withLock { $0["cam-b"] })
         #expect(playback(0) === a && playback(1) === b)
 
         // a swap: layer 1 now shows Cam B, layer 2 Cam A
         catalog.adopt(numbered(["cam-a": 2, "cam-b": 1]))
-        #expect(eventually { status(0).name == "Camera: Cam B" && status(1).name == "Camera: Cam A" })
-        #expect(eventually { playback(0) != nil && playback(1) != nil && playback(0) !== playback(1) })
+        #expect(await waitUntil(.seconds(5)) { status(0).name == "Camera: Cam B" && status(1).name == "Camera: Cam A" })
+        #expect(await waitUntil(.seconds(5)) { playback(0) != nil && playback(1) != nil && playback(0) !== playback(1) })
         #expect(status(0).error == nil && status(1).error == nil)
 
         // Cam B (now on 1) moves to the free number 7: layer 1 shows nothing, a layer on 7 shows Cam B
         catalog.adopt(numbered(["cam-a": 2, "cam-b": 7]))
         select(2, 7)
-        #expect(eventually { status(0).error == "no capture device numbered 1 (folder 0, 1–20)" && playback(0) == nil })
-        #expect(eventually { playback(2) != nil && status(2).name == "Camera: Cam B" })
+        #expect(await waitUntil(.seconds(5)) { status(0).error == "no capture device numbered 1 (folder 0, 1–20)" && playback(0) == nil })
+        #expect(await waitUntil(.seconds(5)) { playback(2) != nil && status(2).name == "Camera: Cam B" })
     }
 }

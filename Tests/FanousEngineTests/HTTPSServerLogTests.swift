@@ -35,7 +35,7 @@ struct HTTPSServerLogTests {
         ) { _ in .text(200, "ok") }
         server.start()
         defer { server.stop() }
-        for _ in 0..<100 where server.boundPort == nil { try await Task.sleep(for: .milliseconds(20)) }
+        await waitUntil(.seconds(2)) { server.boundPort != nil }
         let port = try #require(server.boundPort)
         let session = URLSession(configuration: .ephemeral, delegate: StateServerTests.TrustAll(), delegateQueue: nil)
         _ = try await session.data(from: URL(string: "https://127.0.0.1:\(port)/api/state?token=secret-4711")!)

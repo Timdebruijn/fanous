@@ -24,7 +24,7 @@ import Testing
         defer { decoder.stop() }
 
         decoder.request(frame: 0, direction: 1)
-        for _ in 0..<200 where ring.count < 4 { try await Task.sleep(for: .milliseconds(25)) }
+        await waitUntil(.seconds(5)) { ring.count == 4 }
         #expect(ring.count == 4, "the ring fills")
 
         // a paused layer asks for the same frame every tick: one wake-up for the first request, none after
@@ -39,7 +39,7 @@ import Testing
         // a new frame wakes it: the compositor popped a slot, the thread refills it
         ring.pop()
         decoder.request(frame: 1, direction: 1)
-        for _ in 0..<200 where ring.count < 4 { try await Task.sleep(for: .milliseconds(25)) }
+        await waitUntil(.seconds(5)) { ring.count == 4 }
         #expect(ring.count == 4, "refilled after the wake-up")
         #expect(decoder.wakeups.load(ordering: .relaxed) == wakeups + 1)
 

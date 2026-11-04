@@ -35,7 +35,7 @@ struct OSCReceiverTests {
             let datagrams = (1...200).map { i in OSCMessage("/fanous/cue/goto", [.float32(Float(burst * 200 + i))]).encoded() }
             #expect(sendUDP(datagrams, to: port).sent == datagrams.map(\.count))
         }
-        for _ in 0..<50 where seen.withLock({ $0.count }) < count { try await Task.sleep(for: .milliseconds(100)) }
+        await waitUntil(.seconds(5)) { seen.withLock { $0.count } >= count }
         #expect(seen.withLock { $0.count } == count)
     }
 

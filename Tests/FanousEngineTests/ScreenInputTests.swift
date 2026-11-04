@@ -224,7 +224,7 @@ struct ScreenInputTests {
     /// factory call); a display bound as an output reads "not running", keeps the last frame and its stream is halted;
     /// unbound, one new session serves both layers. A scene entry `screen:` wins on its number; a number without a
     /// display says so; the factory's refusal (no screen grant) is the layer's text.
-    @Test func loaderResolvesNumberedDisplaysToOneSharedInput() throws {
+    @Test func loaderResolvesNumberedDisplaysToOneSharedInput() async throws {
         let context = try MetalContext(), device = context.device
         let layers = (0..<4).map { RenderLayer(index: $0) }
         let loader = MediaLoader(
@@ -244,42 +244,41 @@ struct ScreenInputTests {
         defer { loader.stop() }
         func playback(_ i: Int) -> CaptureInput? { layers[i].pending.withLock { $0.playback?.live as? CaptureInput } }
         func status(_ i: Int) -> LayerMediaStatus { layers[i].mediaStatus.withLock { $0 } }
-        func eventually(_ condition: () -> Bool) -> Bool { SyphonTests.wait(seconds: 5, until: condition) }
         func select(_ i: Int, _ file: Int) {
             layers[i].wanted.store(MediaKey(folder: 0, file: file).packed, ordering: .relaxed)
             loader.wake.signal()
         }
 
         select(0, 22)
-        #expect(eventually { playback(0) != nil })
+        #expect(await waitUntil(.seconds(5)) { playback(0) != nil })
         select(1, 22)
-        #expect(eventually { playback(1) != nil })
+        #expect(await waitUntil(.seconds(5)) { playback(1) != nil })
         let input = try #require(playback(0))
         #expect(playback(1) === input && input is ScreenInput && opened.withLock { $0 } == ["uuid-b"])
         #expect(status(0).name == "Display: DELL U2720Q" && status(0).kind == "live" && status(1).name == "Display: DELL U2720Q")
         input.deliver(try CaptureInputTests.runsBuffer("BGRA"))
-        #expect(eventually { status(0).width == LiveSourceTests.width && status(0).capture?.frames == 1 })
+        #expect(await waitUntil(.seconds(5)) { status(0).width == LiveSourceTests.width && status(0).capture?.frames == 1 })
 
         // bound as an output: not running, the last frame stays, the stream is halted; the number is kept
         catalog.update(running: LiveCatalog.screens(displays, bound: ["uuid-b"]))
-        #expect(eventually { status(0).error == "not running" && status(1).error == "not running" })
+        #expect(await waitUntil(.seconds(5)) { status(0).error == "not running" && status(1).error == "not running" })
         #expect(playback(0) === input && input.latestFrame != nil && !input.alive)
         #expect(catalog.entry(file: 22)?.running == false && catalog.entry(file: 22)?.gone == false)
         // unbound: one new session for both layers; the halted one stops when both have let go
         catalog.update(running: LiveCatalog.screens(displays, bound: []))
-        #expect(eventually { playback(0) != nil && playback(0) !== input && playback(1) === playback(0) && status(0).error == nil })
+        #expect(await waitUntil(.seconds(5)) { playback(0) != nil && playback(0) !== input && playback(1) === playback(0) && status(0).error == nil })
         #expect(opened.withLock { $0 } == ["uuid-b", "uuid-b"])
-        #expect(eventually { input.status == .stopped })
+        #expect(await waitUntil(.seconds(5)) { input.status == .stopped })
 
         // a scene entry wins on its number; a free number says so
         select(2, 24)
         select(3, 25)
-        #expect(eventually { playback(2) != nil && status(3).error == "no display numbered 25 (folder 0, 21–28)" })
+        #expect(await waitUntil(.seconds(5)) { playback(2) != nil && status(3).error == "no display numbered 25 (folder 0, 21–28)" })
         #expect(status(2).name == "Display: synthetic" && opened.withLock { $0 }.last == "uuid-scene")
         // no screen grant: the factory's text, black
         refuse.store(true, ordering: .relaxed)
         select(3, 21)
-        #expect(eventually { status(3).error == CaptureError.screenPermission.description })
+        #expect(await waitUntil(.seconds(5)) { status(3).error == CaptureError.screenPermission.description })
         #expect(status(3).name == "Display: Built-in Retina Display" && status(3).kind == "live" && playback(3) == nil)
         #expect(CaptureError.screenPermission.description == "screen permission not granted: authorize on the Inputs screen, then Engine › Restart")
         #expect(CaptureError.permissionNotAsked.description == "camera permission not asked: authorize on the Inputs screen")
