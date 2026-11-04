@@ -244,9 +244,10 @@ skipped and named in the log.
 
 If `project.json` itself does not read as a project when the engine starts (a
 damaged file, a file from another version), the engine starts with the standard
-patch and keeps the file next to it as `project.json.unreadable-<time>Z`; the log
-names it. Revert to a version (System › Project versions) or move the kept file
-back once it is repaired.
+patch and keeps the file next to it as `project.json.unreadable-<time>`; the log
+names it. Revert to a version (System › Project versions) or, with the engine
+stopped (Engine › **Stop Engine…**), move the kept file back to `project.json`
+once it is repaired.
 
 ## Reset the project
 

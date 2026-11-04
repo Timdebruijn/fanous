@@ -39,7 +39,7 @@ struct ProjectVersionsTests {
     @Test func anUnreadableProjectFileIsSetAside() throws {
         let file = tempFile("fanous-project", ext: "json")
         #expect(try ProjectDocument.setAside(file) == nil)  // no file, nothing to keep
-        let garbage = Data("{\"schema\": 2, \"patch\"".utf8)
+        let garbage = Data("{\"schema\": 2, \"patch\": []}".utf8)  // reads as JSON, is another schema
         try garbage.write(to: file)
         #expect(ProjectDocument.load(from: file) == nil)
         let aside = try #require(try ProjectDocument.setAside(file, now: Date(timeIntervalSince1970: 1793786400)))
