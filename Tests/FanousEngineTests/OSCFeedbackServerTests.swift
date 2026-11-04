@@ -25,41 +25,20 @@ import Testing
         init() throws {
             let fd = socket(AF_INET, SOCK_DGRAM, 0)
             self.fd = fd
-            var address = sockaddr_in()
-            address.sin_family = sa_family_t(AF_INET)
-            address.sin_addr.s_addr = UInt32(0x7F00_0001).bigEndian
-            let bound = withUnsafePointer(to: &address) { p in
-                p.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-                }
-            }
-            try #require(bound == 0)
-            var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-            _ = withUnsafeMutablePointer(to: &address) { p in
-                p.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) }
-            }
-            port = UInt16(bigEndian: address.sin_port)
+            try #require(withSockaddr(host: "127.0.0.1") { bind(fd, $0, $1) } == 0)
+            port = try #require(localPort(fd))
         }
 
         func close() { _ = Darwin.close(fd) }
 
         func send(_ message: OSCMessage, to port: UInt16) {
-            var address = sockaddr_in()
-            address.sin_family = sa_family_t(AF_INET)
-            address.sin_port = port.bigEndian
-            address.sin_addr.s_addr = UInt32(0x7F00_0001).bigEndian
             let bytes = message.encoded()
-            _ = withUnsafePointer(to: &address) { p in
-                p.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    sendto(fd, bytes, bytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-                }
-            }
+            _ = withSockaddr(port: port, host: "127.0.0.1") { sendto(fd, bytes, bytes.count, 0, $0, $1) }
         }
 
         /// The next datagram, or nil after the timeout.
         func receive(timeout: Double = 2) -> OSCPacket? {
-            var tv = timeval(tv_sec: Int(timeout), tv_usec: Int32((timeout - timeout.rounded(.down)) * 1e6))
-            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+            setReceiveTimeout(fd, timeout)
             var buffer = [UInt8](repeating: 0, count: 65_536)
             let n = recv(fd, &buffer, buffer.count, 0)
             return n > 0 ? try? OSCPacket.parse(Array(buffer[0..<n])) : nil
@@ -92,13 +71,7 @@ import Testing
             let port = try freeUDPPort()
             let fd = socket(AF_INET, SOCK_STREAM, 0)
             defer { _ = Darwin.close(fd) }
-            var address = sockaddr_in()
-            address.sin_family = sa_family_t(AF_INET)
-            address.sin_port = port.bigEndian
-            let bound = withUnsafePointer(to: &address) { p in
-                p.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
-            }
-            if bound == 0 { return port }
+            if withSockaddr(port: port, { bind(fd, $0, $1) }) == 0 { return port }
         }
         throw POSIXError(.EADDRINUSE)
     }
@@ -107,10 +80,9 @@ import Testing
         store: DMXStore, fixed: OSCFeedbackTarget? = nil, state: @escaping @Sendable () -> OSCFeedback.State = { [:] },
         fixtures: @escaping @Sendable () -> [FixtureRef: [UInt16]] = { [:] }
     ) async throws -> (OSCReceiver, OSCFeedbackServer, UInt16) {
-        let logger = Logger(label: "test")
-        let feedback = OSCFeedbackServer(fixed: fixed, logger: logger, fixtures: fixtures, engine: state)
+        let feedback = OSCFeedbackServer(fixed: fixed, logger: testLogger, fixtures: fixtures, engine: state)
         let port = try freePort()
-        let receiver = OSCReceiver(store: store, logger: logger, port: port, feedback: feedback)
+        let receiver = OSCReceiver(store: store, logger: testLogger, port: port, feedback: feedback)
         try receiver.start()
         feedback.start()
         var started = false
@@ -145,7 +117,7 @@ import Testing
 
     /// A value set over OSC is read back with `/get`, as a bundle to the sender's own port, in the units it was set in.
     @Test func queryAnswersTheSender() async throws {
-        let store = DMXStore(patch: .standard(layers: 2, outputs: 1), logger: Logger(label: "test"))
+        let store = DMXStore(patch: .standard(layers: 2, outputs: 1), logger: testLogger)
         for n in 1...2 { store.setPolicy(.internal, for: .layer(n)) }  // OSC values win, as with a project set to internal
         let (receiver, feedback, port) = try await Self.start(store: store, fixtures: { store.resolvedRaw() })
         defer {
@@ -204,7 +176,7 @@ import Testing
                 "/fanous/show/mode": [.int32(0)],
             ]
         }
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Logger(label: "test"))
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let (receiver, feedback, port) = try await Self.start(store: store) { box.state.withLock { $0 } }
         defer {
             receiver.stop()
@@ -251,7 +223,7 @@ import Testing
 
     /// Feedback never goes to a third party: a subscribe naming another host is refused with an error to the sender.
     @Test func subscribeForAnotherHostIsRefused() async throws {
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Logger(label: "test"))
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let (receiver, feedback, port) = try await Self.start(store: store) { ["/fanous/show/mode": [.int32(1)]] }
         defer {
             receiver.stop()
@@ -271,7 +243,7 @@ import Testing
         box.state.withLock { $0 = ["/fanous/show/mode": [.int32(0)]] }
         let client = try Client()
         defer { client.close() }
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Logger(label: "test"))
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let (receiver, feedback, port) = try await Self.start(
             store: store, fixed: OSCFeedbackTarget(host: "127.0.0.1", port: client.port)
         ) {
@@ -291,7 +263,7 @@ import Testing
     /// Companion style: commands from one port, feedback to another. The cookie goes to the feedback port; the ack
     /// comes from the same host; only then does that port get values, and a `get` naming it is answered there.
     @Test func subscriptionToAnotherPortNeedsTheAck() async throws {
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Logger(label: "test"))
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let (receiver, feedback, port) = try await Self.start(store: store) { ["/fanous/show/mode": [.int32(1)]] }
         defer {
             receiver.stop()

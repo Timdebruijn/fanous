@@ -9,13 +9,13 @@ import Testing
 
 @testable import FanousEngine
 
+@Suite(.cleansTempFiles)
 struct OSLogHandlerTests {
     /// A line through the engine's handler reaches the unified log under subsystem org.fanous and the file, the call's
     /// metadata winning over the logger's, and info is kept as notice.
     @Test func lineReachesTheUnifiedLogAndTheFile() async throws {
         let marker = UUID().uuidString
-        let file = FileManager.default.temporaryDirectory.appending(path: "fanous-oslog-\(marker).log")
-        defer { try? FileManager.default.removeItem(at: file) }
+        let file = tempFile("fanous-oslog", ext: "log")
         let sink = FileLogSink(url: file)
         var logger = Logging.Logger(label: "test") { EngineLogging.handler(label: $0, level: .info, sink: sink) }
         logger[metadataKey: "a"] = "logger"

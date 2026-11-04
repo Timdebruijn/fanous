@@ -14,7 +14,6 @@ import Testing
 /// End to end over TLS: a real `HTTPSServer`, the WebSocket upgrade, hello/welcome, commands, acks, patches,
 /// show lock, login cookies and a second client seeing the same revision (DESIGN.md §11.2).
 struct StateServerTests {
-    static let logger = Logger(label: "test")
 
     /// Accepts the self-signed test certificate.
     final class TrustAll: NSObject, URLSessionDelegate {
@@ -50,24 +49,16 @@ struct StateServerTests {
     }
 
     static func makeIdentity() throws -> TLSIdentity {
-        let attributes: [String: Any] = [
-            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom, kSecAttrKeySizeInBits as String: 256,
-            kSecPrivateKeyAttrs as String: [kSecAttrIsPermanent as String: false],
-        ]
-        var error: Unmanaged<CFError>?
-        guard let key = SecKeyCreateRandomKey(attributes as CFDictionary, &error) else { throw error!.takeRetainedValue() }
+        let key = try makeKey()
         let (certificate, der) = try TLSIdentity.makeCertificate(privateKey: key, hostnames: ["localhost"], ipAddresses: ["127.0.0.1"])
         let identity = try #require(SecIdentityCreate(nil, certificate, key))
         return TLSIdentity(identity: identity, certificateDER: der, storage: .file)
     }
 
     static func start() async throws -> Fixture {
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: logger)
-        let project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
-        let store = StateStore(project: project, logger: logger)
-        ProjectDocument.registerCommands(on: store, auth: auth)
-        let stateServer = StateServer(store: store, auth: auth, caps: ["schema": 1], logger: logger)
-        let server = try HTTPSServer(port: 0, identity: try makeIdentity(), webRoot: URL(fileURLWithPath: "/nonexistent"), logger: logger) { request in
+        let (store, auth) = testStore()
+        let stateServer = StateServer(store: store, auth: auth, caps: ["schema": 1], logger: testLogger)
+        let server = try HTTPSServer(port: 0, identity: try makeIdentity(), webRoot: URL(fileURLWithPath: "/nonexistent"), logger: testLogger) { request in
             guard request.path == "/api/login", request.method == "POST",
                 let body = try? JSONDecoder().decode(JSONValue.self, from: Data(request.body)),
                 let role = body["role"]?.string.flatMap(Role.init(rawValue:))
@@ -81,7 +72,7 @@ struct StateServerTests {
         }
         server.upgradeRoute = { stateServer.upgrade($0) }
         server.start()
-        for _ in 0..<100 where server.boundPort == nil { try await Task.sleep(for: .milliseconds(20)) }
+        await waitUntil { server.boundPort != nil }
         let port = try #require(server.boundPort)
         let session = URLSession(configuration: .ephemeral, delegate: TrustAll(), delegateQueue: nil)
         return Fixture(server: server, stateServer: stateServer, store: store, auth: auth, port: port, session: session)
@@ -157,7 +148,7 @@ struct StateServerTests {
 
         a.cancel(with: .normalClosure, reason: nil)
         b.cancel(with: .normalClosure, reason: nil)
-        for _ in 0..<50 where f.store.clientCount > 0 { try await Task.sleep(for: .milliseconds(20)) }
+        await waitUntil { f.store.clientCount == 0 }
         #expect(f.store.clientCount == 0)
     }
 
@@ -289,7 +280,7 @@ struct StateServerTests {
         let id = try #require(sub["id"]?.int)
         #expect(thumbnails.hasSubscribers && thumbnails.wantsFrames)
         try await a.send(.string(#"{"t":"unsub","id":\#(id)}"#))
-        for _ in 0..<100 where thumbnails.hasSubscribers { try await Task.sleep(for: .milliseconds(10)) }
+        await waitUntil { !thumbnails.hasSubscribers }
         #expect(!thumbnails.hasSubscribers && !thumbnails.wantsFrames, "nobody wants thumbnails: no atlas pass")
         a.cancel(with: .normalClosure, reason: nil)
     }
@@ -314,7 +305,7 @@ struct StateServerTests {
         try await Task.sleep(for: .milliseconds(200))
         #expect(changes.withLock { $0 } == [true], "b still watches")
         b.cancel(with: .normalClosure, reason: nil)
-        for _ in 0..<100 where changes.withLock({ $0.count }) < 2 { try await Task.sleep(for: .milliseconds(20)) }
+        await waitUntil { changes.withLock { $0.count } >= 2 }
         #expect(changes.withLock { $0 } == [true, false], "stopped with the last one (closing the socket counts)")
         a.cancel(with: .normalClosure, reason: nil)
     }

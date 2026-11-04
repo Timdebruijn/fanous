@@ -12,35 +12,19 @@ import UniformTypeIdentifiers
 
 @testable import FanousEngine
 
+@Suite(.cleansTempFiles)
 struct SequenceIngestTests {
     /// A semi-transparent sequence pixel keeps its colour: ProRes 4444 and the layer shader take straight alpha, so a PNG
     /// pixel (200, 100, 50) at alpha 128 must come back as that, not darkened by its own alpha (100, 50, 25 before, measured).
     @Test func semiTransparentPixelKeepsItsColour() async throws {
         let directory = try tempDir("fanous-seq")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let (w, h) = (64, 32)
-        let data = Data(Array([[UInt8]](repeating: [200, 100, 50, 128], count: w * h).joined()))
-        let image = try #require(CGImage(
-            width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue), provider: CGDataProvider(data: data as CFData)!, decode: nil,
-            shouldInterpolate: false, intent: .defaultIntent))
-        for i in 0..<2 {
-            let destination = try #require(CGImageDestinationCreateWithURL(
-                directory.appending(path: "half_\(i).png") as CFURL, UTType.png.identifier as CFString, 1, nil))
-            CGImageDestinationAddImage(destination, image, nil)
-            #expect(CGImageDestinationFinalize(destination))
-        }
+        let image = try cgImage(rgba: Array([[UInt8]](repeating: [200, 100, 50, 128], count: w * h).joined()), width: w, height: h)
+        for i in 0..<2 { try writePNG(image, to: directory.appending(path: "half_\(i).png")) }
         let output = directory.appending(path: "half.mov")
         let frames = try SequenceIngest.frames(in: directory)
         _ = try await offPool { try SequenceIngest.convert(frames: frames, to: output, fps: 25, codec: .proRes4444) }
-        let asset = AVURLAsset(url: output)
-        let reader = try AVAssetReader(asset: asset)
-        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
-        let readOut = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
-        reader.add(readOut)
-        reader.startReading()
-        let buffer = try #require(readOut.copyNextSampleBuffer().flatMap(CMSampleBufferGetImageBuffer))
-        reader.cancelReading()
+        let buffer = try await firstFrame(of: output)
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
         let pixel = CVPixelBufferGetBaseAddress(buffer)!.advanced(by: 16 * CVPixelBufferGetBytesPerRow(buffer) + 32 * 4).assumingMemoryBound(to: UInt8.self)
@@ -61,14 +45,7 @@ struct SequenceIngestTests {
         // an opaque codec keeps the premultiplied colour: the half-transparent pixel over black, not at full colour
         let opaque = directory.appending(path: "opaque.mov")
         _ = try await offPool { try SequenceIngest.convert(frames: frames, to: opaque, fps: 25, codec: .proRes422HQ) }
-        let opaqueAsset = AVURLAsset(url: opaque)
-        let opaqueReader = try AVAssetReader(asset: opaqueAsset)
-        let opaqueTrack = try #require(try await opaqueAsset.loadTracks(withMediaType: .video).first)
-        let opaqueOut = AVAssetReaderTrackOutput(track: opaqueTrack, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
-        opaqueReader.add(opaqueOut)
-        opaqueReader.startReading()
-        let opaqueBuffer = try #require(opaqueOut.copyNextSampleBuffer().flatMap(CMSampleBufferGetImageBuffer))
-        opaqueReader.cancelReading()
+        let opaqueBuffer = try await firstFrame(of: opaque)
         CVPixelBufferLockBaseAddress(opaqueBuffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(opaqueBuffer, .readOnly) }
         let o = CVPixelBufferGetBaseAddress(opaqueBuffer)!.advanced(by: 16 * CVPixelBufferGetBytesPerRow(opaqueBuffer) + 32 * 4).assumingMemoryBound(to: UInt8.self)
@@ -80,7 +57,6 @@ struct SequenceIngestTests {
     /// of ProRes 422 HQ on the 10-bit video-range ramp `IngestQueueTests.rampError` expects.
     @Test func sixteenBitSequenceKeepsItsPrecisionInProRes() async throws {
         let directory = try tempDir("fanous-seq")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let (w, h) = (1024, 16)
         let row = (0..<w).flatMap { x in [UInt16](repeating: UInt16(x * 65535 / (w - 1)), count: 3) }
         let data = (0..<h).flatMap { _ in row }.withUnsafeBufferPointer { Data(buffer: $0) }
@@ -88,12 +64,7 @@ struct SequenceIngestTests {
             width: w, height: h, bitsPerComponent: 16, bitsPerPixel: 48, bytesPerRow: w * 6, space: CGColorSpace(name: CGColorSpace.sRGB)!,
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue | CGBitmapInfo.byteOrder16Little.rawValue),
             provider: CGDataProvider(data: data as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
-        for i in 0..<3 {
-            let destination = try #require(CGImageDestinationCreateWithURL(
-                directory.appending(path: "ramp_\(i).png") as CFURL, UTType.png.identifier as CFString, 1, nil))
-            CGImageDestinationAddImage(destination, image, nil)
-            #expect(CGImageDestinationFinalize(destination))
-        }
+        for i in 0..<3 { try writePNG(image, to: directory.appending(path: "ramp_\(i).png")) }
         let output = directory.appending(path: "ramp.mov")
         let frames = try SequenceIngest.frames(in: directory)
         _ = try await offPool { try SequenceIngest.convert(frames: frames, to: output, fps: 25, codec: .proRes422HQ) }
@@ -104,29 +75,8 @@ struct SequenceIngestTests {
     /// Ten PNG frames with alpha → ProRes 4444 → the engine opens it with ten frames and decodes with alpha.
     @Test func sequenceBecomesPlayableMovie() async throws {
         let directory = try tempDir("fanous-seq")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let w = 320, h = 176
-        for i in 0..<10 {
-            var pixels = [UInt8](repeating: 0, count: w * h * 4)
-            for y in 0..<h {
-                for x in 0..<w {
-                    let p = (y * w + x) * 4
-                    pixels[p] = UInt8(x * 255 / (w - 1))
-                    pixels[p + 1] = UInt8(i * 25)
-                    pixels[p + 2] = UInt8(y * 255 / (h - 1))
-                    pixels[p + 3] = x < w / 2 ? 255 : 0
-                }
-            }
-            let data = pixels.withUnsafeBufferPointer { Data(buffer: $0) }
-            let image = CGImage(
-                width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue), provider: CGDataProvider(data: data as CFData)!, decode: nil,
-                shouldInterpolate: false, intent: .defaultIntent)!
-            let url = directory.appending(path: String(format: "frame_%03d.png", i))
-            let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)!
-            CGImageDestinationAddImage(destination, image, nil)
-            #expect(CGImageDestinationFinalize(destination))
-        }
+        for i in 0..<10 { try IngestQueueTests.writeFramePNG(to: directory.appending(path: String(format: "frame_%03d.png", i)), index: i) }
         let frames = try SequenceIngest.frames(in: directory)
         #expect(frames.count == 10)
         #expect(frames.first?.lastPathComponent == "frame_000.png")
@@ -152,14 +102,7 @@ struct SequenceIngestTests {
         #expect(slot.kind == .y416 || slot.kind == .planarYCbCrA)  // an alpha-carrying layout
 
         // the movie's own alpha and colour (the 16-bit RGBA path): left half opaque with the red ramp, right half transparent
-        let asset = AVURLAsset(url: output)
-        let reader = try AVAssetReader(asset: asset)
-        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
-        let readOut = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
-        reader.add(readOut)
-        reader.startReading()
-        let buffer = try #require(readOut.copyNextSampleBuffer().flatMap(CMSampleBufferGetImageBuffer))
-        reader.cancelReading()
+        let buffer = try await firstFrame(of: output)
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
         let pixel = CVPixelBufferGetBaseAddress(buffer)!.advanced(by: 80 * CVPixelBufferGetBytesPerRow(buffer)).assumingMemoryBound(to: UInt8.self)

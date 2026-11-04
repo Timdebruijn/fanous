@@ -23,18 +23,10 @@ struct GeneratorTests {
         if let existing {
             compositor = existing
         } else {
-            let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
-            compositor = try Compositor(
-                context: context, canvasWidth: width, canvasHeight: height, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 64), parameters: parameters,
-                logger: Logger(label: "generator-test"))
-            let layer = RenderLayer(index: 0)
-            layer.current = playback
-            if let playback { layer.wanted.store(playback.key.packed, ordering: .relaxed) }
-            compositor.setLayers([layer])
-            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.outputFormat, width: width, height: height, mipmapped: false)
-            descriptor.usage = [.renderTarget, .shaderRead]
-            descriptor.storageMode = .shared
-            compositor.offscreenOutput = context.device.makeTexture(descriptor: descriptor)
+            let parameters: TripleBuffer<ParameterSnapshotSlot>
+            (compositor, parameters) = try makeCompositor(context, size: (width, height))
+            compositor.setLayers([.playing(playback)])
+            compositor.attachOffscreenOutput((width, height))
             var o = OutputConfig(id: 1)
             o.testPattern = pattern
             compositor.outputSet = OutputSet(plans: [try OutputCompiler(device: context.device).compile(o, index: 1, drawable: (width, height))])
@@ -58,7 +50,7 @@ struct GeneratorTests {
         guard let dir = ProcessInfo.processInfo.environment["FANOUS_DUMP_PATTERNS"] else { return }
         var rgba = bgra
         for i in stride(from: 0, to: rgba.count, by: 4) { rgba.swapAt(i, i + 2) }
-        try GoldenTests.writePNG(rgba, width: width, height: height, to: URL(fileURLWithPath: dir).appending(path: "\(name).png"))
+        try writePNG(cgImage(rgba: rgba, width: width, height: height, alpha: .noneSkipLast), to: URL(fileURLWithPath: dir).appending(path: "\(name).png"))
     }
 
     /// Any colour byte above `threshold` (alpha is skipped: it is always 255).
@@ -105,9 +97,9 @@ struct GeneratorTests {
     /// encoder label (1) are made once per generator: 7 and 8 when they were made per draw. Filling in the time digits
     /// allocates nothing (the clock's array of parts did, B112). The test card (110) and the clock (112) are measured.
     /// A ratchet: fewer (or a hook that sees nothing) fails too, so the numbers here are updated with the change.
-    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    @Test(.mallocCounter)
     func mallocCounterGeneratorEncodeReusesItsRenderPass() throws {
-        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        try requireMallocCounter()
         let context = try MetalContext()
         for file in [110, 112] {
             let generator = try #require(GeneratorSource(context: context, file: file, width: 64, height: 64))

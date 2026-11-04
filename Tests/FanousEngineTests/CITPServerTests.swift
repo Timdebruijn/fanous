@@ -14,7 +14,6 @@ import Testing
 /// Loopback: a console-side TCP client talks MSEX to `CITPServer` (version negotiation, library, elements,
 /// thumbnails, layer status, streaming frames).
 struct CITPServerTests {
-    static let logger = Logger(label: "test")
     static let jpeg: [UInt8] = [0xFF, 0xD8, 0xFF, 0xD9]
 
     static func library() -> LibrarySnapshot {
@@ -99,21 +98,15 @@ struct CITPServerTests {
         var one: Int32 = 1
         setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, socklen_t(MemoryLayout<Int32>.size))
         setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &one, socklen_t(MemoryLayout<Int32>.size))
-        var sin = sockaddr_in()
-        sin.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        sin.sin_family = sa_family_t(AF_INET)
-        sin.sin_port = CITPMulticast.port.bigEndian
-        sin.sin_addr.s_addr = INADDR_ANY
-        let bound = withUnsafePointer(to: &sin) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } }
+        let bound = withSockaddr(port: CITPMulticast.port) { bind(fd, $0, $1) }
         #expect(bound == 0, "bind 4809: errno \(errno)")
         var membership = ip_mreq(imr_multiaddr: in_addr(s_addr: inet_addr(CITPMulticast.addressSince2014)), imr_interface: in_addr(s_addr: INADDR_ANY))
         #expect(setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &membership, socklen_t(MemoryLayout<ip_mreq>.size)) == 0, "join: errno \(errno)")
-        var timeout = timeval(tv_sec: 3, tv_usec: 0)
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        setReceiveTimeout(fd, 3)
 
         let server = CITPServer(
             name: "beacon-test", uuid: "550e8400-e29b-41d4-a716-446655440000",
-            providers: CITPServer.Providers(layers: { [] }, library: Self.library, thumbnail: { _ in nil }, frame: { _ in nil }), logger: Self.logger)
+            providers: CITPServer.Providers(layers: { [] }, library: Self.library, thumbnail: { _ in nil }, frame: { _ in nil }), logger: testLogger)
         try server.start()
         defer { server.stop() }
         var buffer = [UInt8](repeating: 0, count: 512)
@@ -141,7 +134,7 @@ struct CITPServerTests {
                 },
                 sources: { sources },
                 layerCount: { 1 }),
-            logger: Self.logger)
+            logger: testLogger)
         try server.start()
         defer { server.stop() }
         var port: UInt16 = 0
@@ -236,7 +229,7 @@ struct CITPServerTests {
                     ]
                 },
                 library: { library }, thumbnail: { _ in nil }, frame: { _ in nil }),
-            logger: Self.logger)
+            logger: testLogger)
         try server.start()
         defer { server.stop() }
         var port: UInt16 = 0
@@ -277,7 +270,7 @@ struct CITPServerTests {
             providers: CITPServer.Providers(
                 layers: { [CITPServer.LayerInfo(index: 1, folder: 1, file: 3, name: "Intro", positionMs: 400, lengthMs: 10_000, fps: 25, flags: LayerStatus.playing)] },
                 library: Self.library, thumbnail: { _ in nil }, frame: { _ in nil }),
-            logger: Self.logger)
+            logger: testLogger)
         try server.start()
         defer { server.stop() }
         var port: UInt16 = 0

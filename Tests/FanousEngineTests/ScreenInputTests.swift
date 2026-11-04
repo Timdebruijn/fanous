@@ -18,15 +18,15 @@ import Testing
 /// exists on CI): the catalog from fake display lists, the project key, the feed, the forget and authorize rules, the
 /// readiness item, `ScreenInput`'s texture path with a synthetic BGRA buffer, the loader with a fake factory, and the
 /// grant poll with an injected preflight.
+@Suite(.cleansTempFiles)
 struct ScreenInputTests {
-    static let logger = Logger(label: "screen-test")
 
     static func display(_ id: UInt32, _ uuid: String, _ name: String) -> DisplayInfo {
         DisplayInfo(id: id, uuid: uuid, name: name, pixelWidth: 1920, pixelHeight: 1080, scale: 1, hz: 60, isMain: false, isBuiltin: false, modes: [])
     }
 
     static func input(_ device: MTLDevice, now: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }) -> ScreenInput {
-        ScreenInput(name: "synthetic", metal: device, logger: logger, noSignalAfter: .infinity, now: now)
+        ScreenInput(name: "synthetic", metal: device, logger: testLogger, noSignalAfter: .infinity, now: now)
     }
 
     // MARK: Catalog, project, feed
@@ -77,15 +77,14 @@ struct ScreenInputTests {
 
     /// `/screens` is in a new project and the load migration adds it to an older one.
     @Test func projectHasTheScreensKey() throws {
-        let initial = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 0), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx)
+        let initial = testProject(layers: 1, outputs: 0)
         #expect(initial["screens"] == [:])
         guard case .object(var map) = initial else {
             Issue.record("the initial project is an object")
             return
         }
         map["screens"] = nil
-        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-screens-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = tempFile("fanous-screens", ext: "json")
         try ProjectDocument.save(.object(map), to: url)
         #expect(try #require(ProjectDocument.load(from: url))["screens"] == [:])
     }
@@ -93,14 +92,12 @@ struct ScreenInputTests {
     /// `capture.forget {file}` takes 21–28 too (never a running display); without a file it forgets every capture device
     /// and display not running, and Syphon's numbers stay.
     @Test func captureForgetCoversDisplays() throws {
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: StateStoreTests.logger)
-        var project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
+        var project = testProject(layers: 2, outputs: 1)
         try project.set(ProjectDocument.liveValue([1, 2].map { LiveCatalogTests.numbered($0, "uid-\($0)", "Cam \($0)", model: "m") }), at: "/capture")
         try project.set(
             ProjectDocument.liveValue([21, 22, 23].map { LiveCatalog.Entry(kind: .screens, file: $0, source: "uuid-\($0)", name: "Display \($0)") }), at: "/screens")
         try project.set(ProjectDocument.liveValue([LiveCatalog.Entry(kind: .syphon, file: 150, source: "App", name: "")]), at: "/syphon")
-        let store = StateStore(project: project, logger: StateStoreTests.logger)
-        ProjectDocument.registerCommands(on: store, auth: auth, liveRunning: { [1, 21] })
+        let (store, _) = testStore(project: project) { ProjectDocument.registerCommands(on: $0, auth: $1, liveRunning: { [1, 21] }) }
         func files(_ kind: LiveCatalog.Kind) -> [Int] { ProjectDocument.liveNumbers(kind, from: store.project).map(\.file) }
 
         #expect(
@@ -197,9 +194,9 @@ struct ScreenInputTests {
     }
 
     /// The tick's read of a display frame allocates nothing (as the capture device's).
-    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    @Test(.mallocCounter)
     func mallocCounterScreenFrameReadAllocatesNothing() throws {
-        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        try requireMallocCounter()
         let context = try MetalContext()
         let input = Self.input(context.device)
         let buffers = try (0..<4).map { i in try CaptureInputTests.buffer(kCVPixelFormatType_32BGRA, 16, 8) { _ in Array(repeating: UInt8(i * 60), count: 64) } }
@@ -224,11 +221,11 @@ struct ScreenInputTests {
     /// factory call); a display bound as an output reads "not running", keeps the last frame and its stream is halted;
     /// unbound, one new session serves both layers. A scene entry `screen:` wins on its number; a number without a
     /// display says so; the factory's refusal (no screen grant) is the layer's text.
-    @Test func loaderResolvesNumberedDisplaysToOneSharedInput() throws {
+    @Test func loaderResolvesNumberedDisplaysToOneSharedInput() async throws {
         let context = try MetalContext(), device = context.device
         let layers = (0..<4).map { RenderLayer(index: $0) }
         let loader = MediaLoader(
-            layers: layers, media: [MediaEntry(folder: 0, file: 24, screen: "uuid-scene")], device: device, ringCapacity: 4, logger: Self.logger)
+            layers: layers, media: [MediaEntry(folder: 0, file: 24, screen: "uuid-scene")], device: device, ringCapacity: 4, logger: testLogger)
         let catalog = LiveCatalog(.screens)
         catalog.onChange = { [loader] in loader.changed(.screens) }
         loader.screensCatalog = catalog
@@ -244,42 +241,41 @@ struct ScreenInputTests {
         defer { loader.stop() }
         func playback(_ i: Int) -> CaptureInput? { layers[i].pending.withLock { $0.playback?.live as? CaptureInput } }
         func status(_ i: Int) -> LayerMediaStatus { layers[i].mediaStatus.withLock { $0 } }
-        func eventually(_ condition: () -> Bool) -> Bool { SyphonTests.wait(seconds: 5, until: condition) }
         func select(_ i: Int, _ file: Int) {
             layers[i].wanted.store(MediaKey(folder: 0, file: file).packed, ordering: .relaxed)
             loader.wake.signal()
         }
 
         select(0, 22)
-        #expect(eventually { playback(0) != nil })
+        #expect(await waitUntil { playback(0) != nil })
         select(1, 22)
-        #expect(eventually { playback(1) != nil })
+        #expect(await waitUntil { playback(1) != nil })
         let input = try #require(playback(0))
         #expect(playback(1) === input && input is ScreenInput && opened.withLock { $0 } == ["uuid-b"])
         #expect(status(0).name == "Display: DELL U2720Q" && status(0).kind == "live" && status(1).name == "Display: DELL U2720Q")
         input.deliver(try CaptureInputTests.runsBuffer("BGRA"))
-        #expect(eventually { status(0).width == LiveSourceTests.width && status(0).capture?.frames == 1 })
+        #expect(await waitUntil { status(0).width == LiveSourceTests.width && status(0).capture?.frames == 1 })
 
         // bound as an output: not running, the last frame stays, the stream is halted; the number is kept
         catalog.update(running: LiveCatalog.screens(displays, bound: ["uuid-b"]))
-        #expect(eventually { status(0).error == "not running" && status(1).error == "not running" })
+        #expect(await waitUntil { status(0).error == "not running" && status(1).error == "not running" })
         #expect(playback(0) === input && input.latestFrame != nil && !input.alive)
         #expect(catalog.entry(file: 22)?.running == false && catalog.entry(file: 22)?.gone == false)
         // unbound: one new session for both layers; the halted one stops when both have let go
         catalog.update(running: LiveCatalog.screens(displays, bound: []))
-        #expect(eventually { playback(0) != nil && playback(0) !== input && playback(1) === playback(0) && status(0).error == nil })
+        #expect(await waitUntil { playback(0) != nil && playback(0) !== input && playback(1) === playback(0) && status(0).error == nil })
         #expect(opened.withLock { $0 } == ["uuid-b", "uuid-b"])
-        #expect(eventually { input.status == .stopped })
+        #expect(await waitUntil { input.status == .stopped })
 
         // a scene entry wins on its number; a free number says so
         select(2, 24)
         select(3, 25)
-        #expect(eventually { playback(2) != nil && status(3).error == "no display numbered 25 (folder 0, 21–28)" })
+        #expect(await waitUntil { playback(2) != nil && status(3).error == "no display numbered 25 (folder 0, 21–28)" })
         #expect(status(2).name == "Display: synthetic" && opened.withLock { $0 }.last == "uuid-scene")
         // no screen grant: the factory's text, black
         refuse.store(true, ordering: .relaxed)
         select(3, 21)
-        #expect(eventually { status(3).error == CaptureError.screenPermission.description })
+        #expect(await waitUntil { status(3).error == CaptureError.screenPermission.description })
         #expect(status(3).name == "Display: Built-in Retina Display" && status(3).kind == "live" && playback(3) == nil)
         #expect(CaptureError.screenPermission.description == "screen permission not granted: authorize on the Inputs screen, then Engine › Restart")
         #expect(CaptureError.permissionNotAsked.description == "camera permission not asked: authorize on the Inputs screen")

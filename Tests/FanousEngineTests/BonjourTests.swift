@@ -13,7 +13,7 @@ import Testing
 struct BonjourTests {
     @Test func advertisesFanousAndHTTPSOnTheSamePort() throws {
         let server = try HTTPSServer(port: 48443, identity: try StateServerTests.makeIdentity(), webRoot: URL(fileURLWithPath: "/nonexistent"),
-                                     logger: Logger(label: "test")) { _ in nil }
+                                     logger: testLogger) { _ in nil }
         server.bonjour(name: "studio")
         let services = server.advertisedServices
         #expect(services.map(\.type) == ["_fanous._tcp", "_https._tcp"])
@@ -24,14 +24,14 @@ struct BonjourTests {
 
     @Test func loopbackOnlyAdvertisesNothing() throws {
         let server = try HTTPSServer(port: 48443, identity: try StateServerTests.makeIdentity(), webRoot: URL(fileURLWithPath: "/nonexistent"),
-                                     loopbackOnly: true, logger: Logger(label: "test")) { _ in nil }
+                                     loopbackOnly: true, logger: testLogger) { _ in nil }
         server.bonjour(name: "studio")
         #expect(server.advertisedServices.isEmpty)
     }
 
     @Test func portZeroAdvertisesNothing() throws {
         let server = try HTTPSServer(port: 0, identity: try StateServerTests.makeIdentity(), webRoot: URL(fileURLWithPath: "/nonexistent"),
-                                     logger: Logger(label: "test")) { _ in nil }
+                                     logger: testLogger) { _ in nil }
         server.bonjour(name: "studio")
         #expect(server.advertisedServices.isEmpty)
     }

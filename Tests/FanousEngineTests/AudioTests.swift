@@ -30,29 +30,12 @@ extension LayerAudioChannel {
     }
 }
 
-@Suite struct AudioTests {
+@Suite(.cleansTempFiles) struct AudioTests {
     // MARK: Helpers
 
     /// 320×180 ProRes 422 HQ at 30 fps, `seconds` long, with the `TestTone` track when `audio` is set.
     static func writeMovie(to url: URL, seconds: Int = 3, audio: Bool = true) async throws {
-        try await offPool { try writeMovieBlocking(to: url, seconds: seconds, audio: audio) }
-    }
-
-    private static func writeMovieBlocking(to url: URL, seconds: Int, audio: Bool) throws {
-        let fps: Int32 = 30
-        let writer = try MovieWriter(url: url, width: 320, height: 180, fps: fps, codec: .proRes422HQ, audio: audio)
-        for frame in 0..<(seconds * Int(fps)) {
-            var buffer: CVPixelBuffer?
-            CVPixelBufferPoolCreatePixelBuffer(nil, writer.pixelBufferPool!, &buffer)
-            guard let buffer else { throw MovieWriter.WriterError.failed("pixel buffer") }
-            CVPixelBufferLockBaseAddress(buffer, [])
-            PatternFrames.fill(
-                bgra: CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self), width: 320, height: 180,
-                bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), frame: frame)
-            CVPixelBufferUnlockBaseAddress(buffer, [])
-            try writer.append(buffer)
-        }
-        try writer.finish()
+        try await writePatternMovie(to: url, size: (320, 180), fps: 30, frames: seconds * 30, audio: audio)
     }
 
     /// An audio-only movie, one second, 16-bit LPCM; channel `c` holds the constant `(c + 1) * 3000`. Mono, stereo or
@@ -94,10 +77,7 @@ extension LayerAudioChannel {
             packetDescriptions: nil, sampleBufferOut: &sample)
         guard let sample, input.append(sample) else { throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "append") }
         input.markAsFinished()
-        let done = DispatchSemaphore(value: 0)
-        writer.finishWriting { done.signal() }
-        done.wait()
-        guard writer.status == .completed else { throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "finish") }
+        try writer.finishBlocking()
     }
 
     /// Sign changes (negative to non-negative or back) of one channel of an interleaved stereo buffer.
@@ -134,7 +114,6 @@ extension LayerAudioChannel {
 
     @Test func readerSeeksToOneSecondAndFindsTheTestTone() async throws {
         let directory = try tempDir("fanous-audio-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "tone.mov")
         try await Self.writeMovie(to: url)
 
@@ -167,7 +146,6 @@ extension LayerAudioChannel {
 
     @Test func readerReturnsFewerFramesAtTheEnd() async throws {
         let directory = try tempDir("fanous-audio-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "end.mov")
         try await Self.writeMovie(to: url)
 
@@ -184,7 +162,6 @@ extension LayerAudioChannel {
 
     @Test func movieWithoutAudioHasNoAudio() async throws {
         let directory = try tempDir("fanous-audio-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "silent.mov")
         try await Self.writeMovie(to: url, seconds: 1, audio: false)
 
@@ -197,7 +174,6 @@ extension LayerAudioChannel {
     @Test(arguments: [(48_000.0, 1), (48_000.0, 3), (44_100.0, 2)])
     func readerMapsChannelsAndConvertsTheRate(rate: Double, channels: Int) async throws {
         let directory = try tempDir("fanous-audio-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "constant.mov")
         try await Self.writeConstantAudio(to: url, rate: rate, channels: channels)
 
@@ -222,7 +198,6 @@ extension LayerAudioChannel {
     @Test(arguments: [kAudioChannelLayoutTag_MPEG_5_1_A, kAudioChannelLayoutTag_AAC_5_1, kAudioChannelLayoutTag_DiscreteInOrder | 6])
     func readerMixesFiveOneByItsLayout(tag: AudioChannelLayoutTag) async throws {
         let directory = try tempDir("fanous-audio-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "five-one.mov")
         try await Self.writeConstantAudio(to: url, rate: 48_000, channels: 6, layoutTag: tag)
         let reader = try await AudioTrackReader.open(url: url)
@@ -393,7 +368,6 @@ extension LayerAudioChannel {
 
     @Test func wantedPTSJumpReseeksTheReaderAndRefills() async throws {
         let directory = try tempDir("fanous-audio-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "jump.mov")
         try await Self.writeMovie(to: url)
         let reader = try await AudioTrackReader.open(url: url)
@@ -439,7 +413,6 @@ extension LayerAudioChannel {
 
     @Test func endOfMediaIsNotAnUnderrunAndDoesNotReseekForever() async throws {
         let directory = try tempDir("fanous-audio-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "tail.mov")
         try await Self.writeMovie(to: url)
         let reader = try await AudioTrackReader.open(url: url)
@@ -462,7 +435,6 @@ extension LayerAudioChannel {
     /// B3: a forward loop is read across the wrap, so 120 wraps of a 1 s file never run the ring dry.
     @Test func loopWrapIsGaplessOverManyWraps() async throws {
         let directory = try tempDir("fanous-audio-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "loop.mov")
         try await Self.writeMovie(to: url, seconds: 1)
         let reader = try await AudioTrackReader.open(url: url)
@@ -493,7 +465,6 @@ extension LayerAudioChannel {
     /// a little longer than the audio (padded), and a restart whose clock is already past the loop end.
     @Test func loopEdgeCases() async throws {
         let directory = try tempDir("fanous-audio-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "edge.mov")
         try await Self.writeConstantAudio(to: url, rate: 44_100, channels: 2)
         let reader = try await AudioTrackReader.open(url: url)

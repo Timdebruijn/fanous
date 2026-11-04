@@ -32,7 +32,7 @@ struct SyncReceiverTests {
     /// A receiver on a free port, bound to 127.0.0.1.
     static func receiver() throws -> (SyncReceiver, UInt16) {
         let port = try freeUDPPort()
-        let receiver = SyncReceiver(machine: own, logger: Logger(label: "sync-test"))
+        let receiver = SyncReceiver(machine: own, logger: testLogger)
         try receiver.start(port: port, loopbackOnly: true)
         return (receiver, port)
     }
@@ -52,7 +52,7 @@ struct SyncReceiverTests {
         var settings = SyncSettings()
         settings.target = "127.0.0.1:\(port)"
         let sender = SyncSender(
-            machine: Self.low, settings: settings, network: false, logger: Logger(label: "sync-test"))
+            machine: Self.low, settings: settings, network: false, logger: testLogger)
         sender.start()
         defer { sender.stop() }
         let before = CACurrentMediaTime()

@@ -9,14 +9,14 @@ import Testing
 
 @testable import FanousEngine
 
+@Suite(.cleansTempFiles)
 struct RoleAuthTests {
-    static let logger = Logger(label: "test")
 
     static func makeAuth(persist: Bool = false) -> (RoleAuth, URL) {
         let directory = try! tempDir("auth")
         let auth = RoleAuth(
             settingsURL: persist ? directory.appending(path: "settings.json") : nil, shellTokenURL: directory.appending(path: "shell-token"),
-            iterations: 1000, logger: logger)
+            iterations: 1000, logger: testLogger)
         return (auth, directory)
     }
 
@@ -46,7 +46,7 @@ struct RoleAuthTests {
         #expect(settings.passwords["programmer"]?.iterations == 1000)
         let permissions = try FileManager.default.attributesOfItem(atPath: directory.appending(path: "settings.json").path)[.posixPermissions] as? Int
         #expect(permissions == 0o600)
-        let reloaded = RoleAuth(settingsURL: directory.appending(path: "settings.json"), shellTokenURL: nil, iterations: 1000, logger: Self.logger)
+        let reloaded = RoleAuth(settingsURL: directory.appending(path: "settings.json"), shellTokenURL: nil, iterations: 1000, logger: testLogger)
         #expect(reloaded.verify("correct horse", for: .programmer))
         try reloaded.setPassword(nil, for: .programmer)
         #expect(reloaded.isOpen(.programmer))
@@ -80,7 +80,7 @@ struct RoleAuthTests {
         #expect(try String(contentsOf: file, encoding: .utf8) == token)
         let permissions = try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int
         #expect(permissions == 0o600)
-        let again = RoleAuth(settingsURL: nil, shellTokenURL: file, iterations: 1000, logger: Self.logger)
+        let again = RoleAuth(settingsURL: nil, shellTokenURL: file, iterations: 1000, logger: testLogger)
         #expect(again.shellToken == token)
         try again.setPassword("pw", for: .programmer)
         #expect(again.grant(requested: .programmer, cookie: nil, token: token) == .programmer)
@@ -94,7 +94,7 @@ struct RoleAuthTests {
         let (_, directory) = makeAuth()
         let file = directory.appending(path: "settings.json")
         if let contents { try Data(contents.utf8).write(to: file) }
-        return (RoleAuth(settingsURL: file, shellTokenURL: nil, iterations: 1000, logger: logger), file)
+        return (RoleAuth(settingsURL: file, shellTokenURL: nil, iterations: 1000, logger: testLogger), file)
     }
 
     static func raw(_ file: URL) throws -> JSONValue { try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: file)) }
@@ -188,7 +188,7 @@ struct RoleAuthTests {
         #expect(MachineSettings.load(from: file).problems.contains { $0.hasPrefix("passwords:") && $0.contains("iterations") })
         _ = try auth.setSync(["port": 48990])
         #expect(auth.verify("op", for: .operator) && !auth.verify("x", for: .operator), "the copy in memory is kept")
-        let fresh = RoleAuth(settingsURL: file, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
+        let fresh = RoleAuth(settingsURL: file, shellTokenURL: nil, iterations: 1000, logger: testLogger)
         #expect(fresh.isOpen(.operator), "the next start reads no passwords: every role is open until the file is fixed")
     }
 

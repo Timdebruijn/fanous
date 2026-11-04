@@ -26,10 +26,8 @@ import Testing
 
         init(layers count: Int, grid: Int) throws {
             let context = try MetalContext()
-            let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: count) }
-            compositor = try Compositor(
-                context: context, canvasWidth: 320, canvasHeight: 180, fps: 60, maxLayers: count, metrics: MetricsRing(capacity: 64), parameters: parameters,
-                logger: PreviewHubTests.logger)
+            let parameters: TripleBuffer<ParameterSnapshotSlot>
+            (compositor, parameters) = try makeCompositor(context, size: (320, 180), maxLayers: count)
             let layers = (0..<count).map { RenderLayer(index: $0) }
             let generator = try #require(GeneratorSource(context: context, file: 101, width: 320, height: 180))
             layers[grid].current = LayerPlayback(key: MediaKey(folder: 0, file: 101), live: generator)
@@ -59,15 +57,15 @@ import Testing
         }
 
         /// One pass period (15 ticks), then waits until its set is published.
-        func pass() throws -> [ThumbnailStreamer.Thumb?] {
+        func pass() async throws -> [ThumbnailStreamer.Thumb?] {
             let before = published.withLock { $0.count }
             tick(15)
-            for _ in 0..<300 where published.withLock({ $0.count }) == before { usleep(10_000) }
+            await waitUntil { published.withLock { $0.count } > before }
             return try #require(published.withLock { $0.count > before ? $0.last : nil })
         }
     }
 
-    @Test func aVisibleLayerYieldsAJPEGAnEmptyOneNoneAndNobodyWatchingDrawsNothing() throws {
+    @Test func aVisibleLayerYieldsAJPEGAnEmptyOneNoneAndNobodyWatchingDrawsNothing() async throws {
         let rig = try Rig(layers: 2, grid: 0)
         rig.tick(30)
         #expect(rig.thumbnails.passes.load(ordering: .relaxed) == 0, "nobody watches: no atlas pass")
@@ -76,8 +74,8 @@ import Testing
         let connection = try PreviewHubTests.Rig().connection()
         rig.thumbnails.subscribe(connection: connection, stream: 1)
         #expect(rig.thumbnails.wantsFrames)
-        _ = try rig.pass()
-        let set = try rig.pass()
+        _ = try await rig.pass()
+        let set = try await rig.pass()
         #expect(rig.thumbnails.passes.load(ordering: .relaxed) == 2, "every 15th tick at 60 fps")
         #expect(rig.compositor.idleTicks.load(ordering: .relaxed) == 30 + 28, "only thumbnails wanted: the canvas is drawn on pass ticks only")
         #expect(set.count == 2)
@@ -96,10 +94,10 @@ import Testing
     }
 
     /// Layer 5 sits in the second atlas row: the crop must find it in the second row.
-    @Test func aLayerInTheSecondAtlasRowIsCutFromItsOwnCell() throws {
+    @Test func aLayerInTheSecondAtlasRowIsCutFromItsOwnCell() async throws {
         let rig = try Rig(layers: 5, grid: 4)
         rig.thumbnails.alwaysEncode = true
-        let set = try rig.pass()
+        let set = try await rig.pass()
         #expect(set.count == 5 && set[0..<4].allSatisfy { $0 == nil })
         let thumb = try #require(set[4])
         #expect(try Self.brightest(thumb) > 128, "the grid of layer 5, not the black slot of the first row")

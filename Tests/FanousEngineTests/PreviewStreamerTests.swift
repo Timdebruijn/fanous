@@ -15,24 +15,20 @@ import Testing
 /// buffer) → VideoToolbox H.264 → avcC + a key frame access unit in the wire layout (DESIGN.md §11.3).
 struct PreviewStreamerTests {
     @Test func canvasTickProducesKeyFrameAndAVCC() async throws {
-        let logger = Logger(label: "test")
         let context = try MetalContext()
-        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
-        let compositor = try Compositor(
-            context: context, canvasWidth: 320, canvasHeight: 180, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 64), parameters: parameters,
-            logger: logger)
-        let streamer = try PreviewStreamer(context: context, width: 320, height: 180, fps: 30, canvasFPS: 60, parameters: parameters, logger: logger)
+        let (compositor, parameters) = try makeCompositor(context, size: (320, 180))
+        let streamer = try PreviewStreamer(context: context, width: 320, height: 180, fps: 30, canvasFPS: 60, parameters: parameters, logger: testLogger)
         let frames = Mutex<[(payload: [UInt8], avcC: [UInt8])]>([])
         streamer.onFrame = { payload, avcC in frames.withLock { $0.append((payload, avcC)) } }
         streamer.alwaysEncode = true  // no WebSocket subscriber in this test
         compositor.previewTap = { canvas, buffer, target, _ in streamer.tap(canvas: canvas, commandBuffer: buffer, target: target) }
         // the first preview frame starts making the encoder (B66) and skips H.264 while it is made
         for i in 0..<2 { compositor.tick(target: 0.5 + Double(i) / 60, drawable: nil) }
-        for _ in 0..<250 where !streamer.hasEncoder { try await Task.sleep(for: .milliseconds(20)) }
+        await waitUntil { streamer.hasEncoder }
         #expect(streamer.hasEncoder)
         // every second tick is a preview frame at 30 of 60 fps
         for i in 0..<8 { compositor.tick(target: 1 + Double(i) / 60, drawable: nil) }
-        for _ in 0..<100 where frames.withLock({ $0.count }) < 2 { try await Task.sleep(for: .milliseconds(20)) }
+        await waitUntil { frames.withLock { $0.count } >= 2 }
         let delivered = frames.withLock { $0 }
         #expect(delivered.count >= 2, "expected encoded frames, got \(delivered.count)")
         let first = try #require(delivered.first)
@@ -65,7 +61,7 @@ struct PreviewStreamerTests {
         #expect(streamer.jpegDropped.load(ordering: .relaxed) > 0, "the rig's connection has no socket: each send is refused")
         #expect(!streamer.hasEncoder)
         #expect(rig.attach("canvas", viewer, stream: 2))
-        for _ in 0..<250 where !streamer.hasEncoder { try await Task.sleep(for: .milliseconds(20)) }
+        await waitUntil { streamer.hasEncoder }
         #expect(streamer.hasEncoder, "the first H.264 subscriber makes the encoder")
         rig.hub.remove(connection: viewer, stream: 2)
         #expect(!streamer.hasEncoder, "released with the last H.264 subscriber")
@@ -74,7 +70,7 @@ struct PreviewStreamerTests {
         weak var gone: PreviewStreamer?
         do {
             let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
-            let unused = try PreviewStreamer(context: rig.context, width: 320, height: 180, fps: 30, canvasFPS: 60, parameters: parameters, logger: Logger(label: "test"))
+            let unused = try PreviewStreamer(context: rig.context, width: 320, height: 180, fps: 30, canvasFPS: 60, parameters: parameters, logger: testLogger)
             gone = unused
             #expect(!unused.hasEncoder)
         }

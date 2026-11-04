@@ -11,21 +11,20 @@ import Testing
 @testable import FanousEngine
 
 /// The decode thread sleeps on a full ring and is only woken by a changed request or a freed slot.
-@Suite(.serialized) struct LayerDecoderTests {
+@Suite(.serialized, .cleansTempFiles) struct LayerDecoderTests {
     @Test func aFullRingSleepsUntilTheRequestChanges() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appending(path: "clip.mov")
         try await IngestQueueTests.writeSource(to: url, seconds: 2, audio: false)
         let device = try #require(MTLCreateSystemDefaultDevice())
         let source = try await MovieSource.open(url: url, device: device, poolSize: 4)
         let ring = FrameRing(capacity: 4)
-        let decoder = LayerDecoder(source: source, ring: ring, logger: Logger(label: "decoder-test"))
+        let decoder = LayerDecoder(source: source, ring: ring, logger: testLogger)
         decoder.start(name: "test.decode")
         defer { decoder.stop() }
 
         decoder.request(frame: 0, direction: 1)
-        for _ in 0..<200 where ring.count < 4 { try await Task.sleep(for: .milliseconds(25)) }
+        await waitUntil { ring.count == 4 }
         #expect(ring.count == 4, "the ring fills")
 
         // a paused layer asks for the same frame every tick: one wake-up for the first request, none after
@@ -40,7 +39,7 @@ import Testing
         // a new frame wakes it: the compositor popped a slot, the thread refills it
         ring.pop()
         decoder.request(frame: 1, direction: 1)
-        for _ in 0..<200 where ring.count < 4 { try await Task.sleep(for: .milliseconds(25)) }
+        await waitUntil { ring.count == 4 }
         #expect(ring.count == 4, "refilled after the wake-up")
         #expect(decoder.wakeups.load(ordering: .relaxed) == wakeups + 1)
 

@@ -11,12 +11,11 @@ import Testing
 /// B27: UI values expire after masking a live console for 10 minutes since the last UI change; time without console
 /// traffic, or with the console winning, pauses the count. All times are injected.
 struct UIExpiryTests {
-    static let logger = Logger(label: "test")
     let layer = FixtureRef.layer(1)
     let intensity = ParameterID.layer(.intensity)
 
     func store(_ policy: SourcePolicy) -> DMXStore {
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         store.setPolicy(policy, for: layer)
         return store
     }
@@ -24,7 +23,7 @@ struct UIExpiryTests {
     /// A fixture patched after the project's policy was set takes that policy, so its UI values apply (before, a new
     /// patch entry kept the default `dmx` until the policy itself changed).
     @Test func aFixturePatchedLaterTakesTheProjectPolicy() {
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         store.setPolicy(.ltp)
         store.setPatch(Patch(entries: store.currentPatch.entries + [PatchEntry(fixture: .layer(2), universe: UniverseID(.artnet, 1), address: 1)]))
         store.setUI(.layer(2), intensity, raw: 40000)
@@ -35,7 +34,7 @@ struct UIExpiryTests {
 
     /// A policy change reaches the render snapshot at once, without waiting for a DMX change.
     @Test func aPolicyChangeReachesTheOutputAtOnce() {
-        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: Self.logger)
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         store.setUI(layer, intensity, raw: 65535)
         store.queue.sync {}
         let rendered = { store.snapshots.withLatest { $0.layers[0].intensity } }

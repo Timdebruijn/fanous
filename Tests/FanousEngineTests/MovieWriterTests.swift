@@ -8,12 +8,12 @@ import Testing
 
 @testable import FanousEngine
 
+@Suite(.cleansTempFiles)
 struct MovieWriterTests {
     /// A zero or negative frame rate throws instead of trapping in init (a job replayed from queue.json with such a
     /// rate would otherwise take the engine down at every start).
     @Test func zeroFrameRateThrows() throws {
         let url = try tempDir("fanous-writer").appending(path: "zero.mov")
-        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         #expect(throws: MovieWriter.WriterError.self) { try MovieWriter(url: url, width: 64, height: 48, fps: 0, codec: .proRes422) }
         #expect(throws: MovieWriter.WriterError.self) { try MovieWriter(url: url, width: 64, height: 48, fps: 25, frameDuration: .zero, codec: .proRes422) }
         #expect(throws: MovieWriter.WriterError.self) { try MovieWriter(url: url, width: 64, height: 48, fps: 25, frameDuration: .positiveInfinity, codec: .proRes422) }
@@ -25,7 +25,6 @@ struct MovieWriterTests {
     /// with 15–40 codes of error on saturated colours (measured 2026-11-02).
     @Test func proResIsWrittenAsRec709WhateverTheSourceTag() async throws {
         let url = try tempDir("fanous-writer").appending(path: "601.mov")
-        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         try await offPool {
             let writer = try MovieWriter(url: url, width: 320, height: 176, fps: 25, codec: .proRes422)
             let buffer = try writer.makePixelBuffer()

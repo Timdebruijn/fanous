@@ -15,16 +15,15 @@ import Testing
 /// Preview targets are per subscriber: a client asking for an output does not move the canvas preview of another, and a
 /// consumer that only wants JPEG (5 fps) throttles the GPU copy as well.
 @Suite(.serialized) struct PreviewHubTests {
-    static let logger = Logger(label: "preview-hub-test")
 
     /// The hub's `make`: a streamer of the asked size at 30 of 60 fps.
     static func make(_ context: MetalContext, _ parameters: TripleBuffer<ParameterSnapshotSlot>) -> @Sendable (Int, Int) throws -> PreviewStreamer {
-        { width, height in try PreviewStreamer(context: context, width: width, height: height, fps: 30, canvasFPS: 60, parameters: parameters, logger: logger) }
+        { width, height in try PreviewStreamer(context: context, width: width, height: height, fps: 30, canvasFPS: 60, parameters: parameters, logger: testLogger) }
     }
 
     struct Rig {
         let context: MetalContext
-        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
+        let parameters: TripleBuffer<ParameterSnapshotSlot>
         let server: StateServer
         let hub: PreviewHub
         let compositor: Compositor
@@ -34,9 +33,9 @@ import Testing
 
         init() throws {
             context = try MetalContext()
-            let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: PreviewHubTests.logger)
-            let project = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx)
-            server = StateServer(store: StateStore(project: project, logger: PreviewHubTests.logger), auth: auth, caps: ["schema": 1], logger: PreviewHubTests.logger)
+            (compositor, parameters) = try makeCompositor(context, size: (160, 90))
+            let (store, auth) = testStore(layers: 1) { _, _ in }  // no commands
+            server = StateServer(store: store, auth: auth, caps: ["schema": 1], logger: testLogger)
             let context = context, parameters = parameters, shapes = shapes
             hub = try PreviewHub(make: PreviewHubTests.make(context, parameters)) { target in
                 shapes.withLock { $0[target] } ?? (target.hasPrefix("canvas:") ? nil : (160, 90))
@@ -47,9 +46,6 @@ import Testing
                 streamer.outputSet = set
                 return true
             }
-            compositor = try Compositor(
-                context: context, canvasWidth: 160, canvasHeight: 90, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 64), parameters: parameters,
-                logger: PreviewHubTests.logger)
             compositor.previewTap = { [hub] canvas, buffer, target, _ in hub.tap(canvas: canvas, commandBuffer: buffer, target: target) }
         }
 
@@ -196,9 +192,7 @@ import Testing
     /// store's queue (it did, and deadlocked). Wired like the engine: Control hops to the main actor.
     @Test(.timeLimit(.minutes(1))) func layerSetWithALayerSubscriberDoesNotHang() async throws {
         let rig = try LayerRig()
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
-        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/x", policy: .dmx), logger: Self.logger)
-        ProjectDocument.registerCommands(on: store, auth: auth)
+        let (store, _) = testStore(project: testProject(layers: 2, outputs: 1, libraryRoot: "/x"))
         let compositor = rig.compositor, made = rig.made
         rig.hub.configure = { target, streamer in
             guard let index = PreviewHub.layerIndex(of: target, layerCount: store.project["layerCount"]?.int ?? 0), (try? streamer.showLayer(index, of: compositor)) != nil else { return false }
@@ -216,7 +210,7 @@ import Testing
         #expect(rig.attach("layer:2"))
         _ = try store.execute("canvas.add", args: ["width": 640, "height": 640], role: .programmer).get()
         _ = try store.execute("layer.set", args: ["layer": 2, "canvas": 2], role: .programmer).get()
-        for _ in 0..<200 where rebuilt.count.load(ordering: .relaxed) < 2 { try await Task.sleep(for: .milliseconds(10)) }
+        await waitUntil { rebuilt.count.load(ordering: .relaxed) >= 2 }
         #expect(rebuilt.count.load(ordering: .relaxed) == 2)
         #expect(rig.hub.targets.contains("layer:2"))
     }
@@ -251,7 +245,7 @@ import Testing
     /// layer:<n> like the engine's. Idle work is skipped as in the engine, so unchanged ticks reuse the canvas.
     final class LayerRig {
         let context: MetalContext
-        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 2) }
+        let parameters: TripleBuffer<ParameterSnapshotSlot>
         let compositor: Compositor
         let hub: PreviewHub
         // copyable locks: the hub's closures share them
@@ -265,15 +259,12 @@ import Testing
         init() throws {
             let context = try MetalContext()
             self.context = context
-            let compositor = try Compositor(
-                context: context, canvasWidth: 320, canvasHeight: 180, fps: 60, maxLayers: 2, metrics: MetricsRing(capacity: 64), parameters: parameters,
-                logger: PreviewHubTests.logger)
-            self.compositor = compositor
-            let layers = [RenderLayer(index: 0), RenderLayer(index: 1)]
-            layers[0].current = try PreviewHubTests.solid(context, [255, 0, 0, 255], file: 1)
-            layers[1].current = try PreviewHubTests.solid(context, [0, 255, 0, 255], file: 2)
-            for (i, layer) in layers.enumerated() { layer.wanted.store(MediaKey(folder: 1, file: i + 1).packed, ordering: .relaxed) }
-            compositor.setLayers(layers)
+            let (compositor, parameters) = try makeCompositor(context, size: (320, 180), maxLayers: 2)
+            (self.compositor, self.parameters) = (compositor, parameters)
+            compositor.setLayers([
+                .playing(try PreviewHubTests.solid(context, [255, 0, 0, 255], file: 1)),
+                .playing(try PreviewHubTests.solid(context, [0, 255, 0, 255], file: 2), index: 1),
+            ])
             let shapes = shapes, made = made
             hub = try PreviewHub(make: PreviewHubTests.make(context, parameters)) { target in shapes.withLock { $0[target] ?? $0["canvas"] } }
             hub.configure = { target, streamer in
@@ -497,16 +488,11 @@ import Testing
             rig.hub.configure = { target, _ in target.hasPrefix("output:") }
             rig.hub.canvasOf = { $0 == "output:3" ? 2 : 1 }
         }
-
-        /// Waits up to 3 s for `done` (the re-balance runs on a global queue).
-        func wait(_ done: () -> Bool) {
-            for _ in 0..<300 where !done() { usleep(10_000) }
-        }
     }
 
     /// B70: the encoder limit holds across targets. Past 4 encoders a new (target, size) gets its target's nearest encoding
     /// size, else its canvas's nearest encoding size, else JPEG on its own streamer (no VideoToolbox session).
-    @Test func theEncoderLimitHoldsAcrossTargets() throws {
+    @Test func theEncoderLimitHoldsAcrossTargets() async throws {
         let r = try LimitRig(), rig = r.rig
         var viewers: [PreviewStreamer] = []
         func serve(_ target: String, _ width: Int?) throws -> (streamer: PreviewStreamer, jpeg: Bool) {
@@ -536,7 +522,7 @@ import Testing
         // the sessions that exist (made off the preview queue, B66) are within the limit too
         let streamers = Dictionary(viewers.map { (ObjectIdentifier($0), $0) }, uniquingKeysWith: { a, _ in a }).values
         #expect(streamers.count == 5)
-        r.wait { streamers.filter(\.hasEncoder).count >= 4 }
+        await waitUntil { streamers.filter(\.hasEncoder).count >= 4 }
         let sessions = streamers.filter(\.hasEncoder).count
         #expect(sessions == 4 && !refused.streamer.hasEncoder, "\(sessions) VideoToolbox sessions")
     }
@@ -560,7 +546,7 @@ import Testing
 
     /// B70: when an encoder is released, the oldest subscriber on a fallback gets its own (target, size), up to the limit;
     /// one refused to JPEG gets H.264 the same way.
-    @Test func aReleasedEncoderGoesToTheOldestFallback() throws {
+    @Test func aReleasedEncoderGoesToTheOldestFallback() async throws {
         let r = try LimitRig(), rig = r.rig
         let (a, b, c, d) = (rig.connection(), rig.connection(), rig.connection(), rig.connection())
         let (e, f, g) = (rig.connection(), rig.connection(), rig.connection())
@@ -576,7 +562,7 @@ import Testing
         // output:2 goes: e (the oldest fallback) gets output:1 at 320; f stays on canvas 1 (the limit again)
         rig.hub.remove(connection: c)
         let own = PreviewHub.Key(target: "output:1", width: 320)
-        r.wait { rig.hub.keys.contains(own) }
+        await waitUntil { rig.hub.keys.contains(own) }
         #expect(rig.hub.keys.contains(own))
         #expect(!output1.subscriberList.contains { $0.connection === e }, "e left its fallback")
         #expect(rig.hub.encoders == 4)
@@ -587,7 +573,7 @@ import Testing
 
         // output:1 at 640 goes: f gets output:4 at 960
         rig.hub.remove(connection: b)
-        r.wait { rig.hub.keys.contains(.init(target: "output:4", width: 960)) }
+        await waitUntil { rig.hub.keys.contains(.init(target: "output:4", width: 960)) }
         #expect(rig.hub.keys.contains(.init(target: "output:4", width: 960)))
         #expect(!rig.hub.canvas.subscriberList.contains { $0.connection === f })
         #expect(rig.hub.encoders == 4)
@@ -596,7 +582,7 @@ import Testing
         rig.hub.remove(connection: e)
         #expect(refused.streamer.subscriberList.contains { $0.connection === g && $0.jpeg }, "x still keeps output:1 at 320")
         rig.hub.remove(connection: x)
-        r.wait { refused.streamer.subscriberList.contains { $0.connection === g && !$0.jpeg } }
+        await waitUntil { refused.streamer.subscriberList.contains { $0.connection === g && !$0.jpeg } }
         #expect(refused.streamer.subscriberList.map(\.jpeg) == [false])
         #expect(rig.hub.encoders == 4)
     }
@@ -604,7 +590,7 @@ import Testing
     /// B96: a viewer put on its canvas's stream at the limit is told so in the `sub` reply and in its subscriber (its
     /// `stream` descriptions carry it), also in the canvas's shape (output:4 is 160×90 like canvas 1); a fallback to its
     /// own target at another size is not; the move to its own stream clears it.
-    @Test func aCanvasFallbackIsFlaggedInTheReplyAndTheMove() throws {
+    @Test func aCanvasFallbackIsFlaggedInTheReplyAndTheMove() async throws {
         let r = try LimitRig(), rig = r.rig
         let (a, b, c, d, e, f) = (rig.connection(), rig.connection(), rig.connection(), rig.connection(), rig.connection(), rig.connection())
         #expect(rig.streamer("canvas", width: nil, a) === rig.hub.canvas)
@@ -625,7 +611,7 @@ import Testing
         rig.hub.remove(connection: c)
         rig.hub.remove(connection: d)
         let own = PreviewHub.Key(target: "output:4", width: 960)
-        r.wait { rig.hub.keys.contains(own) }
+        await waitUntil { rig.hub.keys.contains(own) }
         let moved = try #require(rig.streamer("output:4", width: 960, rig.connection()))
         #expect(moved.subscriberList.first { $0.connection === f }?.fallback == false)
         #expect(!rig.hub.canvas.subscriberList.contains { $0.connection === f })

@@ -2,10 +2,17 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
-import FanousEngine
+import AVFoundation
+import FanousCore
 import Foundation
+import Logging
+import Metal
+import Security
 import Synchronization
 import Testing
+import UniformTypeIdentifiers
+
+@testable import FanousEngine
 
 /// Runs blocking AVFoundation work (`AVAssetWriter.finishWriting` + semaphore, `LibraryIndex.probeMovie`) on a thread of its
 /// own. Swift Testing runs a test per core on the cooperative pool; with every pool thread parked in such a wait the
@@ -20,12 +27,188 @@ func offPool<T: Sendable>(_ body: @escaping @Sendable () throws -> T) async thro
 /// Polls `condition` every `every` until it holds or `deadline` has passed; true = it held. For "eventually" checks: a
 /// fixed sleep before an assertion encodes how fast this Mac is, and a loaded one (other builds, a parallel run) is
 /// slower (B67). Negative checks ("nothing happened") still need a fixed window: there is nothing to poll for.
-func waitUntil(_ deadline: Duration = .seconds(10), every: Duration = .milliseconds(10), _ condition: () -> Bool) async -> Bool {
+@discardableResult
+nonisolated(nonsending) func waitUntil(_ deadline: Duration = .seconds(10), every: Duration = .milliseconds(10), _ condition: () -> Bool) async -> Bool {
     let end = ContinuousClock.now + deadline
     while !condition() {
         guard ContinuousClock.now < end, (try? await Task.sleep(for: every)) != nil else { return condition() }
     }
     return true
+}
+
+/// The logger every test hands the engine.
+let testLogger = Logger(label: "test")
+
+/// A new P-256 private key, in memory only (no keychain, so no SecurityAgent prompt).
+func makeKey() throws -> SecKey {
+    let attributes: [String: Any] = [
+        kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom, kSecAttrKeySizeInBits as String: 256,
+        kSecPrivateKeyAttrs as String: [kSecAttrIsPermanent as String: false],
+    ]
+    var error: Unmanaged<CFError>?
+    guard let key = SecKeyCreateRandomKey(attributes as CFDictionary, &error) else { throw error!.takeRetainedValue() }
+    return key
+}
+
+/// The role gate with every role open and nothing on disk; 1000 PBKDF2 iterations keep a password test fast.
+func testAuth() -> RoleAuth { RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: testLogger) }
+
+/// A new project on the standard patch of `layers` layers and `outputs` output fixtures, DMX policy.
+func testProject(layers: Int, outputs: Int, libraryRoot: String = "/tmp/lib") -> JSONValue {
+    ProjectDocument.initial(patch: .standard(layers: layers, outputs: outputs), layerCount: layers, libraryRoot: libraryRoot, policy: .dmx)
+}
+
+/// A store on `project` (a `testProject` of `layers` and `outputs` by default) with `register`'s commands, the plain
+/// project commands by default.
+func testStore(
+    layers: Int = 2, outputs: Int = 1, project: JSONValue? = nil,
+    registering register: (StateStore, RoleAuth) -> Void = { ProjectDocument.registerCommands(on: $0, auth: $1) }
+) -> (store: StateStore, auth: RoleAuth) {
+    let auth = testAuth()
+    let store = StateStore(project: project ?? testProject(layers: layers, outputs: outputs), logger: testLogger)
+    register(store, auth)
+    return (store, auth)
+}
+
+/// Syphon server `app` (`name`) on number `file`, as the project's `/syphon` list holds it.
+func syphonServer(_ file: Int, _ app: String, name: String = "Server") -> LiveCatalog.Entry {
+    LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: name)
+}
+
+/// The numbers and the apps of `store`'s Syphon list, in its order.
+func syphonFiles(_ store: StateStore) -> [Int] { ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.file) }
+func syphonApps(_ store: StateStore) -> [String] { ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.source) }
+
+/// `count` outputs added to `store`, each a full 1920×1080 region (ids 1…count).
+func addOutputs(_ store: StateStore, _ count: Int) throws {
+    for id in 1...count {
+        _ = try store.execute("output.add", role: .programmer).get()
+        _ = try store.execute("output.set", args: ["id": .number(Double(id)), "path": "/region", "value": ["x": 0, "y": 0, "w": 1920, "h": 1080]], role: .programmer).get()
+    }
+}
+
+/// `image` as a PNG at `url`.
+func writePNG(_ image: CGImage, to url: URL) throws {
+    let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil))
+    CGImageDestinationAddImage(destination, image, nil)
+    try #require(CGImageDestinationFinalize(destination), "PNG not written: \(url.lastPathComponent)")
+}
+
+/// An sRGB image of `rgba` (8 bits a channel, rows top to bottom); `alpha` says how to read the fourth byte.
+func cgImage(rgba: [UInt8], width: Int, height: Int, alpha: CGImageAlphaInfo = .last) throws -> CGImage {
+    try #require(CGImage(
+        width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGBitmapInfo(rawValue: alpha.rawValue), provider: CGDataProvider(data: Data(rgba) as CFData)!, decode: nil,
+        shouldInterpolate: false, intent: .defaultIntent))
+}
+
+/// `buffer` (BGRA, any size) filled with `PatternFrames` frame `frame`.
+@discardableResult
+func fillPattern(_ buffer: CVPixelBuffer, frame: Int) -> CVPixelBuffer {
+    CVPixelBufferLockBaseAddress(buffer, [])
+    PatternFrames.fill(
+        bgra: CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self), width: CVPixelBufferGetWidth(buffer),
+        height: CVPixelBufferGetHeight(buffer), bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), frame: frame)
+    CVPixelBufferUnlockBaseAddress(buffer, [])
+    return buffer
+}
+
+/// A movie of `frames` `PatternFrames` frames at `size` and `fps` in `codec`, with the `TestTone` track when `audio` is set;
+/// written off the pool (B63).
+func writePatternMovie(
+    to url: URL, size: (Int, Int), fps: Int32, frames: Int, codec: MovieWriter.Codec = .proRes422HQ, audio: Bool = false
+) async throws {
+    try await offPool {
+        let writer = try MovieWriter(url: url, width: size.0, height: size.1, fps: fps, codec: codec, audio: audio)
+        for frame in 0..<frames { try writer.append(fillPattern(try writer.makePixelBuffer(), frame: frame)) }
+        try writer.finish()
+    }
+}
+
+extension AVAssetWriter {
+    /// `finishWriting`, waited for; throws unless the movie is complete. Blocks: call it off the pool (`offPool`).
+    func finishBlocking() throws {
+        let done = DispatchSemaphore(value: 0)
+        finishWriting { done.signal() }
+        done.wait()
+        guard status == .completed else { throw MovieWriter.WriterError.failed(error?.localizedDescription ?? "finish") }
+    }
+}
+
+/// The first frame of `url`'s video track, decoded to `format`.
+func firstFrame(of url: URL, format: OSType = kCVPixelFormatType_32BGRA) async throws -> CVPixelBuffer {
+    let asset = AVURLAsset(url: url)
+    let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
+    let reader = try AVAssetReader(asset: asset)
+    let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: format])
+    reader.add(output)
+    reader.startReading()
+    defer { reader.cancelReading() }
+    return try #require(output.copyNextSampleBuffer().flatMap(CMSampleBufferGetImageBuffer))
+}
+
+/// A compositor of `size` at `fps` for `maxLayers` layers, over `parameters` or a buffer of its own; no layers set.
+func makeCompositor(
+    _ context: MetalContext, size: (Int, Int), maxLayers: Int = 1, fps: Double = 60, metrics: MetricsRing = MetricsRing(capacity: 64),
+    parameters: TripleBuffer<ParameterSnapshotSlot>? = nil
+) throws -> (Compositor, TripleBuffer<ParameterSnapshotSlot>) {
+    let parameters = parameters ?? TripleBuffer { ParameterSnapshotSlot(maxLayers: maxLayers) }
+    let compositor = try Compositor(
+        context: context, canvasWidth: size.0, canvasHeight: size.1, fps: fps, maxLayers: maxLayers, metrics: metrics, parameters: parameters,
+        logger: testLogger)
+    return (compositor, parameters)
+}
+
+extension Compositor {
+    /// A shared output-format texture of `size` as the offscreen output, what a display would draw from; returned.
+    @discardableResult func attachOffscreenOutput(_ size: (Int, Int)) -> MTLTexture? {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.outputFormat, width: size.0, height: size.1, mipmapped: false)
+        descriptor.usage = [.renderTarget, .shaderRead]
+        descriptor.storageMode = .shared
+        offscreenOutput = context.device.makeTexture(descriptor: descriptor)
+        return offscreenOutput
+    }
+}
+
+extension RenderLayer {
+    /// Layer `index` playing `playback`, wanted == loaded: the hand-off asks the (absent) loader for nothing.
+    static func playing(_ playback: LayerPlayback?, index: Int = 0) -> RenderLayer {
+        let layer = RenderLayer(index: index)
+        layer.current = playback
+        if let playback { layer.wanted.store(playback.key.packed, ordering: .relaxed) }
+        return layer
+    }
+
+    /// Layer `index` playing `still` as media 1/`file`, wanted.
+    static func still(_ still: DecodedFrame, file: Int = 1, index: Int = 0) -> RenderLayer {
+        playing(LayerPlayback(key: MediaKey(folder: 1, file: file), still: still), index: index)
+    }
+}
+
+/// `body` with an IPv4 address `host`:`port` (any address by default) as the `sockaddr` pointer and length the socket calls take.
+func withSockaddr<T>(port: UInt16 = 0, host: String? = nil, _ body: (UnsafePointer<sockaddr>, socklen_t) throws -> T) rethrows -> T {
+    var address = sockaddr_in()
+    address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_port = port.bigEndian
+    address.sin_addr.s_addr = host.map { inet_addr($0) } ?? INADDR_ANY
+    return try withUnsafePointer(to: &address) { p in
+        try p.withMemoryRebound(to: sockaddr.self, capacity: 1) { try body($0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+    }
+}
+
+/// The port `fd` is bound to; nil when `getsockname` fails.
+func localPort(_ fd: Int32) -> UInt16? {
+    var address = sockaddr_in()
+    var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+    let ok = withUnsafeMutablePointer(to: &address) { p in p.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) == 0 } }
+    return ok ? UInt16(bigEndian: address.sin_port) : nil
+}
+
+/// `recv` on `fd` gives up after `seconds`.
+func setReceiveTimeout(_ fd: Int32, _ seconds: Double) {
+    var wait = timeval(tv_sec: Int(seconds), tv_usec: Int32((seconds - seconds.rounded(.down)) * 1e6))
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &wait, socklen_t(MemoryLayout<timeval>.size))
 }
 
 /// The ports `freeUDPPort` handed out in this process (B115).
@@ -41,15 +224,7 @@ func freeUDPPort() throws -> UInt16 {
     repeat {
         let fd = socket(AF_INET, SOCK_DGRAM, 0)
         defer { close(fd) }
-        var address = sockaddr_in()
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_addr.s_addr = INADDR_ANY
-        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let ok = withUnsafeMutablePointer(to: &address) { p in
-            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, length) == 0 && getsockname(fd, $0, &length) == 0 }
-        }
-        guard ok else { throw POSIXError(.EADDRINUSE) }
-        let port = UInt16(bigEndian: address.sin_port)
+        guard withSockaddr({ bind(fd, $0, $1) }) == 0, let port = localPort(fd) else { throw POSIXError(.EADDRINUSE) }
         if handedOut.withLock({ $0.insert(port).inserted }) { return port }
     } while true
 }
@@ -66,25 +241,46 @@ func sendUDP(_ bytes: [UInt8], to port: UInt16, host: String = "127.0.0.1") {
 func sendUDP(_ datagrams: [[UInt8]], to port: UInt16, host: String = "127.0.0.1", reply: Double = 0) -> (sent: [Int], replied: Bool) {
     let fd = socket(AF_INET, SOCK_DGRAM, 0)
     defer { close(fd) }
-    var address = sockaddr_in()
-    address.sin_family = sa_family_t(AF_INET)
-    address.sin_port = port.bigEndian
-    address.sin_addr.s_addr = inet_addr(host)
-    let sent = datagrams.map { bytes in
-        withUnsafePointer(to: &address) { p in
-            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sendto(fd, bytes, bytes.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
-        }
-    }
+    let sent = datagrams.map { bytes in withSockaddr(port: port, host: host) { sendto(fd, bytes, bytes.count, 0, $0, $1) } }
     guard reply > 0 else { return (sent, false) }
-    var wait = timeval(tv_sec: Int(reply), tv_usec: Int32((reply - reply.rounded(.down)) * 1e6))
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &wait, socklen_t(MemoryLayout<timeval>.size))
+    setReceiveTimeout(fd, reply)
     var buffer = [UInt8](repeating: 0, count: 1500)
     return (sent, recv(fd, &buffer, buffer.count, 0) > 0)
 }
 
-/// A fresh directory `prefix`-<UUID> under the temporary directory.
+/// Removes what `tempDir` and `tempFile` handed out in a test once that test ends. The list is task-local: it reaches
+/// child tasks and `Task {}`, not `offPool` or GCD; a path made there is not registered, and the test removes it itself.
+/// A test outside such a suite that asks for one gets an issue instead of a silent leak.
+struct CleansTempFiles: SuiteTrait, TestTrait, TestScoping {
+    final class Paths: Sendable { let urls = Mutex<[URL]>([]) }
+    @TaskLocal static var current: Paths?
+    var isRecursive: Bool { true }
+    func provideScope(for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void) async throws {
+        let paths = Paths()
+        defer { for url in paths.urls.withLock({ $0 }) { try? FileManager.default.removeItem(at: url) } }
+        try await Self.$current.withValue(paths) { try await function() }
+    }
+}
+
+extension Trait where Self == CleansTempFiles {
+    static var cleansTempFiles: Self { Self() }
+}
+
+/// A path `prefix`-<UUID>[.`ext`] under the temporary directory, nothing made there yet; removed after the test (see
+/// `CleansTempFiles`).
+func tempFile(_ prefix: String, ext: String = "") -> URL {
+    let url = FileManager.default.temporaryDirectory.appending(path: "\(prefix)-\(UUID().uuidString)\(ext.isEmpty ? "" : "." + ext)")
+    if let paths = CleansTempFiles.current {
+        paths.urls.withLock { $0.append(url) }
+    } else if Test.current != nil {
+        Issue.record("\(prefix): the suite needs the .cleansTempFiles trait")
+    }
+    return url
+}
+
+/// A fresh directory `prefix`-<UUID> under the temporary directory; removed after the test (see `CleansTempFiles`).
 func tempDir(_ prefix: String) throws -> URL {
-    let url = FileManager.default.temporaryDirectory.appending(path: "\(prefix)-\(UUID().uuidString)")
+    let url = tempFile(prefix)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
 }
@@ -93,16 +289,8 @@ func tempDir(_ prefix: String) throws -> URL {
 final class UDPCatcher {
     let fd = socket(AF_INET, SOCK_DGRAM, 0)
     init(port: UInt16, timeout: Double) throws {
-        var address = sockaddr_in()
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = port.bigEndian
-        address.sin_addr.s_addr = inet_addr("127.0.0.1")
-        var wait = timeval(tv_sec: Int(timeout), tv_usec: Int32((timeout - timeout.rounded(.down)) * 1e6))
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &wait, socklen_t(MemoryLayout<timeval>.size))
-        let bound = withUnsafePointer(to: &address) { p in
-            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
-        }
-        guard bound == 0 else { throw POSIXError(.EADDRINUSE) }
+        setReceiveTimeout(fd, timeout)
+        guard withSockaddr(port: port, host: "127.0.0.1", { bind(fd, $0, $1) }) == 0 else { throw POSIXError(.EADDRINUSE) }
     }
     deinit { close(fd) }
     func receive() -> [UInt8]? {
@@ -112,11 +300,21 @@ final class UDPCatcher {
     }
 }
 
+extension Trait where Self == ConditionTrait {
+    /// Runs where `MallocCounter` works, and everywhere under FANOUS_REQUIRE_MALLOC_COUNTER (scripts/check-mallocs.sh), where
+    /// `requireMallocCounter()` then fails a test that would count nothing.
+    static var mallocCounter: Self { .enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS") }
+}
+
+func requireMallocCounter(sourceLocation: SourceLocation = #_sourceLocation) throws {
+    try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS", sourceLocation: sourceLocation)
+}
+
 /// The counter sees allocations of the measured thread, malloc and Swift objects alike, and not those of another thread
 /// in the same window. Loops are `while` loops: a `for` over a range allocates in a debug build.
-@Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+@Test(.mallocCounter)
 func mallocCounterCountsOnlyTheMeasuredThread() async throws {
-    try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+    try requireMallocCounter()
     final class Other: Sendable { let state = Mutex((stop: false, allocations: 0)) }
     final class Sink { var object: Sink? }
     let other = Other()

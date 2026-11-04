@@ -122,9 +122,9 @@ struct LiveSourceTests {
 
     /// The tick's one read of a live source (`LayerPlayback.frame`) allocates nothing: `LiveFrame` is returned by value,
     /// from a stored property (the fake) and from a computed one (a generator).
-    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    @Test(.mallocCounter)
     func mallocCounterLiveFrameReadAllocatesNothing() throws {
-        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        try requireMallocCounter()
         let context = try MetalContext()
         let generator = try #require(GeneratorSource(context: context, file: 100, width: 64, height: 64))
         for live: any LiveTextureSource in [try Self.planar(context.device), generator] {

@@ -15,6 +15,7 @@ import UniformTypeIdentifiers
 @testable import FanousEngine
 
 /// Masks v2 (DESIGN.md §9.10 item 5): older projects, the rasteriser, image masks and the render.
+@Suite(.cleansTempFiles)
 struct MaskTests {
     static let release: Bool = {
         #if DEBUG
@@ -77,9 +78,7 @@ struct MaskTests {
             CGImage(
                 width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 8, bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
                 bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue), provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
-        let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil))
-        CGImageDestinationAddImage(destination, image, nil)
-        #expect(CGImageDestinationFinalize(destination))
+        try writePNG(image, to: url)
     }
 
     // MARK: Older projects
@@ -97,7 +96,7 @@ struct MaskTests {
         """
 
     static func oldProject() throws -> JSONValue {
-        var project = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx)
+        var project = testProject(layers: 1, outputs: 1)
         try project.set(.array([try JSONDecoder().decode(JSONValue.self, from: Data(oldOutput.utf8))]), at: "/outputs")
         return project
     }
@@ -106,8 +105,7 @@ struct MaskTests {
     /// (a null one goes); it renders as before (the golden image of that mask), and preset 2 on Output ch 6 still shows the
     /// mask, which `decodeIfPresent` would have dropped without the conversion.
     @Test func anOlderProjectLoadsRendersAsBeforeAndItsPresetKeepsTheMask() throws {
-        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-masks-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = tempFile("fanous-masks", ext: "json")
         try ProjectDocument.save(try Self.oldProject(), to: url)
         let loaded = try #require(ProjectDocument.load(from: url))
         let output = try #require(loaded["outputs"]?[0])
@@ -120,11 +118,11 @@ struct MaskTests {
 
         let context = try MetalContext()
         let still = try GoldenTests.pattern(device: context.device, variant: 0)
-        let plan = try OutputCompiler(device: context.device).compile(config, index: 1, drawable: (OutputPassTests.width, OutputPassTests.height))
+        let plan = try OutputPassTests.plan(config, context: context)
         func image(_ preset: UInt8) throws -> [UInt8] {
             OutputPassTests.rgba(
                 fromBGRA: try OutputPassTests.render(
-                    plan, still: still, drawable: (OutputPassTests.width, OutputPassTests.height), context: context, outputs: [OutputParameters()]) { $0.presets[0] = preset })
+                    plan, still: still, context: context, outputs: [OutputParameters()]) { $0.presets[0] = preset })
         }
         let golden = try #require(GoldenTests.readPNG(OutputPassTests.golden.appending(path: "output-mask-feather.png")))
         let edited = try image(0), masked = try image(2)
@@ -132,8 +130,7 @@ struct MaskTests {
         #expect(GoldenTests.compare(masked, golden, name: "preset 2") == nil, "\(GoldenTests.compare(masked, golden, name: "preset 2") ?? "")")
         let plain = OutputPassTests.rgba(
             fromBGRA: try OutputPassTests.render(
-                try OutputCompiler(device: context.device).compile(OutputConfig(id: 1), index: 1, drawable: (OutputPassTests.width, OutputPassTests.height)), still: still,
-                drawable: (OutputPassTests.width, OutputPassTests.height), context: context))
+                try OutputPassTests.plan(OutputConfig(id: 1), context: context), still: still, context: context))
         #expect(try image(3) == plain, "preset 3 had no mask")
     }
 
@@ -141,7 +138,6 @@ struct MaskTests {
     /// `masks` too.
     @Test func aRevertConvertsTheMask() throws {
         let f = ProjectVersionsTests.make()
-        defer { try? FileManager.default.removeItem(at: f.base) }
         f.store.correct(try #require(try Self.oldProject()["outputs"]), at: "/outputs")
         let saved = try #require(try f.store.execute("project.snapshot", args: ["name": "Old masks"], role: .programmer).get().value)
         f.store.correct([], at: "/outputs")
@@ -282,8 +278,7 @@ struct MaskTests {
     /// An image mask's file is decoded once per file and size (E7 of the M2.7 review): a 4K picture beside a path mask the
     /// operator drags; each drag step rasterises the masks again but finds the picture in the cache. Release only, as above.
     @Test(.enabled(if: MaskTests.release)) func aDragBesideA4KImageMaskDoesNotDecodeItAgain() throws {
-        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-mask-\(UUID().uuidString).png")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = tempFile("fanous-mask", ext: "png")
         let (w, h) = (3840, 2160)
         try Self.writeGrey((0..<(w * h)).map { UInt8(($0 % w) * 255 / w) ^ UInt8(($0 / w) & 0x3f) }, width: w, height: h, to: url)
         let device = try MetalContext().device
@@ -314,8 +309,7 @@ struct MaskTests {
     /// or unreadable file covers nothing: an add mask adds no area (alone it leaves the slice black), a subtract mask cuts
     /// no hole.
     @Test func anImageMaskIsItsLuminanceAndAMissingOneCoversNothing() throws {
-        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-mask-\(UUID().uuidString).png")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = tempFile("fanous-mask", ext: "png")
         // four bands of 0, 100, 200 and 255, 4 px each (CoreGraphics stretches an image of a few pixels oddly)
         try Self.writeGrey((0..<(16 * 8)).map { [0, 100, 200, 255][$0 % 16 / 4] }, width: 16, height: 8, to: url)
         let picture = try #require(StillSource.image(url))
@@ -333,9 +327,8 @@ struct MaskTests {
         let square = MaskShape(path: Self.square(0.25, 0.25, 0.75, 0.75))
         #expect(raster([square, MaskShape(image: image)], file: nil) == raster([square], file: nil), "a missing add mask adds nothing")
         #expect(raster([square, MaskShape(mode: .subtract, image: image)], file: nil) == raster([square], file: nil))
-        let unreadable = FileManager.default.temporaryDirectory.appending(path: "fanous-mask-\(UUID().uuidString).png")
+        let unreadable = tempFile("fanous-mask", ext: "png")
         try Data("not a picture".utf8).write(to: unreadable)
-        defer { try? FileManager.default.removeItem(at: unreadable) }
         #expect(StillSource.image(unreadable) == nil)
     }
 
@@ -343,8 +336,7 @@ struct MaskTests {
     /// change compiles again) gives a new raster with the new picture, also for the slice plan that holds it. The picture
     /// is decoded once per file: an edit of another mask of the slice finds it in the cache.
     @Test func aChangedFileIsRasterisedAgain() throws {
-        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-mask-\(UUID().uuidString).png")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = tempFile("fanous-mask", ext: "png")
         try Self.writeGrey([UInt8](repeating: 255, count: 64), width: 8, height: 8, to: url)
         let device = try MetalContext().device
         let file = Mutex<URL?>(url)
@@ -379,15 +371,14 @@ struct MaskTests {
     /// mask still reads it (`LibraryIndex.still`, by the scan), so a door cut out by a subtract mask does not close while
     /// the probe runs. A movie at that number is no image mask.
     @Test func anImageMaskKeepsItsFileWhileTheLibraryProbesIt() async throws {
-        let base = FileManager.default.temporaryDirectory.appending(path: "fanous-masklib-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: base) }
+        let base = tempFile("fanous-masklib")
         let (root, cache) = (base.appending(path: "root"), base.appending(path: "cache"))
         try FileManager.default.createDirectory(at: root.appending(path: "003_Masks"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
         let file = root.appending(path: "003_Masks/005_door.png")
         try Self.writeGrey([UInt8](repeating: 255, count: 64), width: 8, height: 8, to: file)
         try Data("not a movie".utf8).write(to: root.appending(path: "003_Masks/006_clip.mov"))
-        let library = LibraryIndex(root: root, cacheDirectory: cache, logger: Logger(label: "test"))
+        let library = LibraryIndex(root: root, cacheDirectory: cache, logger: testLogger)
         library.start()
         defer { library.stop() }
         let key = MediaKey(folder: 3, file: 5)
@@ -420,10 +411,9 @@ struct MaskTests {
     /// hard edge) keeps its mask with no feather, and the output takes other edits.
     @Test func anOldNegativeFeatherIsNone() throws {
         let old = Self.oldOutput.replacingOccurrences(of: #""feather":24"#, with: #""feather":-3"#)
-        var project = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx)
+        var project = testProject(layers: 1, outputs: 1)
         try project.set(.array([try JSONDecoder().decode(JSONValue.self, from: Data(old.utf8))]), at: "/outputs")
-        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-masks-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = tempFile("fanous-masks", ext: "json")
         try ProjectDocument.save(project, to: url)
         let loaded = try #require(ProjectDocument.load(from: url))
         let config = try #require(ProjectDocument.outputs(from: loaded).first)
@@ -463,11 +453,10 @@ struct MaskTests {
         let still = try OutputPassTests.flat(context.device, value: 200)
         var o = OutputConfig(id: 1)
         o.slices[0].masks = [MaskShape(path: Self.square(0.1, 0.1, 0.9, 0.9)), MaskShape(mode: .subtract, path: Self.square(0.4, 0.4, 0.6, 0.6))]
-        let plan = try OutputCompiler(device: context.device).compile(o, index: 1, drawable: (OutputPassTests.width, OutputPassTests.height))
-        let image = try OutputPassTests.render(plan, still: still, drawable: (OutputPassTests.width, OutputPassTests.height), context: context)
-        func green(_ x: Int, _ y: Int) -> Int { Int(image[(y * OutputPassTests.width + x) * 4 + 1]) }
-        #expect(green(80, 90) == 200 && green(240, 30) == 200, "inside the add mask")
-        #expect(green(160, 90) == 0, "the hole")
-        #expect(green(10, 10) == 0 && green(310, 170) == 0, "outside")
+        let plan = try OutputPassTests.plan(o, context: context)
+        let image = try OutputPassTests.render(plan, still: still, context: context)
+        #expect(green(image, 80, 90) == 200 && green(image, 240, 30) == 200, "inside the add mask")
+        #expect(green(image, 160, 90) == 0, "the hole")
+        #expect(green(image, 10, 10) == 0 && green(image, 310, 170) == 0, "outside")
     }
 }

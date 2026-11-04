@@ -18,25 +18,19 @@ struct MasterIntensityTests {
     /// Solid red underneath, solid `top` (green) above with `blend`, both at full intensity, on a 64×36 canvas.
     final class Rig {
         let compositor: Compositor
-        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 2) }
+        let parameters: TripleBuffer<ParameterSnapshotSlot>
         let blend: BlendMode
         var target = 3600.0
         var sequence: UInt64 = 0
 
         init(blend: BlendMode = .normal, top: (UInt8, UInt8, UInt8) = (0, 255, 0)) throws {
             let context = try MetalContext()
-            compositor = try Compositor(
-                context: context, canvasWidth: 64, canvasHeight: 36, fps: 60, maxLayers: 2, metrics: MetricsRing(capacity: 16),
-                parameters: parameters, logger: Logger(label: "master"))
-            let red = RenderLayer(index: 0)
-            let green = RenderLayer(index: 1)
-            red.current = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: try Self.solid(context.device, 255, 0, 0))
-            green.current = LayerPlayback(key: MediaKey(folder: 1, file: 2), still: try Self.solid(context.device, top.0, top.1, top.2))
-            compositor.setLayers([red, green])
+            (compositor, parameters) = try makeCompositor(context, size: (64, 36), maxLayers: 2)
+            compositor.setLayers([
+                .still(try Self.solid(context.device, 255, 0, 0)),
+                .still(try Self.solid(context.device, top.0, top.1, top.2), file: 2, index: 1),
+            ])
             self.blend = blend
-            // the stills are already in place: wanted == loaded, so the hand-off asks the (absent) loader for nothing
-            red.wanted.store(MediaKey(folder: 1, file: 1).packed, ordering: .relaxed)
-            green.wanted.store(MediaKey(folder: 1, file: 2).packed, ordering: .relaxed)
         }
 
         static func solid(_ device: MTLDevice, _ r: UInt8, _ g: UInt8, _ b: UInt8) throws -> DecodedFrame {
@@ -109,9 +103,9 @@ struct MasterIntensityTests {
     /// allocated on every assignment even as an `NSString` (1 each, measured). Assigned here, not through the draw
     /// functions.
     /// Asserted in an optimised build (`scripts/check-mallocs.sh`); a debug build prints the counts.
-    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    @Test(.mallocCounter)
     func mallocCounterEncoderLabelsAllocateNothing() throws {
-        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        try requireMallocCounter()
         let compositor = try Rig().compositor
         let context = compositor.context
         let pass = MTLRenderPassDescriptor()
@@ -155,9 +149,9 @@ struct MasterIntensityTests {
     /// Allocations on this (ticking) thread per tick with two layers, at 100 % and at 50 % (printed); in an optimised
     /// build the Master adds none (it is a uniform of the layer draw). Release only: `swift test -c release
     /// -Xswiftc -enable-testing --filter printDimmedTickMallocs` (through `scripts/test.sh`).
-    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    @Test(.mallocCounter)
     func printDimmedTickMallocs() throws {
-        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        try requireMallocCounter()
         let rig = try Rig()
         var counts: [Int] = []
         for master: Float in [1, 0.5] {

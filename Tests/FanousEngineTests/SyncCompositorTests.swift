@@ -12,7 +12,7 @@ import Testing
 
 /// The Sync channel in the compositor (DESIGN.md §23.2–23.3): slaves set their clock from the table, masters fill the
 /// packet slot and the local table.
-@Suite(.serialized)
+@Suite(.serialized, .cleansTempFiles)
 struct SyncCompositorTests {
     static let own = UUID(uuidString: "40000000-0000-0000-0000-000000000000")!
     static let remote = UUID(uuidString: "30000000-0000-0000-0000-000000000000")!
@@ -21,10 +21,10 @@ struct SyncCompositorTests {
     final class Rig {
         let compositor: Compositor
         let layers: [RenderLayer]
-        let receiver = SyncReceiver(machine: SyncCompositorTests.own, logger: Logger(label: "sync-test"))
+        let receiver = SyncReceiver(machine: SyncCompositorTests.own, logger: testLogger)
         let sender = SyncSender(
             machine: SyncCompositorTests.own, settings: SyncSettings(), network: false,
-            logger: Logger(label: "sync-test"))
+            logger: testLogger)
         let metrics = MetricsRing(capacity: 4096)
         let source: MovieSource
         private let parameters: TripleBuffer<ParameterSnapshotSlot>
@@ -46,12 +46,8 @@ struct SyncCompositorTests {
             try await IngestQueueTests.writeSource(to: url, seconds: 2, audio: false)
             let context = try MetalContext()
             source = try await MovieSource.open(url: url, device: context.device, poolSize: 4)
-            parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: sync.count) }
             roles = sync
-            compositor = try Compositor(
-                context: context, canvasWidth: 64, canvasHeight: 36, fps: 60, maxLayers: sync.count, metrics: metrics,
-                parameters: parameters,
-                logger: Logger(label: "sync-test"))
+            (compositor, parameters) = try makeCompositor(context, size: (64, 36), maxLayers: sync.count, metrics: metrics)
             compositor.skipsIdleWork = true  // nobody watches: clocks only, no GPU work
             layers = sync.indices.map { RenderLayer(index: $0) }
             for layer in layers {
@@ -63,13 +59,11 @@ struct SyncCompositorTests {
             publish()
         }
 
-        deinit { try? FileManager.default.removeItem(at: directory) }
-
         func playback() -> LayerPlayback {
             let ring = FrameRing(capacity: 4)
             return LayerPlayback(
                 key: MediaKey(folder: 1, file: 1), movie: source,
-                decoder: LayerDecoder(source: source, ring: ring, logger: Logger(label: "sync-test")), ring: ring)
+                decoder: LayerDecoder(source: source, ring: ring, logger: testLogger), ring: ring)
         }
 
         func publish() {
@@ -256,9 +250,9 @@ struct SyncCompositorTests {
 
     /// The compositor's CPU time per idle tick with 32 file layers, Sync off and all masters (printed), and no
     /// allocation on the ticking thread in steady state (§4.6), in an optimised build.
-    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    @Test(.mallocCounter)
     func printMasterSlotCost() async throws {
-        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        try requireMallocCounter()
         for role in [LayerSync.off, .master(group: 1)] {
             let rig = try await Rig(Array(repeating: role, count: SyncPacket.maxLayers))
             rig.tick(120)

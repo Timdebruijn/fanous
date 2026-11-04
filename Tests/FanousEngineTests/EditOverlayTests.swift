@@ -151,12 +151,12 @@ struct EditOverlayTests {
     }
 
     static func makeStore() throws -> (StateStore, Machine) {
-        let logger = Logger(label: "test")
-        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx), logger: logger)
         let machine = Machine()
-        ProjectDocument.registerCommands(
-            on: store, auth: RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: logger), showModeOn: { machine.showMode.withLock { $0 } },
-            showOverlay: { id, on, selected in machine.calls.withLock { $0.append((id, on, selected)) } })
+        let (store, _) = testStore { store, auth in
+            ProjectDocument.registerCommands(
+                on: store, auth: auth, showModeOn: { machine.showMode.withLock { $0 } },
+                showOverlay: { id, on, selected in machine.calls.withLock { $0.append((id, on, selected)) } })
+        }
         _ = try store.execute("output.add", role: .programmer).get()
         return (store, machine)
     }

@@ -13,6 +13,7 @@ import Testing
 
 @testable import FanousEngine
 
+@Suite(.cleansTempFiles)
 struct LibraryIndexTests {
     static func touch(_ url: URL, bytes: Int = 16) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -33,7 +34,6 @@ struct LibraryIndexTests {
     /// Numbering, invalid names, duplicates, ignored folders; files are empty so every probe ends "unreadable".
     @Test func scanClassifiesNamesAndDuplicates() throws {
         let root = try tempDir("fanous-library")
-        defer { try? FileManager.default.removeItem(at: root) }
         try Self.touch(root.appending(path: "001_Opening/001_intro.mov"))
         try Self.touch(root.appending(path: "001_Opening/002_title.png"))
         try Self.touch(root.appending(path: "001_Opening/002_dup.png"))
@@ -45,7 +45,7 @@ struct LibraryIndexTests {
         try Self.touch(root.appending(path: "Unnumbered/001_y.mov"))
         try Self.touch(root.appending(path: "_incoming/upload.mp4"))
         try FileManager.default.createDirectory(at: root.appending(path: "012_Show/005_sequence"), withIntermediateDirectories: true)
-        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: testLogger)
         index.rescan()
         let snapshot = index.snapshot
         #expect(snapshot.rootExists)
@@ -70,7 +70,6 @@ struct LibraryIndexTests {
     /// 10 000 files scan in well under a second and the probe queue stays bounded by the file count.
     @Test func tenThousandFiles() throws {
         let root = try tempDir("fanous-library")
-        defer { try? FileManager.default.removeItem(at: root) }
         for folder in 1...40 {
             let dir = root.appending(path: String(format: "%03d_Folder", folder))
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -78,7 +77,7 @@ struct LibraryIndexTests {
                 FileManager.default.createFile(atPath: dir.appending(path: String(format: "%03d_clip.mov", file)).path, contents: nil)
             }
         }
-        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: testLogger)
         let start = Date()
         index.rescan()
         let elapsed = Date().timeIntervalSince(start)
@@ -92,18 +91,11 @@ struct LibraryIndexTests {
     /// A playable movie resolves after probing, its thumbnail is requested, and FSEvents picks up a new file.
     @Test func probeResolvesAndWatcherRescans() async throws {
         let root = try tempDir("fanous-library")
-        defer { try? FileManager.default.removeItem(at: root) }
         let folder = root.appending(path: "007_Test")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let movie = folder.appending(path: "003_clip.mov")
-        try await offPool {
-            let writer = try MovieWriter(url: movie, width: 320, height: 176, fps: 25, codec: .proRes422HQ)
-            var buffer: CVPixelBuffer?
-            CVPixelBufferPoolCreatePixelBuffer(nil, writer.pixelBufferPool!, &buffer)
-            for _ in 0..<5 { try writer.append(buffer!) }
-            try writer.finish()
-        }
-        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+        try await writePatternMovie(to: movie, size: (320, 176), fps: 25, frames: 5)
+        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: testLogger)
         // heap-allocated observers: callbacks may still run on the library thread after this function returns
         final class Observer: Sendable {
             let thumbnails = Mutex<[String]>([])
@@ -128,7 +120,7 @@ struct LibraryIndexTests {
         #expect(observer.thumbnails.withLock { $0 } == ["003_clip.mov"])
         // a second index on the same cache needs no probe (the first writes the cache just after it resolves)
         #expect(await waitUntil(every: .milliseconds(50)) {
-            let again = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+            let again = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: testLogger)
             again.rescan()
             return again.resolve(MediaKey(folder: 7, file: 3)) != nil
         })
@@ -147,11 +139,10 @@ struct LibraryIndexTests {
     /// A root missing at start behind a symlink is watched once it is made (B140): FSEvents never matched it before.
     @Test func aMissingRootBehindASymlinkIsWatchedOnceMade() async throws {
         let base = try tempDir("fanous-library-link")
-        defer { try? FileManager.default.removeItem(at: base) }
         try FileManager.default.createDirectory(at: base.appending(path: "real"), withIntermediateDirectories: true)
         try FileManager.default.createSymbolicLink(at: base.appending(path: "link"), withDestinationURL: base.appending(path: "real"))
         let root = base.appending(path: "link/Fanous Library")
-        let index = LibraryIndex(root: root, cacheDirectory: base.appending(path: "cache"), logger: Logger(label: "test"))
+        let index = LibraryIndex(root: root, cacheDirectory: base.appending(path: "cache"), logger: testLogger)
         index.start()
         defer { index.stop() }
         #expect(!index.snapshot.rootExists)
@@ -165,23 +156,11 @@ struct LibraryIndexTests {
     /// A 2×2 PNG: enough for the still probe to call it playable.
     static func png(_ url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let context = CGContext(data: nil, width: 2, height: 2, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-        let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
-        CGImageDestinationAddImage(destination, context.makeImage()!, nil)
-        #expect(CGImageDestinationFinalize(destination))
-    }
-
-    static func eventually(_ condition: () -> Bool) async throws -> Bool {
-        for _ in 0..<100 {
-            if condition() { return true }
-            try await Task.sleep(for: .milliseconds(50))
-        }
-        return condition()
+        try writePNG(cgImage(rgba: [UInt8](repeating: 0, count: 16), width: 2, height: 2), to: url)
     }
 
     @Test func rootProblems() throws {
         let root = try tempDir("fanous-library")
-        defer { try? FileManager.default.removeItem(at: root) }
         try Self.touch(root.appending(path: "file.txt"))
         #expect(LibraryIndex.rootProblem(root.path) == nil)
         #expect(LibraryIndex.rootProblem("Movies/Fanous Library")?.contains("absolute") == true)
@@ -194,7 +173,6 @@ struct LibraryIndexTests {
     /// the root lacks stays "missing". Switching back needs no new probes.
     @Test func switchingRootsReindexesAndReresolvesLayers() async throws {
         let a = try tempDir("fanous-library"), b = try tempDir("fanous-library"), cache = try tempDir("fanous-library")
-        defer { for url in [a, b, cache] { try? FileManager.default.removeItem(at: url) } }
         try Self.png(a.appending(path: "001_A/001_one.png"))
         try Self.png(a.appending(path: "001_A/002_two.png"))
         try Self.png(b.appending(path: "001_B/001_uno.png"))
@@ -206,10 +184,10 @@ struct LibraryIndexTests {
         let observer = Observer()
         // the engine's wiring: one box with the index of the moment (and no other strong reference), the loader
         // resolving through it, every library change asking the loader to retry its missing layers
-        let current = Mutex<LibraryIndex?>(LibraryIndex(root: a, cacheDirectory: cache, logger: Logger(label: "test")))
+        let current = Mutex<LibraryIndex?>(LibraryIndex(root: a, cacheDirectory: cache, logger: testLogger))
         let device = try #require(MTLCreateSystemDefaultDevice())
         let layer = RenderLayer(index: 0)
-        let loader = MediaLoader(layers: [layer], media: [], device: device, ringCapacity: 4, logger: Logger(label: "test"))
+        let loader = MediaLoader(layers: [layer], media: [], device: device, ringCapacity: 4, logger: testLogger)
         loader.resolver = { key in current.withLock { $0 }?.resolve(key) }
         current.withLock { first in
             first!.onChange = {
@@ -223,12 +201,12 @@ struct LibraryIndexTests {
             }
             first!.start()
         }
-        #expect(try await Self.eventually { current.withLock { $0 }?.resolve(MediaKey(folder: 1, file: 2)) != nil })
+        #expect(await waitUntil { current.withLock { $0 }?.resolve(MediaKey(folder: 1, file: 2)) != nil })
         loader.start()
         defer { loader.stop() }
         layer.wanted.store(MediaKey(folder: 1, file: 2).packed, ordering: .relaxed)
         loader.wake.signal()
-        #expect(try await Self.eventually { layer.mediaStatus.withLock { $0.name } == "002_two.png" })
+        #expect(await waitUntil { layer.mediaStatus.withLock { $0.name } == "002_two.png" })
 
         // as Engine.switchLibrary: build the new index, swap, re-resolve, stop the old one last
         observer.holdProbes.store(true, ordering: .relaxed)
@@ -245,18 +223,18 @@ struct LibraryIndexTests {
         #expect(second.snapshot.root == b.path && second.snapshot.folders.map(\.name) == ["001_B"])
         // B's files have never been probed: 1/2 does not resolve yet, so layer 1 shows "missing"
         #expect(second.resolve(MediaKey(folder: 1, file: 2)) == nil)
-        #expect(try await Self.eventually { layer.mediaStatus.withLock { $0.kind == "missing" && $0.error == "no file 2 in folder 1" } })
+        #expect(await waitUntil { layer.mediaStatus.withLock { $0.kind == "missing" && $0.error == "no file 2 in folder 1" } })
         // the probe makes it playable; the change hook retries the missing layer
         observer.holdProbes.store(false, ordering: .relaxed)
-        #expect(try await Self.eventually { layer.mediaStatus.withLock { $0.name } == "002_dos.png" }, "the missing layer was not retried")
-        #expect(try await Self.eventually { second.resolve(MediaKey(folder: 1, file: 1))?.lastPathComponent == "001_uno.png" })
+        #expect(await waitUntil { layer.mediaStatus.withLock { $0.name } == "002_dos.png" }, "the missing layer was not retried")
+        #expect(await waitUntil { second.resolve(MediaKey(folder: 1, file: 1))?.lastPathComponent == "001_uno.png" })
         // a number the root lacks: the existing "missing" state, no crash
         layer.wanted.store(MediaKey(folder: 1, file: 3).packed, ordering: .relaxed)
         loader.wake.signal()
-        #expect(try await Self.eventually { layer.mediaStatus.withLock { $0.kind == "missing" && $0.error == "no file 3 in folder 1" } })
+        #expect(await waitUntil { layer.mediaStatus.withLock { $0.kind == "missing" && $0.error == "no file 3 in folder 1" } })
 
         // the old root is no longer watched and its index is gone
-        #expect(try await Self.eventually { old == nil }, "the replaced index is still alive")
+        #expect(await waitUntil { old == nil }, "the replaced index is still alive")
         let settled = observer.changes.load(ordering: .relaxed)
         try Self.png(a.appending(path: "001_A/003_three.png"))
         try await Task.sleep(for: .milliseconds(1500))
@@ -273,11 +251,10 @@ struct LibraryIndexTests {
 
     @Test func ingestTargets() throws {
         let root = try tempDir("fanous-library")
-        defer { try? FileManager.default.removeItem(at: root) }
         try Self.touch(root.appending(path: "003_Show/001_a.mov"))
         try Self.touch(root.appending(path: "003_Show/002_b.mov"))
         try Self.touch(root.appending(path: "003_Show/004_d.mov"))
-        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: testLogger)
         index.rescan()
         #expect(LibraryIndex.nextFileNumber(in: root.appending(path: "003_Show")) == 3)
         #expect(LibraryIndex.nextFileNumber(in: root.appending(path: "003_Show"), pending: ["003_c.mov"]) == 5)
@@ -301,8 +278,7 @@ struct LibraryIndexTests {
     /// B141: twenty clients creating one number at once make one folder; the others see it exist.
     @Test func concurrentFolderCreatesMakeOneFolder() async throws {
         let root = try tempDir("fanous-library")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+        let index = LibraryIndex(root: root, cacheDirectory: root.appending(path: ".cache"), logger: testLogger)
         let results = await withTaskGroup(of: LibraryIndex.FolderCreate.self) { group in
             for i in 0..<20 { group.addTask { index.createFolder(number: 7, name: "Client \(i)") } }
             return await group.reduce(into: []) { $0.append($1) }
@@ -316,12 +292,11 @@ struct LibraryIndexTests {
     /// B142: a root that cannot be written gives no URL for a folder that does not exist.
     @Test func folderCreateFailsOnAReadOnlyRoot() throws {
         let root = try tempDir("fanous-library")
-        defer { try? FileManager.default.removeItem(at: root) }
         let readOnly = root.appending(path: "root")
         try FileManager.default.createDirectory(at: readOnly, withIntermediateDirectories: true)
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: readOnly.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: readOnly.path) }
-        let index = LibraryIndex(root: readOnly, cacheDirectory: root.appending(path: ".cache"), logger: Logger(label: "test"))
+        let index = LibraryIndex(root: readOnly, cacheDirectory: root.appending(path: ".cache"), logger: testLogger)
         #expect(index.createFolder(number: 1, name: "One") == .failed)
         #expect(index.folderURL(number: 1, createAs: "One") == nil)
         #expect(!FileManager.default.fileExists(atPath: readOnly.appending(path: "001_One").path))

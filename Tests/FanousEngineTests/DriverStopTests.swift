@@ -73,10 +73,7 @@ final class HeldTick: @unchecked Sendable {
 @Suite(.serialized)
 struct DriverStopTests {
     static func compositor() throws -> Compositor {
-        try Compositor(
-            context: try MetalContext(), canvasWidth: 16, canvasHeight: 9, fps: 240, maxLayers: 1,
-            metrics: MetricsRing(capacity: 64), parameters: TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) },
-            logger: Logger(label: "driver-stop-test"))
+        try makeCompositor(try MetalContext(), size: (16, 9), fps: 240).0
     }
 
     @Test func stopReturnsOnlyAfterTheTickInFlight() throws {
@@ -123,7 +120,7 @@ struct RenderServiceStopTests {
         scene.syphonOutput = true
         return try RenderService(
             scene: scene, context: try MetalContext(), parameters: parameters, metrics: MetricsRing(capacity: 64),
-            logger: Logger(label: "render-stop-test"))
+            logger: testLogger)
     }
 
     @Test func syphonStopsAfterTheTickInFlight() async throws {

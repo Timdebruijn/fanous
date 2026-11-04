@@ -9,8 +9,6 @@ let package = Package(
     name: "Fanous",
     platforms: [.macOS(.v15)],
     products: [
-        .library(name: "FanousCore", targets: ["FanousCore"]),
-        .library(name: "FanousEngine", targets: ["FanousEngine"]),
         .executable(name: "fanousd", targets: ["fanousd"]),
         .executable(name: "FanousShell", targets: ["FanousShell"]),
         .executable(name: "fanous-bench", targets: ["fanous-bench"]),
@@ -63,7 +61,7 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
             ]),
         .testTarget(name: "FanousCoreTests", dependencies: ["FanousCore"]),
-        // Engine tests that need no display: lock-free hand-off, encoders. Golden images come in Phase 3.
+        // Engine tests; none needs a display (the GPU ones render offscreen, golden images in Tests/Fixtures/golden).
         .testTarget(name: "FanousEngineTests", dependencies: ["FanousEngine", "FanousCore"]),
     ],
     swiftLanguageModes: [.v6],

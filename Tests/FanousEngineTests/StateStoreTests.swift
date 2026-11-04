@@ -31,19 +31,11 @@ final class RecordingClient: StateClient, @unchecked Sendable {
     var patches: [JSONValue] { messages.withLock { $0.filter { $0["t"]?.string == "patch" } } }
 }
 
+@Suite(.cleansTempFiles)
 struct StateStoreTests {
-    static let logger = Logger(label: "test")
-
-    static func makeStore() -> (StateStore, RoleAuth) {
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: logger)
-        let project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 0), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
-        let store = StateStore(project: project, logger: logger)
-        ProjectDocument.registerCommands(on: store, auth: auth)
-        return (store, auth)
-    }
 
     @Test func commandProducesPatchAndUndoRestores() throws {
-        let (store, _) = Self.makeStore()
+        let (store, _) = testStore(outputs: 0)
         let client = RecordingClient(role: .programmer)
         store.admit(client, role: client.role, caps: [:]) {}
         let result = try store.execute("project.set", args: ["path": "/name", "value": "Tour 2026"], role: .programmer).get()
@@ -66,7 +58,7 @@ struct StateStoreTests {
     }
 
     @Test func showLockRefusesConfigCommandsOnly() throws {
-        let (store, _) = Self.makeStore()
+        let (store, _) = testStore(outputs: 0)
         _ = try store.execute("show.lock", role: .programmer).get()
         #expect(store.project["showLock"]?.bool == true)
         let refused = store.execute("project.set", args: ["path": "/name", "value": "x"], role: .programmer)
@@ -80,7 +72,7 @@ struct StateStoreTests {
     }
 
     @Test func rolesAndValidation() {
-        let (store, _) = Self.makeStore()
+        let (store, _) = testStore(outputs: 0)
         #expect(store.execute("project.set", args: ["path": "/name", "value": "x"], role: .operator) == .failure(.forbidden))
         #expect(store.execute("nope", role: .programmer) == .failure(.unknownCommand))
         #expect(store.execute("project.set", args: ["path": "/showLock", "value": true], role: .programmer).failureCode == "invalidArgs")
@@ -91,7 +83,7 @@ struct StateStoreTests {
     }
 
     @Test func patchSetRewritesTheProjectPatch() throws {
-        let (store, _) = Self.makeStore()
+        let (store, _) = testStore(outputs: 0)
         _ = try store.execute("patch.set", args: ["fixture": "Layer 2", "universe": "sacn:3", "address": 129], role: .programmer).get()
         let patch = try #require(ProjectDocument.patch(from: store.project))
         #expect(patch.entry(for: .layer(2)) == PatchEntry(fixture: .layer(2), universe: UniverseID(.sacn, 3), address: 129))
@@ -102,7 +94,7 @@ struct StateStoreTests {
     }
 
     @Test func liveUpdatesAreDiffedAndCoalesced() async throws {
-        let (store, _) = Self.makeStore()
+        let (store, _) = testStore(outputs: 0)
         let client = RecordingClient(role: .monitor)
         store.admit(client, role: client.role, caps: [:]) {}
         store.updateLive(["metrics": ["fps": 60], "dmx": ["a": 1]])
@@ -124,7 +116,7 @@ struct StateStoreTests {
     }
 
     @Test func laggingClientsDropLiveButNotProject() async throws {
-        let (store, _) = Self.makeStore()
+        let (store, _) = testStore(outputs: 0)
         let client = RecordingClient(role: .programmer)
         store.admit(client, role: client.role, caps: [:]) {}
         client.accepting.withLock { $0 = false }
@@ -138,7 +130,7 @@ struct StateStoreTests {
     }
 
     @Test func welcomeCarriesBothDocuments() throws {
-        let (store, _) = Self.makeStore()
+        let (store, _) = testStore(outputs: 0)
         let welcome = try JSONDecoder().decode(JSONValue.self, from: Data(store.welcome(role: .operator, caps: ["schema": 1]).utf8))
         #expect(welcome["t"]?.string == "welcome")
         #expect(welcome["role"]?.string == "operator")
@@ -153,7 +145,7 @@ struct StateStoreTests {
         var document = ProjectDocument.initial(patch: patch, layerCount: 16, libraryRoot: "/x", policy: .ltp)
         #expect(ProjectDocument.patch(from: document) == patch)
         try document.set(try JSONValue(encoding: (1...4).map { OutputConfig(id: $0) }), at: "/outputs")
-        let url = FileManager.default.temporaryDirectory.appending(path: "project-\(UUID().uuidString).json")
+        let url = tempFile("project", ext: "json")
         try ProjectDocument.save(document, to: url)
         #expect(ProjectDocument.load(from: url) == document)
         // an Output fixture without its output is unpatched on load
@@ -165,7 +157,6 @@ struct StateStoreTests {
         try ProjectDocument.save(document, to: url)
         let loaded = try #require(ProjectDocument.load(from: url))
         #expect(ProjectDocument.patch(from: loaded)?.entries == patch.entries.filter { $0.fixture != .output(3) && $0.fixture != .output(4) }, "and 9: above the console's outputs; Keystone 3 has no output")
-        try? FileManager.default.removeItem(at: url)
         #expect(FixtureRef(parsing: "layer 7") == .layer(7))
         #expect(FixtureRef(parsing: "Output 0") == nil)
         #expect(FixtureRef(parsing: "Keystone 2") == .keystone(2) && FixtureRef(parsing: "keystone 2")?.description == "Keystone 2")
@@ -186,7 +177,7 @@ struct StateStoreTests {
     /// B62: the engine sees a change before any client gets its patch, so a client that reacts to the patch at once
     /// (asks for the preview of a new output) finds the engine already knows it. For commands, undo, corrections and redo.
     @Test func projectChangedRunsBeforeClientsGetThePatch() throws {
-        let (store, _) = StateStoreTests.makeStore()
+        let (store, _) = testStore(outputs: 0)
         let client = RecordingClient(role: .programmer)
         store.admit(client, role: client.role, caps: [:]) {}
         let seen = Mutex<[(name: String?, patchesSent: Int)]>([])
@@ -214,11 +205,11 @@ extension StateStoreTests {
     /// the Master's slot and stays unpatched, so the patch does not change, yet Layer 9 gets a resolver and plays from
     /// the UI. An unparseable patch keeps the running one and still brings a new fixture set.
     @Test func aFixtureSetChangeAloneReachesTheDMXStore() throws {
-        let (store, _) = Self.makeStore()
+        let (store, _) = testStore(outputs: 0)
         _ = try store.execute("layers.setCount", args: ["count": 8], role: .programmer).get()
         let dmx = DMXStore(
             patch: try #require(ProjectDocument.effectivePatch(from: store.project)), fixtures: ProjectDocument.fixtures(from: store.project),
-            logger: Logger(label: "test"))
+            logger: testLogger)
         dmx.setPolicy(.internal)
         var last = ProjectDocument.fixtures(from: store.project)
         func apply(_ document: JSONValue) -> Bool {
@@ -241,7 +232,7 @@ extension StateStoreTests {
     }
 
     @Test func layerCountPatchesNewLayersAndDropsRemovedOnes() throws {
-        let (store, _) = Self.makeStore()  // 2 layers patched at 1 and 65 on artnet:0.0.0
+        let (store, _) = testStore(outputs: 0)  // 2 layers patched at 1 and 65 on artnet:0.0.0
         _ = try store.execute("layers.setCount", args: ["count": 4], role: .programmer).get()
         var patch = try #require(ProjectDocument.patch(from: store.project))
         #expect(store.project["layerCount"]?.int == 4)
@@ -265,7 +256,7 @@ extension StateStoreTests {
 
 extension StateStoreTests {
     @Test func outputFixtureFollowsItsOutput() throws {
-        let (store, _) = Self.makeStore()  // Master at artnet:0.0.1 1, no outputs and no Output fixtures yet
+        let (store, _) = testStore(outputs: 0)  // Master at artnet:0.0.1 1, no outputs and no Output fixtures yet
         let sacn5 = UniverseID(.sacn, 5)
         _ = try store.execute("output.add", role: .programmer).get()
         #expect(ProjectDocument.patch(from: store.project)?.entry(for: .output(1)) == PatchEntry(fixture: .output(1), universe: UniverseID(.artnet, 1), address: 9))
@@ -303,7 +294,7 @@ extension StateStoreTests {
     }
 
     @Test func outputCommandsAddSetValidateAndRemove() throws {
-        let (store, _) = Self.makeStore()
+        let (store, _) = testStore(outputs: 0)
         let id = try store.execute("output.add", args: ["display": ["uuid": "U1", "name": "Epson"]], role: .programmer).get().value?.int
         #expect(id == 1)
         var outputs = ProjectDocument.outputs(from: store.project)
@@ -347,16 +338,15 @@ extension StateStoreTests {
     /// B51: `project.set /library/root` expands `~`, normalises the path and asks the engine; refusals leave the project as it was.
     @Test func libraryRootIsNormalisedAndChecked() throws {
         let root = try tempDir("fanous-root")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
-        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx), logger: Self.logger)
         let state = Mutex((showMode: false, ingestBusy: false))
-        ProjectDocument.registerCommands(
-            on: store, auth: auth,
-            checkLibraryRoot: { path in
-                let s = state.withLock { $0 }
-                if let refusal = Engine.libraryRootRefusal(path, showMode: s.showMode, ingestBusy: s.ingestBusy) { throw refusal }
-            })
+        let (store, _) = testStore(layers: 1) { store, auth in
+            ProjectDocument.registerCommands(
+                on: store, auth: auth,
+                checkLibraryRoot: { path in
+                    let s = state.withLock { $0 }
+                    if let refusal = Engine.libraryRootRefusal(path, showMode: s.showMode, ingestBusy: s.ingestBusy) { throw refusal }
+                })
+        }
         func set(_ value: JSONValue) -> Result<CommandResult, CommandError> { store.execute("project.set", args: ["path": "/library/root", "value": value], role: .programmer) }
 
         _ = try set(.string(root.path + "/")).get()
@@ -377,10 +367,8 @@ extension StateStoreTests {
     }
 
     @Test func canvasSetChangesSizeAndRateWithinLimits() throws {
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
-        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx), logger: Self.logger)
         let showMode = Mutex(false)
-        ProjectDocument.registerCommands(on: store, auth: auth, showModeOn: { showMode.withLock { $0 } })
+        let (store, _) = testStore { ProjectDocument.registerCommands(on: $0, auth: $1, showModeOn: { showMode.withLock { $0 } }) }
         func format(_ w: Int, _ h: Int, _ fps: Double) -> JSONValue { ["id": 1, "width": .number(Double(w)), "height": .number(Double(h)), "fps": .number(fps)] }
         #expect(ProjectDocument.canvases(from: store.project).first?.fps == 60)
 
@@ -411,11 +399,10 @@ extension StateStoreTests {
     /// B60: `sync.set` validates, writes `settings.json` › `sync` next to the passwords, applies, and is refused in show mode.
     @Test func syncSetValidatesSavesAndApplies() throws {
         let directory = try tempDir("sync")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appending(path: "settings.json")
-        let auth = RoleAuth(settingsURL: file, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
+        let auth = RoleAuth(settingsURL: file, shellTokenURL: nil, iterations: 1000, logger: testLogger)
         try auth.setPassword("pw", for: .programmer)
-        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/x", policy: .dmx), logger: Self.logger)
+        let store = StateStore(project: testProject(layers: 1, outputs: 1, libraryRoot: "/x"), logger: testLogger)
         let showMode = Mutex(false), applied = Mutex<[SyncSettings]>([])
         ProjectDocument.registerCommands(
             on: store, auth: auth, showModeOn: { showMode.withLock { $0 } }, applySync: { s in applied.withLock { $0.append(s) } })
@@ -447,10 +434,10 @@ extension StateStoreTests {
     /// B31: undo in show mode changes the project but not the render until show mode ends; a failed switch puts the
     /// rendered canvas back into the project and reports the error.
     @MainActor @Test func canvasSwitchDefersInShowModeAndRevertsOnFailure() async throws {
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
-        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/x", policy: .dmx), logger: Self.logger)
         let showMode = Mutex(false), fail = Mutex(false), applied = Mutex<[Int]>([])
-        ProjectDocument.registerCommands(on: store, auth: auth, showModeOn: { showMode.withLock { $0 } })
+        let (store, _) = testStore(project: testProject(layers: 1, outputs: 1, libraryRoot: "/x")) {
+            ProjectDocument.registerCommands(on: $0, auth: $1, showModeOn: { showMode.withLock { $0 } })
+        }
         let switcher = CanvasSwitch(
             rendered: ProjectDocument.CanvasLayout(ProjectDocument.defaultCanvas), isDeferred: { showMode.withLock { $0 } },
             apply: { layout in
@@ -490,10 +477,10 @@ extension StateStoreTests {
 
     /// Multiple canvases: add (shared rate, cap), per-layer assignment, slices on a canvas, remove moves both to canvas 1.
     @Test func canvasAddRemoveAndLayerAssignment() throws {
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
-        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 8, outputs: 1), layerCount: 8, libraryRoot: "/x", policy: .dmx), logger: Self.logger)
         let showMode = Mutex(false)
-        ProjectDocument.registerCommands(on: store, auth: auth, showModeOn: { showMode.withLock { $0 } })
+        let (store, _) = testStore(project: testProject(layers: 8, outputs: 1, libraryRoot: "/x")) {
+            ProjectDocument.registerCommands(on: $0, auth: $1, showModeOn: { showMode.withLock { $0 } })
+        }
         func ids() -> [Int] { ProjectDocument.canvases(from: store.project).map(\.id) }
 
         #expect(try store.execute("canvas.add", args: ["width": 1280, "height": 720], role: .programmer).get().value == 2)
@@ -587,7 +574,7 @@ extension StateStoreTests {
     }
 
     @Test func projectCanvasWinsOverSceneDefaultsAndASceneFileWinsOverTheProject() throws {
-        var project = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/x", policy: .dmx)
+        var project = testProject(layers: 1, outputs: 1, libraryRoot: "/x")
         #expect(Engine.startCanvas(project: nil, scene: nil) == (1920, 1080, 60))
         try ProjectDocument.setCanvasFormat((3840, 2160, 50), in: &project)
         #expect(Engine.startCanvas(project: project, scene: nil) == (3840, 2160, 50))
@@ -605,7 +592,7 @@ extension StateStoreTests {
     }
 
     @Test func removingTheClockMasterOutputClearsIt() throws {
-        let (store, _) = Self.makeStore()
+        let (store, _) = testStore(outputs: 0)
         _ = try store.execute("output.add", role: .programmer).get()
         _ = try store.execute("output.add", role: .programmer).get()
         _ = try store.execute("canvas.set", args: ["id": 1, "path": "/clockMaster", "value": 2], role: .programmer).get()
@@ -618,7 +605,7 @@ extension StateStoreTests {
     }
 
     @Test func dragEditsFromOneClientCoalesceIntoOneUndoStep() throws {
-        let (store, _) = Self.makeStore()
+        let (store, _) = testStore(outputs: 0)
         _ = try store.execute("output.add", role: .programmer).get()
         let a = RecordingClient(role: .programmer), b = RecordingClient(role: .programmer)
         let before = store.historyDepth.undo
@@ -659,7 +646,7 @@ extension StateStoreTests {
 
 struct StateStoreRedactionTests {
     @Test func rolesGetRedactedDocumentsAndPatches() throws {
-        let (store, _) = StateStoreTests.makeStore()
+        let (store, _) = testStore(outputs: 0)
         store.setLive("/Users/x/lib", at: JSONPointer(tokens: ["library", "root"]))
         store.queue.sync {}
         let monitor = RecordingClient(role: .monitor)
@@ -684,90 +671,80 @@ struct StateStoreRedactionTests {
 extension StateStoreTests {
     /// B69: forget one number or every one not running; never a running one; programmer, undoable, refused under show lock.
     @Test func syphonForgetFreesNumbersThatAreNotRunning() throws {
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
-        var project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
+        var project = testProject(layers: 2, outputs: 1)
         let numbers = [(150, "Resolume"), (151, "Simple Server"), (152, "MadMapper")].map { LiveCatalog.Entry(kind: .syphon, file: $0.0, source: $0.1, name: "") }
         try project.set(ProjectDocument.liveValue(numbers), at: "/syphon")
-        let store = StateStore(project: project, logger: Self.logger)
-        ProjectDocument.registerCommands(on: store, auth: auth, liveRunning: { [150] })
-        func files() -> [Int] { ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.file) }
+        let (store, _) = testStore(project: project) { ProjectDocument.registerCommands(on: $0, auth: $1, liveRunning: { [150] }) }
 
         #expect(store.execute("syphon.forget", args: ["file": 151], role: .operator).failureCode == "forbidden")
         #expect(store.execute("syphon.forget", args: ["file": 150], role: .programmer).failureCode == "invalidArgs")
         #expect(store.execute("syphon.forget", args: ["file": 160], role: .programmer).failureCode == "invalidArgs")
         _ = try store.execute("syphon.forget", args: ["file": 151], role: .programmer).get()
-        #expect(files() == [150, 152])
+        #expect(syphonFiles(store) == [150, 152])
         _ = try store.execute("undo", role: .programmer).get()
-        #expect(files() == [150, 151, 152])
+        #expect(syphonFiles(store) == [150, 151, 152])
         _ = try store.execute("syphon.forget", role: .programmer).get()
-        #expect(files() == [150])
+        #expect(syphonFiles(store) == [150])
 
         _ = try store.execute("show.lock", role: .programmer).get()
         #expect(store.execute("undo", role: .programmer) == .failure(.showLocked))
         #expect(store.execute("syphon.forget", role: .programmer) == .failure(.showLocked))
         // the engine's own numbering still lands under show lock (a new server numbered mid-show)
         store.correct(at: "/syphon") { ProjectDocument.liveValue(numbers) }
-        #expect(files() == [150, 151, 152])
+        #expect(syphonFiles(store) == [150, 151, 152])
     }
 
     /// Keyed by file, a forget and its undo touch one key: numbers recorded in between stay (B69).
     @Test func syphonForgetUndoKeepsNumbersRecordedMeanwhile() throws {
-        let (store, _) = Self.makeStore()
-        func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "") }
-        func files() -> [Int] { ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.file) }
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "A"), server(153, "X")]) }
+        let (store, _) = testStore(outputs: 0)
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(150, "A", name: ""), syphonServer(153, "X", name: "")]) }
         _ = try store.execute("syphon.forget", args: ["file": 153], role: .programmer).get()
         // Y and Z get numbers (the engine records them); Z then stops, its entry stays
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "A"), server(151, "Y"), server(152, "Z")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(150, "A", name: ""), syphonServer(151, "Y", name: ""), syphonServer(152, "Z", name: "")]) }
         _ = try store.execute("undo", role: .programmer).get()
-        #expect(files() == [150, 151, 152, 153])
+        #expect(syphonFiles(store) == [150, 151, 152, 153])
         #expect(ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.source) == ["A", "Y", "Z", "X"])
     }
 
     /// Undoing a forget would overwrite a server that took the number meanwhile and has since stopped (B90).
     @Test func syphonForgetUndoRefusedWhenAnotherServerHoldsTheNumber() throws {
-        let (store, _) = Self.makeStore()
-        func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
-        func apps() -> [String] { ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.source) }
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "A"), server(151, "N")]) }
+        let (store, _) = testStore(outputs: 0)
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(150, "A"), syphonServer(151, "N")]) }
         _ = try store.execute("project.set", args: ["path": "/name", "value": "Tour"], role: .programmer).get()
         _ = try store.execute("syphon.forget", args: ["file": 151], role: .programmer).get()
         // Y takes 151 as the lowest free number, then stops: the engine leaves its entry
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "A"), server(151, "App")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(150, "A"), syphonServer(151, "App")]) }
         let refused = store.execute("undo", role: .programmer)
         #expect(refused == .failure(CommandError("historyConflict", "Syphon number 151 is now held by App/Server; undo/redo refused")))
-        #expect(apps() == ["A", "App"])
+        #expect(syphonApps(store) == ["A", "App"])
         // the conflict does not clear up by itself: the entry is dropped, the next undo reaches the change before it
         _ = try store.execute("undo", role: .programmer).get()
         #expect(store.project["name"] != "Tour")
-        #expect(apps() == ["A", "App"])
+        #expect(syphonApps(store) == ["A", "App"])
     }
 
     /// A free number, or the same name on it (the engine wrote it back), is no conflict (B90).
     @Test func syphonForgetUndoAllowedWhenTheNumberIsFreeOrHeldByTheSameName() throws {
-        let (store, _) = Self.makeStore()
-        func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
-        func apps() -> [String] { ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.source) }
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "A"), server(151, "N")]) }
+        let (store, _) = testStore(outputs: 0)
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(150, "A"), syphonServer(151, "N")]) }
         _ = try store.execute("syphon.forget", args: ["file": 151], role: .programmer).get()
         _ = try store.execute("undo", role: .programmer).get()
-        #expect(apps() == ["A", "N"])
+        #expect(syphonApps(store) == ["A", "N"])
         _ = try store.execute("syphon.forget", args: ["file": 151], role: .programmer).get()
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "A"), server(151, "N")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(150, "A"), syphonServer(151, "N")]) }
         _ = try store.execute("undo", role: .programmer).get()
-        #expect(apps() == ["A", "N"])
+        #expect(syphonApps(store) == ["A", "N"])
     }
 
     /// The entry a redo puts back is checked too: forget, undo, redo, Y takes the number, the undo is refused (B90).
     @Test func syphonForgetRedoneThenUndoRefusedWhenAnotherServerHoldsTheNumber() throws {
-        let (store, _) = Self.makeStore()
-        func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(151, "N")]) }
+        let (store, _) = testStore(outputs: 0)
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(151, "N")]) }
         _ = try store.execute("syphon.forget", args: ["file": 151], role: .programmer).get()
         _ = try store.execute("undo", role: .programmer).get()
         _ = try store.execute("redo", role: .programmer).get()
         #expect(store.project["syphon"] == [:])
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(151, "App")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(151, "App")]) }
         #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by App/Server; undo/redo refused")))
         #expect(ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.source) == ["App"])
     }
@@ -775,13 +752,12 @@ extension StateStoreTests {
     /// Undoing a forget must not put a name on a second number: forget A@150 and N@151, N takes 150 and stops, the undo
     /// of the N forget would re-add 151=N (B92).
     @Test func syphonForgetUndoRefusedWhenTheNameSitsOnAnotherNumber() throws {
-        let (store, _) = Self.makeStore()
-        func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "A"), server(151, "N")]) }
+        let (store, _) = testStore(outputs: 0)
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(150, "A"), syphonServer(151, "N")]) }
         _ = try store.execute("syphon.forget", args: ["file": 150], role: .programmer).get()
         _ = try store.execute("syphon.forget", args: ["file": 151], role: .programmer).get()
         // N announces again and takes 150 as the lowest free number, then stops
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "N")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(150, "N")]) }
         let refused = store.execute("undo", role: .programmer)
         #expect(refused == .failure(CommandError("historyConflict", "Syphon server N/Server is now on number 150; undo/redo refused")))
         #expect(ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.file) == [150])
@@ -791,16 +767,13 @@ extension StateStoreTests {
     /// A twin on a running server's number is no conflict: the catalog drops it (B92). Forget-all frees 151=N and 152=M,
     /// N starts and takes 150; the undo puts M back on 152.
     @Test func syphonForgetUndoAllowedWhenTheTwinRuns() throws {
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
-        func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
-        var project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
-        try project.set(ProjectDocument.liveValue([server(151, "N"), server(152, "M")]), at: "/syphon")
-        let store = StateStore(project: project, logger: Self.logger)
+        var project = testProject(layers: 2, outputs: 1)
+        try project.set(ProjectDocument.liveValue([syphonServer(151, "N"), syphonServer(152, "M")]), at: "/syphon")
         let running = Mutex<Set<Int>>([])
-        ProjectDocument.registerCommands(on: store, auth: auth, liveRunning: { running.withLock { $0 } })
+        let (store, _) = testStore(project: project) { ProjectDocument.registerCommands(on: $0, auth: $1, liveRunning: { running.withLock { $0 } }) }
         _ = try store.execute("syphon.forget", role: .programmer).get()
         running.withLock { $0 = [150] }
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "N")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(150, "N")]) }
         _ = try store.execute("undo", role: .programmer).get()
         #expect(store.project["syphon"]?["150"]?["app"]?.string == "N")
         #expect(store.project["syphon"]?["152"]?["app"]?.string == "M")
@@ -808,7 +781,7 @@ extension StateStoreTests {
 
     /// The engine records a new number with no client connected (a headless show driven by a console, B69).
     @Test func syphonNumbersAreRecordedWithoutClients() {
-        let (store, _) = Self.makeStore()
+        let (store, _) = testStore(outputs: 0)
         let catalog = LiveCatalog(.syphon)
         catalog.update(running: [LiveCatalog.Entry(kind: .syphon, file: 0, source: "Resolume", name: "Out", runtimeID: "a")])
         #expect(store.clientCount == 0)
@@ -829,7 +802,7 @@ struct LibraryRedactionTests {
     }
 
     @Test func admitSendsRedactedWelcomeAndSetsRoleAtomically() throws {
-        let (store, _) = StateStoreTests.makeStore()
+        let (store, _) = testStore(outputs: 0)
         let client = RecordingClient(role: .monitor)
         var set = false
         store.admit(client, role: .monitor, caps: [:]) { set = true }
@@ -855,7 +828,7 @@ extension StateStoreTests {
     }
 
     @Test func patchSetManyIsOneUndoStepAndAllOrNothing() throws {
-        let (store, _) = Self.makeStore()  // Layers 1–2 at artnet:0.0.0 1 and 65, Master at artnet:0.0.1 1
+        let (store, _) = testStore(outputs: 0)  // Layers 1–2 at artnet:0.0.0 1 and 65, Master at artnet:0.0.1 1
         let before = try #require(ProjectDocument.patch(from: store.project))
         _ = try store.execute("patch.setMany", args: Self.entries([("Layer 1", "artnet:0.0.4", 1), ("Layer 2", "artnet:0.0.4", 65), ("Master", "sacn:9", 0)]), role: .programmer).get()
         let patch = try #require(ProjectDocument.patch(from: store.project))
@@ -889,9 +862,9 @@ extension StateStoreTests {
 
     /// DESIGN.md §6.6: an address only for a fixture that exists; address 0 for any, so a stale entry can still go.
     @Test func anAddressNeedsAFixtureThatExists() throws {
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: Self.logger)
+        let auth = testAuth()
         // a project from before the check: Layer 3 patched above a layer count of 2
-        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 3, outputs: 0), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx), logger: Self.logger)
+        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 3, outputs: 0), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx), logger: testLogger)
         ProjectDocument.registerCommands(on: store, auth: auth)
         func run(_ command: String, _ fixture: String, _ address: Int) -> Result<CommandResult, CommandError> {
             let args: JSONValue = ["fixture": .string(fixture), "universe": "sacn:7", "address": .number(Double(address))]
@@ -923,7 +896,7 @@ extension StateStoreTests {
     }
 
     @Test func aNewLayerGoesOnItsSlot() throws {
-        let (store, _) = Self.makeStore()  // Layers 1–2 at artnet:0.0.0 1 and 65, Master at artnet:0.0.1 1
+        let (store, _) = testStore(outputs: 0)  // Layers 1–2 at artnet:0.0.0 1 and 65, Master at artnet:0.0.1 1
         _ = try store.execute("layers.setCount", args: ["count": 8], role: .programmer).get()
         #expect(Self.layers(store)[8] == Patch.Slot(UniverseID(.artnet, 0), 449))
         // the standard Layer 9 slot is the Master's: Layer 9 stays unpatched, rather than collide
@@ -944,7 +917,7 @@ extension StateStoreTests {
     }
 
     @Test func aNewLayerOfACustomGroupFollowsTheLayerBefore() throws {
-        let (store, _) = Self.makeStore()  // Layers 1–2 at artnet:0.0.0 1 and 65
+        let (store, _) = testStore(outputs: 0)  // Layers 1–2 at artnet:0.0.0 1 and 65
         _ = try store.execute("patch.set", args: ["fixture": "Layer 2", "universe": "sacn:3", "address": 300], role: .programmer).get()
         _ = try store.execute("layers.setCount", args: ["count": 3], role: .programmer).get()
         #expect(Self.layers(store)[3] == Patch.Slot(UniverseID(.sacn, 3), 364), "right after Layer 2")

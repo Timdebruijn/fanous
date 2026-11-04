@@ -168,11 +168,7 @@ struct GoldenTests {
     /// `scratch` false: the layers get no scratch textures and draw through the per-tap source path (B2); `scale`
     /// makes the stills that many times 256×144.
     static func render(_ c: Case, context: MetalContext, scratch: Bool = true, scale: Int = 1) throws -> (Int, Int, [UInt8]) {
-        let metrics = MetricsRing(capacity: 16)
-        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 2) }
-        let compositor = try Compositor(
-            context: context, canvasWidth: width, canvasHeight: height, fps: 60, maxLayers: 2, metrics: metrics, parameters: parameters,
-            logger: Logger(label: "golden"))
+        let (compositor, parameters) = try makeCompositor(context, size: (width, height), maxLayers: 2)
         let background = RenderLayer(index: 0)
         let layer = RenderLayer(index: 1)
         let still = try pattern(device: context.device, variant: 0, scale: scale)
@@ -191,14 +187,7 @@ struct GoldenTests {
             }
         }
         compositor.setLayers([background, layer])
-        var outputTexture: MTLTexture?
-        if c.output {
-            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.outputFormat, width: width, height: height, mipmapped: false)
-            descriptor.usage = [.renderTarget, .shaderRead]
-            descriptor.storageMode = .shared
-            outputTexture = context.device.makeTexture(descriptor: descriptor)
-            compositor.offscreenOutput = outputTexture
-        }
+        let outputTexture = c.output ? compositor.attachOffscreenOutput((width, height)) : nil
         parameters.write { slot in
             slot.sequence = 1
             slot.master = c.master
@@ -227,8 +216,7 @@ struct GoldenTests {
     static func slot(_ p: LayerParameters?) -> UInt32 { p?.mediaKey.packed ?? 0 }
 
     @Test func goldenImages() throws {
-        guard let device = MTLCreateSystemDefaultDevice() else { return }
-        _ = device
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
         let context = try MetalContext()
         var failures: [String] = []
         for c in Self.cases {
@@ -237,7 +225,7 @@ struct GoldenTests {
             let file = Self.directory.appending(path: "\(c.name).png")
             if Self.record {
                 try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-                try Self.writePNG(rgba, width: w, height: h, to: file)
+                try writePNG(cgImage(rgba: rgba, width: w, height: h, alpha: .noneSkipLast), to: file)
                 continue
             }
             guard let reference = Self.readPNG(file) else {
@@ -289,19 +277,6 @@ struct GoldenTests {
             return "\(name): mean \(String(format: "%.2f", mean)), max \(maxDiff), \(over4) samples > 4"
         }
         return nil
-    }
-
-    static func writePNG(_ rgba: [UInt8], width: Int, height: Int, to url: URL) throws {
-        let data = rgba.withUnsafeBufferPointer { Data(buffer: $0) }
-        guard let provider = CGDataProvider(data: data as CFData),
-            let image = CGImage(
-                width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
-                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
-                provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent),
-            let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)
-        else { throw RenderError.pipeline("png") }
-        CGImageDestinationAddImage(destination, image, nil)
-        guard CGImageDestinationFinalize(destination) else { throw RenderError.pipeline("png write") }
     }
 
     static func readPNG(_ url: URL) -> [UInt8]? {

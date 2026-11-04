@@ -12,6 +12,7 @@ import Testing
 @testable import FanousEngine
 
 /// The switcher's ordering and bookkeeping against a fake CoreGraphics; no display is ever switched.
+@Suite(.cleansTempFiles)
 struct DisplayModeSwitcherTests {
     typealias Saved = DisplayModeLedger.Saved
     static func mode(_ id: Int32, _ hz: Double) -> Saved {
@@ -59,9 +60,8 @@ struct DisplayModeSwitcherTests {
 
     static func make() -> (DisplayModeSwitcher, FakeBackend, URL) {
         let backend = FakeBackend()
-        let url = FileManager.default.temporaryDirectory.appending(
-            path: "fanous-switcher-\(UUID().uuidString)/display-modes.json")
-        return (DisplayModeSwitcher(logger: Logger(label: "test"), backend: backend, ledgerURL: url), backend, url)
+        let url = tempFile("fanous-switcher").appending(path: "display-modes.json")
+        return (DisplayModeSwitcher(logger: testLogger, backend: backend, ledgerURL: url), backend, url)
     }
 
     @Test func leavingSupersedesAPendingApplyAndUndoesTheOneInFlight() {
@@ -118,14 +118,13 @@ struct DisplayModeSwitcherTests {
     }
 
     @Test func aLedgerFromACrashedRunIsRestoredOnStart() throws {
-        let url = FileManager.default.temporaryDirectory.appending(
-            path: "fanous-switcher-\(UUID().uuidString)/display-modes.json")
+        let url = tempFile("fanous-switcher").appending(path: "display-modes.json")
         var ledger = DisplayModeLedger()
         ledger.record("A", Self.m120)
         try ledger.save(to: url)
         let backend = FakeBackend()
         backend.state.withLock { $0.current = Self.m60 }  // the show mode the crash left behind
-        let switcher = DisplayModeSwitcher(logger: Logger(label: "test"), backend: backend, ledgerURL: url)
+        let switcher = DisplayModeSwitcher(logger: testLogger, backend: backend, ledgerURL: url)
         switcher.restore(connected: [])  // display not there yet: entry kept
         switcher.flush()
         #expect(FileManager.default.fileExists(atPath: url.path))
@@ -138,14 +137,13 @@ struct DisplayModeSwitcherTests {
     /// Show mode resumed after a crash: the engine applies (not restores), the display is already in its show mode,
     /// so nothing is switched and the ledger stays for the restore when show mode is left.
     @Test func resumedShowModeKeepsTheLedgerAndSwitchesNothing() throws {
-        let url = FileManager.default.temporaryDirectory.appending(
-            path: "fanous-switcher-\(UUID().uuidString)/display-modes.json")
+        let url = tempFile("fanous-switcher").appending(path: "display-modes.json")
         var ledger = DisplayModeLedger()
         ledger.record("A", Self.m120)
         try ledger.save(to: url)
         let backend = FakeBackend()
         backend.state.withLock { $0.current = Self.m60 }
-        let switcher = DisplayModeSwitcher(logger: Logger(label: "test"), backend: backend, ledgerURL: url)
+        let switcher = DisplayModeSwitcher(logger: testLogger, backend: backend, ledgerURL: url)
         for _ in 0..<2 {  // first sync, then a rebind's sync
             switcher.apply([(Self.display, Self.m60.descriptor.config)], connected: [Self.display])
         }

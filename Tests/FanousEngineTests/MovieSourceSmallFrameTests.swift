@@ -9,6 +9,7 @@ import Testing
 
 @testable import FanousEngine
 
+@Suite(.cleansTempFiles)
 struct MovieSourceSmallFrameTests {
     /// B5: a 64×48 ProRes opens and decodes. The hardware decoder refuses that size at session creation (−12910 on an M1 Pro;
     /// 128×96, 160×64, 256×64 and 320×16 too, while 144×96 and 320×48 pass, so there is no size rule), the software decoder
@@ -16,7 +17,6 @@ struct MovieSourceSmallFrameTests {
     @Test func tinyProResOpensAndDecodes() async throws {
         guard let device = MTLCreateSystemDefaultDevice() else { return }
         let url = try tempDir("fanous-tiny").appending(path: "tiny.mov")
-        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         try await offPool {
             let writer = try MovieWriter(url: url, width: 64, height: 48, fps: 25, codec: .proRes422)
             let buffer = try writer.makePixelBuffer()

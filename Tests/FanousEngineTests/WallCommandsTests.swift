@@ -11,6 +11,7 @@ import Testing
 @testable import FanousEngine
 
 /// The `wall.*` commands and what `output.set` / `output.remove` do to a wall's outputs (DESIGN.md §9.9).
+@Suite(.cleansTempFiles)
 struct WallCommandsTests {
     final class Machine: Sendable {
         let showMode = Mutex(false)
@@ -20,21 +21,16 @@ struct WallCommandsTests {
     /// A store with `outputs` outputs of 1920 × 1080 (a region each).
     static func makeStore(outputs: Int) throws -> (StateStore, Machine) {
         let machine = Machine()
-        let store = Self.store(ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx), machine: machine)
-        for id in 1...outputs {
-            _ = try store.execute("output.add", role: .programmer).get()
-            _ = try store.execute("output.set", args: ["id": .number(Double(id)), "path": "/region", "value": ["x": 0, "y": 0, "w": 1920, "h": 1080]], role: .programmer).get()
-        }
+        let store = Self.store(testProject(layers: 2, outputs: 1), machine: machine)
+        try addOutputs(store, outputs)
         return (store, machine)
     }
 
     static func store(_ project: JSONValue, machine: Machine) -> StateStore {
-        let logger = Logger(label: "test")
-        let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: logger)
-        let store = StateStore(project: project, logger: logger)
-        ProjectDocument.registerCommands(
-            on: store, auth: auth, showModeOn: { machine.showMode.withLock { $0 } }, displayModes: { machine.displays.withLock { $0 } })
-        return store
+        testStore(project: project) { store, auth in
+            ProjectDocument.registerCommands(
+                on: store, auth: auth, showModeOn: { machine.showMode.withLock { $0 } }, displayModes: { machine.displays.withLock { $0 } })
+        }.store
     }
 
     static func output(_ store: StateStore, _ id: Int) -> OutputConfig { ProjectDocument.outputs(from: store.project).first { $0.id == id }! }
@@ -179,8 +175,7 @@ struct WallCommandsTests {
 
         var old = store.project
         try old.remove(at: "/walls")
-        let file = FileManager.default.temporaryDirectory.appending(path: "walls-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: file) }
+        let file = tempFile("walls", ext: "json")
         try ProjectDocument.save(old, to: file)
         let loaded = try #require(ProjectDocument.load(from: file))
         #expect(loaded["walls"] == [] && ProjectDocument.walls(from: loaded).isEmpty)

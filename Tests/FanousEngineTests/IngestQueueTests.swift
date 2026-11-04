@@ -16,33 +16,13 @@ import VideoToolbox
 
 /// Serialized: `IngestQueue.stop()` parks the test's cooperative-pool thread until the worker exits, and a worker that is
 /// just loading an asset needs a pool thread itself; ten tests parked there at once would starve it.
-@Suite(.serialized) struct IngestQueueTests {
+@Suite(.serialized, .cleansTempFiles) struct IngestQueueTests {
     // MARK: Helpers
 
     /// 320×176 ProRes 422 HQ with the `TestTone` track, 10 fps (20 frames: HAP Q encoding is slow in a debug build).
     static let sourceFPS: Int32 = 10
     static func writeSource(to url: URL, seconds: Int = 2, audio: Bool = true) async throws {
-        try await offPool { try writeSourceBlocking(to: url, seconds: seconds, audio: audio) }
-    }
-
-    private static func writeSourceBlocking(to url: URL, seconds: Int, audio: Bool) throws {
-        let writer = try MovieWriter(url: url, width: 320, height: 176, fps: sourceFPS, codec: .proRes422HQ, audio: audio)
-        for frame in 0..<(seconds * Int(sourceFPS)) {
-            try writer.append(try Self.patternBuffer(pool: writer.pixelBufferPool, frame: frame))
-        }
-        try writer.finish()
-    }
-
-    static func patternBuffer(pool: CVPixelBufferPool?, frame: Int) throws -> CVPixelBuffer {
-        var buffer: CVPixelBuffer?
-        if let pool { CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer) } else { CVPixelBufferCreate(nil, 320, 176, kCVPixelFormatType_32BGRA, nil, &buffer) }
-        guard let buffer else { throw MovieWriter.WriterError.failed("pixel buffer") }
-        CVPixelBufferLockBaseAddress(buffer, [])
-        PatternFrames.fill(
-            bgra: CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self), width: 320, height: 176,
-            bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), frame: frame)
-        CVPixelBufferUnlockBaseAddress(buffer, [])
-        return buffer
+        try await writePatternMovie(to: url, size: (320, 176), fps: sourceFPS, frames: seconds * Int(sourceFPS), audio: audio)
     }
 
     /// A 1 s, 25 fps H.264 `.mp4` (320×176) written with AVAssetWriter, with a 1 s 440 Hz mono AAC track at 44.1 kHz
@@ -142,7 +122,10 @@ import VideoToolbox
         let times = presentationTimes ?? (0..<25).map { CMTime(value: Int64($0), timescale: 25) }
         for (frame, time) in times.enumerated() {
             while !input.isReadyForMoreMediaData { usleep(500) }
-            let buffer = try patternBuffer(pool: adaptor.pixelBufferPool, frame: frame)
+            var pooled: CVPixelBuffer?
+            if let pool = adaptor.pixelBufferPool { CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pooled) }
+            guard let pooled else { throw MovieWriter.WriterError.failed("pixel buffer") }
+            let buffer = fillPattern(pooled, frame: frame)
             if alpha {  // the right half transparent (premultiplied: all zero)
                 CVPixelBufferLockBaseAddress(buffer, [])
                 let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
@@ -155,14 +138,11 @@ import VideoToolbox
             }
         }
         input.markAsFinished()
-        let done = DispatchSemaphore(value: 0)
-        writer.finishWriting { done.signal() }
-        done.wait()
-        guard writer.status == .completed else { throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "finish") }
+        try writer.finishBlocking()
     }
 
     /// A 320×176 PNG: the left half opaque, the right half transparent; the green channel encodes `index`.
-    static func writePNG(to url: URL, index: Int) throws {
+    static func writeFramePNG(to url: URL, index: Int) throws {
         let (w, h) = (320, 176)
         var pixels = [UInt8](repeating: 0, count: w * h * 4)
         for y in 0..<h {
@@ -175,14 +155,7 @@ import VideoToolbox
                 pixels[p + 3] = opaque ? 255 : 0
             }
         }
-        let image = pixels.withUnsafeMutableBytes { raw in
-            CGContext(
-                data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!.makeImage()!
-        }
-        let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)!
-        CGImageDestinationAddImage(destination, image, nil)
-        guard CGImageDestinationFinalize(destination) else { throw MovieWriter.WriterError.failed("png") }
+        try writePNG(cgImage(rgba: pixels, width: w, height: h, alpha: .premultipliedLast), to: url)
     }
 
     /// Polls until the job is finished (or `timeout`, an issue that says how long it waited); returns its last state.
@@ -247,7 +220,6 @@ import VideoToolbox
 
     @Test func transcodesToHAPQAndProResWithAudio() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "source.mov")
         try await Self.writeSource(to: source)
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
@@ -273,10 +245,9 @@ import VideoToolbox
 
     @Test func sequenceJobAndAlphaPromotion() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let frames = directory.appending(path: "frames")
         try FileManager.default.createDirectory(at: frames, withIntermediateDirectories: true)
-        for i in 0..<10 { try Self.writePNG(to: frames.appending(path: String(format: "frame_%03d.png", i)), index: i) }
+        for i in 0..<10 { try Self.writeFramePNG(to: frames.appending(path: String(format: "frame_%03d.png", i)), index: i) }
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
         queue.start()
         defer { queue.stop() }
@@ -300,11 +271,10 @@ import VideoToolbox
 
     @Test func stillIsCopiedAndOriginalMoved() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let incoming = directory.appending(path: "incoming")
         try FileManager.default.createDirectory(at: incoming, withIntermediateDirectories: true)
         let png = incoming.appending(path: "title.png")
-        try Self.writePNG(to: png, index: 3)
+        try Self.writeFramePNG(to: png, index: 3)
         let bytes = try Data(contentsOf: png)
         let library = directory.appending(path: "library/001_Opening")  // does not exist yet
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
@@ -327,7 +297,6 @@ import VideoToolbox
 
     @Test func existingDestinationFailsAndSourceCanBeDeleted() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let first = directory.appending(path: "first.png"), second = directory.appending(path: "second.png")
         try Data("one".utf8).write(to: first)
         try Data("two".utf8).write(to: second)
@@ -358,7 +327,6 @@ import VideoToolbox
 
     @Test func queueSurvivesRestart() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appending(path: "state/queue.json")  // parent is created on the first save
         let first = IngestQueue(persistenceURL: file)
         first.paused = true
@@ -392,7 +360,6 @@ import VideoToolbox
     /// Done and cancelled jobs older than a minute leave the list (and the file at the next change); a failed one stays.
     @Test func finishedJobsAreForgottenAfterAMinuteFailedOnesStay() throws {
         let directory = try tempDir("fanous-ingest-forget")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "in.mov"), destination = directory.appending(path: "out.mov")
         func job(_ state: IngestJob.State, finished seconds: TimeInterval) -> IngestJob {
             var job = IngestJob(source: source, destination: destination, kind: .transcode(codec: .proRes422))
@@ -419,7 +386,6 @@ import VideoToolbox
 
     @Test func pauseHoldsAndCancelRemovesPartialOutput() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "source.mov")
         try await Self.writeSource(to: source, seconds: 5)  // 50 frames
         let library = directory.appending(path: "library")
@@ -433,8 +399,7 @@ import VideoToolbox
             if case .running(let value) = queue.jobs.first(where: { $0.id == job.id })?.state { return value }
             return nil
         }
-        let deadline = Date().addingTimeInterval(5)
-        while (progress() ?? 0) < 0.1, Date() < deadline { try await Task.sleep(for: .milliseconds(5)) }
+        await waitUntil { (progress() ?? 0) >= 0.1 }
         #expect((progress() ?? 0) >= 0.1)
 
         // Timings are loose on purpose: a .utility thread's 20 ms sleeps are coalesced to 150 ms and more on a busy machine.
@@ -451,8 +416,7 @@ import VideoToolbox
         #expect(progress() == held)
         #expect(held.map { $0 < 1 } == true)
         queue.paused = false
-        let resumeDeadline = Date().addingTimeInterval(5)
-        while (progress() ?? 1) <= (held ?? 1), Date() < resumeDeadline { try await Task.sleep(for: .milliseconds(20)) }
+        await waitUntil { (progress() ?? 1) > (held ?? 1) }
         #expect((progress() ?? 1) > (held ?? 1))
 
         queue.cancel(id: job.id)
@@ -473,7 +437,6 @@ import VideoToolbox
 
     @Test func h264SourceBecomesPlayableHAP() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "phone.mp4")
         try await Self.writeH264(to: source)
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
@@ -508,7 +471,6 @@ import VideoToolbox
     /// stereo 16-bit any more (the reader converts at playback).
     @Test func lpcmSourceKeepsItsAudioFormat() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "master.mov")
         try await Self.writeH264(to: source, floatAudio: true)
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
@@ -534,7 +496,6 @@ import VideoToolbox
     /// the channel count, which would kill the engine. Each case builds the output here, so a regression crashes this test.
     @Test func lpcmFormatStaysWithinWhatTheReaderAccepts() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "source.mov")
         try await Self.writeSource(to: source, seconds: 1)
         let track = try #require(try await AVURLAsset(url: source).loadTracks(withMediaType: .audio).first)
@@ -580,7 +541,6 @@ import VideoToolbox
     @Test(arguments: [kAudioChannelLayoutTag_MPEG_5_1_A, kAudioChannelLayoutTag_DiscreteInOrder | 6])
     func sixChannelSourceKeepsItsChannelsAndFoldsAtPlayback(tag: AudioChannelLayoutTag) async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "six.mov")
         try await Self.writeH264(to: source, sixChannels: tag)
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
@@ -610,7 +570,6 @@ import VideoToolbox
     /// `PixelAspectRatio` extension; `naturalSize` then reports the display size), and the player reads it.
     @Test func anamorphicSourceKeepsItsPixelAspect() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "anamorphic.mp4")
         try await Self.writeH264(to: source, pixelAspect: (4, 3))
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
@@ -642,7 +601,7 @@ import VideoToolbox
         let squareJob = queue.enqueue(IngestJob(source: square, destination: directory.appending(path: "library/003_square.mov"), kind: .transcode(codec: .proRes422)))
         #expect(await Self.wait(for: squareJob.id, in: queue) == .done)
         let layer = RenderLayer(index: 0)
-        let loader = MediaLoader(layers: [layer], media: [], device: device, ringCapacity: 4, logger: Logger(label: "test"))
+        let loader = MediaLoader(layers: [layer], media: [], device: device, ringCapacity: 4, logger: testLogger)
         let paths = [1: proRes.destination, 3: squareJob.destination]
         loader.resolver = { key in paths[key.file] }
         loader.start()
@@ -660,7 +619,7 @@ import VideoToolbox
 
         // The Media screen's thumbnail fills its 427:176 frame edge to edge (the still path carries the ratio too; it
         // used to draw the coded 320:176 picture in it, with black bars at both sides).
-        let thumbnails = Thumbnailer(context: try MetalContext(), directory: directory.appending(path: "thumbs"), logger: Logger(label: "test"))
+        let thumbnails = Thumbnailer(context: try MetalContext(), directory: directory.appending(path: "thumbs"), logger: testLogger)
         var metadata = MediaMetadata()
         (metadata.width, metadata.height) = (427, 176)
         let name = try #require(thumbnails.make(for: proRes.destination, metadata: metadata, kind: .movie))
@@ -677,7 +636,6 @@ import VideoToolbox
     /// 30 fps, a 1.33 s file that ran ahead of its sound.
     @Test func variableFrameRateSourceIsHeldAndDroppedToAConstantRate() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "screen.mp4")
         let times = (0..<10).map { CMTime(value: Int64($0) * 100, timescale: 1000) } + (0..<30).map { CMTime(value: 30 + Int64($0), timescale: 30) }
         try await Self.writeH264(to: source, presentationTimes: times)
@@ -704,7 +662,6 @@ import VideoToolbox
     @Test(arguments: [(30.0, 150, CMTime(value: 1, timescale: 30)), (30000.0 / 1001, 1800, CMTime(value: 1001, timescale: 30000))])
     func millisecondTimestampsStayFrameForFrame(rate: Double, frames: Int, frameDuration: CMTime) async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "obs.mp4")
         let times = (0..<frames).map { CMTime(value: Int64((Double($0) * 1000 / rate).rounded()), timescale: 1000) }
         try await Self.writeH264(to: source, presentationTimes: times, timescale: 1000)
@@ -723,7 +680,6 @@ import VideoToolbox
 
     @Test func rotatedSourceIsBakedUpright() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "rotated.mp4")
         try await Self.writeH264(to: source, rotated: true)
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
@@ -767,7 +723,6 @@ import VideoToolbox
     /// codes off on average and up to 5 (measured; VideoToolbox dithers the 8-bit steps).
     @Test func tenBitSourceKeepsItsPrecisionInProRes() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "ramp10.mov")
         try await offPool { try Self.writeTenBitRamp(to: source) }
         let before = try await Self.rampError(source)
@@ -815,24 +770,13 @@ import VideoToolbox
             }
         }
         input.markAsFinished()
-        let done = DispatchSemaphore(value: 0)
-        writer.finishWriting { done.signal() }
-        done.wait()
-        guard writer.status == .completed else { throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "finish") }
+        try writer.finishBlocking()
     }
 
     /// How far the middle row of `url`'s first frame is from `writeTenBitRamp`'s ramp, in 10-bit luma codes, read as
     /// 16-bit 4:2:2 (`v216`: Cb Y0 Cr Y1).
     static func rampError(_ url: URL) async throws -> (mean: Double, max: Int) {
-        let asset = AVURLAsset(url: url)
-        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
-        let reader = try AVAssetReader(asset: asset)
-        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_422YpCbCr16])
-        reader.add(output)
-        reader.startReading()
-        let sample = try #require(output.copyNextSampleBuffer())
-        reader.cancelReading()
-        let buffer = try #require(CMSampleBufferGetImageBuffer(sample))
+        let buffer = try await firstFrame(of: url, format: kCVPixelFormatType_422YpCbCr16)
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
         let row = CVPixelBufferGetBaseAddress(buffer)!.advanced(by: CVPixelBufferGetHeight(buffer) / 2 * CVPixelBufferGetBytesPerRow(buffer))
@@ -847,7 +791,6 @@ import VideoToolbox
     /// file's transparent lower half (y ≥ 160), and the pixel aspect ratio comes along, swapped.
     @Test func rotatedSourceWithAlphaKeepsItsAlpha() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "rotated-alpha.mov")
         try await Self.writeH264(to: source, rotated: true, pixelAspect: (4, 3), alpha: true)
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
@@ -864,12 +807,7 @@ import VideoToolbox
         let ratio = CMFormatDescriptionGetExtension(description, extensionKey: kCMFormatDescriptionExtension_PixelAspectRatio) as? [String: Int]
         #expect(ratio?[kCMFormatDescriptionKey_PixelAspectRatioHorizontalSpacing as String] == 3 && ratio?[kCMFormatDescriptionKey_PixelAspectRatioVerticalSpacing as String] == 4, "swapped ratio: \(ratio ?? [:])")
         #expect(abs(size.width - 176 * 3 / 4) < 1 && size.height == 320, "\(size)")
-        let reader = try AVAssetReader(asset: asset)
-        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
-        reader.add(output)
-        reader.startReading()
-        let first = try #require(output.copyNextSampleBuffer())
-        let buffer = try #require(CMSampleBufferGetImageBuffer(first))
+        let buffer = try await firstFrame(of: job.destination)
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
         let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
@@ -889,7 +827,6 @@ import VideoToolbox
     ])
     func everyTransformPutsThePixelsWhereTheTagSays(name: String, transform: CGAffineTransform) async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appending(path: "tagged.mp4")
         try await Self.writeH264(to: source, transform: transform)
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
@@ -901,25 +838,13 @@ import VideoToolbox
         let asset = AVURLAsset(url: job.destination)
         let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
         #expect(try await track.load(.preferredTransform).isIdentity, "\(name)")
-        let reader = try AVAssetReader(asset: asset)
-        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
-        reader.add(output)
-        reader.startReading()
-        let first = try #require(output.copyNextSampleBuffer())
-        let buffer = try #require(CMSampleBufferGetImageBuffer(first))
+        let buffer = try await firstFrame(of: job.destination)
         let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
         let swaps = transform.a == 0
         #expect(width == (swaps ? 176 : 320) && height == (swaps ? 320 : 176), "\(name): \(width)x\(height)")
         // The stored (untagged) source frame, through the same H.264 decode: the gradient's codes after that decode are what
         // the output must show at the moved positions (the colour chain shifts them by more than a pixel of gradient).
-        let sourceAsset = AVURLAsset(url: source)
-        let sourceTrack = try #require(try await sourceAsset.loadTracks(withMediaType: .video).first)
-        let sourceReader = try AVAssetReader(asset: sourceAsset)
-        let sourceOutput = AVAssetReaderTrackOutput(track: sourceTrack, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
-        sourceReader.add(sourceOutput)
-        sourceReader.startReading()
-        let sourceFirst = try #require(sourceOutput.copyNextSampleBuffer())
-        let stored = try #require(CMSampleBufferGetImageBuffer(sourceFirst))
+        let stored = try await firstFrame(of: source)
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         CVPixelBufferLockBaseAddress(stored, .readOnly)
         defer {
@@ -944,10 +869,9 @@ import VideoToolbox
 
     @Test func cancelledSequenceLeavesNothing() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let frames = directory.appending(path: "frames")
         try FileManager.default.createDirectory(at: frames, withIntermediateDirectories: true)
-        for i in 0..<10 { try Self.writePNG(to: frames.appending(path: String(format: "frame_%03d.png", i)), index: i) }
+        for i in 0..<10 { try Self.writeFramePNG(to: frames.appending(path: String(format: "frame_%03d.png", i)), index: i) }
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
         queue.shouldYield = { true }
         queue.start()
@@ -966,7 +890,6 @@ import VideoToolbox
 
     @Test func unreadableSourceFailsCleanly() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
         queue.start()
         defer { queue.stop() }
@@ -986,12 +909,11 @@ import VideoToolbox
     /// index is never rescanned here, like in the second before the debounced rescan or with a root missing at start behind a symlink (B140).
     @Test func uploadsIntoAnUnindexedFolderNumberShareOneFolder() throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: Logger(label: "test"))
-        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: Logger(label: "test"))
+        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: testLogger)
+        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: testLogger)
         let still = directory.appending(path: "still.png")
-        try Self.writePNG(to: still, index: 0)
+        try Self.writeFramePNG(to: still, index: 0)
         for name in ["red.png", "blue.png"] {
             #expect(api.enqueue(source: still, folder: 3, file: nil, name: name, codec: nil, fps: nil, keepOriginal: true).status == 202)
         }
@@ -1003,13 +925,12 @@ import VideoToolbox
     /// where a zero timescale trapped the engine, and the persisted job would have trapped it again at every start.
     @Test func sequenceWithAnImpossibleFrameRateIsRefused() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: Logger(label: "test"))
-        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: Logger(label: "test"))
+        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: testLogger)
+        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: testLogger)
         let frames = directory.appending(path: "frames")
         try FileManager.default.createDirectory(at: frames, withIntermediateDirectories: true)
-        try Self.writePNG(to: frames.appending(path: "frame_000.png"), index: 0)
+        try Self.writeFramePNG(to: frames.appending(path: "frame_000.png"), index: 0)
         for fps: Int32 in [0, -25, 241] {
             #expect(api.enqueue(source: frames, folder: 1, file: nil, name: nil, codec: nil, fps: fps, keepOriginal: true).status == 400, "fps \(fps)")
         }
@@ -1019,7 +940,7 @@ import VideoToolbox
         // A job persisted with such a rate before the guard ends as failed once the queue runs it, instead of trapping at every start.
         let old = directory.appending(path: "old-frames")  // its own folder: the accepted job above moves `frames` to _originals
         try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
-        try Self.writePNG(to: old.appending(path: "frame_000.png"), index: 0)
+        try Self.writeFramePNG(to: old.appending(path: "frame_000.png"), index: 0)
         let replayed = queue.enqueue(IngestJob(source: old, destination: directory.appending(path: "library/001_Folder/002_old.mov"), kind: .sequence(fps: 0, codec: .proRes422)))
         queue.start()
         defer { queue.stop() }
@@ -1029,12 +950,11 @@ import VideoToolbox
     /// B51: while a library root change holds enqueues, a new job is refused with 409 and nothing is queued.
     @Test func heldEnqueueIsRefused() throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: Logger(label: "test"))
-        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: Logger(label: "test"))
+        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: testLogger)
+        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: testLogger)
         let still = directory.appending(path: "still.png")
-        try Self.writePNG(to: still, index: 0)
+        try Self.writeFramePNG(to: still, index: 0)
         api.holdEnqueue("the library root is changing")
         api.holdEnqueue("the library root is changing")
         #expect(api.enqueue(source: still, folder: 1, file: nil, name: nil, codec: nil, fps: nil, keepOriginal: true).status == 409)
@@ -1050,12 +970,11 @@ import VideoToolbox
     /// it is written but not yet indexed (the index is never rescanned here, like in the 500 ms before the debounced rescan).
     @Test func quickUploadsIntoOneFolderGetConsecutiveNumbers() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        defer { try? FileManager.default.removeItem(at: directory) }
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: Logger(label: "test"))
-        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: Logger(label: "test"))
+        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: testLogger)
+        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: testLogger)
         let sources = (1...3).map { directory.appending(path: "red-\($0).png") }
-        for (index, source) in sources.enumerated() { try Self.writePNG(to: source, index: index) }
+        for (index, source) in sources.enumerated() { try Self.writeFramePNG(to: source, index: index) }
         func upload(_ source: URL, file: Int? = nil) -> String? {
             #expect(api.enqueue(source: source, folder: 3, file: file, name: "red.png", codec: nil, fps: nil, keepOriginal: false).status == 202)
             return queue.jobs.last?.destination.lastPathComponent

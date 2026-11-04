@@ -12,6 +12,7 @@ import Testing
 
 /// `output.preset.*`, the Compare lease `output.show` (DESIGN.md §9.10 item 3) and the test pattern lease `output.pattern`
 /// (§9.9, B102).
+@Suite(.cleansTempFiles)
 struct PresetCommandsTests {
     final class Machine: Sendable {
         let showMode = Mutex(false)
@@ -22,16 +23,13 @@ struct PresetCommandsTests {
     /// A store with `outputs` outputs of 1920 × 1080 (a region each); `output.show` calls land in `Machine.shown`,
     /// `output.pattern` calls in `Machine.patterns` at time 100.
     static func makeStore(outputs: Int) throws -> (StateStore, Machine) {
-        let logger = Logger(label: "test")
-        let store = StateStore(project: ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx), logger: logger)
         let machine = Machine()
-        ProjectDocument.registerCommands(
-            on: store, auth: RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: logger), showModeOn: { machine.showMode.withLock { $0 } },
-            showPreset: { ids, preset in machine.shown.withLock { $0.append((ids, preset)) } }, showPatterns: { machine.patterns.lease($0, at: 100) })
-        for id in 1...outputs {
-            _ = try store.execute("output.add", role: .programmer).get()
-            _ = try store.execute("output.set", args: ["id": .number(Double(id)), "path": "/region", "value": ["x": 0, "y": 0, "w": 1920, "h": 1080]], role: .programmer).get()
+        let (store, _) = testStore { store, auth in
+            ProjectDocument.registerCommands(
+                on: store, auth: auth, showModeOn: { machine.showMode.withLock { $0 } },
+                showPreset: { ids, preset in machine.shown.withLock { $0.append((ids, preset)) } }, showPatterns: { machine.patterns.lease($0, at: 100) })
         }
+        try addOutputs(store, outputs)
         return (store, machine)
     }
 
@@ -175,10 +173,9 @@ struct PresetCommandsTests {
         var output = OutputConfig(id: 1)
         let preset = { (number: Int, name: String) in MappingPreset(number: number, name: name, warp: output.warp, slices: output.slices) }
         output.presets = [preset(3, "first"), preset(0, "zero"), preset(3, "second"), preset(300, "high"), preset(7, "seven")]
-        var project = ProjectDocument.initial(patch: .standard(layers: 2, outputs: 1), layerCount: 2, libraryRoot: "/tmp/lib", policy: .dmx)
+        var project = testProject(layers: 2, outputs: 1)
         try project.set(try JSONValue(encoding: [output]), at: "/outputs")
-        let url = FileManager.default.temporaryDirectory.appending(path: "fanous-presets-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = tempFile("fanous-presets", ext: "json")
         try ProjectDocument.save(project, to: url)
         let loaded = try #require(ProjectDocument.load(from: url))
         let presets = try #require(ProjectDocument.outputs(from: loaded).first).presets
