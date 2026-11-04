@@ -234,7 +234,7 @@ struct UniverseSettingsEngineTests {
         try #require(withSockaddr { bind(holder, $0, $1) } == 0)
         let port = try #require(UDPSend.localPort(holder))
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
-        #expect(throws: POSIXError.self) { try SACNReceiver(store: store, logger: testLogger, port: port).start(groups: [:]) }
+        #expect(throws: POSIXError(.EADDRINUSE)) { try SACNReceiver(store: store, logger: testLogger, port: port).start(groups: [:]) }
 
         var context = ReadinessContext()
         context.sacnError = "Address already in use"
