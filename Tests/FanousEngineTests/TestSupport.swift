@@ -249,11 +249,21 @@ final class UDPCatcher {
     }
 }
 
+extension Trait where Self == ConditionTrait {
+    /// Runs where `MallocCounter` works, and everywhere under FANOUS_REQUIRE_MALLOC_COUNTER (scripts/check-mallocs.sh), where
+    /// `requireMallocCounter()` then fails a test that would count nothing.
+    static var mallocCounter: Self { .enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS") }
+}
+
+func requireMallocCounter(sourceLocation: SourceLocation = #_sourceLocation) throws {
+    try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS", sourceLocation: sourceLocation)
+}
+
 /// The counter sees allocations of the measured thread, malloc and Swift objects alike, and not those of another thread
 /// in the same window. Loops are `while` loops: a `for` over a range allocates in a debug build.
-@Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+@Test(.mallocCounter)
 func mallocCounterCountsOnlyTheMeasuredThread() async throws {
-    try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+    try requireMallocCounter()
     final class Other: Sendable { let state = Mutex((stop: false, allocations: 0)) }
     final class Sink { var object: Sink? }
     let other = Other()

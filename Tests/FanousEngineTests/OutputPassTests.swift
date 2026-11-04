@@ -1178,9 +1178,9 @@ struct OutputPassTests {
 
     /// A secondary display's copy of the output values allocates nothing on its thread (the driver's `PresentParameters`
     /// keep their size). Release only, like the other `mallocCounter` checks (`scripts/check-mallocs.sh`).
-    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    @Test(.mallocCounter)
     func mallocCounterSecondaryCopyAllocatesNothing() throws {
-        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        try requireMallocCounter()
         let rig = try Rig(nil, value: 200)
         rig.preset = 3
         rig.morph = PresetMorph(from: 2, start: 10, fade: 1)

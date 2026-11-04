@@ -103,9 +103,9 @@ struct MasterIntensityTests {
     /// allocated on every assignment even as an `NSString` (1 each, measured). Assigned here, not through the draw
     /// functions.
     /// Asserted in an optimised build (`scripts/check-mallocs.sh`); a debug build prints the counts.
-    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    @Test(.mallocCounter)
     func mallocCounterEncoderLabelsAllocateNothing() throws {
-        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        try requireMallocCounter()
         let compositor = try Rig().compositor
         let context = compositor.context
         let pass = MTLRenderPassDescriptor()
@@ -149,9 +149,9 @@ struct MasterIntensityTests {
     /// Allocations on this (ticking) thread per tick with two layers, at 100 % and at 50 % (printed); in an optimised
     /// build the Master adds none (it is a uniform of the layer draw). Release only: `swift test -c release
     /// -Xswiftc -enable-testing --filter printDimmedTickMallocs` (through `scripts/test.sh`).
-    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    @Test(.mallocCounter)
     func printDimmedTickMallocs() throws {
-        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        try requireMallocCounter()
         let rig = try Rig()
         var counts: [Int] = []
         for master: Float in [1, 0.5] {

@@ -195,9 +195,9 @@ struct ScreenInputTests {
     }
 
     /// The tick's read of a display frame allocates nothing (as the capture device's).
-    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    @Test(.mallocCounter)
     func mallocCounterScreenFrameReadAllocatesNothing() throws {
-        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        try requireMallocCounter()
         let context = try MetalContext()
         let input = Self.input(context.device)
         let buffers = try (0..<4).map { i in try CaptureInputTests.buffer(kCVPixelFormatType_32BGRA, 16, 8) { _ in Array(repeating: UInt8(i * 60), count: 64) } }

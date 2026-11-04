@@ -99,9 +99,9 @@ import Testing
     /// allocates exactly 4 on the calling thread in an optimised build: the encoder (2) and the completion handler block
     /// (2). The render pass descriptor is made once (`VENDORED.md` local change 6); made per frame it added 4 (8 in all).
     /// A ratchet: fewer (or a hook that sees nothing) fails too, so the number here is updated with the change.
-    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    @Test(.mallocCounter)
     func mallocCounterSyphonPublishReusesItsRenderPass() throws {
-        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        try requireMallocCounter()
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else { return }  // no GPU: skip
         let output = try SyphonOutput(name: "FanousTest-\(UUID().uuidString)", device: device)
         defer { output.stop() }

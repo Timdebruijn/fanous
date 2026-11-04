@@ -497,9 +497,9 @@ final class Box { var value = 0 }
     /// Every output has a Keystone resolver; one with no DMX and no internal value is skipped, so `publish` on the DMX
     /// queue with eight outputs and no Keystone patched allocates nothing more than with no Keystone resolver at all.
     /// Asserted in an optimised build (`scripts/check-mallocs.sh`); a debug build prints the counts.
-    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    @Test(.mallocCounter)
     func mallocCounterKeystoneRecomputeSkipsUnusedKeystones() throws {
-        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        try requireMallocCounter()
         let fixtures = ProjectDocument.fixtures(layerCount: 8, outputs: Array(1...8))
         var counts: [Int] = []
         for set in [fixtures, fixtures.filter { if case .keystone = $0 { false } else { true } }] {

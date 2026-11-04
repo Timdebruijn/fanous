@@ -225,9 +225,9 @@ struct CaptureInputTests {
     }
 
     /// The tick's read of a capture frame (`LayerPlayback.frame` → `latestFrame`: lock, ring move) allocates nothing.
-    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    @Test(.mallocCounter)
     func mallocCounterCaptureFrameReadAllocatesNothing() throws {
-        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        try requireMallocCounter()
         let context = try MetalContext()
         let input = Self.input(context.device)
         let buffers = try ["2vuy", "yuvs", "420v", "BGRA"].map { try Self.runsBuffer($0) }
@@ -267,9 +267,9 @@ struct CaptureInputTests {
     /// The reviewer's variant of the read test: 1080p `2vuy` buffers from a `CVPixelBufferPool`, delivered by another
     /// thread, nothing kept by the test. Each of 100 takes evicts the oldest taken buffer, whose last release (back to
     /// the pool) happens on the reading thread: still no allocation there.
-    @Test(.enabled(if: MallocCounter.availableOrRequired, "malloc_logger not exported by libsystem_malloc on this macOS"))
+    @Test(.mallocCounter)
     func mallocCounterCaptureTakeEvictingPoolBuffersAllocatesNothing() throws {
-        try #require(MallocCounter.available, "malloc_logger not exported by libsystem_malloc on this macOS")
+        try requireMallocCounter()
         let context = try MetalContext()
         let input = Self.input(context.device)
         let playback = LayerPlayback(key: MediaKey(folder: 0, file: 1), live: input)
