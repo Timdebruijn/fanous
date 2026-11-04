@@ -14,7 +14,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   before the next string argument, and an HTTP request with a negative Content-Length (`-1` reached the body slice).
   Both now reject the message (`truncated`, 400). A fuzz test cuts every sample of every Core parser (Art-Net, sACN,
   OSC, CITP, WebSocket, HTTP, sync, MIDI; real captures and encoded messages) at every length and mutates every byte;
-  it runs on CI and traps on the old OSC code (PR #NNN).
+  it runs on CI and traps on the old OSC code (PR #277).
 - Tests: the engine test suite drops its repeats (about 290 lines): a `.cleansTempFiles` trait removes temporary files
   after each test, polls go through `waitUntil`, and one shared helper each for the compositor rig, test stores and
   projects, PNGs, movie writing and reading, sockets, the malloc gate and the logger; the same 744 tests assert the
