@@ -27,6 +27,24 @@ import Testing
         #expect(try OSCPacket.parse(unpadded + [0, 0, 0] + [0, 0, 0, 0]) == .message(OSCMessage("/a", [.blob([0xAA]), .string("")])))
     }
 
+    @Test func bundlesNestToALimit() throws {
+        // each level recurses once; 2 500 levels in one datagram overflowed a dispatch worker's 512 KB stack
+        func nested(_ levels: Int) -> OSCPacket {
+            (0..<levels).reduce(OSCPacket.message(OSCMessage("/a"))) { inner, _ in .bundle(OSCBundle(elements: [inner])) }
+        }
+        let deepest = nested(OSCPacket.maxBundleDepth)
+        #expect(try OSCPacket.parse(deepest.encoded()) == deepest)
+        #expect(throws: OSCParseError.badBundle) { try OSCPacket.parse(nested(OSCPacket.maxBundleDepth + 1).encoded()) }
+        // 10 000 levels written out flat (building the packet value would recurse as deep as the old parser did)
+        let message = OSCMessage("/a").encoded()
+        var deep: [UInt8] = []
+        for level in stride(from: 10_000, to: 0, by: -1) {
+            deep += Array("#bundle\0".utf8) + UInt64(1).bigEndianBytes + UInt32(message.count + 20 * (level - 1)).bigEndianBytes
+        }
+        deep += message
+        #expect(throws: OSCParseError.badBundle) { try OSCPacket.parse(deep) }
+    }
+
     @Test func bundlesNest() throws {
         let inner = OSCBundle(timetag: 42, elements: [.message(OSCMessage("/x", [.int32(1)]))])
         let bundle = OSCBundle(elements: [.message(OSCMessage("/y")), .bundle(inner)])

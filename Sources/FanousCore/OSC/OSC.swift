@@ -120,14 +120,18 @@ public indirect enum OSCPacket: Equatable, Sendable {
         }
     }
 
+    /// Bundles nest at most this deep: each level recurses, and 2 500 levels in one datagram overflow a worker's stack.
+    public static let maxBundleDepth = 8
+
     public static func parse(_ bytes: [UInt8]) throws -> OSCPacket {
         var cursor = 0
-        return try parse(bytes, &cursor, end: bytes.count)
+        return try parse(bytes, &cursor, end: bytes.count, depth: 0)
     }
 
-    static func parse(_ b: [UInt8], _ cursor: inout Int, end: Int) throws -> OSCPacket {
+    static func parse(_ b: [UInt8], _ cursor: inout Int, end: Int, depth: Int) throws -> OSCPacket {
         guard cursor < end else { throw OSCParseError.truncated }
         if b[cursor] == UInt8(ascii: "#") {
+            guard depth < maxBundleDepth else { throw OSCParseError.badBundle }
             let tag = try readString(b, &cursor, end: end)
             guard tag == "#bundle" else { throw OSCParseError.badBundle }
             let timetag = try read64(b, &cursor, end: end)
@@ -136,7 +140,7 @@ public indirect enum OSCPacket: Equatable, Sendable {
                 let size = Int(try read32(b, &cursor, end: end))
                 guard size >= 0, cursor + size <= end else { throw OSCParseError.truncated }
                 var inner = cursor
-                elements.append(try parse(b, &inner, end: cursor + size))
+                elements.append(try parse(b, &inner, end: cursor + size, depth: depth + 1))
                 cursor += size
             }
             return .bundle(OSCBundle(timetag: timetag, elements: elements))

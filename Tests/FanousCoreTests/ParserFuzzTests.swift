@@ -7,10 +7,11 @@ import Testing
 
 @testable import FanousCore
 
-/// Every parser on the network boundary survives hostile input (DESIGN.md §18): each sample, real captures and
-/// encoded messages, is cut at every length and has every byte replaced by five values. The parser may throw or
-/// return nothing; it never traps. Two traps found by reading in the 2026-11-04 test review would have failed here:
-/// an OSC blob without padding before a string, and a negative Content-Length.
+/// Every network parser in Core survives hostile input (DESIGN.md §18): each sample, real captures and encoded
+/// messages, is cut at every length and has every byte replaced by five values. The parser may throw or return
+/// nothing; it never traps. Of the traps the 2026-11-04 test review found, the OSC blob without padding before a
+/// string fails here on the old code; the negative Content-Length trapped the server's body slice, not the parser,
+/// and the nested-bundle stack overflow needs thousands of levels, so those two are pinned by unit tests instead.
 @Suite struct ParserFuzzTests {
     enum Parser: CaseIterable {
         case artNet, sacn, osc, citp, webSocket, http, sync, midi
@@ -31,8 +32,13 @@ import Testing
             case .citp:
                 [
                     CITPTests.header(size: 33, "MSEX") + [0x01, 0x02] + Array("CInf".utf8) + [0x03, 0x00, 0x01, 0x01, 0x01, 0x02, 0x01],
-                    CITPTests.pinf("PNam", CITPTests.ucs2("Console")),
+                    CITPTests.pinf("PNam", Array("Console".utf8) + [0]),
                     CITPPacket.nack(receivedContentType: "GELT").encoded(),
+                    // the requests that carry counts and lists, where a hostile length lands
+                    CITPTests.msex("GELI", [1, 1, 2, 0, 0, 3, 0, 0, 1, 7]),
+                    CITPTests.msex("GEIn", [1, 1, 2, 0, 0, 3, 0, 4, 5, 6]),
+                    CITPTests.msex("GETh", Array("PNG ".utf8) + CITPTests.le16(160) + CITPTests.le16(90) + [1, 1, 1, 2, 0, 0, 3, 0, 1, 2, 3]),
+                    CITPTests.msex("GVSr", []),
                 ]
             case .webSocket:
                 [
