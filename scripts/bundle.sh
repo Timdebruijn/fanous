@@ -30,9 +30,15 @@ cp LICENSE LICENSE-ADDITIONAL-TERMS.md THIRD-PARTY-NOTICES.md "$L/"
 cp Sources/CHap/LICENSE "$L/hap-LICENSE.txt"
 cp Sources/CSnappy/LICENSE "$L/snappy-LICENSE.txt"
 cp Sources/Syphon/LICENSE "$L/Syphon-LICENSE.txt"
-SWIFT_LOG_LICENSE=$(find .build/checkouts/swift-log -maxdepth 1 -name "LICENSE*" | head -1)
-[[ -n "$SWIFT_LOG_LICENSE" ]] && cp "$SWIFT_LOG_LICENSE" "$L/swift-log-LICENSE.txt"
+cp .build/checkouts/swift-log/LICENSE.txt "$L/swift-log-LICENSE.txt"
 cp web/node_modules/svelte/LICENSE.md "$L/svelte-LICENSE.md"  # the Svelte runtime is compiled into the web UI
+
+# the usage strings and Bonjour services both Info.plists carry
+USAGE='  <key>NSMicrophoneUsageDescription</key><string>Fanous reads LTC timecode from an audio input when you select one under Show › Timecode.</string>
+  <key>NSCameraUsageDescription</key><string>Fanous shows a camera or capture card as layer content when you select one in folder 0.</string>
+  <key>NSCameraUseContinuityCameraDeviceType</key><true/>
+  <key>NSLocalNetworkUsageDescription</key><string>Fanous receives Art-Net, sACN and OSC from your lighting console and announces itself to consoles over CITP and Bonjour.</string>
+  <key>NSBonjourServices</key><array><string>_fanous._tcp</string><string>_https._tcp</string></array>'
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -50,11 +56,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Tim de Bruijn. GPL-3.0-only with additional terms.</string>
   <key>CFBundleIconFile</key><string>Fanous</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.video</string>
-  <key>NSMicrophoneUsageDescription</key><string>Fanous reads LTC timecode from an audio input when you select one under Show › Timecode.</string>
-  <key>NSCameraUsageDescription</key><string>Fanous shows a camera or capture card as layer content when you select one in folder 0.</string>
-  <key>NSCameraUseContinuityCameraDeviceType</key><true/>
-  <key>NSLocalNetworkUsageDescription</key><string>Fanous receives Art-Net, sACN and OSC from your lighting console and announces itself to consoles over CITP and Bonjour.</string>
-  <key>NSBonjourServices</key><array><string>_fanous._tcp</string><string>_https._tcp</string></array>
+$USAGE
 </dict></plist>
 PLIST
 
@@ -71,11 +73,7 @@ cat > "$HELPER/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSMicrophoneUsageDescription</key><string>Fanous reads LTC timecode from an audio input when you select one under Show › Timecode.</string>
-  <key>NSCameraUsageDescription</key><string>Fanous shows a camera or capture card as layer content when you select one in folder 0.</string>
-  <key>NSCameraUseContinuityCameraDeviceType</key><true/>
-  <key>NSLocalNetworkUsageDescription</key><string>Fanous receives Art-Net, sACN and OSC from your lighting console and announces itself to consoles over CITP and Bonjour.</string>
-  <key>NSBonjourServices</key><array><string>_fanous._tcp</string><string>_https._tcp</string></array>
+$USAGE
 </dict></plist>
 PLIST
 

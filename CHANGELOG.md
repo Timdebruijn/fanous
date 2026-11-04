@@ -15,6 +15,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   automatic-updates readiness item reads the preference with CFPreferences instead of running `defaults`; the never-sent
   stream kind 4 (metrics) and three test-only StateStore members are gone. No behaviour change (over-engineering review
   2026-11-04, PR #273).
+- Changed: `scripts/bench.sh sweep|phase3|drift` runs the benchmark matrices with one preamble and one `run`;
+  `bench-sweep.sh` and `bench-phase3.sh` stay as wrappers. `bundle.sh` writes the usage strings once for both
+  Info.plists (byte-identical output) and copies swift-log's `LICENSE.txt` directly, failing when it is missing instead
+  of leaving it out (PR #272).
 - Changed: the layer chip on a Media tile has 6 px between its dot and its word, like every other status
   (was 5 px; PR #268).
 - Changed: the web UI drops its over-engineering: one `frames` helper for the e2e WebSocket spies, one `CopyButton`, one
