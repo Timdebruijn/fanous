@@ -46,12 +46,8 @@ struct SyncCompositorTests {
             try await IngestQueueTests.writeSource(to: url, seconds: 2, audio: false)
             let context = try MetalContext()
             source = try await MovieSource.open(url: url, device: context.device, poolSize: 4)
-            parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: sync.count) }
             roles = sync
-            compositor = try Compositor(
-                context: context, canvasWidth: 64, canvasHeight: 36, fps: 60, maxLayers: sync.count, metrics: metrics,
-                parameters: parameters,
-                logger: Logger(label: "sync-test"))
+            (compositor, parameters) = try makeCompositor(context, size: (64, 36), maxLayers: sync.count, metrics: metrics)
             compositor.skipsIdleWork = true  // nobody watches: clocks only, no GPU work
             layers = sync.indices.map { RenderLayer(index: $0) }
             for layer in layers {

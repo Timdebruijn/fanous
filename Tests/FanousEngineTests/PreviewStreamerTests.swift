@@ -17,10 +17,7 @@ struct PreviewStreamerTests {
     @Test func canvasTickProducesKeyFrameAndAVCC() async throws {
         let logger = Logger(label: "test")
         let context = try MetalContext()
-        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
-        let compositor = try Compositor(
-            context: context, canvasWidth: 320, canvasHeight: 180, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 64), parameters: parameters,
-            logger: logger)
+        let (compositor, parameters) = try makeCompositor(context, size: (320, 180))
         let streamer = try PreviewStreamer(context: context, width: 320, height: 180, fps: 30, canvasFPS: 60, parameters: parameters, logger: logger)
         let frames = Mutex<[(payload: [UInt8], avcC: [UInt8])]>([])
         streamer.onFrame = { payload, avcC in frames.withLock { $0.append((payload, avcC)) } }

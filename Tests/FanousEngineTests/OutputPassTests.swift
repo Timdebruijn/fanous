@@ -40,18 +40,9 @@ struct OutputPassTests {
         _ plan: OutputPlan?, still: DecodedFrame, drawable: (Int, Int), context: MetalContext, outputs: [OutputParameters] = [],
         master: (ParameterSnapshotSlot) -> Void = { _ in }
     ) throws -> [UInt8] {
-        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
-        let compositor = try Compositor(
-            context: context, canvasWidth: width, canvasHeight: height, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 16), parameters: parameters,
-            logger: Logger(label: "output-test"))
-        let layer = RenderLayer(index: 0)
-        layer.current = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: still)
-        layer.wanted.store(MediaKey(folder: 1, file: 1).packed, ordering: .relaxed)
-        compositor.setLayers([layer])
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.outputFormat, width: drawable.0, height: drawable.1, mipmapped: false)
-        descriptor.usage = [.renderTarget, .shaderRead]
-        descriptor.storageMode = .shared
-        compositor.offscreenOutput = context.device.makeTexture(descriptor: descriptor)
+        let (compositor, parameters) = try makeCompositor(context, size: (width, height))
+        compositor.setLayers([.still(still)])
+        compositor.attachOffscreenOutput(drawable)
         compositor.outputSet = plan.map { OutputSet(plans: [$0]) }
         parameters.write { slot in
             slot.sequence = 1
@@ -162,18 +153,9 @@ struct OutputPassTests {
         let still = try Self.flat(context.device, value: 200)
         let plan = try OutputCompiler(device: context.device).compile(OutputConfig(id: 1), index: 1, drawable: (Self.width, Self.height))
         for control in [OutputControl.freeze, .normal] {
-            let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
-            let compositor = try Compositor(
-                context: context, canvasWidth: Self.width, canvasHeight: Self.height, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 16),
-                parameters: parameters, logger: Logger(label: "output-test"))
-            let layer = RenderLayer(index: 0)
-            layer.current = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: still)
-            layer.wanted.store(MediaKey(folder: 1, file: 1).packed, ordering: .relaxed)
-            compositor.setLayers([layer])
-            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.outputFormat, width: Self.width, height: Self.height, mipmapped: false)
-            descriptor.usage = [.renderTarget, .shaderRead]
-            descriptor.storageMode = .shared
-            compositor.offscreenOutput = context.device.makeTexture(descriptor: descriptor)
+            let (compositor, parameters) = try makeCompositor(context, size: (Self.width, Self.height))
+            compositor.setLayers([.still(still)])
+            compositor.attachOffscreenOutput((Self.width, Self.height))
             compositor.outputSet = OutputSet(plans: [plan])
             var fixture = OutputParameters()
             fixture.control = control
@@ -216,18 +198,9 @@ struct OutputPassTests {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
         let compiler = OutputCompiler(device: context.device)
-        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
-        let compositor = try Compositor(
-            context: context, canvasWidth: Self.width, canvasHeight: Self.height, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 16),
-            parameters: parameters, logger: Logger(label: "output-test"))
-        let layer = RenderLayer(index: 0)
-        layer.current = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: still)
-        layer.wanted.store(MediaKey(folder: 1, file: 1).packed, ordering: .relaxed)
-        compositor.setLayers([layer])
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.outputFormat, width: Self.width, height: Self.height, mipmapped: false)
-        descriptor.usage = [.renderTarget, .shaderRead]
-        descriptor.storageMode = .shared
-        compositor.offscreenOutput = context.device.makeTexture(descriptor: descriptor)
+        let (compositor, parameters) = try makeCompositor(context, size: (Self.width, Self.height))
+        compositor.setLayers([.still(still)])
+        compositor.attachOffscreenOutput((Self.width, Self.height))
         let first = try compiler.compile(OutputConfig(id: 1), index: 1, drawable: (Self.width, Self.height))
         let old = OutputSet(plans: [first])
         compositor.outputSet = old
@@ -454,18 +427,8 @@ struct OutputPassTests {
     /// The canvas centre (RGBA) of `layers` stacked bottom to top, each a full-frame flat still of `value` at intensity 1,
     /// then `edit`, at Master `master`.
     static func canvas(_ layers: [Stacked], master: Float, context: MetalContext) throws -> [Int] {
-        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: layers.count) }
-        let compositor = try Compositor(
-            context: context, canvasWidth: width, canvasHeight: height, fps: 60, maxLayers: layers.count, metrics: MetricsRing(capacity: 16),
-            parameters: parameters, logger: Logger(label: "master-test"))
-        compositor.setLayers(
-            try layers.enumerated().map { i, layer in
-                let key = MediaKey(folder: 1, file: i + 1)
-                let render = RenderLayer(index: i)
-                render.current = LayerPlayback(key: key, still: try flat(context.device, value: layer.value))
-                render.wanted.store(key.packed, ordering: .relaxed)
-                return render
-            })
+        let (compositor, parameters) = try makeCompositor(context, size: (width, height), maxLayers: layers.count)
+        compositor.setLayers(try layers.enumerated().map { i, layer in .still(try flat(context.device, value: layer.value), file: i + 1, index: i) })
         parameters.write { slot in
             slot.sequence = 1
             slot.master = master
@@ -525,13 +488,8 @@ struct OutputPassTests {
 
         init(_ config: OutputConfig?, value: UInt8) throws {
             context = try MetalContext()
-            compositor = try Compositor(
-                context: context, canvasWidth: width, canvasHeight: height, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 16),
-                parameters: parameters, logger: Logger(label: "output-test"))
-            let layer = RenderLayer(index: 0)
-            layer.current = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: try flat(context.device, value: value))
-            layer.wanted.store(MediaKey(folder: 1, file: 1).packed, ordering: .relaxed)
-            compositor.setLayers([layer])
+            compositor = try makeCompositor(context, size: (width, height), parameters: parameters).0
+            compositor.setLayers([.still(try flat(context.device, value: value))])
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.outputFormat, width: width, height: height, mipmapped: false)
             descriptor.usage = [.renderTarget, .shaderRead]
             descriptor.storageMode = .shared

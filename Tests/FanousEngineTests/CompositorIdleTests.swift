@@ -40,22 +40,11 @@ struct CompositorIdleTests {
 
         init(playback: LayerPlayback? = nil, idleWork: Bool, offscreen: Bool, size: (Int, Int) = (CompositorIdleTests.width, CompositorIdleTests.height)) throws {
             context = try MetalContext()
-            parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
-            compositor = try Compositor(
-                context: context, canvasWidth: size.0, canvasHeight: size.1, fps: 60, maxLayers: 1,
-                metrics: metrics, parameters: parameters, logger: Logger(label: "idle-test"))
-            layer = RenderLayer(index: 0)
-            layer.current = try playback ?? Self.stillPlayback(context)
-            layer.wanted.store(layer.current?.key.packed ?? 0, ordering: .relaxed)
+            (compositor, parameters) = try makeCompositor(context, size: size, metrics: metrics)
+            layer = .playing(try playback ?? Self.stillPlayback(context))
             compositor.setLayers([layer])
             compositor.skipsIdleWork = idleWork
-            if offscreen {
-                let d = MTLTextureDescriptor.texture2DDescriptor(
-                    pixelFormat: MetalContext.outputFormat, width: size.0, height: size.1, mipmapped: false)
-                d.usage = [.renderTarget, .shaderRead]
-                d.storageMode = .shared
-                compositor.offscreenOutput = context.device.makeTexture(descriptor: d)
-            }
+            if offscreen { compositor.attachOffscreenOutput(size) }
             setIntensity(1)
         }
 

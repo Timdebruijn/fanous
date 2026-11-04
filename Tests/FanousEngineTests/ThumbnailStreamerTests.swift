@@ -26,10 +26,8 @@ import Testing
 
         init(layers count: Int, grid: Int) throws {
             let context = try MetalContext()
-            let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: count) }
-            compositor = try Compositor(
-                context: context, canvasWidth: 320, canvasHeight: 180, fps: 60, maxLayers: count, metrics: MetricsRing(capacity: 64), parameters: parameters,
-                logger: PreviewHubTests.logger)
+            let parameters: TripleBuffer<ParameterSnapshotSlot>
+            (compositor, parameters) = try makeCompositor(context, size: (320, 180), maxLayers: count)
             let layers = (0..<count).map { RenderLayer(index: $0) }
             let generator = try #require(GeneratorSource(context: context, file: 101, width: 320, height: 180))
             layers[grid].current = LayerPlayback(key: MediaKey(folder: 0, file: 101), live: generator)

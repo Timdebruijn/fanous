@@ -425,16 +425,11 @@ struct ShowControlTests {
 
     @Test func compositorChasesTimecode() throws {
         let context = try MetalContext()
-        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
-        let compositor = try Compositor(
-            context: context, canvasWidth: 64, canvasHeight: 36, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 16), parameters: parameters, logger: Self.logger)
+        let (compositor, parameters) = try makeCompositor(context, size: (64, 36))
         let still = try OutputPassTests.flat(context.device, value: 100)
         // a "movie" of 250 frames at 25 fps built from the still: the clock only needs frameCount and frameRate
         let playback = LayerPlayback(key: MediaKey(folder: 1, file: 1), still: still)
-        let layer = RenderLayer(index: 0)
-        layer.current = playback
-        layer.wanted.store(MediaKey(folder: 1, file: 1).packed, ordering: .relaxed)
-        compositor.setLayers([layer])
+        compositor.setLayers([.playing(playback)])
         let clock = TimecodeClock()
         compositor.timecode = clock
         compositor.timecodeOffsets = TimecodeOffsets(project: 25, layers: [1: 5])  // one second + five frames

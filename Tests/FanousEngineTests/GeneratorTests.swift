@@ -23,18 +23,10 @@ struct GeneratorTests {
         if let existing {
             compositor = existing
         } else {
-            let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
-            compositor = try Compositor(
-                context: context, canvasWidth: width, canvasHeight: height, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 64), parameters: parameters,
-                logger: Logger(label: "generator-test"))
-            let layer = RenderLayer(index: 0)
-            layer.current = playback
-            if let playback { layer.wanted.store(playback.key.packed, ordering: .relaxed) }
-            compositor.setLayers([layer])
-            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.outputFormat, width: width, height: height, mipmapped: false)
-            descriptor.usage = [.renderTarget, .shaderRead]
-            descriptor.storageMode = .shared
-            compositor.offscreenOutput = context.device.makeTexture(descriptor: descriptor)
+            let parameters: TripleBuffer<ParameterSnapshotSlot>
+            (compositor, parameters) = try makeCompositor(context, size: (width, height))
+            compositor.setLayers([.playing(playback)])
+            compositor.attachOffscreenOutput((width, height))
             var o = OutputConfig(id: 1)
             o.testPattern = pattern
             compositor.outputSet = OutputSet(plans: [try OutputCompiler(device: context.device).compile(o, index: 1, drawable: (width, height))])

@@ -168,11 +168,7 @@ struct GoldenTests {
     /// `scratch` false: the layers get no scratch textures and draw through the per-tap source path (B2); `scale`
     /// makes the stills that many times 256×144.
     static func render(_ c: Case, context: MetalContext, scratch: Bool = true, scale: Int = 1) throws -> (Int, Int, [UInt8]) {
-        let metrics = MetricsRing(capacity: 16)
-        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 2) }
-        let compositor = try Compositor(
-            context: context, canvasWidth: width, canvasHeight: height, fps: 60, maxLayers: 2, metrics: metrics, parameters: parameters,
-            logger: Logger(label: "golden"))
+        let (compositor, parameters) = try makeCompositor(context, size: (width, height), maxLayers: 2)
         let background = RenderLayer(index: 0)
         let layer = RenderLayer(index: 1)
         let still = try pattern(device: context.device, variant: 0, scale: scale)
@@ -191,14 +187,7 @@ struct GoldenTests {
             }
         }
         compositor.setLayers([background, layer])
-        var outputTexture: MTLTexture?
-        if c.output {
-            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.outputFormat, width: width, height: height, mipmapped: false)
-            descriptor.usage = [.renderTarget, .shaderRead]
-            descriptor.storageMode = .shared
-            outputTexture = context.device.makeTexture(descriptor: descriptor)
-            compositor.offscreenOutput = outputTexture
-        }
+        let outputTexture = c.output ? compositor.attachOffscreenOutput((width, height)) : nil
         parameters.write { slot in
             slot.sequence = 1
             slot.master = c.master

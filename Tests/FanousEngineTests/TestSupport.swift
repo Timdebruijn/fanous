@@ -2,10 +2,13 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
-import FanousEngine
 import Foundation
+import Logging
+import Metal
 import Synchronization
 import Testing
+
+@testable import FanousEngine
 
 /// Runs blocking AVFoundation work (`AVAssetWriter.finishWriting` + semaphore, `LibraryIndex.probeMovie`) on a thread of its
 /// own. Swift Testing runs a test per core on the cooperative pool; with every pool thread parked in such a wait the
@@ -26,6 +29,44 @@ func waitUntil(_ deadline: Duration = .seconds(10), every: Duration = .milliseco
         guard ContinuousClock.now < end, (try? await Task.sleep(for: every)) != nil else { return condition() }
     }
     return true
+}
+
+/// A compositor of `size` at `fps` for `maxLayers` layers, over `parameters` or a buffer of its own; no layers set.
+func makeCompositor(
+    _ context: MetalContext, size: (Int, Int), maxLayers: Int = 1, fps: Double = 60, metrics: MetricsRing = MetricsRing(capacity: 64),
+    parameters: TripleBuffer<ParameterSnapshotSlot>? = nil
+) throws -> (Compositor, TripleBuffer<ParameterSnapshotSlot>) {
+    let parameters = parameters ?? TripleBuffer { ParameterSnapshotSlot(maxLayers: maxLayers) }
+    let compositor = try Compositor(
+        context: context, canvasWidth: size.0, canvasHeight: size.1, fps: fps, maxLayers: maxLayers, metrics: metrics, parameters: parameters,
+        logger: Logger(label: "test"))
+    return (compositor, parameters)
+}
+
+extension Compositor {
+    /// A shared output-format texture of `size` as the offscreen output, what a display would draw from; returned.
+    @discardableResult func attachOffscreenOutput(_ size: (Int, Int)) -> MTLTexture? {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.outputFormat, width: size.0, height: size.1, mipmapped: false)
+        descriptor.usage = [.renderTarget, .shaderRead]
+        descriptor.storageMode = .shared
+        offscreenOutput = context.device.makeTexture(descriptor: descriptor)
+        return offscreenOutput
+    }
+}
+
+extension RenderLayer {
+    /// Layer `index` playing `playback`, wanted == loaded: the hand-off asks the (absent) loader for nothing.
+    static func playing(_ playback: LayerPlayback?, index: Int = 0) -> RenderLayer {
+        let layer = RenderLayer(index: index)
+        layer.current = playback
+        if let playback { layer.wanted.store(playback.key.packed, ordering: .relaxed) }
+        return layer
+    }
+
+    /// Layer `index` playing `still` as media 1/`file`, wanted.
+    static func still(_ still: DecodedFrame, file: Int = 1, index: Int = 0) -> RenderLayer {
+        playing(LayerPlayback(key: MediaKey(folder: 1, file: file), still: still), index: index)
+    }
 }
 
 /// The ports `freeUDPPort` handed out in this process (B115).

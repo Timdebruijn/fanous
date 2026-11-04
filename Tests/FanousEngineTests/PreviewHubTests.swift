@@ -24,7 +24,7 @@ import Testing
 
     struct Rig {
         let context: MetalContext
-        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 1) }
+        let parameters: TripleBuffer<ParameterSnapshotSlot>
         let server: StateServer
         let hub: PreviewHub
         let compositor: Compositor
@@ -34,6 +34,7 @@ import Testing
 
         init() throws {
             context = try MetalContext()
+            (compositor, parameters) = try makeCompositor(context, size: (160, 90))
             let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: PreviewHubTests.logger)
             let project = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx)
             server = StateServer(store: StateStore(project: project, logger: PreviewHubTests.logger), auth: auth, caps: ["schema": 1], logger: PreviewHubTests.logger)
@@ -47,9 +48,6 @@ import Testing
                 streamer.outputSet = set
                 return true
             }
-            compositor = try Compositor(
-                context: context, canvasWidth: 160, canvasHeight: 90, fps: 60, maxLayers: 1, metrics: MetricsRing(capacity: 64), parameters: parameters,
-                logger: PreviewHubTests.logger)
             compositor.previewTap = { [hub] canvas, buffer, target, _ in hub.tap(canvas: canvas, commandBuffer: buffer, target: target) }
         }
 
@@ -251,7 +249,7 @@ import Testing
     /// layer:<n> like the engine's. Idle work is skipped as in the engine, so unchanged ticks reuse the canvas.
     final class LayerRig {
         let context: MetalContext
-        let parameters = TripleBuffer { ParameterSnapshotSlot(maxLayers: 2) }
+        let parameters: TripleBuffer<ParameterSnapshotSlot>
         let compositor: Compositor
         let hub: PreviewHub
         // copyable locks: the hub's closures share them
@@ -265,15 +263,12 @@ import Testing
         init() throws {
             let context = try MetalContext()
             self.context = context
-            let compositor = try Compositor(
-                context: context, canvasWidth: 320, canvasHeight: 180, fps: 60, maxLayers: 2, metrics: MetricsRing(capacity: 64), parameters: parameters,
-                logger: PreviewHubTests.logger)
-            self.compositor = compositor
-            let layers = [RenderLayer(index: 0), RenderLayer(index: 1)]
-            layers[0].current = try PreviewHubTests.solid(context, [255, 0, 0, 255], file: 1)
-            layers[1].current = try PreviewHubTests.solid(context, [0, 255, 0, 255], file: 2)
-            for (i, layer) in layers.enumerated() { layer.wanted.store(MediaKey(folder: 1, file: i + 1).packed, ordering: .relaxed) }
-            compositor.setLayers(layers)
+            let (compositor, parameters) = try makeCompositor(context, size: (320, 180), maxLayers: 2)
+            (self.compositor, self.parameters) = (compositor, parameters)
+            compositor.setLayers([
+                .playing(try PreviewHubTests.solid(context, [255, 0, 0, 255], file: 1)),
+                .playing(try PreviewHubTests.solid(context, [0, 255, 0, 255], file: 2), index: 1),
+            ])
             let shapes = shapes, made = made
             hub = try PreviewHub(make: PreviewHubTests.make(context, parameters)) { target in shapes.withLock { $0[target] ?? $0["canvas"] } }
             hub.configure = { target, streamer in
