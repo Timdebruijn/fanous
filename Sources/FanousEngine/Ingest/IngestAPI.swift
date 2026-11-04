@@ -130,8 +130,8 @@ public final class IngestAPI: @unchecked Sendable {
         return .json(202, Array((try? encoder.encode(job)) ?? Data()))
     }
 
-    /// `/api/upload/<folder>/<name>` → (folder, percent-decoded file name without path components). Everything an upload
-    /// can be refused for before its body is written is checked here (B154).
+    /// `/api/upload/<folder>/<name>` → (folder, percent-decoded file name without path components). Everything ingest
+    /// refuses an upload for before its body is written is checked here (B154); the role is checked by the route.
     static func uploadComponents(_ path: String) -> (Int, String)? {
         let parts = path.dropFirst("/api/upload/".count).split(separator: "/", maxSplits: 1).map(String.init)
         guard parts.count == 2, let folder = Int(parts[0]), (1...255).contains(folder), let decoded = parts[1].removingPercentEncoding

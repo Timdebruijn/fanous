@@ -81,6 +81,11 @@ import Testing
         #expect(incoming().isEmpty)
         api.holdEnqueue("root change")
         #expect(api.handle(try Self.put("/api/upload/1/clip.mov", body: [1, 2, 3]), uploadedFile: nil).status == 409)
+        // the streamed path: the server wrote the body to the sink's file before the route ran; a refusal removes it too
+        let streamed = try #require(api.uploadTarget(for: try Self.put("/api/upload/1/streamed.mov")))
+        try Data([4, 5, 6]).write(to: streamed)
+        #expect(api.handle(try Self.put("/api/upload/1/streamed.mov"), uploadedFile: streamed).status == 409)
+        #expect(!FileManager.default.fileExists(atPath: streamed.path))
         api.releaseEnqueue()
         #expect(incoming().isEmpty)
     }
