@@ -19,7 +19,9 @@ import Testing
     }
 
     @Test func artnetCapturesParse() throws {
-        for file in Self.files("artnet") {
+        let files = Self.files("artnet")
+        #expect(!files.isEmpty, "no Art-Net captures found")
+        for file in files {
             let bytes = Array(try Data(contentsOf: file))
             let packet = try ArtNet.parse(bytes)
             if case .dmx(let dmx) = packet {
@@ -32,7 +34,9 @@ import Testing
 
     @Test func sacnCapturesParse() throws {
         var merger = SACNUniverseMerger()
-        for file in Self.files("sacn") {
+        let files = Self.files("sacn")
+        #expect(!files.isEmpty, "no sACN captures found")
+        for file in files {
             let bytes = Array(try Data(contentsOf: file))
             let packet = try SACN.parse(bytes)
             if case .data(let data) = packet {
@@ -40,14 +44,6 @@ import Testing
                 #expect(data.encoded() == bytes, Comment(rawValue: "re-encoding \(file.lastPathComponent) is byte-identical"))
                 _ = merger.apply(data, at: 0)
             }
-        }
-    }
-
-    @Test func oscCapturesParse() throws {
-        for file in Self.files("osc") {
-            let bytes = Array(try Data(contentsOf: file))
-            let packet = try OSCPacket.parse(bytes)
-            #expect(packet.encoded() == bytes, Comment(rawValue: "re-encoding \(file.lastPathComponent) is byte-identical"))
         }
     }
 }

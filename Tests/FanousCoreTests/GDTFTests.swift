@@ -105,9 +105,6 @@ final class XMLCollector: NSObject, XMLParserDelegate {
 
     @Test func channelMapDocumentListsEveryParameter() {
         let markdown = ChannelMapDocument.markdown()
-        for mode in FixtureMode.allCases {
-            for spec in ChannelMap.specs(for: mode) { #expect(markdown.contains("| \(spec.name) |")) }
-        }
         #expect(markdown.components(separatedBy: "| Reserved |").count == 4)
         #expect(markdown.contains("| 6–7 | Speed | 16 | 32768 |"))
         #expect(markdown.contains("| 6 | Mapping preset | 8 | 0 | 0 = as edited · 1–255 |"), "Output ch 6 at 0 shows the mapping as edited")

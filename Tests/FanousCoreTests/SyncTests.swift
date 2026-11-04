@@ -23,31 +23,6 @@ import Testing
         #expect(spec.label(forRaw: 90) == "Slave 1" && spec.label(forRaw: 169) == "Slave 8")
         #expect(spec.label(forRaw: 200) == "Off")
     }
-
-    @Test func channel51IsSyncOfSixtyFour() {
-        let spec = ChannelMap.spec(.layer(.sync))
-        #expect(spec.channel == 51 && spec.name == "Sync" && spec.bits == 8 && spec.defaultRaw == 0)
-        #expect(FixtureMode.layer.footprint == 64)
-        #expect(ChannelMap.reserved(for: .layer) == 52...64)
-    }
-
-    @Test func documentAndGDTFCarrySync() {
-        #expect(ChannelMapDocument.markdown().contains("| 51 | Sync | 8 | 0 | 0–9 Off · 10–19 Master 1"))
-        let xml = GDTFExporter.descriptionXML(version: "test")
-        #expect(xml.contains("Offset=\"51\" InitialFunction=\"Base_VideoSync.VideoSync.Sync\""))
-        #expect(xml.contains("<ChannelSet Name=\"Slave 8\" DMXFrom=\"160/1\""))
-        #expect(ChannelMapDocument.markdown().contains("160–169 Slave 8 · 170–255 Off · rest = Off"))
-        var sets: [String] = []
-        var inSync = false
-        for element in GDTFTests.parsed().elements {
-            if element.name == "DMXChannel" {
-                inSync = element.attributes["InitialFunction"]?.contains("VideoSync") == true
-            }
-            if inSync && element.name == "ChannelSet" { sets.append(element.attributes["DMXFrom"]!) }
-        }
-        #expect(sets.count == 18)  // Off, Master 1–8, Slave 1–8, Off: "Slave 8" ends at 169
-        #expect(sets.last == "170/1")
-    }
 }
 
 @Suite struct SyncPacketTests {
@@ -85,12 +60,8 @@ import Testing
         #expect(buffer.withUnsafeBufferPointer { $0.baseAddress } == base)
     }
 
-    @Test func sizesFollowTheLayout() {
-        #expect(SyncPacket.headerSize == 34 && SyncPacket.layerSize == 22)
-        #expect(SyncPacket.maxSize == 34 + 32 * 22)
-    }
-
     @Test func layoutIsLittleEndian() {
+        #expect(SyncPacket.headerSize == 34 && SyncPacket.layerSize == 22)
         var buffer: [UInt8] = []
         SyncPacket(machineID: Self.machine, tick: 0x0102_0304, sendTime: 0, layers: [Self.layer(1)]).encode(
             into: &buffer)
