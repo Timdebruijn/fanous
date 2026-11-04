@@ -19,10 +19,10 @@ import VideoToolbox
 @Suite(.serialized, .cleansTempFiles) struct IngestQueueTests {
     // MARK: Helpers
 
-    /// 320×176 ProRes 422 HQ with the `TestTone` track, 10 fps (20 frames: HAP Q encoding is slow in a debug build).
+    /// 320×176 ProRes 422 HQ with the `TestTone` track, 10 fps by default.
     static let sourceFPS: Int32 = 10
-    static func writeSource(to url: URL, seconds: Int = 2, audio: Bool = true) async throws {
-        try await writePatternMovie(to: url, size: (320, 176), fps: sourceFPS, frames: seconds * Int(sourceFPS), audio: audio)
+    static func writeSource(to url: URL, seconds: Int = 2, fps: Int32 = sourceFPS, audio: Bool = true) async throws {
+        try await writePatternMovie(to: url, size: (320, 176), fps: fps, frames: seconds * Int(fps), audio: audio)
     }
 
     /// A 1 s, 25 fps H.264 `.mp4` (320×176) written with AVAssetWriter, with a 1 s 440 Hz mono AAC track at 44.1 kHz
@@ -221,22 +221,23 @@ import VideoToolbox
 
     @Test func transcodesToHAPQAndProResWithAudio() async throws {
         let directory = try tempDir("fanous-ingest-tests")
-        let source = directory.appending(path: "source.mov")
+        let source = directory.appending(path: "source.mov"), hapSource = directory.appending(path: "source-hap.mov")
         try await Self.writeSource(to: source)
+        try await Self.writeSource(to: hapSource, fps: 2)  // 4 frames: HAP Q encoding takes ~0.2 s a frame in a debug build
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
         queue.start()
         defer { queue.stop() }
 
-        let hapJob = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/001_hap.mov"), kind: .transcode(codec: .hap(.hapQ))))
+        let hapJob = queue.enqueue(IngestJob(source: hapSource, destination: directory.appending(path: "library/001_hap.mov"), kind: .transcode(codec: .hap(.hapQ))))
         let proResJob = queue.enqueue(IngestJob(source: source, destination: directory.appending(path: "library/002_prores.mov"), kind: .transcode(codec: .proRes422HQ)))
         #expect(await Self.wait(for: hapJob.id, in: queue) == .done)
         #expect(await Self.wait(for: proResJob.id, in: queue) == .done)
-        #expect(FileManager.default.fileExists(atPath: source.path))  // no originals directory, no delete: left in place
+        #expect(FileManager.default.fileExists(atPath: source.path) && FileManager.default.fileExists(atPath: hapSource.path))  // no originals directory, no delete: left in place
 
         let bars = try await Self.barPositions(of: proResJob.destination)
         #expect(bars.count == 20 && zip(bars, 0..<20).allSatisfy { abs($0 - $1 * 8) <= 2 }, "bar positions \(bars)")  // every frame, in order, content intact
         guard let device = MTLCreateSystemDefaultDevice() else { return }
-        try await Self.expectPlayable(hapJob.destination, device: device, frames: 20, fps: 10, codec: "HapY")
+        try await Self.expectPlayable(hapJob.destination, device: device, frames: 4, fps: 2, codec: "HapY")
         try await Self.expectPlayable(proResJob.destination, device: device, frames: 20, fps: 10, codec: "apch")
         try await Self.expectTestToneAudio(hapJob.destination)
         try await Self.expectTestToneAudio(proResJob.destination)
