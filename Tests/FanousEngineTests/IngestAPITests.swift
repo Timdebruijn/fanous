@@ -47,8 +47,8 @@ import Testing
     @Test func aClaimThatFailsIsAServerError() throws {
         let (api, library) = try Self.api()
         try FileManager.default.createDirectory(at: library.incomingDirectory, withIntermediateDirectories: true)
-        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAt: library.incomingDirectory)
-        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAt: library.incomingDirectory) }
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: library.incomingDirectory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: library.incomingDirectory.path) }
         #expect(api.handle(try Self.put("/api/upload/1/clip.mov", body: [1, 2, 3]), uploadedFile: nil).status == 500)
     }
 
