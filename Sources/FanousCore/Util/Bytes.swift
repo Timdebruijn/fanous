@@ -16,7 +16,7 @@ extension Array where Element == UInt8 {
     func littleEndian<T: FixedWidthInteger>(at offset: Int, as _: T.Type = T.self) -> T { T(littleEndian: load(at: offset)) }
 
     /// The `T` at `offset` as it lies in memory; traps when it does not fit.
-    func load<T>(at offset: Int, as _: T.Type = T.self) -> T {
+    func load<T: BitwiseCopyable>(at offset: Int, as _: T.Type = T.self) -> T {
         precondition(offset >= 0 && offset + MemoryLayout<T>.size <= count, "read past the end")
         return withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: T.self) }
     }
