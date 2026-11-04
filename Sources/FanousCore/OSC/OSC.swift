@@ -206,27 +206,44 @@ public indirect enum OSCPacket: Equatable, Sendable {
 /// RFC 1055 SLIP framing as used by OSC 1.1 over TCP.
 public struct SLIPDecoder: Sendable {
     static let end: UInt8 = 0xC0, esc: UInt8 = 0xDB, escEnd: UInt8 = 0xDC, escEsc: UInt8 = 0xDD
+    /// A packet longer than this is dropped (B152): far above any OSC packet, and a TCP client that never sends END
+    /// would otherwise grow the buffer without limit. The UDP path is bounded by the datagram.
+    public static let maxPacketBytes = 64 * 1024
     private var buffer: [UInt8] = []
     private var escaping = false
+    /// Past `maxPacketBytes`: the rest of the packet is skipped up to the next END.
+    private var discarding = false
+    /// Packets dropped for length so far.
+    public private(set) var dropped = 0
 
     public init() {}
 
     public mutating func feed(_ bytes: [UInt8]) -> [[UInt8]] {
         var packets: [[UInt8]] = []
         for byte in bytes {
+            let decoded: UInt8
             if escaping {
-                buffer.append(byte == Self.escEnd ? Self.end : byte == Self.escEsc ? Self.esc : byte)
+                decoded = byte == Self.escEnd ? Self.end : byte == Self.escEsc ? Self.esc : byte
                 escaping = false
             } else if byte == Self.end {
-                if !buffer.isEmpty {
-                    packets.append(buffer)
-                    buffer = []
-                }
+                if !discarding, !buffer.isEmpty { packets.append(buffer) }
+                buffer = []
+                discarding = false
+                continue
             } else if byte == Self.esc {
                 escaping = true
+                continue
             } else {
-                buffer.append(byte)
+                decoded = byte
             }
+            if discarding { continue }
+            if buffer.count == Self.maxPacketBytes {
+                buffer = []  // frees the storage
+                discarding = true
+                dropped += 1
+                continue
+            }
+            buffer.append(decoded)
         }
         return packets
     }

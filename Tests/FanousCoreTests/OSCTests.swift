@@ -75,6 +75,32 @@ import Testing
         #expect(decoder.feed(Array(encoded[4...]) + encoded) == [packet, packet])
     }
 
+    /// A client that never sends END cannot grow the buffer past `maxPacketBytes` (B152): the packet is dropped and
+    /// counted, the rest of it skipped, and the next framed packet decodes.
+    @Test func slipDropsAPacketPastTheLimit() {
+        let packet: [UInt8] = [0x01, 0xC0, 0x02]
+        var decoder = SLIPDecoder()
+        #expect(decoder.feed([UInt8](repeating: 0x41, count: 70_000)) == [])
+        #expect(decoder.dropped == 1)
+        #expect(decoder.feed(SLIPDecoder.encode(packet)) == [packet])
+        #expect(decoder.dropped == 1)
+        // a second oversized packet is dropped again: discarding was reset by the END in between
+        _ = decoder.feed([UInt8](repeating: 0x41, count: 70_000) + [0xC0])
+        #expect(decoder.dropped == 2)
+        // an escape pair split across feeds right at the limit
+        var straddling = SLIPDecoder()
+        #expect(straddling.feed([UInt8](repeating: 0x41, count: SLIPDecoder.maxPacketBytes) + [0xDB]) == [])
+        #expect(straddling.dropped == 0)
+        #expect(straddling.feed([0xDC, 0xDB, 0xC0]) == [])  // ESC then END is data here, so the packet has not ended
+        #expect(straddling.dropped == 1)
+        #expect(straddling.feed([0xDD, 0xC0] + SLIPDecoder.encode(packet)) == [packet])
+        // exactly the limit still decodes
+        var full = SLIPDecoder()
+        let largest = [UInt8](repeating: 0x41, count: SLIPDecoder.maxPacketBytes)
+        #expect(full.feed(SLIPDecoder.encode(largest)) == [largest])
+        #expect(full.dropped == 0)
+    }
+
     @Test func addressMapParsesParameters() {
         func command(_ address: String, _ args: [OSCArgument]) -> OSCCommand? {
             OSCAddressMap.command(for: OSCMessage(address, args))
