@@ -158,17 +158,4 @@ import Testing
         SyncPacket(machineID: Self.machine, tick: 1, sendTime: 2, layers: [Self.layer(1), layer]).encode(into: &buffer)
         #expect(throws: SyncPacket.ParseError.badValue) { try SyncPacket.decode(buffer) }
     }
-
-    @Test func reencodingAnythingDecodedNeverTraps() {
-        var buffer: [UInt8] = []
-        SyncPacket(machineID: Self.machine, tick: 1, sendTime: 2, layers: (0..<3).map(Self.layer)).encode(into: &buffer)
-        var out: [UInt8] = []
-        for i in buffer.indices {
-            for value: UInt8 in [0, 1, 0x7F, 0x80, 0xFF] {
-                var mutated = buffer
-                mutated[i] = value
-                if let packet = try? SyncPacket.decode(mutated) { packet.encode(into: &out) }
-            }
-        }
-    }
 }

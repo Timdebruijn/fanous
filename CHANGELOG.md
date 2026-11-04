@@ -10,7 +10,16 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- CI runs the engine suites that need no GPU, media hardware or display (261 tests: state store, commands, versions,
+- Fixed: a `project.json` the engine could not read (damaged, another schema) was replaced without a word: the
+  fresh project's first autosave wrote over it two seconds later. It is now kept next to itself as
+  `project.json.unreadable-<time>` and the log says so (PR #279).
+- Fixed: three parsers on the network boundary took the engine down on one packet: an OSC blob whose padding is
+  missing before the next string argument, OSC bundles nested thousands deep (stack overflow), and an HTTP request
+  with a negative Content-Length (`-1` reached the body slice). They now reject the message (`truncated`,
+  `badBundle` past 8 levels, 400). A fuzz test cuts every sample of every network parser in Core (Art-Net, sACN,
+  OSC, CITP, WebSocket, HTTP, sync, MIDI; real captures and encoded messages) at every length and mutates every
+  byte; it runs on CI and traps on the old OSC blob code (PR #277).
+- CI runs the engine suites that need no GPU, media hardware or display ( tests: state store, commands, versions,
   roles, servers, sync, OSC, CITP, MIDI, library index, readiness, ...) next to the Core tests: `scripts/test.sh
   --hosted` holds the list; nine GPU tests of four mixed files moved into `…GPUTests` suites in the same file
   (PR #278).

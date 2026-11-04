@@ -495,6 +495,15 @@ public enum ProjectDocument {
         return changed ? converted : nil
     }
 
+    /// `load` gave nil for a file that exists: moves it next to itself as `project.json.unreadable-<time>` so the
+    /// fresh project's first autosave does not write over it. Nil when there is no file.
+    public static func setAside(_ url: URL, now: Date = Date()) throws -> URL? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let aside = url.appendingPathExtension("unreadable-" + ProjectVersions.stamp(now.timeIntervalSince1970))
+        try FileManager.default.moveItem(at: url, to: aside)
+        return aside
+    }
+
     public static func save(_ document: JSONValue, to url: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
