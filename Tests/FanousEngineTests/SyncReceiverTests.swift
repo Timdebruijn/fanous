@@ -29,12 +29,10 @@ struct SyncReceiverTests {
         return bytes
     }
 
-    /// A receiver on a free port, bound to 127.0.0.1.
+    /// A receiver on 127.0.0.1, on a port the kernel picks.
     static func receiver() throws -> (SyncReceiver, UInt16) {
-        let port = try freeUDPPort()
         let receiver = SyncReceiver(machine: own, logger: testLogger)
-        try receiver.start(port: port, loopbackOnly: true)
-        return (receiver, port)
+        return (receiver, try receiver.start(port: 0, loopbackOnly: true))
     }
 
     /// Waits until `group` has an entry (the queue handles datagrams in order, so everything sent before it is done).

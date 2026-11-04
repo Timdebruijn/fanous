@@ -16,10 +16,10 @@ struct OSCReceiverTests {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let seen = Mutex<Set<Double>>([])
         store.onCommand = { if case .cueGoto(let n) = $0 { seen.withLock { _ = $0.insert(n) } } }
-        let port = try freeUDPPort()
-        let receiver = OSCReceiver(store: store, logger: testLogger, port: port)
+        let receiver = OSCReceiver(store: store, logger: testLogger, port: 0)
         try receiver.start()
         defer { receiver.stop() }
+        let port = try await listeningPort { receiver.boundUDPPort }
         // listening once a goto 0 (no cue of the burst) arrives; a fixed 300 ms was too short on a loaded Mac (B67)
         #expect(await waitUntil(every: .milliseconds(50)) {
             sendUDP(OSCMessage("/fanous/cue/goto", [.float32(0)]).encoded(), to: port)
@@ -43,10 +43,10 @@ struct OSCReceiverTests {
         let store = DMXStore(patch: .standard(layers: 4, outputs: 1), logger: testLogger)
         let listening = Mutex(false)
         store.onCommand = { _ in listening.withLock { $0 = true } }
-        let port = try freeUDPPort()
-        let receiver = OSCReceiver(store: store, logger: testLogger, port: port)
+        let receiver = OSCReceiver(store: store, logger: testLogger, port: 0)
         try receiver.start()
         defer { receiver.stop() }
+        let port = try await listeningPort { receiver.boundUDPPort }
         // listening once a probe command arrives; a fixed 300 ms was too short on a loaded Mac (B67)
         #expect(await waitUntil(every: .milliseconds(50)) {
             sendUDP(OSCMessage("/fanous/cue/goto", [.float32(0)]).encoded(), to: port)

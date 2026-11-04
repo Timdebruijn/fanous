@@ -65,9 +65,8 @@ struct SyncSenderTests {
     }
 
     @Test func theThreadSendsWhatTheSlotHolds() throws {
-        let port = try freeUDPPort()
-        let catcher = try UDPCatcher(port: port, timeout: 2)
-        let sender = Self.sender(port: port)
+        let catcher = try UDPCatcher(timeout: 2)
+        let sender = Self.sender(port: catcher.port)
         sender.start()
         defer { sender.stop() }
         sender.slots.write { slot in
@@ -89,9 +88,8 @@ struct SyncSenderTests {
     }
 
     @Test func withoutMastersOnlyAKeepaliveOnceASecond() throws {
-        let port = try freeUDPPort()
-        let catcher = try UDPCatcher(port: port, timeout: 0.5)
-        let sender = Self.sender(port: port)
+        let catcher = try UDPCatcher(timeout: 0.5)
+        let sender = Self.sender(port: catcher.port)
         sender.start()
         defer { sender.stop() }
         let start = Date()
@@ -107,9 +105,8 @@ struct SyncSenderTests {
     @Test func noNetworkSendsOnlyToLoopback() throws {
         var settings = SyncSettings()
         #expect(settings.port == 8002 && settings.target == "broadcast" && settings.interface == "any")
-        let port = try freeUDPPort()
-        let catcher = try UDPCatcher(port: port, timeout: 1.5)
-        settings.port = port  // broadcast would go to this port on the LAN
+        let catcher = try UDPCatcher(timeout: 1.5)
+        settings.port = catcher.port  // broadcast would go to this port on the LAN
         let sender = SyncSender(
             machine: Self.machine, settings: settings, network: false, logger: testLogger)
         sender.start()

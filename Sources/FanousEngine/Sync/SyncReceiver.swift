@@ -80,9 +80,12 @@ final class SyncReceiver: @unchecked Sendable {
         self.logger = logger
     }
 
-    /// Binds `port` on every interface, or on 127.0.0.1 only (`--no-network`).
-    func start(port: UInt16, loopbackOnly: Bool) throws {
+    /// Binds `port` on every interface, or on 127.0.0.1 only (`--no-network`); returns the port bound, which differs
+    /// only for port 0 (tests only: the kernel picks one).
+    @discardableResult
+    func start(port: UInt16, loopbackOnly: Bool) throws -> UInt16 {
         let fd = try UDPSend.bound(port: port, address: loopbackOnly ? inet_addr("127.0.0.1") : INADDR_ANY)
+        let port = UDPSend.localPort(fd) ?? port
         let reader = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
         reader.setEventHandler { [weak self] in self?.read(fd) }
         reader.setCancelHandler { close(fd) }
@@ -90,6 +93,7 @@ final class SyncReceiver: @unchecked Sendable {
         reader.resume()
         logger.info(
             "sync listening", metadata: ["port": "\(port)", "address": "\(loopbackOnly ? "127.0.0.1" : "any")"])
+        return port
     }
 
     func stop() {

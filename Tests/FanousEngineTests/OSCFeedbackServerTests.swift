@@ -25,7 +25,7 @@ import Testing
             let fd = socket(AF_INET, SOCK_DGRAM, 0)
             self.fd = fd
             try #require(withSockaddr(host: "127.0.0.1") { bind(fd, $0, $1) } == 0)
-            port = try #require(localPort(fd))
+            port = try #require(UDPSend.localPort(fd))
         }
 
         func close() { _ = Darwin.close(fd) }
@@ -63,25 +63,12 @@ import Testing
         }
     }
 
-    /// A port that is free for UDP and TCP right now (the receiver listens on both): the kernel's UDP pick, kept when
-    /// TCP can bind it too.
-    static func freePort() throws -> UInt16 {
-        for _ in 0..<20 {
-            let port = try freeUDPPort()
-            let fd = socket(AF_INET, SOCK_STREAM, 0)
-            defer { _ = Darwin.close(fd) }
-            if withSockaddr(port: port, { bind(fd, $0, $1) }) == 0 { return port }
-        }
-        throw POSIXError(.EADDRINUSE)
-    }
-
     static func start(
         store: DMXStore, fixed: OSCFeedbackTarget? = nil, state: @escaping @Sendable () -> OSCFeedback.State = { [:] },
         fixtures: @escaping @Sendable () -> [FixtureRef: [UInt16]] = { [:] }
     ) async throws -> (OSCReceiver, OSCFeedbackServer, UInt16) {
         let feedback = OSCFeedbackServer(fixed: fixed, logger: testLogger, fixtures: fixtures, engine: state)
-        let port = try freePort()
-        let receiver = OSCReceiver(store: store, logger: testLogger, port: port, feedback: feedback)
+        let receiver = OSCReceiver(store: store, logger: testLogger, port: 0, feedback: feedback)
         try receiver.start()
         feedback.start()
         var started = false
@@ -91,6 +78,7 @@ import Testing
                 feedback.stop()
             }
         }
+        let port = try await listeningPort { receiver.boundUDPPort }
         // listening once a ping is answered (a fixed 300 ms was too short on a loaded Mac, B67)
         let probe = try Client()
         defer { probe.close() }
