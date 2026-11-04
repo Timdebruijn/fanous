@@ -11,7 +11,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Engine: OSC over TCP drops a SLIP packet longer than 64 KiB and logs it with the peer, instead of buffering a
-  client that never sends END until the engine runs out of memory (PR #NNN).
+  client that never sends END until the engine runs out of memory (PR #288).
 - Tests: Core drops 6 tests that asserted nothing the suite did not already pin (an OSC capture loop over a
   directory that does not exist, the Sync markdown and GDTF strings, Sync channel 51 as a whole test, the
   highest-channel arithmetic, the X.509 byte offsets; the packet-size pins moved into the layout test) and pins
