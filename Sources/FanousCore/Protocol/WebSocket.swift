@@ -80,15 +80,13 @@ public struct WebSocketFrame: Equatable, Sendable {
         var offset = 2
         if length == 126 {
             guard bytes.count >= 4 else { return nil }
-            length = Int(bytes[2]) << 8 | Int(bytes[3])
+            length = Int(bytes.bigEndian(at: 2, as: UInt16.self))
             offset = 4
         } else if length == 127 {
             guard bytes.count >= 10 else { return nil }
             guard bytes[2] & 0x80 == 0 else { throw Error.badLength }
-            var n: UInt64 = 0
-            for i in 2..<10 { n = n << 8 | UInt64(bytes[i]) }
-            // The top bit is clear, so n fits in Int on every 64-bit platform we ship to.
-            length = Int(n)
+            // The top bit is clear, so it fits in Int on every 64-bit platform we ship to.
+            length = Int(bytes.bigEndian(at: 2, as: UInt64.self))
             offset = 10
         }
         if opcode.rawValue >= 8, !fin || length > 125 { throw Error.controlFrameTooLong }

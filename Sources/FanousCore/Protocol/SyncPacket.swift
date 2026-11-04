@@ -92,28 +92,23 @@ public struct SyncPacket: Equatable, Sendable {
         let count = Int(bytes[headerSize - 1])
         // Trailing bytes are ignored (as in `ArtNet.parse`); incompatible changes bump `version`.
         guard count <= maxLayers, bytes.count >= headerSize + count * layerSize else { throw ParseError.badLength }
-        var uuid: uuid_t = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-        withUnsafeMutableBytes(of: &uuid) { $0.copyBytes(from: bytes[5..<21]) }
         var layers: [Layer] = []
         layers.reserveCapacity(count)
         for i in 0..<count {
             let o = headerSize + i * layerSize
             let l = Layer(
-                group: bytes[o], layer: bytes[o + 1], mediaKey: read(bytes, o + 2),
-                fps: Float(bitPattern: read(bytes, o + 4)),
-                position: Double(bitPattern: read(bytes, o + 8)), direction: Int8(bitPattern: bytes[o + 16]),
-                finished: bytes[o + 17] != 0, rate: Float(bitPattern: read(bytes, o + 18)))
+                group: bytes[o], layer: bytes[o + 1], mediaKey: bytes.littleEndian(at: o + 2),
+                fps: Float(bitPattern: bytes.littleEndian(at: o + 4)),
+                position: Double(bitPattern: bytes.littleEndian(at: o + 8)), direction: Int8(bitPattern: bytes[o + 16]),
+                finished: bytes[o + 17] != 0, rate: Float(bitPattern: bytes.littleEndian(at: o + 18)))
             guard l.fps.isFinite, l.fps > 0, l.position.isFinite, l.rate.isFinite,
                 (1...LayerSync.groups).contains(Int(l.group)), (-1...1).contains(l.direction)
             else { throw ParseError.badValue }
             layers.append(l)
         }
         return SyncPacket(
-            machineID: UUID(uuid: uuid), tick: read(bytes, 21), sendTime: Double(bitPattern: read(bytes, 25)),
+            machineID: UUID(uuid: bytes.load(at: 5, as: uuid_t.self)), tick: bytes.littleEndian(at: 21),
+            sendTime: Double(bitPattern: bytes.littleEndian(at: 25)),
             layers: layers)
-    }
-
-    static func read<T: FixedWidthInteger>(_ bytes: [UInt8], _ offset: Int) -> T {
-        (0..<MemoryLayout<T>.size).reduce(T.zero) { $0 | T(bytes[offset + $1]) << ($1 * 8) }
     }
 }

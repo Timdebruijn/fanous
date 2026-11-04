@@ -202,7 +202,7 @@ struct CITPServerTests {
         #expect(CITPServer.layer(ofSource: 0, layerCount: 2) == nil && CITPServer.layer(ofSource: 2, layerCount: 2) == 1 && CITPServer.layer(ofSource: 3, layerCount: 2) == nil)
 
         client.send(Self.msex("XXXX", []))
-        #expect(client.wait(1, for: Self.reply(.nack(Nack(receivedContentType: "XXXX")))))
+        #expect(client.wait(1, for: Self.reply(.nack(receivedContentType: "XXXX"))))
 
         client.send(Self.requestStream(0, width: 640, height: 360, fps: 0))
         for _ in 0..<50 where server.status.withLock({ $0.streams }) > 0 { usleep(20_000) }

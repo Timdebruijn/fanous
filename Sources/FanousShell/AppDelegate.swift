@@ -151,7 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         appMenu.addItem(withTitle: "Hide \(Attribution.projectName)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit \(Attribution.projectName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        mainMenu.addItem(submenu: appMenu)
+        mainMenu.addItem(withTitle: "", action: nil, keyEquivalent: "").submenu = appMenu
 
         let editMenu = NSMenu(title: "Edit")
         editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
@@ -161,7 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        mainMenu.addItem(submenu: editMenu)
+        mainMenu.addItem(withTitle: "", action: nil, keyEquivalent: "").submenu = editMenu
 
         let engineMenu = NSMenu(title: "Engine")
         engineMenu.delegate = self
@@ -176,22 +176,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         engineMenu.addItem(withTitle: "Stop Engine…", action: #selector(stopEngine(_:)), keyEquivalent: "")
         engineMenu.addItem(.separator())
         engineMenu.addItem(withTitle: "Open Logs", action: #selector(openLogs(_:)), keyEquivalent: "")
-        mainMenu.addItem(submenu: engineMenu)
+        mainMenu.addItem(withTitle: "", action: nil, keyEquivalent: "").submenu = engineMenu
 
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.zoom(_:)), keyEquivalent: "")
-        mainMenu.addItem(submenu: windowMenu)
+        mainMenu.addItem(withTitle: "", action: nil, keyEquivalent: "").submenu = windowMenu
         NSApp.windowsMenu = windowMenu
 
         NSApp.mainMenu = mainMenu
-    }
-}
-
-extension NSMenu {
-    fileprivate func addItem(submenu: NSMenu) {
-        let item = NSMenuItem()
-        item.submenu = submenu
-        addItem(item)
     }
 }

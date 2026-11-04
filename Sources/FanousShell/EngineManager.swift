@@ -15,17 +15,13 @@ final class EngineManager {
     static let agentPlist = "org.fanous.engine.plist"
     private var child: Process?
 
-    var isBundled: Bool {
-        FileManager.default.fileExists(
-            atPath: Bundle.main.bundleURL.appending(path: "Contents/Library/LaunchAgents/\(Self.agentPlist)").path)
-    }
-
     var usesAgent: Bool {
         let arguments = CommandLine.arguments
         if let index = arguments.firstIndex(of: "--engine"), arguments.indices.contains(index + 1) {
             return arguments[index + 1] != "child"
         }
-        return isBundled
+        return FileManager.default.fileExists(
+            atPath: Bundle.main.bundleURL.appending(path: "Contents/Library/LaunchAgents/\(Self.agentPlist)").path)
     }
 
     func start() {
@@ -46,9 +42,7 @@ final class EngineManager {
         } else {
             service = child?.isRunning == true ? "child process" : "no child process"
         }
-        var request = URLRequest(url: URL(string: "https://127.0.0.1:8443/healthz")!)
-        request.timeoutInterval = 1
-        let task = Self.probeSession.dataTask(with: request) { data, _, _ in
+        let task = Self.probeSession.dataTask(with: Self.healthz) { data, _, _ in
             let version = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["version"] as? String
             let engine = version.map { "Engine \($0) running" } ?? "Engine not running"
             DispatchQueue.main.async { MainActor.assumeIsolated { completion("\(engine) · \(service)") } }
@@ -122,13 +116,16 @@ final class EngineManager {
 
     /// One session for all probes: a session per request is never invalidated and leaks.
     private static let probeSession = URLSession(configuration: .ephemeral, delegate: TrustAnyLocalhost.shared, delegateQueue: nil)
+    private static let healthz = {
+        var request = URLRequest(url: URL(string: "https://127.0.0.1:8443/healthz")!)
+        request.timeoutInterval = 1
+        return request
+    }()
 
     /// Polls /healthz once a second for up to `seconds` (a freshly started agent needs a moment); answers as soon as
     /// the last attempt finishes.
     static func engineAnswers(within seconds: Int, then: @escaping @MainActor (Bool) -> Void) {
-        var request = URLRequest(url: URL(string: "https://127.0.0.1:8443/healthz")!)
-        request.timeoutInterval = 1
-        probeSession.dataTask(with: request) { data, response, _ in
+        probeSession.dataTask(with: healthz) { data, response, _ in
             let ok = (response as? HTTPURLResponse)?.statusCode == 200 && data != nil
             DispatchQueue.main.asyncAfter(deadline: .now() + (ok || seconds <= 1 ? 0 : 1)) {
                 MainActor.assumeIsolated {

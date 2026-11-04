@@ -28,7 +28,7 @@ import Testing
         let spec = ChannelMap.spec(.layer(.sync))
         #expect(spec.channel == 51 && spec.name == "Sync" && spec.bits == 8 && spec.defaultRaw == 0)
         #expect(FixtureMode.layer.footprint == 64)
-        #expect(ChannelMap.reservedLayerChannels == 52...64)
+        #expect(ChannelMap.reserved(for: .layer) == 52...64)
     }
 
     @Test func documentAndGDTFCarrySync() {

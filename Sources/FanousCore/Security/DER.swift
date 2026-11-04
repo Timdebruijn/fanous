@@ -62,9 +62,7 @@ public enum DER {
 
     /// UTCTime before 2050, GeneralizedTime from 2050 on (RFC 5280 §4.1.2.5).
     public static func time(_ date: Date) -> [UInt8] {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        let c = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        let c = Calendar(identifier: .gregorian).dateComponents(in: .gmt, from: date)
         let year = c.year!
         let body = String(
             format: "%02d%02d%02d%02d%02dZ", c.month!, c.day!, c.hour!, c.minute!, c.second!)

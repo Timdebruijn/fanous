@@ -36,33 +36,35 @@ public enum SACN {
         guard 16 + rootLength <= b.count else { throw ParseError.badLength }
         let end = 16 + rootLength
         let cid = Array(b[22..<38])
-        switch be32(b, 18) {
+        switch b.bigEndian(at: 18, as: UInt32.self) {
         case rootVectorData:
-            guard end >= 126, be32(b, 40) == framingVectorData else { throw ParseError.badVector }
+            guard end >= 126, b.bigEndian(at: 40) == framingVectorData else { throw ParseError.badVector }
             _ = try pduLength(b, at: 38)
             _ = try pduLength(b, at: 115)
             guard b[117] == 0x02 else { throw ParseError.badVector }
-            guard b[118] == 0xA1, be16(b, 119) == 0, be16(b, 121) == 1 else { throw ParseError.badAddressType }
-            let count = Int(be16(b, 123))
+            guard b[118] == 0xA1, b.bigEndian(at: 119, as: UInt16.self) == 0, b.bigEndian(at: 121, as: UInt16.self) == 1 else {
+                throw ParseError.badAddressType
+            }
+            let count = Int(b.bigEndian(at: 123, as: UInt16.self))
             guard count >= 1, count <= 513, 125 + count <= end else { throw ParseError.badLength }
             return .data(
                 SACNData(
-                    cid: cid, sourceName: cString(b, 44, 64), priority: b[108], syncAddress: be16(b, 109), sequence: b[111],
-                    options: b[112], universe: be16(b, 113), startCode: b[125], slots: Array(b[126..<125 + count])))
+                    cid: cid, sourceName: cString(b, 44, 64), priority: b[108], syncAddress: b.bigEndian(at: 109), sequence: b[111],
+                    options: b[112], universe: b.bigEndian(at: 113), startCode: b[125], slots: Array(b[126..<125 + count])))
         case rootVectorExtended:
-            switch be32(b, 40) {
+            switch b.bigEndian(at: 40, as: UInt32.self) {
             case framingVectorSync:
                 guard end >= 49 else { throw ParseError.tooShort }
-                return .sync(SACNSync(cid: cid, sequence: b[44], syncAddress: be16(b, 45)))
+                return .sync(SACNSync(cid: cid, sequence: b[44], syncAddress: b.bigEndian(at: 45)))
             case framingVectorDiscovery:
                 guard end >= 120 else { throw ParseError.tooShort }
                 let discoveryLength = try pduLength(b, at: 112)
-                guard be32(b, 114) == discoveryVectorUniverseList else { throw ParseError.badVector }
+                guard b.bigEndian(at: 114) == discoveryVectorUniverseList else { throw ParseError.badVector }
                 let listEnd = min(end, 112 + discoveryLength)
                 var universes: [UInt16] = []
                 var i = 120
                 while i + 1 < listEnd {
-                    universes.append(be16(b, i))
+                    universes.append(b.bigEndian(at: i))
                     i += 2
                 }
                 return .discovery(
@@ -81,10 +83,6 @@ public enum SACN {
     }
 
     static func flagsLength(_ length: Int) -> [UInt8] { [0x70 | UInt8(length >> 8 & 0x0F), UInt8(length & 0xFF)] }
-    static func be16(_ b: [UInt8], _ i: Int) -> UInt16 { UInt16(b[i]) << 8 | UInt16(b[i + 1]) }
-    static func be32(_ b: [UInt8], _ i: Int) -> UInt32 {
-        UInt32(b[i]) << 24 | UInt32(b[i + 1]) << 16 | UInt32(b[i + 2]) << 8 | UInt32(b[i + 3])
-    }
     static func cString(_ b: [UInt8], _ start: Int, _ length: Int) -> String {
         let field = b[start..<start + length]
         let end = field.firstIndex(of: 0) ?? field.endIndex

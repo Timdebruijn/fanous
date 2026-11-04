@@ -49,15 +49,6 @@ public struct MSEXLibraryID: Equatable, Hashable, Sendable {
     public static func topLevel(_ number: UInt8) -> MSEXLibraryID { MSEXLibraryID(level: 1, level1: number) }
 }
 
-/// MSEX/CInf: the client lists the MSEX versions it speaks (always sent with version 1.2).
-public struct ClientInformation: Equatable, Sendable {
-    public var supportedVersions: [MSEXVersion]
-
-    public init(supportedVersions: [MSEXVersion]) {
-        self.supportedVersions = supportedVersions
-    }
-}
-
 /// MSEX/SInf. 1.0 and 1.1 share the short layout (name, product version, layers); 1.2 adds the fields marked below.
 public struct ServerInformation: Equatable, Sendable {
     /// 1.2: 36-character media server UUID, lets a console cache thumbnails per server.
@@ -111,17 +102,6 @@ public struct ServerInformation: Equatable, Sendable {
         let layers = layerDMXSources.prefix(0xFF)
         out.append(UInt8(layers.count))
         for source in layers { out.putUCS1(source) }
-    }
-}
-
-/// MSEX/Nack (1.2+): "I do not support the message you sent". `InResponseTo` in the CITP header carries the
-/// request's index, so answer with `encoded(requestIndex:)` set to the request's `CITPHeader.requestIndex`.
-public struct Nack: Equatable, Sendable {
-    /// Content type of the rejected message, e.g. "GELT".
-    public var receivedContentType: String
-
-    public init(receivedContentType: String) {
-        self.receivedContentType = receivedContentType
     }
 }
 
@@ -523,10 +503,6 @@ public struct StreamFrame: Equatable, Sendable {
     }
 }
 
-extension Nack {
-    func write(to out: inout [UInt8], as v: MSEXVersion) { out.putCookie(receivedContentType) }
-}
-
 // MARK: - Dispatch
 
 extension CITPClientMessage {
@@ -535,7 +511,7 @@ extension CITPClientMessage {
         let version = MSEXVersion(major: try r.u8(), minor: try r.u8())
         guard version.major == 1 else { throw CITPError.unsupportedVersion }
         switch try r.cookie() {
-        case "CInf": return .clientInformation(ClientInformation(supportedVersions: try r.versions()))
+        case "CInf": return .clientInformation(supportedVersions: try r.versions())
         case "GELI": return .getElementLibraryInformation(try GetElementLibraryInformation(version: version, from: &r))
         case "GEIn": return .getElementInformation(try GetElementInformation(version: version, from: &r))
         case "GETh": return .getElementThumbnail(try GetElementThumbnail(version: version, from: &r))

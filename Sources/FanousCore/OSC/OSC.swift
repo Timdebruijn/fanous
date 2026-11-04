@@ -182,7 +182,7 @@ public indirect enum OSCPacket: Equatable, Sendable {
     static func read32(_ b: [UInt8], _ cursor: inout Int, end: Int) throws -> UInt32 {
         guard cursor + 4 <= end else { throw OSCParseError.truncated }
         defer { cursor += 4 }
-        return UInt32(b[cursor]) << 24 | UInt32(b[cursor + 1]) << 16 | UInt32(b[cursor + 2]) << 8 | UInt32(b[cursor + 3])
+        return b.bigEndian(at: cursor)
     }
 
     static func read64(_ b: [UInt8], _ cursor: inout Int, end: Int) throws -> UInt64 {
