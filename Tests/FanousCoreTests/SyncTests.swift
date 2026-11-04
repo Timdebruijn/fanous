@@ -10,6 +10,7 @@ import Testing
 @Suite struct SyncChannelTests {
     @Test func everyRawValueMapsToItsRoleAndGroup() {
         let spec = ChannelMap.spec(.layer(.sync))
+        #expect(spec.name == "Sync" && spec.channel == 51 && spec.bits == 8 && spec.defaultRaw == 0)  // the wire row, apart from the docs
         for raw in 0...255 {
             let expected: LayerSync =
                 switch raw {

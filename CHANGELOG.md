@@ -11,10 +11,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Tests: Core drops 6 tests that asserted nothing the suite did not already pin (an OSC capture loop over a
-  directory that does not exist, the Sync markdown and GDTF strings, Sync channel 51, the highest-channel and
-  packet-size arithmetic, the X.509 byte offsets) and pins what they missed: the Art-Net and sACN capture
-  directories must not be empty, every parameter has a spec in all four modes, the lookup tables are checked for
-  Keystone, and the MIME table for `.wasm`, `.mjs`, `.css` and `.svg` (PR #283).
+  directory that does not exist, the Sync markdown and GDTF strings, Sync channel 51 as a whole test, the
+  highest-channel arithmetic, the X.509 byte offsets; the packet-size pins moved into the layout test) and pins
+  what they missed: the Art-Net and sACN capture directories must not be empty, every parameter has a spec in all
+  four modes, the Sync wire row and the certificate's v3 version field, the lookup tables are checked for Keystone,
+  and the MIME table for `.wasm`, `.mjs`, `.css` and `.svg` (PR #283).
 - Tests: the REST routes moved out of `Engine.start` into `RESTRoutes` (same routes, statuses and bodies), and a
   table test pins their role gates without a GPU or a socket: who gets 403 on `/api/ingest`, uploads,
   `/api/library/folder` and `/api/logs`, the redacted `/api/library` root below operator, `/api/login` 405/400/401

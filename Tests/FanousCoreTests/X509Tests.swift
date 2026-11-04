@@ -24,6 +24,7 @@ import Testing
         // A syntactically valid cert with a dummy signature: enough for Security to parse subject and SANs.
         let dummySignature = DER.sequence([DER.integer(unsignedBytes: [0x7F]), DER.integer(unsignedBytes: [0x7E])])
         let der = Self.sample().certificate(signature: dummySignature)
+        #expect(der.firstRange(of: DER.explicit(0, DER.integer(unsignedBytes: [2]))) != nil)  // version v3; Security would take v1 too
         let cert = try #require(SecCertificateCreateWithData(nil, Data(der) as CFData))
         #expect(SecCertificateCopySubjectSummary(cert) as String? == "Fanous Test")
         let serial = try #require(SecCertificateCopySerialNumberData(cert, nil) as Data?)
