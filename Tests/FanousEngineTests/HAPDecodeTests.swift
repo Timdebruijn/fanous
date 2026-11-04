@@ -13,11 +13,7 @@ import Testing
     @Test func decodingInPlaceMatchesTheStagingCopy() async throws {
         let directory = try tempDir("fanous-ingest-tests")
         let url = directory.appending(path: "clip.mov")
-        try await offPool {
-            let writer = try MovieWriter(url: url, width: 320, height: 176, fps: 10, codec: .hap(.hap), audio: false)
-            for frame in 0..<4 { try writer.append(try IngestQueueTests.patternBuffer(pool: writer.pixelBufferPool, frame: frame)) }
-            try writer.finish()
-        }
+        try await writePatternMovie(to: url, size: (320, 176), fps: 10, frames: 4, codec: .hap(.hap))
         let device = try #require(MTLCreateSystemDefaultDevice())
         let source = try await MovieSource.open(url: url, device: device, poolSize: 2)
         let direct = DecodedFrame(poolIndex: 0), staged = DecodedFrame(poolIndex: 1)

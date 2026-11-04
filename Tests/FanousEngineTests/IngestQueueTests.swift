@@ -22,27 +22,7 @@ import VideoToolbox
     /// 320×176 ProRes 422 HQ with the `TestTone` track, 10 fps (20 frames: HAP Q encoding is slow in a debug build).
     static let sourceFPS: Int32 = 10
     static func writeSource(to url: URL, seconds: Int = 2, audio: Bool = true) async throws {
-        try await offPool { try writeSourceBlocking(to: url, seconds: seconds, audio: audio) }
-    }
-
-    private static func writeSourceBlocking(to url: URL, seconds: Int, audio: Bool) throws {
-        let writer = try MovieWriter(url: url, width: 320, height: 176, fps: sourceFPS, codec: .proRes422HQ, audio: audio)
-        for frame in 0..<(seconds * Int(sourceFPS)) {
-            try writer.append(try Self.patternBuffer(pool: writer.pixelBufferPool, frame: frame))
-        }
-        try writer.finish()
-    }
-
-    static func patternBuffer(pool: CVPixelBufferPool?, frame: Int) throws -> CVPixelBuffer {
-        var buffer: CVPixelBuffer?
-        if let pool { CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer) } else { CVPixelBufferCreate(nil, 320, 176, kCVPixelFormatType_32BGRA, nil, &buffer) }
-        guard let buffer else { throw MovieWriter.WriterError.failed("pixel buffer") }
-        CVPixelBufferLockBaseAddress(buffer, [])
-        PatternFrames.fill(
-            bgra: CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self), width: 320, height: 176,
-            bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), frame: frame)
-        CVPixelBufferUnlockBaseAddress(buffer, [])
-        return buffer
+        try await writePatternMovie(to: url, size: (320, 176), fps: sourceFPS, frames: seconds * Int(sourceFPS), audio: audio)
     }
 
     /// A 1 s, 25 fps H.264 `.mp4` (320×176) written with AVAssetWriter, with a 1 s 440 Hz mono AAC track at 44.1 kHz
@@ -142,7 +122,10 @@ import VideoToolbox
         let times = presentationTimes ?? (0..<25).map { CMTime(value: Int64($0), timescale: 25) }
         for (frame, time) in times.enumerated() {
             while !input.isReadyForMoreMediaData { usleep(500) }
-            let buffer = try patternBuffer(pool: adaptor.pixelBufferPool, frame: frame)
+            var pooled: CVPixelBuffer?
+            if let pool = adaptor.pixelBufferPool { CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pooled) }
+            guard let pooled else { throw MovieWriter.WriterError.failed("pixel buffer") }
+            let buffer = fillPattern(pooled, frame: frame)
             if alpha {  // the right half transparent (premultiplied: all zero)
                 CVPixelBufferLockBaseAddress(buffer, [])
                 let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
@@ -155,10 +138,7 @@ import VideoToolbox
             }
         }
         input.markAsFinished()
-        let done = DispatchSemaphore(value: 0)
-        writer.finishWriting { done.signal() }
-        done.wait()
-        guard writer.status == .completed else { throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "finish") }
+        try writer.finishBlocking()
     }
 
     /// A 320×176 PNG: the left half opaque, the right half transparent; the green channel encodes `index`.
@@ -790,10 +770,7 @@ import VideoToolbox
             }
         }
         input.markAsFinished()
-        let done = DispatchSemaphore(value: 0)
-        writer.finishWriting { done.signal() }
-        done.wait()
-        guard writer.status == .completed else { throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "finish") }
+        try writer.finishBlocking()
     }
 
     /// How far the middle row of `url`'s first frame is from `writeTenBitRamp`'s ramp, in 10-bit luma codes, read as

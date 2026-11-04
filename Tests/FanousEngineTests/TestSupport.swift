@@ -90,6 +90,39 @@ func cgImage(rgba: [UInt8], width: Int, height: Int, alpha: CGImageAlphaInfo = .
         shouldInterpolate: false, intent: .defaultIntent))
 }
 
+/// `buffer` (BGRA, any size) filled with `PatternFrames` frame `frame`.
+@discardableResult
+func fillPattern(_ buffer: CVPixelBuffer, frame: Int) -> CVPixelBuffer {
+    CVPixelBufferLockBaseAddress(buffer, [])
+    PatternFrames.fill(
+        bgra: CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self), width: CVPixelBufferGetWidth(buffer),
+        height: CVPixelBufferGetHeight(buffer), bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), frame: frame)
+    CVPixelBufferUnlockBaseAddress(buffer, [])
+    return buffer
+}
+
+/// A movie of `frames` `PatternFrames` frames at `size` and `fps` in `codec`, with the `TestTone` track when `audio` is set;
+/// written off the pool (B63).
+func writePatternMovie(
+    to url: URL, size: (Int, Int), fps: Int32, frames: Int, codec: MovieWriter.Codec = .proRes422HQ, audio: Bool = false
+) async throws {
+    try await offPool {
+        let writer = try MovieWriter(url: url, width: size.0, height: size.1, fps: fps, codec: codec, audio: audio)
+        for frame in 0..<frames { try writer.append(fillPattern(try writer.makePixelBuffer(), frame: frame)) }
+        try writer.finish()
+    }
+}
+
+extension AVAssetWriter {
+    /// `finishWriting`, waited for; throws unless the movie is complete. Blocks: call it off the pool (`offPool`).
+    func finishBlocking() throws {
+        let done = DispatchSemaphore(value: 0)
+        finishWriting { done.signal() }
+        done.wait()
+        guard status == .completed else { throw MovieWriter.WriterError.failed(error?.localizedDescription ?? "finish") }
+    }
+}
+
 /// The first frame of `url`'s video track, decoded to `format`.
 func firstFrame(of url: URL, format: OSType = kCVPixelFormatType_32BGRA) async throws -> CVPixelBuffer {
     let asset = AVURLAsset(url: url)
