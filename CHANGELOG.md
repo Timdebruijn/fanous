@@ -46,7 +46,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   instead of 20, the H.264 test sources fill their pattern frames 16 at a time in parallel (an 1800-frame source spent
   11 s on it in one thread), and the five picture tests are a serialized suite of their own (`IngestPictureTests`)
   beside it. Fully parallel, the ingest tests hung once in three runs with every pool thread in an `AVAssetReader`
-  read, so both suites stay serialized (PR #NNN).
+  read, so both suites stay serialized (PR #290).
 - Tests: the engine's network tests no longer probe a free port and bind it a moment later (another process could take
   it in between, "Address already in use" three times on 2026-11-04): the sACN, Art-Net, OSC and sync receivers and the
   sync catcher bind port 0 and the tests read the port the kernel gave (`SACNReceiver.start` and `SyncReceiver.start`
