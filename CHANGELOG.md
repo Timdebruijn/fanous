@@ -22,7 +22,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   repeated others are gone (second slice, now pinned by the slice labels in the slice-drag test; Spread canvas, folded
   into that test), and the Space and L/Ctrl+Z key tests now also fail when the shortcut is broken
   (PR #284).
-
+- Tests: the sync receiver tests send their datagrams from one socket, in order, fail instead of reading the table
+  when the end marker never arrives, and ask for a group's conflict at the conflict's own time: the hosted CI runner
+  once stalled past the 2 s freewheel window and the conflict looked expired (PR #285).
 - Tests: the REST routes moved out of `Engine.start` into `RESTRoutes` (same routes, statuses and bodies), and a
   table test pins their role gates without a GPU or a socket: who gets 403 on `/api/ingest`, uploads,
   `/api/library/folder` and `/api/logs`, the redacted `/api/library` root below operator, `/api/login` 405/400/401
