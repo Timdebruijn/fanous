@@ -350,16 +350,35 @@ public final class IngestQueue: @unchecked Sendable {
         return job.destination.deletingLastPathComponent().appending(path: ext.isEmpty ? name : "\(name).\(ext)")
     }
 
-    /// `name`, or `name-2.ext`, `name-3.ext`, … when `directory` already has it.
+    /// `name`, or `name-2.ext`, `name-3.ext`, … when `directory` already has it. Only a lookup: the caller's move refuses an
+    /// existing destination, so a race between two callers fails instead of overwriting. Writers use `claimURL`.
     static func uniqueURL(for name: String, in directory: URL) -> URL {
-        var candidate = directory.appending(path: name)
-        let base = (name as NSString).deletingPathExtension, ext = (name as NSString).pathExtension
-        var suffix = 2
-        while FileManager.default.fileExists(atPath: candidate.path) {
-            candidate = directory.appending(path: ext.isEmpty ? "\(base)-\(suffix)" : "\(base)-\(suffix).\(ext)")
+        var suffix = 1
+        while FileManager.default.fileExists(atPath: candidate(name, suffix, in: directory).path) { suffix += 1 }
+        return candidate(name, suffix, in: directory)
+    }
+
+    /// Like `uniqueURL`, but creates the empty file (`O_EXCL`), so two parallel callers never get the same file (B155).
+    /// The caller writes into it or removes it.
+    static func claimURL(for name: String, in directory: URL) throws -> URL {
+        var suffix = 1
+        while true {
+            let url = candidate(name, suffix, in: directory)
+            let fd = open(url.path, O_CREAT | O_EXCL | O_WRONLY, 0o644)
+            if fd >= 0 {
+                close(fd)
+                return url
+            }
+            guard errno == EEXIST else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
             suffix += 1
         }
-        return candidate
+    }
+
+    /// `name` for suffix 1, `name-<suffix>.ext` after that.
+    private static func candidate(_ name: String, _ suffix: Int, in directory: URL) -> URL {
+        guard suffix > 1 else { return directory.appending(path: name) }
+        let base = (name as NSString).deletingPathExtension, ext = (name as NSString).pathExtension
+        return directory.appending(path: ext.isEmpty ? "\(base)-\(suffix)" : "\(base)-\(suffix).\(ext)")
     }
 
     enum IngestError: Error, CustomStringConvertible {

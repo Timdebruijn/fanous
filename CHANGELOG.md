@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Engine: two parallel uploads with the same name get their own files in `_incoming` (`clip.mov`, `clip-2.mov`):
+  the name is claimed with `O_EXCL` when the upload starts, so a refused upload can no longer delete the other's
+  queued file (PR #291).
 - Engine: OSC over TCP drops a SLIP packet longer than 64 KiB and logs it with the peer, instead of buffering a
   client that never sends END until the engine runs out of memory (PR #288).
 - Engine: a refused upload leaves nothing in `_incoming`: `PUT /api/upload/<folder>/<name>` with a folder outside

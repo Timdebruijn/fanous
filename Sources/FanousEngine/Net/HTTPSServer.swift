@@ -14,7 +14,8 @@ import Network
 /// upgrade request hands the connection to a `WebSocketSession` (DESIGN.md §11.1: one port for all).
 public final class HTTPSServer: @unchecked Sendable {
     public typealias Route = @Sendable (HTTPRequest) -> HTTPResponse?
-    /// Where to stream a large request body (an upload); nil = refuse the body. Called with the request head only.
+    /// Where to stream a large request body (an upload): an existing file the sink created for this request alone; nil =
+    /// refuse the body. Called with the request head only.
     public typealias UploadSink = @Sendable (HTTPRequest) -> URL?
     /// Called once a streamed body is complete, with the request head and the file it was written to.
     public typealias UploadRoute = @Sendable (HTTPRequest, URL) -> HTTPResponse
@@ -248,9 +249,9 @@ private final class ClientConnection: @unchecked Sendable {
             }
             if request.contentLength > HTTPSServer.maxInlineBody {
                 // large body: stream it to the file the upload sink names, or refuse it
-                guard let sink = server.uploadSink, let file = sink(request), server.uploadRoute != nil,
-                    FileManager.default.createFile(atPath: file.path, contents: nil), let handle = try? FileHandle(forWritingTo: file)
-                else {
+                let file = server.uploadRoute == nil ? nil : server.uploadSink?(request)
+                guard let file, let handle = try? FileHandle(forWritingTo: file) else {
+                    if let file { try? FileManager.default.removeItem(at: file) }
                     send(.text(413, "body too large"), includeBody: true, close: true)
                     return false
                 }
