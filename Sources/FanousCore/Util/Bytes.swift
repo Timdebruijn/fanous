@@ -10,10 +10,10 @@ extension Array where Element == UInt8 {
 
     /// The `T` at `offset`, most significant byte first (sACN, OSC, WebSocket). The caller checks the length;
     /// reading past the end traps, as a subscript does.
-    func bigEndian<T: FixedWidthInteger>(at offset: Int, as _: T.Type = T.self) -> T { T(bigEndian: load(at: offset)) }
+    func bigEndian<T: FixedWidthInteger & BitwiseCopyable>(at offset: Int, as _: T.Type = T.self) -> T { T(bigEndian: load(at: offset)) }
 
     /// The `T` at `offset`, least significant byte first (the sync packet); bounds as `bigEndian(at:)`.
-    func littleEndian<T: FixedWidthInteger>(at offset: Int, as _: T.Type = T.self) -> T { T(littleEndian: load(at: offset)) }
+    func littleEndian<T: FixedWidthInteger & BitwiseCopyable>(at offset: Int, as _: T.Type = T.self) -> T { T(littleEndian: load(at: offset)) }
 
     /// The `T` at `offset` as it lies in memory; traps when it does not fit.
     func load<T: BitwiseCopyable>(at offset: Int, as _: T.Type = T.self) -> T {
