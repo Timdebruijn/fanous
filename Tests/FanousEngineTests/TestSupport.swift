@@ -71,7 +71,8 @@ func testStore(
 }
 
 /// The engine's REST routes over `store` and `auth`, with the library root, ingest queue, thumbnail cache and log file
-/// in a fresh temporary directory (`dir`: `library/`, `thumbnails/`, `fanousd.log`, none made yet); the metrics routes
+/// in a fresh temporary directory (everything under `dir`: `library/`, `cache/`, `queue.json`, `thumbnails/`, `fanousd.log`,
+/// none made yet); the metrics routes
 /// answer stubs. Needs `.cleansTempFiles`.
 func testRoutes(store: StateStore, auth: RoleAuth) throws -> (routes: RESTRoutes, dir: URL) {
     let dir = try tempDir("rest")

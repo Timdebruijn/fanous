@@ -184,7 +184,7 @@ import Testing
 
     @Test(arguments: [
         Row("GET", "/api/thumbnail/abc.jpg", .nobody, 200),  // any role: the library screen shows them to a monitor
-        // the name must stay inside the cache: a check dropped or loosened would serve the file next to it
+    // the `/` and `..` checks back each other up: only with both dropped would `../secret.jpg` serve the file next to the cache
         Row("GET", "/api/thumbnail/..%2Fsecret.jpg", .nobody, 404),
         Row("GET", "/api/thumbnail/%2E%2E%2Fsecret.jpg", .nobody, 404),  // not percent-decoded: no such file in the cache
         Row("GET", "/api/thumbnail/../secret.jpg", .nobody, 404),

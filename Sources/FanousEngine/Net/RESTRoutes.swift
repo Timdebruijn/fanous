@@ -22,7 +22,7 @@ struct RESTRoutes: Sendable {
     let metricsJSON: @Sendable () -> HTTPResponse
     let metricsText: @Sendable () -> HTTPResponse
 
-    /// REST calls that change state need the programmer role: the session cookie, the shell token as a bearer, or an open role.
+    /// Whether the request's bearer token (the shell), its session cookie or an open role grants `role`.
     func allowed(_ role: Role, _ request: HTTPRequest) -> Bool {
         let bearer = request.header("Authorization").flatMap { $0.hasPrefix("Bearer ") ? String($0.dropFirst(7)) : nil }
         let sessionRole = auth.role(forToken: bearer) ?? auth.role(forCookie: RoleAuth.cookie(in: request))
