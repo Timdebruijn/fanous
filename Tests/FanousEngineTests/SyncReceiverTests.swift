@@ -73,11 +73,13 @@ struct SyncReceiverTests {
     @Test func ownPacketsGarbageAndKeepalivesTouchNothing() async throws {
         let (receiver, port) = try Self.receiver()
         defer { receiver.stop() }
-        sendUDP(Self.packet(from: Self.own, [Self.clock(group: 1)]), to: port)
-        sendUDP(Array("not a sync packet".utf8), to: port)
-        sendUDP(Array("FSYN".utf8) + [9] + [UInt8](repeating: 0, count: 40), to: port)  // a version we do not speak
-        sendUDP(Self.packet(from: Self.high, []), to: port)  // keepalive
-        sendUDP(Self.packet(from: Self.low, [Self.clock(group: 2)]), to: port)
+        _ = sendUDP([
+            Self.packet(from: Self.own, [Self.clock(group: 1)]),
+            Array("not a sync packet".utf8),
+            Array("FSYN".utf8) + [9] + [UInt8](repeating: 0, count: 40),  // a version we do not speak
+            Self.packet(from: Self.high, []),  // keepalive
+            Self.packet(from: Self.low, [Self.clock(group: 2)]),
+        ], to: port)
         #expect(try await Self.entry(receiver, group: 2) != nil, "still receiving after the garbage")
         let table = receiver.table.withLock { $0 }
         #expect(table.entries[0] == nil, "our own id is dropped")
@@ -89,10 +91,14 @@ struct SyncReceiverTests {
     @Test func theLowerMachineIdWinsAGroup() async throws {
         let (receiver, port) = try Self.receiver()
         defer { receiver.stop() }
-        sendUDP(Self.packet(from: Self.high, [Self.clock(group: 1, position: 1)]), to: port)
-        sendUDP(Self.packet(from: Self.low, [Self.clock(group: 1, position: 2)]), to: port)
-        sendUDP(Self.packet(from: Self.high, [Self.clock(group: 1, position: 3)]), to: port)
-        sendUDP(Self.packet(from: Self.low, [Self.clock(group: 3)]), to: port)  // marks the end
+        // one socket, so the datagrams arrive in this order: from four sockets the marker overtook the third packet on
+        // the hosted CI runner once (2026-11-04), and the conflict was not there yet when the table was read
+        _ = sendUDP([
+            Self.packet(from: Self.high, [Self.clock(group: 1, position: 1)]),
+            Self.packet(from: Self.low, [Self.clock(group: 1, position: 2)]),
+            Self.packet(from: Self.high, [Self.clock(group: 1, position: 3)]),
+            Self.packet(from: Self.low, [Self.clock(group: 3)]),  // marks the end
+        ], to: port)
         _ = try await Self.entry(receiver, group: 3)
         let table = receiver.table.withLock { $0 }
         #expect(table.entries[0]?.machine == Self.low)

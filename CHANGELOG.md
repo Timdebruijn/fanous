@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Tests: the sync receiver tests send their datagrams from one socket, in order; from one socket per datagram the
+  end marker overtook an earlier packet on the hosted CI runner once and the conflict check read the table too early
+  (PR #NNN).
 - Tests: the REST routes moved out of `Engine.start` into `RESTRoutes` (same routes, statuses and bodies), and a
   table test pins their role gates without a GPU or a socket: who gets 403 on `/api/ingest`, uploads,
   `/api/library/folder` and `/api/logs`, the redacted `/api/library` root below operator, `/api/login` 405/400/401
