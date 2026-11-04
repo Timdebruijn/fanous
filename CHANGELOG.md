@@ -10,6 +10,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Changed: the layer chip on a Media tile has 6 px between its dot and its word, like every other status (was 5 px).
 - Release: 1.0.0-rc.3 is on GitHub as a pre-release with the signed, notarized dmg, built from main 07ac24b
   (PR #267).
 
