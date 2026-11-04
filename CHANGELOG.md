@@ -12,6 +12,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Engine: OSC over TCP drops a SLIP packet longer than 64 KiB and logs it with the peer, instead of buffering a
   client that never sends END until the engine runs out of memory (PR #288).
+- Engine: a refused upload leaves nothing in `_incoming`: `PUT /api/upload/<folder>/<name>` with a folder outside
+  1–255, or named `.` or `..` (also percent-encoded), is refused before the body is written (`..` was taken as the
+  working directory's parent's name), and an upload refused after it was written (a root change in progress, folder
+  full) is deleted. A large body refused before it is written gets 413 "body too large" (the sink can only say no);
+  small bodies get the 400 text (PR #287).
 - Tests: Core drops 6 tests that asserted nothing the suite did not already pin (an OSC capture loop over a
   directory that does not exist, the Sync markdown and GDTF strings, Sync channel 51 as a whole test, the
   highest-channel arithmetic, the X.509 byte offsets; the packet-size pins moved into the layout test) and pins

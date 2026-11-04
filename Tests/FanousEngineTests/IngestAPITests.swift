@@ -24,24 +24,21 @@ import Testing
         #expect(Self.name("../x.mov") == "x.mov")
         #expect(Self.name("abc/x") == "x")
         #expect(Self.name("%2Fetc%2Fpasswd") == "passwd")
-        // refused: hidden, dot names, empty, a folder that is not a number
-        #expect(Self.name(".hidden") == nil)
-        #expect(Self.name("") == nil)
-        #expect(Self.name("x.mov", folder: "abc") == nil)
-        #expect(Self.name("bad%zz") == nil)
-        // a NUL never reaches the file name (Foundation escapes it in the path component)
-        #expect(Self.name("a%00.mov").map { !$0.contains("\0") } ?? true)
+        // refused: hidden, empty, a folder that is not a number or not 1–255, a NUL
+        for refused in [".hidden", "", "bad%zz", "a%00.mov"] {
+            #expect(Self.name(refused) == nil, "\(refused)")
+        }
+        for folder in ["abc", "0", "256", "-1"] {
+            #expect(Self.name("x.mov", folder: folder) == nil, "folder \(folder)")
+        }
+        #expect(Self.name("x.mov", folder: "255") == "x.mov")
     }
 
-    /// `URL(fileURLWithPath:)` resolves `.` and `..` against the process's working directory, so the dot-name guards
-    /// never see them: the name becomes that directory's or its parent's name ("/" when the engine runs in "/", as
-    /// launchd starts it; the file then lands as `_incoming/-2`). The known issue needs a working directory whose name
-    /// and parent's name do not start with a dot (a checkout under `~/.x/` would make the guard fire after all).
-    @Test func dotNamesAreNotRefused() {
-        withKnownIssue("`.` and `..` become the working directory's or its parent's name instead of nil") {
-            #expect(Self.name(".") == nil)
-            #expect(Self.name("..") == nil)
-            #expect(Self.name("%2E%2E") == nil)
+    /// `.` and `..` are refused on the raw component: `URL(fileURLWithPath:)` would resolve them against the working
+    /// directory, and the name would become that directory's or its parent's name (B154).
+    @Test func dotNamesAreRefused() {
+        for name in [".", "..", "%2E", "%2E%2E", "x%2F.."] {
+            #expect(Self.name(name) == nil, "\(name)")
         }
     }
 
@@ -71,16 +68,25 @@ import Testing
         #expect(api.uploadTarget(for: try Self.put("/api/upload/1/.hidden")) == nil)
     }
 
-    /// The folder range is checked in `enqueueNow`, after `uploadTarget` handed out a file and the body was written there
-    /// (IngestAPI.uploadTarget does not check it), so a refused folder leaves the upload in `_incoming`.
-    @Test func refusedFolderLeavesNoUploadBehind() throws {
+    /// A refused upload writes nothing: a folder out of range is refused before the body is written, and an upload that
+    /// `enqueue` refuses after it was written (a hold) is removed again.
+    @Test func refusedUploadsLeaveNothingBehind() throws {
         let (api, library) = try Self.api()
-        #expect(api.uploadTarget(for: try Self.put("/api/upload/0/clip.mov")) != nil)
-        let response = api.handle(try Self.put("/api/upload/256/clip.mov", body: [1, 2, 3]), uploadedFile: nil)
-        #expect(response.status == 400)
-        let left = (try? FileManager.default.contentsOfDirectory(atPath: library.incomingDirectory.path)) ?? []
-        withKnownIssue("folder 0/256 passes uploadTarget; the refused upload stays in _incoming") {
-            #expect(left.isEmpty)
+        let incoming = { (try? FileManager.default.contentsOfDirectory(atPath: library.incomingDirectory.path)) ?? [] }
+        for folder in ["0", "256"] {
+            #expect(api.uploadTarget(for: try Self.put("/api/upload/\(folder)/clip.mov")) == nil)
+            #expect(api.handle(try Self.put("/api/upload/\(folder)/clip.mov", body: [1, 2, 3]), uploadedFile: nil).status == 400)
         }
+        #expect(api.handle(try Self.put("/api/upload/1/..", body: [1, 2, 3]), uploadedFile: nil).status == 400)
+        #expect(incoming().isEmpty)
+        api.holdEnqueue("root change")
+        #expect(api.handle(try Self.put("/api/upload/1/clip.mov", body: [1, 2, 3]), uploadedFile: nil).status == 409)
+        // the streamed path: the server wrote the body to the sink's file before the route ran; a refusal removes it too
+        let streamed = try #require(api.uploadTarget(for: try Self.put("/api/upload/1/streamed.mov")))
+        try Data([4, 5, 6]).write(to: streamed)
+        #expect(api.handle(try Self.put("/api/upload/1/streamed.mov"), uploadedFile: streamed).status == 409)
+        #expect(!FileManager.default.fileExists(atPath: streamed.path))
+        api.releaseEnqueue()
+        #expect(incoming().isEmpty)
     }
 }
