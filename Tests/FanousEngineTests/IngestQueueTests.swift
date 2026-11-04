@@ -120,21 +120,29 @@ import VideoToolbox
         guard audioInput.append(audioSample!) else { throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "append (audio)") }
         audioInput.markAsFinished()
         let times = presentationTimes ?? (0..<25).map { CMTime(value: Int64($0), timescale: 25) }
-        for (frame, time) in times.enumerated() {
-            while !input.isReadyForMoreMediaData { usleep(500) }
-            var pooled: CVPixelBuffer?
-            if let pool = adaptor.pixelBufferPool { CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pooled) }
-            guard let pooled else { throw MovieWriter.WriterError.failed("pixel buffer") }
-            let buffer = fillPattern(pooled, frame: frame)
-            if alpha {  // the right half transparent (premultiplied: all zero)
-                CVPixelBufferLockBaseAddress(buffer, [])
-                let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
-                let stride = CVPixelBufferGetBytesPerRow(buffer)
-                for y in 0..<176 { memset(base + y * stride + 160 * 4, 0, 160 * 4) }
-                CVPixelBufferUnlockBaseAddress(buffer, [])
+        // 16 frames at a time, filled in parallel: the pattern fill takes ~6 ms a frame in a debug build, most of the time
+        // of a long source (1800 frames: 11 s in one thread)
+        for start in stride(from: 0, to: times.count, by: 16) {
+            let chunk = start..<min(start + 16, times.count)
+            let buffers = try chunk.map { _ in
+                var pooled: CVPixelBuffer?
+                if let pool = adaptor.pixelBufferPool { CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pooled) }
+                guard let pooled else { throw MovieWriter.WriterError.failed("pixel buffer") }
+                return pooled
             }
-            guard adaptor.append(buffer, withPresentationTime: time) else {
-                throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "append")
+            DispatchQueue.concurrentPerform(iterations: buffers.count) { fillPattern(buffers[$0], frame: start + $0) }
+            for (frame, buffer) in zip(chunk, buffers) {
+                if alpha {  // the right half transparent (premultiplied: all zero)
+                    CVPixelBufferLockBaseAddress(buffer, [])
+                    let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
+                    let stride = CVPixelBufferGetBytesPerRow(buffer)
+                    for y in 0..<176 { memset(base + y * stride + 160 * 4, 0, 160 * 4) }
+                    CVPixelBufferUnlockBaseAddress(buffer, [])
+                }
+                while !input.isReadyForMoreMediaData { usleep(500) }
+                guard adaptor.append(buffer, withPresentationTime: times[frame]) else {
+                    throw MovieWriter.WriterError.failed(writer.error?.localizedDescription ?? "append")
+                }
             }
         }
         input.markAsFinished()
