@@ -11,7 +11,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Tests: the 50 Hz cue-fade test accepts 10 steps instead of 20; the hosted CI runner delivered 19 of about 50 once
-  (PR #NNN).
+  (PR #281).
 - Fixed: a `project.json` the engine could not read (damaged, another schema) was replaced without a word: the
   fresh project's first autosave wrote over it two seconds later. It is now kept next to itself as
   `project.json.unreadable-<time>` and the log says so (PR #279).
