@@ -33,14 +33,7 @@ struct SequenceIngestTests {
         let output = directory.appending(path: "half.mov")
         let frames = try SequenceIngest.frames(in: directory)
         _ = try await offPool { try SequenceIngest.convert(frames: frames, to: output, fps: 25, codec: .proRes4444) }
-        let asset = AVURLAsset(url: output)
-        let reader = try AVAssetReader(asset: asset)
-        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
-        let readOut = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
-        reader.add(readOut)
-        reader.startReading()
-        let buffer = try #require(readOut.copyNextSampleBuffer().flatMap(CMSampleBufferGetImageBuffer))
-        reader.cancelReading()
+        let buffer = try await firstFrame(of: output)
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
         let pixel = CVPixelBufferGetBaseAddress(buffer)!.advanced(by: 16 * CVPixelBufferGetBytesPerRow(buffer) + 32 * 4).assumingMemoryBound(to: UInt8.self)
@@ -61,14 +54,7 @@ struct SequenceIngestTests {
         // an opaque codec keeps the premultiplied colour: the half-transparent pixel over black, not at full colour
         let opaque = directory.appending(path: "opaque.mov")
         _ = try await offPool { try SequenceIngest.convert(frames: frames, to: opaque, fps: 25, codec: .proRes422HQ) }
-        let opaqueAsset = AVURLAsset(url: opaque)
-        let opaqueReader = try AVAssetReader(asset: opaqueAsset)
-        let opaqueTrack = try #require(try await opaqueAsset.loadTracks(withMediaType: .video).first)
-        let opaqueOut = AVAssetReaderTrackOutput(track: opaqueTrack, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
-        opaqueReader.add(opaqueOut)
-        opaqueReader.startReading()
-        let opaqueBuffer = try #require(opaqueOut.copyNextSampleBuffer().flatMap(CMSampleBufferGetImageBuffer))
-        opaqueReader.cancelReading()
+        let opaqueBuffer = try await firstFrame(of: opaque)
         CVPixelBufferLockBaseAddress(opaqueBuffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(opaqueBuffer, .readOnly) }
         let o = CVPixelBufferGetBaseAddress(opaqueBuffer)!.advanced(by: 16 * CVPixelBufferGetBytesPerRow(opaqueBuffer) + 32 * 4).assumingMemoryBound(to: UInt8.self)
@@ -150,14 +136,7 @@ struct SequenceIngestTests {
         #expect(slot.kind == .y416 || slot.kind == .planarYCbCrA)  // an alpha-carrying layout
 
         // the movie's own alpha and colour (the 16-bit RGBA path): left half opaque with the red ramp, right half transparent
-        let asset = AVURLAsset(url: output)
-        let reader = try AVAssetReader(asset: asset)
-        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
-        let readOut = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
-        reader.add(readOut)
-        reader.startReading()
-        let buffer = try #require(readOut.copyNextSampleBuffer().flatMap(CMSampleBufferGetImageBuffer))
-        reader.cancelReading()
+        let buffer = try await firstFrame(of: output)
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
         let pixel = CVPixelBufferGetBaseAddress(buffer)!.advanced(by: 80 * CVPixelBufferGetBytesPerRow(buffer)).assumingMemoryBound(to: UInt8.self)

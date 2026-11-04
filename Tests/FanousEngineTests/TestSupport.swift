@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
+import AVFoundation
 import Foundation
 import Logging
 import Metal
@@ -30,6 +31,18 @@ nonisolated(nonsending) func waitUntil(_ deadline: Duration = .seconds(10), ever
         guard ContinuousClock.now < end, (try? await Task.sleep(for: every)) != nil else { return condition() }
     }
     return true
+}
+
+/// The first frame of `url`'s video track, decoded to `format`.
+func firstFrame(of url: URL, format: OSType = kCVPixelFormatType_32BGRA) async throws -> CVPixelBuffer {
+    let asset = AVURLAsset(url: url)
+    let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
+    let reader = try AVAssetReader(asset: asset)
+    let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: format])
+    reader.add(output)
+    reader.startReading()
+    defer { reader.cancelReading() }
+    return try #require(output.copyNextSampleBuffer().flatMap(CMSampleBufferGetImageBuffer))
 }
 
 /// A compositor of `size` at `fps` for `maxLayers` layers, over `parameters` or a buffer of its own; no layers set.

@@ -806,15 +806,7 @@ import VideoToolbox
     /// How far the middle row of `url`'s first frame is from `writeTenBitRamp`'s ramp, in 10-bit luma codes, read as
     /// 16-bit 4:2:2 (`v216`: Cb Y0 Cr Y1).
     static func rampError(_ url: URL) async throws -> (mean: Double, max: Int) {
-        let asset = AVURLAsset(url: url)
-        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
-        let reader = try AVAssetReader(asset: asset)
-        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_422YpCbCr16])
-        reader.add(output)
-        reader.startReading()
-        let sample = try #require(output.copyNextSampleBuffer())
-        reader.cancelReading()
-        let buffer = try #require(CMSampleBufferGetImageBuffer(sample))
+        let buffer = try await firstFrame(of: url, format: kCVPixelFormatType_422YpCbCr16)
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
         let row = CVPixelBufferGetBaseAddress(buffer)!.advanced(by: CVPixelBufferGetHeight(buffer) / 2 * CVPixelBufferGetBytesPerRow(buffer))
@@ -845,12 +837,7 @@ import VideoToolbox
         let ratio = CMFormatDescriptionGetExtension(description, extensionKey: kCMFormatDescriptionExtension_PixelAspectRatio) as? [String: Int]
         #expect(ratio?[kCMFormatDescriptionKey_PixelAspectRatioHorizontalSpacing as String] == 3 && ratio?[kCMFormatDescriptionKey_PixelAspectRatioVerticalSpacing as String] == 4, "swapped ratio: \(ratio ?? [:])")
         #expect(abs(size.width - 176 * 3 / 4) < 1 && size.height == 320, "\(size)")
-        let reader = try AVAssetReader(asset: asset)
-        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
-        reader.add(output)
-        reader.startReading()
-        let first = try #require(output.copyNextSampleBuffer())
-        let buffer = try #require(CMSampleBufferGetImageBuffer(first))
+        let buffer = try await firstFrame(of: job.destination)
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
         let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
@@ -881,25 +868,13 @@ import VideoToolbox
         let asset = AVURLAsset(url: job.destination)
         let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
         #expect(try await track.load(.preferredTransform).isIdentity, "\(name)")
-        let reader = try AVAssetReader(asset: asset)
-        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
-        reader.add(output)
-        reader.startReading()
-        let first = try #require(output.copyNextSampleBuffer())
-        let buffer = try #require(CMSampleBufferGetImageBuffer(first))
+        let buffer = try await firstFrame(of: job.destination)
         let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
         let swaps = transform.a == 0
         #expect(width == (swaps ? 176 : 320) && height == (swaps ? 320 : 176), "\(name): \(width)x\(height)")
         // The stored (untagged) source frame, through the same H.264 decode: the gradient's codes after that decode are what
         // the output must show at the moved positions (the colour chain shifts them by more than a pixel of gradient).
-        let sourceAsset = AVURLAsset(url: source)
-        let sourceTrack = try #require(try await sourceAsset.loadTracks(withMediaType: .video).first)
-        let sourceReader = try AVAssetReader(asset: sourceAsset)
-        let sourceOutput = AVAssetReaderTrackOutput(track: sourceTrack, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
-        sourceReader.add(sourceOutput)
-        sourceReader.startReading()
-        let sourceFirst = try #require(sourceOutput.copyNextSampleBuffer())
-        let stored = try #require(CMSampleBufferGetImageBuffer(sourceFirst))
+        let stored = try await firstFrame(of: source)
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         CVPixelBufferLockBaseAddress(stored, .readOnly)
         defer {
