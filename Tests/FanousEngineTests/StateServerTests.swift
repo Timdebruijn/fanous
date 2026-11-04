@@ -152,139 +152,6 @@ struct StateServerTests {
         #expect(f.store.clientCount == 0)
     }
 
-    /// B62: the client matches preview replies to its requests by order, so a refused request must be answered in its
-    /// turn, with its own stream id and `stream`, and must leave no subscription behind.
-    @Test func previewRepliesComeInRequestOrderAndARefusalKeepsNoSubscription() async throws {
-        let f = try await Self.start()
-        defer { f.server.stop() }
-        let rig = try PreviewHubTests.Rig()  // a hub that previews "canvas" and "output:1"
-        f.stateServer.preview = rig.hub
-        let connection = Mutex<StateServer.Connection?>(nil)
-        f.server.upgradeRoute = { [stateServer = f.stateServer] request in
-            let handler = stateServer.upgrade(request)
-            connection.withLock { $0 = handler }
-            return handler
-        }
-        let a = f.socket()
-        try await a.send(.string(#"{"t":"hello","clientId":"a","schema":1}"#))
-        _ = try await Self.receive(a, until: "welcome")
-        for target in ["canvas", "output:99", "output:1"] {
-            try await a.send(.string(#"{"t":"sub","stream":"preview","codec":"jpeg","target":"\#(target)"}"#))
-        }
-        var replies: [JSONValue] = []
-        while replies.count < 3 {
-            let message = try await Self.receive(a)
-            if ["sub", "error"].contains(message["t"]?.string) { replies.append(message) }
-        }
-        #expect(replies.map { $0["t"]?.string } == ["sub", "error", "sub"])
-        #expect(replies.map { $0["target"]?.string } == ["canvas", nil, "output:1"])
-        #expect(replies[1]["code"]?.string == "badTarget" && replies[1]["stream"]?.string == "preview")
-        let ids = replies.compactMap { $0["id"]?.int }
-        #expect(ids.count == 3 && Set(ids).count == 3, "every reply has its own stream id: \(ids)")
-        let table = try #require(connection.withLock { $0 }).subscriptions.withLock { $0 }
-        #expect(Set(table.keys) == [UInt32(ids[0]), UInt32(ids[2])], "the refused id is not subscribed")
-        #expect(!rig.hub.targets.contains("output:99"))
-        a.cancel(with: .normalClosure, reason: nil)
-    }
-
-    /// An H.264 subscription gets `sub`, then the `stream` description (avcC) before any frame, now that the encoder is
-    /// made by the first H.264 subscriber (B66).
-    @Test func anAVCSubscriptionGetsSubThenTheStreamDescription() async throws {
-        let f = try await Self.start()
-        defer { f.server.stop() }
-        let rig = try PreviewHubTests.Rig()
-        f.stateServer.preview = rig.hub
-        let a = f.socket()
-        try await a.send(.string(#"{"t":"hello","clientId":"a","schema":1}"#))
-        _ = try await Self.receive(a, until: "welcome")
-        try await a.send(.string(#"{"t":"sub","stream":"preview","codec":"avc"}"#))
-        let ticks = Task {
-            for i in 0..<3000 where !Task.isCancelled {
-                rig.compositor.tick(target: 100 + Double(i) / 60, drawable: nil)
-                try? await Task.sleep(for: .milliseconds(16))
-            }
-        }
-        defer { ticks.cancel() }
-        var seen: [String] = []
-        var sub: JSONValue = .null, stream: JSONValue = .null
-        for _ in 0..<200 where seen.count < 3 {
-            let message = try await Self.receive(a)
-            if message["binary"] != nil { seen.append("frame") }
-            if message["t"]?.string == "sub" { (sub, seen) = (message, seen + ["sub"]) }
-            if message["t"]?.string == "stream" { (stream, seen) = (message, seen + ["stream"]) }
-        }
-        #expect(seen == ["sub", "stream", "frame"])
-        #expect(sub["codec"]?.string == "avc")
-        #expect(stream["id"]?.int == sub["id"]?.int)
-        #expect(stream["codec"]?.string?.hasPrefix("avc1.42") == true, "Baseline")
-        #expect(stream["w"]?.int == sub["w"]?.int && stream["h"]?.int == sub["h"]?.int)
-
-        // re-subscribing after the encoder was released gets a description every time. Race-sensitive: a frame of the
-        // released session delivered after the release used to leave its avcC behind, and the next session's
-        // identical parameter sets then sent none (2 in 30 before the fix)
-        var id = try #require(sub["id"]?.int)
-        for round in 0..<10 {
-            try await a.send(.string(#"{"t":"unsub","id":\#(id)}"#))
-            try await a.send(.string(#"{"t":"sub","stream":"preview","codec":"avc"}"#))
-            var gotSub = false, gotStream = false
-            for _ in 0..<200 where !gotStream {
-                let message = try await Self.receive(a)
-                if message["t"]?.string == "sub" { (id, gotSub) = (message["id"]?.int ?? id, true) }
-                if gotSub, message["t"]?.string == "stream", message["id"]?.int == id { gotStream = true }
-            }
-            #expect(gotStream, "round \(round): no stream description after re-subscribing")
-        }
-        a.cancel(with: .normalClosure, reason: nil)
-    }
-
-    /// B32: `w` picks the size class; the reply says the size the stream has (the target's shape, 16:9 here).
-    @Test func previewSubTakesAWantedWidthAndRepliesWithTheStreamSize() async throws {
-        let f = try await Self.start()
-        defer { f.server.stop() }
-        let rig = try PreviewHubTests.Rig()
-        f.stateServer.preview = rig.hub
-        let a = f.socket()
-        try await a.send(.string(#"{"t":"hello","clientId":"a","schema":1}"#))
-        _ = try await Self.receive(a, until: "welcome")
-        for w in ["", #","w":300"#, #","w":1e300"#, #","w":-5"#] {
-            try await a.send(.string(#"{"t":"sub","stream":"preview","codec":"jpeg","target":"output:1"\#(w)}"#))
-        }
-        var sizes: [[Int]] = []
-        while sizes.count < 4 {
-            let message = try await Self.receive(a)
-            if message["t"]?.string == "sub" { sizes.append([message["w"]?.int ?? 0, message["h"]?.int ?? 0]) }
-        }
-        #expect(sizes == [[640, 360], [320, 180], [1280, 720], [320, 180]])
-        a.cancel(with: .normalClosure, reason: nil)
-    }
-
-    /// B29: `sub {stream:"thumbs"}` is answered like the other subs (stream id, cell width, rate) and subscribes this
-    /// connection to the one thumbnail producer; `unsub` ends it; without a renderer it is refused with its stream named.
-    @Test func thumbsSubIsAnsweredAndUnsubEndsIt() async throws {
-        let f = try await Self.start()
-        defer { f.server.stop() }
-        let a = f.socket()
-        try await a.send(.string(#"{"t":"hello","clientId":"a","schema":1}"#))
-        _ = try await Self.receive(a, until: "welcome")
-        try await a.send(.string(#"{"t":"sub","stream":"thumbs"}"#))
-        let refused = try await Self.receive(a, until: "error")
-        #expect(refused["code"]?.string == "noPreview" && refused["stream"]?.string == "thumbs" && refused["id"]?.int != nil)
-
-        let rig = try PreviewHubTests.Rig()
-        let thumbnails = try ThumbnailStreamer(context: rig.context, compositor: rig.compositor)
-        rig.hub.thumbnails = thumbnails
-        f.stateServer.preview = rig.hub
-        try await a.send(.string(#"{"t":"sub","stream":"thumbs"}"#))
-        let sub = try await Self.receive(a, until: "sub")
-        #expect(sub["stream"]?.string == "thumbs" && sub["w"]?.int == 160 && sub["fps"]?.int == 4)
-        let id = try #require(sub["id"]?.int)
-        #expect(thumbnails.hasSubscribers && thumbnails.wantsFrames)
-        try await a.send(.string(#"{"t":"unsub","id":\#(id)}"#))
-        await waitUntil { !thumbnails.hasSubscribers }
-        #expect(!thumbnails.hasSubscribers && !thumbnails.wantsFrames, "nobody wants thumbnails: no atlas pass")
-        a.cancel(with: .normalClosure, reason: nil)
-    }
-
     @Test func dmxMonitorTimerFollowsTheSubscriptions() async throws {
         let f = try await Self.start()
         defer { f.server.stop() }
@@ -364,5 +231,141 @@ struct StateServerTests {
         #expect(try upgrade(origin: "https://127.0.0.1:9443") == nil)
         #expect(try upgrade(origin: "https://127.0.0.1") == nil)
         #expect(try upgrade(origin: "null") == nil)
+    }
+}
+
+/// The StateServerTests that need the GPU or a decoder: local and self-hosted runs only (scripts/test.sh --hosted leaves them out).
+struct StateServerGPUTests {
+    /// B62: the client matches preview replies to its requests by order, so a refused request must be answered in its
+    /// turn, with its own stream id and `stream`, and must leave no subscription behind.
+    @Test func previewRepliesComeInRequestOrderAndARefusalKeepsNoSubscription() async throws {
+        let f = try await StateServerTests.start()
+        defer { f.server.stop() }
+        let rig = try PreviewHubTests.Rig()  // a hub that previews "canvas" and "output:1"
+        f.stateServer.preview = rig.hub
+        let connection = Mutex<StateServer.Connection?>(nil)
+        f.server.upgradeRoute = { [stateServer = f.stateServer] request in
+            let handler = stateServer.upgrade(request)
+            connection.withLock { $0 = handler }
+            return handler
+        }
+        let a = f.socket()
+        try await a.send(.string(#"{"t":"hello","clientId":"a","schema":1}"#))
+        _ = try await StateServerTests.receive(a, until: "welcome")
+        for target in ["canvas", "output:99", "output:1"] {
+            try await a.send(.string(#"{"t":"sub","stream":"preview","codec":"jpeg","target":"\#(target)"}"#))
+        }
+        var replies: [JSONValue] = []
+        while replies.count < 3 {
+            let message = try await StateServerTests.receive(a)
+            if ["sub", "error"].contains(message["t"]?.string) { replies.append(message) }
+        }
+        #expect(replies.map { $0["t"]?.string } == ["sub", "error", "sub"])
+        #expect(replies.map { $0["target"]?.string } == ["canvas", nil, "output:1"])
+        #expect(replies[1]["code"]?.string == "badTarget" && replies[1]["stream"]?.string == "preview")
+        let ids = replies.compactMap { $0["id"]?.int }
+        #expect(ids.count == 3 && Set(ids).count == 3, "every reply has its own stream id: \(ids)")
+        let table = try #require(connection.withLock { $0 }).subscriptions.withLock { $0 }
+        #expect(Set(table.keys) == [UInt32(ids[0]), UInt32(ids[2])], "the refused id is not subscribed")
+        #expect(!rig.hub.targets.contains("output:99"))
+        a.cancel(with: .normalClosure, reason: nil)
+    }
+
+    /// An H.264 subscription gets `sub`, then the `stream` description (avcC) before any frame, now that the encoder is
+    /// made by the first H.264 subscriber (B66).
+    @Test func anAVCSubscriptionGetsSubThenTheStreamDescription() async throws {
+        let f = try await StateServerTests.start()
+        defer { f.server.stop() }
+        let rig = try PreviewHubTests.Rig()
+        f.stateServer.preview = rig.hub
+        let a = f.socket()
+        try await a.send(.string(#"{"t":"hello","clientId":"a","schema":1}"#))
+        _ = try await StateServerTests.receive(a, until: "welcome")
+        try await a.send(.string(#"{"t":"sub","stream":"preview","codec":"avc"}"#))
+        let ticks = Task {
+            for i in 0..<3000 where !Task.isCancelled {
+                rig.compositor.tick(target: 100 + Double(i) / 60, drawable: nil)
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+        }
+        defer { ticks.cancel() }
+        var seen: [String] = []
+        var sub: JSONValue = .null, stream: JSONValue = .null
+        for _ in 0..<200 where seen.count < 3 {
+            let message = try await StateServerTests.receive(a)
+            if message["binary"] != nil { seen.append("frame") }
+            if message["t"]?.string == "sub" { (sub, seen) = (message, seen + ["sub"]) }
+            if message["t"]?.string == "stream" { (stream, seen) = (message, seen + ["stream"]) }
+        }
+        #expect(seen == ["sub", "stream", "frame"])
+        #expect(sub["codec"]?.string == "avc")
+        #expect(stream["id"]?.int == sub["id"]?.int)
+        #expect(stream["codec"]?.string?.hasPrefix("avc1.42") == true, "Baseline")
+        #expect(stream["w"]?.int == sub["w"]?.int && stream["h"]?.int == sub["h"]?.int)
+
+        // re-subscribing after the encoder was released gets a description every time. Race-sensitive: a frame of the
+        // released session delivered after the release used to leave its avcC behind, and the next session's
+        // identical parameter sets then sent none (2 in 30 before the fix)
+        var id = try #require(sub["id"]?.int)
+        for round in 0..<10 {
+            try await a.send(.string(#"{"t":"unsub","id":\#(id)}"#))
+            try await a.send(.string(#"{"t":"sub","stream":"preview","codec":"avc"}"#))
+            var gotSub = false, gotStream = false
+            for _ in 0..<200 where !gotStream {
+                let message = try await StateServerTests.receive(a)
+                if message["t"]?.string == "sub" { (id, gotSub) = (message["id"]?.int ?? id, true) }
+                if gotSub, message["t"]?.string == "stream", message["id"]?.int == id { gotStream = true }
+            }
+            #expect(gotStream, "round \(round): no stream description after re-subscribing")
+        }
+        a.cancel(with: .normalClosure, reason: nil)
+    }
+
+    /// B32: `w` picks the size class; the reply says the size the stream has (the target's shape, 16:9 here).
+    @Test func previewSubTakesAWantedWidthAndRepliesWithTheStreamSize() async throws {
+        let f = try await StateServerTests.start()
+        defer { f.server.stop() }
+        let rig = try PreviewHubTests.Rig()
+        f.stateServer.preview = rig.hub
+        let a = f.socket()
+        try await a.send(.string(#"{"t":"hello","clientId":"a","schema":1}"#))
+        _ = try await StateServerTests.receive(a, until: "welcome")
+        for w in ["", #","w":300"#, #","w":1e300"#, #","w":-5"#] {
+            try await a.send(.string(#"{"t":"sub","stream":"preview","codec":"jpeg","target":"output:1"\#(w)}"#))
+        }
+        var sizes: [[Int]] = []
+        while sizes.count < 4 {
+            let message = try await StateServerTests.receive(a)
+            if message["t"]?.string == "sub" { sizes.append([message["w"]?.int ?? 0, message["h"]?.int ?? 0]) }
+        }
+        #expect(sizes == [[640, 360], [320, 180], [1280, 720], [320, 180]])
+        a.cancel(with: .normalClosure, reason: nil)
+    }
+
+    /// B29: `sub {stream:"thumbs"}` is answered like the other subs (stream id, cell width, rate) and subscribes this
+    /// connection to the one thumbnail producer; `unsub` ends it; without a renderer it is refused with its stream named.
+    @Test func thumbsSubIsAnsweredAndUnsubEndsIt() async throws {
+        let f = try await StateServerTests.start()
+        defer { f.server.stop() }
+        let a = f.socket()
+        try await a.send(.string(#"{"t":"hello","clientId":"a","schema":1}"#))
+        _ = try await StateServerTests.receive(a, until: "welcome")
+        try await a.send(.string(#"{"t":"sub","stream":"thumbs"}"#))
+        let refused = try await StateServerTests.receive(a, until: "error")
+        #expect(refused["code"]?.string == "noPreview" && refused["stream"]?.string == "thumbs" && refused["id"]?.int != nil)
+
+        let rig = try PreviewHubTests.Rig()
+        let thumbnails = try ThumbnailStreamer(context: rig.context, compositor: rig.compositor)
+        rig.hub.thumbnails = thumbnails
+        f.stateServer.preview = rig.hub
+        try await a.send(.string(#"{"t":"sub","stream":"thumbs"}"#))
+        let sub = try await StateServerTests.receive(a, until: "sub")
+        #expect(sub["stream"]?.string == "thumbs" && sub["w"]?.int == 160 && sub["fps"]?.int == 4)
+        let id = try #require(sub["id"]?.int)
+        #expect(thumbnails.hasSubscribers && thumbnails.wantsFrames)
+        try await a.send(.string(#"{"t":"unsub","id":\#(id)}"#))
+        await waitUntil { !thumbnails.hasSubscribers }
+        #expect(!thumbnails.hasSubscribers && !thumbnails.wantsFrames, "nobody wants thumbnails: no atlas pass")
+        a.cancel(with: .normalClosure, reason: nil)
     }
 }

@@ -23,60 +23,6 @@ struct EditOverlayTests {
     /// Where the selection's crosshair is drawn (before the warp), nil when there is none.
     static func selectedPoint(_ lines: EditOverlay.Lines?) -> SIMD2<Float>? { segments(lines).first { $0.flags & 1 != 0 }?.a }
 
-    /// Start, renewal, expiry 5 s after the last renewal, the latest selection wins, off and show mode or lock end it.
-    @Test func theLeaseRunsFiveSecondsFromItsLastRenewal() throws {
-        let overlay = EditOverlay(device: try #require(MTLCreateSystemDefaultDevice()))
-        let config = OutputConfig(id: 1)
-        #expect(overlay.lines(1, at: 100) == nil && !overlay.asked(1, at: 100), "none before a lease")
-        overlay.lease(1, on: true, selected: OverlaySelection(kind: .corner, point: 0), config: config, at: 100)
-        #expect(overlay.lines(1, at: 104.9) != nil && overlay.asked(1, at: 104.9))
-        #expect(overlay.lines(1, at: 105) == nil && !overlay.asked(1, at: 105), "5 s after it was taken")
-        #expect(overlay.lines(2, at: 101) == nil, "per output")
-
-        let first = try #require(overlay.lines(1, at: 101))
-        overlay.lease(1, on: true, selected: OverlaySelection(kind: .corner, point: 0), config: config, at: 103)
-        #expect(overlay.lines(1, at: 107.9) != nil && overlay.lines(1, at: 108) == nil, "renewed at 103: until 108")
-        #expect(overlay.lines(1, at: 104)?.buffer === first.buffer, "a renewal with the same selection keeps the lines")
-        #expect(Self.selectedPoint(first) == SIMD2(0, 0))
-
-        overlay.lease(1, on: true, selected: OverlaySelection(kind: .corner, point: 2), config: config, at: 104)
-        #expect(Self.selectedPoint(overlay.lines(1, at: 104)) == SIMD2(1, 1), "the latest call's selection")
-        overlay.lease(1, on: true, selected: nil, config: config, at: 104.5)
-        #expect(overlay.lines(1, at: 105) != nil && Self.selectedPoint(overlay.lines(1, at: 105)) == nil, "no selection: lines only")
-
-        overlay.lease(1, on: false, selected: nil, config: config, at: 105)
-        #expect(overlay.lines(1, at: 105) == nil && !overlay.asked(1, at: 105), "off ends it")
-        overlay.lease(1, on: true, selected: nil, config: nil, at: 106)
-        #expect(overlay.lines(1, at: 106) == nil, "an output that is gone draws nothing")
-
-        overlay.lease(1, on: true, selected: nil, config: config, at: 110)
-        overlay.lease(2, on: true, selected: nil, config: OutputConfig(id: 2), at: 110)
-        overlay.endAll()
-        #expect(overlay.lines(1, at: 110) == nil && overlay.lines(2, at: 110) == nil, "show mode and show lock end every lease")
-    }
-
-    /// An edit rebuilds a running lease's lines from the new mapping with its selection; one that ran out, or whose
-    /// output went, is dropped. A selection the new mapping lacks draws none.
-    @Test func anEditRebuildsTheRunningLeases() throws {
-        let overlay = EditOverlay(device: try #require(MTLCreateSystemDefaultDevice()))
-        var config = OutputConfig(id: 1)
-        config.slices.append(SliceConfig(id: 2))
-        overlay.lease(1, on: true, selected: OverlaySelection(slice: 1, kind: .slice, point: 1), config: config, at: 100)
-        overlay.lease(2, on: true, selected: nil, config: OutputConfig(id: 2), at: 90)
-        #expect(Self.selectedPoint(overlay.lines(1, at: 101)) == SIMD2(1, 0))
-        config.slices[1].dest[1] = MapPoint(0.8, 0.1)
-        overlay.rebuild([config, OutputConfig(id: 2)], at: 101)
-        #expect(Self.selectedPoint(overlay.lines(1, at: 101)) == SIMD2(0.8, 0.1), "the moved corner")
-        #expect(Self.segments(overlay.lines(1, at: 101)).contains { $0.a == SIMD2(0.8, 0.1) && $0.flags == 0 }, "slice 2's outline from it")
-        #expect(overlay.lines(1, at: 104.9) != nil && overlay.lines(1, at: 105) == nil, "the lease keeps its end")
-        config.slices.removeLast()
-        overlay.rebuild([config], at: 102)
-        #expect(overlay.lines(1, at: 102) != nil && Self.selectedPoint(overlay.lines(1, at: 102)) == nil, "slice 2 went: no selection, the lines stay")
-        overlay.lease(2, on: true, selected: nil, config: OutputConfig(id: 2), at: 102)
-        overlay.rebuild([config], at: 103)
-        #expect(!overlay.asked(2, at: 103), "output 2 went")
-    }
-
     /// What the overlay draws: the corner pin's edges or the mesh's grid lines, 64 pieces each, every slice's outline (64
     /// per edge) and its mask's (at most 1/64 of the output per piece), then the selection. Capped at 16,384 segments.
     @Test func theLinesOfAMapping() {
@@ -211,5 +157,63 @@ struct EditOverlayTests {
         #expect(live(2) == "preset" && live(0, from: 2, fade: 2) == "preset", "a preset, a morph from one")
         #expect(live(9) == "shown" && live(0, from: 9, fade: 2) == "shown", "a missing number draws the edited mapping")
         #expect(live(raw: true) == "raw")
+    }
+}
+
+/// The EditOverlayTests that need the GPU or a decoder: local and self-hosted runs only (scripts/test.sh --hosted leaves them out).
+@MainActor
+struct EditOverlayGPUTests {
+    /// Start, renewal, expiry 5 s after the last renewal, the latest selection wins, off and show mode or lock end it.
+    @Test func theLeaseRunsFiveSecondsFromItsLastRenewal() throws {
+        let overlay = EditOverlay(device: try #require(MTLCreateSystemDefaultDevice()))
+        let config = OutputConfig(id: 1)
+        #expect(overlay.lines(1, at: 100) == nil && !overlay.asked(1, at: 100), "none before a lease")
+        overlay.lease(1, on: true, selected: OverlaySelection(kind: .corner, point: 0), config: config, at: 100)
+        #expect(overlay.lines(1, at: 104.9) != nil && overlay.asked(1, at: 104.9))
+        #expect(overlay.lines(1, at: 105) == nil && !overlay.asked(1, at: 105), "5 s after it was taken")
+        #expect(overlay.lines(2, at: 101) == nil, "per output")
+
+        let first = try #require(overlay.lines(1, at: 101))
+        overlay.lease(1, on: true, selected: OverlaySelection(kind: .corner, point: 0), config: config, at: 103)
+        #expect(overlay.lines(1, at: 107.9) != nil && overlay.lines(1, at: 108) == nil, "renewed at 103: until 108")
+        #expect(overlay.lines(1, at: 104)?.buffer === first.buffer, "a renewal with the same selection keeps the lines")
+        #expect(EditOverlayTests.selectedPoint(first) == SIMD2(0, 0))
+
+        overlay.lease(1, on: true, selected: OverlaySelection(kind: .corner, point: 2), config: config, at: 104)
+        #expect(EditOverlayTests.selectedPoint(overlay.lines(1, at: 104)) == SIMD2(1, 1), "the latest call's selection")
+        overlay.lease(1, on: true, selected: nil, config: config, at: 104.5)
+        #expect(overlay.lines(1, at: 105) != nil && EditOverlayTests.selectedPoint(overlay.lines(1, at: 105)) == nil, "no selection: lines only")
+
+        overlay.lease(1, on: false, selected: nil, config: config, at: 105)
+        #expect(overlay.lines(1, at: 105) == nil && !overlay.asked(1, at: 105), "off ends it")
+        overlay.lease(1, on: true, selected: nil, config: nil, at: 106)
+        #expect(overlay.lines(1, at: 106) == nil, "an output that is gone draws nothing")
+
+        overlay.lease(1, on: true, selected: nil, config: config, at: 110)
+        overlay.lease(2, on: true, selected: nil, config: OutputConfig(id: 2), at: 110)
+        overlay.endAll()
+        #expect(overlay.lines(1, at: 110) == nil && overlay.lines(2, at: 110) == nil, "show mode and show lock end every lease")
+    }
+
+    /// An edit rebuilds a running lease's lines from the new mapping with its selection; one that ran out, or whose
+    /// output went, is dropped. A selection the new mapping lacks draws none.
+    @Test func anEditRebuildsTheRunningLeases() throws {
+        let overlay = EditOverlay(device: try #require(MTLCreateSystemDefaultDevice()))
+        var config = OutputConfig(id: 1)
+        config.slices.append(SliceConfig(id: 2))
+        overlay.lease(1, on: true, selected: OverlaySelection(slice: 1, kind: .slice, point: 1), config: config, at: 100)
+        overlay.lease(2, on: true, selected: nil, config: OutputConfig(id: 2), at: 90)
+        #expect(EditOverlayTests.selectedPoint(overlay.lines(1, at: 101)) == SIMD2(1, 0))
+        config.slices[1].dest[1] = MapPoint(0.8, 0.1)
+        overlay.rebuild([config, OutputConfig(id: 2)], at: 101)
+        #expect(EditOverlayTests.selectedPoint(overlay.lines(1, at: 101)) == SIMD2(0.8, 0.1), "the moved corner")
+        #expect(EditOverlayTests.segments(overlay.lines(1, at: 101)).contains { $0.a == SIMD2(0.8, 0.1) && $0.flags == 0 }, "slice 2's outline from it")
+        #expect(overlay.lines(1, at: 104.9) != nil && overlay.lines(1, at: 105) == nil, "the lease keeps its end")
+        config.slices.removeLast()
+        overlay.rebuild([config], at: 102)
+        #expect(overlay.lines(1, at: 102) != nil && EditOverlayTests.selectedPoint(overlay.lines(1, at: 102)) == nil, "slice 2 went: no selection, the lines stay")
+        overlay.lease(2, on: true, selected: nil, config: OutputConfig(id: 2), at: 102)
+        overlay.rebuild([config], at: 103)
+        #expect(!overlay.asked(2, at: 103), "output 2 went")
     }
 }
