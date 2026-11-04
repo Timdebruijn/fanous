@@ -37,7 +37,7 @@ struct OutputPassTests {
     /// `master` edits the Master fixture's values in the slot (intensity, control, test pattern). A nil plan draws the
     /// plain pass (the canvas as the canvas preview, Syphon and CITP show it).
     static func render(
-        _ plan: OutputPlan?, still: DecodedFrame, drawable: (Int, Int), context: MetalContext, outputs: [OutputParameters] = [],
+        _ plan: OutputPlan?, still: DecodedFrame, drawable: (Int, Int) = (width, height), context: MetalContext, outputs: [OutputParameters] = [],
         master: (ParameterSnapshotSlot) -> Void = { _ in }
     ) throws -> [UInt8] {
         let (compositor, parameters) = try makeCompositor(context, size: (width, height))
@@ -55,6 +55,11 @@ struct OutputPassTests {
         }
         compositor.tick(target: 3600, drawable: nil)
         return compositor.readbackOutput().bgra
+    }
+
+    /// `config` compiled for the 320×180 test output, as output `index`.
+    static func plan(_ config: OutputConfig, index: Int = 1, context: MetalContext) throws -> OutputPlan {
+        try OutputCompiler(device: context.device).compile(config, index: index, drawable: (width, height))
     }
 
     static func rgba(fromBGRA bgra: [UInt8]) -> [UInt8] {
@@ -135,15 +140,15 @@ struct OutputPassTests {
         let plan = try compiler.compile(o, index: 1, drawable: (Self.width, Self.height))
         var raw = OutputParameters()
         raw.raw = true
-        let image = try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [raw])
+        let image = try Self.render(plan, still: still, context: context, outputs: [raw])
         #expect(image[(90 * Self.width + 10) * 4 + 1] == 200, "raw: no blend ramp at the left edge")
         var dim = OutputParameters()
         dim.intensity = 0.5
-        let dimmed = try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [dim])
+        let dimmed = try Self.render(plan, still: still, context: context, outputs: [dim])
         #expect(abs(Int(dimmed[(90 * Self.width + 300) * 4 + 1]) - 100) <= 1)
         var black = OutputParameters()
         black.control = .blackout
-        let dark = try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [black])
+        let dark = try Self.render(plan, still: still, context: context, outputs: [black])
         #expect(dark[(90 * Self.width + 300) * 4 + 1] <= 1)
     }
 
@@ -151,7 +156,7 @@ struct OutputPassTests {
     @Test func freezeHoldsTheOutputWhileTheCanvasMovesOn() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
-        let plan = try OutputCompiler(device: context.device).compile(OutputConfig(id: 1), index: 1, drawable: (Self.width, Self.height))
+        let plan = try Self.plan(OutputConfig(id: 1), context: context)
         for control in [OutputControl.freeze, .normal] {
             let (compositor, parameters) = try makeCompositor(context, size: (Self.width, Self.height))
             compositor.setLayers([.still(still)])
@@ -285,13 +290,13 @@ struct OutputPassTests {
         let compiler = OutputCompiler(device: context.device)
         var o = OutputConfig(id: 1)
         o.testPattern = TestPattern.colourBars.rawValue
-        let flat = try Self.render(compiler.compile(o, index: 1, drawable: (Self.width, Self.height)), still: still, drawable: (Self.width, Self.height), context: context)
+        let flat = try Self.render(compiler.compile(o, index: 1, drawable: (Self.width, Self.height)), still: still, context: context)
         func px(_ image: [UInt8], _ x: Int, _ y: Int) -> (r: Int, g: Int) { (Int(image[(y * Self.width + x) * 4 + 2]), Int(image[(y * Self.width + x) * 4 + 1])) }
         // unwarped: x = 100 of 320 is bar 2 (cyan: no red, 75 % green)
         #expect(px(flat, 100, 90).r < 10 && abs(px(flat, 100, 90).g - 191) <= 2, "\(px(flat, 100, 90))")
         // corner pin onto the left half: x = 100 now shows pre-warp x = 0.625, bar 5 (red); the right half is empty
         o.warp.cornerPin = [MapPoint(0, 0), MapPoint(0.5, 0), MapPoint(0.5, 1), MapPoint(0, 1)]
-        let warped = try Self.render(compiler.compile(o, index: 1, drawable: (Self.width, Self.height)), still: still, drawable: (Self.width, Self.height), context: context)
+        let warped = try Self.render(compiler.compile(o, index: 1, drawable: (Self.width, Self.height)), still: still, context: context)
         #expect(abs(px(warped, 100, 90).r - 191) <= 2 && px(warped, 100, 90).g < 10, "\(px(warped, 100, 90))")
         #expect(px(warped, 250, 90).r < 3 && px(warped, 250, 90).g < 3, "outside the pinned quad: \(px(warped, 250, 90))")
     }
@@ -413,10 +418,10 @@ struct OutputPassTests {
     @Test func masterDimsAMappedOutputOnce() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
-        let plan = try OutputCompiler(device: context.device).compile(OutputConfig(id: 1), index: 1, drawable: (Self.width, Self.height))
+        let plan = try Self.plan(OutputConfig(id: 1), context: context)
         for (master, expected) in [(Float(1), 200), (0.5, 100), (0.25, 50)] {
-            let mapped = try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, master: { $0.master = master })
-            let plain = try Self.render(nil, still: still, drawable: (Self.width, Self.height), context: context, master: { $0.master = master })
+            let mapped = try Self.render(plan, still: still, context: context, master: { $0.master = master })
+            let plain = try Self.render(nil, still: still, context: context, master: { $0.master = master })
             let (m, p) = (Int(mapped[(90 * Self.width + 160) * 4 + 1]), Int(plain[(90 * Self.width + 160) * 4 + 1]))
             #expect(abs(m - expected) <= 1 && abs(m - p) <= 1, "Master \(master): mapped \(m), plain \(p)")
         }
@@ -498,11 +503,27 @@ struct OutputPassTests {
             else { throw RenderError.pipeline("output test rig") }
             compositor.offscreenOutput = output
             (self.target, self.uniforms) = (target, uniforms)
-            if let config { compositor.outputSet = OutputSet(plans: [try compile(config)]) }
+            if let config { try setOutput(config) }
         }
 
-        func compile(_ config: OutputConfig) throws -> OutputPlan {
-            try OutputCompiler(device: context.device).compile(config, index: 1, drawable: (width, height))
+        func compile(_ config: OutputConfig, drawable: (Int, Int) = (width, height), overlay: EditOverlay? = nil, patterns: PatternLeases? = nil) throws -> OutputPlan {
+            try OutputCompiler(device: context.device).compile(config, index: 1, drawable: drawable, overlay: overlay, patterns: patterns)
+        }
+
+        /// The projector draws `config` (with `overlay`'s lines); the set it draws.
+        @discardableResult func setOutput(_ config: OutputConfig, overlay: EditOverlay? = nil) throws -> OutputSet {
+            let set = OutputSet(plans: [try compile(config, overlay: overlay)])
+            compositor.outputSet = set
+            return set
+        }
+
+        /// A 5 fps output preview of `config` at `size` on the rig's parameters, compiled as the engine compiles one
+        /// (its own compiler, no overlay).
+        func previewStreamer(_ config: OutputConfig, size: (Int, Int) = (160, 90), patterns: PatternLeases? = nil) throws -> PreviewStreamer {
+            let streamer = try PreviewStreamer(
+                context: context, width: size.0, height: size.1, fps: 5, canvasFPS: 5, parameters: parameters, logger: Logger(label: "output-test"))
+            streamer.outputSet = OutputSet(plans: [try compile(config, drawable: size, patterns: patterns)])
+            return streamer
         }
 
         func write(_ control: OutputControl, master: Float, layer: Float, blackout: Bool = false) {
@@ -575,9 +596,7 @@ struct OutputPassTests {
     @Test func thePreviewOfAFrozenOutputHolds() async throws {
         for shared in [true, false] {
             let rig = try Rig(OutputConfig(id: 1), value: 200)
-            let streamer = try PreviewStreamer(
-                context: rig.context, width: 160, height: 90, fps: 5, canvasFPS: 5, parameters: rig.parameters, logger: Logger(label: "output-test"))
-            streamer.outputSet = OutputSet(plans: [try OutputCompiler(device: rig.context.device).compile(OutputConfig(id: 1), index: 1, drawable: (160, 90))])
+            let streamer = try rig.previewStreamer(OutputConfig(id: 1))
             streamer.externalJPEGWanted = { true }  // a JPEG of every tap (5 fps canvas, 1 s apart)
             func watch() {
                 rig.compositor.previewTap = { canvas, buffer, target, live in
@@ -605,7 +624,7 @@ struct OutputPassTests {
             let live = try #require(rig.compositor.outputSet)
             rig.compositor.outputSet = OutputSet(plans: [try rig.compile(OutputConfig(id: 1))], previous: live.holdSource)
             streamer.outputSet = OutputSet(
-                plans: [try OutputCompiler(device: rig.context.device).compile(OutputConfig(id: 1), index: 1, drawable: (160, 90))],
+                plans: [try rig.compile(OutputConfig(id: 1), drawable: (160, 90))],
                 previous: streamer.outputSet?.holdSource)
             #expect(near(try await preview(.freeze, master: 1, layer: 0), 200), "shared \(shared): the held frame after a recompile")
             #expect(try #require(streamer.outputSet).previous.withLock { $0 } == nil, "shared \(shared): the preview lets the replaced set go")
@@ -621,10 +640,8 @@ struct OutputPassTests {
     /// show one that ended for good.
     @Test func thePreviewDrawsAPatternLeaseWhileItRuns() async throws {
         let rig = try Rig(nil, value: 0)
-        let streamer = try PreviewStreamer(
-            context: rig.context, width: 160, height: 90, fps: 5, canvasFPS: 5, parameters: rig.parameters, logger: Logger(label: "output-test"))
         let leases = PatternLeases()
-        streamer.outputSet = OutputSet(plans: [try OutputCompiler(device: rig.context.device).compile(OutputConfig(id: 1), index: 1, drawable: (160, 90), patterns: leases)])
+        let streamer = try rig.previewStreamer(OutputConfig(id: 1), patterns: leases)
         streamer.externalJPEGWanted = { true }  // a JPEG of every tap
         rig.compositor.previewTap = { canvas, buffer, target, _ in streamer.tap(canvas: canvas, commandBuffer: buffer, target: target) }
         func preview(at target: Double) async throws -> Int {
@@ -798,7 +815,7 @@ struct OutputPassTests {
         let still = try Self.flat(rig.context.device, value: 100)
         let dark: [(ParameterSnapshotSlot) -> Void] = [{ $0.master = 0 }, { $0.masterControl = .blackout }]
         for master in dark {
-            let image = try Self.render(try rig.compile(o), still: still, drawable: (Self.width, Self.height), context: rig.context, outputs: [pattern], master: master)
+            let image = try Self.render(try rig.compile(o), still: still, context: rig.context, outputs: [pattern], master: master)
             #expect(Set(stride(from: 1, to: image.count, by: 4).map { image[$0] }) == [0], "White pattern with colour at Master 0 / Blackout")
         }
         // held at Master 100 % (layer dark afterwards): the held canvas × the Master since, × gain, then lift and black
@@ -857,14 +874,13 @@ struct OutputPassTests {
         let still = try Self.flat(context.device, value: 200)
         var o = OutputConfig(id: 1)
         o.blend.right = BlendEdge(overlap: 60, gamma: 1)
-        let plan = try OutputCompiler(device: context.device).compile(o, index: 1, drawable: (Self.width, Self.height))
+        let plan = try Self.plan(o, context: context)
         func image(_ keystone: simd_float3x3, raw: Bool = false, pattern: TestPattern = .off) throws -> [UInt8] {
             var fixture = OutputParameters()
             fixture.raw = raw
             fixture.testPattern = pattern
-            return try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [fixture]) { $0.keystones[0] = keystone }
+            return try Self.render(plan, still: still, context: context, outputs: [fixture]) { $0.keystones[0] = keystone }
         }
-        func green(_ image: [UInt8], _ x: Int, _ y: Int) -> Int { Int(image[(y * Self.width + x) * 4 + 1]) }
         let plain = try image(matrix_identity_float3x3)
         let moved = try image(Self.topLeftHalfRight)
         #expect(green(plain, 2, 2) == 200)
@@ -888,15 +904,14 @@ struct OutputPassTests {
         let still = try Self.flat(context.device, value: 200)
         var o = OutputConfig(id: 1)
         o.warp.cornerPin = [MapPoint(-0.2, -0.2), MapPoint(1.2, -0.2), MapPoint(1.2, 1.2), MapPoint(-0.2, 1.2)]  // 20 % bleed
-        let plan = try OutputCompiler(device: context.device).compile(o, index: 1, drawable: (Self.width, Self.height))
+        let plan = try Self.plan(o, context: context)
         let half = simd_float3x3(rowMajor: WarpMath.keystone(to: [MapPoint(0.25, 0.25), MapPoint(0.75, 0.25), MapPoint(0.75, 0.75), MapPoint(0.25, 0.75)])!)
-        let image = try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [OutputParameters()]) {
+        let image = try Self.render(plan, still: still, context: context, outputs: [OutputParameters()]) {
             $0.keystones[0] = half
         }
-        func green(_ x: Double, _ y: Double) -> Int { Int(image[(Int(y * Double(Self.height)) * Self.width + Int(x * Double(Self.width))) * 4 + 1]) }
-        #expect(green(0.5, 0.5) == 200, "inside the keystoned quad")
+        #expect(green(image, 0.5, 0.5) == 200, "inside the keystoned quad")
         // the bleed reaches 0.15…0.85 after the keystone; the output's own edges are at 0.25 and 0.75
-        #expect(green(0.2, 0.5) <= 1 && green(0.8, 0.5) <= 1 && green(0.5, 0.2) <= 1 && green(0.5, 0.8) <= 1, "the bleed stays outside")
+        #expect(green(image, 0.2, 0.5) <= 1 && green(image, 0.8, 0.5) <= 1 && green(image, 0.5, 0.2) <= 1 && green(image, 0.5, 0.8) <= 1, "the bleed stays outside")
     }
 
     /// The output preview shows the mapping as edited, without the keystone (DESIGN.md §9.10 item 3), while the projector
@@ -904,8 +919,7 @@ struct OutputPassTests {
     @Test func thePreviewDrawsWithoutTheKeystone() async throws {
         let rig = try Rig(OutputConfig(id: 1), value: 200)
         rig.keystone = Self.topLeftHalfRight
-        let streamer = try PreviewStreamer(context: rig.context, width: 160, height: 90, fps: 5, canvasFPS: 5, parameters: rig.parameters, logger: Logger(label: "output-test"))
-        streamer.outputSet = OutputSet(plans: [try OutputCompiler(device: rig.context.device).compile(OutputConfig(id: 1), index: 1, drawable: (160, 90))])
+        let streamer = try rig.previewStreamer(OutputConfig(id: 1))
         streamer.externalJPEGWanted = { true }
         rig.compositor.previewTap = { canvas, buffer, target, live in streamer.tap(canvas: canvas, commandBuffer: buffer, target: target, live: live) }
         _ = rig.tick(.normal, master: 1, layer: 1)
@@ -939,12 +953,11 @@ struct OutputPassTests {
     @Test func thePresetPicksTheGeometryAndKeepsTheBlendMap() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
-        let plan = try OutputCompiler(device: context.device).compile(Self.presetConfig(), index: 1, drawable: (Self.width, Self.height))
+        let plan = try Self.plan(Self.presetConfig(), context: context)
         #expect(plan.presets.count == 1 && plan.blendMap != nil)
         func image(_ preset: UInt8) throws -> [UInt8] {
-            try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [OutputParameters()]) { $0.presets[0] = preset }
+            try Self.render(plan, still: still, context: context, outputs: [OutputParameters()]) { $0.presets[0] = preset }
         }
-        func green(_ image: [UInt8], _ x: Int, _ y: Int) -> Int { Int(image[(y * Self.width + x) * 4 + 1]) }
         let edited = try image(0), preset = try image(1), missing = try image(7)
         #expect(green(edited, 2, 2) == 200 && green(missing, 2, 2) == 200, "0 and a missing number: the edited mapping")
         #expect(green(preset, 2, 2) <= 1 && green(preset, 150, 2) <= 1 && green(preset, 170, 2) == 200, "preset 1: the corner is at x = 160")
@@ -964,16 +977,15 @@ struct OutputPassTests {
         o.slices[0].dest = [MapPoint(0, 0), MapPoint(0.5, 0), MapPoint(0.5, 1), MapPoint(0, 1)]
         o.storePreset(2, name: nil)
         o.slices = [SliceConfig(id: 1)]
-        let plan = try OutputCompiler(device: context.device).compile(o, index: 1, drawable: (Self.width, Self.height))
+        let plan = try Self.plan(o, context: context)
         let half = simd_float3x3(rowMajor: WarpMath.keystone(to: [MapPoint(0.25, 0.25), MapPoint(0.75, 0.25), MapPoint(0.75, 0.75), MapPoint(0.25, 0.75)])!)
-        let image = try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [OutputParameters()]) {
+        let image = try Self.render(plan, still: still, context: context, outputs: [OutputParameters()]) {
             $0.presets[0] = 2
             $0.keystones[0] = half
         }
-        func green(_ x: Double, _ y: Double) -> Int { Int(image[(Int(y * Double(Self.height)) * Self.width + Int(x * Double(Self.width))) * 4 + 1]) }
-        #expect(green(0.375, 0.5) == 200, "the preset's slice, keystoned")
-        #expect(green(0.1, 0.5) <= 1, "not the preset alone")
-        #expect(green(0.6, 0.5) <= 1, "not the keystone alone")
+        #expect(green(image, 0.375, 0.5) == 200, "the preset's slice, keystoned")
+        #expect(green(image, 0.1, 0.5) <= 1, "not the preset alone")
+        #expect(green(image, 0.6, 0.5) <= 1, "not the keystone alone")
     }
 
     /// A secondary display (`present`, from the DMX side's copy) draws the preset ch 6 asks for, like the clock master.
@@ -1013,11 +1025,11 @@ struct OutputPassTests {
     @Test func aMorphGlidesTheSliceBetweenPresets() throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
-        let plan = try OutputCompiler(device: context.device).compile(Self.morphConfig(), index: 1, drawable: (Self.width, Self.height))
+        let plan = try Self.plan(Self.morphConfig(), context: context)
         let xs = [0.1, 0.3, 0.45, 0.55, 0.7, 0.9]
         /// `elapsed` seconds into a 2 s morph from preset 1 to 2 (the tick draws at 3600).
         func row(_ elapsed: Double, fade: Double = 2) throws -> [Int] {
-            let image = try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [OutputParameters()]) {
+            let image = try Self.render(plan, still: still, context: context, outputs: [OutputParameters()]) {
                 $0.presets[0] = 2
                 $0.morphs[0] = PresetMorph(from: 1, start: 3600 - elapsed, fade: fade)
             }
@@ -1054,15 +1066,14 @@ struct OutputPassTests {
         o.slices = [slice(1, 0.5, 0, opacity: 0.5), slice(3, 0.5, 0.35), slice(4, 0.5, 0.7)]
         o.storePreset(2, name: nil)
         o.slices = [SliceConfig(id: 1)]
-        let plan = try OutputCompiler(device: context.device).compile(o, index: 1, drawable: (Self.width, Self.height))
+        let plan = try Self.plan(o, context: context)
         func image(_ elapsed: Double) throws -> [UInt8] {
-            try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [OutputParameters()]) {
+            try Self.render(plan, still: still, context: context, outputs: [OutputParameters()]) {
                 $0.presets[0] = 2
                 $0.morphs[0] = PresetMorph(from: 1, start: 3600 - elapsed, fade: 2)
             }
         }
         let start = try image(0), half = try image(1)
-        func green(_ image: [UInt8], _ x: Double, _ y: Double) -> Int { Int(image[(Int(y * Double(Self.height)) * Self.width + Int(x * Double(Self.width))) * 4 + 1]) }
         #expect(Self.lit(start, y: 0.5, [0.25, 0.75]) == [0, 1] && Self.lit(start, y: 0.85, [0.25, 0.75]) == [0, 1], "at s = 0 already")
         #expect(Self.lit(half, y: 0.5, [0.1, 0.45, 0.9]) == [0, 0, 1], "slice 2 gone, slice 3 there")
         #expect(Self.lit(half, y: 0.85, [0.1, 0.45, 0.9]) == [0, 0, 1], "slice 4 changed canvas: at preset 2's place")
@@ -1089,14 +1100,13 @@ struct OutputPassTests {
         o.slices = [slice(1, 0, 1, 0, 0.45, source: 0.5), masked]
         o.storePreset(2, name: nil)
         o.slices = [SliceConfig(id: 1)]
-        let plan = try OutputCompiler(device: context.device).compile(o, index: 1, drawable: (Self.width, Self.height))
+        let plan = try Self.plan(o, context: context)
         func image(_ elapsed: Double) throws -> [UInt8] {
-            try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [OutputParameters()]) {
+            try Self.render(plan, still: still, context: context, outputs: [OutputParameters()]) {
                 $0.presets[0] = 2
                 $0.morphs[0] = PresetMorph(from: 1, start: 3600 - elapsed, fade: 2)
             }
         }
-        func green(_ image: [UInt8], _ x: Double, _ y: Double) -> Int { Int(image[(Int(y * Double(Self.height)) * Self.width + Int(x * Double(Self.width))) * 4 + 1]) }
         let half = try image(1), end = try image(2)
         #expect(Self.near(green(half, 0.1, 0.2), 50) && green(half, 0.9, 0.2) == 200, "the source halfway: 0.05 → 0.55 samples 0.3")
         #expect(green(end, 0.1, 0.2) == 200, "at the end: preset 2's source")
@@ -1109,21 +1119,20 @@ struct OutputPassTests {
     @Test(arguments: [TestPattern.off, .white]) func theWarpGlidesIntoTheEditedMapping(_ pattern: TestPattern) throws {
         let context = try MetalContext()
         let still = try Self.flat(context.device, value: 200)
-        let plan = try OutputCompiler(device: context.device).compile(Self.presetConfig(), index: 1, drawable: (Self.width, Self.height))
+        let plan = try Self.plan(Self.presetConfig(), context: context)
         var fixture = OutputParameters()
         fixture.testPattern = pattern
         func image(_ elapsed: Double) throws -> [UInt8] {
-            try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context, outputs: [fixture]) {
+            try Self.render(plan, still: still, context: context, outputs: [fixture]) {
                 $0.presets[0] = 0
                 $0.morphs[0] = PresetMorph(from: 1, start: 3600 - elapsed, fade: 2)
             }
         }
-        func green(_ image: [UInt8], _ x: Int) -> Int { Int(image[(2 * Self.width + x) * 4 + 1]) }
         let lit = pattern == .off ? 200 : 255
         let start = try image(0), half = try image(1), end = try image(2)
-        #expect(green(start, 2) <= 1 && green(start, 100) <= 1 && green(start, 170) == lit, "s = 0: preset 1, the corner at x = 160")
-        #expect(green(half, 2) <= 1 && green(half, 100) == lit, "halfway: the corner at x = 80")
-        #expect(green(end, 2) == lit, "s = 1: the edited mapping")
+        #expect(green(start, 2, 2) <= 1 && green(start, 100, 2) <= 1 && green(start, 170, 2) == lit, "s = 0: preset 1, the corner at x = 160")
+        #expect(green(half, 2, 2) <= 1 && green(half, 100, 2) == lit, "halfway: the corner at x = 80")
+        #expect(green(end, 2, 2) == lit, "s = 1: the edited mapping")
     }
 
     /// Both sides warped (flags 1 and 16 at once), on output 2 (slot index 1): preset 1's corner pin squeezes the picture
@@ -1138,10 +1147,10 @@ struct OutputPassTests {
         (o.warp.cornerPin[1], o.warp.cornerPin[2]) = (MapPoint(0.5, 0), MapPoint(0.5, 1))
         o.storePreset(2, name: nil)
         o.warp = WarpSettings()
-        let plan = try OutputCompiler(device: context.device).compile(o, index: 2, drawable: (Self.width, Self.height))
+        let plan = try Self.plan(o, index: 2, context: context)
         #expect(plan.geometry(1).warpField != nil && plan.geometry(2).warpField != nil)
         func row(_ elapsed: Double) throws -> [Int] {
-            let image = try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context) {
+            let image = try Self.render(plan, still: still, context: context) {
                 $0.presets[1] = 2
                 $0.morphs[1] = PresetMorph(from: 1, start: 3600 - elapsed, fade: 2)
             }
@@ -1204,7 +1213,7 @@ struct OutputPassTests {
             MappingPreset(number: 2, name: "second", warp: flat.warp, slices: flat.slices), MappingPreset(number: 5, name: "broken", warp: broken.warp, slices: broken.slices),
             MappingPreset(number: 256, name: "high", warp: moved.warp, slices: moved.slices),
         ]
-        let plan = try OutputCompiler(device: MetalContext().device).compile(o, index: 1, drawable: (Self.width, Self.height))
+        let plan = try Self.plan(o, context: MetalContext())
         #expect(plan.presets.keys.sorted() == [2])
         #expect(plan.geometry(0).warpField == nil, "ch 6 = 0 shows the edited mapping")
         #expect(plan.geometry(2).warpField != nil, "the first preset 2, with the moved corner")
@@ -1215,8 +1224,7 @@ struct OutputPassTests {
     @Test func thePreviewDrawsTheEditedMapping() async throws {
         let rig = try Rig(Self.presetConfig(), value: 200)
         rig.preset = 1
-        let streamer = try PreviewStreamer(context: rig.context, width: 160, height: 90, fps: 5, canvasFPS: 5, parameters: rig.parameters, logger: Logger(label: "output-test"))
-        streamer.outputSet = OutputSet(plans: [try OutputCompiler(device: rig.context.device).compile(Self.presetConfig(), index: 1, drawable: (160, 90))])
+        let streamer = try rig.previewStreamer(Self.presetConfig())
         streamer.externalJPEGWanted = { true }
         rig.compositor.previewTap = { canvas, buffer, target, live in streamer.tap(canvas: canvas, commandBuffer: buffer, target: target, live: live) }
         _ = rig.tick(.normal, master: 1, layer: 1)
@@ -1290,7 +1298,7 @@ struct OutputPassTests {
         var failures: [String] = []
         for (name, config) in cases {
             let plan = try compiler.compile(config, index: 1, drawable: (Self.width, Self.height))
-            let rgba = Self.rgba(fromBGRA: try Self.render(plan, still: still, drawable: (Self.width, Self.height), context: context))
+            let rgba = Self.rgba(fromBGRA: try Self.render(plan, still: still, context: context))
             let url = Self.golden.appending(path: "\(name).png")
             if GoldenTests.record {
                 try GoldenTests.writePNG(rgba, width: Self.width, height: Self.height, to: url)
@@ -1353,9 +1361,7 @@ struct OutputPassTests {
     @MainActor static func overlaid(_ rig: Rig, selected: OverlaySelection? = nil, at: Double = 3600) throws -> OutputSet {
         let overlay = EditOverlay(device: rig.context.device)
         overlay.lease(1, on: true, selected: selected, config: overlayConfig(), at: at)
-        let set = OutputSet(plans: [try OutputCompiler(device: rig.context.device).compile(overlayConfig(), index: 1, drawable: (width, height), overlay: overlay)])
-        rig.compositor.outputSet = set
-        return set
+        return try rig.setOutput(overlayConfig(), overlay: overlay)
     }
 
     /// Blue, green, red at (x, y) of a BGRA image.
@@ -1458,7 +1464,7 @@ struct OutputPassTests {
         o.slices.append(bleed)
         let overlay = EditOverlay(device: rig.context.device)
         overlay.lease(1, on: true, selected: nil, config: o, at: 3600)
-        rig.compositor.outputSet = OutputSet(plans: [try OutputCompiler(device: rig.context.device).compile(o, index: 1, drawable: (Self.width, Self.height), overlay: overlay)])
+        try rig.setOutput(o, overlay: overlay)
         rig.keystone = simd_float3x3(rowMajor: WarpMath.keystone(to: [MapPoint(0.25, 0.25), MapPoint(0.75, 0.25), MapPoint(0.75, 0.75), MapPoint(0.25, 0.75)])!)
         _ = rig.tick(.normal, master: 1, layer: 1)
         let image = rig.compositor.readbackOutput().bgra
@@ -1512,9 +1518,8 @@ struct OutputPassTests {
         let rig = try Rig(nil, value: 200)
         let overlay = EditOverlay(device: rig.context.device)
         await MainActor.run { overlay.lease(1, on: true, selected: nil, config: Self.overlayConfig(), at: 3600) }
-        rig.compositor.outputSet = OutputSet(plans: [try OutputCompiler(device: rig.context.device).compile(Self.overlayConfig(), index: 1, drawable: (Self.width, Self.height), overlay: overlay)])
-        let streamer = try PreviewStreamer(context: rig.context, width: Self.width, height: Self.height, fps: 5, canvasFPS: 5, parameters: rig.parameters, logger: Logger(label: "output-test"))
-        streamer.outputSet = OutputSet(plans: [try OutputCompiler(device: rig.context.device).compile(Self.overlayConfig(), index: 1, drawable: (Self.width, Self.height))])
+        try rig.setOutput(Self.overlayConfig(), overlay: overlay)
+        let streamer = try rig.previewStreamer(Self.overlayConfig(), size: (Self.width, Self.height))
         streamer.externalJPEGWanted = { true }
         rig.compositor.previewTap = { canvas, buffer, target, live in streamer.tap(canvas: canvas, commandBuffer: buffer, target: target, live: live) }
         #expect(rig.tick(.normal, master: 1, layer: 1) == 255, "the projector draws slice 2's edge at the centre")
@@ -1532,4 +1537,12 @@ struct OutputPassTests {
             #expect(abs(Int(rgba[(y * width + x) * 4 + 1]) - 200) <= 8, "the preview at (\(x), \(y)): \(rgba[(y * width + x) * 4 + 1])")
         }
     }
+}
+
+/// Green at pixel (`x`, `y`) of a BGRA image of the test output's size.
+func green(_ image: [UInt8], _ x: Int, _ y: Int) -> Int { Int(image[(y * OutputPassTests.width + x) * 4 + 1]) }
+
+/// Green at (`x`, `y`) as fractions of the test output.
+func green(_ image: [UInt8], _ x: Double, _ y: Double) -> Int {
+    green(image, Int(x * Double(OutputPassTests.width)), Int(y * Double(OutputPassTests.height)))
 }

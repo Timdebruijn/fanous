@@ -120,11 +120,11 @@ struct MaskTests {
 
         let context = try MetalContext()
         let still = try GoldenTests.pattern(device: context.device, variant: 0)
-        let plan = try OutputCompiler(device: context.device).compile(config, index: 1, drawable: (OutputPassTests.width, OutputPassTests.height))
+        let plan = try OutputPassTests.plan(config, context: context)
         func image(_ preset: UInt8) throws -> [UInt8] {
             OutputPassTests.rgba(
                 fromBGRA: try OutputPassTests.render(
-                    plan, still: still, drawable: (OutputPassTests.width, OutputPassTests.height), context: context, outputs: [OutputParameters()]) { $0.presets[0] = preset })
+                    plan, still: still, context: context, outputs: [OutputParameters()]) { $0.presets[0] = preset })
         }
         let golden = try #require(GoldenTests.readPNG(OutputPassTests.golden.appending(path: "output-mask-feather.png")))
         let edited = try image(0), masked = try image(2)
@@ -132,8 +132,7 @@ struct MaskTests {
         #expect(GoldenTests.compare(masked, golden, name: "preset 2") == nil, "\(GoldenTests.compare(masked, golden, name: "preset 2") ?? "")")
         let plain = OutputPassTests.rgba(
             fromBGRA: try OutputPassTests.render(
-                try OutputCompiler(device: context.device).compile(OutputConfig(id: 1), index: 1, drawable: (OutputPassTests.width, OutputPassTests.height)), still: still,
-                drawable: (OutputPassTests.width, OutputPassTests.height), context: context))
+                try OutputPassTests.plan(OutputConfig(id: 1), context: context), still: still, context: context))
         #expect(try image(3) == plain, "preset 3 had no mask")
     }
 
@@ -456,11 +455,10 @@ struct MaskTests {
         let still = try OutputPassTests.flat(context.device, value: 200)
         var o = OutputConfig(id: 1)
         o.slices[0].masks = [MaskShape(path: Self.square(0.1, 0.1, 0.9, 0.9)), MaskShape(mode: .subtract, path: Self.square(0.4, 0.4, 0.6, 0.6))]
-        let plan = try OutputCompiler(device: context.device).compile(o, index: 1, drawable: (OutputPassTests.width, OutputPassTests.height))
-        let image = try OutputPassTests.render(plan, still: still, drawable: (OutputPassTests.width, OutputPassTests.height), context: context)
-        func green(_ x: Int, _ y: Int) -> Int { Int(image[(y * OutputPassTests.width + x) * 4 + 1]) }
-        #expect(green(80, 90) == 200 && green(240, 30) == 200, "inside the add mask")
-        #expect(green(160, 90) == 0, "the hole")
-        #expect(green(10, 10) == 0 && green(310, 170) == 0, "outside")
+        let plan = try OutputPassTests.plan(o, context: context)
+        let image = try OutputPassTests.render(plan, still: still, context: context)
+        #expect(green(image, 80, 90) == 200 && green(image, 240, 30) == 200, "inside the add mask")
+        #expect(green(image, 160, 90) == 0, "the hole")
+        #expect(green(image, 10, 10) == 0 && green(image, 310, 170) == 0, "outside")
     }
 }
