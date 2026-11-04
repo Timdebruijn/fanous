@@ -20,17 +20,11 @@ import Testing
             ipAddresses: [[127, 0, 0, 1], [UInt8](repeating: 0, count: 15) + [1]])
     }
 
-    @Test func tbsIsAValidSequence() {
-        let tbs = Self.sample().tbsCertificate()
-        #expect(tbs[0] == 0x30)
-        // version [0] EXPLICIT INTEGER 2 comes first inside the sequence
-        #expect(Array(tbs[4..<9]) == [0xA0, 0x03, 0x02, 0x01, 0x02])
-    }
-
     @Test func securityFrameworkParsesIt() throws {
         // A syntactically valid cert with a dummy signature: enough for Security to parse subject and SANs.
         let dummySignature = DER.sequence([DER.integer(unsignedBytes: [0x7F]), DER.integer(unsignedBytes: [0x7E])])
         let der = Self.sample().certificate(signature: dummySignature)
+        #expect(der.firstRange(of: DER.explicit(0, DER.integer(unsignedBytes: [2]))) != nil)  // version v3; Security would take v1 too
         let cert = try #require(SecCertificateCreateWithData(nil, Data(der) as CFData))
         #expect(SecCertificateCopySubjectSummary(cert) as String? == "Fanous Test")
         let serial = try #require(SecCertificateCopySerialNumberData(cert, nil) as Data?)

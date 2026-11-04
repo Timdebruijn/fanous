@@ -25,7 +25,7 @@ import Testing
     }
 
     @Test func lookupTablesAgreeWithTheSpecOrder() {
-        for mode in [FixtureMode.layer, .master, .output] {
+        for mode in FixtureMode.allCases {
             for (i, spec) in ChannelMap.specs(for: mode).enumerated() {
                 #expect(ChannelMap.index(of: spec.id) == i)
                 #expect(ChannelMap.spec(spec.id).id == spec.id)

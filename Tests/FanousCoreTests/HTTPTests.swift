@@ -77,5 +77,9 @@ import Testing
         #expect(MIMEType.forPath("index.html") == "text/html; charset=utf-8")
         #expect(MIMEType.forPath("assets/app-1a2b.js") == "text/javascript; charset=utf-8")
         #expect(MIMEType.forPath("x.unknown") == "application/octet-stream")
+        #expect(MIMEType.forPath("assets/app.wasm") == "application/wasm")
+        #expect(MIMEType.forPath("assets/chunk.mjs") == "text/javascript; charset=utf-8")
+        #expect(MIMEType.forPath("assets/app.css") == "text/css; charset=utf-8")
+        #expect(MIMEType.forPath("logo.svg") == "image/svg+xml")
     }
 }
