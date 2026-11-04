@@ -346,4 +346,23 @@ struct StateServerTests {
         bad.resume()
         await #expect(throws: Error.self) { try await bad.receive() }
     }
+
+    /// Cross-site WebSocket hijacking: a page on another origin must not get a socket that carries the session cookie.
+    /// No Origin is the shell app; a browser always sends one, and it must name this host and port.
+    @Test func upgradeAcceptsOnlyTheSameOrigin() throws {
+        let (store, auth) = testStore()
+        let server = StateServer(store: store, auth: auth, caps: ["schema": 1], logger: testLogger)
+        func upgrade(host: String = "127.0.0.1:8443", origin: String?) throws -> StateServer.Connection? {
+            let head = "GET /ws HTTP/1.1\r\nHost: \(host)\r\n" + (origin.map { "Origin: \($0)\r\n" } ?? "") + "\r\n"
+            return server.upgrade(try #require(try HTTPRequest.parse(Array(head.utf8))).request)
+        }
+        #expect(try upgrade(origin: "https://127.0.0.1:8443") != nil)
+        #expect(try upgrade(origin: nil) != nil)
+        #expect(try upgrade(host: "fanous.local:8443", origin: "https://Fanous.LOCAL:8443") != nil)
+        #expect(try upgrade(origin: "https://evil.example") == nil)
+        #expect(try upgrade(origin: "https://evil.example:8443") == nil)
+        #expect(try upgrade(origin: "https://127.0.0.1:9443") == nil)
+        #expect(try upgrade(origin: "https://127.0.0.1") == nil)
+        #expect(try upgrade(origin: "null") == nil)
+    }
 }
