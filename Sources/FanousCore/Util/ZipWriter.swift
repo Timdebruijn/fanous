@@ -39,9 +39,7 @@ public enum ZipWriter {
     static func le32(_ v: UInt32) -> [UInt8] { [UInt8(v & 0xFF), UInt8(v >> 8 & 0xFF), UInt8(v >> 16 & 0xFF), UInt8(v >> 24)] }
 
     static func dosDateTime(_ date: Date) -> (UInt16, UInt16) {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        let c = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        let c = Calendar(identifier: .gregorian).dateComponents(in: .gmt, from: date)
         let time = UInt16(c.hour! << 11 | c.minute! << 5 | c.second! / 2)
         let day = UInt16(max(0, c.year! - 1980) << 9 | c.month! << 5 | c.day!)
         return (time, day)

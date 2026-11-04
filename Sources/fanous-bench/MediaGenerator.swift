@@ -34,22 +34,29 @@ enum MediaGenerator {
             let frames = Int(seconds * Double(spec.fps))
             let started = Date()
             let writer = try MovieWriter(url: url, width: spec.width, height: spec.height, fps: spec.fps, codec: spec.codec, audio: audio)
-            let buffer = try writer.makePixelBuffer()
-            for frame in 0..<frames {
-                // the adaptor keeps pool buffers in flight: a fresh one each time; HAP has no pool and reuses one
-                let pixelBuffer = try writer.pixelBufferPool == nil ? buffer : writer.makePixelBuffer()
-                CVPixelBufferLockBaseAddress(pixelBuffer, [])
+            try writeFrames(writer, count: frames) { pixelBuffer, frame in
                 PatternFrames.fill(
                     bgra: CVPixelBufferGetBaseAddress(pixelBuffer)!.assumingMemoryBound(to: UInt8.self), width: spec.width,
                     height: spec.height, bytesPerRow: CVPixelBufferGetBytesPerRow(pixelBuffer), frame: frame)
-                CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
-                try writer.append(pixelBuffer)
             }
-            try writer.finish()
             let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
             logger.info(
                 "wrote \(spec.name)",
                 metadata: ["frames": "\(frames)", "audio": "\(audio)", "MB": "\(size / 1_000_000)", "seconds": "\(Int(Date().timeIntervalSince(started)))"])
         }
     }
+}
+
+/// Writes `count` frames, each drawn by `draw` into a locked pixel buffer, and finishes the movie.
+func writeFrames(_ writer: MovieWriter, count: Int, draw: (CVPixelBuffer, Int) -> Void) throws {
+    let buffer = try writer.makePixelBuffer()
+    for frame in 0..<count {
+        // the adaptor keeps pool buffers in flight: a fresh one each time; HAP has no pool and reuses one
+        let pixelBuffer = try writer.pixelBufferPool == nil ? buffer : writer.makePixelBuffer()
+        CVPixelBufferLockBaseAddress(pixelBuffer, [])
+        draw(pixelBuffer, frame)
+        CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
+        try writer.append(pixelBuffer)
+    }
+    try writer.finish()
 }

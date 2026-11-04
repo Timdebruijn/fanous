@@ -56,20 +56,13 @@ enum SampleMedia {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             let started = Date()
             let writer = try MovieWriter(url: partial, width: Int(w), height: Int(h), fps: Int32(clip.fps), codec: clip.codec)
-            let buffer = try writer.makePixelBuffer()
-            for frame in 0..<seconds * clip.fps {
-                // the adaptor keeps pool buffers in flight: a fresh one each time; HAP has no pool and reuses one
-                let pixelBuffer = try writer.pixelBufferPool == nil ? buffer : writer.makePixelBuffer()
-                CVPixelBufferLockBaseAddress(pixelBuffer, [])
+            try writeFrames(writer, count: seconds * clip.fps) { pixelBuffer, frame in
                 let context = CGContext(
                     data: CVPixelBufferGetBaseAddress(pixelBuffer), width: Int(w), height: Int(h), bitsPerComponent: 8,
                     bytesPerRow: CVPixelBufferGetBytesPerRow(pixelBuffer), space: CGColorSpaceCreateDeviceRGB(),
                     bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!
                 clip.draw(context, frame, clip.fps)
-                CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
-                try writer.append(pixelBuffer)
             }
-            try writer.finish()
             // rename(2) replaces an earlier run's file in one step: a layer playing it never finds the number missing
             guard rename(partial.path, url.path) == 0 else { refuse("\(clip.path): \(String(cString: strerror(errno)))") }
             let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0

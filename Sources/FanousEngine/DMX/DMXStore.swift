@@ -58,7 +58,7 @@ public final class DMXStore: @unchecked Sendable {
     /// The cue list's last output and when it came: a resolver made later (a layer added, an undo) takes it at once, as
     /// the cue engine pushes values only while a fade runs. Stamped with that time, as the resolvers that existed got
     /// it, so a console fed to the new resolver now wins under latest wins.
-    private var cue: (outputs: [CueOutput], at: TimeInterval) = ([], 0)
+    private var cue: (outputs: [CueValue], at: TimeInterval) = ([], 0)
     private var announced: Set<String> = []
     private var lastAnnounced: (universe: UniverseID, source: String, priority: UInt8?)?
     private var timer: DispatchSourceTimer?
@@ -345,7 +345,7 @@ public final class DMXStore: @unchecked Sendable {
     // MARK: Cross-thread
 
     /// Cue list output (DESIGN.md §15.2): every value the cue engine asserts, as the cue source.
-    public func setCue(_ outputs: [CueOutput]) {
+    public func setCue(_ outputs: [CueValue]) {
         queue.async { [self] in
             let now = Self.now
             cue = (outputs, now)

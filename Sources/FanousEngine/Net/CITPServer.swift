@@ -281,8 +281,8 @@ public final class CITPServer: @unchecked Sendable {
 
     fileprivate func handle(_ packet: CITPClientMessage, requestIndex: UInt16, from session: Session) {
         switch packet {
-        case .clientInformation(let info):
-            let version = info.supportedVersions.filter { $0 <= .v1_2 }.max() ?? .v1_0
+        case .clientInformation(let supportedVersions):
+            let version = supportedVersions.filter { $0 <= .v1_2 }.max() ?? .v1_0
             session.version = version
             updateTimers()
             let library = providers.library()
@@ -333,7 +333,7 @@ public final class CITPServer: @unchecked Sendable {
         case .unknown(let contentType, let body):
             // an MSEX message we do not model: the Nack names its MSEX content type (bytes 2..<6 after the version)
             let received = contentType == "MSEX" && body.count >= 6 ? String(decoding: body[2..<6], as: UTF8.self) : contentType
-            session.send(.nack(Nack(receivedContentType: received)), requestIndex: requestIndex)
+            session.send(.nack(receivedContentType: received), requestIndex: requestIndex)
         }
     }
 

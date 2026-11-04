@@ -104,7 +104,8 @@ public enum CITPClientMessage: Equatable, Sendable {
     // PINF
     case peerName(String)
     // MSEX
-    case clientInformation(ClientInformation)
+    /// MSEX/CInf: the client lists the MSEX versions it speaks (always sent with version 1.2).
+    case clientInformation(supportedVersions: [MSEXVersion])
     case getElementLibraryInformation(GetElementLibraryInformation)
     case getElementInformation(GetElementInformation)
     case getElementThumbnail(GetElementThumbnail)
@@ -145,7 +146,10 @@ public enum CITPPacket: Equatable, Sendable {
     case peerLocation(PeerLocation)
     // MSEX
     case serverInformation(ServerInformation)
-    case nack(Nack)
+    /// MSEX/Nack (1.2+): "I do not support the message you sent", naming the rejected message's content type
+    /// (e.g. "GELT"). `InResponseTo` in the CITP header carries the request's index, so answer with
+    /// `encoded(requestIndex:)` set to the request's `CITPHeader.requestIndex`.
+    case nack(receivedContentType: String)
     case layerStatus([LayerStatus])
     case elementLibraryInformation(ElementLibraryInformation)
     case mediaElementInformation(MediaElementInformation)
@@ -169,7 +173,7 @@ public enum CITPPacket: Equatable, Sendable {
             body.putUCS1(p.state)
         // Nack only exists from 1.2; the others use the layout of `version`.
         case .serverInformation(let m): body = Self.msex("SInf", version, m.write)
-        case .nack(let m): body = Self.msex("Nack", max(version, .v1_2), m.write)
+        case .nack(let type): body = Self.msex("Nack", max(version, .v1_2)) { out, _ in out.putCookie(type) }
         case .layerStatus(let layers): body = Self.msex("LSta", version) { LayerStatus.write(layers, to: &$0, as: $1) }
         case .elementLibraryInformation(let m): body = Self.msex("ELIn", version, m.write)
         case .mediaElementInformation(let m): body = Self.msex("MEIn", version, m.write)

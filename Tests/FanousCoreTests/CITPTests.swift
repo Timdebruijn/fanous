@@ -94,12 +94,12 @@ import Testing
     @Test func clientInformationDecodes() throws {
         // Versions are u16 with major in the high byte, little endian: minor comes first on the wire.
         let bytes = Self.header(size: 33, "MSEX") + [0x01, 0x02] + Array("CInf".utf8) + [0x03, 0x00, 0x01, 0x01, 0x01, 0x02, 0x01]
-        #expect(try CITPClientMessage.parse(bytes) == .clientInformation(ClientInformation(supportedVersions: [.v1_0, .v1_1, .v1_2])))
+        #expect(try CITPClientMessage.parse(bytes) == .clientInformation(supportedVersions: [.v1_0, .v1_1, .v1_2]))
     }
 
     @Test func nackKeepsInResponseTo() throws {
         // Nack only exists in 1.2: an older requested version is lifted to 1.2.
-        let bytes = CITPPacket.nack(Nack(receivedContentType: "GELT")).encoded(version: .v1_1, requestIndex: 42)
+        let bytes = CITPPacket.nack(receivedContentType: "GELT").encoded(version: .v1_1, requestIndex: 42)
         #expect(bytes == Self.header(size: 30, "MSEX", requestIndex: 42) + [0x01, 0x02] + Array("Nack".utf8) + Array("GELT".utf8))
         #expect(try CITPHeader.parse(bytes).requestIndex == 42)
     }
@@ -291,7 +291,7 @@ import Testing
 
     static let serverPackets: [CITPPacket] = [
         .peerLocation(PeerLocation(listeningTCPPort: 1, type: "t", name: "n", state: "s")), .serverInformation(serverInfo),
-        .nack(Nack(receivedContentType: "GELT")), .layerStatus([LayerStatus(layerNumber: 0, mediaName: name)]),
+        .nack(receivedContentType: "GELT"), .layerStatus([LayerStatus(layerNumber: 0, mediaName: name)]),
         .elementLibraryInformation(ElementLibraryInformation(libraries: [ElementLibrary(id: .topLevel(1), name: name)])),
         .mediaElementInformation(MediaElementInformation(libraryID: .topLevel(1), elements: [MediaElement(number: 0, name: name)])),
         .elementThumbnail(ElementThumbnail(libraryID: .topLevel(1), elementNumber: 0, width: 1, height: 1, buffer: [1, 2, 3])),

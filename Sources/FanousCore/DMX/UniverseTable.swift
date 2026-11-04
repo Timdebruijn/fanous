@@ -55,11 +55,8 @@ public struct SACNUniverseMerger: Sendable {
         return accepted
     }
 
-    @discardableResult
-    public mutating func expire(at time: TimeInterval) -> Bool {
-        let before = sources.count
+    public mutating func expire(at time: TimeInterval) {
         sources = sources.filter { time - $0.value.lastSeen <= Self.timeout }
-        return sources.count != before
     }
 
     public var winner: Source? {
@@ -173,12 +170,10 @@ public struct UniverseTable: Sendable {
     }
 
     /// The universes the packet fed (empty: wrong interface, out of sequence, or nobody listens).
-    @discardableResult
     public mutating func apply(artnet packet: ArtDmx, from source: String, at time: TimeInterval) -> [UniverseID] {
         feed(packet.universeID, from: source, at: time) { $0.artnet.apply(packet, from: source, at: time) }
     }
 
-    @discardableResult
     public mutating func apply(sacn packet: SACNData, from sender: String = "", at time: TimeInterval) -> [UniverseID] {
         feed(packet.universeID, from: sender, at: time) { $0.sacn.apply(packet, at: time) }
     }

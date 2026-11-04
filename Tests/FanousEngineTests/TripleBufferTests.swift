@@ -429,7 +429,7 @@ final class Box { var value = 0 }
         let added = store.snapshots.withLatest { $0.layers[1] }
         #expect(added.intensity == 1 && added.file == 7, "\(added)")
         // released before the layer is added: nothing to take
-        store.setCue([CueOutput]())
+        store.setCue([CueValue]())
         store.setPatch(store.currentPatch, fixtures: ProjectDocument.fixtures(layerCount: 1, outputs: []))
         store.setPatch(store.currentPatch, fixtures: ProjectDocument.fixtures(layerCount: 2, outputs: []))
         store.queue.sync {}

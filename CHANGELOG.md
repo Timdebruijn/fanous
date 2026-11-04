@@ -17,6 +17,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   `noUnusedLocals` in tsconfig (PR #269); no behaviour change.
 - Release: 1.0.0-rc.3 is on GitHub as a pre-release with the signed, notarized dmg, built from main 07ac24b
   (PR #267).
+- Changed: less code in Core, the shell and the bench, no behaviour or wire change: CITP `CInf` and `Nack` are enum cases
+  instead of one-field structs; one big/little-endian reader in `Bytes.swift` replaces the hand-rolled ones in sACN, OSC,
+  the WebSocket frame and the sync packet; zip, certificate and GDTF dates take one UTC calendar call; one channel-map
+  builder instead of three; the cue engine returns `CueValue`; one frame-writer loop for both bench generators; the
+  unread result of the sACN merger's expiry is gone (PR #271).
 
 ## 1.0.0-rc.3 — 2026-11-03
 

@@ -57,12 +57,6 @@ public struct CueList: Codable, Equatable, Sendable {
     public func index(ofNumber number: Double) -> Int? { cues.firstIndex { $0.number == number } }
 }
 
-public struct CueOutput: Equatable, Sendable {
-    public var fixture: FixtureRef
-    public var parameter: ParameterID
-    public var raw: UInt16
-}
-
 /// Go/back/goto with per-cue fades, timecode triggers and follows (DESIGN.md §15.2).
 /// Pure: feed it the clock, read `tick` output into the resolver as the cue source.
 public struct CueEngine: Sendable {
@@ -169,7 +163,7 @@ public struct CueEngine: Sendable {
     }
 
     /// Advances fades and follows; returns every value the cue list currently asserts.
-    public mutating func tick(at time: TimeInterval) -> [CueOutput] {
+    public mutating func tick(at time: TimeInterval) -> [CueValue] {
         if let follow, time >= follow.fireAt {
             self.follow = nil
             if let at = list.cues.firstIndex(where: { $0.id == follow.from }), at + 1 < list.cues.count { fire(index: at + 1, at: time) }
@@ -178,9 +172,9 @@ public struct CueEngine: Sendable {
             held[key] = UInt16(fade.to.rounded())
             fades[key] = nil
         }
-        var outputs = held.map { CueOutput(fixture: $0.key.fixture, parameter: $0.key.parameter, raw: $0.value) }
+        var outputs = held.map { CueValue(fixture: $0.key.fixture, parameter: $0.key.parameter, raw: $0.value) }
         for (key, fade) in fades {
-            outputs.append(CueOutput(fixture: key.fixture, parameter: key.parameter, raw: UInt16(fade.value(at: time).rounded())))
+            outputs.append(CueValue(fixture: key.fixture, parameter: key.parameter, raw: UInt16(fade.value(at: time).rounded())))
         }
         return outputs.sorted { "\($0.fixture) \($0.parameter)" < "\($1.fixture) \($1.parameter)" }
     }
