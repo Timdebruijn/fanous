@@ -13,7 +13,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Changed: `scripts/bench.sh sweep|phase3|drift` runs the benchmark matrices with one preamble and one `run`;
   `bench-sweep.sh` and `bench-phase3.sh` stay as wrappers. `bundle.sh` writes the usage strings once for both
   Info.plists (byte-identical output) and copies swift-log's `LICENSE.txt` directly, failing when it is missing instead
-  of leaving it out (PR #NNN).
+  of leaving it out (PR #272).
 - Changed: the layer chip on a Media tile has 6 px between its dot and its word, like every other status
   (was 5 px; PR #268).
 - Release: 1.0.0-rc.3 is on GitHub as a pre-release with the signed, notarized dmg, built from main 07ac24b
