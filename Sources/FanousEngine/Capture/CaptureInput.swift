@@ -149,11 +149,11 @@ public class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoDataOutput
 
     public static var authorization: AVAuthorizationStatus { AVCaptureDevice.authorizationStatus(for: .video) }
 
-    /// Asks for the camera only when `allowed` (outside show mode) and not yet determined; otherwise reports the current
-    /// state (`.notDetermined` when not allowed to ask). `completion` may run on any thread.
-    public static func requestAccess(allowed: Bool, completion: @escaping @Sendable (AVAuthorizationStatus) -> Void) {
+    /// Asks for the camera when not yet determined; otherwise reports the current state. `completion` may run on any
+    /// thread.
+    public static func requestAccess(completion: @escaping @Sendable (AVAuthorizationStatus) -> Void) {
         let status = authorization
-        guard status == .notDetermined, allowed else { return completion(status) }
+        guard status == .notDetermined else { return completion(status) }
         AVCaptureDevice.requestAccess(for: .video) { completion($0 ? .authorized : .denied) }
     }
 
@@ -167,7 +167,7 @@ public class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoDataOutput
         case .authorized: break
         case .notDetermined:
             guard allowed else { throw CaptureError.permissionNotAsked }
-            requestAccess(allowed: true) { _ in onAnswer() }
+            requestAccess { _ in onAnswer() }
             throw CaptureError.permissionPending
         default: throw CaptureError.permissionDenied
         }
@@ -186,13 +186,8 @@ public class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoDataOutput
     /// What the output is asked for, by the device's native subtype: the 8-bit layouts the shader reads stay as they
     /// are, anything else (MJPEG webcams, `v210` for now) is decoded to BGRA by AVFoundation.
     static func outputPixelFormat(native: FourCharCode) -> OSType {
-        switch native {
-        case kCVPixelFormatType_422YpCbCr8: kCVPixelFormatType_422YpCbCr8
-        case kCVPixelFormatType_422YpCbCr8_yuvs: kCVPixelFormatType_422YpCbCr8_yuvs
-        case kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange:
-            kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
-        default: kCVPixelFormatType_32BGRA
-        }
+        guard keptSubtypes.contains(native) else { return kCVPixelFormatType_32BGRA }
+        return native == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange ? kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange : native  // 420f read as 420v
     }
 
     /// One frame-rate range of one format of the active format's size.

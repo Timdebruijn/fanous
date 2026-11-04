@@ -396,10 +396,8 @@ public final class PreviewStreamer: @unchecked Sendable {
         let record = Self.avcC(from: format)
         let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[CFString: Any]]
         let key = !(attachments?.first?[kCMSampleAttachmentKey_NotSync] as? Bool ?? false)
-        var payload = [UInt8](repeating: 0, count: 9)
-        payload[0] = key ? 1 : 0
         let micros = UInt64(max(0, target * 1_000_000))
-        for i in 0..<8 { payload[1 + i] = UInt8((micros >> (8 * (7 - i))) & 0xFF) }
+        var payload: [UInt8] = [key ? 1 : 0] + withUnsafeBytes(of: micros.bigEndian, Array.init)  // flag, big-endian µs
         let length = CMBlockBufferGetDataLength(dataBuffer)
         payload.reserveCapacity(9 + length)
         payload.append(contentsOf: [UInt8](repeating: 0, count: length))

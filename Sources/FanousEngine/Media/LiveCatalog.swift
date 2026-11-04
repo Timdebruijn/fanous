@@ -11,10 +11,12 @@ import Synchronization
 /// devices (1–20), displays (21–28) and, to come, windows (29–32), numbered as they appear (the lowest free number), so a console
 /// or the UI selects one like a generator. One that goes keeps its number (not running); one that comes back with the
 /// same identity takes its old number again. The numbering is kept in the project (`/syphon`, B69, or the kind's
-/// `projectKey`): the catalog starts from it, so numbers survive an engine restart. `syphon.forget` (`capture.forget`) frees a number;
+/// `rawValue`): the catalog starts from it, so numbers survive an engine restart. `syphon.forget` (`capture.forget`) frees a number;
 /// undo, redo and loading a version also drop the not-running numbers the restored project lacks.
 /// Safe on any thread, except `start`/`stop` (one control thread).
 public final class LiveCatalog: @unchecked Sendable {
+    /// The raw value is the project's key: `/syphon` `{"151": {app, server}}`, `/capture` `{"3": {uid, name, model}}`,
+    /// `/screens` `{"21": {uuid, name}}`, `/windows` `{"29": {app, title}}`.
     public enum Kind: String, CaseIterable, Sendable {
         case syphon, capture, screens, windows
 
@@ -26,9 +28,6 @@ public final class LiveCatalog: @unchecked Sendable {
             case .syphon: 150...169
             }
         }
-        /// The project's key: `/syphon` `{"151": {app, server}}`, `/capture` `{"3": {uid, name, model}}`, `/screens`
-        /// `{"21": {uuid, name}}`, `/windows` `{"29": {app, title}}`.
-        public var projectKey: String { rawValue }
         /// An entry's `source`, `name` and (capture only) `model` as the project names them.
         public var fields: (source: String, name: String, model: String?) {
             switch self {

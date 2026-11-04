@@ -320,7 +320,7 @@ struct CaptureInputTests {
 
     /// A scene entry `{folder: 0, file, capture: uid}` opens through `captureFactory`: the layer reads "Camera: <name>",
     /// "no signal" while frames stop (same playback), the factory's error as its status, and a layer refused for the
-    /// permission opens once the answer comes (`capturePermissionChanged`).
+    /// permission opens once the answer comes (`changed(.capturePermission)`).
     @Test func loaderOpensSceneCaptureEntries() throws {
         let context = try MetalContext(), device = context.device
         let layers = [RenderLayer(index: 0), RenderLayer(index: 1)]
@@ -358,7 +358,7 @@ struct CaptureInputTests {
         #expect(eventually { status(0).width == 64 && status(0).height == 32 && status(0).capture?.frames == 3 })
 
         granted.store(true, ordering: .relaxed)
-        loader.capturePermissionChanged()
+        loader.changed(.capturePermission)
         #expect(eventually { playback(1) != nil && status(1).error == nil && status(1).name == "Camera: synthetic" })
         #expect(playback(0) === input)  // an open layer is left alone
     }
@@ -371,7 +371,7 @@ struct CaptureInputTests {
         let layers = (0..<4).map { RenderLayer(index: $0) }
         let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: Self.logger)
         let catalog = LiveCatalog(.capture, numbers: [LiveCatalogTests.numbered(5, "away", "Away Cam", model: "")])
-        catalog.onChange = { [loader] in loader.captureDevicesChanged() }
+        catalog.onChange = { [loader] in loader.changed(.captureDevices) }
         loader.captureCatalog = catalog
         let cams = ["cam-a", "cam-b", "cam-c"].map { LiveCatalogTests.device($0, "Cam \($0.suffix(1).uppercased())", model: "m") }
         catalog.update(running: cams)
@@ -454,7 +454,7 @@ struct CaptureInputTests {
         let layers = (0..<3).map { RenderLayer(index: $0) }
         let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: Self.logger)
         let catalog = LiveCatalog(.capture)
-        catalog.onChange = { [loader] in loader.captureDevicesChanged() }
+        catalog.onChange = { [loader] in loader.changed(.captureDevices) }
         loader.captureCatalog = catalog
         let cams = ["cam-a", "cam-b"].map { LiveCatalogTests.device($0, "Cam \($0.suffix(1).uppercased())", model: "m") }
         catalog.update(running: cams)

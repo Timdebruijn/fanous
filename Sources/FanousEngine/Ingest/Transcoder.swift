@@ -404,15 +404,7 @@ public enum Transcoder {
                 composition = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: asset)
                 composition?.frameDuration = frameDuration  // caps the composition's rate; the read loop sets the cadence (it delivers the source times)
             }
-            var pixelAspect: (horizontal: Int, vertical: Int)?
-            if let first = formats.first,
-                let ratio = CMFormatDescriptionGetExtension(first, extensionKey: kCMFormatDescriptionExtension_PixelAspectRatio) as? [String: Int],
-                let horizontal = ratio[kCMFormatDescriptionKey_PixelAspectRatioHorizontalSpacing as String],
-                let vertical = ratio[kCMFormatDescriptionKey_PixelAspectRatioVerticalSpacing as String], horizontal > 0, vertical > 0, horizontal != vertical,
-                (0.1...10).contains(Double(horizontal) / Double(vertical))  // a broken tag is not carried over (the player ignores it too)
-            {
-                pixelAspect = (horizontal, vertical)
-            }
+            let pixelAspect = formats.first.flatMap(MovieSource.pixelAspectSpacing).flatMap { $0.horizontal != $0.vertical ? $0 : nil }  // square: no tag
             return Probe(
                 asset: asset, video: video, audio: audio, audioFormat: audioFormat, frameDuration: frameDuration, start: range.start, duration: range.duration,
                 hasAlpha: alpha,

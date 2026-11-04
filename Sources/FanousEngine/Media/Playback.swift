@@ -138,11 +138,21 @@ public final class LayerPlayback: @unchecked Sendable {
         scratchLevels = set?.levels ?? []
     }
 
-    /// The scratch texture and its level views for a media of this size (B2); nil when Metal refuses either.
+    /// The scratch texture for a media of this size (B2): canvas format, four mip levels (the blur reads up to 1/8),
+    /// private storage, with every level as a single-level view. Nil when Metal refuses the texture or any view (the
+    /// layer then draws without one).
     public static func makeScratchSet(device: MTLDevice, width: Int, height: Int) -> ScratchSet? {
-        guard let texture = makeScratch(device: device, width: width, height: height) else { return nil }
-        let levels = levels(of: texture)
-        return levels.isEmpty ? nil : ScratchSet(texture: texture, levels: levels)
+        guard width > 0, height > 0 else { return nil }
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.canvasFormat, width: width, height: height, mipmapped: true)
+        descriptor.mipmapLevelCount = min(4, descriptor.mipmapLevelCount)
+        descriptor.usage = [.renderTarget, .shaderRead, .shaderWrite]  // the downsample kernel writes the mip levels
+        descriptor.storageMode = .private
+        guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
+        texture.label = "scratch"
+        let levels = (0..<texture.mipmapLevelCount).compactMap {
+            texture.makeTextureView(pixelFormat: texture.pixelFormat, textureType: .type2D, levels: $0..<($0 + 1), slices: 0..<1)
+        }
+        return levels.count == texture.mipmapLevelCount ? ScratchSet(texture: texture, levels: levels) : nil
     }
     private let liveFrame = DecodedFrame(poolIndex: 0)
     var clock = LayerClock()
@@ -166,28 +176,6 @@ public final class LayerPlayback: @unchecked Sendable {
         pixelAspect = movie.info.pixelAspect
         frameRate = movie.info.frameRate
         frameCount = movie.info.frameCount
-    }
-
-    /// Every level of `scratch` as a single-level view, or none when one could not be made (B2).
-    public static func levels(of scratch: MTLTexture?) -> [MTLTexture] {
-        guard let scratch else { return [] }
-        let views = (0..<scratch.mipmapLevelCount).compactMap {
-            scratch.makeTextureView(pixelFormat: scratch.pixelFormat, textureType: .type2D, levels: $0..<($0 + 1), slices: 0..<1)
-        }
-        return views.count == scratch.mipmapLevelCount ? views : []
-    }
-
-    /// The scratch texture for a media of this size (B2): canvas format, four mip levels (the blur reads up to 1/8),
-    /// private storage. Nil when Metal refuses (the layer then draws without one).
-    public static func makeScratch(device: MTLDevice, width: Int, height: Int) -> MTLTexture? {
-        guard width > 0, height > 0 else { return nil }
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: MetalContext.canvasFormat, width: width, height: height, mipmapped: true)
-        descriptor.mipmapLevelCount = min(4, descriptor.mipmapLevelCount)
-        descriptor.usage = [.renderTarget, .shaderRead, .shaderWrite]  // the downsample kernel writes the mip levels
-        descriptor.storageMode = .private
-        let texture = device.makeTexture(descriptor: descriptor)
-        texture?.label = "scratch"
-        return texture
     }
 
     /// `pixelAspect`: the movie's, when the still is one decoded movie frame (the thumbnailer); 1 for a real still.
@@ -453,12 +441,36 @@ public final class MediaLoader: @unchecked Sendable {
         wake.signal()
     }
 
-    private let reresolveAll = Atomic<Bool>(false)
-    private let reresolveMissing = Atomic<Bool>(false)
-    private let syphonChanged = Atomic<Bool>(false)
-    private let captureChanged = Atomic<Bool>(false)
-    private let devicesChanged = Atomic<Bool>(false)
-    private let displaysChanged = Atomic<Bool>(false)
+    /// What changed since the loader thread last looked (`changed(_:)`).
+    public struct Changes: OptionSet, Sendable {
+        public let rawValue: UInt8
+        public init(rawValue: UInt8) { self.rawValue = rawValue }
+        /// B61: a numbered Syphon server started, went or came back. A layer on one that went says "not running" and
+        /// keeps its last picture; one whose server (re)appears connects without being selected again.
+        public static let syphonServers = Changes(rawValue: 1 << 0)
+        /// The camera permission was answered (or authorized from the Inputs screen): layers on a capture entry that
+        /// could not open try again.
+        public static let capturePermission = Changes(rawValue: 1 << 1)
+        /// B73: a numbered capture device came, went, came back or is in use by another app. As for Syphon, a layer on
+        /// one that went says "not running" and keeps its last picture; one that (re)appears opens without being
+        /// selected again.
+        public static let captureDevices = Changes(rawValue: 1 << 2)
+        /// B73 step 3: a numbered display came, went (or was bound as an output) or came back; as `captureDevices`.
+        public static let screens = Changes(rawValue: 1 << 3)
+        /// B51: the library root changed; every layer on library media opens its folder/file again through `resolver`
+        /// (a file the new root lacks shows "missing"). Generators, scene entries and "none" are left alone.
+        public static let library = Changes(rawValue: 1 << 4)
+        /// The library changed (a scan, a probe that made a file playable): layers showing "missing" whose folder/file
+        /// now resolves open it. Cheap when nothing is missing; signalled on every library change.
+        public static let missingLibrary = Changes(rawValue: 1 << 5)
+    }
+    private let pendingChanges = Atomic<UInt8>(0)
+
+    public func changed(_ c: Changes) {
+        pendingChanges.bitwiseOr(c.rawValue, ordering: .relaxed)
+        wake.signal()
+    }
+
     /// Loader thread: the capture or screen input each layer shows (by uid or uuid), polled for its status ("no signal").
     private var captureOpen: [(uid: String, input: CaptureInput)?]
     /// Loader thread: the open input of each device by uid (`.capture`) and of each display by uuid (`.screens`), so a
@@ -467,33 +479,6 @@ public final class MediaLoader: @unchecked Sendable {
     private struct WeakCapture { weak var input: CaptureInput? }
     /// Loader thread: the directory id of the numbered Syphon server each layer is connected to.
     private var syphonOpen: [String?]
-
-    /// B61: a numbered Syphon server started, went or came back. A layer on one that went says "not running" and keeps
-    /// its last picture; one whose server (re)appears connects without being selected again.
-    public func syphonServersChanged() {
-        syphonChanged.store(true, ordering: .relaxed)
-        wake.signal()
-    }
-
-    /// The camera permission was answered (or authorized from the Inputs screen): layers on a capture entry that could
-    /// not open try again.
-    public func capturePermissionChanged() {
-        captureChanged.store(true, ordering: .relaxed)
-        wake.signal()
-    }
-
-    /// B73: a numbered capture device came, went, came back or is in use by another app. As for Syphon, a layer on one
-    /// that went says "not running" and keeps its last picture; one that (re)appears opens without being selected again.
-    public func captureDevicesChanged() {
-        devicesChanged.store(true, ordering: .relaxed)
-        wake.signal()
-    }
-
-    /// B73 step 3: a numbered display came, went (or was bound as an output) or came back; as `captureDevicesChanged`.
-    public func screensChanged() {
-        displaysChanged.store(true, ordering: .relaxed)
-        wake.signal()
-    }
 
     /// "Camera: <name>", "Display: <name>".
     private static func liveName(_ kind: LiveCatalog.Kind, _ name: String) -> String { "\(kind == .screens ? "Display" : "Camera"): \(name)" }
@@ -532,25 +517,12 @@ public final class MediaLoader: @unchecked Sendable {
         key.folder == 0 && kind.files.contains(key.file) && media[key] == nil
     }
 
-    /// B51: the library root changed; every layer on library media opens its folder/file again through `resolver`
-    /// (a file the new root lacks shows "missing"). Generators, scene entries and "none" are left alone.
-    public func reresolveLibrary() {
-        reresolveAll.store(true, ordering: .relaxed)
-        wake.signal()
-    }
-
-    /// The library changed (a scan, a probe that made a file playable): layers showing "missing" whose folder/file
-    /// now resolves open it. Cheap when nothing is missing; called on every library change.
-    public func reresolveMissingLibrary() {
-        reresolveMissing.store(true, ordering: .relaxed)
-        wake.signal()
-    }
-
     private func loop() {
         while running.load(ordering: .relaxed) {
             _ = wake.wait(timeout: .now() + .milliseconds(100))
-            let all = reresolveAll.exchange(false, ordering: .relaxed)
-            if reresolveMissing.exchange(false, ordering: .relaxed) || all {
+            let changes = Changes(rawValue: pendingChanges.exchange(0, ordering: .relaxed))
+            let all = changes.contains(.library)
+            if changes.contains(.missingLibrary) || all {
                 for i in loaded.indices {
                     let key = MediaKey(packed: loaded[i])
                     guard !key.isNone, key.folder != 0, media[key] == nil else { continue }
@@ -559,7 +531,7 @@ public final class MediaLoader: @unchecked Sendable {
                     }
                 }
             }
-            if syphonChanged.exchange(false, ordering: .relaxed) {
+            if changes.contains(.syphonServers) {
                 for i in loaded.indices where isNumbered(MediaKey(packed: loaded[i]), .syphon) {
                     let server = syphonCatalog?.entry(file: MediaKey(packed: loaded[i]).file)
                     if server?.runtimeID == syphonOpen[i] {
@@ -574,9 +546,9 @@ public final class MediaLoader: @unchecked Sendable {
                     }
                 }
             }
-            if devicesChanged.exchange(false, ordering: .relaxed) { liveSourcesChanged(.capture) }
-            if displaysChanged.exchange(false, ordering: .relaxed) { liveSourcesChanged(.screens) }
-            if captureChanged.exchange(false, ordering: .relaxed) {
+            if changes.contains(.captureDevices) { liveSourcesChanged(.capture) }
+            if changes.contains(.screens) { liveSourcesChanged(.screens) }
+            if changes.contains(.capturePermission) {
                 for i in loaded.indices where captureOpen[i] == nil {
                     let key = MediaKey(packed: loaded[i])
                     if media[key]?.capture != nil || isNumbered(key, .capture) { loaded[i] = .max }  // never a packed key: opened again below
@@ -608,11 +580,7 @@ public final class MediaLoader: @unchecked Sendable {
                     return copy
                 }
                 for playback in retired { playback.stop() }
-                let asking = layer.scratchRequest.withLock { box -> LayerPlayback? in
-                    let taken = box
-                    box = nil
-                    return taken
-                }
+                let asking = layer.scratchRequest.withLock { $0.take() }
                 if let asking {
                     let answer = LayerPlayback.makeScratchSet(device: device, width: asking.width, height: asking.height)
                     layer.pendingScratch.withLock { box in

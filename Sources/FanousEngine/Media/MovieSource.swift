@@ -86,7 +86,7 @@ public struct MovieInfo: Sendable {
 /// hap.c for HAP) into Metal textures without copies (ADR-0004, ADR-0005).
 /// One instance per layer; used from that layer's decode thread only.
 public final class MovieSource: @unchecked Sendable {
-    static let proResCodecs: Set<FourCharCode> = ["apch", "apcn", "apcs", "apco", "ap4h", "ap4x"].map(makeFourCC).reduce(into: []) { $0.insert($1) }
+    static let proResCodecs: Set<FourCharCode> = Set(["apch", "apcn", "apcs", "apco", "ap4h", "ap4x"].map(makeFourCC))
     static let hapCodecs: [FourCharCode: (format0: MTLPixelFormat, format1: MTLPixelFormat?, kind: SourcePixelKind)] = [
         makeFourCC("Hap1"): (.bc1_rgba, nil, .rgba),
         makeFourCC("Hap5"): (.bc3_rgba, nil, .rgba),
@@ -96,15 +96,20 @@ public final class MovieSource: @unchecked Sendable {
         makeFourCC("HapR"): (.bc7_rgbaUnorm, nil, .rgba),
     ]
 
-    /// The `PixelAspectRatio` extension as horizontal over vertical spacing; 1 when absent, malformed or outside 0.1–10
-    /// (no real format is wider; a broken tag would otherwise draw a hairline or a huge quad).
-    static func pixelAspect(of description: CMFormatDescription) -> Double {
-        guard let ratio = CMFormatDescriptionGetExtension(description, extensionKey: kCMFormatDescriptionExtension_PixelAspectRatio) as? [String: Double],
+    /// The `PixelAspectRatio` extension's spacings; nil when absent, malformed or outside 0.1–10 (no real format is
+    /// wider; a broken tag would otherwise draw a hairline or a huge quad, and is not carried over by a transcode).
+    static func pixelAspectSpacing(of description: CMFormatDescription) -> (horizontal: Int, vertical: Int)? {
+        guard let ratio = CMFormatDescriptionGetExtension(description, extensionKey: kCMFormatDescriptionExtension_PixelAspectRatio) as? [String: Int],
             let horizontal = ratio[kCMFormatDescriptionKey_PixelAspectRatioHorizontalSpacing as String],
             let vertical = ratio[kCMFormatDescriptionKey_PixelAspectRatioVerticalSpacing as String], horizontal > 0, vertical > 0,
-            (0.1...10).contains(horizontal / vertical)
-        else { return 1 }
-        return horizontal / vertical
+            (0.1...10).contains(Double(horizontal) / Double(vertical))
+        else { return nil }
+        return (horizontal, vertical)
+    }
+
+    /// `pixelAspectSpacing` as horizontal over vertical spacing; 1 without one.
+    static func pixelAspect(of description: CMFormatDescription) -> Double {
+        pixelAspectSpacing(of: description).map { Double($0.horizontal) / Double($0.vertical) } ?? 1
     }
 
     public let url: URL

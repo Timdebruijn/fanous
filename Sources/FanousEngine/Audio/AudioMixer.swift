@@ -19,9 +19,8 @@ public final class AudioMixer: @unchecked Sendable {
     private let callbackCount = Atomic<Int>(0)
     private var engine: AVAudioEngine?
 
-    /// `deviceUID` selects the output device. Device selection is a later phase: for now it is ignored and the
-    /// system default output is used.
-    public init(channels: Int, deviceUID: String? = nil) {
+    /// Plays to the system default output (device selection: B4).
+    public init(channels: Int) {
         self.channels = (0..<max(0, channels)).map { _ in LayerAudioChannel() }
         for channel in self.channels { channel.onActivate = { [weak self] in self?.ensureRunning() } }
     }

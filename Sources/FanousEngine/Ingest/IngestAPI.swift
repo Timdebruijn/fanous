@@ -14,7 +14,6 @@ import Synchronization
 ///   PUT  /api/upload/<folder>/<name>  body = the file; it lands in _incoming/ and is queued for folder N
 /// The engine's router checks the role first: programmer for every change, operator to read the queue (file paths).
 public final class IngestAPI: @unchecked Sendable {
-    public static let defaultCodec: MovieWriter.Codec = .proRes422HQ
     /// The current index: the library root can change while the engine runs (B51).
     private let currentLibrary: @Sendable () -> LibraryIndex
     private var library: LibraryIndex { currentLibrary() }
@@ -49,13 +48,9 @@ public final class IngestAPI: @unchecked Sendable {
     public func handle(_ request: HTTPRequest, uploadedFile: URL?) -> HTTPResponse {
         let path = request.path
         if path.hasPrefix("/api/upload/") {
-            guard request.method == "PUT", let (folder, name) = Self.uploadComponents(path) else { return .text(400, "PUT /api/upload/<folder>/<name>") }
-            let file: URL
-            if let uploadedFile {
-                file = uploadedFile
-            } else {
-                try? FileManager.default.createDirectory(at: library.incomingDirectory, withIntermediateDirectories: true)
-                file = IngestQueue.uniqueURL(for: name, in: library.incomingDirectory)
+            guard request.method == "PUT", let (folder, name) = Self.uploadComponents(path), let file = uploadedFile ?? uploadTarget(for: request)
+            else { return .text(400, "PUT /api/upload/<folder>/<name>") }
+            if uploadedFile == nil {
                 do { try Data(request.body).write(to: file) } catch { return .text(500, "cannot store upload: \(error)") }
             }
             return enqueue(source: file, folder: folder, file: nil, name: name, codec: nil, fps: nil, keepOriginal: false)
@@ -122,7 +117,7 @@ public final class IngestAPI: @unchecked Sendable {
             kind = .still
             destinationExtension = ext
         } else {
-            kind = .transcode(codec: MovieWriter.Codec.named(codec) ?? Self.defaultCodec)
+            kind = .transcode(codec: MovieWriter.Codec.named(codec) ?? .proRes422HQ)
             destinationExtension = "mov"
         }
         let destination = folderURL.appending(path: LibraryIndex.destinationName(number: number, originalName: originalName, pathExtension: destinationExtension))

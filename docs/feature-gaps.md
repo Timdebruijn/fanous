@@ -35,7 +35,7 @@ repository.
      Still open (B73): windows of other apps (files 29–32) and capture cards
      whose only path is a vendor SDK (DeckLink, AJA).
 3. **Audio goes to the default device only, in stereo.**
-   - The cause is B4: `AudioMixer.deviceUID` is ignored. The per-layer channel
+   - The cause is B4: `AudioMixer` has no device selection. The per-layer channel
      pairs of DESIGN §10 are not built either.
    - Every other class routes multichannel.
    - Device selection alone also brings Dante, because Dante Virtual Soundcard
@@ -185,7 +185,7 @@ priority for each row comes from §4.
 
 | # | Capability | Who has it | Fanous | Effort |
 |---|---|---|---|---|
-| G44 | Choice of output device | standard in every class | `—` (B4: `deviceUID` ignored, so the default device only) | S |
+| G44 | Choice of output device | standard in every class | `—` (B4: no device selection, so the default device only) | S |
 | G45 | Multichannel per-layer routing, Dante | CN 4/5 · HE 6/6 · QLab 128 ch · Isadora 64 ch | `◐` stereo mix. Pairs are designed (§10) but not built. Dante works through DVS once G44 lands, as a 2-channel feed until the pairs land | M |
 | G46 | Varispeed audio | none documented | `D` (OPEN-15, §21) | — |
 

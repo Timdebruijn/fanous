@@ -68,7 +68,7 @@ public final class MovieWriter {
         self.width = width
         self.height = height
         self.fps = fps
-        self.frameDuration = frameDuration ?? CMTime(value: 1, timescale: fps)
+        self.frameDuration = duration
         testTone = audio
         try? FileManager.default.removeItem(at: url)
         writer = try AVAssetWriter(outputURL: url, fileType: .mov)

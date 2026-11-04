@@ -6,7 +6,6 @@ import Accelerate
 import CoreGraphics
 import CoreVideo
 import Foundation
-import ImageIO
 
 /// Phase 3 ingest stub (DESIGN.md §8.3): an image sequence becomes a movie the
 /// engine plays natively. ProRes 4444 keeps alpha; HAP Q is the fast path for
@@ -38,7 +37,7 @@ public enum SequenceIngest {
     /// Writes `frames` at `fps` to `output`. Returns the number of frames written.
     @discardableResult
     public static func convert(frames: [URL], to output: URL, fps: Int32, codec: MovieWriter.Codec, progress: ((Int, Int) throws -> Void)? = nil) throws -> Int {
-        guard let first = frames.first, let probe = image(at: first) else { throw IngestError.noImages(output) }
+        guard let first = frames.first, let probe = StillSource.image(first) else { throw IngestError.noImages(output) }
         let width = probe.width, height = probe.height
         // ProRes: 16 bits per channel, so a 16-bit TIFF/PNG render keeps its precision. RGBA little-endian (64RGBALE), not
         // the transcoder's 64ARGB: Core Graphics draws 16-bit RGB with the alpha last only. HAP is 8-bit.
@@ -51,7 +50,7 @@ public enum SequenceIngest {
         let straight: Bool = switch codec { case .proRes4444, .hap(.hapAlpha): true; default: false }
         for (index, url) in frames.enumerated() {
             try autoreleasepool {
-                guard let image = index == 0 ? probe : image(at: url) else { throw IngestError.unreadable(url) }
+                guard let image = index == 0 ? probe : StillSource.image(url) else { throw IngestError.unreadable(url) }
                 guard image.width == width, image.height == height else { throw IngestError.sizeMismatch(url, width, height) }
                 let buffer = try writer.makePixelBuffer()
                 try draw(image, from: url, into: buffer, deep: deep, straight: straight, colorSpace: colorSpace)
@@ -87,10 +86,5 @@ public enum SequenceIngest {
         // BGRA through the RGBA8888 function (the C header's BGRA one is a macro for it): only the alpha's place counts, last
         let error = deep ? vImageUnpremultiplyData_RGBA16U(&pixels, &pixels, flags) : vImageUnpremultiplyData_RGBA8888(&pixels, &pixels, flags)
         guard error == kvImageNoError else { throw IngestError.unreadable(url) }
-    }
-
-    static func image(at url: URL) -> CGImage? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        return CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCache: false] as CFDictionary)
     }
 }

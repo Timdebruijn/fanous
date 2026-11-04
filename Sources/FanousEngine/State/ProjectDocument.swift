@@ -102,7 +102,7 @@ public enum ProjectDocument {
     /// written by the engine as it numbers sources (no command, also under show lock), freed by `syphon.forget` and
     /// `capture.forget`. Gone until they are seen. `/capture` also keeps each device's `model` (the uid fallback).
     public static func liveNumbers(_ kind: LiveCatalog.Kind, from project: JSONValue) -> [LiveCatalog.Entry] {
-        guard case .object(let map)? = project[kind.projectKey] else { return [] }
+        guard case .object(let map)? = project[kind.rawValue] else { return [] }
         return map.compactMap { key, entry in
             guard let file = Int(key), let source = entry[kind.fields.source]?.string else { return nil }
             let model = kind.fields.model.flatMap { entry[$0]?.string } ?? ""
@@ -157,7 +157,7 @@ public enum ProjectDocument {
             let now = project[pointer]
             guard now != expected, now != value else { continue }
             let number = pointer.tokens[1]
-            guard let held = project[JSONPointer(tokens: [kind.projectKey, number])] else {
+            guard let held = project[JSONPointer(tokens: [kind.rawValue, number])] else {
                 throw CommandError("historyConflict", "\(kind.title) number \(number) is now free; undo/redo refused")
             }
             let label = LiveCatalog.Entry(kind: kind, file: 0, source: held[kind.fields.source]?.string ?? "", name: held[kind.fields.name]?.string ?? "").label
@@ -659,12 +659,12 @@ public enum ProjectDocument {
                             throw CommandError.invalidArgs("\(noun.prefix(1).uppercased() + noun.dropFirst()) \(file) is running; only one that is not running can be forgotten")
                         }
                         numbers.removeAll { $0.file == file }
-                        try project.set(liveValue(numbers), at: JSONPointer(tokens: [kind.projectKey]))
+                        try project.set(liveValue(numbers), at: JSONPointer(tokens: [kind.rawValue]))
                     } else {
                         for kind in kinds {
                             let numbers = liveNumbers(kind, from: project)
                             let kept = numbers.filter { running.contains($0.file) }
-                            if kept.count != numbers.count { try project.set(liveValue(kept), at: JSONPointer(tokens: [kind.projectKey])) }
+                            if kept.count != numbers.count { try project.set(liveValue(kept), at: JSONPointer(tokens: [kind.rawValue])) }
                         }
                     }
                     return nil
@@ -704,7 +704,7 @@ public enum ProjectDocument {
                     }
                     // a source numbered or renumbered by the catalog in the last tenth of a second is not in the project yet: the
                     // catalog would not find the value naming it, keep its numbers and write them back over this change
-                    if let now = liveNow(kind), now != (project[kind.projectKey] ?? [:]) {
+                    if let now = liveNow(kind), now != (project[kind.rawValue] ?? [:]) {
                         throw CommandError("liveChanged", "the inputs changed a moment ago; try again")
                     }
                     var numbers = liveNumbers(kind, from: project)
@@ -717,7 +717,7 @@ public enum ProjectDocument {
                     }
                     numbers[moved].file = to
                     if let other { numbers[other].file = file }
-                    try project.set(liveValue(numbers), at: JSONPointer(tokens: [kind.projectKey]))
+                    try project.set(liveValue(numbers), at: JSONPointer(tokens: [kind.rawValue]))
                     return nil
                 })
         }

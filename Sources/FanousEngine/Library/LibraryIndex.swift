@@ -85,7 +85,8 @@ public struct LibrarySnapshot: Codable, Sendable, Equatable {
 /// Resolution for the media loader is a dictionary lookup under a mutex.
 public final class LibraryIndex: @unchecked Sendable {
     public static let movieExtensions: Set<String> = ["mov", "mp4", "m4v", "avi", "mkv", "mxf"]
-    static let playableCodecs: Set<String> = ["apch", "apcn", "apcs", "apco", "ap4h", "ap4x", "Hap1", "Hap5", "HapY", "HapM", "HapA", "HapR"]
+    /// The codecs `MovieSource` plays, as the fourCC strings of `Metadata.codec`.
+    static let playableCodecs = Set(MovieSource.proResCodecs.union(MovieSource.hapCodecs.keys).map(fourCCString))
 
     public let root: URL
     public let cacheDirectory: URL

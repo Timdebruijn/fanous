@@ -122,7 +122,6 @@ public final class ThumbnailStreamer: @unchecked Sendable {
     /// `PreviewHub.tap`, after the canvas pass: on pass ticks while wanted, the atlas pass and its copy into a pixel buffer.
     func tap(commandBuffer: MTLCommandBuffer) {
         guard let compositor, wantsPass else { return }
-        guard !encoding.load(ordering: .relaxed) else { return }
         let canvases = compositor.thumbnailCanvases()
         let shapes = canvases.map { (width: $0.width, height: $0.height) }
         guard let layout = ThumbnailAtlas.layout(canvases.map { $0.visible ? ($0.width, $0.height) : nil }) else {
@@ -223,10 +222,10 @@ public final class ThumbnailStreamer: @unchecked Sendable {
         return VTCreateCGImageFromCVPixelBuffer(pixelBuffer, options: nil, imageOut: &image) == noErr ? image : nil
     }
 
-    static func jpeg(_ image: CGImage) -> [UInt8]? {
+    static func jpeg(_ image: CGImage, quality: Double = 0.7) -> [UInt8]? {
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else { return nil }
-        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.7] as CFDictionary)
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
         return CGImageDestinationFinalize(destination) ? [UInt8](data as Data) : nil
     }
 
@@ -239,7 +238,7 @@ public final class ThumbnailStreamer: @unchecked Sendable {
             bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
         context?.setFillColor(gray: 0, alpha: 1)
         context?.fill(CGRect(x: 0, y: 0, width: size.width, height: size.height))
-        let made = Thumb(jpeg: context?.makeImage().flatMap(Self.jpeg) ?? [], width: size.width, height: size.height)
+        let made = Thumb(jpeg: context?.makeImage().flatMap { Self.jpeg($0) } ?? [], width: size.width, height: size.height)
         black[size.height] = made
         return made
     }

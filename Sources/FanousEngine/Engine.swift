@@ -252,7 +252,7 @@ public final class Engine: @unchecked Sendable {
         // a file that becomes playable (a probe after a scan or a root change) reaches layers still showing "missing", and a
         // changed image mask file is compiled again
         library.onChange = { [weak self] in
-            self?.render?.loader.reresolveMissingLibrary()
+            self?.render?.loader.changed(.missingLibrary)
             self?.imageMaskFilesChanged()
         }
         library.start()
@@ -327,9 +327,9 @@ public final class Engine: @unchecked Sendable {
             liveNow: { [weak self] kind in (self?.liveCatalogs ?? []).first { $0.kind == kind }.map { ProjectDocument.liveValue($0.entries) } },
             authorizeCamera: { [weak self] in
                 let loader = self?.render?.loader, catalog = self?.render?.captureCatalog
-                CaptureInput.requestAccess(allowed: true) { _ in
+                CaptureInput.requestAccess { _ in
                     catalog?.refreshPermissions()
-                    loader?.capturePermissionChanged()
+                    loader?.changed(.capturePermission)
                 }
             },
             authorizeScreen: { [weak self] in
@@ -1495,7 +1495,7 @@ public final class Engine: @unchecked Sendable {
         }
         // the Syphon, capture and display numbering (B69, B73): a forget, undo, a loaded project; the live feed writes the catalogs back
         for catalog in liveCatalogs {
-            let numbers = document[catalog.kind.projectKey] ?? [:]
+            let numbers = document[catalog.kind.rawValue] ?? [:]
             if liveInProject.withLock({ applied in
                 defer { applied[catalog.kind] = numbers }
                 return applied[catalog.kind] != numbers
@@ -1577,7 +1577,7 @@ public final class Engine: @unchecked Sendable {
             return
         }
         libraryBox.withLock { $0 = next }
-        render?.loader.reresolveLibrary()
+        render?.loader.changed(.library)
         imageMaskFilesChanged()  // the new root's scan changed the library before it was the engine's
         old.stop()
         logger.info("library root changed", metadata: ["from": "\(old.root.path)", "to": "\(root)"])
@@ -1812,7 +1812,7 @@ public final class Engine: @unchecked Sendable {
     static func recordLiveNumbers(_ catalog: LiveCatalog, into store: StateStore, applied: JSONValue) {
         guard ProjectDocument.liveValue(catalog.entries) != applied else { return }
         // made on the store's queue: never a list from before a syphon.forget that landed meanwhile
-        store.correct(at: JSONPointer(tokens: [catalog.kind.projectKey])) { ProjectDocument.liveValue(catalog.entries) }
+        store.correct(at: JSONPointer(tokens: [catalog.kind.rawValue])) { ProjectDocument.liveValue(catalog.entries) }
     }
 
     /// `live.syphon` (B61, B69).

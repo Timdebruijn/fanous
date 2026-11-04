@@ -35,13 +35,18 @@ public final class DisplayManager {
 
     public init(logger: Logger) { self.logger = logger }
 
-    public static func current() -> [DisplayInfo] {
+    /// The online displays' ids. CoreGraphics only, so any thread.
+    nonisolated static func onlineDisplayIDs() -> [CGDirectDisplayID] {
         var count: UInt32 = 0
         CGGetOnlineDisplayList(0, nil, &count)
         var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
         CGGetOnlineDisplayList(count, &ids, &count)
+        return Array(ids.prefix(Int(count)))
+    }
+
+    public static func current() -> [DisplayInfo] {
         let screens = NSScreen.screens
-        return ids.prefix(Int(count)).compactMap { id -> DisplayInfo? in
+        return onlineDisplayIDs().compactMap { id -> DisplayInfo? in
             guard let uuid = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue() else { return nil }
             let mode = CGDisplayCopyDisplayMode(id)
             let screen = screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == id }

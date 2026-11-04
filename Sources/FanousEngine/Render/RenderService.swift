@@ -145,15 +145,15 @@ public final class RenderService {
         }
         syphonCatalog = LiveCatalog(.syphon, excluding: syphon?.uuid, numbers: syphonNumbers)
         loader.syphonCatalog = syphonCatalog
-        syphonCatalog.onChange = { [weak loader] in loader?.syphonServersChanged() }  // the loader holds the catalog
+        syphonCatalog.onChange = { [weak loader] in loader?.changed(.syphonServers) }  // the loader holds the catalog
         syphonCatalog.start(device: device)
         captureCatalog = LiveCatalog(.capture, numbers: captureNumbers)
         loader.captureCatalog = captureCatalog
-        captureCatalog.onChange = { [weak loader] in loader?.captureDevicesChanged() }
+        captureCatalog.onChange = { [weak loader] in loader?.changed(.captureDevices) }
         captureCatalog.startCapture()
         screensCatalog = LiveCatalog(.screens, numbers: screenNumbers)
         loader.screensCatalog = screensCatalog
-        screensCatalog.onChange = { [weak loader] in loader?.screensChanged() }
+        screensCatalog.onChange = { [weak loader] in loader?.changed(.screens) }
     }
 
     public func start() async throws {
@@ -173,7 +173,7 @@ public final class RenderService {
             guard let loader else { throw CaptureError.session("the engine is stopping") }
             return try CaptureInput.open(uid: uid, metal: device, fps: fps, canvas: compositor.canvasSizeSnapshot, allowed: allowed(), logger: logger) { [weak loader] in
                 captureCatalog.refreshPermissions()
-                loader?.capturePermissionChanged()
+                loader?.changed(.capturePermission)
             }
         }
         // the grant as cached by the capture catalog: macOS applies a new one only after a restart, so no prompt here

@@ -230,7 +230,7 @@ struct ScreenInputTests {
         let loader = MediaLoader(
             layers: layers, media: [MediaEntry(folder: 0, file: 24, screen: "uuid-scene")], device: device, ringCapacity: 4, logger: Self.logger)
         let catalog = LiveCatalog(.screens)
-        catalog.onChange = { [loader] in loader.screensChanged() }
+        catalog.onChange = { [loader] in loader.changed(.screens) }
         loader.screensCatalog = catalog
         let displays = [Self.display(1, "uuid-a", "Built-in Retina Display"), Self.display(2, "uuid-b", "DELL U2720Q")]
         catalog.update(running: LiveCatalog.screens(displays, bound: []))
