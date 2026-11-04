@@ -242,6 +242,13 @@ The versions are files in `~/Library/Application Support/Fanous/versions/`,
 one per version, `<time>-<name>.json`. A file that does not read as a project is
 skipped and named in the log.
 
+If `project.json` itself does not read as a project when the engine starts (a
+damaged file, a file from another version), the engine starts with the standard
+patch and keeps the file next to it as `project.json.unreadable-<time>`; the log
+names it. Revert to a version (System › Project versions) or, with the engine
+stopped (Engine › **Stop Engine…**), move the kept file back to `project.json`
+once it is repaired.
+
 ## Reset the project
 
 This deletes your patch changes, outputs, cues and timecode settings. Save a

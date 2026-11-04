@@ -35,6 +35,20 @@ struct ProjectVersionsTests {
         return Fixture(store: store, versions: versions, flag: flag, base: base)
     }
 
+    /// An unreadable project file is kept next to itself before the fresh project's autosave would write over it.
+    @Test func anUnreadableProjectFileIsSetAside() throws {
+        let file = tempFile("fanous-project", ext: "json")
+        #expect(try ProjectDocument.setAside(file) == nil)  // no file, nothing to keep
+        let garbage = Data("{\"schema\": 2, \"patch\": []}".utf8)  // reads as JSON, is another schema
+        try garbage.write(to: file)
+        #expect(ProjectDocument.load(from: file) == nil)
+        let aside = try #require(try ProjectDocument.setAside(file, now: Date(timeIntervalSince1970: 1793786400)))
+        #expect(aside.lastPathComponent == file.lastPathComponent + ".unreadable-20261104T100000.000Z")
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(try Data(contentsOf: aside) == garbage)
+        try FileManager.default.removeItem(at: aside)
+    }
+
     static func failure(_ result: Result<CommandResult, CommandError>) -> CommandError? {
         if case .failure(let error) = result { return error }
         return nil

@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Fixed: a `project.json` the engine could not read (damaged, another schema) was replaced without a word: the
+  fresh project's first autosave wrote over it two seconds later. It is now kept next to itself as
+  `project.json.unreadable-<time>` and the log says so (PR #279).
 - Fixed: three parsers on the network boundary took the engine down on one packet: an OSC blob whose padding is
   missing before the next string argument, OSC bundles nested thousands deep (stack overflow), and an HTTP request
   with a negative Content-Length (`-1` reached the body slice). They now reject the message (`truncated`,
