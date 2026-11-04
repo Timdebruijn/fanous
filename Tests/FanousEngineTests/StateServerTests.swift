@@ -13,7 +13,7 @@ import Testing
 
 /// End to end over TLS: a real `HTTPSServer`, the WebSocket upgrade, hello/welcome, commands, acks, patches,
 /// show lock, login cookies and a second client seeing the same revision (DESIGN.md §11.2).
-struct StateServerTests {
+@Suite(.cleansTempFiles) struct StateServerTests {
 
     /// Accepts the self-signed test certificate.
     final class TrustAll: NSObject, URLSessionDelegate {
@@ -58,17 +58,9 @@ struct StateServerTests {
     static func start() async throws -> Fixture {
         let (store, auth) = testStore()
         let stateServer = StateServer(store: store, auth: auth, caps: ["schema": 1], logger: testLogger)
-        let server = try HTTPSServer(port: 0, identity: try makeIdentity(), webRoot: URL(fileURLWithPath: "/nonexistent"), logger: testLogger) { request in
-            guard request.path == "/api/login", request.method == "POST",
-                let body = try? JSONDecoder().decode(JSONValue.self, from: Data(request.body)),
-                let role = body["role"]?.string.flatMap(Role.init(rawValue:))
-            else { return nil }
-            do {
-                let cookie = try auth.login(role: role, password: body["password"]?.string ?? "", from: request.remoteAddress)
-                return HTTPResponse(status: 204, headers: [HTTPHeader("Set-Cookie", RoleAuth.cookieHeader(cookie))])
-            } catch {
-                return .text(401, "wrong password")
-            }
+        let routes = try testRoutes(store: store, auth: auth).routes  // the engine's own `/api/login`
+        let server = try HTTPSServer(port: 0, identity: try makeIdentity(), webRoot: URL(fileURLWithPath: "/nonexistent"), logger: testLogger) {
+            routes.handle($0)
         }
         server.upgradeRoute = { stateServer.upgrade($0) }
         server.start()
@@ -236,7 +228,7 @@ struct StateServerTests {
 }
 
 /// The StateServerTests that need the GPU or a decoder: local and self-hosted runs only (scripts/test.sh --hosted leaves them out).
-struct StateServerGPUTests {
+@Suite(.cleansTempFiles) struct StateServerGPUTests {
     /// B62: the client matches preview replies to its requests by order, so a refused request must be answered in its
     /// turn, with its own stream id and `stream`, and must leave no subscription behind.
     @Test func previewRepliesComeInRequestOrderAndARefusalKeepsNoSubscription() async throws {
