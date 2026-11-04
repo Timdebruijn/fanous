@@ -112,7 +112,7 @@ struct UniverseSettingsEngineTests {
         store.snapshot(at: now).fixtures["Layer 1"]?.first { $0.key == "intensity" }
     }
 
-    /// Waits (≤ 10 s) until Layer 1's intensity is `raw`.
+    /// One ArtDmx frame for port address 0 with every channel at `level`.
     static func artnet(_ level: UInt8, sequence: UInt8 = 0) -> [UInt8] { ArtDmx(sequence: sequence, portAddress: 0, data: [UInt8](repeating: level, count: 512)).encoded() }
 
     func receiving(_ loss: UniverseSettings.Loss) async throws -> (DMXStore, ArtNetReceiver, UInt16) {
