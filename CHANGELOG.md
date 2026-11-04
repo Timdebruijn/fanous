@@ -16,6 +16,13 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   what they missed: the Art-Net and sACN capture directories must not be empty, every parameter has a spec in all
   four modes, the Sync wire row and the certificate's v3 version field, the lookup tables are checked for Keystone,
   and the MIME table for `.wasm`, `.mjs`, `.css` and `.svg` (PR #283).
+- Tests: web test cleanup. `layers-media.test.ts` merged into `layers.test.ts` (one `layer()` factory, the
+  `layerState` assertions in one place), the tautological `GENERATORS` line and the doubled `transcodeCodecs` check
+  gone, the POLICIES copy narrowed to the `line` texts nothing else pins. In the e2e suite two tests that only
+  repeated others are gone (second slice, now pinned by the slice labels in the slice-drag test; Spread canvas, folded
+  into that test), and the Space and L/Ctrl+Z key tests now also fail when the shortcut is broken
+  (PR #284).
+
 - Tests: the REST routes moved out of `Engine.start` into `RESTRoutes` (same routes, statuses and bodies), and a
   table test pins their role gates without a GPU or a socket: who gets 403 on `/api/ingest`, uploads,
   `/api/library/folder` and `/api/logs`, the redacted `/api/library` root below operator, `/api/login` 405/400/401
