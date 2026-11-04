@@ -232,36 +232,17 @@ func withSockaddr<T>(port: UInt16 = 0, host: String? = nil, _ body: (UnsafePoint
     }
 }
 
-/// The port `fd` is bound to; nil when `getsockname` fails.
-func localPort(_ fd: Int32) -> UInt16? {
-    var address = sockaddr_in()
-    var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-    let ok = withUnsafeMutablePointer(to: &address) { p in p.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) == 0 } }
-    return ok ? UInt16(bigEndian: address.sin_port) : nil
-}
-
 /// `recv` on `fd` gives up after `seconds`.
 func setReceiveTimeout(_ fd: Int32, _ seconds: Double) {
     var wait = timeval(tv_sec: Int(seconds), tv_usec: Int32((seconds - seconds.rounded(.down)) * 1e6))
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &wait, socklen_t(MemoryLayout<timeval>.size))
 }
 
-/// The ports `freeUDPPort` handed out in this process (B115).
-private let handedOut = Mutex<Set<UInt16>>([])
-
-/// A UDP port that is free right now: bind port 0 exclusively (no SO_REUSEADDR/SO_REUSEPORT), read back the port the
-/// kernel assigned, release it. Unlike a random pick, it never lands on a port another socket holds; Network.framework
-/// listeners share ports, so such a port would cross-talk silently. Still check-then-release: the window is short, but
-/// the kernel assigns at random (2000 probes: 110 repeats), so two tests that probe before either binds can get the same
-/// port; their listeners then share it and every unicast datagram goes to the older one (B115, measured). A port is
-/// therefore handed out once per process. ponytail: another process probing in the same window is not covered.
-func freeUDPPort() throws -> UInt16 {
-    repeat {
-        let fd = socket(AF_INET, SOCK_DGRAM, 0)
-        defer { close(fd) }
-        guard withSockaddr({ bind(fd, $0, $1) }) == 0, let port = localPort(fd) else { throw POSIXError(.EADDRINUSE) }
-        if handedOut.withLock({ $0.insert(port).inserted }) { return port }
-    } while true
+/// The port a Network.framework listener reports through `read` (`boundPort`) once it is ready; port 0 in, so the kernel
+/// picked it and no other socket holds it (B153).
+func listeningPort(_ read: () -> UInt16?, sourceLocation: SourceLocation = #_sourceLocation) async throws -> UInt16 {
+    await waitUntil { (read() ?? 0) != 0 }
+    return try #require(read().flatMap { $0 == 0 ? nil : $0 }, "the listener never got ready", sourceLocation: sourceLocation)
 }
 
 /// One UDP datagram to `host`:`port` from a throwaway socket.
@@ -320,12 +301,15 @@ func tempDir(_ prefix: String) throws -> URL {
     return url
 }
 
-/// A socket on 127.0.0.1:`port` whose `receive` waits at most `timeout` seconds; nil = nothing came.
+/// A socket on 127.0.0.1, on a `port` the kernel picks, whose `receive` waits at most `timeout` seconds; nil = nothing came.
 final class UDPCatcher {
     let fd = socket(AF_INET, SOCK_DGRAM, 0)
-    init(port: UInt16, timeout: Double) throws {
+    let port: UInt16
+    init(timeout: Double) throws {
+        let fd = fd
         setReceiveTimeout(fd, timeout)
-        guard withSockaddr(port: port, host: "127.0.0.1", { bind(fd, $0, $1) }) == 0 else { throw POSIXError(.EADDRINUSE) }
+        guard withSockaddr(host: "127.0.0.1", { bind(fd, $0, $1) }) == 0, let port = UDPSend.localPort(fd) else { throw POSIXError(.EADDRINUSE) }
+        self.port = port
     }
     deinit { close(fd) }
     func receive() -> [UInt8]? {

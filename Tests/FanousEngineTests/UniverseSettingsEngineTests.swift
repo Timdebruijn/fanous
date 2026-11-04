@@ -120,9 +120,9 @@ struct UniverseSettingsEngineTests {
         var settings = UniverseSettings(for: Self.a0)
         settings.holdOnLoss = loss
         store.setUniverseSettings([Self.a0: settings])
-        let port = try freeUDPPort()
-        let receiver = ArtNetReceiver(store: store, logger: testLogger, nodeName: "test", port: port)
+        let receiver = ArtNetReceiver(store: store, logger: testLogger, nodeName: "test", port: 0)
         try receiver.start()
+        let port = try await listeningPort { receiver.boundPort }
         #expect(await Self.listening(port))
         sendUDP(Self.artnet(255), to: port)
         #expect(await waitUntil { Self.intensity(store)?.raw == 65535 }, "port \(port)")
@@ -187,7 +187,7 @@ struct UniverseSettingsEngineTests {
     /// Asked of the kernel (multicast delivery itself needs the Local Network permission, which a test run lacks).
     @Test func sacnMembershipsFollowSettingsAndSurviveReplug() async throws {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
-        let sacn = SACNReceiver(store: store, logger: testLogger, port: try freeUDPPort())
+        let sacn = SACNReceiver(store: store, logger: testLogger, port: 0)
         try sacn.start(groups: ["lo0": [7], "en42": [8]])
         defer { sacn.stop() }
         sacn.pathUpdated()
@@ -211,7 +211,7 @@ struct UniverseSettingsEngineTests {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let real = SystemInfo.ipv4Interfaces.filter(\.multicast)
         store.interfaceList = { real + [NetworkInterface(name: "en99", address: "10.99.0.1", netmask: "255.255.0.0", multicast: true)] }
-        let sacn = SACNReceiver(store: store, logger: testLogger, port: try freeUDPPort())
+        let sacn = SACNReceiver(store: store, logger: testLogger, port: 0)
         try sacn.start(groups: ["any": [3]])
         defer { sacn.stop() }
         sacn.pathUpdated()
@@ -229,10 +229,10 @@ struct UniverseSettingsEngineTests {
 
     /// A port someone holds without SO_REUSEPORT (nc -u -l 5568) fails the bind: the engine catches it and runs on.
     @Test func sacnBindFailureThrowsAndReadinessWarns() throws {
-        let port = try freeUDPPort()
         let holder = socket(AF_INET, SOCK_DGRAM, 0)
         defer { close(holder) }
-        try #require(withSockaddr(port: port) { bind(holder, $0, $1) } == 0)
+        try #require(withSockaddr { bind(holder, $0, $1) } == 0)
+        let port = try #require(UDPSend.localPort(holder))
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         #expect(throws: POSIXError.self) { try SACNReceiver(store: store, logger: testLogger, port: port).start(groups: [:]) }
 
@@ -244,15 +244,15 @@ struct UniverseSettingsEngineTests {
 
     @Test func protocolSwitchesLiveToSACNOnThePair() async throws {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
-        let artPort = try freeUDPPort(), sacnPort = try freeUDPPort()
-        let artnet = ArtNetReceiver(store: store, logger: testLogger, nodeName: "test", port: artPort)
+        let artnet = ArtNetReceiver(store: store, logger: testLogger, nodeName: "test", port: 0)
         try artnet.start()
-        let sacn = SACNReceiver(store: store, logger: testLogger, port: sacnPort)
-        try sacn.start(groups: ["any": [1]])
+        let sacn = SACNReceiver(store: store, logger: testLogger, port: 0)
+        let sacnPort = try sacn.start(groups: ["any": [1]])
         defer {
             artnet.stop()
             sacn.stop()
         }
+        let artPort = try await listeningPort { artnet.boundPort }
         #expect(await Self.listening(artPort))  // the sACN socket is bound in start()
         let cid: [UInt8] = (1...16).map { UInt8($0) }
         sendUDP(SACNData(cid: cid, sourceName: "Desk", sequence: 1, universe: 1, slots: [UInt8](repeating: 64, count: 512)).encoded(), to: sacnPort)
@@ -276,10 +276,10 @@ struct UniverseSettingsEngineTests {
         store.interfaceList = {
             [NetworkInterface(name: "lo0", address: "127.0.0.1", netmask: "255.0.0.0"), NetworkInterface(name: "en9", address: "10.9.0.1", netmask: "255.255.0.0")]
         }
-        let port = try freeUDPPort()
-        let receiver = ArtNetReceiver(store: store, logger: testLogger, nodeName: "test", port: port)
+        let receiver = ArtNetReceiver(store: store, logger: testLogger, nodeName: "test", port: 0)
         try receiver.start()
         defer { receiver.stop() }
+        let port = try await listeningPort { receiver.boundPort }
         #expect(await Self.listening(port))
 
         var settings = UniverseSettings(for: Self.a0)
