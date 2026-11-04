@@ -67,7 +67,11 @@ struct ShowControlTests {
         #expect(steps.last?.value == 1, "reached full")
         #expect(first < 200, "first step within 200 ms of go: \(first) ms")
         #expect(last < 1300, "full within the fade + 300 ms: \(last) ms")
-        #expect(steps.count >= 20, "about 50 steps at 50 Hz: \(steps.count)")
+        // about 50 steps at 50 Hz on a quiet Mac; on the hosted CI VM the sampler saw 19 once (2026-11-04), so the bound
+        // only refuses a fade that jumps in a handful of steps; the rate itself is not asserted. The fade is wall-clock
+        // based, so load delays its end but never brings it forward: the lower bound on `last` cannot flake
+        #expect(steps.count >= 10, "a fade in steps, not jumps: \(steps.count)")
+        #expect(last >= 950, "the fade takes its second: \(last) ms")
     }
 
     @Test func timecodeClockExtrapolatesFreewheelsAndLoses() {
