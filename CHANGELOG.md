@@ -38,7 +38,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   it in between, "Address already in use" three times on 2026-11-04): the sACN, Art-Net, OSC and sync receivers and the
   sync catcher bind port 0 and the tests read the port the kernel gave (`SACNReceiver.start` and `SyncReceiver.start`
   return it, `ArtNetReceiver.boundPort` and `OSCReceiver.boundUDPPort` once listening); the sACN bind-failure test holds
-  its own port-0 socket. No change to the production ports (PR #NNN).
+  its own port-0 socket. No change to the production ports (PR #289).
 - Tests: the REST routes moved out of `Engine.start` into `RESTRoutes` (same routes, statuses and bodies), and a
   table test pins their role gates without a GPU or a socket: who gets 403 on `/api/ingest`, uploads,
   `/api/library/folder` and `/api/logs`, the redacted `/api/library` root below operator, `/api/login` 405/400/401
