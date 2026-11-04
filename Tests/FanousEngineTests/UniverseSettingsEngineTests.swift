@@ -15,9 +15,10 @@ struct UniverseSettingsEngineTests {
     static let logger = Logger(label: "test")
     static let a0 = UniverseID(.artnet, 0)
 
-    static func makeStore() -> StateStore {
+    static func makeStore(
+        project: JSONValue = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx)
+    ) -> StateStore {
         let auth = RoleAuth(settingsURL: nil, shellTokenURL: nil, iterations: 1000, logger: logger)
-        let project = ProjectDocument.initial(patch: .standard(layers: 1, outputs: 1), layerCount: 1, libraryRoot: "/tmp/lib", policy: .dmx)
         let store = StateStore(project: project, logger: logger)
         ProjectDocument.registerCommands(on: store, auth: auth)
         return store
@@ -90,10 +91,9 @@ struct UniverseSettingsEngineTests {
         ])
 
         // universe.set starts from what the engine runs and leaves one entry per universe
-        let store = Self.makeStore()
-        var document = store.project
+        var document = Self.makeStore().project
         try document.set(entries, at: "/universes")
-        store.replaceProject(document)
+        let store = Self.makeStore(project: document)
         _ = try Self.set(store, "/protocol", "both", id: "sacn:2").get()
         _ = try Self.set(store, "/sacnPriorityMode", "htp").get()
         let list = try #require(store.project["universes"]?.array)

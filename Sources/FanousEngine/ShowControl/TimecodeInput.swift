@@ -261,16 +261,11 @@ public final class LTCInput: @unchecked Sendable {
 
     /// Input devices (CoreAudio): name, input channel count, and which one is the system default.
     public static func inputDevices() -> [Device] {
-        var address = Self.devicesAddress
-        var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return [] }
-        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &ids) == noErr else { return [] }
         var defaultAddress = Self.defaultInputAddress
         var defaultID = AudioDeviceID(0)
         var idSize = UInt32(MemoryLayout<AudioDeviceID>.size)
         if AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &defaultAddress, 0, nil, &idSize, &defaultID) != noErr { defaultID = 0 }
-        return ids.compactMap { id in
+        return deviceIDs().compactMap { id in
             let channels = inputChannels(id)
             guard channels > 0, let name = name(of: id) else { return nil }
             return Device(name: name, channels: channels, isDefault: id == defaultID)
@@ -278,12 +273,17 @@ public final class LTCInput: @unchecked Sendable {
     }
 
     static func inputDevice(named name: String) -> AudioDeviceID? {
+        deviceIDs().first { inputChannels($0) > 0 && self.name(of: $0) == name }
+    }
+
+    /// Every CoreAudio device; empty when the list cannot be read.
+    static func deviceIDs() -> [AudioDeviceID] {
         var address = Self.devicesAddress
         var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return nil }
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return [] }
         var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &ids) == noErr else { return nil }
-        return ids.first { inputChannels($0) > 0 && self.name(of: $0) == name }
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &ids) == noErr else { return [] }
+        return ids
     }
 
     static func name(of id: AudioDeviceID) -> String? {

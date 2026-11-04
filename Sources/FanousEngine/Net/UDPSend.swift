@@ -3,8 +3,10 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
 import Darwin
+import Foundation
 
-/// The engine's raw UDP senders (CITP PLoc, sync) never block (B123): the socket is `O_NONBLOCK`, and a datagram the
+/// The engine's raw UDP sockets: the senders (CITP PLoc, sync) and the receivers' bound sockets (sACN, sync, `bound`).
+/// A sender never blocks (B123): the socket is `O_NONBLOCK`, and a datagram the
 /// kernel cannot take at once (a full send buffer, a stalled interface) is dropped and counted by the caller, so a
 /// stuck network path cannot hold a queue or thread that a `stop()` waits on.
 enum UDPSend {
@@ -27,6 +29,30 @@ enum UDPSend {
             close(fd)
             errno = error
             return -1
+        }
+        return fd
+    }
+
+    /// A receiver's socket (sACN, sync): SO_REUSEADDR and SO_REUSEPORT (other receivers share the port), the receive
+    /// buffer when given, bound to `port` on `address`, then `O_NONBLOCK`; closed again when a step fails.
+    static func bound(port: UInt16, address: in_addr_t, receiveBuffer: Int32? = nil) throws -> Int32 {
+        let fd = Darwin.socket(AF_INET, SOCK_DGRAM, 0)
+        guard fd >= 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
+        var on: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, socklen_t(MemoryLayout<Int32>.size))
+        setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &on, socklen_t(MemoryLayout<Int32>.size))
+        if var buffer = receiveBuffer { setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &buffer, socklen_t(MemoryLayout<Int32>.size)) }
+        var bindAddress = sockaddr_in()
+        bindAddress.sin_family = sa_family_t(AF_INET)
+        bindAddress.sin_port = port.bigEndian
+        bindAddress.sin_addr.s_addr = address
+        let bound = withUnsafePointer(to: &bindAddress) { p in
+            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        guard bound == 0, fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) == 0 else {
+            let error = POSIXError(.init(rawValue: errno) ?? .EIO)
+            close(fd)
+            throw error
         }
         return fd
     }

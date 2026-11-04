@@ -115,26 +115,8 @@ public final class SACNReceiver: @unchecked Sendable {
 
     /// Binds the port (shared with other receivers, SO_REUSEPORT) and joins `groups` (interface → universes).
     public func start(groups: [String: [Int]]) throws {
-        let fd = socket(AF_INET, SOCK_DGRAM, 0)
-        guard fd >= 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
-        var on: Int32 = 1
-        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, socklen_t(MemoryLayout<Int32>.size))
-        setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &on, socklen_t(MemoryLayout<Int32>.size))
         // 32 universes at 44 Hz while the DMX queue is busy for a moment: 4 MB holds several seconds of packets
-        var buffer: Int32 = 4 << 20
-        setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &buffer, socklen_t(MemoryLayout<Int32>.size))
-        var address = sockaddr_in()
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = port.bigEndian
-        address.sin_addr.s_addr = INADDR_ANY
-        let bound = withUnsafePointer(to: &address) { p in
-            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
-        }
-        guard bound == 0, fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) == 0 else {
-            let error = POSIXError(.init(rawValue: errno) ?? .EIO)
-            close(fd)
-            throw error
-        }
+        let fd = try UDPSend.bound(port: port, address: INADDR_ANY, receiveBuffer: 4 << 20)
         let reader = DispatchSource.makeReadSource(fileDescriptor: fd, queue: store.queue)
         reader.setEventHandler { [weak self] in self?.read() }
         reader.setCancelHandler { close(fd) }
@@ -263,7 +245,7 @@ public final class SACNReceiver: @unchecked Sendable {
     }
 }
 
-/// OSC on UDP and TCP (SLIP). Commands go to the store; cue/show commands are logged until Phase 5/7 wire them.
+/// OSC on UDP and TCP (SLIP). Commands go to the store, which hands cue/show commands to the engine (`onCommand`).
 public final class OSCReceiver: @unchecked Sendable {
     private let store: DMXStore
     private let logger: Logger

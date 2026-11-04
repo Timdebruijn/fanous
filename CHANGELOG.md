@@ -10,6 +10,11 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Changed: the engine's control side has one UDP receiver socket setup (sACN, sync), one pipeline descriptor helper,
+  one welcome message, one CoreAudio device list, one cue store and one sync target parser instead of copies; the
+  automatic-updates readiness item reads the preference with CFPreferences instead of running `defaults`; the never-sent
+  stream kind 4 (metrics) and three test-only StateStore members are gone. No behaviour change (over-engineering review
+  2026-11-04, PR #273).
 - Changed: the layer chip on a Media tile has 6 px between its dot and its word, like every other status
   (was 5 px; PR #268).
 - Changed: the web UI drops its over-engineering: one `frames` helper for the e2e WebSocket spies, one `CopyButton`, one

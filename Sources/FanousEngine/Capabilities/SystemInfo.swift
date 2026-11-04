@@ -6,7 +6,7 @@ import Darwin
 import FanousCore
 import Foundation
 
-/// Runtime facts about this machine. Phase 0 only logs them; tiers come in Phase 2.
+/// Runtime facts about this machine (chip, memory, OS, interfaces) for the start log, readiness and the System screen.
 public enum SystemInfo {
     public static var chipName: String { sysctlString("machdep.cpu.brand_string") ?? "unknown" }
     /// The platform floor (DESIGN.md §5): of the Mac chips only the base M1 has no ProRes engine (B144; from Apple's

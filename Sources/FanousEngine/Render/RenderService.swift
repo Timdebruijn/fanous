@@ -7,8 +7,7 @@ import Foundation
 import FanousCore
 import Logging
 
-/// A scene until projects exist (Phase 5): one canvas, N layer slots, the
-/// media those slots can address, one display or headless.
+/// What the render service runs: one canvas, N layer slots, the media those slots can address, one display or headless.
 public struct SceneConfig: Codable, Sendable {
     public var canvasWidth = 1920
     public var canvasHeight = 1080

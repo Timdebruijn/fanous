@@ -26,11 +26,16 @@ public struct SyncSettings: Codable, Sendable, Equatable {
 
     /// "broadcast", or an IPv4 address with an optional ":port" (1–65535): what the sender can send to.
     static func isValidTarget(_ target: String) -> Bool {
-        if target == "broadcast" { return true }
+        target == "broadcast" || parseTarget(target).map { $0.1 != 0 } ?? false
+    }
+
+    /// An IPv4 address with an optional ":port": the address and the port (nil without one, 0 when it is not
+    /// 1–65535); nil when the address part is not an IPv4 address or there is more than one ":".
+    static func parseTarget(_ target: String) -> (in_addr, UInt16?)? {
         let parts = target.split(separator: ":", omittingEmptySubsequences: false)
         var address = in_addr()
-        guard parts.count <= 2, inet_pton(AF_INET, String(parts[0]), &address) == 1 else { return false }
-        return parts.count == 1 || (UInt16(parts[1]) ?? 0) > 0
+        guard parts.count <= 2, inet_pton(AF_INET, String(parts[0]), &address) == 1 else { return nil }
+        return (address, parts.count == 2 ? UInt16(parts[1]) ?? 0 : nil)
     }
 
     /// Field by field: a bad field keeps its default, the others are still read.
@@ -178,17 +183,15 @@ final class SyncSender: @unchecked Sendable {
             }
             address.sin_addr.s_addr = inet_addr(match.address) | ~inet_addr(match.netmask)
         } else {
-            let parts = settings.target.split(separator: ":", omittingEmptySubsequences: false)
-            guard let host = parts.first, parts.count <= 2, inet_pton(AF_INET, String(host), &address.sin_addr) == 1
-            else {
+            guard let (ip, port) = SyncSettings.parseTarget(settings.target) else {
                 return nowhere("sync target \(settings.target) is not an IPv4 address with an optional :port")
             }
-            if parts.count == 2 {
-                guard let port = UInt16(parts[1]), port > 0 else {
-                    return nowhere("sync target \(settings.target) has no valid port")
-                }
+            address.sin_addr = ip
+            if let port {
+                guard port > 0 else { return nowhere("sync target \(settings.target) has no valid port") }
                 address.sin_port = port.bigEndian
             }
+            let host = settings.target.prefix { $0 != ":" }
             guard network || host == "127.0.0.1" else {
                 return nowhere("sync target \(host) is not sent to with --no-network; only 127.0.0.1")
             }

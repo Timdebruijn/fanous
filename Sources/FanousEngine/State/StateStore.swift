@@ -115,23 +115,7 @@ public final class StateStore: @unchecked Sendable {
     public var rev: UInt64 { queue.sync { revision } }
     public var project: JSONValue { queue.sync { projectDocument } }
     public var live: JSONValue { queue.sync { liveDocument } }
-    public var isShowLocked: Bool { queue.sync { projectDocument["showLock"]?.bool ?? false } }
     public var historyDepth: (undo: Int, redo: Int) { queue.sync { (undoStack.count, redoStack.count) } }
-
-    /// Replaces the project (project load): history cleared, every client gets a snapshot.
-    public func replaceProject(_ document: JSONValue) {
-        queue.sync {
-            projectDocument = document
-            undoStack.removeAll()
-            redoStack.removeAll()
-            revision += 1
-            onProjectChanged?(projectDocument)
-            for (id, entry) in clients where !entry.client.send(text: snapshotMessage(type: "snapshot", role: entry.client.role), droppable: false) {
-                entry.client.disconnect(reason: "cannot keep up")
-                clients.removeValue(forKey: id)
-            }
-        }
-    }
 
     // MARK: Commands
 
@@ -295,21 +279,12 @@ public final class StateStore: @unchecked Sendable {
 
     // MARK: Clients
 
-    public func attach(_ client: StateClient) { queue.sync { clients[ObjectIdentifier(client)] = Client(client: client) } }
     public func detach(_ client: StateClient) { queue.sync { _ = clients.removeValue(forKey: ObjectIdentifier(client)) } }
     public var clientCount: Int { queue.sync { clients.count } }
     public var laggingClients: Int { queue.sync { clients.values.filter(\.lagging).count } }
 
     /// The `welcome`/`snapshot` payload for one client.
-    public func welcome(role: Role, caps: JSONValue) -> String {
-        queue.sync {
-            var message = snapshotObject(role: role)
-            message["t"] = "welcome"
-            message["role"] = .string(role.rawValue)
-            message["caps"] = caps
-            return encode(.object(message))
-        }
-    }
+    public func welcome(role: Role, caps: JSONValue) -> String { queue.sync { welcomeMessage(role: role, caps: caps) } }
 
     /// Makes `client` a member at `role` and sends its welcome in one turn on the queue, so no broadcast (built for
     /// the new role) can reach it before the redacted document it patches.
@@ -317,12 +292,17 @@ public final class StateStore: @unchecked Sendable {
         queue.sync {
             setRole()
             clients[ObjectIdentifier(client)] = clients[ObjectIdentifier(client)] ?? Client(client: client)
-            var message = snapshotObject(role: role)
-            message["t"] = "welcome"
-            message["role"] = .string(role.rawValue)
-            message["caps"] = caps
-            _ = client.send(text: encode(.object(message)), droppable: false)
+            _ = client.send(text: welcomeMessage(role: role, caps: caps), droppable: false)
         }
+    }
+
+    /// Queue only.
+    private func welcomeMessage(role: Role, caps: JSONValue) -> String {
+        var message = snapshotObject(role: role)
+        message["t"] = "welcome"
+        message["role"] = .string(role.rawValue)
+        message["caps"] = caps
+        return encode(.object(message))
     }
 
     public func snapshot(role: Role) -> String { queue.sync { snapshotMessage(type: "snapshot", role: role) } }
