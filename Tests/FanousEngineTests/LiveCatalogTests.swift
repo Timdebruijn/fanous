@@ -401,8 +401,7 @@ extension LiveCatalogTests {
     /// canvases): the catalog could not tell a swap of such twins from no change.
     @Test func syphonRenumberRefusesTwins() throws {
         let (store, _) = testStore(outputs: 0)
-        func server(_ file: Int, _ app: String, _ name: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: name) }
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "fanousd", "Canvas"), server(151, "fanousd", "Canvas"), server(152, "Other", "")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(150, "fanousd", name: "Canvas"), syphonServer(151, "fanousd", name: "Canvas"), syphonServer(152, "Other", name: "")]) }
         func renumber(_ file: Int, _ to: Int) -> Result<CommandResult, CommandError> { store.execute("syphon.renumber", args: ["file": .number(Double(file)), "to": .number(Double(to))], role: .programmer) }
         #expect(renumber(150, 160).failureCode == "invalidArgs")
         #expect(renumber(152, 151).failureCode == "invalidArgs")  // the swap would move a twin

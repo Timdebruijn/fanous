@@ -145,15 +145,14 @@ struct ProjectVersionsTests {
     @Test func revertUndoRefusedWhenAnotherServerTookADroppedNumber() throws {
         let f = Self.make()
         let store = f.store
-        func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "A")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(150, "A")]) }
         let id = try #require(try store.execute("project.snapshot", args: ["name": "Doors"], role: .programmer).get().value?["id"]?.string)
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "A"), server(151, "X")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(150, "A"), syphonServer(151, "X")]) }
         _ = try store.execute("project.set", args: ["path": "/name", "value": "Tour"], role: .programmer).get()
         _ = try store.execute("project.revert", args: ["id": .string(id)], role: .programmer).get()
         #expect(store.project["syphon"]?["151"] == nil)
         // Y takes 151 as the lowest free number, then stops: the engine leaves its entry
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(150, "A"), server(151, "Y")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(150, "A"), syphonServer(151, "Y")]) }
         #expect(store.historyDepth.undo == 2)
         #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by Y/Server; undo/redo refused")))
         #expect(store.project["syphon"]?["151"]?["app"]?.string == "Y")
@@ -167,13 +166,12 @@ struct ProjectVersionsTests {
     @Test func revertUndoRefusedWhenItWouldFreeAnotherServersNumber() throws {
         let f = Self.make()
         let store = f.store
-        func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(151, "X")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(151, "X")]) }
         let id = try #require(try store.execute("project.snapshot", args: ["name": "Doors"], role: .programmer).get().value?["id"]?.string)
         store.correct(at: "/syphon") { ProjectDocument.liveValue([]) }
         _ = try store.execute("project.revert", args: ["id": .string(id)], role: .programmer).get()
         // X runs elsewhere: the catalog drops its twin on 151; Y takes 151, then stops
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(151, "Y")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(151, "Y")]) }
         #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by Y/Server; undo/redo refused")))
         #expect(store.project["syphon"]?["151"]?["app"]?.string == "Y")
     }
@@ -183,8 +181,7 @@ struct ProjectVersionsTests {
     @Test func revertUndoSkipsANumberTheEngineAlreadyDropped() throws {
         let f = Self.make()
         let store = f.store
-        func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(151, "X")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(151, "X")]) }
         let id = try #require(try store.execute("project.snapshot", args: ["name": "Doors"], role: .programmer).get().value?["id"]?.string)
         store.correct(at: "/syphon") { ProjectDocument.liveValue([]) }
         _ = try store.execute("project.set", args: ["path": "/name", "value": "Tour"], role: .programmer).get()
@@ -197,7 +194,7 @@ struct ProjectVersionsTests {
         #expect(store.project["syphon"] == [:])
         #expect(store.historyDepth.undo == depth - 1)
         // Y takes 151, then stops: the redo would put X back over it
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(151, "Y")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(151, "Y")]) }
         #expect(store.execute("redo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by Y/Server; undo/redo refused")))
         #expect(store.project["syphon"]?["151"]?["app"]?.string == "Y")
     }
@@ -207,10 +204,9 @@ struct ProjectVersionsTests {
     @Test func revertUndoRestoresARenamedNumber() throws {
         let f = Self.make()
         let store = f.store
-        func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(151, "Z")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(151, "Z")]) }
         let id = try #require(try store.execute("project.snapshot", args: ["name": "Doors"], role: .programmer).get().value?["id"]?.string)
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(151, "X")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(151, "X")]) }
         _ = try store.execute("project.revert", args: ["id": .string(id)], role: .programmer).get()
         #expect(store.project["syphon"]?["151"]?["app"]?.string == "Z")
         let depth = store.historyDepth.undo
@@ -224,13 +220,12 @@ struct ProjectVersionsTests {
     @Test func revertUndoRefusedWhenItWouldRenameAnotherServersNumber() throws {
         let f = Self.make()
         let store = f.store
-        func server(_ file: Int, _ app: String) -> LiveCatalog.Entry { LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: "Server") }
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(151, "Z")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(151, "Z")]) }
         let id = try #require(try store.execute("project.snapshot", args: ["name": "Doors"], role: .programmer).get().value?["id"]?.string)
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(151, "X")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(151, "X")]) }
         _ = try store.execute("project.revert", args: ["id": .string(id)], role: .programmer).get()
         #expect(store.project["syphon"]?["151"]?["app"]?.string == "Z")
-        store.correct(at: "/syphon") { ProjectDocument.liveValue([server(151, "Y")]) }
+        store.correct(at: "/syphon") { ProjectDocument.liveValue([syphonServer(151, "Y")]) }
         #expect(store.execute("undo", role: .programmer) == .failure(CommandError("historyConflict", "Syphon number 151 is now held by Y/Server; undo/redo refused")))
         #expect(store.project["syphon"]?["151"]?["app"]?.string == "Y")
     }

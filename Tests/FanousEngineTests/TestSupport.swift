@@ -58,6 +58,15 @@ func testStore(
     return (store, auth)
 }
 
+/// Syphon server `app` (`name`) on number `file`, as the project's `/syphon` list holds it.
+func syphonServer(_ file: Int, _ app: String, name: String = "Server") -> LiveCatalog.Entry {
+    LiveCatalog.Entry(kind: .syphon, file: file, source: app, name: name)
+}
+
+/// The numbers and the apps of `store`'s Syphon list, in its order.
+func syphonFiles(_ store: StateStore) -> [Int] { ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.file) }
+func syphonApps(_ store: StateStore) -> [String] { ProjectDocument.liveNumbers(.syphon, from: store.project).map(\.source) }
+
 /// `count` outputs added to `store`, each a full 1920×1080 region (ids 1…count).
 func addOutputs(_ store: StateStore, _ count: Int) throws {
     for id in 1...count {
