@@ -15,6 +15,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Changed: the web UI drops its over-engineering: one `frames` helper for the e2e WebSocket spies, one `CopyButton`, one
   `zeroGroups`, `fetchLibrary` and `post` helper each, one `LEASE_MS`, parameters and re-exports nobody used, and
   `noUnusedLocals` in tsconfig (PR #269); no behaviour change.
+- Changed: the engine's media, ingest, capture, library and preview code drops repeats and unused options: the media
+  loader's six change signals are one `changed(_:)` with an option set, the pixel-aspect tag, the online-display list,
+  the still decode, the JPEG encode and the upload target are each read in one place, and the playable codec list
+  follows the decoder's (over-engineering review 2026-11-04); no behaviour change (PR #270).
 - Release: 1.0.0-rc.3 is on GitHub as a pre-release with the signed, notarized dmg, built from main 07ac24b
   (PR #267).
 - Changed: less code in Core, the shell and the bench, no behaviour or wire change: CITP `CInf` and `Nack` are enum cases

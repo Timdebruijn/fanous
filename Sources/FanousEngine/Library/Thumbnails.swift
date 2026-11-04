@@ -9,7 +9,6 @@ import ImageIO
 import FanousCore
 import Logging
 import Metal
-import UniformTypeIdentifiers
 
 /// Thumbnails (DESIGN.md §8.4): one mid-file frame per movie, decoded by the
 /// engine's own decoders and rendered through the layer pipeline into a
@@ -100,8 +99,7 @@ public final class Thumbnailer: @unchecked Sendable {
     }
 
     static func writeJPEG(_ image: CGImage, to url: URL) -> Bool {
-        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else { return false }
-        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
-        return CGImageDestinationFinalize(destination)
+        guard let jpeg = ThumbnailStreamer.jpeg(image, quality: 0.8) else { return false }
+        return (try? Data(jpeg).write(to: url)) != nil
     }
 }

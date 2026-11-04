@@ -42,21 +42,21 @@ public struct HAPEncoder {
     public let variant: Variant
     public let width: Int
     public let height: Int
-    public let chunkCount: UInt32
+    /// Chunks per frame, so a decoder can decompress one frame on several threads.
+    public static let chunkCount: UInt32 = 4
     private var dxt: [UInt8]
     private var encoded: [UInt8]
 
-    public init(variant: Variant, width: Int, height: Int, chunkCount: UInt32 = 4) {
+    public init(variant: Variant, width: Int, height: Int) {
         precondition(width % 4 == 0 && height % 4 == 0, "HAP needs dimensions that are multiples of 4")
         self.variant = variant
         self.width = width
         self.height = height
-        self.chunkCount = chunkCount
         let dxtBytes = DXTCompressor.compressedSize(width: width, height: height, format: variant.dxt)
         dxt = [UInt8](repeating: 0, count: dxtBytes)
         var lengths: [UInt] = [UInt(dxtBytes)]
         var formats: [UInt32] = [variant.hapFormat]
-        var chunks: [UInt32] = [chunkCount]
+        var chunks: [UInt32] = [Self.chunkCount]
         encoded = [UInt8](repeating: 0, count: Int(HapMaxEncodedLength(1, &lengths, &formats, &chunks)))
     }
 
@@ -73,7 +73,7 @@ public struct HAPEncoder {
                 var lengths: [UInt] = [UInt(input.count)]
                 var formats: [UInt32] = [format.hapFormat]
                 var compressors: [UInt32] = [UInt32(HapCompressorSnappy.rawValue)]
-                var chunks: [UInt32] = [chunkCount]
+                var chunks: [UInt32] = [Self.chunkCount]
                 return HapEncode(1, &inputs, &lengths, &formats, &compressors, &chunks, out.baseAddress!, UInt(out.count), &used)
             }
         }

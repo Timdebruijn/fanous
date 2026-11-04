@@ -214,7 +214,7 @@ struct LibraryIndexTests {
         current.withLock { first in
             first!.onChange = {
                 observer.changes.wrappingAdd(1, ordering: .relaxed)
-                loader.reresolveMissingLibrary()
+                loader.changed(.missingLibrary)
             }
             // a probe of a fresh file waits here while the test holds it: the window right after a switch
             first!.thumbnailer = { _, _, _ in
@@ -239,7 +239,7 @@ struct LibraryIndexTests {
                 defer { box = second }
                 return box
             }
-            loader.reresolveLibrary()
+            loader.changed(.library)
             replaced?.stop()
         }
         #expect(second.snapshot.root == b.path && second.snapshot.folders.map(\.name) == ["001_B"])

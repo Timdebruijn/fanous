@@ -36,11 +36,7 @@ public final class ScreenInput: CaptureInput, SCStreamOutput, SCStreamDelegate, 
     /// The online display with this CG UUID and its pixel size (`DisplayInfo.pixelWidth/Height`: the mode's pixels, not
     /// `SCDisplay`'s points). CoreGraphics only, so any thread.
     static func display(uuid: String) -> (id: CGDirectDisplayID, width: Int, height: Int)? {
-        var count: UInt32 = 0
-        CGGetOnlineDisplayList(0, nil, &count)
-        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
-        CGGetOnlineDisplayList(count, &ids, &count)
-        for id in ids.prefix(Int(count)) {
+        for id in DisplayManager.onlineDisplayIDs() {
             guard let cf = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue(), CFUUIDCreateString(nil, cf) as String == uuid else { continue }
             let mode = CGDisplayCopyDisplayMode(id)
             return (id, mode?.pixelWidth ?? Int(CGDisplayPixelsWide(id)), mode?.pixelHeight ?? Int(CGDisplayPixelsHigh(id)))

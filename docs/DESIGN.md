@@ -1571,7 +1571,7 @@ throws its refusal as the layer's text and returns the `CaptureInput` itself
 *Permission:* `CaptureInput.open` asks only when `allowed`.
 `RenderService.captureAllowed` is set by the engine to "not in show mode".
 While the dialog is open the layer reads "waiting for camera permission";
-the answer reopens the layer (`MediaLoader.capturePermissionChanged`). In
+the answer reopens the layer (`MediaLoader.changed(.capturePermission)`). In
 show mode the layer reads the "not asked" text, and after a refusal the
 "denied" text above. `com.apple.security.device.camera` is in
 `scripts/entitlements.plist`; `NSCameraUsageDescription` and
@@ -1612,8 +1612,8 @@ the fallback. The catalog keeps the running number, and the device moves back
 to the old one at its next replug.
 *Commands:* `capture.authorize {kind}` (programmer, refused under show lock
 and in show mode, not undoable): `camera` calls
-`CaptureInput.requestAccess(allowed: true)` and then
-`MediaLoader.capturePermissionChanged()`. `screen` is refused with
+`CaptureInput.requestAccess()` and then
+`MediaLoader.changed(.capturePermission)`. `screen` is refused with
 `unavailable` until step 3.
 *Permissions cache:* `authorizationStatus` (about 25 ms, a TCC round trip
 that is not cached) and `CGPreflightScreenCaptureAccess()` (about 12 ms) are
@@ -1628,8 +1628,8 @@ catalog: "Camera: <name>", "not running" without a runtime id, else
 another app" and is not opened, unless one of our layers already holds a live
 session on it: that session is shared first, because the flag may come from
 another app that opened the device after us. A scene entry still wins.
-`captureDevicesChanged` (the catalog's `onChange`) works like
-`syphonServersChanged`, and the loader remembers the uid each layer opened (as
+`changed(.captureDevices)` (the catalog's `onChange`) works like
+`changed(.syphonServers)`, and the loader remembers the uid each layer opened (as
 `syphonOpen` holds the runtime id):
 - A layer whose device went reads "not running" and keeps its input (the last
   frame).
@@ -1744,8 +1744,8 @@ catalog: "Display: <name>", "not running" without a runtime id, else
 `screenFactory(uuid)`. A scene entry `{folder: 0, file, screen: uuid}`
 wins; it does not follow the catalog, so a display hosting an output is
 captured that way and never halted (the scene's explicit choice). One
-input per uuid (`captureShared` is per kind). `screensChanged()`
-shares its body with `captureDevicesChanged()`. A display that goes or is
+input per uuid (`captureShared` is per kind). `changed(.screens)`
+shares its body with `.captureDevices`. A display that goes or is
 bound as an output reads "not running" and keeps its last frame, and its
 stream is halted (else it would show the desktop under the engine's
 excluded output window); its return opens one new session for its
@@ -4065,7 +4065,7 @@ no settings at all:
   picked by name from `live.osc.audioInputs`, which has no channel count, and
   nothing shows whether the channel carries a signal.
 - The audio output is the system default device in one stereo mix:
-  `AudioMixer.deviceUID` is ignored (B4) and the per-layer output pairs of §10
+  `AudioMixer` has no device selection (B4) and the per-layer output pairs of §10
   are not built (B76). §12 puts the audio device on the System screen, but no
   UI has it.
 

@@ -310,7 +310,7 @@ import Testing
             return FakeLive(uuid: uuid)
         }
         let catalog = LiveCatalog(.syphon)
-        catalog.onChange = { [loader] in loader.syphonServersChanged() }
+        catalog.onChange = { [loader] in loader.changed(.syphonServers) }
         loader.syphonCatalog = catalog
         catalog.update(running: [Self.info("Resolume", "Out", "a"), Self.info("Other", "", "b")])
         loader.start()
@@ -367,7 +367,7 @@ import Testing
         let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: Logger(label: "test"))
         loader.liveFactory = { _, uuid in FakeLive(uuid: uuid) }
         let catalog = LiveCatalog(.syphon)
-        catalog.onChange = { [loader] in loader.syphonServersChanged() }
+        catalog.onChange = { [loader] in loader.changed(.syphonServers) }
         loader.syphonCatalog = catalog
         catalog.update(running: [Self.info("Resolume", "Out", "a")])
         loader.start()
