@@ -421,7 +421,6 @@ struct ShowControlTests {
         #expect(!idle.stop(keepingState: true))  // restart outside show mode: nothing kept
         #expect(!FileManager.default.fileExists(atPath: url.path))
     }
-
 }
 
 /// The ShowControlTests that need the GPU or a decoder: local and self-hosted runs only (scripts/test.sh --hosted leaves them out).
