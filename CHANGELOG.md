@@ -10,6 +10,12 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Fixed: three parsers on the network boundary took the engine down on one packet: an OSC blob whose padding is
+  missing before the next string argument, OSC bundles nested thousands deep (stack overflow), and an HTTP request
+  with a negative Content-Length (`-1` reached the body slice). They now reject the message (`truncated`,
+  `badBundle` past 8 levels, 400). A fuzz test cuts every sample of every network parser in Core (Art-Net, sACN,
+  OSC, CITP, WebSocket, HTTP, sync, MIDI; real captures and encoded messages) at every length and mutates every
+  byte; it runs on CI and traps on the old OSC blob code (PR #277).
 - Tests: the engine test suite drops its repeats (about 290 lines): a `.cleansTempFiles` trait removes temporary files
   after each test, polls go through `waitUntil`, and one shared helper each for the compositor rig, test stores and
   projects, PNGs, movie writing and reading, sockets, the malloc gate and the logger; the same 744 tests assert the

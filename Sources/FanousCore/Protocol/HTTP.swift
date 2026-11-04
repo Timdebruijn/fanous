@@ -28,6 +28,8 @@ public struct HTTPRequest: Equatable, Sendable {
         case malformedRequestLine
         case malformedHeader
         case headTooLarge
+        /// Content-Length that is not a non-negative integer (RFC 9112 §6.3: reject the message).
+        case badContentLength
     }
 
     public static let maxHeadBytes = 16 * 1024
@@ -74,6 +76,7 @@ public struct HTTPRequest: Equatable, Sendable {
         }
         let request = HTTPRequest(
             method: String(parts[0]), target: String(parts[1]), version: String(parts[2]), headers: headers)
+        if let length = request.header("Content-Length"), Int(length).map({ $0 < 0 }) ?? true { throw ParseError.badContentLength }
         return (request, end + 4)
     }
 }
