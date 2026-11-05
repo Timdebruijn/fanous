@@ -17,7 +17,7 @@ console: [ui.md](ui.md#roles-and-logging-in)). While the show is locked the
 wall, preset, Remote and Colour controls are greyed out with the reason and
 the engine refuses the rest; a canvas change is also refused in show mode.
 
-**First picture on one projector**, in four steps: plug the projector in
+First picture on one projector, in four steps: plug the projector in
 and set it to extended in System Settings › Displays; Outputs screen, **Add
 output on**, pick it; press **Output ID** under the output settings and
 read the number on the projector; then play a layer
@@ -77,7 +77,7 @@ projector; use the warp for the fine trim, not to square up a big rotation.
 5. Leave **Intensity** at 100 %: the console's Output and Master intensity
    multiply with it.
 
-<img src="images/outputs-next-align.png" width="1000" alt="The yellow bar after adding an output: Next: align this output, with the buttons Align this output and Later">
+<img src="images/outputs-next-align.png" width="1396" alt="The yellow bar after adding an output: Next: align this output, with the buttons Align this output and Later">
 
 An output is tied to its display by identity, not by port or position: a
 projector you unplug and plug in again, on any port, lands on the same
@@ -96,7 +96,7 @@ show ([known limitations](reference/known-limitations.md#outputs-and-mapping)).
 | grey ring, "not assigned to a display" ("binding…" for a moment) | unassigned | No display chosen, or it is being bound. Settings can be edited |
 | red dot, "display missing: name" | lost | The display went away. A red banner says so; the other outputs keep running. Plug it back in and it rebinds by itself |
 
-<img src="images/outputs-lost-banner.png" width="1000" alt="The red banner: Output 3 lost · Projector R is not connected; the other outputs keep running">
+<img src="images/outputs-lost-banner.png" width="1396" alt="The red banner: Output 3 lost · Projector R is not connected; the other outputs keep running">
 
 ### Which display paces the engine
 
@@ -229,7 +229,7 @@ that is not a grid. The hand route, for two 1920 × 1080 projectors with a
 The curve drawing on each card shows the ramp. **Power** (0.1 to 10, 2 to
 start) is how steep the S-curve is; **Gamma** (0.5 to 5, 2.2 to start) is
 the projector's gamma. In the engine's own test the summed light of two or
-four ideal gamma-2.2 projectors stays within 3.5 % of white; real
+four ideal gamma-2.2 projectors stays within 3 % of white for two and 3.5 % for four; real
 projectors decide the rest, so tune by eye.
 
 <img src="images/outputs-black-lift.png" width="520" alt="Black lift (%) at 6 and Lift feather px at 40 under the blend edges">
@@ -313,7 +313,7 @@ applies to the picture and the test patterns, also in Raw: it belongs to
 the projector, not to the mapping. An Output or Master Blackout, or an
 intensity at 0, is black, black offset included.
 
-**Three black controls, two settings.** A seam lighter than the rest:
+Three black controls, two settings. A seam lighter than the rest:
 **Black lift** (output settings, 0 to 50 %), which the wall panel calls
 **Black floor** (0 to 20 %): one setting, two names. A whole projector
 whose black is darker than its neighbours': **Black offset** (Colour, 0 to
@@ -325,14 +325,15 @@ on brighter pictures
 ## Projector walls
 
 A projector wall is two to sixteen projectors that show one picture: side
-by side, stacked, or a grid of up to 4 × 4. The wall keeps two kinds of
+by side, stacked, or a grid, at most 4 × 4 (so 5, 7, 11, 13, 14 or 15
+projectors make no grid). The wall keeps two kinds of
 work apart:
 
-- **Geometry is computed.** From the grid and the overlap the wall gives
+- Geometry is computed. From the grid and the overlap the wall gives
   each projector its part of the canvas (slice 1's Source) and the overlap
   of its inner blend edges, equal on both sides of every seam. That is
   right for projectors hung as that grid, so you do not type it.
-- **Tuning is by eye.** Gamma and curve per seam, black floor and colour
+- Tuning is by eye. Gamma and curve per seam, black floor and colour
   per projector: no start value fits every room, because projector age,
   ambient light and the surface differ. The [seam check](#seam-check) walks
   you through it.
@@ -370,9 +371,9 @@ wall yet." until there are.
    size: the wall stretches over the canvas, and the wizard shows the
    wall's size at projector resolution so you can see whether the shapes
    match.
-3. **Make wall.** Blend check appears on every projector of the wall and the
-   wall's panel opens on the seam check. **Undo** right after takes the
-   wall away again; **Cancel** at any step changes nothing.
+   **Make wall** ends the wizard: Blend check appears on every projector
+   of the wall and the wall's panel opens on the seam check. **Undo** right
+   after takes the wall away again; **Cancel** at any step changes nothing.
 
 ```mermaid
 flowchart TD
@@ -401,11 +402,11 @@ button between neighbours with its gamma (**RGB** when each colour has its
 own). The header has the wall's name, "rows × columns · canvas · overlap"
 and the **Seam check** and **Geometry** switches.
 
-<img src="images/wall-panel-map.png" width="1000" alt="The panel of Wall 1 with Geometry open: the map with Projector L and Projector R and the seam at 2.2 between them, Overlap across at 15 % with 'Each projector shares 151 of its 1008 px across with its neighbour', Edit layout and Remove wall">
+<img src="images/wall-panel-map.png" width="1000" alt="The panel of Wall 1 with Geometry open: the map with Projector L and Projector R and the seam at 2.2 between them, Overlap across at 15 % with 'Each projector shares 151 of its 1008 px across with its neighbour', Edit layout, and the presets strip below">
 
-**Tap a seam** for its controls; both sides of the seam always follow:
+Tap a seam for its controls; both sides of the seam always follow:
 
-<img src="images/wall-seam-controls.png" width="1000" alt="The seam controls: Gamma 2.20, the Link R, G, B switch on, Curve 2.0, with a line on what each does">
+<img src="images/wall-seam-controls.png" width="1045" alt="The seam controls: Gamma 2.20, the Link R, G, B switch on, Curve 2.0, with a line on what each does">
 
 - **Gamma** (0.5 to 5, 2.2 to start): down for a bright band in the seam,
   up for a dark one.
@@ -418,9 +419,9 @@ and the **Seam check** and **Geometry** switches.
 - **Apply to all seams** (with more than one seam) gives every seam these
   values.
 
-**Tap a projector** for its black floor and colour:
+Tap a projector for its black floor and colour:
 
-<img src="images/wall-projector-controls.png" width="1000" alt="The projector controls of Projector L: Black floor 0.0 %, Gain R, G and B at 100 %, Black offset 0.0 %, and Open in Warp & Slices">
+<img src="images/wall-projector-controls.png" width="1045" alt="The projector controls of Projector L: Black floor 0.0 %, Gain R, G and B at 100 %, Black offset 0.0 %, and Open in Warp & Slices">
 
 - **Black floor** (0 to 20 %) is the output's Black lift under another
   name: on Grey 0 %, raise it on the projectors next to a lighter seam, one
@@ -458,7 +459,7 @@ shows it, and its control opens, outlined. Fanous has no camera, so your
 eye picks the seam. You are done when all six steps look even from where
 the audience sits; press **End seam check**.
 
-<img src="images/wall-seam-check-card.png" width="1000" alt="The seam check card on step 2 of 6, Blend check: the six step buttons, 'Look for:' with three lines, a bright band in a seam → that seam's gamma, down; a dark band → gamma up; a visible edge where the overlap starts → that seam's curve; then Previous, Next and End seam check">
+<img src="images/wall-seam-check-card.png" width="1045" alt="The seam check card on step 2 of 6, Blend check: the six step buttons, 'Look for:' with three lines, a bright band in a seam → that seam's gamma, down; a dark band → gamma up; a visible edge where the overlap starts → that seam's curve; then Previous, Next and End seam check">
 
 | Step | You see | Turn |
 |---|---|---|

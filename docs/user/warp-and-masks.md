@@ -15,7 +15,7 @@ section below:
 - **Masks**: a shape that hides part of the picture, for a window or a door.
 - **Show on output** and **Remote**: see the selected point on the
   projector, and align from an iPad.
-- **Presets** and the **Keystone fixture**: mappings an output switches
+- **Presets** and the Keystone fixture: mappings an output switches
   between from the console, and the four corners driven live from the desk.
 
 Together, the corner pin, mesh, slices and masks of one output are its
@@ -55,7 +55,7 @@ flowchart TD
 | **Slices** | A rectangle of the canvas into a four-corner area of the output | One per surface; the warp still applies on top |
 | **Masks** | What a slice shows: inside an Add mask, outside a Subtract mask | A mask removes content, not light: the projector's black still falls there |
 | **Presets** | The corner pin, mesh, slices and masks of one output, stored under a number | Blend, colour and black lift are not in a preset |
-| **Keystone fixture** | The four corners from the console, on top of everything | A fader at 50 % (32768) is "no change" |
+| Keystone fixture | The four corners from the console, on top of everything | A fader at 50 % (32768) is "no change" |
 
 Does the surface move? Between scenes: store a preset per position and let
 the console switch and glide ([presets](#mapping-presets)). Live, from the
@@ -97,7 +97,7 @@ at an angle. To fit a flat screen:
 
 ## Mesh
 
-<img src="images/warp-mesh.png" width="1000" alt="Mesh mode on the LED wall output: a 5 × 5 grid of points over the preview, the top and bottom rows curved, the point in row 2 column 3 selected">
+<img src="images/warp-mesh.png" width="1040" alt="Mesh mode on the LED wall output: a 5 × 5 grid of points over the preview, the top and bottom rows curved, the point in row 2 column 3 selected">
 
 For a curved or uneven surface, after the corner pin:
 
@@ -121,7 +121,7 @@ handles say where on the output it appears. An output starts with one slice
 that shows the whole canvas, so you need more only when one projector
 covers several surfaces that each need their own part of the picture.
 
-<img src="images/warp-slices.png" width="1000" alt="Slices mode on the LED wall output: three slices side by side with gaps between them, each showing a third of the canvas; slice 2 is selected with its top-left corner handle">
+<img src="images/warp-slices.png" width="1040" alt="Slices mode on the LED wall output: three slices side by side with gaps between them, each showing a third of the canvas; slice 2 is selected with its top-left corner handle">
 
 Three screens on a stage from one projector, on a 1920 × 1080 canvas:
 
@@ -139,7 +139,7 @@ Three screens on a stage from one projector, on a 1920 × 1080 canvas:
    x in the next by the same amount.
 5. **Opacity %** per slice; a later slice draws over an earlier one.
 
-<img src="images/warp-slices-form.png" width="1000" alt="The Slices form: Slice 2, Canvas 1 · 1920 × 1080, Source 640 · 0 · 640 · 1080, Opacity 100, and the buttons Add slice, Reset slice, Spread canvas, Triangle, Circle, Remove slice">
+<img src="images/warp-slices-form.png" width="1039" alt="The Slices form: Slice 2, Canvas 1 · 1920 × 1080, Source 640 · 0 · 640 · 1080, Opacity 100, and the buttons Add slice, Reset slice, Spread canvas, Triangle, Circle, Remove slice">
 
 **Reset slice** puts the whole canvas on the whole output again (the masks
 stay); **Remove slice** keeps at least one. Each slice has a **Canvas** list
@@ -161,7 +161,7 @@ all of itself. A mask removes content, not light: the projector's own black
 still falls on the window, so use lens shift or a physical flag where that
 matters, and do not raise the black lift to match the masked area.
 
-<img src="images/warp-masks.png" width="1000" alt="Mask mode on the LED wall output: a five-point Add mask over slice 2 with a dashed four-point Subtract mask inside it; one point is selected">
+<img src="images/warp-masks.png" width="1040" alt="Mask mode on the LED wall output: a five-point Add mask over slice 2 with a dashed four-point Subtract mask inside it; one point is selected">
 
 To keep a window dark:
 
@@ -183,7 +183,7 @@ Each tool adds an Add mask, one Undo step:
 | **Freehand** | Drag along the outline with the mouse or one finger (a second finger or the palm is ignored); letting go closes the shape. Fanous keeps as few points as it can, with sharp turns as corners and smooth curves elsewhere |
 | **Image mask** | A still from the library: black hides, white shows, grey is partly visible, stretched over the whole output. A file changed in the library is picked up by itself; a missing one covers nothing (as an Add mask the slice is black) and the readiness list warns |
 
-<img src="images/warp-masks-list.png" width="1000" alt="The Mask form: the Slice list, the tools Polygon, Rectangle, Ellipse and Freehand, the Image mask list, the mask list with Mask 1 (Add, 5 points) and Mask 2 (Subtract, 4 points, feather 4), each with Invert, Feather px, Redraw and Remove, and the point tools Add points, Smooth point and Remove point">
+<img src="images/warp-masks-list.png" width="1039" alt="The Mask form: the Slice list, the tools Polygon, Rectangle, Ellipse and Freehand, the Image mask list, the mask list with Mask 1 (Add, 5 points) and Mask 2 (Subtract, 4 points, feather 4), each with Invert, Feather px, Redraw and Remove, and the point tools Add points, Smooth point and Remove point">
 
 The mask list shows every mask of the slice: its number (tap it to select
 its first point), **Add** or **Subtract**, its points or image, **Invert**
@@ -191,7 +191,7 @@ and **Remove**. Drawn masks also have **Feather px** and **Redraw** (draw
 the shape again with any tool, keeping its mode and feather); an image mask
 has neither. A Subtract mask has a dashed outline and hollow points.
 
-<img src="images/warp-image-mask.png" width="1000" alt="The mask list with an image mask: Mask 1, Add, Folder 1 · Opening / 3 · 003_welcome.png, with Invert and Remove">
+<img src="images/warp-image-mask.png" width="1006" alt="The mask list with an image mask: Mask 1, Add, Folder 1 · Opening / 3 · 003_welcome.png, with Invert and Remove">
 
 Editing the points of a drawn mask:
 
@@ -360,7 +360,7 @@ preset like any mapping.
 
 <img src="images/outputs-badges.png" width="341" alt="The output list with badges: Projector R with Keystone active, LED wall with Preset 1 (console)">
 
-<img src="images/warp-preset-note.png" width="1000" alt="Warp & Slices while the console shows Preset 1: the badges Preset 1 (console) and Overlay hidden: a preset shows, and the yellow line 'The output shows Preset 1. Edits go to its own mapping, shown here, and on the output again at channel 6 = 0.'">
+<img src="images/warp-preset-note.png" width="1040" alt="Warp & Slices while the console shows Preset 1: the badges Preset 1 (console) and Overlay hidden: a preset shows, and the yellow line 'The output shows Preset 1. Edits go to its own mapping, shown here, and on the output again at channel 6 = 0.'">
 
 When the console signal drops, the output follows the universe's **Hold on
 signal loss** ([console-setup.md](console-setup.md#when-the-console-goes-silent)):
@@ -368,7 +368,7 @@ signal loss** ([console-setup.md](console-setup.md#when-the-console-goes-silent)
 | Hold on signal loss | The output |
 |---|---|
 | **Hold last values** | Keeps the preset; a running glide finishes |
-| **Go to zero** | The whole Output fixture goes to 0, intensity included: the output goes black, and the preset and fade fall to 0 as well. Keystone fixtures centre instead |
+| **Go to zero** | The whole Output fixture goes to 0, intensity included: the output goes black, and the preset and fade fall to 0 as well, under Who controls Console only or latest change wins; under highest value wins a UI or cue intensity above 0 still shows. Keystone fixtures centre instead |
 | **UI and cues take over** | Shows the preset and fade that the UI or a cue set for channels 6 and 7, otherwise the edited mapping |
 
 When the signal comes back, and on the first packet after the engine
@@ -384,14 +384,14 @@ the alignment made here, for moving scenery or a quick fix from front of
 house; it is not the projector's own keystone setting.
 
 - Patch one per output, next to its Output fixture: Keystone 1 belongs to
-  Output 1 (outputs 1 to 8). The Patch screen lists a Keystone row under
+  Output 1 (outputs 1 to 8). The Patch screen shows a Keystone chip under
   every Output row; it is not in the standard patch, so set its address
   when you want it.
 - The channels: top-left X and Y, top-right, bottom-right, bottom-left,
   each 16-bit (coarse, then fine), from −50 % to +50 % of the output's
   width or height; + moves right or down.
-- **A Keystone built by hand on the console must default to 32768 on each
-  pair**: a fader at 50 %, or coarse 128 and fine 0 on an 8-bit console.
+- A Keystone built by hand on the console must default to 32768 on each
+  pair: a fader at 50 %, or coarse 128 and fine 0 on an 8-bit console.
   That is "no change", so a centred or unpatched Keystone leaves the output
   as aligned. At 0 every corner sits at −50 % and the picture moves half an
   output up and left. A universe set to **Go to zero** on signal loss
