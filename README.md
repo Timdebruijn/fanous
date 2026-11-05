@@ -7,7 +7,7 @@ A free, open-source media server for Apple Silicon Macs, driven by your lighting
 No dongle, no licence server, no account.</p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="License: GPL-3.0-only" src="https://img.shields.io/badge/license-GPL--3.0--only-blue"></a>
+  <a href="LICENSE"><img alt="Licence: GPL-3.0-only" src="https://img.shields.io/badge/license-GPL--3.0--only-blue"></a>
   <img alt="Platform: macOS 15+ on Apple Silicon" src="https://img.shields.io/badge/platform-macOS%2015%2B%20Apple%20Silicon-lightgrey">
   <img alt="Status: 1.0.0 release candidate" src="https://img.shields.io/badge/status-1.0.0--rc.4-orange">
   <a href="https://github.com/Timdebruijn/fanous/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Timdebruijn/fanous/actions/workflows/ci.yml/badge.svg"></a>
@@ -68,12 +68,12 @@ in the guide's [glossary](docs/user/reference/glossary.md).
 
 | | |
 |---|---|
-| **The engine outlives the UI** | It runs as a background service in your login. Quit or crash the app and the output keeps going; a crashed engine is back within about a second (10 s after a crash in its first 10 s) and resumes show mode; browsers log in again and no cue is current ([what comes back](docs/user/show-day-checklist.md#what-comes-back-after-the-engine-stops)) |
+| **The engine outlives the UI** | It runs as a background service in your login. Quit or crash the app and the output keeps going; a crashed engine is back at once (0.26 s measured; 10 s after a crash in its first 10 s) and resumes show mode if it was on; browsers log in again and no cue is current ([what comes back](docs/user/show-day-checklist.md#what-comes-back-after-the-engine-stops)) |
 | **Readiness list before doors** | 23 items: power, thermal, disk, memory, universes, outputs and display modes, permissions, sync, Spotlight, automatic updates, Time Machine, display sleep ([every item](docs/user/reference/readiness.md)) |
-| **Show mode** | The Mac stays awake, ingest pauses, every output with a Mode set goes to it, a canvas or library change is refused; it refuses to start while a readiness item fails |
+| **Show mode** | The Mac stays awake, ingest pauses, every output with a Mode set goes to it, a canvas or library change is refused; it refuses to start while a readiness item fails and is not acknowledged |
 | **Show lock** | One key (L): accidental edits are refused while GO, Back and the timecode keep running |
-| **Every screen in a browser** | The whole UI on an iPad or any computer on the network, with monitor, operator and programmer roles and passwords ([the user interface](docs/user/ui.md#roles-and-logging-in)). Keep the Mac on the show network: OSC and a few status endpoints take no password |
-| **Nothing to license on show day** | No dongle, no licence check, no cloud. Your spare Mac runs the same free software; the swap is by hand, there is no automatic failover |
+| **Every screen in a browser** | The whole UI on an iPad or any computer on the network, with monitor, operator and programmer roles and passwords ([the user interface](docs/user/ui.md#roles-and-logging-in)). Keep the Mac on the show network: OSC, a few read-only endpoints (live DMX values, patch) and the library rescan take no password ([known limitations](docs/user/reference/known-limitations.md#the-web-ui-and-security)) |
+| **Nothing to license on show day** | No dongle, no licence check, no cloud. Your spare Mac runs the same free software; Fanous has no failover feature, so a spare is a second install you switch to yourself |
 | **Made for a dark room in a hurry** | Atkinson Hyperlegible, 44 px touch targets, undo after a delete, plain wording |
 
 ## What you stop paying for
@@ -95,7 +95,7 @@ missed frame, no late frame, no layer without a picture, over the whole window.
 
 | Test | Result |
 |---|---|
-| 16 layers, 1080p60, ProRes 422 HQ or HAP Q, on the 120 Hz built-in display, 2 min | 0 missed, 0 late; GPU p99 10 ms (2026-10-26, idle Mac) |
+| 16 layers, 1080p60, ProRes 422 HQ or HAP Q, on the 120 Hz built-in display, 2 min | 0 missed, 0 late; GPU p99 10 ms (2026-10-26) |
 | 4K60 ProRes 422 HQ, on a 4K display | 4 layers pass; 7 showed late GPU frames (2026-11-03, other work running) |
 | 8-hour soak, 8 layers 1080p60, headless, `kill -9` every 2 h | 0 missed frames in about 1.7 million, 5 presented one refresh late; engine back in 0.26 s; memory 218 to 230 MB (2026-10-24) |
 | Art-Net in to pixel out, 2 layers, 60 fps canvas | p99 32 ms: two frames; the display's own scan-out not included (2026-10-23) |
@@ -180,7 +180,7 @@ with a "where to start" chart: [docs/user/README.md](docs/user/README.md).
   canvas rate to the display's refresh, and expect two projectors up to one refresh apart.
 - **Audio is one stereo mix** on the Mac's default output, at 100 % forward speed only.
 - **Apple Silicon only:** no Intel, Windows or Linux.
-- **4K60 is about 4 ProRes layers;** Blur and Edge on every layer fit 3 ProRes layers at 1080p60.
+- **4K60 is about 4 ProRes layers;** Blur and Edge on every layer fit 3 ProRes layers at 1080p60 (headless, measured before the Blur speed-up).
 - **No NDI, DeckLink or AJA in the open build.** No text layer, no MIDI output; 3D mapping comes
   later. In plain words: [known limitations](docs/user/reference/known-limitations.md);
   everything open: [`docs/BACKLOG.md`](docs/BACKLOG.md).
