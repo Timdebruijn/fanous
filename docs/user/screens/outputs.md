@@ -128,7 +128,7 @@ The wizard, the wall panel and the seam check, step by step:
 | **Intensity %** | 0–100, multiplied with the Output fixture's and the Master's intensity |
 | Yellow notes | The mode note; "This output uses the Mac's own display: the local UI shell will be hidden behind it." |
 | **Blend edges** | One card per edge (left, right, top, bottom) with a curve drawing, **Overlap (px)**, **Power** 0.1–10 (the steepness of the fade; the wall panel calls it Curve), **Gamma** 0.5–5 (the projector's gamma, so the two ramps add up evenly), or the read-only "Gamma R · G · B" with **One gamma for R, G, B**, and a **manual** badge with **Back to wall** on a wall member; then **Black lift (%)** 0–50 and **Lift feather px** |
-| **Test pattern** | Off, Grid, Colour bars, Blend check, Output ID, Crosshair, Grey steps (0–100 % in 10 % steps above, 0–10 % in 1 % steps below), Checkerboard, Grey 0 %, Grey 25 %, Grey 75 %, White (flat fields at that signal level: 25 % is code 64 of 255, 75 % is 191). The Output fixture's and the Master's Test pattern channels override the buttons; the Output fixture's Blend channel at 128 or more shows the output **Raw**, without blend, black lift, warp and keystone |
+| **Test pattern** | Off, Grid, Colour bars, Blend check, Output ID, Crosshair, Grey steps (0–100 % in 10 % steps above, 0–10 % in 1 % steps below), Checkerboard, Grey 0 %, Grey 25 %, Grey 75 %, White (flat fields at that signal level: 25 % is code 64 of 255, 75 % is 191). The Output fixture's and the Master's Test pattern channels override the buttons; the Output fixture's Blend channel at 128 or more shows the output **Raw**: the output without blend, black lift, masks, warp and keystone, for alignment |
 | **Colour** | **Gain R / G / B** 0–200 % (steps of 0.5), **Black offset** 0–20 % (steps of 0.1), each a slider with − and + |
 
 <img src="../images/outputs-colour.png" width="1006" alt="The Colour controls: Gain R, Gain G, Gain B and Black offset as sliders with − and +">
@@ -187,7 +187,7 @@ spread over the slices, left to right.") with Undo.
 |---|---|
 | **Store as N** / **Replace N** | Stores the warp and the slices with their masks under the number in the field (1–255, the lowest free one filled in) |
 | **Preset** list, **Name**, **Recall**, **Remove** | Appear once the output (or every output of the wall) has a preset. Recall copies the preset's warp, slices and masks into the mapping you edit (Undo takes it back); blend, colour and black lift are not in a preset and stay as they are |
-| **Hold to compare** | Shows the preset on the output while you hold the button (not in show mode, refused while the show is locked). Only on outputs 1 to 8: on output 9 and up the button is absent |
+| **Hold to compare** | Shows the preset on the output while you hold the button; greyed with "Compare is off in show mode", the lock reason, or "Compare reaches outputs 1–8" on output 9 and up |
 
 The console shows a preset with Output channel 6; channel 7 sets the glide
 time ([outputs-and-mapping.md](../outputs-and-mapping.md#mapping-presets)).

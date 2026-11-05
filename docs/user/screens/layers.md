@@ -40,7 +40,7 @@ the panel moves under the list; below 600 px the channel list starts folded.
 | Control | Shows | Select |
 |---|---|---|
 | **Master** | Intensity (multiplies every output), Speed, Control (Normal, Freeze all, Blackout), Test pattern | puts the Master in the panel: Intensity and Speed can be set from the UI |
-| **Output n** | a dot (always green: decoration, not the output's state; that is in the status bar and under System › Machine), Intensity, Control (Normal, Blackout, Freeze), Test pattern, Blend (**On**, or **Raw** when the console holds the Blend channel at 128 or more: the output without blend, warp and keystone, for alignment; set it back to On for the show) | puts the output in the panel: Intensity and Test pattern can be set from the UI |
+| **Output n** | a dot (always green: decoration, not the output's state; that is in the status bar and under System › Machine), Intensity, Control (Normal, Blackout, Freeze), Test pattern, Blend (**On**, or **Raw** when the console holds the Blend channel at 128 or more: the output without blend, black lift, masks, warp and keystone, for alignment; set it back to On for the show) | puts the output in the panel: Intensity and Test pattern can be set from the UI |
 
 The values are what the engine applies: from the console, or from the UI, a
 cue, OSC or MIDI according to Who controls. **Selected** marks the strip in
@@ -72,6 +72,9 @@ Master or Output fixture at Blackout or 0 (the strips), the output not bound
 
 ## Preview
 
+Shown only while the engine renders an output; otherwise the switch and the
+picture are absent.
+
 | Control | Does |
 |---|---|
 | **Canvas** (one button per canvas when there are several) | The whole canvas, as the outputs show it before their slices, blend and warp |
@@ -100,9 +103,9 @@ with the output: judge motion, banding and colour on an output.
 | Patch line | `artnet:0.0.1 · ch 145–208 · 64 ch`, or "no address" |
 | Library line | `Folder 3 · Intro / 12 · loop.mov`: the names behind the numbers the layer plays |
 | Note | "UI control" or "MIDI control" while such values are set; "· console active, releases in 7:42" with **Keep** while they hide a live console value. At 0:00 the UI and MIDI values are dropped and the console's values show again; **Keep** restarts the 10 minutes (programmer; refused while the show is locked) |
-| Release bar (Control on) | "Console and this screen both control these values; whoever moved last wins." and **Release**, which hands the layer back to the console (programmer; greyed when no UI or MIDI value is set, and while the show is locked) |
+| Release bar (Control on) | "Console and this screen both control these values; whoever moved last wins." and **Release**, which hands the layer back to the console (programmer; greyed when no UI or MIDI value is set, and greyed in the UI while the show is locked, although the engine's release command itself is not refused by the lock) |
 | Yellow note (Control on) | Who controls is **Console only**, so values set here are kept but not shown; **Use Console and Fanous, latest change wins** changes it (programmer) |
-| **Media from the library** (Control on, layers) | Every library file that is not invalid or unreadable, as `Folder 3 · Intro / 12 · loop.mov`; puts folder and file on the layer and intensity to full when it was 0. "No media in the library yet" when the library is empty |
+| **Media from the library** (Control on, layers) | Every library file that is not invalid or unreadable, as `Folder 3 · Intro / 12 · loop.mov`; puts folder and file on the layer and intensity to full when it was 0. "No media in the library yet (Media screen)" when the library is empty |
 | **Built-in content and live inputs (folder 0)** (Control on, layers) | The same for folder 0, grouped: built-in content, cameras and capture cards (1–20), displays (21–28), Syphon servers (150–169) |
 | Channel list | "Showing all 51 of 64 channels; 52–64 reserved" (a layer) or "N values" (Master, output); folds. The Master panel has Intensity and Speed; an output panel Intensity and Test pattern |
 | Channel row | The DMX channel (`3` or `1–2`), the parameter, its raw value and its meaning, and "· UI" or "· MIDI" when that source set it. A missing file shows the folder and file values in red |

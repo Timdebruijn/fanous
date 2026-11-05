@@ -29,7 +29,8 @@ stays as it was, and nothing is released when a later cue fires. The header
 caption reads "N cues · timecode off / locked / freewheel / lost". Go, Back, Go to, Go to this cue and the timecode switch are the
 operator's and work while the show is locked; everything else is the
 programmer's and is refused while the show is locked. Duplicate, Remove, Move
-up and Move down are greyed until a cue is selected. Below about 1100 px the
+up and Move down are greyed until a cue is selected, Move up on the first
+cue and Move down on the last. Below about 1100 px the
 right column with OSC and MIDI moves under the left one.
 
 ## Transport
@@ -97,7 +98,8 @@ Empty: "No cues yet. Add one, then give it values and a fade."
 
 Validation lines appear in red under a field: "A cue number is a number from
 0 up.", "Cue N already exists.", "A fade time is seconds, 0 or more.", "Use
-hh:mm:ss:ff@rate, for example 00:01:30:00@25", "Unknown rate …", "Hours go to
+hh:mm:ss:ff@rate, for example 00:01:30:00@25 (rates: 24, 25, 29.97df, 30)",
+"Unknown rate …", "Hours go to
 23, minutes and seconds to 59", "Frames go to 24 at 25 fps". "This cue
 changes nothing yet. Add a value for each parameter it should set." when the
 cue has no values. The engine's own refusals come as the yellow banner.

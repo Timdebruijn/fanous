@@ -143,8 +143,8 @@ up yet." What each setting does:
 | Part | Does |
 |---|---|
 | Universe switcher | One button per universe in the panel above |
-| Grid | 512 cells with the value as received from the console, in a scrolling box; a colour per fixture from a short palette (two fixtures can share a colour), red where fixtures collide, grey where free; the selected fixture is outlined and scrolled into view |
-| Pin bar | Tap a cell: the fixture, its channel inside the fixture, the parameter, the received value and what the engine applies ("17 → Loop rev"); "collision" with the owners; "free"; "No cell pinned". The two can differ: the grid is the DMX wire, the meaning is the value after Who controls (0 → 100 % when the UI holds the intensity). The fine byte of a 16-bit pair has no meaning of its own |
+| Grid | 512 cells with the DMX as received, merged across senders (zeros until the first packet), in a scrolling box; a colour per fixture from a short palette (two fixtures can share a colour), red where fixtures collide, grey where free; the selected fixture is outlined and scrolled into view |
+| Pin bar | Tap a cell: the fixture, its channel inside the fixture, the parameter, the received value and what the engine applies ("17 → Loop rev"); "collision" with the owners; "free"; "No cell pinned". The two can differ: the grid is the merged DMX, the meaning is the value after Who controls (0 → 100 % when the UI holds the intensity). The fine byte of a 16-bit pair has no meaning of its own |
 | Legend | One swatch per fixture, plus collision and free |
 
 Empty: "No universe is patched or heard yet. Patch a fixture to watch its

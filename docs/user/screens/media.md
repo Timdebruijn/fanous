@@ -106,5 +106,6 @@ remove it. The status bar shows the running job's progress too.
 
 Yellow banners with **Dismiss**: "Cannot load the library: …", "Cannot create
 the folder: …", "Rescan failed: …", "Cannot transcode …: …", "Could not cancel
-the job: …", "Could not remove the job: …", "The library root does not
-exist: …" (create a folder with New folder, or make the folder in Finder).
+the job: …", "Could not remove the job: …". A yellow banner without Dismiss,
+"The library root does not exist: …", stays until you create a folder with
+New folder or make the folder in Finder.

@@ -41,7 +41,7 @@ or capture card), **Screen recording** (when it has a display to number) and
 | Part | Does |
 |---|---|
 | Dot | Green: granted. Yellow: a layer shows an input of this kind without the permission (for the microphone: the timecode source is LTC without it). Grey: nothing of this kind is in use |
-| Word | **granted**, **not asked**, **denied** |
+| Word | **granted**, **not asked**, **denied**; rarely **restricted** (a profile forbids it) or **pending** (the prompt is open) |
 | **Authorize camera / screen / microphone** | Asks macOS (programmer; refused while the show is locked and in show mode, "Leave show mode first"). Screen recording opens System Settings › Privacy & Security › Screen & System Audio Recording: allow Fanous, then Engine › Restart Engine |
 | Notes | "Camera denied: allow Fanous under System Settings › Privacy & Security › Camera.", the same for the microphone, and "Screen recording: macOS asks again about once a month; before a show, check the readiness item Screen recording granted on the System screen." |
 
@@ -63,9 +63,11 @@ Empty texts say that a new camera or server appears with the lowest free
 number and keeps it, also across engine restarts, until you forget it here.
 
 **What a capture input delivers.** A camera or capture card is opened only
-while a layer shows it, at the canvas frame rate (or the nearest rate the
-device offers) and at the largest size that fits the canvas. 8-bit 2vuy,
-yuvs and 420v frames are taken as they are; anything else (MJPEG, 10-bit
+while a layer shows it, at the canvas frame rate or the nearest rate the
+device offers. A built-in or Continuity camera is asked for the largest size
+that fits the canvas; a UVC capture card or webcam delivers the size of its
+input. 8-bit 2vuy, yuvs and 420v frames (420f is read as 420v) are taken as
+they are; anything else (MJPEG, 10-bit
 v210) is decoded to 8-bit BGRA first. A display is captured as 8-bit BGRA in
 sRGB, without the pointer, without sound and without Fanous's own windows,
 at most at the canvas rate, and only when its picture changes.

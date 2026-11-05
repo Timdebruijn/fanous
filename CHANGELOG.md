@@ -12,8 +12,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Docs: one reference page per screen under `docs/user/screens/` (Layers, Media, Inputs, Outputs, Patch, Show,
   System): a numbered full-screen picture, every control with what it does and the role it needs, the status
-  words and the messages; 33 new pictures; the guide index links them per screen. New row B165 (sequence
-  transcode fixed at 25 fps) (PR #299).
+  words and the messages; 31 new pictures and `logs.png` retaken on rc.4; the guide index links them per screen, and
+  `ui.md` says Release is greyed under the show lock. New row B165 (sequence transcode fixed at 25 fps) (PR #299).
 
 - Docs: the user guide's foundation pages are rewritten for a lighting technician new to video: a glossary,
   a one-page how-it-works with a pipeline diagram, getting started as six illustrated steps with first-launch and

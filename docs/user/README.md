@@ -48,7 +48,7 @@ things up in the third.
 | | [multi-server.md](multi-server.md) | Several Macs, one picture: the Sync channel, a left/right setup, badges, sync settings, the camera check |
 | | [show-day-checklist.md](show-day-checklist.md) | A printable checklist for the day of the show, and every readiness item |
 | | [troubleshooting.md](troubleshooting.md) | Symptoms, causes, fixes, logs, restart, earlier versions and reset |
-| Look up | `screens/` | One page per screen with every control, status word and message: see [The seven screens](#the-seven-screens) |
+| Look up | [screens/](#the-seven-screens) | One page per screen with every control, status word and message: see The seven screens below |
 | | [channel-map.md](../channel-map.md) | Every DMX channel of the four fixtures with its default, bands and OSC key |
 | | [reference/files-and-ports.md](reference/files-and-ports.md) | Every file the engine writes, every port, the command line, service names |
 | | [reference/shortcuts.md](reference/shortcuts.md) | Keys and their touch equivalents |
