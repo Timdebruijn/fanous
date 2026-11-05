@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Web: a media tile shows its codec, size, alpha and audio as one quiet mono line ("ProRes 422 · 1080p30 · α")
+  instead of three outlined badges; only a state ("needs transcode", "invalid name") is still a badge. The cue
+  editor's value fade column is 128 px wide, so the "cue fade" placeholder is no longer clipped (PR #TBD).
 - Engine: a client that disconnects while streaming an upload no longer leaves a partial file in `_incoming`; the
   server removes it and logs the peer and the bytes received (PR #292).
 - Engine: two parallel uploads with the same name get their own files in `_incoming` (`clip.mov`, `clip-2.mov`):
