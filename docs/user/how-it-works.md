@@ -101,7 +101,7 @@ Three things the rule leaves out:
   once. Cue and OSC values never expire.
 - The setting applies to the whole project, not per layer. What a universe's
   fixtures do when the console goes silent is a setting of the universe:
-  [console-setup.md](console-setup.md#sources-and-merging).
+  [console-setup.md](console-setup.md#when-the-console-goes-silent).
 
 ## The project
 

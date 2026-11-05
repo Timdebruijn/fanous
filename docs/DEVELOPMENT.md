@@ -282,3 +282,36 @@ blending, so a rate that does not divide the canvas rate (24, 25 or 50p on a
 60 fps canvas) judders by its cadence, not by a fault. Every pattern moves a
 whole number of periods per loop, so a hitch at the loop point is the
 engine's.
+
+## sACN manual test (sACNView)
+
+The automated tests check multicast memberships in the kernel but cannot
+receive real multicast (that needs the Local Network permission). Run this
+with sACNView, or another sACN source, on a second machine, a console on a real
+network, and the System screen's readiness list open. Patch Layer 1 on `S 1`.
+
+- [ ] **Default route.** Mac and sACNView on the default-route network (Wi-Fi or
+      Ethernet with gateway), Interface "All interfaces": S 1 multicast turns the
+      status green and moves Layer 1.
+- [ ] **Named NIC.** A second NIC (USB Ethernet) to the console network, Interface
+      set to that NIC (`en7`): S 1 arrives; sACN sent on the other network is
+      ignored.
+- [ ] **Named NIC without a gateway.** Same NIC, no gateway on it, Interface back to "All
+      interfaces": S 1 still arrives (joined on every multicast interface).
+- [ ] **Unplug and replug.** Unplug the USB NIC: readiness warns "Universe
+      interfaces usable" for a named Interface; the status goes red once
+      Signal lost after has passed. Replug: packets return within 5 s without touching anything.
+- [ ] **Unicast.** sACNView unicast to the Mac's address on S 1: received, with
+      the sender shown in the status.
+- [ ] **sACNView receiving on the Mac.** Open a sACNView receive window for S 1 on
+      the same Mac: both show multicast; note that unicast now goes to sACNView
+      only.
+- [ ] **Port held.** Quit Fanous, run `nc -u -l 5568`, start the engine: it runs,
+      the log says "sACN port in use", readiness warns "sACN port 5568
+      available"; Art-Net still works. Quit nc, Engine › Restart Engine: sACN is
+      back.
+- [ ] **Load.** 32 universes at full rate for 10 minutes: no silent universe,
+      the DMX to photon p99 under System › Live metrics stays where it is with Art-Net.
+- [ ] **Priority takeover.** Two sources on S 1, priority 150 and 100, different
+      levels: 150 wins; stop it: the 100 source takes over after 2.5 s, also
+      with Signal lost after set to 10 s.

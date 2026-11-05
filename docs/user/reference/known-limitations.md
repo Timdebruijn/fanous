@@ -21,6 +21,8 @@ link here. Back to the [index](../README.md).
 | No NDI. grandMA3 and Eos have no CITP, so they get no thumbnails or preview of Fanous on the desk. | B74 |
 | Only GDTF: no grandMA2 XML, MagicQ head file, Avolites personality, Eos library request or Onyx fixture. Eos's GDTF import creates no media or model list. | B77 |
 | Fanous answers ArtPoll, but has no registered Art-Net OEM code yet. | B13 |
+| The ArtPollReply names the Mac's first network address, which on a Mac with Wi-Fi and a show adapter can be the wrong one, and carries no MAC address, so two Macs look like one node to a desk that keys on it. Enter the Mac's address on the desk by hand. | B166 |
+| Another program holding the Art-Net port 6454 is only reported in the engine log; the readiness list warns for the sACN port only. | B167 |
 | A loss of OSC messages sent back to back was seen once and never reproduced. If a controller's bursts seem partly lost, leave about 50 ms between messages and report it. | B30 |
 | Who controls applies to the whole project, not per layer. | — |
 

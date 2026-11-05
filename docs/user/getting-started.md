@@ -222,7 +222,7 @@ flowchart TD
   start["The console sends,<br>but nothing moves"] --> pill{"The universe's pill<br>in the status bar?"}
   pill -- "yellow · silent" --> none["Nothing has arrived on that universe. Patch screen › Universes:<br>a yellow row 'heard, nothing patched' names the universe the console<br>does send to, often one off (A 0.0.1 for A 0.0.0).<br>No such row: cable, subnet, console output enabled,<br>Local Network allowed, firewall UDP 6454 or 5568"]
   pill -- "yellow · seconds" --> gap["Packets stopped for a moment,<br>or this universe is heard but not patched"]
-  pill -- "red" --> quiet["The universe was heard and went quiet<br>longer than its Signal lost after time:<br>console output stopped, or the network dropped"]
+  pill -- "red" --> quiet["The universe was heard and went quiet<br>(after its Signal lost after time, at least 2.5 s):<br>console output stopped, or the network dropped"]
   pill -- green --> row{"Layer 1 row?"}
   row -- "no file 1 in folder 1" --> media["The number does not exist or the file is not playable:<br>Media screen, look for a red or yellow badge"]
   row -- "1 / 1 · 001_clip.mov, green, but 0 %" --> level["Intensity is channels 1 and 2, 16-bit:<br>the coarse channel must be up"]

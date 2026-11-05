@@ -69,7 +69,7 @@ a reference page with every control; the task pages say when to use them.
 | 2 | Media | The library: folders, files, built-in content and live inputs, import, transcode, the ingest queue | [screens/media.md](screens/media.md) | [media-library.md](media-library.md) |
 | 3 | Inputs | Cameras, capture cards, displays and Syphon servers with their signal, numbers and Forget; audio inputs and the LTC channel; the permissions they need | [screens/inputs.md](screens/inputs.md) | [media-library.md](media-library.md#the-inputs-screen-key-3) |
 | 4 | Outputs | Canvases, outputs, projector walls, blend, warp, slices, masks, presets | [screens/outputs.md](screens/outputs.md) | [outputs-and-mapping.md](outputs-and-mapping.md) |
-| 5 | Patch | Who controls, fixture groups and blocks, universes, DMX monitor, patch sheet, GDTF export | [screens/patch.md](screens/patch.md) | [console-setup.md](console-setup.md#the-patch-screen-key-5) |
+| 5 | Patch | Who controls, fixture groups and blocks, universes, DMX monitor, patch sheet, GDTF export | [screens/patch.md](screens/patch.md) | [console-setup.md](console-setup.md) |
 | 6 | Show | GO, timecode, cues, OSC, MIDI | [screens/show.md](screens/show.md) | [show-control.md](show-control.md) |
 | 7 | System | Show mode and readiness, live metrics, machine, library root, network, sync, project versions, roles, logs | [screens/system.md](screens/system.md) | [show-day-checklist.md](show-day-checklist.md), [troubleshooting.md](troubleshooting.md) |
 
