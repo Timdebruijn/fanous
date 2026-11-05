@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 600" width="1240" height="600" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14">
+  <title>From console to projector: the path a picture takes through Fanous, with the screen that controls each step</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#9aa3ad"/>
+    </marker>
+    <marker id="arrow-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6b737c"/>
+    </marker>
+  </defs>
+  <rect width="1240" height="600" fill="#16191d"/>
+
+  <g stroke="#4a515a" stroke-width="1.5" fill="#262a30">
+    <!-- sources -->
+    <rect x="30" y="60" width="220" height="72" rx="8"/>
+    <rect x="30" y="170" width="220" height="92" rx="8"/>
+    <rect x="30" y="320" width="220" height="72" rx="8"/>
+    <rect x="30" y="420" width="220" height="92" rx="8"/>
+    <!-- patch, who controls -->
+    <rect x="300" y="60" width="230" height="92" rx="8"/>
+    <rect x="300" y="190" width="230" height="72" rx="8"/>
+    <!-- layers, canvas, outputs -->
+    <rect x="590" y="120" width="190" height="130" rx="8"/>
+    <rect x="820" y="120" width="160" height="130" rx="8"/>
+    <rect x="1020" y="120" width="190" height="130" rx="8"/>
+    <!-- displays -->
+    <rect x="1020" y="330" width="190" height="92" rx="8"/>
+    <!-- feedback -->
+    <rect x="590" y="330" width="390" height="92" rx="8" stroke-dasharray="6 4"/>
+  </g>
+
+  <g fill="#e6e8eb" text-anchor="middle">
+    <text x="140" y="90" font-weight="600">Lighting console</text>
+    <text x="140" y="112" fill="#b4bac2">Art-Net or sACN</text>
+
+    <text x="140" y="200" font-weight="600">Without a console</text>
+    <text x="140" y="222" fill="#b4bac2">the UI, the cue list</text>
+    <text x="140" y="242" fill="#b4bac2">(timecode, follow), OSC, MIDI</text>
+
+    <text x="140" y="350" font-weight="600">Media library</text>
+    <text x="140" y="372" fill="#b4bac2">folders 1–255, files 1–255</text>
+
+    <text x="140" y="450" font-weight="600">Folder 0</text>
+    <text x="140" y="472" fill="#b4bac2">built-in content, cameras,</text>
+    <text x="140" y="492" fill="#b4bac2">displays, Syphon</text>
+
+    <text x="415" y="90" font-weight="600">Patch</text>
+    <text x="415" y="112" fill="#b4bac2">Layer fixtures (64 ch),</text>
+    <text x="415" y="132" fill="#b4bac2">Master, Output, Keystone</text>
+
+    <text x="415" y="220" font-weight="600">Who controls</text>
+    <text x="415" y="242" fill="#b4bac2">console, Fanous, or both</text>
+
+    <text x="685" y="150" font-weight="600">Layers</text>
+    <text x="685" y="172" fill="#b4bac2">8 in a new project, up to 32</text>
+    <text x="685" y="194" fill="#b4bac2">media, position, scale, colour,</text>
+    <text x="685" y="214" fill="#b4bac2">effects, intensity, play mode,</text>
+    <text x="685" y="234" fill="#b4bac2">dissolve</text>
+
+    <text x="900" y="150" font-weight="600">Canvas</text>
+    <text x="900" y="172" fill="#b4bac2">the picture the layers</text>
+    <text x="900" y="192" fill="#b4bac2">are drawn into</text>
+    <text x="900" y="214" fill="#b4bac2">1920 × 1080 @ 60 to start,</text>
+    <text x="900" y="234" fill="#b4bac2">up to four canvases</text>
+
+    <text x="1115" y="150" font-weight="600">Outputs</text>
+    <text x="1115" y="172" fill="#b4bac2">slices, blend edges,</text>
+    <text x="1115" y="192" fill="#b4bac2">warp, masks, colour,</text>
+    <text x="1115" y="212" fill="#b4bac2">test patterns; Master and</text>
+    <text x="1115" y="232" fill="#b4bac2">Output fixtures act here</text>
+
+    <text x="1115" y="360" font-weight="600">Displays, projectors</text>
+    <text x="1115" y="382" fill="#b4bac2">one output per display</text>
+    <text x="1115" y="402" fill="#b4bac2">or region; engine clock</text>
+
+    <text x="785" y="356" font-weight="600">Fanous reports back</text>
+    <text x="785" y="378" fill="#b4bac2">preview of a canvas, a layer or an output in the UI</text>
+    <text x="785" y="398" fill="#b4bac2">CITP to the desk and Syphon to other apps: Canvas 1</text>
+  </g>
+
+  <!-- arrows -->
+  <g stroke="#9aa3ad" stroke-width="2" fill="none" marker-end="url(#arrow)">
+    <path d="M250,96 L298,96"/>
+    <path d="M415,152 L415,188"/>
+    <path d="M250,216 L298,216"/>
+    <path d="M530,226 L588,200"/>
+    <path d="M250,356 L588,215"/>
+    <path d="M250,466 L588,230"/>
+    <path d="M780,185 L818,185"/>
+    <path d="M980,185 L1018,185"/>
+    <path d="M1115,250 L1115,328"/>
+    <!-- Master and Output fixtures: patch to outputs -->
+    <path d="M530,80 C 760,40 1000,40 1115,118"/>
+  </g>
+  <g stroke="#6b737c" stroke-width="2" fill="none" stroke-dasharray="6 4" marker-end="url(#arrow-dim)">
+    <path d="M900,250 L900,328"/>
+  </g>
+  <g fill="#b4bac2" font-size="12" text-anchor="middle">
+    <text x="820" y="52">Master and Output fixtures: intensity, blackout, freeze, test patterns, presets</text>
+  </g>
+
+  <!-- screen badges -->
+  <g font-size="12" font-weight="600" text-anchor="middle">
+    <rect x="300" y="38" width="70" height="20" rx="10" fill="#f5b301"/>
+    <text x="335" y="52" fill="#111">5 Patch</text>
+    <rect x="300" y="168" width="70" height="20" rx="10" fill="#f5b301"/>
+    <text x="335" y="182" fill="#111">5 Patch</text>
+    <rect x="30" y="148" width="130" height="20" rx="10" fill="#f5b301"/>
+    <text x="95" y="162" fill="#111">1 Layers · 6 Show</text>
+    <rect x="30" y="298" width="70" height="20" rx="10" fill="#f5b301"/>
+    <text x="65" y="312" fill="#111">2 Media</text>
+    <rect x="30" y="398" width="130" height="20" rx="10" fill="#f5b301"/>
+    <text x="95" y="412" fill="#111">2 Media · 3 Inputs</text>
+    <rect x="590" y="98" width="70" height="20" rx="10" fill="#f5b301"/>
+    <text x="625" y="112" fill="#111">1 Layers</text>
+    <rect x="820" y="98" width="80" height="20" rx="10" fill="#f5b301"/>
+    <text x="860" y="112" fill="#111">4 Outputs</text>
+    <rect x="1020" y="98" width="80" height="20" rx="10" fill="#f5b301"/>
+    <text x="1060" y="112" fill="#111">4 Outputs</text>
+    <rect x="1020" y="308" width="80" height="20" rx="10" fill="#f5b301"/>
+    <text x="1060" y="322" fill="#111">4 Outputs</text>
+  </g>
+
+  <g fill="#b4bac2" font-size="14">
+    <text x="30" y="555">The yellow badges name the screen (and its key) where each step is set up.</text>
+    <text x="30" y="577">Screen 7, System, watches the whole machine: show mode, readiness, versions, network, logs.</text>
+  </g>
+</svg>

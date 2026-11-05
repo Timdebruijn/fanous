@@ -94,7 +94,7 @@ side with a soft-edge blend in the middle, one console.
 Both Macs need the same sync port (8002 unless you changed it) and must be on
 the same network segment for broadcast to reach them. If a firewall runs on
 the Macs, allow `fanousd` UDP 8002 in and out
-([getting-started.md](getting-started.md#firewall)).
+([reference/files-and-ports.md](reference/files-and-ports.md#ports)).
 
 ## Three ways to split a picture
 
