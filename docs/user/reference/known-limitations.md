@@ -48,6 +48,8 @@ link here. Back to the [index](../README.md).
 | A Rec.601 (SD) file played directly is read as Rec.709; transcoding it fixes the colours. A 601 camera is read as 709 too. | B21 |
 | Only `.mov`, `.mp4`, `.m4v`, `.avi`, `.mkv` and `.mxf` are listed; a `.webm`, `.mpg`, `.wmv` or other container is skipped without a message. | B161 |
 | An image sequence transcoded from the Media screen is always written at 25 frames per second; another rate needs the `fanousd ingest --fps` command. | B165 |
+| **Transcode** on a `.mov` that needs a transcode (an iPhone's H.264 `.mov`, a rotated ProRes file) fails with "source and destination are the same file"; use **Import…** for such a file instead. | B169 |
+| HAP refuses a source whose width or height is not a multiple of 4 (854 × 480, 1366 × 768): pick ProRes 422 HQ for it. | — |
 | A thumbnail of a packed 4:2:2 movie (v210, yuvs) may draw at half width. | B149 |
 | A UVC webcam (Logitech C920, Brio) may stay at its driver's default format, for example 640 × 480 on a larger canvas. Capture cards follow their input. | B131 |
 | Blackmagic DeckLink and AJA cards do not appear: they need their own SDK, which is planned for the Pro build. Windows of other apps (folder 0, files 29 to 32) are reserved but not available. | B73 |

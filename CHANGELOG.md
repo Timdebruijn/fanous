@@ -10,6 +10,15 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs: `media-library.md` rewritten around the questions a technician asks (what plays as it is, how a file gets in,
+  what a transcode changes, what a Mac can play) with three flowcharts; new `live-inputs.md` (numbers, permissions,
+  what a camera, capture card, display or Syphon server delivers, LTC input, show-day advice) with two flowcharts; new
+  `reference/built-in-content.md` with a picture of every folder-0 generator; 20 new pictures and `inputs.png`
+  retaken; links from the index, the glossary and the screen pages follow; the folder-0 section of
+  `show-control.md` stays until that page's own PR. New rows B169 (Transcode fails on a `.mov` source, measured),
+  B170 (the ingest queue shows the destination URL-encoded), B171 (the show lock does not cover library writes)
+  (PR #TBD).
+
 - Docs: `console-setup.md` rewritten as the console-side task page: the four fixtures with the channel facts a
   programmer trips on (non-zero defaults, Master speed, audio at 100 %, retrigger), the standard patch, telling the
   console (GDTF, Patch sheet, universe count) and Art-Net or sACN as flowcharts, universe settings, signal loss ×

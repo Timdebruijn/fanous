@@ -4,288 +4,310 @@
 
 # Media library
 
-The library is a folder on the Mac, `~/Movies/Fanous Library` unless you
-choose another one (see "Change the library root" below). The console
-picks media by number: channel 3 (Folder) and channel 4 (File) of a Layer. Show
-files store those numbers, never paths, so a library on another Mac works as
-long as the numbers match.
+Use this page to get a show's content into Fanous and onto a layer: how the
+library and its numbers work, which files play as they are, how a file gets
+in and what a transcode changes, the library on a second Mac, and what a Mac
+can play. Every control of the Media screen is in
+[screens/media.md](screens/media.md); cameras, displays and Syphon are in
+[live-inputs.md](live-inputs.md); the content Fanous draws itself is in
+[reference/built-in-content.md](reference/built-in-content.md). Terms are in
+the [glossary](reference/glossary.md).
 
-Use a folder on a local disk. Network volumes are not supported.
+Creating folders, importing and transcoding need the programmer role; the
+show lock does not stop them. Putting a file on a layer from the UI and
+changing the library root are refused while the show is locked.
 
-![The Media screen: the folder list on the left, the files of folder 1 as tiles, the ingest queue below](images/media.png)
+## The library and its numbers
 
-The Media screen (key 2) lists the folders on the left, with folder 0 for
-built-in content and live inputs first and the number of files after each name.
-The selected folder's files are tiles: the file number, a thumbnail, the
-duration (or "still"), the codec and size, and a **Layer N** badge for every
-layer that plays it. **Search files** filters the tiles by name. Select a tile
-to get **Play on layer**, which puts that file on a layer from here (with the
-same Who controls rules as the layer panel). The ingest queue is at the bottom.
-
-## Folder and file names
+The library is a folder on the Mac's own disk: `~/Movies/Fanous Library`
+unless you change it. The console picks media by two numbers, folder and
+file (Layer channels 3 and 4, sent as plain values, 1 to 255); the project
+and the cue list store those numbers, never paths or names, so a show runs
+on any Mac whose library has the same numbers.
 
 ```
 Fanous Library/
 ├── 001_Opening/
 │   ├── 001_intro_loop.mov
 │   ├── 002_title.png
-│   └── _originals/002_title.psd     ignored
+│   ├── 005_Flames/                 an image sequence: flames_0001.png, flames_0002.png, …
+│   └── _originals/002_title.psd    ignored
 ├── 012_Show/
 │   └── 004_intro_loop.mov
-└── _incoming/                       uploads on their way in
+└── _incoming/                      uploads on their way in
 ```
 
-- The folder number is the first one to three digits of the folder name; the
-  file number is the first one to three digits of the file name. Both must be
-  **1 to 255**. Anything that is not a digit may follow (`001_Name`, `12-Show`,
-  `7 intro.mov`). 0 means "none" on the console.
-- Folders and files whose names start with `_` or `.` are ignored. Files that
-  are not media are ignored.
-- These are **invalid** and can never be reached from DMX: no number prefix,
-  number 0 or above 255, four or more digits, and duplicates (when two
-  names carry the same number, the one that sorts first alphabetically keeps it).
+| Rule | Detail |
+|---|---|
+| The number | The first one to three digits of the folder or file name, 1 to 255. Anything may follow: `001_Name`, `12-Show`, `7 intro.mov` |
+| Invalid names | No digits in front, 0, above 255, four or more digits, or a duplicate number in the same folder (the name that sorts first keeps the number). Such items are listed with a red **invalid name** badge and the reason, and cannot be reached from the console: rename them in Finder. Every file in a folder with an invalid number is invalid with it |
+| Unreadable | A file macOS cannot open at all (a Matroska `.mkv`, a damaged file, a sub-folder that is no image sequence) shows a red **unreadable** badge with the reason and no Transcode button: convert it on another machine |
+| Ignored | Folders and files whose names start with `_` or `.`, and files that are not media |
+| Watched | A change in Finder shows up within a moment; **Rescan** on the Media screen forces it |
+| Folder 0 | Not on disk: built-in content and live inputs ([reference/built-in-content.md](reference/built-in-content.md)) |
 
-The Media screen (key 2) shows invalid items in red: a folder row gets an
-"N invalid" badge, a file tile gets an "invalid name" badge with the reason
-("no 1-255 prefix", "duplicate file number 4", "folder: duplicate folder number
-3"), and the header counts "N invalid names". An invalid folder has no number in
-the list. The library is watched, so a rename in Finder shows up after a moment;
-**Rescan** (the circular arrow) forces it.
+A layer that points at a number that does not exist, or at a file that is
+not playable, reads "no file N in folder M" in red on the Layers screen.
 
-A layer that points at a number that does not exist, or at a file that is not
-playable, shows the red message "no file N in folder M" on the Layers screen.
+![The Media screen: the folder list on the left, the files of folder 1 as tiles, the ingest queue below](images/media.png)
 
-The first row of the folder list, **0 · Built-in and live inputs**, is folder
-0: the content the engine draws itself, the cameras, capture cards and
-displays of this Mac and the Syphon servers of other apps, each with the file
-number a console dials (see
-[show-control.md](show-control.md#built-in-content-folder-0)).
-Select an item and use **Play on layer** to put it on a layer from here. For a
-camera, display or Syphon server, **Status on Inputs** opens it on the Inputs
-screen.
+## Build the library for a show
 
-![Folder 0 on the Media screen: built-in content with Layer badges, then cameras and capture cards](images/media-folder0.png)
+1. **Agree the numbers** with whoever programs the console: a list of folder
+   and file numbers per cue, before anything is copied. The numbers are what
+   the cues store.
+2. **Make the folders** on the Media screen with **New folder** (number and
+   name), or in Finder. The library folder opens in Finder with Go › Go to
+   Folder and `~/Movies/Fanous Library`.
+3. **Copy the files in with Finder**, each renamed with its number in front:
+   `003_logo.png`, `012_walk-in.mov`. An image sequence goes in as a
+   numbered folder of frames (below). The only files you upload with
+   **Import…** instead are the ones that need a transcode anyway and sit on
+   another computer.
+4. **Read the tiles** on the Media screen: no badge means the file plays;
+   yellow **needs transcode** means pick a codec and press **Transcode**;
+   red **invalid name** means rename it in Finder.
+5. **Test every file on a layer**: select the tile, **Play on layer**, and
+   look at the Layers screen (the row reads the file with a green dot). From
+   the console the same file is folder and file on channels 3 and 4, with
+   the fixture's home values loaded
+   ([console-setup.md](console-setup.md#channels-that-bite)). A cue that
+   sends the same folder and file again does not restart the clip; that is
+   Retrigger (channel 50). A change of file starts at the in point.
+6. **Before the show**: no yellow badges left (a layer on such a file stays
+   black, and the readiness list does not check for it), the library on the
+   internal disk with more than 10 % free, no transcode running.
 
-## The Inputs screen (key 3)
+| You have | Do |
+|---|---|
+| A `.mov` in ProRes or HAP from an editor or a media team | Copy it in with Finder; it plays as it is. Do not Import it: Import re-encodes it |
+| A phone `.mp4`, a web download, anything H.264 or HEVC | Copy it in, then **Transcode** on its tile; or **Import…** it from any computer |
+| An H.264 or HEVC `.mov` (an iPhone's own recording), or a rotated ProRes `.mov` | **Import…** it. **Transcode** on the tile fails for a `.mov` that needs a transcode ([known limitations](reference/known-limitations.md#media-and-inputs)) |
+| A still (PNG, JPEG, TIFF, HEIF, GIF, BMP, WebP, EXR) | Copy it in; it plays as it is |
+| A folder of numbered frames | Copy the folder in as `NNN_name/`; the frames inside need no numbers; then **Transcode** it (25 fps from the tile) |
+| A HAP file in another container than `.mov` | It cannot be transcoded (macOS cannot decode HAP): remux it to a `.mov` on another machine, then copy it in |
 
-The Inputs screen lists the live inputs of folder 0 by kind: **Cameras and
-capture cards (1–20)**, **Displays (21–28)** and **Syphon servers
-(150–169)**. A green dot means it runs; a yellow dot with "in use by another
-app" means another app has the camera open (an iPhone in FaceTime). A
-**Layer N** badge says which layers show it, and while a layer shows a camera
-or display the row says what arrives: size, rate and pixel format ("1920×1080 ·
-59.94 fps · 2vuy"), or "no signal". A Syphon server on a layer reads
-"connected" (Fanous reads no size or rate from it). Select an input for its details on the right: kind,
-model, status, the layers that show it, and its signal and frame counters
-(frames, dropped, out of buffers, unusable). An input is opened only while a
-layer shows it, so one that no layer shows reads "not open: no layer shows
-it": opening a camera just to look could take it from another app.
+## What plays as it is
 
-![The Inputs screen: permissions, then the live inputs by kind with the selected one on the right](images/inputs.png)
+Fanous plays two codec families directly, both **all-intra** (every frame
+stored whole, so the player can jump, scrub, reverse and chase timecode):
 
-A camera, capture card, display or Syphon server keeps its number, also across
-engine restarts, until you forget it: select one that is not running and press
-**Forget**. With more than one that is not running, **Forget all not
-running** above the Syphon list, or **Forget all not running (cameras and
-displays)** above the cameras (it frees both), does them all at once. Its
-number is then free for the next new one; **Undo** brings it back.
+| Plays as it is | Notes |
+|---|---|
+| **ProRes** 422 Proxy, LT, 422, 422 HQ, 4444, 4444 XQ, in a `.mov` | Decoded by the chip's ProRes engine, which is why the base M1 is not supported. A few very small frame sizes (64 × 48, 256 × 64) fall back to the software decoder, which the log notes. 4444 carries alpha |
+| **HAP**, HAP Alpha, HAP Q, HAP Q Alpha, HAP Alpha-only, HAP R, in a `.mov` | Unpacked on the CPU, read by the GPU as texture blocks; files several times the size of ProRes |
+| **Stills**: PNG, JPEG, TIFF, HEIF, GIF (first frame), BMP, WebP, EXR | Loaded once; 16-bit images become 8-bit |
 
-To give an input another number, type it under **Number** in the panel and
-press **Apply**: a free number moves the input there, a taken one swaps the
-two. Layers and consoles select by number, so a layer or cue on that number
-shows the other input from then on: put the stage-left camera on 1 and a cue
-on 1 means that camera, whatever order the cameras were plugged in. A camera
-or capture card stays within 1–20, a display within 21–28, a Syphon server
-within 150–169. **Undo** takes it back. Not in show mode and not while the
-show is locked. Two Syphon servers with the same app and name (two Fanous
-canvases) keep their numbers, as Fanous cannot tell them apart; the other
-servers can still be renumbered.
+Everything else shows a yellow **needs transcode** badge and cannot be put
+on a layer until it is transcoded: H.264, HEVC and every other codec, also
+in a `.mov`; a ProRes or HAP file in another container (`.mp4`, `.m4v`,
+`.avi`, `.mkv`, `.mxf`); phone footage with a rotation flag; and image
+sequences. Long-GOP codecs such as H.264 are refused on purpose: they cannot
+scrub, run in reverse or chase timecode reliably. A file with a container
+Fanous does not list (`.webm`, `.mpg`, `.wmv`) is not listed at all: convert
+it on another machine.
 
-**Permissions** at the top of the screen list the camera and screen recording
-permissions while this Mac has a camera or a display to number. A dot is
-yellow while a layer shows an input that lacks its permission, grey while none
-does.
+<img src="images/media-needs-transcode.png" width="217" alt="A tile with the yellow needs transcode badge, the line H.264 · 720p25, the codec list reading HAP Q and the Transcode button">
 
-**Cameras and capture cards (1–20)** need the camera permission: press
-**Authorize camera** under Permissions (not in show mode). If you denied it
-once, allow Fanous under System Settings › Privacy & Security › Camera.
+```mermaid
+flowchart TD
+  file["A file in a numbered folder"] --> name{"Name starts with 1–255,<br>no duplicate?"}
+  name -- no --> invalid["Red: invalid name. Rename it in Finder"]
+  name -- yes --> kind{"What is it?"}
+  kind -- "a still" --> still["Plays as it is"]
+  kind -- "a .mov in ProRes or HAP, not rotated" --> native["Plays as it is"]
+  kind -- "a folder of frames" --> seq["Yellow: needs transcode.<br>Pick a codec, press Transcode"]
+  kind -- "any other movie" --> other{"Container .mov, .mp4, .m4v,<br>.avi, .mkv or .mxf?"}
+  other -- no --> skipped["Not listed: convert it on another machine"]
+  other -- yes --> mov{"Is it a .mov?"}
+  mov -- yes --> importit["Yellow, but Transcode fails on a .mov:<br>Import… it instead"]
+  mov -- no --> hap{"HAP inside?"}
+  hap -- yes --> haphand["Cannot be transcoded: remux it<br>to a .mov on another machine"]
+  hap -- no --> transcode["Yellow: needs transcode.<br>Pick a codec, press Transcode"]
+```
 
-**Displays (21–28)** are whole displays of this Mac: what the display shows,
-without the mouse pointer and without sound, at most at the canvas rate. A
-display larger than the canvas is scaled down to fit it (aspect kept); colours
-come through as the display shows them. A display never reads "no signal", and
-the rate on the Layers screen is the rate of changed frames: macOS sends a
-frame only when the picture changes. A display that Fanous uses as an output
-reads "not running" (one that was an output from the start gets no number):
-Fanous leaves its own windows out of a capture, so it would be black.
+**What to ask a content maker for.** ProRes 422 HQ in a `.mov`, ProRes 4444
+when it needs transparency, or HAP Q; the canvas size and frame rate
+(1920 × 1080 at 60 fps unless you change them on the Outputs screen's
+Canvases tab, [outputs-and-mapping.md](outputs-and-mapping.md#canvas-size-and-frame-rate));
+square pixels; Rec.709; 8-bit. Audio as stereo.
 
-The first time, displays need the Screen permission: press **Authorize screen**
-under Permissions on the Inputs screen (not in show mode). macOS opens
-System Settings; allow Fanous under Privacy & Security › Screen & System
-Audio Recording, then choose Engine › **Restart Engine** (macOS applies the
-grant only to a new engine process; outputs go black for a moment). The row
-then says "granted".
+## Getting files in
 
-macOS asks again about once a month whether Fanous may keep recording
-the screen, with a dialog on the main display that nobody answers during an
-unattended show. Before a show, check the readiness item **Screen recording
-granted** on the System screen. For a show-critical slides feed, prefer a
-capture card: a second Mac's HDMI into a capture card needs no Screen
-permission and is not re-asked.
+| Way | When | What happens |
+|---|---|---|
+| **Copy in Finder** into the numbered folder, named `NNN_name.ext` | Anything that plays as it is, and anything you will transcode on the Mac | It is listed within a moment and plays as soon as the engine has probed it |
+| **Import…** on the Media screen (programmer) | A file that needs a transcode and sits on another computer, and an H.264 `.mov` | The file is uploaded to `_incoming/`, re-encoded and placed in the folder with the lowest free number (a gap is filled first) and the name `NNN_<original name without its leading digits>`; the temporary copy is removed. Check the number it got when a cue depends on it |
 
-**Audio inputs** are listed under the video inputs: every audio interface and
-microphone of this Mac with its number of input channels; "default" marks the
-system's default input. They have no folder 0 number: a layer does not show
-them. One is used for LTC timecode: its row says "Timecode (LTC, channel N)".
-Select an input, pick a channel and press **Use for timecode** to read LTC
-from it; the panel then shows the timecode state, the time, the rate and a
-level meter of that channel (see
-[show-control.md](show-control.md#timecode)). While timecode is on LTC,
-Permissions also lists **Microphone (LTC)**, which LTC needs.
+Import re-encodes **every** movie, ProRes included, to ProRes 422 HQ (ProRes
+4444 when the source has alpha), so a playable ProRes file gains a
+generation of loss and a bigger file: copy it in instead. A still is copied
+as it is. One file uploads at a time; the list under the toolbar shows each
+as waiting, uploading, queued or failed. A HAP file cannot be imported (macOS
+cannot decode it).
 
-## Create a folder
+<img src="images/media-playbar-transcode.png" width="1130" alt="The selected-file bar for a file that needs a transcode: 1 · 001_phone.mp4 and the caption Transcode this file first to play it">
 
-On the Media screen press **New folder**, type a number (the first free one is
-filled in; 1 to 255) and a name, then **Create**. The engine makes
-`NNN_name` under the library root (and the root itself if it is missing). You can
-also make folders in Finder. Creating folders is for the programmer role. If the
-screen says "The library root does not exist", create a folder this way or make
-`~/Movies/Fanous Library` yourself.
+## Transcoding
+
+On a **needs transcode** tile pick the codec and press **Transcode**; the
+button reads "Queued" while the job waits. The result is `NNN_name.mov`
+with the same number, and the original moves to `_originals/` in the folder.
+
+| Codec | Pick it for |
+|---|---|
+| **HAP Q** (the default) | Most clips: light to play, good quality, large files. Every HAP needs a width and height that are multiples of 4 (854 × 480 and 1366 × 768 are refused): pick ProRes for those |
+| **HAP** | Lighter still, lower quality |
+| **HAP Alpha** | A clip with transparency, HAP-style |
+| **ProRes 422 HQ** | Most clips when disk space matters more than CPU, and any size; what Import uses |
+| **ProRes 4444** | A clip with transparency at full quality |
+
+A movie with alpha is promoted to ProRes 4444 or HAP Alpha whatever you
+pick; HAP Q Alpha cannot be written. For ten phone clips at 1080p either HAP
+Q or ProRes 422 HQ is fine; audio survives in both.
+
+<img src="images/media-ingest-running.png" width="1396" alt="The ingest queue with one job: 001_phone.mp4 to 004_Extras/001_phone.mov, HAP Q, transcoding 14 %, a progress bar and Cancel">
+
+```mermaid
+flowchart LR
+  src["Import… or Transcode"] --> q["Ingest queue: one job at a time,<br>low priority, yields to the show"]
+  q --> show{"Show mode on?"}
+  show -- yes --> paused["Paused until show mode ends"] --> q
+  show -- no --> run["transcoding N %"]
+  run --> done["done: NNN_name.mov in the folder,<br>the original in _originals/"]
+  run --> failed["failed, with the reason: Remove it,<br>fix the cause and press Transcode again"]
+  run --> cancelled["cancelled: press Transcode again when wanted"]
+  done --> gone["Leaves the list a minute later"]
+  cancelled --> gone
+```
+
+A transcode takes about as long as the clip is long, more for 4K. The queue
+survives an engine restart; a job that was running starts over. Jobs can be
+queued in show mode, but they wait until it ends. The status bar shows the
+running job's progress; do it before the show.
+
+<img src="images/media-folder-after-transcode.png" width="1130" alt="Folder 4 after the transcode: the tile reads phone.mov, HAP Q · 720p25, with no badge">
+
+### What a transcode or import changes
+
+| Source | Result |
+|---|---|
+| Phone footage with a rotation flag (portrait) | Upright: the quarter turn or flip is applied to the pixels exactly, width and height swap, alpha and pixel aspect come along |
+| A rotation that is not a quarter turn or flip | Rendered through a composition, which loses alpha and writes the display size with square pixels |
+| Anamorphic (non-square pixels, 1440 × 1080 shown as 16:9) | The pixel aspect ratio is kept; the layer draws the file at its display width and the tile shows that width (`1920×1080p25`) |
+| Variable frame rate (a screen recording, some phone footage) | Written at a constant rate, the source's fastest frame interval up to 60 fps; one short frame in the source can double the output rate. A constant-rate source keeps its rate, also above 60 |
+| Rec.601 colour (SD, some cameras) | Converted to Rec.709, which is what Fanous plays; a 601 file played without a transcode is taken as 709 and looks slightly off |
+| 10-bit ProRes | Kept at full precision in ProRes; HAP is 8-bit |
+| Audio | Kept as in the source (sample rate, channels, layout) |
+| An image sequence | A movie in the codec you pick (HAP Q by default, no alpha promotion: pick ProRes 4444 or HAP Alpha for transparency), at 25 fps |
+
+## Image sequences
+
+Put a folder of images inside a numbered folder and number the folder like a
+file: `001_Opening/005_Flames/` with `flames_0001.png`, `flames_0002.png`, …
+The frames themselves need no numbers; at least two, all the same size,
+played in name order. The tile reads "N frames" and **needs transcode**.
+From the tile the movie is written at 25 fps; another rate needs the
+engine's command line on the Mac:
+
+```bash
+/Applications/Fanous.app/Contents/MacOS/fanousd ingest ~/Movies/Fanous\ Library/001_Opening/005_Flames ~/Movies/Fanous\ Library/001_Opening/005_flames.mov --fps 30 --codec prores4444
+```
+
+Then move the frame folder out of the library (or into `_originals/`), so
+the number is not a duplicate.
+
+## Thumbnails and probing
+
+The engine reads each new file once (codec, size, frame rate, duration,
+alpha, audio), makes a thumbnail (a movie's middle frame, 320 pixels wide; a
+still's longest side at 320; a sequence's first frame) and caches both under
+`~/Library/Application Support/Fanous/cache/`. A tile reads "probing…" until
+then, and a layer pointing at the file shows "no file" until the probe is
+done. The same thumbnails go to a console over CITP and stand in on the
+Layers screen for a layer that shows nothing. A file that changes, moves or
+is renamed is probed again.
+
+## Audio
+
+A movie's audio plays on the Mac's default output device in one stereo mix
+with every other layer: no device choice, no routing. Per layer, the Audio
+volume channel (48, 0 by default, so a clip is silent until the console or a
+cue raises it) and Audio pan (49) apply, and a dissolve crossfades the sound
+with the picture; the layer's intensity does not change the volume. A file
+with more than two channels and a known layout (5.1, 7.1) is folded to stereo
+by Apple's matrix for that layout; a file with a discrete or unknown layout
+plays its first two channels. There is no limiter: a loud fold-down can clip
+at the device. A layer has sound only while it plays forward at 100 % (layer
+speed × Master speed, within half a percent); Freeze, Scrub, Timecode and the
+reverse half of Bounce are silent, so sound never follows chased timecode
+([console-setup.md](console-setup.md#channels-that-bite)).
+
+## The library on a second Mac
+
+Copy the folders so every file the show uses has the same folder and file
+number on both Macs; the names after the number may differ. The project does
+not carry the media. For two Macs that play in step see
+[multi-server.md](multi-server.md).
 
 ## Change the library root
 
-On the System screen (Machine › Library) type the path of another folder and
-press **Apply**. `~` stands for your home folder. The change takes effect at
-once: the engine stops watching the old folder, indexes the new one and every
-layer looks up its folder and file number again in the new library. A layer
-whose number does not exist there shows "no file N in folder M"; the outputs
-keep running. A file the engine has not seen before shows that message until it
-has been probed (a moment per file), then it plays. While the switch runs (the
-scan of a large library can take a few seconds), entering show mode and adding
-ingest jobs are refused; try again a moment later. Metadata and thumbnails are cached per file, so switching back to
-a library that was used before needs no new probing.
+System › Machine › Library: type the path of another folder (`~` stands for
+your home folder) and press **Apply**. The engine stops watching the old
+folder, indexes the new one, and every layer looks its numbers up there at
+once; a number that does not exist there reads "no file N in folder M", and
+the outputs keep running. Metadata and thumbnails are cached per file, so a
+library used before needs no new probing.
 
-- The folder must already exist and be readable; the engine does not create it
-  or any numbered folders in it. Make it in Finder first, then create numbered
-  folders with **New folder** on the Media screen.
-- The change is refused in show mode, under show lock, and while ingest jobs
-  are queued or running (they write into the old library): let them finish or
-  cancel them first.
-- Changing the root is for the programmer role. The monitor role never sees the
-  path.
-- Undo and redo work on the root like on any other setting.
+```mermaid
+flowchart TD
+  apply["Apply a new library root"] --> exists{"Does the folder exist<br>and can the engine read it?"}
+  exists -- no --> make["Make it in Finder first: Apply needs an existing folder<br>(New folder on the Media screen creates the root only for the current library)"]
+  exists -- yes --> busy{"Show mode on, show locked,<br>or ingest jobs queued or running?"}
+  busy -- yes --> refused["Refused: leave show mode, unlock, let the jobs finish or cancel them"]
+  busy -- no --> switch["Switched at once; a large library scans for a few seconds,<br>during which show mode and new ingest jobs are refused"]
+  switch --> check["Layers screen: every layer finds its number, or reads no file N in folder M"]
+```
 
-## Formats
+Undo and redo work on the root like on any other setting. The monitor role
+does not see the path.
 
-| Plays directly ("native") | Notes |
+## What a Mac can play
+
+All numbers are from the reference MacBook Pro M1 Pro (32 GB), release
+build. "Headless" is the engine's own clock with no display; "display" is a
+real output. Pass means no missed or late frame and no texture miss in a
+20 s window. The 2026-10-23 runs were idle (macOS 27.0.1); the 2026-11-03
+runs were on a 4K display with other work on the Mac (load 5 to 24, macOS
+27.2), so they say what a busy Mac manages, not a show Mac.
+
+| Content | Result |
 |---|---|
-| ProRes 422 Proxy, LT, 422, 422 HQ; ProRes 4444 and 4444 XQ (alpha) | in a `.mov`; decoded by the Mac's ProRes engine |
-| HAP, HAP Alpha, HAP Q, HAP Q Alpha, HAP Alpha-only, HAP R | in a `.mov`; decoded on the CPU |
-| Stills: PNG, JPEG, TIFF, HEIF, GIF, BMP, WebP, EXR | loaded once; 16-bit images become 8-bit (B10); a GIF shows its first frame |
+| 16 layers of 1080p60 ProRes 422 HQ | Pass headless (GPU p99 3.9 ms); on the display one texture miss in 1212 frames (2026-10-23); pass under load on the 4K display (2026-11-03) |
+| 16 layers of 1080p60 HAP Q | Pass headless and on the display (2026-10-23) |
+| 16 layers of 4K30 ProRes 422 HQ | Pass headless (GPU p99 13.3 ms, 2026-10-23); no display run |
+| 4K60 ProRes 422 HQ | 6 layers headless, 7 with one texture miss (2026-10-23); 4 layers pass on the 4K display under load (2026-11-03). Treat 4 as the safe number |
+| 4K30 HAP Q | 16 layers headless with the default read-ahead of 8 frames (2026-10-23) |
+| 4K60 HAP Q | At least 4 layers headless (2026-10-23); 8 fail on GPU time under load (2026-11-03). HAP Q is not lighter than ProRes at 4K |
+| Blur and Edge on every layer at 1080p60 | 3 ProRes layers pass, 4 fail; 2 HAP Q layers pass, 3 fail (headless, 2026-10-23, before the blur change of 2026-11-03 that cut the cost of Blur alone by about half) |
+| A dissolve (Dissolve channel) | Uses a second decoder: counts as one more layer. 8 layers in permanent 2 s dissolves at 1080p60 pass (2026-10-23) |
 
-Everything else (H.264, HEVC, `.mp4`, `.avi`, `.mkv`, `.mxf` and other codecs)
-is listed with a **needs transcode** badge and cannot be played until it is
-transcoded. Long-GOP video is refused on purpose: it cannot scrub, run in
-reverse or chase timecode reliably. The hardware decoder refuses some small
-ProRes frame sizes (64x48 and 256x64, for example; no rule by width, height or
-area); such a file opens on the software decoder instead, and the log says
-"software ProRes decoder" (B5).
+Rules of thumb:
 
-Audio in a movie is played on the Mac's default output device, with the Layer's
-Audio volume and Audio pan channels (48 and 49). There is no device choice yet
-(B4).
-
-### Image sequences
-
-Put a **folder** of images inside a numbered folder and number it like a file
-(`001_Opening/005_Flames/` with `flames_0001.png`, `flames_0002.png`, ...). It
-needs at least two images of the same size; they play in name order. It is
-listed as "needs transcode" with a frame count. Transcode turns it into a
-movie; the Media screen uses 25 frames per second. Choose ProRes 4444 or HAP
-Alpha if the images have alpha.
-
-## Import from the browser
-
-Select a numbered folder, press **Import…** and pick one or more files. The
-upload is streamed to `_incoming/` and queued; the list under the toolbar shows
-each file as waiting, uploading, queued or failed; **Clear** empties the list
-when the uploads are done. Only the programmer role can import.
-
-- Every uploaded movie goes through the ingest queue and is re-encoded: ProRes
-  422 HQ, or ProRes 4444 if the source has alpha. Stills are copied.
-- The file gets the next free number in that folder and the name
-  `NNN_<original name without leading digits>`; the temporary copy in
-  `_incoming/` is deleted afterwards.
-- **HAP files cannot be imported or transcoded** (the macOS decoder cannot read
-  them; B20). Copy HAP files into the folder with Finder under the right name.
-- Phone footage with a rotation flag (portrait video) is imported upright: the
-  quarter turn or flip is applied to the pixels exactly (no resampling), a
-  quarter turn swaps width and height, and alpha and the pixel aspect ratio
-  come along. Only an odd transform (not a quarter turn or flip) is rendered by
-  a composition, which loses alpha and draws the display size with square
-  pixels.
-- Anamorphic sources (non-square pixels, such as 1440x1080 shown as 16:9) keep
-  their pixel aspect ratio: the file is tagged and the layer draws it at its
-  display width. The thumbnail has the display shape and the label shows the
-  shown size with the rate ("1920×1080p25"), as does the layer's media line on
-  the Layers screen; square-pixel movies keep "1080p25".
-- A variable-frame-rate source (a screen recording, some phone footage) is
-  written at a constant rate, its fastest rate up to 60 fps: each output frame
-  shows the source frame that was current at that moment, so the picture
-  keeps its timing against the audio. A constant-rate source comes out frame
-  for frame.
-
-## Transcode a file that is already in the library
-
-On a "needs transcode" tile choose the codec and press **Transcode** (the
-button says "Queued" while the job waits). The choices are HAP Q (the default),
-HAP, HAP Alpha, ProRes 422 HQ and ProRes 4444. The result is `NNN_name.mov` with
-the same number, and the original is moved to `_originals/` in that folder.
-Sources with alpha are promoted to ProRes 4444 or HAP Alpha; HAP Q Alpha cannot
-be written (B16).
-
-## The ingest queue
-
-The panel at the bottom of the Media screen shows "N running · N queued". Each
-job shows source, destination, codec, state (queued, transcoding with a
-percentage, done, failed with the reason, cancelled) and a progress bar, plus
-**Cancel** or **Remove**. Jobs run one at a time at low priority and wait while
-frames are tight. They are paused while show mode is on (resume by leaving show
-mode) and survive an engine restart. A done or cancelled job leaves the list a
-minute after it finished; a failed one stays until you remove it. The status
-bar shows the progress too.
-
-## Thumbnails
-
-The engine renders one frame from the middle of each file, 320 pixels wide, and
-caches it with the file's metadata (codec, size, frame rate, duration, alpha,
-audio) in `~/Library/Application Support/Fanous/cache/`. Tiles say "probing…"
-until it is done. The same thumbnails go to consoles over CITP, and appear on
-the Layers screen for a layer that shows nothing right now; a layer that shows
-something has its live picture there instead. A file that changes is probed again.
-
-## Performance advice
-
-- Use all-intra formats only: ProRes or HAP.
-- Make the clip the same size as the canvas. **HAP Q** (decoded on the CPU) or
-  **ProRes 422 HQ** (decoded by the ProRes engine) at the canvas resolution is
-  the safe default.
-- Measured on the M1 Pro reference machine (1080p60 canvas): 16 layers of
-  ProRes 422 HQ or HAP Q ran without dropped frames; 16 was the limit of the
-  test. At 4K30: 16 layers likewise. At 4K60: 4 layers of ProRes 422 HQ ran
-  without missed frames, and at 7 some frames finished late on the GPU (B1;
-  measured while the Mac was busy with other work). HAP Q at 4K60: at least 4
-  layers.
-- Effects cost frame time: a 1080p ProRes layer with both Blur and Edge took
-  4 to 5 ms of GPU time (p99) on the idle M1 Pro, against about 0.25 ms for a
-  plain layer, so 3 such layers ran at 1080p60 and 4 did not (headless
-  measurement). Since 2026-11-03 (B2) the blur and edge taps read a converted
-  copy of the layer: in a loaded A/B a blurred layer cost about 0.9 ms instead
-  of 2.3 and an edged one about 0.3 instead of 1.6 (derived from 4-layer
-  frames), so expect more layers with Blur alone or Edge alone; with both,
-  the gain was smaller. The idle figures are to be re-measured. A dissolve (Dissolve channel) uses a
-  second decoder, which counts as one more layer.
-- Watch "dropped" in the status bar and the tiles under System › Live metrics while
-  you build the show.
+- Use ProRes or HAP at the canvas size and frame rate. Larger content costs
+  decode time and is scaled anyway.
 - Keep the library on the internal disk with more than 10 % free, and switch
-  Spotlight indexing off for that volume (see the show-day checklist).
+  Spotlight off for that volume ([show-day-checklist.md](show-day-checklist.md)).
+  A network or removable volume fails the readiness item **Library on a local
+  volume**.
+- Watch **dropped** in the status bar and the GPU p99 tile under System ›
+  Live metrics while you build the show
+  ([screens/system.md](screens/system.md#live-metrics)).
+- Which chip the Mac has: Apple menu › About This Mac. A base M2 or M3 has
+  fewer decoders than a Pro or Max chip, the base M1 has no ProRes engine and
+  is not supported, and the numbers above are the M1 Pro's. The layer limit
+  of 32 is the engine's, not a measurement.
+
+Not there yet: no text layer, HAP cannot be imported, 16-bit stills become
+8-bit, one stereo mix, Transcode fails on a `.mov`, and the other library
+items in [reference/known-limitations.md](reference/known-limitations.md#media-and-inputs).

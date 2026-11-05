@@ -8,7 +8,7 @@ Every control on the screen that lists the live inputs of this Mac: cameras
 and capture cards, displays, Syphon servers of other apps, and the audio
 inputs that carry LTC timecode. For the tasks (numbering, permissions, a
 camera on a layer, LTC) see
-[media-library.md](../media-library.md#the-inputs-screen-key-3) and
+[live-inputs.md](../live-inputs.md) and
 [show-control.md](../show-control.md#timecode). Terms are in the
 [glossary](../reference/glossary.md).
 

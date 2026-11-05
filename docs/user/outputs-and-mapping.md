@@ -251,7 +251,7 @@ greys). On an output blended on both axes the single-projector area shows about
 
 The first seven patterns, a moving test card and a few more are also available
 as layer content in folder 0 (see
-[show-control.md](show-control.md#built-in-content-folder-0)); for a flat grey
+[reference/built-in-content.md](reference/built-in-content.md)); for a flat grey
 on a layer use Solid colour (file 100) with the layer's Red, Green and Blue.
 
 ### Colour
@@ -601,7 +601,7 @@ another app on the same Mac can receive it (the other canvases are not
 published). Receiving a Syphon server into a layer was checked with a
 second engine's canvas, which arrives upright. Other apps' Syphon servers are
 layer content in folder 0, files 150–169 (see
-[show-control.md](show-control.md#built-in-content-folder-0)).
+[reference/built-in-content.md](reference/built-in-content.md)).
 
 Editing on this screen needs the programmer role and is refused while the show
 is locked.

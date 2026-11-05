@@ -42,7 +42,8 @@ things up in the third.
 | Do | [getting-started.md](getting-started.md) | Install, the first launch, the firewall, and first light in six steps: a clip on a layer on a display, driven by the console |
 | | [ui.md](ui.md) | The window and its menus, the status bar item by item, messages and banners, the UI on an iPad, roles and passwords, why a control is greyed out |
 | | [console-setup.md](console-setup.md) | Fixture types, the standard patch, the Patch screen, universe settings, GDTF export, sACN, Who controls and merging |
-| | [media-library.md](media-library.md) | Folder and file naming, built-in content and live inputs (folder 0), the Inputs screen, formats, import and transcode, thumbnails, performance advice |
+| | [media-library.md](media-library.md) | The library and its numbers, what plays as it is, import and transcode and what they change, image sequences, the library root, what a Mac can play |
+| | [live-inputs.md](live-inputs.md) | Cameras, capture cards, this Mac's displays and Syphon servers on a layer: numbers, permissions, what arrives, the LTC audio input, show-day advice |
 | | [outputs-and-mapping.md](outputs-and-mapping.md) | Canvases, displays, outputs, blend edges, test patterns, colour, projector walls, corner pin and mesh warp, slices, masks, presets, keystone |
 | | [show-control.md](show-control.md) | Timecode (LTC, MTC), cues, OSC, MIDI, CITP/MSEX, built-in content, controlling layers from the UI |
 | | [multi-server.md](multi-server.md) | Several Macs, one picture: the Sync channel, a left/right setup, badges, sync settings, the camera check |
@@ -51,6 +52,7 @@ things up in the third.
 | Look up | [screens/](#the-seven-screens) | One page per screen with every control, status word and message: see The seven screens below |
 | | [channel-map.md](../channel-map.md) | Every DMX channel of the four fixtures with its default, bands and OSC key |
 | | [reference/files-and-ports.md](reference/files-and-ports.md) | Every file the engine writes, every port, the command line, service names |
+| | [reference/built-in-content.md](reference/built-in-content.md) | Folder 0 by file number: solid colour, the test patterns as a layer, test card, colour sweep, clock, motion test, with pictures |
 | | [reference/shortcuts.md](reference/shortcuts.md) | Keys and their touch equivalents |
 | | [reference/known-limitations.md](reference/known-limitations.md) | What this version does not do or has not been tested on, with its backlog entry |
 
@@ -66,8 +68,8 @@ a reference page with every control; the task pages say when to use them.
 | Key | Screen | Purpose | Every control | Tasks |
 |---|---|---|---|---|
 | 1 | Layers | One row per layer: media, position, intensity, play mode, source; preview of the canvas or the selected layer; the layer panel | [screens/layers.md](screens/layers.md) | [show-control.md](show-control.md#controlling-layers-from-the-ui) |
-| 2 | Media | The library: folders, files, built-in content and live inputs, import, transcode, the ingest queue | [screens/media.md](screens/media.md) | [media-library.md](media-library.md) |
-| 3 | Inputs | Cameras, capture cards, displays and Syphon servers with their signal, numbers and Forget; audio inputs and the LTC channel; the permissions they need | [screens/inputs.md](screens/inputs.md) | [media-library.md](media-library.md#the-inputs-screen-key-3) |
+| 2 | Media | The library: folders, files, built-in content and live inputs, import, transcode, the ingest queue | [screens/media.md](screens/media.md) | [media-library.md](media-library.md), [reference/built-in-content.md](reference/built-in-content.md) |
+| 3 | Inputs | Cameras, capture cards, displays and Syphon servers with their signal, numbers and Forget; audio inputs and the LTC channel; the permissions they need | [screens/inputs.md](screens/inputs.md) | [live-inputs.md](live-inputs.md) |
 | 4 | Outputs | Canvases, outputs, projector walls, blend, warp, slices, masks, presets | [screens/outputs.md](screens/outputs.md) | [outputs-and-mapping.md](outputs-and-mapping.md) |
 | 5 | Patch | Who controls, fixture groups and blocks, universes, DMX monitor, patch sheet, GDTF export | [screens/patch.md](screens/patch.md) | [console-setup.md](console-setup.md) |
 | 6 | Show | GO, timecode, cues, OSC, MIDI | [screens/show.md](screens/show.md) | [show-control.md](show-control.md) |
