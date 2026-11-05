@@ -33,6 +33,8 @@
   const duration = $derived(durationBadge(item));
   const format = $derived(meta ? formatLabel(meta) : '');
   const audio = $derived(meta ? audioLabel(meta) : '');
+  /** one quiet line like the layer row's "HEVC · 1080p25": a tile's format is information, not a state */
+  const detail = $derived(meta ? [meta.codec ? codecLabel(meta.codec) : '', format, meta.hasAlpha ? 'α' : '', audio].filter(Boolean).join(' · ') : '');
   const locked = $derived(!can('programmer'));
   const bad = $derived(item.status === 'invalid' || item.status === 'unreadable');
 
@@ -52,7 +54,7 @@
       {#if onLayers.length}<span class="on"><span class="dot dot-green"></span>{onLayers.join(', ')}</span>{/if}
     </span>
     <span class="name ellipsis">{displayName(item.name, item.file !== null)}</span>
-    <span class="badges">
+    {#if item.status !== 'playable'}<span class="badges">
       {#if item.status === 'invalid'}
         <span class="badge badge-err">invalid name</span>
       {:else if item.status === 'unreadable'}
@@ -62,11 +64,8 @@
       {:else if item.status === 'probing'}
         <span class="caption">probing…</span>
       {/if}
-      {#if meta?.codec}<span class="badge codec">{codecLabel(meta.codec)}</span>{/if}
-      {#if format}<span class="badge badge-outline mono">{format}</span>{/if}
-      {#if meta?.hasAlpha}<span class="badge badge-outline" title="Has an alpha channel">α</span>{/if}
-      {#if audio}<span class="badge badge-outline mono" title="Audio track">{audio}</span>{/if}
-    </span>
+    </span>{/if}
+    {#if detail}<span class="caption mono" title={meta?.hasAlpha ? 'α: has an alpha channel' : undefined}>{detail}</span>{/if}
     {#if bad && item.reason}<span class="caption reason">{item.reason}</span>{/if}
   </button>
   {#if item.status === 'needsTranscode'}
@@ -98,7 +97,7 @@
   .on .dot { width: 6px; height: 6px; }
   .dur { position: absolute; right: 4px; bottom: 4px; height: 20px; padding: 0 6px; border-radius: 4px; background: var(--scrim); font-size: 11px; font-weight: 500; display: inline-flex; align-items: center; }
   .name { display: block; font-weight: 500; }
-  .badges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 24px; }
+  .badges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
   .reason { display: block; overflow-wrap: anywhere; }
   .actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 8px 8px; }
   .actions .select { flex: 1 1 120px; min-width: 0; }
