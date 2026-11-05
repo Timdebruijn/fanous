@@ -33,7 +33,7 @@ checks, enter and leave show mode and fire cues. Everything else below
 needs the programmer, or someone at the Mac: the Engine menu is in the
 menu bar at the top of the Mac's screen while the Fanous app is in front
 (click Fanous in the Dock), not in the browser or on the iPad. Its first
-line says what the engine is doing, "Engine 1.0.0 running · service
+line says what the engine is doing, "Engine <version> running · service
 installed" when all is well ([ui.md](ui.md#menus-of-the-app-window)).
 
 ## The engine died during the show
@@ -193,8 +193,8 @@ lost its signal, holds its last frame by design.
 - Its Intensity up, and the Output and Master fixtures' Intensity up with
   no Blackout: a test pattern follows them like the picture, so a pattern
   that stays black points at them.
-- No output at all: the status bar's outputs item reads 0 and a banner
-  says "no outputs rendering".
+- No output at all: the status bar's outputs item reads 0 and its caption
+  "no outputs rendering: add or assign one (Outputs)".
 - After a library root change the layers look their media up in the new
   library at once: a number that does not exist there reads "no file N in
   folder M".
@@ -321,7 +321,8 @@ log show --predicate 'subsystem == "org.fanous"' --last 1h
 
 | Line | Means |
 |---|---|
-| "HTTPS listener failed", "Art-Net listener failed", "OSC UDP failed", "OSC TCP failed", "CITP listener failed" | Another program holds that port; the engine runs without it |
+| "HTTPS listener failed", "Art-Net listener failed", "OSC UDP failed", "OSC TCP failed" | That listener could not open, usually a port another program holds; the engine runs without it |
+| "CITP listener failed" | The CITP server could not open its port; the console will not list Fanous |
 | "sACN port in use; running without sACN" | The readiness item warns too |
 | "sync port in use; not receiving sync packets" | System › Sync: apply a free port |
 | "CITP start failed", "CITP PLoc beacon failed (firewall?)" | The console will not list Fanous |

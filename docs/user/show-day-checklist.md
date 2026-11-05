@@ -63,7 +63,8 @@ on the night, [troubleshooting.md](troubleshooting.md).
       output's Mode set, so show mode applies it.
 - [ ] Firewall allows `fanousd` ([getting-started.md](getting-started.md#firewall-and-network));
       done when the iPad loads the UI.
-- [ ] Engine menu first line reads "running · service installed".
+- [ ] Engine menu first line reads "Engine <version> running · service
+      installed".
 
 ## Before doors
 
@@ -91,7 +92,7 @@ on the night, [troubleshooting.md](troubleshooting.md).
 - [ ] Lock the show again after every fix: the status bar's red marks for
       dropped frames, timecode and outputs show only while it is locked.
 - [ ] No imports or transcodes; ingest is paused in show mode anyway.
-- [ ] Engine died: the card under "How it works".
+- [ ] Engine died: [the steps below](#the-engine-died-during-the-show).
 
 | Who | May, also while the show is locked |
 |---|---|
@@ -171,9 +172,9 @@ The engine writes its show-mode state to disk every 30 seconds.
 ```mermaid
 flowchart TD
   gone["The engine stops in show mode"] --> why{"How?"}
-  why -- "crash, or killed" --> auto["macOS starts it again by itself"]
+  why -- "crash, or Force Quit" --> auto["macOS starts it again by itself"]
   why -- "Engine › Restart Engine" --> auto
-  why -- "Stop Engine, Stop Engine and Quit, a planned Restart or Shut Down of the Mac" --> normal["Show mode is left; the next start is normal"]
+  why -- "Stop Engine, Stop Engine and Quit, a plain quit of fanousd, Log Out, Restart or Shut Down" --> normal["Show mode is left; the next start is normal"]
   why -- "power cut" --> login["After the Mac is up and the show user logged in, the engine starts"]
   auto --> resume["Back in show mode: display modes kept, ingest paused, cursor hidden"]
   login --> age{"Last write under 2 hours old?"}
@@ -185,8 +186,8 @@ flowchart TD
 After a crash macOS restarts the engine at once, or after 10 seconds when
 it crashed within 10 seconds of starting. A locked show stays locked. A
 crash that nobody restarts keeps the show-mode file: an engine started
-days later on the same boot still resumes show mode; Engine › Stop Engine
-clears it. The System screen's banner adds "The engine stopped uncleanly
+days later on the same boot still resumes show mode; Engine › **Stop
+Engine…** clears it. The System screen's banner adds "The engine stopped uncleanly
 during the show; check the outputs and the log." after every resume, also
 after a deliberate Restart Engine: when you pressed it yourself, ignore
 that sentence ([known limitations](reference/known-limitations.md#show-mode-and-the-machine)).

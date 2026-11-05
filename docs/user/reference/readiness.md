@@ -11,24 +11,27 @@ the list on the day is in
 panel's controls are in [screens/system.md](../screens/system.md#readiness).
 Back to the [index](../README.md).
 
-Types: **Fails** blocks show mode until it is fixed or a programmer
-acknowledges it; **Warns** never blocks; **Manual** cannot be read and is
-yours to check; **Blocking** cannot be acknowledged. The checks run when
+Types: Fails blocks show mode until it is fixed or a programmer
+acknowledges it; Warns never blocks; Manual cannot be read and is yours to
+check; Blocking cannot be acknowledged. The "What to do" column is the
+row's fix hint, shortened; the on-screen hint for Spotlight also names
+Spotlight Privacy, which does not count, and the one for the hardware item
+says "M1 Pro or newer", while every chip but the base M1 passes. The checks run when
 show mode turns on, every 30 seconds while it is on, once after a resumed
 show mode, after a display mode switch in show mode, and on **Run checks**;
 nothing alerts you when an item turns red meanwhile. The last column is
 the id the API's `readiness.acknowledge` takes and the yellow banner names
 ("readiness: dmx, displaysleep").
 
-| Item | Fails or warns when | The row reads | Fix hint | Type | Id |
+| Item | Fails or warns when | The row reads | What to do | Type | Id |
 |---|---|---|---|---|---|
 | On AC power | The first power source is not mains; a Mac without a battery passes | "AC power (battery N %)", "on battery, N %", "no battery" | Connect the power adapter | Fails | `power` |
 | Thermal state nominal | macOS reports serious or critical; nominal and fair pass | "nominal", "fair", "serious", "critical" | Let the machine cool down, improve airflow | Fails | `thermal` |
 | Free disk > 10 % | The library's volume has 10 % or less free; the home volume with the project and the log is not checked | "N % free (X GB)" | Free space on the library volume | Fails | `disk` |
-| Memory headroom | Less than 15 % of the memory is free, inactive or purgeable | "N % free" | Quit other applications | Fails | `memory` |
+| Memory headroom | 15 % or less of the memory is free, inactive or purgeable | "N % free" | Quit other applications | Fails | `memory` |
 | All patched universes receiving | A patched universe has had no packet within its Signal lost after time (2.5 s to start), or none ever | "all receiving", "silent: artnet:0.0.1" | Check the console's output and the network | Fails | `dmx` |
 | Universe interfaces usable | A universe is set to an interface this Mac lacks, or one without sACN multicast | "present, or any interface", "not usable: …" | Connect the network adapter, or pick another interface for the universe (Patch › Interface) | Warns | `interfaces` |
-| sACN port 5568 available | Another program holds UDP 5568 exclusively, so the engine runs without sACN; a program that shares the port does not count | "listening", "in use, running without sACN: …" | Quit the program that holds UDP 5568, then Engine › Restart Engine | Warns | `sacnport` |
+| sACN port 5568 available | Another program holds UDP 5568 exclusively, so the engine runs without sACN; a program that shares the port does not count | "listening", "in use, running without sACN: …" | Quit the program that holds UDP 5568 (`sudo lsof -nP -iUDP:5568`), then Engine › Restart Engine | Warns | `sacnport` |
 | All outputs bound to their displays | An output is lost or unassigned, or no output is bound at all (also with no outputs) | "N bound", "no output bound", "lost: […], unassigned: […]" | Connect the displays, assign every output | Fails | `outputs` |
 | Outputs in their desired display mode | A bound output's Mode is not available on its display, was not applied in show mode, is no multiple of the canvas rate, or conflicts with another output on the display; outputs without a Mode are not checked | "applied in show mode, or none set", or the output's note | Pick an available mode for the output (Outputs › Mode), or set it in System Settings › Displays | Warns | `modes` |
 | Sync groups have one master | A slave playing a movie has no master, a group has two masters, or this Mac's master is outranked | "every slave in use has one master, or none in use", "Layer 2 (group 1): no master" | Set exactly one layer per group to master (Sync channel); a slave without a master plays on its own | Warns | `syncmaster` |
@@ -64,3 +67,5 @@ change is in progress.
 The status bar's **Show mode** tag shows "Cannot enter show mode" with the
 blocking items and their fix hints when it refuses, with **Open System**;
 the yellow banner at the top names the items by id.
+
+<img src="../images/banner-readiness.png" width="1396" alt="The yellow banner: readiness: dmx, spotlight, updates, displaysleep, with the line Show mode is blocked by failed readiness checks, and the buttons Recent messages and Dismiss">
