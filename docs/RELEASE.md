@@ -86,6 +86,9 @@ With Fanous and the console software on one subnet (Little Snitch: allow
       Done again for 1.0.0-rc.3 on 2026-11-03 from main 07ac24b (the built tree, 661c4b7): zip and signed dmg
       accepted, both stapled, both `spctl` checks `accepted`, `source=Notarized Developer ID`,
       `syspolicy_check distribution` passes the dmg. The notarytool profile had to be stored again first.
+      Done again for 1.0.0-rc.4 on 2026-11-05 from main 178eae5 (the built tree, ff3bb2e8): app and signed dmg
+      accepted, both stapled, both `spctl` checks `accepted`, `source=Notarized Developer ID`. The notarytool
+      profile had vanished again and was stored again first.
 - [ ] `shasum -a 256 dist/Fanous-<version>.dmg` goes into the release notes
 - [ ] only on a developer Mac that ran ad-hoc builds: the first Developer ID open re-registers the agent (B50), and
       the old Screen Recording switch stays on while the engine reads `denied` after the signature change:
@@ -159,6 +162,7 @@ On a fresh macOS user account (or a fresh Mac) with the notarized dmg:
       section and the interop/benchmark notes. 1.0.0-rc.2 was published as a pre-release on 2026-11-03 with the
       signed dmg, its SHA-256, a link to the CHANGELOG and what is not tested yet; no interop or benchmark notes
       (no console measured yet). 1.0.0-rc.3 the same way on 2026-11-03; an anonymous download matches the SHA-256 and
-      a quarantined copy of the dmg is `accepted`, `source=Notarized Developer ID`
+      a quarantined copy of the dmg is `accepted`, `source=Notarized Developer ID`. 1.0.0-rc.4 the same way on
+      2026-11-05 (no anonymous download checked this time)
 - [ ] the release notes name the drawable-loop driver and the macOS 27.0.1
       stall (R17, ADR-0006) so early adopters know why it is the default
