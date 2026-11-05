@@ -27,7 +27,7 @@ as its own fixture on the console.
 | **Layer** | 64 | layer | Everything about one layer: intensity, folder and file, play mode, speed, in and out points, dissolve, position, scale, rotation, colour, blend mode, two effects, crop, audio, sync |
 | **Master** | 8 | machine | Master intensity (multiplies every output), Freeze all or Blackout, a test pattern on every output, Master speed |
 | **Output** | 8 | output (outputs 1 to 8) | Output intensity, Blackout or Freeze, a test pattern, Blend on or Raw, mapping preset and its fade |
-| **Keystone** | 16 | output, optional | Moves the output's four corners on top of its alignment ([outputs-and-mapping.md](outputs-and-mapping.md#keystone-from-the-console)) |
+| **Keystone** | 16 | output, optional | Moves the output's four corners on top of its alignment ([warp-and-masks.md](warp-and-masks.md#keystone-from-the-console)) |
 
 Every channel with its default and bands: [channel-map.md](../channel-map.md).
 Eight layers fill one universe exactly; 16 layers need two, 32 need four.
@@ -64,7 +64,7 @@ channels 52 to 64 are reserved. Outputs 9 and up have no Output fixture.
 - **Mapping preset and fade** (Output channels 6 and 7): Fanous reads the
   fade at the moment the preset channel changes, so put the fade in an
   earlier cue or give it a fade time of 0
-  ([outputs-and-mapping.md](outputs-and-mapping.md#mapping-presets)).
+  ([warp-and-masks.md](warp-and-masks.md#mapping-presets)).
 
 ## The standard patch
 
@@ -284,7 +284,7 @@ Under Fanous only the console is ignored, so Hold on signal loss changes
 nothing. A fixture without an address holds nothing from the console:
 unpatching it, or moving it to another universe, drops the console's values
 at once. An Output fixture's preset and fade channels follow the same rules
-([outputs-and-mapping.md](outputs-and-mapping.md#from-the-console)).
+([warp-and-masks.md](warp-and-masks.md#from-the-console)).
 
 ## Who controls
 

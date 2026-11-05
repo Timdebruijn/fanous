@@ -10,6 +10,15 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs: `outputs-and-mapping.md` rewritten as the projector-side task page (one output per projector, add and bind
+  with the three output states and a hot-plug flowchart, display modes as a table and a show-mode flowchart, canvas
+  size, blending two projectors step by step, the eleven test patterns on one sheet, colour, projector walls with the
+  wizard flowchart, the wall panel part by part and the seam check as a symptom table and flowchart); new
+  `warp-and-masks.md` (which tool as a flowchart, the editor, corner pin, mesh, slices with a three-screen procedure,
+  masks, the content template, Show on output with a "why is it hidden" flowchart, Remote from an iPad, mapping
+  presets with the console flowchart, the Keystone fixture); 23 new pictures, among them the projector itself with
+  Show on output; the index, screen page and cross-links follow.
+
 - Docs: `media-library.md` rewritten around the questions a technician asks (what plays as it is, how a file gets in,
   what a transcode changes, what a Mac can play) with three flowcharts; new `live-inputs.md` (numbers, permissions,
   what a camera, capture card, display or Syphon server delivers, LTC input, show-day advice) with two flowcharts; new

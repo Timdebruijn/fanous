@@ -202,7 +202,7 @@ that has not answered yet is listed grey, "not seen since the engine
 started". Two servers with the same app and server name (two Fanous canvases
 on one Mac) keep their numbers, as Fanous cannot tell them apart. Fanous's own
 canvas is not listed; it is published to other apps as "Fanous – Canvas"
-([outputs-and-mapping.md](outputs-and-mapping.md#warp--slices-tab)).
+([warp-and-masks.md](warp-and-masks.md#the-canvas-for-other-apps)).
 
 ## Audio inputs and LTC
 

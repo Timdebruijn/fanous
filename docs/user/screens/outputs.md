@@ -5,9 +5,10 @@
 # Outputs screen (key 4)
 
 Every control on the screen titled "Outputs & Mapping": canvases, outputs,
-projector walls, warp, slices, masks and presets. For the tasks (a projector,
-a blend, a wall, the seam check, an alignment) see
-[outputs-and-mapping.md](../outputs-and-mapping.md). Terms are in the
+projector walls, warp, slices, masks and presets. For the tasks see
+[outputs-and-mapping.md](../outputs-and-mapping.md) (a projector, a blend, a
+wall, the seam check, colour) and [warp-and-masks.md](../warp-and-masks.md)
+(corner pin, mesh, slices, masks, Remote, presets, keystone). Terms are in the
 [glossary](../reference/glossary.md): seam, gamma, black lift, black floor,
 black offset, corner pin, mesh, slice, mask, Raw.
 
@@ -150,7 +151,7 @@ kept but cannot be shown on the wall panel's slider.
    **Slices**, **Mask**. With one point selected, **Selected point (px)**
    shows its x and y.
 2. **Remote**: the iPad layout
-   ([outputs-and-mapping.md](../outputs-and-mapping.md#warp--slices-tab));
+   ([warp-and-masks.md](../warp-and-masks.md#remote-aligning-from-an-ipad));
    **Content template (PNG)** downloads the slice and mask layout at canvas
    size.
 3. **Preview** with the handles. Drag them; arrow keys nudge by 1 px, Shift
@@ -190,4 +191,4 @@ spread over the slices, left to right.") with Undo.
 | **Hold to compare** | Shows the preset on the output while you hold the button; greyed with "Compare is off in show mode", the lock reason, or "Compare reaches outputs 1–8" on output 9 and up |
 
 The console shows a preset with Output channel 6; channel 7 sets the glide
-time ([outputs-and-mapping.md](../outputs-and-mapping.md#mapping-presets)).
+time ([warp-and-masks.md](../warp-and-masks.md#from-the-console)).

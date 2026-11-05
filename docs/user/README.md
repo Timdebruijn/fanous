@@ -17,7 +17,8 @@ program cues, and run the machine reliably on show day. It does not teach
 Art-Net, sACN or console programming. It does explain the video side: every
 term a lighting technician may not have met is in the
 [glossary](reference/glossary.md), and the pages on projectors, blending and
-warping ([outputs-and-mapping.md](outputs-and-mapping.md)) start from zero.
+warping ([outputs-and-mapping.md](outputs-and-mapping.md),
+[warp-and-masks.md](warp-and-masks.md)) start from zero.
 
 ## Requirements
 
@@ -44,7 +45,8 @@ things up in the third.
 | | [console-setup.md](console-setup.md) | Fixture types, the standard patch, the Patch screen, universe settings, GDTF export, sACN, Who controls and merging |
 | | [media-library.md](media-library.md) | The library and its numbers, what plays as it is, import and transcode and what they change, image sequences, the library root, what a Mac can play |
 | | [live-inputs.md](live-inputs.md) | Cameras, capture cards, this Mac's displays and Syphon servers on a layer: numbers, permissions, what arrives, the LTC audio input, show-day advice |
-| | [outputs-and-mapping.md](outputs-and-mapping.md) | Canvases, displays, outputs, blend edges, test patterns, colour, projector walls, corner pin and mesh warp, slices, masks, presets, keystone |
+| | [outputs-and-mapping.md](outputs-and-mapping.md) | Canvases, displays and display modes, outputs, blending two projectors, test patterns, colour, projector walls and the seam check |
+| | [warp-and-masks.md](warp-and-masks.md) | Corner pin, mesh, slices, masks, the content template, Show on output, Remote from an iPad, mapping presets, the Keystone fixture |
 | | [show-control.md](show-control.md) | Timecode (LTC, MTC), cues, OSC, MIDI, CITP/MSEX, built-in content, controlling layers from the UI |
 | | [multi-server.md](multi-server.md) | Several Macs, one picture: the Sync channel, a left/right setup, badges, sync settings, the camera check |
 | | [show-day-checklist.md](show-day-checklist.md) | A printable checklist for the day of the show, and every readiness item |
@@ -70,7 +72,7 @@ a reference page with every control; the task pages say when to use them.
 | 1 | Layers | One row per layer: media, position, intensity, play mode, source; preview of the canvas or the selected layer; the layer panel | [screens/layers.md](screens/layers.md) | [show-control.md](show-control.md#controlling-layers-from-the-ui) |
 | 2 | Media | The library: folders, files, built-in content and live inputs, import, transcode, the ingest queue | [screens/media.md](screens/media.md) | [media-library.md](media-library.md), [reference/built-in-content.md](reference/built-in-content.md) |
 | 3 | Inputs | Cameras, capture cards, displays and Syphon servers with their signal, numbers and Forget; audio inputs and the LTC channel; the permissions they need | [screens/inputs.md](screens/inputs.md) | [live-inputs.md](live-inputs.md) |
-| 4 | Outputs | Canvases, outputs, projector walls, blend, warp, slices, masks, presets | [screens/outputs.md](screens/outputs.md) | [outputs-and-mapping.md](outputs-and-mapping.md) |
+| 4 | Outputs | Canvases, outputs, projector walls, blend, warp, slices, masks, presets | [screens/outputs.md](screens/outputs.md) | [outputs-and-mapping.md](outputs-and-mapping.md), [warp-and-masks.md](warp-and-masks.md) |
 | 5 | Patch | Who controls, fixture groups and blocks, universes, DMX monitor, patch sheet, GDTF export | [screens/patch.md](screens/patch.md) | [console-setup.md](console-setup.md) |
 | 6 | Show | GO, timecode, cues, OSC, MIDI | [screens/show.md](screens/show.md) | [show-control.md](show-control.md) |
 | 7 | System | Show mode and readiness, live metrics, machine, library root, network, sync, project versions, roles, logs | [screens/system.md](screens/system.md) | [show-day-checklist.md](show-day-checklist.md), [troubleshooting.md](troubleshooting.md) |
