@@ -5,8 +5,9 @@
 # Show screen (key 6)
 
 Every control on the screen titled "Show control": GO, timecode, the cue
-list, OSC and MIDI. For the tasks (cues, LTC and MTC, OSC and MIDI setups)
-see [show-control.md](../show-control.md). Terms are in the
+list, OSC and MIDI. For the tasks see [show-control.md](../show-control.md)
+(cues, LTC and MTC) and [remote-control.md](../remote-control.md) (OSC, MIDI,
+MSC). Terms are in the
 [glossary](../reference/glossary.md).
 
 Everything marked "programmer" is greyed out or refused for the operator and
@@ -116,7 +117,7 @@ cue has no values. The engine's own refusals come as the yellow banner.
 
 The panel is read-only. The feedback addresses (`/get`, subscribe) and
 `/fanous/project/load` are not listed here:
-[show-control.md](../show-control.md#osc).
+[reference/osc.md](../reference/osc.md).
 
 ## MIDI
 

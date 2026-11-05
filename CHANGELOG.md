@@ -10,6 +10,19 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs: `show-control.md` rewritten around running the show, building a cue (with a flowchart), fades, triggers and
+  follows (the 5-second rule, jumps, the offset that triggers ignore) and timecode (LTC and MTC setup flowchart, a
+  state diagram, the states table); new `remote-control.md` (Who controls as a table, the UI, OSC with the subscribe
+  handshake as a sequence diagram and the Companion and TouchOSC recipes, MIDI Learn with a flowchart, MIDI Show
+  Control as a decision table, CITP/MSEX); `multi-server.md` rewritten with the setup first and a "slave does not
+  follow" flowchart; new `reference/osc.md` (every address in and out, limits) and `reference/api.md` (transport,
+  roles, REST, the WebSocket protocol with a sequence diagram, all 57 commands, errors, limits), both from the code;
+  the folder-0 and UI-control sections of the old show page live in `reference/built-in-content.md` and
+  `remote-control.md`; 4 new pictures; the index, screen pages, `ui.md` (monitor's one command) and
+  `known-limitations.md` follow. New rows B175 (sync lost tooltip), B176 (OSC panel's last-received spelling and
+  address list), B177 (`/api/session` ignores the token), B178 (MIDI "Learned:" spelling, trigger hint), B179 (cloned
+  install UUID silently breaks sync).
+
 - Docs: `outputs-and-mapping.md` rewritten as the projector-side task page (one output per projector, add and bind
   with the three output states and a hot-plug flowchart, display modes as a table and a show-mode flowchart, canvas
   size, blending two projectors step by step, the eleven test patterns on one sheet, colour, projector walls with the
