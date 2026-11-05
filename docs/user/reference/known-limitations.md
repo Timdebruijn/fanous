@@ -83,6 +83,10 @@ link here. Back to the [index](../README.md).
 | Show mode does not lower the log level, throttle thumbnails or check for mirrored displays. | B42 |
 | Readiness probes for Spotlight, automatic updates and Time Machine read macOS tools; when the output changes they show **manual** and you check by hand. Focus (Do Not Disturb) is always manual. | B38 |
 | An acknowledged readiness item stays acknowledged until the engine restarts: there is no un-acknowledge, and the item keeps its acknowledgement if it fails again later. | B163 |
+| **Display sleep disabled** fails for any setting but Never, although show mode holds the display awake meanwhile, so a 10-minute setting blocks show mode until acknowledged. | B180 |
+| After a deliberate Engine › Restart Engine in show mode the System screen says "The engine stopped uncleanly during the show": the UI cannot tell a restart from a crash. | B181 |
+| **Spotlight indexing off for the library volume** reads the volume's indexing switch only; a library folder added to Spotlight Privacy still fails the item. | B182 |
+| A port held by another program (the web UI's 8443, Art-Net 6454, OSC 8000) is only logged as "listener failed": the engine keeps running without that listener, and with 8443 taken nothing on screen can say so. A second engine started by hand refuses on the terminal only, not in the log. | B183 |
 | There is one project per machine: versions of it can be restored, but there are no project bundles to open or switch between, and no diff between two versions. | — |
 | The layer limit is 32 on every Mac: the engine's ceiling, not a measurement of this Mac. What a Mac plays without dropping frames can be far lower, at 4K for example. | B145 |
 | Everything measured was measured on one MacBook Pro M1 Pro. Other Apple Silicon chips are expectations; the idle 4K60 figures are to be re-measured. | B49 |
