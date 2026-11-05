@@ -10,7 +10,7 @@
    [Releases](https://github.com/Timdebruijn/fanous/releases) and copy
    `Fanous.app` to the Applications folder (drag it from the disk image).
 2. Open it. A notarized build passes the Gatekeeper check (`spctl`, the app
-   and the disk image checked for 1.0.0-rc.3); a real first open on a clean
+   and the disk image checked for 1.0.0-rc.4); a real first open on a clean
    account is not tested yet (backlog B50). A build signed ad hoc
    (`scripts/bundle.sh` without `CODESIGN_IDENTITY`) may be refused at first
    open; allow it in System Settings › Privacy & Security.
@@ -81,7 +81,7 @@ another computer opens. Every screen has the same frame:
 Menus of the app window:
 
 - **Fanous**: About, Hide, Quit.
-- **Engine**: the first line shows the state, for example "Engine 1.0.0-rc.3
+- **Engine**: the first line shows the state, for example "Engine 1.0.0-rc.4
   running · service installed" (or "service needs approval in Login Items").
   **Reload UI** (Cmd-R) reloads the page. **Start Engine**, **Restart Engine**
   and **Stop Engine…** control the service. Stop removes the service

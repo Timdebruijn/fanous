@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Release: 1.0.0-rc.4 is on GitHub as a pre-release with the signed, notarized dmg, built from main 178eae5
+  (PR #NNN).
+
 ## 1.0.0-rc.4 — 2026-11-05
 
 - Web: a media tile shows its codec, size, alpha and audio as one quiet mono line ("ProRes 422 · 1080p30 · α")
