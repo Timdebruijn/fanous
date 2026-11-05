@@ -10,6 +10,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs: the README's candidate note no longer says "source only, no download yet"; the signed dmg has been on
+  Releases since rc.2 (PR #NNN).
+
 - Release: 1.0.0-rc.4 is on GitHub as a pre-release with the signed, notarized dmg, built from main 178eae5
   (PR #296).
 
