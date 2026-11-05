@@ -14,7 +14,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   a one-page how-it-works with a pipeline diagram, getting started as six illustrated steps with first-launch and
   "nothing moves" flowcharts, a UI page (status bar item by item, messages, roles, why a control is greyed out), and
   reference pages for files, ports and the command line, keys with their touch equivalents, and known limitations with
-  their backlog rows. New rows B159–B164 for code findings of the gap analysis (PR #TBD).
+  their backlog rows. New rows B159–B164 for code findings of the gap analysis (PR #298).
 
 - Docs: the README's candidate note no longer says "source only, no download yet"; the signed dmg has been on
   Releases since rc.2 (PR #297).
