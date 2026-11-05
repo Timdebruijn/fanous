@@ -8,7 +8,7 @@ Every item of the System screen's readiness list, in the order shown, with
 its threshold, what the row reads, the fix hint and its type. How to work
 the list on the day is in
 [Show-day checklist](../show-day-checklist.md#the-readiness-list); the
-panel's controls are in [screens/system.md](../screens/system.md#readiness).
+panel's controls are in [System screen](../screens/system.md#readiness).
 Back to the [index](../README.md).
 
 Types: Fails blocks show mode until it is fixed or a programmer

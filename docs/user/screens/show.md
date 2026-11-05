@@ -117,7 +117,7 @@ cue has no values. The engine's own refusals come as the yellow banner.
 
 The panel is read-only. The feedback addresses (`/get`, subscribe) and
 `/fanous/project/load` are not listed here:
-[reference/osc.md](../reference/osc.md).
+[OSC reference](../reference/osc.md).
 
 ## MIDI
 

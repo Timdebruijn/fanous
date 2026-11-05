@@ -10,7 +10,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Docs: every link in the user guide shows the page's title instead of its file name (186 links on 26
+- Docs: every link in the user guide shows the page's title instead of its file name (about 190 links on 27
   pages; the index tables keep the file names and say so in Conventions); the index gets a "Where to start"
   flowchart from the reader's situation to the page.
 

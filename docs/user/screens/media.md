@@ -79,7 +79,7 @@ Select a numbered folder, then press Import…", `No files match "…"`.
 
 The first row of the folder list opens folder 0: the content Fanous makes
 itself and the live inputs of this Mac, each with the file number a console
-dials ([reference/built-in-content.md](../reference/built-in-content.md)).
+dials ([Built-in content](../reference/built-in-content.md)).
 Folder 0 has no Search and no Import.
 
 ![Folder 0 on the Media screen: built-in content with Layer badges, then cameras and capture cards](../images/media-folder0.png)

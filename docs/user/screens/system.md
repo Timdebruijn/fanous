@@ -58,7 +58,7 @@ a planned Restart, Shut Down or Log Out leaves show mode.
 | Badges | **warning** (yellow, never blocks), **blocking** (red, cannot be acknowledged: Supported hardware), **acknowledged** (yellow), **manual** (grey outline: Fanous cannot read it, check by hand). A **failed** item (red dot) shows the Acknowledge button instead of a badge |
 
 The 23 items with their thresholds and fixes:
-[reference/readiness.md](../reference/readiness.md). An
+[Readiness items](../reference/readiness.md). An
 acknowledgement holds until the engine restarts. Empty: "No checks have run
 yet. Run the checks, or enter show mode, which runs them."
 
@@ -169,4 +169,4 @@ password.
 
 "Could not load the log: …", "No lines match the filter.", "The log is
 empty." Where the file is and how it rotates:
-[reference/files-and-ports.md](../reference/files-and-ports.md#logs).
+[Files, ports and the command line](../reference/files-and-ports.md#logs).

@@ -17,8 +17,8 @@ program cues, and run the machine reliably on show day. It does not teach
 Art-Net, sACN or console programming. It does explain the video side: every
 term a lighting technician may not have met is in the
 [glossary](reference/glossary.md), and the pages on projectors, blending and
-warping ([outputs-and-mapping.md](outputs-and-mapping.md),
-[warp-and-masks.md](warp-and-masks.md)) start from zero.
+warping ([Outputs and mapping](outputs-and-mapping.md),
+[Warp, slices and masks](warp-and-masks.md)) start from zero.
 
 ## Requirements
 
