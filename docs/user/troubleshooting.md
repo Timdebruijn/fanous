@@ -5,7 +5,7 @@
 # Troubleshooting
 
 From the symptom to the cause, the most likely first. The readiness items
-with their fixes are in [reference/readiness.md](reference/readiness.md);
+with their fixes are in [Readiness items](reference/readiness.md);
 the log is under [Logs](#logs).
 
 | You see | Go to |
@@ -24,8 +24,8 @@ the log is under [Logs](#logs).
 | A cue does not fire | [A cue does not fire](#a-cue-does-not-fire) |
 | Timecode does not lock | [LTC does not lock](#ltc-does-not-lock) |
 | The console does not list Fanous | [A CITP console does not see Fanous](#a-citp-console-does-not-see-fanous) |
-| The second Mac does not follow | [multi-server.md](multi-server.md#when-the-slave-does-not-follow) |
-| Show mode refuses | [show-day-checklist.md](show-day-checklist.md#the-readiness-list) |
+| The second Mac does not follow | [Multi-server sync](multi-server.md#when-the-slave-does-not-follow) |
+| Show mode refuses | [Show-day checklist](show-day-checklist.md#the-readiness-list) |
 | The patch or the cues are gone after a restart | [The project is gone after a restart](#the-project-is-gone-after-a-restart) |
 
 Who can do what: an operator on an iPad can read every screen, run the
@@ -34,7 +34,7 @@ needs the programmer, or someone at the Mac: the Engine menu is in the
 menu bar at the top of the Mac's screen while the Fanous app is in front
 (click Fanous in the Dock), not in the browser or on the iPad. Its first
 line says what the engine is doing, "Engine <version> running · service
-installed" when all is well ([ui.md](ui.md#menus-of-the-app-window)).
+installed" when all is well ([The user interface](ui.md#menus-of-the-app-window)).
 
 ## The engine died during the show
 
@@ -97,9 +97,9 @@ compare the fingerprint with System › Network › TLS fingerprint on the Mac
 `fanousd reset-tls`, on another device or browser, and when you use an
 address the certificate was not made for: it holds the Mac's name and the
 addresses it had at first start, so a new network needs a reset
-([reference/files-and-ports.md](reference/files-and-ports.md)). If the
+([Files, ports and the command line](reference/files-and-ports.md)). If the
 page does not load at all, check the address
-([ui.md](ui.md#the-ui-on-an-ipad-or-another-computer)) and the firewall.
+([The user interface](ui.md#the-ui-on-an-ipad-or-another-computer)) and the firewall.
 
 A preview that is a still image updating five times a second is the JPEG
 fallback instead of H.264: the browser cannot decode the stream, or the
@@ -111,10 +111,10 @@ The universe pill is green but the layer does not follow the desk.
 
 1. Who controls (Patch screen) on **Fanous only**: the console is ignored.
    Set it to Console only or one of the "Console and Fanous" choices
-   ([console-setup.md](console-setup.md#who-controls)).
+   ([Console setup](console-setup.md#who-controls)).
 2. The fixture's address: the Patch screen's DMX monitor shows what
    arrives on each channel; the console's address and mode must match the
-   patch sheet ([console-setup.md](console-setup.md#tell-the-console)).
+   patch sheet ([Console setup](console-setup.md#tell-the-console)).
 3. The layer's Intensity (channels 1 and 2) above 0, Folder and File not 0.
 4. A UI or MIDI value masking the console: the layer panel reads "UI
    control" or "MIDI control"; **Release** hands it back.
@@ -129,7 +129,7 @@ The universe pill is green but the layer does not follow the desk.
 | Red | A patched universe silent for longer than its Signal lost after time and 2.5 s |
 
 The fixtures hold their last values meanwhile, unless the universe's
-**Hold on signal loss** says otherwise ([console-setup.md](console-setup.md#when-the-console-goes-silent)).
+**Hold on signal loss** says otherwise ([Console setup](console-setup.md#when-the-console-goes-silent)).
 
 1. System › Machine › DMX universes: the sender's address, the packet count
    and the age of the last packet. "No DMX universes seen" means nothing
@@ -154,9 +154,9 @@ The Layers screen shows the problem in the row's Media column.
 
 | The row reads | Do |
 |---|---|
-| "no file N in folder M" | The number does not exist or the file is not playable: Media screen, that folder: invalid name, needs transcode, unreadable ([media-library.md](media-library.md)) |
+| "no file N in folder M" | The number does not exist or the file is not playable: Media screen, that folder: invalid name, needs transcode, unreadable ([Media library](media-library.md)) |
 | A decoder error ("unsupported codec", "VideoToolbox error", "no video track") | Transcode the file again or replace it, then send Control 24–31 (Clear error) on layer channel 50 from the console and back to 0 |
-| "no capture device / display / Syphon server numbered N" | Nothing has that number in folder 0: Inputs screen, **Number** ([live-inputs.md](live-inputs.md)) |
+| "no capture device / display / Syphon server numbered N" | Nothing has that number in folder 0: Inputs screen, **Number** ([Live inputs](live-inputs.md)) |
 | "not running", "in use by another app", "no signal" | The live input: plugged in, not open in another app, a signal on the card |
 | A permission text | Inputs screen › **Authorize** (not in show mode); screen recording needs Engine › Restart Engine after the grant |
 
@@ -173,7 +173,7 @@ picture appears:
 5. The output bound ([below](#outputs-stay-black-although-the-layers-play)).
 6. Scale and Crop.
 7. The value came from the UI, a cue or OSC and Who controls is **Console
-   only**: it is kept, not shown ([remote-control.md](remote-control.md#who-controls)).
+   only**: it is kept, not shown ([Remote control](remote-control.md#who-controls)).
 
 The Layer panel on the Layers screen shows every channel's value as the
 engine reads it.
@@ -189,7 +189,7 @@ lost its signal, holds its last frame by design.
 
 - The output's row on the Outputs screen: green with its display, not "not
   assigned to a display" or the red "display missing"
-  ([outputs-and-mapping.md](outputs-and-mapping.md#add-an-output-and-bind-it-to-a-display)).
+  ([Outputs and mapping](outputs-and-mapping.md#add-an-output-and-bind-it-to-a-display)).
 - Its Intensity up, and the Output and Master fixtures' Intensity up with
   no Blackout: a test pattern follows them like the picture, so a pattern
   that stays black points at them.
@@ -202,12 +202,12 @@ lost its signal, holds its last frame by design.
   granted" wants **Authorize screen** on the Inputs screen, the grant under
   Privacy & Security › Screen & System Audio Recording, then Engine ›
   Restart Engine; macOS asks again about once a month, on the main
-  display ([live-inputs.md](live-inputs.md#displays-2128)).
+  display ([Live inputs](live-inputs.md#displays-2128)).
 
 ## Lines and a yellow cross on the projector
 
 Someone has Warp & Slices open: the projector shows what they edit
-([warp-and-masks.md](warp-and-masks.md#show-on-output)). Leave the tab or
+([Warp, slices and masks](warp-and-masks.md#show-on-output)). Leave the tab or
 switch **Show on output** off; a browser that went away takes them with it
 within a few seconds.
 
@@ -216,7 +216,7 @@ within a few seconds.
 The status bar shows "dropped · 1 s"; in show mode the tile on System ›
 Live metrics is red, and the status bar's item is red while the show is
 locked. The tile to read is **dropped**; the graph shows the GPU's p99
-against the frame budget ([screens/system.md](screens/system.md#live-metrics)).
+against the frame budget ([System screen](screens/system.md#live-metrics)).
 
 <img src="images/metrics.png" width="1396" alt="System › Live metrics: tiles for fps, dropped, GPU and CPU time, DMX to photon, texture misses, clients, preview and audio, and the GPU graph">
 
@@ -228,14 +228,14 @@ against the frame budget ([screens/system.md](screens/system.md#live-metrics)).
   ingest). Many open browser previews cost time too: the clients tile.
 - Display mode: the display at the canvas frame rate or a multiple of it,
   not mirrored; the output's Mode set, so show mode applies it
-  ([outputs-and-mapping.md](outputs-and-mapping.md#display-modes)).
+  ([Outputs and mapping](outputs-and-mapping.md#display-modes)).
 - Too much media: 4K60 ProRes, Blur and Edge, dissolves on many layers
-  ([media-library.md](media-library.md#what-a-mac-can-play)).
+  ([Media library](media-library.md#what-a-mac-can-play)).
 
 ## No sound
 
 Audio plays on the Mac's default output device in one stereo mix
-([media-library.md](media-library.md#audio)). System Settings › Sound ›
+([Media library](media-library.md#audio)). System Settings › Sound ›
 Output: the right device; a replugged HDMI display can switch it. The
 layer's audio channels on the console (volume, mute); audio plays only at
 100 % speed forward. System › Live metrics › audio counts underruns.
@@ -246,17 +246,17 @@ layer's audio channels on the console (volume, mute); audio plays only at
   showing; the Show screen says so in yellow.
 - From a trigger: the timecode must be Locked and pass the trigger time
   running; a start exactly at the trigger, a jump back, or a jump forward
-  of 5 seconds or more fires nothing ([show-control.md](show-control.md#triggers-and-follows)).
+  of 5 seconds or more fires nothing ([Show control](show-control.md#triggers-and-follows)).
   Fire a skipped cue with Go to.
 - From OSC or MSC: the OSC panel's "Last received" or the MIDI panel's last
   message shows whether it arrived; the MSC format and device id must match
-  ([remote-control.md](remote-control.md#midi-show-control)).
+  ([Remote control](remote-control.md#midi-show-control)).
 - After an engine restart no cue is current: Go to the right one.
 
 ## LTC does not lock
 
 Show screen › Timecode: the state should read **Locked** and "frames seen"
-count up ([show-control.md](show-control.md#timecode)).
+count up ([Show control](show-control.md#timecode)).
 
 - Source **LTC**, the **Timecode** switch on, the right **Device** (an
   unplugged one reads "not connected") and **Channel** (1 is the first; the
@@ -347,7 +347,7 @@ Engine › **Restart Engine**: the outputs go black for a moment and the UI
 reloads; every iPad logs in again; the console's values apply again at once
 and playback positions start over. Avoid it during a show; if show mode is
 on, the engine comes back in show mode and the displays keep their modes
-([show-day-checklist.md](show-day-checklist.md#what-comes-back-after-the-engine-stops)).
+([Show-day checklist](show-day-checklist.md#what-comes-back-after-the-engine-stops)).
 Quitting the app does not stop the engine unless you choose **Stop Engine
 and Quit** in the quit question; **Stop Engine…** does, and **Start
 Engine** starts it again.
@@ -384,7 +384,7 @@ cues, timecode and MIDI settings. Undo is refused when a live input's
 number changed meanwhile; revert to the "Before revert to …" version then.
 A console can do the same with OSC: `/fanous/project/load "Doors 19:30"`
 restores the newest named version with that name, under the same rules
-([reference/osc.md](reference/osc.md)).
+([OSC reference](reference/osc.md)).
 
 ## Reset the project
 
@@ -405,7 +405,7 @@ screen: stop the engine, remove the `passwords` entry from
 away, which also resets the sync and OSC feedback settings) and start the
 engine; the role is open again. The certificate is reset with
 `fanousd reset-tls`, with the engine stopped
-([reference/files-and-ports.md](reference/files-and-ports.md#service-and-process-names)).
+([Files, ports and the command line](reference/files-and-ports.md#service-and-process-names)).
 
 ## For the venue's systems technician
 
@@ -418,7 +418,7 @@ engine; the role is open again. The certificate is reset with
 - Firewall both ways: in UDP 6454, 5568, 8000, 8002 and TCP 8443; out UDP
   to the Art-Net poller, to OSC subscribers, to 224.0.0.180 and
   239.224.0.180 on 4809, and sync on 8002
-  ([reference/files-and-ports.md](reference/files-and-ports.md#ports)).
+  ([Files, ports and the command line](reference/files-and-ports.md#ports)).
   Allow-list the console's addresses: OSC and Art-Net carry no login.
 - A managed Mac: a profile can block the login item (the Engine menu then
   reads "service needs approval"), pre-deny the camera and microphone,

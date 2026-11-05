@@ -8,12 +8,12 @@ Use this page to get the canvas onto a projector or display, to blend two
 or more projectors into one picture, to tune the seams of a projector wall,
 and to match colour between projectors. Placing the picture on the surface
 (corner pin, mesh, slices, masks, presets, the Keystone fixture) is
-[warp-and-masks.md](warp-and-masks.md). Every control of the Outputs screen
-is in [screens/outputs.md](screens/outputs.md); terms are in the
+[Warp, slices and masks](warp-and-masks.md). Every control of the Outputs screen
+is in [Outputs screen](screens/outputs.md); terms are in the
 [glossary](reference/glossary.md#mapping).
 
 Everything here needs the Fanous programmer role (a login level, not the
-console: [ui.md](ui.md#roles-and-logging-in)). While the show is locked the
+console: [The user interface](ui.md#roles-and-logging-in)). While the show is locked the
 wall, preset, Remote and Colour controls are greyed out with the reason and
 the engine refuses the rest; a canvas change is also refused in show mode.
 
@@ -21,7 +21,7 @@ First picture on one projector, in four steps: plug the projector in
 and set it to extended in System Settings › Displays; Outputs screen, **Add
 output on**, pick it; press **Output ID** under the output settings and
 read the number on the projector; then play a layer
-([getting-started.md](getting-started.md)). The rest of this page is what
+([Getting started](getting-started.md)). The rest of this page is what
 comes after.
 
 ## One output per projector
@@ -33,7 +33,7 @@ warp, one or more slices with their masks, and a colour match. A new output
 shows the whole canvas, unblended and unwarped. Everything an output does
 runs on the GPU in the last step, so it costs no layer capacity. Each
 output is also an 8-channel Output fixture on the console
-([console-setup.md](console-setup.md#the-four-fixtures)): intensity,
+([Console setup](console-setup.md#the-four-fixtures)): intensity,
 blackout and freeze (channel 3), test pattern (channel 4), Raw (channel 5),
 mapping preset and fade (channels 6 and 7). Console control covers outputs
 1 to 8; outputs 9 and up are driven from the UI only.
@@ -43,7 +43,7 @@ mapping preset and fade (channels 6 and 7). Console control covers outputs
 The preview on top shows the selected output in its own shape, as the
 projector sees it; on the Canvases tab it shows the canvas. Do not judge
 colour or smoothness on it, judge on the projector
-([ui.md](ui.md#the-window)).
+([The user interface](ui.md#the-window)).
 
 Do the work in this order: hang and focus the projectors, align each one
 on its own (warp), then blend, then black lift, then colour. The blend
@@ -66,7 +66,7 @@ projector; use the warp for the fine trim, not to square up a big rotation.
    ID** under the output settings: the projector shows its number on a
    coloured field, so you know the output works before any content does.
    A yellow bar offers **Align this output**, which opens Warp & Slices
-   for it ([warp-and-masks.md](warp-and-masks.md)); **Later** keeps it for
+   for it ([Warp, slices and masks](warp-and-masks.md)); **Later** keeps it for
    now. The bar appears only for an output added on this screen, not for
    one added on the Patch screen.
 4. Name it after the projector (**Name** under the list). When one display
@@ -154,7 +154,7 @@ to what renders, and what was on it moves to Canvas 1.
 To send Canvas 1 to another app on this Mac, choose the Syphon server
 **Fanous – Canvas** in that app. The other canvases are not published.
 Other apps' Syphon servers are layer content in folder 0, files 150 to 169
-([live-inputs.md](live-inputs.md#syphon-servers-150169)).
+([Live inputs](live-inputs.md#syphon-servers-150169)).
 
 ## Display modes
 
@@ -162,7 +162,7 @@ Skip this section until a projector must run at a fixed resolution and
 refresh rate. Outside show mode Fanous uses whatever mode a display runs.
 **Mode** in the output settings asks for one from the display's own list;
 the output row then warns in yellow, and show mode
-([show-control.md](show-control.md)) switches every display with a Mode,
+([Show control](show-control.md)) switches every display with a Mode,
 all at once, and switches them back when it ends or when the engine stops.
 After an engine crash in show mode the displays keep their show modes until
 you leave show mode.
@@ -198,7 +198,7 @@ that is not a grid. The hand route, for two 1920 × 1080 projectors with a
 15 % overlap (288 px):
 
 1. Hang, focus and align each projector on its own
-   ([warp-and-masks.md](warp-and-masks.md#corner-pin)), with **Grid** on
+   ([Warp, slices and masks](warp-and-masks.md#corner-pin)), with **Grid** on
    both (the test pattern buttons under the output settings): the grid
    lines must meet across the overlap before you blend.
 2. Canvases tab: **Size** 3552 × 1080 (2 × 1920 − 288), **Apply**.
@@ -286,7 +286,7 @@ Colour bars, 48–63 Blend check, 64–79 Output ID, 80–95 Crosshair, 96–111
 Grey steps, 112–127 Checkerboard, 128–143 Grey 0 %, 144–159 Grey 25 %,
 160–175 Grey 75 %, 176–191 White ([channel map](../channel-map.md)). The
 first seven patterns and a moving test card are also layer content in
-folder 0 ([reference/built-in-content.md](reference/built-in-content.md)).
+folder 0 ([Built-in content](reference/built-in-content.md)).
 The output is 8-bit with a noise dither; a long gradient across a ramp can
 band.
 
@@ -505,16 +505,16 @@ wall see the patterns alternate: finish on one device first.
 - A Mode on every output that must run at a fixed rate; the canvas frame
   rate equal to the projectors' refresh rate, read from each output row;
   the readiness item **Outputs in their desired display mode** green or
-  acknowledged ([show-day-checklist.md](show-day-checklist.md)).
+  acknowledged ([Show-day checklist](show-day-checklist.md)).
 - Seam check done, test patterns off (the Output and Master fixtures'
   Test pattern channels at 0), every output's own test pattern **Off**.
 - Black lift set at 100 % output intensity; dimming from the Master or the
   layers.
 - **Hold on signal loss** at Hold last values for the universes that carry
   the Output, Master and Keystone fixtures, unless you want black on loss
-  ([console-setup.md](console-setup.md#when-the-console-goes-silent)).
+  ([Console setup](console-setup.md#when-the-console-goes-silent)).
 - Walls and presets stored again after any layout change: a wall changed
   later does not change the presets stored before
-  ([warp-and-masks.md](warp-and-masks.md#mapping-presets)).
+  ([Warp, slices and masks](warp-and-masks.md#mapping-presets)).
 - The UI on another device when an output uses the Mac's own display.
-- Something wrong on the night: [troubleshooting.md](troubleshooting.md).
+- Something wrong on the night: [Troubleshooting](troubleshooting.md).

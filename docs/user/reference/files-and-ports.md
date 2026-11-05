@@ -140,5 +140,5 @@ another engine of this user already runs ("fanousd is already running
 | `https://127.0.0.1:8443/healthz` | `{"status":"ok","version":…,"uptimeSeconds":…,"chip":…}` when the engine answers; no login needed |
 | `https://…:8443/api/channel-map.md` | The channel map the Patch screen's **Channel map** opens |
 
-The OSC address space is in [osc.md](osc.md); the HTTP endpoints, the
-roles and the WebSocket protocol for integrators are in [api.md](api.md).
+The OSC address space is in [OSC reference](osc.md); the HTTP endpoints, the
+roles and the WebSocket protocol for integrators are in [REST and WebSocket API](api.md).

@@ -39,7 +39,7 @@ is doing: frames, universes, outputs, clients.
    blackout, freeze, test patterns, mapping presets. An optional **Keystone
    fixture** (16 channels) moves an output's corners from the desk. You patch
    them on the console from the GDTF file Fanous exports. See
-   [console-setup.md](console-setup.md).
+   [Console setup](console-setup.md).
 2. **Who controls decides which value counts.** Besides the console, values
    can come from the UI, from Fanous's own cue list (fired by hand, by
    timecode or by a follow time), from OSC and from MIDI. The project's
@@ -53,7 +53,7 @@ is doing: frames, universes, outputs, clients.
    The other channels set how it plays (loop, once, bounce, timecode, speed,
    in and out points) and how it looks (intensity, position, scale, rotation,
    colour, blend mode, two effects, crop, dissolve). See
-   [media-library.md](media-library.md).
+   [Media library](media-library.md).
 4. **Layers stack into a canvas**, the picture the layers are drawn into, in
    pixels. Layer 1 is at the bottom, each higher layer on top of it with its
    blend mode. A new project has one canvas of 1920 × 1080 at 60 fps; a show
@@ -65,13 +65,13 @@ is doing: frames, universes, outputs, clients.
    mesh), masked, colour-matched. A projector wall sets up several outputs in
    one go. All of this runs on the GPU after the layers are composited, so it
    does not count against the layer limit. See
-   [outputs-and-mapping.md](outputs-and-mapping.md).
+   [Outputs and mapping](outputs-and-mapping.md).
 6. **Fanous reports back.** The UI shows a live preview of a canvas, a layer
    or an output: H.264 at up to 1280 pixels wide, not in step with the output
    and no colour reference. A console that speaks CITP/MSEX gets the media
    list, thumbnails and a preview stream of Canvas 1; OSC can read every value
    back; other apps on the Mac can take Canvas 1 over Syphon. See
-   [remote-control.md](remote-control.md) and [reference/osc.md](reference/osc.md).
+   [Remote control](remote-control.md) and [OSC reference](reference/osc.md).
 
 The picture leaves the Mac as 8-bit Rec.709 video at the canvas size and
 rate. The engine paces its frames on its own clock at the canvas rate; it is
@@ -101,7 +101,7 @@ Three things the rule leaves out:
   once. Cue and OSC values never expire.
 - The setting applies to the whole project, not per layer. What a universe's
   fixtures do when the console goes silent is a setting of the universe:
-  [console-setup.md](console-setup.md#when-the-console-goes-silent).
+  [Console setup](console-setup.md#when-the-console-goes-silent).
 
 ## The project
 
@@ -121,7 +121,7 @@ The media is not in the project. The project and the console only know folder
 and file numbers, so the same show runs on a spare Mac whose library has the
 same numbers. Role passwords and multi-server sync settings belong to the
 machine, not the show. Every file and where it is:
-[reference/files-and-ports.md](reference/files-and-ports.md).
+[Files, ports and the command line](reference/files-and-ports.md).
 
 ## Safe on show day
 
@@ -137,10 +137,10 @@ machine, not the show. Every file and where it is:
   acknowledges it (one item, Supported hardware, cannot be acknowledged); an
   operator can run the list but not acknowledge, so have a programmer login
   ready before doors. See
-  [show-day-checklist.md](show-day-checklist.md).
+  [Show-day checklist](show-day-checklist.md).
 - **Roles** (monitor, operator, programmer) with their own passwords decide
   what each browser may do. The app window on the Mac is always programmer.
-  See [ui.md](ui.md#roles-and-logging-in).
+  See [The user interface](ui.md#roles-and-logging-in).
 - **When the console goes silent**, each universe's fixtures hold their last
   values unless its settings say otherwise, so a crashed desk leaves the last
   picture up.
@@ -150,7 +150,7 @@ machine, not the show. Every file and where it is:
   reboot it resumes show mode if someone logs in within two hours of the
   moment the Mac went down.
 - **Several Macs** can play one picture in step, each its own part of it. See
-  [multi-server.md](multi-server.md).
+  [Multi-server sync](multi-server.md).
 
-When something goes wrong, [troubleshooting.md](troubleshooting.md) starts from
+When something goes wrong, [Troubleshooting](troubleshooting.md) starts from
 what you see.

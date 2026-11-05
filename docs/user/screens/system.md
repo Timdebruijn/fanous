@@ -8,15 +8,15 @@ Every control on the screen that watches the machine: show mode and the
 readiness list, live metrics, the machine, the network, sync, project
 versions, roles and passwords, and the log. For the tasks (show day, finding
 a fault, going back to a version) see
-[show-day-checklist.md](../show-day-checklist.md) and
-[troubleshooting.md](../troubleshooting.md). Terms are in the
+[Show-day checklist](../show-day-checklist.md) and
+[Troubleshooting](../troubleshooting.md). Terms are in the
 [glossary](../reference/glossary.md): p50 and p99, frame budget, DMX to
 photon, texture miss, Sync master.
 
 Everything marked "programmer" is greyed out or refused for the operator and
 monitor roles; "refused while the show is locked" means the status bar's tag
 reads **Locked** (a programmer presses L to unlock). Hover a greyed control
-for its reason: [ui.md](../ui.md#why-is-this-control-greyed-out).
+for its reason: [The user interface](../ui.md#why-is-this-control-greyed-out).
 On this screen the operator can switch show mode and run the readiness list;
 Acknowledge, the library root, sync, versions and passwords are the
 programmer's.
@@ -42,7 +42,7 @@ awake, the ingest queue is paused, the cursor is hidden on the outputs, each
 display runs the mode its output asks for, and the state is written to disk
 every 30 s so the engine resumes show mode after a crash, a restart, or a
 power cut within two hours
-([show-day-checklist.md](../show-day-checklist.md#what-comes-back-after-the-engine-stops));
+([Show-day checklist](../show-day-checklist.md#what-comes-back-after-the-engine-stops));
 a planned Restart, Shut Down or Log Out leaves show mode.
 
 ## Readiness
@@ -74,7 +74,7 @@ badge appears when a poll fails.
 | Part | Shows |
 |---|---|
 | fps | Frames rendered in the last second, divided by the span between the first and the last of them, so it reads one above the canvas rate now and then (61 on a 60 fps canvas) |
-| dropped | Missed (the display's tick passed before a frame was ready) and late (the GPU finished after the tick) frames in the last second; red in show mode, yellow before it, when above 0. Any number above 0 during a show is a frame the audience did not get: see [troubleshooting.md](../troubleshooting.md#dropped-frames) |
+| dropped | Missed (the display's tick passed before a frame was ready) and late (the GPU finished after the tick) frames in the last second; red in show mode, yellow before it, when above 0. Any number above 0 during a show is a frame the audience did not get: see [Troubleshooting](../troubleshooting.md#dropped-frames) |
 | GPU ms, CPU ms | p50 / p99 / max of the frame times; p99 against the frame budget is the one to watch |
 | DMX to photon ms | From a changed DMX frame arriving to the time the frame that shows it is scheduled to appear, p50 / p99 with the sample count (one per changed DMX frame); the display's own delay is not included; "—" without samples |
 | texture misses | How often a visible layer had no decoded frame ready, summed over every frame of the second (60 on one layer is one second of a stuck layer); the previous frame is shown again; yellow above 0 |
@@ -124,7 +124,7 @@ badge appears when a poll fails.
 
 While nothing renders the panel says "Sync runs with the outputs: nothing is
 rendering on this machine." and hides the form. What the settings mean:
-[multi-server.md](../multi-server.md#sync-settings).
+[Multi-server sync](../multi-server.md#sync-settings).
 
 ## Project versions
 
@@ -144,7 +144,7 @@ entering show mode and every 10 minutes after a change, the newest 50 kept.
 
 <img src="../images/roles.png" width="1396" alt="System › Roles and passwords: each role open, with Set and Clear">
 
-One row per role: monitor, operator, programmer ([ui.md](../ui.md#roles-and-logging-in)). A role without a password is open to everyone who can reach the address.
+One row per role: monitor, operator, programmer ([The user interface](../ui.md#roles-and-logging-in)). A role without a password is open to everyone who can reach the address.
 
 | Control | Does |
 |---|---|

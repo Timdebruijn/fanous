@@ -6,8 +6,8 @@
 
 Every control on the screen titled "Outputs & Mapping": canvases, outputs,
 projector walls, warp, slices, masks and presets. For the tasks see
-[outputs-and-mapping.md](../outputs-and-mapping.md) (a projector, a blend, a
-wall, the seam check, colour) and [warp-and-masks.md](../warp-and-masks.md)
+[Outputs and mapping](../outputs-and-mapping.md) (a projector, a blend, a
+wall, the seam check, colour) and [Warp, slices and masks](../warp-and-masks.md)
 (corner pin, mesh, slices, masks, Remote, presets, keystone). Terms are in the
 [glossary](../reference/glossary.md): seam, gamma, black lift, black floor,
 black offset, corner pin, mesh, slice, mask, Raw.
@@ -15,7 +15,7 @@ black offset, corner pin, mesh, slice, mask, Raw.
 Everything marked "programmer" is greyed out or refused for the operator and
 monitor roles; "refused while the show is locked" means the status bar's tag
 reads **Locked** (a programmer presses L to unlock). Hover a greyed control
-for its reason: [ui.md](../ui.md#why-is-this-control-greyed-out).
+for its reason: [The user interface](../ui.md#why-is-this-control-greyed-out).
 On this screen the operator and monitor roles can look and switch tabs;
 nothing here changes anything for them.
 
@@ -92,7 +92,7 @@ be even." Removing a canvas asks first and shows a toast with Undo.
 **New projector wall** opens the wizard; it is disabled with "Add at least
 two outputs that are in no wall yet." Each wall has a panel here instead.
 The wizard, the wall panel and the seam check, step by step:
-[outputs-and-mapping.md](../outputs-and-mapping.md#projector-walls).
+[Outputs and mapping](../outputs-and-mapping.md#projector-walls).
 
 ![The panel of Wall 1 on the seam check, Blend check on both projectors; the preview shows the grey blend check pattern](../images/wall-panel.png)
 
@@ -151,7 +151,7 @@ kept but cannot be shown on the wall panel's slider.
    **Slices**, **Mask**. With one point selected, **Selected point (px)**
    shows its x and y.
 2. **Remote**: the iPad layout
-   ([warp-and-masks.md](../warp-and-masks.md#remote-aligning-from-an-ipad));
+   ([Warp, slices and masks](../warp-and-masks.md#remote-aligning-from-an-ipad));
    **Content template (PNG)** downloads the slice and mask layout at canvas
    size.
 3. **Preview** with the handles. Drag them; arrow keys nudge by 1 px, Shift
@@ -191,4 +191,4 @@ spread over the slices, left to right.") with Undo.
 | **Hold to compare** | Shows the preset on the output while you hold the button; greyed with "Compare is off in show mode", the lock reason, or "Compare reaches outputs 1–8" on output 9 and up |
 
 The console shows a preset with Output channel 6; channel 7 sets the glide
-time ([warp-and-masks.md](../warp-and-masks.md#from-the-console)).
+time ([Warp, slices and masks](../warp-and-masks.md#from-the-console)).

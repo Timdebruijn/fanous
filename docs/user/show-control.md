@@ -7,24 +7,24 @@
 Use this page to run a show from the Show screen, to build cues, and to let
 timecode (LTC or MTC) fire them and drive the layers. Driving Fanous without
 a console from the UI, OSC, MIDI and MSC, and letting a console browse it
-over CITP, is [remote-control.md](remote-control.md); two Macs playing in
-step is [multi-server.md](multi-server.md). Every control of the Show screen
-is in [screens/show.md](screens/show.md); terms are in the
+over CITP, is [Remote control](remote-control.md); two Macs playing in
+step is [Multi-server sync](multi-server.md). Every control of the Show screen
+is in [Show screen](screens/show.md); terms are in the
 [glossary](reference/glossary.md#console-protocols-control).
 
 Before you start: open the Show screen (key 6); have media in the library
-([media-library.md](media-library.md)) and the layers patched
-([console-setup.md](console-setup.md)); and when the Show screen shows a
+([Media library](media-library.md)) and the layers patched
+([Console setup](console-setup.md)); and when the Show screen shows a
 yellow note about Who controls, press **Use Console and Fanous, latest
 change wins** once. With the default **Console only** the cue list runs but
-the layers keep showing the console ([remote-control.md](remote-control.md#who-controls)).
+the layers keep showing the console ([Remote control](remote-control.md#who-controls)).
 
 ![The Show screen: GO with the next cue, the Timecode panel, the cue list with cue 2 current and cue 3 next, OSC on the right](../images/show.png)
 
 Running the show (GO, Back, Go to, the timecode switch) is the operator's
 and works while the show is locked. Building cues and the timecode settings
 are the programmer's and are refused while the show is locked
-([ui.md](ui.md#roles-and-logging-in)).
+([The user interface](ui.md#roles-and-logging-in)).
 
 ## Run the show
 
@@ -168,7 +168,7 @@ Setting up LTC:
    before show mode: LTC needs the Microphone permission, and the readiness
    item **Microphone permission granted** blocks show mode without it while
    the Source is LTC, whatever the switch says
-   ([live-inputs.md](live-inputs.md#permissions)).
+   ([Live inputs](live-inputs.md#permissions)).
 2. Plug the LTC feed into an audio input of the Mac. On the Inputs screen,
    select that input, pick the channel (1 is the first) and press **Use for
    timecode**: Source, Device and Channel are set in one step. The same
@@ -246,7 +246,7 @@ the Offset. Any change to the settings, also the Offset, restarts the
 input: the state drops to Off for a moment and comes back Locked. The
 settings are the programmer's and are refused while the show is locked,
 so set them before you lock. The per-layer offsets the engine also
-supports have no field on the screen ([reference/api.md](reference/api.md#commands),
+supports have no field on the screen ([REST and WebSocket API](reference/api.md#commands),
 `timecode.set`).
 
 ## Before the show
@@ -262,4 +262,4 @@ supports have no field on the screen ([reference/api.md](reference/api.md#comman
   and the timecode switch keep working.
 - After a crash or an engine restart fire the section's first cue with Go
   to: no cue is current, and Go to does not rebuild earlier cues.
-- Something wrong on the night: [troubleshooting.md](troubleshooting.md).
+- Something wrong on the night: [Troubleshooting](troubleshooting.md).

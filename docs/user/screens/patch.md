@@ -7,13 +7,13 @@
 Every control on the screen that holds the DMX patch: Who controls, the
 fixture groups, the universes and the DMX monitor. For the tasks (patching
 on a console, GDTF, Art-Net or sACN, signal loss) see
-[console-setup.md](../console-setup.md). Terms are in the
+[Console setup](../console-setup.md). Terms are in the
 [glossary](../reference/glossary.md).
 
 Everything marked "programmer" is greyed out or refused for the operator and
 monitor roles; "refused while the show is locked" means the status bar's tag
 reads **Locked** (a programmer presses L to unlock). Hover a greyed control
-for its reason: [ui.md](../ui.md#why-is-this-control-greyed-out).
+for its reason: [The user interface](../ui.md#why-is-this-control-greyed-out).
 On this screen the operator and monitor roles can read everything, open a
 chip's editor and the Patch sheet, and pin cells in the monitor; every change
 is the programmer's.
@@ -57,7 +57,7 @@ where it counts from; `S 1` is sACN universe 1 ([README](../README.md#convention
 A list with the four settings (**Console only**, **Fanous only (UI, cues,
 OSC, MIDI)**, **Console and Fanous, latest change wins**, **Console and
 Fanous, highest value wins**) and a line that explains the current one
-([how-it-works.md](../how-it-works.md#who-wins-the-four-who-controls-settings)).
+([How Fanous works](../how-it-works.md#who-wins-the-four-who-controls-settings)).
 Latest change wins is LTP per channel between the console and Fanous's own
 sources; highest value wins is HTP for continuous channels. Neither has to do
 with sACN priority, which merges consoles.
@@ -134,7 +134,7 @@ switches to it.
 A red line says "Interface X is not on this Mac: the universe receives
 nothing until it is connected." Empty: "No universe is patched, heard or set
 up yet." What each setting does:
-[console-setup.md](../console-setup.md#universe-settings).
+[Console setup](../console-setup.md#universe-settings).
 
 ## DMX monitor
 

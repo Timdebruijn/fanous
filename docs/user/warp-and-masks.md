@@ -20,12 +20,12 @@ section below:
 
 Together, the corner pin, mesh, slices and masks of one output are its
 mapping. Binding, blending, walls and colour are
-[outputs-and-mapping.md](outputs-and-mapping.md); every control of the
-Warp & Slices tab is in [screens/outputs.md](screens/outputs.md#warp--slices-tab);
+[Outputs and mapping](outputs-and-mapping.md); every control of the
+Warp & Slices tab is in [Outputs screen](screens/outputs.md#warp--slices-tab);
 terms are in the [glossary](reference/glossary.md#mapping).
 
 Editing here needs the Fanous programmer role
-([ui.md](ui.md#roles-and-logging-in)) and is refused while the show is
+([The user interface](ui.md#roles-and-logging-in)) and is refused while the show is
 locked (you can still select and step through points, not move them).
 **Show on output**, **Hold to compare** and the wizard's Output IDs are
 also off in show mode.
@@ -144,14 +144,14 @@ Three screens on a stage from one projector, on a 1920 × 1080 canvas:
 **Reset slice** puts the whole canvas on the whole output again (the masks
 stay); **Remove slice** keeps at least one. Each slice has a **Canvas** list
 when the project has several canvases
-([outputs-and-mapping.md](outputs-and-mapping.md#several-canvases)). Two
+([Outputs and mapping](outputs-and-mapping.md#several-canvases)). Two
 shape buttons act on the selected slice: **Triangle**, for a gable or a
 pointed screen, moves its top corners together into the middle of the top
 edge (drag one away and it is four corners again); **Circle** adds an
 ellipse mask that fills the box around the slice's corners (a circle when
 the slice is square), to edit in Mask mode. On a wall member slice 1's
 Source is the wall's; changing it marks the field **manual**
-([outputs-and-mapping.md](outputs-and-mapping.md#the-wall-panel)).
+([Outputs and mapping](outputs-and-mapping.md#the-wall-panel)).
 
 ## Masks
 
@@ -257,7 +257,7 @@ and makes them large, so you can align from an iPad while you look at the
 projection (**Show on output** marks the selected point there). It is on
 by default on touch screens narrower than 900 px, and each browser
 remembers your choice. The iPad logs in as programmer like any browser
-([ui.md](ui.md#the-ui-on-an-ipad-or-another-computer)).
+([The user interface](ui.md#the-ui-on-an-ipad-or-another-computer)).
 
 <img src="images/warp-remote.png" width="731" alt="The Warp & Slices form on an iPad in Remote mode, Mesh 5 × 5: the selection 'r1 c2' in large type, Previous point and Next point, One point, Row, Column and All, the edges Top, Right, Bottom and Left, the nudge pad with 10 px and a trackpad area">
 
@@ -317,7 +317,7 @@ all of them have).
 ### From the console
 
 Output fixture channels 6, **Mapping preset**, and 7, **Mapping fade**
-([console-setup.md](console-setup.md#the-four-fixtures)), on outputs 1 to
+([Console setup](console-setup.md#the-four-fixtures)), on outputs 1 to
 8:
 
 ```mermaid
@@ -363,7 +363,7 @@ preset like any mapping.
 <img src="images/warp-preset-note.png" width="1040" alt="Warp & Slices while the console shows Preset 1: the badges Preset 1 (console) and Overlay hidden: a preset shows, and the yellow line 'The output shows Preset 1. Edits go to its own mapping, shown here, and on the output again at channel 6 = 0.'">
 
 When the console signal drops, the output follows the universe's **Hold on
-signal loss** ([console-setup.md](console-setup.md#when-the-console-goes-silent)):
+signal loss** ([Console setup](console-setup.md#when-the-console-goes-silent)):
 
 | Hold on signal loss | The output |
 |---|---|
@@ -379,7 +379,7 @@ channel 7 if that preset differs from what it shows.
 
 To move an output's four corners from the console, patch a **Keystone**
 fixture (16 channels,
-[console-setup.md](console-setup.md#the-four-fixtures)). It works on top of
+[Console setup](console-setup.md#the-four-fixtures)). It works on top of
 the alignment made here, for moving scenery or a quick fix from front of
 house; it is not the projector's own keystone setting.
 

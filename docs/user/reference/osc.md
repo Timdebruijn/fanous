@@ -6,8 +6,8 @@
 
 Every OSC address Fanous understands and sends, with its arguments and
 limits. How to use them from a controller, with Companion and TouchOSC
-recipes, is in [remote-control.md](../remote-control.md#osc). The roles
-named below are the UI's roles ([ui.md](../ui.md#roles-and-logging-in));
+recipes, is in [Remote control](../remote-control.md#osc). The roles
+named below are the UI's roles ([The user interface](../ui.md#roles-and-logging-in));
 OSC itself carries no login. Back to the [index](../README.md).
 
 ## Transport

@@ -147,7 +147,7 @@ On an iPad in either orientation everything is there.
   "Engine unreachable: …; retrying". **Red "Connection lost · … · values shown
   are stale"** when the connection dropped after it was up: the numbers on
   screen stop moving until it is back. What to do:
-  [troubleshooting.md](troubleshooting.md#the-ui-says-the-engine-is-unreachable).
+  [Troubleshooting](troubleshooting.md#the-ui-says-the-engine-is-unreachable).
 - **Toast, bottom centre.** After a removal (an output, a slice, a preset, a
   wall, a layer, a cue) and after a one-step edit such as storing or
   recalling a preset or resetting a slice: "Output 2 removed." with a button
@@ -167,7 +167,7 @@ Space on the Show screen, open the list with **?**. Keys do nothing while you
 type in a field or while a dialog is open, and Space is ignored while a field
 or button has the focus: on show night click an empty part of the Show screen
 once, or use the GO button. The full list, with what to tap instead on an
-iPad: [reference/shortcuts.md](reference/shortcuts.md).
+iPad: [Keyboard shortcuts](reference/shortcuts.md).
 
 ## The UI on an iPad or another computer
 
@@ -200,7 +200,7 @@ preview pauses while the tab is in the background.
 
 A touch screen gets the same controls with 44 px targets, a nudge pad in the
 warp editor and **Remote** mode for aligning from the iPad while you look at
-the projection ([warp-and-masks.md](warp-and-masks.md#remote-aligning-from-an-ipad)).
+the projection ([Warp, slices and masks](warp-and-masks.md#remote-aligning-from-an-ipad)).
 
 ## Roles and logging in
 
@@ -236,7 +236,7 @@ The app window on the Mac itself is always programmer; it needs no password.
 
 Passwords are stored hashed in the machine's `settings.json`; how to back it
 up and what happens when the file is edited by hand:
-[reference/files-and-ports.md](reference/files-and-ports.md#application-support).
+[Files, ports and the command line](reference/files-and-ports.md#application-support).
 
 ## Why is this control greyed out
 

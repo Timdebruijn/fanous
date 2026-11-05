@@ -31,6 +31,19 @@ warping ([outputs-and-mapping.md](outputs-and-mapping.md),
 - For the UI on another device: a browser on the same network. An iPad is the
   intended second screen.
 
+## Where to start
+
+```mermaid
+flowchart TD
+  q{"What brings you here?"}
+  q -- "Fanous is new to me" --> hiw["How Fanous works"] --> gs["Getting started: first light in six steps"]
+  gs --> cs["Console setup"] --> ml["Media library"] --> om["Outputs and mapping"] --> sc["Show control"]
+  q -- "The machine runs; the show is soon" --> sd["Show-day checklist"] --> rd["Readiness items"]
+  q -- "Something is wrong" --> ts["Troubleshooting: from the symptom"]
+  q -- "What does this control do?" --> scr["screens/: one page per screen"]
+  q -- "A controller, not a console" --> rc["Remote control"]
+```
+
 ## Pages
 
 Three kinds of pages: read the first kind once, work from the second, look
@@ -107,3 +120,5 @@ a reference page with every control; the task pages say when to use them.
   show is locked" means press L first.
 - A number from a measurement names the machine and the conditions; a number
   without them is a design limit.
+- A link shows the page's title; the tables on this page show the file
+  names, so you can find a page in the folder.

@@ -8,14 +8,14 @@ Every control on the screen that lists the live inputs of this Mac: cameras
 and capture cards, displays, Syphon servers of other apps, and the audio
 inputs that carry LTC timecode. For the tasks (numbering, permissions, a
 camera on a layer, LTC) see
-[live-inputs.md](../live-inputs.md) and
-[show-control.md](../show-control.md#timecode). Terms are in the
+[Live inputs](../live-inputs.md) and
+[Show control](../show-control.md#timecode). Terms are in the
 [glossary](../reference/glossary.md).
 
 Everything marked "programmer" is greyed out or refused for the operator and
 monitor roles; "refused while the show is locked" means the status bar's tag
 reads **Locked** (a programmer presses L to unlock). Hover a greyed control
-for its reason: [ui.md](../ui.md#why-is-this-control-greyed-out).
+for its reason: [The user interface](../ui.md#why-is-this-control-greyed-out).
 On this screen the operator and monitor roles can look; Authorize, Number,
 Apply, Forget and Use for timecode are the programmer's.
 

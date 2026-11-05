@@ -10,7 +10,7 @@ media, so position, scale, colour, effects and dissolves apply. Select it
 from the console (channel 3 at 0, channel 4 at the number), from the layer
 panel's **Built-in content and live inputs (folder 0)** list, or from the
 Media screen's folder 0 with **Play on layer**. Live inputs:
-[live-inputs.md](../live-inputs.md). Back to the [index](../README.md).
+[Live inputs](../live-inputs.md). Back to the [index](../README.md).
 
 | File | Content |
 |---|---|
@@ -43,7 +43,7 @@ a wash, a backing or a flash. Dim it with the layer's intensity.
 ## 101 to 107 · Test patterns as a layer
 
 The same seven patterns an output can show for alignment
-([outputs-and-mapping.md](../outputs-and-mapping.md#test-patterns)), but as
+([Outputs and mapping](../outputs-and-mapping.md#test-patterns)), but as
 the content of one layer: they go through the layer's position, scale and
 colour, and through the outputs' blend and warp like any picture. Use them
 to send a grid or bars to every output from a cue, or as a test picture with
