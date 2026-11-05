@@ -257,12 +257,12 @@ change with the yellow banner instead. The outcome is the same.
 
 **What keeps working while the show is locked:** Go, Back and Go to, show
 mode on and off, the timecode switch, Run checks and Acknowledge on the
-System screen, Save version…, Release in the layer panel, logging in and
-out, and everything the console sends. Everything that changes the setup is
+System screen, Save version…, logging in and out, and everything the console
+sends. Everything that changes the setup is
 refused: patch, media, outputs, warp, cues, timecode settings, MIDI maps,
-Control and Keep in the layer panel, Revert and Delete under Project
-versions, Forget and Number on the Inputs screen, Set and Clear under Roles
-and passwords.
+Control, Keep and Release in the layer panel, Revert and Delete under
+Project versions, Forget and Number on the Inputs screen, Set and Clear
+under Roles and passwords.
 
 **What show mode refuses on top of that:** changing or adding a canvas,
 changing the library root, renumbering an input, the Authorize buttons,
