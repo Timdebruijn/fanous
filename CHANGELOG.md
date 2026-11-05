@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+## 1.0.0-rc.4 — 2026-11-05
+
 - Web: a media tile shows its codec, size, alpha and audio as one quiet mono line ("ProRes 422 · 1080p30 · α")
   instead of three outlined badges; only a state ("needs transcode", "invalid name") is still a badge. The cue
   editor's value fade column is 128 px wide, so the "cue fade" placeholder is no longer clipped (PR #294).
