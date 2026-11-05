@@ -4,747 +4,517 @@
 
 # Outputs and mapping
 
-Layers are composited into a **canvas** (1920x1080 at 60 fps in a new
-project; change it on the Canvases tab, see below). A project can have up to
-four canvases, for example layers 1 to 4 on Canvas 1 for the projectors and
-layers 5 to 8 on Canvas 2 for an LED wall (see "Several canvases" below).
-**Outputs** take parts of the canvases to displays
-and projectors. An output is a display, a region of it, an intensity, blend
-edges, a warp and one or more slices. A new output shows the whole canvas with
-no blend and no warp. Everything is applied on the GPU in the last step, so it
-costs no layer capacity.
+Use this page to get the canvas onto a projector or display, to blend two
+or more projectors into one picture, to tune the seams of a projector wall,
+and to match colour between projectors. Placing the picture on the surface
+(corner pin, mesh, slices, masks, presets, the Keystone fixture) is
+[warp-and-masks.md](warp-and-masks.md). Every control of the Outputs screen
+is in [screens/outputs.md](screens/outputs.md); terms are in the
+[glossary](reference/glossary.md#mapping).
 
-The Outputs screen (key 4, "Outputs & Mapping") has three tabs: **Canvases**,
-**Outputs** and **Warp & Slices**. The output list is on the left. The preview
-on top shows the canvas on the Canvases tab and the selected output on the other
-two. The output preview has the output's own aspect ratio (4:3, 16:10, an
-ultra-wide LED wall), and the handles are drawn over exactly the same box, so
-they sit on the picture whatever the display. The Canvases tab shows the canvas
-in its own aspect ratio. The preview stream has that shape too, and is about as
-wide as the preview is on your screen in pixels: 320, 640, 960 or 1280 pixels,
-so a large or high-resolution screen gets a sharper picture. Resizing the window
-switches size after a moment.
+Everything here needs the Fanous programmer role (a login level, not the
+console: [ui.md](ui.md#roles-and-logging-in)). While the show is locked the
+wall, preset, Remote and Colour controls are greyed out with the reason and
+the engine refuses the rest; a canvas change is also refused in show mode.
+
+First picture on one projector, in four steps: plug the projector in
+and set it to extended in System Settings › Displays; Outputs screen, **Add
+output on**, pick it; press **Output ID** under the output settings and
+read the number on the projector; then play a layer
+([getting-started.md](getting-started.md)). The rest of this page is what
+comes after.
+
+## One output per projector
+
+Layers are drawn into a canvas (1920 × 1080 at 60 fps in a new project).
+An output takes the canvas to one display: the whole display or a region of
+it, with an intensity, blend edges on the sides that overlap a neighbour, a
+warp, one or more slices with their masks, and a colour match. A new output
+shows the whole canvas, unblended and unwarped. Everything an output does
+runs on the GPU in the last step, so it costs no layer capacity. Each
+output is also an 8-channel Output fixture on the console
+([console-setup.md](console-setup.md#the-four-fixtures)): intensity,
+blackout and freeze (channel 3), test pattern (channel 4), Raw (channel 5),
+mapping preset and fade (channels 6 and 7). Console control covers outputs
+1 to 8; outputs 9 and up are driven from the UI only.
 
 ![The Outputs tab: three outputs in the list, the selected output's preview and its settings below](images/outputs.png)
 
+The preview on top shows the selected output in its own shape, as the
+projector sees it; on the Canvases tab it shows the canvas. Do not judge
+colour or smoothness on it, judge on the projector
+([ui.md](ui.md#the-window)).
+
+Do the work in this order: hang and focus the projectors, align each one
+on its own (warp), then blend, then black lift, then colour. The blend
+works in the projector's own pixels after the warp, so hang and lens-shift
+so that the overlap is a straight vertical or horizontal strip in each
+projector; use the warp for the fine trim, not to square up a big rotation.
+
+## Add an output and bind it to a display
+
+1. Plug the projector in and set it to extended in System Settings ›
+   Displays (a mirrored display cannot be an output of its own). Set its
+   resolution and refresh rate there, or leave that to a
+   [display mode](#display-modes).
+2. Outputs screen, **Add output on**: pick the display, or "Unassigned
+   (assign later)" to prepare an output on a Mac without the projector. Do
+   not pick this Mac's own display unless another device already drives
+   the UI: the output covers the app window.
+3. The output appears in the list with a green dot and its display line,
+   and shows the whole canvas: black until a layer plays. Press **Output
+   ID** under the output settings: the projector shows its number on a
+   coloured field, so you know the output works before any content does.
+   A yellow bar offers **Align this output**, which opens Warp & Slices
+   for it ([warp-and-masks.md](warp-and-masks.md)); **Later** keeps it for
+   now. The bar appears only for an output added on this screen, not for
+   one added on the Patch screen.
+4. Name it after the projector (**Name** under the list). When one display
+   carries several outputs, set the **Region** each output draws on, in
+   display pixels: a 3840 × 2160 port into a splitter that feeds four
+   1920 × 1080 projectors gets 0 · 0 · 1920 · 1080, 1920 · 0 · 1920 · 1080,
+   0 · 1080 · 1920 · 1080 and 1920 · 1080 · 1920 · 1080.
+5. Leave **Intensity** at 100 %: the console's Output and Master intensity
+   multiply with it.
+
+<img src="images/outputs-next-align.png" width="1396" alt="The yellow bar after adding an output: Next: align this output, with the buttons Align this output and Later">
+
+An output is tied to its display by identity, not by port or position: a
+projector you unplug and plug in again, on any port, lands on the same
+output. A replaced projector shows as missing until you pick the new
+display in the output's **Display** field. With several identical
+projectors, check the binding with **Output ID** after a replug or a cable
+swap. Plugging displays in and out while the engine runs is checked with
+one external display; with two or more, test it on your machine before the
+show ([known limitations](reference/known-limitations.md#outputs-and-mapping)).
+
+<img src="images/outputs-row-states.png" width="341" alt="The output list with the three states: a green dot and the display line, a grey ring with 'not assigned to a display', a red dot with 'display missing: Projector R'">
+
+| Row | State | Means |
+|---|---|---|
+| green dot, `display · W × H @ Hz` | bound | The output draws on that display. "· clock master" marks the display that paces the engine ([below](#which-display-paces-the-engine)) |
+| grey ring, "not assigned to a display" ("binding…" for a moment) | unassigned | No display chosen, or it is being bound. Settings can be edited |
+| red dot, "display missing: name" | lost | The display went away. A red banner says so; the other outputs keep running. Plug it back in and it rebinds by itself |
+
+<img src="images/outputs-lost-banner.png" width="1396" alt="The red banner: Output 3 lost · Projector R is not connected; the other outputs keep running">
+
+### Which display paces the engine
+
+Fanous does not genlock to the projectors. The engine renders at the
+canvas frame rate and hands each frame to the clock master display first:
+the first bound output, unless you pick another under **Clock master** on
+the Canvases tab. Set it to the display that matters most; the others get
+the latest finished frame. Displays are not locked to each other either:
+two projectors can show frames up to one refresh apart, so a fast move
+across a seam can shear by that much. For a seam that must be frame-exact,
+feed those projectors from one display (a 4K port into a splitter, with a
+Region per output). Even with matching rates an occasional frame is
+repeated or skipped ([known limitations](reference/known-limitations.md#outputs-and-mapping)).
+
 ## Canvas size and frame rate
 
-On the Canvases tab, **Size w × h** sets the canvas in pixels (or pick a preset:
-1920 × 1080, 3840 × 2160, 1280 × 720) and **Frame rate** the rate the engine
-renders at: 23.976, 24, 25, 29.97, 30, 50, 59.94 or 60 fps. Width and height
-must be even and between 320 and 8192. Nothing changes until you press
-**Apply** and confirm; **Revert** drops your edits.
+On the Canvases tab, **Size w × h** sets the canvas in pixels (a preset:
+1920 × 1080, 3840 × 2160, 1280 × 720, or any even size from 320 to 8192)
+and **Frame rate** the rate the engine renders at: 23.976, 24, 25, 29.97,
+30, 50, 59.94 or 60 fps. Make the frame rate equal to the projectors'
+refresh rate, which the output row shows (`@ 60`): 60 fps for 60 Hz, 50
+fps for 50 Hz. For one projector, make the canvas its resolution; for
+projectors side by side, the width is the sum of their widths minus the
+overlaps ([below](#blend-two-projectors)). **Apply** asks first and
+re-creates the canvas: every output blanks for a moment, so do it before
+the show. It is refused in show mode and while the show is locked;
+**Revert** drops the edits and Undo goes back.
 
 ![The Canvases tab: the canvas preview, Canvas 1 and Add canvas, then name, size, frame rate and clock master](images/canvases.png)
 
-Applying re-creates the canvas: every output blanks (or holds its last picture)
-for a moment, so do it before the show, not during it. It is refused while the
-show is locked or show mode is on. An undo, redo or project load that changes the
-canvas during show mode waits: the tab says which canvas is rendering, and the
-change applies when show mode ends. If the engine cannot make the new canvas
-(not enough memory), the old one keeps running, the project goes back to it and
-the tab shows the error. Previews and generator layers (test card, grid) follow
-the new size. Outputs keep their display, blend, warp and
-slices: slice sources are stored as fractions of the canvas, so a slice that
-showed the left half still shows the left half (in pixels, the numbers double
-when you go from 1920 × 1080 to 3840 × 2160). Content that was made for the
-old size is scaled to the new canvas by each layer's fit mode. Undo (Cmd-Z)
-goes back to the previous size.
+Outputs keep their display, blend, warp and slices across a size change: a
+slice keeps its relative place on the canvas. Content made for the old size
+is scaled by each layer's Fit mode. A canvas change from an undo, redo or
+project load during show mode waits until show mode ends; the tab says
+which canvas is rendering meanwhile. If the engine cannot make the new
+canvas (not enough memory), the old one keeps running and the tab shows
+the error.
 
-## Several canvases
+### Several canvases
 
-Not every layer has to be on every output. **Add canvas** on the Canvases tab
-adds a canvas (at most four, and all canvases together at most four times
-3840 × 2160 pixels, for GPU memory; it starts at the size of Canvas 1); the buttons
-above the editor pick which canvas the editor and the preview show. Each canvas
-has its own name and size. All canvases run at the frame rate of Canvas 1: the
-**Frame rate** list is only enabled on Canvas 1, and changing it there changes
-every canvas. The clock master is set on Canvas 1 too.
+**Add canvas** adds a second to fourth canvas, for example layers 1 to 4 on
+Canvas 1 for the projectors and layers 5 to 8 on Canvas 2 for an LED wall
+(all canvases together at most four times 3840 × 2160 pixels). Every layer
+is on Canvas 1 until you pick another in the list under its name on the
+Layers screen; the list appears once there are two canvases. Every slice
+has a **Canvas** list on Warp & Slices, so one output can mix slices from
+different canvases. All canvases run at Canvas 1's frame rate, and the
+clock master is set on Canvas 1. Adding, removing or resizing a canvas
+blanks the outputs briefly. **Remove canvas** moves its layers and slices
+to Canvas 1 in one undoable step; a canvas the engine cannot make goes back
+to what renders, and what was on it moves to Canvas 1.
 
-- **Which layers:** every layer is on Canvas 1 until you pick another canvas in
-  the small list under the layer's name on the Layers screen (the list appears
-  once there are two canvases). A layer is drawn only into its own canvas. The
-  Canvases tab lists the layers of the selected canvas. This is a project
-  setting, not a DMX channel; it needs the programmer role and is refused while
-  the show is locked.
-- **Which outputs:** on Warp & Slices, every slice has a **Canvas** list: the
-  slice takes its picture from that canvas. One output can mix slices from
-  different canvases.
-- **Remove canvas** (not Canvas 1): its layers and the slices that showed it
-  move to Canvas 1, in one step that Undo reverses.
-- Adding, removing or resizing a canvas re-creates the canvases: outputs blank
-  briefly, so do it before the show. It is refused in show mode and under show
-  lock. An undo, redo or project load in show mode that brings back a canvas
-  waits for the end of show mode like a size change; until then its layers
-  are drawn on Canvas 1 and the slices that show it show Canvas 1, so nothing
-  goes dark. If a canvas cannot be made (not enough memory), the canvases go
-  back to what renders, the tab shows the error and what was on the missing
-  canvas moves to Canvas 1. A layer costs the same layer capacity on any
-  canvas; each extra canvas costs one more render pass while it has layers, and
-  three textures of its size in GPU memory.
-- A slice whose canvas no longer exists (a hand-edited project) stays black and
-  the engine log says which slice; pick another canvas for it. A browser
-  previewing a canvas that was removed gets an error instead of a frozen
-  picture.
+### The canvas for other apps
 
-The size and rate are saved in the project and used at every start. Developers
-who start the engine with `--scene FILE` override them: the scene file's canvas
-wins for that run and is shown (and saved, on the next edit) in the project.
-Keep the frame rate equal to the refresh rate of the displays; show mode sets
-each output's Mode (see [Display modes](#display-modes)).
+To send Canvas 1 to another app on this Mac, choose the Syphon server
+**Fanous – Canvas** in that app. The other canvases are not published.
+Other apps' Syphon servers are layer content in folder 0, files 150 to 169
+([live-inputs.md](live-inputs.md#syphon-servers-150169)).
 
-After you add an output, a yellow bar says **Next: align this output**:
-**Align this output** opens the Warp & Slices tab for that output, **Later**
-closes the bar.
+## Display modes
 
-## Displays and binding
+Skip this section until a projector must run at a fixed resolution and
+refresh rate. Outside show mode Fanous uses whatever mode a display runs.
+**Mode** in the output settings asks for one from the display's own list;
+the output row then warns in yellow, and show mode
+([show-control.md](show-control.md)) switches every display with a Mode,
+all at once, and switches them back when it ends or when the engine stops.
+After an engine crash in show mode the displays keep their show modes until
+you leave show mode.
 
-Under **Add output on** choose a connected display (name, size, "(this Mac)"
-for the built-in one) or "Unassigned (assign later)". An output is tied to a
-display by its identity, not by its position, so a projector you unplug and
-plug in again lands on the same output, and a replaced projector shows up as
-missing until you pick the new display in the **Display** field.
+<img src="images/outputs-mode-note.png" width="341" alt="An output row with the yellow note: Mode 1920 × 1080 @ 60 is not available on this display; closest 1920 × 1200 @ 60.">
 
-The list shows a status line per output:
+| Row note | Means | Do |
+|---|---|---|
+| "Mode differs: … wanted …. Applied in show mode." | The display runs another mode now | Nothing: show mode applies it |
+| "Mode … is not available on this display; closest …" | The display does not offer that mode | Pick the closest, or set the projector itself |
+| "N Hz is not a multiple of the canvas M fps: motion judders" | The wanted refresh rate and the canvas rate do not match | Change the Mode or the canvas frame rate |
+| "Conflicts with Output N on the same display" | Two outputs on one display want different modes | The first output with a Mode wins; make them agree |
+| "Not applied: screen locked: modes applied when unlocked" | macOS refuses display changes on a locked screen | Unlock the Mac; the mode follows while show mode is on |
 
-- green: `<display> · 1920 × 1080 @ 60`, with "clock master" on one of them
-- "not assigned to a display" (grey), or "binding…"
-- red: "display missing: <name>". A red banner also says "Output N lost" and that
-  the other outputs keep running. Re-plugging rebinds it.
+The judder warning, and the readiness item **Outputs in their desired
+display mode**, look only at outputs that have a Mode: for the others, read
+the Hz on the output row yourself. 59.94 and 60 Hz count as the same rate
+(so do 29.97/30 and 23.976/24); the exact one is used when the display
+offers it. Resolution means pixels: on a HiDPI display the current scaling
+is kept when both a scaled and a 1:1 mode have the asked size. A display
+unplugged and replugged during show mode gets its mode again. Any other
+macOS refusal shows its error in the row and in the readiness list.
 
-The compositor follows the **clock master**: the first bound output unless you
-pick another under **Clock master** on the Canvases tab. The other displays show
-the most recent finished canvas. One display can carry several outputs (regions),
-for example a 4K port into a splitter that feeds four projectors.
+## Blend two projectors
 
-If an output uses the Mac's own display, the screen says so in yellow: the app
-window is hidden behind it. Use the web UI from another device then.
+Two projectors side by side overlap by a strip; each fades out across the
+strip so the sum stays flat
+([soft-edge blend](reference/glossary.md#mapping)). For two or more
+projectors in a row or a grid, use **New projector wall**
+([below](#projector-walls)): it sizes the slices and the overlaps for you
+and walks you through the tuning. Set a blend by hand only for a layout
+that is not a grid. The hand route, for two 1920 × 1080 projectors with a
+15 % overlap (288 px):
 
-## Outputs tab
+1. Hang, focus and align each projector on its own
+   ([warp-and-masks.md](warp-and-masks.md#corner-pin)), with **Grid** on
+   both (the test pattern buttons under the output settings): the grid
+   lines must meet across the overlap before you blend.
+2. Canvases tab: **Size** 3552 × 1080 (2 × 1920 − 288), **Apply**.
+3. Left output, Warp & Slices › Slices: slice 1 **Source** 0 · 0 · 1920 ·
+   1080. Right output: 1632 · 0 · 1920 · 1080. The two sources share a
+   288-pixel strip.
+4. Outputs tab: on the left output, the **Right** blend edge gets
+   **Overlap** 288; on the right output, its **Left** edge gets 288. The
+   overlap in pixels must equal the strip the two sources share, or the
+   seam doubles or jumps.
+5. **Blend check** on both: a flat 50 % grey with each projector's grid
+   lines in its own colour. A bright band in the seam: **Gamma** down on
+   both edges; a dark band: up. Set it to the projector's gamma (2.2 is
+   usual) so the two ramps add up to a flat field. A visible edge where
+   the overlap starts: **Power** up softens the start of the ramp, down
+   makes it more linear. Change one value at a time in small steps and
+   look after each. Done when no band or line shows from where the
+   audience sits.
+6. **Grey 0 %** on both: the overlap is a lighter stripe, because two
+   projectors' blacks add up there. Raise **Black lift** (under the four
+   edge cards) on both outputs until the rest of the picture is as light as
+   the stripe; **Lift feather px** softens where the lift ends.
+7. **Grey 25 %**, **Grey 75 %** and **White**: one projector darker or
+   tinted is a [colour](#colour) job, not a blend job.
 
-| Field | Meaning |
-|---|---|
-| Name | free text |
-| Display | the bound display, or Unassigned |
-| Mode | the wanted resolution and refresh rate, chosen from the modes the display offers. Applied when show mode turns on (see below); **Current** leaves the display as it is |
-| Region x · y · w · h (px) | the part of the display this output draws on; **Full display** resets it |
-| Intensity % | multiplied with the Output fixture's intensity and the Master intensity |
+<img src="images/outputs-blend-edges.png" width="1006" alt="The four blend edge cards, Left, Right, Top and Bottom, each with a curve drawing, Overlap (px), Power and Gamma; the right edge has an overlap of 151 on a 1008-pixel output">
 
-<img src="images/output-settings.png" width="880" alt="The settings of one output: name, display, mode, region, intensity and the four blend edges">
+The curve drawing on each card shows the ramp. **Power** (0.1 to 10, 2 to
+start) is how steep the S-curve is; **Gamma** (0.5 to 5, 2.2 to start) is
+the projector's gamma. In the engine's own test the summed light of two or
+four ideal gamma-2.2 projectors stays within 3 % of white for two and 3.5 % for four; real
+projectors decide the rest, so tune by eye.
 
-### Display modes
+<img src="images/outputs-black-lift.png" width="520" alt="Black lift (%) at 6 and Lift feather px at 40 under the blend edges">
 
-Outside show mode Fanous uses whatever mode the display runs and only warns:
-the output list shows a yellow line such as "Mode differs: 1920 × 1080 @ 59.94,
-wanted @ 60. Applied in show mode." When **show mode** turns on, Fanous
-switches every display whose output has a Mode to that mode, all at once, and
-logs the old and new mode. Turning show mode off or stopping Fanous puts the
-previous modes back. A display that is unplugged and replugged during show
-mode gets its mode again.
+**Black lift** (0 to 50 %) raises the black outside the overlaps until it
+matches the overlaps. Set it on Grey 0 % at 100 % output intensity;
+brighter pictures need no further adjustment, because the lift adds light
+the way a second projector's black does. On a wall with rows and columns
+the lift is matched to the corner where four projectors overlap, so match
+to the corners there. The lift and the black offset scale with the output's
+intensity (the Output fixture and the Intensity field), while the
+projectors' own black does not: dim with the Master or the layers if the
+seams must stay invisible. A mask or a gap between slices has no lift
+either.
 
-- 59.94 and 60 Hz (and 29.97/30, 23.976/24) count as the same rate. The exact
-  rate is used when the display offers it.
-- Resolution means pixels. On a HiDPI display Fanous keeps the current scaling
-  when both a scaled and a 1:1 mode have the asked pixel size.
-- When the display does not offer the mode, nothing is switched: the output
-  list and the readiness check (**Outputs in their desired display mode**,
-  a yellow warning) name the closest mode that is available.
-- A refresh rate that is not a whole multiple of the canvas frame rate (50 Hz
-  for a 60 fps canvas) is warned about the same way: motion judders.
-- macOS refuses display changes while the screen is locked. The output then
-  says "Not applied: screen locked: modes applied when unlocked", and Fanous
-  switches as soon as the screen is unlocked (or wakes) while show mode is
-  still on. Any other refusal shows the macOS error the same way, in the
-  output list and in the readiness check.
-- If several outputs share a display, the first output with a Mode decides.
-  An output on the same display that wants another mode says "Conflicts with
-  Output N on the same display" in yellow and in the readiness check.
-- The Mode list only offers modes macOS marks as usable for the desktop
-  (all modes when a display marks none).
-- The previous modes are also written to
-  `~/Library/Application Support/Fanous/display-modes.json`. If Fanous crashes
-  or is killed in show mode, it comes back in show mode and the displays keep
-  their show modes; the file stays until you leave show mode, which puts the
-  previous modes back. When it starts outside show mode with the file present
-  (an older crash), it puts them back and removes the file. A display that is
-  unplugged at that moment gets its mode back when it is plugged in again while
-  Fanous runs (outside show mode).
+## Test patterns
 
-**Remove output** takes effect at once and shows "Undone? Undo" for 8 seconds
-(Undo also works with Cmd-Z). Slices, masks, cues and the last layer work the
-same way.
+The buttons under the output settings put a pattern on the selected output;
+the Output fixture's Test pattern channel (per projector) and the Master's
+(every output) override them, so a cue can call them up. Patterns follow
+the corner pin, mesh and keystone and show the blend. **Raw** (the Output
+fixture's Blend channel, 5, at 128 or more) bypasses all mapping: no blend,
+black lift, masks, warp or keystone, so you see what the projector alone
+does.
 
-### Blend edges
-
-For each edge (left, right, top, bottom) set **Overlap**: the width of the strip
-shared with the neighbouring projector, in pixels of this output. Then **Power**
-and **Gamma**; each has a one-line explanation under it on the screen. The curve next
-to the fields shows the ramp. Power (0.1 to 10, default 2) is how steep the
-S-curve is; set **Gamma** (0.5 to 5, default 2.2) to the projector's gamma so
-the sum of both projectors stays flat in the overlap. In tests a flat field
-over two or four projectors stayed within 2 % across the overlap.
-
-**Black lift (%)** (0 to 50) raises the black level so it matches the overlaps,
-where the blacks of two projectors add up. On an output with overlaps on one
-axis it lifts the area outside the overlaps; **Lift feather px** softens where
-the lift ends. Use Grey 0 % (or Grey steps) to match it by eye.
-On an output with overlaps both across and down (a wall with rows and columns)
-every point rises to the black level of the corner where four projectors
-overlap: the lift then shows its value in the two-projector overlaps and about
-1.6 times it where one projector lights alone, and the feather softens each of
-those steps. A project tuned with a version before M2.1 needs Grey 0 % checked
-again.
-The lift adds light, as a second projector's black does, so a lift set on
-Grey 0 % stays right on brighter pictures (see the note under Test patterns).
-Grids work: a corner pixel gets the product of the horizontal and vertical
-ramps.
-
-### Test patterns
-
-Buttons: Off, Grid, Colour bars, Blend check, Output ID, Crosshair, Grey steps,
-Checkerboard, Grey 0 %, Grey 25 %, Grey 75 %, White. The Test pattern channel
-of the Output fixture (per projector) and of the Master (all outputs) overrides
-the button, so a console can call them up.
-Patterns follow the corner pin, mesh and keystone and show the blend map; set
-the Output fixture's **Blend** channel to 128 or more (Raw) to see them without
-blend, warp and keystone. Line widths and cells follow the output's height, so a pattern reads
-the same on a monitor and on a 4K projector.
-
-Patterns follow the same Dimmer and Blackout as the picture: the output's
-Intensity %, the Output fixture's Intensity and the Master's Intensity dim
-them, and an Output or Master Blackout makes them black, also in Raw. A
-console's Grand Master or DBO therefore takes a pattern down with the rest; to
-focus or align, bring the Output and Master Intensity up (both are 100 % when
-nothing is patched).
-Freeze holds the picture, not the pattern: a pattern shows live over a frozen
-output, and the held frame is back when the pattern is switched off.
+<img src="images/test-patterns.png" width="1160" alt="The eleven test patterns on the demo output: Grid, Colour bars, Blend check, Output ID, Crosshair, Grey steps, Checkerboard, Grey 0 %, Grey 25 %, Grey 75 % and White">
 
 | Pattern | Use it for |
 |---|---|
-| Grid | alignment: centred square cells, border (overscan), centre cross, a circle for aspect ratio, diagonals |
-| Colour bars | 75 % SMPTE bars and 100 % white/red/green/blue/black: colour and level match between projectors |
-| Blend check | flat 50 % grey shows a blend seam as a bright or dark band; grid lines in this output's own colour let two overlapping projectors be laid on top of each other |
-| Output ID | the output number, large, on the output's colour: which projector is which |
-| Crosshair | centre and focus, circles every 1/8 of the height |
-| Grey steps | 0–100 % in 10 % steps (top) and 0–10 % in 1 % steps (bottom): gamma and black level, black lift |
-| Checkerboard | focus and pixel geometry |
-| Grey 0 % | black floor: a seam lighter than the rest needs more black lift on the projectors next to it |
-| Grey 25 % | dark-grey match: one projector darker than its neighbours or tinted, or a colour shift only inside a seam |
-| Grey 75 % | light-grey match, as Grey 25 %, where the projectors' upper range differs |
-| White | full-level match: brightness and colour of each projector, and a seam that stays bright or dark at full level |
+| Grid | Alignment: square cells, a border for overscan, a centre cross, a circle for the aspect ratio, diagonals |
+| Colour bars | 75 % SMPTE bars with 100 % white, red, green, blue and black: colour and level between projectors |
+| Blend check | Flat 50 % grey: a seam shows as a bright or dark band; the grid lines in this output's own colour let two overlapping projectors be laid over each other |
+| Output ID | The output number, large, on the output's colour: which projector is which |
+| Crosshair | Centre and focus; circles every eighth of the height |
+| Grey steps | 0 to 100 % in 10 % steps above, 0 to 10 % in 1 % steps below: gamma, black level, black lift |
+| Checkerboard | Focus and pixel geometry |
+| Grey 0 % | Black floor: a seam lighter than the rest wants more black lift next to it |
+| Grey 25 %, Grey 75 % | Dark and light grey match: a projector darker or tinted than its neighbours, or a colour shift only inside a seam |
+| White | Full level: brightness and colour of each projector, a seam that stays bright or dark at full |
 
-Grey 0 %, 25 % and 75 % and White are flat fields at that output signal level
-(25 % is code 64 of 255, 75 % is 191) with every intensity at 100 %, on the
-same scale as Blend check's 50 % grey. A
-console calls them up on Test pattern channel 4: 128 Grey 0 %, 144 Grey 25 %,
-160 Grey 75 %, 176 White.
+Line widths and cells follow the output's height, so a pattern reads the
+same on a monitor and on a 4K projector. Patterns dim and black out with
+the picture: the output's Intensity and the Output and Master fixtures'
+Intensity dim them, a Blackout makes them black, also in Raw. A console's
+grand master or DBO therefore takes a pattern down with the rest; to align,
+bring the Output and Master intensity up (both are 100 % when nothing is
+patched). Freeze holds the picture, not the pattern.
 
-These are signal levels: on a gamma-2.2 projector Grey 25 % is about 5 % of
-white's light, Grey 75 % about 53 %. The black lift and the black offset
-(below) add the light they give on black, computed for a gamma-2.2 projector:
-set them on Grey 0 %, and a brighter picture gets only that bit of light more.
-On an output blended on one axis a lift of 8 % shows as 8 % on Grey 0 % outside
-the overlaps, but raises Grey 25 % only from 64 to 66 of 255 (versions before
-M1.7 added the 8 % as signal, 64 to 84, so a lifted area looked brighter at mid
-greys). On an output blended on both axes the single-projector area shows about
-13 % and Grey 25 % goes from 64 to 71 there (see [Blend edges](#blend-edges)).
+The flat fields are signal levels, on the same scale as Blend check's 50 %
+grey: on a gamma-2.2 projector Grey 25 % is about 5 % of white's light
+and Grey 75 % about 53 %. From the console, Test pattern is channel 4 of
+the Output and Master fixtures in bands of 16: 0–15 Off, 16–31 Grid, 32–47
+Colour bars, 48–63 Blend check, 64–79 Output ID, 80–95 Crosshair, 96–111
+Grey steps, 112–127 Checkerboard, 128–143 Grey 0 %, 144–159 Grey 25 %,
+160–175 Grey 75 %, 176–191 White ([channel map](../channel-map.md)). The
+first seven patterns and a moving test card are also layer content in
+folder 0 ([reference/built-in-content.md](reference/built-in-content.md)).
+The output is 8-bit with a noise dither; a long gradient across a ramp can
+band.
 
-The first seven patterns, a moving test card and a few more are also available
-as layer content in folder 0 (see
-[reference/built-in-content.md](reference/built-in-content.md)); for a flat grey
-on a layer use Solid colour (file 100) with the layer's Red, Green and Blue.
+## Colour
 
-### Colour
+**Colour**, under the test patterns, matches this projector to the others
+by eye: put Colour bars, Grey steps, Grey 25 %, Grey 75 % or White on every
+projector at once and turn the one that is off. White looks green on
+projector 2: lower its **Gain G** a few percent until it matches projector
+1. Projector 2 is darker all over: raise all three gains, or lower the
+others'.
 
-Under the test patterns, **Colour** matches this projector to the others by
-eye. Look at Colour bars, Grey steps, Grey 25 %, Grey 75 % or White on all
-projectors at once and turn the one that is off.
+<img src="images/outputs-colour.png" width="1006" alt="The Colour controls: Gain R, Gain G, Gain B and Black offset as sliders with − and +">
 
-| Control | Range (start) | What it does |
+| Control | Range (start) | Does |
 |---|---|---|
-| Gain R, Gain G, Gain B | 0–200 % (100 %) | scales that colour of everything this output shows: lower the channel that is too strong on a tinted projector, or all three on one that is too bright |
-| Black offset | 0–20 % (0 %) | raises this projector's black over the whole output, overlaps included: for a projector whose black is darker than its neighbours' |
+| **Gain R, G, B** | 0–200 % (100 %) | Scales that colour of everything this output shows |
+| **Black offset** | 0–20 % (0 %) | Raises this projector's black over the whole output, overlaps included: for a projector whose black is darker than its neighbours' |
 
-- The gain scales the signal, not the light: on a gamma-2.2 projector 50 %
-  gain is about a fifth of the light. Tune by eye, in small steps.
-- The black offset adds light like the black lift does (see the note above):
-  it shows its full value on Grey 0 % and adds only that light on brighter
-  pictures.
-- Colour applies to the picture and to the test patterns, and after it the
-  output's intensity: an Output or Master Blackout, or an intensity at 0, is
-  black, black offset included.
-- Gain and black offset also apply in Raw (the Output fixture's Blend channel
-  at 128 or more): they belong to the projector, not to the mapping, so its
-  colour does not change while you align. Raw leaves out the blend ramps and
-  the black lift.
-- Drag a slider or tap **−** and **+** for fine steps (0.5 % gain, 0.1 % black
-  offset). A drag is one step for **Undo**. In a projector wall the same
-  controls are on the wall panel when you tap a projector.
+The gain scales the signal, not the light: 50 % gain is about a fifth of
+the light on a gamma-2.2 projector, so tune in small steps (**−** and **+**
+are 0.5 % gain and 0.1 % black offset; a drag is one Undo step). Colour
+applies to the picture and the test patterns, also in Raw: it belongs to
+the projector, not to the mapping. An Output or Master Blackout, or an
+intensity at 0, is black, black offset included.
+
+Three black controls, two settings. A seam lighter than the rest:
+**Black lift** (output settings, 0 to 50 %), which the wall panel calls
+**Black floor** (0 to 20 %): one setting, two names. A whole projector
+whose black is darker than its neighbours': **Black offset** (Colour, 0 to
+20 %), overlaps included. Both add light as a projector's black does,
+computed for a gamma-2.2 projector, so a value set on Grey 0 % stays right
+on brighter pictures
+([known limitations](reference/known-limitations.md#outputs-and-mapping)).
 
 ## Projector walls
 
-A **projector wall** is two to sixteen projectors that together show one
-picture: side by side, stacked, or a grid of up to 4 × 4. Fanous keeps the two
-kinds of work apart:
+A projector wall is two to sixteen projectors that show one picture: side
+by side, stacked, or a grid, at most 4 × 4 (so 5, 7, 11, 13, 14 or 15
+projectors make no grid). The wall keeps two kinds of
+work apart:
 
-- **Geometry** is computed. From the grid and the overlap the wall gives each
-  projector its part of the canvas (slice 1's source) and sets the overlap of
-  the inner blend edges, equal on both sides of every seam. That is always
-  right for projectors hung as that grid.
-- **Tuning** is done by eye: gamma and curve per seam, black floor and colour
-  per projector. No start value fits every room, because projector age, ambient
-  light and the surface differ. The **seam check** below is the route.
+- Geometry is computed. From the grid and the overlap the wall gives
+  each projector its part of the canvas (slice 1's Source) and the overlap
+  of its inner blend edges, equal on both sides of every seam. That is
+  right for projectors hung as that grid, so you do not type it.
+- Tuning is by eye. Gamma and curve per seam, black floor and colour
+  per projector: no start value fits every room, because projector age,
+  ambient light and the surface differ. The [seam check](#seam-check) walks
+  you through it.
 
-All wall controls need the programmer role and are refused while the show is
-locked; they are greyed out with the reason.
+Each output of the wall must have a known resolution (bind it to a display,
+or give it a Region or a Mode), the same for all of them. Console control
+reaches outputs 1 to 8: in a wall of more projectors the rest have no
+Output or Keystone fixture and no console preset. All wall controls need
+the programmer role and grey out with the reason while the show is locked.
 
 ### New projector wall
 
-**New projector wall** (above the output list on the Outputs tab) opens a
-wizard. Every output of the wall needs a pixel size: a connected display, or a
-region or display mode. The outputs of one wall need the same pixel size.
-
-1. **Order.** Every output on a display shows its Output ID, a large number.
-   Tap the tiles in the order the projectors hang: the top row from left to
-   right, then the next row. A second tap takes a tile out again. Then pick the
-   grid (rows × columns); only grids that fit the number of tiles are offered,
-   for four tiles 1 × 4, 2 × 2 and 4 × 1. The drawing below shows where each
-   output lands.
-2. **Overlap and canvas.** The overlap is a percentage of one projector,
-   15 % to start with; the line below says how many pixels that is. Below
-   10 % or above 25 % a yellow line says why that is unusual. Then choose:
-   - **Use Canvas N** as it is: the wall stretches over that canvas. The
-     wizard says the wall's size at projector resolution, so you can see
-     whether the canvas has the same shape.
-   - **Make Canvas N fit the wall**: the canvas becomes the wall's size (the
-     size is shown before you apply; a very large wall is scaled down whole to
-     stay within the canvas limits). Every output blanks briefly. This is not
-     possible in show mode.
-3. **Make wall.** Blend check appears on every projector of the wall and the
-   wall's panel opens on the seam check.
+**New projector wall**, above the output list on the Outputs tab, opens a
+two-step wizard; it is greyed with "Add at least two outputs that are in no
+wall yet." until there are.
 
 ![Step 1 of the wizard: Projector L and Projector R tapped in order, grid 1 × 2](images/wall-wizard.png)
 
 ![Step 2 of the wizard: overlap 15 %, and the choice between using the canvas as it is or making it fit the wall](images/wall-wizard-2.png)
 
-**Cancel** at any step changes nothing; the Output IDs go away. **Undo** right
-after Make wall takes the wall away again.
+1. **Order.** The wizard shows one tile per output, and every projector
+   shows its Output ID, large. Look at the projectors, then tap the tiles
+   in the order they hang: the top row from left to right, then the next
+   row (a second tap takes a tile out, **Clear order** starts over). Pick
+   the **Grid (rows × columns)**: only grids that fit the number of tiles
+   are offered, for four tiles 1 × 4, 2 × 2 and 4 × 1. The drawing shows
+   where each output lands.
+2. **Overlap and canvas.** The **Overlap** is a percentage of one
+   projector, 15 % to start, with the pixel count under it; below 10 % or
+   above 25 % a yellow line says why that is unusual. Then choose **Make
+   Canvas N fit the wall** when the content is not made yet or the canvas
+   is only for this wall: the canvas becomes the wall's size, shown before
+   you apply, and every output blanks briefly (not in show mode). Choose
+   **Use Canvas N as it is** when the content is already made at a fixed
+   size: the wall stretches over the canvas, and the wizard shows the
+   wall's size at projector resolution so you can see whether the shapes
+   match.
+   **Make wall** ends the wizard: Blend check appears on every projector
+   of the wall and the wall's panel opens on the seam check. **Undo** right
+   after takes the wall away again; **Cancel** at any step changes nothing.
+
+```mermaid
+flowchart TD
+  start["New projector wall"] --> free{"Two or more outputs in no wall?"}
+  free -- no --> add["Add outputs first"]
+  free -- yes --> order["Step 1: tap the tiles in hanging order, pick the grid"]
+  order --> size{"Every output has one known resolution, the same for all?"}
+  size -- no --> fix["Bind it, or give it a Region or a Mode; the step names the output"]
+  size -- yes --> overlap["Step 2: overlap in % of one projector"]
+  overlap --> content{"Content already made at a fixed size?"}
+  content -- no --> make["Make Canvas N fit the wall"]
+  content -- yes --> use["Use Canvas N as it is"]
+  make --> made["Make wall: Blend check on every projector, the panel opens on the seam check"]
+  use --> made
+```
+
+Give the content maker the wall's size in canvas pixels (the wizard shows
+it: columns × projector width minus the overlaps, the same down); a smaller
+canvas is scaled up, and the content must continue under the overlaps.
 
 ### The wall panel
 
-Each wall has a panel above the output list, built around a **map** of the
-wall: one tile per projector (name, Output ID, row and column) and the seams as
-lines between them, each with its gamma (**RGB** when R, G and B are set apart).
+Each wall has a panel above the output list, built around a map of the
+wall: one tile per projector (Output ID, name, row and column) and a seam
+button between neighbours with its gamma (**RGB** when each colour has its
+own). The header has the wall's name, "rows × columns · canvas · overlap"
+and the **Seam check** and **Geometry** switches.
 
-![The panel of Wall 1 on the seam check, Blend check on both projectors; the preview shows the grey blend check pattern](images/wall-panel.png)
+<img src="images/wall-panel-map.png" width="1000" alt="The panel of Wall 1 with Geometry open: the map with Projector L and Projector R and the seam at 2.2 between them, Overlap across at 15 % with 'Each projector shares 151 of its 1008 px across with its neighbour', Edit layout, and the presets strip below">
 
-- **Tap a seam** for its controls. Both sides of the seam always follow.
-  - **Gamma** (0.5 to 5, 2.2 to start): down for a bright band in the seam,
-    up for a dark one.
-  - **Link R, G, B** is on: one gamma for all three colours. Turned off,
-    **Gamma R**, **Gamma G** and **Gamma B** replace the single gamma, each
-    starting at the single gamma's value, and each changes its own colour in the seam: use
-    them for a colour shift only inside a seam. Turning the link on again
-    drops the per-colour values and the single gamma is back.
-  - **Curve** (0.1 to 10, 2 to start): how steep the fade is; change it when
-    you see an edge where the overlap starts.
-  - **Apply to all seams** gives every seam of the wall this seam's values:
-    its R, G and B when they are unlinked here, else one gamma (other seams
-    lose their own R, G and B).
-  - Drag a slider or tap **−** and **+** for fine steps. A drag, or taps less
-    than a second apart, are one step for **Undo**.
-- **Tap a projector** for its **black floor** (the output's Black lift):
-  it lifts the black to match the overlaps, where the blacks of two (or, on a
-  wall with rows and columns, four) projectors add up. Below it are the projector's **Gain R, G, B** and **Black offset**
-  (see [Colour](#colour)): the gain for a projector that is darker or tinted
-  next to its neighbours, the black offset for one whose black is darker
-  everywhere. **Open in Warp & Slices** takes you to that projector's warp.
-- **Geometry**: the overlap across and down (in %), **Edit layout…** (the
-  wizard again, filled in: change the order, the grid, the overlap or the
-  canvas) and **Remove wall**. Removing a wall keeps the outputs as they are
-  now; Undo brings the wall back.
-- In the output list a wall output carries a badge such as "Wall 1 · r1 c2".
+Tap a seam for its controls; both sides of the seam always follow:
 
-**Manual fields.** If you type an inner edge's overlap on the Outputs tab, or
-change slice 1's source on Warp & Slices, that field becomes **manual**: it
-shows a yellow "manual" chip, and the wall leaves it alone from then on, also
-when you change the wall's overlap. **Back to wall** next to the chip gives the
-field back to the wall. A power or gamma typed on an inner edge goes to its
-seam, so the neighbour follows. An edge whose seam has R, G and B set apart
-shows the three values instead of a gamma field; **One gamma for R, G, B**
-there links them again.
+<img src="images/wall-seam-controls.png" width="1045" alt="The seam controls: Gamma 2.20, the Link R, G, B switch on, Curve 2.0, with a line on what each does">
+
+- **Gamma** (0.5 to 5, 2.2 to start): down for a bright band in the seam,
+  up for a dark one.
+- **Link R, G, B** on gives one gamma for all three colours. Off, **Gamma
+  R**, **G** and **B** replace it, each starting at its value, for a colour
+  shift only inside the seam; linking again drops the per-colour values.
+- **Curve** (0.1 to 10, 2 to start): the same value as the edge's Power in
+  the output settings; up softens the start of the ramp, down makes it more
+  linear.
+- **Apply to all seams** (with more than one seam) gives every seam these
+  values.
+
+Tap a projector for its black floor and colour:
+
+<img src="images/wall-projector-controls.png" width="1045" alt="The projector controls of Projector L: Black floor 0.0 %, Gain R, G and B at 100 %, Black offset 0.0 %, and Open in Warp & Slices">
+
+- **Black floor** (0 to 20 %) is the output's Black lift under another
+  name: on Grey 0 %, raise it on the projectors next to a lighter seam, one
+  by one, until even.
+- **Gain R, G, B** and **Black offset** are the output's [Colour](#colour).
+- **Open in Warp & Slices** goes to that projector's warp.
+
+**Geometry** holds **Overlap across** and **Overlap down** (0 to 50 %, with
+the pixel line), **Edit layout…** (the wizard again, filled in: change the
+order, the grid, the overlap or the canvas) and **Remove wall** (the outputs
+keep their slices and blend edges; Undo brings the wall back). The sliders
+wait until every output of the wall has one known resolution. In the output
+list a wall member carries a badge such as **Wall 1 · r1 c2**.
+
+Fields the wall manages can be taken by hand:
+
+- An inner edge's overlap typed in the output settings, or slice 1's Source
+  changed on Warp & Slices, becomes **manual** (a yellow chip): the wall
+  leaves it alone from then on, also when you change the wall's overlap.
+- **Back to wall** next to the chip hands the field back to the wall.
+- A power or gamma typed on an inner edge goes to its seam, so the
+  neighbour follows.
+- Recalling a preset whose slice 1 no longer matches the wall marks it
+  manual too.
+
+Drag a slider or tap **−** and **+** for fine steps; a drag, or taps less
+than a second apart, are one Undo step.
 
 ### Seam check
 
-**Seam check** on the wall panel steps through test patterns on every
-projector of the wall at once. Each step says what to look for and which
-control to turn. Tap a line of the card, then tap the seam or projector on the
-map that shows the problem: its control opens, outlined. (Without a camera
-Fanous cannot know which seam is off, so your eye picks it.)
+**Seam check** on the wall panel steps through six test patterns on every
+projector of the wall at once. Each step says what to look for; tap the
+line that matches what you see, then the seam or projector on the map that
+shows it, and its control opens, outlined. Fanous has no camera, so your
+eye picks the seam. You are done when all six steps look even from where
+the audience sits; press **End seam check**.
+
+<img src="images/wall-seam-check-card.png" width="1045" alt="The seam check card on step 2 of 6, Blend check: the six step buttons, 'Look for:' with three lines, a bright band in a seam → that seam's gamma, down; a dark band → gamma up; a visible edge where the overlap starts → that seam's curve; then Previous, Next and End seam check">
 
 | Step | You see | Turn |
 |---|---|---|
-| Grid | lines that do not meet across a seam | the warp, not the blend: tapping the projector opens Warp & Slices |
-| Blend check (50 % grey) | a bright band in a seam | that seam's gamma, down |
-| | a dark band | that seam's gamma, up |
-| | a visible edge where the overlap starts | that seam's curve |
-| Grey 0 % | seams lighter than the rest | the black floor of the projectors next to it, up, one by one until even |
-| Grey 25 %, Grey 75 %, White | one projector darker, or tinted | that projector's colour gain, the colour that is off: tapping the projector opens its Gain R, G, B |
-| | a colour shift only inside a seam | unlink R, G, B on that seam and tune the colour that is off |
+| 1 Grid | Lines that do not meet across a seam | The warp, not the blend: tapping the projector opens Warp & Slices |
+| 2 Blend check | A bright band in a seam | That seam's gamma, down |
+| 2 Blend check | A dark band in a seam | That seam's gamma, up |
+| 2 Blend check | A visible edge where the overlap starts | That seam's curve |
+| 3 Grey 0 % | Seams lighter than the rest | The black floor of the projectors next to it, up, one by one |
+| 3 Grey 0 % | One projector's black darker everywhere | That projector's black offset |
+| 4 Grey 25 %, 5 Grey 75 %, 6 White | One projector darker, or tinted | That projector's gain, the colour that is off |
+| 4 Grey 25 %, 5 Grey 75 %, 6 White | A colour shift only inside a seam | Unlink R, G, B on that seam; tune the colour that is off |
 
-On a wall with rows and columns the black of Grey 0 % now rises to the black
-level of the corner where four projectors overlap, so a wall tuned with a
-version before M2.1 needs its Grey 0 % step checked again.
+```mermaid
+flowchart TD
+  see["What do you see?"] --> lines{"Grid lines meet across every seam?"}
+  lines -- no --> warp["That projector's warp"]
+  lines -- yes --> band{"Blend check: a band in a seam?"}
+  band -- bright --> gdown["Seam gamma down"]
+  band -- dark --> gup["Seam gamma up"]
+  band -- "edge where the overlap starts" --> curve["Seam curve"]
+  band -- none --> black{"Grey 0 %: seams lighter than the rest?"}
+  black -- yes --> floor["Black floor of the neighbours, up"]
+  black -- "one projector darker everywhere" --> offset["Its black offset"]
+  black -- no --> grey{"Grey 25 %, 75 %, White: a projector darker or tinted?"}
+  grey -- "the whole projector" --> gain["Its Gain R, G or B"]
+  grey -- "only inside a seam" --> rgb["Unlink R, G, B on that seam"]
+  grey -- no --> done["Even: End seam check"]
+```
 
-You can switch to Warp & Slices during the check, for example to fix the
-warp: a yellow line there says the check is still running and takes you back.
-**End seam check**, or leaving the Outputs screen, takes the test patterns off
-again (leaving the screen also cancels the wizard). Hiding the page takes them
-off; they come back when the page is visible again. The wizard's Output IDs
-show only while the wizard is in sight on the Outputs tab. The wizard's and the
-check's patterns are never stored with the outputs and are no step for Undo:
-each output's own test pattern stays as it was. They show only for the
-programmer role, and are off in show mode and while the show is locked. When
-the page is closed or the connection drops, they go within 5 seconds. If two
-people check the same wall at once, ending the check on one device takes the
-patterns off until the other device puts its own back, within 2 seconds; on
-different steps of the same outputs the two devices' patterns alternate about
-every second, as the latest renewal wins.
+You can switch to Warp & Slices during the check: a yellow banner there
+says the check is running and takes you back. **End seam check**, or
+leaving the Outputs screen, takes the patterns off (leaving also cancels
+the wizard); a hidden page takes them off until it is visible again. The
+check's patterns are not stored and are no Undo step: each output's own
+test pattern stays as it was. They show only for the programmer and are
+off in show mode and under the show lock. Two people checking the same
+wall see the patterns alternate: finish on one device first.
 
-## Warp & Slices tab
+## Before the show
 
-Choose what to edit with **Corner pin**, **Mesh**, **Slices** or **Mask**.
-Handles sit over the output preview. Drag them with mouse or finger (the hit
-target is large for touch); with a handle selected the arrow keys move it by one
-output pixel, Shift by ten, Tab and Shift-Tab select the next and previous
-point, and Esc lets go of it. On an iPad use the **nudge pad** that appears under
-the mode buttons once a point is selected: arrows move by 1 px, the **10 px**
-key in the middle makes every press move ten, and holding an arrow for half a
-second moves 0.25 px. A selected point also shows
-numeric x and y fields in pixels. Changes go to the engine while you drag.
-
-**Show on output**, under the preview, draws what you edit on the projector
-itself, so at the wall you see which point is selected:
-
-- The warp (the edges of the corner pin, or the grid lines of the mesh), every
-  slice's outline and the outline of each of its masks. They go through the
-  warp and the keystone, so they lie on the picture.
-- The selected point is a yellow cross with a gap in the middle, so you still
-  see the point. Its number is next to it in yellow digits. On a mesh the
-  number is row·column: **3·5** is row 3, column 5. On a corner pin or a slice,
-  corners are 1 to 4, clockwise from the top left. A mask point has its own
-  number; with one of its curve handles selected, the point is marked. With
-  Remote's Row, Column or Edge selected, only one point of the group is marked.
-- The lines are 2 pixels of white with a black edge, so they show on any
-  picture. A Blackout, or the Master at 0, hides them. The output's own
-  Intensity does not dim them, unlike test patterns.
-- It is on whenever you open Warp & Slices and goes off when you leave the tab
-  or switch it off. After 10 minutes without an edit it switches itself off;
-  one click switches it on again. Moving a point or changing a field counts as
-  an edit. Selecting a point does not.
-- When the browser goes away (a closed laptop, an iPad that sleeps), the engine
-  takes it off within 5 seconds. It comes back when the page wakes, unless 10
-  minutes have passed since your last edit. A browser tab in the background
-  takes it off too, and it comes back when you return to the tab, with the same
-  10 minutes.
-- It is not drawn while the output shows a preset or glides from or into one
-  (the lines belong to the mapping you edit), nor in Raw: **Overlay hidden: a
-  preset shows** or **Overlay hidden: Raw** says why. The preview does not show
-  it; the handles are drawn over the preview instead.
-- It needs the programmer role. Show mode and the show lock take it off at
-  once; the switch then shows off and says why. When they end, it comes back
-  by itself while Warp & Slices is open, unless 10 minutes have passed since
-  your last edit.
-- Two browsers with Warp & Slices open on the same output take turns: the
-  projector shows one selection, then the other. When one of them leaves, the
-  other's overlay can be off for up to 2 seconds.
-
-**Remote mode** is for aligning from an iPad while you look at the projection
-instead of the screen. Turn it on with **Remote** next to the mode buttons; it
-is on by default on touch screens narrower than 900 px, and each browser
-remembers your choice. The controls then come before the preview, and the
-projector shows the selected point (**Show on output** above):
-
-- The selection in large type: "corner top-left", "r3 c5" (row 3, column 5 of
-  the mesh), "slice 2 · bottom-right", "slice 2 · mask point 5" ("slice 2 ·
-  mask 2 point 5" when the slice has several masks, "slice 2 · mask point 5
-  in" or "… out" for one of the point's curve handles), or a group such as
-  "row 3" with how many points move together.
-- **Previous** and **Next** go through the points row by row (left to right,
-  then the next row) and wrap around; on a mask, point by point, each curved
-  point followed by its in and out handles. With a group selected they step the
-  group: the next row, the next column, or the next edge clockwise.
-- **One point**, **Row**, **Column** (mesh only) and **All** choose what moves:
-  the selected point, its row or column, or every point. **Top**, **Right**,
-  **Bottom** and **Left** select every point on that edge; on a corner pin or a
-  slice an edge is its two corners. A mask has no rows, columns or edges;
-  **All** moves the points of every mask of the slice, their curve handles
-  with them.
-  Tapping or dragging a handle on the picture selects just that point again
-  (**One point**), and so does turning Remote off or picking another output.
-- The nudge pad moves the selection by 1 px, 10 px, or 0.25 px on a long press.
-  The points always move as one: when the first of them reaches the edge of the
-  output, or under a warp cannot go further, the group stops there instead of
-  being squeezed or bent.
-- The **trackpad** area beside it moves the selection as you drag, so your
-  finger never covers the picture: 1 output pixel per 4 screen pixels of finger
-  travel, four times as far when you drag fast.
-
-Distances are output pixels as seen on the projector, also under a corner pin
-or mesh. Moves go to the engine up to ten times a second; taps in between are
-added up, so none is lost. Nudges of the same point or the same group less than
-a second apart are one step for **Undo**. Without the programmer role, or while
-the show is locked, you can still select and step through points, but not move
-them.
-
-Slice, mask and mesh points are stored before the warp, but the preview shows
-the warped picture. The editor therefore draws these handles where the picture
-really is (through the corner pin and mesh) and moves them in that picture, so
-a handle stays on the spot you touch while a warp is active.
-
-- **Corner pin**: four corners. **Reset corners** puts them back.
-
-  ![Warp & Slices on the LED wall output: the four corner handles over the warped preview, the mode buttons and presets below](images/warp-corner-pin.png)
-- **Mesh**: **Density** is Off (corner pin only) or 2x2, 3x3, 5x5, 9x9, 17x17
-  or 33x33 points. Changing the density keeps the shape: the new points are
-  placed on the current surface, so you can start coarse and refine; going to
-  a lower density keeps the overall shape, not the detail between the points
-  that remain. The picture
-  follows a smooth surface through the points. **Reset mesh** flattens it.
-- **Slices**: a slice is a piece of the canvas placed somewhere on the output.
-  It takes a rectangle of the canvas (**Source x · y · w · h**, in canvas
-  pixels; the tooltip shows the stored 0 to 1 value) and stretches it into a
-  four-corner area on the output (the handles). Only the slice chosen in the
-  **Slice** list has handles; the others are drawn as outlines. An output starts with one slice
-  that shows the whole canvas, so you only need more when one projector covers
-  several surfaces that each need their own part of the picture: three screens
-  on a stage, the pillars of a facade, a strip next to a screen. **Opacity %**
-  per slice; **Add slice**, **Reset slice** (whole canvas on the whole output,
-  the masks stay) and **Remove slice** (an output keeps at least one); later
-  slices draw over earlier ones. **Spread canvas** makes one picture across all
-  slices, for the faces of an object: from left to right on the output, each
-  slice gets the next strip of the canvas, as wide as the slice is on the
-  output (full canvas height). Fine-tune a seam by changing the w of one slice
-  and the x of the next by the same amount. The warp (corner pin, mesh) applies to the whole output on top.
-  Two shape buttons act on the selected slice, each one step for **Undo**:
-  **Triangle** moves its top-left and top-right corners to the middle of the
-  top edge, so the picture's top edge is squeezed into that point (drag one of
-  them away and it is four corners again); **Circle** adds an ellipse mask
-  that fills the box around the slice's corners (edit it in Mask mode). The
-  mask stays where it is on the output when you move a corner afterwards: the
-  picture stretches differently, the circle does not move.
-- **Mask**: a mask hides everything of a slice outside its shape (windows,
-  doors, the sky above a building). A slice can have several. The slice shows
-  what is inside its **add** masks (all of it when it has none), minus what is
-  inside its **subtract** masks: a door or a window is a subtract mask, a hole.
-
-  ![Mask mode on the LED wall output: an ellipse mask with its four points, the mask tools and the mask list below](images/masks.png)
-
-  The tools each add an add mask, as one step for **Undo**:
-  - **Polygon**: tap the corners of the area that stays visible on the picture,
-    in order around it; **Done** when you have at least three, **Undo last
-    corner** and **Cancel** while drawing.
-  - **Rectangle** and **Ellipse**: drag a box on the picture; the rectangle or
-    the ellipse fills it. **10 % inside** makes one 10 % inside the output
-    without a drag.
-  - **Freehand**: drag along the outline, with the mouse or, on an iPad, one
-    finger on the picture (a second finger or the palm meanwhile is ignored).
-    Letting go closes the shape. It keeps the fewest points of your stroke
-    that leave none of it more than 2 output pixels off the straight lines
-    between them. Where the stroke turns by more than 40° (a corner of a
-    window, a wall meeting a roof) the point is a corner and the edges stay
-    straight; elsewhere the curve is smoothed through the points, which on a
-    rounded shape keeps it within about 2 px of your stroke. Drag its points
-    and handles to refine it.
-  - **Image mask**: a still from the library (Media screen), black hides and
-    white shows, stretched over the whole output; shades of grey are partly
-    visible. A file changed in the library is picked up by itself. A missing
-    one covers nothing: as an add mask it shows nothing (alone, the slice is
-    black), as a subtract mask it cuts no hole; System › Readiness warns.
-
-  The **mask list** under the tools shows every mask of the slice: its number
-  (click it to select its first point), **Add** or **Subtract**, its points
-  (or the image), **Invert** (makes an add mask a subtract mask and back),
-  **Feather px** (softens the edge, from 2 px; below that the edge stays plain;
-  an image carries its own softness and has none), **Redraw** (draw its shape
-  again with any tool; it keeps its mode and feather; when the mask changes
-  meanwhile, for example from another browser, the new shape becomes a mask of
-  its own and the caption says so) and **Remove**. On the
-  picture a subtract mask has a dashed outline and hollow points.
-
-  Drag points to move them, nudge with the arrow keys or the pad; the
-  selected point shows its curve handles (small dots on a line), which you
-  drag too, also with the keys. A press takes the nearest of the point and its
-  handles, so a short handle close to its point can still be grabbed. A
-  handle may go past the edge of the output (a smoothed corner at the edge
-  has one there); a point stays on the output. **Double-tap** a point (or
-  **Smooth point**) to make a corner smooth, with handles along its
-  neighbours, or a smooth point a corner again. To add points, turn on **Add
-  points** and tap where the point goes, or double-click anywhere: the point
-  joins the nearest edge; on a curve it lands on the curve, where it comes
-  nearest to the tap, and the shape stays as it was. **Backspace** (or
-  **Remove point**) deletes the selected point; a mask keeps at least three.
-  With a handle selected it removes that handle instead (**Remove handle**):
-  that side of the point becomes a corner. Tab steps through the points and
-  their handles. A project saved
-  before masks v2 opens with its masks as they were. A browser tab opened
-  before that update cannot change masks or add a slice until you reload it.
-- **Content template (PNG)**: downloads a picture at the size of the selected
-  slice's canvas that shows, per slice on that canvas, which rectangle it uses
-  and (filled) what its masks leave visible (an image mask is not drawn
-  there). Give it to whoever makes the content, as a layer under their design,
-  so windows and edges land where the mapping expects them.
-
-Canvas 1 is also published as the Syphon server "Fanous – Canvas" (in Syphon's
-OpenGL row order; checked upright in the Syphon Simple Client), so
-another app on the same Mac can receive it (the other canvases are not
-published). Receiving a Syphon server into a layer was checked with a
-second engine's canvas, which arrives upright. Other apps' Syphon servers are
-layer content in folder 0, files 150–169 (see
-[reference/built-in-content.md](reference/built-in-content.md)).
-
-Editing on this screen needs the programmer role and is refused while the show
-is locked.
-
-## Mapping presets
-
-A **preset** stores what Warp & Slices edits under a number from 1 to 255, so
-an output can switch between alignments: scenery that flies in and out, a
-screen that moves between scenes.
-
-- **A preset holds** the corner pin, the mesh, and the slices with their part
-  of the canvas, their place on the output, their opacity and their masks.
-- **A preset does not hold** the blend edges, the black floor, the colour, the
-  intensity, the region or the display. Those are the projector's own tuning:
-  they stay as they are whichever preset the output shows.
-- A projector wall changed later does not change the presets stored before:
-  store them again after a wall change.
-
-### Store, recall, rename, remove
-
-The **Presets** strip is at the bottom of Warp & Slices, for the selected
-output, and at the bottom of each wall panel, for the whole wall.
-
-- **Store as N** stores the mapping as it is now. N starts at the lowest free
-  number; type another to choose. A number that exists is replaced (the
-  button says **Replace N**) and keeps its name.
-- **Recall** copies the chosen preset into the mapping you edit. It is an edit
-  like any other: **Undo** takes it back. It cuts, without a glide.
-- **Name** renames the chosen preset when you leave the field; **Remove**
-  deletes it (Undo brings it back).
-- In a wall panel each of these works on every output of the wall at once, as
-  one undo step, and the list shows the presets that all of them have.
-  Recalling a preset on a wall output whose slice 1 no longer matches the
-  wall's part of the canvas marks it **manual**, as moving it by hand does.
-
-### Compare
-
-**Hold to compare** shows the chosen preset on the output for as long as you
-hold the button (mouse, finger, or Space or Enter), and goes back when you let
-go. The preview and the handles keep showing the mapping you edit. While held,
-Compare wins over channel 6 from the console. It cuts, when you press and when
-you let go, without a glide. If the browser goes away while you hold it, the
-output goes back by itself within about 5 seconds. Compare is off in show mode
-and while the show is locked, and works on outputs 1 to 8.
-
-### From the console
-
-Output fixture channels 6, **Mapping preset**, and 7, **Mapping fade** (see
-[console-setup.md](console-setup.md)):
-
-- 0 shows the mapping as edited; N shows the output's preset N for as long as
-  the channel holds it. Nothing in the project changes.
-- Channel 7 makes the output glide from one preset to the next. The warp, the
-  slice corners, their part of the canvas and their opacity move together. 0
-  cuts; 1 to 255 is 0.1 to 25.5 s, as Layer Dissolve. Value ÷ 10 = seconds
-  (50 = 5 s).
-- Fanous reads channel 7 at the moment channel 6 changes. Changing channel 7
-  during a glide does nothing to that glide. If your console fades channel 7
-  along with the cue, make it snap, or set it in an earlier cue.
-- Slices are matched by number: Slice 2 glides to Slice 2. A slice that is in
-  only one preset, or shows a different canvas in each, does not glide: it
-  appears or disappears when the glide starts. The new preset's masks are on
-  from the start and move with their slice.
-- Changing channel 6 again during a glide jumps to where that glide was going
-  and glides on from there.
-- A number the output does not have keeps the edited mapping, and the output
-  row says **Preset N missing** in yellow. A glide to it goes to the edited
-  mapping.
-- For a wall, store the preset on the whole wall. Then set channels 6 and 7 on
-  each of its Output fixtures, to the same values, or the tiles glide out of
-  step.
-- OSC: `/fanous/output/{n}/preset` and `/fanous/output/{n}/fade`.
-- When the console's signal is lost, the output follows channel 6 (Hold on
-  loss, in [console-setup.md](console-setup.md)):
-  - **Hold last values**: the output stays as it is. A glide that is running
-    finishes.
-  - **Go to zero**: channels 6 and 7 go to 0, so the output cuts to the edited
-    mapping. Under Who controls *Console and Fanous, highest value wins*, a
-    channel 7 value from the UI or a cue is higher than 0 and wins: the output
-    glides to the edited mapping over that time instead.
-  - **UI and cues take over**: the output shows the preset and the fade the UI
-    or a cue set for channels 6 and 7. With none set, it cuts to the edited
-    mapping.
-- When the signal comes back after Go to zero or UI and cues take over, and on
-  the first packet after Fanous starts, the output glides to the console's
-  preset over the console's channel 7: from the edited mapping, or from the
-  preset the UI or a cue showed.
-
-While an output shows a preset, its row and the Warp & Slices tab say
-**Preset N (console)** or **Preset N (compare)**. While it glides they say
-**Preset A → B**, **Edited → Preset B** or **Preset A → edited**. Warp &
-Slices says that your edits go to the mapping the output shows again when it
-leaves the preset. A Keystone fixture moves the preset like any mapping.
-
-## Keystone from the console
-
-The **Keystone** fixture (16 channels, see
-[console-setup.md](console-setup.md)) moves an output's four corners from the
-console, on top of the alignment you made here: for moving scenery, or a quick
-fix from FOH without touching the hand alignment.
-
-- Patch one per output, next to its Output fixture: "Keystone 1" belongs to
-  Output 1. The Patch screen lists a Keystone row under every Output row; it is
-  not in the standard patch, so set its address when you want it.
-- The channels, in order: top-left X, top-left Y, top-right X, top-right Y,
-  bottom-right X, bottom-right Y, bottom-left X, bottom-left Y, each 16-bit
-  (coarse, then fine; [channel-map.md](../channel-map.md)). Each goes from
-  −50 % to +50 % of the output's width or height; + moves right or down.
-- The default, 32768 (50 % on a fader), is no change, so a centred or
-  unpatched Keystone leaves the output as aligned. A fixture you build by hand
-  on a console must default to 32768 too: at 0 every corner sits at −50 % and
-  the picture moves half an output up and left.
-- A universe set to **Go to zero** on DMX loss centres its Keystone fixtures
-  rather than sending them 0 (see [console-setup.md](console-setup.md)).
-- The whole mapping moves: every slice and test pattern, with their masks. The
-  blend ramps and the black lift stay where they are on the projector, so the
-  overlap of a wall stays put while the picture moves.
-- Raw on the Output fixture (Blend channel 128 or more) shows the output
-  without blend, warp and keystone, for alignment.
-- The preview and the Warp & Slices handles show the mapping as you edited it,
-  without the keystone, so a handle stays where you drag it. The output row
-  and the Warp & Slices tab say **Keystone active** while it moves the output
-  (not in Raw, which bypasses it).
-- Corners that would fold the picture (one pulled onto or past the line
-  between two others) are refused: the output keeps the last keystone that
-  worked and shows **Keystone invalid** in yellow until the console sends
-  corners that work again.
-- OSC: `/fanous/keystone/{n}/topLeftX` and the other keys of the channel map.
-
-## Not done yet
-
-- **Hot-plug** (unplug and replug) is checked with one external display: unplug
-  releases the output, and replug on the same or another port and a mode change
-  rebind it, all within 25 ms of the display event. Show mode applied and
-  restored a wanted mode, but after an unplug in show mode the display came
-  back in the applied mode, so the re-apply was not exercised. With two or more
-  external displays it rests on unit tests; test it on your machine before the
-  show (B34).
-- Dithering is a simple noise function; if you see banding on a projector, tell
-  the developers (B34).
-- Not available: per-output Syphon, Syphon for canvases other than Canvas 1,
-  a frame rate per canvas, 10-bit output.
-- Projector walls: the outputs of one wall need the same pixel size.
-- Compare reaches outputs 1 to 8.
-- Colour, black lift and black offset assume a gamma-2.2 projector; there is no
-  per-output gamma for them yet.
+- Every output bound (green), none lost; the clock master on the display
+  that matters most.
+- A Mode on every output that must run at a fixed rate; the canvas frame
+  rate equal to the projectors' refresh rate, read from each output row;
+  the readiness item **Outputs in their desired display mode** green or
+  acknowledged ([show-day-checklist.md](show-day-checklist.md)).
+- Seam check done, test patterns off (the Output and Master fixtures'
+  Test pattern channels at 0), every output's own test pattern **Off**.
+- Black lift set at 100 % output intensity; dimming from the Master or the
+  layers.
+- **Hold on signal loss** at Hold last values for the universes that carry
+  the Output, Master and Keystone fixtures, unless you want black on loss
+  ([console-setup.md](console-setup.md#when-the-console-goes-silent)).
+- Walls and presets stored again after any layout change: a wall changed
+  later does not change the presets stored before
+  ([warp-and-masks.md](warp-and-masks.md#mapping-presets)).
+- The UI on another device when an output uses the Mac's own display.
+- Something wrong on the night: [troubleshooting.md](troubleshooting.md).

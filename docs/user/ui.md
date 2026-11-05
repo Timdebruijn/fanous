@@ -200,7 +200,7 @@ preview pauses while the tab is in the background.
 
 A touch screen gets the same controls with 44 px targets, a nudge pad in the
 warp editor and **Remote** mode for aligning from the iPad while you look at
-the projection ([outputs-and-mapping.md](outputs-and-mapping.md#warp--slices-tab)).
+the projection ([warp-and-masks.md](warp-and-masks.md#remote-aligning-from-an-ipad)).
 
 ## Roles and logging in
 

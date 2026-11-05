@@ -85,7 +85,7 @@ side with a soft-edge blend in the middle, one console.
    stay Off.
 5. **Split the picture** (next section) and set the **blend** on each Mac's
    Outputs screen: the left output's right edge and the right output's left
-   edge get the same Overlap ([outputs-and-mapping.md](outputs-and-mapping.md#blend-edges)).
+   edge get the same Overlap ([outputs-and-mapping.md](outputs-and-mapping.md#blend-two-projectors)).
    Check the seam with the Blend check test pattern.
 6. **Check** the Layers screen on the right Mac: Layer 1's badge reads **S1**
    in green, "locked to Layer 1 on" the left Mac. Then run the camera check

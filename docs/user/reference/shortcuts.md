@@ -42,7 +42,7 @@ and ⇧⌘Z.
 | Double-click a mask edge | Add a point there | **Add points**, then tap |
 
 The warp editor is one tab stop: click or tap it once before the arrow keys
-act. See [outputs-and-mapping.md](../outputs-and-mapping.md#warp--slices-tab).
+act. See [warp-and-masks.md](../warp-and-masks.md#the-editor).
 
 ## Layer panel (Layers screen)
 
