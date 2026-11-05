@@ -6,7 +6,7 @@
 
 Every control on the screen that shows what each layer plays. For the tasks
 (driving a layer from the UI, reading its state, the preview) see
-[show-control.md](../show-control.md#controlling-layers-from-the-ui) and
+[remote-control.md](../remote-control.md#from-the-ui) and
 [getting-started.md](../getting-started.md). Terms are in the
 [glossary](../reference/glossary.md).
 
@@ -99,7 +99,7 @@ with the output: judge motion, banding and colour on an output.
 | Part | Does |
 |---|---|
 | Title | `Layer N`, `Master` or `Output n` |
-| **Control** switch | Set these values from here, without a console (programmer; refused while the show is locked). It stays on when you select another layer row and goes off when you select the Master or an output. See [show-control.md](../show-control.md#controlling-layers-from-the-ui) |
+| **Control** switch | Set these values from here, without a console (programmer; refused while the show is locked). It stays on when you select another layer row and goes off when you select the Master or an output. See [remote-control.md](../remote-control.md#from-the-ui) |
 | Patch line | `artnet:0.0.1 · ch 145–208 · 64 ch`, or "no address" |
 | Library line | `Folder 3 · Intro / 12 · loop.mov`: the names behind the numbers the layer plays |
 | Note | "UI control" or "MIDI control" while such values are set; "· console active, releases in 7:42" with **Keep** while they hide a live console value. At 0:00 the UI and MIDI values are dropped and the console's values show again; **Keep** restarts the 10 minutes (programmer; refused while the show is locked) |

@@ -2,543 +2,264 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 
-# Show control
+# Show control: cues and timecode
 
-The Show screen (key 6, "Show control") holds timecode, the cue list, OSC and
-MIDI. Fanous can also be seen and browsed from a console
-over CITP/MSEX.
+Use this page to run a show from the Show screen, to build cues, and to let
+timecode (LTC or MTC) fire them and drive the layers. Driving Fanous without
+a console from the UI, OSC, MIDI and MSC, and letting a console browse it
+over CITP, is [remote-control.md](remote-control.md); two Macs playing in
+step is [multi-server.md](multi-server.md). Every control of the Show screen
+is in [screens/show.md](screens/show.md); terms are in the
+[glossary](reference/glossary.md#console-protocols-control).
+
+Before you start: open the Show screen (key 6); have media in the library
+([media-library.md](media-library.md)) and the layers patched
+([console-setup.md](console-setup.md)); and when the Show screen shows a
+yellow note about Who controls, press **Use Console and Fanous, latest
+change wins** once. With the default **Console only** the cue list runs but
+the layers keep showing the console ([remote-control.md](remote-control.md#who-controls)).
 
 ![The Show screen: GO with the next cue, the Timecode panel, the cue list with cue 2 current and cue 3 next, OSC on the right](../images/show.png)
 
-Before you build a show on cues or OSC or MIDI parameter values, set the project's
-**Who controls** (Patch screen, the card above the fixture groups) to **Console
-and Fanous, latest change wins**, **Console and Fanous, highest value wins** or
-**Fanous only (UI, cues, OSC, MIDI)**: with the default **Console only** those
-values are recorded but do not move a layer, and the Show control screen shows
-a yellow warning with a button **Use Console and Fanous, latest change wins**
-(programmer, not while the show is locked). The same warning appears in the
-layer panel and on the Media screen. See
-[console-setup.md](console-setup.md#who-controls).
+Running the show (GO, Back, Go to, the timecode switch) is the operator's
+and works while the show is locked. Building cues and the timecode settings
+are the programmer's and are refused while the show is locked
+([ui.md](ui.md#roles-and-logging-in)).
 
-The **Timecode on/off** switch belongs to the operator and also works under
-show lock; the source, device, channel and offsets are programmer settings.
+## Run the show
 
-The big **GO · Space** button (72 px high) fires the next cue and says which
-one: "Next: 3 Chorus". **Back** sits at the far right, apart from Go, so it is
-not pressed by mistake. The toolbar has a **Cue no.** field with **Go to**.
-Operators and programmers can use them, also while the show is locked. The Space
-key does the same as GO, but only when no field or button has the focus.
+<img src="images/show-transport.png" width="1396" alt="The GO · Space button with Next: 3 Band walk-in, and Back at the far right">
+
+- **GO · Space** fires the next cue by number after the current one; its
+  second line says which ("Next: 3 Band walk-in", or "Next: no further
+  cue"). Before the first GO the next cue is the first in the list. Space
+  also fires GO, except while you type in a field or a dialog is open;
+  after a click on a button Space still means GO.
+- **Back** fires the cue before the current one, by its own values only: it
+  does not undo what later cues set. The next GO then continues after it.
+  It sits at the far right so it is not hit by mistake.
+- **Cue no.** and **Go to** fire the cue with that number, in any
+  direction, and make it current; the caption names the cue or says "no
+  such cue".
+- Fanous cues track: a cue sets only the values it holds, with its fade,
+  and every other value stays where the last cue left it. A cue that must
+  take a layer out needs its Intensity at 0. Nothing is released when a
+  later cue fires; removing a cue from the list releases what it held.
+- Jumping into the middle (Go to after a restart, a rehearsal from scene
+  three) does not rebuild what the cues before it set. Give the first cue of
+  each section every value it needs: folder, file, intensity and dissolve.
+  After an engine restart no cue is current ("No cue fired yet").
+
+## Build a cue
+
+<img src="images/show-cues.png" width="1060" alt="The cue list: Now 2 Welcome · next 3 Band walk-in, the buttons Add cue, Duplicate, Remove, Move up and Move down, and five cues with number, name, fade, trigger, follow and value count">
+
+1. **Add cue**: the new cue gets the number one above the highest whole
+   number (cues 1, 2 and 5 give 6; a highest cue 2.5 gives 3) and the name
+   "Cue N". Numbers may have decimals (2.5, three at most) and must be
+   unique; the editor says "Cue N already exists." when not.
+2. **Name** it after what it does, and give it a **Fade (s)**: linear, for
+   every continuous value in the cue; 0 cuts.
+3. **Add value** for each parameter the cue sets: **Fixture** (Layer 1 to
+   N, Master, and the Output and Keystone fixtures that are in the patch),
+   **Parameter**, **Value**, and an optional **Fade (s)** for that value
+   alone. The range is printed under the field: 0–255 for an 8-bit
+   parameter, 0–65535 for a 16-bit one such as Intensity, or a list for a
+   parameter with named bands such as Play mode. A value whose fixture or
+   parameter no longer exists reads "(missing)": fix or remove it.
+4. Changing media with a fade? Give the layer's **Dissolve** value a Fade
+   of 0, or set the Dissolve in an earlier cue. Dissolve is the layer
+   parameter that sets how long a new file crossfades in; the media
+   switches at once and the dissolve is read when the new file's first
+   frame is ready, so a Dissolve fading in the same cue is read on its way.
+   The same holds for an output's Mapping preset and Mapping fade.
+5. **Go to this cue** to test it. Give it a [trigger or a follow](#triggers-and-follows)
+   when timecode or the previous cue should fire it.
+6. **Duplicate** makes "name (copy)" numbered halfway to the next cue, with
+   the fade and the values but not the trigger and follow. **Move up** and
+   **Move down** swap numbers with the neighbour. **Remove** shows a toast
+   with Undo for 8 seconds.
+
+A three-cue show, Layer 1 playing folder 1 file 1 and Layer 2 taking over:
+
+| Cue | Fade | Values |
+|---|---|---|
+| 1 Opening | 2 | Layer 1 Folder 1, Layer 1 File 1, Layer 1 Intensity 65535 |
+| 2 Fade out | 3 | Layer 1 Intensity 0 |
+| 3 Band | 0 | Layer 2 Folder 1, Layer 2 File 2, Layer 2 Intensity 65535 |
+
+Press GO three times. Cue 2 needs Layer 1's intensity explicitly, because
+cue 3 would otherwise leave Layer 1 where cue 1 put it.
+
+<img src="images/cue-editor.png" width="1060" alt="The cue editor for cue 3: number, name, fade, trigger and follow, then its values per fixture and parameter">
+
+```mermaid
+flowchart TD
+  add["Add cue, name, fade"] --> values["Add value per parameter"]
+  values --> media{"Does it change Folder or File with a fade?"}
+  media -- yes --> dissolve["Give the Dissolve value Fade 0, or set it in an earlier cue"]
+  media -- no --> test
+  dissolve --> test["Go to this cue"]
+  test --> moves{"Does the layer move?"}
+  moves -- "no, yellow note on the screen" --> policy["Who controls is Console only: Use Console and Fanous, latest change wins"]
+  moves -- "no, no note" --> fixture["A value reads (missing), or the layer has no media: fix the value"]
+  moves -- yes --> trig{"Fired by timecode or by the cue before it?"}
+  trig -- timecode --> trigger["Trigger hh:mm:ss:ff@rate"]
+  trig -- "after the previous cue" --> follow["Follow (s) on the previous cue"]
+  trig -- "by hand" --> done["Done"]
+```
+
+How a fade runs: a continuous value moves in a straight line from the last
+value any cue set for that parameter (the parameter's default when none
+has) to the new one; it does not start from what the console shows.
+Parameters that are choices (play mode, blend mode, effects, fit, folder,
+file, mapping preset) switch when the fade starts. A cue fired during a
+fade starts from where the fade is. Under **Console and Fanous, latest
+change wins** a running fade holds against the console until it ends.
+
+## Triggers and follows
+
+A **Trigger** fires the cue from timecode: `hh:mm:ss:ff@rate`, for example
+`00:01:30:00@25`. The rate is the timecode's frame rate: copy it from the
+Timecode panel's source line (`LTC · device · 25 fps`); 24, 25, 29.97df,
+29.97ndf and 30 are accepted, and without `@rate` it means 25. Use 29.97df
+(drop frame) only when the source says so; frames count from 0 to one
+below the rate. A **Follow (s)** fires the next cue in the list that many
+seconds after this one fires, not after its fade ends: a 5 s fade with
+Follow 5 fires the next cue as the fade ends. 0 fires it at once; empty is
+none.
+
+| Timecode does | The trigger |
+|---|---|
+| Passes the trigger time while running | Fires; several cues in the same frame fire in number order |
+| Starts, after an engine start or a jump back, exactly at the trigger time | Nothing fires: a trigger needs a frame before it. Write the first trigger at least one frame after the time the timecode starts at |
+| Jumps back, or repeats | Nothing fires; the cues after the new position are armed again |
+| Jumps forward by 5 s or more in its value | Nothing fires: the cues in between are skipped, not caught up. A pause that resumes at the same value is no jump |
+| Is in Freewheel or Lost | Nothing fires; triggers come from decoded frames only. After a gap of less than 5 s in the value, the triggers passed in the gap fire together on the first frame back |
+| Passes midnight | Counts as a jump back and arms every cue again |
+
+Start the timecode running before the first trigger and let it play
+through. A locate on the playback skips the cues between the old and the
+new position, which is intended; fire a skipped cue with Go to. Triggers
+use the incoming time as it is: the **Offset** on the Timecode panel moves
+the layers that chase timecode, not the triggers, so write the triggers at
+the times the timecode really shows. A follow is set each time the cue
+fires, so follows chain; a GO, Back or trigger in between replaces the
+pending follow. A Follow on the last cue in the list does nothing.
 
 ## Timecode
 
-The Timecode panel shows the current time in big digits, its state and the
-number of frames seen. States: **Locked** (green), **Freewheel** (yellow, the
-signal dropped and the clock keeps running for the Freewheel time), **Lost**
-(red, layers stop chasing) and **Off**.
+Timecode is a clock, `hh:mm:ss:ff`, that a sound desk, a playback computer
+or a console sends out so that everything runs in step. Fanous only
+follows one; it has no clock of its own. It arrives as LTC, an audio
+signal on one channel of an audio input, or as MTC over MIDI; ask the
+sound or playback operator which you get. Timecode does two separate
+things: it fires cues whose trigger it passes, and it can make a layer's
+video play at the timecode position ("chase"), with Play mode **Timecode**
+(channel 5 at 128 to 143): the layer shows the file at `(timecode −
+Offset)` at the file's own rate, looped between its In and Out points. Skip
+the chase if you only need triggers.
 
-| Field | Meaning |
-|---|---|
-| Source | Off, LTC (audio input) or MTC (MIDI) |
-| Device | an audio input for LTC ("Default input" or a named device), a MIDI source for MTC ("All sources" or one) |
-| Channel | LTC only: input channel of the device, 1 is the first |
-| Offset (frames) | subtracted from the incoming time, project wide. The line under it shows the same offset in seconds at the current rate, for example "+25 frames = +1.00 s at 25 fps" |
-| Freewheel (s) | how long a dropped signal is bridged; default 2 |
-| Timecode on/off | the switch in the panel header |
+<img src="images/show-timecode.png" width="1060" alt="The Timecode panel: the on/off switch, the readout with its state and frames seen, and the fields Source, Device, Channel, Offset and Freewheel">
 
-**LTC** reads any audio input on the Mac. Frame rates 24, 25, 29.97 (drop and
-non-drop) and 30 are detected by themselves. Under the readout a level meter
-shows the LTC channel's peak over the last tenth of a second in dBFS, so you
-can see whether anything arrives on the channel you chose; it reads "no
-audio" when the input could not open or nothing has arrived for half a second,
-and "timecode switched off" while the switch is off. The Inputs screen lists every audio input with its channels:
-select one, pick a channel and press **Use for timecode** to set Source,
-Device and Channel at once (one undo step; the switch stays as it is). LTC
-needs the Microphone permission: macOS asks once when LTC opens, or press
-**Authorize microphone** under Permissions on the Inputs screen (not in show
-mode). If you said no, turn it on in System Settings › Privacy & Security ›
-Microphone. **MTC** reads quarter-frame and full-frame messages from any
-MIDI source; connected sources are listed in the MIDI panel on the right, with a
-"timecode" badge on the chosen one. MIDI controllers and MIDI Show Control are
-described under [MIDI](#midi).
+Setting up LTC:
 
-Offsets: besides the project offset the engine supports one offset per layer
-(also frames); the Show screen only has the project offset field.
+1. Press **Authorize microphone** under Permissions on the Inputs screen,
+   before show mode: LTC needs the Microphone permission, and the readiness
+   item **Microphone permission granted** blocks show mode without it while
+   the Source is LTC, whatever the switch says
+   ([live-inputs.md](live-inputs.md#permissions)).
+2. Plug the LTC feed into an audio input of the Mac. On the Inputs screen,
+   select that input, pick the channel (1 is the first) and press **Use for
+   timecode**: Source, Device and Channel are set in one step. The same
+   fields are on the Show screen's Timecode panel.
+3. **Timecode on/off** on. The level meter under the readout shows the LTC
+   channel's level in dBFS; "no audio" means the input could not open or
+   nothing arrives on that channel. The rate (24, 25, 29.97 drop or
+   non-drop, 30) is detected by itself.
+4. Done when the state pill reads **Locked** in green, the readout counts,
+   and the source line reads `LTC · device · 25 fps`.
 
-To make a layer follow the timecode set its Play mode channel (channel 5) to
-128 to 143, "Timecode". The layer then shows the file position
-`(timecode − project offset − layer offset)` at the file's own frame rate, looped
-between the In point and Out point channels.
+Setting up MTC:
 
-Changing the timecode settings (source, device, channel, offsets, freewheel)
-is a configuration change: it needs the programmer role and is refused while
-the show is locked, so set them up before you lock the show. The **Timecode
-on/off** switch is not: the operator can use it, also under show lock.
+1. Connect the MIDI source (a USB interface, or a network MIDI session in
+   Audio MIDI Setup). It appears in the MIDI panel's source list.
+2. Source **MTC (MIDI)**, Device **All sources** or that source; the MIDI
+   panel marks it with a "timecode" badge. No permission is needed. MTC
+   carries its rate (24, 25, 29.97 drop frame or 30; never 29.97 non-drop).
+3. **Timecode on/off** on.
+4. Done when the pill reads **Locked** and the source line shows the rate.
+   A missing source reads in red under the readout.
 
-## Cues
+<img src="images/show-timecode-mtc.png" width="1060" alt="The Timecode panel with Source MTC (MIDI) and Device All sources, the readout dashed with the state Off and 'No source', and the red line 'no MIDI source connected'">
 
-A cue has a number, a name, a fade time, a list of values, an optional timecode
-trigger and an optional follow time. The list shows No., Name, Fade, Trigger,
-Follow and Values; the header says "Now 2 Name · next 3 Name", and the rows are
-marked current (or fading) and next.
-
-- **Add cue** takes the number one above the highest cue, rounded down to a
-  whole number (cues 1, 2 and 5 give 6; a highest cue 2.5 gives 3), and the
-  name "Cue N". **Duplicate** copies fade and values, not trigger and follow.
-  **Remove** shows "Undone? Undo" for 8 seconds. **Move
-  up** and **Move down** swap numbers with the neighbour. Numbers may have
-  decimals (2.5) and must be unique.
-- In the editor: **Number**, **Name**, **Fade (s)**, **Trigger**, **Follow (s)**,
-  and **Go to this cue**.
-- **Values** are rows of Fixture (Layer n, Master, and the Output n and
-  Keystone n fixtures that are in the patch), Parameter, Value and an optional
-  Fade (s) that overrides the cue fade. Value is a number in the parameter's
-  raw range or, for parameters with named bands such as Play mode or Blend
-  mode, a choice list. **Add value** adds a row, **×** removes one.
-- Fades are linear for continuous parameters. Parameters that are choices
-  (play mode, blend mode, effects, folder, file, mapping preset) switch when the
-  fade starts.
-- A layer's media change reads Dissolve, and an output's Mapping preset change
-  reads Mapping fade, at that start. A cue that changes both with a fade still
-  reads the old Dissolve or Mapping fade: give that value a Fade of 0, or set
-  it in an earlier cue.
-- **Trigger** is `hh:mm:ss:ff@rate`, for example `00:01:30:00@25`. Rates: 24,
-  25, 29.97df, 29.97ndf, 30; without `@rate` it means 25. The cue fires when the
-  timecode passes that time, and arms again after a jump back.
-- **Follow** fires the next cue that many seconds after this one. Leave it empty
-  for none.
-
-![The cue editor for cue 3: number, name, fade, trigger and follow, then its values per fixture and parameter](images/cue-editor.png)
-
-**Go** fires the next cue, **Back** the previous one, **Go to** a given number.
-Editing cues is a configuration change (programmer, refused while the show is
-locked); Go, Back and Go to are not.
-
-## OSC
-
-Fanous listens for OSC on port 8000, UDP, and on TCP 8000 with SLIP framing.
-The OSC panel shows the port, the last received messages (time and command) and
-the address list. Try `/fanous/cue/go` first. Parameter keys are the "OSC key"
-column of [channel-map.md](../channel-map.md); a float is a value from 0 to 1 of
-the parameter's range, an int is the raw value.
-
-| Address | Args | Effect |
-|---|---|---|
-| `/fanous/layer/{n}/{param}` | f | Layer parameter; param is a key of the channel map |
-| `/fanous/layer/{n}/media` | ii | Folder, file |
-| `/fanous/layer/{n}/retrigger` | | Restart the media |
-| `/fanous/master/{param}` | f | Master parameter |
-| `/fanous/output/{n}/{param}` | f | Output parameter |
-| `/fanous/keystone/{n}/{param}` | f | Keystone parameter (`topLeftX` … `bottomLeftY`, see the channel map) |
-| `/fanous/cue/go` | | Fire the next cue |
-| `/fanous/cue/back` | | Fire the previous cue |
-| `/fanous/cue/goto` | i | Fire the cue with this number |
-| `/fanous/cue/{number}/go` | | Fire that cue |
-| `/fanous/show/lock` | i | 1 locks the show, 0 unlocks |
-| `/fanous/show/mode` | i | 1 enters show mode, 0 leaves |
-| `/fanous/timecode/enable` | i | 1 switches timecode on, 0 off |
-| `/fanous/project/load` | s | Revert to the newest named project version with this name (or to a version id); refused in show mode and while the show is locked |
-
-OSC bundles with timetags are honoured: the contents run at the given time.
-Send a burst slowly: messages sent back to back from one socket can be partly
-lost, so leave about 50 ms between them (B30).
-
-### Reading state back (feedback)
-
-A controller (Bitfocus Companion, QLab, TouchOSC) can also read values back,
-in two ways.
-
-**Ask once.** Add `/get` to any address below: `/fanous/layer/3/intensity/get`
-answers with `/fanous/layer/3/intensity 0.75`, `/fanous/layer/3/get` with every
-value of layer 3, `/fanous/cue/get` with the cue state. `/fanous/get` on its own
-answers with a summary: version, show mode, show lock, ready, current cue,
-frames per second and missed frames. The answer goes back to the address and
-port the question came from. A controller that listens on another port than it
-sends from adds that port as an int (`/fanous/get 9000`); that only works once
-that port has a confirmed subscription (below), otherwise the answer still goes
-to the port the question came from. One question answers at most 256 addresses;
-ask per layer rather than for all layers at once. Answers come from a snapshot
-that is at most 25 ms old.
-
-**Subscribe** takes two steps. `/fanous/subscribe <host> <port> [prefix]`
-(s, i, s) is answered with `/fanous/subscribe/confirm <cookie>` (s) on that
-port; the controller sends `/fanous/subscribe/ack <cookie>` back within 5
-seconds, from the same computer. From then on every change under the prefix
-(default `/fanous`, everything) goes to that port. This way nobody can make
-Fanous send a stream to a computer that did not ask for it. Right after the ack
-you get all current values once, then only changes. Changes
-are collected for 50 ms and sent together, so a value goes out at most 20 times
-a second and always as its latest value; a console fading a layer does not
-flood the controller. A subscription ends after 60 seconds unless it is renewed
-with another `/fanous/subscribe` (no new cookie needed once confirmed) or a
-`/fanous/ping` (answered with `/fanous/pong`): let the controller send one every
-30 seconds.
-`/fanous/unsubscribe` ends every subscription of the sending computer;
-`/fanous/unsubscribe <host> <port> [prefix]` ends one. Every cue go (Go, Back,
-Go to, from the UI, the Space key or OSC) sends the cue addresses again, also
-when the cue did not change.
-
-Answers and changes come as OSC bundles with the timetag "immediately", each
-smaller than one network packet. Values are in the same units you send:
-parameters as a float from 0 to 1 of their range (send one back and you set the
-same value), so a fader on a controller can follow a layer.
-
-| Address | Type | Value |
-|---|---|---|
-| `/fanous/layer/{n}/{param}` | f | Layer parameter as it is applied (after the source policy) |
-| `/fanous/layer/{n}/media` | ii | Folder, file |
-| `/fanous/master/{param}` | f | Master parameter |
-| `/fanous/output/{n}/{param}` | f | Output parameter |
-| `/fanous/keystone/{n}/{param}` | f | Keystone parameter, for every output |
-| `/fanous/output/{n}/state` | s | `bound`, `lost` or `unassigned` |
-| `/fanous/output/{n}/bound` | i | 1 when the output shows on its display |
-| `/fanous/cue/current` | f | Number of the current cue, -1 for none |
-| `/fanous/cue/current/name` | s | Its name, empty for none |
-| `/fanous/cue/next` | f | Number of the next cue, -1 for none |
-| `/fanous/cue/next/name` | s | Its name |
-| `/fanous/cue/fading` | i | 1 while a cue fades |
-| `/fanous/cue/count` | i | Number of cues |
-| `/fanous/show/mode` | i | 1 in show mode |
-| `/fanous/show/lock` | i | 1 when the show is locked |
-| `/fanous/show/ready` | i | 1 when no readiness item blocks show mode |
-| `/fanous/timecode/enable` | i | 1 when timecode is switched on |
-| `/fanous/timecode/state` | s | `off`, `locked`, `freewheel` or `lost` |
-| `/fanous/timecode/value` | s | `hh:mm:ss:ff` |
-| `/fanous/engine/version` | s | Fanous version |
-| `/fanous/engine/fps` | f | Frames rendered in the last second |
-| `/fanous/engine/missed` | i | Frames missed in the last second |
-
-Nothing that names a file or folder on the Mac (library root, project file) can
-be read over OSC.
-
-**Who gets feedback.** Fanous only sends to the computer that asked: a subscribe
-naming another host is refused with `/fanous/error`, and a stream starts only
-after the cookie came back. At most 16 confirmed subscriptions exist at once.
-Each computer can send 10 feedback requests (get, subscribe, ack, ping) a second,
-20 in a burst; more are ignored. OSC has no passwords, so keep it on the show
-network. For a
-controller that cannot subscribe, set a **fixed feedback target** in
-`~/Library/Application Support/Fanous/settings.json` (next to `passwords`, keep
-those), then restart the engine:
-
-```json
-{
-  "passwords": { … },
-  "oscFeedback": { "host": "192.168.1.20", "port": 9000, "prefix": "/fanous/cue" }
-}
+```mermaid
+flowchart TD
+  src{"Source?"} -- LTC --> mic{"Microphone permission?"}
+  mic -- "not asked" --> auth["Inputs screen: Authorize microphone (not in show mode)"]
+  mic -- denied --> settings["System Settings › Privacy & Security › Microphone: allow Fanous"]
+  mic -- granted --> dev
+  auth --> dev
+  settings --> dev["Inputs screen: the input, the channel, Use for timecode"]
+  src -- MTC --> midi["Device: All sources or the interface"]
+  dev --> on["Timecode on/off on"]
+  midi --> on
+  on --> level{"LTC: level on the meter?"}
+  level -- "no audio" --> wrong["Wrong device or channel, or no feed: check the Inputs screen"]
+  level -- yes --> state{"State?"}
+  state -- Locked --> ok["Done: triggers fire, layers chase"]
+  state -- "Freewheel, then Lost" --> feed["The feed stops or stutters: check the cable and the rate"]
+  state -- Off --> sw["The switch is off, or the source is not connected"]
 ```
 
-That target gets every change under the prefix (default `/fanous`) for as long
-as the engine runs, and the answers to `/get` from any controller too. There is
-no field for it on the System screen yet.
+```mermaid
+stateDiagram-v2
+  [*] --> Off
+  Off --> Locked: frames arrive, switch on
+  Locked --> Freewheel: no new frame for 1.5 update intervals
+  Freewheel --> Locked: a frame arrives
+  Freewheel --> Lost: no frame for the Freewheel time (2 s)
+  Lost --> Locked: a frame arrives
+  Locked --> Off: switch off, or a setting changes
+  Freewheel --> Off: switch off
+  Lost --> Off: switch off
+```
 
-**Example: Bitfocus Companion.** Add a *Generic OSC* connection with the Fanous
-Mac's address as target and port 8000, and let it listen for OSC on a port of
-its own, say 9000 (the field names differ between Companion versions). Then:
+| State | Layers that chase | Triggers | Shown |
+|---|---|---|---|
+| **Locked** (green) | Follow the time | Fire | Readout runs; status bar `timecode · locked` |
+| **Freewheel** (yellow): the clock keeps counting for a moment after the signal dropped | Keep running at the last rate | Do not fire | Readout keeps counting |
+| **Lost** (red): no signal for the Freewheel time | Hold their position | Do not fire | Status bar red while the show is locked |
+| **Off** | Stand still; other layers play as set | Do not fire | Readout dashed |
 
-- the simplest: put the Companion computer in `settings.json` as fixed target
-  (`"host": "<Companion's address>", "port": 9000`); no subscribe needed;
-- or subscribe in two steps. A trigger that runs every 30 seconds sends
-  *Send message* `/fanous/subscribe` with the arguments `<Companion's address>`
-  (string), `9000` (integer) and `/fanous/cue` (string). Store the received
-  `/fanous/subscribe/confirm` argument in a variable, and let a second trigger
-  on that variable changing send `/fanous/subscribe/ack` with the variable as
-  string argument. Once confirmed, the 30-second subscribe only renews (no new
-  cookie);
-- a button with the action *Send message* `/fanous/cue/go` fires the next cue;
-- received `/fanous/cue/current/name` and `/fanous/cue/next/name` fill
-  variables to show on that button ("Next: Chorus"), and a feedback on
-  `/fanous/show/ready` = 0 can turn a button red before show mode.
-
-TouchOSC sends from and listens on the same port: it gets the cookie on that
-port, from port 8000, and answers with the ack (a small script on a control:
-on `/fanous/subscribe/confirm`, send `/fanous/subscribe/ack` with the same
-argument); changes then come from port 8000 too.
-
-## MIDI
-
-A MIDI controller (an APC, Launchpad, nanoKONTROL, a keyboard) can fire cues
-and move parameters without a lighting desk, and a show controller can fire
-cues with MIDI Show Control. The MIDI panel on the Show screen has:
-
-- **Source**: **All sources** (default) or one MIDI source. Devices plugged in
-  later are picked up by themselves. The list below shows every source; a green
-  dot means Fanous listens to it, the "timecode" badge marks the MTC source.
-- **MSC device id** (0–111, default 0): MIDI Show Control messages to this id or
-  to all (127) are answered. **GO** fires the next cue, **GO** with a cue number
-  fires that cue. A GO whose cue is not a number (`1.2.3`, a stray byte) does
-  nothing: it never becomes a plain GO. STOP, RESUME and the other MSC commands
-  are shown but do nothing yet. Group ids (112–126) are not answered.
-- **MSC format**: the command format answered, default **Video (30–3F)**; pick
-  **Lighting (01)** or another to follow that one instead. MSC in other formats
-  is ignored (a lighting GO meant for the desk does not fire Fanous cues); "all
-  types" (7F) is always answered.
-- The **last message** received, for example `APC mini · ch 1 · CC 48 = 127`, so
-  you can see a controller is talking before you map it. Map entries that
-  cannot be read or cannot work (hand-written into a project) are listed in red
-  under it; the other entries keep working.
-- The **map**: one row per control with Control (channel and note, CC or
-  program, and the source it came from), Target and mode (for a parameter
-  target **Linear** or **Toggle** and **Pickup**), and **Remove**.
-
-<img src="images/midi.png" width="321" alt="The MIDI panel with three map rows: note 36 to GO, note 37 to Back, CC 7 to Layer 1 intensity">
-
-**Learn.** Choose a target: **GO**, **Back**, **Go to cue** (pick the cue) or
-**Parameter** (pick fixture and parameter). Press **Learn**, then press the key
-or move the control. The first note, controller or program change that arrives
-becomes a map row; "Learned: ch 1 · note 0 → …" confirms it. **Cancel** stops
-waiting. Learning the same control for the same target again replaces the row.
-A controller 0–31 followed by its partner 32–63 is learned as one 14-bit
-control (fine faders).
-
-What a control does:
-
-| Control | Cue target | Parameter target |
-|---|---|---|
-| Note | fires on key down | **Linear**: the velocity while held, back to 0 on release. **Toggle** (the default when learned): every press switches between 0 and full, starting from what the layer shows |
-| CC | fires when it rises past half way (a button sending 127/0 fires once per press) | **Linear**: 0–127 across the parameter's range. **Toggle**: every rise past half way switches |
-| CC 14-bit | as CC | as CC, with 16 384 steps: the coarse controller sets the value, its fine partner refines it |
-| Program change | fires; **Go to cue** without a number fires cue *program + 1* (program 1 on the device = cue 1) | the program number across the range |
-
-**Pickup** (Linear only): the control is ignored until it reaches the value the
-parameter shows now, then takes over. When something else changes the value
-(the console, a cue, the UI), it lets go again until it is reached once more.
-Use it for faders so a layer does not jump when you touch one.
-
-MIDI parameter values enter as their own source "MIDI", so the project's Who
-controls decides whether they move a layer (not with **Console only**). A
-controller can be left holding a value, so MIDI values are treated like UI
-values: the layer panel says "MIDI control", they are released after masking a
-received console for 10 minutes (**Keep** restarts the count) and **Release**
-clears them. They are also dropped when their map row is removed or the
-controller is unplugged. Mapping changes and Learn are programmer settings and
-are refused while the show is locked; a locked show still follows its MIDI
-controllers.
-
-**Example: APC mini.** Set Who controls to **Console and Fanous, latest change wins**.
-In the MIDI panel:
-
-1. Target **GO**, **Learn**, press the bottom-right pad. That pad is now GO.
-2. Target **Back**, **Learn**, press the pad left of it.
-3. Target **Go to cue**, cue 1, **Learn**, press the top-left pad; repeat for
-   cues 2, 3… along the top row.
-4. Target **Parameter**, Layer 1 · Intensity, **Learn**, move fader 1; set Mode
-   to Linear and tick **Pickup**. Repeat for Layer 2 to 8 with faders 2 to 8.
-5. Target **Parameter**, Master · Intensity, **Learn**, move the ninth fader.
-
-On an APC mini the pads are notes 0–63 and the faders CC 48–56 on channel 1, but
-Learn finds the numbers for you. The pad lights are not driven: Fanous does not
-send MIDI back.
-
-**Checking plug and unplug.** With the engine running and the controller
-unplugged, plug it in: within a second it appears in the source list with a
-green dot and the log says `MIDI input listening sources=["…"]`; move a mapped
-fader and the layer follows. Unplug it: it leaves the list, and whatever it was
-holding is released (the layer goes back to the console or its default). Without
-a controller at hand, turn on the IAC Driver in Audio MIDI Setup › MIDI Studio
-(it appears as a source) and send to it from any MIDI app.
-
-The same check for **MTC**: set the timecode Source to MTC and the Device to
-your MTC interface (or All sources) while it is unplugged; the Timecode panel
-says "MTC source … is not connected". Plug it in and start the timecode: within
-a second the log says `MTC input listening sources=["…"]`, the panel shows the
-device and goes Locked. Unplug it: the device leaves the panel at once, the
-state turns Freewheel (yellow), then Lost (red, layers stop chasing) after the
-Freewheel time, as when the timecode stops. When it was the only source the
-panel says the source is not connected again.
-
-## CITP/MSEX
-
-Fanous announces itself to consoles every 5 seconds on the CITP multicast
-groups 224.0.0.180 and 239.224.0.180 (port 4809), under the Mac's host name, and
-serves MSEX over TCP on a port the system picks (shown in System › Network, CITP
-line, together with the connected consoles and open streams). The console must
-be on the same subnet and the firewall must let the traffic through. A console
-sees:
-
-- one DMX source per layer and the **layer status** (media, position, playing)
-  four times a second;
-- the **libraries and elements**: numbered folders and numbered files with name,
-  size, frame rate and length. They are sent as indexes counted from 0 without
-  gaps, in folder or file order: the first folder is library 0 whatever its
-  number. The folder or file number (the DMX value) is in the DMX range min and
-  max. Folder 0 (built-in and live inputs) is not a library: a layer playing
-  it, or media that is missing, reports library 255 and element 255;
-- **thumbnails** of the files (the library thumbnails);
-- the **video sources** it can stream: source 0 is the canvas, source 1 to N
-  layer 1 to N;
-- a **canvas preview stream** of Canvas 1: JPEG at 640x360, up to 10 frames per
-  second, and **layer streams**: the live picture of one layer alone, JPEG 160
-  pixels wide, 4 new pictures a second (black while the layer shows nothing).
-  Each is only produced while a console asks for it.
-
-MSEX versions 1.0 to 1.2 are negotiated; the highest common one is used. A
-console that sends no ClientInformation within 2 seconds (MSEX 1.0 and 1.1
-consoles do not) is taken as 1.0 and gets the server information unasked.
-
-## Not done yet
-
-- **Who controls applies to the whole project**, not per layer: one setting
-  on the Patch screen for every fixture.
-- No MIDI output (controller lights, MSC replies) and no MIDI-triggered cue
-  recording. MIDI ranges (low/high of a mapping) can only be set with the
-  `midi.map.set` command, not in the panel. MIDI has been tested with injected
-  messages and a virtual source, not with a real controller (B36). The OSC
-  feedback target can only be set in `settings.json`, not on the System screen.
-- CITP: streams and thumbnails come at a fixed size (canvas 640x360, layers 160
-  pixels wide, thumbnails as stored) whatever size the console asks for (B41).
-  No real console has been tried (B40).
-- Timecode chase is tested with generated LTC and simulated MTC, not with real
-  hardware, and not at 29.97 drop frame or over long runs (B44). The
-  microphone prompt was checked on the notarized build, not on a clean account
-  (B50). Cue fades have not been measured from cue to picture (B43).
-
-## Built-in content (folder 0)
-
-Folder 0 holds content the engine draws itself: no files, any layer, selected
-like a clip (Folder 0, File n) from the console, from the layer panel
-(**Control** › **Built-in content and live inputs (folder 0)**) or from the Media screen
-(folder **0 · Built-in and live inputs**). It goes through the layer like media:
-position, scale, colour, effects and dissolves apply.
-
-| File | Content |
+| Field | Does |
 |---|---|
-| 1–20 | Cameras and capture cards on this Mac, numbered as the engine first sees them and kept in the project (see below) |
-| 21–28 | Displays of this Mac, numbered the same way (see below) |
-| 100 | Solid colour: white times the layer's Red/Green/Blue channels |
-| 101–107 | The seven output test patterns as layer content |
-| 110 | Test card: grid, aspect circle, border, colour bars, running time (or the incoming timecode when it runs) with a frame number, a bar that sweeps once a second, and two squares that swap every frame (a dropped or doubled frame shows as both lit or both dark) |
-| 111 | Colour sweep: a slow moving hue gradient |
-| 112 | Clock: time of day, hh:mm:ss |
-| 113 | Motion test: a bar moving 32 px per frame and stripes scrolling 16 px per frame on a 1080p canvas (half that at 540 lines, double at 2160), and a strip of 60 cells with one lit per frame. At a steady rate every step is equal; a dropped or doubled frame shows as a jump or a stop |
-| 150–169 | Syphon servers of other apps on this Mac, numbered as the engine first sees them and kept in the project (see below) |
+| **Source**, **Device**, **Channel** | Off, LTC (audio input, with its channel) or MTC (MIDI source) |
+| **Offset (frames)** | Subtracted from the incoming time for every layer that chases, one value for the project; the line under it shows it in seconds at the current rate. Not applied to cue triggers |
+| **Freewheel (s)** | How long a dropped signal is bridged before Lost; 2 to start, 0.1 at least |
+| **Timecode on/off** | The operator's switch; off, the engine treats the source as Off |
 
-**Cameras and capture cards (1–20).** Every camera and capture card on this
-Mac gets the lowest free number from 1, up to 20, when the engine first sees
-it; the Media and Inputs screens list them under **Cameras and capture cards (1–20)**
-with a green dot while the device delivers and a grey ring when it has gone,
-and the numbers are kept in the project like the Syphon numbers below. A
-device you unplug keeps its number and gets it back when you plug it in again;
-a USB card moved to another port is found again by its model and name when
-only one gone device matches. **Forget** on the Inputs screen frees a number (a device that is
-not running, or **Forget all not running (cameras and displays)**, which frees
-displays too; programmer, undoable, not while
-the show is locked). A device another app has open (an iPhone in FaceTime)
-reads "in use by another app" with a yellow dot. **Number** on the Inputs
-screen gives a device another number (a taken one swaps). A card follows its input signal: the picture takes the size and rate of what
-comes in, and a card without a signal for 2 seconds reads "no signal" on the
-Layers screen and keeps its last frame. macOS asks for the camera permission
-once, for "Fanous Engine" (listed as "Fanous" in System Settings): when a
-layer first selects a camera, or when you press **Authorize camera** under
-Permissions on the Inputs screen; never in show mode, so authorize
-before the show. Denied: allow Fanous under System Settings › Privacy &
-Security › Camera. Verified so far: the built-in
-camera, an iPhone over Continuity Camera; UVC cards such as Elgato Cam Link
-4K and Magewell USB Capture appear as cameras; Blackmagic DeckLink and
-UltraStudio do not (they need their own SDK, see the backlog).
+Show timecode usually starts at 01:00:00:00. A layer that chases then
+needs an Offset of one hour (90000 frames at 25 fps), else it shows the
+file one hour in, wrapped; the triggers are written at 01:00:… whatever
+the Offset. Any change to the settings, also the Offset, restarts the
+input: the state drops to Off for a moment and comes back Locked. The
+settings are the programmer's and are refused while the show is locked,
+so set them before you lock. The per-layer offsets the engine also
+supports have no field on the screen ([reference/api.md](reference/api.md#commands),
+`timecode.set`).
 
-**Displays (21–28).** Every display of this Mac gets the lowest free number
-from 21, up to 28, listed under **Displays (21–28)** on the Media and Inputs
-screens the same way; a display that Fanous uses as an output reads "not running". A
-display layer is named `Display: <name>` and shows the whole display, scaled down to
-the canvas when larger (more in [media-library.md](media-library.md)). It
-needs the Screen permission: **Authorize screen** under Permissions on the
-Inputs screen, never in show mode, allow Fanous in System
-Settings, then choose Engine › **Restart Engine** (macOS applies the grant only
-to a new engine process). Without the grant the layer reads "screen permission
-not granted" and stays black.
+## Before the show
 
-**Readiness.** Three items on the System screen look only at inputs in use: a
-layer that shows a camera (1–20) or a display (21–28), an entry of a `--scene`
-file with `capture:` or `screen:`, or timecode set to LTC. **Camera permission
-granted** fails while a layer shows a camera without the camera permission;
-**Screen recording granted** fails while a layer shows a display without the
-Screen permission; **Microphone permission granted** fails while the timecode
-Source is LTC without the Microphone permission, whatever the Timecode switch
-says (fix: Authorize microphone on the Inputs screen). A failed item blocks
-show mode until a programmer acknowledges it, so no permission dialog appears
-during the show; each is acknowledged on its own. While a layer shows a
-display, Screen recording granted also warns with the grant: macOS asks again
-about once a month whether Fanous may record the screen, with a dialog on the
-main display. A numbered camera or display that no layer shows changes neither
-of the first two items. Check them before every show, with the show's media
-loaded; for a show-critical slides feed, a capture card is the safer path.
-
-**Syphon servers (150–169).** Every Syphon server another app on this Mac
-publishes gets the lowest free number from 150, up to 169, when the engine
-first sees it; the Media and Inputs screens list them with their number, a green dot
-while the server runs and a grey ring when it has gone. The numbers are kept
-in the project, so they stay the same across an engine restart (also a restart
-after a crash in the middle of a show): a server that stops keeps its number,
-and when it starts again (same app and server name) it gets its old number
-back. After a restart a server that has not answered yet is listed greyed,
-"not seen since the engine started". A number is freed with **Forget** on
-the Inputs screen (one server that is not running, or **Forget all not running**;
-programmer, undoable, not while the show is locked), and **Number** there
-gives a server another one; undo, redo and loading a
-project version also free the numbers of servers that are not running and that
-the restored project does not list; with all 20 numbers taken a
-new server gets none and the Inputs screen names it. When an app quits, its dot goes grey at once; when it crashes,
-within about 11 seconds. A layer on a server that has gone keeps its last
-picture and shows "Syphon: App/Server · not running" on the Layers screen;
-when the server comes back the picture returns without selecting it again.
-Selecting a server that is not running shows black until it starts. A scene
-file entry for the same number wins. This engine's own canvas is not
-listed.
-
-Judge motion on an output (a display or projector), not in the preview: the
-preview is at most 1280 pixels wide at 30 fps and shows only every second frame
-of a 60 fps canvas, so moving content always looks jerky there.
-
-## Controlling layers from the UI
-
-Without a console on site, open the Layers screen, select a layer and turn on
-**Control** in its panel. Every channel gets a control: a slider for continuous
-values (double-click: default), a list for modes, a number for folder and file.
-Values enter as the UI source, so the project's Who controls must be
-**Console and Fanous, latest change wins**, **Console and Fanous, highest value
-wins** or **Fanous only (UI, cues, OSC, MIDI)**; the panel offers **Use Console
-and Fanous, latest change wins** when it is Console only. With latest change
-wins, whoever moved last wins between console and UI.
-**Release** hands the layer back to the console. UI control is refused while the
-show is locked.
-
-<img src="images/layer-control.png" width="332" alt="The layer panel of Layer 3 with Control on: Release, the media lists and a slider or field per channel">
-
-**Preview of one layer.** Above the preview on the Layers screen, **Canvas**
-shows the whole canvas (with several canvases there is a button per canvas
-instead) and **This layer** shows only the selected layer, in the shape of its
-own canvas: its
-media with its own position, scale, rotation, fit, crop, colour, effects and
-intensity, in the canvas frame, over black. Layers above and below it are left
-out, and its blend mode is shown as Normal (Multiply or Darken over black would
-show nothing). The preview follows the selection; with Master or an output
-selected in the strips it shows the canvas, **Canvas** is lit and the caption
-says "Canvas (no layer selected)"; select a layer again and it returns to that
-layer. The caption ends with what is shown, for example
-`H.264 · 640×360 · 30 fps · Layer 3`. The browser remembers the choice; other
-browsers keep their own. A layer at intensity 0 or without media is black.
-
-**Master and outputs.** The strips above the layer list have a **Select**
-button: it puts Master (intensity and speed) or an output (intensity and test
-pattern) in the side panel, with the same **Control** switch, **Release** and
-rules as a layer. Select a layer row to go back to the layer.
-
-**Expiry.** UI values only run down while they mask a console: Art-Net or sACN
-comes in for the fixture's universe and at least one UI value is what the layer
-shows. That is never the case with **Console only** (UI values are not shown),
-with **Console and Fanous, latest change wins** only until the desk moves that
-channel again, and with **Console and Fanous, highest value wins** only where
-the UI value is the higher one. After 10 minutes of masking
-since the last UI change the UI values are released and the log says so. While
-it runs, the panel says "UI control · console active, releases in 7:42";
-**Keep** (or any change from the UI) restarts the 10 minutes. Otherwise it says
-just "UI control" and the count pauses: a console that drops out and comes back
-continues where it was, and testing before the desk is on site never loses the
-values (they stay until **Release**).
-
-**Media from the library** lists every playable file as "Folder 3 · Intro / 12 ·
-loop.mov" and puts the choice on the layer (folder and file, and intensity to
-full if it was 0). The same works from the Media screen: select a file and pick
-**Play on layer** (Layer 1 to n). The panel shows the library names of what the
-layer plays, not only the numbers.
-
+- Test every cue with **Go to this cue**, with the show's media loaded, and
+  the first cue of every section with every value it needs.
+- Leave Who controls on a setting that shows Fanous's values, not Console
+  only.
+- Lock timecode and keep it Locked, with a healthy level on the meter for
+  LTC and the Microphone permission granted; write the triggers at the
+  incoming time, with a frame to spare after the start.
+- Lock the show (L), so a stray click cannot change a cue; GO, Back, Go to
+  and the timecode switch keep working.
+- After a crash or an engine restart fire the section's first cue with Go
+  to: no cue is current, and Go to does not rebuild earlier cues.
+- Something wrong on the night: [troubleshooting.md](troubleshooting.md).

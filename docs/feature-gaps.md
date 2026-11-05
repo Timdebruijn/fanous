@@ -174,7 +174,7 @@ priority for each row comes from §4.
 | G35 | Timeline editor | all classes | non-goal | — |
 | G36 | Richer cue list: groups, wait, goto, notes, CSV import/export | QLab, Millumin, VDMX, MadMapper, Pixera (CSV) | `◐` simple list | S–M |
 | G37 | Projector control: PJLink, serial | HE 5/6 · Mac 3/6 · Catalyst | `D` serial (OPEN-7); PJLink, strings over the network or serial, and PTZ cameras as device fixtures in the backlog (B139) | S for PJLink |
-| G38 | Documented public API and a Bitfocus Companion module | API: HE 6/6, Hippotizer, Resolume · Companion: Hippotizer, Smode, Kinetic, QLab, Mitti | `◐` WebSocket, REST and OSC exist; Companion over Generic OSC (`docs/user/show-control.md`) | S |
+| G38 | Documented public API and a Bitfocus Companion module | API: HE 6/6, Hippotizer, Resolume · Companion: Hippotizer, Smode, Kinetic, QLab, Mitti | `◐` WebSocket, REST and OSC exist; Companion over Generic OSC (`docs/user/remote-control.md`, `docs/user/reference/osc.md`) | S |
 | G39 | Presets stored on the server, recalled with a few channels | CN 4/5 | `◐` cues | M, plus channels |
 | G40 | Time-of-day schedule for installations | Kinetic, MadMapper, Hippotizer | `—` | S: a cue trigger on the wall clock |
 | G41 | Scripting (Python, Lua, JS) | HE 5/6 · Mac 5/6 | `—` | non-goal: the OSC/WebSocket API covers it |

@@ -238,6 +238,7 @@ flowchart TD
   console goes silent: [console-setup.md](console-setup.md).
 - Blend two projectors, warp onto a surface:
   [outputs-and-mapping.md](outputs-and-mapping.md).
-- Cues, timecode, OSC and MIDI: [show-control.md](show-control.md).
+- Cues and timecode: [show-control.md](show-control.md); OSC, MIDI and the
+  other ways in: [remote-control.md](remote-control.md).
 - Show mode (keeps the Mac and the display awake, runs the readiness list)
   and the day of the show: [show-day-checklist.md](show-day-checklist.md).

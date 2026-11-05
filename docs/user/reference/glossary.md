@@ -91,15 +91,23 @@ browser's find for a word. Back to the [index](../README.md).
 | **CITP / MSEX** | The protocol some consoles implement to browse a media server's layers, media lists, thumbnails and a preview stream (grandMA2, MagicQ, Hog 4, Onyx and Titan implement it; grandMA3 and Eos do not). Not yet tested against a real console, see [known limitations](known-limitations.md#consoles-and-protocols). |
 | **OSC** | Open Sound Control: short network messages such as `/fanous/cue/go` that apps and controllers (QLab, Companion, TouchOSC) send to Fanous and can read back. UDP and TCP port 8000. |
 | **MIDI** | Notes, controllers (CC) and program changes from a controller (APC, Launchpad, a keyboard) that fire cues or move parameters. Input only. |
-| **MSC** | MIDI Show Control: a show controller's GO message with a cue number, sent over MIDI. |
+| **MSC** | MIDI Show Control: a show controller's GO message with a cue number, sent over MIDI. Fanous acts on it when the **MSC device id** (0–111, or the all-call 127) and the **MSC format** (Video by default, Lighting for most desks) match. |
+| **Subscribe, cookie** | How an OSC controller gets changes pushed to it: it asks, Fanous sends a one-time code (the cookie) to the address it named, and the controller sends the code back within 5 s. |
+| **Note, CC, program change** | The three MIDI messages Fanous maps: a note is a pad or key pressed and released, a controller (CC) a fader or knob from 0 to 127, a program change a patch number. |
 | **Timecode** | A running clock `hh:mm:ss:ff` (hours, minutes, seconds, frames) from the sound or show system that layers and cues can follow. |
 | **LTC** | Timecode as an audio signal, on one channel of an audio interface. |
 | **MTC** | Timecode sent over MIDI. |
 | **Drop frame** | 29.97 fps timecode that skips two frame numbers each minute (except every tenth) to stay on clock time; no picture is dropped, only numbers. Written `29.97 DF`; non-drop is `29.97 NDF`. Fanous reads 24, 25, 29.97 DF and NDF and 30; chase at 29.97 DF is not yet tested with real hardware. |
 | **Freewheel** | When timecode stops arriving, the clock keeps running for the Freewheel time (2 s by default) before the state goes to **Lost**. |
+| **Tracking** | How Fanous cues work: a cue sets only the values it holds, and every other value stays where the last cue left it. A cue that takes a layer out needs its intensity at 0. |
+| **Trigger, Follow** | A cue's two automatic fires: a trigger fires it when timecode passes `hh:mm:ss:ff@rate`; a follow fires the next cue that many seconds after this one. |
+| **Chase** | A layer whose position in its file is locked to the timecode (Play mode Timecode, channel 5 at 128 to 143), offset by the Offset field. |
+| **Dissolve** | Layer channel 12: how long a new file crossfades in when the media changes. Read when the new file's first frame is ready. |
 | **Cue** | A numbered step in Fanous's own cue list: parameter values with a fade, optionally fired by a timecode trigger or a follow time. |
 | **Retrigger** | Layer channel 50 at 8 to 15: restart the clip from its in point. It fires once, when the channel enters the band; a value held there does not loop the clip. Return the channel to 0 before the next retrigger. |
 | **Blackout** | Master channel 3 at 128 to 191 (all outputs) or Output channel 3 at 64 to 127 (one output): the picture and the test patterns go black. A console's DBO or Grand Master does the same through the intensities. |
+| **Machine id** | The first 8 characters of a Mac's install id, shown under System › Sync; it names a Mac in the sync badges and decides which of two Sync masters wins (the lower one). Two Macs installed from one cloned disk share it and ignore each other. |
+| **Broadcast** | A packet every machine on the network segment receives (Art-Net and sync use it); multicast reaches those that joined a group (sACN, CITP). Broadcast and CITP stay within one subnet. |
 | **Sync master, Sync slave** | Layer channel 51: a layer that sends its clock to a group (master) or follows that group's clock (slave), so layers on several Macs play in step. Not the Master fixture. |
 
 ## Engine, UI and measurements

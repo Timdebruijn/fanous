@@ -36,7 +36,11 @@ link here. Back to the [index](../README.md).
 | A cue's timecode trigger fires only when the clock advances by less than 5 seconds at a time: a jump forward of 5 s or more fires nothing in between. A jump back arms the triggers again. | — |
 | A cue trigger with a rate the engine does not know (`@29.97df` instead of `@29.97 DF`) is stored as typed and shown in the cue list, but never fires, with no error, when it comes in over OSC or the WebSocket; the UI spells the rate right by itself. | B159 |
 | Cue fades are measured up to the engine's published state (first step 1.2 to 1.4 ms, full after about 1 s for a 1 s fade), not up to the photons on the screen. | B43 |
-| The OSC feedback target for a controller that cannot subscribe can only be set in `settings.json`, not on the System screen. | — |
+| The OSC feedback target for a controller that cannot subscribe can only be set in `settings.json`, not on the System screen. OSC listens on port 8000 on every interface; neither can be changed. | — |
+| The OSC panel's "Last received" list shows cue, show, timecode and project-load commands in the engine's own spelling (`cueGoto(3.0)`) and no parameter messages; its address list leaves out `/fanous/project/load` and the feedback addresses, and shows `/fanous/cue/goto` with `i` although any number works. | B176 |
+| The MIDI panel's "Learned:" line names the target in the engine's own spelling (`fixture:Layer 1/intensity`); the cue editor's hint omits the rate 29.97ndf. | B178 |
+| A slave layer's freewheel before it reads lost is 2 s and cannot be changed. Two Macs with the same machine id (a cloned install) throw each other's packets away with no warning. | B179 |
+| The status bar's "sync lost" tooltip says the layers play on their own clock; they keep freewheeling at the master's last rate. | B175 |
 
 ## Media and inputs
 
@@ -89,6 +93,6 @@ link here. Back to the [index](../README.md).
 
 | Limitation | Backlog |
 |---|---|
-| A few addresses need no login whatever passwords are set: `/healthz`, `/metrics`, `/api/metrics`, `/api/live` (DMX senders and every fixture value), `/api/patch`, `/api/gdtf`, `/api/session`, the channel map, the thumbnails and `POST /api/library/rescan`. Keep the Mac on the show network, not on a guest network. | B160 |
+| A few addresses need no login whatever passwords are set: `/healthz`, `/metrics`, `/api/metrics`, `/api/live` (DMX senders and every fixture value), `/api/patch`, `/api/gdtf`, `/api/session`, `/api/library` (paths only, no root, below operator), `/api/login` and `/api/logout`, the channel map, the thumbnails and `/api/library/rescan` (any method). `/api/session` reports the cookie's role only, not a token's (B177). Keep the Mac on the show network, not on a guest network. | B160 |
 | OSC has no passwords. | — |
 | The engine's certificate is self-signed, so every browser warns once; confirm it against the fingerprint under System › Network. | — |

@@ -206,7 +206,7 @@ the projection ([warp-and-masks.md](warp-and-masks.md#remote-aligning-from-an-ip
 
 | Role | Can do |
 |---|---|
-| monitor | Look. No commands |
+| monitor | Look. The only command is the list of project versions |
 | operator | Cues (Go, Back, Go to), show mode on or off, run the readiness list, the timecode on/off switch. All of these also while the show is locked |
 | programmer | Everything: patch, media, outputs, cue editing, acknowledging a readiness item, passwords, show lock |
 
