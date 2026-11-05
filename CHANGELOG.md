@@ -21,7 +21,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   `remote-control.md`; 4 new pictures; the index, screen pages, `ui.md` (monitor's one command) and
   `known-limitations.md` follow. New rows B175 (sync lost tooltip), B176 (OSC panel's last-received spelling and
   address list), B177 (`/api/session` ignores the token), B178 (MIDI "Learned:" spelling, trigger hint), B179 (cloned
-  install UUID silently breaks sync).
+  install UUID silently breaks sync) (PR #pull request create failed: GraphQL: Something went wrong while executing your query on 2026-11-05T16:11:40Z. Please include `3292:2446CA:20C2519:2F52C7A:6AECAABB` when reporting this issue.).
 
 - Docs: `outputs-and-mapping.md` rewritten as the projector-side task page (one output per projector, add and bind
   with the three output states and a hot-plug flowchart, display modes as a table and a show-mode flowchart, canvas
