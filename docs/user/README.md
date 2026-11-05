@@ -48,7 +48,8 @@ things up in the third.
 | | [multi-server.md](multi-server.md) | Several Macs, one picture: the Sync channel, a left/right setup, badges, sync settings, the camera check |
 | | [show-day-checklist.md](show-day-checklist.md) | A printable checklist for the day of the show, and every readiness item |
 | | [troubleshooting.md](troubleshooting.md) | Symptoms, causes, fixes, logs, restart, earlier versions and reset |
-| Look up | [channel-map.md](../channel-map.md) | Every DMX channel of the four fixtures with its default, bands and OSC key |
+| Look up | [screens/](#the-seven-screens) | One page per screen with every control, status word and message: see The seven screens below |
+| | [channel-map.md](../channel-map.md) | Every DMX channel of the four fixtures with its default, bands and OSC key |
 | | [reference/files-and-ports.md](reference/files-and-ports.md) | Every file the engine writes, every port, the command line, service names |
 | | [reference/shortcuts.md](reference/shortcuts.md) | Keys and their touch equivalents |
 | | [reference/known-limitations.md](reference/known-limitations.md) | What this version does not do or has not been tested on, with its backlog entry |
@@ -59,17 +60,18 @@ Outside this guide: [DESIGN.md](../DESIGN.md) is the technical design,
 
 ## The seven screens
 
-Switch screens with the rail on the left or the keys 1 to 7.
+Switch screens with the rail on the left or the keys 1 to 7. Each screen has
+a reference page with every control; the task pages say when to use them.
 
-| Key | Screen | Purpose | Explained in |
-|---|---|---|---|
-| 1 | Layers | One row per layer: media, position, intensity, play mode, source; preview of the canvas or the selected layer; the layer panel | [ui.md](ui.md#the-window), [show-control.md](show-control.md#controlling-layers-from-the-ui) |
-| 2 | Media | The library: folders, files, built-in content and live inputs, import, transcode, the ingest queue | [media-library.md](media-library.md) |
-| 3 | Inputs | Cameras, capture cards, displays and Syphon servers with their signal, numbers and Forget; audio inputs and the LTC channel; the permissions they need | [media-library.md](media-library.md#the-inputs-screen-key-3) |
-| 4 | Outputs | Canvases, outputs, projector walls, blend, warp, slices, masks, presets | [outputs-and-mapping.md](outputs-and-mapping.md) |
-| 5 | Patch | Who controls, fixture groups and blocks, universes, DMX monitor, patch sheet, GDTF export | [console-setup.md](console-setup.md#the-patch-screen-key-5) |
-| 6 | Show | GO, timecode, cues, OSC, MIDI | [show-control.md](show-control.md) |
-| 7 | System | Show mode and readiness, live metrics, machine, library root, network, sync, project versions, roles, logs | [show-day-checklist.md](show-day-checklist.md), [troubleshooting.md](troubleshooting.md) |
+| Key | Screen | Purpose | Every control | Tasks |
+|---|---|---|---|---|
+| 1 | Layers | One row per layer: media, position, intensity, play mode, source; preview of the canvas or the selected layer; the layer panel | [screens/layers.md](screens/layers.md) | [show-control.md](show-control.md#controlling-layers-from-the-ui) |
+| 2 | Media | The library: folders, files, built-in content and live inputs, import, transcode, the ingest queue | [screens/media.md](screens/media.md) | [media-library.md](media-library.md) |
+| 3 | Inputs | Cameras, capture cards, displays and Syphon servers with their signal, numbers and Forget; audio inputs and the LTC channel; the permissions they need | [screens/inputs.md](screens/inputs.md) | [media-library.md](media-library.md#the-inputs-screen-key-3) |
+| 4 | Outputs | Canvases, outputs, projector walls, blend, warp, slices, masks, presets | [screens/outputs.md](screens/outputs.md) | [outputs-and-mapping.md](outputs-and-mapping.md) |
+| 5 | Patch | Who controls, fixture groups and blocks, universes, DMX monitor, patch sheet, GDTF export | [screens/patch.md](screens/patch.md) | [console-setup.md](console-setup.md#the-patch-screen-key-5) |
+| 6 | Show | GO, timecode, cues, OSC, MIDI | [screens/show.md](screens/show.md) | [show-control.md](show-control.md) |
+| 7 | System | Show mode and readiness, live metrics, machine, library root, network, sync, project versions, roles, logs | [screens/system.md](screens/system.md) | [show-day-checklist.md](show-day-checklist.md), [troubleshooting.md](troubleshooting.md) |
 
 ## Conventions
 
