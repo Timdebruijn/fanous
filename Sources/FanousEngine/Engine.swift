@@ -908,7 +908,7 @@ public final class Engine: @unchecked Sendable {
         oscProjectFacts.withLock { $0 = facts }
     }
 
-    /// The readable OSC addresses besides fixture parameters (B36, docs/user/show-control.md), from cached copies
+    /// The readable OSC addresses besides fixture parameters (B36, docs/user/reference/osc.md), from cached copies
     /// only: no project document, no metric percentiles. Nothing that names a path (library root, files).
     private func oscFeedbackState() -> OSCFeedback.State {
         var state: OSCFeedback.State = [:]

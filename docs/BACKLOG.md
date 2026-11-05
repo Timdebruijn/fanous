@@ -1,8 +1,9 @@
 # Backlog: deferred items
 
 Everything we decided not to do yet, with where it came from and what would
-trigger picking it up. Phase summaries add to this file; items leave it when
-they land or when `docs/DESIGN.md` §21/§22 absorbs them. Owner column: who
+trigger picking it up. Phase summaries add to this file; an item that lands
+is struck through with the date and PR, and leaves when `docs/DESIGN.md`
+§21/§22 absorbs it. Owner column: who
 has to act (engine = this codebase, owner = Tim).
 
 | # | Item | Origin | Trigger / plan | Owner |

@@ -4,7 +4,13 @@
 
 # Development
 
-Building, protocols, endpoints and internals. The user guide is in [`user/`](user/README.md).
+Building, protocols, endpoints and internals. The user guide is in
+[`user/`](user/README.md), with the integrator references
+[`user/reference/api.md`](user/reference/api.md) and
+[`user/reference/osc.md`](user/reference/osc.md). Design: [`DESIGN.md`](DESIGN.md),
+the decisions in [`adr/`](adr/README.md), the mapping proposal
+[`mapping-ux.md`](mapping-ux.md), the competitor matrix
+[`feature-gaps.md`](feature-gaps.md) and the chip table [`hardware.md`](hardware.md).
 
 
 Requirements: Apple Silicon Mac with a ProRes engine, macOS 15+, Swift 6.2+
@@ -17,7 +23,7 @@ with `VTIsHardwareDecodeSupported` there stalled every engine after the first
 
 ```bash
 swift build                      # engine, shell, core
-scripts/test.sh                  # every test, engine included (CI's Core job: --filter FanousCoreTests)
+scripts/test.sh                  # every test, engine included (CI's Core job: --filter FanousCoreTests; --hosted: the suites a hosted runner can run)
 scripts/check-mallocs.sh         # §4.6 zero-malloc rule, release build (before merging compositor changes)
 (cd web && npm install && npm run build)   # web UI → web/dist
 .build/debug/fanousd --foreground        # https://127.0.0.1:8443 (self-signed; fingerprint in the log)
@@ -132,17 +138,19 @@ command line; the engine's ingest queue (`/api/ingest`) transcodes uploads and
 "needs transcode" items to ProRes or HAP one job at a time at utility
 priority, yielding when the compositor is busy, and moves originals to
 `_originals/`. Remote clients upload with `PUT /api/upload/<folder>/<name>`
-(streamed to `_incoming/`, then queued). Endpoints: `/api/library`,
-`/api/library/rescan`, `/api/thumbnail/<name>.jpg`, `/api/ingest`.
+(a body over 1 MiB is streamed to `_incoming/`, a smaller one buffered, then
+queued). Every route with its role is in `user/reference/api.md`.
 
 State and roles (Phase 5, DESIGN.md §11): the UI talks WebSocket on
 `wss://<host>:8443/ws` (hello → welcome with the `project` and `live`
 documents, commands with acks, RFC 6902 patches per revision, `snapshot` for
-a lagging client, `sub` for the DMX monitor stream). Roles are monitor,
+a lagging client, `sub` for the `dmx`, `preview` and `thumbs` streams,
+`unsub`, `stream` and `error`; every command is in `user/reference/api.md`).
+Roles are monitor,
 operator and programmer with optional passwords (`roles.setPassword`,
 PBKDF2-HMAC-SHA256 in `~/Library/Application Support/Fanous/settings.json`);
 `POST /api/login` returns the session cookie, `GET /api/session` shows the
-current role and which roles are open. The local shell authenticates with the
+cookie's role (null with the shell's Bearer token) and which roles are open. The local shell authenticates with the
 token in `shell-token` (mode 0600). The project is autosaved to `project.json`
 and loaded at start; `fanousd protocol-dts` prints `web/src/lib/protocol.d.ts`
 (checked by `scripts/check-generated.sh`).
@@ -245,7 +253,8 @@ application firewall; in the run above that happened only after the delay.
 `/api/metrics` reports frame timing, the DMX-to-photon estimate and audio
 drift; `fanous-bench run` ramps layers until a frame drops (`--effects
 blur,edge`, `--dissolve 2`, `--ingest FILE` for the Phase 3/4 variants) and
-`scripts/bench-sweep.sh` / `scripts/bench-phase3.sh` run the matrices.
+`scripts/bench.sh sweep|phase3|drift` runs the matrices (`bench-sweep.sh` and
+`bench-phase3.sh` are kept as wrappers for the records that name them).
 
 For Instruments, start `fanousd` or `fanous-bench` with `FANOUS_SIGNPOSTS=1`:
 the os_signpost instrument then shows the intervals `tick` (compositor),

@@ -85,14 +85,18 @@ not yet verified with real consoles or hardware.
 
 ## 5. Honest limits (never claim otherwise)
 
-- Release candidate, **source only**: no notarized download yet (B50).
+- Release candidate: a signed, notarized dmg is on Releases; a first install on
+  a clean Mac account is not tested yet (B50).
 - Not yet tested with real consoles (GDTF import, CITP thumbnails) (B7, B40),
   real LTC/MTC hardware (B44), second-display hot-plug (B34).
 - Measured on one machine (MacBook Pro M1 Pro); other chips are expectations (B49).
 - Apple Silicon with a ProRes engine only; no Windows, Linux, Intel or base M1.
-- 4K60: about 6 ProRes layers; heavy blur/edge effects on 2–3 layers only.
-- No NDI/DeckLink/AJA in the open build (planned as Pro plugins); OSC feedback,
-  MIDI notes/CC, project versions, 3D mapping are later.
+- 4K60: about 4 ProRes layers on the display (7 showed late frames); Blur and
+  Edge on every layer fit 3 layers at 1080p60 (B49).
+- No genlock or frame lock: outputs run on the engine's clock (B58). Audio is
+  one stereo mix on the default device, at 100 % forward speed only (B3, B76).
+- No NDI/DeckLink/AJA in the open build (planned as Pro plugins); no text
+  layer (B75), no MIDI output (B36); 3D mapping is later (B9).
 - Pull requests are not accepted until the CLA is final.
 
 ## 6. Personas

@@ -3930,6 +3930,36 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   0.26 s; four preview clients + one stalled client: identical revisions, the
   stalled one flagged lagging, 0 missed / late frames.
 
+### 11.7 §11.1 and §11.2 as built (2026-11-05, from the API inventory for `docs/user/reference/api.md`)
+
+- The TLS identity is in the data-protection keychain (tag `org.fanous.tls`)
+  for signed builds and in `tls/private-key.der` (mode 0600) for ad-hoc
+  builds; the login keychain is never used (ADR-0015 amendment, Phase 3).
+  There is no import of a PEM/PKCS#12 identity; the only operation is
+  `fanousd reset-tls`, which regenerates it.
+- The HTTPS listener binds every interface, or only 127.0.0.1 with
+  `--no-network`; it has no per-interface setting (interfaces are chosen for
+  DMX receive and sync only).
+- REST has no project export. Besides uploads and downloads it serves the
+  library, ingest, the channel map, metrics, `/healthz`, the session and
+  login/logout, and it mutates state itself (`POST /api/ingest`, its
+  cancel/remove, `PUT /api/upload/…`, `POST /api/library/folder`,
+  `/api/library/rescan` with any method, login/logout); REST has no Origin
+  check, so its CSRF protection is the `SameSite=Strict` cookie. The full
+  route table with roles is `docs/user/reference/api.md`.
+- The protocol sketch above omits `role` in `hello` (read; default
+  `monitor`) and `result` in `ack` (always sent, `null` when there is none);
+  the example `output.setBlend` does not exist, outputs change through
+  `output.set` with a path.
+- The preview limit is 4 H.264 encoders in total (`PreviewSize.maxEncoders`,
+  a constant, not a tier setting), one per target and size and shared by any
+  number of viewers; a viewer past the limit first gets an existing stream
+  (`fallback: true`), JPEG at 5 fps only when none fits.
+- Operator commands are `cue.go`, `cue.back`, `cue.goto`, `readiness.run`,
+  `show.mode` and `timecode.enable`; transport, blackout and test patterns
+  come from DMX and are not operator commands, and a preview subscription
+  needs only `hello`. The monitor has one command, `project.versions`.
+
 ---
 
 ## 12. Main screens
@@ -4849,11 +4879,12 @@ biggest risks early.
 | **5 — Service, UI foundation** | LaunchAgent via SMAppService, crash restart, role auth, state sync protocol, undo/versioning, show lock, preview streaming (H.264 + JPEG fallback), status bar, Layers, Media, Patch/DMX screens, DMX monitor, generated `protocol.d.ts` | kill -9 of the engine → outputs back < 3 s; 4 browser clients + shell show identical state, lagging-client test passes without affecting frame time (measured); WebCodecs preview works on iPad Safari over HTTPS; show lock refuses config commands; undo across clients; channel-map labels in the UI match `docs/channel-map.md` byte-for-byte |
 | **6 — Outputs & mapping** | multi-output, regions per display, blend maps, black lift, warp (corner pin + bezier mesh), slices, masks, test patterns, display identity/hot-plug/modes, Output fixture, Outputs & Mapping screen on iPad | golden images for blend/warp/mask; 2×1 and 2×2 blend of a flat grey field measures flat across the overlap in a readback test; hot-unplug/replug of a display recovers without affecting other outputs; a 33×33 warp edit applies within 100 ms; iPad usability check by the owner |
 | **7 — Show control & console interop** | LTC/MTC sources, layer timecode chase, cue list, OSC complete, CITP/MSEX (thumbnails + streaming), show mode + readiness, System/Health screen | chase accuracy ±1 frame against a generated LTC file; cue fades match the fade engine's unit tests end-to-end; thumbnails appear in grandMA3 onPC and MagicQ PC via CITP; readiness check catches each simulated failure; metrics exported |
-| **8 — Hardening & release** | soak tests, benchmark on every available machine, notarized build, user docs (EN), release checklist (brief removed, legal review done), v1.0 | 8 h soak passes on the M1 Pro; benchmark docs committed per machine; notarized `.app` installs and registers the agent on a clean user account; all `[OPEN]` items either resolved or moved to the v1.x list |
+| **8 — Hardening & release** | soak tests, benchmark on every available machine, notarized build, user docs (EN), release checklist (brief removed; the lawyer review of the licensing drafts is still open, RELEASE §7), v1.0 | 8 h soak passes on the M1 Pro; benchmark docs committed per machine; notarized `.app` installs and registers the agent on a clean user account; all `[OPEN]` items either resolved or moved to the v1.x list |
 
-Scope guard: a feature not in the table is not in v1. Serial fixture, OSC
-feedback, per-output Syphon, 10-bit output, frame blending, varispeed audio
-and the MDM profile are the v1.x candidates.
+Scope guard: a feature not in the table is not in v1. Serial fixture,
+per-output Syphon, 10-bit output, frame blending, varispeed audio and the
+MDM profile are the v1.x candidates (OSC feedback, MIDI notes/CC and MSC
+shipped in v1, B36).
 
 ---
 
@@ -4895,7 +4926,7 @@ and the MDM profile are the v1.x candidates.
 | 3D-model layers (media as texture on a mesh) | the layer pass is one quad in a perspective camera (§4.3); a mesh from Model I/O (USDZ/OBJ) with its own UVs replaces the quad, the fragment shader is unchanged; needs a depth attachment on the canvas pass and a "Geometry" parameter in the reserved Layer channels 52–64 (0 = flat, 1–255 = model from the library); `docs/BACKLOG.md` B9 |
 | Motion: tracking in, movement out (B53) | **Tracking as a source:** a PosiStageNet receiver in Core (UDP multicast, position/speed/orientation per tracker) and OSC trackers become an extra *internal source* in the resolver (§7.2), mapped per project ("tracker 3 → Layer 2 position X/Y, scale") through a stage-to-canvas calibration (metres → canvas) set on the Outputs screen; on-device person tracking through the Vision framework on a capture input (folder 0); depth/lidar SDKs only through the plugin boundary (ADR-0016). **Movement out:** DMX-controlled motion (mirror heads, pan/tilt yokes, winches, rotators) via the Art-Net/sACN builders of the pixel-mapping pass; small motors (ESP32 steppers/servos) via OSC output (B36) or an MQTT bridge. **Moving screens:** encoder positions in over PSN/OSC update an output's corner-pin homography per frame. **Hard rule:** Fanous sends cues and target positions only; it is never the safety layer of stage automation (e-stops, SIL-rated controllers stay in charge). Camera tracking of people is processed on the device and never stored (GDPR). Expected tracker → photon ≈ 35–40 ms, enough to follow a performer, not for locked-on AR. |
 | Serial device fixture | fixture type in `ParameterSpec`; POSIX termios on `/dev/cu.*`, no dependency |
-| OSC feedback, MIDI notes/CC, MSC, timeline, varispeed audio, 10-bit output, frame blending, MDM profile, CA profile for iPads | noted in their sections |
+| Timeline, varispeed audio, 10-bit output, frame blending, MDM profile, CA profile for iPads | noted in their sections (OSC feedback, MIDI notes/CC and MSC shipped in v1) |
 
 ---
 
