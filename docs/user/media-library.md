@@ -8,9 +8,9 @@ Use this page to get a show's content into Fanous and onto a layer: how the
 library and its numbers work, which files play as they are, how a file gets
 in and what a transcode changes, the library on a second Mac, and what a Mac
 can play. Every control of the Media screen is in
-[screens/media.md](screens/media.md); cameras, displays and Syphon are in
-[live-inputs.md](live-inputs.md); the content Fanous draws itself is in
-[reference/built-in-content.md](reference/built-in-content.md). Terms are in
+[Media screen](screens/media.md); cameras, displays and Syphon are in
+[Live inputs](live-inputs.md); the content Fanous draws itself is in
+[Built-in content](reference/built-in-content.md). Terms are in
 the [glossary](reference/glossary.md).
 
 Creating folders, importing and transcoding need the programmer role; the
@@ -44,7 +44,7 @@ Fanous Library/
 | Unreadable | A file macOS cannot open at all (a Matroska `.mkv`, a damaged file, a sub-folder that is no image sequence) shows a red **unreadable** badge with the reason and no Transcode button: convert it on another machine |
 | Ignored | Folders and files whose names start with `_` or `.`, and files that are not media |
 | Watched | A change in Finder shows up within a moment; **Rescan** on the Media screen forces it |
-| Folder 0 | Not on disk: built-in content and live inputs ([reference/built-in-content.md](reference/built-in-content.md)) |
+| Folder 0 | Not on disk: built-in content and live inputs ([Built-in content](reference/built-in-content.md)) |
 
 A layer that points at a number that does not exist, or at a file that is
 not playable, reads "no file N in folder M" in red on the Layers screen.
@@ -71,7 +71,7 @@ not playable, reads "no file N in folder M" in red on the Layers screen.
    look at the Layers screen (the row reads the file with a green dot). From
    the console the same file is folder and file on channels 3 and 4, with
    the fixture's home values loaded
-   ([console-setup.md](console-setup.md#channels-that-bite)). A cue that
+   ([Console setup](console-setup.md#channels-that-bite)). A cue that
    sends the same folder and file again does not restart the clip; that is
    Retrigger (channel 50). A change of file starts at the in point.
 6. **Before the show**: no yellow badges left (a layer on such a file reads
@@ -131,7 +131,7 @@ flowchart TD
 **What to ask a content maker for.** ProRes 422 HQ in a `.mov`, ProRes 4444
 when it needs transparency, or HAP Q; the canvas size and frame rate
 (1920 × 1080 at 60 fps unless you change them on the Outputs screen's
-Canvases tab, [outputs-and-mapping.md](outputs-and-mapping.md#canvas-size-and-frame-rate));
+Canvases tab, [Outputs and mapping](outputs-and-mapping.md#canvas-size-and-frame-rate));
 square pixels; Rec.709; 8-bit. Audio as stereo.
 
 ## Getting files in
@@ -245,14 +245,14 @@ plays its first two channels. There is no limiter: a loud fold-down can clip
 at the device. A layer has sound only while it plays forward at 100 % (layer
 speed × Master speed, within half a percent); Freeze, Scrub, Timecode and the
 reverse half of Bounce are silent, so sound never follows chased timecode
-([console-setup.md](console-setup.md#channels-that-bite)).
+([Console setup](console-setup.md#channels-that-bite)).
 
 ## The library on a second Mac
 
 Copy the folders so every file the show uses has the same folder and file
 number on both Macs; the names after the number may differ. The project does
 not carry the media. For two Macs that play in step see
-[multi-server.md](multi-server.md).
+[Multi-server sync](multi-server.md).
 
 ## Change the library root
 
@@ -301,12 +301,12 @@ Rules of thumb:
 - Use ProRes or HAP at the canvas size and frame rate. Larger content costs
   decode time and is scaled anyway.
 - Keep the library on the internal disk with more than 10 % free, and switch
-  Spotlight off for that volume ([show-day-checklist.md](show-day-checklist.md)).
+  Spotlight off for that volume ([Show-day checklist](show-day-checklist.md)).
   A network or removable volume fails the readiness item **Library on a local
   volume**.
 - Watch **dropped** in the status bar and the GPU p99 tile under System ›
   Live metrics while you build the show
-  ([screens/system.md](screens/system.md#live-metrics)).
+  ([System screen](screens/system.md#live-metrics)).
 - Which chip the Mac has: Apple menu › About This Mac. A base M2 or M3 has
   fewer decoders than a Pro or Max chip, the base M1 has no ProRes engine and
   is not supported, and the numbers above are the M1 Pro's. The layer limit
@@ -314,4 +314,4 @@ Rules of thumb:
 
 Not there yet: no text layer, HAP cannot be imported, 16-bit stills become
 8-bit, one stereo mix, Transcode fails on a `.mov`, and the other library
-items in [reference/known-limitations.md](reference/known-limitations.md#media-and-inputs).
+items in [Known limitations](reference/known-limitations.md#media-and-inputs).

@@ -8,9 +8,9 @@ Use this page to drive Fanous without a lighting console, or next to one:
 from the web UI on any device, from a show controller or button box over
 OSC (and to read the state back), from a MIDI controller or MIDI Show
 Control, and to let a console browse the library over CITP/MSEX. Cues and
-timecode are [show-control.md](show-control.md); the full OSC address list
-is [reference/osc.md](reference/osc.md), the REST and WebSocket API for
-integrators [reference/api.md](reference/api.md).
+timecode are [Show control](show-control.md); the full OSC address list
+is [OSC reference](reference/osc.md), the REST and WebSocket API for
+integrators [REST and WebSocket API](reference/api.md).
 
 | Way in | Typical use | Reads state back | Login | Values expire |
 |---|---|---|---|---|
@@ -25,7 +25,7 @@ integrators [reference/api.md](reference/api.md).
 
 Everything on this page enters Fanous as its own values, next to the
 console's. The project's **Who controls** (Patch screen) decides what shows
-([console-setup.md](console-setup.md#who-controls)):
+([Console setup](console-setup.md#who-controls)):
 
 | Who controls | The UI, OSC, MIDI and cues | The console |
 |---|---|---|
@@ -44,7 +44,7 @@ count, **Release** drops them). Cue and OSC values do not expire.
 
 Reach the UI from another device: `https://<the Mac's name>.local:8443`,
 accept the certificate once, log in with the role's password when one is
-set ([ui.md](ui.md#the-ui-on-an-ipad-or-another-computer)). Then open the
+set ([The user interface](ui.md#the-ui-on-an-ipad-or-another-computer)). Then open the
 Layers screen, select a layer and turn on **Control** in its panel. Every
 channel gets a control: a slider for continuous values (double-click: the
 default), a list for modes, numbers for folder and file, and **Media from
@@ -54,7 +54,7 @@ the console; the panel says "UI control · console active, releases in
 7:42" while a console is masked. The Master and the outputs have the same
 **Control** switch in their strips. UI control is the programmer's and
 refused while the show is locked. The same from the Media screen: select a
-file and pick **Play on layer** ([media-library.md](media-library.md)).
+file and pick **Play on layer** ([Media library](media-library.md)).
 
 <img src="images/layer-control.png" width="332" alt="The layer panel of Layer 3 with Control on: Release, the media lists and a slider or field per channel">
 
@@ -100,7 +100,7 @@ the readiness list, project load under the lock) is logged, not sent back.
 Leave about 50 ms between messages sent back to back from one socket
 ([known limitations](reference/known-limitations.md#consoles-and-protocols));
 bundles, timetags and the other details are in
-[reference/osc.md](reference/osc.md).
+[OSC reference](reference/osc.md).
 
 ### Reading state back
 
@@ -142,7 +142,7 @@ always as its latest value, so a console fading a layer does not flood the
 controller; every cue go sends the cue addresses again. Values come in the
 units you send: a parameter as 0 to 1, so a fader can follow a layer and
 send the same value back. The readable addresses are in
-[reference/osc.md](reference/osc.md#reading-state-and-subscribing): every
+[OSC reference](reference/osc.md#reading-state-and-subscribing): every
 parameter, `/fanous/cue/current` and `/fanous/cue/next` with their names,
 `/fanous/show/ready`, `/fanous/timecode/state`, the outputs' state, the
 engine's version, fps and missed frames.
@@ -234,7 +234,7 @@ unplugged, or a row removed, drops what it was holding. The map and Learn
 are the programmer's and refused while the show is locked; a locked show
 still follows its controllers. A row that fires cue *program + 1* from a
 program change cannot be learned; the API makes one
-([reference/api.md](reference/api.md#commands), `midi.map.set` with kind
+([REST and WebSocket API](reference/api.md#commands), `midi.map.set` with kind
 `pc` and no cue).
 
 An APC mini, with Who controls not on Console only:

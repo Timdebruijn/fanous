@@ -11,7 +11,7 @@ The console decides which layers follow which with one channel per layer,
 **Sync** (layer channel 51). Terms are in the
 [glossary](reference/glossary.md#console-protocols-control). For
 projectors on one Mac use a projector wall instead
-([outputs-and-mapping.md](outputs-and-mapping.md#projector-walls)); sync is
+([Outputs and mapping](outputs-and-mapping.md#projector-walls)); sync is
 for when one Mac is not enough.
 
 Sync shares one thing: the clock of a layer, that is where in its file it
@@ -45,7 +45,7 @@ its home value is 0: every cue and palette on the console must hold it.
 - Put the Macs on the same network segment, wired. Both use the same sync
   port (8002 unless you changed it); a firewall or a network filter on the
   Macs must allow `fanousd` on UDP 8002 in and out
-  ([reference/files-and-ports.md](reference/files-and-ports.md#ports)).
+  ([Files, ports and the command line](reference/files-and-ports.md#ports)).
 - Decide how to split the picture ([below](#three-ways-to-split-a-picture));
   the first way fits most shows.
 
@@ -56,7 +56,7 @@ console:
 
 1. **Same library numbering on both Macs.** Copy the library (Finder, or
    any sync tool) so every file the show uses has the same folder and file
-   number on both ([media-library.md](media-library.md)). With pre-split
+   number on both ([Media library](media-library.md)). With pre-split
    files the numbers are the same and the contents differ; a slave follows
    the clock, not the file.
 2. **One set of fixtures per Mac on the console.** The console sends one
@@ -64,7 +64,7 @@ console:
    the right reads "slave", so each Mac needs its own copy of the fixtures
    at different addresses: on the second Mac's Patch screen move its
    layers, Master, Outputs and Keystones to a free range, for example the
-   layers on `A 0.0.4` ([console-setup.md](console-setup.md#changing-the-patch)),
+   layers on `A 0.0.4` ([Console setup](console-setup.md#changing-the-patch)),
    and patch both sets on the console. Keep the layer layout the same on
    both and put each pair of layer fixtures in a console group, so one
    fader sets folder, file and intensity on both.
@@ -81,7 +81,7 @@ console:
    a 256-pixel overlap, the right Mac's slice at x 3584 − 1920 = 1664.
    Then set the blend on each Mac's Outputs screen: the left output's
    right edge and the right output's left edge get the same Overlap, 256
-   ([outputs-and-mapping.md](outputs-and-mapping.md#blend-two-projectors)).
+   ([Outputs and mapping](outputs-and-mapping.md#blend-two-projectors)).
 6. **Check** the Layers screen on the right Mac: Layer 1's badge reads
    **S1** in green, "locked to Layer 1 on" the left Mac's id. Enter show
    mode on both Macs. Then run the [camera check](#the-camera-check) once
@@ -96,7 +96,7 @@ console:
 | One canvas per Mac | One projector's part | The same full-width file on both | You want no slices: each Mac's layer places its half with the layer's Fit mode (Native) and Position X |
 
 With slices, each Mac's output keeps one slice and sets its **Source x · w**
-to its part of the canvas ([warp-and-masks.md](warp-and-masks.md#slices)):
+to its part of the canvas ([Warp, slices and masks](warp-and-masks.md#slices)):
 on the left Mac x 0, w 1920; on the right Mac x 1664, w 1920. The overlap
 is the 256 pixels both slices share, and the blend edge Overlap is 256 on
 both outputs.
@@ -143,7 +143,7 @@ characters of its id; the lower id wins a group with two masters),
 **Packets** in, out and decode errors counting up live (out counts at the
 frame rate while a master plays, one a second otherwise; in stays 0 on a
 Mac that hears no other), **Masters here**, **Conflicts**, and the settings
-below ([screens/system.md](screens/system.md#sync)). While nothing renders
+below ([System screen](screens/system.md#sync)). While nothing renders
 on this Mac the panel says so and shows no settings.
 
 ## Sync settings

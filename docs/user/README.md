@@ -17,8 +17,8 @@ program cues, and run the machine reliably on show day. It does not teach
 Art-Net, sACN or console programming. It does explain the video side: every
 term a lighting technician may not have met is in the
 [glossary](reference/glossary.md), and the pages on projectors, blending and
-warping ([outputs-and-mapping.md](outputs-and-mapping.md),
-[warp-and-masks.md](warp-and-masks.md)) start from zero.
+warping ([Outputs and mapping](outputs-and-mapping.md),
+[Warp, slices and masks](warp-and-masks.md)) start from zero.
 
 ## Requirements
 
@@ -30,6 +30,19 @@ warping ([outputs-and-mapping.md](outputs-and-mapping.md),
 - A lighting console (or software) that sends Art-Net or sACN to the Mac.
 - For the UI on another device: a browser on the same network. An iPad is the
   intended second screen.
+
+## Where to start
+
+```mermaid
+flowchart TD
+  q{"What brings you here?"}
+  q -- "Fanous is new to me" --> hiw["How Fanous works"] --> gs["Getting started: first light in six steps"]
+  gs --> cs["Console setup"] --> ml["Media library"] --> om["Outputs and mapping"] --> sc["Show control"]
+  q -- "The machine runs; the show is soon" --> sd["Show-day checklist"] --> rd["Readiness items"]
+  q -- "Something is wrong" --> ts["Troubleshooting: from the symptom"]
+  q -- "What does this control do?" --> scr["screens/: one page per screen"]
+  q -- "A controller, not a console" --> rc["Remote control"]
+```
 
 ## Pages
 
@@ -107,3 +120,5 @@ a reference page with every control; the task pages say when to use them.
   show is locked" means press L first.
 - A number from a measurement names the machine and the conditions; a number
   without them is a design limit.
+- A link shows the page's title; the tables on this page show the file
+  names, so you can find a page in the folder.

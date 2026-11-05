@@ -5,15 +5,15 @@
 # Show screen (key 6)
 
 Every control on the screen titled "Show control": GO, timecode, the cue
-list, OSC and MIDI. For the tasks see [show-control.md](../show-control.md)
-(cues, LTC and MTC) and [remote-control.md](../remote-control.md) (OSC, MIDI,
+list, OSC and MIDI. For the tasks see [Show control](../show-control.md)
+(cues, LTC and MTC) and [Remote control](../remote-control.md) (OSC, MIDI,
 MSC). Terms are in the
 [glossary](../reference/glossary.md).
 
 Everything marked "programmer" is greyed out or refused for the operator and
 monitor roles; "refused while the show is locked" means the status bar's tag
 reads **Locked** (a programmer presses L to unlock). Hover a greyed control
-for its reason: [ui.md](../ui.md#why-is-this-control-greyed-out).
+for its reason: [The user interface](../ui.md#why-is-this-control-greyed-out).
 
 ![The Show screen with its numbered parts: the Cue no. field with Go to, the GO and Back buttons, the Timecode panel, the cue list, the cue editor, the OSC panel and the MIDI panel](../images/screens-show.png)
 
@@ -117,7 +117,7 @@ cue has no values. The engine's own refusals come as the yellow banner.
 
 The panel is read-only. The feedback addresses (`/get`, subscribe) and
 `/fanous/project/load` are not listed here:
-[reference/osc.md](../reference/osc.md).
+[OSC reference](../reference/osc.md).
 
 ## MIDI
 

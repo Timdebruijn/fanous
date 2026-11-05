@@ -8,8 +8,8 @@ Use this page to put a camera, a capture card, one of this Mac's displays
 or another app's Syphon server on a layer, and to pick the audio input that
 carries LTC: how they get their numbers, which permission each needs, what
 arrives, and what to rely on for a show. Every control of the Inputs screen is in
-[screens/inputs.md](screens/inputs.md); the content Fanous draws itself is
-in [reference/built-in-content.md](reference/built-in-content.md). Terms are
+[Inputs screen](screens/inputs.md); the content Fanous draws itself is
+in [Built-in content](reference/built-in-content.md). Terms are
 in the [glossary](reference/glossary.md).
 
 Authorize, Number, Forget and Use for timecode need the programmer role and
@@ -141,7 +141,7 @@ granted** fails while a layer shows a camera without the permission,
 (and warns with it, because of the monthly dialog), **Microphone permission
 granted** fails while the timecode source is LTC without it, whatever the
 timecode switch says. A failed item blocks show mode until a programmer
-acknowledges it ([show-day-checklist.md](show-day-checklist.md#the-readiness-list)).
+acknowledges it ([Show-day checklist](show-day-checklist.md#the-readiness-list)).
 
 ## Cameras and capture cards (1–20)
 
@@ -202,7 +202,7 @@ that has not answered yet is listed grey, "not seen since the engine
 started". Two servers with the same app and server name (two Fanous canvases
 on one Mac) keep their numbers, as Fanous cannot tell them apart. Fanous's own
 canvas is not listed; it is published to other apps as "Fanous – Canvas"
-([outputs-and-mapping.md](outputs-and-mapping.md#the-canvas-for-other-apps)).
+([Outputs and mapping](outputs-and-mapping.md#the-canvas-for-other-apps)).
 
 ## Audio inputs and LTC
 
@@ -211,7 +211,7 @@ with its channel count. They have no folder 0 number: a layer cannot show
 them. One of them carries LTC timecode: select it, pick the channel (1 is
 the first) and press **Use for timecode**, which sets the timecode source,
 device and channel in one step; the panel then shows the timecode state and
-a level meter of that channel ([show-control.md](show-control.md#timecode)).
+a level meter of that channel ([Show control](show-control.md#timecode)).
 
 ## On show day
 

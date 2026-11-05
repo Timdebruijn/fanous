@@ -9,21 +9,21 @@ Venue: ______________________ Mac: ______________ Fanous: ______________
 Programmer: ______________________ Phone: ______________________
 
 Every readiness item with its threshold and fix is in
-[reference/readiness.md](reference/readiness.md); when something is wrong
-on the night, [troubleshooting.md](troubleshooting.md).
+[Readiness items](reference/readiness.md); when something is wrong
+on the night, [Troubleshooting](troubleshooting.md).
 
 ## The day before
 
 - [ ] Every file the show uses in the library, with more than 10 % of the
       library's volume free; on an external disk only on purpose
-      (acknowledge the readiness item) ([media-library.md](media-library.md)).
+      (acknowledge the readiness item) ([Media library](media-library.md)).
 - [ ] Layers screen: every layer in use shows its file and a green dot.
 - [ ] Patch screen: no collisions; every universe in use green with the
-      console running ([console-setup.md](console-setup.md#before-the-show)).
+      console running ([Console setup](console-setup.md#before-the-show)).
 - [ ] Outputs screen: every output bound, blend, warp and masks checked
-      with the test patterns ([outputs-and-mapping.md](outputs-and-mapping.md#before-the-show)).
+      with the test patterns ([Outputs and mapping](outputs-and-mapping.md#before-the-show)).
 - [ ] Every cue tested with Go to; timecode Locked if used
-      ([show-control.md](show-control.md#before-the-show)).
+      ([Show control](show-control.md#before-the-show)).
 - [ ] The permissions the show uses granted on the Inputs screen (camera,
       screen recording with an engine restart after it, microphone); they
       cannot be asked in show mode.
@@ -34,7 +34,7 @@ on the night, [troubleshooting.md](troubleshooting.md).
       acknowledge on purpose.
 - [ ] A named version saved: System › Project versions › **Save version…**
       ("Day before"); a copy of `~/Library/Application Support/Fanous` and
-      of the library on another disk ([reference/files-and-ports.md](reference/files-and-ports.md)).
+      of the library on another disk ([Files, ports and the command line](reference/files-and-ports.md)).
 - [ ] No macOS update planned before the show.
 
 ## Mac settings, once per show machine
@@ -50,7 +50,7 @@ on the night, [troubleshooting.md](troubleshooting.md).
       Utilities), `sudo mdutil -i off /` for a library on the internal disk;
       it asks for the Mac's administrator password and prints "Indexing
       disabled". Without that password, acknowledge the item. Spotlight
-      Privacy does not count ([reference/readiness.md](reference/readiness.md)).
+      Privacy does not count ([Readiness items](reference/readiness.md)).
 - [ ] Automatic updates off: System Settings › General › Software Update ›
       Automatic updates.
 - [ ] Time Machine off for the show, not only paused.
@@ -61,7 +61,7 @@ on the night, [troubleshooting.md](troubleshooting.md).
       Universes).
 - [ ] Displays extended, not mirrored (Fanous does not check this); each
       output's Mode set, so show mode applies it.
-- [ ] Firewall allows `fanousd` ([getting-started.md](getting-started.md#firewall-and-network));
+- [ ] Firewall allows `fanousd` ([Getting started](getting-started.md#firewall-and-network));
       done when the iPad loads the UI.
 - [ ] Engine menu first line reads "Engine <version> running · service
       installed".
@@ -206,6 +206,6 @@ that sentence ([known limitations](reference/known-limitations.md#show-mode-and-
    blocking items" when an acknowledged item failed again; acknowledgements
    did not survive either. Acknowledge them again.
 5. Not back after 30 seconds: at the Mac, Engine › **Restart Engine**. Still
-   nothing: [troubleshooting.md](troubleshooting.md#the-ui-says-the-engine-is-unreachable).
+   nothing: [Troubleshooting](troubleshooting.md#the-ui-says-the-engine-is-unreachable).
 6. After the show: download the log, and look in
    `~/Library/Logs/DiagnosticReports` for a crash report of `fanousd`.

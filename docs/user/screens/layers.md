@@ -6,14 +6,14 @@
 
 Every control on the screen that shows what each layer plays. For the tasks
 (driving a layer from the UI, reading its state, the preview) see
-[remote-control.md](../remote-control.md#from-the-ui) and
-[getting-started.md](../getting-started.md). Terms are in the
+[Remote control](../remote-control.md#from-the-ui) and
+[Getting started](../getting-started.md). Terms are in the
 [glossary](../reference/glossary.md).
 
 Everything marked "programmer" is greyed out or refused for the operator and
 monitor roles; "refused while the show is locked" means the status bar's tag
 reads **Locked** (a programmer presses L to unlock). Hover a greyed control
-for its reason: [ui.md](../ui.md#why-is-this-control-greyed-out).
+for its reason: [The user interface](../ui.md#why-is-this-control-greyed-out).
 On this screen the operator and monitor roles can look and select; every
 control in the layer panel is the programmer's. "Control" means two things
 here: the **Control** switch in the panel (set values from the UI) and the
@@ -53,13 +53,13 @@ the panel; select a layer row to go back to a layer.
 | Column | Shows |
 |---|---|
 | Picture | A live picture of this layer alone (a 160-pixel JPEG four times a second) while the engine renders and the layer shows something; the file's library thumbnail when it shows nothing (no media, intensity 0). Live pictures stop while the tab is in the background |
-| Layer | `Layer N`, and under it the canvas it is drawn into. With several canvases this is a list (programmer; refused while the show is locked); a canvas that no longer exists reads "Canvas N · missing". A Sync pill `M1` or `S1` appears when the Sync channel is set: see [multi-server.md](../multi-server.md#what-the-screens-show) |
+| Layer | `Layer N`, and under it the canvas it is drawn into. With several canvases this is a list (programmer; refused while the show is locked); a canvas that no longer exists reads "Canvas N · missing". A Sync pill `M1` or `S1` appears when the Sync channel is set: see [Multi-server sync](../multi-server.md#what-the-screens-show) |
 | Media | `folder / file · name`, then the codec and size (`ProRes 422 · 1080p30`, `Still · 1920×1080`, `Live · 1920×1080`), or "no media", "no live data", or the engine's error in red ("no file 2 in folder 3", "File missing") |
 | Position | A scrubber with the playhead and the in and out points for a movie, and `mm:ss.s / mm:ss.s` under it; "still" for a still, "live" for an input, "—" with no media. The scrubber only shows the position |
 | Intensity | The percentage and a bar |
 | Play mode | The mode (Loop fwd, Once hold, Bounce, Freeze, Timecode, …) and the speed |
 | Audio | The audio volume parameter as a percentage; no level meter |
-| Source | **Console**, **Fanous**, **Both · latest** or **Both · highest**: the project's Who controls as it applies to this layer ([how-it-works.md](../how-it-works.md#who-wins-the-four-who-controls-settings)). Under **Console** a value set from the UI is kept but not shown |
+| Source | **Console**, **Fanous**, **Both · latest** or **Both · highest**: the project's Who controls as it applies to this layer ([How Fanous works](../how-it-works.md#who-wins-the-four-who-controls-settings)). Under **Console** a value set from the UI is kept but not shown |
 | State | A dot and a word: **OK** (green), **Live** (green, a live input), **No media** (grey), **Missing file** (red), **Decoder error** (red), or the reason a live input fails ("Not running", "Could not connect") |
 
 Click or tap a row (Enter or Space on the keyboard) to select it; the panel
@@ -99,7 +99,7 @@ with the output: judge motion, banding and colour on an output.
 | Part | Does |
 |---|---|
 | Title | `Layer N`, `Master` or `Output n` |
-| **Control** switch | Set these values from here, without a console (programmer; refused while the show is locked). It stays on when you select another layer row and goes off when you select the Master or an output. See [remote-control.md](../remote-control.md#from-the-ui) |
+| **Control** switch | Set these values from here, without a console (programmer; refused while the show is locked). It stays on when you select another layer row and goes off when you select the Master or an output. See [Remote control](../remote-control.md#from-the-ui) |
 | Patch line | `artnet:0.0.1 · ch 145–208 · 64 ch`, or "no address" |
 | Library line | `Folder 3 · Intro / 12 · loop.mov`: the names behind the numbers the layer plays |
 | Note | "UI control" or "MIDI control" while such values are set; "· console active, releases in 7:42" with **Keep** while they hide a live console value. At 0:00 the UI and MIDI values are dropped and the console's values show again; **Keep** restarts the 10 minutes (programmer; refused while the show is locked) |
@@ -110,7 +110,7 @@ with the output: judge motion, banding and colour on an output.
 | Channel list | "Showing all 51 of 64 channels; 52–64 reserved" (a layer) or "N values" (Master, output); folds. The Master panel has Intensity and Speed; an output panel Intensity and Test pattern |
 | Channel row | The DMX channel (`3` or `1–2`), the parameter, its raw value and its meaning, and "· UI" or "· MIDI" when that source set it. A missing file shows the folder and file values in red |
 | Channel row, Control on | A list for modes, a number field 0–255 for folder and file, a slider for the rest (double-click: the default) |
-| Sync line | Under the Sync channel of a layer: its sync state in words ([multi-server.md](../multi-server.md#what-the-screens-show)) |
+| Sync line | Under the Sync channel of a layer: its sync state in words ([Multi-server sync](../multi-server.md#what-the-screens-show)) |
 
 Values from the UI go out at most twenty times a second per parameter, the
 last value always.

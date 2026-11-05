@@ -7,15 +7,15 @@
 How a lighting console takes control of Fanous: the four fixtures, the patch
 on both sides, Art-Net or sACN on a show network, what happens when the
 console goes silent, and how the console's values combine with Fanous's own.
-Every control of the Patch screen is in [screens/patch.md](screens/patch.md);
+Every control of the Patch screen is in [Patch screen](screens/patch.md);
 terms are in the [glossary](reference/glossary.md).
 
 **Before you start.** This page is the console side. Do steps 1 to 3 of
-[getting-started.md](getting-started.md#first-light-in-six-steps) first (a
+[Getting started](getting-started.md#first-light-in-six-steps) first (a
 clip in the library, an output on a display, the layer playing from the UI),
 then come back here for the desk. Changing the patch needs the programmer
 role and is refused while the show is locked
-([ui.md](ui.md#roles-and-logging-in)).
+([The user interface](ui.md#roles-and-logging-in)).
 
 ## The four fixtures
 
@@ -27,7 +27,7 @@ as its own fixture on the console.
 | **Layer** | 64 | layer | Everything about one layer: intensity, folder and file, play mode, speed, in and out points, dissolve, position, scale, rotation, colour, blend mode, two effects, crop, audio, sync |
 | **Master** | 8 | machine | Master intensity (multiplies every output), Freeze all or Blackout, a test pattern on every output, Master speed |
 | **Output** | 8 | output (outputs 1 to 8) | Output intensity, Blackout or Freeze, a test pattern, Blend on or Raw, mapping preset and its fade |
-| **Keystone** | 16 | output, optional | Moves the output's four corners on top of its alignment ([warp-and-masks.md](warp-and-masks.md#keystone-from-the-console)) |
+| **Keystone** | 16 | output, optional | Moves the output's four corners on top of its alignment ([Warp, slices and masks](warp-and-masks.md#keystone-from-the-console)) |
 
 Every channel with its default and bands: [channel-map.md](../channel-map.md).
 Eight layers fill one universe exactly; 16 layers need two, 32 need four.
@@ -64,7 +64,7 @@ channels 52 to 64 are reserved. Outputs 9 and up have no Output fixture.
 - **Mapping preset and fade** (Output channels 6 and 7): Fanous reads the
   fade at the moment the preset channel changes, so put the fade in an
   earlier cue or give it a fade time of 0
-  ([warp-and-masks.md](warp-and-masks.md#mapping-presets)).
+  ([Warp, slices and masks](warp-and-masks.md#mapping-presets)).
 
 ## The standard patch
 
@@ -140,7 +140,7 @@ and start at 1.
 6. **Check.** The universe's pill in the status bar turns green when packets
    arrive; until then it reads **A 0.0.0 · silent** in yellow, the normal
    state of a fresh install. Set folder, file and intensity on Layer 1 and
-   see [getting-started.md](getting-started.md#6-check-layers-key-1) when
+   see [Getting started](getting-started.md#6-check-layers-key-1) when
    nothing moves.
 
 ```mermaid
@@ -161,7 +161,7 @@ flowchart TD
 The GDTF import has not been verified on a real grandMA3, Eos or MagicQ yet
 ([known limitations](reference/known-limitations.md#consoles-and-protocols)).
 Over CITP/MSEX a console that speaks it also sees the media list and
-thumbnails ([remote-control.md](remote-control.md#citpmsex)).
+thumbnails ([Remote control](remote-control.md#citpmsex)).
 
 ## Art-Net or sACN
 
@@ -284,14 +284,14 @@ Under Fanous only the console is ignored, so Hold on signal loss changes
 nothing. A fixture without an address holds nothing from the console:
 unpatching it, or moving it to another universe, drops the console's values
 at once. An Output fixture's preset and fade channels follow the same rules
-([warp-and-masks.md](warp-and-masks.md#from-the-console)).
+([Warp, slices and masks](warp-and-masks.md#from-the-console)).
 
 ## Who controls
 
 The project's **Who controls** on the Patch screen decides how the console's
 values combine with values from the UI, cues, OSC and MIDI. The four
 settings and the rules the table leaves out:
-[how-it-works.md](how-it-works.md#who-wins-the-four-who-controls-settings).
+[How Fanous works](how-it-works.md#who-wins-the-four-who-controls-settings).
 
 | Choice | Source badge on the Layers screen |
 |---|---|
@@ -327,7 +327,7 @@ The Patch screen keeps each group of fixtures as a **block**: fixture n sits
 on place n − 1 from the block's start, one footprint apart, moving to
 address 1 of the next universe when a place would run past channel 512.
 Every control (the block line, the chips, the editor, Re-lay as block, Patch
-as block): [screens/patch.md](screens/patch.md#fixture-groups). Each action is
+as block): [Patch screen](screens/patch.md#fixture-groups). Each action is
 one undo step. Fanous never lets a fixture it places itself land on another
 one; it leaves it without an address instead. What you place by hand may
 overlap, and is then shown in red.
@@ -398,7 +398,7 @@ flowchart TD
   values, which is right for a mirrored pair; each Mac needs its own layer
   addresses when the desk must drive them apart, for example to make one
   Mac's layer the Sync master and the other's the Sync slave
-  ([multi-server.md](multi-server.md)).
+  ([Multi-server sync](multi-server.md)).
 
 ## Before the show
 
@@ -411,10 +411,10 @@ flowchart TD
   shows every channel of a layer with where its value came from.
 - The readiness items **All patched universes receiving**, **Universe
   interfaces usable** and **sACN port 5568 available** are green
-  ([show-day-checklist.md](show-day-checklist.md#the-readiness-list)).
+  ([Show-day checklist](show-day-checklist.md#the-readiness-list)).
 - When the desk sends and nothing moves:
-  [getting-started.md](getting-started.md#6-check-layers-key-1).
+  [Getting started](getting-started.md#6-check-layers-key-1).
 
 What is not there yet on the console side (the GDTF import on a real desk,
 CITP with a real console, desk-specific fixture files, NDI, an Art-Net OEM
-code): [reference/known-limitations.md](reference/known-limitations.md#consoles-and-protocols).
+code): [Known limitations](reference/known-limitations.md#consoles-and-protocols).

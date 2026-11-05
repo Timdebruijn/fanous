@@ -6,7 +6,7 @@
 
 Every key the UI answers to and what to tap instead on an iPad. Press **?**
 on any screen, or the **?** button in the status bar, for the list in the UI.
-How the screens fit together: [ui.md](../ui.md#keys).
+How the screens fit together: [The user interface](../ui.md#keys).
 
 <img src="../images/shortcuts.png" width="420" alt="The keyboard shortcut list as the ? button opens it">
 
@@ -42,7 +42,7 @@ and ⇧⌘Z.
 | Double-click a mask edge | Add a point there | **Add points**, then tap |
 
 The warp editor is one tab stop: click or tap it once before the arrow keys
-act. See [warp-and-masks.md](../warp-and-masks.md#the-editor).
+act. See [Warp, slices and masks](../warp-and-masks.md#the-editor).
 
 ## Layer panel (Layers screen)
 

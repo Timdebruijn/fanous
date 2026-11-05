@@ -43,7 +43,7 @@ page explains the video side as it goes; every term is also in the
 
 `Fanous.app` holds two programs: the app window you see and the engine,
 `fanousd`. The engine does all the work; the window only shows the UI.
-[how-it-works.md](how-it-works.md) explains why that matters on show day.
+[How Fanous works](how-it-works.md) explains why that matters on show day.
 
 ## First launch: let the engine run in the background
 
@@ -76,7 +76,7 @@ when you pick an LTC timecode input, **Camera** when a layer shows a camera,
 **Screen Recording** when a layer shows one of this Mac's displays. Allow them
 before the show, never during it: a prompt nobody answers on show night leaves
 that input black. The Inputs screen has an **Authorize** button for each, see
-[live-inputs.md](live-inputs.md).
+[Live inputs](live-inputs.md).
 
 ## Firewall and network
 
@@ -96,7 +96,7 @@ Art-Net broadcast, sACN multicast and CITP reach the Mac only from the same
 subnet; unicast Art-Net or sACN to the Mac's address works across subnets.
 sACN multicast through a managed switch needs IGMP snooping with a querier,
 or unicast. The Mac's addresses are under System › Network. Every port with
-its direction: [reference/files-and-ports.md](reference/files-and-ports.md#ports).
+its direction: [Files, ports and the command line](reference/files-and-ports.md#ports).
 
 ## First light in six steps
 
@@ -122,7 +122,7 @@ pictures show a fresh install with one folder, `001_Test`, and one clip.
 ![The Media screen on a fresh install: folder 1 · Test with one clip as a tile (the tile shows the name without its number), the New folder form open and proposing the next number, the ingest queue below](images/getting-started-media.png)
 
 The console dials this clip as folder 1, file 1. Naming rules, formats and
-what to ask a content maker for: [media-library.md](media-library.md).
+what to ask a content maker for: [Media library](media-library.md).
 
 **What to ask the content maker for.** ProRes 422 HQ in a `.mov` (ProRes
 4444 when it needs transparency), or HAP Q; the canvas size (1920 × 1080
@@ -134,7 +134,7 @@ unless you change it) at the display's refresh rate; square pixels, Rec.709,
 Under **Add output on** choose a display. The output appears in the list with
 a green line naming the display and its mode, and the display shows the
 canvas: black for now. A yellow bar offers **Align this output**, the warp,
-blend and mask work of [outputs-and-mapping.md](outputs-and-mapping.md);
+blend and mask work of [Outputs and mapping](outputs-and-mapping.md);
 press **Later**, it comes once the picture plays.
 
 ![The Outputs screen after adding one output on the built-in display: the output in the list with its display and mode, the yellow Next: align this output bar, the black canvas in the preview](images/getting-started-output.png)
@@ -233,12 +233,12 @@ flowchart TD
 ## What next
 
 - Set a programmer password before anyone else reaches the UI, and read the
-  status bar: [ui.md](ui.md).
+  status bar: [The user interface](ui.md).
 - Patch the Master and Output fixtures, choose sACN, set what happens when the
-  console goes silent: [console-setup.md](console-setup.md).
+  console goes silent: [Console setup](console-setup.md).
 - Blend two projectors, warp onto a surface:
-  [outputs-and-mapping.md](outputs-and-mapping.md).
-- Cues and timecode: [show-control.md](show-control.md); OSC, MIDI and the
-  other ways in: [remote-control.md](remote-control.md).
+  [Outputs and mapping](outputs-and-mapping.md).
+- Cues and timecode: [Show control](show-control.md); OSC, MIDI and the
+  other ways in: [Remote control](remote-control.md).
 - Show mode (keeps the Mac and the display awake, runs the readiness list)
-  and the day of the show: [show-day-checklist.md](show-day-checklist.md).
+  and the day of the show: [Show-day checklist](show-day-checklist.md).

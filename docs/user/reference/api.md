@@ -6,8 +6,8 @@
 
 For integrators: what the engine serves over HTTPS, how a client logs in,
 and the WebSocket protocol the web UI itself uses, with every command. OSC
-is [osc.md](osc.md); files, ports and the command line are
-[files-and-ports.md](files-and-ports.md). Back to the [index](../README.md).
+is [OSC reference](osc.md); files, ports and the command line are
+[Files, ports and the command line](files-and-ports.md). Back to the [index](../README.md).
 
 For parameters, prefer OSC: an OSC parameter message needs no role, is
 never refused and never expires, while `fixture.set` over the WebSocket
@@ -31,7 +31,7 @@ is the programmer's, refused while the show is locked, and expires after
 Three roles, monitor < operator < programmer, each with an optional
 password set on the System screen. A role without a password is open to
 anyone who reaches the port; a new install has no passwords at all
-([ui.md](../ui.md#roles-and-logging-in)). A client is one of three things:
+([The user interface](../ui.md#roles-and-logging-in)). A client is one of three things:
 
 | Credential | Gives | How |
 |---|---|---|

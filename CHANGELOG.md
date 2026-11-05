@@ -10,6 +10,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs: every link in the user guide shows the page's title instead of its file name (about 190 links on 27
+  pages; the index tables keep the file names and say so in Conventions); the index gets a "Where to start"
+  flowchart from the reader's situation to the page.
+
 - Docs: `show-day-checklist.md` rewritten (the day before, the Mac settings, before doors, the readiness list with
   how a row reads and what an acknowledgement does, show mode with a flowchart of what comes back after a crash,
   a restart or a power cut, during and after the show); `troubleshooting.md` rewritten symptom-first with flowcharts
