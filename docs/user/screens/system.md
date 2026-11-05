@@ -41,7 +41,7 @@ the same with a popover. While show mode is on the Mac and the displays stay
 awake, the ingest queue is paused, the cursor is hidden on the outputs, each
 display runs the mode its output asks for, and the state is written to disk
 every 30 s so the engine resumes show mode after a crash, a restart, or a
-reboot within two hours ([show-day-checklist.md](../show-day-checklist.md)).
+power cut within two hours ([show-day-checklist.md](../show-day-checklist.md#what-comes-back-after-the-engine-stops)); a planned Restart or Shut Down leaves show mode.
 
 ## Readiness
 
@@ -55,8 +55,8 @@ reboot within two hours ([show-day-checklist.md](../show-day-checklist.md)).
 | Item row | A dot, the title, what it found in monospace, a fix hint when it is not ok, and **Acknowledge** (programmer) for a failed item, or a badge. Acknowledging accepts the risk: show mode can then start although the item still fails. Do it only for something you decided on purpose, such as a spare display that is not connected |
 | Badges | **warning** (yellow, never blocks), **blocking** (red, cannot be acknowledged: Supported hardware), **acknowledged** (yellow), **manual** (grey outline: Fanous cannot read it, check by hand). A **failed** item (red dot) shows the Acknowledge button instead of a badge |
 
-The 23 items with what each needs:
-[show-day-checklist.md](../show-day-checklist.md#the-readiness-list). An
+The 23 items with their thresholds and fixes:
+[reference/readiness.md](../reference/readiness.md). An
 acknowledgement holds until the engine restarts. Empty: "No checks have run
 yet. Run the checks, or enter show mode, which runs them."
 

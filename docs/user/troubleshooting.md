@@ -4,9 +4,52 @@
 
 # Troubleshooting
 
-From the symptom to the cause, the most likely first. The log is at the end
-([Logs](#logs)); the readiness items with their fixes are in
-[reference/readiness.md](reference/readiness.md).
+From the symptom to the cause, the most likely first. The readiness items
+with their fixes are in [reference/readiness.md](reference/readiness.md);
+the log is under [Logs](#logs).
+
+| You see | Go to |
+|---|---|
+| The picture froze, the iPad says "Connection lost" | [The engine died during the show](#the-engine-died-during-the-show) |
+| The UI cannot reach the engine | [Engine unreachable](#the-ui-says-the-engine-is-unreachable) |
+| The iPad warns about the certificate, or will not load the UI | [The iPad warns about the certificate](#the-ipad-warns-about-the-certificate) |
+| The console moves nothing | [The console moves nothing](#the-console-moves-nothing) |
+| A universe pill is not green | [A DMX universe is silent](#a-dmx-universe-is-silent) |
+| A layer reads an error, or is black | [A layer shows an error, or the picture is black](#a-layer-shows-an-error-or-the-picture-is-black) |
+| The picture is frozen | [The picture is frozen](#the-picture-is-frozen) |
+| A projector is black | [Outputs stay black although the layers play](#outputs-stay-black-although-the-layers-play) |
+| Lines and a yellow cross on a projector | [Lines on the projector](#lines-and-a-yellow-cross-on-the-projector) |
+| The picture stutters, "dropped" above 0 | [Dropped frames](#dropped-frames) |
+| No sound | [No sound](#no-sound) |
+| A cue does not fire | [A cue does not fire](#a-cue-does-not-fire) |
+| Timecode does not lock | [LTC does not lock](#ltc-does-not-lock) |
+| The console does not list Fanous | [A CITP console does not see Fanous](#a-citp-console-does-not-see-fanous) |
+| The second Mac does not follow | [multi-server.md](multi-server.md#when-the-slave-does-not-follow) |
+| Show mode refuses | [show-day-checklist.md](show-day-checklist.md#the-readiness-list) |
+| The patch or the cues are gone after a restart | [The project is gone after a restart](#the-project-is-gone-after-a-restart) |
+
+Who can do what: an operator on an iPad can read every screen, run the
+checks, enter and leave show mode and fire cues. Everything else below
+needs the programmer, or someone at the Mac: the Engine menu is in the
+menu bar at the top of the Mac's screen while the Fanous app is in front
+(click Fanous in the Dock), not in the browser or on the iPad. Its first
+line says what the engine is doing, "Engine 1.0.0 running · service
+installed" when all is well ([ui.md](ui.md#menus-of-the-app-window)).
+
+## The engine died during the show
+
+1. Wait 15 seconds: macOS restarts the engine by itself. Done when the
+   status bar reads "Show mode resumed after the engine restarted at
+   HH:MM" and the projectors show a picture.
+2. Log in again on every iPad; the logins did not survive the restart.
+3. Go to the section's first cue: no cue is current after a restart.
+4. Programmer, System screen: acknowledge again what the red banner "Show
+   mode is on with blocking items" names; acknowledgements did not survive
+   either.
+5. Not back after 30 seconds: at the Mac, Engine › **Restart Engine**.
+   Still nothing: the next section.
+6. Afterwards, copy the log before any further restart, and look in
+   `~/Library/Logs/DiagnosticReports` for a crash report of `fanousd`.
 
 ## The UI says the engine is unreachable
 
@@ -19,98 +62,128 @@ launch and retries every second by itself.
 
 ```mermaid
 flowchart TD
-  start["Engine menu in the app: the first line"] --> line{"Reads?"}
-  line -- "Engine 1.0.0 running · service installed" --> conn["The engine is fine: the connection is the problem.<br>Same network, https, port 8443, the firewall allows fanousd on TCP 8443,<br>the certificate accepted on this device"]
-  line -- "Engine not running" --> health["https://127.0.0.1:8443/healthz in a browser on the Mac"]
-  health -- "status: ok" --> hung["The engine answers but the app's probe timed out: Restart Engine"]
-  health -- "no answer" --> port["Start Engine. Still nothing: another program on port 8443?<br>sudo lsof -nP -iTCP:8443 -sTCP:LISTEN. Then the log"]
+  start["Engine menu, first line"] --> line{"The two halves read?"}
+  line -- "running · service installed" --> conn["The engine is fine: the connection (below)"]
+  line -- "not running · service installed" --> log["Engine › Open Logs: the newest lines"]
+  log -- "HTTPS listener failed" --> port["Another program holds port 8443: the engine runs without its UI.<br>Quit that program and Restart Engine"]
+  log -- "a crash report, or nothing recent" --> startit["Start Engine; after a crash macOS restarts it by itself (10 s after a quick crash)"]
   line -- "service needs approval in Login Items" --> approve["System Settings › General › Login Items & Extensions › Allow in the Background: Fanous on, then Start Engine"]
-  line -- "service not installed" --> startit["Start Engine registers and starts it"]
+  line -- "service not installed" --> install["Start Engine registers and starts it"]
   line -- "service plist missing" --> reinstall["The app is damaged: reinstall it"]
 ```
 
-The engine menu's first line comes from the same `/healthz` address with a
+The connection, when the engine runs: the same network, `https`, port
+8443, the firewall allowing `fanousd` on TCP 8443, the certificate accepted
+on that device, and macOS's Local Network permission granted to Fanous.
+`https://127.0.0.1:8443/healthz` in a browser on the Mac answers a short
+JSON with `"status":"ok"` when the engine answers (the browser warns about
+the certificate first); the Engine menu uses the same address with a
 one-second timeout, so a hung engine also reads "Engine not running".
-`/healthz` needs no login and answers a short JSON with `"status":"ok"`;
-the browser warns about the certificate first. A second engine started by
-hand refuses with "fanousd is already running (pid n): one engine per
-user", on the terminal only, not in the log. A port held by another program
-(8443, Art-Net 6454, OSC 8000) does not stop the engine: the log says
-"… listener failed" and the engine runs without that listener.
 
-## Certificate warning on the iPad
+Do not press **Start Engine** on a hunch while the show runs: when an
+engine runs but does not answer within 10 seconds (port 8443 held by
+another program, or hung), Start Engine restarts it, and the outputs go
+black for a moment. Read the log first. A port held by another program
+(8443, Art-Net 6454, OSC 8000) does not stop the engine; the log says
+"HTTPS listener failed", "Art-Net listener failed" or "OSC UDP failed" and
+the engine runs without that listener ([known limitations](reference/known-limitations.md#show-mode-and-the-machine)).
 
-Expected once: the engine makes its own certificate. Compare the fingerprint
-in the warning with System › Network › TLS fingerprint on the Mac (the
-browser shows it with colons and in capitals) and continue. It warns again
-after `fanousd reset-tls`, on another device or browser, and when you use
-an address the certificate was not made for: it holds the Mac's name and
-the addresses it had at first start. If the page does not load at all,
-check the address ([ui.md](ui.md#the-ui-on-an-ipad-or-another-computer))
-and the firewall. A preview that is a still image updating five times a
-second is the JPEG fallback instead of H.264.
+## The iPad warns about the certificate
+
+Expected once per device: the engine makes its own certificate. On the
+iPad tap Show Details › visit this website. To check that it is your Mac,
+compare the fingerprint with System › Network › TLS fingerprint on the Mac
+(the browser shows it with colons and in capitals). It warns again after
+`fanousd reset-tls`, on another device or browser, and when you use an
+address the certificate was not made for: it holds the Mac's name and the
+addresses it had at first start, so a new network needs a reset
+([reference/files-and-ports.md](reference/files-and-ports.md)). If the
+page does not load at all, check the address
+([ui.md](ui.md#the-ui-on-an-ipad-or-another-computer)) and the firewall.
+
+A preview that is a still image updating five times a second is the JPEG
+fallback instead of H.264: the browser cannot decode the stream, or the
+engine's four encoders are taken.
+
+## The console moves nothing
+
+The universe pill is green but the layer does not follow the desk.
+
+1. Who controls (Patch screen) on **Fanous only**: the console is ignored.
+   Set it to Console only or one of the "Console and Fanous" choices
+   ([console-setup.md](console-setup.md#who-controls)).
+2. The fixture's address: the Patch screen's DMX monitor shows what
+   arrives on each channel; the console's address and mode must match the
+   patch sheet ([console-setup.md](console-setup.md#tell-the-console)).
+3. The layer's Intensity (channels 1 and 2) above 0, Folder and File not 0.
+4. A UI or MIDI value masking the console: the layer panel reads "UI
+   control" or "MIDI control"; **Release** hands it back.
 
 ## A DMX universe is silent
 
-The status bar has one pill per universe: green, packets arrive within the
-universe's Signal lost after time (2.5 s to start); yellow "silent" when
-nothing has ever arrived; yellow with seconds while it is silent for less
-than 2.5 s; red when a patched universe has been silent for longer. The
-fixtures hold their last values meanwhile, unless the universe's **Hold on
-signal loss** says otherwise ([console-setup.md](console-setup.md#when-the-console-goes-silent)).
+| Pill | Means |
+|---|---|
+| Green | Packets arrive within the universe's Signal lost after time (2.5 s to start) |
+| Yellow "silent" | Nothing has ever arrived on it, also right after an engine restart |
+| Yellow with seconds | Silent for less than 2.5 s, or an unpatched universe (which is never red) |
+| Red | A patched universe silent for longer than its Signal lost after time and 2.5 s |
 
-- Console: output enabled for that universe, right protocol, right universe
-  number. Art-Net `A 0.0.0` is port-address 0; some consoles count from 1
-  ([console-setup.md](console-setup.md#tell-the-console)).
-- Patch screen › Universes: a universe the console sends to with no fixture
-  on it reads "heard, nothing patched" in yellow. If the console sends
-  universe 1 and you patched 0, `A 0.0.1` says that while `A 0.0.0` stays
-  silent. Tap the row to see its values in the DMX monitor.
-- System › Machine › DMX universes shows the sender's address, the packet
-  count and the age of the last packet; "No DMX universes seen" means
-  nothing arrives at all: the console's target address, the cable or Wi-Fi.
-- Network: Mac and console on the same subnet, one active interface, the
-  firewall allowing UDP 6454 (Art-Net) and 5568 (sACN).
-- Two sources on one universe: Art-Net takes the latest packet, sACN the
-  highest priority. Send each universe from one console.
+The fixtures hold their last values meanwhile, unless the universe's
+**Hold on signal loss** says otherwise ([console-setup.md](console-setup.md#when-the-console-goes-silent)).
+
+1. System › Machine › DMX universes: the sender's address, the packet count
+   and the age of the last packet. "No DMX universes seen" means nothing
+   arrives at all: the console's target address, the cable or Wi-Fi, or
+   macOS's Local Network permission.
+2. Console: output enabled for that universe, right protocol, right
+   universe number. Art-Net `A 0.0.0` is port-address 0; some consoles
+   count from 1.
+3. Patch screen › Universes: a universe the console sends to with no
+   fixture on it reads "heard, nothing patched". If the console sends 1 and
+   you patched 0, `A 0.0.1` says that while `A 0.0.0` stays silent.
+4. Network: Mac and console on the same subnet, one active interface, the
+   firewall allowing UDP 6454 (Art-Net) and 5568 (sACN).
+5. Two sources on one universe: Art-Net takes the latest packet, sACN the
+   highest priority. Send each universe from one console.
+
+Done when the pill turns green.
 
 ## A layer shows an error, or the picture is black
 
 The Layers screen shows the problem in the row's Media column.
 
-```mermaid
-flowchart TD
-  row{"The row reads?"} -- "no file N in folder M" --> file["The number does not exist or the file is not playable:<br>Media screen, that folder: invalid name, needs transcode, unreadable"]
-  row -- "a decoder error" --> dec["The file cannot be decoded: transcode it again or replace it;<br>then Control 24–31 (Clear error) on layer channel 50"]
-  row -- "no capture device / display / Syphon server numbered N" --> num["Nothing has that number in folder 0: Inputs screen, Number"]
-  row -- "not running, in use by another app, no signal" --> live["The live input: plugged in, not open elsewhere, a signal on the card"]
-  row -- "permission …" --> perm["Inputs screen › Authorize (not in show mode); screen recording needs Engine › Restart after the grant"]
-  row -- "green, picture black" --> black["In this order: the layer's Intensity (channels 1–2); Folder and File not 0;<br>Play mode 112–127 is Freeze; the Master's Intensity and Control (128–191 Blackout, 64–127 Freeze all);<br>the Output fixture's Intensity and Control (64–127 Blackout, 128–191 Freeze);<br>the output bound; Scale and Crop"]
-  black --> who{"Still black, and the value came from the UI, a cue or OSC?"}
-  who -- yes --> policy["Who controls is Console only: the value is kept, not shown"]
-```
+| The row reads | Do |
+|---|---|
+| "no file N in folder M" | The number does not exist or the file is not playable: Media screen, that folder: invalid name, needs transcode, unreadable ([media-library.md](media-library.md)) |
+| A decoder error ("unsupported codec", "VideoToolbox error", "no video track") | Transcode the file again or replace it, then send Control 24–31 (Clear error) on layer channel 50 from the console and back to 0 |
+| "no capture device / display / Syphon server numbered N" | Nothing has that number in folder 0: Inputs screen, **Number** ([live-inputs.md](live-inputs.md)) |
+| "not running", "in use by another app", "no signal" | The live input: plugged in, not open in another app, a signal on the card |
+| A permission text | Inputs screen › **Authorize** (not in show mode); screen recording needs Engine › Restart Engine after the grant |
+
+The row is green and the picture black, in this order, done when the
+picture appears:
+
+1. The layer's Intensity (channels 1 and 2) above 0; Folder and File not 0.
+2. Play mode 112 to 127 is Freeze.
+3. The Master fixture, if patched: Intensity (channels 1 and 2) up,
+   Control (channel 3) below 64; 64 to 127 is Freeze all, 128 to 191
+   Blackout.
+4. The Output fixture, if patched: Intensity up, Control below 64; 64 to
+   127 is Blackout, 128 to 191 Freeze.
+5. The output bound ([below](#outputs-stay-black-although-the-layers-play)).
+6. Scale and Crop.
+7. The value came from the UI, a cue or OSC and Who controls is **Console
+   only**: it is kept, not shown ([remote-control.md](remote-control.md#who-controls)).
 
 The Layer panel on the Layers screen shows every channel's value as the
-engine reads it. The engine's own texts for a layer are "no file N in
-folder M", "no capture device numbered N (folder 0, 1–20)", "no display
-numbered N (folder 0, 21–28)", "no Syphon server numbered N (folder 0,
-150–169)", "no built-in content N in folder 0", "not running", "in use by
-another app", "could not connect", "no signal", the camera and screen
-permission texts, and a decoder's error ("unsupported codec …",
-"VideoToolbox error …", "no video track").
+engine reads it.
 
-## A display layer is black
+## The picture is frozen
 
-A layer on folder 0, file 21 to 28, shows a whole display of this Mac
-([live-inputs.md](live-inputs.md#displays-2128)). "screen permission not
-granted": Inputs screen › **Authorize screen** (not in show mode), allow
-Fanous under System Settings › Privacy & Security › Screen & System Audio
-Recording, then Engine › **Restart Engine**: macOS applies the grant only to
-a new engine process. It worked before and stopped: macOS asks about once a
-month, with a dialog on the main display; allow it, then restart the engine
-if the layer stays black. "not running": the display is unplugged, or it is
-one of Fanous's outputs. For a show-critical slides feed use a capture card
-instead; it needs no permission and is never asked again.
+Play mode 112 to 127 is Freeze on the layer; Master Control 64 to 127 is
+Freeze all; Output Control 128 to 191 is Freeze. A frozen output shows a
+test pattern live over the held frame. A still image, or a live input that
+lost its signal, holds its last frame by design.
 
 ## Outputs stay black although the layers play
 
@@ -120,43 +193,65 @@ instead; it needs no permission and is never asked again.
 - Its Intensity up, and the Output and Master fixtures' Intensity up with
   no Blackout: a test pattern follows them like the picture, so a pattern
   that stays black points at them.
-- No output at all: the status bar reads "outputs 0" and a banner says "no
-  outputs rendering".
+- No output at all: the status bar's outputs item reads 0 and a banner
+  says "no outputs rendering".
 - After a library root change the layers look their media up in the new
   library at once: a number that does not exist there reads "no file N in
   folder M".
+- A display layer (folder 0, 21 to 28) black: "screen permission not
+  granted" wants **Authorize screen** on the Inputs screen, the grant under
+  Privacy & Security › Screen & System Audio Recording, then Engine ›
+  Restart Engine; macOS asks again about once a month, on the main
+  display ([live-inputs.md](live-inputs.md#displays-2128)).
 
 ## Lines and a yellow cross on the projector
 
 Someone has Warp & Slices open: the projector shows what they edit
 ([warp-and-masks.md](warp-and-masks.md#show-on-output)). Leave the tab or
-switch **Show on output** off and the lines go; a browser that went away
-takes them with it within a few seconds.
+switch **Show on output** off; a browser that went away takes them with it
+within a few seconds.
 
 ## Dropped frames
 
-The status bar shows "dropped · 1 s". System › Live metrics shows, over the
-last second, fps, dropped (missed and late), GPU and CPU time (p50, p99,
-max), DMX to photon, texture misses (a layer without a decoded frame in
-time), clients, preview frames and audio, with a graph of the GPU p99
+The status bar shows "dropped · 1 s"; in show mode the tile on System ›
+Live metrics is red, and the status bar's item is red while the show is
+locked. The tile to read is **dropped**; the graph shows the GPU's p99
 against the frame budget ([screens/system.md](screens/system.md#live-metrics)).
-The dropped tile is red in show mode and yellow before it; the status bar's
-"dropped" is red while the show is locked.
 
-![System › Live metrics: tiles for fps, dropped, GPU and CPU time, DMX to photon, texture misses, clients, preview and audio, and the GPU graph](images/metrics.png)
+<img src="images/metrics.png" width="1396" alt="System › Live metrics: tiles for fps, dropped, GPU and CPU time, DMX to photon, texture misses, clients, preview and audio, and the GPU graph">
 
 - Heat or power: System › Machine › Thermal nominal (fair still passes the
-  readiness item, serious does not); AC power. Fix airflow first; the engine
-  only reports the thermal state, it does not slow itself down.
-- Other work on the Mac: quit other applications (Memory headroom), pause
-  Time Machine, switch Spotlight off for the library volume, turn show mode
-  on (it pauses ingest). Many open browser previews cost time too: the
-  clients tile.
+  readiness item); AC power. Fix airflow first; the engine only reports the
+  thermal state and does not slow itself down.
+- Other work on the Mac: quit other applications, switch Time Machine
+  off, Spotlight off for the library's volume, show mode on (it pauses
+  ingest). Many open browser previews cost time too: the clients tile.
 - Display mode: the display at the canvas frame rate or a multiple of it,
   not mirrored; the output's Mode set, so show mode applies it
   ([outputs-and-mapping.md](outputs-and-mapping.md#display-modes)).
 - Too much media: 4K60 ProRes, Blur and Edge, dissolves on many layers
   ([media-library.md](media-library.md#what-a-mac-can-play)).
+
+## No sound
+
+Audio plays on the Mac's default output device in one stereo mix
+([media-library.md](media-library.md#audio)). System Settings › Sound ›
+Output: the right device; a replugged HDMI display can switch it. The
+layer's audio channels on the console (volume, mute); audio plays only at
+100 % speed forward. System › Live metrics › audio counts underruns.
+
+## A cue does not fire
+
+- From GO: Who controls on **Console only** keeps the cue's values from
+  showing; the Show screen says so in yellow.
+- From a trigger: the timecode must be Locked and pass the trigger time
+  running; a start exactly at the trigger, a jump back, or a jump forward
+  of 5 seconds or more fires nothing ([show-control.md](show-control.md#triggers-and-follows)).
+  Fire a skipped cue with Go to.
+- From OSC or MSC: the OSC panel's "Last received" or the MIDI panel's last
+  message shows whether it arrived; the MSC format and device id must match
+  ([remote-control.md](remote-control.md#midi-show-control)).
+- After an engine restart no cue is current: Go to the right one.
 
 ## LTC does not lock
 
@@ -192,100 +287,145 @@ enable a network MIDI session, then choose it under Device or All sources.
 - No hardware console has been tried yet
   ([known limitations](reference/known-limitations.md#consoles-and-protocols)).
 
-## A sync slave does not follow
+## The project is gone after a restart
 
-[multi-server.md](multi-server.md#when-the-slave-does-not-follow): the
-badge, Packets in on System › Sync, the port, the interface, a cloned
-install.
+The engine starts with the standard patch and no cues when `project.json`
+does not read as a project (a damaged file, a file from another version).
+It keeps the file next to it as `project.json.unreadable-<time>` and the
+log names it. Revert to the newest version (System › Project versions,
+[below](#go-back-to-an-earlier-version)); or, with the engine stopped
+(Engine › **Stop Engine…**), move the kept file back to `project.json` once
+it is repaired.
 
 ## Logs
 
 System › Logs (programmer) shows the last 64 KB of the engine log with a
 filter field, **Refresh** (it does not follow the log live) and
-**Download** (the whole current file; the rotated `fanousd.log.1` is not
-served). The Service line shows the engine version and its uptime: a short
-uptime you did not expect means it restarted.
+**Download** (the whole current file). The start-up lines are in the 64 KB
+view only when the engine started recently. The Service line shows the
+engine version and its uptime: a short uptime you did not expect means it
+restarted.
 
 <img src="images/logs.png" width="1395" alt="System › Logs with the filter field set to compositor, Refresh, Download and the Service line">
 
 The file is `~/Library/Logs/Fanous/fanousd.log` (Engine › **Open Logs**
-opens the folder; it rotates once at 10 MB). The same lines are in
-Console.app under the subsystem `org.fanous`. At a start the engine logs
-its version and chip, the TLS identity, each listener ("Art-Net listening",
-"OSC listening", "HTTPS listening", "CITP listening"), the MIDI sources and
-the LTC input; what went wrong reads "… listener failed", "sACN port in use;
-running without sACN", "sync port in use", "CITP start failed", "media not
-found", "media open failed", "project file not readable", "show mode
-resumed after an unclean stop" or "show mode kept across a restart".
+opens the folder); it rotates once at 10 MB to `fanousd.log.1`, which
+Download does not serve, and the rotation drops the older copy, so copy the
+log before restarting anything in a crash loop. A crash leaves no trace in
+it: look in `~/Library/Logs/DiagnosticReports` for a report of `fanousd`.
+The same lines are in the unified log under the subsystem `org.fanous`:
+
+```bash
+log show --predicate 'subsystem == "org.fanous"' --last 1h
+```
+
+| Line | Means |
+|---|---|
+| "HTTPS listener failed", "Art-Net listener failed", "OSC UDP failed", "OSC TCP failed", "CITP listener failed" | Another program holds that port; the engine runs without it |
+| "sACN port in use; running without sACN" | The readiness item warns too |
+| "sync port in use; not receiving sync packets" | System › Sync: apply a free port |
+| "CITP start failed", "CITP PLoc beacon failed (firewall?)" | The console will not list Fanous |
+| "media not found", "media open failed" | The layer's row says the same |
+| "project file not readable" | The section above |
+| "stale show state ignored" | The Mac was down for more than 2 hours: a normal start |
+| "show mode resumed after an unclean stop", "show mode kept across a restart" | Show mode came back; the second is a deliberate Restart Engine |
+| "autosave failed", "show mode state not saved" | The disk or the folder is not writable: the engine plays on and saves nothing |
+
+## Disk full, or the folder not writable
+
+The readiness item checks the library's volume only; the project, the
+versions and the log live on the home volume. When that is full or
+`~/Library/Application Support/Fanous` is not writable, the engine keeps
+playing but saves nothing and the UI does not say so: the log reads
+"autosave failed". Free space, or fix the folder's owner and permissions,
+then save a named version.
 
 ## Restart the engine
 
 Engine › **Restart Engine**: the outputs go black for a moment and the UI
-reloads; the console's values apply again at once and playback positions
-start over. Avoid it during a show; if show mode is on, the engine comes
-back in show mode and the displays keep their modes
-([show-day-checklist.md](show-day-checklist.md#show-mode)). After a crash
-the engine restarts by itself, at once, or after 10 seconds when it crashed
-within 10 seconds of starting. Quitting the app does not stop the engine
-unless you choose **Stop Engine and Quit** in the quit question; **Stop
-Engine…** does, and **Start Engine** starts it again.
+reloads; every iPad logs in again; the console's values apply again at once
+and playback positions start over. Avoid it during a show; if show mode is
+on, the engine comes back in show mode and the displays keep their modes
+([show-day-checklist.md](show-day-checklist.md#what-comes-back-after-the-engine-stops)).
+Quitting the app does not stop the engine unless you choose **Stop Engine
+and Quit** in the quit question; **Stop Engine…** does, and **Start
+Engine** starts it again.
 
 ## Go back to an earlier version
 
-A change made the show worse and Undo is no help (the engine restarted, or
-too much happened since). System › **Project versions** holds the versions:
-automatic ones at every engine start, on entering show mode and every 10
-minutes, each only when the project changed since the newest version (the
-newest 50 automatic ones are kept); named ones from **Save version…**, kept
-until you delete them.
+A change made the show worse and Undo is no help. System › **Project
+versions** holds the versions: automatic ones at every engine start, on
+entering show mode, every 10 minutes and before a revert, each only when
+the project changed since the newest version (the newest 50 automatic ones
+are kept); named ones from **Save version…**, kept until you delete them.
 
-![System › Project versions with a named version "Before doors" and its Revert and Delete buttons](images/versions.png)
+<img src="images/versions.png" width="1396" alt="System › Project versions with a named version Before doors and its Revert and Delete buttons">
 
 ```mermaid
 flowchart TD
   start["Revert… on the version"] --> role{"Programmer?"}
   role -- no --> login["Log in as programmer"]
   role -- yes --> lock{"Show locked?"}
-  lock -- yes --> unlock["L to unlock (asks when show mode is on)"]
+  lock -- yes --> unlock["L to unlock"]
   lock -- no --> mode{"Show mode on?"}
   unlock --> mode
-  mode -- yes --> leave["Leave show mode first"]
-  mode -- no --> dialog["The dialog: the project goes back to that version;<br>the current project is saved as a version first"]
+  mode -- yes --> leave["Leave show mode: the display modes go back for a moment"]
+  mode -- no --> dialog["Confirm: the current project is saved as a version first"]
   leave --> dialog
   dialog --> done["Reverted; the show lock stays as it was"]
-  done --> undo{"Wrong version?"}
-  undo -- "Undo" --> back["Back to the saved copy, unless a live input's number changed meanwhile<br>(then Undo is refused: revert to the 'Before revert to …' version instead)"]
+  done --> wrong{"Wrong version?"}
+  wrong -- "yes: Undo" --> back["Back to the saved copy"]
+  wrong -- no --> fin["Show mode on again"]
 ```
 
 Everything in the project goes back: layers, patch, outputs, canvases,
-cues, timecode and MIDI settings. A console can do the same with OSC:
-`/fanous/project/load "Doors 19:30"` restores the newest named version with
-that name, under the same rules ([reference/osc.md](reference/osc.md)).
-
-The versions are files in `~/Library/Application Support/Fanous/versions/`,
-one per version. If `project.json` itself does not read as a project when
-the engine starts, the engine starts with the standard patch and keeps the
-file next to it as `project.json.unreadable-<time>`; the log names it.
-Revert to a version, or, with the engine stopped (Engine › **Stop
-Engine…**), move the kept file back to `project.json` once it is repaired.
+cues, timecode and MIDI settings. Undo is refused when a live input's
+number changed meanwhile; revert to the "Before revert to …" version then.
+A console can do the same with OSC: `/fanous/project/load "Doors 19:30"`
+restores the newest named version with that name, under the same rules
+([reference/osc.md](reference/osc.md)).
 
 ## Reset the project
 
 This drops the patch changes, outputs, cues and timecode settings. Save a
-named version first, or copy `project.json`; the `versions/` folder is not
-touched.
+named version first; the `versions/` folder is not touched.
 
 1. Engine › **Stop Engine…**, or quit and choose **Stop Engine and Quit**.
-2. In Finder move `~/Library/Application Support/Fanous/project.json` away,
-   for example to the Desktop.
-3. Engine › **Start Engine**. The engine starts with the standard patch.
+2. Finder › Go › Go to Folder, paste `~/Library/Application Support/Fanous`
+   and move `project.json` away, for example to the Desktop.
+3. Engine › **Start Engine**. Done when the UI shows the standard patch.
 
 ## A forgotten password
 
-The app window on the Mac always has programmer access: System › Roles and
-passwords sets a new password or clears it. Without the Mac's screen, stop
-the engine, remove the `passwords` entry from `~/Library/Application
-Support/Fanous/settings.json` (or move the file away, which also resets the
-sync and OSC feedback settings) and start the engine: the role is open
-again. The certificate is reset with `fanousd reset-tls`, with the engine
-stopped; browsers then warn again ([reference/files-and-ports.md](reference/files-and-ports.md)).
+At the Mac: the app window always has programmer access. System › Roles
+and passwords sets a new password or clears it. Only without the Mac's
+screen: stop the engine, remove the `passwords` entry from
+`~/Library/Application Support/Fanous/settings.json` (or move the file
+away, which also resets the sync and OSC feedback settings) and start the
+engine; the role is open again. The certificate is reset with
+`fanousd reset-tls`, with the engine stopped
+([reference/files-and-ports.md](reference/files-and-ports.md#service-and-process-names)).
+
+## For the venue's systems technician
+
+- Monitor without a login: `https://<mac>:8443/healthz` (status, version,
+  uptime; an uptime that reset is a restart), `/metrics` (frames, missed,
+  late, show mode, clients) and `/api/live` (per universe `active` and the
+  age of the last packet); use `curl -k -m 8`. Readiness, the show lock and
+  timecode are on the WebSocket only. These addresses need no password, so
+  reach them from a management network only.
+- Firewall both ways: in UDP 6454, 5568, 8000, 8002 and TCP 8443; out UDP
+  to the Art-Net poller, to OSC subscribers, to 224.0.0.180 and
+  239.224.0.180 on 4809, and sync on 8002
+  ([reference/files-and-ports.md](reference/files-and-ports.md#ports)).
+  Allow-list the console's addresses: OSC and Art-Net carry no login.
+- A managed Mac: a profile can block the login item (the Engine menu then
+  reads "service needs approval"), pre-deny the camera and microphone,
+  force updates (the readiness item cannot be satisfied) or lock the
+  lock-screen settings; ask for the profile list before the first show.
+  Keep the app in Applications: a moved or re-signed app leaves the
+  background service pinned to the old binary until Stop Engine and Start
+  Engine.
+- Time Machine off during the show, not paused: a Time Machine target that
+  does not answer can stall the readiness probe, which runs on the same
+  queue as the UI's live values.
