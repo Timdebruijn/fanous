@@ -18,8 +18,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   follow" flowchart; new `reference/osc.md` (every address in and out, limits) and `reference/api.md` (transport,
   roles, REST, the WebSocket protocol with a sequence diagram, all 57 commands, errors, limits), both from the code;
   the folder-0 and UI-control sections of the old show page live in `reference/built-in-content.md` and
-  `remote-control.md`; 4 new pictures; the index, screen pages, `ui.md` (monitor's one command) and
-  `known-limitations.md` follow. New rows B175 (sync lost tooltip), B176 (OSC panel's last-received spelling and
+  `remote-control.md`; 3 new pictures, `cue-editor.png` and `layers-sync-badges.png` retaken; the index, screen pages,
+  `ui.md` (monitor's one command) and `known-limitations.md` follow. New rows B175 (sync lost tooltip), B176 (OSC panel's last-received spelling and
   address list), B177 (`/api/session` ignores the token), B178 (MIDI "Learned:" spelling, trigger hint), B179 (cloned
   install UUID silently breaks sync) (PR #303).
 

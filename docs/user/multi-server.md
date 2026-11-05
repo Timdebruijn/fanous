@@ -32,9 +32,10 @@ blend and warp, and the project itself with its cues and timecode settings.
 Good to know: only movies have a clock, so a still, built-in content from
 folder 0 and a live input neither send nor follow. A slave ignores its own
 Play mode, Speed, In and Out points, timecode chase and Retrigger while it
-has a master. The Sync channel is a layer parameter like any other, so Who
-controls applies, and its home value is 0: every cue and palette on the
-console must hold it.
+has a master; a master in Freeze, Scrub or Timecode keeps sending with a
+clock that stands still, so its slaves hold or step with it. The Sync
+channel is a layer parameter like any other, so Who controls applies, and
+its home value is 0: every cue and palette on the console must hold it.
 
 ## Before you start
 
@@ -130,7 +131,7 @@ machine id otherwise) and the correction of the last frame.
 | green | Its group's clock, sending | Locked: following the master |
 | yellow | | Freewheel: packets are late; running on at the master's last rate |
 | red | A second master in the group (one wins) | Lost: no packets for 2 s; or two masters in the group (it follows the winner) |
-| grey | Not sending: no movie playing, Play mode Timecode, Freeze or Scrub, or another layer on this Mac holds the group | No master in the group, or no movie playing on the slave |
+| grey | Not sending: no movie playing, or another layer on this Mac holds the group | No master in the group, or no movie playing on the slave |
 
 The status bar reads "sync lost" in red while any slave on this Mac is
 lost, and links to the Layers screen.
@@ -170,7 +171,7 @@ flowchart TD
   badge -- "none" --> off["Sync is Off on that layer: the console's value does not reach it<br>(Who controls, the patch, a cue that resets channel 51)"]
   badge -- "grey · no movie playing" --> still["The slave shows a still, a live input or nothing: only movies follow"]
   badge -- "grey · no master" --> master{"On the master Mac: badge M in green?"}
-  master -- "grey" --> mstill["The master plays no movie, or is in Timecode, Freeze or Scrub"]
+  master -- "grey" --> mstill["The master plays no movie"]
   master -- "green" --> packets{"System › Sync on the slave Mac: Packets in counting?"}
   packets -- "0" --> net["Same Port on both? Target broadcast? Same network segment?<br>A firewall or network filter? A cloned install (same machine id)?"]
   packets -- "counting" --> group["The master is in another group: check both Sync values"]

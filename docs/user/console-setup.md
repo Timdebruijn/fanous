@@ -161,7 +161,7 @@ flowchart TD
 The GDTF import has not been verified on a real grandMA3, Eos or MagicQ yet
 ([known limitations](reference/known-limitations.md#consoles-and-protocols)).
 Over CITP/MSEX a console that speaks it also sees the media list and
-thumbnails ([show-control.md](remote-control.md#citpmsex)).
+thumbnails ([remote-control.md](remote-control.md#citpmsex)).
 
 ## Art-Net or sACN
 

@@ -132,10 +132,10 @@ none.
 | Timecode does | The trigger |
 |---|---|
 | Passes the trigger time while running | Fires; several cues in the same frame fire in number order |
-| Starts, or locates, exactly at the trigger time | Nothing fires: a trigger needs a frame before it. Write the first trigger at least one frame after the time the timecode starts at |
+| Starts, after an engine start or a jump back, exactly at the trigger time | Nothing fires: a trigger needs a frame before it. Write the first trigger at least one frame after the time the timecode starts at |
 | Jumps back, or repeats | Nothing fires; the cues after the new position are armed again |
 | Jumps forward by 5 s or more in its value | Nothing fires: the cues in between are skipped, not caught up. A pause that resumes at the same value is no jump |
-| Is in Freewheel or Lost | Nothing fires; triggers come from decoded frames only |
+| Is in Freewheel or Lost | Nothing fires; triggers come from decoded frames only. After a gap of less than 5 s in the value, the triggers passed in the gap fire together on the first frame back |
 | Passes midnight | Counts as a jump back and arms every cue again |
 
 Start the timecode running before the first trigger and let it play
@@ -145,15 +145,14 @@ use the incoming time as it is: the **Offset** on the Timecode panel moves
 the layers that chase timecode, not the triggers, so write the triggers at
 the times the timecode really shows. A follow is set each time the cue
 fires, so follows chain; a GO, Back or trigger in between replaces the
-pending follow. A cue that follows onto a number that does not exist does
-nothing.
+pending follow. A Follow on the last cue in the list does nothing.
 
 ## Timecode
 
 Timecode is a clock, `hh:mm:ss:ff`, that a sound desk, a playback computer
 or a console sends out so that everything runs in step. Fanous only
-follows one; it has no clock of its own. It arrives as **LTC**, an audio
-signal on one channel of an audio input, or as **MTC** over MIDI; ask the
+follows one; it has no clock of its own. It arrives as LTC, an audio
+signal on one channel of an audio input, or as MTC over MIDI; ask the
 sound or playback operator which you get. Timecode does two separate
 things: it fires cues whose trigger it passes, and it can make a layer's
 video play at the timecode position ("chase"), with Play mode **Timecode**

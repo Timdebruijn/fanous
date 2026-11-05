@@ -107,7 +107,7 @@ browser's find for a word. Back to the [index](../README.md).
 | **Retrigger** | Layer channel 50 at 8 to 15: restart the clip from its in point. It fires once, when the channel enters the band; a value held there does not loop the clip. Return the channel to 0 before the next retrigger. |
 | **Blackout** | Master channel 3 at 128 to 191 (all outputs) or Output channel 3 at 64 to 127 (one output): the picture and the test patterns go black. A console's DBO or Grand Master does the same through the intensities. |
 | **Machine id** | The first 8 characters of a Mac's install id, shown under System › Sync; it names a Mac in the sync badges and decides which of two Sync masters wins (the lower one). Two Macs installed from one cloned disk share it and ignore each other. |
-| **Broadcast** | A packet every machine on the network segment receives (Art-Net and sync use it); multicast reaches those that joined a group (sACN, CITP). Both stay within one subnet. |
+| **Broadcast** | A packet every machine on the network segment receives (Art-Net and sync use it); multicast reaches those that joined a group (sACN, CITP). Broadcast and CITP stay within one subnet. |
 | **Sync master, Sync slave** | Layer channel 51: a layer that sends its clock to a group (master) or follows that group's clock (slave), so layers on several Macs play in step. Not the Master fixture. |
 
 ## Engine, UI and measurements

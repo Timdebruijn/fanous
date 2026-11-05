@@ -209,9 +209,10 @@ Fanous listens to it (**Source** is All sources or one), the last message
    **Parameter** (then the fixture and the parameter).
 3. **Learn**, then press the key or move the control. "Waiting for MIDI:
    press a key or move a control…" shows until the first message arrives;
-   **Cancel** stops waiting. A fader numbered 0 to 31 makes Fanous wait
-   briefly for a second message, to see whether it is a fine-resolution
-   (14-bit) fader: keep moving it.
+   **Cancel** stops waiting. A controller numbered 0 to 31 is learned on
+   the next message: as a fine-resolution (14-bit) fader when that is its
+   partner (controller + 32), else as a plain controller. Keep moving the
+   fader, or press the button twice.
 4. The row appears in the map and "Learned: …" confirms it. Learning the
    same control for the same target again replaces the row.
 5. For a parameter, pick the **Mode** and **Pickup** on the row.

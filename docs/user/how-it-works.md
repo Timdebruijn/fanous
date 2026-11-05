@@ -71,7 +71,7 @@ is doing: frames, universes, outputs, clients.
    and no colour reference. A console that speaks CITP/MSEX gets the media
    list, thumbnails and a preview stream of Canvas 1; OSC can read every value
    back; other apps on the Mac can take Canvas 1 over Syphon. See
-   [show-control.md](show-control.md).
+   [remote-control.md](remote-control.md) and [reference/osc.md](reference/osc.md).
 
 The picture leaves the Mac as 8-bit Rec.709 video at the canvas size and
 rate. The engine paces its frames on its own clock at the canvas rate; it is
