@@ -10,6 +10,15 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs: `console-setup.md` rewritten as the console-side task page: the four fixtures with the channel facts a
+  programmer trips on (non-zero defaults, Master speed, audio at 100 %, retrigger), the standard patch, telling the
+  console (GDTF, Patch sheet, universe count) and Art-Net or sACN as flowcharts, universe settings, signal loss ×
+  Who controls as a flowchart, changing the patch with Add-layer and collision flowcharts, two consoles with their
+  priorities; five new pictures and `universe-settings.png` retaken; links in `how-it-works.md`, `show-control.md`
+  and the index follow. The sACN manual test moves to `DEVELOPMENT.md`. New rows B166–B168 (ArtPollReply address
+  and MAC, no readiness item for the Art-Net port, the Add-layer note names one fixture), the first two also in
+  `reference/known-limitations.md` (PR #300).
+
 - Docs: one reference page per screen under `docs/user/screens/` (Layers, Media, Inputs, Outputs, Patch, Show,
   System): a numbered full-screen picture, every control with what it does and the role it needs, the status
   words and the messages; 31 new pictures and `logs.png` retaken on rc.4; the guide index links them per screen, and

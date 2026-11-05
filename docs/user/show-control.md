@@ -18,7 +18,7 @@ values are recorded but do not move a layer, and the Show control screen shows
 a yellow warning with a button **Use Console and Fanous, latest change wins**
 (programmer, not while the show is locked). The same warning appears in the
 layer panel and on the Media screen. See
-[console-setup.md](console-setup.md#sources-and-merging).
+[console-setup.md](console-setup.md#who-controls).
 
 The **Timecode on/off** switch belongs to the operator and also works under
 show lock; the source, device, channel and offsets are programmer settings.
