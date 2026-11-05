@@ -3930,8 +3930,6 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   0.26 s; four preview clients + one stalled client: identical revisions, the
   stalled one flagged lagging, 0 missed / late frames.
 
----
-
 ### 11.7 §11.1 and §11.2 as built (2026-11-05, from the API inventory for `docs/user/reference/api.md`)
 
 - The TLS identity is in the data-protection keychain (tag `org.fanous.tls`)
@@ -3961,6 +3959,8 @@ arrows (±1 fine, ±10 coarse with Shift, ±0.1 with Alt).
   `show.mode` and `timecode.enable`; transport, blackout and test patterns
   come from DMX and are not operator commands, and a preview subscription
   needs only `hello`. The monitor has one command, `project.versions`.
+
+---
 
 ## 12. Main screens
 
