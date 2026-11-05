@@ -102,7 +102,7 @@ browser's find for a word. Back to the [index](../README.md).
 | **Tracking** | How Fanous cues work: a cue sets only the values it holds, and every other value stays where the last cue left it. A cue that takes a layer out needs its intensity at 0. |
 | **Trigger, Follow** | A cue's two automatic fires: a trigger fires it when timecode passes `hh:mm:ss:ff@rate`; a follow fires the next cue that many seconds after this one. |
 | **Chase** | A layer whose position in its file is locked to the timecode (Play mode Timecode, channel 5 at 128 to 143), offset by the Offset field. |
-| **Dissolve** | Layer channel 11: how long a new file crossfades in when the media changes. Read when the new file's first frame is ready. |
+| **Dissolve** | Layer channel 12: how long a new file crossfades in when the media changes. Read when the new file's first frame is ready. |
 | **Cue** | A numbered step in Fanous's own cue list: parameter values with a fade, optionally fired by a timecode trigger or a follow time. |
 | **Retrigger** | Layer channel 50 at 8 to 15: restart the clip from its in point. It fires once, when the channel enters the band; a value held there does not loop the clip. Return the channel to 0 before the next retrigger. |
 | **Blackout** | Master channel 3 at 128 to 191 (all outputs) or Output channel 3 at 64 to 127 (one output): the picture and the test patterns go black. A console's DBO or Grand Master does the same through the intensities. |
