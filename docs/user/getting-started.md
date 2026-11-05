@@ -76,7 +76,7 @@ when you pick an LTC timecode input, **Camera** when a layer shows a camera,
 **Screen Recording** when a layer shows one of this Mac's displays. Allow them
 before the show, never during it: a prompt nobody answers on show night leaves
 that input black. The Inputs screen has an **Authorize** button for each, see
-[media-library.md](media-library.md#the-inputs-screen-key-3).
+[live-inputs.md](live-inputs.md).
 
 ## Firewall and network
 
