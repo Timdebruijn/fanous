@@ -34,7 +34,7 @@
   const format = $derived(meta ? formatLabel(meta) : '');
   const audio = $derived(meta ? audioLabel(meta) : '');
   /** one quiet line like the layer row's "HEVC · 1080p25": a tile's format is information, not a state */
-  const detail = $derived(meta ? [codecLabel(meta.codec), format, meta.hasAlpha ? 'α' : '', audio].filter(Boolean).join(' · ') : '');
+  const detail = $derived(meta ? [meta.codec ? codecLabel(meta.codec) : '', format, meta.hasAlpha ? 'α' : '', audio].filter(Boolean).join(' · ') : '');
   const locked = $derived(!can('programmer'));
   const bad = $derived(item.status === 'invalid' || item.status === 'unreadable');
 
