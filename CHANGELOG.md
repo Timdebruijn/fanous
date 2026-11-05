@@ -20,7 +20,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   B182 (Spotlight Privacy does not satisfy the item), B183 (a port in use only logged; the second-engine refusal not
   in the log), B184 (logins lost at an engine restart), B185 (no alert when an item turns red in show mode), B186
   (a stale show-mode file resumes on the same boot), B187 (readiness probes without a timeout on the feed queue),
-  B188 (a full home volume is only logged); `files-and-ports.md` gets the engine's real path and the backup list.
+  B188 (a full home volume is only logged); `files-and-ports.md` gets the engine's real path and the backup list
+  (PR #304).
 
 - Docs: `show-control.md` rewritten around running the show, building a cue (with a flowchart), fades, triggers and
   follows (the 5-second rule, jumps, the offset that triggers ignore) and timecode (LTC and MTC setup flowchart, a
