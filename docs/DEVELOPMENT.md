@@ -296,7 +296,7 @@ network, and the System screen's readiness list open. Patch Layer 1 on `S 1`.
 - [ ] **Named NIC.** A second NIC (USB Ethernet) to the console network, Interface
       set to that NIC (`en7`): S 1 arrives; sACN sent on the other network is
       ignored.
-- [ ] **Named NIC without a gateway.** Same NIC, no gateway on it, Interface back to "All
+- [ ] **All interfaces with a NIC without a gateway.** Same NIC, no gateway on it, Interface back to "All
       interfaces": S 1 still arrives (joined on every multicast interface).
 - [ ] **Unplug and replug.** Unplug the USB NIC: readiness warns "Universe
       interfaces usable" for a named Interface; the status goes red once

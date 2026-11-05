@@ -10,7 +10,7 @@ console goes silent, and how the console's values combine with Fanous's own.
 Every control of the Patch screen is in [screens/patch.md](screens/patch.md);
 terms are in the [glossary](reference/glossary.md).
 
-**First picture.** This page is the console side. Do steps 1 to 3 of
+**Before you start.** This page is the console side. Do steps 1 to 3 of
 [getting-started.md](getting-started.md#first-light-in-six-steps) first (a
 clip in the library, an output on a display, the layer playing from the UI),
 then come back here for the desk. Changing the patch needs the programmer
@@ -94,10 +94,10 @@ an 8-layer project does not move them by itself, see
 **Universe numbers.** Fanous writes Art-Net universes as
 `A net.subnet.universe` and sACN universes as `S n`. A desk with one Art-Net
 universe field asks for the port-address, `net × 256 + subnet × 16 +
-universe`: `A 0.0.1` is port-address 1, `A 0.1.0` is 16. A desk that counts
-Art-Net universes from 1 calls port-address 0 "universe 1": if its first
-Art-Net universe is 1 and there is no universe 0, it counts from 1. sACN
-universes are the same number everywhere and start at 1.
+universe`: `A 0.0.1` is port-address 1, `A 0.1.0` is 16. A desk whose first Art-Net
+universe is 1 and that has no universe 0 counts from 1: it calls
+port-address 0 "universe 1". sACN universes are the same number everywhere
+and start at 1.
 
 ## Tell the console
 
@@ -122,7 +122,7 @@ universes are the same number everywhere and start at 1.
    on the clipboard as tab-separated text for a spreadsheet; **Print** prints
    it alone.
 
-![The Patch sheet dialog over the Patch screen, with 8 layers, the Master and three outputs](images/patch-sheet.png)
+<img src="images/patch-sheet.png" width="756" alt="The Patch sheet dialog over the Patch screen, with 8 layers, the Master and three outputs">
 
 4. **Check the universe count.** The sheet writes `A 0.0.1 = universe 1`;
    with **Count Art-Net universes from 1** on it writes `A 0.0.1 =
@@ -155,7 +155,7 @@ flowchart TD
   pill -- "no, Art-Net" --> arow{"Patch screen › Universes:<br>a yellow row 'heard, nothing patched'?"}
   arow -- yes --> off["The desk sends to another port-address, usually one off:<br>change the Block universe field in Fanous or the desk's universe"]
   arow -- no --> net["Cable, subnet, desk output enabled,<br>Local Network allowed, firewall UDP 6454,<br>a universe Interface the desk is not on"]
-  pill -- "no, sACN" --> snum["Multicast is joined only for patched S universes, so a wrong number leaves no row:<br>compare the desk's universe with the sheet, check the Interface,<br>and IGMP (below), or send unicast"]
+  pill -- "no, sACN" --> snum["Multicast is joined only for the S universes in the patch (and S 1 when there is none),<br>so a wrong number leaves no row: compare the desk's universe with the sheet,<br>check the Interface and IGMP (below), or send unicast"]
 ```
 
 The GDTF import has not been verified on a real grandMA3, Eos or MagicQ yet
@@ -171,9 +171,9 @@ thumbnails ([show-control.md](show-control.md#citpmsex)).
 | Reaches the Mac by | broadcast on the subnet, or unicast to the Mac's address | multicast on `239.255.hi.lo` per universe, joined on every interface that can multicast or on one named interface; or unicast to the Mac |
 | Universe in Fanous | `A net.subnet.universe`, port-address 0 and up | `S 1` to `S 63999` |
 | Two senders on one universe | the latest packet wins, per packet, with no hold: two consoles fight. Send each universe from one console | the highest priority wins; at equal priority the latest packet, or a per-channel merge by highest value when the universe is set to Merge equal (HTP). A source silent for 2.5 s drops out; a source that sends the stream-terminated flag (a clean shutdown) drops out at once |
-| Not honoured | ArtSync; a packet 1 to 19 behind the last sequence number from the same sender is dropped (sequence 0 switches the check off) | per-address priority (start code 0xDD), sACN sync, and packets flagged as preview or with another start code |
+| Not honoured | ArtSync; a packet with a sequence number 0 to 19 behind the last one from the same sender is dropped (sequence 0 switches the check off) | per-address priority (start code 0xDD), sACN sync, and packets flagged as preview or with another start code; the same 0 to 19 sequence check applies per source |
 | What Fanous answers | ArtPoll, with an ArtPollReply as a media server node naming its patched port-addresses, sent back to the poller | nothing; it only listens |
-| Port conflicts | another program holding UDP 6454 is only in the engine log | the port is shared with other receivers on the Mac (sACNView, a second engine); unicast reaches only the one that opened it last; a program that holds it exclusively is named by the readiness item **sACN port 5568 available** |
+| Port conflicts | another program holding UDP 6454 is only in the engine log | the port is shared with other receivers on the Mac (sACNView, a second engine); unicast reaches only the one that opened it last; a program that holds it exclusively is named by the readiness item **sACN port 5568 available** (`sudo lsof -nP -iUDP:5568` shows who) |
 
 The ArtPollReply names the Mac's first network address, which on a Mac with
 Wi-Fi and a show adapter can be the wrong one for a desk that unicasts to
@@ -219,7 +219,9 @@ within 5 s.
 heard or has settings. For another Art-Net universe, let the desk send to it
 once: it appears as "heard". For another sACN universe, patch on an A
 universe and type the number into its **sACN universe** field, or type it in
-the Block universe field.
+the Block universe field. sACN multicast is joined for every S universe in
+the patch and for the sACN universe paired with every A universe fed by
+sACN; with none of those, S 1 is joined so the multicast path is ready.
 
 ## Universe settings
 
@@ -252,14 +254,14 @@ and 3 s).
 A universe that has received packets and then goes quiet:
 
 - The status bar's pill stays green for the universe's Signal lost after
-  time, then reads yellow with the seconds since the last packet up to 2.5 s,
-  then red (for a patched universe). The Patch screen's Universes panel and
-  the readiness item **All patched universes receiving** go red at Signal
-  lost after.
+  time, then goes red (for a patched universe); only with a Signal lost
+  after below 2.5 s is there a yellow phase with the seconds since the last
+  packet, until 2.5 s. The Patch screen's Universes panel and the readiness
+  item **All patched universes receiving** go red at Signal lost after.
 - The fixtures do what the universe's **Hold on signal loss** says. A
   universe that never received anything is not lost: its fixtures sit at
-  their defaults (or follow the UI and cues under the "Console and Fanous"
-  settings).
+  their defaults, or follow the UI and cues under the "Console and Fanous"
+  settings and under Hold on signal loss **UI and cues take over**.
 
 ```mermaid
 flowchart TD
@@ -301,7 +303,8 @@ settings and the rules the table leaves out:
 Two rules a desk programmer meets first. Under latest change wins the console
 "moves" a channel only when its value changes: a desk sitting at 100 % does
 not win against a cue fired later. Under highest value wins a desk that held
-100 % and then died keeps winning with that held value (Hold last values):
+100 % and then died keeps winning with that held value on continuous
+channels (Hold last values; folder, file and modes take the latest change):
 pick latest change wins for a desk that may go away, or unpatch the fixture
 to drop the held value.
 

@@ -16,7 +16,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   Who controls as a flowchart, changing the patch with Add-layer and collision flowcharts, two consoles with their
   priorities; five new pictures and `universe-settings.png` retaken; links in `how-it-works.md`, `show-control.md`
   and the index follow. The sACN manual test moves to `DEVELOPMENT.md`. New rows B166–B168 (ArtPollReply address
-  and MAC, no readiness item for the Art-Net port, the Add-layer note names one fixture) (PR #300).
+  and MAC, no readiness item for the Art-Net port, the Add-layer note names one fixture), the first two also in
+  `reference/known-limitations.md` (PR #300).
 
 - Docs: one reference page per screen under `docs/user/screens/` (Layers, Media, Inputs, Outputs, Patch, Show,
   System): a numbered full-screen picture, every control with what it does and the role it needs, the status
