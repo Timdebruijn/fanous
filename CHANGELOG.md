@@ -10,6 +10,17 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Dev docs and marketing after the guide rewrite: `DESIGN.md` §11 gets an "as built" list from the API inventory
+  (data-protection keychain, no identity import, no per-interface listener, REST mutates and has no project
+  export, the protocol sketch's `role` and `result`, the 4-encoder preview limit, the operator and monitor
+  commands); §19 and §20 no longer list OSC feedback, MIDI notes/CC and MSC as v1.x; the Phase 8 row says the
+  lawyer review is open. `DEVELOPMENT.md` points at the API and OSC references, the ADRs, mapping-ux,
+  feature-gaps and hardware; names `test.sh --hosted`, the three streams, the 1 MiB upload threshold,
+  `/api/session` with the shell token, and `bench.sh`. `RELEASE.md` §1 says engine tests bind port 0; §8 ticks
+  the README box, dates the guide rewrite and says BACKLOG rows are struck, not removed (BACKLOG header too).
+  The marketing sheets' honest limits: a notarized dmg exists, 4K60 is 4 layers, no genlock, one stereo mix,
+  no text layer, no MIDI output. The OSC comment in `Engine.swift` points at `reference/osc.md`.
+
 - README: a "you need" line and the glossary link under the pitch; the features table adds the Keystone fixture,
   live inputs and multi-server sync and says what GDTF and CITP have not been tested with; the show-day table
   separates show mode from the show lock, names the 23 readiness items, the restart behaviour and the open

@@ -10,8 +10,8 @@ Phase 8 deliverable of `DESIGN.md` §19; v1.0 ships when every box is ticked.
 
 ## 1. Code is green
 
-- [ ] `scripts/test.sh` (engine tests bind the DMX/OSC/HTTPS ports: stop any
-      running `fanousd` first). Tests run in parallel and wait with a deadline,
+- [ ] `scripts/test.sh` (engine tests bind port 0 since B153, so a running
+      `fanousd` no longer has to be stopped). Tests run in parallel and wait with a deadline,
       so a loaded Mac makes the run slower, not red, in the loads tested (load
       average up to ~100); negative checks keep fixed windows (B67)
 - [ ] `scripts/check-mallocs.sh`: 0 allocations for the tick's own work, with no
@@ -147,14 +147,16 @@ On a fresh macOS user account (or a fresh Mac) with the notarized dmg:
 
 ## 8. Docs
 
-- [ ] `README.md` install paragraph points at the dmg and `docs/user/`. Done 2026-11-03 with 1.0.0-rc.2: README
+- [x] `README.md` install paragraph points at the dmg and `docs/user/`. Done 2026-11-03 with 1.0.0-rc.2: README
       "Download or build" and getting-started point at the Releases page, not at one version
-- [ ] `docs/user/*` read through against the build (button labels, paths)
+- [ ] `docs/user/*` read through against the build (button labels, paths). The guide was rewritten
+      against main with every picture from a running engine on 2026-11-05 (PRs #298–#306); the
+      read-through of the next candidate is still this box
 - [ ] `docs/DESIGN.md`: every phase has its "as built" notes; `[OPEN-n]`
       rows are decided, resolved or marked v1.x; §19 scope guard lists the
       v1.x candidates
-- [ ] `docs/BACKLOG.md`: rows that shipped are removed, the rest carry a
-      trigger
+- [ ] `docs/BACKLOG.md`: rows that shipped are struck through with the date
+      and PR, the rest carry a trigger
 
 ## 9. Publish
 
