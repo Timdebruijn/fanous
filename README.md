@@ -32,9 +32,10 @@ rotation, colour, blend mode, effects and dissolve are all on the encoders you
 already know.
 
 > [!IMPORTANT]
-> **1.0.0 release candidate, source only.** There is no download yet: you build it.
-> It is measured on one Mac but **not yet tested with a real console** (GDTF import,
-> CITP thumbnails). Rehearse with your own desk before you commit a show to it.
+> **1.0.0 release candidate.** A signed, notarized disk image is on
+> [Releases](https://github.com/Timdebruijn/fanous/releases). It is measured on one Mac
+> but **not yet tested with a real console** (GDTF import, CITP thumbnails). Rehearse
+> with your own desk before you commit a show to it.
 
 ## What you get
 
