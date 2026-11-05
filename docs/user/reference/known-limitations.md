@@ -61,11 +61,14 @@ link here. Back to the [index](../README.md).
 | Limitation | Backlog |
 |---|---|
 | Hot-plugging a display is checked with one external display; with two or more it rests on unit tests. Test it on your machine before the show. | B34 |
-| Output frames are paced by the engine's own clock at the canvas rate, not locked to the display's refresh. A display whose refresh is not a whole multiple of the canvas rate (50 Hz or 24 Hz for a 60 fps canvas) judders; match the canvas frame rate to the display. Even with matching rates the two clocks drift, so a frame is repeated or skipped now and then; how often is not measured. | B58 |
+| Output frames are paced by the engine's own clock at the canvas rate, not locked to the display's refresh. A display whose refresh is not a whole multiple of the canvas rate (50 Hz or 24 Hz for a 60 fps canvas) judders; match the canvas frame rate to the display. Even with matching rates the two clocks drift, so a frame is repeated or skipped now and then; how often is not measured. Displays are not locked to each other: two projectors can show frames up to one refresh apart. | B58 |
 | In the 8-hour soak on the M1 Pro, about one frame in 340 000 was presented one refresh late. | B52 |
 | Dithering is a simple noise function; report banding on a projector. | B34 |
 | No per-output Syphon, no Syphon for canvases other than Canvas 1, no frame rate per canvas, no 10-bit output. | B59 |
-| The outputs of one projector wall need the same pixel size. **Hold to compare** reaches outputs 1 to 8. | — |
+| Console control (the Output and Keystone fixtures: intensity, blackout, test pattern, Raw, presets and glides) covers outputs 1 to 8; outputs 9 and up are driven from the UI only, and **Hold to compare** reaches outputs 1 to 8 too. The outputs of one projector wall need the same pixel size. | — |
+| The black lift and the black offset scale with the output's intensity (the Output fixture and the Intensity field), while the projectors' own black does not: a dimmed output shows its seams again. Tune them at 100 % and dim with the Master or the layers. | — |
+| The judder warning ("N Hz is not a multiple of the canvas M fps") and the readiness item **Outputs in their desired display mode** look only at outputs that have a Mode. | B173 |
+| The content template's footer text runs under the border of the slice drawn across it. | B174 |
 | Colour gain, black lift and black offset assume a gamma-2.2 projector; there is no per-output gamma for them. | — |
 | A permanent dissolve on layers that also run Blur and Edge needs more memory than the compositor's documented budget: 16 such layers at 1080p60 showed texture misses. | B148 |
 

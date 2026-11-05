@@ -67,7 +67,7 @@ browser's find for a word. Back to the [index](../README.md).
 | **Seam** | The overlap between two neighbouring projectors of a wall, with its own gamma and curve. |
 | **Seam check** | The wall panel's guided walk through test patterns, one symptom at a time, that tells you which control to turn. |
 | **Test pattern** | Grid, colour bars, blend check, output ID, crosshair, grey steps, checkerboard and flat greys, drawn on an output for alignment. Called up with buttons or from the console. |
-| **Raw** | The Output fixture's Blend channel at 128 or more: the output without blend ramps, black lift, warp and keystone, for alignment. Colour gain and black offset still apply. |
+| **Raw** | The Output fixture's Blend channel at 128 or more: the output without blend ramps, black lift, masks, warp and keystone, for alignment. Colour gain and black offset still apply. |
 | **Align** | What the Outputs screen calls the warp, blend and mask work on one output: **Align this output** opens the Warp & Slices tab for it. |
 | **Mapping preset** | A stored alignment (warp, slices, masks) under a number 1 to 255, so an output can switch between surfaces from the console (Output channel 6) with a timed glide (channel 7). |
 | **Show on output** | Draws the warp lines, slice outlines and the selected point on the projector itself while you edit, so you can align while looking at the surface. |

@@ -17,7 +17,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   `warp-and-masks.md` (which tool as a flowchart, the editor, corner pin, mesh, slices with a three-screen procedure,
   masks, the content template, Show on output with a "why is it hidden" flowchart, Remote from an iPad, mapping
   presets with the console flowchart, the Keystone fixture); 23 new pictures, among them the projector itself with
-  Show on output; the index, screen page and cross-links follow.
+  Show on output; the index, screen page and cross-links follow. New rows B173 (no judder warning without a Mode)
+  and B174 (the content template's footer runs under a slice border); known limitations gain the console limit of
+  eight outputs, the lift scaling with the output intensity and displays not locked to each other.
 
 - Docs: `media-library.md` rewritten around the questions a technician asks (what plays as it is, how a file gets in,
   what a transcode changes, what a Mac can play) with three flowcharts; new `live-inputs.md` (numbers, permissions,
