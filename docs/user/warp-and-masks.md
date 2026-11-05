@@ -231,7 +231,7 @@ you leave the tab, switch it off, or have not edited for 10 minutes.
   keystone, so they lie on the picture. The lines are white with a black
   edge.
 - The selected point as a yellow cross with a gap, its number beside it: a
-  mesh point as row·column (**3·5**), a corner of a corner pin or slice 1
+  mesh point as row·column (3·5), a corner of a corner pin or slice 1
   to 4 clockwise from the top left, a mask point by its own number. With a
   group selected in Remote, one point of the group is marked.
 - A Blackout, or the Master at 0, hides the lines; the output's own
