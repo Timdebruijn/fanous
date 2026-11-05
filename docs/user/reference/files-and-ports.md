@@ -34,7 +34,7 @@ Everything below is in `~/Library/Application Support/Fanous/` (mode 0700).
 | `shell-token` | The app window's programmer token (mode 0600) | 64 hex characters, made at first start. The app opens the UI with it, so the window is always programmer |
 | `install-uuid` | This install's identity | The CITP server id and the sync machine id |
 | `engine.lock` | One engine per user | Holds the engine's pid; a second `fanousd` refuses to start |
-| `show-state.json`, `restart-pending` | Show mode across a crash or restart | Written every 30 s while show mode is on; show mode resumes after a crash, or after a reboot when the engine starts within two hours of the last write; removed on a clean leave |
+| `show-state.json`, `restart-pending` | Show mode across a crash or restart | The first is written every 30 s while show mode is on: show mode resumes after a crash or a Force Quit (on the same boot, however long ago; an ordinary quit of `fanousd` leaves show mode), or after a power cut when the engine starts within two hours of the last write; a planned Restart or Shut Down of the Mac removes it. The second is written by the app right before Engine › Restart Engine and honoured for 60 s. |
 | `display-modes.json` | The display modes to put back after show mode | Only while modes are switched |
 | `ingest-queue.json` | The ingest queue | Survives an engine restart; done jobs leave the list after a minute |
 | `cache/library-index.json`, `cache/thumbnails/*.jpg` | Media metadata and thumbnails | Keyed by path, size and modification time; a changed file is probed again |
@@ -62,20 +62,26 @@ use until the next start, which would leave every role open.
 }
 ```
 
-**Backing up a show.** Copy `project.json` and `versions/`. The media is not in
-the project: the project and the console only know folder and file numbers, so
-the spare Mac needs a library with the same numbers. Role passwords and sync
-settings belong to the machine and are in `settings.json`.
+**Backing up a show.** Copy `project.json`, `versions/` and `settings.json`
+(passwords, sync and OSC feedback), and the library: the project and the
+console only know folder and file numbers, so the spare Mac needs a library
+with the same numbers. The files are written whole, so a copy while the
+engine runs is safe. Do not copy `install-uuid` to another Mac (two Macs
+with one id ignore each other's sync packets), nor `engine.lock`,
+`show-state.json` or `shell-token` (the app window's programmer credential).
+A restored Mac makes a new certificate, so every iPad warns once again.
 
 ## Ports
 
 | Direction | Port | For | Disabled by |
 |---|---|---|---|
 | in | UDP 6454 | Art-Net (ArtDmx in; ArtPoll is answered with an ArtPollReply naming the patched port-addresses) | `--no-network` |
+| out | UDP to the poller, from 6454 | The ArtPollReply | `--no-network` |
 | in | UDP 5568 | sACN, multicast joined per patched universe; the port is shared with other receivers on the Mac | `--no-network`, or another program holding the port exclusively |
 | in | UDP 8000 and TCP 8000 | OSC (TCP with SLIP framing) | `--no-network` |
 | out | UDP to each subscriber's port and the fixed target | OSC feedback, bundles of at most 1200 bytes | `--no-network` |
-| in | TCP 8443 | The web UI: HTTPS and the WebSocket | `--port` changes it |
+| in | TCP 8443 | The web UI: HTTPS and the WebSocket | `--port` changes it for a hand-started engine; the installed engine and the app window always use 8443 |
+| out | UDP 5353 (macOS, not `fanousd`) | Bonjour and the `.local` name; across VLANs use the address, or an mDNS reflector | |
 | in and out | UDP 8002 | Multi-server sync, only with several Macs; System › Sync changes it | |
 | out | UDP 4809 to 224.0.0.180 and 239.224.0.180 | CITP announcements every 5 s, TTL 1 (same subnet) | `--no-network` |
 | in | TCP, a port the system picks | CITP/MSEX for consoles; shown on the CITP line of System › Network | `--no-network` |
@@ -120,7 +126,7 @@ another engine of this user already runs ("fanousd is already running
 
 | Name | What |
 |---|---|
-| `Fanous.app` | The app bundle; `Fanous.app/Contents/MacOS/fanousd` is the engine inside it |
+| `Fanous.app` | The app bundle; the engine is the helper `Fanous.app/Contents/Helpers/FanousEngine.app/Contents/MacOS/fanousd` (bundle id `org.fanous.engine`), the program a firewall or filter rule must name. From the terminal, with the engine stopped: `/Applications/Fanous.app/Contents/Helpers/FanousEngine.app/Contents/MacOS/fanousd reset-tls` |
 | `org.fanous.engine` | The LaunchAgent the app registers; listed under System Settings › General › Login Items & Extensions as "Fanous" |
 | `org.fanous.app` | The app's preference domain (`defaults delete org.fanous.app KeepEngineOnQuit` brings the quit question back) |
 | `org.fanous` | The subsystem to search for in Console.app |

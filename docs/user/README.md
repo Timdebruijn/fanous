@@ -50,8 +50,8 @@ things up in the third.
 | | [show-control.md](show-control.md) | Running the show, building cues, triggers and follows, timecode (LTC, MTC) with its states |
 | | [remote-control.md](remote-control.md) | Without a console: Who controls, the UI, OSC and reading state back (Companion, TouchOSC), MIDI Learn, MIDI Show Control, CITP/MSEX |
 | | [multi-server.md](multi-server.md) | Several Macs, one picture: the Sync channel, a left/right setup, badges, sync settings, the camera check |
-| | [show-day-checklist.md](show-day-checklist.md) | A printable checklist for the day of the show, and every readiness item |
-| | [troubleshooting.md](troubleshooting.md) | Symptoms, causes, fixes, logs, restart, earlier versions and reset |
+| | [show-day-checklist.md](show-day-checklist.md) | A printable checklist for the day of the show: Mac settings, the readiness list, show mode and what comes back after a crash |
+| | [troubleshooting.md](troubleshooting.md) | From the symptom to the cause, with flowcharts: unreachable engine, silent universe, black layer or output, timecode, CITP, logs, versions, reset, a forgotten password |
 | Look up | [screens/](#the-seven-screens) | One page per screen with every control, status word and message: see The seven screens below |
 | | [channel-map.md](../channel-map.md) | Every DMX channel of the four fixtures with its default, bands and OSC key |
 | | [reference/files-and-ports.md](reference/files-and-ports.md) | Every file the engine writes, every port, the command line, service names |
@@ -59,6 +59,7 @@ things up in the third.
 | | [reference/api.md](reference/api.md) | REST routes with their roles, the WebSocket protocol, every command, error codes, limits |
 | | [reference/built-in-content.md](reference/built-in-content.md) | Folder 0 by file number: solid colour, the test patterns as a layer, test card, colour sweep, clock, motion test, with pictures |
 | | [reference/shortcuts.md](reference/shortcuts.md) | Keys and their touch equivalents |
+| | [reference/readiness.md](reference/readiness.md) | Every readiness item: threshold, what the row reads, the fix, whether it blocks |
 | | [reference/known-limitations.md](reference/known-limitations.md) | What this version does not do or has not been tested on, with its backlog entry |
 
 Outside this guide: [DESIGN.md](../DESIGN.md) is the technical design,

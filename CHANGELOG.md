@@ -10,6 +10,19 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Docs: `show-day-checklist.md` rewritten (the day before, the Mac settings, before doors, the readiness list with
+  how a row reads and what an acknowledgement does, show mode with a flowchart of what comes back after a crash,
+  a restart or a power cut, during and after the show); `troubleshooting.md` rewritten symptom-first with flowcharts
+  for an unreachable engine, a black layer and a revert, plus a forgotten password; new `reference/readiness.md` with
+  every item's threshold, row text, fix hint and whether it blocks; 5 new pictures (the list with failed items, the
+  popover, the refusal banner, an acknowledged row, the Save version dialog); the index follows. New rows B180
+  (display sleep fails although show mode holds the display), B181 (the resumed banner after a deliberate restart),
+  B182 (Spotlight Privacy does not satisfy the item), B183 (a port in use only logged; the second-engine refusal not
+  in the log), B184 (logins lost at an engine restart), B185 (no alert when an item turns red in show mode), B186
+  (a stale show-mode file resumes on the same boot), B187 (readiness probes without a timeout on the feed queue),
+  B188 (a full home volume is only logged); `files-and-ports.md` gets the engine's real path and the backup list
+  (PR #304).
+
 - Docs: `show-control.md` rewritten around running the show, building a cue (with a flowchart), fades, triggers and
   follows (the 5-second rule, jumps, the offset that triggers ignore) and timecode (LTC and MTC setup flowchart, a
   state diagram, the states table); new `remote-control.md` (Who controls as a table, the UI, OSC with the subscribe
