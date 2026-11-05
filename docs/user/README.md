@@ -72,7 +72,7 @@ a reference page with every control; the task pages say when to use them.
 
 | Key | Screen | Purpose | Every control | Tasks |
 |---|---|---|---|---|
-| 1 | Layers | One row per layer: media, position, intensity, play mode, source; preview of the canvas or the selected layer; the layer panel | [screens/layers.md](screens/layers.md) | [show-control.md](remote-control.md#from-the-ui) |
+| 1 | Layers | One row per layer: media, position, intensity, play mode, source; preview of the canvas or the selected layer; the layer panel | [screens/layers.md](screens/layers.md) | [remote-control.md](remote-control.md#from-the-ui) |
 | 2 | Media | The library: folders, files, built-in content and live inputs, import, transcode, the ingest queue | [screens/media.md](screens/media.md) | [media-library.md](media-library.md), [reference/built-in-content.md](reference/built-in-content.md) |
 | 3 | Inputs | Cameras, capture cards, displays and Syphon servers with their signal, numbers and Forget; audio inputs and the LTC channel; the permissions they need | [screens/inputs.md](screens/inputs.md) | [live-inputs.md](live-inputs.md) |
 | 4 | Outputs | Canvases, outputs, projector walls, blend, warp, slices, masks, presets | [screens/outputs.md](screens/outputs.md) | [outputs-and-mapping.md](outputs-and-mapping.md), [warp-and-masks.md](warp-and-masks.md) |

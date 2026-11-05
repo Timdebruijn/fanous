@@ -113,7 +113,7 @@ cue has no values. The engine's own refusals come as the yellow banner.
 |---|---|
 | Port | 8000 |
 | **Last received** | The newest messages first, with their time; "Nothing received yet. Send /fanous/cue/go to port 8000 to try it." |
-| **Addresses** | The thirteen control addresses with their argument types (`f` a float from 0 to 1 of the parameter's range, `i` an integer, `ii` two integers, "no args" none) and one line each: layer, master, output and keystone parameters, media, retrigger, cue go, back, goto and `{number}/go`, show lock, show mode, timecode enable. `/fanous/cue/goto` takes a whole number; a cue such as 2.5 is fired with `/fanous/cue/2.5/go` |
+| **Addresses** | The thirteen control addresses with their argument types (`f` a float from 0 to 1 of the parameter's range, `i` an integer, `ii` two integers, "no args" none) and one line each: layer, master, output and keystone parameters, media, retrigger, cue go, back, goto and `{number}/go`, show lock, show mode, timecode enable. `/fanous/cue/goto` is listed with `i` but takes any number, so 2.5 works, as does `/fanous/cue/2.5/go` |
 
 The panel is read-only. The feedback addresses (`/get`, subscribe) and
 `/fanous/project/load` are not listed here:

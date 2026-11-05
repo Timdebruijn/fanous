@@ -74,6 +74,7 @@ settings belong to the machine and are in `settings.json`.
 | in | UDP 6454 | Art-Net (ArtDmx in; ArtPoll is answered with an ArtPollReply naming the patched port-addresses) | `--no-network` |
 | in | UDP 5568 | sACN, multicast joined per patched universe; the port is shared with other receivers on the Mac | `--no-network`, or another program holding the port exclusively |
 | in | UDP 8000 and TCP 8000 | OSC (TCP with SLIP framing) | `--no-network` |
+| out | UDP to each subscriber's port and the fixed target | OSC feedback, bundles of at most 1200 bytes | `--no-network` |
 | in | TCP 8443 | The web UI: HTTPS and the WebSocket | `--port` changes it |
 | in and out | UDP 8002 | Multi-server sync, only with several Macs; System › Sync changes it | |
 | out | UDP 4809 to 224.0.0.180 and 239.224.0.180 | CITP announcements every 5 s, TTL 1 (same subnet) | `--no-network` |
@@ -96,6 +97,7 @@ fanousd --version
 fanousd channel-map            print docs/channel-map.md
 fanousd gdtf FILE              write the GDTF fixture file
 fanousd reset-tls              delete the TLS key and certificate; a new one is made at the next start
+fanousd protocol-dts           print the WebSocket message and command types (TypeScript)
 fanousd ingest DIR OUT.mov [--fps N] [--codec prores4444|prores422hq|prores422|hap|hapalpha|hapq|hapalphaonly]
                                convert an image sequence to a movie (25 fps and ProRes 4444 by default)
 ```
@@ -132,6 +134,5 @@ another engine of this user already runs ("fanousd is already running
 | `https://127.0.0.1:8443/healthz` | `{"status":"ok","version":…,"uptimeSeconds":…,"chip":…}` when the engine answers; no login needed |
 | `https://…:8443/api/channel-map.md` | The channel map the Patch screen's **Channel map** opens |
 
-The OSC address space is in [osc.md](osc.md); the
-HTTP endpoints and the WebSocket protocol for integrators are in
-[DEVELOPMENT.md](../../DEVELOPMENT.md).
+The OSC address space is in [osc.md](osc.md); the HTTP endpoints, the
+roles and the WebSocket protocol for integrators are in [api.md](api.md).

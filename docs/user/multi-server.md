@@ -9,91 +9,82 @@ own projector with its own part of the picture, its own blend and its own
 warp, with a layer on one Mac playing in step with a layer on the other.
 The console decides which layers follow which with one channel per layer,
 **Sync** (layer channel 51). Terms are in the
-[glossary](reference/glossary.md#console-protocols-control).
+[glossary](reference/glossary.md#console-protocols-control). For
+projectors on one Mac use a projector wall instead
+([outputs-and-mapping.md](outputs-and-mapping.md#projector-walls)); sync is
+for when one Mac is not enough.
 
 Sync shares one thing: the clock of a layer, that is where in its file it
-is, how fast and in which direction it runs. A master layer sends its clock
-on the network under a group number (1 to 8); a slave layer in the same
-group, on any Mac and any layer number, takes that clock every frame.
-Everything else stays local: folder and file, intensity, position, scale,
-colour, effects, audio, and the outputs with their slices, blend and warp.
-OSC, MIDI, cues fired from one Mac's UI and timecode reach that Mac only:
-drive everything that must happen on both from the console.
+is, how fast and in which direction it runs. A Sync master layer sends its
+clock on the network under a group number (1 to 8); a Sync slave layer in
+the same group, on any Mac and any layer number, copies that clock every
+frame. Everything else stays local to each Mac: folder and file, intensity,
+position, scale, colour, effects, audio, the outputs with their slices,
+blend and warp, and the project itself with its cues and timecode settings.
+
+| Sync value | Means |
+|---|---|
+| 0–9 | Off: the layer plays on its own clock |
+| 10–89 | Sync master, group 1 to 8 (10–19 group 1, 20–29 group 2, …) |
+| 90–169 | Sync slave, group 1 to 8 (90–99 group 1, 100–109 group 2, …) |
+| 170–255 | Off (reserved) |
+
+Good to know: only movies have a clock, so a still, built-in content from
+folder 0 and a live input neither send nor follow. A slave ignores its own
+Play mode, Speed, In and Out points, timecode chase and Retrigger while it
+has a master. The Sync channel is a layer parameter like any other, so Who
+controls applies, and its home value is 0: every cue and palette on the
+console must hold it.
+
+## Before you start
+
+- Install Fanous on each Mac separately. Copying one Mac's disk to the
+  other gives both the same machine id, and sync then ignores the other
+  Mac.
+- Put the Macs on the same network segment, wired. Both use the same sync
+  port (8002 unless you changed it); a firewall or a network filter on the
+  Macs must allow `fanousd` on UDP 8002 in and out
+  ([reference/files-and-ports.md](reference/files-and-ports.md#ports)).
+- Decide how to split the picture ([below](#three-ways-to-split-a-picture));
+  the first way fits most shows.
 
 ## Two Macs, one picture
 
 Two Mac minis, two projectors side by side with a soft-edge blend, one
 console:
 
-1. **Same library numbering on both Macs.** Copy the library so every file
-   the show uses has the same folder and file number on both
-   ([media-library.md](media-library.md)). The contents may differ (a
-   pre-split left and right half under the same number): a slave follows
+1. **Same library numbering on both Macs.** Copy the library (Finder, or
+   any sync tool) so every file the show uses has the same folder and file
+   number on both ([media-library.md](media-library.md)). With pre-split
+   files the numbers are the same and the contents differ; a slave follows
    the clock, not the file.
-2. **One set of layer fixtures per Mac.** The Sync channel must read
-   "master" on one Mac and "slave" on the other, so the two Macs' layer
-   fixtures need different addresses: on the second Mac's Patch screen move
-   its layers to a free range, for example Layer 1 to 8 on `A 0.0.4`, and
-   patch both sets on the console ([console-setup.md](console-setup.md#changing-the-patch)).
-   Keep the layer layout the same on both, so one console group sets
-   folder, file and intensity on both at once.
-3. **The console reaches both Macs**: Art-Net broadcast, or sACN
-   multicast. Both Patch screens show their universes green.
-4. **Sync channel**: on the left Mac, Layer 1 Sync = **Master 1**; on the
-   right Mac, Layer 1 Sync = **Slave 1**. Every further pair gets its own
-   group: Layer 2 Master 2 and Slave 2, and so on. Layers that need no sync
-   stay Off.
-5. **Split the picture** ([below](#three-ways-to-split-a-picture)) and set
-   the blend on each Mac's Outputs screen: the left output's right edge and
-   the right output's left edge get the same Overlap
+2. **One set of fixtures per Mac on the console.** The console sends one
+   Sync value per layer fixture, and the left Mac must read "master" where
+   the right reads "slave", so each Mac needs its own copy of the fixtures
+   at different addresses: on the second Mac's Patch screen move its
+   layers, Master, Outputs and Keystones to a free range, for example the
+   layers on `A 0.0.4` ([console-setup.md](console-setup.md#changing-the-patch)),
+   and patch both sets on the console. Keep the layer layout the same on
+   both and put each pair of layer fixtures in a console group, so one
+   fader sets folder, file and intensity on both.
+3. **The console reaches both Macs**: Art-Net broadcast (every Mac on the
+   network hears it) or sACN multicast. Both Patch screens show their
+   universes green.
+4. **Sync channel, on the console**: channel 51 of the left Mac's Layer 1
+   fixture to 10 (**Master 1**), of the right Mac's Layer 1 fixture to 90
+   (**Slave 1**), held in every cue. Every further pair gets its own group:
+   Layer 2 at 20 and 100 (group 2), and so on. Layers that need no sync
+   stay at 0.
+5. **Split the picture** with slices of one file unless you have a reason
+   not to: canvas width 2 × 1920 − 256 = 3584 for two 1920 projectors with
+   a 256-pixel overlap, the right Mac's slice at x 3584 − 1920 = 1664.
+   Then set the blend on each Mac's Outputs screen: the left output's
+   right edge and the right output's left edge get the same Overlap, 256
    ([outputs-and-mapping.md](outputs-and-mapping.md#blend-two-projectors)).
 6. **Check** the Layers screen on the right Mac: Layer 1's badge reads
-   **S1** in green, "locked to Layer 1 on" the left Mac's id. Then run the
-   [camera check](#the-camera-check) once per rig.
-
-Both Macs need the same sync port (8002 unless you changed it) on the same
-network segment, so the broadcast reaches them. A firewall on the Macs must
-allow `fanousd` UDP 8002 in and out
-([reference/files-and-ports.md](reference/files-and-ports.md#ports)). Each
-Mac needs its own install: a cloned disk gives both the same machine id,
-and each then throws the other's packets away as its own.
-
-| Sync value | Means |
-|---|---|
-| 0–9 | Off: the layer plays on its own clock |
-| 10–89 | Master, group 1 to 8 (10–19 group 1, 20–29 group 2, …) |
-| 90–169 | Slave, group 1 to 8 (90–99 group 1, 100–109 group 2, …) |
-| 170–255 | Off (reserved) |
-
-The Sync channel is a layer parameter like any other, so Who controls
-applies: under **Fanous only** the console's Sync value is ignored, under
-**Console only** a cue's. A group also works inside one Mac: Layer 3 as
-Slave 1 follows Layer 1 as Master 1 on the same machine, with no offset at
-all.
-
-- A slave ignores its own Play mode, Speed, In and Out points, timecode
-  chase and Retrigger while it has a master; a Retrigger on the master
-  reaches the slave as a jump. A master in Timecode, Freeze or Scrub stands
-  still, and so does its slave.
-- Different frame rates are fine: a 25 fps file follows a 50 fps master and
-  keeps the same time. Files of different length drift apart at the loop
-  point.
-- Only movies have a clock: a still, built-in content from folder 0 and a
-  live input neither send nor follow. During a dissolve the incoming file
-  is shared, not the outgoing one.
-- A slave's audio plays while its master runs at normal speed, forward.
-- Two masters in one group on different Macs: the Mac with the lower
-  machine id wins, slaves follow it, and the badge and the readiness list
-  say so. Two master layers in one group on one Mac: the later one holds
-  the group and the other's badge reads grey.
-
-How close: the slave sets its position from the master's packet every
-frame and never adds up small errors, so the offset after an hour is the
-same as after a second: the packet jitter, well under a millisecond on a
-wired network. What remains is one frame of display phase: the Macs have no
-genlock, so the two projectors refresh at slightly different moments, up to
-one output frame apart. Both show the same frame of the file, not at the
-same microsecond. That is the floor.
+   **S1** in green, "locked to Layer 1 on" the left Mac's id. Enter show
+   mode on both Macs. Then run the [camera check](#the-camera-check) once
+   per rig.
 
 ## Three ways to split a picture
 
@@ -105,52 +96,83 @@ same microsecond. That is the floor.
 
 With slices, each Mac's output keeps one slice and sets its **Source x · w**
 to its part of the canvas ([warp-and-masks.md](warp-and-masks.md#slices)):
-on the left Mac x 0, w 1920; on the right Mac x 1664, w 1920 for the
-example above. The overlap is the 256 pixels both slices share, and the
-blend edge Overlap is 256 on both outputs.
+on the left Mac x 0, w 1920; on the right Mac x 1664, w 1920. The overlap
+is the 256 pixels both slices share, and the blend edge Overlap is 256 on
+both outputs.
+
+## Cues, timecode and the show controller on two Macs
+
+The project is per Mac: each has its own cue list, timecode settings, show
+mode and show lock, and only the layer clock crosses the network. So:
+
+- Build the cue list once and copy the project to the other Mac (a named
+  version restored there, or the same cues built twice), with the same cue
+  numbers and triggers.
+- Send the show controller's OSC or MSC GO to both Macs, or split the LTC
+  feed to both; a GO on one Mac's screen fires that Mac only.
+- Enter show mode and lock the show on each Mac.
+- Let the console carry every layer value, including the Sync channel; a
+  cue on one Mac that changes a layer reaches that Mac only.
 
 ## What the screens show
 
-<img src="images/layers-sync-badges.png" width="1048" alt="Three layer rows on the Layers screen: Layer 1 with a green M1 badge playing a movie, Layer 2 with a grey S1 badge showing a still, Layer 3 with a grey S2 badge and no media">
+<img src="images/layers-sync-badges.png" width="1048" alt="Three layer rows on the Layers screen: Layer 1 with a green M1 badge playing a movie, Layer 2 with a green S1 badge playing the same movie, Layer 3 with a grey S2 badge and no media">
 
-A layer with Sync on gets a badge under its name: **M** for master or **S**
-for slave, then the group. Hover it, or open the layer's panel, for the
-state in words: a slave reads "locked to Layer 1 on 415FF791, −0.2 ms",
-with the master's layer, its Mac (the name for a master on the same Mac,
-the first 8 characters of its machine id otherwise) and the correction of
-the last frame.
+Layer 1 is a Sync master (green M1), Layer 2 a Sync slave locked to it
+(green S1), Layer 3 a slave of a group without a master (grey S2). Hover a
+badge, or open the layer's panel, for the state in words: a slave reads
+"locked to Layer 1 on 415FF791, −0.2 ms", with the master's layer, its Mac
+(the name for a master on the same Mac, the first 8 characters of its
+machine id otherwise) and the correction of the last frame.
 
-| Badge | Master | Slave |
+| Badge | Sync master | Sync slave |
 |---|---|---|
-| green | Its group's clock, sending | **locked**: following the master |
-| yellow | | **freewheel**: packets are late; running on at the master's last rate |
-| red | A second master in the group (one wins) | **lost**: no packets for 2 s; or two masters in the group (it follows the winner) |
-| grey | Not sending: no movie playing, or another layer on this Mac holds the group | **no master** in the group, or no movie playing on the slave |
+| green | Its group's clock, sending | Locked: following the master |
+| yellow | | Freewheel: packets are late; running on at the master's last rate |
+| red | A second master in the group (one wins) | Lost: no packets for 2 s; or two masters in the group (it follows the winner) |
+| grey | Not sending: no movie playing, Play mode Timecode, Freeze or Scrub, or another layer on this Mac holds the group | No master in the group, or no movie playing on the slave |
 
 The status bar reads "sync lost" in red while any slave on this Mac is
 lost, and links to the Layers screen.
 
-![System › Sync: machine, packets, masters here, conflicts, then Interface, Port and Target with Apply](images/sync.png)
+<img src="images/sync.png" width="1396" alt="System › Sync: machine, packets, masters here, conflicts, then Interface, Port and Target with Apply">
 
-**System › Sync** shows the **Machine** (this Mac's name and the first 8
+System › Sync shows the **Machine** (this Mac's name and the first 8
 characters of its id; the lower id wins a group with two masters),
 **Packets** in, out and decode errors counting up live (out counts at the
 frame rate while a master plays, one a second otherwise; in stays 0 on a
 Mac that hears no other), **Masters here**, **Conflicts**, and the settings
-below. While nothing renders on this Mac the panel says so and shows no
-settings.
+below ([screens/system.md](screens/system.md#sync)). While nothing renders
+on this Mac the panel says so and shows no settings.
+
+## Sync settings
+
+System › Sync (programmer; refused while the show is locked or show mode
+is on). Leave all three at their defaults unless a badge never goes green;
+set the same Port on every Mac. **Apply** saves them on this Mac, not in
+the project, and restarts sending and receiving at once.
+
+| Setting | Default | Means |
+|---|---|---|
+| Interface | any | The interface the packets go out on: **any** is the first active interface with broadcast, or pick one (en0); receiving listens on every interface |
+| Port | 8002 | The UDP port, the same on every Mac of the show; the ports of Art-Net (6454), sACN (5568) and OSC (8000, 8001) are refused |
+| Target | broadcast | **broadcast** reaches every Mac on the interface's network; one IPv4 address (`10.0.0.12`, or `10.0.0.12:8003`) reaches one Mac only, so with more than two Macs every other one stops hearing the master |
+
+If another program holds the port you apply, the settings are saved but
+this Mac receives nothing until you apply a port that works; the message on
+screen and the log say so.
 
 ## When the slave does not follow
 
 ```mermaid
 flowchart TD
-  start["The slave's badge?"] --> badge{"Colour and word"}
-  badge -- "none" --> off["Sync is Off on that layer: the console's value does not reach it<br>(Who controls, the patch) or is 0"]
+  start["The slave's badge?"] --> badge{"Colour and, on hover, the word"}
+  badge -- "none" --> off["Sync is Off on that layer: the console's value does not reach it<br>(Who controls, the patch, a cue that resets channel 51)"]
   badge -- "grey · no movie playing" --> still["The slave shows a still, a live input or nothing: only movies follow"]
   badge -- "grey · no master" --> master{"On the master Mac: badge M in green?"}
   master -- "grey" --> mstill["The master plays no movie, or is in Timecode, Freeze or Scrub"]
   master -- "green" --> packets{"System › Sync on the slave Mac: Packets in counting?"}
-  packets -- "0" --> net["Same Port on both? Target broadcast, not unicast to another Mac?<br>Same subnet? Firewall or network filter? A cloned install (same machine id)?"]
+  packets -- "0" --> net["Same Port on both? Target broadcast? Same network segment?<br>A firewall or network filter? A cloned install (same machine id)?"]
   packets -- "counting" --> group["The master is in another group: check both Sync values"]
   badge -- "yellow · freewheel" --> late["Packets arrive late: wait, or check the network load"]
   badge -- "red · lost" --> lost["No packets for 2 s: the master Mac, the cable, the port, the interface"]
@@ -170,40 +192,45 @@ flowchart TD
   Snitch and the like) can hold a newly installed engine's packets without
   a dialog: Packets out counts, nothing arrives, and the log says "sync
   packets dropped". Allow `fanousd` in the filter.
+- Two Sync masters in one group on different Macs: the lower machine id
+  wins and the other's slaves follow it. On one Mac the later layer holds
+  the group and the other's badge reads grey.
 
 Two readiness items cover sync, both warnings that never block show mode,
 because a slave without a master still plays: **Sync groups have one
 master** (a slave in use has no master, or a group has two) and **Sync
 packets arriving** (a slave in use has had no packet for 2 s).
 
-## Sync settings
-
-System › Sync (programmer; refused while the show is locked or show mode
-is on). **Apply** saves them on this Mac, not in the project, and restarts
-sending and receiving at once.
-
-| Setting | Default | Means |
-|---|---|---|
-| Interface | any | The interface the packets go out on: **any** is the first active interface with broadcast, or pick one (en0); receiving listens on every interface |
-| Port | 8002 | The UDP port, the same on every Mac of the show; the ports of Art-Net (6454), sACN (5568) and OSC (8000, 8001) are refused |
-| Target | broadcast | **broadcast** reaches every Mac on the interface's network; one IPv4 address (`10.0.0.12`, or `10.0.0.12:8003`) reaches one Mac only |
-
-Broadcast is right for almost every show: a unicast target reaches the Mac
-it names, so with more than two Macs every other one stops hearing the
-master. If another program holds the port you apply, the settings are saved
-but this Mac receives nothing until you apply a port that works; the
-message on screen and the log say so.
-
 ## The camera check
 
 Once per rig, before the first show:
 
-1. Make a test movie with the frame number burned into every frame, as the
-   same folder and file number on both Macs.
+1. Make a test movie with the frame number burned into every frame (any
+   editor's timecode burn-in), as the same folder and file number on both
+   Macs; folder 0's clock cannot be used, because only movies sync.
 2. Play it on Layer 1 on both: Master 1 on the left Mac, Slave 1 on the
    right, both on their projector.
-3. Film both projections at once with a phone at 240 fps (slow motion) for
-   10 minutes.
-4. Step through the video. Pass: the numbers are never more than one frame
-   apart, the difference does not grow, the slave never stutters, and the
-   blend seam does not breathe.
+3. Film both projections at once with a phone at 240 fps (slow motion):
+   several clips of about 30 seconds, spread over 10 minutes.
+4. Step through the clips. Pass: the numbers are never more than one frame
+   apart, the difference does not grow over the 10 minutes, and the slave
+   never stutters.
+
+Background: the slave sets its position from the master's packet every
+frame and never adds up small errors, so the offset after an hour is the
+same as after a second. What remains is that the Macs' displays are not
+locked to each other (no genlock), so one projector may show a frame up to
+one frame time before the other. Both show the same frame of the file; the
+difference does not grow.
+
+## Before the show
+
+- Both Macs installed separately, on one network segment, with the same
+  Port; Packets in counting on each.
+- Every pair's badges green: M on one Mac, S locked on the other; the
+  readiness items **Sync groups have one master** and **Sync packets
+  arriving** green on both.
+- The Sync channel held in every cue on the console; the cue list, show
+  mode and the show lock on each Mac.
+- A plan for a master Mac that dies: the slave's Sync to Off from the
+  console.
