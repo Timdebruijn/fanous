@@ -17,7 +17,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   retaken; links from the index, the glossary and the screen pages follow; the folder-0 section of
   `show-control.md` stays until that page's own PR. New rows B169 (Transcode fails on a `.mov` source, measured),
   B170 (the ingest queue shows the destination URL-encoded), B171 (the show lock does not cover library writes)
-  (PR #TBD).
+  (PR #301).
 
 - Docs: `console-setup.md` rewritten as the console-side task page: the four fixtures with the channel facts a
   programmer trips on (non-zero defaults, Master speed, audio at 100 %, retrigger), the standard patch, telling the
