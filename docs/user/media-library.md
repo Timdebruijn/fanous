@@ -74,8 +74,9 @@ not playable, reads "no file N in folder M" in red on the Layers screen.
    ([console-setup.md](console-setup.md#channels-that-bite)). A cue that
    sends the same folder and file again does not restart the clip; that is
    Retrigger (channel 50). A change of file starts at the in point.
-6. **Before the show**: no yellow badges left (a layer on such a file stays
-   black, and the readiness list does not check for it), the library on the
+6. **Before the show**: no yellow badges left (a layer on such a file reads
+   "no file N in folder M" and fails the readiness item **No decoder
+   errors**; a tile no layer uses is not checked), the library on the
    internal disk with more than 10 % free, no transcode running.
 
 | You have | Do |
@@ -84,7 +85,7 @@ not playable, reads "no file N in folder M" in red on the Layers screen.
 | A phone `.mp4`, a web download, anything H.264 or HEVC | Copy it in, then **Transcode** on its tile; or **Import…** it from any computer |
 | An H.264 or HEVC `.mov` (an iPhone's own recording), or a rotated ProRes `.mov` | **Import…** it. **Transcode** on the tile fails for a `.mov` that needs a transcode ([known limitations](reference/known-limitations.md#media-and-inputs)) |
 | A still (PNG, JPEG, TIFF, HEIF, GIF, BMP, WebP, EXR) | Copy it in; it plays as it is |
-| A folder of numbered frames | Copy the folder in as `NNN_name/`; the frames inside need no numbers; then **Transcode** it (25 fps from the tile) |
+| A folder of numbered frames | Copy the folder in as `NNN_name/`; the frames inside need no numbers; then **Transcode** it (25 fps from the tile). Pick ProRes when the frames are not a multiple of 4 wide and high: HAP on such a sequence crashes the engine ([known limitations](reference/known-limitations.md#media-and-inputs)) |
 | A HAP file in another container than `.mov` | It cannot be transcoded (macOS cannot decode HAP): remux it to a `.mov` on another machine, then copy it in |
 
 ## What plays as it is
@@ -101,13 +102,14 @@ stored whole, so the player can jump, scrub, reverse and chase timecode):
 Everything else shows a yellow **needs transcode** badge and cannot be put
 on a layer until it is transcoded: H.264, HEVC and every other codec, also
 in a `.mov`; a ProRes or HAP file in another container (`.mp4`, `.m4v`,
-`.avi`, `.mkv`, `.mxf`); phone footage with a rotation flag; and image
-sequences. Long-GOP codecs such as H.264 are refused on purpose: they cannot
-scrub, run in reverse or chase timecode reliably. A file with a container
-Fanous does not list (`.webm`, `.mpg`, `.wmv`) is not listed at all: convert
-it on another machine.
+`.avi`, `.mxf`); phone footage with a rotation flag; and image sequences.
+Long-GOP codecs such as H.264 are refused on purpose: they cannot scrub, run
+in reverse or chase timecode reliably. A `.mkv` is listed but macOS cannot
+open it, so it reads red **unreadable**; a container Fanous does not list
+(`.webm`, `.mpg`, `.wmv`) is not listed at all. Convert both on another
+machine. A file that needs a transcode has no thumbnail: its tile is black.
 
-<img src="images/media-needs-transcode.png" width="217" alt="A tile with the yellow needs transcode badge, the line H.264 · 720p25, the codec list reading HAP Q and the Transcode button">
+<img src="images/media-needs-transcode.png" width="218" alt="A tile with the yellow needs transcode badge, the line H.264 · 720p25, the codec list reading HAP Q and the Transcode button">
 
 ```mermaid
 flowchart TD
@@ -117,8 +119,8 @@ flowchart TD
   kind -- "a still" --> still["Plays as it is"]
   kind -- "a .mov in ProRes or HAP, not rotated" --> native["Plays as it is"]
   kind -- "a folder of frames" --> seq["Yellow: needs transcode.<br>Pick a codec, press Transcode"]
-  kind -- "any other movie" --> other{"Container .mov, .mp4, .m4v,<br>.avi, .mkv or .mxf?"}
-  other -- no --> skipped["Not listed: convert it on another machine"]
+  kind -- "any other movie" --> other{"Container .mov, .mp4, .m4v,<br>.avi or .mxf?"}
+  other -- no --> skipped["Not listed, or red unreadable (.mkv):<br>convert it on another machine"]
   other -- yes --> mov{"Is it a .mov?"}
   mov -- yes --> importit["Yellow, but Transcode fails on a .mov:<br>Import… it instead"]
   mov -- no --> hap{"HAP inside?"}
@@ -137,7 +139,7 @@ square pixels; Rec.709; 8-bit. Audio as stereo.
 | Way | When | What happens |
 |---|---|---|
 | **Copy in Finder** into the numbered folder, named `NNN_name.ext` | Anything that plays as it is, and anything you will transcode on the Mac | It is listed within a moment and plays as soon as the engine has probed it |
-| **Import…** on the Media screen (programmer) | A file that needs a transcode and sits on another computer, and an H.264 `.mov` | The file is uploaded to `_incoming/`, re-encoded and placed in the folder with the lowest free number (a gap is filled first) and the name `NNN_<original name without its leading digits>`; the temporary copy is removed. Check the number it got when a cue depends on it |
+| **Import…** on the Media screen (programmer) | A file that needs a transcode and sits on another computer, and an H.264 `.mov` | The file is uploaded to `_incoming/`, re-encoded and placed in the folder with the lowest free number (a gap is filled first; any numbered file counts, media or not) and the name `NNN_<original name without its leading digits>`; the temporary copy is removed. Check the number it got when a cue depends on it |
 
 Import re-encodes **every** movie, ProRes included, to ProRes 422 HQ (ProRes
 4444 when the source has alpha), so a playable ProRes file gains a
@@ -163,8 +165,8 @@ with the same number, and the original moves to `_originals/` in the folder.
 | **ProRes 4444** | A clip with transparency at full quality |
 
 A movie with alpha is promoted to ProRes 4444 or HAP Alpha whatever you
-pick; HAP Q Alpha cannot be written. For ten phone clips at 1080p either HAP
-Q or ProRes 422 HQ is fine; audio survives in both.
+pick; HAP Q Alpha cannot be written. For phone clips at 1080p either HAP Q
+or ProRes 422 HQ plays fine; audio survives in both.
 
 <img src="images/media-ingest-running.png" width="1396" alt="The ingest queue with one job: 001_phone.mp4 to 004_Extras/001_phone.mov, HAP Q, transcoding 14 %, a progress bar and Cancel">
 
@@ -181,8 +183,9 @@ flowchart LR
   cancelled --> gone
 ```
 
-A transcode takes about as long as the clip is long, more for 4K. The queue
-survives an engine restart; a job that was running starts over. Jobs can be
+A HAP Q transcode of 1080p runs at about 11 frames a second on the M1 Pro,
+so a 25 fps clip takes about two and a half times its length; ProRes at
+1080p is not measured. The queue survives an engine restart; a job that was running starts over. Jobs can be
 queued in show mode, but they wait until it ends. The status bar shows the
 running job's progress; do it before the show.
 
@@ -197,9 +200,9 @@ running job's progress; do it before the show.
 | Anamorphic (non-square pixels, 1440 × 1080 shown as 16:9) | The pixel aspect ratio is kept; the layer draws the file at its display width and the tile shows that width (`1920×1080p25`) |
 | Variable frame rate (a screen recording, some phone footage) | Written at a constant rate, the source's fastest frame interval up to 60 fps; one short frame in the source can double the output rate. A constant-rate source keeps its rate, also above 60 |
 | Rec.601 colour (SD, some cameras) | Converted to Rec.709, which is what Fanous plays; a 601 file played without a transcode is taken as 709 and looks slightly off |
-| 10-bit ProRes | Kept at full precision in ProRes; HAP is 8-bit |
-| Audio | Kept as in the source (sample rate, channels, layout) |
-| An image sequence | A movie in the codec you pick (HAP Q by default, no alpha promotion: pick ProRes 4444 or HAP Alpha for transparency), at 25 fps |
+| 10-bit ProRes | Kept at full precision in ProRes (not on the odd-rotation path, which is 8-bit); HAP is 8-bit |
+| Audio | Channels and layout as in the source; compressed audio (AAC) becomes 24-bit LPCM, so the file grows; the sample rate is kept within 8 to 192 kHz |
+| An image sequence | A movie in the codec you pick (HAP Q by default, no alpha promotion: pick ProRes 4444 or HAP Alpha for transparency; ProRes when the frames are not a multiple of 4 wide and high), at 25 fps |
 
 ## Image sequences
 
@@ -220,8 +223,9 @@ the number is not a duplicate.
 ## Thumbnails and probing
 
 The engine reads each new file once (codec, size, frame rate, duration,
-alpha, audio), makes a thumbnail (a movie's middle frame, 320 pixels wide; a
-still's longest side at 320; a sequence's first frame) and caches both under
+alpha, audio), makes a thumbnail (a playable movie's middle frame, 320
+pixels wide; a still's longest side at 320; a sequence's first frame; none
+for a file that needs a transcode) and caches both under
 `~/Library/Application Support/Fanous/cache/`. A tile reads "probing…" until
 then, and a layer pointing at the file shows "no file" until the probe is
 done. The same thumbnails go to a console over CITP and stand in on the
@@ -262,7 +266,7 @@ library used before needs no new probing.
 ```mermaid
 flowchart TD
   apply["Apply a new library root"] --> exists{"Does the folder exist<br>and can the engine read it?"}
-  exists -- no --> make["Make it in Finder first: Apply needs an existing folder<br>(New folder on the Media screen creates the root only for the current library)"]
+  exists -- no --> make["Make it in Finder first: Apply needs an existing folder"]
   exists -- yes --> busy{"Show mode on, show locked,<br>or ingest jobs queued or running?"}
   busy -- yes --> refused["Refused: leave show mode, unlock, let the jobs finish or cancel them"]
   busy -- no --> switch["Switched at once; a large library scans for a few seconds,<br>during which show mode and new ingest jobs are refused"]
@@ -277,18 +281,18 @@ does not see the path.
 All numbers are from the reference MacBook Pro M1 Pro (32 GB), release
 build. "Headless" is the engine's own clock with no display; "display" is a
 real output. Pass means no missed or late frame and no texture miss in a
-20 s window. The 2026-10-23 runs were idle (macOS 27.0.1); the 2026-11-03
-runs were on a 4K display with other work on the Mac (load 5 to 24, macOS
-27.2), so they say what a busy Mac manages, not a show Mac.
+10 or 20 s window. The 2026-10-23 runs were idle (macOS 27.0.1); the
+2026-11-03 runs were on a 4K display with other work on the Mac (load 5 to
+24, macOS 27.2), so they say what a busy Mac manages, not a show Mac.
 
 | Content | Result |
 |---|---|
 | 16 layers of 1080p60 ProRes 422 HQ | Pass headless (GPU p99 3.9 ms); on the display one texture miss in 1212 frames (2026-10-23); pass under load on the 4K display (2026-11-03) |
 | 16 layers of 1080p60 HAP Q | Pass headless and on the display (2026-10-23) |
 | 16 layers of 4K30 ProRes 422 HQ | Pass headless (GPU p99 13.3 ms, 2026-10-23); no display run |
-| 4K60 ProRes 422 HQ | 6 layers headless, 7 with one texture miss (2026-10-23); 4 layers pass on the 4K display under load (2026-11-03). Treat 4 as the safe number |
+| 4K60 ProRes 422 HQ | 3 to 7 layers headless depending on the run, with single texture misses that did not reproduce later (2026-10-23, 2026-11-02); 4 layers pass on the 4K display under load, 7 showed late GPU frames (2026-11-03). Treat 4 as the safe number |
 | 4K30 HAP Q | 16 layers headless with the default read-ahead of 8 frames (2026-10-23) |
-| 4K60 HAP Q | At least 4 layers headless (2026-10-23); 8 fail on GPU time under load (2026-11-03). HAP Q is not lighter than ProRes at 4K |
+| 4K60 HAP Q | At least 4 layers headless (2026-10-23); 8 fail on GPU time under load (2026-11-03) |
 | Blur and Edge on every layer at 1080p60 | 3 ProRes layers pass, 4 fail; 2 HAP Q layers pass, 3 fail (headless, 2026-10-23, before the blur change of 2026-11-03 that cut the cost of Blur alone by about half) |
 | A dissolve (Dissolve channel) | Uses a second decoder: counts as one more layer. 8 layers in permanent 2 s dissolves at 1080p60 pass (2026-10-23) |
 

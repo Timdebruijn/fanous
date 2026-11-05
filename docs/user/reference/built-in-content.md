@@ -66,8 +66,9 @@ test pattern. For a flat grey use Solid colour with equal RGB values.
 <img src="../images/builtin-110.png" width="333" alt="The test card: a grid, a circle, colour bars, the time 00:00:02:31 with the frame counter 487087 under it, a sweep bar and two squares in the top corners">
 
 A grid with a border and an aspect circle, colour bars, and three motion
-checks: a running time counted from the engine's first draw (or the incoming
-timecode while it runs) with the engine's frame counter under it, a bar that
+checks: a running time counted from the moment a moving built-in was first
+shown after the engine started, wrapping at 24 hours (or the incoming
+timecode while it runs), with the engine's frame counter under it, a bar that
 sweeps once a second, and two squares that swap every frame. In a photo with
 an exposure longer than a frame a dropped or doubled frame shows as both
 squares lit or both dark; a wrong frame rate as a sweep that does not take

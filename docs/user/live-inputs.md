@@ -176,7 +176,8 @@ A display layer shows one of this Mac's whole displays as it is: without the
 pointer, without sound, without the engine's own output windows (the app
 window is captured), in 8-bit sRGB, at most at the canvas rate and only
 when the picture changes, so the rate on the Layers screen is the rate of
-changed frames and a still slide reads about 0 fps, which is normal. A display larger than the
+the last changed frames and a still slide keeps the last rate shown; a
+display never reads "no signal". A display larger than the
 canvas is scaled down to fit it. A display that Fanous uses as an output
 reads "not running" and is not captured (it would only show black); one that
 was an output from the engine's start is not numbered at all.
