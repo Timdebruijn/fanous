@@ -10,6 +10,15 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- README: a "you need" line and the glossary link under the pitch; the features table adds the Keystone fixture,
+  live inputs and multi-server sync and says what GDTF and CITP have not been tested with; the show-day table
+  separates show mode from the show lock, names the 23 readiness items, the restart behaviour and the open
+  endpoints; the measurements carry their date and conditions per row ("Measured on one machine"), the blend
+  figure moves to Mapping as the engine's own test, 4K60 is 4 ProRes layers instead of 6; the pipeline picture
+  from the guide; "Download or build" names the first-launch prompts, the ad-hoc signature of a home build and
+  where the certificate fingerprint is; the guide as a reading order; the limitations add genlock, audio and
+  29.97 drop frame; "Licence" spelt as the noun.
+
 - Docs: `show-day-checklist.md` rewritten (the day before, the Mac settings, before doors, the readiness list with
   how a row reads and what an acknowledgement does, show mode with a flowchart of what comes back after a crash,
   a restart or a power cut, during and after the show); `troubleshooting.md` rewritten symptom-first with flowcharts
