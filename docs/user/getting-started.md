@@ -119,7 +119,7 @@ pictures show a fresh install with one folder, `001_Test`, and one clip.
      phone or a web download made works after a wait of a few minutes. The
      ingest queue at the bottom shows the progress.
 
-![The Media screen on a fresh install: folder 1 · Test with one clip as a tile, the New folder form open and proposing the next number, the ingest queue below](images/getting-started-media.png)
+![The Media screen on a fresh install: folder 1 · Test with one clip as a tile (the tile shows the name without its number), the New folder form open and proposing the next number, the ingest queue below](images/getting-started-media.png)
 
 The console dials this clip as folder 1, file 1. Naming rules, formats and
 what to ask a content maker for: [media-library.md](media-library.md).
@@ -203,9 +203,9 @@ On the console:
 | 4 | File | 1 |
 
 Intensity defaults to 0, so a layer that gets no intensity stays black.
-Every other channel can stay at its default: the GDTF carries them (speed,
-scale and colour default to the middle of their range, 32768 or 255, not to
-0). A console that outputs only touched channels must load the fixture's
+Every other channel can stay at its default: the GDTF carries them (speed
+and scale default to the middle of their range, 32768; red, green and blue
+to full, 255; not to 0). A console that outputs only touched channels must load the fixture's
 home values first, or the picture is tiny or black. If you drove the layer
 from the UI in step 3, the console takes over as soon as it moves a channel.
 

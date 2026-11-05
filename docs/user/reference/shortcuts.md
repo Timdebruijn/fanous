@@ -21,12 +21,13 @@ How the screens fit together: [ui.md](../ui.md#keys).
 | `Space` | GO: fire the next cue, on the Show screen only. Ignored while a field or button has the focus: click an empty part of the screen first | operator, programmer | the GO button |
 | `?` | This list; also closes it | any | the ? button |
 | `Esc` | Close a dialog; in the warp editor, let go of the selected point | any | Cancel or Close; tap the empty preview |
-| `Shift` on the address stepper (Patch) | Step by 10 | programmer | tap and hold |
+| `Shift` + click on − or + of the address stepper (Patch) | Step by 10 | programmer | type the address in the field |
 
-Keys do nothing while you type in a field, while a dialog is open (except `?`
-to close the list), while a modifier key is held, or when the key repeats.
-Space is ignored while a field or button has the focus: click an empty part of
-the Show screen first.
+Keys do nothing while you type in a field or while a dialog is open (except
+`?` to close the list). Space is also ignored while a modifier key is held,
+when the key repeats, and while a field or button has the focus: click an
+empty part of the Show screen first. Ctrl+Z and Ctrl+Shift+Z work like ⌘Z
+and ⇧⌘Z.
 
 ## Warp & Slices (Outputs screen)
 

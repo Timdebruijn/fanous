@@ -36,7 +36,7 @@ browser's find for a word. Back to the [index](../README.md).
 |---|---|
 | **Library** | The folder on the Mac that holds the media: `~/Movies/Fanous Library` unless you change it. Numbered folders with numbered files. |
 | **Folder and file number** | The first one to three digits of a folder or file name, 1 to 255. The console dials media by these two numbers (layer channels 3 and 4), never by name. `001_Opening/002_title.png` is folder 1, file 2. |
-| **Folder 0** | Not a folder on disk: the content Fanous makes itself (test card, clock, solid colour), the cameras and displays of this Mac and the Syphon servers of other apps, each with a file number. See [show-control.md](../show-control.md#built-in-content-folder-0). |
+| **Folder 0** | Not a folder on disk: the content Fanous makes itself (test card, clock, solid colour), the cameras and displays of this Mac and the Syphon servers of other apps, each with a file number. Dial it with channel 3 at 0 and channel 4 at the file number (the channel map's "0 = none" is the case with channel 4 at 0 too). See [show-control.md](../show-control.md#built-in-content-folder-0). |
 | **Codec** | The way the pictures in a movie file are compressed. Fanous plays two families directly: ProRes and HAP. Everything else is re-encoded first. |
 | **ProRes** | Apple's production codec. Apple Silicon Macs (except the base M1) decode it in dedicated hardware, which is why Fanous needs such a Mac. 422 HQ is the usual choice; 4444 carries alpha. |
 | **HAP** | A codec made for media servers: the file holds GPU texture blocks, so the CPU only unpacks them and the GPU reads them directly. Very light to play, but the files are several times the size of ProRes, so the disk's read speed matters. HAP Q is the quality variant, HAP Alpha carries transparency. |
@@ -72,7 +72,7 @@ browser's find for a word. Back to the [index](../README.md).
 | **Mapping preset** | A stored alignment (warp, slices, masks) under a number 1 to 255, so an output can switch between surfaces from the console (Output channel 6) with a timed glide (channel 7). |
 | **Show on output** | Draws the warp lines, slice outlines and the selected point on the projector itself while you edit, so you can align while looking at the surface. |
 | **Content template** | A PNG at canvas size that shows the content maker where each slice and mask lands. |
-| **Clock master** | The display whose presentation paces the compositor's frame clock. Fanous runs its own clock at the canvas rate and is not locked to any display's refresh. The first bound output unless you pick another on the Canvases tab. |
+| **Clock master** | The display the compositor hands its frames to first; when that display is behind, the compositor waits for it. Fanous still runs its own clock at the canvas rate, not the display's refresh, so this is pacing, not genlock. The first bound output unless you pick another on the Canvases tab. |
 | **Display mode** | A display's resolution and refresh rate as macOS lists them. An output can ask for one; show mode applies it. |
 | **Extended, mirrored** | macOS can show the same picture on two displays (mirrored) or treat them as separate (extended). Fanous needs **extended**: a mirrored display cannot be an output of its own. |
 

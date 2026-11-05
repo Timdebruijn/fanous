@@ -134,8 +134,9 @@ machine, not the show. Every file and where it is:
   keeps the Mac and the displays awake, pauses the ingest queue, hides the
   cursor on the outputs and switches each display to the mode its output asks
   for. A failed item blocks show mode until it is fixed or a programmer
-  acknowledges it; an operator can run the list but not acknowledge, so have a
-  programmer login ready before doors. See
+  acknowledges it (one item, Supported hardware, cannot be acknowledged); an
+  operator can run the list but not acknowledge, so have a programmer login
+  ready before doors. See
   [show-day-checklist.md](show-day-checklist.md).
 - **Roles** (monitor, operator, programmer) with their own passwords decide
   what each browser may do. The app window on the Mac is always programmer.
@@ -146,7 +147,8 @@ machine, not the show. Every file and where it is:
 - **The engine outlives the UI.** Quit the app, lose the iPad, close the
   laptop: the outputs keep running. If the engine itself is killed while show
   mode is on, it comes back in show mode within about a second; after a
-  reboot it resumes show mode when someone logs in within two hours.
+  reboot it resumes show mode if someone logs in within two hours of the
+  moment the Mac went down.
 - **Several Macs** can play one picture in step, each its own part of it. See
   [multi-server.md](multi-server.md).
 

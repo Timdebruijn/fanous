@@ -34,7 +34,7 @@ Everything below is in `~/Library/Application Support/Fanous/` (mode 0700).
 | `shell-token` | The app window's programmer token (mode 0600) | 64 hex characters, made at first start. The app opens the UI with it, so the window is always programmer |
 | `install-uuid` | This install's identity | The CITP server id and the sync machine id |
 | `engine.lock` | One engine per user | Holds the engine's pid; a second `fanousd` refuses to start |
-| `show-state.json`, `restart-pending` | Show mode across a crash or restart | Show mode resumes after a crash, or within two hours after a reboot; removed on a clean leave |
+| `show-state.json`, `restart-pending` | Show mode across a crash or restart | Written every 30 s while show mode is on; show mode resumes after a crash, or after a reboot when the engine starts within two hours of the last write; removed on a clean leave |
 | `display-modes.json` | The display modes to put back after show mode | Only while modes are switched |
 | `ingest-queue.json` | The ingest queue | Survives an engine restart; done jobs leave the list after a minute |
 | `cache/library-index.json`, `cache/thumbnails/*.jpg` | Media metadata and thumbnails | Keyed by path, size and modification time; a changed file is probed again |
@@ -112,7 +112,7 @@ fanousd ingest DIR OUT.mov [--fps N] [--codec prores4444|prores422hq|prores422|h
 
 Exit codes: 0 after SIGTERM or SIGINT, 64 for a wrong argument, 75 when
 another engine of this user already runs ("fanousd is already running
-(pid n)"), 1 when an export or ingest fails.
+(pid n)"), 1 when the engine cannot start or an export or ingest fails.
 
 ## Service and process names
 

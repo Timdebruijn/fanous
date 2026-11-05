@@ -32,7 +32,7 @@ link here. Back to the [index](../README.md).
 | MIDI and MSC are tested with injected messages and a virtual source, not with a real controller. | — |
 | Timecode chase is tested with generated LTC and simulated MTC, not with real hardware, not at 29.97 drop frame and not over long runs. | B44 |
 | A cue's timecode trigger fires only when the clock advances by less than 5 seconds at a time: a jump forward of 5 s or more fires nothing in between. A jump back arms the triggers again. | — |
-| A cue trigger with a rate the engine does not know is stored without a trigger and without an error when it comes in over OSC or the WebSocket; the UI spells the rate right by itself. | — |
+| A cue trigger with a rate the engine does not know (`@29.97df` instead of `@29.97 DF`) is stored as typed and shown in the cue list, but never fires, with no error, when it comes in over OSC or the WebSocket; the UI spells the rate right by itself. | B159 |
 | Cue fades are measured up to the engine's published state (first step 1.2 to 1.4 ms, full after about 1 s for a 1 s fade), not up to the photons on the screen. | B43 |
 | The OSC feedback target for a controller that cannot subscribe can only be set in `settings.json`, not on the System screen. | — |
 
@@ -44,7 +44,7 @@ link here. Back to the [index](../README.md).
 | HAP files cannot be imported or transcoded (macOS cannot decode them): copy them into the library with Finder. HAP Q Alpha cannot be written; alpha sources go to HAP Alpha or ProRes 4444. | B20, B16 |
 | 16-bit stills become 8-bit. | B10 |
 | A Rec.601 (SD) file played directly is read as Rec.709; transcoding it fixes the colours. A 601 camera is read as 709 too. | B21 |
-| Only `.mov`, `.mp4`, `.m4v`, `.avi`, `.mkv` and `.mxf` are listed; a `.webm`, `.mpg`, `.wmv` or other container is skipped without a message. | — |
+| Only `.mov`, `.mp4`, `.m4v`, `.avi`, `.mkv` and `.mxf` are listed; a `.webm`, `.mpg`, `.wmv` or other container is skipped without a message. | B161 |
 | A thumbnail of a packed 4:2:2 movie (v210, yuvs) may draw at half width. | B149 |
 | A UVC webcam (Logitech C920, Brio) may stay at its driver's default format, for example 640 × 480 on a larger canvas. Capture cards follow their input. | B131 |
 | Blackmagic DeckLink and AJA cards do not appear: they need their own SDK, which is planned for the Pro build. Windows of other apps (folder 0, files 29 to 32) are reserved but not available. | B73 |
@@ -70,7 +70,7 @@ link here. Back to the [index](../README.md).
 |---|---|
 | Show mode does not lower the log level, throttle thumbnails or check for mirrored displays. | B42 |
 | Readiness probes for Spotlight, automatic updates and Time Machine read macOS tools; when the output changes they show **manual** and you check by hand. Focus (Do Not Disturb) is always manual. | B38 |
-| An acknowledged readiness item stays acknowledged until the engine restarts: there is no un-acknowledge, and the item keeps its acknowledgement if it fails again later. | — |
+| An acknowledged readiness item stays acknowledged until the engine restarts: there is no un-acknowledge, and the item keeps its acknowledgement if it fails again later. | B163 |
 | There is one project per machine: versions of it can be restored, but there are no project bundles to open or switch between, and no diff between two versions. | — |
 | The layer limit is 32 on every Mac: the engine's ceiling, not a measurement of this Mac. What a Mac plays without dropping frames can be far lower, at 4K for example. | B145 |
 | Everything measured was measured on one MacBook Pro M1 Pro. Other Apple Silicon chips are expectations; the idle 4K60 figures are to be re-measured. | B49 |
@@ -81,6 +81,6 @@ link here. Back to the [index](../README.md).
 
 | Limitation | Backlog |
 |---|---|
-| A few read-only addresses need no login whatever passwords are set: `/healthz`, `/metrics`, `/api/live` (DMX senders and every fixture value), `/api/patch`, `/api/gdtf`, the channel map and the thumbnails. Keep the Mac on the show network, not on a guest network. | — |
+| A few addresses need no login whatever passwords are set: `/healthz`, `/metrics`, `/api/metrics`, `/api/live` (DMX senders and every fixture value), `/api/patch`, `/api/gdtf`, `/api/session`, the channel map, the thumbnails and `POST /api/library/rescan`. Keep the Mac on the show network, not on a guest network. | B160 |
 | OSC has no passwords. | — |
 | The engine's certificate is self-signed, so every browser warns once; confirm it against the fingerprint under System › Network. | — |

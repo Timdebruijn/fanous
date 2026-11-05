@@ -22,8 +22,8 @@ another computer opens. Every screen has the same frame:
    versions, clients, Undo and Redo, the shortcut list and your role. See
    [The status bar](#the-status-bar).
 2. The **rail**: the seven screens, also on the keys 1 to 7 (the
-   [index](README.md#the-seven-screens) says what each is for). Below
-   1100 px wide only the icons show; hover one for its name and key. On an
+   [index](README.md#the-seven-screens) says what each is for). At
+   1100 px wide and below only the icons show; hover one for its name and key. On an
    iPad only the icons show; their order matches the keys.
 3. On the Layers screen, one strip for the **Master** fixture and one per
    **Output** fixture, each with **Select** to edit it.
@@ -97,9 +97,11 @@ The universe pill:
   lost after time (2.5 s by default); or heard but not in the patch (the
   Patch screen's Universes panel then says "heard, nothing patched", often a
   universe one off from the one you patched).
-- **Red**: a patched universe that was heard and has been quiet longer than
-  that. Its fixtures hold their last values unless the universe's Hold on
-  signal loss says otherwise.
+- **Red**: a patched universe that was heard and has been quiet for more
+  than 2.5 s (the status bar uses that fixed time; the Patch screen's
+  Universes panel uses the universe's own Signal lost after time). Its
+  fixtures hold their last values unless the universe's Hold on signal loss
+  says otherwise.
 
 Red means look now: dropped frames, a lost timecode, outputs missing or not
 rendering while the show is locked, a patched universe that went silent, a
@@ -112,8 +114,8 @@ programmer password.
 Below 600 px wide the bar folds to three rows and drops what does not fit: the
 Fanous name, the GPU and CPU times, the auto version item and the **?**
 button. The role button moves next to the frame rate, Undo and Redo join the
-numbers row, and the outputs item shows only while it is yellow or red. On an
-iPad in either orientation everything is there.
+numbers row, and the outputs item shows only while it is yellow, red or off.
+On an iPad in either orientation everything is there.
 
 <img src="images/status-bar-phone.png" width="390" alt="The status bar at phone width: the lock, show mode and role with the frame rate on the first row, dropped frames, clients, Undo and Redo on the second, the universe pills on the third">
 
@@ -147,9 +149,10 @@ iPad in either orientation everything is there.
   screen stop moving until it is back. What to do:
   [troubleshooting.md](troubleshooting.md#the-ui-says-the-engine-is-unreachable).
 - **Toast, bottom centre.** After a removal (an output, a slice, a preset, a
-  wall, a layer, a cue): "Output 2 removed." with a button labelled
-  **Undone? — Undo**, for 8 seconds. ⌘Z does the same after the toast is
-  gone.
+  wall, a layer, a cue) and after a one-step edit such as storing or
+  recalling a preset or resetting a slice: "Output 2 removed." with a button
+  labelled **Undone? — Undo**, for 8 seconds. ⌘Z does the same after the
+  toast is gone.
 - **Yellow note in a panel.** Who controls is **Console only**, so values set
   from the UI are kept but not shown on the layer; the note offers **Use
   Console and Fanous, latest change wins** (programmer). It appears in the
@@ -215,7 +218,7 @@ By default no role has a password, so anyone who can reach the address is
 programmer, and the status bar says **web UI open**. **Set a programmer
 password before the show**: System › Roles and passwords, type the new
 password for the role, press **Set**. **Clear** removes it again, and the role
-is open. Passwords can be changed while the show is locked.
+is open. Both are refused while the show is locked: unlock first.
 
 <img src="images/roles.png" width="700" alt="System › Roles and passwords: each role open, with Set and Clear">
 
@@ -237,13 +240,13 @@ up and what happens when the file is edited by hand:
 
 ## Why is this control greyed out
 
-A greyed control shows the reason when you hover it (or tap and hold on an
-iPad):
+A greyed control shows the reason when you hover it with a mouse; on an iPad
+the same reason comes as the yellow banner when you try:
 
 | Tooltip | Reason | What to do |
 |---|---|---|
 | Locked: programmer only | Your role is monitor or operator | Press the role name in the status bar and log in as programmer |
-| Locked: operator only / operator or programmer | Your role is monitor | Log in as operator or programmer |
+| Locked: operator only | Your role is monitor | Log in as operator or programmer |
 | Locked: the show is locked (press L to unlock) | The show lock is on | A programmer presses L or the Locked tag; while show mode is on it asks first |
 | Leave show mode first | The change would interrupt the show (a canvas, the library root, a renumbering, a permission prompt, sync settings, Compare) | Leave show mode, change, enter it again |
 | Programmer only / Operator or programmer only (status bar tags) | The lock or show mode tag is not for your role | Log in |
@@ -254,13 +257,15 @@ change with the yellow banner instead. The outcome is the same.
 
 **What keeps working while the show is locked:** Go, Back and Go to, show
 mode on and off, the timecode switch, Run checks and Acknowledge on the
-System screen, Save version…, Roles and passwords, logging in and out, and
-everything the console sends. Everything that changes the setup is refused:
-patch, media, outputs, warp, cues, timecode settings, MIDI maps, Control in
-the layer panel, Revert and Delete under Project versions, Forget and Number
-on the Inputs screen.
+System screen, Save version…, Release in the layer panel, logging in and
+out, and everything the console sends. Everything that changes the setup is
+refused: patch, media, outputs, warp, cues, timecode settings, MIDI maps,
+Control and Keep in the layer panel, Revert and Delete under Project
+versions, Forget and Number on the Inputs screen, Set and Clear under Roles
+and passwords.
 
 **What show mode refuses on top of that:** changing or adding a canvas,
 changing the library root, renumbering an input, the Authorize buttons,
-the sync settings, Hold to compare, and the test patterns of the wall wizard
-and the seam check. Leave show mode for those.
+the sync settings, Revert under Project versions, Hold to compare, Show on
+output, and the test patterns of the wall wizard and the seam check. Leave
+show mode for those.
