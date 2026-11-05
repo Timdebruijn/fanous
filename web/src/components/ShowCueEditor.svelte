@@ -203,7 +203,8 @@
   .fields .input.left { width: 190px; text-align: left; }
 
   .values { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-  .vrow { display: grid; grid-template-columns: 150px minmax(160px, 1.2fr) minmax(150px, 1fr) 128px var(--touch);  /* 128: the "cue fade" placeholder plus the number field's padding (110 clipped it) */ gap: 8px 12px; align-items: start; }
+  /* fade column 128: the "cue fade" placeholder plus the number field's padding (110 clipped it) */
+  .vrow { display: grid; grid-template-columns: 150px minmax(160px, 1.2fr) minmax(150px, 1fr) 128px var(--touch); gap: 8px 12px; align-items: start; }
   .vhead { font-size: 12px; color: var(--text-3); }
   .vrow .select, .vrow .input { width: 100%; min-width: 0; }
   .ctl { display: flex; flex-direction: column; gap: 2px; min-width: 0; }

@@ -33,6 +33,8 @@
   const duration = $derived(durationBadge(item));
   const format = $derived(meta ? formatLabel(meta) : '');
   const audio = $derived(meta ? audioLabel(meta) : '');
+  /** one quiet line like the layer row's "HEVC · 1080p25": a tile's format is information, not a state */
+  const detail = $derived(meta ? [codecLabel(meta.codec), format, meta.hasAlpha ? 'α' : '', audio].filter(Boolean).join(' · ') : '');
   const locked = $derived(!can('programmer'));
   const bad = $derived(item.status === 'invalid' || item.status === 'unreadable');
 
@@ -63,12 +65,7 @@
         <span class="caption">probing…</span>
       {/if}
     </span>{/if}
-    <span class="meta caption mono">
-      {#if meta?.codec}<span>{codecLabel(meta.codec)}</span>{/if}
-      {#if format}<span>{format}</span>{/if}
-      {#if meta?.hasAlpha}<span title="Has an alpha channel">α</span>{/if}
-      {#if audio}<span title="Audio track">{audio}</span>{/if}
-    </span>
+    {#if detail}<span class="caption mono" title={meta?.hasAlpha ? 'α: has an alpha channel' : undefined}>{detail}</span>{/if}
     {#if bad && item.reason}<span class="caption reason">{item.reason}</span>{/if}
   </button>
   {#if item.status === 'needsTranscode'}
@@ -101,9 +98,6 @@
   .dur { position: absolute; right: 4px; bottom: 4px; height: 20px; padding: 0 6px; border-radius: 4px; background: var(--scrim); font-size: 11px; font-weight: 500; display: inline-flex; align-items: center; }
   .name { display: block; font-weight: 500; }
   .badges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-  /* one quiet line like the layer row's "HEVC · 1080p25": a tile's format is information, not a state */
-  .meta { display: flex; flex-wrap: wrap; gap: 0 8px; min-height: 16px; }
-  .meta span + span::before { content: '·'; margin-right: 8px; color: var(--text-3); }
   .reason { display: block; overflow-wrap: anywhere; }
   .actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 8px 8px; }
   .actions .select { flex: 1 1 120px; min-width: 0; }
