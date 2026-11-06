@@ -46,6 +46,9 @@ public struct IngestJob: Codable, Sendable, Identifiable {
     public var createdAt: Date
     public var finishedAt: Date?
 
+    /// The result replaces the source (B169): written beside it, then the source makes way as configured.
+    var inPlace: Bool { source.standardizedFileURL == destination.standardizedFileURL }
+
     public init(
         source: URL, destination: URL, kind: Kind, originalsDirectory: URL? = nil, deleteSource: Bool = false
     ) {
@@ -230,7 +233,7 @@ public final class IngestQueue: @unchecked Sendable {
         do {
             try execute(job, temporary: temporary, gate: gate)
             outcome = .done
-            finishOriginal(of: job)
+            if !job.inPlace { finishOriginal(of: job) }
         } catch TranscodeError.cancelled {
             try? FileManager.default.removeItem(at: temporary)
             outcome = .cancelled
@@ -252,12 +255,14 @@ public final class IngestQueue: @unchecked Sendable {
         }
     }
 
-    /// Produces `job.destination` through `temporary` (same directory, so the final rename is atomic).
+    /// Produces `job.destination` through `temporary` (same directory, so the final rename is atomic). In place (B169: the
+    /// Media tile's **Transcode** sends the file's own number and name) the source makes way just before that rename.
     private func execute(_ job: IngestJob, temporary: URL, gate: IngestGate) throws {
         let files = FileManager.default
         guard files.fileExists(atPath: job.source.path) else { throw IngestError.missingSource(job.source) }
-        guard job.source.standardizedFileURL != job.destination.standardizedFileURL else { throw IngestError.sameFile }
-        guard !files.fileExists(atPath: job.destination.path) else { throw IngestError.destinationExists(job.destination) }
+        // in place without an originals directory or deleteSource would destroy the source
+        guard !job.inPlace || job.originalsDirectory != nil || job.deleteSource else { throw IngestError.sameFile }
+        guard job.inPlace || !files.fileExists(atPath: job.destination.path) else { throw IngestError.destinationExists(job.destination) }
         try files.createDirectory(at: job.destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? files.removeItem(at: temporary)
 
@@ -285,7 +290,27 @@ public final class IngestQueue: @unchecked Sendable {
             try files.copyItem(at: job.source, to: temporary)
         }
         try gate.throwIfCancelled()
-        try files.moveItem(at: temporary, to: job.destination)
+        if job.inPlace { try replaceInPlace(job, with: temporary) } else { try files.moveItem(at: temporary, to: job.destination) }
+    }
+
+    /// The source moves to the originals directory, then `temporary` takes its name (the original moves back if that
+    /// fails); with `deleteSource` instead, `temporary` replaces it in one rename. Unlike `finishOriginal`, a failure fails
+    /// the job: the source is still where it was.
+    private func replaceInPlace(_ job: IngestJob, with temporary: URL) throws {
+        let files = FileManager.default
+        guard let directory = job.originalsDirectory else {
+            guard rename(temporary.path, job.destination.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+            return
+        }
+        try files.createDirectory(at: directory, withIntermediateDirectories: true)
+        let original = Self.uniqueURL(for: job.source.lastPathComponent, in: directory)
+        try files.moveItem(at: job.source, to: original)
+        do {
+            try files.moveItem(at: temporary, to: job.destination)
+        } catch {
+            try? files.moveItem(at: original, to: job.source)
+            throw error
+        }
     }
 
     /// Moves the source to the originals directory or deletes it, as configured. The output exists by now, so a failure

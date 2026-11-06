@@ -82,8 +82,7 @@ not playable, reads "no file N in folder M" in red on the Layers screen.
 | You have | Do |
 |---|---|
 | A `.mov` in ProRes or HAP from an editor or a media team | Copy it in with Finder; it plays as it is. Do not Import it: Import re-encodes it |
-| A phone `.mp4`, a web download, anything H.264 or HEVC | Copy it in, then **Transcode** on its tile; or **Import…** it from any computer |
-| An H.264 or HEVC `.mov` (an iPhone's own recording), or a rotated ProRes `.mov` | **Import…** it. **Transcode** on the tile fails for a `.mov` that needs a transcode ([known limitations](reference/known-limitations.md#media-and-inputs)) |
+| A phone `.mp4` or `.mov`, a web download, anything H.264 or HEVC, a rotated ProRes `.mov` | Copy it in, then **Transcode** on its tile; or **Import…** it from any computer |
 | A still (PNG, JPEG, TIFF, HEIF, GIF, BMP, WebP, EXR) | Copy it in; it plays as it is |
 | A folder of numbered frames | Copy the folder in as `NNN_name/`; the frames inside need no numbers; then **Transcode** it (25 fps from the tile). Pick ProRes when the frames are not a multiple of 4 wide and high: HAP on such a sequence crashes the engine ([known limitations](reference/known-limitations.md#media-and-inputs)) |
 | A HAP file in another container than `.mov` | It cannot be transcoded (macOS cannot decode HAP): remux it to a `.mov` on another machine, then copy it in |
@@ -121,9 +120,7 @@ flowchart TD
   kind -- "a folder of frames" --> seq["Yellow: needs transcode.<br>Pick a codec, press Transcode"]
   kind -- "any other movie" --> other{"Container .mov, .mp4, .m4v,<br>.avi or .mxf?"}
   other -- no --> skipped["Not listed, or red unreadable (.mkv):<br>convert it on another machine"]
-  other -- yes --> mov{"Is it a .mov?"}
-  mov -- yes --> importit["Yellow, but Transcode fails on a .mov:<br>Import… it instead"]
-  mov -- no --> hap{"HAP inside?"}
+  other -- yes --> hap{"HAP inside?"}
   hap -- yes --> haphand["Cannot be transcoded: remux it<br>to a .mov on another machine"]
   hap -- no --> transcode["Yellow: needs transcode.<br>Pick a codec, press Transcode"]
 ```
@@ -139,7 +136,7 @@ square pixels; Rec.709; 8-bit. Audio as stereo.
 | Way | When | What happens |
 |---|---|---|
 | **Copy in Finder** into the numbered folder, named `NNN_name.ext` | Anything that plays as it is, and anything you will transcode on the Mac | It is listed within a moment and plays as soon as the engine has probed it |
-| **Import…** on the Media screen (programmer) | A file that needs a transcode and sits on another computer, and an H.264 `.mov` | The file is uploaded to `_incoming/`, re-encoded and placed in the folder with the lowest free number (a gap is filled first; any numbered file counts, media or not) and the name `NNN_<original name without its leading digits>`; the temporary copy is removed. Check the number it got when a cue depends on it |
+| **Import…** on the Media screen (programmer) | A file that needs a transcode and sits on another computer | The file is uploaded to `_incoming/`, re-encoded and placed in the folder with the lowest free number (a gap is filled first; any numbered file counts, media or not) and the name `NNN_<original name without its leading digits>`; the temporary copy is removed. Check the number it got when a cue depends on it |
 
 Import re-encodes **every** movie, ProRes included, to ProRes 422 HQ (ProRes
 4444 when the source has alpha), so a playable ProRes file gains a
@@ -313,5 +310,5 @@ Rules of thumb:
   of 32 is the engine's, not a measurement.
 
 Not there yet: no text layer, HAP cannot be imported, 16-bit stills become
-8-bit, one stereo mix, Transcode fails on a `.mov`, and the other library
+8-bit, one stereo mix, and the other library
 items in [Known limitations](reference/known-limitations.md#media-and-inputs).

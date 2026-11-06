@@ -479,6 +479,55 @@ import VideoToolbox
         }
     }
 
+    /// B169: **Transcode** on a library `.mov` that needs one (an H.264 `.mov`, what an iPhone records) sends the file's own
+    /// number and name, so the destination is the source itself; the job failed with "source and destination are the same
+    /// file". Now the result takes the file's place and the original goes to `_originals/`.
+    @Test func transcodeInPlaceKeepsNumberAndNameAndMovesTheOriginal() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        let folder = directory.appending(path: "library/001_Clips")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let source = folder.appending(path: "002_phone.mov")
+        try await Self.writeH264(to: source, floatAudio: true)  // floatAudio: a .mov container
+        let bytes = try Data(contentsOf: source)
+        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: testLogger)
+        library.rescan()
+        let item = try #require(library.item(MediaKey(folder: 1, file: 2)))
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: testLogger)
+        queue.start()
+        defer { queue.stop() }
+
+        // the Media tile's request: the item's own path, folder, file and name (Media.svelte transcode())
+        #expect(api.enqueue(source: URL(fileURLWithPath: item.path), folder: 1, file: item.file, name: item.name, codec: "prores422hq", fps: nil, keepOriginal: true).status == 202)
+        let job = try #require(queue.jobs.last)
+        #expect(job.destination.standardizedFileURL == source.standardizedFileURL)
+        let state = await Self.wait(for: job.id, in: queue)
+        #expect(state == .done, "\(state)")
+
+        let track = try #require(try await AVURLAsset(url: source).loadTracks(withMediaType: .video).first)
+        let description = try #require(try await track.load(.formatDescriptions).first)
+        #expect(CMFormatDescriptionGetMediaSubType(description) == kCMVideoCodecType_AppleProRes422HQ)
+        #expect(try Data(contentsOf: folder.appending(path: "_originals/002_phone.mov")) == bytes)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted() == ["002_phone.mov", "_originals"], "no temporary left")
+        library.rescan()
+        #expect(library.snapshot.folders.first?.items.map(\.path) == [source.path])
+
+        // without an originals directory or deleteSource the source would be lost: still refused
+        let bare = queue.enqueue(IngestJob(source: source, destination: source, kind: .transcode(codec: .proRes422)))
+        guard case .failed(let text) = await Self.wait(for: bare.id, in: queue) else {
+            Issue.record("not failed")
+            return
+        }
+        #expect(text == "source and destination are the same file")
+
+        // deleteSource instead of an originals directory: the result replaces the source in one rename
+        let still = folder.appending(path: "003_title.png")
+        try Self.writeFramePNG(to: still, index: 1)
+        let replaced = queue.enqueue(IngestJob(source: still, destination: still, kind: .still, deleteSource: true))
+        #expect(await Self.wait(for: replaced.id, in: queue) == .done)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted() == ["002_phone.mov", "003_title.png", "_originals"])
+    }
+
     /// B19: an LPCM source keeps its sample rate, channel count, bit depth and float form; nothing is resampled to 48 kHz
     /// stereo 16-bit any more (the reader converts at playback).
     @Test func lpcmSourceKeepsItsAudioFormat() async throws {
