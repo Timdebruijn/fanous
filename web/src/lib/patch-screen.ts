@@ -556,7 +556,8 @@ export function standardStart(groups: readonly Group[], index: number): Slot | n
  * "Move Master and outputs after the layers" (DESIGN §6.6 item 2), offered when a layer found no room because a later
  * group sits on its slot: lays each later group that has a block from the universe after the last layer slot, each
  * after the one before, and puts the unplaced layers on their slots, as one `patch.setMany`. Null when no layer is
- * blocked by a later group, or a later group would run past the last universe.
+ * blocked, when something in a layer's way would stay (placed by hand, or in a group without a block), or a later group
+ * would run past the last universe.
  */
 export function moveAfterLayers(groups: readonly Group[]): PatchEntry[] | null {
   const i = groups.findIndex((g) => g.ownUniverses);
@@ -564,8 +565,8 @@ export function moveAfterLayers(groups: readonly Group[]): PatchEntry[] | null {
   const start = layers?.block.start;
   if (!layers || !start) return null;
   const later = groups.slice(i + 1);
-  const names = new Set(later.flatMap((g) => g.rows.map((r) => r.name)));
-  if (!layers.rows.some((r) => r.blocked?.by.some((o) => names.has(o.name)))) return null;
+  const blockers = layers.rows.flatMap((r) => r.blocked?.by ?? []);
+  if (blockers.length === 0) return null;
   const slots = groupSlots(layers, start);
   const entries: PatchEntry[] = [];
   for (const r of layers.rows) {
@@ -582,7 +583,8 @@ export function moveAfterLayers(groups: readonly Group[]): PatchEntry[] | null {
     }
     from = after(g, from);
   }
-  return entries;
+  const moved = new Set(entries.map((e) => e.fixture));
+  return blockers.every((o) => moved.has(o.name)) ? entries : null;
 }
 
 /**

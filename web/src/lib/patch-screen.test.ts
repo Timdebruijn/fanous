@@ -349,6 +349,17 @@ describe('blocks', () => {
     // every output in the way is named, Keystone 2 at 89 is past the layer's 64 channels
     const seven = buildPatch([...patch, ...[3, 4, 5, 6, 7].map((n) => at(`Output ${n}`, 'artnet:0.0.1', 1 + 8 * n))], 9, map, [1, 2, 3, 4, 5, 6, 7]);
     expect(rowStatus(seven.rows.find((r) => r.name === 'Layer 9')!, 'internal').text).toBe('no address · A 0.0.1 1–64 is taken by Master, Outputs 1–7');
+    // a Keystone placed by hand is in the way too, while its outputs have no block: the move would lay Layer 9 on
+    // it, so it is not offered; with the outputs patched the Keystone moves along with them
+    const lone = buildPatch([...standard.slice(0, 9), at('Keystone 2', 'artnet:0.0.1', 40)], 9, map, [1, 2]);
+    expect(rowStatus(lone.rows.find((r) => r.name === 'Layer 9')!, 'internal').text).toBe('no address · A 0.0.1 1–64 is taken by Master, Keystone 2');
+    expect(moveAfterLayers(lone.groups)).toBeNull();
+    const along = buildPatch([...standard, at('Keystone 2', 'artnet:0.0.1', 40)], 9, map, [1, 2]);
+    expect(moveAfterLayers(along.groups)).toEqual([
+      at('Layer 9', 'artnet:0.0.1', 1),
+      at('Master', 'artnet:0.0.2', 1),
+      at('Output 1', 'artnet:0.0.2', 9), at('Output 2', 'artnet:0.0.2', 17), at('Keystone 2', 'artnet:0.0.2', 89),
+    ]);
     // nothing blocked: not offered
     expect(moveAfterLayers(buildPatch(standard, 8, map, [1, 2]).groups)).toBeNull();
   });

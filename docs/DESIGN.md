@@ -964,8 +964,9 @@ code on 2026-10-30:
   moving a block and editing one fixture may overlap; the overlap shows in
   red, as today.
 - **A new fixture that found no room** says why: "no address · A 0.0.1 1–64 is
-  taken by Master". In the common case (an 8-layer project adding Layer 9,
-  whose slot is the Master's) the Layers group offers **Move Master and
+  taken by Master, Outputs 1–3" (every fixture in the way). In the common
+  case (an 8-layer project adding Layer 9, whose slot is the Master's) the
+  Layers group offers **Move Master and
   outputs after the layers**: one `patch.setMany` that moves the Master,
   Outputs and Keystone blocks to the universe after the last layer slot and
   puts the unplaced layers on their slots, as one undo step. It changes the
@@ -1161,7 +1162,7 @@ guide changes with the step that changes what it describes (4–6).
   the anchor's start falls below 1, Re-lay lays from address 1 of the anchor's
   universe.
 - The Master group has the same block line as the others (a block of one).
-- The blocker ("no address · A 0.0.1 1–64 is taken by Master", yellow) is
+- The blocker ("no address · A 0.0.1 1–64 is taken by Master, Outputs 1–3", yellow) is
   named only while the group is a Block, since only a block gives the fixture a
   slot; in a Custom group a fixture without an address shows the policy words.
   Move Master and outputs after the layers is offered when such a blocker
