@@ -64,7 +64,7 @@ and the TLS fingerprint from programmer.
 | `/api/library/rescan` | any | none | Rescans the disk |
 | `/api/library/folder` | POST | programmer | `{"number": 1–255, "name": "…"}` makes `NNN_name` under the root; 200 with the name, 409 when the number exists |
 | `/api/thumbnail/<name>.jpg` | any | none | A thumbnail, `name` from the library item; 404 when there is none; cached a day |
-| `/api/ingest` | GET | operator | The ingest jobs: `{id, source, destination, kind, state, originalsDirectory, deleteSource, createdAt, finishedAt}` each |
+| `/api/ingest` | GET | operator | The ingest jobs: `{id, source, destination, kind, state, originalsDirectory, deleteSource, createdAt, finishedAt}` each, plus `originalMovedTo` when a transcode in place moves the original to `_originals/` (the path it goes to) |
 | `/api/ingest` | POST | programmer | `{"source": "<absolute path>", "folder": 1–255, "file"?, "name"?, "codec"?, "fps"?, "keepOriginal"?}`: queues a transcode; `codec` is `prores4444`, `prores422hq`, `prores422`, `hap`, `hapalpha`, `hapq` or `hapalphaonly` (unknown falls back to ProRes 422 HQ, or 4444 for a sequence); `fps` 1–240 applies to a folder source (an image sequence); a still is kept as it is. `keepOriginal` is true unless you say false, and false deletes the source after success. 202 with the job, 404 when the source is missing, 409 when the folder is full |
 | `/api/ingest/<id>/cancel`, `/api/ingest/<id>/remove` | POST | programmer | 200 "cancelled" or "removed"; 404 for a malformed id |
 | `/api/upload/<folder>/<name>` | PUT | programmer | The body is the file: it lands in `_incoming` and is queued into the folder with the next free number, without the original kept; 202 with the job |

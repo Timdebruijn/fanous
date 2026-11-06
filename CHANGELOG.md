@@ -22,6 +22,9 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   restart-marker parameter are gone (PR #312).
 - Fix: an image sequence whose frames are not a multiple of 4 wide and high, transcoded to HAP, fails the job with
   the movie path's "HAP needs a width and height that are multiples of 4" instead of crashing the engine (B172) (PR #315).
+- Fix: **Transcode** on a library `.mov` that needs one (an iPhone's H.264 `.mov`, a rotated ProRes file) no longer
+  fails with "source and destination are the same file": the result keeps the file's number and name and the original
+  moves to `_originals/` (B169) (PR #326).
 - Dev docs and marketing after the guide rewrite: `DESIGN.md` §11 gets an "as built" list from the API inventory
   (data-protection keychain, no identity import, no per-interface listener, REST mutates and has no project
   export, the protocol sketch's `role` and `result`, the 4-encoder preview limit, the operator and monitor

@@ -480,6 +480,202 @@ import VideoToolbox
         }
     }
 
+    /// B169: **Transcode** on a library `.mov` that needs one (an H.264 `.mov`, what an iPhone records) sends the file's own
+    /// number and name, so the destination is the source itself; the job failed with "source and destination are the same
+    /// file". Now the result takes the file's place and the original goes to `_originals/`.
+    @Test func transcodeInPlaceKeepsNumberAndNameAndMovesTheOriginal() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        let folder = directory.appending(path: "library/001_Clips")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let source = folder.appending(path: "002_phone.mov")
+        try await Self.writeH264(to: source, floatAudio: true)  // floatAudio: a .mov container
+        let bytes = try Data(contentsOf: source)
+        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: testLogger)
+        library.rescan()
+        let item = try #require(library.item(MediaKey(folder: 1, file: 2)))
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: testLogger)
+        queue.start()
+        defer { queue.stop() }
+
+        // the Media tile's request: the item's own path, folder, file and name (Media.svelte transcode())
+        #expect(api.enqueue(source: URL(fileURLWithPath: item.path), folder: 1, file: item.file, name: item.name, codec: "prores422hq", fps: nil, keepOriginal: true).status == 202)
+        let job = try #require(queue.jobs.last)
+        #expect(job.destination.standardizedFileURL == source.standardizedFileURL)
+        let state = await Self.wait(for: job.id, in: queue)
+        #expect(state == .done, "\(state)")
+
+        let track = try #require(try await AVURLAsset(url: source).loadTracks(withMediaType: .video).first)
+        let description = try #require(try await track.load(.formatDescriptions).first)
+        #expect(CMFormatDescriptionGetMediaSubType(description) == kCMVideoCodecType_AppleProRes422HQ)
+        #expect(try Data(contentsOf: folder.appending(path: "_originals/002_phone.mov")) == bytes)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted() == ["002_phone.mov", "_originals"], "no temporary left")
+        library.rescan()
+        #expect(library.snapshot.folders.first?.items.map(\.path) == [source.path])
+
+        // the same request again (a second click before the list updated) finds the file done: no second encode, no 002_phone-2.mov
+        #expect(api.enqueue(source: URL(fileURLWithPath: item.path), folder: 1, file: item.file, name: item.name, codec: "prores422hq", fps: nil, keepOriginal: true).status == 202)
+        let again = try #require(queue.jobs.last)
+        #expect(await Self.wait(for: again.id, in: queue) == .done)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.appending(path: "_originals").path) == ["002_phone.mov"])
+
+        // without an originals directory or deleteSource the source would be lost: still refused
+        let bare = queue.enqueue(IngestJob(source: source, destination: source, kind: .transcode(codec: .proRes422)))
+        guard case .failed(let text) = await Self.wait(for: bare.id, in: queue) else {
+            Issue.record("not failed")
+            return
+        }
+        #expect(text == "source and destination are the same file")
+
+        // deleteSource instead of an originals directory: the result replaces the source in one rename
+        let still = folder.appending(path: "003_title.png")
+        try Self.writeFramePNG(to: still, index: 1)
+        let replaced = queue.enqueue(IngestJob(source: still, destination: still, kind: .still, deleteSource: true))
+        #expect(await Self.wait(for: replaced.id, in: queue) == .done)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted() == ["002_phone.mov", "003_title.png", "_originals"])
+    }
+
+    /// B169: an in-place transcode that fails (here an unreadable source) leaves the source as it was and no temporary.
+    @Test func failedInPlaceTranscodeLeavesTheSource() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        let folder = directory.appending(path: "library/001_Clips")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let source = folder.appending(path: "002_bad.mov")
+        try Data("not a movie".utf8).write(to: source)
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        queue.start()
+        defer { queue.stop() }
+
+        let job = queue.enqueue(IngestJob(source: source, destination: source, kind: .transcode(codec: .proRes422HQ), originalsDirectory: folder.appending(path: "_originals")))
+        guard case .failed = await Self.wait(for: job.id, in: queue) else {
+            Issue.record("not failed")
+            return
+        }
+        #expect(try String(contentsOf: source, encoding: .utf8) == "not a movie")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["002_bad.mov"])
+    }
+
+    /// B169: a crash between the two renames of an in-place job leaves the original in `_originals/` and the finished result
+    /// as the hidden temporary. The restart puts that temporary in place and saves the job as done, before any worker runs
+    /// (a job left queued, then cancelled while ingest is paused, would otherwise keep the hidden file for good).
+    @Test func inPlaceResultLeftByACrashIsPutInPlace() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        let folder = directory.appending(path: "library/001_Clips")
+        let originals = folder.appending(path: "_originals")
+        try FileManager.default.createDirectory(at: originals, withIntermediateDirectories: true)
+        try Data("the original".utf8).write(to: originals.appending(path: "002_phone.mov"))
+        let source = folder.appending(path: "002_phone.mov")  // moved away already
+        var job = IngestJob(source: source, destination: source, kind: .transcode(codec: .proRes422HQ), originalsDirectory: originals)
+        job.state = .running(progress: 1)
+        job.originalMovedTo = originals.appending(path: "002_phone.mov")
+        let temporary = IngestQueue.temporaryURL(for: job)
+        try await Self.writeSource(to: temporary, seconds: 1, audio: false)
+        let result = try Data(contentsOf: temporary)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode([job]).write(to: directory.appending(path: "queue.json"))
+
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))  // not started
+        #expect(queue.jobs.first?.state == .done)
+        #expect(IngestQueue(persistenceURL: directory.appending(path: "queue.json")).jobs.first?.state == .done, "saved as done")
+        #expect(try Data(contentsOf: source) == result)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted() == ["002_phone.mov", "_originals"])
+        #expect(try String(contentsOf: originals.appending(path: "002_phone.mov"), encoding: .utf8) == "the original")
+    }
+
+    /// B169: a source removed by hand while a crashed in-place job's half-written temporary exists is no finished result
+    /// (the original never moved): the restart removes the temporary and the rerun fails "source not found". When the
+    /// original did go to `_originals/`, the failure says where it is.
+    @Test func inPlaceTemporaryWithoutAMovedOriginalIsNotPutInPlace() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        let folder = directory.appending(path: "library/001_Clips")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let source = folder.appending(path: "002_phone.mov")  // removed by hand, never moved
+        var job = IngestJob(source: source, destination: source, kind: .transcode(codec: .proRes422HQ), originalsDirectory: folder.appending(path: "_originals"))
+        job.state = .running(progress: 0.5)
+        let temporary = IngestQueue.temporaryURL(for: job)
+        try Data("half a movie".utf8).write(to: temporary)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode([job]).write(to: directory.appending(path: "queue.json"))
+
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        #expect(!FileManager.default.fileExists(atPath: temporary.path), "the restart removes the half-written temporary")
+        #expect(queue.jobs.first?.state == .queued)
+        queue.start()
+        defer { queue.stop() }
+        guard case .failed(let text) = await Self.wait(for: job.id, in: queue) else {
+            Issue.record("not failed")
+            return
+        }
+        #expect(text == "source not found: 002_phone.mov")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty, "nothing put in place")
+
+        try FileManager.default.createDirectory(at: folder.appending(path: "_originals"), withIntermediateDirectories: true)
+        try Data("the original".utf8).write(to: folder.appending(path: "_originals/002_phone.mov"))
+        let again = queue.enqueue(IngestJob(source: source, destination: source, kind: .transcode(codec: .proRes422HQ), originalsDirectory: folder.appending(path: "_originals")))
+        guard case .failed(let named) = await Self.wait(for: again.id, in: queue) else {
+            Issue.record("not failed")
+            return
+        }
+        #expect(named == "source not found: 002_phone.mov; the original is in _originals/002_phone.mov")
+    }
+
+    /// B169: when the queue file cannot be saved (a full disk; here a read-only folder), an in-place job does not move the
+    /// source: a crash after that move could not be recovered. The job fails and the source stays where it is.
+    @Test func inPlaceJobWhoseRecordCannotBeSavedLeavesTheSource() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        let folder = directory.appending(path: "library/001_Clips")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let still = folder.appending(path: "003_title.png")
+        try Self.writeFramePNG(to: still, index: 1)
+        let bytes = try Data(contentsOf: still)
+        let stateDirectory = directory.appending(path: "state")
+        try FileManager.default.createDirectory(at: stateDirectory, withIntermediateDirectories: true)
+        let queue = IngestQueue(persistenceURL: stateDirectory.appending(path: "queue.json"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: stateDirectory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stateDirectory.path) }
+        queue.start()
+        defer { queue.stop() }
+
+        let job = queue.enqueue(IngestJob(source: still, destination: still, kind: .still, originalsDirectory: folder.appending(path: "_originals")))
+        guard case .failed(let text) = await Self.wait(for: job.id, in: queue) else {
+            Issue.record("not failed")
+            return
+        }
+        #expect(text == "the ingest queue could not be saved; the source was left in place")
+        #expect(try Data(contentsOf: still) == bytes)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { !$0.hasPrefix("_") } == ["003_title.png"], "no temporary left")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.appending(path: "_originals").path).isEmpty)
+    }
+
+    /// B169: an in-place job on a file that already is its result (a crash after the rename, before `done` was saved, reruns
+    /// the job) finishes without writing: no second encode, no `_originals/` copy. Another codec still transcodes.
+    @Test func inPlaceJobOnAFinishedFileWritesNothing() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        let folder = directory.appending(path: "library/001_Clips")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let source = folder.appending(path: "002_clip.mov")
+        try await Self.writeSource(to: source, seconds: 1, audio: false)  // ProRes 422 HQ
+        let bytes = try Data(contentsOf: source)
+        let originals = folder.appending(path: "_originals")
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        queue.start()
+        defer { queue.stop() }
+
+        let same = queue.enqueue(IngestJob(source: source, destination: source, kind: .transcode(codec: .proRes422HQ), originalsDirectory: originals))
+        #expect(await Self.wait(for: same.id, in: queue) == .done)
+        #expect(try Data(contentsOf: source) == bytes)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["002_clip.mov"])
+
+        let other = queue.enqueue(IngestJob(source: source, destination: source, kind: .transcode(codec: .hap(.hapQ)), originalsDirectory: originals))
+        #expect(await Self.wait(for: other.id, in: queue) == .done)
+        #expect(try Data(contentsOf: originals.appending(path: "002_clip.mov")) == bytes)
+        let track = try #require(try await AVURLAsset(url: source).loadTracks(withMediaType: .video).first)
+        let description = try #require(try await track.load(.formatDescriptions).first)
+        #expect(CMFormatDescriptionGetMediaSubType(description) == HAPEncoder.Variant.hapQ.fourCC)
+    }
+
     /// B19: an LPCM source keeps its sample rate, channel count, bit depth and float form; nothing is resampled to 48 kHz
     /// stereo 16-bit any more (the reader converts at playback).
     @Test func lpcmSourceKeepsItsAudioFormat() async throws {
