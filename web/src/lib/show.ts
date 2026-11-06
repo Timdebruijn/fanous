@@ -66,7 +66,7 @@ export function swapSteps(cues: readonly CueDoc[], id: string, direction: -1 | 1
 // ---- trigger text ------------------------------------------------------------------------------------------
 
 /**
- * `id` is how the rate is typed and shown (docs.ts: 24, 25, 29.97df, 30); `engine` is the spelling
+ * `id` is how the rate is typed and shown (docs.ts: 24, 25, 29.97df, 29.97ndf, 30); `engine` is the spelling
  * ShowCommands.parseTimecode accepts (TimecodeRate.label), which is what we store.
  */
 const TRIGGER_RATES: { id: string; engine: string; frames: number }[] = [
@@ -77,7 +77,7 @@ const TRIGGER_RATES: { id: string; engine: string; frames: number }[] = [
   { id: '30', engine: '30', frames: 30 },
 ];
 
-export const TRIGGER_HINT = 'hh:mm:ss:ff@rate, for example 00:01:30:00@25 (rates: 24, 25, 29.97df, 30)';
+export const TRIGGER_HINT = 'hh:mm:ss:ff@rate, for example 00:01:30:00@25 (rates: 24, 25, 29.97df, 29.97ndf, 30)';
 
 export type TriggerResult = { ok: true; value: string | null } | { ok: false; error: string };
 

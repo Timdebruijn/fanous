@@ -11,6 +11,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Tests: the capture renumber test waits for its status like the others, two test warnings are gone (PR #314).
+- Fix: a cue trigger with the rate written `@29.97df` or `@29.97ndf` over the WebSocket now fires instead of being stored and ignored; a trigger that does not parse is refused with `invalidArgs`, and the cue editor's hint lists 29.97ndf (PR #317).
 - Cleanup: the web `typecheck` script and the TypeScript 7 preview dependency are gone; `npm run check` (svelte-check) covers the same files on CI (PR #308).
 - Cleanup: sACN sync/discovery parsing, the bench shim scripts and two test-only Core members are gone (PR #309).
 - Cleanup: the scene-file route to a Syphon server is gone (live inputs 150–169 are the way), the preview and

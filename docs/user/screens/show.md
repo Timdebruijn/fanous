@@ -99,7 +99,7 @@ Empty: "No cues yet. Add one, then give it values and a fade."
 
 Validation lines appear in red under a field: "A cue number is a number from
 0 up.", "Cue N already exists.", "A fade time is seconds, 0 or more.", "Use
-hh:mm:ss:ff@rate, for example 00:01:30:00@25 (rates: 24, 25, 29.97df, 30)",
+hh:mm:ss:ff@rate, for example 00:01:30:00@25 (rates: 24, 25, 29.97df, 29.97ndf, 30)",
 "Unknown rate …", "Hours go to
 23, minutes and seconds to 59", "Frames go to 24 at 25 fps". "This cue
 changes nothing yet. Add a value for each parameter it should set." when the

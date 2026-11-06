@@ -285,6 +285,27 @@ struct ShowControlTests {
         #expect(fired.withLock { $0 } == ["go", "goto 1.5", "ack power"])
     }
 
+    /// B159: every rate spelling the guide and the cue editor use parses, and cue.add refuses a trigger that does not.
+    @Test func cueTriggerRateSpellings() throws {
+        for (text, rate) in [
+            ("00:01:30:00@29.97df", TimecodeRate.fps2997df), ("00:01:30:00@29.97ndf", .fps2997ndf), ("00:01:30:00@29.97 DF", .fps2997df),
+            ("00:01:30:00@29.97 NDF", .fps2997ndf), ("00:01:30:00@fps2997df", .fps2997df), ("00:01:30:00@24", .fps24), ("00:01:30:00@25", .fps25),
+            ("00:01:30:00@30", .fps30), ("00:01:30:00", .fps25),
+        ] {
+            #expect(ShowCommands.parseTimecode(text) == Timecode(hours: 0, minutes: 1, seconds: 30, frames: 0, rate: rate), "\(text)")
+        }
+        #expect(ShowCommands.parseTimecode("00:01:30:00@29.97") == nil)
+        let (store, _) = testStore(outputs: 0)
+        ShowCommands.register(
+            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _ in }, runReadiness: {}))
+        #expect(store.execute("cue.add", args: ["number": 1, "name": "typo", "trigger": "00:01:30:00@29.97"], role: .programmer).failureCode == "invalidArgs")
+        #expect(store.execute("cue.add", args: ["number": 2, "name": "short", "trigger": "01:30:00"], role: .programmer).failureCode == "invalidArgs")
+        _ = try store.execute("cue.add", args: ["number": 3, "name": "ndf", "trigger": "00:01:30:00@29.97ndf"], role: .programmer).get()
+        #expect(ShowCommands.cueList(from: store.project).cues.map(\.timecodeTrigger) == [Timecode(hours: 0, minutes: 1, seconds: 30, frames: 0, rate: .fps2997ndf)])
+        // null clears the trigger and is not refused
+        _ = try store.execute("cue.add", args: ["number": 4, "name": "none", "trigger": .null], role: .programmer).get()
+    }
+
     /// B144: a Mac without a ProRes engine fails the "Supported hardware" item hard; acknowledging does not unblock it.
     @Test func aMacWithoutAProResEngineIsRefusedShowMode() throws {
         #expect(!SystemInfo.proResEngine(chip: "Apple M1") && SystemInfo.proResEngine(chip: "Apple M1 Pro") && SystemInfo.proResEngine(chip: "Apple M2"))

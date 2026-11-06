@@ -49,11 +49,13 @@ public enum ShowCommands {
         CueList(cues: (project["cues"]?.array ?? []).compactMap(cue(from:)))
     }
 
-    /// "hh:mm:ss:ff@25", "@29.97df", "@30", "@24"
+    /// "hh:mm:ss:ff@25", 25 without "@rate"; the rate as the guide writes it ("29.97df", "29.97ndf"), the engine's label
+    /// ("29.97 DF") or the raw value ("fps2997df"), case and spaces ignored.
     static func parseTimecode(_ text: String) -> Timecode? {
         let parts = text.split(separator: "@")
         guard let time = parts.first else { return nil }
-        let rate = parts.count > 1 ? TimecodeRate(rawValue: String(parts[1])) ?? TimecodeRate.allCases.first { $0.label == String(parts[1]) } : .fps25
+        func key(_ s: String) -> String { s.lowercased().replacingOccurrences(of: " ", with: "") }
+        let rate = parts.count > 1 ? TimecodeRate.allCases.first { [key($0.label), $0.rawValue.lowercased()].contains(key(String(parts[1]))) } : .fps25
         let fields = time.split(separator: ":").map { Int($0) }
         guard fields.count == 4, let h = fields[0], let m = fields[1], let s = fields[2], let f = fields[3], let rate else { return nil }
         return Timecode(hours: h, minutes: m, seconds: s, frames: f, rate: rate)
@@ -72,6 +74,9 @@ public enum ShowCommands {
         guard cue(from: value) != nil else { throw CommandError.invalidArgs("a cue needs number, name and valid values ({fixture, parameter, raw, fade?})") }
         if let values = value["values"]?.array, values.count != values.compactMap(cueValue(from:)).count {
             throw CommandError.invalidArgs("every value needs fixture (\"Layer n\" / \"Master\" / \"Output n\" / \"Keystone n\"), a parameter key and raw")
+        }
+        if let trigger = value["trigger"], trigger != .null, trigger.string.flatMap(parseTimecode) == nil {
+            throw CommandError.invalidArgs("trigger is hh:mm:ss:ff@rate, the rate 24, 25, 29.97df, 29.97ndf or 30")
         }
     }
 
