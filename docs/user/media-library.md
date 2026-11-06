@@ -85,7 +85,7 @@ not playable, reads "no file N in folder M" in red on the Layers screen.
 | A phone `.mp4`, a web download, anything H.264 or HEVC | Copy it in, then **Transcode** on its tile; or **Import…** it from any computer |
 | An H.264 or HEVC `.mov` (an iPhone's own recording), or a rotated ProRes `.mov` | **Import…** it. **Transcode** on the tile fails for a `.mov` that needs a transcode ([known limitations](reference/known-limitations.md#media-and-inputs)) |
 | A still (PNG, JPEG, TIFF, HEIF, GIF, BMP, WebP, EXR) | Copy it in; it plays as it is |
-| A folder of numbered frames | Copy the folder in as `NNN_name/`; the frames inside need no numbers; then **Transcode** it (25 fps from the tile). Pick ProRes when the frames are not a multiple of 4 wide and high: HAP on such a sequence crashes the engine ([known limitations](reference/known-limitations.md#media-and-inputs)) |
+| A folder of numbered frames | Copy the folder in as `NNN_name/`; the frames inside need no numbers; then **Transcode** it at the frame rate in the tile's **fps** field (25 unless you change it). Pick ProRes when the frames are not a multiple of 4 wide and high: HAP on such a sequence crashes the engine ([known limitations](reference/known-limitations.md#media-and-inputs)) |
 | A HAP file in another container than `.mov` | It cannot be transcoded (macOS cannot decode HAP): remux it to a `.mov` on another machine, then copy it in |
 
 ## What plays as it is
@@ -202,7 +202,7 @@ running job's progress; do it before the show.
 | Rec.601 colour (SD, some cameras) | Converted to Rec.709, which is what Fanous plays; a 601 file played without a transcode is taken as 709 and looks slightly off |
 | 10-bit ProRes | Kept at full precision in ProRes (not on the odd-rotation path, which is 8-bit); HAP is 8-bit |
 | Audio | Channels and layout as in the source; compressed audio (AAC) becomes 24-bit LPCM, so the file grows; the sample rate is kept within 8 to 192 kHz |
-| An image sequence | A movie in the codec you pick (HAP Q by default, no alpha promotion: pick ProRes 4444 or HAP Alpha for transparency; ProRes when the frames are not a multiple of 4 wide and high), at 25 fps |
+| An image sequence | A movie in the codec you pick (HAP Q by default, no alpha promotion: pick ProRes 4444 or HAP Alpha for transparency; ProRes when the frames are not a multiple of 4 wide and high), at the tile's **fps** (25 by default, 1–240) |
 
 ## Image sequences
 
@@ -210,8 +210,9 @@ Put a folder of images inside a numbered folder and number the folder like a
 file: `001_Opening/005_Flames/` with `flames_0001.png`, `flames_0002.png`, …
 The frames themselves need no numbers; at least two, all the same size,
 played in name order. The tile reads "N frames" and **needs transcode**.
-From the tile the movie is written at 25 fps; another rate needs the
-engine's command line on the Mac:
+The tile has an **fps** field under the codec list (25 by default, 1 to 240):
+the movie is written at that rate. The engine's command line on the Mac does
+the same:
 
 ```bash
 /Applications/Fanous.app/Contents/MacOS/fanousd ingest ~/Movies/Fanous\ Library/001_Opening/005_Flames ~/Movies/Fanous\ Library/001_Opening/005_flames.mov --fps 30 --codec prores4444

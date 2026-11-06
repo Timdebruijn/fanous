@@ -22,11 +22,13 @@
     /** layers currently playing this file ("Layer 3") */
     onLayers: string[];
     onselect: () => void;
-    ontranscode: (item: LibraryItem, codec: string) => Promise<void>;
+    ontranscode: (item: LibraryItem, codec: string, fps: number) => Promise<void>;
   }
   let { item, selected, pending, onLayers, onselect, ontranscode }: Props = $props();
 
   let codec = $state<string>(transcodeCodecs[0].value);
+  /** an image sequence has no rate of its own: the movie is written at this one (the engine takes 1–240) */
+  let fps = $state(25);
   let busy = $state(false);
 
   const meta = $derived(item.metadata);
@@ -40,7 +42,7 @@
 
   async function transcode() {
     busy = true;
-    await ontranscode(item, codec);
+    await ontranscode(item, codec, fps);
     busy = false;
   }
 </script>
@@ -73,6 +75,9 @@
       <select class="select" aria-label="Codec for {item.name}" bind:value={codec} disabled={locked || busy || pending} title={locked ? LOCKED_TITLE : undefined}>
         {#each transcodeCodecs as option (option.value)}<option value={option.value}>{option.label}</option>{/each}
       </select>
+      {#if item.kind === 'sequence'}
+        <label class="fps caption"><input class="input mono" type="number" min="1" max="240" step="1" aria-label="Frame rate for {item.name}" bind:value={fps} disabled={locked || busy || pending} title={locked ? LOCKED_TITLE : undefined} /> fps</label>
+      {/if}
       <button
         class="btn"
         disabled={locked || busy || pending}
@@ -102,4 +107,6 @@
   .actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 8px 8px; }
   .actions .select { flex: 1 1 120px; min-width: 0; }
   .actions .btn { flex: 1 1 auto; }
+  .fps { display: inline-flex; align-items: center; gap: 4px; }
+  .fps .input { width: 64px; }
 </style>
