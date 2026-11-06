@@ -555,8 +555,8 @@ import VideoToolbox
     }
 
     /// B169: a crash between the two renames of an in-place job leaves the original in `_originals/` and the finished result
-    /// as the hidden temporary. The restart keeps that temporary and the rerun puts it in place instead of failing with
-    /// "source not found" and an empty slot.
+    /// as the hidden temporary. The restart puts that temporary in place and saves the job as done, before any worker runs
+    /// (a job left queued, then cancelled while ingest is paused, would otherwise keep the hidden file for good).
     @Test func inPlaceResultLeftByACrashIsPutInPlace() async throws {
         let directory = try tempDir("fanous-ingest-tests")
         let folder = directory.appending(path: "library/001_Clips")
@@ -574,19 +574,17 @@ import VideoToolbox
         encoder.dateEncodingStrategy = .iso8601
         try encoder.encode([job]).write(to: directory.appending(path: "queue.json"))
 
-        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
-        #expect(FileManager.default.fileExists(atPath: temporary.path), "the restart keeps an in-place job's temporary")
-        queue.start()
-        defer { queue.stop() }
-        let state = await Self.wait(for: job.id, in: queue)
-        #expect(state == .done, "\(state)")
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))  // not started
+        #expect(queue.jobs.first?.state == .done)
+        #expect(IngestQueue(persistenceURL: directory.appending(path: "queue.json")).jobs.first?.state == .done, "saved as done")
         #expect(try Data(contentsOf: source) == result)
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted() == ["002_phone.mov", "_originals"])
         #expect(try String(contentsOf: originals.appending(path: "002_phone.mov"), encoding: .utf8) == "the original")
     }
 
     /// B169: a source removed by hand while a crashed in-place job's half-written temporary exists is no finished result
-    /// (the original never moved): the rerun fails "source not found" and the temporary goes.
+    /// (the original never moved): the restart removes the temporary and the rerun fails "source not found". When the
+    /// original did go to `_originals/`, the failure says where it is.
     @Test func inPlaceTemporaryWithoutAMovedOriginalIsNotPutInPlace() async throws {
         let directory = try tempDir("fanous-ingest-tests")
         let folder = directory.appending(path: "library/001_Clips")
@@ -601,6 +599,8 @@ import VideoToolbox
         try encoder.encode([job]).write(to: directory.appending(path: "queue.json"))
 
         let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        #expect(!FileManager.default.fileExists(atPath: temporary.path), "the restart removes the half-written temporary")
+        #expect(queue.jobs.first?.state == .queued)
         queue.start()
         defer { queue.stop() }
         guard case .failed(let text) = await Self.wait(for: job.id, in: queue) else {
@@ -608,7 +608,44 @@ import VideoToolbox
             return
         }
         #expect(text == "source not found: 002_phone.mov")
-        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty, "temporary removed, nothing put in place")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty, "nothing put in place")
+
+        try FileManager.default.createDirectory(at: folder.appending(path: "_originals"), withIntermediateDirectories: true)
+        try Data("the original".utf8).write(to: folder.appending(path: "_originals/002_phone.mov"))
+        let again = queue.enqueue(IngestJob(source: source, destination: source, kind: .transcode(codec: .proRes422HQ), originalsDirectory: folder.appending(path: "_originals")))
+        guard case .failed(let named) = await Self.wait(for: again.id, in: queue) else {
+            Issue.record("not failed")
+            return
+        }
+        #expect(named == "source not found: 002_phone.mov; the original is in _originals/002_phone.mov")
+    }
+
+    /// B169: when the queue file cannot be saved (a full disk; here a read-only folder), an in-place job does not move the
+    /// source: a crash after that move could not be recovered. The job fails and the source stays where it is.
+    @Test func inPlaceJobWhoseRecordCannotBeSavedLeavesTheSource() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        let folder = directory.appending(path: "library/001_Clips")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let still = folder.appending(path: "003_title.png")
+        try Self.writeFramePNG(to: still, index: 1)
+        let bytes = try Data(contentsOf: still)
+        let stateDirectory = directory.appending(path: "state")
+        try FileManager.default.createDirectory(at: stateDirectory, withIntermediateDirectories: true)
+        let queue = IngestQueue(persistenceURL: stateDirectory.appending(path: "queue.json"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: stateDirectory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stateDirectory.path) }
+        queue.start()
+        defer { queue.stop() }
+
+        let job = queue.enqueue(IngestJob(source: still, destination: still, kind: .still, originalsDirectory: folder.appending(path: "_originals")))
+        guard case .failed(let text) = await Self.wait(for: job.id, in: queue) else {
+            Issue.record("not failed")
+            return
+        }
+        #expect(text == "the ingest queue could not be saved; the source was left in place")
+        #expect(try Data(contentsOf: still) == bytes)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { !$0.hasPrefix("_") } == ["003_title.png"], "no temporary left")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.appending(path: "_originals").path).isEmpty)
     }
 
     /// B169: an in-place job on a file that already is its result (a crash after the rename, before `done` was saved, reruns
