@@ -744,7 +744,11 @@ public final class Engine: @unchecked Sendable {
         let settings = MachineSettings.load(from: AppPaths.settingsFile).sync ?? SyncSettings()  // RoleAuth logs its problems
         let machine = UUID(uuidString: Self.installUUID()) ?? UUID()
         let receiver = SyncReceiver(machine: machine, logger: logger)
-        bindSyncReceiver(receiver, port: settings.port)
+        do {
+            try receiver.start(port: settings.port, loopbackOnly: !options.network)
+        } catch {
+            logger.error("sync port in use; not receiving sync packets", metadata: ["port": "\(settings.port)", "error": "\(error)"])
+        }
         let sender = SyncSender(machine: machine, settings: settings, network: options.network, logger: logger)
         sender.start()
         compositor.sync = (receiver, sender)
@@ -758,20 +762,11 @@ public final class Engine: @unchecked Sendable {
         guard let receiver = syncReceiver, let sender = syncSender else { return }
         sender.apply(settings)
         receiver.stop()
-        guard bindSyncReceiver(receiver, port: settings.port) else {
-            throw CommandError("failed", "saved, but sync port \(settings.port) is in use: not receiving sync packets")
-        }
-    }
-
-    /// Binds the sync receiver; false (logged) when the port is in use.
-    @discardableResult
-    private func bindSyncReceiver(_ receiver: SyncReceiver, port: UInt16) -> Bool {
         do {
-            try receiver.start(port: port, loopbackOnly: !options.network)
-            return true
+            try receiver.start(port: settings.port, loopbackOnly: !options.network)
         } catch {
-            logger.error("sync port in use; not receiving sync packets", metadata: ["port": "\(port)", "error": "\(error)"])
-            return false
+            logger.error("sync port in use; not receiving sync packets", metadata: ["port": "\(settings.port)", "error": "\(error)"])
+            throw CommandError("failed", "saved, but sync port \(settings.port) is in use: not receiving sync packets")
         }
     }
 
