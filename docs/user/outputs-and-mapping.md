@@ -173,13 +173,14 @@ you leave show mode.
 |---|---|---|
 | "Mode differs: … wanted …. Applied in show mode." | The display runs another mode now | Nothing: show mode applies it |
 | "Mode … is not available on this display; closest …" | The display does not offer that mode | Pick the closest, or set the projector itself |
-| "N Hz is not a multiple of the canvas M fps: motion judders" | The wanted refresh rate and the canvas rate do not match | Change the Mode or the canvas frame rate |
+| "N Hz is not a multiple of the canvas M fps: motion judders" | The wanted refresh rate, or without a Mode the rate its display runs at in show mode, and the canvas rate do not match | Change the Mode or the canvas frame rate |
 | "Conflicts with Output N on the same display" | Two outputs on one display want different modes | The first output with a Mode wins; make them agree |
 | "Not applied: screen locked: modes applied when unlocked" | macOS refuses display changes on a locked screen | Unlock the Mac; the mode follows while show mode is on |
 
 The judder warning, and the readiness item **Outputs in their desired
-display mode**, look only at outputs that have a Mode: for the others, read
-the Hz on the output row yourself. 59.94 and 60 Hz count as the same rate
+display mode**, check the Mode's rate; for an output without a Mode, the rate its display
+runs at in show mode: another output's Mode on that display, or else the
+current rate. 59.94 and 60 Hz count as the same rate
 (so do 29.97/30 and 23.976/24); the exact one is used when the display
 offers it. Resolution means pixels: on a HiDPI display the current scaling
 is kept when both a scaled and a 1:1 mode have the asked size. A display
