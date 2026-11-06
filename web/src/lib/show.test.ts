@@ -11,6 +11,7 @@ import {
   cueRowLabel, cueRowText, cueStatus, fixtureNames, fixtureType, formatNumber, groupSpecs, isNumberTaken, lockTitle, newValue, nextCueNumber,
   numberAfter, parseTrigger, retargetValue, sortedCues, specsFor, swapSteps, timecodeBadge, timecodeOn, timecodeSource, valueControl, withFade,
   offsetText,
+  TRIGGER_HINT,
   rateFps,
   midiControlText,
   midiParameterTarget,
@@ -108,6 +109,7 @@ describe('parseTrigger', () => {
   it('pads, defaults the rate to 25 and spells rates the way the engine parses them', () => {
     expect(parseTrigger('1:2:3:4')).toEqual({ ok: true, value: '01:02:03:04@25' });
     expect(parseTrigger('00:01:30:00@24')).toEqual({ ok: true, value: '00:01:30:00@24' });
+    expect(TRIGGER_HINT).toContain('29.97ndf');
     expect(parseTrigger('00:00:10:29@29.97df')).toEqual({ ok: true, value: '00:00:10:29@29.97 DF' });
     expect(parseTrigger('00:00:10:29 @ 29.97 NDF')).toEqual({ ok: true, value: '00:00:10:29@29.97 NDF' }); // what the engine shows back
     expect(parseTrigger('00:01:00;02@29.97DF')).toEqual({ ok: true, value: '00:01:00:02@29.97 DF' });
