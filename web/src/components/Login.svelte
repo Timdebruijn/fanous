@@ -2,6 +2,7 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
+  import { errText } from '../lib/errors';
   import { app, client } from '../lib/state.svelte';
   import type { Role } from '../lib/protocol';
 
@@ -42,7 +43,7 @@
         error = 'Wrong password for this role.';
       }
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errText(e);
     } finally {
       busy = false;
     }

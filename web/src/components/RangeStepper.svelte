@@ -8,6 +8,7 @@
 
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
+  import { clamp } from '../lib/system';
 
   // One −/range/+ slider for a value the engine owns (B114; the colour of an output, a wall's seams, floor and overlap).
   // From an input, a −/+ tap or a key it shows the value it sent instead of the engine's, until the engine's value
@@ -85,7 +86,7 @@
   }
   const up = (e: PointerEvent) => e.pointerId === finger && release();
   function nudge(by: number) {
-    const n = Math.min(max, Math.max(min, Number((v + by).toFixed(digits))));
+    const n = clamp(Number((v + by).toFixed(digits)), min, max);
     hold(n);
     set(n);
   }

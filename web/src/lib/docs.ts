@@ -310,11 +310,9 @@ export interface ReadinessItemDoc {
 }
 
 /** Puts back the top-level keys a patch removed (the undo of the first `timecode.set` removes `/timecode`, which a
- * new project lacks): the screens read them without a guard. Returns the keys it restored. */
-export function restoreKeys(doc: Record<string, unknown>, defaults: object): string[] {
-  const missing = Object.keys(defaults).filter((key) => !(key in doc));
-  for (const key of missing) doc[key] = structuredClone((defaults as Record<string, unknown>)[key]);
-  return missing;
+ * new project lacks): the screens read them without a guard. */
+export function restoreKeys(doc: Record<string, unknown>, defaults: object): void {
+  for (const key of Object.keys(defaults)) if (!(key in doc)) doc[key] = structuredClone((defaults as Record<string, unknown>)[key]);
 }
 
 export const emptyProject: ProjectDoc = {

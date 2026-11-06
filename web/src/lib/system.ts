@@ -4,7 +4,6 @@
 // Pure helpers of the System / Health screen: clocks, readiness verdicts, the /metrics summary, the frame-time
 // sparkline and the log filter. The screen stays thin so everything that can go wrong is tested here.
 import type { ReadinessItemDoc } from './docs';
-import { clamp01 } from './outputs';
 import type { Role } from './protocol';
 
 export const OPERATOR_TITLE = 'Locked: operator or programmer';
@@ -19,6 +18,15 @@ export const pad2 = (n: number) => String(n).padStart(2, '0');
 
 /** A count with its noun: 1 → "1 layer", 2 → "2 layers"; `many` for an irregular plural ("canvases"). */
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** `n` within `lo`…`hi` (`hi` wins when `lo` > `hi`). */
+export const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), hi);
+
+/** The number typed into `el`, or null when it is blank, not a number, or below `min`. */
+export function typedNumber(el: HTMLInputElement, min = -Infinity): number | null {
+  const n = Number(el.value);
+  return el.value.trim() === '' || !Number.isFinite(n) || n < min ? null : n;
+}
 
 const finite = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
@@ -54,7 +62,7 @@ export function ageText(seconds: number): string {
 
 /** "62 % free · 64 GB" */
 export function memoryText(freeFraction: number, gb: number): string {
-  const free = `${Math.round(clamp01(finite(freeFraction)) * 100)} % free`;
+  const free = `${Math.round(clamp(finite(freeFraction), 0, 1) * 100)} % free`;
   return gb > 0 ? `${free} · ${gb} GB` : free;
 }
 

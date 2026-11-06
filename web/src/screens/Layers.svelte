@@ -29,6 +29,7 @@
   import { canvasTarget, layerCanvas } from '../lib/outputs';
   import { loadChannelMap, type ChannelMap } from '../lib/patch-screen';
   import { latestOnly } from '../lib/preview';
+  import { clamp } from '../lib/system';
   import { go } from '../lib/router.svelte';
   import { app, subscribeThumbs } from '../lib/state.svelte';
   import { plural } from '../lib/system';
@@ -98,7 +99,7 @@
 
   const numbers = $derived(layerNumbers(app.project.layerCount));
   const layerCount = $derived(numbers.length);
-  const selected = $derived(Math.min(Math.max(ui.selected, 1), Math.max(layerCount, 1)));
+  const selected = $derived(clamp(ui.selected, 1, Math.max(layerCount, 1)));
   const liveByIndex = $derived(new Map(app.live.layers.map((layer) => [layer.index, layer])));
   const patchByFixture = $derived(new Map(app.project.patch.map((entry) => [entry.fixture, entry])));
   const thumbs = $derived(thumbnailIndex(library));

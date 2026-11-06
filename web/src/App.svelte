@@ -8,7 +8,6 @@
   import StatusBar from './components/StatusBar.svelte';
   import Toast from './components/Toast.svelte';
   import { BANNER_MS } from './lib/errors';
-  import { attributionText, repositoryURL } from './lib/attribution';
   import { route, startRouter } from './lib/router.svelte';
   import { app, client } from './lib/state.svelte';
   import Layers from './screens/Layers.svelte';
@@ -18,6 +17,10 @@
   import Patch from './screens/Patch.svelte';
   import Show from './screens/Show.svelte';
   import System from './screens/System.svelte';
+
+  /** Must match Attribution.text in FanousCore. */
+  const attributionText = 'Based on Fanous by Tim de Bruijn — https://github.com/timdebruijn/fanous';
+  const repositoryURL = 'https://github.com/timdebruijn/fanous';
 
   let showMessages = $state(false);
 

@@ -298,10 +298,9 @@ describe('restoreKeys (B137 review)', () => {
   it('puts back a top-level key a patch removed, as a copy, and leaves the others', () => {
     const project: Record<string, unknown> = { ...structuredClone(emptyProject), name: 'Show' };
     delete project.timecode;  // the undo of a new project's first timecode.set
-    expect(restoreKeys(project, emptyProject)).toEqual(['timecode']);
+    restoreKeys(project, emptyProject);
     expect(project.timecode).toEqual(emptyProject.timecode);
     expect(project.timecode).not.toBe(emptyProject.timecode);
     expect(project.name).toBe('Show');
-    expect(restoreKeys(project, emptyProject)).toEqual([]);
   });
 });

@@ -10,6 +10,7 @@
     specsFor, valueControl, withFade,
   } from '../lib/show';
   import { app, can, cmd, programmerLock } from '../lib/state.svelte';
+  import { typedNumber } from '../lib/system';
 
   /** `map`: undefined while the channel map loads, null when it could not be loaded */
   let { cue, map: loaded }: { cue: CueDoc | undefined; map: ChannelMap | null | undefined } = $props();
@@ -34,12 +35,6 @@
     if ((await cmd('cue.set', { id: next.id, cue: next as unknown as JSONValue })) === undefined) revert();
   }
 
-  /** The number typed into `el`, or null when it is empty, not a number, or below `min`. */
-  function typed(el: HTMLInputElement, min = 0): number | null {
-    const n = Number(el.value);
-    return el.value.trim() === '' || !Number.isFinite(n) || n < min ? null : n;
-  }
-
   /** An entry that cannot be a valid value: say why under the fields and put the control back. */
   function reject(el: HTMLInputElement, message: string, original: string) {
     problem = message;
@@ -47,7 +42,7 @@
   }
 
   function onNumber(c: CueDoc, el: HTMLInputElement) {
-    const n = typed(el);
+    const n = typedNumber(el, 0);
     const original = String(c.number);
     if (n === null) return reject(el, 'A cue number is a number from 0 up.', original);
     if (isNumberTaken(app.project.cues, n, c.id)) return reject(el, `Cue ${formatNumber(n)} already exists.`, original);
@@ -55,14 +50,14 @@
   }
 
   function onFade(c: CueDoc, el: HTMLInputElement) {
-    const n = el.value.trim() === '' ? 0 : typed(el);
+    const n = el.value.trim() === '' ? 0 : typedNumber(el, 0);
     const original = String(c.fade);
     if (n === null) return reject(el, 'A fade time is seconds, 0 or more.', original);
     void save({ ...c, fade: n }, () => (el.value = original));
   }
 
   function onFollow(c: CueDoc, el: HTMLInputElement) {
-    const n = el.value.trim() === '' ? null : typed(el);
+    const n = el.value.trim() === '' ? null : typedNumber(el, 0);
     const original = c.follow == null ? '' : String(c.follow);
     if (n === null && el.value.trim() !== '') return reject(el, 'Follow is seconds, 0 or more; leave it empty for none.', original);
     void save({ ...c, follow: n }, () => (el.value = original));
@@ -85,7 +80,7 @@
 
   function onRaw(c: CueDoc, i: number, v: CueValueDoc, spec: ParamSpec | undefined, el: HTMLInputElement) {
     const original = String(v.raw);
-    const n = typed(el, -Infinity);
+    const n = typedNumber(el);
     if (n === null) {
       el.value = original;
       return;
@@ -96,7 +91,7 @@
   }
 
   function onValueFade(c: CueDoc, i: number, v: CueValueDoc, el: HTMLInputElement) {
-    const n = el.value.trim() === '' ? null : typed(el);
+    const n = el.value.trim() === '' ? null : typedNumber(el, 0);
     const original = v.fade == null ? '' : String(v.fade);
     if (n === null && el.value.trim() !== '') return reject(el, 'A value fade is seconds, 0 or more; leave it empty to use the cue fade.', original);
     setValue(c, i, withFade(v, n), () => (el.value = original));

@@ -826,7 +826,6 @@
   .narrow { width: 90px; }
   .nudge { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
   .nudge .caption { flex: 1 1 200px; margin: 0; }
-  .yellow { color: var(--yellow); }
   .edges { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
   .edge { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
   .edge .input { width: 100%; }

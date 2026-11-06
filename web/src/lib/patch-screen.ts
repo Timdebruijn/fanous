@@ -5,7 +5,7 @@
 // words (DESIGN §6.6), per-universe cell ownership, parameter lookup by fixture-relative channel, universe naming and
 // option lists, the Universes panel's rows and the Patch sheet.
 import type { PatchEntry, UniverseInfo, UniverseSettingsDoc } from './docs';
-import { plural } from './system';
+import { clamp, plural } from './system';
 
 export const UNIVERSE_SIZE = 512;
 export const LOCKED_TITLE = 'Locked: programmer only';
@@ -144,7 +144,7 @@ function portAddress(id: string): number {
 
 /** The other protocol's universe by the engine's default mapping: sACN n ↔ Art-Net port-address n − 1 (S 1 ↔ A 0.0.0). */
 export function defaultPair(id: string): string {
-  if (id.startsWith('sacn:')) return artnetId(Math.min(Math.max(Number(id.slice(5)) - 1, 0), 0x7fff));
+  if (id.startsWith('sacn:')) return artnetId(clamp(Number(id.slice(5)) - 1, 0, 0x7fff));
   return `sacn:${Math.min(portAddress(id) + 1, 63999)}`;
 }
 
@@ -273,7 +273,7 @@ interface Kind {
 const KINDS: Record<string, Kind> = {
   layer: {
     title: 'Layers', max: MAX_LAYERS, ownUniverses: true,
-    numbers: (layers) => Array.from({ length: Math.max(0, Math.min(Math.floor(layers) || 0, MAX_LAYERS)) }, (_, i) => i + 1),
+    numbers: (layers) => Array.from({ length: clamp(Math.floor(layers) || 0, 0, MAX_LAYERS) }, (_, i) => i + 1),
   },
   machine: { max: 1, numbers: () => [1] },
   output: { title: 'Outputs', max: MAX_OUTPUTS, numbers: (_, ids) => [...new Set(ids)].filter((n) => n >= 1 && n <= MAX_OUTPUTS).sort((a, b) => a - b) },

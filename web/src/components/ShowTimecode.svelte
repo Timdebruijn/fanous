@@ -6,7 +6,7 @@
   import type { JSONValue } from '../lib/protocol';
   import { lockTitle, offsetText, timecodeBadge, timecodeOn, timecodeSource } from '../lib/show';
   import { app, can, cmd, programmerLock } from '../lib/state.svelte';
-  import { plural } from '../lib/system';
+  import { plural, typedNumber } from '../lib/system';
 
   const tc = $derived(app.project.timecode);
   const live = $derived(app.live.timecode);
@@ -30,11 +30,6 @@
   /** Sends one setting; `revert` puts the control back when the engine refuses (the banner says why). */
   async function set(path: string, value: JSONValue, revert: () => void) {
     if ((await cmd('timecode.set', { path, value })) === undefined) revert();
-  }
-
-  function typed(el: HTMLInputElement): number | null {
-    const n = Number(el.value);
-    return el.value.trim() === '' || !Number.isFinite(n) ? null : n;
   }
 
   function setOffset(n: number | null, el?: HTMLInputElement) {
@@ -107,7 +102,7 @@
         title={editTitle}
         onchange={(e) => {
           const el = e.currentTarget;
-          const n = typed(el);
+          const n = typedNumber(el);
           if (n === null || n < 1) el.value = String(tc.channel + 1);
           else void set('/channel', Math.round(n) - 1, () => (el.value = String(tc.channel + 1)));
         }}
@@ -117,7 +112,7 @@
       <span id="tc-offset">Offset (frames)</span>
       <div class="stepper" title={editTitle}>
         <button type="button" aria-label="Offset one frame earlier" disabled={!editable} onclick={() => setOffset(offset - 1)}>−</button>
-        <input type="number" step="1" aria-labelledby="tc-offset" value={offset} disabled={!editable} onchange={(e) => setOffset(typed(e.currentTarget), e.currentTarget)} />
+        <input type="number" step="1" aria-labelledby="tc-offset" value={offset} disabled={!editable} onchange={(e) => setOffset(typedNumber(e.currentTarget), e.currentTarget)} />
         <button type="button" aria-label="Offset one frame later" disabled={!editable} onclick={() => setOffset(offset + 1)}>+</button>
       </div>
       <span class="caption" aria-live="polite">{offsetText(offset, app.live.timecode.rate)}</span>
@@ -134,7 +129,7 @@
         title={editTitle}
         onchange={(e) => {
           const el = e.currentTarget;
-          const n = typed(el);
+          const n = typedNumber(el);
           if (n === null || n < 0.1) el.value = String(tc.freewheel);
           else void set('/freewheel', n, () => (el.value = String(tc.freewheel)));
         }}

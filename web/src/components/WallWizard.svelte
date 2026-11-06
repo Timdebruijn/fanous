@@ -3,7 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { app, programmerLock } from '../lib/state.svelte';
-  import { plural } from '../lib/system';
+  import { clamp, plural } from '../lib/system';
   import { applyWizard, cancelWizard, wallUI, wizardBack } from '../lib/wall-session.svelte';
   import { MAX_CANVAS_PIXELS, fitCanvas, freeOutputs, grids, overlapHint, rc, tap, wallPixels, wallSize, type Grid } from '../lib/walls';
 
@@ -47,7 +47,7 @@
   const showMode = $derived(app.live.show.mode);
   const applyReason = $derived(lock ?? (gone ? 'This wall was removed.' : draft.fit === 'makeCanvas' && showMode ? 'Leave show mode to resize a canvas, or use the canvas as it is.' : null));
   function setOverlap(percent: number) {
-    draft.overlap = Math.min(50, Math.max(0, Math.round(percent)));
+    draft.overlap = clamp(Math.round(percent), 0, 50);
   }
   const ordinal = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th'}`;
 </script>
@@ -164,7 +164,6 @@
   header, footer { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
   .muted { margin: 0; }
   .caption { margin: 0; }
-  .yellow { color: var(--yellow); }
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
   .tile {
     position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 96px; padding: 12px;

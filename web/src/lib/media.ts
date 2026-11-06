@@ -4,6 +4,7 @@
 // Pure helpers of the Media screen: library shapes (LibraryIndex.swift), codec and job-state names for what Swift's
 // synthesized Codable writes (IngestQueue.swift, MovieWriter.swift), formatting and filtering.
 import type { IngestJobDoc } from './docs';
+import { errText } from './errors';
 import { clamp01 } from './outputs';
 import { plural } from './system';
 
@@ -273,6 +274,6 @@ export async function send(url: string, init: RequestInit): Promise<string | nul
     if (response.ok) return null;
     return `${response.status} ${(await response.text()).trim() || response.statusText}`.trim();
   } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    return errText(error);
   }
 }

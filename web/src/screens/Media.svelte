@@ -6,6 +6,7 @@
   import MediaIngestQueue from '../components/MediaIngestQueue.svelte';
   import MediaTile from '../components/MediaTile.svelte';
   import PolicyHint from '../components/PolicyHint.svelte';
+  import { errText } from '../lib/errors';
   import { app, authHeaders, can, playOnLayer, post, programmerLock } from '../lib/state.svelte';
   import {
     activeSources,
@@ -82,7 +83,7 @@
       const snapshot = await loadLibrary();
       if (mine === latest) library = snapshot;
     } catch (error) {
-      if (mine === latest) notice = `Cannot load the library: ${error instanceof Error ? error.message : String(error)}`;
+      if (mine === latest) notice = `Cannot load the library: ${errText(error)}`;
     } finally {
       if (mine === latest) loads++;
     }

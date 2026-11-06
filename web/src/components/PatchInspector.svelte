@@ -3,6 +3,7 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { app, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
+  import { clamp } from '../lib/system';
   import { UNIVERSE_SIZE, compareUniverse, rangeText, universeName, type FixtureRow, type Slot, type Status } from '../lib/patch-screen';
 
   // The inline editor of one fixture, inside its group (DESIGN §6.6 item 2): universe, address, Patch or Unpatch.
@@ -27,9 +28,7 @@
   /** a slot's universe may be one nobody uses yet (A 0.0.5 for Layers 33–40 of a block at A 0.0.4) */
   const choices = $derived(options.includes(universe) ? options : [...options, universe].sort(compareUniverse));
 
-  function clamp(n: number): number {
-    return Math.min(maxAddress, Math.max(0, Math.round(n)));
-  }
+  const clampAddress = (n: number) => clamp(Math.round(n), 0, maxAddress);
 
   async function apply(nextUniverse: string, nextAddress: number) {
     universe = nextUniverse;
@@ -56,7 +55,7 @@
 
   function commitAddress(input: HTMLInputElement) {
     const typed = input.value.trim();
-    const next = typed === '' || Number.isNaN(Number(typed)) ? address : clamp(Number(typed));
+    const next = typed === '' || Number.isNaN(Number(typed)) ? address : clampAddress(Number(typed));
     input.value = String(next);
     if (next !== address) void apply(universe, next);
   }
@@ -80,12 +79,12 @@
     <div class="field" role="group" aria-label="Address">
       <span class="label" aria-hidden="true">Address</span>
       <div class="stepper">
-        <button type="button" aria-label="Decrease address" title={lock ?? 'Decrease address (Shift: 10)'} disabled={locked || address <= 0} onclick={(e) => apply(universe, clamp(address - (e.shiftKey ? 10 : 1)))}>−</button>
+        <button type="button" aria-label="Decrease address" title={lock ?? 'Decrease address (Shift: 10)'} disabled={locked || address <= 0} onclick={(e) => apply(universe, clampAddress(address - (e.shiftKey ? 10 : 1)))}>−</button>
         <input
           type="number" inputmode="numeric" min="0" max={maxAddress} step="1" aria-label="Address (0 = no address)"
           value={address} disabled={locked} title={lock}
           onchange={(e) => commitAddress(e.currentTarget)} />
-        <button type="button" aria-label="Increase address" title={lock ?? 'Increase address (Shift: 10)'} disabled={locked || address >= maxAddress} onclick={(e) => apply(universe, clamp(address + (e.shiftKey ? 10 : 1)))}>+</button>
+        <button type="button" aria-label="Increase address" title={lock ?? 'Increase address (Shift: 10)'} disabled={locked || address >= maxAddress} onclick={(e) => apply(universe, clampAddress(address + (e.shiftKey ? 10 : 1)))}>+</button>
       </div>
     </div>
     <span class="spacer"></span>

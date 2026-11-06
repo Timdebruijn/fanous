@@ -5,6 +5,7 @@
 import type { CaptureLiveDoc, LayerStatus, PatchEntry, ProjectDoc, ResolvedParameter, SyphonServerDoc } from './docs';
 import { codecLabel, displayName } from './media';
 import type { ParamSpec } from './patch-screen';
+import { clamp } from './system';
 
 /** 1…`layerCount` (the project's, guarded against a bad document). */
 export function layerNumbers(layerCount: number): number[] {
@@ -201,7 +202,7 @@ export function formatTime(seconds: number): string {
 }
 
 export function clampPercent(value: number): number {
-  return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0;
+  return Number.isFinite(value) ? clamp(value, 0, 100) : 0;
 }
 
 /** Playhead position of a movie in percent of its length. */
