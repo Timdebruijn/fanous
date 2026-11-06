@@ -22,7 +22,6 @@ link here. Back to the [index](../README.md).
 | Only GDTF: no grandMA2 XML, MagicQ head file, Avolites personality, Eos library request or Onyx fixture. Eos's GDTF import creates no media or model list. | B77 |
 | Fanous answers ArtPoll, but has no registered Art-Net OEM code yet. | B13 |
 | The ArtPollReply names the Mac's first network address, which on a Mac with Wi-Fi and a show adapter can be the wrong one, and carries no MAC address, so two Macs look like one node to a desk that keys on it. Enter the Mac's address on the desk by hand. | B166 |
-| Another program holding the Art-Net port 6454 is only reported in the engine log; the readiness list warns for the sACN port only. | B167 |
 | A loss of OSC messages sent back to back was seen once and never reproduced. If a controller's bursts seem partly lost, leave about 50 ms between messages and report it. | B30 |
 | Who controls applies to the whole project, not per layer. | — |
 
@@ -84,7 +83,7 @@ link here. Back to the [index](../README.md).
 | **Display sleep disabled** fails for any setting but Never, although show mode holds the display awake meanwhile, so a 10-minute setting blocks show mode until acknowledged. | B180 |
 | After a deliberate Engine › Restart Engine in show mode the System screen says "The engine stopped uncleanly during the show": the UI cannot tell a restart from a crash. | B181 |
 | **Spotlight indexing off for the library volume** reads the volume's indexing switch only; a library folder added to Spotlight Privacy still fails the item. | B182 |
-| A port held by another program (the web UI's 8443, Art-Net 6454, OSC 8000) is only logged as "listener failed": the engine keeps running without that listener, and with 8443 taken nothing on screen can say so; Start Engine then restarts that healthy engine. A second engine started by hand refuses on the terminal only, not in the log. | B183 |
+| A port held by another program (the web UI's 8443, OSC 8000) is only logged as "listener failed": the engine keeps running without that listener, and with 8443 taken nothing on screen can say so; Start Engine then restarts that healthy engine. A second engine started by hand refuses on the terminal only, not in the log. | B183 |
 | Logins do not survive an engine restart: every iPad logs in again, and a client that asked for a role it can no longer get drops to the highest open role without a word. | B184 |
 | Nothing alerts you when a readiness item turns red while show mode is on: only the System screen's red banner shows it; the status bar and the log stay quiet. | B185 |
 | A show-mode file left by a crash resumes show mode at any later start on the same boot, also days later; only Stop Engine clears it. | B186 |

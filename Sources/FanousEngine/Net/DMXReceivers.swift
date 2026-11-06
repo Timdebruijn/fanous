@@ -6,6 +6,7 @@ import Foundation
 import FanousCore
 import Logging
 import Network
+import Synchronization
 
 /// Art-Net 4 on UDP 6454: ArtDmx into the store, ArtPoll answered with ArtPollReply (unicast to the poller).
 public final class ArtNetReceiver: @unchecked Sendable {
@@ -14,6 +15,7 @@ public final class ArtNetReceiver: @unchecked Sendable {
     private let nodeName: String
     private var listener: NWListener?
     private let port: UInt16
+    private let failed = Mutex<String?>(nil)
 
     public init(store: DMXStore, logger: Logger, nodeName: String, port: UInt16 = ArtNet.port) {
         self.store = store
@@ -26,14 +28,19 @@ public final class ArtNetReceiver: @unchecked Sendable {
     /// (tests only: the kernel picks one).
     public var boundPort: UInt16? { listener?.port?.rawValue }
 
+    /// Why the listener failed (a program that holds UDP 6454 exclusively), for readiness (B167); nil while it runs.
+    public var failure: String? { failed.withLock { $0 } }
+
     public func start() throws {
         let parameters = NWParameters.udp
         parameters.allowLocalEndpointReuse = true
         let listener = try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port)!)
-        listener.stateUpdateHandler = { [logger, port, weak listener] state in
+        listener.stateUpdateHandler = { [logger, port, weak self, weak listener] state in
             switch state {
             case .ready: logger.info("Art-Net listening", metadata: ["port": "\(listener?.port?.rawValue ?? port)"])
-            case .failed(let error): logger.error("Art-Net listener failed", metadata: ["error": "\(error)"])
+            case .failed(let error):
+                logger.error("Art-Net listener failed", metadata: ["error": "\(error)"])
+                self?.failed.withLock { $0 = "\(error)" }
             default: break
             }
         }

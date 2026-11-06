@@ -86,7 +86,8 @@ another program, or hung), Start Engine restarts it, and the outputs go
 black for a moment. Read the log first. A port held by another program
 (8443, Art-Net 6454, OSC 8000) does not stop the engine; the log says
 "HTTPS listener failed", "Art-Net listener failed" or "OSC UDP failed" and
-the engine runs without that listener ([known limitations](reference/known-limitations.md#show-mode-and-the-machine)).
+the engine runs without that listener; for Art-Net the readiness item
+**Art-Net port 6454 available** warns too ([known limitations](reference/known-limitations.md#show-mode-and-the-machine)).
 
 ## The iPad warns about the certificate
 

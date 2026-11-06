@@ -57,7 +57,7 @@ a planned Restart, Shut Down or Log Out leaves show mode.
 | Item row | A dot, the title, what it found in monospace, a fix hint when it is not ok, and **Acknowledge** (programmer) for a failed item, or a badge. Acknowledging accepts the risk: show mode can then start although the item still fails. Do it only for something you decided on purpose, such as a spare display that is not connected |
 | Badges | **warning** (yellow, never blocks), **blocking** (red, cannot be acknowledged: Supported hardware), **acknowledged** (yellow), **manual** (grey outline: Fanous cannot read it, check by hand). A **failed** item (red dot) shows the Acknowledge button instead of a badge |
 
-The 23 items with their thresholds and fixes:
+The 24 items with their thresholds and fixes:
 [Readiness items](../reference/readiness.md). An
 acknowledgement holds until the engine restarts. Empty: "No checks have run
 yet. Run the checks, or enter show mode, which runs them."
