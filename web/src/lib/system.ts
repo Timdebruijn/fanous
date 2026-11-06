@@ -22,7 +22,7 @@ export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n ==
 /** `n` within `lo`…`hi` (`hi` wins when `lo` > `hi`). */
 export const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), hi);
 
-/** The number typed into `el`, or null when it is blank, not a number, or below `min`. */
+/** The number typed into `el`, or null when it is blank, not a finite number, or below `min`. */
 export function typedNumber(el: HTMLInputElement, min = -Infinity): number | null {
   const n = Number(el.value);
   return el.value.trim() === '' || !Number.isFinite(n) || n < min ? null : n;
