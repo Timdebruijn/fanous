@@ -92,8 +92,11 @@ export function templateSVG(output: OutputConfig, canvas: { width: number; heigh
     const label = `Slice ${slice.id} · ${Math.round(x)},${Math.round(y)} · ${Math.round(w)}×${Math.round(h)} px${slice.masks?.length ? ' · masked' : ''}`;
     parts.push(`<text x="${x + font * 0.6}" y="${y + font * 1.4}" fill="${colour}" font-family="Helvetica, Arial, sans-serif" font-size="${font}" font-weight="700">${escape(label)}</text>`);
   });
+  // on a band of the background colour, the text's own box (a flood filter sized to it), so a slice border that
+  // crosses the footer does not strike it through (B174)
+  parts.push(`<filter id="band" x="-0.01" y="-0.15" width="1.02" height="1.3"><feFlood flood-color="#101215"/><feComposite in="SourceGraphic"/></filter>`);
   parts.push(
-    `<text x="${font * 0.6}" y="${H - font * 0.8}" fill="#A3AAB4" font-family="Helvetica, Arial, sans-serif" font-size="${font}">${escape(`Fanous content template · ${output.name} · canvas ${W}×${H} px · filled = visible on this output`)}</text>`,
+    `<text x="${font * 0.6}" y="${H - font * 0.8}" fill="#A3AAB4" filter="url(#band)" font-family="Helvetica, Arial, sans-serif" font-size="${font}">${escape(`Fanous content template · ${output.name} · canvas ${W}×${H} px · filled = visible on this output`)}</text>`,
   );
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${parts.join('')}</svg>`;
 }
