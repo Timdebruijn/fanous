@@ -158,6 +158,16 @@ export function basename(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1);
 }
 
+/** A job's source and destination arrive as file URLs (Swift encodes `URL` that way): the plain path, decoded for display ("2%20Band" → "2 Band"); anything else as is. */
+export function displayPath(path: string): string {
+  if (!path.startsWith('file://')) return path;
+  try {
+    return decodeURIComponent(new URL(path).pathname);
+  } catch {
+    return path; // a malformed escape: better encoded than missing
+  }
+}
+
 /** The last two path components: "…/003_Intro/012_clip.mov" → "003_Intro/012_clip.mov". */
 export function pathTail(path: string): string {
   return path.split('/').filter(Boolean).slice(-2).join('/');

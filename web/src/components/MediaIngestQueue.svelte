@@ -4,7 +4,7 @@
 <script lang="ts">
   import { app, can, post } from '../lib/state.svelte';
   import { LOCKED_TITLE } from '../lib/patch-screen';
-  import { basename, describeCodec, describeJobState, isActive, orderJobs, pathTail, queueSummary } from '../lib/media';
+  import { basename, describeCodec, displayPath, describeJobState, isActive, orderJobs, pathTail, queueSummary } from '../lib/media';
 
   let { onfail }: { onfail: (message: string) => void } = $props();
 
@@ -32,16 +32,18 @@
       {#each jobs as job (job.id)}
         {@const state = describeJobState(job.state)}
         {@const percent = Math.round(state.progress * 100)}
+        {@const source = displayPath(job.source)}
+        {@const destination = displayPath(job.destination)}
         <li class="job">
           <div class="who">
-            <div class="ellipsis" title={job.source}>{basename(job.source)}</div>
-            <div class="caption mono ellipsis" title={job.destination}>{pathTail(job.destination)}</div>
+            <div class="ellipsis" title={source}>{basename(source)}</div>
+            <div class="caption mono ellipsis" title={destination}>{pathTail(destination)}</div>
           </div>
           <span class="badge badge-outline">{describeCodec(job.kind)}</span>
           <span class="state" class:run={state.label === 'transcoding'} class:fail={state.label === 'failed'}>
             {state.label}{#if state.label === 'transcoding'}<span class="mono pct">{percent}%</span>{/if}
           </span>
-          <span class="bar" role="progressbar" aria-label="Progress of {basename(job.source)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow={percent}>
+          <span class="bar" role="progressbar" aria-label="Progress of {basename(source)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow={percent}>
             <span style:width="{percent}%"></span>
           </span>
           {#if isActive(state.label)}
