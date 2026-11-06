@@ -23,7 +23,7 @@ struct RoleAuthTests {
     @Test func openRolesNeedNoPassword() throws {
         let (auth, _) = Self.makeAuth()
         #expect(auth.isOpen(.programmer))
-        #expect(auth.grant(requested: .programmer, cookie: nil, token: nil) == .programmer)
+        #expect(auth.grant(requested: .programmer, sessionRole: nil) == .programmer)
         let cookie = try auth.login(role: .operator, password: "", from: "10.0.0.1")
         #expect(auth.role(forCookie: cookie) == .operator)
         auth.logout(cookie: cookie)
@@ -36,11 +36,11 @@ struct RoleAuthTests {
         #expect(!auth.isOpen(.programmer))
         #expect(auth.verify("correct horse", for: .programmer))
         #expect(!auth.verify("wrong", for: .programmer))
-        #expect(auth.grant(requested: .programmer, cookie: nil, token: nil) == .operator, "falls back to the highest open role")
+        #expect(auth.grant(requested: .programmer, sessionRole: nil) == .operator, "falls back to the highest open role")
         #expect(throws: RoleAuth.LoginError.wrongPassword) { try auth.login(role: .programmer, password: "wrong", from: "10.0.0.2") }
         let cookie = try auth.login(role: .programmer, password: "correct horse", from: "10.0.0.2")
-        #expect(auth.grant(requested: .programmer, cookie: cookie, token: nil) == .programmer)
-        #expect(auth.grant(requested: .operator, cookie: cookie, token: nil) == .operator)
+        #expect(auth.grant(requested: .programmer, sessionRole: auth.role(forCookie: cookie)) == .programmer)
+        #expect(auth.grant(requested: .operator, sessionRole: auth.role(forCookie: cookie)) == .operator)
 
         let settings = MachineSettings.load(from: directory.appending(path: "settings.json"))
         #expect(settings.passwords["programmer"]?.iterations == 1000)
@@ -56,9 +56,9 @@ struct RoleAuthTests {
         let (auth, _) = Self.makeAuth()
         try auth.setPassword("a", for: .programmer)
         try auth.setPassword("b", for: .operator)
-        #expect(auth.grant(requested: .programmer, cookie: nil, token: nil) == .monitor)
+        #expect(auth.grant(requested: .programmer, sessionRole: nil) == .monitor)
         try auth.setPassword("c", for: .monitor)
-        #expect(auth.grant(requested: .monitor, cookie: nil, token: nil) == nil)
+        #expect(auth.grant(requested: .monitor, sessionRole: nil) == nil)
     }
 
     @Test func loginIsRateLimitedPerAddress() throws {
@@ -83,8 +83,8 @@ struct RoleAuthTests {
         let again = RoleAuth(settingsURL: nil, shellTokenURL: file, iterations: 1000, logger: testLogger)
         #expect(again.shellToken == token)
         try again.setPassword("pw", for: .programmer)
-        #expect(again.grant(requested: .programmer, cookie: nil, token: token) == .programmer)
-        #expect(again.grant(requested: .programmer, cookie: nil, token: "nope") == .operator)
+        #expect(again.grant(requested: .programmer, sessionRole: again.role(forToken: token)) == .programmer)
+        #expect(again.grant(requested: .programmer, sessionRole: again.role(forToken: "nope")) == .operator)
         let wrong = String(token.dropLast()) + (token.last == "0" ? "1" : "0")  // differs from the token in its last character (B84)
         #expect(again.role(forToken: wrong) == nil)
     }
@@ -109,7 +109,7 @@ struct RoleAuthTests {
         #expect(raw["sync"] == ["port": 48900, "target": "127.0.0.1:48901", "mode": "fast"], "an unknown sync field survives")
         #expect(raw["passwords"]?["operator"]?["iterations"] == 1000)
         #expect(auth.verify("pw", for: .operator) && !auth.verify("x", for: .operator))
-        #expect(auth.syncSettings.target == "127.0.0.1:48901", "the copy in memory follows the write")
+        #expect(MachineSettings.load(from: file).sync?.target == "127.0.0.1:48901", "the file the engine reads at start has it")
         try auth.setPassword(nil, for: .operator)
         #expect(try Self.raw(file)["passwords"] == [:], "clearing removes the record")
         #expect(try Self.raw(file)["future"] == [1, "x"])
@@ -129,7 +129,7 @@ struct RoleAuthTests {
 
         let sync = try auth.setSync(["target": "127.0.0.1:48951"])
         #expect(sync.interface == "en0" && sync.port == 48950 && sync.target == "127.0.0.1:48951", "what is applied merges the file")
-        #expect(auth.syncSettings == sync)
+        #expect(MachineSettings.load(from: file).sync == sync)
         try auth.setPassword("pw", for: .operator)
         let raw = try Self.raw(file)
         #expect(raw["passwords"]?["programmer"] == edited["passwords"]?["programmer"], "the hand-set password record is kept")

@@ -61,13 +61,13 @@ public struct ShowModeState: Codable, Equatable, Sendable {
         return Double(value.tv_sec) + Double(value.tv_usec) / 1e6
     }
 
-    /// The shell writes `restart-pending` right before Engine › Restart Engine; a stop that finds a fresh one keeps
+    /// The shell writes `restart-pending` right before Engine › Restart Engine; a stop that finds one under a minute old keeps
     /// show mode. Always removed, so a marker from a failed restart cannot turn a later Stop Engine into a restart.
-    public static func takeRestartMarker(at url: URL, now: Date = Date(), maxAge: TimeInterval = 60) -> Bool {
+    public static func takeRestartMarker(at url: URL, now: Date = Date()) -> Bool {
         let fm = FileManager.default
         guard let modified = (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date else { return false }
         try? fm.removeItem(at: url)
-        return now.timeIntervalSince(modified) < maxAge
+        return now.timeIntervalSince(modified) < 60
     }
 }
 

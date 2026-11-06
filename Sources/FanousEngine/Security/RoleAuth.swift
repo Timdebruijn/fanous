@@ -138,9 +138,6 @@ public final class RoleAuth: @unchecked Sendable {
         logger.info("role password \(record == nil ? "cleared" : "set")", metadata: ["role": "\(role)"])
     }
 
-    /// The sync settings as stored (defaults when the file has none).
-    public var syncSettings: SyncSettings { state.withLock { $0.settings.sync } ?? SyncSettings() }
-
     /// Stores the given sync members (`sync.set`, DESIGN.md §23.2) next to the passwords; the others keep the file's
     /// values. Returns the merged settings, to apply live.
     public func setSync(_ members: [String: JSONValue]) throws -> SyncSettings {
@@ -251,13 +248,8 @@ public final class RoleAuth: @unchecked Sendable {
         return .programmer
     }
 
-    /// The highest role up to `requested` this client is entitled to: shell token → programmer, else the
-    /// session cookie's role, else any open role. Monitor is always granted when open.
-    public func grant(requested: Role, cookie: String?, token: String?) -> Role? {
-        grant(requested: requested, sessionRole: role(forToken: token) ?? role(forCookie: cookie))
-    }
-
-    /// Same, with the session's role already resolved (the WebSocket handler resolves the cookie at upgrade time).
+    /// The highest role up to `requested` this client is entitled to: `sessionRole` (the caller resolves it: shell token →
+    /// programmer, else the session cookie's role), else any open role. Monitor is always granted when open.
     public func grant(requested: Role, sessionRole: Role?) -> Role? {
         for candidate in Role.allCases.reversed() where candidate <= requested {
             if let sessionRole, candidate <= sessionRole { return candidate }
