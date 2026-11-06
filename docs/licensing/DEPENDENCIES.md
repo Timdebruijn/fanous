@@ -40,7 +40,7 @@ platform; the GPL's system-library exception covers linking against them.
 | @sveltejs/vite-plugin-svelte | 7.3.1 | MIT | yes | build |
 | vite | 8.3.5 (2026-10-21) | MIT | yes | build/dev server |
 | vitest | 5.0.5 (2026-10-15) | MIT | yes | tests |
-| typescript | 7.0.2 (2026) | Apache-2.0 | yes | type checking |
+| typescript | 6.0.3 | Apache-2.0 | yes | type checking (svelte-check) |
 
 Rejected alternative: preact 11.0.1 + @preact/signals 2.11.3 (MIT) — see
 ADR-0012.

@@ -53,8 +53,8 @@ accounts are covered. Pull requests from unsigned authors are not merged.
 - **Commits** in English, imperative mood, one topic per commit. PRs describe
   what was measured, not only what was changed.
 - Code style: the `.swift-format` configuration in the repo (CI does not run
-  it). For `web/`, `npm run typecheck` and `npm run check` (`svelte-check`,
-  warnings fail); there is no eslint or prettier.
+  it). For `web/`, `npm run check` (`svelte-check`: types in
+  the `.ts` files and the `.svelte` script blocks, warnings fail); there is no eslint or prettier.
 
 ## 4. Review and merge
 
