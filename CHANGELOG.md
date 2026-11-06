@@ -17,6 +17,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Readiness: **Display sleep disabled** warns instead of failing for a display sleep timeout, so it no longer blocks show mode; show mode holds the display awake (B180) (PR #323).
 - Outputs: an output without a Mode on a display whose refresh is no whole multiple of the canvas rate (a 50 Hz projector on a 60 fps canvas) now gets the judder note on its row and a readiness warning (B173) (PR #325).
 - UI texts now match the guide: the refusal hints say "status bar", the Login dialog lists what an operator can do, the MIDI "Learned:" line names its target like the map rows, and the "sync lost" tooltip says the layers keep running at the master's last rate (PR #313).
+- The ingest queue shows a job's file name and destination folder decoded ("2 Band", not "2%20Band") (PR #316).
 - Cleanup: the web `typecheck` script and the TypeScript 7 preview dependency are gone; `npm run check` (svelte-check) covers the same files on CI (PR #308).
 - Cleanup: sACN sync/discovery parsing, the bench shim scripts and two test-only Core members are gone (PR #309).
 - Cleanup: the scene-file route to a Syphon server is gone (live inputs 150–169 are the way), the preview and

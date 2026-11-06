@@ -7,6 +7,7 @@ import {
   activeSources,
   audioLabel,
   basename,
+  displayPath,
   codecLabel,
   defaultFolder,
   describeCodec,
@@ -161,6 +162,13 @@ describe('formatting', () => {
     expect(basename('clip.mov')).toBe('clip.mov');
     expect(pathTail('/lib/003_Intro/012_clip.mov')).toBe('003_Intro/012_clip.mov');
     expect(pathTail('/clip.mov')).toBe('clip.mov');
+  });
+
+  it('decodes a job file URL for display, leaves plain paths and malformed escapes alone', () => {
+    expect(pathTail(displayPath('file:///lib/002_2%20Band/002_phone.mov'))).toBe('002_2 Band/002_phone.mov');
+    expect(displayPath('file:///in/caf%C3%A9%2350%25.mov')).toBe('/in/café#50%.mov');
+    expect(displayPath('/lib/50%20off.mov')).toBe('/lib/50%20off.mov');
+    expect(displayPath('file:///in/100%zz.mov')).toBe('file:///in/100%zz.mov');
   });
 });
 
