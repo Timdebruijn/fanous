@@ -10,7 +10,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Fix: `GET /api/session` with the shell's Bearer token reports `"role": "programmer"` instead of null; it resolves the role like every other route, token first, then the cookie (PR #NNN).
+- Fix: `GET /api/session` with the shell's Bearer token reports `"role": "programmer"` instead of null; it resolves the role like every other route, token first, then the cookie (PR #322).
 - Cleanup: the web `typecheck` script and the TypeScript 7 preview dependency are gone; `npm run check` (svelte-check) covers the same files on CI (PR #308).
 - Cleanup: sACN sync/discovery parsing, the bench shim scripts and two test-only Core members are gone (PR #309).
 - Cleanup: the scene-file route to a Syphon server is gone (live inputs 150–169 are the way), the preview and
