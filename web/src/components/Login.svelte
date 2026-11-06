@@ -63,7 +63,7 @@
       <span>Role</span>
       <select class="select" bind:value={role}>
         <option value="programmer">Programmer · everything</option>
-        <option value="operator">Operator · cues, blackout, test patterns</option>
+        <option value="operator">Operator · cues, show mode, readiness, timecode switch</option>
         <option value="monitor">Monitor · read only</option>
       </select>
     </label>

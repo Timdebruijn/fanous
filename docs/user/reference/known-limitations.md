@@ -38,9 +38,8 @@ link here. Back to the [index](../README.md).
 | Cue fades are measured up to the engine's published state (first step 1.2 to 1.4 ms, full after about 1 s for a 1 s fade), not up to the photons on the screen. | B43 |
 | The OSC feedback target for a controller that cannot subscribe can only be set in `settings.json`, not on the System screen. OSC listens on port 8000 on every interface; neither can be changed. | — |
 | The OSC panel's "Last received" list shows cue, show, timecode and project-load commands in the engine's own spelling (`cueGoto(3.0)`) and no parameter messages; its address list leaves out `/fanous/project/load` and the feedback addresses, and shows `/fanous/cue/goto` with `i` although any number works. | B176 |
-| The MIDI panel's "Learned:" line names the target in the engine's own spelling (`fixture:Layer 1/intensity`); the cue editor's hint omits the rate 29.97ndf. | B178 |
+| The cue editor's hint omits the rate 29.97ndf. | B159 |
 | A slave layer's freewheel before it reads lost is 2 s and cannot be changed. Two Macs with the same machine id (a cloned install) throw each other's packets away with no warning. | B179 |
-| The status bar's "sync lost" tooltip says the layers play on their own clock; they keep freewheeling at the master's last rate. | B175 |
 
 ## Media and inputs
 

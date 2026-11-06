@@ -10,6 +10,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- UI texts now match the guide: the refusal hints say "status bar", the Login dialog lists what an operator can do, the MIDI "Learned:" line names its target like the map rows, and the "sync lost" tooltip says the layers keep running at the master's last rate (PR #NNN).
 - Cleanup: the web `typecheck` script and the TypeScript 7 preview dependency are gone; `npm run check` (svelte-check) covers the same files on CI (PR #308).
 - Cleanup: sACN sync/discovery parsing, the bench shim scripts and two test-only Core members are gone (PR #309).
 - Cleanup: the scene-file route to a Syphon server is gone (live inputs 150–169 are the way), the preview and

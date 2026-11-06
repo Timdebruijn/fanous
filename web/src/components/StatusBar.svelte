@@ -124,7 +124,7 @@
     <span class="caption" class:yellow={app.live.clients.lagging > 0}>clients{app.live.clients.lagging > 0 ? ` · ${app.live.clients.lagging} lagging` : ''}</span>
   </div>
   {#if syncLost.length > 0}
-    <a class="item red plain" href="#/layers" title="No sync packets for 2 s: {syncLost.join(', ')} play on their own clock (Layers)"><span class="dot dot-red"></span><span class="caption">sync lost</span></a>
+    <a class="item red plain" href="#/layers" title="No sync packets for 2 s: {syncLost.join(', ')} keep running at the master's last rate (Layers)"><span class="dot dot-red"></span><span class="caption">sync lost</span></a>
   {/if}
   {#if app.live.security.webUIOpen}
     <div class="item yellow caption" title="Web UI open: the programmer role has no password (System › Roles)"><span class="dot dot-yellow"></span><span class="long"> web UI open</span></div>
