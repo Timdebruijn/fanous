@@ -360,6 +360,28 @@ import Testing
         #expect(await waitUntil { playback(1)?.uuid == "a" && status(1).error == nil })
     }
 
+    /// An old scene file's `{folder: 0, file: 151, syphon: …}` decodes to an entry without a source; the loader skips
+    /// it, so 151 is the numbered server there, not "has no path".
+    @Test func sceneEntryWithoutASourceLeavesTheNumberedServer() async throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { return }
+        let json = #"{"media": [{"folder": 0, "file": 151, "syphon": "Scene App/Fixed"}]}"#
+        let scene = try JSONDecoder().decode(SceneConfig.self, from: Data(json.utf8))
+        #expect(scene.media == [MediaEntry(folder: 0, file: 151)])
+        let layer = RenderLayer(index: 0)
+        let loader = MediaLoader(layers: [layer], media: scene.media, device: device, ringCapacity: 4, logger: testLogger)
+        loader.liveFactory = { uuid in FakeLive(uuid: uuid) }
+        let catalog = LiveCatalog(.syphon)
+        catalog.update(running: [Self.info("Resolume", "Out", "a"), Self.info("Other", "", "b")])
+        #expect(catalog.entry(file: 151)?.runtimeID == "b")
+        loader.syphonCatalog = catalog
+        loader.start()
+        defer { loader.stop() }
+        layer.wanted.store(MediaKey(folder: 0, file: 151).packed, ordering: .relaxed)
+        loader.wake.signal()
+        #expect(await waitUntil { (layer.pending.withLock { $0.playback?.live as? FakeLive })?.uuid == "b" })
+        #expect(layer.mediaStatus.withLock { $0.name == "Syphon: Other" && $0.error == nil })
+    }
+
     @Test func loaderSaysCouldNotConnectWhenARunningServerRefuses() async throws {
         guard let device = MTLCreateSystemDefaultDevice() else { return }
         let layer = RenderLayer(index: 0)

@@ -1325,7 +1325,8 @@ file I/O; it then goes through the layer pipeline like media.
 **As built (2026-10-27, B61):** files 150–169 are the Syphon servers of other
 apps. Files 1–32 are designed in §8.2.1 (1–28 built since). The scene-file
 route (`{folder: 0, file, syphon: "App/Server"}`) is gone since 2026-11-06:
-150–169 is the only way to a Syphon server.
+150–169 is the only way to a Syphon server; such an entry (no path, capture or
+screen) is skipped with a warning.
 `Syphon/SyphonCatalog.swift` follows Syphon's directory (an unconnected
 `SyphonInput` for its announce/update/retire notifications, which need the
 main run loop) and gives each new server the lowest free number; a server that goes keeps

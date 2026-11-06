@@ -415,7 +415,14 @@ public final class MediaLoader: @unchecked Sendable {
 
     public init(layers: [RenderLayer], media: [MediaEntry], device: MTLDevice, ringCapacity: Int, logger: Logger) {
         self.layers = layers
-        self.media = Dictionary(media.map { ($0.key, $0) }, uniquingKeysWith: { _, last in last })
+        // an entry without a source (an old scene file's `syphon` entry, whose key is no longer decoded) would hide a
+        // numbered live input on its number and fail to open: skipped
+        let sourced = media.filter { entry in
+            guard entry.path == nil, entry.capture == nil, entry.screen == nil else { return true }
+            logger.warning("scene media \(entry.key) has no source, skipped")
+            return false
+        }
+        self.media = Dictionary(sourced.map { ($0.key, $0) }, uniquingKeysWith: { _, last in last })
         self.device = device
         self.ringCapacity = ringCapacity
         self.logger = logger

@@ -121,7 +121,8 @@ policy and library root win over the project's:
 ```
 
 Other apps' Syphon servers are folder 0 files 150–169 (live inputs), not
-scene entries.
+scene entries; an entry without `path`, `capture` or `screen` (an old
+`syphon` one) is skipped with a warning.
 
 Layers pick media with their Folder/File channels. The engine indexes the
 library root (`~/Movies/Fanous Library` by default, `"library"` in the
