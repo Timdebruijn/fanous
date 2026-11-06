@@ -101,7 +101,8 @@ public final class IngestQueue: @unchecked Sendable {
         for index in jobs.indices {
             if case .running = jobs[index].state {
                 jobs[index].state = .queued
-                try? FileManager.default.removeItem(at: Self.temporaryURL(for: jobs[index]))  // the half-written output of the crashed run
+                // the half-written output of the crashed run; an in-place job's may be finished, `execute` decides (B169)
+                if !jobs[index].inPlace { try? FileManager.default.removeItem(at: Self.temporaryURL(for: jobs[index])) }
             }
         }
         state.withLock { $0.jobs = jobs }
@@ -259,6 +260,11 @@ public final class IngestQueue: @unchecked Sendable {
     /// Media tile's **Transcode** sends the file's own number and name) the source makes way just before that rename.
     private func execute(_ job: IngestJob, temporary: URL, gate: IngestGate) throws {
         let files = FileManager.default
+        if job.inPlace, !files.fileExists(atPath: job.source.path), files.fileExists(atPath: temporary.path) {
+            // a crash between the two renames of `replaceInPlace`: the source only makes way once the result is finished
+            try files.moveItem(at: temporary, to: job.destination)
+            return
+        }
         guard files.fileExists(atPath: job.source.path) else { throw IngestError.missingSource(job.source) }
         // in place without an originals directory or deleteSource would destroy the source
         guard !job.inPlace || job.originalsDirectory != nil || job.deleteSource else { throw IngestError.sameFile }
@@ -278,7 +284,9 @@ public final class IngestQueue: @unchecked Sendable {
 
         switch job.kind {
         case .transcode(let codec):
-            try Transcoder.run(source: job.source, destination: temporary, codec: codec, gate: gate, progress: report)
+            // in place, a source that already is the result: a crash after the rename, before `done` was saved (B169)
+            guard try Transcoder.run(source: job.source, destination: temporary, codec: codec, gate: gate, unlessDone: job.inPlace, progress: report)
+            else { return }
         case .sequence(let fps, let codec):
             let frames = try SequenceIngest.frames(in: job.source)
             // The progress callback runs between frames: that is where cancel, yield and pause are honoured.
@@ -308,7 +316,9 @@ public final class IngestQueue: @unchecked Sendable {
         do {
             try files.moveItem(at: temporary, to: job.destination)
         } catch {
-            try? files.moveItem(at: original, to: job.source)
+            do { try files.moveItem(at: original, to: job.source) } catch let back {
+                logger.warning("in-place ingest left the original in the originals folder", metadata: ["original": "\(original.path)", "error": "\(back)"])
+            }
             throw error
         }
     }

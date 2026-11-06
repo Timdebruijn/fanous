@@ -79,13 +79,25 @@ public enum Transcoder {
     }
 
     /// Transcodes `source` to `destination` (replacing a file already there). `progress` gets (frames written, frames
-    /// expected); the expectation is derived from the track duration and may be off by a frame.
+    /// expected); the expectation is derived from the track duration and may be off by a frame. With `unlessDone`, a
+    /// `.mov` source already in the codec this run would write, without a rotation or flip (what `LibraryIndex` plays as
+    /// it is), is left alone: returns false and writes nothing.
+    @discardableResult
     static func run(
-        source: URL, destination: URL, codec: MovieWriter.Codec, gate: IngestGate, progress: ((_ framesDone: Int, _ framesTotal: Int) -> Void)? = nil
-    ) throws {
+        source: URL, destination: URL, codec: MovieWriter.Codec, gate: IngestGate, unlessDone: Bool = false,
+        progress: ((_ framesDone: Int, _ framesTotal: Int) -> Void)? = nil
+    ) throws -> Bool {
         try gate.throwIfCancelled()
         let probe = try blockingAwait { [source] in try await Probe.load(source) }
         let requested = Self.effectiveCodec(codec, sourceHasAlpha: probe.hasAlpha)
+        let target: FourCharCode =
+            switch requested {
+            case .proRes422HQ: kCMVideoCodecType_AppleProRes422HQ
+            case .proRes422: kCMVideoCodecType_AppleProRes422
+            case .proRes4444: kCMVideoCodecType_AppleProRes4444
+            case .hap(let variant): variant.fourCC
+            }
+        if unlessDone, source.pathExtension.lowercased() == "mov", probe.codec == target, probe.turn == nil, probe.upright == nil { return false }
 
         let reader = try AVAssetReader(asset: probe.asset)
         // RGB, not the source's YCbCr: the reader converts with the source's own matrix and the writer codes Rec.709 (B21).
@@ -211,6 +223,7 @@ public enum Transcoder {
             }
             throw error
         }
+        return true
     }
 
     /// The interleaved LPCM the library stores for `source` (ADR-0019: what `AudioTrackReader` reads without a
