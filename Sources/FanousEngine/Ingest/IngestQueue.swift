@@ -48,6 +48,9 @@ public struct IngestJob: Codable, Sendable, Identifiable {
 
     /// The result replaces the source (B169): written beside it, then the source makes way as configured.
     var inPlace: Bool { source.standardizedFileURL == destination.standardizedFileURL }
+    /// In place with an originals directory: where the source goes, saved just before it moves there. `deleteSource`
+    /// replaces the source in one rename, which leaves no state to recover from.
+    var originalMovedTo: URL?
 
     public init(
         source: URL, destination: URL, kind: Kind, originalsDirectory: URL? = nil, deleteSource: Bool = false
@@ -260,8 +263,11 @@ public final class IngestQueue: @unchecked Sendable {
     /// Media tile's **Transcode** sends the file's own number and name) the source makes way just before that rename.
     private func execute(_ job: IngestJob, temporary: URL, gate: IngestGate) throws {
         let files = FileManager.default
-        if job.inPlace, !files.fileExists(atPath: job.source.path), files.fileExists(atPath: temporary.path) {
-            // a crash between the two renames of `replaceInPlace`: the source only makes way once the result is finished
+        if job.inPlace, !files.fileExists(atPath: job.source.path), files.fileExists(atPath: temporary.path),
+            let original = job.originalMovedTo, files.fileExists(atPath: original.path)
+        {
+            // a crash between the two renames of `replaceInPlace`: the original moved, so the temporary is finished. A
+            // source gone any other way (removed by hand) fails below and the temporary goes with the failed job.
             try files.moveItem(at: temporary, to: job.destination)
             return
         }
@@ -312,6 +318,10 @@ public final class IngestQueue: @unchecked Sendable {
         }
         try files.createDirectory(at: directory, withIntermediateDirectories: true)
         let original = Self.uniqueURL(for: job.source.lastPathComponent, in: directory)
+        // saved before the move: the restart takes the temporary as finished only once this file exists (`execute`)
+        mutate { state in
+            if let index = state.jobs.firstIndex(where: { $0.id == job.id }) { state.jobs[index].originalMovedTo = original }
+        }
         try files.moveItem(at: job.source, to: original)
         do {
             try files.moveItem(at: temporary, to: job.destination)

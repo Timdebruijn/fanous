@@ -566,6 +566,7 @@ import VideoToolbox
         let source = folder.appending(path: "002_phone.mov")  // moved away already
         var job = IngestJob(source: source, destination: source, kind: .transcode(codec: .proRes422HQ), originalsDirectory: originals)
         job.state = .running(progress: 1)
+        job.originalMovedTo = originals.appending(path: "002_phone.mov")
         let temporary = IngestQueue.temporaryURL(for: job)
         try await Self.writeSource(to: temporary, seconds: 1, audio: false)
         let result = try Data(contentsOf: temporary)
@@ -582,6 +583,32 @@ import VideoToolbox
         #expect(try Data(contentsOf: source) == result)
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted() == ["002_phone.mov", "_originals"])
         #expect(try String(contentsOf: originals.appending(path: "002_phone.mov"), encoding: .utf8) == "the original")
+    }
+
+    /// B169: a source removed by hand while a crashed in-place job's half-written temporary exists is no finished result
+    /// (the original never moved): the rerun fails "source not found" and the temporary goes.
+    @Test func inPlaceTemporaryWithoutAMovedOriginalIsNotPutInPlace() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        let folder = directory.appending(path: "library/001_Clips")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let source = folder.appending(path: "002_phone.mov")  // removed by hand, never moved
+        var job = IngestJob(source: source, destination: source, kind: .transcode(codec: .proRes422HQ), originalsDirectory: folder.appending(path: "_originals"))
+        job.state = .running(progress: 0.5)
+        let temporary = IngestQueue.temporaryURL(for: job)
+        try Data("half a movie".utf8).write(to: temporary)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode([job]).write(to: directory.appending(path: "queue.json"))
+
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        queue.start()
+        defer { queue.stop() }
+        guard case .failed(let text) = await Self.wait(for: job.id, in: queue) else {
+            Issue.record("not failed")
+            return
+        }
+        #expect(text == "source not found: 002_phone.mov")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty, "temporary removed, nothing put in place")
     }
 
     /// B169: an in-place job on a file that already is its result (a crash after the rename, before `done` was saved, reruns
