@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
-// At most one command per fixture and parameter every `ms` while a slider moves; the last value always goes out,
+// At most one command per fixture and parameter every 50 ms while a slider moves; the last value always goes out,
 // to the fixture it was set for (B80: not to whichever layer is selected when the timer fires).
 
 export type Sender = (fixture: string, parameter: string, raw: number) => void;
 
-export function throttledSender(out: Sender, ms = 50) {
+export function throttledSender(out: Sender) {
   const pending = new Map<string, Map<string, number>>(); // fixture → parameter → raw
   let timer: ReturnType<typeof setTimeout> | null = null;
   function flush() {
@@ -18,7 +18,7 @@ export function throttledSender(out: Sender, ms = 50) {
   function send(fixture: string, parameter: string, raw: number) {
     const values = pending.get(fixture) ?? new Map<string, number>();
     pending.set(fixture, values.set(parameter, Math.round(raw)));
-    timer ??= setTimeout(flush, ms);
+    timer ??= setTimeout(flush, 50);
   }
   return { send, flush };
 }

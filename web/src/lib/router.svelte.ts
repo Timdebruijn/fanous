@@ -20,7 +20,7 @@ export type ScreenId = (typeof screens)[number]['id'];
 
 function fromHash(): { screen: ScreenId; item: string } {
   const [id, item = ''] = location.hash.replace(/^#\/?/, '').split('/');
-  return { screen: (screens.find((s) => s.id === id)?.id ?? 'layers') as ScreenId, item };
+  return { screen: screens.find((s) => s.id === id)?.id ?? 'layers', item };
 }
 
 /** `item` is the second hash segment: the input selected on the Inputs screen (`#/inputs/3`). */

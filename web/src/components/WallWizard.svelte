@@ -164,7 +164,6 @@
   header, footer { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
   .muted { margin: 0; }
   .caption { margin: 0; }
-  .yellow { color: var(--yellow); }
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
   .tile {
     position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 96px; padding: 12px;

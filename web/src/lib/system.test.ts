@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { ReadinessItemDoc } from './docs';
 import {
   ageText, droppedTone, filterLines, formatClock, headerCaption, memoryText, metricTiles, outputTone, parseMetrics, parseOpenRoles, permissionRow,
-  plural, pushHistory, readinessBadge, readinessSummary, resumedText, sparkline, stampText, thermalTone,
+  plural, pushHistory, readinessBadge, readinessSummary, resumedText, sparkline, stampText, thermalTone, typedNumber,
 } from './system';
 
 const item = (state: ReadinessItemDoc['state'], acknowledged = false): ReadinessItemDoc => ({ id: state, title: state, state, detail: '', fix: '', acknowledged });
@@ -212,5 +212,13 @@ describe('plural', () => {
     expect(plural(2, 'decode error')).toBe('2 decode errors');
     expect(plural(1, 'canvas', 'canvases')).toBe('1 canvas');
     expect(plural(3, 'canvas', 'canvases')).toBe('3 canvases');
+  });
+});
+
+describe('typedNumber', () => {
+  it('reads a typed number; blank, not a number, infinite or below min is null', () => {
+    const typed = (value: string, min?: number) => typedNumber({ value } as HTMLInputElement, min);
+    expect([typed('2.5'), typed(' -3 '), typed('0', 0)]).toEqual([2.5, -3, 0]);
+    expect([typed(''), typed('  '), typed('abc'), typed('1e999'), typed('-1', 0)]).toEqual([null, null, null, null, null]);
   });
 });

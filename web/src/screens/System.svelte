@@ -232,8 +232,6 @@
   .empty { margin: 0; padding: 8px 16px 12px; }
   .grow { flex: 1 1 140px; min-width: 0; }
   .wrap { overflow-wrap: anywhere; }
-  .red { color: var(--red); }
-  .yellow { color: var(--yellow); }
   .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 12px; align-items: start; }
   .status { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
   .rootform, .copyrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }

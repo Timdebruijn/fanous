@@ -6,7 +6,7 @@
   import PatchInspector from './PatchInspector.svelte';
   import type { PatchEntry } from '../lib/docs';
   import { app, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
-  import { plural } from '../lib/system';
+  import { plural, typedNumber } from '../lib/system';
   import {
     MAX_LAYERS, MAX_OUTPUTS, UNIVERSE_SIZE, groupSlots, layEntries, moveAfterLayers, patchTarget, rowStatus, rowSummary, slotText, standardStart, universeName,
     type FixtureRow, type Group, type Slot,
@@ -97,8 +97,8 @@
   }
 
   function moveAddress(input: HTMLInputElement, start: Slot) {
-    const typed = Math.round(Number(input.value));
-    const address = Number.isFinite(typed) && input.value.trim() !== '' ? Math.min(UNIVERSE_SIZE + 1 - first.footprint, Math.max(1, typed)) : start.address;
+    const typed = typedNumber(input);
+    const address = typed === null ? start.address : Math.min(UNIVERSE_SIZE + 1 - first.footprint, Math.max(1, Math.round(typed)));
     input.value = String(address);
     if (address !== start.address) void moveTo(input, start, { universe: start.universe, address });
   }

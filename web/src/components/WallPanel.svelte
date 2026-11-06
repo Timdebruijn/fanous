@@ -264,7 +264,6 @@
   .wall { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
   header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
   .caption { margin: 0; }
-  .yellow { color: var(--yellow); }
   .body { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
   .map { flex: 1 1 300px; max-width: 520px; display: grid; }
   .side { flex: 999 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }

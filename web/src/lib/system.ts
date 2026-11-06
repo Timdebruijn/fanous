@@ -20,6 +20,12 @@ export const pad2 = (n: number) => String(n).padStart(2, '0');
 /** A count with its noun: 1 → "1 layer", 2 → "2 layers"; `many` for an irregular plural ("canvases"). */
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
+/** The number typed into `el`, or null when it is blank, not a finite number, or below `min`. */
+export function typedNumber(el: HTMLInputElement, min = -Infinity): number | null {
+  const n = Number(el.value);
+  return el.value.trim() === '' || !Number.isFinite(n) || n < min ? null : n;
+}
+
 const finite = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
 /** The notice after show mode came back by itself (engine crash or kill); null when it was entered by hand. */

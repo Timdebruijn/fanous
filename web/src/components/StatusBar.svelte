@@ -172,7 +172,6 @@
   .dmx { gap: 4px 12px; flex-wrap: wrap; padding-block: 4px; }
   .ingest { width: 150px; }
   .ingest .bar { width: 100%; height: 4px; margin-top: 4px; }
-  .yellow { color: var(--yellow); }
   .role-btn { border: 0; cursor: pointer; min-height: var(--touch); }
   .role-btn:hover { background: var(--surface-3); }
   .plain { color: inherit; text-decoration: none; }

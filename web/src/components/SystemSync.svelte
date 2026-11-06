@@ -74,7 +74,6 @@
 
 <style>
   .wrap { overflow-wrap: anywhere; }
-  .red { color: var(--red); }
   .settings { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; padding: 0 16px; }
   .field { display: flex; flex-direction: column; gap: 4px; }
   .field .input[type='number'] { width: 110px; }

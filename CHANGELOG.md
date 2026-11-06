@@ -15,6 +15,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Cleanup: the scene-file route to a Syphon server is gone (live inputs 150–169 are the way), the preview and
   thumbnail streamers share one pixel-buffer pool helper, the test-only `Compositor.readbackOutput` moved to the
   tests (PR #310).
+- Cleanup: the web UI shares one typed-number parser and the yellow/red styles instead of per-file copies; attribution
+  constants live in App.svelte (PR #311).
 - Dev docs and marketing after the guide rewrite: `DESIGN.md` §11 gets an "as built" list from the API inventory
   (data-protection keychain, no identity import, no per-interface listener, REST mutates and has no project
   export, the protocol sketch's `role` and `result`, the 4-encoder preview limit, the operator and monitor
