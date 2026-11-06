@@ -30,6 +30,12 @@ struct RESTRoutes: Sendable {
     }
     func programmerAllowed(_ request: HTTPRequest) -> Bool { allowed(.programmer, request) }
 
+    /// 405 for a route that only takes POST.
+    static let postOnly = HTTPResponse(status: 405, headers: [HTTPHeader("Allow", "POST")])
+
+    /// 200 with `value` as JSON (an empty body if it does not encode).
+    func json(_ value: some Encodable) -> HTTPResponse { .json(200, Array((try? encoder.encode(value)) ?? Data())) }
+
     /// Where a large upload streams before the route runs: the role is checked before the body is accepted.
     func uploadTarget(_ request: HTTPRequest) -> URL? { programmerAllowed(request) ? ingestAPI.uploadTarget(for: request) : nil }
 
@@ -48,7 +54,7 @@ struct RESTRoutes: Sendable {
         }
         if request.path == "/api/library/folder" {
             // POST {"number": N, "name": "…"} creates NNN_name under the root (and the root itself)
-            guard request.method == "POST" else { return HTTPResponse(status: 405, headers: [HTTPHeader("Allow", "POST")]) }
+            guard request.method == "POST" else { return Self.postOnly }
             guard programmerAllowed(request) else { return .text(403, "programmer role required") }
             guard let body = try? JSONDecoder().decode(JSONValue.self, from: Data(request.body)), let number = body["number"]?.int, (1...255).contains(number),
                 let name = body["name"]?.string, !name.trimmingCharacters(in: .whitespaces).isEmpty
@@ -67,11 +73,11 @@ struct RESTRoutes: Sendable {
                 "status": "ok", "version": .string(FanousVersion.string), "uptimeSeconds": .number(Double(Int(Date().timeIntervalSince(startedAt)))),
                 "chip": .string(SystemInfo.chipName),
             ]
-            return .json(200, Array((try? encoder.encode(health)) ?? Data()))
+            return json(health)
         case "/api/live":
-            return .json(200, Array((try? encoder.encode(dmx.snapshot())) ?? Data()))
+            return json(dmx.snapshot())
         case "/api/login":
-            guard request.method == "POST" else { return HTTPResponse(status: 405, headers: [HTTPHeader("Allow", "POST")]) }
+            guard request.method == "POST" else { return Self.postOnly }
             guard let body = try? JSONDecoder().decode(JSONValue.self, from: Data(request.body)),
                 let role = body["role"]?.string.flatMap(Role.init(rawValue:))
             else { return .text(400, "expected {\"role\": …, \"password\": …}") }
@@ -84,7 +90,7 @@ struct RESTRoutes: Sendable {
                 return .text(401, "wrong password")
             }
         case "/api/logout":
-            guard request.method == "POST" else { return HTTPResponse(status: 405, headers: [HTTPHeader("Allow", "POST")]) }
+            guard request.method == "POST" else { return Self.postOnly }
             if let cookie = RoleAuth.cookie(in: request) { auth.logout(cookie: cookie) }
             return HTTPResponse(status: 204, headers: [HTTPHeader("Set-Cookie", "\(RoleAuth.cookieName)=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0")])
         case "/metrics":
@@ -112,7 +118,7 @@ struct RESTRoutes: Sendable {
             ]
             return .json(200, Array(store.encode(session).utf8))
         case "/api/patch":
-            return .json(200, Array((try? encoder.encode(dmx.currentPatch)) ?? Data()))
+            return json(dmx.currentPatch)
         case "/api/gdtf":
             return HTTPResponse(
                 status: 200,
@@ -125,7 +131,7 @@ struct RESTRoutes: Sendable {
         case "/api/library":
             // below operator: no absolute paths (B25); the UI keys files by `path`, which stays unique relative to the root
             let snapshot = allowed(.operator, request) ? library.snapshot : library.snapshot.redacted()
-            return .json(200, Array((try? encoder.encode(snapshot)) ?? Data()))
+            return json(snapshot)
         case let path where path.hasPrefix("/api/thumbnail/"):
             // thumbnail file names are hashes written by the engine itself: no path component may escape the cache
             let name = String(path.dropFirst("/api/thumbnail/".count))

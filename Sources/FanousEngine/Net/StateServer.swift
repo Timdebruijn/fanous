@@ -130,19 +130,19 @@ public final class StateServer: @unchecked Sendable {
 
         public func session(_ session: WebSocketSession, didReceiveText text: String) {
             guard let message = try? JSONDecoder().decode(JSONValue.self, from: Data(text.utf8)), let type = message["t"]?.string else {
-                session.send(text: server.store.encode(["t": "error", "code": "badMessage", "message": "expected a JSON object with t"]), droppable: false)
+                sendError("badMessage", "expected a JSON object with t", on: session)
                 return
             }
             if type == "hello" { return hello(message, on: session) }
             guard isAuthenticated else {
-                session.send(text: server.store.encode(["t": "error", "code": "helloFirst", "message": "send hello before anything else"]), droppable: false)
+                sendError("helloFirst", "send hello before anything else", on: session)
                 return
             }
             switch type {
             case "cmd":
                 let id = message["id"] ?? .null
                 guard let name = message["name"]?.string else {
-                    session.send(text: server.store.encode(["t": "ack", "id": id, "ok": false, "error": ["code": "badMessage", "message": "cmd needs a name"]]), droppable: false)
+                    reply(["t": "ack", "id": id, "ok": false, "error": ["code": "badMessage", "message": "cmd needs a name"]], on: session)
                     return
                 }
                 let result = server.store.execute(name, args: message["args"] ?? [:], role: role, from: self)
@@ -153,7 +153,7 @@ public final class StateServer: @unchecked Sendable {
                     case .failure(let e):
                         ["t": "ack", "id": id, "ok": false, "error": ["code": .string(e.code), "message": .string(e.message)]]
                     }
-                session.send(text: server.store.encode(ack), droppable: false)
+                reply(ack, on: session)
             case "snapshot":
                 server.store.clearLagging(self)
                 session.send(text: server.store.snapshot(role: role), droppable: false)
@@ -161,20 +161,19 @@ public final class StateServer: @unchecked Sendable {
                 switch message["stream"]?.string {
                 case "dmx":
                     guard let universe = message["universe"]?.string else {
-                        session.send(text: server.store.encode(["t": "error", "code": "badStream", "message": "stream dmx needs a universe"]), droppable: false)
+                        sendError("badStream", "stream dmx needs a universe", on: session)
                         return
                     }
                     let id = server.nextStream.add(1, ordering: .relaxed).oldValue
                     subscriptions.withLock { $0[id] = .dmx(universe) }
                     server.dmxSubscriptionsChanged()
-                    session.send(text: server.store.encode(["t": "sub", "id": .number(Double(id)), "stream": "dmx", "universe": .string(universe)]), droppable: false)
+                    reply(["t": "sub", "id": .number(Double(id)), "stream": "dmx", "universe": .string(universe)], on: session)
                 case "preview":
                     // a refused preview carries the stream id it would have had and `stream`, like the `sub` reply, so the
                     // client settles its waiting request (an error with an id and no `stream` ends a stream that went away)
                     let id = server.nextStream.add(1, ordering: .relaxed).oldValue
                     func refused(_ code: String, _ text: String) {
-                        let reply: JSONValue = ["t": "error", "id": .number(Double(id)), "stream": "preview", "code": .string(code), "message": .string(text)]
-                        session.send(text: server.store.encode(reply), droppable: false)
+                        reply(["t": "error", "id": .number(Double(id)), "stream": "preview", "code": .string(code), "message": .string(text)], on: session)
                     }
                     guard let preview = server.preview else { return refused("noPreview", "the engine is not rendering") }
                     let jpeg = message["codec"]?.string == "jpeg"
@@ -185,12 +184,12 @@ public final class StateServer: @unchecked Sendable {
                     let width = message["w"]?.double.map { Int(min(1280, max(160, $0)).rounded(.up)) }
                     // past the encoder limit an H.264 request may be served as JPEG (B70): the reply says so
                     let attached = preview.attach(target: target, width: width, connection: self, stream: id, jpeg: jpeg) { streamer, jpeg, fallback in
-                        session.send(
-                            text: server.store.encode([
+                        self.reply(
+                            [
                                 "t": "sub", "id": .number(Double(id)), "stream": "preview", "codec": jpeg ? "jpeg" : "avc", "w": .number(Double(streamer.width)),
                                 "h": .number(Double(streamer.height)), "fps": .number(jpeg ? 5 : streamer.fps), "target": .string(target),
                                 "fallback": .bool(fallback),
-                            ]), droppable: false)
+                            ], on: session)
                     }
                     if !attached {
                         subscriptions.withLock { _ = $0.removeValue(forKey: id) }
@@ -200,18 +199,15 @@ public final class StateServer: @unchecked Sendable {
                     // live layer thumbnails (B29): one stream of per-layer JPEG frames, `ThumbnailAtlas.frame`
                     let id = server.nextStream.add(1, ordering: .relaxed).oldValue
                     guard let thumbnails = server.preview?.thumbnails else {
-                        let reply: JSONValue = ["t": "error", "id": .number(Double(id)), "stream": "thumbs", "code": "noPreview", "message": "the engine is not rendering"]
-                        session.send(text: server.store.encode(reply), droppable: false)
-                        return
+                        return reply(["t": "error", "id": .number(Double(id)), "stream": "thumbs", "code": "noPreview", "message": "the engine is not rendering"], on: session)
                     }
                     subscriptions.withLock { $0[id] = .preview }
-                    let reply: JSONValue = [
+                    let text = server.store.encode([
                         "t": "sub", "id": .number(Double(id)), "stream": "thumbs", "w": .number(Double(ThumbnailAtlas.cellWidth)), "fps": .number(1 / ThumbnailAtlas.interval),
-                    ]
-                    let text = server.store.encode(reply)
+                    ])
                     thumbnails.subscribe(connection: self, stream: id) { session.send(text: text, droppable: false) }
                 default:
-                    session.send(text: server.store.encode(["t": "error", "code": "badStream", "message": "streams: dmx, preview, thumbs"]), droppable: false)
+                    sendError("badStream", "streams: dmx, preview, thumbs", on: session)
                 }
             case "unsub":
                 if let id = message["id"]?.int {
@@ -220,20 +216,28 @@ public final class StateServer: @unchecked Sendable {
                     if case .dmx? = removed { server.dmxSubscriptionsChanged() }
                 }
             default:
-                session.send(text: server.store.encode(["t": "error", "code": "badMessage", "message": "unknown t \(type)"]), droppable: false)
+                sendError("badMessage", "unknown t \(type)", on: session)
             }
+        }
+
+        private func reply(_ value: JSONValue, on session: WebSocketSession) {
+            session.send(text: server.store.encode(value), droppable: false)
+        }
+
+        private func sendError(_ code: String, _ message: String, on session: WebSocketSession) {
+            reply(["t": "error", "code": .string(code), "message": .string(message)], on: session)
         }
 
         private func hello(_ message: JSONValue, on session: WebSocketSession) {
             guard message["schema"]?.int == StateServer.schema else {
-                session.send(text: server.store.encode(["t": "error", "code": "schema", "message": "this engine speaks schema \(StateServer.schema)"]), droppable: false)
+                sendError("schema", "this engine speaks schema \(StateServer.schema)", on: session)
                 session.close(code: 1002, reason: "schema")
                 return
             }
             let requested = message["role"]?.string.flatMap(Role.init(rawValue:)) ?? .monitor
             let sessionRole = server.auth.role(forToken: message["token"]?.string) ?? cookieRole
             guard let granted = server.auth.grant(requested: requested, sessionRole: sessionRole) else {
-                session.send(text: server.store.encode(["t": "error", "code": "authRequired", "message": "log in for role \(requested)"]), droppable: false)
+                sendError("authRequired", "log in for role \(requested)", on: session)
                 session.close(code: 4401, reason: "auth required")
                 return
             }
