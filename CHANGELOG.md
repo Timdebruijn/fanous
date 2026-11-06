@@ -10,6 +10,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- Tests: the capture renumber test waits for its status like the others, two test warnings are gone (PR #314).
 - Cleanup: the web `typecheck` script and the TypeScript 7 preview dependency are gone; `npm run check` (svelte-check) covers the same files on CI (PR #308).
 - Cleanup: sACN sync/discovery parsing, the bench shim scripts and two test-only Core members are gone (PR #309).
 - Cleanup: the scene-file route to a Syphon server is gone (live inputs 150–169 are the way), the preview and
