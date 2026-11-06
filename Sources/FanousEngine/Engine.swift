@@ -1193,12 +1193,8 @@ public final class Engine: @unchecked Sendable {
         var checks: [Int: DisplayModeMatching.Check] = [:]
         for output in outputs {
             guard let display = displays.first(where: { $0.uuid == output.display?.uuid }) else { continue }
-            if let winner = resolved.conflicts[output.id] {
-                checks[output.id] = DisplayModeMatching.conflict(with: winner)
-                continue
-            }
             checks[output.id] = DisplayModeMatching.check(
-                desired: output.mode, current: display.mode, available: display.modes, showMode: show, fps: fps, failure: failures[display.uuid])
+                output, resolved: resolved, current: display.mode, available: display.modes, showMode: show, fps: fps, failure: failures[display.uuid])
         }
         modeChecks.withLock { $0 = checks }
     }

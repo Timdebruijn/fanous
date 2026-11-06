@@ -116,6 +116,29 @@ struct DisplayModeMatchingTests {
         #expect(check(0, fps: 60) == .init())  // a display that reports no rate is not judged
     }
 
+    /// B173 review: an output without a Mode is judged by the rate its display runs at in show mode, which another
+    /// output's Mode on the same display sets.
+    @Test func withoutAModeTheDisplaysWantedRateWins() {
+        func output(_ id: Int, _ mode: DisplayModeConfig?) -> OutputConfig {
+            var o = OutputConfig(id: id)
+            o.display = DisplayIdentity(uuid: "A", name: "D")
+            o.mode = mode
+            return o
+        }
+        let at50 = DisplayModeConfig(width: 1920, height: 1080, hz: 50)
+        func check(_ outputs: [OutputConfig], _ index: Int) -> DisplayModeMatching.Check {
+            DisplayModeMatching.check(
+                outputs[index], resolved: DisplayModeMatching.resolve(outputs), current: at50, available: [], showMode: true, fps: 60)
+        }
+        let shared = [output(1, DisplayModeConfig(width: 1920, height: 1080, hz: 60)), output(2, nil)]
+        #expect(check(shared, 1) == .init())  // show mode runs the display at Output 1's 60
+        #expect(check(shared, 0).note == "Mode differs: 1920 × 1080 @ 50, wanted @ 60. Not applied: switching, or refused by the display.")
+        let alone = [output(2, nil)]
+        #expect(check(alone, 0).note == "50 Hz is not a multiple of the canvas 60 fps: motion judders.")
+        let lost = [output(1, at50), output(2, DisplayModeConfig(width: 1280, height: 720, hz: 60))]
+        #expect(check(lost, 1) == DisplayModeMatching.conflict(with: lost[0]))
+    }
+
     @Test func unusableModesOnlyWhenNothingElseMatches() {
         let unusable = Self.mode(1920, 1080, 60, usable: false)
         let usable = Self.mode(1920, 1080, 59.94)

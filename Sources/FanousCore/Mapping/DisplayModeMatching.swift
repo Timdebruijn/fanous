@@ -150,6 +150,17 @@ public enum DisplayModeMatching {
         return Check(note: note, issue: issue)
     }
 
+    /// One bound output: lost to an earlier output's Mode on its display, its own Mode, or, without one, the rate its
+    /// display runs at in show mode (another output's Mode there, else the current mode).
+    public static func check(
+        _ output: OutputConfig, resolved: (wanted: [String: DisplayModeConfig], conflicts: [Int: OutputConfig]),
+        current: DisplayModeConfig, available: [DisplayModeConfig], showMode: Bool, fps: Double, failure: String? = nil
+    ) -> Check {
+        if let winner = resolved.conflicts[output.id] { return conflict(with: winner) }
+        let running = output.mode == nil ? output.display.flatMap { resolved.wanted[$0.uuid] } ?? current : current
+        return check(desired: output.mode, current: running, available: available, showMode: showMode, fps: fps, failure: failure)
+    }
+
     static func judder(_ hz: Double, fps: Double) -> String? {
         refreshFits(hz, fps: fps) ? nil : "\(rate(hz)) Hz is not a multiple of the canvas \(rate(fps)) fps: motion judders."
     }
