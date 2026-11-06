@@ -114,10 +114,11 @@ programmer password.
 Below 600 px wide the bar folds to three rows and drops what does not fit: the
 Fanous name, the GPU and CPU times, the auto version item and the **?**
 button. The role button moves next to the frame rate, Undo and Redo join the
-numbers row, and the outputs item shows only while it is yellow, red or off.
+numbers row, the outputs item shows only while it is yellow, red or off, and
+**web UI open** shortens to **open**.
 On an iPad in either orientation everything is there.
 
-<img src="images/status-bar-phone.png" width="390" alt="The status bar at phone width: the lock, show mode and role with the frame rate on the first row, dropped frames, clients, Undo and Redo on the second, the universe pills on the third">
+<img src="images/status-bar-phone.png" width="390" alt="The status bar at phone width: the lock, show mode and role with the frame rate on the first row, dropped frames, clients, the yellow open warning (web UI open), Undo and Redo on the second, the universe pills on the third">
 
 ## Messages
 
