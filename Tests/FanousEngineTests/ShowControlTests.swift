@@ -325,6 +325,17 @@ struct ShowControlTests {
         #expect(items.allSatisfy { !$0.fix.isEmpty && !$0.detail.isEmpty })
     }
 
+    /// B180: show mode's PreventUserIdleDisplaySleep assertion keeps the display awake whatever `pmset` displaysleep says,
+    /// so a timeout warns (never blocks); Never passes, and so does an unreadable value.
+    @Test func displaySleepWarnsWhileShowModeHoldsTheDisplayAwake() {
+        let never = Readiness.displaySleep(minutes: 0, acknowledged: [])
+        #expect(never.id == "displaysleep" && never.state == .ok && never.detail == "never")
+        let ten = Readiness.displaySleep(minutes: 10, acknowledged: [])
+        #expect(ten.state == .warn && !ten.blocks && ten.detail == "10 min (held off by the show-mode assertion)")
+        let unknown = Readiness.displaySleep(minutes: nil, acknowledged: [])
+        #expect(unknown.state == .ok && !unknown.blocks && unknown.detail == "unknown")
+    }
+
     @Test func showModeAssertionsToggle() {
         let controller = ShowModeController(logger: testLogger)
         let changes = Mutex<[Bool]>([])

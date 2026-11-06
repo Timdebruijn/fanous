@@ -311,10 +311,19 @@ public enum Readiness {
         let backup = timeMachineRunning()
         add("timemachine", "Time Machine not backing up", backup.map { !$0 }, backup == nil ? "unknown" : (backup! ? "backup running" : "idle"), "Stop the backup or disable Time Machine for the show")
         add("focus", "Focus / Do Not Disturb on", nil, "cannot be read; check the menu bar", "Turn on a Focus so notifications stay off the outputs")
-        let sleep = displaySleepMinutes()
-        add("displaysleep", "Display sleep disabled", sleep.map { $0 == 0 } ?? true, sleep.map { $0 == 0 ? "never" : "\($0) min (held off by the show-mode assertion)" } ?? "unknown", "System Settings › Lock Screen › Turn display off: never")
+        items.append(displaySleep(minutes: displaySleepMinutes(), acknowledged: acknowledged))
         add("hardware", "Supported hardware", context.hardwareSupported, context.hardwareSupported ? "Apple Silicon with ProRes engine" : "no hardware ProRes decoder", "Use an Apple Silicon Mac with a ProRes engine (M1 Pro or newer)", failing: .hard)
         return items
+    }
+
+    /// A display sleep timeout only warns (B180): show mode holds a PreventUserIdleDisplaySleep assertion, so the
+    /// display stays awake whatever the setting; Never and an unreadable value pass.
+    static func displaySleep(minutes: Int?, acknowledged: Set<String>) -> ReadinessItem {
+        ReadinessItem(
+            id: "displaysleep", title: "Display sleep disabled", state: (minutes ?? 0) == 0 ? .ok : .warn,
+            detail: minutes.map { $0 == 0 ? "never" : "\($0) min (held off by the show-mode assertion)" } ?? "unknown",
+            fix: "Show mode keeps the display awake; for outside show mode too: System Settings › Lock Screen › Turn display off: never",
+            acknowledged: acknowledged.contains("displaysleep"))
     }
 
     // MARK: probes

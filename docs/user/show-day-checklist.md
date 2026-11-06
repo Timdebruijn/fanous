@@ -44,8 +44,8 @@ on the night, [Troubleshooting](troubleshooting.md).
       comes back after a power cut without anyone at the keyboard; a desktop
       Mac set to start after a power failure (System Settings › Energy).
 - [ ] Display sleep off: System Settings › Lock Screen › Turn display off:
-      Never, and "Require password" set to Never. Any other display sleep
-      fails the readiness item.
+      Never, and "Require password" set to Never. Show mode keeps the
+      display awake anyway; any other display sleep warns in the readiness list.
 - [ ] Spotlight off for the library's volume: Terminal (Applications ›
       Utilities), `sudo mdutil -i off /` for a library on the internal disk;
       it asks for the Mac's administrator password and prints "Indexing
