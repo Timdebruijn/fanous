@@ -338,13 +338,17 @@ describe('blocks', () => {
     const patch = [...standard, at('Keystone 2', 'artnet:0.0.1', 89)];
     const { rows, groups } = buildPatch(patch, 9, map, [1, 2]);
     const layer9 = rows.find((r) => r.name === 'Layer 9')!;
-    expect(layer9.blocked).toEqual({ slot: { universe: 'artnet:0.0.1', address: 1 }, by: 'Master' });
-    expect(rowStatus(layer9, 'internal')).toEqual({ tone: 'warn', text: 'no address · A 0.0.1 1–64 is taken by Master' });
+    expect(layer9.blocked?.slot).toEqual({ universe: 'artnet:0.0.1', address: 1 });
+    expect(layer9.blocked?.by.map((r) => r.name)).toEqual(['Master', 'Output 1', 'Output 2']);
+    expect(rowStatus(layer9, 'internal')).toEqual({ tone: 'warn', text: 'no address · A 0.0.1 1–64 is taken by Master, Outputs 1–2' });
     expect(moveAfterLayers(groups)).toEqual([
       at('Layer 9', 'artnet:0.0.1', 1),
       at('Master', 'artnet:0.0.2', 1),
       at('Output 1', 'artnet:0.0.2', 9), at('Output 2', 'artnet:0.0.2', 17), at('Keystone 2', 'artnet:0.0.2', 89),
     ]);
+    // every output in the way is named, Keystone 2 at 89 is past the layer's 64 channels
+    const seven = buildPatch([...patch, ...[3, 4, 5, 6, 7].map((n) => at(`Output ${n}`, 'artnet:0.0.1', 1 + 8 * n))], 9, map, [1, 2, 3, 4, 5, 6, 7]);
+    expect(rowStatus(seven.rows.find((r) => r.name === 'Layer 9')!, 'internal').text).toBe('no address · A 0.0.1 1–64 is taken by Master, Outputs 1–7');
     // nothing blocked: not offered
     expect(moveAfterLayers(buildPatch(standard, 8, map, [1, 2]).groups)).toBeNull();
   });

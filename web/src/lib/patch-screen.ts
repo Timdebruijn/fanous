@@ -253,7 +253,7 @@ export interface FixtureRow {
   collisions: Collision[];
   exceeds: boolean;
   /** unpatched although its block has a slot for it: the slot and the fixture on it (a new layer that found no room) */
-  blocked: { slot: Slot; by: string } | null;
+  blocked: { slot: Slot; by: FixtureRow[] } | null;
   /** patched, but not on its slot from the group's anchor: laying the group as a block moves it */
   offBlock: boolean;
 }
@@ -396,14 +396,14 @@ export interface Status {
 
 /**
  * The status words (DESIGN §6.6 item 4): "ok", or a collision or a range past 512 in red. Without an address: an
- * optional fixture is "not used"; one whose block slot is taken names what took it; else what it does under Who
+ * optional fixture is "not used"; one whose block slot is taken names every fixture in the way; else what it does under Who
  * controls (`policy`): Fanous only, or under Console only a layer stays dark (yellow) and the Master or an output stays
  * at its defaults (grey: full and normal are the working state).
  */
 export function rowStatus(r: FixtureRow, policy: string): Status {
   if (!r.patched) {
     if (r.optional) return { tone: 'faint', text: 'not used' };
-    if (r.blocked) return { tone: 'warn', text: `no address · ${slotText(r.blocked.slot, r.footprint)} is taken by ${r.blocked.by}` };
+    if (r.blocked) return { tone: 'warn', text: `no address · ${slotText(r.blocked.slot, r.footprint)} is taken by ${fixturesText(r.blocked.by)}` };
     if (policy !== 'dmx') return { tone: 'faint', text: 'no address · Fanous only' };
     return r.kind === 'layer' ? { tone: 'warn', text: 'no address · stays dark' } : { tone: 'faint', text: 'no address · at defaults' };
   }
@@ -478,10 +478,12 @@ export function groupSlots(g: Group, start: Slot): Map<string, Slot | null> {
 
 const NO_BLOCK: Block = { start: null, anchor: null, required: 0, unplaced: 0, off: 0, handPlaced: 0 };
 
-/** The patched fixture other than `except` on any of `footprint` channels from `at`. */
-function takenBy(rows: readonly FixtureRow[], at: Slot, footprint: number, except: string): FixtureRow | undefined {
+/** The patched fixtures other than `except` on any of `footprint` channels from `at`, by address. */
+function takenBy(rows: readonly FixtureRow[], at: Slot, footprint: number, except: string): FixtureRow[] {
   const end = at.address + footprint - 1;
-  return rows.find((o) => o.patched && o.name !== except && o.universe === at.universe && o.address <= end && at.address <= o.end);
+  return rows
+    .filter((o) => o.patched && o.name !== except && o.universe === at.universe && o.address <= end && at.address <= o.end)
+    .sort((a, b) => a.address - b.address);
 }
 
 /** The group's block from its first mode's patched fixtures; while it is a Block, an unplaced required fixture whose slot is taken records what took it. */
@@ -502,8 +504,8 @@ function detectBlock(g: Group, rows: readonly FixtureRow[]): Block {
   if (start) {
     for (const r of required) {
       const slot = slots.get(r.name);
-      const by = !r.patched && slot ? takenBy(rows, slot, r.footprint, r.name) : undefined;
-      if (slot && by) r.blocked = { slot, by: by.name };
+      const by = !r.patched && slot ? takenBy(rows, slot, r.footprint, r.name) : [];
+      if (slot && by.length > 0) r.blocked = { slot, by };
     }
   }
   return { ...counts, start, anchor, off, handPlaced: g.rows.filter((r) => r.offBlock).length };
@@ -563,7 +565,7 @@ export function moveAfterLayers(groups: readonly Group[]): PatchEntry[] | null {
   if (!layers || !start) return null;
   const later = groups.slice(i + 1);
   const names = new Set(later.flatMap((g) => g.rows.map((r) => r.name)));
-  if (!layers.rows.some((r) => r.blocked && names.has(r.blocked.by))) return null;
+  if (!layers.rows.some((r) => r.blocked?.by.some((o) => names.has(o.name)))) return null;
   const slots = groupSlots(layers, start);
   const entries: PatchEntry[] = [];
   for (const r of layers.rows) {
@@ -592,7 +594,7 @@ export function patchTarget(g: Group, r: FixtureRow, rows: readonly FixtureRow[]
   const slot = g.block.start && groupSlots(g, g.block.start).get(r.name);
   if (!slot) return null;
   for (let address = slot.address; address + r.footprint - 1 <= UNIVERSE_SIZE; address++) {
-    if (!takenBy(rows, { universe: slot.universe, address }, r.footprint, r.name)) return { universe: slot.universe, address };
+    if (takenBy(rows, { universe: slot.universe, address }, r.footprint, r.name).length === 0) return { universe: slot.universe, address };
   }
   return null;
 }
