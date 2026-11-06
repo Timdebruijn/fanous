@@ -71,7 +71,6 @@ link here. Back to the [index](../README.md).
 | No per-output Syphon, no Syphon for canvases other than Canvas 1, no frame rate per canvas, no 10-bit output. | B59 |
 | Console control (the Output and Keystone fixtures: intensity, blackout, test pattern, Raw, presets and glides) covers outputs 1 to 8; outputs 9 and up are driven from the UI only, and **Hold to compare** reaches outputs 1 to 8 too. The outputs of one projector wall need the same pixel size. | — |
 | The black lift and the black offset scale with the output's intensity (the Output fixture and the Intensity field), while the projectors' own black does not: a dimmed output shows its seams again. Tune them at 100 % and dim with the Master or the layers. | — |
-| The judder warning ("N Hz is not a multiple of the canvas M fps") and the readiness item **Outputs in their desired display mode** look only at outputs that have a Mode. | B173 |
 | The content template's footer text runs under the border of the slice drawn across it. | B174 |
 | Colour gain, black lift and black offset assume a gamma-2.2 projector; there is no per-output gamma for them. | — |
 | A permanent dissolve on layers that also run Blur and Edge needs more memory than the compositor's documented budget: 16 such layers at 1080p60 showed texture misses. | B148 |

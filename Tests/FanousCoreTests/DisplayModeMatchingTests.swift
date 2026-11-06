@@ -99,6 +99,23 @@ struct DisplayModeMatchingTests {
         #expect(judder.issue == judder.note)
     }
 
+    /// B173: without a Mode the display's current rate is checked against the canvas, with the same note and issue.
+    @Test func withoutAModeTheCurrentRateIsCheckedAgainstTheCanvas() {
+        func check(_ hz: Double, fps: Double, showMode: Bool = true) -> DisplayModeMatching.Check {
+            DisplayModeMatching.check(
+                desired: nil, current: DisplayModeConfig(width: 1920, height: 1080, hz: hz), available: [], showMode: showMode, fps: fps)
+        }
+        let projector = check(50, fps: 60)
+        #expect(projector.note == "50 Hz is not a multiple of the canvas 60 fps: motion judders.")
+        #expect(projector.issue == projector.note)
+        #expect(check(50, fps: 60, showMode: false) == projector)  // nothing to apply: the same in and out of show mode
+        #expect(check(60, fps: 60) == .init())
+        #expect(check(120, fps: 60) == .init())
+        #expect(check(60, fps: 30) == .init())
+        #expect(check(59.94, fps: 60) == .init())
+        #expect(check(0, fps: 60) == .init())  // a display that reports no rate is not judged
+    }
+
     @Test func unusableModesOnlyWhenNothingElseMatches() {
         let unusable = Self.mode(1920, 1080, 60, usable: false)
         let usable = Self.mode(1920, 1080, 59.94)

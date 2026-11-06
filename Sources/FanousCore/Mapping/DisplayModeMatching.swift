@@ -115,12 +115,15 @@ public enum DisplayModeMatching {
     }
 
     /// `available` is the display's mode list (empty = unknown, not checked); `failure` why show mode could not
-    /// switch the display (CG error, locked screen).
+    /// switch the display (CG error, locked screen). Without a desired mode only the current rate is judged (B173).
     public static func check(
         desired: DisplayModeConfig?, current: DisplayModeConfig, available: [DisplayModeConfig], showMode: Bool,
         fps: Double, failure: String? = nil
     ) -> Check {
-        guard let desired else { return Check() }
+        guard let desired else {
+            let warning = judder(current.hz, fps: fps)
+            return Check(note: warning, issue: warning)
+        }
         var note: String?
         var issue: String?
         if !same(current, desired) {
@@ -140,12 +143,15 @@ public enum DisplayModeMatching {
                 if showMode { issue = note }
             }
         }
-        if !refreshFits(desired.hz, fps: fps) {
-            let warning = "\(rate(desired.hz)) Hz is not a multiple of the canvas \(rate(fps)) fps: motion judders."
+        if let warning = judder(desired.hz, fps: fps) {
             note = note.map { "\($0) \(warning)" } ?? warning
             issue = issue.map { "\($0) \(warning)" } ?? warning
         }
         return Check(note: note, issue: issue)
+    }
+
+    static func judder(_ hz: Double, fps: Double) -> String? {
+        refreshFits(hz, fps: fps) ? nil : "\(rate(hz)) Hz is not a multiple of the canvas \(rate(fps)) fps: motion judders."
     }
 }
 
