@@ -12,15 +12,6 @@ import Testing
 @testable import FanousEngine
 
 @Suite struct SyphonTests {
-    @Test func sceneSpecSplitsOnTheFirstSlash() {
-        #expect(SceneConfig.syphonSpec("Some App/Server name")! == ("Some App", "Server name"))
-        #expect(SceneConfig.syphonSpec("Simple Server/")! == ("Simple Server", ""))
-        #expect(SceneConfig.syphonSpec("A/B/C")! == ("A", "B/C"))
-        #expect(SceneConfig.syphonSpec("App") == nil)
-        #expect(SceneConfig.syphonSpec("/Server") == nil)
-        #expect(SceneConfig.syphonSpec("/") == nil)
-    }
-
     static let size = 64
 
     /// B = x*4, G = y*4, R = 0x80, A = 0xFF: every row and column differs, so a flip in either axis shows.
@@ -289,18 +280,12 @@ import Testing
     }
 
     /// Folder 0 file 150+ resolves through the catalog to a live input made by the factory with the server's id; a gone
-    /// server says "not running" and keeps the playback, its return connects again without a new selection, and a
-    /// scene entry on the same number wins.
+    /// server says "not running" and keeps the playback, and its return connects again without a new selection.
     @Test func loaderResolvesNumberedServersAndReconnects() async throws {
         guard let device = MTLCreateSystemDefaultDevice() else { return }
         let layers = [RenderLayer(index: 0), RenderLayer(index: 1)]
-        let loader = MediaLoader(
-            layers: layers, media: [MediaEntry(folder: 0, file: 151, syphon: "Scene App/Fixed")], device: device, ringCapacity: 4, logger: testLogger)
-        let calls = Mutex<[String]>([])
-        loader.liveFactory = { spec, uuid in
-            calls.withLock { $0.append("\(spec)|\(uuid ?? "-")") }
-            return FakeLive(uuid: uuid)
-        }
+        let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: testLogger)
+        loader.liveFactory = { uuid in FakeLive(uuid: uuid) }
         let catalog = LiveCatalog(.syphon)
         catalog.onChange = { [loader] in loader.changed(.syphonServers) }
         loader.syphonCatalog = catalog
@@ -311,13 +296,9 @@ import Testing
         func playback(_ i: Int) -> FakeLive? { layers[i].pending.withLock { $0.playback?.live as? FakeLive } }
         func status(_ i: Int) -> LayerMediaStatus { layers[i].mediaStatus.withLock { $0 } }
         layers[0].wanted.store(MediaKey(folder: 0, file: 150).packed, ordering: .relaxed)
-        layers[1].wanted.store(MediaKey(folder: 0, file: 151).packed, ordering: .relaxed)
         loader.wake.signal()
         #expect(await waitUntil { playback(0)?.uuid == "a" && status(0).name == "Syphon: Resolume/Out" })
         #expect(status(0).kind == "live" && status(0).error == nil)
-        // the scene's entry on 151 wins over the catalog's "Other"
-        #expect(await waitUntil { status(1).name == "Syphon: Scene App/Fixed" })
-        #expect(calls.withLock { $0 }.contains("Scene App/Fixed|-"))
 
         // the server goes: "not running", the last picture stays (same playback, not stopped)
         let first = try #require(playback(0))
@@ -356,7 +337,7 @@ import Testing
         guard let device = MTLCreateSystemDefaultDevice() else { return }
         let layers = [RenderLayer(index: 0), RenderLayer(index: 1)]
         let loader = MediaLoader(layers: layers, media: [], device: device, ringCapacity: 4, logger: testLogger)
-        loader.liveFactory = { _, uuid in FakeLive(uuid: uuid) }
+        loader.liveFactory = { uuid in FakeLive(uuid: uuid) }
         let catalog = LiveCatalog(.syphon)
         catalog.onChange = { [loader] in loader.changed(.syphonServers) }
         loader.syphonCatalog = catalog
@@ -383,7 +364,7 @@ import Testing
         guard let device = MTLCreateSystemDefaultDevice() else { return }
         let layer = RenderLayer(index: 0)
         let loader = MediaLoader(layers: [layer], media: [], device: device, ringCapacity: 4, logger: testLogger)
-        loader.liveFactory = { _, _ in nil }
+        loader.liveFactory = { _ in nil }
         let catalog = LiveCatalog(.syphon)
         catalog.update(running: [Self.info("App", "", "a")])
         loader.syphonCatalog = catalog

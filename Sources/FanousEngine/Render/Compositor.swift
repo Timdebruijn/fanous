@@ -1099,12 +1099,6 @@ public final class Compositor: @unchecked Sendable {
         return true
     }
 
-    /// Reads the offscreen output (BGRA 8-bit) back; tests only.
-    public func readbackOutput() -> (width: Int, height: Int, bgra: [UInt8]) {
-        guard let texture = offscreenOutput, let buffer = blitToShared(texture, bytesPerPixel: 4) else { return (0, 0, []) }
-        return (texture.width, texture.height, Array(UnsafeRawBufferPointer(start: buffer.contents(), count: buffer.length)))
-    }
-
     // MARK: Diagnostics
 
     /// Reads the most recently completed canvas back as 8-bit RGBA (tests and thumbnails; allocates, blocks on the GPU).
@@ -1117,8 +1111,9 @@ public final class Compositor: @unchecked Sendable {
         return (texture.width, texture.height, rgba)
     }
 
-    /// `texture` copied into a new shared buffer, rows packed; blocks until the GPU is done.
-    private func blitToShared(_ texture: MTLTexture, bytesPerPixel: Int) -> MTLBuffer? {
+    /// `texture` copied into a new shared buffer, rows packed; blocks until the GPU is done. Internal for the tests'
+    /// `readbackOutput`.
+    func blitToShared(_ texture: MTLTexture, bytesPerPixel: Int) -> MTLBuffer? {
         let bytesPerRow = texture.width * bytesPerPixel
         guard let buffer = context.device.makeBuffer(length: bytesPerRow * texture.height, options: .storageModeShared),
             let commandBuffer = context.queue.makeCommandBuffer(), let blit = commandBuffer.makeBlitCommandEncoder()

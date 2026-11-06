@@ -203,6 +203,12 @@ extension Compositor {
         offscreenOutput = context.device.makeTexture(descriptor: descriptor)
         return offscreenOutput
     }
+
+    /// Reads the offscreen output (BGRA 8-bit) back.
+    func readbackOutput() -> (width: Int, height: Int, bgra: [UInt8]) {
+        guard let texture = offscreenOutput, let buffer = blitToShared(texture, bytesPerPixel: 4) else { return (0, 0, []) }
+        return (texture.width, texture.height, Array(UnsafeRawBufferPointer(start: buffer.contents(), count: buffer.length)))
+    }
 }
 
 extension RenderLayer {

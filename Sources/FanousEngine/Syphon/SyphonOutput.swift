@@ -8,14 +8,12 @@ import Syphon
 
 public enum SyphonError: Error, CustomStringConvertible {
     case serverFailed(String)
-    case serverNotFound(appName: String, serverName: String)
     case clientFailed(String)
     case notRunning(String)
 
     public var description: String {
         switch self {
         case .serverFailed(let name): "Syphon server '\(name)' could not be started"
-        case .serverNotFound(let app, let name): "no Syphon server '\(name)' from '\(app)'"
         case .clientFailed(let name): "Syphon client for '\(name)' could not connect"
         case .notRunning(let uuid): "Syphon server \(uuid) is not running"
         }
