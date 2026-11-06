@@ -45,7 +45,7 @@ export function invert(m: Mat3): Mat3 | null {
 function catmullRom(values: number[], t: number): number {
   const n = values.length;
   if (n < 2) return values[0] ?? 0;
-  const x = clamp01(t) * (n - 1);
+  const x = Math.min(Math.max(t, 0), 1) * (n - 1);
   const i = Math.min(n - 2, Math.floor(x));
   const f = x - i;
   const p1 = values[i]!, p2 = values[i + 1]!;

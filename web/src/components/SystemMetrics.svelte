@@ -2,7 +2,6 @@
 <!-- Copyright (c) 2026 Tim de Bruijn -->
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
-  import { errText } from '../lib/errors';
   import { app } from '../lib/state.svelte';
   import { metricTiles, parseMetrics, plural, pushHistory, sparkline, type Metrics } from '../lib/system';
 
@@ -31,7 +30,7 @@
         history = pushHistory(history, next.gpuMsP99);
         error = '';
       } catch (e) {
-        if (alive) error = errText(e);
+        if (alive) error = e instanceof Error ? e.message : String(e);
       } finally {
         busy = false;
       }

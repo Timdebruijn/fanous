@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ReadinessItemDoc } from './docs';
 import {
-  ageText, clamp, droppedTone, filterLines, formatClock, headerCaption, memoryText, metricTiles, outputTone, parseMetrics, parseOpenRoles, permissionRow,
+  ageText, droppedTone, filterLines, formatClock, headerCaption, memoryText, metricTiles, outputTone, parseMetrics, parseOpenRoles, permissionRow,
   plural, pushHistory, readinessBadge, readinessSummary, resumedText, sparkline, stampText, thermalTone, typedNumber,
 } from './system';
 
@@ -215,11 +215,7 @@ describe('plural', () => {
   });
 });
 
-describe('clamp and typedNumber', () => {
-  it('clamps, and the upper bound wins when the bounds cross', () => {
-    expect([clamp(-1, 0, 10), clamp(5, 0, 10), clamp(11, 0, 10), clamp(5, 3, 1)]).toEqual([0, 5, 10, 1]);
-  });
-
+describe('typedNumber', () => {
   it('reads a typed number; blank, not a number, infinite or below min is null', () => {
     const typed = (value: string, min?: number) => typedNumber({ value } as HTMLInputElement, min);
     expect([typed('2.5'), typed(' -3 '), typed('0', 0)]).toEqual([2.5, -3, 0]);

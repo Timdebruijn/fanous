@@ -3,7 +3,6 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Pure helpers of the Outputs & Mapping screen: the output model as the engine stores it (OutputModel.swift),
 // geometry for the mapper overlay, blend curve points and display naming.
-import { clamp } from './system';
 
 export interface MapPoint {
   x: number;
@@ -250,38 +249,21 @@ export function lowestFree(used: Iterable<number>, max = 255): number | null {
 /** How often a lease from the UI is renewed (compare, edit overlay, test patterns); the engine drops one 5 s after the last. */
 export const LEASE_MS = 2000;
 
-/** The timer of a lease from the UI: `renew` clears it, calls `first` and then `tick` every `LEASE_MS`; `end` clears it
- *  and calls `off`, only while it runs. */
-export function lease() {
-  let timer: ReturnType<typeof setInterval> | null = null;
-  return {
-    get running() {
-      return timer !== null;
-    },
-    renew(first: () => void, tick: () => void) {
-      if (timer) clearInterval(timer);
-      first();
-      timer = setInterval(tick, LEASE_MS);
-    },
-    end(off: () => void) {
-      if (!timer) return;
-      clearInterval(timer);
-      timer = null;
-      off();
-    },
-  };
-}
-
 /** Compare held from the UI (DESIGN §9.10 item 4): `start` sends the preset at once and again every `LEASE_MS` (the
  * engine lets the lease run out 5 s after the last one); `stop` ends it with preset 0. The latest `start` wins. */
 export function compareLease(send: (preset: number) => void) {
-  const timer = lease();
+  let timer: ReturnType<typeof setInterval> | null = null;
   return {
     start(preset: number) {
-      timer.renew(() => send(preset), () => send(preset));
+      if (timer) clearInterval(timer);
+      send(preset);
+      timer = setInterval(() => send(preset), LEASE_MS);
     },
     stop() {
-      timer.end(() => send(0));
+      if (!timer) return;
+      clearInterval(timer);
+      timer = null;
+      send(0);
     },
   };
 }
@@ -334,20 +316,27 @@ export function maskTarget(slice: SliceConfig | undefined, sliceIndex: number, h
  *  `on: false`. */
 export function overlayLease(send: (id: number, on: boolean, selected: OverlaySelection | null) => void, idle: () => void) {
   const quiet = 600_000;
-  const timer = lease();
+  let timer: ReturnType<typeof setInterval> | null = null;
   let id = 0, selected: OverlaySelection | null = null, editedAt = 0;
-  const stop = () => timer.end(() => send(id, false, null));
+  function stop() {
+    if (!timer) return;
+    clearInterval(timer);
+    timer = null;
+    send(id, false, null);
+  }
   return {
     start(output: number, next: OverlaySelection | null) {
-      if (timer.running && output === id && JSON.stringify(next) === JSON.stringify(selected)) return;
-      if (timer.running && output !== id) stop();
-      if (!timer.running && Date.now() - editedAt >= quiet) return idle();
+      if (timer && output === id && JSON.stringify(next) === JSON.stringify(selected)) return;
+      if (timer && output !== id) stop();
+      if (!timer && Date.now() - editedAt >= quiet) return idle();
       [id, selected] = [output, next];
-      timer.renew(() => send(id, true, selected), () => {
+      send(id, true, selected);
+      if (timer) clearInterval(timer);
+      timer = setInterval(() => {
         if (Date.now() - editedAt < quiet) return send(id, true, selected);
         stop();
         idle();
-      });
+      }, LEASE_MS);
     },
     edited() {
       editedAt = Date.now();
@@ -388,7 +377,7 @@ export function colorOf(output: OutputConfig): OutputColor {
 }
 
 export function clamp01(v: number): number {
-  return clamp(v, 0, 1);
+  return Math.min(1, Math.max(0, v));
 }
 
 /** Pixel size of an output: its region, else its display's size, else 1920×1080. */

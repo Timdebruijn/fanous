@@ -7,7 +7,7 @@
   import { RELEASE_TEXT, ZERO_GROUPS, channelRange, clockText, controlKeys, folderZeroItems, mediaOptions, mediaPath, patchText, playSteps, reservedText, valueText, type LibrarySnapshot } from '../lib/layers';
   import type { ParamSpec } from '../lib/patch-screen';
   import { app, cmd, playOnLayer, programmerLock } from '../lib/state.svelte';
-  import { clamp, plural } from '../lib/system';
+  import { plural } from '../lib/system';
   import { syncStatus } from '../lib/sync';
   import { throttledSender } from '../lib/throttle';
   import PolicyHint from './PolicyHint.svelte';
@@ -148,7 +148,7 @@
                 {#each spec.bands as band (band.from)}<option value={band.from}>{band.name}</option>{/each}
               </select>
             {:else if isNumber(param.key)}
-              <input class="input mono" type="number" min="0" max="255" aria-label={param.name} disabled={lockTitle !== undefined} value={param.raw} onchange={(e) => send(param.key, clamp(Number(e.currentTarget.value) || 0, 0, 255))} />
+              <input class="input mono" type="number" min="0" max="255" aria-label={param.name} disabled={lockTitle !== undefined} value={param.raw} onchange={(e) => send(param.key, Math.max(0, Math.min(255, Number(e.currentTarget.value) || 0)))} />
             {:else}
               <input type="range" min="0" max={rawMax(spec)} step="1" aria-label={param.name} disabled={lockTitle !== undefined} value={param.raw} oninput={(e) => send(param.key, Number(e.currentTarget.value))} ondblclick={() => spec && send(param.key, spec.default ?? 0)} title="Double-click: default" />
             {/if}

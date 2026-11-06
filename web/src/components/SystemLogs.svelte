@@ -3,7 +3,6 @@
 <!-- Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { errText } from '../lib/errors';
   import { app } from '../lib/state.svelte';
   import { filterLines, formatClock, plural } from '../lib/system';
 
@@ -24,7 +23,7 @@
       if (!response.ok) throw new Error(`${response.status} ${body}`.trim());
       text = body;
     } catch (e) {
-      error = errText(e);
+      error = e instanceof Error ? e.message : String(e);
     } finally {
       loading = false;
     }

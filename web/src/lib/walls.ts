@@ -3,8 +3,7 @@
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 // Pure logic of projector walls on the Outputs screen (DESIGN §9.9): the wall as the engine stores it (WallModel.swift),
 // the wizard's grid choice and canvas preview, the mini-map's seams, badges, test patterns and the seam check steps.
-import { clamp } from './system';
-import { lease, TEST_PATTERNS, type DisplayDoc, type OutputConfig, type OutputStatusDoc } from './outputs';
+import { LEASE_MS, TEST_PATTERNS, type DisplayDoc, type OutputConfig, type OutputStatusDoc } from './outputs';
 
 export type ManualField = 'source' | 'overlap.left' | 'overlap.right' | 'overlap.top' | 'overlap.bottom';
 
@@ -150,7 +149,7 @@ export function fitCanvas(grid: Grid, overlap: { x: number; y: number }, output:
     // Swift's .rounded() takes a half away from zero, as Math.round does for these positive values; 1e-9: 8192 · (x / x)
     // may land just below
     const rounded = scale < 1 ? Math.floor(half + 1e-9) : Math.round(half);
-    return clamp(2 * rounded, CANVAS_SIDES.min, CANVAS_SIDES.max);
+    return Math.min(CANVAS_SIDES.max, Math.max(CANVAS_SIDES.min, 2 * rounded));
   };
   return { width: even(w), height: even(h) };
 }
@@ -218,24 +217,25 @@ export function wallPatterns(
  * drops a lease 5 s after the last); a `show` of what already shows sends nothing new, one of no outputs is a `stop`.
  * `stop` ends them all with 0. */
 export function patternLease(send: (patterns: { id: number; pattern: number }[]) => void) {
-  const timer = lease();
+  let timer: ReturnType<typeof setInterval> | null = null;
   let shown: { id: number; pattern: number }[] = [];
   const ends = (keep: number[]) => shown.filter((p) => !keep.includes(p.id)).map(({ id }) => ({ id, pattern: 0 }));
   function stop() {
-    timer.end(() => {
-      send(ends([]));
-      shown = [];
-    });
+    if (!timer) return;
+    clearInterval(timer);
+    timer = null;
+    send(ends([]));
+    shown = [];
   }
   return {
     show(ids: number[], pattern: number) {
       if (!ids.length) return stop();
       const next = ids.map((id) => ({ id, pattern }));
-      if (timer.running && JSON.stringify(next) === JSON.stringify(shown)) return;
-      timer.renew(() => {
-        send([...next, ...ends(ids)]);
-        shown = next;
-      }, () => send(shown));
+      if (timer && JSON.stringify(next) === JSON.stringify(shown)) return;
+      if (timer) clearInterval(timer);
+      send([...next, ...ends(ids)]);
+      shown = next;
+      timer = setInterval(() => send(shown), LEASE_MS);
     },
     stop,
   };

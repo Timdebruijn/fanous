@@ -5,7 +5,6 @@
 // in large type, the trackpad gain and the one `output.set` that moves them. A selection is a group plus an anchor, the
 // index of one point in `handles(output, mode, sliceIndex)`; the anchor is the point the mapper has selected.
 import type { JSONValue } from './protocol';
-import { clamp } from './system';
 import { handles, maskHandle, movedHandle, type MapPoint, type MapperMode, type OutputConfig } from './outputs';
 import { fromScreen, nudgeStored, toScreen } from './warp';
 
@@ -125,7 +124,7 @@ export function nudgeCommand(
     return movedHandle(output, knob.path, fromScreen(output, mode, { x: s.x + dx / size.w, y: s.y + dy / size.h })) as unknown as { path: string; value: JSONValue };
   }
   const on = moving.map((i) => toScreen(output, mode, all[i]!.point));
-  const limit = (d: number, values: number[]) => clamp(d, Math.min(0, -Math.min(...values)), Math.max(0, 1 - Math.max(...values)));
+  const limit = (d: number, values: number[]) => Math.min(Math.max(d, Math.min(0, -Math.min(...values))), Math.max(0, 1 - Math.max(...values)));
   const nx = limit(dx / size.w, on.map((p) => p.x));
   const ny = limit(dy / size.h, on.map((p) => p.y));
   if (nx === 0 && ny === 0) return null;

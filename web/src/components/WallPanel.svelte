@@ -7,7 +7,6 @@
   import PresetStrip from './PresetStrip.svelte';
   import RangeStepper, { GRACE } from './RangeStepper.svelte';
   import { app, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
-  import { clamp } from '../lib/system';
   import { throttledSender } from '../lib/throttle';
   import { endCheck, pick, removeWall, startWizard, stepCheck, wallUI } from '../lib/wall-session.svelte';
   import { SEAM_STEPS, overlapHint, rc, seamLines, wallPixels, type ManualField, type SeamLine, type WallConfig } from '../lib/walls';
@@ -127,7 +126,7 @@
   const gammaText = (l: SeamLine, digits: number) => (l.gammaRGB ? l.gammaRGB.map((g, i) => `${'RGB'[i]} ${g.toFixed(digits)}`).join(' · ') : l.gamma.toFixed(digits));
   const rgb = (values: number[] | null | undefined, i: number, v: number) => (values ?? [0, 0, 0]).map((x, j) => (j === i ? v : x)) as [number, number, number];
   function setOverlap(axis: 'x' | 'y', percent: number) {
-    const overlap = remember('overlap', { ...recent('overlap', wall.overlap), [axis]: clamp(Math.round(percent), 0, 50) / 100 });
+    const overlap = remember('overlap', { ...recent('overlap', wall.overlap), [axis]: Math.min(50, Math.max(0, Math.round(percent))) / 100 });
     void cmd('wall.set', { id: wall.id, overlap });
   }
 

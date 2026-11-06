@@ -6,7 +6,7 @@
 import type { AudioInputDoc, CueDoc, CueValueDoc, LiveDoc, MIDIMappingDoc, PatchEntry, TimecodeSettingsDoc } from './docs';
 import { clamp01 } from './outputs';
 import { LOCKED_TITLE, type ChannelMap, type FixtureType, type ParamSpec } from './patch-screen';
-import { clamp, pad2, plural } from './system';
+import { pad2, plural } from './system';
 
 export const LOCKED_OPERATOR = 'Locked: operator only';
 export const LOCKED_SHOW = 'Locked: the show is locked (press L to unlock)';
@@ -178,7 +178,7 @@ export function rawMax(spec: ParamSpec | undefined): number {
 }
 
 export function clampRaw(spec: ParamSpec | undefined, n: number): number {
-  return clamp(Math.round(Number.isFinite(n) ? n : 0), 0, rawMax(spec));
+  return Math.min(rawMax(spec), Math.max(0, Math.round(Number.isFinite(n) ? n : 0)));
 }
 
 export type ValueControl =

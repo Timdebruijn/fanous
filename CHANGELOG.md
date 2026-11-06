@@ -10,8 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Cleanup: the web UI shares one lease helper, one typed-number parser, one clamp, one error-text helper and the
-  yellow/red styles instead of per-file copies (PR #311).
+- Cleanup: the web UI shares one typed-number parser and the yellow/red styles instead of per-file copies; attribution
+  constants live in App.svelte (PR #311).
 - Dev docs and marketing after the guide rewrite: `DESIGN.md` §11 gets an "as built" list from the API inventory
   (data-protection keychain, no identity import, no per-interface listener, REST mutates and has no project
   export, the protocol sketch's `role` and `result`, the 4-encoder preview limit, the operator and monitor

@@ -13,9 +13,6 @@ export interface UIMessage {
   hint: string;
 }
 
-/** The text of a thrown value: an Error's message, anything else as a string. */
-export const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
-
 /** the banner goes away by itself after this long */
 export const BANNER_MS = 10_000;
 /** an Undo toast stays this long */

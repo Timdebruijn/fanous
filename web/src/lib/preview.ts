@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
-import { clamp } from './system';
 
 export interface Generation {
   /** No newer `begin()` and no `cancel()` since this one began. */
@@ -40,7 +39,7 @@ export function latestOnly(): { begin: () => Generation; cancel: () => void } {
 export const PREVIEW_CLASSES = [320, 640, 960, 1280] as const;
 
 export function previewClass(w: number): number {
-  const clamped = clamp(w, 160, 1280);
+  const clamped = Math.min(1280, Math.max(160, w));
   return PREVIEW_CLASSES.find((c) => c >= clamped) ?? 1280;
 }
 
