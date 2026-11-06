@@ -22,13 +22,13 @@
     /** layers currently playing this file ("Layer 3") */
     onLayers: string[];
     onselect: () => void;
-    ontranscode: (item: LibraryItem, codec: string, fps: number) => Promise<void>;
+    ontranscode: (item: LibraryItem, codec: string, fps: number | null) => Promise<void>;
   }
   let { item, selected, pending, onLayers, onselect, ontranscode }: Props = $props();
 
   let codec = $state<string>(transcodeCodecs[0].value);
-  /** an image sequence has no rate of its own: the movie is written at this one (the engine takes 1–240) */
-  let fps = $state(25);
+  /** an image sequence has no rate of its own: the movie is written at this one (the engine takes whole 1–240; an emptied field is null, its 25) */
+  let fps = $state<number | null>(25);
   let busy = $state(false);
 
   const meta = $derived(item.metadata);
@@ -42,7 +42,7 @@
 
   async function transcode() {
     busy = true;
-    await ontranscode(item, codec, fps);
+    await ontranscode(item, codec, fps == null ? null : Math.round(fps));  // 24.5 got the engine's "bad job JSON"
     busy = false;
   }
 </script>
@@ -76,7 +76,7 @@
         {#each transcodeCodecs as option (option.value)}<option value={option.value}>{option.label}</option>{/each}
       </select>
       {#if item.kind === 'sequence'}
-        <label class="fps caption"><input class="input mono" type="number" min="1" max="240" step="1" aria-label="Frame rate for {item.name}" bind:value={fps} disabled={locked || busy || pending} title={locked ? LOCKED_TITLE : undefined} /> fps</label>
+        <label class="fps caption"><input class="input mono" type="number" inputmode="numeric" min="1" max="240" step="1" aria-label="Frame rate for {item.name}" bind:value={fps} disabled={locked || busy || pending} title={locked ? LOCKED_TITLE : undefined} /> fps</label>
       {/if}
       <button
         class="btn"
