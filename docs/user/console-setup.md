@@ -337,13 +337,13 @@ overlap, and is then shown in red.
 With the standard patch of 8 layers the Master and the outputs sit where
 Layer 9 would go:
 
-<img src="images/patch-add-layer-blocked.png" width="673" alt="The Layers group after Add layer with the Master in the way: Layer 9 has no address, the block line reads 1 unplaced with the yellow note A 0.0.1 1–64 is taken by Master, and the button Move Master and outputs after the layers">
+<img src="images/patch-add-layer-blocked.png" width="673" alt="The Layers group after Add layer with the Master in the way: Layer 9 has no address, the block line reads 1 unplaced with the yellow note A 0.0.1 1–64 is taken by Master, Outputs 1–3, and the button Move Master and outputs after the layers">
 
 ```mermaid
 flowchart TD
   add["Add layer (+ next to the layer count)"] --> free{"Is the new layer's place<br>in the block free?"}
   free -- yes --> placed["The layer is patched there"]
-  free -- "taken by the Master (standard patch, 8 layers)" --> note["Layer 9: no address · A 0.0.1 1–64 is taken by Master<br>(the outputs at 9–32 are in the way too)"]
+  free -- "taken by the Master and the outputs (standard patch, 8 layers)" --> note["Layer 9: no address · A 0.0.1 1–64 is taken by Master, Outputs 1–3"]
   note --> move{"Move the Master and the outputs?"}
   move -- yes --> moved["Move Master and outputs after the layers: those blocks go to the universe after the last layer,<br>the unplaced layers take their places. The desk's patch changes too: print the sheet again"]
   move -- "no, keep the desk's patch" --> hand["Tap the new layer's chip: a free universe and address by hand,<br>for example A 0.0.2 at 1 (grey cells in the DMX monitor are free)"]

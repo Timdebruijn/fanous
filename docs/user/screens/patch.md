@@ -72,7 +72,7 @@ with sACN priority, which merges consoles.
 | Block line, **Block · A 0.0.0 from 1** | Every patched fixture sits on its place. The universe and the address are fields: change one to move the whole group; "· N unplaced" counts fixtures without an address |
 | Block line, **Custom · N of M off the block** (yellow) | Some fixtures were placed by hand; **Re-lay as block** puts every one on its place |
 | Block line, **No address** | Nothing in the group is patched; **Patch as block** puts it where the standard patch does |
-| Block line, "Layer 9: no address · A 0.0.1 1–64 is taken by Master" | Add layer found the new layer's place taken; **Move Master and outputs after the layers** moves those blocks (this changes the console patch too) |
+| Block line, "Layer 9: no address · A 0.0.1 1–64 is taken by Master, Outputs 1–3" | Add layer found the new layer's place taken; **Move Master and outputs after the layers** moves those blocks (this changes the console patch too) |
 | Block line, red notice | A block would run past the last universe; nothing was patched |
 | Chips (Layers, Master) | The fixture's colour, number (or name), its address, "A 0.0.1 · 1" when it sits on another universe than the block's start, **off** when placed by hand, "—" when unpatched. The colour tone is its status; hover for the words |
 | Rows (Outputs) | Per output: `name · on display · Outputs & Mapping` (a link), then its Output chip with the range (`A 0.0.1 9–16`) and status, and its Keystone chip with **Patch** while unpatched ("not used") |
@@ -88,7 +88,7 @@ Status words, in the chip's tooltip and in the editor:
 | **no address · stays dark** (yellow) | A layer without an address under Console only: it never plays | Patch it, or change Who controls |
 | **no address · at defaults** | The Master or an Output without an address under Console only: full and normal | Patch it only when the console must control it |
 | **no address · Fanous only** | No address, and the UI, cues, OSC and MIDI drive it | Nothing, unless the console must control it |
-| **no address · A 0.0.1 1–64 is taken by Master** (yellow) | The layer's place in the block is occupied | **Move Master and outputs after the layers** |
+| **no address · A 0.0.1 1–64 is taken by Master, Outputs 1–3** (yellow) | The layer's place in the block is occupied | **Move Master and outputs after the layers** |
 | **not used** | A Keystone fixture without an address; it is optional | **Patch** when the console should move the corners |
 
 ### Fixture editor
