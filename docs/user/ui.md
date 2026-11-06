@@ -36,7 +36,7 @@ another computer opens. Every screen has the same frame:
 
 - **Fanous**: About, Hide, Quit.
 - **Engine**: the first line is the engine's state, for example "Engine
-  1.0.0-rc.4 running · service installed", or "service needs approval in
+  1.0.0-rc.5 running · service installed", or "service needs approval in
   Login Items", "service not installed", "service plist missing". **Reload
   UI** (⌘R) reloads the page. **Start Engine**, **Restart Engine** and
   **Stop Engine…** control the service; Stop removes the service registration,
