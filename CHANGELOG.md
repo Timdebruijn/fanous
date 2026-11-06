@@ -20,6 +20,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
   constants live in App.svelte (PR #311).
 - Cleanup: the state server and the REST routes share reply helpers, two test-only RoleAuth members and an unused
   restart-marker parameter are gone (PR #312).
+- Fix: an image sequence whose frames are not a multiple of 4 wide and high, transcoded to HAP, fails the job with
+  the movie path's "HAP needs a width and height that are multiples of 4" instead of crashing the engine (B172) (PR #315).
 - Dev docs and marketing after the guide rewrite: `DESIGN.md` §11 gets an "as built" list from the API inventory
   (data-protection keychain, no identity import, no per-interface listener, REST mutates and has no project
   export, the protocol sketch's `role` and `result`, the 4-encoder preview limit, the operator and monitor

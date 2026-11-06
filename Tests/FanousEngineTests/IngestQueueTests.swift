@@ -968,6 +968,44 @@ extension IngestQueueTests {
         if case .failed(let text) = await Self.wait(for: replayed.id, in: queue) { #expect(text.contains("frame rate"), "failed with: \(text)") } else { Issue.record("not failed") }
     }
 
+    /// B172: a sequence whose frames are not a multiple of 4 wide and high, queued for HAP Q the way the Media tile sends it,
+    /// ends as a failed job with the movie path's HAP size error; `HAPEncoder`'s precondition took the engine down before.
+    /// The same frames to ProRes still work.
+    @Test func sequenceNotAMultipleOfFourFailsForHAP() async throws {
+        let directory = try tempDir("fanous-ingest-tests")
+        let queue = IngestQueue(persistenceURL: directory.appending(path: "queue.json"))
+        let library = LibraryIndex(root: directory.appending(path: "library"), cacheDirectory: directory.appending(path: "cache"), logger: testLogger)
+        let api = IngestAPI(library: { library }, queue: queue, encoder: JSONEncoder(), logger: testLogger)
+        let frames = directory.appending(path: "frames")
+        try FileManager.default.createDirectory(at: frames, withIntermediateDirectories: true)
+        let image = try cgImage(rgba: Array([[UInt8]](repeating: [200, 100, 50, 255], count: 30 * 30).joined()), width: 30, height: 30)
+        for i in 0..<3 { try writePNG(image, to: frames.appending(path: "frame_\(i).png")) }
+        queue.start()
+        defer { queue.stop() }
+
+        #expect(api.enqueue(source: frames, folder: 1, file: nil, name: "seq", codec: "hapq", fps: 25, keepOriginal: true).status == 202)
+        let hap = try #require(queue.jobs.last)
+        guard case .failed(let text) = await Self.wait(for: hap.id, in: queue) else {
+            Issue.record("not failed")
+            return
+        }
+        #expect(text == "\(TranscodeError.hapDimensions(30, 30))", "failed with: \(text)")
+        #expect(!FileManager.default.fileExists(atPath: hap.destination.path) && FileManager.default.fileExists(atPath: frames.path))
+
+        #expect(api.enqueue(source: frames, folder: 1, file: nil, name: "seq", codec: "prores422hq", fps: 25, keepOriginal: true).status == 202)
+        let proRes = try #require(queue.jobs.last)
+        #expect(await Self.wait(for: proRes.id, in: queue) == .done)
+        #expect(FileManager.default.fileExists(atPath: proRes.destination.path))
+
+        // the movie path refuses the same size with the same error (its check moved into MovieWriter)
+        let movie = queue.enqueue(IngestJob(source: proRes.destination, destination: directory.appending(path: "hap.mov"), kind: .transcode(codec: .hap(.hapQ))))
+        guard case .failed(let movieText) = await Self.wait(for: movie.id, in: queue) else {
+            Issue.record("movie not failed")
+            return
+        }
+        #expect(movieText == text, "movie failed with: \(movieText)")
+    }
+
     /// B51: while a library root change holds enqueues, a new job is refused with 409 and nothing is queued.
     @Test func heldEnqueueIsRefused() throws {
         let directory = try tempDir("fanous-ingest-tests")

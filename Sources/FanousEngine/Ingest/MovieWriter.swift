@@ -65,6 +65,8 @@ public final class MovieWriter {
         precondition(!(audio && externalAudio != nil), "audio is either the test tone or caller-supplied")
         let duration = frameDuration ?? CMTime(value: 1, timescale: fps)
         guard fps > 0, duration.isNumeric, duration.seconds > 0 else { throw WriterError.failed("frame rate must be positive") }  // a job that got through would trap below
+        // HAPEncoder traps on this; a sequence job reached it unchecked and took the engine down (B172)
+        if case .hap = codec, width % 4 != 0 || height % 4 != 0 { throw TranscodeError.hapDimensions(width, height) }
         self.width = width
         self.height = height
         self.fps = fps
