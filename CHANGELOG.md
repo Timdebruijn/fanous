@@ -10,7 +10,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Readiness: **Display sleep disabled** warns instead of failing for a display sleep timeout, so it no longer blocks show mode; show mode holds the display awake (B180) (PR #NNN).
+- Readiness: **Display sleep disabled** warns instead of failing for a display sleep timeout, so it no longer blocks show mode; show mode holds the display awake (B180) (PR #323).
 - Cleanup: the web `typecheck` script and the TypeScript 7 preview dependency are gone; `npm run check` (svelte-check) covers the same files on CI (PR #308).
 - Cleanup: sACN sync/discovery parsing, the bench shim scripts and two test-only Core members are gone (PR #309).
 - Cleanup: the scene-file route to a Syphon server is gone (live inputs 150–169 are the way), the preview and
