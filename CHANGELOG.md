@@ -10,7 +10,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
-- Outputs: an output without a Mode on a display whose refresh is no whole multiple of the canvas rate (a 50 Hz projector on a 60 fps canvas) now gets the judder note on its row and a readiness warning (B173) (PR #NNN).
+- Outputs: an output without a Mode on a display whose refresh is no whole multiple of the canvas rate (a 50 Hz projector on a 60 fps canvas) now gets the judder note on its row and a readiness warning (B173) (PR #325).
 - Cleanup: the web `typecheck` script and the TypeScript 7 preview dependency are gone; `npm run check` (svelte-check) covers the same files on CI (PR #308).
 - Cleanup: sACN sync/discovery parsing, the bench shim scripts and two test-only Core members are gone (PR #309).
 - Cleanup: the scene-file route to a Syphon server is gone (live inputs 150–169 are the way), the preview and
