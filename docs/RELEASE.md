@@ -36,7 +36,7 @@ Phase 8 deliverable of `DESIGN.md` §19; v1.0 ships when every box is ticked.
 
 ## 3. Measurements (per release, per machine)
 
-- [ ] `scripts/bench-sweep.sh` and `scripts/bench-phase3.sh` on every
+- [ ] `scripts/bench.sh sweep` and `scripts/bench.sh phase3` on every
       available machine → `docs/benchmarks/<chip>-…-<date>.md/.json` and the
       tier table in `docs/benchmarks/README.md`; `docs/hardware.md` lists the
       chips verified (OPEN-6: owner verifies per generation)

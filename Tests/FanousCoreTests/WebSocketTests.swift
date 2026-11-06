@@ -37,7 +37,7 @@ private let upgradeHead =
         let (frame, length) = try #require(try WebSocketFrame.parse(raw))
         #expect(frame == WebSocketFrame.text("Hello"))
         #expect(length == raw.count)
-        #expect(frame.serializedMasked(key: key) == raw)
+        #expect(frame.encode(key: key) == raw)
     }
 
     @Test func serializesUnmaskedHelloFromRFC() {
@@ -83,7 +83,7 @@ private let upgradeHead =
     @Test func fragmentedTextParsesAsTwoFrames() throws {
         let first = WebSocketFrame(fin: false, opcode: .text, payload: Array("Hel".utf8))
         let second = WebSocketFrame(fin: true, opcode: .continuation, payload: Array("lo".utf8))
-        let stream = first.serializedMasked(key: key) + second.serializedMasked(key: key)
+        let stream = first.encode(key: key) + second.encode(key: key)
         let one = try #require(try WebSocketFrame.parse(stream))
         #expect(one.frame == first)
         #expect(!one.frame.fin)
@@ -169,7 +169,7 @@ private let upgradeHead =
         #expect(close.opcode == .close)
         #expect(close.fin)
         #expect(close.serialized() == [0x88, 0x05, 0x03, 0xE8, 0x62, 0x79, 0x65])
-        let (parsed, _) = try #require(try WebSocketFrame.parse(close.serializedMasked(key: key)))
+        let (parsed, _) = try #require(try WebSocketFrame.parse(close.encode(key: key)))
         #expect(parsed == close)
         #expect(parsed.closeCode == 1000)
         #expect(String(decoding: parsed.payload.dropFirst(2), as: UTF8.self) == "bye")
@@ -186,7 +186,7 @@ private let upgradeHead =
         let close = WebSocketFrame.close(code: 1008, reason: String(repeating: "é", count: 100))
         #expect(close.payload.count <= 125)
         #expect(String(bytes: close.payload.dropFirst(2), encoding: .utf8) != nil)
-        #expect(try WebSocketFrame.parse(close.serializedMasked(key: key)) != nil)
+        #expect(try WebSocketFrame.parse(close.encode(key: key)) != nil)
     }
 
     @Test(arguments: [0, 125, 126, 65_535, 65_536])
@@ -194,7 +194,7 @@ private let upgradeHead =
         let payload = sample(count)
         let frame = WebSocketFrame.binary(payload)
 
-        let masked = frame.serializedMasked(key: (0xDE, 0xAD, 0xBE, 0xEF))
+        let masked = frame.encode(key: (0xDE, 0xAD, 0xBE, 0xEF))
         let parsed = try #require(try WebSocketFrame.parse(masked))
         #expect(parsed.frame == frame)
         #expect(parsed.length == masked.count)

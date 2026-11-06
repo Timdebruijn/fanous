@@ -701,13 +701,16 @@ three existing modes and their footprints alone.
   status bar. Hold-vs-release is a project setting (per universe, §6.5a).
 - The server answers `ArtPoll` with `ArtPollReply` (name, IP, port
   addresses; unicast back to the poller, one reply per Net/Sub-Net group of
-  four ports) and sACN discovery (E1.31 universe discovery packets are
-  received; the server advertises nothing in v1 as it only receives).
+  four ports). It sends no sACN universe discovery in v1 as it only
+  receives; E1.31 universe discovery packets it receives are ignored (not
+  parsed).
 - sACN multicast groups are joined on the default-route interface, or per
   universe on its interface (§6.5a); unicast sACN on port 5568 is accepted
   on every interface.
-- `ArtSync` and E1.31 synchronization packets: when received, a universe
-  update is applied at the sync packet, otherwise immediately.
+- Every universe update is applied as it arrives; no sync is honoured.
+  `ArtSync` is parsed and then dropped; E1.31 synchronization packets are
+  ignored (not parsed). The user guide says the same
+  (`docs/user/console-setup.md`, "Not honoured").
 
 ### 6.5a Per-universe settings as built (2026-10-26, B28)
 

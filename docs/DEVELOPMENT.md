@@ -253,8 +253,7 @@ application firewall; in the run above that happened only after the delay.
 `/api/metrics` reports frame timing, the DMX-to-photon estimate and audio
 drift; `fanous-bench run` ramps layers until a frame drops (`--effects
 blur,edge`, `--dissolve 2`, `--ingest FILE` for the Phase 3/4 variants) and
-`scripts/bench.sh sweep|phase3|drift` runs the matrices (`bench-sweep.sh` and
-`bench-phase3.sh` are kept as wrappers for the records that name them).
+`scripts/bench.sh sweep|phase3|drift` runs the matrices.
 
 For Instruments, start `fanousd` or `fanous-bench` with `FANOUS_SIGNPOSTS=1`:
 the os_signpost instrument then shows the intervals `tick` (compositor),

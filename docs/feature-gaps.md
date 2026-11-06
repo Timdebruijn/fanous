@@ -161,7 +161,7 @@ priority for each row comes from §4.
 | G27 | Timecode out, LTC generator | QLab, Millumin, VDMX, Pixera | `◐` `LTCEncoder` in Core, used by tests only; a generator with Art-Net, MTC and LTC out in the backlog (B138) | S–M |
 | G28 | PosiStageNet and tracking | HE 5/6 · Hippotizer; MA3 and MagicQ send PSN | `D` (B53) | M |
 | G29 | GDTF `MediaServerLayer` / `MediaServerMaster` geometry types | no consuming desk verified | `◐` generic `Geometry` | S |
-| G30 | Honour sACN sync and `ArtSync`; sACN 0xDD | niche | `◐` parsed | S |
+| G30 | Honour sACN sync and `ArtSync`; sACN 0xDD | niche | `◐` `ArtSync` parsed; sACN sync packets are ignored | S |
 | G31 | Kling-Net, Sig-Net | MediaMaster / ChamSys only | `—` | watch |
 
 ### 3.4 Show control, API, workflow

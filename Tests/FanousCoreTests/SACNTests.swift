@@ -26,12 +26,16 @@ import Testing
         #expect(try SACN.parse(small.encoded()) == .data(small))
     }
 
-    @Test func syncAndDiscoveryRoundTrip() throws {
-        let sync = SACNSync(cid: Self.cidA, sequence: 3, syncAddress: 7999)
-        #expect(sync.encoded().count == 49)
-        #expect(try SACN.parse(sync.encoded()) == .sync(sync))
-        let discovery = SACNDiscovery(cid: Self.cidB, sourceName: "Console B", page: 0, lastPage: 0, universes: [1, 2, 63999])
-        #expect(try SACN.parse(discovery.encoded()) == .discovery(discovery))
+    @Test func syncAndDiscoveryAreNotData() {
+        // E1.31 synchronization and universe discovery packets: extended root vector 0x08, framing vector 0x01 / 0x02.
+        let sync = SACN.flagsLength(11) + [0, 0, 0, 1, 3] + UInt16(7999).bigEndianBytes + [0, 0]
+        let list = [UInt16(1), 2, 63999].flatMap(\.bigEndianBytes)
+        let discovery = SACN.flagsLength(8 + list.count) + [0, 0, 0, 1, 0, 0] + list
+        let framing = SACN.flagsLength(74 + discovery.count) + [0, 0, 0, 2] + [UInt8].fixed("Console B", 64) + [0, 0, 0, 0]
+        for body in [sync, framing + discovery] {
+            let bytes = SACN.root(cid: Self.cidA, vector: 0x0000_0008, bodyLength: body.count) + body
+            #expect(throws: SACN.ParseError.badVector) { try SACN.parse(bytes) }
+        }
     }
 
     @Test func rejectsBadPackets() {

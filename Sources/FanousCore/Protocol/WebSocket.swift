@@ -104,10 +104,8 @@ public struct WebSocketFrame: Equatable, Sendable {
     /// Wire format for server-to-client frames, which are never masked.
     public func serialized() -> [UInt8] { encode(key: nil) }
 
-    /// Wire format for client-to-server frames (masked), for tests and clients.
-    public func serializedMasked(key: (UInt8, UInt8, UInt8, UInt8)) -> [UInt8] { encode(key: key) }
-
-    private func encode(key: (UInt8, UInt8, UInt8, UInt8)?) -> [UInt8] {
+    /// Wire format: masked with `key` (client-to-server frames, built by tests), unmasked for nil.
+    func encode(key: (UInt8, UInt8, UInt8, UInt8)?) -> [UInt8] {
         var out: [UInt8] = [(fin ? 0x80 : 0) | opcode.rawValue]
         let maskBit: UInt8 = key != nil ? 0x80 : 0
         let n = payload.count

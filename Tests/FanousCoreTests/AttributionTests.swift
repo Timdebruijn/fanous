@@ -8,7 +8,7 @@ import Testing
 
 @Suite struct AttributionTests {
     @Test func attributionNamesAuthorAndRepository() {
-        #expect(Attribution.text.contains(Attribution.author))
+        #expect(Attribution.text.contains("Tim de Bruijn"))
         #expect(Attribution.text.contains(Attribution.repositoryURL))
         #expect(Attribution.artNetCredit.contains("Artistic Licence"))
     }

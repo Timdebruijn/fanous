@@ -4,24 +4,18 @@
 
 import Foundation
 
-/// Streaming ACN, ANSI E1.31-2025: data, synchronization and discovery packets.
+/// Streaming ACN, ANSI E1.31-2025: data packets. Synchronization and discovery packets (extended root vector) are rejected like any other non-data packet.
 public enum SACN {
     public static let port: UInt16 = 5568
     public static let maxUniverse = 63999
     static let acnIdentifier: [UInt8] = Array("ASC-E1.17\0\0\0".utf8)
     static let rootVectorData: UInt32 = 0x0000_0004
-    static let rootVectorExtended: UInt32 = 0x0000_0008
     static let framingVectorData: UInt32 = 0x0000_0002
-    static let framingVectorSync: UInt32 = 0x0000_0001
-    static let framingVectorDiscovery: UInt32 = 0x0000_0002
-    static let discoveryVectorUniverseList: UInt32 = 0x0000_0001
 
     public static func multicastAddress(universe: Int) -> String { "239.255.\(universe >> 8 & 0xFF).\(universe & 0xFF)" }
 
     public enum Packet: Equatable, Sendable {
         case data(SACNData)
-        case sync(SACNSync)
-        case discovery(SACNDiscovery)
     }
 
     public enum ParseError: Error, Equatable {
@@ -51,27 +45,6 @@ public enum SACN {
                 SACNData(
                     cid: cid, sourceName: cString(b, 44, 64), priority: b[108], syncAddress: b.bigEndian(at: 109), sequence: b[111],
                     options: b[112], universe: b.bigEndian(at: 113), startCode: b[125], slots: Array(b[126..<125 + count])))
-        case rootVectorExtended:
-            switch b.bigEndian(at: 40, as: UInt32.self) {
-            case framingVectorSync:
-                guard end >= 49 else { throw ParseError.tooShort }
-                return .sync(SACNSync(cid: cid, sequence: b[44], syncAddress: b.bigEndian(at: 45)))
-            case framingVectorDiscovery:
-                guard end >= 120 else { throw ParseError.tooShort }
-                let discoveryLength = try pduLength(b, at: 112)
-                guard b.bigEndian(at: 114) == discoveryVectorUniverseList else { throw ParseError.badVector }
-                let listEnd = min(end, 112 + discoveryLength)
-                var universes: [UInt16] = []
-                var i = 120
-                while i + 1 < listEnd {
-                    universes.append(b.bigEndian(at: i))
-                    i += 2
-                }
-                return .discovery(
-                    SACNDiscovery(cid: cid, sourceName: cString(b, 44, 64), page: b[118], lastPage: b[119], universes: universes))
-            default:
-                throw ParseError.badVector
-            }
         default:
             throw ParseError.badVector
         }
@@ -129,45 +102,5 @@ public struct SACNData: Equatable, Sendable {
         let framing = SACN.flagsLength(77 + dmp.count) + SACN.framingVectorData.bigEndianBytes + [UInt8].fixed(sourceName, 64)
             + [priority] + syncAddress.bigEndianBytes + [sequence, options] + universe.bigEndianBytes
         return SACN.root(cid: cid, vector: SACN.rootVectorData, bodyLength: framing.count + dmp.count) + framing + dmp
-    }
-}
-
-public struct SACNSync: Equatable, Sendable {
-    public var cid: [UInt8]
-    public var sequence: UInt8
-    public var syncAddress: UInt16
-
-    public init(cid: [UInt8], sequence: UInt8, syncAddress: UInt16) {
-        self.cid = cid
-        self.sequence = sequence
-        self.syncAddress = syncAddress
-    }
-
-    public func encoded() -> [UInt8] {
-        let framing = SACN.flagsLength(11) + SACN.framingVectorSync.bigEndianBytes + [sequence] + syncAddress.bigEndianBytes + [0, 0]
-        return SACN.root(cid: cid, vector: SACN.rootVectorExtended, bodyLength: framing.count) + framing
-    }
-}
-
-public struct SACNDiscovery: Equatable, Sendable {
-    public var cid: [UInt8]
-    public var sourceName: String
-    public var page: UInt8
-    public var lastPage: UInt8
-    public var universes: [UInt16]
-
-    public init(cid: [UInt8], sourceName: String, page: UInt8, lastPage: UInt8, universes: [UInt16]) {
-        self.cid = cid
-        self.sourceName = sourceName
-        self.page = page
-        self.lastPage = lastPage
-        self.universes = universes
-    }
-
-    public func encoded() -> [UInt8] {
-        let list = universes.flatMap(\.bigEndianBytes)
-        let discovery = SACN.flagsLength(8 + list.count) + SACN.discoveryVectorUniverseList.bigEndianBytes + [page, lastPage] + list
-        let framing = SACN.flagsLength(74 + discovery.count) + SACN.framingVectorDiscovery.bigEndianBytes + [UInt8].fixed(sourceName, 64) + [0, 0, 0, 0]
-        return SACN.root(cid: cid, vector: SACN.rootVectorExtended, bodyLength: framing.count + discovery.count) + framing + discovery
     }
 }

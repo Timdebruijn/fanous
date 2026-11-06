@@ -6,7 +6,6 @@
 /// footer and the GDTF/CITP server names read from here; a test asserts it.
 public enum Attribution {
     public static let projectName = "Fanous"
-    public static let author = "Tim de Bruijn"
     public static let repositoryURL = "https://github.com/timdebruijn/fanous"
     /// Required by LICENSE-ADDITIONAL-TERMS.md §1 (GPLv3 §7(b)).
     public static let text = "Based on Fanous by Tim de Bruijn — https://github.com/timdebruijn/fanous"

@@ -11,6 +11,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 ## Unreleased
 
 - Cleanup: the web `typecheck` script and the TypeScript 7 preview dependency are gone; `npm run check` (svelte-check) covers the same files on CI (PR #308).
+- Cleanup: sACN sync/discovery parsing, the bench shim scripts and two test-only Core members are gone (PR #309).
 - Dev docs and marketing after the guide rewrite: `DESIGN.md` §11 gets an "as built" list from the API inventory
   (data-protection keychain, no identity import, no per-interface listener, REST mutates and has no project
   export, the protocol sketch's `role` and `result`, the 4-encoder preview limit, the operator and monitor
