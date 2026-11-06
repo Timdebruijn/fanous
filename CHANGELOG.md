@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+## 1.0.0-rc.5 — 2026-11-06
+
 - Tests: the capture renumber test waits for its status like the others, two test warnings are gone (PR #314).
 - Fix: a cue trigger with the rate written `@29.97df` or `@29.97ndf` over the WebSocket now fires instead of being stored and ignored; a trigger that does not parse is refused with `invalidArgs`, and the cue editor's hint lists 29.97ndf (PR #317).
 - Fix: `GET /api/session` with the shell's Bearer token reports `"role": "programmer"` instead of null; it resolves the role like every other route, token first, then the cookie (PR #322).
