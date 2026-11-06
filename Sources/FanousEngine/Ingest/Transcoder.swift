@@ -180,7 +180,6 @@ public enum Transcoder {
                             swap(&width, &height)
                             pixelAspect = pixelAspect.map { ($0.vertical, $0.horizontal) }
                         }
-                        if case .hap = requested, width % 4 != 0 || height % 4 != 0 { throw TranscodeError.hapDimensions(width, height) }
                         writer = try MovieWriter(
                             url: destination, width: width, height: height, fps: max(1, Int32((1 / probe.frameDuration.seconds).rounded())),  // a slideshow slower than 0.5 fps rounds to 0
                             frameDuration: probe.frameDuration, codec: requested, externalAudio: audioFormat, pixelAspect: pixelAspect,

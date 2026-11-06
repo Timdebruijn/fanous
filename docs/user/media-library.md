@@ -85,7 +85,7 @@ not playable, reads "no file N in folder M" in red on the Layers screen.
 | A phone `.mp4`, a web download, anything H.264 or HEVC | Copy it in, then **Transcode** on its tile; or **Import…** it from any computer |
 | An H.264 or HEVC `.mov` (an iPhone's own recording), or a rotated ProRes `.mov` | **Import…** it. **Transcode** on the tile fails for a `.mov` that needs a transcode ([known limitations](reference/known-limitations.md#media-and-inputs)) |
 | A still (PNG, JPEG, TIFF, HEIF, GIF, BMP, WebP, EXR) | Copy it in; it plays as it is |
-| A folder of numbered frames | Copy the folder in as `NNN_name/`; the frames inside need no numbers; then **Transcode** it (25 fps from the tile). Pick ProRes when the frames are not a multiple of 4 wide and high: HAP on such a sequence crashes the engine ([known limitations](reference/known-limitations.md#media-and-inputs)) |
+| A folder of numbered frames | Copy the folder in as `NNN_name/`; the frames inside need no numbers; then **Transcode** it (25 fps from the tile). Pick ProRes when the frames are not a multiple of 4 wide and high: HAP refuses such a sequence |
 | A HAP file in another container than `.mov` | It cannot be transcoded (macOS cannot decode HAP): remux it to a `.mov` on another machine, then copy it in |
 
 ## What plays as it is
