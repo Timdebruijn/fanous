@@ -128,8 +128,8 @@
     await load();
   }
 
-  async function transcode(item: LibraryItem, codec: string) {
-    const body = { source: item.path, folder: current?.number, file: item.file, name: item.name, codec, ...(item.kind === 'sequence' ? { fps: 25 } : {}) };
+  async function transcode(item: LibraryItem, codec: string, fps: number | null) {
+    const body = { source: item.path, folder: current?.number, file: item.file, name: item.name, codec, ...(item.kind === 'sequence' ? { fps } : {}) };
     const error = await post('/api/ingest', body);
     if (error) notice = `Cannot transcode ${item.name}: ${error}`;
   }

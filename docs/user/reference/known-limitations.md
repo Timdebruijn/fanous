@@ -47,7 +47,6 @@ link here. Back to the [index](../README.md).
 | 16-bit stills become 8-bit. | B10 |
 | A Rec.601 (SD) file played directly is read as Rec.709; transcoding it fixes the colours. A 601 camera is read as 709 too. | B21 |
 | Only `.mov`, `.mp4`, `.m4v`, `.avi`, `.mkv` and `.mxf` are listed; a `.webm`, `.mpg`, `.wmv` or other container is skipped without a message. | B161 |
-| An image sequence transcoded from the Media screen is always written at 25 frames per second; another rate needs the `fanousd ingest --fps` command. | B165 |
 | HAP refuses a movie or image sequence whose width or height is not a multiple of 4 (854 × 480, 1366 × 768): pick ProRes 422 HQ for it. | — |
 | A thumbnail of a packed 4:2:2 movie (v210, yuvs) may draw at half width. | B149 |
 | A UVC webcam (Logitech C920, Brio) may stay at its driver's default format, for example 640 × 480 on a larger canvas. Capture cards follow their input. | B131 |
