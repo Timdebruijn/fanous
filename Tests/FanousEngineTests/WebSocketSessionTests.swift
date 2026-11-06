@@ -2,12 +2,12 @@
 // Copyright (c) 2026 Tim de Bruijn
 // Additional terms under GPLv3 §7 apply: see LICENSE-ADDITIONAL-TERMS.md
 
-import FanousCore
 import Foundation
 import Network
 import Synchronization
 import Testing
 
+@testable import FanousCore
 @testable import FanousEngine
 
 /// `WebSocketSession.feed` with hand-built client frames (RFC 6455 §5.4 fragments, §7.4 close codes). The session sits on
@@ -112,7 +112,7 @@ struct WebSocketSessionTests {
 
     /// A masked client frame (RFC 6455 §5.3), built by `WebSocketFrame`'s own client encoder.
     static func frame(_ opcode: WebSocketFrame.Opcode, fin: Bool = true, _ payload: [UInt8]) -> [UInt8] {
-        WebSocketFrame(fin: fin, opcode: opcode, payload: payload).serializedMasked(key: (0x37, 0xFA, 0x21, 0x3D))
+        WebSocketFrame(fin: fin, opcode: opcode, payload: payload).encode(key: (0x37, 0xFA, 0x21, 0x3D))
     }
 
     static let hello = Array(#"{"t":"hello","clientId":"a","schema":1}"#.utf8)
@@ -157,7 +157,7 @@ struct WebSocketSessionTests {
     @Test func fragmentsAboveTheMessageLimitAreRefusedWith1009() async throws {
         let pair = try await Pair.make()
         defer { pair.stop() }
-        // 8 MB frames by hand with a zero mask key: `serializedMasked` would mask 16 MB in a debug build
+        // 8 MB frames by hand with a zero mask key: `encode(key:)` would mask 16 MB in a debug build
         let half = WebSocketSession.maxMessageBytes / 2
         func large(_ first: UInt8) -> [UInt8] {
             [first, 0xFF] + withUnsafeBytes(of: UInt64(half).bigEndian, Array.init) + [0, 0, 0, 0]

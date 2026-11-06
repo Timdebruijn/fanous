@@ -54,7 +54,7 @@ ProRes 4444 1080p 1.8 ms (`y416`, alpha kept) vs 0.95 ms native; HAP Q 1080p
 
 ## Phase 3 (2026-10-23): effects, dissolves, audio
 
-Same machine and criterion; release build; `scripts/bench-phase3.sh` runs the
+Same machine and criterion; release build; `scripts/bench.sh phase3` runs the
 matrix (`--effects a,b` puts both effect slots on every layer, `--dissolve 2`
 switches every layer between two files every 4 s so there is always a
 crossfade running).
@@ -103,7 +103,7 @@ switching files never shows a texture miss.
 
 Audio (one HAP Q 1080p60 layer with a 48 kHz LPCM track, headless, the
 layer clock is master): 20 s run 0 underruns, 0 drift corrections, max drift
-11.8 ms. **One-hour soak** (`scripts/bench-phase3.sh drift`,
+11.8 ms. **One-hour soak** (`scripts/bench.sh drift`,
 `…-layers1-soak3600s-2026-10-23.md`): max drift 15.3 ms, 0 drift corrections,
 26 underruns over 360 loop wraps of the 10 s file (a loop wrap is a reseek
 with one callback of silence; gapless loop reads are a v1.x item), video
