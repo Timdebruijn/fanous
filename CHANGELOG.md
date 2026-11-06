@@ -20,6 +20,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - The ingest queue shows a job's file name and destination folder decoded ("2 Band", not "2%20Band") (PR #316).
 - Patch: when Add layer finds the new layer's place taken, the note names every fixture in the way ("taken by Master, Outputs 1–3"), not only the first (PR #320).
 - Web UI: on a phone the status bar's yellow "web UI open" dot carries the word "open" instead of standing alone (PR #319).
+- Web UI: the content template's footer text sits on a band of the background colour, so a slice border crossing it no longer strikes it through (PR #321).
 - Cleanup: the web `typecheck` script and the TypeScript 7 preview dependency are gone; `npm run check` (svelte-check) covers the same files on CI (PR #308).
 - Cleanup: sACN sync/discovery parsing, the bench shim scripts and two test-only Core members are gone (PR #309).
 - Cleanup: the scene-file route to a Syphon server is gone (live inputs 150–169 are the way), the preview and

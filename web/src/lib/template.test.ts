@@ -79,4 +79,13 @@ describe('templateSVG', () => {
     expect(points.length).toBeGreaterThan(400);
     points.forEach(([x, y]) => expect(Math.hypot(x! - 50, y! - 50)).toBeCloseTo(50, 0));
   });
+
+  it('draws the footer last, on a band of the background, so a slice border crossing it does not strike it through (B174)', () => {
+    const square = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
+    const slices = [0, 1, 2].map((i) => ({ id: i + 1, canvas: 1, source: { x: i / 3, y: 0, w: 1 / 3, h: 1 }, dest: square, opacity: 1 }));
+    const svg = templateSVG({ id: 1, name: 'Output 1', slices } as unknown as OutputConfig, { width: 1920, height: 1080 });
+    const footer = /<text[^>]*>Fanous content template · Output 1 · canvas 1920×1080 px · filled = visible on this output<\/text><\/svg>$/.exec(svg)?.[0];
+    expect(footer).toContain('filter="url(#band)"');
+    expect(svg).toContain('<filter id="band" x="-0.01" y="-0.15" width="1.02" height="1.3"><feFlood flood-color="#101215"/><feComposite in="SourceGraphic"/></filter>');
+  });
 });
