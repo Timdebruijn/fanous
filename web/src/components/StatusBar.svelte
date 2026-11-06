@@ -127,7 +127,7 @@
     <a class="item red plain" href="#/layers" title="No sync packets for 2 s: {syncLost.join(', ')} keep running at the master's last rate (Layers)"><span class="dot dot-red"></span><span class="caption">sync lost</span></a>
   {/if}
   {#if app.live.security.webUIOpen}
-    <div class="item yellow caption" title="Web UI open: the programmer role has no password (System › Roles)"><span class="dot dot-yellow"></span><span class="long"> web UI open</span></div>
+    <div class="item yellow caption" title="Web UI open: the programmer role has no password (System › Roles)"><span class="dot dot-yellow"></span><span class="long"> web UI open</span><span class="short" aria-hidden="true">open</span></div>
   {/if}
   <span class="spacer"></span>
   <div class="item right">
@@ -175,10 +175,11 @@
   .role-btn { border: 0; cursor: pointer; min-height: var(--touch); }
   .role-btn:hover { background: var(--surface-3); }
   .plain { color: inherit; text-decoration: none; }
+  .short { display: none; }
   /* a phone: five rows of 44 px took a third of the screen. Value and caption share a line; the frame time, its gpu/cpu
      detail, the auto-version item (System carries both), the keyboard-shortcuts button (no keyboard; the ? key still
      opens the list with one), the app name and the outputs item while it has nothing to say go; the badges shrink
-     (their names stay for the e2e and screen readers), the dropped caption and the web-UI note shorten on screen only; the role
+     (their names stay for the e2e and screen readers), the dropped caption and the web-UI note ("open") shorten on screen only; the role
      joins the badge row, undo and redo the numbers row, the pills take the third: three rows with a fresh engine at 375 px */
   @media (max-width: 599px) {
     .status { padding: 4px; }
@@ -189,6 +190,7 @@
     .metrics .caption, .ms, .version, .help, .brand .name, .outputs:not(.alert) { display: none; }
     /* the long forms stay for screen readers ("web UI open", "dropped · 1 s"), off screen */
     .long { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .short { display: inline; }  /* the dot alone did not say what it warns about (B164) */
     .role-btn { padding: 0 8px; font-size: 11px; }
     .brand { gap: 8px; }  /* order 0, the default: first */
     .item.dmx { order: 4; }  /* the pills last: fps, dropped and clients share a row, the pills take their own */

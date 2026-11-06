@@ -335,7 +335,8 @@ test('status bar: three rows on a phone, the role on the badge row, undo and red
   const row = async (name: string) => Math.round((await banner.getByRole('button', { name }).boundingBox())!.y);
   expect(await row('Programmer')).toBe(await row('Unlocked'));  // the role on the badge row
   expect(await row('Undo')).toBeGreaterThan(await row('Unlocked'));  // undo on a later row, with the numbers
-  await expect(banner.getByText('web UI open')).toBeAttached();  // for screen readers; shown as its dot
+  await expect(banner.getByText('web UI open')).toBeAttached();  // for screen readers; shown as its dot and "open" (B164)
+  expect((await banner.getByTitle(/^Web UI open/).boundingBox())!.width).toBeGreaterThan(30);  // the bare dot was 17 px
   await expect(banner.getByRole('button', { name: 'Keyboard shortcuts' })).toBeHidden();  // no keyboard on a phone
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 });
