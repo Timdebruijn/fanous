@@ -172,8 +172,8 @@ import Testing
         #expect(try login("prog", from: "10.0.0.10")?.status == 204)
     }
 
-    /// The cookie names the session's role; the shell token as a bearer does not count here (pinned, not judged).
-    @Test(arguments: [(Who.nobody, nil), (.monitor, "monitor"), (.operator, "operator"), (.programmer, "programmer"), (.token, nil)] as [(Who, String?)])
+    /// The shell token as a bearer names the programmer (B177), else the cookie names the session's role; a wrong token falls through to null.
+    @Test(arguments: [(Who.nobody, nil), (.monitor, "monitor"), (.operator, "operator"), (.programmer, "programmer"), (.token, "programmer"), (.wrongToken, nil)] as [(Who, String?)])
     func session(_ who: Who, role: String?) throws {
         let f = try Fixture()
         let response = try #require(f.routes.handle(try f.request("GET", "/api/session", who)))

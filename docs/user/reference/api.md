@@ -55,7 +55,7 @@ and the TLS fingerprint from programmer.
 | `/api/metrics` | any | none | The 10-second summary as text |
 | `/api/live` | any | none | Every universe, fixture value with its source, policy and UI expiry; exposes the DMX senders' addresses |
 | `/api/patch` | any | none | The patch as JSON |
-| `/api/session` | any | none | `{"role": "<role>" or null, "open": [...]}`; the role comes from the cookie only, not from a token ([known limitations](known-limitations.md#the-web-ui-and-security)) |
+| `/api/session` | any | none | `{"role": "<role>" or null, "open": [...]}`; the role of the shell token (`Authorization: Bearer`, programmer), else of the session cookie |
 | `/api/login`, `/api/logout` | POST | none | Log in to a role (above); log out drops the cookie |
 | `/api/logs` | any | programmer | The last 64 KiB of `~/Library/Logs/Fanous/fanousd.log`; `?download=1` sends the whole file |
 | `/api/gdtf` | any | none | `Fanous.gdtf` for the console |

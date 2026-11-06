@@ -102,6 +102,6 @@ link here. Back to the [index](../README.md).
 
 | Limitation | Backlog |
 |---|---|
-| A few addresses need no login whatever passwords are set: `/healthz`, `/metrics`, `/api/metrics`, `/api/live` (DMX senders and every fixture value), `/api/patch`, `/api/gdtf`, `/api/session`, `/api/library` (paths only, no root, below operator), `/api/login` and `/api/logout`, the channel map, the thumbnails and `/api/library/rescan` (any method). `/api/session` reports the cookie's role only, not a token's (B177). Keep the Mac on the show network, not on a guest network. | B160 |
+| A few addresses need no login whatever passwords are set: `/healthz`, `/metrics`, `/api/metrics`, `/api/live` (DMX senders and every fixture value), `/api/patch`, `/api/gdtf`, `/api/session`, `/api/library` (paths only, no root, below operator), `/api/login` and `/api/logout`, the channel map, the thumbnails and `/api/library/rescan` (any method). Keep the Mac on the show network, not on a guest network. | B160 |
 | OSC has no passwords. | — |
 | The engine's certificate is self-signed, so every browser warns once; confirm it against the fingerprint under System › Network. | — |

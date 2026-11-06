@@ -22,12 +22,14 @@ struct RESTRoutes: Sendable {
     let metricsJSON: @Sendable () -> HTTPResponse
     let metricsText: @Sendable () -> HTTPResponse
 
-    /// Whether the request's bearer token (the shell), its session cookie or an open role grants `role`.
-    func allowed(_ role: Role, _ request: HTTPRequest) -> Bool {
+    /// The role of the request's bearer token (the shell), else of its session cookie.
+    func sessionRole(_ request: HTTPRequest) -> Role? {
         let bearer = request.header("Authorization").flatMap { $0.hasPrefix("Bearer ") ? String($0.dropFirst(7)) : nil }
-        let sessionRole = auth.role(forToken: bearer) ?? auth.role(forCookie: RoleAuth.cookie(in: request))
-        return auth.grant(requested: role, sessionRole: sessionRole) == role
+        return auth.role(forToken: bearer) ?? auth.role(forCookie: RoleAuth.cookie(in: request))
     }
+
+    /// Whether the request's bearer token, its session cookie or an open role grants `role`.
+    func allowed(_ role: Role, _ request: HTTPRequest) -> Bool { auth.grant(requested: role, sessionRole: sessionRole(request)) == role }
     func programmerAllowed(_ request: HTTPRequest) -> Bool { allowed(.programmer, request) }
 
     /// 405 for a route that only takes POST.
@@ -111,7 +113,7 @@ struct RESTRoutes: Sendable {
                 headers: [HTTPHeader("Content-Type", "text/plain; charset=utf-8")] + (download ? [HTTPHeader("Content-Disposition", "attachment; filename=\"fanousd.log\"")] : []),
                 body: Array(data))
         case "/api/session":
-            let role = auth.role(forCookie: RoleAuth.cookie(in: request))
+            let role = sessionRole(request)
             let session: JSONValue = [
                 "role": role.map { .string($0.rawValue) } ?? .null,
                 "open": .array(Role.allCases.filter { auth.isOpen($0) }.map { .string($0.rawValue) }),
