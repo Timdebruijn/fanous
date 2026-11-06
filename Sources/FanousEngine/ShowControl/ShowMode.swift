@@ -103,8 +103,10 @@ public final class ShowModeController: @unchecked Sendable {
     public func enter(since: Date = Date()) {
         let changed = state.withLock { s -> Bool in
             guard !s.on, !s.stopping else { return false }
-            IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleDisplaySleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), "Fanous show mode" as CFString, &s.display)
-            IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleSystemSleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), "Fanous show mode" as CFString, &s.system)
+            let display = IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleDisplaySleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), "Fanous show mode" as CFString, &s.display)
+            if display != kIOReturnSuccess { logger.warning("display sleep assertion not created", metadata: ["result": "\(display)"]) }
+            let system = IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleSystemSleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), "Fanous show mode" as CFString, &s.system)
+            if system != kIOReturnSuccess { logger.warning("system sleep assertion not created", metadata: ["result": "\(system)"]) }
             s.activity = ProcessInfo.processInfo.beginActivity(options: [.latencyCritical, .userInitiated, .idleDisplaySleepDisabled], reason: "Fanous show mode")
             s.on = true
             s.since = since.timeIntervalSince1970
@@ -316,12 +318,13 @@ public enum Readiness {
         return items
     }
 
-    /// A display sleep timeout only warns (B180): show mode holds a PreventUserIdleDisplaySleep assertion, so the
-    /// display stays awake whatever the setting; Never and an unreadable value pass.
+    /// A display sleep timeout only warns (B180): show mode holds a PreventUserIdleDisplaySleep assertion and an
+    /// `.idleDisplaySleepDisabled` activity, so the display stays awake whatever the setting; Never and an unreadable
+    /// value pass.
     static func displaySleep(minutes: Int?, acknowledged: Set<String>) -> ReadinessItem {
         ReadinessItem(
             id: "displaysleep", title: "Display sleep disabled", state: (minutes ?? 0) == 0 ? .ok : .warn,
-            detail: minutes.map { $0 == 0 ? "never" : "\($0) min (held off by the show-mode assertion)" } ?? "unknown",
+            detail: minutes.map { $0 == 0 ? "never" : "\($0) min; show mode keeps the display awake" } ?? "unknown",
             fix: "Show mode keeps the display awake; for outside show mode too: System Settings › Lock Screen › Turn display off: never",
             acknowledged: acknowledged.contains("displaysleep"))
     }

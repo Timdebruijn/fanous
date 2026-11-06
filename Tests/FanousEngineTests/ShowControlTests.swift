@@ -331,7 +331,7 @@ struct ShowControlTests {
         let never = Readiness.displaySleep(minutes: 0, acknowledged: [])
         #expect(never.id == "displaysleep" && never.state == .ok && never.detail == "never")
         let ten = Readiness.displaySleep(minutes: 10, acknowledged: [])
-        #expect(ten.state == .warn && !ten.blocks && ten.detail == "10 min (held off by the show-mode assertion)")
+        #expect(ten.state == .warn && !ten.blocks && ten.detail == "10 min; show mode keeps the display awake")
         let unknown = Readiness.displaySleep(minutes: nil, acknowledged: [])
         #expect(unknown.state == .ok && !unknown.blocks && unknown.detail == "unknown")
     }

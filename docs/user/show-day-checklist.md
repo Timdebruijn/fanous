@@ -120,7 +120,7 @@ what it found, a fix hint when it is not green, and **Acknowledge** or a
 badge. Nothing alerts you when an item turns red during the show: only the
 System screen shows it.
 
-<img src="images/readiness-failed.png" width="1396" alt="The Readiness panel reading not ready: green rows, red rows with Acknowledge for the silent universes, no output bound, Spotlight, automatic updates and display sleep, and Focus as a manual row">
+<img src="images/readiness-failed.png" width="1396" alt="The Readiness panel reading not ready: green rows, red rows with Acknowledge for the silent universes, no output bound, Spotlight and automatic updates; Focus as a manual row; display sleep as a yellow warning row">
 
 | Row | Means | Do |
 |---|---|---|
