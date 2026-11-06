@@ -22,7 +22,7 @@ Phase 8 deliverable of `DESIGN.md` §19; v1.0 ships when every box is ticked.
       whose firewall allows the test runner's outgoing UDP (the CITP beacon)
 - [ ] `scripts/check-generated.sh`, `scripts/core-purity.sh`,
       `scripts/license-headers.sh`
-- [ ] `cd web && npm test && npm run typecheck && npm run check && npm run build`
+- [ ] `cd web && npm test && npm run check && npm run build`
 - [ ] `docs/BACKLOG.md` has a row for every known limitation; nothing is
       silently missing
 

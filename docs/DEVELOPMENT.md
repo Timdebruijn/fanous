@@ -167,10 +167,10 @@ on the Layers screen uses WebCodecs (H.264 from VideoToolbox, `sub` stream
 `preview`) and falls back to JPEG at 5 fps. Keys 1–7 switch screens.
 `cd web && npm run dev` proxies `/api`, `/ws` and `/healthz` to a running
 engine; `npm run build` writes `web/dist`. The web checks, in the order of
-CI's `web` job: `npm test && npm run typecheck && npm run check && npm run build`; `check` is
-`svelte-check` (types in the `.svelte` script blocks, Svelte's a11y rules,
-warnings fail). svelte-check needs the TypeScript 6 API, so `typescript` is 6
-and TypeScript 7 is installed as `@typescript/native`, which `typecheck` runs.
+CI's `web` job: `npm test && npm run check && npm run build`; `check` is
+`svelte-check` (types in the `.ts` files and the `.svelte` script blocks of
+`tsconfig.json`'s `include`, Svelte's a11y rules, warnings fail). svelte-check
+needs the TypeScript 6 API, so `typescript` is 6.
 
 Outputs and mapping (Phase 6, DESIGN.md §9): the project holds `outputs[]`
 (display identity, region, mode, intensity, blend edges with power and gamma,

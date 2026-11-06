@@ -4857,7 +4857,7 @@ trademark search for "Fanous" (`[OPEN-21]`).
 CI (Phase 0): build all targets, Core tests and the engine suites that need no
 GPU, media hardware or display (`scripts/test.sh --hosted`, the list lives
 there; a mixed file keeps its GPU tests in a `…GPUTests` suite), license-header
-check, Core purity check, `web` lint/typecheck/test/build. Hardware tests are a
+check, Core purity check, `web` test/check/build. Hardware tests are a
 separate workflow triggered manually or by a self-hosted runner label.
 
 ---
