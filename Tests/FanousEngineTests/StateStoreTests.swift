@@ -115,6 +115,12 @@ struct StateStoreTests {
         #expect(client.patches.count == 1)  // no change, no patch
     }
 
+    /// The Encodable live sections keep a nil member as `null`: the UI reads every key.
+    @Test func liveSectionsKeepNilMembersAsNull() throws {
+        let cue = try JSONValue(encoding: LiveCue(CueRunner.Status(current: nil, currentName: nil, next: 2.5, nextName: nil, fading: false, count: 1)))
+        #expect(cue == ["current": .null, "currentName": .null, "next": 2.5, "nextName": .null, "fading": false, "count": 1])
+    }
+
     @Test func laggingClientsDropLiveButNotProject() async throws {
         let (store, _) = testStore(outputs: 0)
         let client = RecordingClient(role: .programmer)

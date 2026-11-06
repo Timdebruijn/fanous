@@ -953,20 +953,17 @@ public final class Engine: @unchecked Sendable {
 
     private func citpLive() -> JSONValue {
         guard let s = citp?.status.withLock({ $0 }) else { return [:] }
-        return ["port": .number(Double(s.port)), "clients": .array(s.clients.map { .string($0) }), "streams": .number(Double(s.streams)), "beaconsDropped": .number(Double(s.beaconsDropped)), "multicast": .array([.string(CITPMulticast.address), .string(CITPMulticast.addressSince2014)])]
+        return (try? JSONValue(encoding: LiveCITP(s))) ?? [:]
     }
 
     private func timecodeLive() -> JSONValue {
         let s = timecodeClock.current()
         let mtcStatus = mtc?.status.withLock { $0 }
-        return [
-            "state": .string(s.state.rawValue), "source": .string(s.source), "value": .string(s.state == .off ? "--:--:--:--" : s.timecode.description),
-            "rate": .string(s.rate.label), "frames": .number(Double(s.frameCount)), "seen": .number(Double(timecodeClock.framesSeen.load(ordering: .relaxed))),
-            "error": (ltc?.lastError ?? mtcStatus?.error).map { .string($0) } ?? .null,
-            "device": .string(ltc?.deviceName ?? mtcStatus?.connected.joined(separator: ", ") ?? ""),
-            // the LTC channel's peak over the last tenth of a second (B137); null while LTC is not open
-            "level": ltc?.level.map { .number($0) } ?? .null,
-        ]
+        let live = LiveTimecode(
+            state: s.state.rawValue, source: s.source, value: s.state == .off ? "--:--:--:--" : s.timecode.description, rate: s.rate.label,
+            frames: s.frameCount, seen: timecodeClock.framesSeen.load(ordering: .relaxed), error: ltc?.lastError ?? mtcStatus?.error,
+            device: ltc?.deviceName ?? mtcStatus?.connected.joined(separator: ", ") ?? "", level: ltc?.level)
+        return (try? JSONValue(encoding: live)) ?? [:]
     }
 
     /// `live.audio.inputs` (B137): every input device with its channel count; `default` on the system default input.
@@ -981,20 +978,12 @@ public final class Engine: @unchecked Sendable {
 
     private func cueLive() -> JSONValue {
         guard let s = cues?.status.withLock({ $0 }) else { return [:] }
-        return [
-            "current": s.current.map { .number($0) } ?? .null, "currentName": s.currentName.map { .string($0) } ?? .null,
-            "next": s.next.map { .number($0) } ?? .null, "nextName": s.nextName.map { .string($0) } ?? .null, "fading": .bool(s.fading), "count": .number(Double(s.count)),
-        ]
+        return (try? JSONValue(encoding: LiveCue(s))) ?? [:]
     }
 
     private func midiLive() -> JSONValue {
         guard let s = midi?.status.withLock({ $0 }) else { return [:] }
-        return [
-            "connected": .array(s.connected.map { .string($0) }), "last": s.last.map { .string($0) } ?? .null, "lastAt": s.lastAt.map { .number($0) } ?? .null,
-            "learning": s.learning.map { ["target": .string($0.target), "cue": $0.cue.map { .number($0) } ?? .null] } ?? .null,
-            "learned": s.learned.map { .string($0) } ?? .null,
-            "error": s.error == nil && s.problems.isEmpty ? .null : .string(([s.error].compactMap { $0 } + s.problems).joined(separator: "; ")),
-        ]
+        return (try? JSONValue(encoding: LiveMIDI(s))) ?? [:]
     }
 
     private func showLive() -> JSONValue {
@@ -1590,7 +1579,6 @@ public final class Engine: @unchecked Sendable {
         guard store.clientCount > 0 else { return }
         let facts = currentHostFacts()
         let summary = metrics.summary(seconds: 1, now: CACurrentMediaTime())
-        func ms(_ v: Double) -> JSONValue { .number((v * 100).rounded() / 100) }
         let snapshot = library.snapshot
         let modeNotes = modeChecks.withLock { $0 }.compactMapValues(\.note)
         // per output: keystone active (not the identity) and invalid (the console's quad was refused), and Raw, from the DMX side's copy
@@ -1616,45 +1604,15 @@ public final class Engine: @unchecked Sendable {
                 "version": .string(FanousVersion.string), "chip": .string(SystemInfo.chipName),
                 "uptimeSeconds": .number(Date().timeIntervalSince(startedAt).rounded()), "rendering": .bool(render != nil),
             ],
-            "metrics": [
-                "frames": .number(Double(summary.frames)), "missed": .number(Double(summary.missed)), "late": .number(Double(summary.late)),
-                "textureMisses": .number(Double(summary.textureMisses)), "idle": .number(Double(summary.idle)), "cpuP50": ms(summary.cpuP50), "cpuP99": ms(summary.cpuP99),
-                "gpuP50": ms(summary.gpuP50), "gpuP99": ms(summary.gpuP99), "dmxP99": ms(summary.dmxP99),
-            ],
+            "metrics": (try? JSONValue(encoding: LiveMetrics(summary))) ?? [:],
             "dmx": (try? JSONValue(encoding: dmx.snapshot())) ?? [:],
             "ingest": (try? JSONValue(encoding: ingest.jobs)) ?? [],
-            "library": [
-                "root": .string(snapshot.root), "rootExists": .bool(snapshot.rootExists), "folders": .number(Double(snapshot.folders.count)),
-                "fileCount": .number(Double(snapshot.fileCount)), "invalidCount": .number(Double(snapshot.invalidCount)),
-                "scannedAt": .number(snapshot.scannedAt),
-            ],
-            "layers": .array(
-                projectLayers.map { layer in
-                    let s = layer.mediaStatus.withLock { $0 }
-                    return [
-                        "index": .number(Double(layer.index + 1)), "folder": .number(Double(s.folder)), "file": .number(Double(s.file)),
-                        "name": s.name.map { .string($0) } ?? .null, "kind": .string(s.kind), "codec": .string(s.codec),
-                        "width": .number(Double(s.width)), "height": .number(Double(s.height)), "fps": .number(s.fps),
-                        "frames": .number(Double(s.frames)), "frame": .number(Double(layer.currentFrame)), "error": s.error.map { .string($0) } ?? .null,
-                        "pixelAspect": s.pixelAspect.map { .number($0) } ?? .null,
-                        "sync": syncLive(layer.syncStatus.withLock { $0 }),
-                        "capture": s.capture.map { c in
-                            [
-                                "frames": .number(Double(c.frames)), "dropped": .number(Double(c.dropped)), "outOfBuffers": .number(Double(c.outOfBuffers)),
-                                "unusable": .number(Double(c.unusable)),
-                            ]
-                        } ?? .null,
-                    ]
-                }),
+            "library": (try? JSONValue(encoding: LiveLibrary(snapshot))) ?? [:],
+            "layers": (try? JSONValue(encoding: projectLayers.map { layer in
+                LiveLayer(index: layer.index, status: layer.mediaStatus.withLock { $0 }, frame: layer.currentFrame, sync: syncLive(layer.syncStatus.withLock { $0 }))
+            })) ?? [],
             "clients": ["count": .number(Double(store.clientCount)), "lagging": .number(Double(store.laggingClients))],
-            "displays": .array(
-                displays.withLock { $0 }.map { d in
-                    [
-                        "uuid": .string(d.uuid), "name": .string(d.name), "width": .number(Double(d.pixelWidth)), "height": .number(Double(d.pixelHeight)),
-                        "hz": .number(d.hz), "main": .bool(d.isMain), "builtin": .bool(d.isBuiltin),
-                        "modes": .array(d.modes.prefix(64).map { ["width": .number(Double($0.width)), "height": .number(Double($0.height)), "hz": .number($0.hz)] }),
-                    ]
-                }),
+            "displays": (try? JSONValue(encoding: displays.withLock { $0 }.map(LiveDisplay.init))) ?? [],
             "outputs": .array(
                 outputStatus.withLock { $0 }.map { s in
                     let preset = Self.presetLive(presets.indices.contains(s.id - 1) ? presets[s.id - 1] : (0, false, PresetMorph()), config: configs.first { $0.id == s.id }, at: now)

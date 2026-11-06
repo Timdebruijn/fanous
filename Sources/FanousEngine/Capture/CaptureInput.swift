@@ -51,7 +51,7 @@ public class CaptureInput: NSObject, LiveTextureSource, AVCaptureVideoDataOutput
 
     /// Frames delivered; dropped by AVFoundation (any reason) and of those for want of a pool buffer; delivered but
     /// unusable (no IOSurface, no texture view).
-    public struct Counters: Sendable, Equatable {
+    public struct Counters: Sendable, Equatable, Encodable {
         public var frames = 0
         public var dropped = 0
         public var outOfBuffers = 0
