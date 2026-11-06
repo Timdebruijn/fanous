@@ -21,7 +21,7 @@ show mode turns on, every 30 seconds while it is on, once after a resumed
 show mode, after a display mode switch in show mode, and on **Run checks**;
 nothing alerts you when an item turns red meanwhile. The last column is
 the id the API's `readiness.acknowledge` takes and the yellow banner names
-("readiness: dmx, displaysleep").
+("readiness: dmx, spotlight").
 
 | Item | Fails or warns when | The row reads | What to do | Type | Id |
 |---|---|---|---|---|---|
@@ -47,7 +47,7 @@ the id the API's `readiness.acknowledge` takes and the yellow banner names
 | Automatic macOS updates off | macOS is set to install updates by itself; the other update switches are not read | "off", "automatic install enabled", "unknown" | System Settings › General › Software Update › Automatic updates | Fails; manual when unreadable | `updates` |
 | Time Machine not backing up | A backup is running now | "idle", "backup running", "unknown" | Stop the backup or disable Time Machine for the show | Fails; manual when unreadable | `timemachine` |
 | Focus / Do Not Disturb on | Always manual: macOS does not tell | "cannot be read; check the menu bar" | Turn on a Focus so notifications stay off the outputs | Manual | `focus` |
-| Display sleep disabled | The display sleep setting is anything but Never, although show mode holds the display awake meanwhile; an unreadable value passes | "never", "60 min (held off by the show-mode assertion)" | System Settings › Lock Screen › Turn display off: never | Fails | `displaysleep` |
+| Display sleep disabled | The display sleep setting is anything but Never; show mode holds the display awake meanwhile, so it never blocks; an unreadable value passes | "never", "60 min; show mode keeps the display awake", "unknown" | Show mode keeps the display awake; for outside show mode too: System Settings › Lock Screen › Turn display off: never | Warns | `displaysleep` |
 | Supported hardware | The chip is the base M1, which has no ProRes engine; every other Apple Silicon chip passes | "Apple Silicon with ProRes engine", "no hardware ProRes decoder" | Use any Apple Silicon Mac except the base M1 | Blocking | `hardware` |
 
 Entering show mode is also refused, without an item, while a library root
@@ -69,4 +69,4 @@ The status bar's **Show mode** tag shows "Cannot enter show mode" with the
 blocking items and their fix hints when it refuses, with **Open System**;
 the yellow banner at the top names the items by id.
 
-<img src="../images/banner-readiness.png" width="1396" alt="The yellow banner: readiness: dmx, spotlight, updates, displaysleep, with the line Show mode is blocked by failed readiness checks, and the buttons Recent messages and Dismiss">
+<img src="../images/banner-readiness.png" width="1396" alt="The yellow banner: readiness: dmx, spotlight, updates, with the line Show mode is blocked by failed readiness checks, and the buttons Recent messages and Dismiss">

@@ -14,6 +14,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 - Fix: a cue trigger with the rate written `@29.97df` or `@29.97ndf` over the WebSocket now fires instead of being stored and ignored; a trigger that does not parse is refused with `invalidArgs`, and the cue editor's hint lists 29.97ndf (PR #317).
 - Fix: `GET /api/session` with the shell's Bearer token reports `"role": "programmer"` instead of null; it resolves the role like every other route, token first, then the cookie (PR #322).
 - Readiness: a new item **Art-Net port 6454 available** warns when another program holds UDP 6454 exclusively and the engine runs without Art-Net, as the sACN item does for 5568 (B167) (PR #318).
+- Readiness: **Display sleep disabled** warns instead of failing for a display sleep timeout, so it no longer blocks show mode; show mode holds the display awake (B180) (PR #323).
 - Cleanup: the web `typecheck` script and the TypeScript 7 preview dependency are gone; `npm run check` (svelte-check) covers the same files on CI (PR #308).
 - Cleanup: sACN sync/discovery parsing, the bench shim scripts and two test-only Core members are gone (PR #309).
 - Cleanup: the scene-file route to a Syphon server is gone (live inputs 150–169 are the way), the preview and

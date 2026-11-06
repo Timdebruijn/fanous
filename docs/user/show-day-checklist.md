@@ -44,8 +44,8 @@ on the night, [Troubleshooting](troubleshooting.md).
       comes back after a power cut without anyone at the keyboard; a desktop
       Mac set to start after a power failure (System Settings › Energy).
 - [ ] Display sleep off: System Settings › Lock Screen › Turn display off:
-      Never, and "Require password" set to Never. Any other display sleep
-      fails the readiness item.
+      Never, and "Require password" set to Never. Show mode keeps the
+      display awake anyway; any other display sleep warns in the readiness list.
 - [ ] Spotlight off for the library's volume: Terminal (Applications ›
       Utilities), `sudo mdutil -i off /` for a library on the internal disk;
       it asks for the Mac's administrator password and prints "Indexing
@@ -120,7 +120,7 @@ what it found, a fix hint when it is not green, and **Acknowledge** or a
 badge. Nothing alerts you when an item turns red during the show: only the
 System screen shows it.
 
-<img src="images/readiness-failed.png" width="1396" alt="The Readiness panel reading not ready: green rows, red rows with Acknowledge for the silent universes, no output bound, Spotlight, automatic updates and display sleep, and Focus as a manual row">
+<img src="images/readiness-failed.png" width="1396" alt="The Readiness panel reading not ready: green rows, red rows with Acknowledge for the silent universes, no output bound, Spotlight and automatic updates; Focus as a manual row; display sleep as a yellow warning row">
 
 | Row | Means | Do |
 |---|---|---|
