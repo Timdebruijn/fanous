@@ -117,12 +117,12 @@ policy and library root win over the project's:
 ```json
 {"canvasWidth": 1920, "canvasHeight": 1080, "fps": 60, "display": 0, "layerCount": 4,
  "media": [{"folder": 1, "file": 1, "path": "/path/loop.mov"},
-           {"folder": 1, "file": 2, "path": "/path/still.png"},
-           {"folder": 0, "file": 1, "syphon": "Some App/Server name"}]}
+           {"folder": 1, "file": 2, "path": "/path/still.png"}]}
 ```
 
-`syphon` is `"App/Server name"`, split on the first `/`; `"App/"` takes the
-first server of that app (Syphon servers may have an empty name).
+Other apps' Syphon servers are folder 0 files 150–169 (live inputs), not
+scene entries; an entry without `path`, `capture` or `screen` (an old
+`syphon` one) is skipped with a warning.
 
 Layers pick media with their Folder/File channels. The engine indexes the
 library root (`~/Movies/Fanous Library` by default, `"library"` in the
@@ -130,7 +130,7 @@ scene to override): folders `NNN_name/` and files `NNN_name.ext`, numbered
 1–255, ProRes/HAP `.mov` and stills playable, everything else marked "needs
 transcode"; FSEvents keep the index current, metadata and thumbnails are
 cached under `~/Library/Application Support/Fanous/cache/`. Explicit scene
-`media` entries (Syphon servers, test files) take precedence over the library.
+`media` entries (test files) take precedence over the library.
 The canvas is published as the Syphon server "Fanous – Canvas".
 
 Ingest: `fanousd ingest DIR out.mov` converts an image sequence from the

@@ -1326,9 +1326,10 @@ before the canvas pass, so it costs one small full-screen pass per layer and no
 file I/O; it then goes through the layer pipeline like media.
 
 **As built (2026-10-27, B61):** files 150–169 are the Syphon servers of other
-apps. Files 1–32 are designed in §8.2.1 (1–28 built since);
-the fixed path is a scene `media` entry (`{folder: 0, file, syphon:
-"App/Server"}`) on any folder 0 number, which also beats 150–169.
+apps. Files 1–32 are designed in §8.2.1 (1–28 built since). The scene-file
+route (`{folder: 0, file, syphon: "App/Server"}`) is gone since 2026-11-06:
+150–169 is the only way to a Syphon server; such an entry (no path, capture or
+screen) is skipped with a warning.
 `Syphon/SyphonCatalog.swift` follows Syphon's directory (an unconnected
 `SyphonInput` for its announce/update/retire notifications, which need the
 main run loop) and gives each new server the lowest free number; a server that goes keeps
@@ -1339,8 +1340,8 @@ servers with one name (two engines' canvases) get a number each and connect
 to the right one (`SyphonInput.connect(uuid:)`); the engine's own canvas
 server is left out. The catalog lives in `RenderService` (as long as the
 engine) and is published as `live.syphon.servers` `[{file, app, server,
-running, gone?}]`. `MediaLoader` resolves 0/150–169 through it with `liveFactory(name,
-uuid)` (status name "Syphon: App/Server", codec `syphon`); a scene `media`
+running, gone?}]`. `MediaLoader` resolves 0/150–169 through it with `liveFactory(uuid)`
+(status name "Syphon: App/Server", codec `syphon`); a scene `media`
 entry on the same number wins. On a catalog change the loader marks a layer
 whose server went "not running" and keeps its playback (the last frame stays),
 and opens a layer whose server (re)appeared again, so the picture returns

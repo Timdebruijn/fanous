@@ -72,8 +72,7 @@ public final class ThumbnailStreamer: @unchecked Sendable {
     public init(context: MetalContext, compositor: Compositor) throws {
         self.context = context
         self.compositor = compositor
-        var cache: CVMetalTextureCache?
-        guard CVMetalTextureCacheCreate(nil, nil, context.device, nil, &cache) == kCVReturnSuccess, let cache else { throw RenderError.pipeline("thumbnail texture cache") }
+        guard let cache = BGRAPixelPool.textureCache(device: context.device) else { throw RenderError.pipeline("thumbnail texture cache") }
         textureCache = cache
         atlasPass.colorAttachments[0].loadAction = .clear  // to opaque black, the default clear colour
         atlasPass.colorAttachments[0].storeAction = .store
@@ -183,21 +182,12 @@ public final class ThumbnailStreamer: @unchecked Sendable {
     private func pixelBuffer(width: Int, height: Int) -> (CVPixelBuffer, CVMetalTexture)? {
         if pool == nil || width > poolSize.width || height > poolSize.height {
             let size = (width: max(width, poolSize.width), height: max(height, poolSize.height))
-            let attributes: [CFString: Any] = [
-                kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey: size.width, kCVPixelBufferHeightKey: size.height,
-                kCVPixelBufferMetalCompatibilityKey: true, kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
-            ]
-            var made: CVPixelBufferPool?
-            guard CVPixelBufferPoolCreate(nil, [kCVPixelBufferPoolMinimumBufferCountKey: 2] as CFDictionary, attributes as CFDictionary, &made) == kCVReturnSuccess else { return nil }
+            guard let made = BGRAPixelPool.make(width: size.width, height: size.height, minimumBufferCount: 2) else { return nil }
             pool = made
             poolSize = size
         }
-        var buffer: CVPixelBuffer?
-        guard let pool, CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer) == kCVReturnSuccess, let buffer else { return nil }
-        var texture: CVMetalTexture?
-        guard CVMetalTextureCacheCreateTextureFromImage(nil, textureCache, buffer, nil, .bgra8Unorm, poolSize.width, poolSize.height, 0, &texture) == kCVReturnSuccess, let texture
-        else { return nil }
-        return (buffer, texture)
+        guard let pool else { return nil }
+        return BGRAPixelPool.buffer(from: pool, cache: textureCache, width: poolSize.width, height: poolSize.height)
     }
 
     // MARK: Thumbnail queue

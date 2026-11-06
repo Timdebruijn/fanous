@@ -362,18 +362,15 @@ public struct MediaEntry: Codable, Sendable, Equatable {
     public var folder: Int
     public var file: Int
     public var path: String?
-    /// Syphon server as "App name/Server name" (folder 0, DESIGN.md §8.2).
-    public var syphon: String?
     /// Capture device by `AVCaptureDevice.uniqueID` (folder 0, DESIGN.md §8.2.1).
     public var capture: String?
     /// Display by its CoreGraphics UUID (folder 0, DESIGN.md §8.2.1).
     public var screen: String?
 
-    public init(folder: Int, file: Int, path: String? = nil, syphon: String? = nil, capture: String? = nil, screen: String? = nil) {
+    public init(folder: Int, file: Int, path: String? = nil, capture: String? = nil, screen: String? = nil) {
         self.folder = folder
         self.file = file
         self.path = path
-        self.syphon = syphon
         self.capture = capture
         self.screen = screen
     }
@@ -394,9 +391,9 @@ public final class MediaLoader: @unchecked Sendable {
     private let running = Atomic<Bool>(true)
     private var loaded: [UInt32]
     private var thread: Thread?
-    /// Creates live inputs: Syphon by a scene's "App/Server", or by the directory's id when given (a numbered server
-    /// of folder 0, B61, where two servers can share a name); nil until the Syphon wiring is installed.
-    public var liveFactory: (@Sendable (_ spec: String, _ uuid: String?) -> (any LiveTextureSource)?)?
+    /// Creates a Syphon live input by the directory's id (a numbered server of folder 0, B61, where two servers can
+    /// share a name); nil until the Syphon wiring is installed.
+    public var liveFactory: (@Sendable (_ uuid: String) -> (any LiveTextureSource)?)?
     /// Folder 0 files 150–169 (B61); nil = no numbered Syphon servers (tests, bench). Set before `start`.
     public var syphonCatalog: LiveCatalog?
     /// Folder 0 files 1–20 (B73); nil = no numbered capture devices. Set before `start`.
@@ -418,7 +415,14 @@ public final class MediaLoader: @unchecked Sendable {
 
     public init(layers: [RenderLayer], media: [MediaEntry], device: MTLDevice, ringCapacity: Int, logger: Logger) {
         self.layers = layers
-        self.media = Dictionary(media.map { ($0.key, $0) }, uniquingKeysWith: { _, last in last })
+        // an entry without a source (an old scene file's `syphon` entry, whose key is no longer decoded) would hide a
+        // numbered live input on its number and fail to open: skipped
+        let sourced = media.filter { entry in
+            guard entry.path == nil, entry.capture == nil, entry.screen == nil else { return true }
+            logger.warning("scene media \(entry.key) has no source, skipped")
+            return false
+        }
+        self.media = Dictionary(sourced.map { ($0.key, $0) }, uniquingKeysWith: { _, last in last })
         self.device = device
         self.ringCapacity = ringCapacity
         self.logger = logger
@@ -627,7 +631,7 @@ public final class MediaLoader: @unchecked Sendable {
                 status.error = "not running"  // black until it starts; then the catalog change opens it
                 return nil
             }
-            guard let live = liveFactory?(server.label, uuid) else {
+            guard let live = liveFactory?(uuid) else {
                 logger.warning("Syphon server could not connect", metadata: ["layer": "\(layer + 1)", "syphon": "\(server.label)"])
                 status.error = "could not connect"
                 return nil
@@ -698,12 +702,6 @@ public final class MediaLoader: @unchecked Sendable {
                 captureOpen[layer] = (uid, input)
                 logger.info("layer \(layer + 1) media \(key)", metadata: ["capture": "\(input.name)"])
                 return LayerPlayback(key: key, live: input)
-            }
-            if let syphon = entry.syphon {
-                guard let live = liveFactory?(syphon, nil) else { throw RenderError.pipeline("no live input for \(syphon)") }
-                status.kind = "live"
-                status.name = "Syphon: \(syphon)"
-                return LayerPlayback(key: key, live: live)
             }
             guard let path = entry.path else { throw RenderError.pipeline("media \(key) has no path") }
             let url = URL(fileURLWithPath: path)

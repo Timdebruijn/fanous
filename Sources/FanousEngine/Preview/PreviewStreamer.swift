@@ -118,16 +118,9 @@ public final class PreviewStreamer: @unchecked Sendable {
         }()
         pass.colorAttachments[0].loadAction = .clear
         pass.colorAttachments[0].storeAction = .store
-        let attributes: [CFString: Any] = [
-            kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey: self.width, kCVPixelBufferHeightKey: self.height,
-            kCVPixelBufferMetalCompatibilityKey: true, kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
-        ]
-        var pool: CVPixelBufferPool?
-        guard CVPixelBufferPoolCreate(nil, [kCVPixelBufferPoolMinimumBufferCountKey: 4] as CFDictionary, attributes as CFDictionary, &pool) == kCVReturnSuccess, let pool
-        else { throw RenderError.pipeline("preview pixel buffer pool") }
+        guard let pool = BGRAPixelPool.make(width: self.width, height: self.height, minimumBufferCount: 4) else { throw RenderError.pipeline("preview pixel buffer pool") }
         self.pool = pool
-        var cache: CVMetalTextureCache?
-        guard CVMetalTextureCacheCreate(nil, nil, context.device, nil, &cache) == kCVReturnSuccess, let cache else { throw RenderError.pipeline("preview texture cache") }
+        guard let cache = BGRAPixelPool.textureCache(device: context.device) else { throw RenderError.pipeline("preview texture cache") }
         textureCache = cache
     }
 
@@ -192,14 +185,8 @@ public final class PreviewStreamer: @unchecked Sendable {
     public func tap(canvas: MTLTexture, commandBuffer: MTLCommandBuffer, target: Double, canvases: ((Int) -> MTLTexture?)? = nil, live: OutputSet? = nil) {
         tickCounter &+= 1
         guard wantsFrames, tickCounter % (wantsH264 ? everyNth : jpegEveryNth) == 0, let pool, let textureCache else { return }
-        var pixelBuffer: CVPixelBuffer?
-        guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer) == kCVReturnSuccess, let pixelBuffer else {
-            skipped.wrappingAdd(1, ordering: .relaxed)
-            return
-        }
-        var cvTexture: CVMetalTexture?
-        guard CVMetalTextureCacheCreateTextureFromImage(nil, textureCache, pixelBuffer, nil, .bgra8Unorm, width, height, 0, &cvTexture) == kCVReturnSuccess,
-            let cvTexture, let texture = CVMetalTextureGetTexture(cvTexture)
+        guard let (pixelBuffer, cvTexture) = BGRAPixelPool.buffer(from: pool, cache: textureCache, width: width, height: height),
+            let texture = CVMetalTextureGetTexture(cvTexture)
         else {
             skipped.wrappingAdd(1, ordering: .relaxed)
             return

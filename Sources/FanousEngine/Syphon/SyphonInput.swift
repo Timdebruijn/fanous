@@ -65,14 +65,6 @@ public final class SyphonInput: @unchecked Sendable {
     /// Syphon surfaces hold the picture in OpenGL order (row 0 at the bottom), whatever kind of server wrote them.
     public var latestFrame: LiveFrame? { slot.load().map { LiveFrame(texture0: $0, bottomUp: true) } }
 
-    public func connect(appName: String, serverName: String) throws {
-        // Syphon treats an empty name as "any", so a match here is never ambiguous in the sense of a wrong server type
-        guard let description = SyphonServerDirectory.shared().servers(matchingName: serverName, appName: appName).first else {
-            throw SyphonError.serverNotFound(appName: appName, serverName: serverName)
-        }
-        try connect(description: description)
-    }
-
     /// Connects to the server the directory knows by `uuid` (a numbered server, B61: two servers can share a name).
     public func connect(uuid: String) throws {
         guard let description = SyphonServerDirectory.shared().servers.first(where: { $0[SyphonServerDescriptionUUIDKey] as? String == uuid }) else {
