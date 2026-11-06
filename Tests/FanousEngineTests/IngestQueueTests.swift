@@ -126,7 +126,8 @@ import VideoToolbox
         // of a long source (1800 frames: 11 s in one thread)
         for start in stride(from: 0, to: times.count, by: 16) {
             let chunk = start..<min(start + 16, times.count)
-            let buffers = try chunk.map { _ in
+            // each iteration fills its own buffer, no two touch the same one
+            nonisolated(unsafe) let buffers = try chunk.map { _ in
                 var pooled: CVPixelBuffer?
                 if let pool = adaptor.pixelBufferPool { CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pooled) }
                 guard let pooled else { throw MovieWriter.WriterError.failed("pixel buffer") }

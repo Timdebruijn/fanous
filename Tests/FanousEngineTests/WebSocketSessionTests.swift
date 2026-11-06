@@ -163,7 +163,6 @@ struct WebSocketSessionTests {
             [first, 0xFF] + withUnsafeBytes(of: UInt64(half).bigEndian, Array.init) + [0, 0, 0, 0]
                 + [UInt8](repeating: 0x61, count: half)
         }
-        let start = ContinuousClock.now
         #expect(!pair.feed(large(0x01), large(0x00), Self.frame(.continuation, [0x61])))
         #expect(await pair.closeCode() == 1009)
     }

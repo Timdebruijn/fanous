@@ -486,7 +486,7 @@ struct CaptureInputTests {
         catalog.adopt(numbered(["cam-a": 2, "cam-b": 1]))
         #expect(await waitUntil { status(0).name == "Camera: Cam B" && status(1).name == "Camera: Cam A" })
         #expect(await waitUntil { playback(0) != nil && playback(1) != nil && playback(0) !== playback(1) })
-        #expect(status(0).error == nil && status(1).error == nil)
+        #expect(await waitUntil { status(0).error == nil && status(1).error == nil })
 
         // Cam B (now on 1) moves to the free number 7: layer 1 shows nothing, a layer on 7 shows Cam B
         catalog.adopt(numbered(["cam-a": 2, "cam-b": 7]))
