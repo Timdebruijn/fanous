@@ -126,9 +126,9 @@ On an iPad in either orientation everything is there.
 - **Yellow banner, top of the screen.** The engine refused a command. The
   bold line is the engine's reason (in the picture: "the show is locked;
   unlock it first (programmer)"), the line under it the next step, one of:
-  - "Show lock is on — press L or the Locked tag in the top bar to unlock
+  - "Show lock is on — press L or the Locked tag in the status bar to unlock
     (programmer)."
-  - "Not allowed for this role — click the role tag in the top bar and log in
+  - "Not allowed for this role — click the role tag in the status bar and log in
     as programmer."
   - "Show mode is blocked by failed readiness checks — open System to fix or
     acknowledge them."

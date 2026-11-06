@@ -22,6 +22,15 @@
   ];
   const formatMissing = $derived(midi.mscFormat != null && !formats.some((f) => f.value === midi.mscFormat));
   const live = $derived(app.live.midi);
+  // the engine sends "<control> → <target>[ <cue>]": the target part is shown like the map rows
+  const learnedText = $derived.by(() => {
+    const l = live.learned;
+    const at = l?.indexOf(' → ') ?? -1;
+    if (!l || at < 0) return l;
+    const target = l.slice(at + 3);
+    const goto = /^cue\.goto (\S+)$/.exec(target);
+    return `${l.slice(0, at)} → ${midiTargetText(goto ? { target: 'cue.goto', cue: Number(goto[1]) } : { target, cue: null }, map)}`;
+  });
   const sources = $derived(app.live.osc.midiSources);
   const sourceMissing = $derived(!!midi.source && !sources.includes(midi.source));
   const mtcDevice = $derived(app.project.timecode.source === 'mtc' ? (app.project.timecode.device ?? '') : null);
@@ -152,7 +161,7 @@
       <button type="button" class="btn" disabled={!editable || !ready} title={editTitle ?? (ready ? 'Map the next note, controller or program change received' : 'Choose the cue or parameter first')} onclick={learn}>Learn</button>
     {/if}
   </div>
-  {#if live.learned && !live.learning}<p class="caption" aria-live="polite">Learned: {live.learned}</p>{/if}
+  {#if live.learned && !live.learning}<p class="caption" aria-live="polite">Learned: {learnedText}</p>{/if}
 
   {#if midi.map.length === 0}
     <p class="caption">No controls mapped. Choose a target, press Learn and touch the control.</p>

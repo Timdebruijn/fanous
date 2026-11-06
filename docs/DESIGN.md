@@ -3599,8 +3599,8 @@ server → client   binary frames: [u8 kind][u32 streamId][payload]   kind 1 = H
   issued a command sees its own ack and the same patch everyone else gets.
 - Show lock is a `project` flag: while set, every command tagged
   `mutatesConfig` fails with `showLocked` except `show.unlock` (programmer
-  only). Operators keep: cue go/back/goto, transport (retrigger), timecode
-  source on/off, blackout, test patterns, preview selection. Monitors: none.
+  only). Operators keep: cues (go/back/goto), show mode, readiness, the
+  timecode switch. Monitors: none.
 
 ### 11.3 Preview streaming (ADR-0014)
 
