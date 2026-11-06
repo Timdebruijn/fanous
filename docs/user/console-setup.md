@@ -173,7 +173,7 @@ thumbnails ([Remote control](remote-control.md#citpmsex)).
 | Two senders on one universe | the latest packet wins, per packet, with no hold: two consoles fight. Send each universe from one console | the highest priority wins; at equal priority the latest packet, or a per-channel merge by highest value when the universe is set to Merge equal (HTP). A source silent for 2.5 s drops out; a source that sends the stream-terminated flag (a clean shutdown) drops out at once |
 | Not honoured | ArtSync; a packet with a sequence number 0 to 19 behind the last one from the same sender is dropped (sequence 0 switches the check off) | per-address priority (start code 0xDD), sACN sync, and packets flagged as preview or with another start code; the same 0 to 19 sequence check applies per source |
 | What Fanous answers | ArtPoll, with an ArtPollReply as a media server node naming its patched port-addresses, sent back to the poller | nothing; it only listens |
-| Port conflicts | another program holding UDP 6454 is only in the engine log | the port is shared with other receivers on the Mac (sACNView, a second engine); unicast reaches only the one that opened it last; a program that holds it exclusively is named by the readiness item **sACN port 5568 available** (`sudo lsof -nP -iUDP:5568` shows who) |
+| Port conflicts | a program that holds it exclusively is named by the readiness item **Art-Net port 6454 available** (`sudo lsof -nP -iUDP:6454` shows who) | the port is shared with other receivers on the Mac (sACNView, a second engine); unicast reaches only the one that opened it last; a program that holds it exclusively is named by the readiness item **sACN port 5568 available** (`sudo lsof -nP -iUDP:5568` shows who) |
 
 The ArtPollReply names the Mac's first network address, which on a Mac with
 Wi-Fi and a show adapter can be the wrong one for a desk that unicasts to
@@ -410,7 +410,8 @@ flowchart TD
   the engine applies after Who controls; the layer panel on the Layers screen
   shows every channel of a layer with where its value came from.
 - The readiness items **All patched universes receiving**, **Universe
-  interfaces usable** and **sACN port 5568 available** are green
+  interfaces usable**, **Art-Net port 6454 available** and **sACN port 5568
+  available** are green
   ([Show-day checklist](show-day-checklist.md#the-readiness-list)).
 - When the desk sends and nothing moves:
   [Getting started](getting-started.md#6-check-layers-key-1).

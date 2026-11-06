@@ -1074,6 +1074,7 @@ public final class Engine: @unchecked Sendable {
                 context.interfacesMissing.append("\(numbers.map { "sacn:\($0)" }.joined(separator: ", ")): \(interface) (no sACN multicast)")
             }
         }
+        context.artnetError = artnet?.failure
         context.sacnError = sacnError.withLock { $0 }
         let statuses = outputStatus.withLock { $0 }
         context.outputsLost = statuses.filter { $0.state == .lost }.map(\.id)

@@ -242,6 +242,37 @@ struct UniverseSettingsEngineTests {
         #expect(item.state == .warn && !item.blocks && item.detail == "in use, running without sACN: Address already in use")
     }
 
+    /// The same for Art-Net (B167): the listener fails after `start()`, the receiver keeps why, readiness warns.
+    @Test func artNetListenerFailureIsKeptAndReadinessWarns() async throws {
+        let holder = socket(AF_INET, SOCK_DGRAM, 0)
+        defer { close(holder) }
+        try #require(withSockaddr { bind(holder, $0, $1) } == 0)
+        let port = try #require(UDPSend.localPort(holder))
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
+        let artnet = ArtNetReceiver(store: store, logger: testLogger, nodeName: "test", port: port)
+        try artnet.start()
+        defer { artnet.stop() }
+        #expect(await waitUntil { artnet.failure != nil })
+        let failure = try #require(artnet.failure)
+        #expect(failure.contains("Address already in use"))
+
+        var context = ReadinessContext()
+        #expect(Readiness.check(context, acknowledged: []).first { $0.id == "artnetport" }.map { $0.state == .ok && $0.detail == "listening" } == true)
+        context.artnetError = failure
+        let item = try #require(Readiness.check(context, acknowledged: []).first { $0.id == "artnetport" })
+        #expect(item.title == "Art-Net port 6454 available" && item.state == .warn && !item.blocks && item.detail == "in use, running without Art-Net: \(failure)")
+    }
+
+    /// A listener that gets its port keeps no failure: the item stays green while the engine itself holds 6454.
+    @Test func artNetListenerOnAFreePortKeepsNoFailure() async throws {
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
+        let artnet = ArtNetReceiver(store: store, logger: testLogger, nodeName: "test", port: 0)
+        try artnet.start()
+        defer { artnet.stop() }
+        _ = try await listeningPort { artnet.boundPort }
+        #expect(artnet.failure == nil)
+    }
+
     @Test func protocolSwitchesLiveToSACNOnThePair() async throws {
         let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
         let artnet = ArtNetReceiver(store: store, logger: testLogger, nodeName: "test", port: 0)

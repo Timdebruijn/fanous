@@ -69,7 +69,7 @@ in the guide's [glossary](docs/user/reference/glossary.md).
 | | |
 |---|---|
 | **The engine outlives the UI** | It runs as a background service in your login. Quit or crash the app and the output keeps going; a crashed engine is back at once (0.26 s measured; 10 s after a crash in its first 10 s) and resumes show mode if it was on; browsers log in again and no cue is current ([what comes back](docs/user/show-day-checklist.md#what-comes-back-after-the-engine-stops)) |
-| **Readiness list before doors** | 23 items: power, thermal, disk, memory, universes, outputs and display modes, permissions, sync, Spotlight, automatic updates, Time Machine, display sleep ([every item](docs/user/reference/readiness.md)) |
+| **Readiness list before doors** | 24 items: power, thermal, disk, memory, universes, outputs and display modes, permissions, sync, Spotlight, automatic updates, Time Machine, display sleep ([every item](docs/user/reference/readiness.md)) |
 | **Show mode** | The Mac stays awake, ingest pauses, every output with a Mode set goes to it, a canvas or library change is refused; it refuses to start while a readiness item fails and is not acknowledged |
 | **Show lock** | One key (L): accidental edits are refused while GO, Back and the timecode keep running |
 | **Every screen in a browser** | The whole UI on an iPad or any computer on the network, with monitor, operator and programmer roles and passwords ([the user interface](docs/user/ui.md#roles-and-logging-in)). Keep the Mac on the show network: OSC, a few read-only endpoints (live DMX values, patch) and the library rescan take no password ([known limitations](docs/user/reference/known-limitations.md#the-web-ui-and-security)) |
