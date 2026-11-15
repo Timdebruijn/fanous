@@ -12,7 +12,7 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 - Show screen: the OSC panel lists `/fanous/project/load` and the read-back addresses (`/get`, subscribe, ack,
   unsubscribe, ping) and says that Last received shows cue, show, timecode and project-load commands only (B176 web
-  half, PR #TBD).
+  half, PR #331).
 - Docs: `AGENTS.md` tells coding and review agents (Copilot, Claude) where things are, the hard rules, the checks
   before a PR and what a reviewer looks for (PR #329).
 
