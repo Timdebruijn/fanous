@@ -158,7 +158,7 @@ export function basename(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1);
 }
 
-/** A job's source and destination arrive as file URLs (Swift encodes `URL` that way): the plain path, decoded for display ("2%20Band" → "2 Band"); anything else as is. */
+/** A job's source and destination arrive as file URLs (Swift encodes `URL` that way): the plain path, decoded for display and for matching a library item's `path` ("2%20Band" → "2 Band"); anything else as is. */
 export function displayPath(path: string): string {
   if (!path.startsWith('file://')) return path;
   try {
