@@ -84,7 +84,14 @@ describe('describeJobState', () => {
 });
 
 describe('queue helpers', () => {
-  const jobs = [job('a', { done: {} }), job('b', { running: { progress: 0.5 } }), job('c', { failed: { _0: 'x' } }), job('d', { queued: {} }), job('e', { cancelled: {} })];
+  // the engine encodes a job's source as a file URL (Swift `URL`), the library item's path is plain (B190)
+  const jobs = [
+    job('a', { done: {} }),
+    job('b', { running: { progress: 0.5 } }, 'file:///in/b%20c.mp4'),
+    job('c', { failed: { _0: 'x' } }),
+    job('d', { queued: {} }, 'file:///in/d.mp4'),
+    job('e', { cancelled: {} }),
+  ];
 
   it('lists newest first with the active jobs ahead of the finished ones', () => {
     expect(orderJobs(jobs).map((j) => j.id)).toEqual(['d', 'b', 'e', 'c', 'a']);
@@ -94,7 +101,7 @@ describe('queue helpers', () => {
   it('counts running and queued jobs and finds sources still in flight', () => {
     expect(queueSummary(jobs)).toEqual({ running: 1, queued: 1 });
     expect(queueSummary([])).toEqual({ running: 0, queued: 0 });
-    expect(activeSources(jobs)).toEqual(new Set(['/in/b.mp4', '/in/d.mp4']));
+    expect(activeSources(jobs)).toEqual(new Set(['/in/b c.mp4', '/in/d.mp4']));
   });
 });
 

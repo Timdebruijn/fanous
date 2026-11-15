@@ -269,9 +269,12 @@ export function queueSummary(jobs: IngestJobDoc[]): { running: number; queued: n
   return { running: labels.filter((l) => l === 'transcoding').length, queued: labels.filter((l) => l === 'queued').length };
 }
 
-/** Sources with a job still going: their Transcode button must not queue a second one. */
+/**
+ * Sources with a job still going, as plain paths: their Transcode button must not queue a second one. The engine sends
+ * `job.source` as a file URL while a library item's `path` is a plain path, so the two only meet decoded (B190).
+ */
 export function activeSources(jobs: IngestJobDoc[]): Set<string> {
-  return new Set(jobs.filter((job) => isActive(describeJobState(job.state).label)).map((job) => job.source));
+  return new Set(jobs.filter((job) => isActive(describeJobState(job.state).label)).map((job) => displayPath(job.source)));
 }
 
 // MARK: requests
