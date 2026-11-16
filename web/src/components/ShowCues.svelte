@@ -4,7 +4,7 @@
 <script lang="ts">
   import type { CueDoc } from '../lib/docs';
   import type { JSONValue } from '../lib/protocol';
-  import { cueRowLabel, cueRowText, cueStatus, formatNumber, moveCue, nextCueNumber, numberAfter, sortedCues } from '../lib/show';
+  import { cueRowLabel, cueRowText, cueStatus, formatNumber, moveProblem, nextCueNumber, numberAfter, sortedCues, swapSteps } from '../lib/show';
   import { app, cmd, programmerLock, toastUndo } from '../lib/state.svelte';
 
   let { selected = $bindable('') }: { selected: string } = $props();
@@ -16,6 +16,12 @@
 
   const lock = $derived(programmerLock());
   let busy = $state(false);
+  let problem = $state('');
+
+  $effect(() => {
+    void selected;
+    problem = '';
+  });
   const blocked = $derived(lock !== undefined || busy);
 
   async function add() {
@@ -45,16 +51,14 @@
   /** Swaps numbers with the neighbour; the engine refuses duplicate numbers, so it takes three cue.set calls (three undo steps). */
   async function move(direction: -1 | 1) {
     if (!picked) return;
+    problem = moveProblem(app.project.cues, picked.id, direction);
+    if (problem) return;
     busy = true;
-    let refusal: typeof app.lastError = null;
     try {
-      await moveCue($state.snapshot(app.project.cues) as CueDoc[], picked.id, direction, async (step) => {
-        if ((await cmd('cue.set', { id: step.id, cue: step as unknown as JSONValue })) !== undefined) return true;
-        refusal = app.lastError;
-        return false;
-      });
+      for (const step of swapSteps($state.snapshot(app.project.cues) as CueDoc[], picked.id, direction)) {
+        if ((await cmd('cue.set', { id: step.id, cue: step as unknown as JSONValue })) === undefined) break;
+      }
     } finally {
-      if (refusal) app.lastError = refusal; // putting the picked cue back succeeds, which clears the banner
       busy = false;
     }
   }
@@ -78,6 +82,7 @@
       </div>
     </div>
   </header>
+  {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
 
   {#if cues.length === 0}
     <p class="caption empty">No cues yet. Add one, then give it values and a fade.</p>
@@ -118,6 +123,7 @@
   header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 16px; }
   header p { margin: 0; }
   .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .problem { margin: 0; padding: 0 16px 12px; color: var(--red); font-size: 13px; }
   .empty { margin: 0; padding: 0 16px 16px; }
   .list { border-top: 1px solid var(--line); max-height: min(50vh, 440px); overflow-y: auto; }
   .list > :last-child { border-bottom: 0; }

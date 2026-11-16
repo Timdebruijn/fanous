@@ -64,18 +64,17 @@ export function swapSteps(cues: readonly CueDoc[], id: string, direction: -1 | 1
 }
 
 /**
- * Sends the swap steps in order through `send` (cue.set; false = refused). When the neighbour is refused, for example for
- * a trigger an older build stored that the engine now refuses, the picked cue gets its own number back instead of
- * staying parked at the end of the list.
+ * Why a move cannot start, '' when it can: a cue of the swap holds a stored trigger (from an older build, B189) that the
+ * engine refuses in cue.set, which would leave the picked cue parked at the end of the list.
  */
-export async function moveCue(cues: readonly CueDoc[], id: string, direction: -1 | 1, send: (cue: CueDoc) => Promise<boolean>): Promise<void> {
-  const steps = swapSteps(cues, id, direction);
-  for (const [i, step] of steps.entries()) {
-    if (await send(step)) continue;
-    const picked = cues.find((c) => c.id === id);
-    if (i === 1 && picked) await send(picked);
-    return;
+export function moveProblem(cues: readonly CueDoc[], id: string, direction: -1 | 1): string {
+  const list = sortedCues(cues);
+  const index = list.findIndex((c) => c.id === id);
+  for (const c of [list[index], list[index + direction]]) {
+    const result = c?.trigger ? parseTrigger(c.trigger) : null;
+    if (c && result && !result.ok) return `Correct the trigger of cue ${formatNumber(c.number)} (${c.trigger}) before moving: ${result.error}`;
   }
+  return '';
 }
 
 // ---- trigger text ------------------------------------------------------------------------------------------

@@ -8,7 +8,7 @@ import {
   levelText,
   ltcInput,
   meterFill,
-  cueRowLabel, cueRowText, cueStatus, fixtureNames, fixtureType, formatNumber, groupSpecs, isNumberTaken, lockTitle, moveCue, newValue, nextCueNumber,
+  cueRowLabel, cueRowText, cueStatus, fixtureNames, fixtureType, formatNumber, groupSpecs, isNumberTaken, lockTitle, moveProblem, newValue, nextCueNumber,
   numberAfter, parseTrigger, retargetValue, sortedCues, specsFor, swapSteps, timecodeBadge, timecodeOn, timecodeSource, valueControl, withFade,
   offsetText,
   TRIGGER_HINT,
@@ -99,17 +99,14 @@ describe('swapSteps', () => {
     expect(swapSteps(cues, 'zzz', 1)).toEqual([]);
   });
 
-  it('moveCue gives the picked cue its number back when the neighbour is refused (B189)', async () => {
-    const sent: [string, number][] = [];
-    const refuseB = async (step: CueDoc) => {
-      sent.push([step.id, step.number]);
-      return step.id !== 'b'; // b holds a trigger an older build stored
-    };
-    await moveCue(cues, 'a', 1, refuseB);
-    expect(sent).toEqual([['a', 5], ['b', 1], ['a', 1]]);
-    sent.length = 0;
-    await moveCue(cues, 'a', 1, async (step) => (sent.push([step.id, step.number]), true));
-    expect(sent).toEqual([['a', 5], ['b', 1], ['a', 2]]);
+  it('moveProblem stops a move when either cue holds a trigger the engine refuses (B189)', () => {
+    const old = [cue('a', 1), cue('b', 2, { trigger: '00:00:00:99@25' }), cue('c', 3, { trigger: '00:00:10:00@25' })];
+    expect(moveProblem(old, 'a', 1)).toBe('Correct the trigger of cue 2 (00:00:00:99@25) before moving: Frames go to 24 at 25 fps'); // neighbour bad
+    expect(moveProblem(old, 'b', -1)).toContain('cue 2 (00:00:00:99@25)'); // picked bad
+    expect(moveProblem(old, 'c', -1)).toContain('cue 2');
+    expect(moveProblem([cue('d', 1, { trigger: '00:01:00:00@29.97 DF' }), cue('e', 2)], 'e', -1)).toContain('29.97df skips frames 00 and 01');
+    expect(moveProblem([cue('d', 1, { trigger: '00:10:00:00@29.97 DF' }), cue('e', 2, { trigger: null }), cue('f', 3)], 'e', -1)).toBe('');
+    expect(moveProblem(old, 'zzz', 1)).toBe('');
   });
 });
 
