@@ -10,6 +10,8 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+## 1.0.0-rc.6 — 2026-11-16
+
 - Patch screen: the universe fields of the block line and the fixture editor take a typed `A net.subnet.universe` or
   `S n` and offer the universes in use as suggestions; before, a universe nobody used yet could not be chosen (B191,
   PR #332).
