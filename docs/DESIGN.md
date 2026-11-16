@@ -4563,7 +4563,14 @@ interface selectable. Address space generated from `ParameterSpec`:
 /fanous/project/load s (programmer; refused while show-locked)
 ```
 
-Bundles with timetags are honoured (scheduled on Control). OSC feedback
+Bundles with timetags are honoured (scheduled on the DMX queue). Parameter
+messages are applied on the DMX queue; cue, show and timecode commands are
+handed from there to the engine's command queue (B198, `Engine.handOver`), the
+same serial queue as MIDI's cue actions, and run there one at a time in arrival
+order, so the DMX queue never waits on the control queue or the readiness
+checks; a repeated `show.mode true` is dropped while one is queued or running (a
+stale clear lets at most one more through). A command still waits behind a running
+show-mode entry on the control queue (B200). OSC feedback
 (query/notify) is later; the design keeps every OSC-settable value in `live`
 so a feedback sender is a subscriber like any client.
 
@@ -4743,8 +4750,9 @@ grandMA3 onPC, Eos Nomad and MagicQ during Phase 7.
   Cue values enter `DMXStore.setCue` as the internal `.cue` source, so the
   source policy decides per layer. `live.cue`: current, next, fading, count.
 - **OSC**: the full §15.3 address map is routed through `DMXStore.onCommand`
-  into the state store (cue, show lock/mode, timecode enable); bundles with
-  timetags are scheduled on Control; `live.osc.recent` is the log the Show
+  and the engine's command queue (B198) into the state store (cue, show
+  lock/mode, timecode enable); bundles with timetags are scheduled on the DMX
+  queue; `live.osc.recent` is the log the Show
   screen shows. `/fanous/project/load` restores a named project version
   (B35, §11.5 as built).
 - **Show mode and readiness** (`ShowControl/ShowMode.swift`): IOPM assertions

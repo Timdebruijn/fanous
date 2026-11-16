@@ -142,6 +142,13 @@ public final class Engine: @unchecked Sendable {
     private var lastOSCLoad: (id: String, at: TimeInterval)?
     static let oscLoadRepeatWindow: TimeInterval = 2
     let feedQueue = DispatchQueue(label: "org.fanous.feed", qos: .utility)
+    /// B198: OSC (from the DMX queue) and MIDI (from the MIDI queue) commands run here one at a time, in the order they
+    /// were handed over, so neither queue waits on the control queue or the readiness checks.
+    private let commandQueue = DispatchQueue(label: "org.fanous.commands", qos: .userInitiated)
+    /// Set first in `stop()`: a command still queued does nothing.
+    private let commandsStopped = Atomic<Bool>(false)
+    /// A `show.mode true` from OSC or MIDI is queued or running; a repeat meanwhile is dropped (B198).
+    private let showEntryPending = Atomic<Bool>(false)
     public let metrics = MetricsRing()
 
     /// The command registry as `fanousd protocol-dts` sees it: no engine needed.
@@ -403,7 +410,7 @@ public final class Engine: @unchecked Sendable {
                 runReadiness: { [weak self] in self?.runReadiness() }))
         // MIDI control (B36): cue actions run as commands like OSC's; parameter values go straight to the resolvers
         let midi = MIDIInput(dmx: dmx, logger: logger)
-        midi.onCue = { [weak self] in self?.runCommand($0, on: store) }
+        midi.onCue = { [weak self] in self?.handOver($0, to: store) }
         midi.onLearn = { mapping in
             guard let args = try? JSONValue(encoding: mapping) else { return "cannot encode" }
             if case .failure(let error) = store.execute("midi.map.set", args: args, role: .programmer) { return error.message }
@@ -418,7 +425,7 @@ public final class Engine: @unchecked Sendable {
         // OSC: cue, show and timecode commands (DESIGN.md §15.3); the parameter ones stay on the DMX queue
         dmx.onCommand = { [weak self] command in
             guard let self, let store = self.store else { return }
-            self.runCommand(command, on: store)
+            self.handOver(command, to: store)
         }
         showMode.onChange = { [weak self] on in
             guard let self else { return }
@@ -806,6 +813,27 @@ public final class Engine: @unchecked Sendable {
             "decodeErrors": .number(Double(receiver.decodeErrors.load(ordering: .relaxed))), "masters": .object(masters),
             "conflicts": .array((1...LayerSync.groups).filter { table.conflict(group: $0, now: now) != nil }.map { .number(Double($0)) }),
         ]
+    }
+
+    /// B198: the DMX and MIDI queues hand a command over and go on; it runs on `commandQueue` after the ones before it.
+    /// Measured in a release build: 3 allocations per command on the handing queue, at operator rate; the synchronous
+    /// `store.execute` before allocated 4 for a refused command. Parameter values never get here.
+    /// A refused `show.mode true` costs a whole readiness run, so a console repeating it would queue faster than it
+    /// drains: a repeat while one is queued or running is dropped (that one answers for it). A `false` clears the flag,
+    /// so `1, 0, 1` still ends on; the finished entry's clear can be stale and let one more through. Cue, lock and
+    /// timecode commands are never dropped.
+    func handOver(_ command: OSCCommand, to store: StateStore) {
+        switch command {
+        case .showMode(true):
+            guard showEntryPending.compareExchange(expected: false, desired: true, ordering: .relaxed).exchanged else { return }
+        case .showMode(false): showEntryPending.store(false, ordering: .relaxed)
+        default: break
+        }
+        commandQueue.async { [weak self] in
+            guard let self, !self.commandsStopped.load(ordering: .relaxed) else { return }
+            self.runCommand(command, on: store)
+            if case .showMode(true) = command { self.showEntryPending.store(false, ordering: .relaxed) }
+        }
     }
 
     // MARK: Show control
@@ -1798,6 +1826,9 @@ public final class Engine: @unchecked Sendable {
     }
 
     public func stop() {
+        // B198: a command still queued does not run against what is torn down below. One already running is not
+        // waited for (a show-mode entry's checks can hang, B197); it meets the same stopped parts it did on the DMX queue.
+        commandsStopped.store(true, ordering: .relaxed)
         liveTimer?.cancel()
         feedQueue.sync {
             dmxTimer?.cancel()

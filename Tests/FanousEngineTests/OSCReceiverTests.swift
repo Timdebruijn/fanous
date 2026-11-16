@@ -149,6 +149,43 @@ struct OSCReceiverTests {
         }
     }
 
+    /// B198: a command message costs the DMX queue the hand-over to the engine's command queue and nothing more; the
+    /// command itself (here a refused one: the store has none registered) runs on the command queue, not counted.
+    /// Measured on an M1 Pro: 3 per command in release (the synchronous `store.execute` before: 4), 4 in debug against
+    /// 1 with a no-op `onCommand`; 5 in debug on the CI VM. The absolute count moves with machine and toolchain, so the
+    /// printed numbers are the measurement (`scripts/check-mallocs.sh` shows them) and the assertions guard only what
+    /// holds everywhere: the hand-over adds at most 8 per command over a no-op `onCommand` in the same run, and in
+    /// release `apply` with a no-op `onCommand` allocates nothing.
+    @Test(.mallocCounter)
+    func mallocCounterOSCCommandHandOver() throws {
+        try requireMallocCounter()
+        let engine = Engine(options: EngineOptions(webRoot: URL(fileURLWithPath: "/")), logger: testLogger)
+        let state = StateStore(project: [:], logger: testLogger)
+        let store = DMXStore(patch: .standard(layers: 1, outputs: 1), logger: testLogger)
+        let message = OSCMessage("/fanous/cue/go", [])
+        let command = try #require(OSCAddressMap.command(for: message))
+        func burst() -> Int {
+            store.queue.sync {
+                MallocCounter.count {
+                    var i = 0
+                    while i < 100 {
+                        store.apply(command, from: message)
+                        i += 1
+                    }
+                }
+            }
+        }
+        store.onCommand = { _ in }
+        _ = burst()  // warm-up: the ring holds messages
+        let baseline = burst()
+        store.onCommand = { [weak engine] in engine?.handOver($0, to: state) }
+        _ = burst()
+        let allocations = burst()
+        print("OSC receive path, 100 cue go messages: \(allocations) allocations on the DMX queue with the hand-over, \(baseline) without")
+        if MaskTests.release { #expect(baseline == 0, "apply with a no-op onCommand: \(baseline) allocations") }
+        #expect(allocations - baseline <= 800, "\(allocations - baseline) allocations for 100 hand-overs, more than 8 per command")
+    }
+
     /// Feeds a message the way `OSCReceiver.dispatch` does, on the store's queue.
     private func feed(_ store: DMXStore, _ messages: [OSCMessage]) throws {
         for message in messages {

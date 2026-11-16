@@ -10,6 +10,10 @@ implements is `docs/DESIGN.md`; known limitations are in `docs/BACKLOG.md`.
 
 ## Unreleased
 
+- OSC and MIDI: a cue, show or timecode command no longer holds the DMX (or MIDI) queue while it runs; commands run on
+  their own queue in arrival order, so Art-Net, sACN and OSC parameters keep flowing during a show-mode entry's
+  readiness checks. A repeated show-mode entry is dropped while one is queued or running; a cue command can still wait
+  behind one running entry (B198; B200 open) (PR #351).
 - Release: 1.0.0-rc.8 is on GitHub as a pre-release with the signed, notarized dmg, built from main 40400ef
   (PR #348).
 
