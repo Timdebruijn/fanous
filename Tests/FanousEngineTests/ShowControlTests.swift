@@ -235,6 +235,17 @@ struct ShowControlTests {
         #expect(clock.current(at: 14).state == .off)
     }
 
+    /// B150: a numberless cue.add is cue 0 and is refused like any other number once cue 0 exists.
+    @Test func numberlessCueAddIsCueZeroOnce() throws {
+        let (store, _) = testStore(outputs: 0)
+        ShowCommands.register(
+            on: store, hooks: ShowCommands.Hooks(go: {}, back: {}, goto: { _ in }, showMode: { _ in [] }, acknowledge: { _ in }, runReadiness: {}))
+        _ = try store.execute("cue.add", args: ["name": "first"], role: .programmer).get()
+        #expect(store.execute("cue.add", args: ["name": "second"], role: .programmer).failureCode == "invalidArgs")
+        #expect(store.execute("cue.add", args: ["number": 0, "name": "zero"], role: .programmer).failureCode == "invalidArgs")
+        #expect(ShowCommands.cueList(from: store.project).cues.map(\.number) == [0])
+    }
+
     @Test func cueJSONRoundTripAndCommands() throws {
         let (store, _) = testStore(outputs: 0)
         let fired = Mutex<[String]>([])

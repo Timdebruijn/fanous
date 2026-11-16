@@ -80,10 +80,10 @@ public enum ShowCommands {
         }
     }
 
-    /// `cue` in place of `cues[index]` (appended when nil), the list sorted by number into `/cues`; refused when
-    /// another cue already has `number` (cue.add compares the number it was given, cue.set the normalized one).
-    static func storeCues(_ cues: [JSONValue], _ cue: JSONValue, at index: Int?, number: Double?, in project: inout JSONValue) throws {
-        if cues.contains(where: { $0["id"]?.string != cue["id"]?.string && $0["number"]?.double == number }) { throw CommandError.invalidArgs("cue number exists") }
+    /// `cue` (normalized) in place of `cues[index]` (appended when nil), the list sorted by number into `/cues`;
+    /// refused when another cue already has its number (a numberless cue.add is cue 0).
+    static func storeCues(_ cues: [JSONValue], _ cue: JSONValue, at index: Int?, in project: inout JSONValue) throws {
+        if cues.contains(where: { $0["id"]?.string != cue["id"]?.string && $0["number"]?.double == cue["number"]?.double }) { throw CommandError.invalidArgs("cue number exists") }
         var cues = cues
         if let index { cues[index] = cue } else { cues.append(cue) }
         cues.sort { ($0["number"]?.double ?? 0) < ($1["number"]?.double ?? 0) }
@@ -128,7 +128,7 @@ public enum ShowCommands {
                 let id = UUID().uuidString
                 let cue = normalizedCue(args, id: id)
                 try validateCue(cue)
-                try storeCues(project["cues"]?.array ?? [], cue, at: nil, number: args["number"]?.double, in: &project)
+                try storeCues(project["cues"]?.array ?? [], cue, at: nil, in: &project)
                 return .string(id)
             })
         store.register(
@@ -138,7 +138,7 @@ public enum ShowCommands {
                 try validateCue(cue)
                 let cues = project["cues"]?.array ?? []
                 guard let index = cues.firstIndex(where: { $0["id"]?.string == id }) else { throw CommandError.invalidArgs("no cue \(id)") }
-                try storeCues(cues, cue, at: index, number: cue["number"]?.double, in: &project)
+                try storeCues(cues, cue, at: index, in: &project)
                 return nil
             })
         store.register(CommandSpec(name: "cue.remove", role: .programmer, summary: "Remove a cue by id.", argsType: "{ id: string }") { project, args in
