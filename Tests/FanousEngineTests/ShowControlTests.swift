@@ -318,7 +318,7 @@ struct ShowControlTests {
         ]
         for (i, trigger) in bad.enumerated() {
             let result = store.execute("cue.add", args: ["number": .number(Double(i + 1)), "name": "bad", "trigger": .string(trigger)], role: .programmer)
-            #expect(result.failureMessage?.hasPrefix("trigger out of range") == true, "\(trigger)")
+            #expect(result.failureMessage?.hasPrefix("trigger \(trigger) out of range: ") == true, "\(trigger)")
         }
         let good = ["23:59:59:24@25", "00:00:00:23@24", "00:00:00:29@29.97df", "00:01:00:02@29.97df", "00:10:00:00@29.97df", "00:01:00:00@29.97ndf"]
         for (i, trigger) in good.enumerated() {
@@ -328,7 +328,9 @@ struct ShowControlTests {
         var changed = first
         try changed.set("00:00:00:99@25", at: "/trigger")
         let refused = store.execute("cue.set", args: ["id": first["id"] ?? .null, "cue": changed], role: .programmer)
-        #expect(refused.failureMessage?.hasPrefix("trigger out of range") == true)
+        #expect(
+            refused.failureMessage
+                == "trigger 00:00:00:99@25 out of range: hours go to 23, minutes and seconds to 59, frames to one below the rate; 29.97df skips frames 00 and 01 of each minute except every tenth")
         // a malformed trigger keeps its own text
         #expect(
             store.execute("cue.add", args: ["number": 99, "name": "typo", "trigger": "00:01:30:00@29.97"], role: .programmer).failureMessage

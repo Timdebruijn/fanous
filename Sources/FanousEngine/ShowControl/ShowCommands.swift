@@ -77,11 +77,11 @@ public enum ShowCommands {
             throw CommandError.invalidArgs("every value needs fixture (\"Layer n\" / \"Master\" / \"Output n\" / \"Keystone n\"), a parameter key and raw")
         }
         if let trigger = value["trigger"], trigger != .null {
-            guard let timecode = trigger.string.flatMap(parseTimecode) else {
+            guard let text = trigger.string, let timecode = parseTimecode(text) else {
                 throw CommandError.invalidArgs("trigger is hh:mm:ss:ff@rate, the rate 24, 25, 29.97df, 29.97ndf or 30")
             }
             guard timecode.isValid else {
-                throw CommandError.invalidArgs("trigger out of range: hours go to 23, minutes and seconds to 59, frames to one below the rate; 29.97df skips frames 00 and 01 of each minute except every tenth")
+                throw CommandError.invalidArgs("trigger \(text) out of range: hours go to 23, minutes and seconds to 59, frames to one below the rate; 29.97df skips frames 00 and 01 of each minute except every tenth")
             }
         }
     }
